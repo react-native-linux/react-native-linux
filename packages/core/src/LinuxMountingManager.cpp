@@ -30,7 +30,7 @@ void LinuxMountingManager::executeMount(facebook::react::SurfaceId /*surfaceId*/
     const std::lock_guard<std::mutex> guard(sceneMutex_);
 
     for (const facebook::react::ShadowViewMutation& mutation : mountingTransaction.getMutations()) {
-        switch (mutation.type) {
+        switch (mutation.type) { // COV_EXCL: every ShadowViewMutation::Type value has a case, so the implicit no-match branch cannot execute
             case facebook::react::ShadowViewMutation::Create:
                 scene_.createNode(mutation.newChildShadowView);
                 break;

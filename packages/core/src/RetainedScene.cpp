@@ -19,6 +19,18 @@ namespace react_native_linux {
 
 namespace {
 
+template <typename Nodes>
+void eraseChildTag(Nodes& nodes, facebook::react::Tag parentTag, facebook::react::Tag childTag) {
+    const auto parent = nodes.find(parentTag);
+
+    if (parent == nodes.end()) {
+        return;
+    }
+
+    std::vector<facebook::react::Tag>& childTags = parent->second.childTags;
+    childTags.erase(std::remove(childTags.begin(), childTags.end(), childTag), childTags.end());
+}
+
 constexpr size_t kFrameBufferSize = 128;
 constexpr size_t kIndentWidth = 2;
 
@@ -97,19 +109,18 @@ void RetainedScene::insertChild(facebook::react::Tag parentTag, const facebook::
 
 void RetainedScene::removeChild(facebook::react::Tag parentTag, const facebook::react::ShadowView& childShadowView) {
     const auto child = nodes_.find(childShadowView.tag);
+    facebook::react::Tag formerParentTag = parentTag;
 
     if (child != nodes_.end()) {
+        formerParentTag = child->second.parentTag;
         child->second.parentTag = 0;
     }
 
-    const auto parent = nodes_.find(parentTag);
+    eraseChildTag(nodes_, parentTag, childShadowView.tag);
 
-    if (parent == nodes_.end()) {
-        return;
+    if (formerParentTag != parentTag) {
+        eraseChildTag(nodes_, formerParentTag, childShadowView.tag);
     }
-
-    std::vector<facebook::react::Tag>& childTags = parent->second.childTags;
-    childTags.erase(std::remove(childTags.begin(), childTags.end(), childShadowView.tag), childTags.end());
 }
 
 void RetainedScene::updateNode(const facebook::react::ShadowView& shadowView) {

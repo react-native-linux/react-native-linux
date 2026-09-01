@@ -9,6 +9,12 @@ cmake_minimum_required(VERSION 3.28)
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+# Hermes' bundled llvh defines `gtest` and `gtest_main` unconditionally, so upstream googletest
+# and Hermes cannot coexist in one CMake configure. This option selects the Hermes-free half:
+# the ReactCommon closure plus the GoogleTest binary, and none of the runtime targets. The
+# `test` preset is the only thing that turns it on. See docs/cpp-toolchain.md.
+option(RNL_BUILD_TESTS "Configure the Hermes-free GoogleTest build instead of the runtime targets" OFF)
+
 include(FetchContent)
 
 set(RNL_VENDOR_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/react-native/packages/react-native)
@@ -102,6 +108,7 @@ if(TARGET glog::glog)
     target_link_libraries(glog INTERFACE glog::glog)
 else()
     message(STATUS "glog: FetchContent ${RNL_GLOG_VERSION}")
+    set(BUILD_TESTING OFF)
     set(WITH_GFLAGS OFF CACHE BOOL "" FORCE)
     set(WITH_GTEST OFF CACHE BOOL "" FORCE)
     set(WITH_PKGCONFIG OFF CACHE BOOL "" FORCE)
@@ -197,7 +204,7 @@ target_link_libraries(folly_runtime
 set_target_properties(folly_runtime PROPERTIES CXX_STANDARD 20)
 
 # ---------------------------------------------------------------------------
-# Hermes
+# Hermes, or the jsi target on its own
 #
 # There is no prebuilt Hermes runtime for Linux, so the VM is built from source at the
 # version React Native pins in sdks/hermes-engine/version.properties. Three hazards are
@@ -207,59 +214,68 @@ set_target_properties(folly_runtime PROPERTIES CXX_STANDARD 20)
 #   2. Hermes' CDP and llvh sources rely on standard headers arriving transitively, which
 #      stopped being true with libstdc++ 13. The force-includes below are scoped to the
 #      Hermes add_subdirectory and restored afterwards.
-#   3. HERMES_ENABLE_TEST_SUITE must stay OFF: Hermes' bundled llvh ships its own
-#      googletest, which collides with an upstream googletest in the same configure.
-#      Wiring GoogleTest for packages/core has to account for that.
+#   3. external/llvh/CMakeLists.txt adds utils/unittest unconditionally, which defines the
+#      `gtest` and `gtest_main` target names. HERMES_ENABLE_TEST_SUITE=OFF does not prevent
+#      that, so an upstream googletest cannot exist in a configure that contains Hermes.
+#      RNL_BUILD_TESTS drops Hermes and adds ReactCommon's jsi directly instead; it is the
+#      same directory Hermes would have added through JSI_DIR, so jsi is one target either
+#      way. See docs/cpp-toolchain.md.
 # ---------------------------------------------------------------------------
 
-file(READ ${RNL_VENDOR_DIR}/sdks/hermes-engine/version.properties RNL_HERMES_VERSION_PROPERTIES)
-string(REGEX MATCH "HERMES_VERSION_NAME=([0-9A-Za-z.]+)" RNL_HERMES_VERSION_MATCH "${RNL_HERMES_VERSION_PROPERTIES}")
+if(RNL_BUILD_TESTS)
+    add_subdirectory(${REACT_COMMON_DIR}/jsi/jsi ReactCommon/jsi)
+else()
+    file(READ ${RNL_VENDOR_DIR}/sdks/hermes-engine/version.properties RNL_HERMES_VERSION_PROPERTIES)
+    string(REGEX MATCH "HERMES_VERSION_NAME=([0-9A-Za-z.]+)" RNL_HERMES_VERSION_MATCH
+        "${RNL_HERMES_VERSION_PROPERTIES}")
 
-if(NOT RNL_HERMES_VERSION_MATCH)
-    message(FATAL_ERROR "Could not read HERMES_VERSION_NAME from sdks/hermes-engine/version.properties")
+    if(NOT RNL_HERMES_VERSION_MATCH)
+        message(FATAL_ERROR "Could not read HERMES_VERSION_NAME from sdks/hermes-engine/version.properties")
+    endif()
+
+    set(RNL_HERMES_VERSION ${CMAKE_MATCH_1})
+    message(STATUS "Hermes pinned by React Native: ${RNL_HERMES_VERSION}")
+
+    # JSI_DIR makes Hermes build its jsi target from React Native's own copy, so ReactCommon
+    # and Hermes share one jsi rather than defining the target name twice.
+    set(JSI_DIR ${REACT_COMMON_DIR}/jsi CACHE PATH "" FORCE)
+    set(HERMES_BUILD_APPLE_FRAMEWORK OFF CACHE BOOL "" FORCE)
+    set(HERMES_BUILD_SHARED_JSI ON CACHE BOOL "" FORCE)
+    set(HERMES_ENABLE_DEBUGGER OFF CACHE BOOL "" FORCE)
+    set(HERMES_ENABLE_RTTI ON CACHE BOOL "" FORCE)
+    set(HERMES_ENABLE_INTL OFF CACHE BOOL "" FORCE)
+    set(HERMES_ENABLE_TEST_SUITE OFF CACHE BOOL "" FORCE)
+    set(HERMES_ENABLE_TOOLS ON CACHE BOOL "" FORCE)
+
+    FetchContent_Declare(hermes
+        GIT_REPOSITORY https://github.com/facebook/hermes.git
+        GIT_TAG hermes-v${RNL_HERMES_VERSION}
+        GIT_SHALLOW TRUE
+        GIT_PROGRESS TRUE)
+
+    set(RNL_SAVED_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        set(CMAKE_CXX_FLAGS
+            "${CMAKE_CXX_FLAGS} -include cstdint -include cstring -include cstddef -include string -include memory -include vector")
+    endif()
+
+    FetchContent_MakeAvailable(hermes)
+
+    set(CMAKE_CXX_FLAGS "${RNL_SAVED_CXX_FLAGS}")
+
+    if(NOT TARGET hermesvm)
+        message(FATAL_ERROR "Hermes did not define the hermesvm target; check the pinned Hermes version")
+    endif()
 endif()
 
-set(RNL_HERMES_VERSION ${CMAKE_MATCH_1})
-message(STATUS "Hermes pinned by React Native: ${RNL_HERMES_VERSION}")
-
-# JSI_DIR makes Hermes build its jsi target from React Native's own copy, so ReactCommon
-# and Hermes share one jsi rather than defining the target name twice.
-set(JSI_DIR ${REACT_COMMON_DIR}/jsi CACHE PATH "" FORCE)
-set(HERMES_BUILD_APPLE_FRAMEWORK OFF CACHE BOOL "" FORCE)
-set(HERMES_BUILD_SHARED_JSI ON CACHE BOOL "" FORCE)
-set(HERMES_ENABLE_DEBUGGER OFF CACHE BOOL "" FORCE)
-set(HERMES_ENABLE_RTTI ON CACHE BOOL "" FORCE)
-set(HERMES_ENABLE_INTL OFF CACHE BOOL "" FORCE)
-set(HERMES_ENABLE_TEST_SUITE OFF CACHE BOOL "" FORCE)
-set(HERMES_ENABLE_TOOLS ON CACHE BOOL "" FORCE)
-
-FetchContent_Declare(hermes
-    GIT_REPOSITORY https://github.com/facebook/hermes.git
-    GIT_TAG hermes-v${RNL_HERMES_VERSION}
-    GIT_SHALLOW TRUE
-    GIT_PROGRESS TRUE)
-
-set(RNL_SAVED_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    set(CMAKE_CXX_FLAGS
-        "${CMAKE_CXX_FLAGS} -include cstdint -include cstring -include cstddef -include string -include memory -include vector")
-endif()
-
-FetchContent_MakeAvailable(hermes)
-
-set(CMAKE_CXX_FLAGS "${RNL_SAVED_CXX_FLAGS}")
-
-if(NOT TARGET hermesvm)
-    message(FATAL_ERROR "Hermes did not define the hermesvm target; check the pinned Hermes version")
-endif()
-
-# Hermes only compiles jsi.cpp, and it builds libjsi.so with -fvisibility=hidden, which
-# strips the unannotated JSIDynamic/jsilib symbols. ReactCommon additionally needs the
-# folly<->jsi bridge and the POSIX jsilib, so they get their own static library with
-# default visibility instead of being appended to Hermes' target.
 target_link_libraries(jsi PUBLIC folly_runtime glog)
 set_target_properties(jsi PROPERTIES CXX_STANDARD 20)
+
+# ReactCommon's jsi CMakeLists compiles jsi.cpp only, and under Hermes it builds libjsi.so with
+# -fvisibility=hidden, which strips the unannotated JSIDynamic/jsilib symbols. ReactCommon
+# additionally needs the folly<->jsi bridge and the POSIX jsilib, so they get their own static
+# library with default visibility instead of being appended to the jsi target.
 
 add_library(rnl_jsidynamic STATIC
     ${REACT_COMMON_DIR}/jsi/jsi/JSIDynamic.cpp
@@ -437,6 +453,14 @@ foreach(rnl_target IN LISTS RNL_REACT_COMMON_TARGETS)
         target_compile_options(${rnl_target} PRIVATE -Wno-error)
     endif()
 endforeach()
+
+# The test configure stops here: everything below links hermesvm, and the reason this build
+# exists at all is that Hermes cannot share a configure with googletest.
+if(RNL_BUILD_TESTS)
+    add_subdirectory(tests)
+
+    return()
+endif()
 
 # ---------------------------------------------------------------------------
 # rnl_react_core

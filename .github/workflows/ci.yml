@@ -88,6 +88,110 @@ jobs:
       - name: Run shellcheck, shfmt, and gitleaks
         run: node scripts/validate-meta.ts
 
+  unit:
+    name: unit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CC: clang-18
+      CXX: clang++-18
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      LLVM_COV: llvm-cov-18
+      LLVM_PROFDATA: llvm-profdata-18
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The test preset never touches Hermes or Skia: RNL_BUILD_TESTS stops the configure before
+      # either is reached, so this job needs only the ReactCommon/folly prerequisites and LLVM's
+      # coverage tools, not freetype, fontconfig, Wayland or Vulkan.
+      - name: Install build prerequisites
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            ccache \
+            clang-18 \
+            clang-tools-18 \
+            cmake \
+            git \
+            libboost-dev \
+            libclang-rt-18-dev \
+            libdouble-conversion-dev \
+            libfmt-dev \
+            libgoogle-glog-dev \
+            libicu-dev \
+            llvm-18 \
+            ninja-build \
+            pkg-config \
+            python3
+          clang-18 --version
+          cmake --version
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Cache vendored React Native
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: third_party/react-native
+          key: rnl-vendor-react-native-ubuntu-24.04-${{ hashFiles('scripts/vendor.lock.json', 'scripts/vendor-react-native.ts') }}
+
+      - name: Vendor React Native
+        run: node scripts/vendor-react-native.ts
+
+      - name: Restore ccache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .ccache
+          key: rnl-ccache-ubuntu-24.04-clang-18-test-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'packages/core/CMakeLists.txt', 'packages/core/tests/CMakeLists.txt', 'scripts/vendor.lock.json') }}-${{ github.run_id }}
+          restore-keys: |
+            rnl-ccache-ubuntu-24.04-clang-18-test-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'packages/core/CMakeLists.txt', 'packages/core/tests/CMakeLists.txt', 'scripts/vendor.lock.json') }}-
+            rnl-ccache-ubuntu-24.04-clang-18-test-
+
+      - name: Configure ccache
+        run: |
+          set -euo pipefail
+          mkdir -p "$CCACHE_DIR"
+          printf 'max_size = 2G\ncompression = true\n' > "$CCACHE_DIR/ccache.conf"
+          ccache --zero-stats
+
+      - name: Configure
+        run: cmake --preset test
+
+      - name: Build rnl_core_tests
+        run: cmake --build --preset test
+
+      - name: Report ccache and disk usage
+        if: always()
+        run: |
+          set -euo pipefail
+          ccache --show-stats
+          df -h /
+
+      - name: Save ccache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .ccache
+          key: rnl-ccache-ubuntu-24.04-clang-18-test-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'packages/core/CMakeLists.txt', 'packages/core/tests/CMakeLists.txt', 'scripts/vendor.lock.json') }}-${{ github.run_id }}
+
+      - name: Run rnl_core_tests under ctest
+        run: ctest --preset test
+
+      - name: Coverage gate
+        run: node scripts/cpp-coverage.ts
+
   native:
     name: native (${{ matrix.preset }})
     runs-on: ubuntu-24.04

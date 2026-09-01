@@ -35,6 +35,15 @@
       }
     },
     {
+      "name": "test",
+      "displayName": "Hermes-free GoogleTest build with LLVM source-based coverage",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "RNL_BUILD_TESTS": "ON"
+      }
+    },
+    {
       "name": "asan",
       "displayName": "Debug build with AddressSanitizer and UndefinedBehaviorSanitizer",
       "inherits": "base",
@@ -72,12 +81,29 @@
       "configurePreset": "release"
     },
     {
+      "name": "test",
+      "configurePreset": "test",
+      "targets": ["rnl_core_tests"]
+    },
+    {
       "name": "asan",
       "configurePreset": "asan"
     },
     {
       "name": "tsan",
       "configurePreset": "tsan"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "test",
+      "configurePreset": "test",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
     }
   ]
 }

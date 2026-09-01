@@ -302,6 +302,7 @@ pnpm --filter @react-native-linux/core run:window:fabric  # build/dev/bin/rnl_wi
 
 pnpm test:golden          # compare renders against the checked-in goldens
 pnpm test:golden:update   # regenerate the goldens, for review before committing
+pnpm test:native          # configure/build the `test` preset, run ctest, gate on coverage — see *Unit tests and coverage*
 ```
 
 The same sequence without pnpm, from the repository root:
@@ -481,6 +482,52 @@ The first fixture is `packages/core/test-bundles/fabric-view.js` to `packages/co
 dark `#14161A` background with one flat blue `#3366CC` rectangle, 120x80, its top-left corner at (24, 24) — the
 frame `hello_react --fabric` prints for `View #4`, rasterised instead of dumped.
 
+## Unit tests and coverage
+
+`packages/core/tests` is a second, Hermes-free CMake configure of the same source tree, reached only through the
+`test` preset. `RNL_BUILD_TESTS` makes `packages/core/CMakeLists.txt` build ReactCommon's `jsi` directly instead of
+taking the Hermes branch, add `packages/core/tests`, and `return()` before any Hermes-linked target — see hazard 3
+above for why Hermes and GoogleTest cannot share a configure. The configure still needs the vendored React Native
+tree (`ReactCommon` and `ReactCxxPlatform`) and the same folly/boost/glog/double-conversion/fmt prerequisites as
+every other preset, because `RetainedScene` and `LinuxMountingManager` are ordinary renderer-core consumers; it
+needs neither Hermes nor Skia, so it skips both the multi-hour Hermes build and the freetype/fontconfig/Wayland/
+Vulkan prerequisites `RNL_ENABLE_SKIA` and `RNL_ENABLE_WINDOW` probe for.
+
+`packages/core/tests/CMakeLists.txt` fetches googletest at a pinned commit, builds `rnl_core_tests` from
+`SceneTest.cpp` plus the two sources it exercises — `RetainedScene.cpp` and `LinuxMountingManager.cpp`, compiled
+directly into the test binary rather than linked from a Hermes-linked library — and registers them with
+`gtest_discover_tests` so `ctest` finds every `TEST` individually. Under Clang, `rnl_core_tests` also gets
+`-fprofile-instr-generate -fcoverage-mapping`, LLVM's source-based coverage instrumentation.
+
+`scripts/cpp-coverage.ts` is the gate: it runs `rnl_core_tests` with `LLVM_PROFILE_FILE` pointed at
+`build/test/coverage`, merges the raw profile with `llvm-profdata merge -sparse`, exports it as lcov with
+`llvm-cov export --format=lcov`, and grades line and branch coverage per file against an explicit list
+(`scopedSourcePaths` in the script — today `RetainedScene.cpp` and `LinuxMountingManager.cpp`, the two sources
+`SceneTest.cpp` actually exercises). A source with no tests behind it is deliberately not in that list: adding a
+file there without coverage behind it is what turns the gate red, rather than a silent average across the whole of
+`packages/core`. The gate honors `// COV_EXCL: <reason>` markers per AGENTS.md — a marked line is dropped from both
+the line and the branch count, and a marker with no reason after the colon fails the script outright. `LLVM_COV`
+and `LLVM_PROFDATA` name the binaries to run and default to unversioned `llvm-cov`/`llvm-profdata`, which is what a
+recent Arch `llvm` package puts on `PATH`; Ubuntu's `llvm-18` package installs only the versioned
+`llvm-cov-18`/`llvm-profdata-18`, so CI sets both env vars.
+
+```bash
+cmake --preset test
+cmake --build --preset test
+ctest --preset test
+node scripts/cpp-coverage.ts
+```
+
+or, from the root, the single script that chains all four steps:
+
+```bash
+pnpm test:native
+```
+
+`ctest --preset test` and `scripts/cpp-coverage.ts` both run every `TEST` in `rnl_core_tests`: the former for
+per-test pass/fail reporting through CTest, the latter to produce the coverage-instrumented run the gate grades.
+Both runs are deterministic and side-effect-free, so running the suite twice costs time, not correctness.
+
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on every pull request and on every push to `main`, under
@@ -491,6 +538,7 @@ with the version in a trailing comment; Renovate keeps those SHAs fresh through 
 | --- | --- | --- | --- |
 | `validate` | `ubuntu-24.04` | 15 min | `pnpm validate`: format, types, lint, deadcode, duplication, Vitest with its 100% coverage thresholds, meta files. |
 | `meta` | `ubuntu-24.04` | 10 min | actionlint, typos, shellcheck, shfmt, gitleaks. |
+| `unit` | `ubuntu-24.04` | 30 min | `rnl_core_tests`, the Hermes-free GoogleTest suite for `RetainedScene` and `LinuxMountingManager`, run under `ctest` and gated at 100% line and branch coverage by `scripts/cpp-coverage.ts`. Needs neither Hermes nor Skia. |
 | `native (dev)` | `ubuntu-24.04` | 120 min | The whole C++ toolchain: vendor, configure, build, the four `hello_react` acceptance paths, and the golden-image comparison. |
 | `native (asan)` | `ubuntu-24.04` | 120 min | The same build and the same four paths under ASan + UBSan. |
 | `native (tsan)` | `ubuntu-24.04` | 120 min | The same build and the same four paths under TSan. |
@@ -588,11 +636,8 @@ shows up as a mystery failure.
 
 ### Not wired up yet
 
-Issue #4 also asks for `llvm-cov` C++ coverage with a 100% gate. That is blocked, not skipped: there is no
-GoogleTest target for `packages/core` yet, because Hermes' bundled llvh ships its own googletest and collides with
-an upstream one in the same configure — hazard 3 above. Coverage over zero C++ tests is not a gate. The TypeScript
-half of that acceptance criterion is already enforced, by `pnpm test` inside `pnpm validate`. The gcc column of the
-matrix, and the lavapipe window golden, are the other two deferred pieces.
+Issue #4's `llvm-cov` C++ coverage gate is wired now; see *Unit tests and coverage* below. The gcc column of the
+matrix, and the lavapipe window golden, are the remaining deferred pieces.
 
 ## Dependencies, and how they differ from Meta's
 
@@ -624,10 +669,14 @@ and libstdc++: `FOLLY_USE_LIBCPP` (folly would include libc++'s `<__config>`) an
    them for the duration of Hermes' `add_subdirectory` and restores `CMAKE_CXX_FLAGS` afterwards. Upstream has no
    Linux CI job with `HERMES_ENABLE_DEBUGGER=ON`, so this keeps recurring; adding one is the cheapest useful
    upstream contribution this project can make.
-3. **gtest collides with Hermes' llvh.** Hermes' bundled llvh ships its own googletest. `HERMES_ENABLE_TEST_SUITE`
-   is forced off here, but wiring a GoogleTest target for `packages/core` in the same configure as Hermes still has
-   to solve the collision — either by keeping the test binary in a Hermes-free configure, or by fetching googletest
-   before Hermes and letting the existing targets win.
+3. **gtest collides with Hermes' llvh.** `external/llvh/CMakeLists.txt` adds `utils/unittest` unconditionally, which
+   defines the `gtest` and `gtest_main` target names. `HERMES_ENABLE_TEST_SUITE=OFF` does not prevent that — the
+   option gates Hermes' own test suite, not llvh's unconditional `add_subdirectory` — so an upstream googletest
+   `FetchContent` in the same configure as Hermes fails with "target gtest already defined" at Hermes'
+   `add_subdirectory`, regardless of fetch order. The resolution is the Hermes-free `test` CMake preset:
+   `RNL_BUILD_TESTS` builds ReactCommon's `jsi` directly instead of taking the Hermes branch, so Hermes and its
+   vendored llvh are never added to that configure and GoogleTest owns the `gtest` name. See *Unit tests and
+   coverage*.
 4. **`jsi` is defined twice upstream.** Hermes builds a `jsi` target and so does ReactCommon. `JSI_DIR` points
    Hermes at React Native's `ReactCommon/jsi`, so exactly one `jsi` target exists; the build then appends
    `JSIDynamic.cpp` and `jsilib-posix.cpp`, which Hermes' own CMakeLists does not compile but ReactCommon needs.
