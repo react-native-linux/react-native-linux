@@ -1,5 +1,15 @@
 # AGENTS.md
 
+## Prime Directive: No Overengineering
+
+This rule outranks every other rule in this file. Solve every task with the **minimal working code** that satisfies the acceptance criteria and the test layers — nothing more.
+
+- Reduce complexity at every decision: fewer abstractions, fewer files, fewer layers, fewer options. Add an abstraction only after the second concrete consumer exists, never for an imagined future one.
+- No speculative generality: no plugin systems, no renderer-agnostic interfaces, no configuration for things with one value, no "tier" scaffolding before the first tier works end to end.
+- Prefer deleting code to adding it. Prefer a 40-line direct implementation to a 200-line "extensible" one. Prefer copying a reference implementation's simple approach over inventing a clever one.
+- Reuse what upstream already ships before writing anything: `ReactCxxPlatform`, the generic `cxx` renderer platforms, RN's own JSI conformance suite, Skia's modules. The best code for this project is code we did not write.
+- The quality bar (tests, sanitizers, coverage) is not overengineering — it is how minimal code stays minimal. Everything else is guilty until proven necessary.
+
 react-native-linux is a GPU-first out-of-tree React Native platform for desktop Linux: Fabric rendered through Skia (Graphite/Vulkan) into a Wayland surface, Hermes for JavaScript, New Architecture only. The founding decision record is `docs/adr/0001-gpu-first-out-of-tree-react-native-platform-for-linux.md`; read it before proposing architectural changes. Amendments to it require a new ADR in `docs/adr/`.
 
 ## Canonical Agent Surfaces
