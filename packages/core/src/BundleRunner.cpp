@@ -1,6 +1,7 @@
 #include "BundleRunner.h"
 
 #include "ConsoleBinding.h"
+#include "FabricHost.h"
 #include "HermesJSRuntimeFactory.h"
 #include "HostTimerRegistry.h"
 #include "JsErrorReporter.h"
@@ -8,6 +9,7 @@
 #include <cxxreact/JSBigString.h>
 #include <react/featureflags/ReactNativeFeatureFlags.h>
 #include <react/featureflags/ReactNativeFeatureFlagsOverridesOSSStable.h>
+#include <react/renderer/graphics/Size.h>
 #include <react/runtime/ReactInstance.h>
 #include <react/runtime/TimerManager.h>
 #include <react/threading/MessageQueueThreadImpl.h>
@@ -26,6 +28,7 @@ namespace {
 constexpr std::chrono::milliseconds kQuiescenceBudget{30000};
 constexpr char kSmokeSource[] = "console.log('react-native-linux: hermes alive');";
 constexpr char kSmokeSourceUrl[] = "smoke.js";
+constexpr facebook::react::Size kHeadlessSurfaceSize{.width = 800, .height = 600};
 
 std::unique_ptr<const facebook::react::JSBigString> readScript(const std::optional<std::string>& bundlePath) {
     if (bundlePath.has_value()) {
@@ -41,7 +44,7 @@ std::chrono::milliseconds remainingBudget(std::chrono::steady_clock::time_point 
 
 } // namespace
 
-int runBundle(const std::optional<std::string>& bundlePath) {
+int runBundle(const std::optional<std::string>& bundlePath, BundleMode bundleMode) {
     std::unique_ptr<const facebook::react::JSBigString> script = readScript(bundlePath);
     const std::string sourceUrl = bundlePath.value_or(kSmokeSourceUrl);
 
@@ -66,6 +69,13 @@ int runBundle(const std::optional<std::string>& bundlePath) {
     timerManager->setRuntimeExecutor(reactInstance->getBufferedRuntimeExecutor());
 
     reactInstance->initializeRuntime({}, installConsoleBinding);
+
+    std::unique_ptr<FabricHost> fabricHost;
+
+    if (bundleMode == BundleMode::Fabric) {
+        fabricHost = std::make_unique<FabricHost>(*reactInstance, kHeadlessSurfaceSize);
+    }
+
     reactInstance->loadScript(std::move(script), sourceUrl);
 
     const std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::now() + kQuiescenceBudget;
@@ -80,6 +90,13 @@ int runBundle(const std::optional<std::string>& bundlePath) {
             std::cerr << "[bundle-runner] gave up waiting for pending timers" << std::endl;
             isQuiescent = true;
         }
+    }
+
+    if (fabricHost) {
+        std::cout << fabricHost->dumpScene() << std::flush;
+        fabricHost->stopSurface();
+        jsMessageQueueThread->runOnQueueSync([]() {});
+        fabricHost.reset();
     }
 
     jsMessageQueueThread->quitSynchronous();

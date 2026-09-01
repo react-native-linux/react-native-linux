@@ -1,0 +1,51 @@
+#include "LinuxMountingManager.h"
+
+#include <react/renderer/mounting/ShadowViewMutation.h>
+
+#include <mutex>
+#include <string>
+
+namespace react_native_linux {
+
+void LinuxMountingManager::startSurface(facebook::react::SurfaceId surfaceId, facebook::react::Size size) {
+    const std::lock_guard<std::mutex> guard(sceneMutex_);
+
+    scene_.createSurfaceRoot(surfaceId, size);
+}
+
+std::string LinuxMountingManager::dumpScene() const {
+    const std::lock_guard<std::mutex> guard(sceneMutex_);
+
+    return scene_.dump();
+}
+
+void LinuxMountingManager::executeMount(facebook::react::SurfaceId /*surfaceId*/,
+                                        facebook::react::MountingTransaction&& mountingTransaction) {
+    const std::lock_guard<std::mutex> guard(sceneMutex_);
+
+    for (const facebook::react::ShadowViewMutation& mutation : mountingTransaction.getMutations()) {
+        switch (mutation.type) {
+            case facebook::react::ShadowViewMutation::Create:
+                scene_.createNode(mutation.newChildShadowView);
+                break;
+            case facebook::react::ShadowViewMutation::Delete:
+                scene_.deleteNode(mutation.oldChildShadowView.tag);
+                break;
+            case facebook::react::ShadowViewMutation::Insert:
+                scene_.insertChild(mutation.parentTag, mutation.newChildShadowView, mutation.index);
+                break;
+            case facebook::react::ShadowViewMutation::Remove:
+                scene_.removeChild(mutation.parentTag, mutation.oldChildShadowView);
+                break;
+            case facebook::react::ShadowViewMutation::Update:
+                scene_.updateNode(mutation.newChildShadowView);
+                break;
+        }
+    }
+}
+
+void LinuxMountingManager::dispatchCommand(const facebook::react::ShadowView& /*shadowView*/,
+                                           const std::string& /*commandName*/,
+                                           const folly::dynamic& /*args*/) {}
+
+} // namespace react_native_linux

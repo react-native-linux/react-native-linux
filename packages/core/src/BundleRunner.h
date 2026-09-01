@@ -5,6 +5,11 @@
 
 namespace react_native_linux {
 
-int runBundle(const std::optional<std::string>& bundlePath);
+enum class BundleMode {
+    Script,
+    Fabric,
+};
+
+int runBundle(const std::optional<std::string>& bundlePath, BundleMode bundleMode);
 
 } // namespace react_native_linux

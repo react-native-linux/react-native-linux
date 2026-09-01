@@ -1,0 +1,168 @@
+#include "RetainedScene.h"
+
+#include <react/renderer/components/root/RootShadowNode.h>
+#include <react/renderer/components/view/ViewProps.h>
+#include <react/renderer/graphics/Color.h>
+#include <react/renderer/graphics/Rect.h>
+
+#include <algorithm>
+#include <array>
+#include <cstddef>
+#include <cstdio>
+#include <memory>
+#include <optional>
+#include <string>
+#include <vector>
+
+namespace react_native_linux {
+
+namespace {
+
+constexpr size_t kFrameBufferSize = 128;
+constexpr size_t kIndentWidth = 2;
+
+std::string formatFrame(const facebook::react::Rect& frame) {
+    std::array<char, kFrameBufferSize> buffer{};
+
+    std::snprintf(buffer.data(), buffer.size(), "(%.2f, %.2f, %.2f, %.2f)", static_cast<double>(frame.origin.x),
+                  static_cast<double>(frame.origin.y), static_cast<double>(frame.size.width),
+                  static_cast<double>(frame.size.height));
+
+    return buffer.data();
+}
+
+std::optional<std::string> readBackgroundColor(const facebook::react::ShadowView& shadowView) {
+    const std::shared_ptr<const facebook::react::ViewProps> viewProps =
+        std::dynamic_pointer_cast<const facebook::react::ViewProps>(shadowView.props);
+
+    if (viewProps == nullptr || !facebook::react::isColorMeaningful(viewProps->backgroundColor)) {
+        return std::nullopt;
+    }
+
+    return viewProps->backgroundColor.toString();
+}
+
+std::string readComponentName(const facebook::react::ShadowView& shadowView) {
+    if (shadowView.componentName == nullptr) {
+        return {};
+    }
+
+    return shadowView.componentName;
+}
+
+} // namespace
+
+void RetainedScene::createSurfaceRoot(facebook::react::SurfaceId surfaceId, facebook::react::Size size) {
+    SceneNode& node = nodes_[surfaceId];
+
+    node.tag = surfaceId;
+    node.componentName = facebook::react::RootComponentName;
+    node.layoutMetrics.frame.size = size;
+}
+
+void RetainedScene::createNode(const facebook::react::ShadowView& shadowView) {
+    writeNode(shadowView);
+}
+
+void RetainedScene::deleteNode(facebook::react::Tag tag) {
+    nodes_.erase(tag);
+}
+
+void RetainedScene::insertChild(facebook::react::Tag parentTag, const facebook::react::ShadowView& childShadowView,
+                                int index) {
+    SceneNode& child = writeNode(childShadowView);
+    child.parentTag = parentTag;
+
+    const auto parent = nodes_.find(parentTag);
+
+    if (parent == nodes_.end()) {
+        return;
+    }
+
+    std::vector<facebook::react::Tag>& childTags = parent->second.childTags;
+    const size_t position = std::min(static_cast<size_t>(std::max(index, 0)), childTags.size());
+
+    childTags.insert(childTags.begin() + static_cast<std::ptrdiff_t>(position), childShadowView.tag);
+}
+
+void RetainedScene::removeChild(facebook::react::Tag parentTag, const facebook::react::ShadowView& childShadowView) {
+    const auto child = nodes_.find(childShadowView.tag);
+
+    if (child != nodes_.end()) {
+        child->second.parentTag = 0;
+    }
+
+    const auto parent = nodes_.find(parentTag);
+
+    if (parent == nodes_.end()) {
+        return;
+    }
+
+    std::vector<facebook::react::Tag>& childTags = parent->second.childTags;
+    childTags.erase(std::remove(childTags.begin(), childTags.end(), childShadowView.tag), childTags.end());
+}
+
+void RetainedScene::updateNode(const facebook::react::ShadowView& shadowView) {
+    writeNode(shadowView);
+}
+
+std::string RetainedScene::dump() const {
+    std::vector<facebook::react::Tag> rootTags;
+
+    for (const auto& [tag, node] : nodes_) {
+        if (node.parentTag == 0) {
+            rootTags.push_back(tag);
+        }
+    }
+
+    std::sort(rootTags.begin(), rootTags.end());
+
+    std::string output;
+
+    for (facebook::react::Tag tag : rootTags) {
+        appendNode(output, tag, 0);
+    }
+
+    return output;
+}
+
+SceneNode& RetainedScene::writeNode(const facebook::react::ShadowView& shadowView) {
+    SceneNode& node = nodes_[shadowView.tag];
+
+    node.tag = shadowView.tag;
+    node.componentName = readComponentName(shadowView);
+    node.layoutMetrics = shadowView.layoutMetrics;
+    node.backgroundColor = readBackgroundColor(shadowView);
+
+    return node;
+}
+
+void RetainedScene::appendNode(std::string& output, facebook::react::Tag tag, size_t depth) const {
+    const auto entry = nodes_.find(tag);
+
+    if (entry == nodes_.end()) {
+        return;
+    }
+
+    const SceneNode& node = entry->second;
+
+    output.append(depth * kIndentWidth, ' ');
+    output += node.componentName;
+    output += " #";
+    output += std::to_string(node.tag);
+    output += " frame=";
+    output += formatFrame(node.layoutMetrics.frame);
+
+    if (node.backgroundColor.has_value()) {
+        output += " backgroundColor=";
+        output += node.backgroundColor.value();
+    }
+
+    output += '\n';
+
+    for (facebook::react::Tag childTag : node.childTags) {
+        appendNode(output, childTag, depth + 1);
+    }
+}
+
+} // namespace react_native_linux

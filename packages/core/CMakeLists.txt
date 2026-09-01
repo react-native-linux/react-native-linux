@@ -112,6 +112,11 @@ endif()
 # fbgloginit is an Android-only shim; ReactCommon links the target unconditionally.
 add_library(glog_init INTERFACE)
 
+# React Native's codegen output is produced by Gradle and is not vendored, so react_codegen_rncore has no
+# definition here. react_renderer_animationbackend is the only target in this graph that names it, and none of
+# its sources include a generated header, so an empty interface library satisfies the link line.
+add_library(react_codegen_rncore INTERFACE)
+
 FetchContent_Declare(fast_float
     URL https://github.com/fastfloat/fast_float/archive/refs/tags/v${RNL_FAST_FLOAT_VERSION}.tar.gz
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE
@@ -274,8 +279,18 @@ set_target_properties(rnl_jsidynamic PROPERTIES CXX_STANDARD 20)
 #   react/runtime -> bridgeless: ReactInstance, TimerManager, BufferedRuntimeExecutor.
 # None of them adds a system dependency: react/runtime/hermes (bridgelesshermes) is the one
 # that would, through hermes_executor_common and hermes_inspector_modern, and it is not used.
-# The nativemodule and component trees and the remaining eleven ReactCxxPlatform
-# subdirectories stay out until Fabric bring-up needs them.
+#
+# The Fabric bootstrap adds the transitive closure of react_renderer_scheduler. Every entry
+# below is named by a target already in that closure, none of them introduces a system
+# dependency, and the two text subdirectories arrive because react_renderer_uimanager links
+# react_renderer_dom, which links rrc_text. The C++ platform selector resolves rrc_text and
+# react_renderer_textlayoutmanager to their platform/cxx sources, where TextLayoutManager is a
+# stub with no shaping engine behind it.
+#
+# ReactCxxPlatform's react/renderer/{uimanager,scheduler} carry IMountingManager and
+# SchedulerDelegateImpl. They are the only two subdirectories of that tree used here besides
+# react/threading; ReactCxxPlatform's ReactHost is not, because it pulls bridgelesshermes, the
+# HTTP and WebSocket clients, and the whole nativemodule tree.
 # ---------------------------------------------------------------------------
 
 add_compile_options(-include cstdint)
@@ -297,13 +312,34 @@ set(RNL_REACT_COMMON_SUBDIRS
     oscompat
     react/debug
     react/featureflags
+    react/performance/cdpmetrics
     react/performance/timeline
+    react/renderer/animationbackend
+    react/renderer/attributedstring
+    react/renderer/bridging
+    react/renderer/componentregistry
+    react/renderer/components/legacyviewmanagerinterop
+    react/renderer/components/root
+    react/renderer/components/scrollview
+    react/renderer/components/text
+    react/renderer/components/view
     react/renderer/consistency
     react/renderer/core
+    react/renderer/css
     react/renderer/debug
+    react/renderer/dom
     react/renderer/graphics
+    react/renderer/leakchecker
     react/renderer/mapbuffer
+    react/renderer/mounting
+    react/renderer/observers/events
     react/renderer/runtimescheduler
+    react/renderer/scheduler
+    react/renderer/telemetry
+    react/renderer/textlayoutmanager
+    react/renderer/uimanager
+    react/renderer/uimanager/consistency
+    react/renderer/viewtransition
     react/runtime
     react/timing
     react/utils
@@ -314,10 +350,14 @@ foreach(rnl_subdir IN LISTS RNL_REACT_COMMON_SUBDIRS)
     add_subdirectory(${REACT_COMMON_DIR}/${rnl_subdir} ReactCommon/${rnl_subdir})
 endforeach()
 
-# ReactCxxPlatform's threading subdirectory is the only one pulled in here. It carries
-# MessageQueueThreadImpl and TaskDispatchThread, which is the MessageQueueThread ReactInstance
-# needs, and its only dependencies are folly_runtime and react_cxxreact, both already built.
-add_subdirectory(${REACT_CXX_PLATFORM_DIR}/react/threading ReactCxxPlatform/react/threading)
+set(RNL_REACT_CXX_PLATFORM_SUBDIRS
+    react/renderer/scheduler
+    react/renderer/uimanager
+    react/threading)
+
+foreach(rnl_subdir IN LISTS RNL_REACT_CXX_PLATFORM_SUBDIRS)
+    add_subdirectory(${REACT_CXX_PLATFORM_DIR}/${rnl_subdir} ReactCxxPlatform/${rnl_subdir})
+endforeach()
 
 set(RNL_REACT_COMMON_TARGETS
     bridgeless
@@ -331,20 +371,43 @@ set(RNL_REACT_COMMON_TARGETS
     jsitooling
     logger
     oscompat
+    react_cxx_platform_react_renderer_scheduler
+    react_cxx_platform_react_renderer_uimanager
     react_cxx_platform_react_threading
     react_cxxreact
     react_debug
     react_featureflags
+    react_performance_cdpmetrics
     react_performance_timeline
+    react_renderer_animationbackend
+    react_renderer_attributedstring
+    react_renderer_bridging
+    react_renderer_componentregistry
     react_renderer_consistency
     react_renderer_core
+    react_renderer_css
     react_renderer_debug
+    react_renderer_dom
     react_renderer_graphics
+    react_renderer_leakchecker
     react_renderer_mapbuffer
+    react_renderer_mounting
+    react_renderer_observers_events
     react_renderer_runtimescheduler
+    react_renderer_scheduler
+    react_renderer_telemetry
+    react_renderer_textlayoutmanager
+    react_renderer_uimanager
+    react_renderer_uimanager_consistency
+    react_renderer_viewtransition
     react_timing
     react_utils
     reactperflogger
+    rrc_legacyviewmanagerinterop
+    rrc_root
+    rrc_scrollview
+    rrc_text
+    rrc_view
     runtimeexecutor
     yogacore)
 
@@ -376,9 +439,12 @@ endforeach()
 add_executable(hello_react
     src/BundleRunner.cpp
     src/ConsoleBinding.cpp
+    src/FabricHost.cpp
     src/HermesJSRuntimeFactory.cpp
     src/HostTimerRegistry.cpp
     src/JsErrorReporter.cpp
+    src/LinuxMountingManager.cpp
+    src/RetainedScene.cpp
     src/main.cpp)
 target_compile_options(hello_react PRIVATE -Wall -Wextra -fexceptions -frtti)
 target_include_directories(hello_react PRIVATE src)

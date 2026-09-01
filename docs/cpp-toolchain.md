@@ -1,8 +1,8 @@
 # C++ toolchain
 
 `packages/core` builds `hello_react`: a bridgeless `ReactInstance` running a JavaScript bundle on Hermes, linked
-against the React Native renderer core and Yoga. It is the toolchain proof for issue #3 and the engine-embedding
-proof for issue #9, not a renderer.
+against the React Native renderer core and Yoga. It is the toolchain proof for issue #3, the engine-embedding proof
+for issue #9, and the headless half of the Fabric bootstrap for issue #10. It is not a renderer: nothing here draws.
 
 ## Scope
 
@@ -14,8 +14,45 @@ executable takes an optional bundle path and falls back to an inline smoke line 
 
 `react/runtime/hermes` (`bridgelesshermes`) is deliberately not used: it needs `hermes_executor_common` and
 `hermes_inspector_modern`, and the debugger is off in this build. The consequence is that `JSRuntime` falls back to
-`FallbackRuntimeTargetDelegate`, so no CDP-backed console or sampling profiler. Fabric, TurboModules, the
-nativemodule and component trees, and the remaining eleven `ReactCxxPlatform` subdirectories are still out.
+`FallbackRuntimeTargetDelegate`, so no CDP-backed console or sampling profiler. TurboModules, the nativemodule tree,
+and the remaining ten `ReactCxxPlatform` subdirectories are still out.
+
+## Fabric bootstrap
+
+`hello_react --fabric <bundle>` adds a headless Fabric host on top of the same `ReactInstance`:
+
+- `FabricHost` builds a `SchedulerToolbox` (context container carrying the `RuntimeScheduler`, buffered runtime
+  executor, unbuffered bindings executor, a base `EventBeat`, and a component registry with the `RootView` and
+  `View` descriptors), constructs a `Scheduler`, and starts one `SurfaceHandler` with an 800x600 layout
+  constraint. Constructing the `Scheduler` is what installs `nativeFabricUIManager` into the runtime.
+- The surface is started with an **empty module name**, so `SurfaceHandler::start` goes through
+  `UIManager::startEmptySurface` instead of `AppRegistryBinding::startSurface`. That is the whole reason a bundle
+  without React Native's JavaScript runtime can drive the renderer. `SurfaceHandler::stop` has no such branch and
+  always calls `RN$stopSurface`, so `FabricHost` installs a no-op for it.
+- `SchedulerDelegateImpl` from `ReactCxxPlatform` pulls each `MountingTransaction` and hands it to
+  `LinuxMountingManager`, our `IMountingManager`, which applies the five `ShadowViewMutation` operations to
+  `RetainedScene`. The scene is mutated in place across commits; Fabric owns the diff, we do not.
+- The surface root is created by the host, not by a mutation: the differ only emits an `Update` for the root
+  shadow node when its `ShadowView` changed, and on the first commit it has not.
+
+`packages/core/test-bundles/fabric-view.js` calls `createNode`, `appendChild`, `createChildSet`,
+`appendChildToSet` and `completeRoot` directly — the same `nativeFabricUIManager` surface React's Fabric
+reconciler uses. Its outer `<View>` carries no paint props and is flattened away by Fabric before mounting; the
+inner one carries `backgroundColor` and reaches the mounting layer. Expected output:
+
+```text
+fabric-view: committed surface 1
+RootView #1 frame=(0.00, 0.00, 800.00, 600.00)
+  View #4 frame=(24.00, 24.00, 120.00, 80.00) backgroundColor=rgba(51, 102, 204, 1)
+```
+
+The `(24.00, 24.00)` origin is the flattened parent's padding folded into the child's frame by the differ, and the
+frame itself is Yoga output. The dump is ordered by mount order under sorted root tags so it can become a golden
+fixture in issue #6.
+
+Not covered yet, each with an owning milestone: events (the `EventBeat` is never induced, so nothing can be
+dispatched), `Scheduler::reportMount` and mount-hook telemetry, `dispatchCommand`, multiple surfaces, and every
+component past `View`.
 
 ## Pins
 
@@ -78,6 +115,7 @@ pnpm --filter @react-native-linux/core vendor      # node scripts/vendor-react-n
 pnpm --filter @react-native-linux/core configure   # cmake -S <repo root> --preset dev
 pnpm --filter @react-native-linux/core build       # cmake --build build/dev
 pnpm --filter @react-native-linux/core run:hello   # build/dev/bin/hello_react
+pnpm --filter @react-native-linux/core run:fabric  # build/dev/bin/hello_react --fabric <bundle>
 ```
 
 The same sequence without pnpm, from the repository root:
@@ -88,12 +126,14 @@ cmake --preset dev
 cmake --build build/dev
 ./build/dev/bin/hello_react
 ./build/dev/bin/hello_react packages/core/test-bundles/hello.js
+./build/dev/bin/hello_react --fabric packages/core/test-bundles/fabric-view.js
 ```
 
 Without an argument the expected output is `react-native-linux: hermes alive`. With
 `packages/core/test-bundles/hello.js` the bundle prints its own evaluation, microtask and timer lines and the
 process exits 0. `packages/core/test-bundles/throws.js` is the error fixture: it prints a `[js-error] fatal` block
-with a parsed stack to stderr and exits 1.
+with a parsed stack to stderr and exits 1. `--fabric` takes the bundle path as its own argument and prints the
+retained scene after the JavaScript thread goes quiet; see *Fabric bootstrap* above.
 
 When `cmake` and `ninja` are not on `PATH`, wrap the two CMake steps:
 
