@@ -1,0 +1,23 @@
+packages:
+  - packages/*
+
+catalog:
+  "@types/node": 26.4.0
+  "@vitest/coverage-v8": 4.1.11
+  jscpd: 5.1.1
+  knip: 6.34.0
+  oxfmt: 0.65.0
+  oxlint: 1.80.0
+  typescript: 7.0.2
+  vitest: 4.1.11
+
+minimumReleaseAgeExclude:
+  - jscpd-darwin-arm64@5.1.1
+  - jscpd-darwin-x64@5.1.1
+  - jscpd-linux-arm64-gnu@5.1.1
+  - jscpd-linux-x64-gnu@5.1.1
+  - jscpd-linux-x64-musl@5.1.1
+  - jscpd-windows-arm64-msvc@5.1.1
+  - jscpd-windows-x64-msvc@5.1.1
+  - jscpd@5.1.1
+  - knip@6.34.0

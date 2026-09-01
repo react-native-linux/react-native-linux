@@ -1,0 +1,28 @@
+{
+  "name": "react-native-linux-monorepo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "cpd": "jscpd packages",
+    "deadcode": "knip",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check .",
+    "lint": "oxlint --deny-warnings",
+    "test": "vitest run --coverage",
+    "ts": "tsc --noEmit",
+    "validate": "pnpm format:check && pnpm ts && pnpm lint && pnpm deadcode && pnpm cpd && pnpm test"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "catalog:",
+    "jscpd": "catalog:",
+    "knip": "catalog:",
+    "oxfmt": "catalog:",
+    "oxlint": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "packageManager": "pnpm@11.25.0"
+}

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": ["vitest.config.ts"],
+      "project": ["*.ts"]
+    },
+    "packages/cli": {
+      "entry": ["src/platform-config.ts"],
+      "project": ["src/**/*.ts"]
+    }
+  }
+}

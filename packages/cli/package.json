@@ -1,0 +1,11 @@
+{
+  "name": "@react-native-linux/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/platform-config.ts",
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "vitest": "catalog:"
+  }
+}

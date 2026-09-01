@@ -1,0 +1,14 @@
+---
+BasedOnStyle: LLVM
+Standard: c++20
+ColumnLimit: 120
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+AccessModifierOffset: -4
+ContinuationIndentWidth: 4
+ConstructorInitializerIndentWidth: 4
+PointerAlignment: Left
+ReferenceAlignment: Left
+IncludeBlocks: Regroup
+SeparateDefinitionBlocks: Always

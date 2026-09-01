@@ -1,0 +1,33 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["eslint", "typescript", "react", "unicorn", "import", "promise", "jsx-a11y", "node", "oxc"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "pedantic": "error",
+    "style": "error",
+    "restriction": "error"
+  },
+  "rules": {
+    "eslint/no-ternary": "off",
+    "eslint/one-var": ["error", "never"],
+    "import/extensions": ["error", "always", { "ignorePackages": true }],
+    "import/no-named-export": "off",
+    "import/no-nodejs-modules": "off",
+    "import/prefer-default-export": "off",
+    "node/no-sync": "off",
+    "oxc/no-async-await": "off",
+    "oxc/no-optional-chaining": "off",
+    "oxc/no-rest-spread-properties": "off",
+    "unicorn/no-null": "off"
+  },
+  "overrides": [
+    {
+      "files": ["*.config.ts", "**/*.config.ts"],
+      "rules": {
+        "import/no-default-export": "off"
+      }
+    }
+  ],
+  "ignorePatterns": ["coverage"]
+}
