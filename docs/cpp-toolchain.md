@@ -5,9 +5,14 @@ against the React Native renderer core and Yoga. It is the toolchain proof for i
 for issue #9, and the headless half of the Fabric bootstrap for issue #10. It is not a renderer: nothing here draws.
 
 `packages/core` also builds `rnl_window`: an xdg-shell window on Wayland, a FIFO Vulkan swapchain, and a Skia Ganesh
-`GrDirectContext` on that device, driven by `wl_surface` frame callbacks. That is issue #8. The two executables share
-no code and no process: `hello_react` stays headless, and `rnl_window` runs no JavaScript. Wiring the retained scene
-into the window is the next step, not this one.
+`GrDirectContext` on that device, driven by `wl_surface` frame callbacks. That is issue #8. With
+`--fabric <bundle>` it boots the same `ReactInstance` and `FabricHost` inside the window process and draws the
+retained scene every frame — issue #32, the first React-driven pixels. Without the flag it draws the static
+placeholder card and runs no JavaScript.
+
+The engine half is shared rather than duplicated: `rnl_react_core` is a static library carrying the instance, the
+Fabric host and the retained scene, and both executables link it. `hello_react` adds the headless runner,
+`rnl_window` adds Wayland, Vulkan and Skia.
 
 ## Scope
 
@@ -55,22 +60,28 @@ The `(24.00, 24.00)` origin is the flattened parent's padding folded into the ch
 frame itself is Yoga output. The dump is ordered by mount order under sorted root tags so it can become a golden
 fixture in issue #6.
 
+Nothing in this bootstrap is headless-only. `hello_react` and `rnl_window` construct the same `ReactHost` and the
+same `FabricHost`; the headless host dumps the scene once the JavaScript thread goes quiet, and the window host
+draws it every frame. See *The retained scene, and the threads it crosses*.
+
 Not covered yet, each with an owning milestone: events (the `EventBeat` is never induced, so nothing can be
 dispatched), `Scheduler::reportMount` and mount-hook telemetry, `dispatchCommand`, multiple surfaces, and every
 component past `View`.
 
 ## Window host
 
-`rnl_window` is three files under `packages/core/src`, in the order the frame flows through them:
+`rnl_window` is four files under `packages/core/src`, in the order the frame flows through them:
 
 - `WaylandWindow` owns one connection, one `wl_surface`, one `xdg_toplevel` titled `react-native-linux` at 800x600,
   and the run loop. It never attaches a buffer; `vkQueuePresentKHR` does that. `xdg_toplevel.close` sets the exit
   flag, `xdg_toplevel.configure` records a resize, and `xdg_wm_base.ping` is answered.
 - `SkiaVulkanRenderer` owns the `VkInstance` (`VK_KHR_surface` + `VK_KHR_wayland_surface`), the device, the FIFO
   swapchain, and the `GrDirectContext`.
-- `WindowMain` clears to `#14161A` and draws one rounded rectangle in `#3366CC`, inset 64 px with a 24 px corner
-  radius. That colour is the same one `test-bundles/fabric-view.js` puts on its `View`, so the day the retained
-  scene is wired in the picture should not change much.
+- `WindowSession` is the React half, and only exists with `--fabric`: it owns a `ReactHost` and a `FabricHost`
+  sized by the window, loads the bundle, and hands the frame thread a scene snapshot per frame.
+- `WindowMain` parses the flag, owns the run loop, and paints. Without a bundle it clears to `#14161A` and draws
+  one rounded rectangle in `#3366CC`, inset 64 px with a 24 px corner radius. With one it clears to the same
+  background and fills one `SkRect` per painted scene node.
 
 ### Swapchain to SkSurface
 
@@ -103,6 +114,40 @@ with a 60 or 120 Hz callback stream and fast enough that a hidden window still n
 
 Issue #8's acceptance criteria say "no timer-based render loop exists anywhere in the frame path", which predates
 the ADR amendment that made the fallback mandatory. The ADR wins; the issue text needs the correction.
+
+### The retained scene, and the threads it crosses
+
+`rnl_window --fabric <bundle>` runs the whole stack in one process: `WindowSession` constructs a `ReactHost`
+(bridgeless instance, JavaScript thread, timers, error handler) and a `FabricHost` sized by the window, then loads
+the bundle. `BundleRunner` uses the same `ReactHost`; it differs only in the policy layered on top — it runs to
+quiescence and exits, which a window cannot do, so the session variant exists to keep the JavaScript thread alive
+for the life of the window and nothing else.
+
+The handoff is ADR-0001 decision 6 applied literally. JavaScript runs on the instance's JavaScript thread; a commit
+driven from JavaScript mounts there, when the `RuntimeScheduler` drains its rendering update. The window loop is the
+platform-owned frame thread, and it calls exactly two things on the session:
+
+- `snapshotScene`, once per frame, which copies the scene out under `LinuxMountingManager`'s mutex. The copy carries
+  absolute frames — parent-relative Fabric frames are accumulated during the walk, in the scene, not in the paint
+  loop — and one packed ARGB colour per node that has a meaningful `backgroundColor`. Nodes without one, including
+  the surface root, contribute nothing, because the background clear already covers them.
+- `resize`, on `xdg_toplevel.configure`, which calls `SurfaceHandler::constraintLayout` with the new size as both
+  the minimum and the maximum. That commit uses the default commit options, whose `mountSynchronously` is true, so
+  the Yoga relayout **and** the resulting mount run on the frame thread. Thread affinity is therefore not what keeps
+  the scene consistent — the mutex is, and it is the only thing that is.
+
+A snapshot is a full copy and every frame is a full repaint. At one `View` that is cheaper than any alternative, and
+damage tracking is issue #12, not this one.
+
+Shutdown is stop, drain, destroy, in that order: `~WindowSession` stops the surface, drains the JavaScript thread so
+the queued unmount runs while the scheduler delegate is still alive, and then lets the Fabric host and the instance
+destruct. `xdg_toplevel.close` and a `wl_display` error both leave the run loop normally, so both take that path.
+`Ctrl-C` does not: there is still no signal handler, so `SIGINT` terminates the process where it stands and the
+compositor reclaims the surface when the connection's file descriptor closes.
+
+Not drawn yet, each with an owning milestone: text (#14), borders, radii, opacity and transforms, `overflow`
+clipping, and `display: none`. Events are M1/M2 — the `EventBeat` is still never induced, so the window is a
+display, not an application.
 
 ### Skia acquisition
 
@@ -214,6 +259,7 @@ pnpm --filter @react-native-linux/core build        # cmake --build build/dev
 pnpm --filter @react-native-linux/core run:hello    # build/dev/bin/hello_react
 pnpm --filter @react-native-linux/core run:fabric   # build/dev/bin/hello_react --fabric <bundle>
 pnpm --filter @react-native-linux/core run:window   # build/dev/bin/rnl_window
+pnpm --filter @react-native-linux/core run:window:fabric  # build/dev/bin/rnl_window --fabric <bundle>
 ```
 
 The same sequence without pnpm, from the repository root:
@@ -227,6 +273,7 @@ cmake --build build/dev
 ./build/dev/bin/hello_react packages/core/test-bundles/hello.js
 ./build/dev/bin/hello_react --fabric packages/core/test-bundles/fabric-view.js
 ./build/dev/bin/rnl_window
+./build/dev/bin/rnl_window --fabric packages/core/test-bundles/fabric-view.js
 ```
 
 Without an argument the expected output is `react-native-linux: hermes alive`. With
@@ -286,6 +333,16 @@ background filling the window with one blue `#3366CC` rounded rectangle inset 64
 8. Optional, for a driver-independent check:
    `VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json ./build/dev/bin/rnl_window` renders the same
    picture through lavapipe. That is the path the headless golden-image rig will use.
+9. `./build/dev/bin/rnl_window --fabric packages/core/test-bundles/fabric-view.js` opens the same window on the
+   same dark background with one flat blue `#3366CC` rectangle, 120x80, its top-left corner at (24, 24) — the
+   frame `hello_react --fabric` prints for `View #4`, drawn instead of dumped. The bundle's
+   `fabric-view: committed surface 1` line goes to stdout as usual.
+10. Resize that window. The rectangle keeps its size and its (24, 24) origin, because the bundle uses fixed sizes
+    and a padded root; the point of the check is that the surface relayouts without crashing. Close it, and the
+    process exits 0 — the surface is stopped and the JavaScript thread drained before anything is destroyed.
+11. `./build/dev/bin/rnl_window --fabric` with no path prints
+    `[rnl-window] --fabric requires a bundle path` and exits 1. A path that does not exist exits 1 through the
+    same `[rnl-window]` handler.
 
 Not covered by this checklist, because it is not implemented yet: fractional scale, pointer and keyboard input,
 `wp_presentation_feedback` timing, and any measurement of the frame budget.

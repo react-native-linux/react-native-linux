@@ -81,10 +81,7 @@ FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::
 
     surfaceHandler_ = std::make_unique<facebook::react::SurfaceHandler>("", kSurfaceId);
     scheduler_->registerSurface(*surfaceHandler_);
-    surfaceHandler_->constraintLayout({.minimumSize = surfaceSize,
-                                       .maximumSize = surfaceSize,
-                                       .layoutDirection = facebook::react::LayoutDirection::LeftToRight},
-                                      {});
+    setSurfaceSize(surfaceSize);
     surfaceHandler_->start();
 }
 
@@ -93,10 +90,21 @@ FabricHost::~FabricHost() noexcept {
     scheduler_->unregisterSurface(*surfaceHandler_);
 }
 
+void FabricHost::setSurfaceSize(facebook::react::Size surfaceSize) {
+    surfaceHandler_->constraintLayout({.minimumSize = surfaceSize,
+                                       .maximumSize = surfaceSize,
+                                       .layoutDirection = facebook::react::LayoutDirection::LeftToRight},
+                                      {});
+}
+
 void FabricHost::stopSurface() {
     if (surfaceHandler_->getStatus() == facebook::react::SurfaceHandler::Status::Running) {
         surfaceHandler_->stop();
     }
+}
+
+SceneSnapshot FabricHost::snapshotScene() const {
+    return mountingManager_->snapshotScene();
 }
 
 std::string FabricHost::dumpScene() const {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "LinuxMountingManager.h"
+#include "RetainedScene.h"
 
 #include <react/renderer/componentregistry/ComponentDescriptorProviderRegistry.h>
 #include <react/renderer/graphics/Size.h>
@@ -18,15 +19,19 @@ namespace react_native_linux {
 /**
  * Bootstraps Fabric on top of an already initialised bridgeless `ReactInstance`: one `Scheduler`, one
  * `SurfaceHandler` started as an empty surface, and the retained scene the resulting mounting transactions are
- * applied to. There is no window, so the surface is sized by the caller.
+ * applied to. The surface is sized by the caller: headlessly that is a fixed size, and under a window it is the
+ * window's size, republished through `setSurfaceSize` on every configure so Yoga relayouts against it.
  *
  * The surface is started with an empty module name, which takes `SurfaceHandler` through
  * `UIManager::startEmptySurface` instead of `AppRegistryBinding`. That is what makes a JavaScript bundle without
  * React Native's own JavaScript runtime able to drive the renderer.
  *
  * Threading contract: construction and destruction happen on the thread that owns the process run loop, before
- * the JavaScript bundle is loaded and after the JavaScript thread has gone quiet. Everything Fabric does in
- * between happens on the JavaScript thread.
+ * the JavaScript bundle is loaded and after the JavaScript thread has been drained. Everything Fabric does in
+ * between happens on the JavaScript thread. `setSurfaceSize` and `snapshotScene` are the two members that may be
+ * called while the surface is running: `constraintLayout` commits on the calling thread and, because the default
+ * commit options mount synchronously, mounts there as well, and `snapshotScene` copies the scene under the
+ * mounting manager's mutex.
  *
  * Shutdown contract: stopSurface commits an empty tree and queues the resulting unmount onto the JavaScript
  * thread. The owner drains that thread before destroying the host, because the queued rendering update holds a
@@ -41,7 +46,9 @@ public:
     FabricHost& operator=(FabricHost&&) = delete;
     ~FabricHost() noexcept;
 
+    void setSurfaceSize(facebook::react::Size surfaceSize);
     void stopSurface();
+    SceneSnapshot snapshotScene() const;
     std::string dumpScene() const;
 
 private:

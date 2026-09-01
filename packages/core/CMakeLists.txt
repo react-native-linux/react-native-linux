@@ -434,37 +434,53 @@ foreach(rnl_target IN LISTS RNL_REACT_COMMON_TARGETS)
 endforeach()
 
 # ---------------------------------------------------------------------------
-# hello_react
+# rnl_react_core
+#
+# The engine and Fabric half of the platform: the bridgeless ReactInstance, the Fabric host and the retained
+# scene. Both executables link it, so the ReactCommon closure and the atomic hazard from the fix ledger are named
+# once instead of being duplicated onto each target. Nothing here draws: Skia stays on the window target, which is
+# also why the SK_* definitions do.
 # ---------------------------------------------------------------------------
 
-add_executable(hello_react
-    src/BundleRunner.cpp
+add_library(rnl_react_core STATIC
     src/ConsoleBinding.cpp
     src/FabricHost.cpp
     src/HermesJSRuntimeFactory.cpp
     src/HostTimerRegistry.cpp
     src/JsErrorReporter.cpp
     src/LinuxMountingManager.cpp
-    src/RetainedScene.cpp
-    src/main.cpp)
-target_compile_options(hello_react PRIVATE -Wall -Wextra -fexceptions -frtti)
-target_include_directories(hello_react PRIVATE src)
-target_link_libraries(hello_react
-    PRIVATE
+    src/ReactHost.cpp
+    src/RetainedScene.cpp)
+target_compile_options(rnl_react_core PRIVATE -Wall -Wextra)
+target_compile_options(rnl_react_core PUBLIC -fexceptions -frtti)
+target_include_directories(rnl_react_core PUBLIC src)
+target_link_libraries(rnl_react_core
+    PUBLIC
         hermesvm
         jsi
         rnl_jsidynamic
         folly_runtime
         ${RNL_REACT_COMMON_TARGETS}
         atomic)
+
+# ---------------------------------------------------------------------------
+# hello_react
+# ---------------------------------------------------------------------------
+
+add_executable(hello_react
+    src/BundleRunner.cpp
+    src/main.cpp)
+target_compile_options(hello_react PRIVATE -Wall -Wextra)
+target_link_libraries(hello_react PRIVATE rnl_react_core)
 set_target_properties(hello_react PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 # ---------------------------------------------------------------------------
 # rnl_window
 #
-# The Wayland/Vulkan/Skia host from issue #8. It shares no code with hello_react, which stays
-# headless, and it is skipped rather than fatal when its dependencies are absent, so a machine
-# with neither Skia nor a Wayland development environment still builds the headless target.
+# The Wayland/Vulkan/Skia host from issue #8, drawing the retained scene from issue #32. It shares
+# the engine and Fabric half with hello_react through rnl_react_core and adds only the drawing and
+# windowing sources, and it is skipped rather than fatal when its dependencies are absent, so a
+# machine with neither Skia nor a Wayland development environment still builds the headless target.
 # Configure with -DRNL_ENABLE_WINDOW=OFF to skip it deliberately.
 #
 # Skia is a prebuilt static archive pinned by scripts/skia.lock.json; see docs/cpp-toolchain.md
@@ -565,13 +581,15 @@ elseif(RNL_ENABLE_WINDOW)
     add_executable(rnl_window
         src/SkiaVulkanRenderer.cpp
         src/WaylandWindow.cpp
-        src/WindowMain.cpp)
-    target_compile_options(rnl_window PRIVATE -Wall -Wextra -fexceptions -frtti)
+        src/WindowMain.cpp
+        src/WindowSession.cpp)
+    target_compile_options(rnl_window PRIVATE -Wall -Wextra)
     target_include_directories(rnl_window PRIVATE src)
     # libskia.a is a single static archive built against system freetype and fontconfig, so those two
     # have to follow it on the link line rather than travel as usage requirements of the archive.
     target_link_libraries(rnl_window
         PRIVATE
+            rnl_react_core
             rnl_xdg_shell
             rnl_skia
             Vulkan::Vulkan

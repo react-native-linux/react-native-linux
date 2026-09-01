@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <memory>
 #include <optional>
@@ -31,7 +32,7 @@ std::string formatFrame(const facebook::react::Rect& frame) {
     return buffer.data();
 }
 
-std::optional<std::string> readBackgroundColor(const facebook::react::ShadowView& shadowView) {
+std::optional<facebook::react::SharedColor> readBackgroundColor(const facebook::react::ShadowView& shadowView) {
     const std::shared_ptr<const facebook::react::ViewProps> viewProps =
         std::dynamic_pointer_cast<const facebook::react::ViewProps>(shadowView.props);
 
@@ -39,7 +40,16 @@ std::optional<std::string> readBackgroundColor(const facebook::react::ShadowView
         return std::nullopt;
     }
 
-    return viewProps->backgroundColor.toString();
+    return viewProps->backgroundColor;
+}
+
+uint32_t toArgb(facebook::react::SharedColor color) {
+    const uint32_t alpha = facebook::react::alphaFromColor(color);
+    const uint32_t red = facebook::react::redFromColor(color);
+    const uint32_t green = facebook::react::greenFromColor(color);
+    const uint32_t blue = facebook::react::blueFromColor(color);
+
+    return (alpha << 24U) | (red << 16U) | (green << 8U) | blue;
 }
 
 std::string readComponentName(const facebook::react::ShadowView& shadowView) {
@@ -106,20 +116,20 @@ void RetainedScene::updateNode(const facebook::react::ShadowView& shadowView) {
     writeNode(shadowView);
 }
 
-std::string RetainedScene::dump() const {
-    std::vector<facebook::react::Tag> rootTags;
+SceneSnapshot RetainedScene::snapshot() const {
+    SceneSnapshot rectangles;
 
-    for (const auto& [tag, node] : nodes_) {
-        if (node.parentTag == 0) {
-            rootTags.push_back(tag);
-        }
+    for (facebook::react::Tag tag : sortedRootTags()) {
+        appendRectangles(rectangles, tag, {});
     }
 
-    std::sort(rootTags.begin(), rootTags.end());
+    return rectangles;
+}
 
+std::string RetainedScene::dump() const {
     std::string output;
 
-    for (facebook::react::Tag tag : rootTags) {
+    for (facebook::react::Tag tag : sortedRootTags()) {
         appendNode(output, tag, 0);
     }
 
@@ -135,6 +145,42 @@ SceneNode& RetainedScene::writeNode(const facebook::react::ShadowView& shadowVie
     node.backgroundColor = readBackgroundColor(shadowView);
 
     return node;
+}
+
+std::vector<facebook::react::Tag> RetainedScene::sortedRootTags() const {
+    std::vector<facebook::react::Tag> rootTags;
+
+    for (const auto& [tag, node] : nodes_) {
+        if (node.parentTag == 0) {
+            rootTags.push_back(tag);
+        }
+    }
+
+    std::sort(rootTags.begin(), rootTags.end());
+
+    return rootTags;
+}
+
+void RetainedScene::appendRectangles(SceneSnapshot& rectangles, facebook::react::Tag tag,
+                                     facebook::react::Point parentOrigin) const {
+    const auto entry = nodes_.find(tag);
+
+    if (entry == nodes_.end()) {
+        return;
+    }
+
+    const SceneNode& node = entry->second;
+    const facebook::react::Point origin = parentOrigin + node.layoutMetrics.frame.origin;
+
+    if (node.backgroundColor.has_value()) {
+        rectangles.push_back(
+            SceneRectangle{.frame = facebook::react::Rect{.origin = origin, .size = node.layoutMetrics.frame.size},
+                           .colorArgb = toArgb(node.backgroundColor.value())});
+    }
+
+    for (facebook::react::Tag childTag : node.childTags) {
+        appendRectangles(rectangles, childTag, origin);
+    }
 }
 
 void RetainedScene::appendNode(std::string& output, facebook::react::Tag tag, size_t depth) const {
@@ -155,7 +201,7 @@ void RetainedScene::appendNode(std::string& output, facebook::react::Tag tag, si
 
     if (node.backgroundColor.has_value()) {
         output += " backgroundColor=";
-        output += node.backgroundColor.value();
+        output += node.backgroundColor.value().toString();
     }
 
     output += '\n';
