@@ -64,12 +64,14 @@ See the `testing-gospel` skill for the harness architecture and commands.
 
 ## Toolchain
 
-One entry point mirrors CI exactly: `yarn validate` (format check, typecheck, lint, deadcode, duplication, meta-file checks). Agents run it before finishing any change; if it passes locally it passes in CI. Individual commands:
+Package manager is **pnpm** (workspaces, `catalog:` version pinning, version locked via corepack `packageManager` field). pnpm's strict symlinked layout makes phantom dependencies impossible — do not weaken it with global hoisting; if Metro ever chokes on symlinks in the test-harness app, scope `node-linker=hoisted` to that package only. Everything JS-side is **TypeScript** — CLI, codegen driver, harness, and all repo scripts (run via `tsx`); no plain JavaScript files.
 
-- `yarn format` / `yarn format:check` — **Biome** (also the TS/JS linter via `yarn lint`; includes the React-hooks rules; no ESLint/Prettier).
-- `yarn ts` — `tsc --noEmit`, maximum strictness: `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `isolatedModules`.
-- `yarn deadcode` — **knip**: unused files, exports, and dependencies across the workspace.
-- `yarn cpd` — **jscpd** duplication check.
+One entry point mirrors CI exactly: `pnpm validate` (format check, typecheck, lint, deadcode, duplication, meta-file checks). Agents run it before finishing any change; if it passes locally it passes in CI. Individual commands:
+
+- `pnpm format` / `pnpm format:check` — **oxfmt** (Oxc formatter). `pnpm lint` — **oxlint** at max config: every rule category enabled (`correctness`, `suspicious`, `pedantic`, `style`, `restriction` — deviations are per-rule opt-outs with reasons, not category opt-outs) plus the full plugin set (`typescript`, `react`, `react-hooks`, `unicorn`, `import`, `promise`, `jsx-a11y`, `node`, `oxc`). Anti-slop custom rules (comment bans, wrapper bans, naming rules from this file) are added as oxlint JS plugins as they prove enforceable. No ESLint, no Prettier, no Biome.
+- `pnpm ts` — `tsc --noEmit`, maximum strictness: `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `isolatedModules`.
+- `pnpm deadcode` — **knip**: unused files, exports, and dependencies across the workspace.
+- `pnpm cpd` — **jscpd** duplication check.
 - C++: **clang-format** and **clang-tidy** (curated set: `bugprone-*`, `performance-*`, `modernize-*`, selected `cppcoreguidelines-*`) run through the CMake presets. `CMAKE_EXPORT_COMPILE_COMMANDS=ON` is always set so clangd works from a fresh checkout. A `NOLINT` needs a stated reason and is reviewed like an API change.
 - Meta-files: **actionlint** (workflows), **shellcheck** + **shfmt** (scripts), **typos** (spelling), **gitleaks** (secrets); **lychee** link-checks docs weekly in CI.
 - **Renovate** keeps pinned dependencies fresh; PR titles are gated on Conventional Commits.
