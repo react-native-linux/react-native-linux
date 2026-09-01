@@ -10,9 +10,15 @@ for issue #9, and the headless half of the Fabric bootstrap for issue #10. It is
 retained scene every frame — issue #32, the first React-driven pixels. Without the flag it draws the static
 placeholder card and runs no JavaScript.
 
-The engine half is shared rather than duplicated: `rnl_react_core` is a static library carrying the instance, the
-Fabric host and the retained scene, and both executables link it. `hello_react` adds the headless runner,
-`rnl_window` adds Wayland, Vulkan and Skia.
+`hello_react --golden <bundle> <output.png>` is the third mode and the producer half of the golden-image rig from
+issue #6: it boots the same headless Fabric host, renders the settled scene into an **offscreen raster**
+`SkSurface` and writes a PNG. No GPU, no Vulkan driver, no Wayland compositor. See *Golden images*.
+
+Two halves are shared rather than duplicated: `rnl_react_core` is a static library carrying the instance, the
+Fabric host and the retained scene, and `rnl_scene_painter` is a static library carrying `paintScene`, the single
+implementation that turns a `SceneSnapshot` into draw calls. `rnl_window` calls it once per frame into a
+swapchain-backed surface; `hello_react --golden` calls it once into a raster surface. A golden produced by a second
+painter would prove nothing about the window, so there is only one.
 
 ## Scope
 
@@ -57,8 +63,8 @@ RootView #1 frame=(0.00, 0.00, 800.00, 600.00)
 ```
 
 The `(24.00, 24.00)` origin is the flattened parent's padding folded into the child's frame by the differ, and the
-frame itself is Yoga output. The dump is ordered by mount order under sorted root tags so it can become a golden
-fixture in issue #6.
+frame itself is Yoga output. The dump is ordered by mount order under sorted root tags, and the same scene is what
+`--golden` rasterises; see *Golden images*.
 
 Nothing in this bootstrap is headless-only. `hello_react` and `rnl_window` construct the same `ReactHost` and the
 same `FabricHost`; the headless host dumps the scene once the JavaScript thread goes quiet, and the window host
@@ -80,8 +86,9 @@ component past `View`.
 - `WindowSession` is the React half, and only exists with `--fabric`: it owns a `ReactHost` and a `FabricHost`
   sized by the window, loads the bundle, and hands the frame thread a scene snapshot per frame.
 - `WindowMain` parses the flag, owns the run loop, and paints. Without a bundle it clears to `#14161A` and draws
-  one rounded rectangle in `#3366CC`, inset 64 px with a 24 px corner radius. With one it clears to the same
-  background and fills one `SkRect` per painted scene node.
+  one rounded rectangle in `#3366CC`, inset 64 px with a 24 px corner radius. With one it calls `paintScene` from
+  `ScenePainter`, which clears to the same background and fills one `SkRect` per painted scene node. That function
+  lives outside the window because `hello_react --golden` calls it too; see *Golden images*.
 
 ### Swapchain to SkSurface
 
@@ -219,6 +226,9 @@ sudo pacman -S --needed wayland wayland-protocols vulkan-headers vulkan-icd-load
   freetype2 fontconfig
 ```
 
+`hello_react --golden` needs only `freetype2` and `fontconfig` from that list, plus the vendored Skia archive. It
+never opens a Wayland connection and never loads a Vulkan driver.
+
 `wayland-scanner` ships inside the `wayland` package and is located through
 `pkg-config --variable=wayland_scanner wayland-scanner`, so it is never assumed to be on `PATH`. A Vulkan driver
 package is separate from the loader: `vulkan-radeon`, `vulkan-intel`, `nvidia-utils`, or `vulkan-swrast` for
@@ -258,8 +268,12 @@ pnpm --filter @react-native-linux/core configure    # cmake -S <repo root> --pre
 pnpm --filter @react-native-linux/core build        # cmake --build build/dev
 pnpm --filter @react-native-linux/core run:hello    # build/dev/bin/hello_react
 pnpm --filter @react-native-linux/core run:fabric   # build/dev/bin/hello_react --fabric <bundle>
+pnpm --filter @react-native-linux/core run:golden   # hello_react --golden <bundle> /tmp/rnl-fabric-view.png
 pnpm --filter @react-native-linux/core run:window   # build/dev/bin/rnl_window
 pnpm --filter @react-native-linux/core run:window:fabric  # build/dev/bin/rnl_window --fabric <bundle>
+
+pnpm test:golden          # compare renders against the checked-in goldens
+pnpm test:golden:update   # regenerate the goldens, for review before committing
 ```
 
 The same sequence without pnpm, from the repository root:
@@ -280,7 +294,9 @@ Without an argument the expected output is `react-native-linux: hermes alive`. W
 `packages/core/test-bundles/hello.js` the bundle prints its own evaluation, microtask and timer lines and the
 process exits 0. `packages/core/test-bundles/throws.js` is the error fixture: it prints a `[js-error] fatal` block
 with a parsed stack to stderr and exits 1. `--fabric` takes the bundle path as its own argument and prints the
-retained scene after the JavaScript thread goes quiet; see *Fabric bootstrap* above.
+retained scene after the JavaScript thread goes quiet; see *Fabric bootstrap* above. `--golden` takes the bundle
+path and an output path, prints nothing of its own, and writes a PNG; see *Golden images*. On a build configured
+without Skia it exits 1 with a message naming `scripts/vendor-skia.ts`.
 
 When `cmake` and `ninja` are not on `PATH`, wrap the two CMake steps:
 
@@ -303,10 +319,18 @@ mise exec cmake@latest ninja@latest -- cmake --build build/dev --target rnl_wind
 ./build/dev/bin/rnl_window
 ```
 
-`RNL_ENABLE_WINDOW` defaults to `ON`. When it is on but a dependency is absent — no Skia in `third_party`, no
-`wayland-scanner`, no Vulkan loader, no freetype or fontconfig — configure prints
-`rnl_window is disabled, missing: ...` and skips the target rather than failing, so the headless build survives on a
-machine that has none of it. `cmake --preset dev -DRNL_ENABLE_WINDOW=OFF` skips it deliberately and silently.
+Two options gate the drawing targets, both defaulting to `ON`:
+
+- `RNL_ENABLE_SKIA` covers everything that draws. When Skia, freetype, fontconfig or `pkg-config` is absent,
+  configure prints `Skia is unavailable, missing: ...` and skips `rnl_scene_painter`, `rnl_window` and
+  `hello_react --golden`. `hello_react` itself still builds and still runs bundles.
+- `RNL_ENABLE_WINDOW` covers only the Wayland half. When Skia is present but `wayland-scanner`, `wayland-client`,
+  the xdg-shell protocol or the Vulkan loader is not, configure prints `rnl_window is disabled, missing: ...` and
+  skips the target rather than failing.
+
+Both skip rather than fail, so the headless build survives on a machine that has none of it.
+`cmake --preset dev -DRNL_ENABLE_WINDOW=OFF` skips the window deliberately and silently, and
+`-DRNL_ENABLE_SKIA=OFF` skips everything that draws.
 
 The xdg-shell client header and private code are generated at build time by `wayland-scanner` into
 `build/<preset>/packages/core/wayland-protocols` and compiled into `rnl_xdg_shell`. Nothing generated is checked in.
@@ -332,7 +356,8 @@ background filling the window with one blue `#3366CC` rounded rectangle inset 64
    `[rnl-window] wl_display_connect failed; is WAYLAND_DISPLAY set?` and exits 1.
 8. Optional, for a driver-independent check:
    `VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json ./build/dev/bin/rnl_window` renders the same
-   picture through lavapipe. That is the path the headless golden-image rig will use.
+   picture through lavapipe. That is the path the deferred full-window golden will use; the golden rig that exists
+   today renders offscreen on the CPU and never reaches a driver. See *Golden images*.
 9. `./build/dev/bin/rnl_window --fabric packages/core/test-bundles/fabric-view.js` opens the same window on the
    same dark background with one flat blue `#3366CC` rectangle, 120x80, its top-left corner at (24, 24) — the
    frame `hello_react --fabric` prints for `View #4`, drawn instead of dumped. The bundle's
@@ -343,9 +368,90 @@ background filling the window with one blue `#3366CC` rounded rectangle inset 64
 11. `./build/dev/bin/rnl_window --fabric` with no path prints
     `[rnl-window] --fabric requires a bundle path` and exits 1. A path that does not exist exits 1 through the
     same `[rnl-window]` handler.
+12. `./build/dev/bin/hello_react --golden packages/core/test-bundles/fabric-view.js /tmp/fabric-view.png` writes
+    that same picture as an 800x600 PNG without opening a window, without a Vulkan driver and with
+    `WAYLAND_DISPLAY` unset. That is the golden-image rig; see *Golden images*.
 
 Not covered by this checklist, because it is not implemented yet: fractional scale, pointer and keyboard input,
 `wp_presentation_feedback` timing, and any measurement of the frame budget.
+
+## Golden images
+
+The rig has two halves. `hello_react --golden` produces a PNG; a Vitest spec compares it against a checked-in one.
+
+```text
+hello_react --golden <bundle> <output.png> [width height]
+```
+
+The default size is 800x600, the same constraint the headless Fabric surface uses. The run is the ordinary headless
+one — boot the bridgeless instance, boot `FabricHost`, load the bundle, wait for the JavaScript thread to go quiet —
+and then it paints `runFabricBundle`'s scene snapshot through `paintScene`, the same function `rnl_window` calls per
+frame, into a surface from `SkSurfaces::Raster` at `kRGBA_8888_SkColorType` and `kPremul_SkAlphaType`. The pixels are
+encoded with `SkPngEncoder::Encode(SkWStream*, const SkPixmap&, const Options&)` into an `SkFILEWStream`.
+
+### Why the render is offscreen, and what that defers
+
+The gospel calls for lavapipe under a headless Wayland compositor, and issue #6's acceptance criteria say so. This
+slice does not do that, deliberately:
+
+- The rig has to run where screen capture is permission-gated. On the Omarchy/Hyprland development machine
+  `grim`/`wlr-screencopy` is gated, so a full-window capture is not available at all.
+- `SkSurfaces::Raster` needs no GPU, no ICD, no compositor and no display, so the rig runs unchanged in a CI
+  container with nothing graphical installed. That is the Prime Directive answer: the minimal thing that makes
+  rendering observable.
+- The cost is honest and bounded. A raster golden proves the scene, the geometry and the paint code path. It does
+  **not** prove `SkiaVulkanRenderer`: swapchain wrapping, image layout transitions, semaphore handling, colour
+  space through the WSI, or `wl_surface` presentation. Every one of those is exactly what the lavapipe plus
+  `weston --backend=headless` golden is for, and that rig is a follow-up issue, not this one.
+
+### Link impact on hello_react
+
+`libskia.a` is a static archive, so the linker pulls only the objects the golden path references. Nothing in
+`ScenePainter.cpp` or `GoldenRenderer.cpp` names `GrDirectContext`, `GrBackendRenderTargets` or any `vk*` entry
+point, so no Ganesh or Vulkan object is pulled and `hello_react` needs no Vulkan loader. libpng and zlib are
+compiled **into** the archive (`png_create_write_struct` and `deflate` are defined there, not undefined), so PNG
+encoding adds no system dependency either. The only new link inputs are freetype and fontconfig, which Skia's font
+ports reference and which `rnl_window` already required; they are what `RNL_ENABLE_SKIA` checks for alongside the
+archive itself.
+
+`rnl_scene_painter` still carries `SK_GANESH;SK_VULKAN;SK_RELEASE`, unchanged from what the window target used to
+set. Those are header-layout switches against a prebuilt archive, not feature switches for this build: dropping
+`SK_VULKAN` for the golden path would compile the shared painter against a different ABI than `rnl_window` does.
+The reason `SK_RELEASE` is mandatory even in the Debug preset is item 2 of the window fix ledger below.
+
+### The comparison, and why the tolerance is zero
+
+`packages/core/goldens/png-diff.ts` compares two decoded RGBA buffers channel by channel and reports the first
+differing pixel by coordinate. `packages/core/goldens/png-diff.spec.ts` covers it; it needs no binary and runs
+everywhere. Decoding is `pngjs`, a maintained dependency-free PNG codec, added to `@react-native-linux/core`'s
+devDependencies through the workspace catalog.
+
+The gospel's perceptual threshold exists because GPU rasterisation and font hinting vary between drivers. Skia's
+raster backend does not: one Skia build given one scene produces the same bytes on every machine, so the threshold
+here is exact equality. A tolerance would only hide a real regression. When the lavapipe window golden lands it
+needs its own comparator with its own stated threshold, not a loosened version of this one.
+
+### The workflow
+
+`packages/core/goldens/golden.spec.ts` runs under the ordinary `pnpm test`. It builds nothing. When
+`build/dev/bin/hello_react` is absent it prints why and skips, so a checkout without a C++ build stays green.
+
+Regenerating is explicit and never happens as a side effect of a normal run:
+
+```bash
+cmake --build build/dev --target hello_react
+pnpm test:golden:update   # RNL_UPDATE_GOLDENS=1, writes packages/core/goldens/*.png
+pnpm test:golden          # compares; must pass immediately afterwards
+```
+
+**A regenerated golden is reviewed like code.** Open the PNG, confirm it is the picture the change intended, and
+say in the pull request why it changed. A golden that is updated because "the test failed" is a deleted test. When
+a golden is missing and `RNL_UPDATE_GOLDENS` is unset the spec fails and names the regeneration command rather than
+silently creating a baseline.
+
+The first fixture is `packages/core/test-bundles/fabric-view.js` to `packages/core/goldens/fabric-view.png`: the
+dark `#14161A` background with one flat blue `#3366CC` rectangle, 120x80, its top-left corner at (24, 24) — the
+frame `hello_react --fabric` prints for `View #4`, rasterised instead of dumped.
 
 ## Dependencies, and how they differ from Meta's
 

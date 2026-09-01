@@ -438,8 +438,8 @@ endforeach()
 #
 # The engine and Fabric half of the platform: the bridgeless ReactInstance, the Fabric host and the retained
 # scene. Both executables link it, so the ReactCommon closure and the atomic hazard from the fix ledger are named
-# once instead of being duplicated onto each target. Nothing here draws: Skia stays on the window target, which is
-# also why the SK_* definitions do.
+# once instead of being duplicated onto each target. Nothing here draws: Skia and the SK_* definitions live on
+# rnl_scene_painter, which is the only translation unit that turns a scene into pixels.
 # ---------------------------------------------------------------------------
 
 add_library(rnl_react_core STATIC
@@ -464,7 +464,74 @@ target_link_libraries(rnl_react_core
         atomic)
 
 # ---------------------------------------------------------------------------
+# Skia, and the one place the scene is painted
+#
+# Skia has two consumers now: rnl_window draws the retained scene into a swapchain-backed SkSurface, and
+# hello_react --golden draws the same scene into an offscreen raster SkSurface for the golden-image rig. The
+# detection therefore lives here rather than inside the window block, and rnl_scene_painter carries the single
+# paint implementation both of them call. A golden that came from a second painter would prove nothing.
+#
+# Skia is a prebuilt static archive pinned by scripts/skia.lock.json; see docs/cpp-toolchain.md for the
+# acquisition decision and the accepted risk. Configure with -DRNL_ENABLE_SKIA=OFF to skip it and everything
+# that draws.
+# ---------------------------------------------------------------------------
+
+option(RNL_ENABLE_SKIA "Build the Skia-dependent targets: the scene painter, rnl_window, and hello_react --golden" ON)
+
+if(RNL_ENABLE_SKIA)
+    set(RNL_SKIA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/skia)
+    set(RNL_SKIA_LIBRARY ${RNL_SKIA_DIR}/lib/libskia.a)
+    set(RNL_SKIA_MISSING "")
+
+    find_package(PkgConfig QUIET)
+
+    if(PkgConfig_FOUND)
+        pkg_check_modules(RNL_FREETYPE QUIET IMPORTED_TARGET freetype2)
+        pkg_check_modules(RNL_FONTCONFIG QUIET IMPORTED_TARGET fontconfig)
+    else()
+        list(APPEND RNL_SKIA_MISSING "pkg-config")
+    endif()
+
+    if(NOT RNL_FREETYPE_FOUND)
+        list(APPEND RNL_SKIA_MISSING "freetype2")
+    endif()
+
+    if(NOT RNL_FONTCONFIG_FOUND)
+        list(APPEND RNL_SKIA_MISSING "fontconfig")
+    endif()
+
+    if(NOT EXISTS "${RNL_SKIA_LIBRARY}")
+        list(APPEND RNL_SKIA_MISSING "third_party/skia (run: node scripts/vendor-skia.ts)")
+    endif()
+endif()
+
+if(RNL_ENABLE_SKIA AND RNL_SKIA_MISSING)
+    string(REPLACE ";" ", " RNL_SKIA_MISSING_TEXT "${RNL_SKIA_MISSING}")
+    message(WARNING "Skia is unavailable, missing: ${RNL_SKIA_MISSING_TEXT}; rnl_window and hello_react --golden are disabled")
+elseif(RNL_ENABLE_SKIA)
+    # SK_RELEASE is not an optimisation switch here: the pinned archive is a release build, and
+    # Skia's public headers change class layout when SK_DEBUG is defined, so a Debug preset would
+    # otherwise compile against a different ABI than the one in libskia.a.
+    add_library(rnl_skia STATIC IMPORTED GLOBAL)
+    set_target_properties(rnl_skia PROPERTIES
+        IMPORTED_LOCATION ${RNL_SKIA_LIBRARY}
+        INTERFACE_INCLUDE_DIRECTORIES ${RNL_SKIA_DIR}
+        INTERFACE_COMPILE_DEFINITIONS "SK_GANESH;SK_VULKAN;SK_RELEASE")
+
+    add_library(rnl_scene_painter STATIC src/ScenePainter.cpp)
+    target_compile_options(rnl_scene_painter PRIVATE -Wall -Wextra)
+    target_include_directories(rnl_scene_painter PUBLIC src)
+    target_link_libraries(rnl_scene_painter PUBLIC rnl_react_core rnl_skia)
+endif()
+
+# ---------------------------------------------------------------------------
 # hello_react
+#
+# The headless runner. With Skia available it also carries --golden, which renders a bundle's final scene into an
+# offscreen raster surface and writes a PNG: no GPU, no Vulkan driver, no Wayland compositor. libskia.a is a
+# static archive, so only the raster and PNG objects are pulled in; nothing here names GrDirectContext or any
+# Vulkan entry point. libpng and zlib are inside the archive, so the only new link inputs are freetype and
+# fontconfig, which Skia's font ports reference and which rnl_window already required.
 # ---------------------------------------------------------------------------
 
 add_executable(hello_react
@@ -474,33 +541,37 @@ target_compile_options(hello_react PRIVATE -Wall -Wextra)
 target_link_libraries(hello_react PRIVATE rnl_react_core)
 set_target_properties(hello_react PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
+if(TARGET rnl_scene_painter)
+    target_sources(hello_react PRIVATE src/GoldenRenderer.cpp)
+    target_compile_definitions(hello_react PRIVATE RNL_ENABLE_GOLDEN)
+    target_link_libraries(hello_react
+        PRIVATE
+            rnl_scene_painter
+            PkgConfig::RNL_FREETYPE
+            PkgConfig::RNL_FONTCONFIG
+            Threads::Threads
+            ${CMAKE_DL_LIBS})
+endif()
+
 # ---------------------------------------------------------------------------
 # rnl_window
 #
 # The Wayland/Vulkan/Skia host from issue #8, drawing the retained scene from issue #32. It shares
-# the engine and Fabric half with hello_react through rnl_react_core and adds only the drawing and
-# windowing sources, and it is skipped rather than fatal when its dependencies are absent, so a
-# machine with neither Skia nor a Wayland development environment still builds the headless target.
-# Configure with -DRNL_ENABLE_WINDOW=OFF to skip it deliberately.
-#
-# Skia is a prebuilt static archive pinned by scripts/skia.lock.json; see docs/cpp-toolchain.md
-# for the acquisition decision and the accepted risk.
+# the engine and Fabric half with hello_react through rnl_react_core, the paint code path through
+# rnl_scene_painter, and adds only the drawing and windowing sources. It is skipped rather than fatal when its
+# dependencies are absent, so a machine with neither Skia nor a Wayland development environment still builds the
+# headless target. Configure with -DRNL_ENABLE_WINDOW=OFF to skip it deliberately.
 # ---------------------------------------------------------------------------
 
 option(RNL_ENABLE_WINDOW "Build rnl_window, the Wayland/Vulkan/Skia host" ON)
 
 if(RNL_ENABLE_WINDOW)
-    set(RNL_SKIA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/skia)
-    set(RNL_SKIA_LIBRARY ${RNL_SKIA_DIR}/lib/libskia.a)
     set(RNL_WINDOW_MISSING "")
 
-    find_package(PkgConfig QUIET)
     find_package(Vulkan QUIET)
 
     if(PkgConfig_FOUND)
         pkg_check_modules(RNL_WAYLAND_CLIENT QUIET IMPORTED_TARGET wayland-client)
-        pkg_check_modules(RNL_FREETYPE QUIET IMPORTED_TARGET freetype2)
-        pkg_check_modules(RNL_FONTCONFIG QUIET IMPORTED_TARGET fontconfig)
         pkg_get_variable(RNL_WAYLAND_SCANNER wayland-scanner wayland_scanner)
         pkg_get_variable(RNL_WAYLAND_PROTOCOLS_DIR wayland-protocols pkgdatadir)
     endif()
@@ -515,14 +586,6 @@ if(RNL_ENABLE_WINDOW)
         list(APPEND RNL_WINDOW_MISSING "wayland-client")
     endif()
 
-    if(NOT RNL_FREETYPE_FOUND)
-        list(APPEND RNL_WINDOW_MISSING "freetype2")
-    endif()
-
-    if(NOT RNL_FONTCONFIG_FOUND)
-        list(APPEND RNL_WINDOW_MISSING "fontconfig")
-    endif()
-
     if(NOT RNL_WAYLAND_SCANNER OR NOT EXISTS "${RNL_WAYLAND_SCANNER}")
         list(APPEND RNL_WINDOW_MISSING "wayland-scanner")
     endif()
@@ -535,8 +598,8 @@ if(RNL_ENABLE_WINDOW)
         list(APPEND RNL_WINDOW_MISSING "Vulkan loader and headers")
     endif()
 
-    if(NOT EXISTS "${RNL_SKIA_LIBRARY}")
-        list(APPEND RNL_WINDOW_MISSING "third_party/skia (run: node scripts/vendor-skia.ts)")
+    if(NOT TARGET rnl_scene_painter)
+        list(APPEND RNL_WINDOW_MISSING "Skia (see the warning above)")
     endif()
 endif()
 
@@ -569,15 +632,6 @@ elseif(RNL_ENABLE_WINDOW)
     target_include_directories(rnl_xdg_shell PUBLIC ${RNL_PROTOCOL_DIR})
     target_link_libraries(rnl_xdg_shell PUBLIC PkgConfig::RNL_WAYLAND_CLIENT)
 
-    # SK_RELEASE is not an optimisation switch here: the pinned archive is a release build, and
-    # Skia's public headers change class layout when SK_DEBUG is defined, so a Debug preset would
-    # otherwise compile against a different ABI than the one in libskia.a.
-    add_library(rnl_skia STATIC IMPORTED GLOBAL)
-    set_target_properties(rnl_skia PROPERTIES
-        IMPORTED_LOCATION ${RNL_SKIA_LIBRARY}
-        INTERFACE_INCLUDE_DIRECTORIES ${RNL_SKIA_DIR}
-        INTERFACE_COMPILE_DEFINITIONS "SK_GANESH;SK_VULKAN;SK_RELEASE")
-
     add_executable(rnl_window
         src/SkiaVulkanRenderer.cpp
         src/WaylandWindow.cpp
@@ -590,6 +644,7 @@ elseif(RNL_ENABLE_WINDOW)
     target_link_libraries(rnl_window
         PRIVATE
             rnl_react_core
+            rnl_scene_painter
             rnl_xdg_shell
             rnl_skia
             Vulkan::Vulkan

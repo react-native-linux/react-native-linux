@@ -22,5 +22,5 @@
     "target": "es2023",
     "verbatimModuleSyntax": true
   },
-  "include": ["packages/*/src/**/*.ts", "vitest.config.ts"]
+  "include": ["packages/*/src/**/*.ts", "packages/core/goldens/*.ts", "vitest.config.ts"]
 }

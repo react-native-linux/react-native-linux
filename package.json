@@ -9,6 +9,8 @@
     "format:check": "oxfmt --check .",
     "lint": "oxlint --deny-warnings",
     "test": "vitest run --coverage",
+    "test:golden": "vitest run packages/core/goldens",
+    "test:golden:update": "RNL_UPDATE_GOLDENS=1 vitest run packages/core/goldens/golden.spec.ts",
     "ts": "tsc --noEmit",
     "validate": "pnpm format:check && pnpm ts && pnpm lint && pnpm deadcode && pnpm cpd && pnpm test && pnpm validate:meta",
     "validate:meta": "node scripts/validate-meta.ts"

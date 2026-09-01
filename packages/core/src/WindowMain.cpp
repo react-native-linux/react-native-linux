@@ -1,4 +1,5 @@
 #include "RetainedScene.h"
+#include "ScenePainter.h"
 #include "SkiaVulkanRenderer.h"
 #include "WaylandWindow.h"
 #include "WindowSession.h"
@@ -23,14 +24,13 @@ namespace {
 constexpr uint32_t kInitialWidth = 800;
 constexpr uint32_t kInitialHeight = 600;
 constexpr std::chrono::milliseconds kFrameCallbackFallback{50};
-constexpr SkColor kBackgroundColor = SkColorSetRGB(0x14, 0x16, 0x1A);
 constexpr SkColor kCardColor = SkColorSetRGB(0x33, 0x66, 0xCC);
 constexpr SkScalar kCardInset = 64.0F;
 constexpr SkScalar kCardCornerRadius = 24.0F;
 constexpr std::string_view kFabricFlag = "--fabric";
 
 void paintPlaceholderFrame(SkCanvas& canvas, react_native_linux::WindowSize size) {
-    canvas.clear(kBackgroundColor);
+    canvas.clear(react_native_linux::kSceneBackgroundColor);
 
     const SkRect cardBounds = SkRect::MakeLTRB(kCardInset, kCardInset, static_cast<SkScalar>(size.width) - kCardInset,
                                                static_cast<SkScalar>(size.height) - kCardInset);
@@ -40,20 +40,6 @@ void paintPlaceholderFrame(SkCanvas& canvas, react_native_linux::WindowSize size
     cardPaint.setAntiAlias(true);
 
     canvas.drawRRect(SkRRect::MakeRectXY(cardBounds, kCardCornerRadius, kCardCornerRadius), cardPaint);
-}
-
-void paintSceneFrame(SkCanvas& canvas, const react_native_linux::SceneSnapshot& scene) {
-    canvas.clear(kBackgroundColor);
-
-    SkPaint fillPaint;
-    fillPaint.setAntiAlias(true);
-
-    for (const react_native_linux::SceneRectangle& rectangle : scene) {
-        fillPaint.setColor(rectangle.colorArgb);
-        canvas.drawRect(SkRect::MakeXYWH(rectangle.frame.origin.x, rectangle.frame.origin.y, rectangle.frame.size.width,
-                                         rectangle.frame.size.height),
-                        fillPaint);
-    }
 }
 
 } // namespace
@@ -93,7 +79,7 @@ int main(int argc, char** argv) {
                 const react_native_linux::SceneSnapshot scene = session->snapshotScene();
 
                 renderer.drawFrame(window, [&scene](SkCanvas& canvas, react_native_linux::WindowSize /*size*/) {
-                    paintSceneFrame(canvas, scene);
+                    react_native_linux::paintScene(canvas, scene);
                 });
             } else {
                 renderer.drawFrame(window, paintPlaceholderFrame);
