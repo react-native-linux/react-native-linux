@@ -1,0 +1,30 @@
+{
+  "includePatterns": ["src-linux/**", "index.ts"],
+  "excludePatterns": ["**/*.spec.ts"],
+  "baseVersion": "0.87.1",
+  "overrides": [
+    {
+      "type": "platform",
+      "file": "index.ts"
+    },
+    {
+      "type": "derived",
+      "file": "src-linux/Libraries/Utilities/Platform.linux.ts",
+      "baseFile": "packages/react-native/Libraries/Utilities/Platform.android.js",
+      "baseHash": "6497ec623691b34885e226e4d05bc55ba582a135"
+    },
+    {
+      "type": "derived",
+      "file": "src-linux/Libraries/Utilities/PlatformTypes.ts",
+      "baseFile": "packages/react-native/Libraries/Utilities/PlatformTypes.js",
+      "baseHash": "933ac7f586871c9de39fc0d84aa4c3b68997f34d",
+      "issue": 29
+    },
+    {
+      "type": "derived",
+      "file": "src-linux/Libraries/Utilities/NativePlatformConstantsLinux.ts",
+      "baseFile": "packages/react-native/src/private/specs_DEPRECATED/modules/NativePlatformConstantsAndroid.js",
+      "baseHash": "6d562f689df6f0fd926a78326afce7f51b6b1279"
+    }
+  ]
+}

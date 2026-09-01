@@ -3,9 +3,11 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "main": "./index.ts",
   "scripts": {
     "build": "cmake --build ../../build/dev",
     "configure": "cmake -S ../.. --preset dev",
+    "override:validate": "react-native-platform-override validate",
     "run:fabric": "../../build/dev/bin/hello_react --fabric test-bundles/fabric-view.js",
     "run:golden": "../../build/dev/bin/hello_react --golden test-bundles/fabric-view.js /tmp/rnl-fabric-view.png",
     "run:hello": "../../build/dev/bin/hello_react",
@@ -18,6 +20,7 @@
     "@types/node": "catalog:",
     "@types/pngjs": "catalog:",
     "pngjs": "catalog:",
+    "react-native-platform-override": "catalog:",
     "vitest": "catalog:"
   }
 }
