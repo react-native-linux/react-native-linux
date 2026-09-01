@@ -10,7 +10,8 @@
     "lint": "oxlint --deny-warnings",
     "test": "vitest run --coverage",
     "ts": "tsc --noEmit",
-    "validate": "pnpm format:check && pnpm ts && pnpm lint && pnpm deadcode && pnpm cpd && pnpm test"
+    "validate": "pnpm format:check && pnpm ts && pnpm lint && pnpm deadcode && pnpm cpd && pnpm test && pnpm validate:meta",
+    "validate:meta": "node scripts/validate-meta.ts"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "catalog:",
