@@ -1,35 +1,24 @@
-#include <hermes/hermes.h>
-#include <jsi/jsi.h>
+#include "BundleRunner.h"
 
-#include <cstddef>
-#include <cstdio>
-#include <memory>
+#include <exception>
+#include <iostream>
+#include <optional>
+#include <span>
 #include <string>
 
-namespace {
+int main(int argc, char** argv) {
+    const std::span<char*> arguments(argv, static_cast<size_t>(argc));
+    std::optional<std::string> bundlePath;
 
-facebook::jsi::Value hostPrint(facebook::jsi::Runtime& runtime, const facebook::jsi::Value& /*thisValue*/,
-                               const facebook::jsi::Value* arguments, size_t argumentCount) {
-    for (size_t index = 0; index < argumentCount; ++index) {
-        std::puts(arguments[index].toString(runtime).utf8(runtime).c_str());
+    if (arguments.size() > 1) {
+        bundlePath = std::string(arguments[1]);
     }
 
-    return facebook::jsi::Value::undefined();
-}
+    try {
+        return react_native_linux::runBundle(bundlePath);
+    } catch (const std::exception& error) {
+        std::cerr << "[bundle-runner] " << error.what() << std::endl;
 
-} // namespace
-
-int main() {
-    const std::unique_ptr<facebook::hermes::HermesRuntime> hermesRuntime = facebook::hermes::makeHermesRuntime();
-    facebook::jsi::Runtime& runtime = *hermesRuntime;
-
-    runtime.global().setProperty(
-        runtime, "print",
-        facebook::jsi::Function::createFromHostFunction(runtime, facebook::jsi::PropNameID::forAscii(runtime, "print"),
-                                                        1, hostPrint));
-
-    runtime.evaluateJavaScript(
-        std::make_shared<facebook::jsi::StringBuffer>("print('react-native-linux: hermes alive');"), "hello.js");
-
-    return 0;
+        return 1;
+    }
 }

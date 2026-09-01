@@ -1,16 +1,21 @@
 # C++ toolchain
 
-`packages/core` builds `hello_react`: a Hermes runtime that evaluates a JavaScript string and prints to stdout,
-linked against the React Native renderer core and Yoga. It is the toolchain proof for issue #3, not a renderer.
+`packages/core` builds `hello_react`: a bridgeless `ReactInstance` running a JavaScript bundle on Hermes, linked
+against the React Native renderer core and Yoga. It is the toolchain proof for issue #3 and the engine-embedding
+proof for issue #9, not a renderer.
 
 ## Scope
 
-`main.cpp` drives Hermes through the public JSI surface only: `makeHermesRuntime`, one host function, one
-`evaluateJavaScript`. The renderer-core closure and Yoga are compiled and linked into the same executable, which is
-what proves the toolchain, but nothing constructs a `ReactInstance` yet. Bridgeless bring-up — `react/runtime`,
-`cxxreact`, `jsiexecutor`, the nativemodule and component trees, and all twelve `ReactCxxPlatform` subdirectories
-that `react-native-fantom` links — belongs to issue #9. `ReactCxxPlatform` is vendored now so that issue starts from
-sources already on disk.
+`hello_react` boots the upstream bridgeless stack: a `JSRuntimeFactory` that wraps `makeHermesRuntime` in
+`JSIRuntimeHolder`, `ReactCxxPlatform`'s `MessageQueueThreadImpl` as the JS thread, a `PlatformTimerRegistry`
+implementation on a `TaskDispatchThread` feeding `TimerManager`, and `JsErrorHandler::OnJsError` printing structured
+errors to stderr. `console` and `nativeLoggingHook` are installed in C++ and write to stdout and stderr. The
+executable takes an optional bundle path and falls back to an inline smoke line without one.
+
+`react/runtime/hermes` (`bridgelesshermes`) is deliberately not used: it needs `hermes_executor_common` and
+`hermes_inspector_modern`, and the debugger is off in this build. The consequence is that `JSRuntime` falls back to
+`FallbackRuntimeTargetDelegate`, so no CDP-backed console or sampling profiler. Fabric, TurboModules, the
+nativemodule and component trees, and the remaining eleven `ReactCxxPlatform` subdirectories are still out.
 
 ## Pins
 
@@ -82,9 +87,13 @@ node scripts/vendor-react-native.ts
 cmake --preset dev
 cmake --build build/dev
 ./build/dev/bin/hello_react
+./build/dev/bin/hello_react packages/core/test-bundles/hello.js
 ```
 
-Expected output: `react-native-linux: hermes alive`.
+Without an argument the expected output is `react-native-linux: hermes alive`. With
+`packages/core/test-bundles/hello.js` the bundle prints its own evaluation, microtask and timer lines and the
+process exits 0. `packages/core/test-bundles/throws.js` is the error fixture: it prints a `[js-error] fatal` block
+with a parsed stack to stderr and exits 1.
 
 When `cmake` and `ninja` are not on `PATH`, wrap the two CMake steps:
 
@@ -103,7 +112,7 @@ from a fresh configure.
 `private/react-native-fantom/tester/CMakeLists.txt` is the canonical template for a C++ React Native host. It pulls
 `boost`, `glog`, `double-conversion`, `fast_float`, `fmt`, `folly`, `gflags`, `nlohmann_json` and OpenSSL, all
 downloaded into an NDK staging directory by Gradle's `prepareNative3pDependencies`. This build needs a subset,
-because it stops at the renderer core rather than the full `ReactInstance`:
+because it stops at the `ReactInstance` rather than the full fantom host:
 
 | Dependency | Here | Why |
 | --- | --- | --- |
@@ -113,7 +122,7 @@ because it stops at the renderer core rather than the full `ReactInstance`:
 | fast_float | FetchContent at RN's pin | No Ubuntu package. |
 | folly | FetchContent at RN's pin, RN's subset source list | ReactCommon compiles every TU with `-DFOLLY_NO_CONFIG=1`, which is ABI-incompatible with a distribution folly built against `folly-config.h`. |
 | gflags | not used | Only fantom's own CLI needs it. |
-| nlohmann_json, OpenSSL | not used | Only `ReactCxxPlatform`'s HTTP/WebSocket clients need them; those arrive with issue #9. |
+| nlohmann_json, OpenSSL | not used | Only `ReactCxxPlatform`'s HTTP/WebSocket clients need them, and only `react/threading` is linked from that tree. They arrive with the Metro dev server and the inspector. |
 
 Two flags fantom sets are deliberately dropped, because fantom targets the NDK and libc++ while this targets glibc
 and libstdc++: `FOLLY_USE_LIBCPP` (folly would include libc++'s `<__config>`) and `FOLLY_HAVE_XSI_STRERROR_R`

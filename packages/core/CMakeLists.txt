@@ -21,6 +21,8 @@ set(REACT_COMMON_DIR ${RNL_VENDOR_DIR}/ReactCommon)
 # ReactCommon's jsinspector CMakeLists include SoMerging-utils.cmake from here; the function
 # it defines is a no-op off Android, but the include itself is unconditional.
 set(REACT_ANDROID_DIR ${RNL_VENDOR_DIR}/ReactAndroid)
+# ReactCxxPlatform subdirectory CMakeLists resolve their own include root through this variable.
+set(REACT_CXX_PLATFORM_DIR ${RNL_VENDOR_DIR}/ReactCxxPlatform)
 
 include(${REACT_COMMON_DIR}/cmake-utils/react-native-flags.cmake)
 include(${REACT_COMMON_DIR}/cmake-utils/internal/react-native-platform-selector.cmake)
@@ -260,9 +262,20 @@ set_target_properties(rnl_jsidynamic PROPERTIES CXX_STANDARD 20)
 # ---------------------------------------------------------------------------
 # ReactCommon
 #
-# This is the transitive closure of react_renderer_core and yoga. The remaining fantom
-# subdirectories (react/runtime, cxxreact, the nativemodule and component trees, and all
-# of ReactCxxPlatform) land with the ReactInstance bring-up in issue #9.
+# This is the transitive closure of react_renderer_core, yoga and the bridgeless
+# ReactInstance. Four subdirectories were added for the ReactInstance bring-up, each because a
+# target already in the graph names it:
+#   cxxreact    -> react_cxxreact: JSBigString/JSBigFileString bundle loading and
+#                  MessageQueueThread, named by jsitooling and jsireact.
+#   jsitooling  -> jsitooling: JSRuntime/JSRuntimeFactory/JSIRuntimeHolder and
+#                  bindNativeLogger/bindNativePerformanceNow, named by bridgeless.
+#   jsiexecutor -> jsireact: named by bridgeless. Nothing here calls JSIExecutor, but the
+#                  target name has to resolve or the bridgeless link line breaks.
+#   react/runtime -> bridgeless: ReactInstance, TimerManager, BufferedRuntimeExecutor.
+# None of them adds a system dependency: react/runtime/hermes (bridgelesshermes) is the one
+# that would, through hermes_executor_common and hermes_inspector_modern, and it is not used.
+# The nativemodule and component trees and the remaining eleven ReactCxxPlatform
+# subdirectories stay out until Fabric bring-up needs them.
 # ---------------------------------------------------------------------------
 
 add_compile_options(-include cstdint)
@@ -272,11 +285,14 @@ add_library(yoga ALIAS yogacore)
 
 set(RNL_REACT_COMMON_SUBDIRS
     callinvoker
+    cxxreact
     jserrorhandler
+    jsiexecutor
     jsinspector-modern
     jsinspector-modern/cdp
     jsinspector-modern/network
     jsinspector-modern/tracing
+    jsitooling
     logger
     oscompat
     react/debug
@@ -288,6 +304,7 @@ set(RNL_REACT_COMMON_SUBDIRS
     react/renderer/graphics
     react/renderer/mapbuffer
     react/renderer/runtimescheduler
+    react/runtime
     react/timing
     react/utils
     reactperflogger
@@ -297,15 +314,25 @@ foreach(rnl_subdir IN LISTS RNL_REACT_COMMON_SUBDIRS)
     add_subdirectory(${REACT_COMMON_DIR}/${rnl_subdir} ReactCommon/${rnl_subdir})
 endforeach()
 
+# ReactCxxPlatform's threading subdirectory is the only one pulled in here. It carries
+# MessageQueueThreadImpl and TaskDispatchThread, which is the MessageQueueThread ReactInstance
+# needs, and its only dependencies are folly_runtime and react_cxxreact, both already built.
+add_subdirectory(${REACT_CXX_PLATFORM_DIR}/react/threading ReactCxxPlatform/react/threading)
+
 set(RNL_REACT_COMMON_TARGETS
+    bridgeless
     callinvoker
     jserrorhandler
     jsinspector
     jsinspector_cdp
     jsinspector_network
     jsinspector_tracing
+    jsireact
+    jsitooling
     logger
     oscompat
+    react_cxx_platform_react_threading
+    react_cxxreact
     react_debug
     react_featureflags
     react_performance_timeline
@@ -320,6 +347,15 @@ set(RNL_REACT_COMMON_TARGETS
     reactperflogger
     runtimeexecutor
     yogacore)
+
+# bridgeless includes react/renderer and react/timing headers that its own CMakeLists does not
+# name, and consumes the RuntimeScheduler. Those usage requirements are added here rather than
+# by patching the vendored file.
+target_link_libraries(bridgeless
+    react_renderer_consistency
+    react_renderer_core
+    react_renderer_runtimescheduler
+    react_timing)
 
 # ReactCommon compiles with -Werror against the compilers Meta ships. Downgrade it rather
 # than carry a patch for every distribution compiler that adds a new warning.
@@ -337,8 +373,15 @@ endforeach()
 # hello_react
 # ---------------------------------------------------------------------------
 
-add_executable(hello_react src/main.cpp)
+add_executable(hello_react
+    src/BundleRunner.cpp
+    src/ConsoleBinding.cpp
+    src/HermesJSRuntimeFactory.cpp
+    src/HostTimerRegistry.cpp
+    src/JsErrorReporter.cpp
+    src/main.cpp)
 target_compile_options(hello_react PRIVATE -Wall -Wextra -fexceptions -frtti)
+target_include_directories(hello_react PRIVATE src)
 target_link_libraries(hello_react
     PRIVATE
         hermesvm
