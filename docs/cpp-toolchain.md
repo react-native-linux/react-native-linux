@@ -4,6 +4,11 @@
 against the React Native renderer core and Yoga. It is the toolchain proof for issue #3, the engine-embedding proof
 for issue #9, and the headless half of the Fabric bootstrap for issue #10. It is not a renderer: nothing here draws.
 
+`packages/core` also builds `rnl_window`: an xdg-shell window on Wayland, a FIFO Vulkan swapchain, and a Skia Ganesh
+`GrDirectContext` on that device, driven by `wl_surface` frame callbacks. That is issue #8. The two executables share
+no code and no process: `hello_react` stays headless, and `rnl_window` runs no JavaScript. Wiring the retained scene
+into the window is the next step, not this one.
+
 ## Scope
 
 `hello_react` boots the upstream bridgeless stack: a `JSRuntimeFactory` that wraps `makeHermesRuntime` in
@@ -54,6 +59,83 @@ Not covered yet, each with an owning milestone: events (the `EventBeat` is never
 dispatched), `Scheduler::reportMount` and mount-hook telemetry, `dispatchCommand`, multiple surfaces, and every
 component past `View`.
 
+## Window host
+
+`rnl_window` is three files under `packages/core/src`, in the order the frame flows through them:
+
+- `WaylandWindow` owns one connection, one `wl_surface`, one `xdg_toplevel` titled `react-native-linux` at 800x600,
+  and the run loop. It never attaches a buffer; `vkQueuePresentKHR` does that. `xdg_toplevel.close` sets the exit
+  flag, `xdg_toplevel.configure` records a resize, and `xdg_wm_base.ping` is answered.
+- `SkiaVulkanRenderer` owns the `VkInstance` (`VK_KHR_surface` + `VK_KHR_wayland_surface`), the device, the FIFO
+  swapchain, and the `GrDirectContext`.
+- `WindowMain` clears to `#14161A` and draws one rounded rectangle in `#3366CC`, inset 64 px with a 24 px corner
+  radius. That colour is the same one `test-bundles/fabric-view.js` puts on its `View`, so the day the retained
+  scene is wired in the picture should not change much.
+
+### Swapchain to SkSurface
+
+Each swapchain `VkImage` is wrapped directly as an `SkSurface` through `GrBackendRenderTargets::MakeVk` plus
+`SkSurfaces::WrapBackendRenderTarget`. There is no offscreen surface and no blit, because the wrap path is both the
+simpler one and the one Skia's own `tools/window/VulkanWindowContext.cpp` uses, and it leaves every image barrier to
+Skia. The only layout handling in our code is the `skgpu::MutableTextureState` requesting
+`VK_IMAGE_LAYOUT_PRESENT_SRC_KHR`, passed to `GrDirectContext::flush`.
+
+Per frame: create a semaphore, `vkAcquireNextImageKHR`, `SkSurface::wait` on that semaphore (Skia takes ownership
+and destroys it), paint, flush with one signal semaphore and the present state, `submit`, then `vkQueuePresentKHR`
+waiting on the signal semaphore. Render semaphores are per backbuffer and there is one more backbuffer than there
+are swapchain images, so a command buffer retires before its semaphore is reused. That structure is copied from
+Skia's reference implementation rather than invented.
+
+`VK_ERROR_OUT_OF_DATE_KHR` from either acquire or present rebuilds the swapchain; `xdg_toplevel.configure` rebuilds
+it too, so a resize is handled from whichever side notices first.
+
+### Pacing
+
+ADR-0001 decision 3 is implemented literally. `wl_surface.frame` is what throttles: `requestFrameCallback` runs
+immediately before `vkQueuePresentKHR`, because present is what commits the surface and `wl_surface.frame` applies
+to the next commit on the connection. The run loop then blocks in `poll` on the Wayland file descriptor until the
+callback arrives.
+
+The poll timeout is the mandatory fallback, not a second frame source. Hyprland sends frame callbacks only for the
+active and active-special workspaces, so a window on another workspace receives none at all and would otherwise
+stop dispatching entirely — including the close event. The fallback is 50 ms, which is slow enough not to compete
+with a 60 or 120 Hz callback stream and fast enough that a hidden window still notices it was closed.
+
+Issue #8's acceptance criteria say "no timer-based render loop exists anywhere in the frame path", which predates
+the ADR amendment that made the fallback mandatory. The ADR wins; the issue text needs the correction.
+
+### Skia acquisition
+
+Skia publishes no official binaries and recommends tracking tip-of-tree, so the choice was a maintained third-party
+prebuilt or a `gn`/`ninja` source build. M0 takes the prebuilt, and specifically **rust-skia's**:
+
+| Candidate | Verdict |
+| --- | --- |
+| `aseprite/skia` `m151` | Rejected. Its shipped `out/Release-x64/args.gn` sets no `skia_use_vulkan`, and `gn/skia.gni` defaults it to false, so Ganesh is GL-only. Vulkan headers ship, the implementation does not. |
+| `JetBrains/skia` `m152` (skiko) | Rejected. Vulkan is on, but the Linux build is gcc-10 with `-D_GLIBCXX_USE_CXX11_ABI=0 -fno-exceptions -fno-rtti`. The old libstdc++ string ABI is viral across the whole link, and this build already links ReactCommon and Hermes with the modern ABI. `JetBrains/skia-pack` is archived and its Linux build had no Vulkan either. |
+| `rust-skia/skia-binaries` `0.153.2` | **Chosen.** Vulkan and Ganesh both on, modern cxx11 ABI, clang-20 against libstdc++, system freetype and fontconfig, and a `textlayout` variant that already carries SkParagraph for M1. |
+| Source build at a `chrome/mNNN` branch | Deferred. It is the documented follow-up, not the M0 path. |
+
+The pin is split because the rust-skia release ships archives without headers:
+
+| Component | Pin |
+| --- | --- |
+| Skia milestone | `m153` |
+| Static libraries | `skia-binaries-b0260d93e48425b4b39f-x86_64-unknown-linux-gnu-ganesh-gl-jpegd-jpege-pdf-textlayout-vulkan.tar.gz` from release `0.153.2`, sha256 `918fa4ff44211ea0df405ae1e86cb1fbcd5593a6500f67b12a378690d8b49668` |
+| Headers | `rust-skia/skia` at `c9c3c5a91e9d74181a2ca34de81d78fef9b4d2b6`, sparse `include` and the three module `include` trees |
+
+Both live in `scripts/skia.lock.json` and are fetched by `scripts/vendor-skia.ts` into `third_party/skia`, which
+verifies the sha256 before extracting and writes a stamp so a re-run is a no-op. Re-pinning is an edit to the lock
+file followed by `pnpm --filter @react-native-linux/core vendor:skia`.
+
+**Tracked risk.** ADR-0001 already records that Skia has no ABI and no releases; this adds a second-hand build to
+that. The archive is produced by a Rust binding project for its own consumption, on its own schedule, from a fork
+of `google/skia`; `0.153.2` is a release of the binaries repository, and the corresponding crate version was still
+mid-flight when it was pinned. Nothing about it is a contract. The sha256 makes the artifact immutable for us, and
+the documented exit is a source build at a `chrome/mNNN` branch with `skia_use_vulkan=true`, which is the same
+recipe the AUR `skia-static` package uses. That exit should be taken before Skia lands in CI, because CI cannot
+depend on a third party's release cadence.
+
 ## Pins
 
 | Component | Pin | Source of truth |
@@ -64,6 +146,8 @@ component past `View`.
 | fast_float | `v8.0.0` | `RNL_FAST_FLOAT_VERSION`, same mirror |
 | Boost (fallback only) | `1.83.0` | `RNL_BOOST_VERSION`, same mirror; used only when no system Boost is found |
 | glog (fallback only) | `v0.7.1` | `RNL_GLOG_VERSION`; used only when no system glog is found |
+| Skia | `m153` prebuilt | `scripts/skia.lock.json` |
+| xdg-shell | system `wayland-protocols` | `pkg-config --variable=pkgdatadir wayland-protocols` |
 
 The Hermes tag is derived, never hardcoded: `hermes-v${HERMES_VERSION_NAME}`. `sdks/.hermesversion` was removed
 upstream and must not be used. The Hermes CMake library target is `hermesvm`, not `libhermes`.
@@ -82,6 +166,18 @@ machine without root can build without them. `double-conversion`, `fmt` and ICU 
 sudo pacman -S --needed base-devel git cmake ninja ccache python \
   boost boost-libs double-conversion fmt google-glog icu
 ```
+
+`rnl_window` needs, on top of that:
+
+```bash
+sudo pacman -S --needed wayland wayland-protocols vulkan-headers vulkan-icd-loader \
+  freetype2 fontconfig
+```
+
+`wayland-scanner` ships inside the `wayland` package and is located through
+`pkg-config --variable=wayland_scanner wayland-scanner`, so it is never assumed to be on `PATH`. A Vulkan driver
+package is separate from the loader: `vulkan-radeon`, `vulkan-intel`, `nvidia-utils`, or `vulkan-swrast` for
+lavapipe.
 
 `clang` and `llvm` are optional but recommended: Meta's own Linux C++ host (`react-native-fantom`) builds with
 `CC=clang`, and Hermes' Linux CI does the same, so clang is the better-tested path for the Hermes and llvh sources.
@@ -111,22 +207,26 @@ two acquisition paths.
 ## Commands
 
 ```bash
-pnpm --filter @react-native-linux/core vendor      # node scripts/vendor-react-native.ts
-pnpm --filter @react-native-linux/core configure   # cmake -S <repo root> --preset dev
-pnpm --filter @react-native-linux/core build       # cmake --build build/dev
-pnpm --filter @react-native-linux/core run:hello   # build/dev/bin/hello_react
-pnpm --filter @react-native-linux/core run:fabric  # build/dev/bin/hello_react --fabric <bundle>
+pnpm --filter @react-native-linux/core vendor       # node scripts/vendor-react-native.ts
+pnpm --filter @react-native-linux/core vendor:skia  # node scripts/vendor-skia.ts
+pnpm --filter @react-native-linux/core configure    # cmake -S <repo root> --preset dev
+pnpm --filter @react-native-linux/core build        # cmake --build build/dev
+pnpm --filter @react-native-linux/core run:hello    # build/dev/bin/hello_react
+pnpm --filter @react-native-linux/core run:fabric   # build/dev/bin/hello_react --fabric <bundle>
+pnpm --filter @react-native-linux/core run:window   # build/dev/bin/rnl_window
 ```
 
 The same sequence without pnpm, from the repository root:
 
 ```bash
 node scripts/vendor-react-native.ts
+node scripts/vendor-skia.ts
 cmake --preset dev
 cmake --build build/dev
 ./build/dev/bin/hello_react
 ./build/dev/bin/hello_react packages/core/test-bundles/hello.js
 ./build/dev/bin/hello_react --fabric packages/core/test-bundles/fabric-view.js
+./build/dev/bin/rnl_window
 ```
 
 Without an argument the expected output is `react-native-linux: hermes alive`. With
@@ -146,6 +246,49 @@ Presets: `dev` (Debug), `release` (Release), `asan` (ASan + UBSan), `tsan` (TSan
 Hermes' own `HERMES_ENABLE_*_SANITIZER` options, because Hermes disables its Boost.Context fibers under ASan and
 cannot infer that from `CMAKE_CXX_FLAGS`. `CMAKE_EXPORT_COMPILE_COMMANDS` is on in every preset, so clangd works
 from a fresh configure.
+
+### Building and running rnl_window
+
+```bash
+node scripts/vendor-skia.ts
+mise exec cmake@latest ninja@latest -- cmake --preset dev
+mise exec cmake@latest ninja@latest -- cmake --build build/dev --target rnl_window
+./build/dev/bin/rnl_window
+```
+
+`RNL_ENABLE_WINDOW` defaults to `ON`. When it is on but a dependency is absent — no Skia in `third_party`, no
+`wayland-scanner`, no Vulkan loader, no freetype or fontconfig — configure prints
+`rnl_window is disabled, missing: ...` and skips the target rather than failing, so the headless build survives on a
+machine that has none of it. `cmake --preset dev -DRNL_ENABLE_WINDOW=OFF` skips it deliberately and silently.
+
+The xdg-shell client header and private code are generated at build time by `wayland-scanner` into
+`build/<preset>/packages/core/wayland-protocols` and compiled into `rnl_xdg_shell`. Nothing generated is checked in.
+
+### Window test checklist
+
+Run these under a real Hyprland session, from the repository root. The expected picture is a dark `#14161A`
+background filling the window with one blue `#3366CC` rounded rectangle inset 64 px on every side.
+
+1. `./build/dev/bin/rnl_window` opens a window titled `react-native-linux` at 800x600 with the picture above, and
+   prints nothing.
+2. Drag a corner to resize. The rectangle keeps its 64 px inset on all four sides at every size, with no stretching,
+   no tearing, and no black band at the edge while dragging. Resize to a very small window and back.
+3. Close the window with the compositor's close binding (`SUPER Q` on stock Omarchy). The process exits 0 —
+   `echo $?` — and no `wl_display` protocol error is printed.
+4. `Ctrl-C` in the terminal also terminates it. There is no signal handler, so this is a plain `SIGINT` kill and the
+   compositor should not leave a stale window behind.
+5. Move the window to another workspace, wait ten seconds, come back. It must still be alive and repainting. This is
+   the frame-callback fallback: Hyprland stops sending frame callbacks off the active workspace, so without the poll
+   timeout the process would be stuck in `poll` forever.
+6. With the window on another workspace, close it from the compositor. It must still exit, on the same path.
+7. `WAYLAND_DISPLAY= ./build/dev/bin/rnl_window` prints
+   `[rnl-window] wl_display_connect failed; is WAYLAND_DISPLAY set?` and exits 1.
+8. Optional, for a driver-independent check:
+   `VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json ./build/dev/bin/rnl_window` renders the same
+   picture through lavapipe. That is the path the headless golden-image rig will use.
+
+Not covered by this checklist, because it is not implemented yet: fractional scale, pointer and keyboard input,
+`wp_presentation_feedback` timing, and any measurement of the frame budget.
 
 ## Dependencies, and how they differ from Meta's
 
@@ -199,3 +342,13 @@ and libstdc++: `FOLLY_USE_LIBCPP` (folly would include libc++'s `<__config>`) an
 4. `HERMES_ENABLE_RTTI=ON` is required: llvh otherwise builds without RTTI and every RTTI-enabled consumer of `libhermesvm.so` fails on missing `llvh::cl::*` typeinfo.
 5. `JSIDynamic.cpp`/`jsilib-posix.cpp` must not be appended to Hermes' `jsi` target — its `-fvisibility=hidden` strips their unannotated symbols; they live in the `rnl_jsidynamic` static library instead.
 6. `hello_react` links `atomic`: `std::atomic<std::optional<double>>` in `ReactNativeFeatureFlagsAccessor` needs `__atomic_load_16`/`__atomic_store_16` on x86-64 glibc.
+
+## Window fix ledger (2026-09-01, clang 22, Arch)
+
+1. `add_compile_options(-include cstdint)`, added for hazard 3 above, is now wrapped in `$<COMPILE_LANGUAGE:CXX>`. It applied to the whole directory, and `wayland-scanner`'s generated `xdg-shell-protocol.c` is C, which cannot include a C++ header. The `SHELL:` prefix keeps the two tokens together.
+2. **`SK_RELEASE` must be defined even in the Debug preset.** Skia's public headers change class layout under `SK_DEBUG`, and `SkTypes.h` infers `SK_DEBUG` from the absence of `NDEBUG`. Against a release prebuilt that is an ABI mismatch that links and then misbehaves. `SK_GANESH` and `SK_VULKAN` are set for the same parity reason.
+3. Skia is reached as `#include "include/core/..."` with `third_party/skia` itself on the include path, which is how Skia expects to be included and why the header tree is vendored at its repository root rather than flattened.
+4. `<vulkan/vulkan.h>` is deliberately not used. It only includes `vulkan_wayland.h` behind `VK_USE_PLATFORM_WAYLAND_KHR`, and a `#define` that must precede an include does not survive `clang-format`'s `IncludeBlocks: Regroup`. `vulkan_wayland.h` has no guard of its own, so it is included directly.
+5. Skia's `tools/window/VulkanWindowContext.cpp` is the reference for the frame path but cannot be linked: it includes `src/` private headers that no prebuilt ships. The structure is copied, the code is not.
+6. `VkSurfaceCapabilitiesKHR::currentExtent` is `0xFFFFFFFF` on Wayland, so the swapchain extent comes from the last `xdg_toplevel.configure` clamped to the reported min and max, never from the surface.
+7. `wl_display_dispatch` cannot be used. The Vulkan WSI dispatches the same connection on its own private event queue, so the run loop uses the `wl_display_prepare_read`/`wl_display_read_events` protocol with `poll` in between.

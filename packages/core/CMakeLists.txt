@@ -293,7 +293,8 @@ set_target_properties(rnl_jsidynamic PROPERTIES CXX_STANDARD 20)
 # HTTP and WebSocket clients, and the whole nativemodule tree.
 # ---------------------------------------------------------------------------
 
-add_compile_options(-include cstdint)
+# Scoped to C++ so it does not leak into wayland-scanner's generated C, which cannot include <cstdint>.
+add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:SHELL:-include cstdint>")
 
 add_subdirectory(${REACT_COMMON_DIR}/yoga ReactCommon/yoga)
 add_library(yoga ALIAS yogacore)
@@ -457,3 +458,126 @@ target_link_libraries(hello_react
         ${RNL_REACT_COMMON_TARGETS}
         atomic)
 set_target_properties(hello_react PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+# ---------------------------------------------------------------------------
+# rnl_window
+#
+# The Wayland/Vulkan/Skia host from issue #8. It shares no code with hello_react, which stays
+# headless, and it is skipped rather than fatal when its dependencies are absent, so a machine
+# with neither Skia nor a Wayland development environment still builds the headless target.
+# Configure with -DRNL_ENABLE_WINDOW=OFF to skip it deliberately.
+#
+# Skia is a prebuilt static archive pinned by scripts/skia.lock.json; see docs/cpp-toolchain.md
+# for the acquisition decision and the accepted risk.
+# ---------------------------------------------------------------------------
+
+option(RNL_ENABLE_WINDOW "Build rnl_window, the Wayland/Vulkan/Skia host" ON)
+
+if(RNL_ENABLE_WINDOW)
+    set(RNL_SKIA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/skia)
+    set(RNL_SKIA_LIBRARY ${RNL_SKIA_DIR}/lib/libskia.a)
+    set(RNL_WINDOW_MISSING "")
+
+    find_package(PkgConfig QUIET)
+    find_package(Vulkan QUIET)
+
+    if(PkgConfig_FOUND)
+        pkg_check_modules(RNL_WAYLAND_CLIENT QUIET IMPORTED_TARGET wayland-client)
+        pkg_check_modules(RNL_FREETYPE QUIET IMPORTED_TARGET freetype2)
+        pkg_check_modules(RNL_FONTCONFIG QUIET IMPORTED_TARGET fontconfig)
+        pkg_get_variable(RNL_WAYLAND_SCANNER wayland-scanner wayland_scanner)
+        pkg_get_variable(RNL_WAYLAND_PROTOCOLS_DIR wayland-protocols pkgdatadir)
+    endif()
+
+    set(RNL_XDG_SHELL_XML ${RNL_WAYLAND_PROTOCOLS_DIR}/stable/xdg-shell/xdg-shell.xml)
+
+    if(NOT PkgConfig_FOUND)
+        list(APPEND RNL_WINDOW_MISSING "pkg-config")
+    endif()
+
+    if(NOT RNL_WAYLAND_CLIENT_FOUND)
+        list(APPEND RNL_WINDOW_MISSING "wayland-client")
+    endif()
+
+    if(NOT RNL_FREETYPE_FOUND)
+        list(APPEND RNL_WINDOW_MISSING "freetype2")
+    endif()
+
+    if(NOT RNL_FONTCONFIG_FOUND)
+        list(APPEND RNL_WINDOW_MISSING "fontconfig")
+    endif()
+
+    if(NOT RNL_WAYLAND_SCANNER OR NOT EXISTS "${RNL_WAYLAND_SCANNER}")
+        list(APPEND RNL_WINDOW_MISSING "wayland-scanner")
+    endif()
+
+    if(NOT RNL_WAYLAND_PROTOCOLS_DIR OR NOT EXISTS "${RNL_XDG_SHELL_XML}")
+        list(APPEND RNL_WINDOW_MISSING "wayland-protocols (stable/xdg-shell)")
+    endif()
+
+    if(NOT Vulkan_FOUND)
+        list(APPEND RNL_WINDOW_MISSING "Vulkan loader and headers")
+    endif()
+
+    if(NOT EXISTS "${RNL_SKIA_LIBRARY}")
+        list(APPEND RNL_WINDOW_MISSING "third_party/skia (run: node scripts/vendor-skia.ts)")
+    endif()
+endif()
+
+if(RNL_ENABLE_WINDOW AND RNL_WINDOW_MISSING)
+    string(REPLACE ";" ", " RNL_WINDOW_MISSING_TEXT "${RNL_WINDOW_MISSING}")
+    message(WARNING "rnl_window is disabled, missing: ${RNL_WINDOW_MISSING_TEXT}")
+elseif(RNL_ENABLE_WINDOW)
+    set(RNL_PROTOCOL_DIR ${CMAKE_CURRENT_BINARY_DIR}/wayland-protocols)
+    file(MAKE_DIRECTORY ${RNL_PROTOCOL_DIR})
+
+    add_custom_command(
+        OUTPUT ${RNL_PROTOCOL_DIR}/xdg-shell-client-protocol.h
+        COMMAND ${RNL_WAYLAND_SCANNER} client-header ${RNL_XDG_SHELL_XML}
+                ${RNL_PROTOCOL_DIR}/xdg-shell-client-protocol.h
+        DEPENDS ${RNL_XDG_SHELL_XML}
+        COMMENT "wayland-scanner client-header xdg-shell"
+        VERBATIM)
+
+    add_custom_command(
+        OUTPUT ${RNL_PROTOCOL_DIR}/xdg-shell-protocol.c
+        COMMAND ${RNL_WAYLAND_SCANNER} private-code ${RNL_XDG_SHELL_XML}
+                ${RNL_PROTOCOL_DIR}/xdg-shell-protocol.c
+        DEPENDS ${RNL_XDG_SHELL_XML}
+        COMMENT "wayland-scanner private-code xdg-shell"
+        VERBATIM)
+
+    add_library(rnl_xdg_shell STATIC
+        ${RNL_PROTOCOL_DIR}/xdg-shell-protocol.c
+        ${RNL_PROTOCOL_DIR}/xdg-shell-client-protocol.h)
+    target_include_directories(rnl_xdg_shell PUBLIC ${RNL_PROTOCOL_DIR})
+    target_link_libraries(rnl_xdg_shell PUBLIC PkgConfig::RNL_WAYLAND_CLIENT)
+
+    # SK_RELEASE is not an optimisation switch here: the pinned archive is a release build, and
+    # Skia's public headers change class layout when SK_DEBUG is defined, so a Debug preset would
+    # otherwise compile against a different ABI than the one in libskia.a.
+    add_library(rnl_skia STATIC IMPORTED GLOBAL)
+    set_target_properties(rnl_skia PROPERTIES
+        IMPORTED_LOCATION ${RNL_SKIA_LIBRARY}
+        INTERFACE_INCLUDE_DIRECTORIES ${RNL_SKIA_DIR}
+        INTERFACE_COMPILE_DEFINITIONS "SK_GANESH;SK_VULKAN;SK_RELEASE")
+
+    add_executable(rnl_window
+        src/SkiaVulkanRenderer.cpp
+        src/WaylandWindow.cpp
+        src/WindowMain.cpp)
+    target_compile_options(rnl_window PRIVATE -Wall -Wextra -fexceptions -frtti)
+    target_include_directories(rnl_window PRIVATE src)
+    # libskia.a is a single static archive built against system freetype and fontconfig, so those two
+    # have to follow it on the link line rather than travel as usage requirements of the archive.
+    target_link_libraries(rnl_window
+        PRIVATE
+            rnl_xdg_shell
+            rnl_skia
+            Vulkan::Vulkan
+            PkgConfig::RNL_FREETYPE
+            PkgConfig::RNL_FONTCONFIG
+            Threads::Threads
+            ${CMAKE_DL_LIBS})
+    set_target_properties(rnl_window PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+endif()

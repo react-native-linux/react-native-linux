@@ -16,6 +16,7 @@
     "import/no-nodejs-modules": "off",
     "import/prefer-default-export": "off",
     "node/no-sync": "off",
+    "node/no-top-level-await": "off",
     "oxc/no-async-await": "off",
     "oxc/no-optional-chaining": "off",
     "oxc/no-rest-spread-properties": "off",

@@ -1,0 +1,12 @@
+{
+  "milestone": "m153",
+  "binaries": {
+    "url": "https://github.com/rust-skia/skia-binaries/releases/download/0.153.2/skia-binaries-b0260d93e48425b4b39f-x86_64-unknown-linux-gnu-ganesh-gl-jpegd-jpege-pdf-textlayout-vulkan.tar.gz",
+    "sha256": "918fa4ff44211ea0df405ae1e86cb1fbcd5593a6500f67b12a378690d8b49668"
+  },
+  "headers": {
+    "repository": "https://github.com/rust-skia/skia.git",
+    "commit": "c9c3c5a91e9d74181a2ca34de81d78fef9b4d2b6",
+    "sparsePaths": ["include", "modules/skcms", "modules/skparagraph/include", "modules/skshaper/include", "modules/skunicode/include"]
+  }
+}

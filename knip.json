@@ -3,7 +3,7 @@
   "ignoreWorkspaces": ["packages/core"],
   "workspaces": {
     ".": {
-      "entry": ["vitest.config.ts", "scripts/vendor-react-native.ts"],
+      "entry": ["vitest.config.ts", "scripts/vendor-react-native.ts", "scripts/vendor-skia.ts"],
       "project": ["*.ts", "scripts/**/*.ts"]
     },
     "packages/cli": {
