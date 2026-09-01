@@ -66,12 +66,14 @@ target_link_libraries(fmt INTERFACE fmt::fmt)
 # Boost is used headers-only. React Native's own boost target is an INTERFACE library with
 # nothing but an include directory, and its Gradle task extracts only boost/**/*.hpp, so the
 # whole of ReactCommon and the folly subset build without a single compiled Boost library.
-find_package(Boost CONFIG QUIET)
+find_package(Boost ${RNL_BOOST_VERSION} CONFIG QUIET)
 
 if(TARGET Boost::headers)
+    message(STATUS "Boost: system ${Boost_VERSION}")
     add_library(boost INTERFACE)
     target_link_libraries(boost INTERFACE Boost::headers)
 else()
+    message(STATUS "Boost: FetchContent ${RNL_BOOST_VERSION}")
     # The boostorg/boost release archives are the modular CMake superproject: they carry no
     # merged boost/ include tree, so using them would mean naming every Boost module folly
     # and ReactCommon reach through. The classic source archive is the same artifact React
@@ -92,12 +94,14 @@ target_compile_options(boost INTERFACE -fexceptions -frtti)
 # React Native pins glog 0.3.5, which has no usable standalone CMake build: Gradle generates
 # its config.h and substitutes tokens into the .h.in headers. The fallback therefore builds
 # 0.7.1, whose own CMake defines the target name ReactCommon links, `glog`.
-find_package(glog CONFIG QUIET)
+find_package(glog ${RNL_GLOG_VERSION} CONFIG QUIET)
 
 if(TARGET glog::glog)
+    message(STATUS "glog: system ${glog_VERSION}")
     add_library(glog INTERFACE)
     target_link_libraries(glog INTERFACE glog::glog)
 else()
+    message(STATUS "glog: FetchContent ${RNL_GLOG_VERSION}")
     set(WITH_GFLAGS OFF CACHE BOOL "" FORCE)
     set(WITH_GTEST OFF CACHE BOOL "" FORCE)
     set(WITH_PKGCONFIG OFF CACHE BOOL "" FORCE)

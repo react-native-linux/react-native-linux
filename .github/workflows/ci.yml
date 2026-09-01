@@ -87,3 +87,175 @@ jobs:
 
       - name: Run shellcheck, shfmt, and gitleaks
         run: node scripts/validate-meta.ts
+
+  native:
+    name: native (${{ matrix.preset }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - preset: dev
+            skia: "ON"
+          - preset: asan
+            skia: "OFF"
+          - preset: tsan
+            skia: "OFF"
+    env:
+      CC: clang-18
+      CXX: clang++-18
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      RNL_ENABLE_SKIA: ${{ matrix.skia }}
+      RNL_PRESET: ${{ matrix.preset }}
+      ASAN_OPTIONS: detect_leaks=1:external_symbolizer_path=/usr/lib/llvm-18/bin/llvm-symbolizer
+      UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1:external_symbolizer_path=/usr/lib/llvm-18/bin/llvm-symbolizer
+      TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1:external_symbolizer_path=/usr/lib/llvm-18/bin/llvm-symbolizer
+    steps:
+      # Hermes plus the ReactCommon closure is several GB of objects per preset, and more again under a
+      # sanitizer. The runner image ships toolchains this build never touches; dropping them buys ~25 GB.
+      - name: Free disk space
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      # The sanitizer runtimes map fixed shadow regions and abort when the kernel hands out more ASLR
+      # entropy than they were built for. 28 is the Ubuntu 24.04 default and what compiler-rt 18 expects.
+      - name: Relax ASLR entropy for the sanitizer runtimes
+        run: sudo sysctl -w vm.mmap_rnd_bits=28
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Mirrors the Ubuntu prerequisites in docs/cpp-toolchain.md. libboost-dev is 1.83.0 on 24.04, exactly
+      # RNL_BOOST_VERSION, and ships BoostConfig.cmake, so find_package(Boost CONFIG) hits and the 145 MB
+      # FetchContent fallback never runs. libclang-rt-18-dev carries the ASan/UBSan/TSan runtimes, which
+      # Debian splits out of the clang package.
+      - name: Install build prerequisites
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            ccache \
+            clang-18 \
+            clang-tools-18 \
+            cmake \
+            git \
+            libboost-dev \
+            libclang-rt-18-dev \
+            libdouble-conversion-dev \
+            libfmt-dev \
+            libfontconfig-dev \
+            libfreetype-dev \
+            libgoogle-glog-dev \
+            libicu-dev \
+            llvm-18 \
+            ninja-build \
+            pkg-config \
+            python3
+          clang-18 --version
+          cmake --version
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Cache vendored React Native
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: third_party/react-native
+          key: rnl-vendor-react-native-ubuntu-24.04-${{ hashFiles('scripts/vendor.lock.json', 'scripts/vendor-react-native.ts') }}
+
+      - name: Vendor React Native
+        run: node scripts/vendor-react-native.ts
+
+      - name: Cache vendored Skia
+        if: matrix.skia == 'ON'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: third_party/skia
+          key: rnl-vendor-skia-ubuntu-24.04-${{ hashFiles('scripts/skia.lock.json', 'scripts/vendor-skia.ts') }}
+
+      - name: Vendor Skia
+        if: matrix.skia == 'ON'
+        run: node scripts/vendor-skia.ts
+
+      # Restored on every event, saved only from main: a per-preset ccache is ~2 GB and the repository cache
+      # ceiling is 10 GB, so letting every pull request write its own copy would evict the warm entry the
+      # rest of them read. Pull requests therefore warm from main and never pay the storage.
+      - name: Restore ccache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .ccache
+          key: rnl-ccache-ubuntu-24.04-clang-18-${{ matrix.preset }}-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'packages/core/CMakeLists.txt', 'scripts/vendor.lock.json', 'scripts/skia.lock.json') }}-${{ github.run_id }}
+          restore-keys: |
+            rnl-ccache-ubuntu-24.04-clang-18-${{ matrix.preset }}-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'packages/core/CMakeLists.txt', 'scripts/vendor.lock.json', 'scripts/skia.lock.json') }}-
+            rnl-ccache-ubuntu-24.04-clang-18-${{ matrix.preset }}-
+
+      - name: Configure ccache
+        run: |
+          set -euo pipefail
+          mkdir -p "$CCACHE_DIR"
+          printf 'max_size = 2G\ncompression = true\n' > "$CCACHE_DIR/ccache.conf"
+          ccache --zero-stats
+
+      # RNL_ENABLE_WINDOW is left ON deliberately. Neither wayland-client nor a Vulkan loader is installed,
+      # so configure has to print "rnl_window is disabled, missing: ..." and carry on; a fatal error there is
+      # a regression in the graceful-degradation path.
+      - name: Configure
+        run: cmake --preset "$RNL_PRESET" -DRNL_ENABLE_SKIA="$RNL_ENABLE_SKIA"
+
+      - name: Build hello_react
+        run: cmake --build "build/$RNL_PRESET" --target hello_react
+
+      - name: Report ccache and disk usage
+        if: always()
+        run: |
+          set -euo pipefail
+          ccache --show-stats
+          df -h /
+          du -sh "build/$RNL_PRESET" || true
+
+      - name: Save ccache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .ccache
+          key: rnl-ccache-ubuntu-24.04-clang-18-${{ matrix.preset }}-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'packages/core/CMakeLists.txt', 'scripts/vendor.lock.json', 'scripts/skia.lock.json') }}-${{ github.run_id }}
+
+      - name: Run hello_react acceptance paths
+        run: |
+          set -euo pipefail
+          binary="build/$RNL_PRESET/bin/hello_react"
+
+          "$binary" | tee /tmp/rnl-smoke.log
+          grep -q "react-native-linux: hermes alive" /tmp/rnl-smoke.log
+
+          "$binary" packages/core/test-bundles/hello.js | tee /tmp/rnl-hello.log
+          grep -q "react-native-linux: timer fired" /tmp/rnl-hello.log
+          grep -q "react-native-linux: nested timer fired" /tmp/rnl-hello.log
+          grep -q "react-native-linux: bundle done" /tmp/rnl-hello.log
+
+          status=0
+          "$binary" packages/core/test-bundles/throws.js > /tmp/rnl-throws.log 2>&1 || status=$?
+          cat /tmp/rnl-throws.log
+          test "$status" -eq 1
+          grep -q "\[js-error\] fatal" /tmp/rnl-throws.log
+
+          "$binary" --fabric packages/core/test-bundles/fabric-view.js | tee /tmp/rnl-fabric.log
+          grep -q "fabric-view: committed surface 1" /tmp/rnl-fabric.log
+          grep -q "View #4 frame=(24.00, 24.00, 120.00, 80.00) backgroundColor=rgba(51, 102, 204, 1)" /tmp/rnl-fabric.log
+
+      - name: Compare golden images
+        if: matrix.skia == 'ON'
+        run: pnpm test:golden

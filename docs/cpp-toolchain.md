@@ -246,18 +246,46 @@ directory, so installing system Boost is still the faster path when it is availa
 
 ### Ubuntu (CI)
 
+This is the list `.github/workflows/ci.yml` installs, and the only Ubuntu configuration this project claims to
+support:
+
 ```bash
-sudo apt-get install -y build-essential git cmake ninja-build ccache python3 \
-  libboost-dev libdouble-conversion-dev libfmt-dev libgoogle-glog-dev libicu-dev
+sudo apt-get install -y build-essential git cmake ninja-build ccache python3 pkg-config \
+  clang-18 clang-tools-18 libclang-rt-18-dev llvm-18 \
+  libboost-dev libdouble-conversion-dev libfmt-dev libgoogle-glog-dev libicu-dev \
+  libfreetype-dev libfontconfig-dev
 ```
 
-Two version caveats on Ubuntu 24.04, both understood and accepted:
+`pkg-config`, `libfreetype-dev` and `libfontconfig-dev` are what `RNL_ENABLE_SKIA` probes for; without them
+configure disables the painter and `hello_react --golden`, and the golden-image rig has nothing to run.
+
+Version caveats on Ubuntu 24.04, all understood and accepted:
 
 - `libfmt-dev` is 10.x while React Native pins fmt 12.1.0. folly's subset only needs fmt >= 8.
 - `cmake` is 3.28.3, exactly the minimum this build declares.
+- `libboost-dev` is 1.83.0, exactly `RNL_BOOST_VERSION`, and it ships
+  `/usr/lib/x86_64-linux-gnu/cmake/Boost-1.83.0/BoostConfig.cmake`, so `find_package(Boost CONFIG)` resolves
+  `Boost::headers` and the 145 MB source fallback never runs. The two paths deliver the same Boost, so installing
+  it is a pure saving rather than a divergence.
+- `libgoogle-glog-dev` is 0.6.0, not the 0.7.1 the fallback builds. It ships its own CMake package files defining
+  `glog::glog`, and it pulls `libgflags-dev` and `libunwind-dev`, which its config module looks for. Only the
+  logging macros ReactCommon uses are involved, and those are unchanged between 0.6 and 0.7.
 
 `fast_float` has no Ubuntu package, so it is fetched at React Native's pinned version rather than split across
 two acquisition paths.
+
+The compiler is `clang-18`, Ubuntu 24.04's default clang, and not the clang 22 the fix ledgers below were written
+against. Newer clang is stricter than older clang, not laxer, so the ledger entries are a superset of what 18
+needs; the libstdc++ include-hygiene workarounds are keyed to the standard library, which is libstdc++ 13 here.
+Two packages exist only because Debian splits them out of `clang`: `libclang-rt-18-dev` carries the ASan, UBSan
+and TSan runtimes, without which the sanitizer presets fail at link, and `clang-tools-18` carries
+`clang-scan-deps`, which CMake demands if any subproject resets `CMP0155` to `OLD` and re-enables C++20 module
+scanning. If clang 18 ever proves to be the problem, the documented escape is to pin a specific `apt.llvm.org`
+toolchain rather than to float on whatever `clang` resolves to.
+
+gcc remains the documented-but-untested alternative. CI builds one compiler, clang, because it is the one the
+local development machine, Hermes' own Linux CI, and Meta's `react-native-fantom` host all use; a gcc column
+would double the wall-clock cost of the matrix to test a path nothing else exercises.
 
 ## Commands
 
@@ -452,6 +480,119 @@ silently creating a baseline.
 The first fixture is `packages/core/test-bundles/fabric-view.js` to `packages/core/goldens/fabric-view.png`: the
 dark `#14161A` background with one flat blue `#3366CC` rectangle, 120x80, its top-left corner at (24, 24) — the
 frame `hello_react --fabric` prints for `View #4`, rasterised instead of dumped.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every pull request and on every push to `main`, under
+`permissions: contents: read` and a `cancel-in-progress` concurrency group. Every action is pinned by commit SHA
+with the version in a trailing comment; Renovate keeps those SHAs fresh through `helpers:pinGitHubActionDigests`.
+
+| Job | Runner | Timeout | What it proves |
+| --- | --- | --- | --- |
+| `validate` | `ubuntu-24.04` | 15 min | `pnpm validate`: format, types, lint, deadcode, duplication, Vitest with its 100% coverage thresholds, meta files. |
+| `meta` | `ubuntu-24.04` | 10 min | actionlint, typos, shellcheck, shfmt, gitleaks. |
+| `native (dev)` | `ubuntu-24.04` | 120 min | The whole C++ toolchain: vendor, configure, build, the four `hello_react` acceptance paths, and the golden-image comparison. |
+| `native (asan)` | `ubuntu-24.04` | 120 min | The same build and the same four paths under ASan + UBSan. |
+| `native (tsan)` | `ubuntu-24.04` | 120 min | The same build and the same four paths under TSan. |
+
+The three `native` entries are one matrix job with `fail-fast: false`, so a sanitizer failure never hides the
+headless result. They are ordinary pull-request jobs rather than a push-to-main or label-gated workflow: they run
+on separate runners, so the matrix costs wall clock equal to its slowest entry rather than the sum, and issue #4
+requires the sanitizers to be merge-blocking. If the wall clock ever stops being tolerable, the exit is to move
+the two sanitizer entries into their own workflow on `push: main` plus a `pull_request` label opt-in, and to say
+so here.
+
+### What the native job actually does
+
+Vendoring is the two pinned scripts, unchanged from local use: `node scripts/vendor-react-native.ts` always, and
+`node scripts/vendor-skia.ts` only for the `dev` entry. The sanitizer entries configure with
+`-DRNL_ENABLE_SKIA=OFF`, which drops the painter, the window and the golden path in one flag. That is deliberate:
+the pinned Skia archive is an uninstrumented release build, so linking it into a sanitized binary buys shadow-memory
+noise and no coverage.
+
+`RNL_ENABLE_WINDOW` is left at its default `ON` even though no runner has Wayland or a Vulkan loader. Configure has
+to print `rnl_window is disabled, missing: ...` and continue; CI is where that graceful-degradation path is proved,
+so turning the option off explicitly would delete the test.
+
+Only `--target hello_react` is built. Building `all` would additionally build Hermes' CLI tool suite — `hermes`,
+`hvm`, `hbcdump` and the rest — none of which anything here runs. `hermesc` is still built, because
+`InternalBytecode` depends on it.
+
+The acceptance step is the documented checklist turned into assertions, and it runs identically in all three
+entries:
+
+1. `hello_react` with no argument prints `react-native-linux: hermes alive`.
+2. `hello_react packages/core/test-bundles/hello.js` exits 0 and prints the timer, nested-timer and done lines, so
+   the `PlatformTimerRegistry` feeding `TimerManager` is proved, not just bundle evaluation.
+3. `hello_react packages/core/test-bundles/throws.js` exits **1** and prints a `[js-error] fatal` block.
+4. `hello_react --fabric packages/core/test-bundles/fabric-view.js` prints the committed-surface line and the exact
+   `View #4 frame=(24.00, 24.00, 120.00, 80.00) backgroundColor=rgba(51, 102, 204, 1)` line, so the Yoga output and
+   the flattened-parent origin are pinned, not merely the fact that a commit happened.
+
+`pnpm test:golden` then runs on the `dev` entry only. It is not a smoke test: `golden.spec.ts` skips itself when the
+binary is missing, so the assertion that it does *not* skip is what proves the Skia half configured at all, and the
+comparison is exact-equality against the checked-in PNG.
+
+### Sanitizer policy
+
+The sanitizer options are set as job environment and are deliberately loud: `detect_leaks=1` for ASan,
+`halt_on_error=1` with `print_stacktrace=1` for UBSan, `halt_on_error=1` for TSan, each pointed at
+`/usr/lib/llvm-18/bin/llvm-symbolizer` so frames are symbolized. There is no suppression file anywhere in this
+repository, and per AGENTS.md there must never be one without an issue link in it. A leak or a race found by these
+jobs is a bug to fix or an issue to file, never a line to add to a suppression list.
+
+`vm.mmap_rnd_bits` is lowered to 28 before anything else runs. The sanitizer runtimes map fixed shadow regions and
+abort with `unexpected memory mapping` when the kernel hands out more ASLR entropy than compiler-rt was built for;
+28 is Ubuntu 24.04's own default, so the step is a no-op on a healthy runner and insurance on a changed one.
+
+### Caches, and what is deliberately not cached
+
+| Cache | Path | Key | Size |
+| --- | --- | --- | --- |
+| Vendored React Native | `third_party/react-native` | `rnl-vendor-react-native-ubuntu-24.04-<hash of scripts/vendor.lock.json + scripts/vendor-react-native.ts>` | ~18 MB |
+| Vendored Skia | `third_party/skia` | `rnl-vendor-skia-ubuntu-24.04-<hash of scripts/skia.lock.json + scripts/vendor-skia.ts>` | ~93 MB |
+| ccache | `.ccache` | `rnl-ccache-ubuntu-24.04-clang-18-<preset>-<hash of the CMake files and both lock files>-<run id>` | 2 GB ceiling per preset |
+| pnpm store | handled by `actions/setup-node` | `pnpm-lock.yaml` | small |
+
+The two vendor caches are keyed on the lock file **and** the script that reads it, because a change to either can
+change the tree. Both keys are content-deterministic, so the plain `actions/cache` action is used and a miss saves
+automatically; both vendor scripts are no-ops on a hit, since they compare the restored `.vendor-stamp.json`
+against the lock.
+
+ccache is split: `actions/cache/restore` on every event, `actions/cache/save` only on a push to `main`. A per-preset
+ccache is up to 2 GB and the repository-wide GitHub cache ceiling is 10 GB, so letting every pull request save its
+own copy would evict the warm entry every other pull request reads. Pull requests therefore warm from `main` and
+never pay the storage. The primary key carries the run id so it never hits, which is what makes the save
+unconditional on `main`; the two `restore-keys` prefixes fall back first to the same toolchain inputs and then to
+the preset alone. `max_size = 2G` and `compression = true` are written into `ccache.conf` before every build, so a
+restored config cannot drift.
+
+`build/<preset>/_deps` is **not** cached, and that is a decision rather than an omission. Installing `libboost-dev`
+and `libgoogle-glog-dev` removes the two expensive FetchContent entries outright — Boost alone was a 145 MB download
+expanding to 888 MB — and what remains is a shallow Hermes clone plus the folly and fast_float tarballs, roughly two
+minutes of network. Caching that would cost ~300 MB of the 10 GB ceiling per preset and compete directly with
+ccache, which is worth an order of magnitude more, and FetchContent's stamp reuse across a restored tree is fragile
+in a way ccache's is not. Compiling those dependencies, which is the part that actually costs time, is covered by
+ccache.
+
+Cold start works with every cache empty; that is the 120-minute budget. A cold `native` entry is roughly 60–90
+minutes, almost all of it Hermes plus the ReactCommon closure. With a warm ccache from `main` and both vendor trees
+restored, expect 10–20 minutes, dominated by linking and by apt. Any pull request that edits `CMakePresets.json`,
+either `CMakeLists.txt` or either lock file falls back to the preset-only restore key and pays a partial recompile;
+one that changes the React Native pin pays a full one.
+
+Disk is managed, not assumed. `build/dev` is about 4.5 GB and a sanitized build is larger, so the job first removes
+the runner's unused Android, GHC and CodeQL toolchains — about 25 GB — and reports `df -h /` before the build and
+`df -h /` plus `du -sh build/<preset>` after it, so a slow slide toward exhaustion shows up in the log before it
+shows up as a mystery failure.
+
+### Not wired up yet
+
+Issue #4 also asks for `llvm-cov` C++ coverage with a 100% gate. That is blocked, not skipped: there is no
+GoogleTest target for `packages/core` yet, because Hermes' bundled llvh ships its own googletest and collides with
+an upstream one in the same configure — hazard 3 above. Coverage over zero C++ tests is not a gate. The TypeScript
+half of that acceptance criterion is already enforced, by `pnpm test` inside `pnpm validate`. The gcc column of the
+matrix, and the lavapipe window golden, are the other two deferred pieces.
 
 ## Dependencies, and how they differ from Meta's
 
