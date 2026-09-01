@@ -62,6 +62,20 @@ Use the `rn-reference` skill for how to mine these efficiently.
 
 See the `testing-gospel` skill for the harness architecture and commands.
 
+## Toolchain
+
+One entry point mirrors CI exactly: `yarn validate` (format check, typecheck, lint, deadcode, duplication, meta-file checks). Agents run it before finishing any change; if it passes locally it passes in CI. Individual commands:
+
+- `yarn format` / `yarn format:check` — **Biome** (also the TS/JS linter via `yarn lint`; includes the React-hooks rules; no ESLint/Prettier).
+- `yarn ts` — `tsc --noEmit`, maximum strictness: `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `isolatedModules`.
+- `yarn deadcode` — **knip**: unused files, exports, and dependencies across the workspace.
+- `yarn cpd` — **jscpd** duplication check.
+- C++: **clang-format** and **clang-tidy** (curated set: `bugprone-*`, `performance-*`, `modernize-*`, selected `cppcoreguidelines-*`) run through the CMake presets. `CMAKE_EXPORT_COMPILE_COMMANDS=ON` is always set so clangd works from a fresh checkout. A `NOLINT` needs a stated reason and is reviewed like an API change.
+- Meta-files: **actionlint** (workflows), **shellcheck** + **shfmt** (scripts), **typos** (spelling), **gitleaks** (secrets); **lychee** link-checks docs weekly in CI.
+- **Renovate** keeps pinned dependencies fresh; PR titles are gated on Conventional Commits.
+
+Deliberately excluded until proven necessary (Prime Directive): cppcheck, include-what-you-use, pre-commit hook frameworks, markdownlint.
+
 ## Git Commits And Pull Requests
 
 Conventional Commits for commit messages and PR titles: `type(scope): short description`. Scopes: `core`, `cli`, `harness`, `modules`; omit for repo-wide docs and tooling. Types: `feat`, `fix`, `refactor`, `chore`, `docs`, `ci`, `test`, `perf`, `build`.
