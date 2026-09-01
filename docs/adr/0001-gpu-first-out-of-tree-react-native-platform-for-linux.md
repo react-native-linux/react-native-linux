@@ -11,8 +11,8 @@ React Native has first-class mobile targets and Microsoft-maintained desktop tar
 
 The portability of the React Native core to Linux-family systems is proven, not speculative:
 
-- **microsoft/react-native-skia** demonstrated RN rendering through Skia on Linux and embedded targets.
-- **Amazon Vega (Kepler)** ships React Native as the app platform of a Linux-based OS in production devices.
+- **react-native-skia** (`react-native-skia/react-native-skia`, started by Kudo Chien, NAGRA-funded, dormant since 2023) demonstrated RN rendering through Skia on Linux (X11/Wayland/DirectFB) and embedded targets.
+- **Amazon Vega (Kepler)** ships React Native (ReactCommon, Yoga, Hermes, Fabric) as the app platform of a Linux-based OS in production retail devices; its rendering layer is undisclosed.
 - **react-native-harmony** shows a vendor building a complete out-of-tree New Architecture platform.
 - **react-native-windows** maintains a reusable cross-platform C++ core and the out-of-tree platform tooling patterns we can model.
 
@@ -60,7 +60,7 @@ Rejected: licensing complexity and the same widget-tree ownership problem as GTK
 Positive:
 
 - Full ownership of the frame loop makes the 120 fps target an engineering task, not a negotiation with a toolkit.
-- The Skia + RN-core combination follows the architecture production systems (Vega, rn-skia) already validated.
+- RN-core-on-Linux is validated at retail scale (Vega), and RN-through-Skia-on-Linux reached a working proof of concept (react-native-skia); the combination is proven feasible, though no production system is publicly confirmed to pair them.
 - Renderer-first scope gives a demonstrable vertical slice early: window → View → the six components → 120 fps proof.
 
 Negative / accepted risks:

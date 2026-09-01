@@ -27,7 +27,7 @@ Never design platform plumbing from scratch without first checking how the maint
 
 - **react-native-windows** (microsoft/react-native-windows) — the structural model: out-of-tree platform layout, `vnext/` C++ Fabric composition renderer, platform overrides, codegen wiring, CI shape.
 - **react-native-macos** (microsoft/react-native-macos) — fork-based platform maintenance, upstream-merge cadence, desktop interaction patterns (pointer, keyboard, menus).
-- **react-native-harmony** and **microsoft/react-native-skia** — out-of-tree New Architecture registration and Skia-based RN rendering respectively.
+- **react-native-harmony** and **react-native-skia/react-native-skia** (Kudo/NAGRA, dormant) — out-of-tree New Architecture registration and Skia-based RN rendering respectively.
 
 Use the `rn-reference` skill for how to mine these efficiently.
 
