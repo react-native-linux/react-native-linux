@@ -7,6 +7,12 @@
   "headers": {
     "repository": "https://github.com/rust-skia/skia.git",
     "commit": "c9c3c5a91e9d74181a2ca34de81d78fef9b4d2b6",
-    "sparsePaths": ["include", "modules/skcms", "modules/skparagraph/include", "modules/skshaper/include", "modules/skunicode/include"]
+    "sparsePaths": [
+      "include",
+      "modules/skcms",
+      "modules/skparagraph/include",
+      "modules/skshaper/include",
+      "modules/skunicode/include"
+    ]
   }
 }
