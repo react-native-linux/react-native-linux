@@ -7,7 +7,6 @@
 
 cmake_minimum_required(VERSION 3.28)
 
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 include(FetchContent)
@@ -19,8 +18,12 @@ if(NOT EXISTS ${RNL_VENDOR_DIR}/ReactCommon)
 endif()
 
 set(REACT_COMMON_DIR ${RNL_VENDOR_DIR}/ReactCommon)
-set(REACT_CXX_PLATFORM_DIR ${RNL_VENDOR_DIR}/ReactCxxPlatform)
+# ReactCommon's jsinspector CMakeLists include SoMerging-utils.cmake from here; the function
+# it defines is a no-op off Android, but the include itself is unconditional.
 set(REACT_ANDROID_DIR ${RNL_VENDOR_DIR}/ReactAndroid)
+
+include(${REACT_COMMON_DIR}/cmake-utils/react-native-flags.cmake)
+include(${REACT_COMMON_DIR}/cmake-utils/internal/react-native-platform-selector.cmake)
 
 find_program(RNL_CCACHE ccache)
 
@@ -40,16 +43,17 @@ endif()
 
 set(RNL_FOLLY_VERSION 2024.11.18.00)
 set(RNL_FAST_FLOAT_VERSION 8.0.0)
+set(RNL_BOOST_VERSION 1.83.0)
+set(RNL_GLOG_VERSION 0.7.1)
 
-find_package(Boost CONFIG REQUIRED)
+# Everything fetched here is static; Hermes re-enables shared libraries for jsi in its own
+# scope. Declaring it up front also stops glog's own option() from writing BUILD_SHARED_LIBS
+# into the cache.
+set(BUILD_SHARED_LIBS OFF)
+
 find_package(double-conversion CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
-find_package(glog CONFIG REQUIRED)
 find_package(Threads REQUIRED)
-
-add_library(boost INTERFACE)
-target_link_libraries(boost INTERFACE Boost::headers)
-target_compile_options(boost INTERFACE -fexceptions -frtti)
 
 add_library(double-conversion INTERFACE)
 target_link_libraries(double-conversion INTERFACE double-conversion::double-conversion)
@@ -57,8 +61,51 @@ target_link_libraries(double-conversion INTERFACE double-conversion::double-conv
 add_library(fmt INTERFACE)
 target_link_libraries(fmt INTERFACE fmt::fmt)
 
-add_library(glog INTERFACE)
-target_link_libraries(glog INTERFACE glog::glog)
+# Boost is used headers-only. React Native's own boost target is an INTERFACE library with
+# nothing but an include directory, and its Gradle task extracts only boost/**/*.hpp, so the
+# whole of ReactCommon and the folly subset build without a single compiled Boost library.
+find_package(Boost CONFIG QUIET)
+
+if(TARGET Boost::headers)
+    add_library(boost INTERFACE)
+    target_link_libraries(boost INTERFACE Boost::headers)
+else()
+    # The boostorg/boost release archives are the modular CMake superproject: they carry no
+    # merged boost/ include tree, so using them would mean naming every Boost module folly
+    # and ReactCommon reach through. The classic source archive is the same artifact React
+    # Native downloads, and needs no configure step at all.
+    string(REPLACE "." "_" RNL_BOOST_ARCHIVE_VERSION ${RNL_BOOST_VERSION})
+    FetchContent_Declare(boost
+        URL https://archives.boost.io/release/${RNL_BOOST_VERSION}/source/boost_${RNL_BOOST_ARCHIVE_VERSION}.tar.gz
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+        SOURCE_SUBDIR rnl-do-not-configure)
+    FetchContent_MakeAvailable(boost)
+
+    add_library(boost INTERFACE)
+    target_include_directories(boost INTERFACE ${boost_SOURCE_DIR})
+endif()
+
+target_compile_options(boost INTERFACE -fexceptions -frtti)
+
+# React Native pins glog 0.3.5, which has no usable standalone CMake build: Gradle generates
+# its config.h and substitutes tokens into the .h.in headers. The fallback therefore builds
+# 0.7.1, whose own CMake defines the target name ReactCommon links, `glog`.
+find_package(glog CONFIG QUIET)
+
+if(TARGET glog::glog)
+    add_library(glog INTERFACE)
+    target_link_libraries(glog INTERFACE glog::glog)
+else()
+    set(WITH_GFLAGS OFF CACHE BOOL "" FORCE)
+    set(WITH_GTEST OFF CACHE BOOL "" FORCE)
+    set(WITH_PKGCONFIG OFF CACHE BOOL "" FORCE)
+    set(WITH_UNWIND none CACHE STRING "" FORCE)
+    FetchContent_Declare(glog
+        GIT_REPOSITORY https://github.com/google/glog.git
+        GIT_TAG v${RNL_GLOG_VERSION}
+        GIT_SHALLOW TRUE)
+    FetchContent_MakeAvailable(glog)
+endif()
 
 # fbgloginit is an Android-only shim; ReactCommon links the target unconditionally.
 add_library(glog_init INTERFACE)
@@ -70,6 +117,7 @@ FetchContent_Declare(fast_float
 FetchContent_Declare(folly
     URL https://github.com/facebook/folly/archive/refs/tags/v${RNL_FOLLY_VERSION}.tar.gz
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    PATCH_COMMAND sed -i "s|__has_include(<demangle.h>)|0|g" folly/Demangle.cpp
     SOURCE_SUBDIR rnl-do-not-configure)
 FetchContent_MakeAvailable(fast_float folly)
 
@@ -153,9 +201,9 @@ set_target_properties(folly_runtime PROPERTIES CXX_STANDARD 20)
 # ---------------------------------------------------------------------------
 
 file(READ ${RNL_VENDOR_DIR}/sdks/hermes-engine/version.properties RNL_HERMES_VERSION_PROPERTIES)
-string(REGEX MATCH "HERMES_VERSION_NAME=([0-9A-Za-z.\\-]+)" RNL_HERMES_VERSION_MATCH "${RNL_HERMES_VERSION_PROPERTIES}")
+string(REGEX MATCH "HERMES_VERSION_NAME=([0-9A-Za-z.]+)" RNL_HERMES_VERSION_MATCH "${RNL_HERMES_VERSION_PROPERTIES}")
 
-if(NOT CMAKE_MATCH_1)
+if(NOT RNL_HERMES_VERSION_MATCH)
     message(FATAL_ERROR "Could not read HERMES_VERSION_NAME from sdks/hermes-engine/version.properties")
 endif()
 
@@ -168,6 +216,7 @@ set(JSI_DIR ${REACT_COMMON_DIR}/jsi CACHE PATH "" FORCE)
 set(HERMES_BUILD_APPLE_FRAMEWORK OFF CACHE BOOL "" FORCE)
 set(HERMES_BUILD_SHARED_JSI ON CACHE BOOL "" FORCE)
 set(HERMES_ENABLE_DEBUGGER OFF CACHE BOOL "" FORCE)
+set(HERMES_ENABLE_RTTI ON CACHE BOOL "" FORCE)
 set(HERMES_ENABLE_INTL OFF CACHE BOOL "" FORCE)
 set(HERMES_ENABLE_TEST_SUITE OFF CACHE BOOL "" FORCE)
 set(HERMES_ENABLE_TOOLS ON CACHE BOOL "" FORCE)
@@ -193,13 +242,20 @@ if(NOT TARGET hermesvm)
     message(FATAL_ERROR "Hermes did not define the hermesvm target; check the pinned Hermes version")
 endif()
 
-# Hermes only compiles jsi.cpp. ReactCommon additionally needs the folly<->jsi bridge and
-# the POSIX jsilib, which live in the same React Native directory.
-target_sources(jsi PRIVATE
-    ${REACT_COMMON_DIR}/jsi/jsi/JSIDynamic.cpp
-    ${REACT_COMMON_DIR}/jsi/jsi/jsilib-posix.cpp)
+# Hermes only compiles jsi.cpp, and it builds libjsi.so with -fvisibility=hidden, which
+# strips the unannotated JSIDynamic/jsilib symbols. ReactCommon additionally needs the
+# folly<->jsi bridge and the POSIX jsilib, so they get their own static library with
+# default visibility instead of being appended to Hermes' target.
 target_link_libraries(jsi PUBLIC folly_runtime glog)
 set_target_properties(jsi PROPERTIES CXX_STANDARD 20)
+
+add_library(rnl_jsidynamic STATIC
+    ${REACT_COMMON_DIR}/jsi/jsi/JSIDynamic.cpp
+    ${REACT_COMMON_DIR}/jsi/jsi/jsilib-posix.cpp)
+target_include_directories(rnl_jsidynamic PUBLIC ${REACT_COMMON_DIR}/jsi)
+target_compile_options(rnl_jsidynamic PRIVATE -fexceptions -frtti)
+target_link_libraries(rnl_jsidynamic PUBLIC jsi folly_runtime glog)
+set_target_properties(rnl_jsidynamic PROPERTIES CXX_STANDARD 20)
 
 # ---------------------------------------------------------------------------
 # ReactCommon
@@ -208,6 +264,8 @@ set_target_properties(jsi PROPERTIES CXX_STANDARD 20)
 # subdirectories (react/runtime, cxxreact, the nativemodule and component trees, and all
 # of ReactCxxPlatform) land with the ReactInstance bring-up in issue #9.
 # ---------------------------------------------------------------------------
+
+add_compile_options(-include cstdint)
 
 add_subdirectory(${REACT_COMMON_DIR}/yoga ReactCommon/yoga)
 add_library(yoga ALIAS yogacore)
@@ -264,7 +322,7 @@ set(RNL_REACT_COMMON_TARGETS
     yogacore)
 
 # ReactCommon compiles with -Werror against the compilers Meta ships. Downgrade it rather
-# than carry a patch per distribution compiler; our own sources keep -Werror below.
+# than carry a patch for every distribution compiler that adds a new warning.
 foreach(rnl_target IN LISTS RNL_REACT_COMMON_TARGETS)
     get_target_property(rnl_target_type ${rnl_target} TYPE)
 
@@ -285,6 +343,8 @@ target_link_libraries(hello_react
     PRIVATE
         hermesvm
         jsi
+        rnl_jsidynamic
         folly_runtime
-        ${RNL_REACT_COMMON_TARGETS})
+        ${RNL_REACT_COMMON_TARGETS}
+        atomic)
 set_target_properties(hello_react PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)

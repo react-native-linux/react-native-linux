@@ -1,0 +1,12 @@
+{
+  "name": "@react-native-linux/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "cmake --build ../../build/dev",
+    "configure": "cmake -S ../.. --preset dev",
+    "run:hello": "../../build/dev/bin/hello_react",
+    "vendor": "node ../../scripts/vendor-react-native.ts"
+  }
+}

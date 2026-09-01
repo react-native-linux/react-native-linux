@@ -1,6 +1,7 @@
 node_modules/
 coverage/
 build/
+third_party/
 *.tsbuildinfo
 compile_commands.json
 .DS_Store

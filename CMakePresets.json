@@ -28,7 +28,7 @@
     },
     {
       "name": "release",
-      "displayName": "Optimised build with debug info",
+      "displayName": "Optimised build",
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"

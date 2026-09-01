@@ -1,9 +1,10 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignoreWorkspaces": ["packages/core"],
   "workspaces": {
     ".": {
-      "entry": ["vitest.config.ts"],
-      "project": ["*.ts"]
+      "entry": ["vitest.config.ts", "scripts/vendor-react-native.ts"],
+      "project": ["*.ts", "scripts/**/*.ts"]
     },
     "packages/cli": {
       "entry": ["src/platform-config.ts"],

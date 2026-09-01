@@ -29,5 +29,5 @@
       }
     }
   ],
-  "ignorePatterns": ["coverage"]
+  "ignorePatterns": ["build", "coverage", "third_party"]
 }
