@@ -162,6 +162,7 @@ set(RNL_FOLLY_SOURCES
     folly/lang/SafeAssert.cpp
     folly/lang/ToAscii.cpp
     folly/memory/SanitizeAddress.cpp
+    folly/memory/SanitizeLeak.cpp
     folly/memory/detail/MallocImpl.cpp
     folly/net/NetOps.cpp
     folly/portability/SysUio.cpp
