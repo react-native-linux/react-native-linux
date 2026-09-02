@@ -3,9 +3,6 @@
 #include <gtest/gtest.h>
 
 #include <react/renderer/mounting/MountingTransaction.h>
-#include <react/renderer/mounting/ShadowView.h>
-#include <react/renderer/mounting/ShadowViewMutation.h>
-#include <react/renderer/telemetry/TransactionTelemetry.h>
 
 namespace {
 
