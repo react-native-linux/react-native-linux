@@ -1,0 +1,525 @@
+{
+  "labels": [
+    {
+      "name": "area:renderer",
+      "color": "1D76DB",
+      "description": "Skia/Vulkan rendering, scene, damage tracking"
+    },
+    {
+      "name": "area:core",
+      "color": "5319E7",
+      "description": "Platform core: window, Hermes, Fabric, threading"
+    },
+    {
+      "name": "area:input",
+      "color": "D93F0B",
+      "description": "Pointer, keyboard, and input pipeline"
+    },
+    {
+      "name": "area:text",
+      "color": "B60205",
+      "description": "Text shaping, layout, and editing"
+    },
+    {
+      "name": "area:testing",
+      "color": "0052CC",
+      "description": "Unit, golden-image, e2e, and perf test harness"
+    },
+    {
+      "name": "area:infra",
+      "color": "0E8A16",
+      "description": "Build/CI/tooling infrastructure"
+    },
+    {
+      "name": "area:cli",
+      "color": "FBCA04",
+      "description": "CLI, codegen, autolinking, Metro platform registration"
+    },
+    {
+      "name": "area:modules",
+      "color": "C2E0C6",
+      "description": "TurboModules and native module implementations"
+    },
+    {
+      "name": "area:a11y",
+      "color": "F9D0C4",
+      "description": "Accessibility: IME and AT-SPI"
+    },
+    {
+      "name": "area:packaging",
+      "color": "6F4E37",
+      "description": "Distribution packaging: AUR, omarchy-pkgs"
+    },
+    {
+      "name": "kind:bug",
+      "color": "D73A4A",
+      "description": "Something implemented behaves incorrectly"
+    },
+    {
+      "name": "kind:feat",
+      "color": "84B6EB",
+      "description": "New platform capability that does not exist yet"
+    },
+    {
+      "name": "kind:test",
+      "color": "C5DEF5",
+      "description": "Adds or hardens a test layer without changing behaviour"
+    },
+    {
+      "name": "kind:parity",
+      "color": "7057FF",
+      "description": "Nothing is broken; we do not yet match iOS/Android/desktop reference behaviour"
+    },
+    {
+      "name": "kind:perf",
+      "color": "FEF2C0",
+      "description": "Frame budget, allocation, or throughput work with a measured gate"
+    },
+    {
+      "name": "kind:regression",
+      "color": "E99695",
+      "description": "Behaviour that used to work and stopped; always ships with the test that would have caught it"
+    },
+    {
+      "name": "kind:docs",
+      "color": "E8E8E8",
+      "description": "Documentation, ADRs, and research records"
+    },
+    {
+      "name": "priority:P0",
+      "color": "990000",
+      "description": "Rocket-blocker: the milestone or the flagship app cannot ship without it"
+    },
+    {
+      "name": "priority:P1",
+      "color": "E36209",
+      "description": "Important: schedule inside its milestone"
+    },
+    {
+      "name": "priority:P2",
+      "color": "DBAB09",
+      "description": "Wanted: do it when the surrounding area is open"
+    },
+    {
+      "name": "priority:P3",
+      "color": "CCCCCC",
+      "description": "Nice to have; no milestone depends on it"
+    },
+    {
+      "name": "platform-parity:macos",
+      "color": "8DB3E2",
+      "description": "react-native-macos behaviour is the oracle for this issue"
+    },
+    {
+      "name": "platform-parity:windows",
+      "color": "8DB3E2",
+      "description": "react-native-windows behaviour is the oracle for this issue"
+    },
+    {
+      "name": "platform-parity:ios",
+      "color": "8DB3E2",
+      "description": "iOS behaviour is the oracle for this issue"
+    },
+    {
+      "name": "platform-parity:android",
+      "color": "8DB3E2",
+      "description": "Android behaviour is the oracle for this issue"
+    },
+    {
+      "name": "platform-parity:host-linux",
+      "color": "8DB3E2",
+      "description": "Native Linux desktop convention is the oracle, not another React Native platform"
+    },
+    {
+      "name": "origin:rn-macos",
+      "color": "6F42C1",
+      "description": "Derived from the microsoft/react-native-macos issue history"
+    },
+    {
+      "name": "origin:rn-windows",
+      "color": "6F42C1",
+      "description": "Derived from the microsoft/react-native-windows issue history"
+    },
+    {
+      "name": "origin:flagship",
+      "color": "6F42C1",
+      "description": "Raised by running the flagship consumer application, not by a research study"
+    },
+    {
+      "name": "needs:triage",
+      "color": "EDEDED",
+      "description": "Unreviewed; area, milestone, or priority still missing"
+    },
+    {
+      "name": "needs:decision",
+      "color": "E4E669",
+      "description": "Blocked on an architectural decision, possibly an ADR"
+    },
+    {
+      "name": "needs:repro",
+      "color": "D876E3",
+      "description": "Blocked on a minimal reproduction or a failing test"
+    }
+  ],
+  "issues": [
+    {
+      "title": "feat(input): pointerEvents semantics — auto, none, box-none, box-only, and the rounded-corner hit shape",
+      "milestone": "M1",
+      "labels": [
+        "area:input",
+        "area:renderer",
+        "kind:feat",
+        "kind:parity",
+        "platform-parity:ios",
+        "origin:rn-windows",
+        "priority:P1"
+      ],
+      "priority": "P1",
+      "body": "## Context\n\n`react-native-windows` spent a decade discovering that `pointerEvents` is not a boolean and that the hit shape is\nnot the layout rect:\n\n- [#8496](https://github.com/microsoft/react-native-windows/issues/8496) missing behaviours for the `pointerEvents` prop.\n- [#8531](https://github.com/microsoft/react-native-windows/issues/8531) views with `borderRadius` ignore `pointerEvents=\"none\"` — the hit path used a different\n  geometry from the paint path the moment corners became round.\n- [#10493](https://github.com/microsoft/react-native-windows/issues/10493) changing `pointerEvents` from `none` back to `box-none` never restored hit testing; the\n  prop was applied once at mount and never invalidated.\n- [#9767](https://github.com/microsoft/react-native-windows/issues/9767) applying a `borderRadius` to a view broke `zIndex`.\n- [#16316](https://github.com/microsoft/react-native-windows/issues/16316) a core `Switch` renders but never fires `onValueChange` on a mouse click.\n\nOur side: `docs/cpp-toolchain.md` records that hit testing is upstream's `PointerEventsProcessor` while the clip\nstack, the transform composition and the rounded border box are ours in `RetainedScene`. Nothing today asserts\nthat `pointerEvents` reaches the processor at all, and nothing asserts that a rounded corner is transparent to\nthe pointer.\n\n## What to verify\n\n1. All four values (`auto`, `none`, `box-none`, `box-only`) behave per the React Native contract, including the\n   inherited case where a `none` ancestor makes an `auto` descendant unreachable.\n2. Changing the prop at runtime invalidates the hit path in the same commit — the [#10493](https://github.com/microsoft/react-native-windows/issues/10493) shape.\n3. The hit region of a view with `borderRadius` excludes the corner cut-outs, and matches the painted\n   `SkRRect` used by `ScenePainter`, not the layout rect.\n4. `overflow: hidden` on an ancestor removes the clipped area from the hit region as well as from the paint.\n\n## Acceptance criteria\n\n- Unit (C++, GoogleTest): a table-driven test over the four values crossed with nesting depth 2, asserting the\n  node returned by hit testing for a set of probe points. Inside the 100% line-and-branch gate.\n- Unit: rounded-corner probe points — a point inside the layout rect but outside the `SkRRect` resolves to the\n  parent, not the view.\n- Golden image: a fixture painting the probe geometry so the assertion and the picture are reviewed together.\n- E2E: `--inject-pointer` trace over a `pointerEvents` toggle proves invalidation without a remount.\n\nRelated: #18 (pointer pipeline, closed), #13 (view props, closed).\n"
+    },
+    {
+      "title": "feat(input): keyboard event identity — key versus code versus keysym, isComposing, and repeat",
+      "milestone": "M1",
+      "labels": [
+        "area:input",
+        "kind:feat",
+        "kind:parity",
+        "platform-parity:windows",
+        "origin:rn-windows",
+        "priority:P1"
+      ],
+      "priority": "P1",
+      "body": "## Context\n\n`react-native-windows` shipped a key event payload and then found it disagreed with the platform it was supposed\nto match:\n\n- [#11049](https://github.com/microsoft/react-native-windows/issues/11049) `keyUpEvents`/`keyDownEvents` check `code`, not `key` — labelled `Breaking Change`,\n  still open. Choosing the wrong identity field is not a bug you can fix quietly later.\n- [#5821](https://github.com/microsoft/react-native-windows/issues/5821) add `isComposing` to `onKeyDown`/`onKeyUp`. Without it a JavaScript handler cannot tell a\n  real Enter from the Enter that commits an IME candidate.\n- [#16088](https://github.com/microsoft/react-native-windows/issues/16088) crash when overwriting selected text in a `<TextInput>` with a Japanese IME.\n- [#2469](https://github.com/microsoft/react-native-windows/issues/2469) \"Add Keyboard events\" — the original, from which every later divergence descends.\n\nOur side: `docs/cpp-toolchain.md` states the payload is `{key, ctrlKey, shiftKey, altKey, metaKey}` dispatched to\nthe node under the pointer, that `wl_keyboard.repeat_info` is accepted and ignored, and that compose sequences are\nunimplemented. We have a keysym, a keycode and a UTF-8 string available from xkbcommon and have not decided which\none is `key` and which is `code`.\n\n## What to verify\n\n1. `key` carries the layout-dependent character or named key (`\"a\"`, `\"Enter\"`, `\"ArrowLeft\"`); `code` carries the\n   layout-independent physical key. Both are populated, and a non-US layout proves they differ.\n2. `repeat` is `true` for synthesised repeats and the repeat cadence comes from `wl_keyboard.repeat_info`, not a\n   hardcoded timer.\n3. `isComposing` is `true` for every key delivered while a `zwp_text_input_v3` composition is active.\n4. Unhandled keys have a stated destination and do not silently vanish.\n\n## Acceptance criteria\n\n- Unit (C++): a keysym-to-`key`/`code` mapping table tested against a US and a non-US xkb keymap fixture, covering\n  named keys, modifiers, keypad and dead keys.\n- Unit: repeat synthesis driven by an injected clock, asserting delay and rate from `repeat_info`.\n- Unit: `isComposing` asserted through `TextInputV3State` (already at 100% coverage) with a composition open.\n- E2E: virtual-keyboard trace asserting the full payload sequence for a held key and for an IME commit.\n\nRelated: #18 (closed), #26 (IME, open), #17 (`<TextInput>`, open).\n"
+    },
+    {
+      "title": "feat(input): mouse button identity — button and buttons on pointer events, secondary and middle",
+      "milestone": "M1",
+      "labels": [
+        "area:input",
+        "kind:feat",
+        "kind:parity",
+        "platform-parity:windows",
+        "origin:rn-windows",
+        "priority:P2"
+      ],
+      "priority": "P2",
+      "body": "## Context\n\n- [#6410](https://github.com/microsoft/react-native-windows/issues/6410) add a `button` number property to mouse events — open with reactions since 2020.\n- [#8275](https://github.com/microsoft/react-native-windows/issues/8275) \"Missing Mechanism to Expose Right Click\".\n- [#688](https://github.com/microsoft/react-native-windows/issues/688) \"More complete mouse support\" — 4 reactions, the original ask.\n- [#8499](https://github.com/microsoft/react-native-windows/issues/8499) view managers should be able to handle and capture pointer events (17 comments).\n\nDesktop applications need the secondary and middle buttons, and React Native's own `PointerEvent` type already\ncarries `button` and `buttons`. A platform that reports every press as button 0 makes a context menu impossible\nwithout a native module.\n\n## What to verify\n\n1. `wl_pointer.button` codes (`BTN_LEFT`, `BTN_RIGHT`, `BTN_MIDDLE`, and the extra buttons) map to the W3C\n   `button` and `buttons` values React Native's pointer events declare.\n2. A chorded press (left held, right pressed) produces the correct `buttons` bitmask on both events.\n3. A secondary press does not produce `onPress` on a `Pressable`.\n\n## Acceptance criteria\n\n- Unit (C++): a mapping table test over every `BTN_*` we accept, plus chorded sequences.\n- E2E: `--inject-pointer` trace with a right-click over a `Pressable` asserting no `onPress` fires and the\n  pointer event carries `button: 2`.\n\nNote: the macOS plan owns the *behavioural* rule that a right click must not be a left click; this issue owns the\n*payload*. They should land together. Related: #18 (closed).\n"
+    },
+    {
+      "title": "feat(renderer): boxShadow and the shadow props on the canvas",
+      "milestone": "M1",
+      "labels": ["area:renderer", "kind:feat", "platform-parity:ios", "origin:rn-windows", "priority:P1"],
+      "priority": "P1",
+      "body": "## Context\n\n[#2800](https://github.com/microsoft/react-native-windows/issues/2800) \"Drop Shadow support for View, Text, Image, and more\" is one of the most-reacted **open**\nissues in `react-native-windows` (6 reactions) and has been open since 2019. [#2796](https://github.com/microsoft/react-native-windows/issues/2796) is the matching\n\"Document View — Style API completion\". A platform that cannot draw a shadow cannot render most real designs, and\non a widget toolkit it is genuinely hard. On a canvas it is a blur filter, which is the whole argument of\nADR-0001's *Alternatives considered*: this is the class of feature we chose the canvas in order to get cheaply.\n\nOur side: `docs/cpp-toolchain.md`, *View props fidelity*, ends with \"Not implemented at all, and owned elsewhere:\n`shadowColor`/elevation and `boxShadow`, `filter`, `mixBlendMode` and `isolation`, `outline*`, and\n`backgroundImage` gradients. Each needs its own issue under M1.\" `backgroundImage` is #34; this is the shadow one.\n\n## What to verify\n\n1. `boxShadow` (RN 0.76+, the CSS-shaped prop: offset, blur radius, spread radius, colour, `inset`) including a\n   list of multiple shadows in paint order.\n2. The legacy iOS `shadowColor`/`shadowOffset`/`shadowOpacity`/`shadowRadius` quartet and Android `elevation`\n   resolve to the same drawing, so a cross-platform app looks the same.\n3. The shadow follows the resolved `SkRRect` — per-corner radii, not the layout rect.\n4. A shadow is drawn outside the node's own clip but inside its ancestor's, and it enlarges the damage rect.\n\n## Acceptance criteria\n\n- Unit (C++): shadow geometry and the resulting damage rectangle computed in `RetainedScene` (inside the 100%\n  gate); `ScenePainter` only issues the Skia call.\n- Golden image: a fixture matrix — outset, inset, multiple shadows, per-corner radius, shadow under `overflow:\n  hidden`, shadow on a transformed node.\n- Perf: the blur must not move the frame budget for a scene with 50 shadowed nodes; recorded against #20.\n\nRelated: #13 (view props, closed), #34 (gradients, open), #12 (damage tracking, closed).\n"
+    },
+    {
+      "title": "feat(renderer): filter, mixBlendMode, isolation and outline",
+      "milestone": "M1",
+      "labels": ["area:renderer", "kind:feat", "platform-parity:ios", "origin:rn-windows", "priority:P2"],
+      "priority": "P2",
+      "body": "## Context\n\nADR-0001 argues for the canvas partly because React Native's style surface is converging on CSS and still\ngrowing: 0.76 added `boxShadow` and `filter`, 0.77 added `mixBlendMode`, `outline` and `boxSizing`. On\n`react-native-windows` this class of prop is the permanent tail of [#2800](https://github.com/microsoft/react-native-windows/issues/2800) and\n[#15352](https://github.com/microsoft/react-native-windows/issues/15352) \"Props Parity of Fabric as per Paper\"; on a widget tree each one is a workaround.\n\n`docs/cpp-toolchain.md` lists these as not implemented and explicitly asks for an issue per group. This is that\nissue for the compositing group.\n\n## What to verify\n\n1. `filter`: `brightness`, `contrast`, `grayscale`, `hue-rotate`, `invert`, `opacity`, `saturate`, `sepia`,\n   `blur`, `drop-shadow` — each as an `SkImageFilter`/`SkColorFilter` chain in declaration order.\n2. `mixBlendMode` and `isolation`: the blend applies against the nearest isolated stacking context, not against\n   the whole framebuffer.\n3. `outline`, `outlineColor`, `outlineOffset`, `outlineStyle`: drawn outside the border box, not participating in\n   layout, and enlarging damage.\n4. Filters and blends force a `saveLayer`, which is also what group opacity needs — decide once whether a\n   stacking-context layer is a scene concept, because three features want it.\n\n## Acceptance criteria\n\n- Unit (C++): the filter chain and the isolation-ancestor resolution computed in `RetainedScene`, table-driven,\n  inside the 100% gate.\n- Golden image: one fixture per filter function, one per blend mode against an isolated and a non-isolated\n  ancestor, and one outline matrix.\n- The damage rect for a filtered node is asserted to cover the filter's spread.\n\nRelated: #13 (closed), #12 (closed), and the `boxShadow` issue in this batch.\n"
+    },
+    {
+      "title": "test(renderer): prop-coverage conformance — every declared prop of every shipped component is asserted",
+      "milestone": "M1",
+      "labels": [
+        "area:renderer",
+        "area:testing",
+        "kind:test",
+        "kind:parity",
+        "platform-parity:windows",
+        "origin:rn-windows",
+        "priority:P0"
+      ],
+      "priority": "P0",
+      "body": "## Context\n\nThe single most transferable process lesson in `react-native-windows` is that they eventually stopped filing\nper-prop bugs and started tracking prop coverage as a matrix:\n\n- [#6227](https://github.com/microsoft/react-native-windows/issues/6227) \"Master task: Add tests for every ViewManager, and test setting every prop/event\" — still open.\n- [#13183](https://github.com/microsoft/react-native-windows/issues/13183) \"Create issues to track remaining host component properties that we need to implement for\n  fabric\".\n- [#15352](https://github.com/microsoft/react-native-windows/issues/15352) \"Props Parity of Fabric as per Paper\", and the `Parity: Fabric vs. Paper` /\n  `Parity: React Native` label pair that exists because prop drift was too common to describe in prose.\n- [#11152](https://github.com/microsoft/react-native-windows/issues/11152) \"ScrollView component parity for Fabric\" — the per-component version of the same task.\n- [#4037](https://github.com/microsoft/react-native-windows/issues/4037) \"Build visual tree compare tests that iterate over RNTester pages\" — their attempt at the\n  automated form of it.\n\nThey reached ~570 issues under `Area: Fabric` partly because there was no machine-readable answer to \"which props\nwork\". We can have that answer from the first component, and AGENTS.md's rule 5 (\"every renderer feature must be\nobservable\") already implies it.\n\n## What to verify\n\nThe generated component descriptors already enumerate every prop Fabric will hand us. For each shipped component\n(`View`, `Text`, `Image`, `ScrollView`, `TextInput`, and every later one) every prop is in exactly one of three\nstates, recorded in a checked-in table: **implemented** (with the test that proves it), **deliberately deviating**\n(with the reason, as `docs/cpp-toolchain.md` already writes them in prose), or **not implemented** (with the issue\nnumber that owns it). A prop in none of the three fails the build.\n\n## Acceptance criteria\n\n- A generated coverage report derived from the component descriptors, not hand-maintained, checked in and diffed\n  in review; the existing *Fidelity limits* prose in `docs/cpp-toolchain.md` becomes its `deviating` column.\n- CI gate: a prop that appears in a descriptor and in no column fails `pnpm validate`.\n- Golden image: each `implemented` prop names at least one golden or unit assertion, and the report links it.\n- The report is regenerated when the vendored React Native pin moves, so a new upstream prop appears as a build\n  failure rather than as a user report — this is the cheap half of the drift oracle.\n\nRelated: #13, #14, #15, #16, #17 (component issues), #6 (golden rig, closed).\n"
+    },
+    {
+      "title": "feat(text): font asset registration — fontFamily resolves from bundled assets and fails loudly",
+      "milestone": "M1",
+      "labels": ["area:text", "kind:feat", "platform-parity:android", "origin:rn-windows", "priority:P1"],
+      "priority": "P1",
+      "body": "## Context\n\nCustom fonts are the most durable text complaint in `react-native-windows`:\n\n- [#3463](https://github.com/microsoft/react-native-windows/issues/3463) \"Custom Fonts do not load like on other platforms\" — open, 13 comments, since 2019.\n- [#16308](https://github.com/microsoft/react-native-windows/issues/16308) registered icon-font TTFs render **blank glyphs** until table checksums and the table\n  directory are recomputed — \"silent failure in the DWrite font path\". A wrong font produces no error, just\n  nothing.\n- [#3966](https://github.com/microsoft/react-native-windows/issues/3966) their own text example had to be moved off an in-box font to test anything real.\n- [#4467](https://github.com/microsoft/react-native-windows/issues/4467) glyph gets cut off at the bottom.\n\nOur side: `docs/cpp-toolchain.md`, *Font strategy*, pins a vendored font so goldens are reproducible, and resolves\nfamilies through fontconfig. An application's own `assets/fonts/*.ttf` — which is how every React Native app ships\nan icon font — has no path into `SkFontMgr` at all, and an unresolvable family currently degrades to whatever\nfontconfig substitutes, silently, which is exactly [#16308](https://github.com/microsoft/react-native-windows/issues/16308)'s failure mode with a different cause.\n\n## What to verify\n\n1. Fonts declared by the application (the `react-native.config.js` assets convention, and whatever the CLI of #22\n   settles on) are registered into a `SkFontMgr` that sits **in front of** fontconfig.\n2. An unresolvable `fontFamily` is reported once, loudly, with the family name — never substituted in silence.\n3. Weight, style and `fontVariant` selection picks the right face within a registered family, including variable\n   fonts.\n4. A font file that parses but has no glyph for the requested codepoint falls back deterministically, and the\n   fallback chain is inspectable from the harness.\n\n## Acceptance criteria\n\n- Unit (C++): registration and resolution against a fixture font directory containing a good font, a broken font\n  and a font with a deliberately wrong checksum ([#16308](https://github.com/microsoft/react-native-windows/issues/16308)'s reproduction), inside the 100% gate.\n- Golden image: an icon-font fixture rendering private-use codepoints, which is the case that fails silently.\n- The diagnostic for an unresolved family is asserted, not just its absence.\n\nRelated: #14 (text pipeline, closed), #22 (CLI/asset config, open).\n"
+    },
+    {
+      "title": "test(text): glyph rasterization policy — no subpixel fringing on a transparent surface, gamma pinned",
+      "milestone": "M1",
+      "labels": [
+        "area:text",
+        "area:renderer",
+        "area:testing",
+        "kind:test",
+        "platform-parity:host-linux",
+        "origin:rn-windows",
+        "priority:P1"
+      ],
+      "priority": "P1",
+      "body": "## Context\n\n[#16340](https://github.com/microsoft/react-native-windows/issues/16340) — \"Fabric text is drawn with ClearType onto transparent composition surfaces, fringing thin\nglyphs\" — is the newest text bug in `react-native-windows` and the most directly transferable one we found,\nbecause it is not an integration bug with a native control. It is a compositing-model bug: subpixel antialiasing\nassumes it knows the pixels underneath, and on a surface with an alpha channel it does not.\n\nEvery one of those preconditions is true for us. Wayland surfaces are composited with alpha; Skia's\n`SkSurfaceProps` carries a pixel geometry that defaults to something; FreeType's LCD filtering and gamma\ncorrection are configurable and machine-dependent; and `docs/cpp-toolchain.md` already notes that our goldens\ndepend on pinning the font for exactly this class of reason.\n\n## What to verify\n\n1. The `SkSurfaceProps` pixel geometry and the `SkFont` edging/hinting used for text are chosen deliberately and\n   stated, for both the window swapchain surface and the offscreen golden surface, and they are the **same**\n   choice — otherwise goldens do not predict the window.\n2. Text drawn over a transparent region shows no colour fringing.\n3. Gamma and contrast (`SkSurfaceProps`/`gGammaExponent`-class knobs) are pinned so a driver or fontconfig change\n   cannot move a golden.\n4. The policy is documented next to the font pin in `docs/cpp-toolchain.md`.\n\n## Acceptance criteria\n\n- Golden image: a fixture drawing thin light-on-dark and dark-on-light glyphs over an opaque and a transparent\n  region, compared at the existing zero tolerance.\n- Window golden under `weston --backend=headless` + lavapipe asserting the swapchain path produces the same\n  glyph coverage as the offscreen path (the equivalence proof already sketched in *Golden images*).\n- Unit (C++): the surface-props construction is one function, asserted, and used by both paths.\n\nRelated: #14 (closed), #6 (golden rig, closed), #33 (window golden, closed).\n"
+    },
+    {
+      "title": "feat(text): RTL — writingDirection, base paragraph direction, and I18nManager without a bundle reload",
+      "milestone": "M1",
+      "labels": [
+        "area:text",
+        "area:core",
+        "kind:feat",
+        "kind:parity",
+        "platform-parity:android",
+        "origin:rn-windows",
+        "priority:P1"
+      ],
+      "priority": "P1",
+      "body": "## Context\n\n`react-native-windows` has a small `Area: RTL` label (15 issues) whose contents are disproportionately severe:\n\n- [#7070](https://github.com/microsoft/react-native-windows/issues/7070) changing from LTR to RTL requires reloading the JS bundle, and the layout does not persist\n  across restarts — open, 10 comments. The platform made direction a boot-time constant.\n- [#4167](https://github.com/microsoft/react-native-windows/issues/4167) `left`/`right` style properties are mishandled in RTL.\n- [#12716](https://github.com/microsoft/react-native-windows/issues/12716) the right-to-left `<Text>` example is displayed incorrectly under Fabric.\n- [#7792](https://github.com/microsoft/react-native-windows/issues/7792) the last character in wrapped RTL text fails hit testing — the geometry disagreement again,\n  in the one place where visual order and logical order differ.\n- [#4432](https://github.com/microsoft/react-native-windows/issues/4432) popups do not render correctly in RTL mode.\n\nOur side: `docs/cpp-toolchain.md`, *Fidelity limits*, says \"RTL is not handled. The paragraph direction is\nhardcoded left-to-right … what is missing is `writingDirection` and an RTL base direction, and there is no golden\nfor either.\" Yoga's own `direction` is a layout input we currently never set.\n\n## What to verify\n\n1. `writingDirection` and the inherited base direction reach `SkParagraph`, and Yoga receives a matching\n   `YGDirection` so `start`/`end`, `marginStart`, `paddingEnd` and the `left`/`right` pair resolve consistently.\n2. `I18nManager.forceRTL`/`allowRTL` change direction **without** a bundle reload, and the choice survives a\n   restart — the [#7070](https://github.com/microsoft/react-native-windows/issues/7070) shape.\n3. Hit testing on wrapped bidirectional text maps a point to the correct logical offset, including the trailing\n   character of a wrapped line ([#7792](https://github.com/microsoft/react-native-windows/issues/7792)).\n4. The caret and selection geometry of #17 are expressed in visual runs, not logical offsets.\n\n## Acceptance criteria\n\n- Unit (C++): direction resolution and the `start`/`end` mapping, table-driven, inside the 100% gate.\n- Unit: point-to-offset and offset-to-point round trips over a mixed LTR/RTL paragraph fixture.\n- Golden image: an RTL fixture and a mixed-direction fixture, both with wrapping and with a trailing punctuation\n  case.\n- E2E: a direction flip at runtime re-lays out without reloading the bundle.\n\nRelated: #14 (closed), #17 (`<TextInput>`, open), #11 (Yoga layout, closed).\n"
+    },
+    {
+      "title": "fix(core): non-finite layout and style values must be rejected at the boundary, not serialized",
+      "milestone": "M1",
+      "labels": ["area:core", "kind:bug", "platform-parity:windows", "origin:rn-windows", "priority:P1"],
+      "priority": "P1",
+      "body": "## Context\n\n- [#8318](https://github.com/microsoft/react-native-windows/issues/8318) \"`folly::toJson`: JSON object value was a NaN or INF\" — open, 14 comments, `Area: Layout`.\n  A NaN produced anywhere in layout survives all the way to the serializer that talks to JavaScript, and the app\n  dies there, thousands of frames from the cause.\n- [#10197](https://github.com/microsoft/react-native-windows/issues/10197) `transform` `translateX` throws with percentage values.\n- [#1447](https://github.com/microsoft/react-native-windows/issues/1447) fractional flex values honoured on iOS and Android but not on the platform — 6 reactions.\n- [#5437](https://github.com/microsoft/react-native-windows/issues/5437) certain components stopped rendering without an explicit `height`.\n\nThe pattern is that a numeric style value has three failure modes — non-finite, wrong unit, and out of domain —\nand a platform typically checks none of them until something downstream explodes with an unrelated message.\n\n## What to verify\n\n1. Every numeric that enters the scene from props or from Yoga (`LayoutMetrics`, transforms, border widths, radii,\n   opacity, scroll offsets) is finite before it is used, and a non-finite value is reported once with the node and\n   prop name rather than propagated.\n2. Percentage and unit-bearing values (`translateX: '50%'`, `borderRadius: '10%'`, `flex: 0.5`) resolve through\n   the same upstream helpers iOS and Android use — `resolveBorderMetrics` and `resolveTransform` already do this\n   for two of them — and every remaining hand-rolled arithmetic is identified.\n3. A degenerate frame (zero, negative or non-finite size) paints nothing rather than producing a Skia assert or a\n   NaN-poisoned `SkMatrix`.\n\n## Acceptance criteria\n\n- Unit (C++): a fuzz-shaped table of NaN, ±Inf, negative and huge values for each numeric prop, asserting the\n  reject-and-report path; inside the 100% line-and-branch gate.\n- The existing ASan+UBSan jobs must stay clean under that table — UBSan's float-cast-overflow is precisely the\n  detector for this class.\n- Golden image: a degenerate-frame fixture proving \"paints nothing\" is a picture, not a crash.\n\nRelated: #11 (Yoga layout, closed), #13 (view props, closed).\n"
+    },
+    {
+      "title": "fix(core): a native-driver animation whose target view is not mounted must not hang the frame thread",
+      "milestone": "M2",
+      "labels": [
+        "area:core",
+        "area:renderer",
+        "kind:bug",
+        "platform-parity:windows",
+        "origin:rn-windows",
+        "priority:P0"
+      ],
+      "priority": "P0",
+      "body": "## Context\n\n[#16309](https://github.com/microsoft/react-native-windows/issues/16309) — \"Permanent UI thread hang: unbounded `ProcessDelayedPropsNodes` retry loop when a\nnative-driver animation targets a view absent from the Fabric registry\" — is the most instructive open bug in\n`react-native-windows` for our M2. The animated node graph and the mounting layer have independent lifetimes; when\nan animation is attached to a view that was never mounted, or was unmounted mid-animation, the natural\nimplementation retries forever, on the thread that draws.\n\nRelated history in the same area: [#4312](https://github.com/microsoft/react-native-windows/issues/4312) `Animated.Value` does not increment properly,\n[#3283](https://github.com/microsoft/react-native-windows/issues/3283) a missing facade type silently dropped a property, [#2297](https://github.com/microsoft/react-native-windows/issues/2297) the original native\ndriver request.\n\nOur side: ADR-0001 decision 6 commits us to React Native's shared C++ animated node graph\n(`ReactCommon/react/renderer/animated/`) driven from a **platform-owned frame thread**, which is our concept and\nnot React Native's. That is the exact configuration [#16309](https://github.com/microsoft/react-native-windows/issues/16309) describes, and our frame thread is the\none thread where an unbounded retry is unrecoverable: no frame callback, no `xdg_toplevel.close` handling, no way\nout but SIGKILL.\n\n## What to verify\n\n1. Attaching a native-driven animation to a tag that is not in the scene resolves in bounded time — either the\n   node is dropped with a diagnostic, or it is parked until the mount arrives, but never retried per frame\n   forever.\n2. Unmounting a view mid-animation detaches its animated nodes in the same mounting transaction, and the frame\n   thread never dereferences the removed node.\n3. The frame thread has a hard per-frame work bound; exceeding it is a test failure, not a hang.\n\n## Acceptance criteria\n\n- Unit (C++): attach-before-mount, unmount-during-animation, and re-mount-same-tag cases, driven by an injected\n  clock, asserting bounded iteration counts. Inside the 100% gate.\n- TSan: the attach/detach path exercised concurrently with mounting transactions, clean.\n- E2E: a watchdog in the harness fails the run if a frame exceeds a wall-clock ceiling, so this class of bug can\n  never again be reported as \"the app froze\".\n\nRelated: #19 (native-driven animations, open), #20 (pacing, open).\n"
+    },
+    {
+      "title": "test(core): Animated value conformance — units, percentages, interpolation, additive composition",
+      "milestone": "M2",
+      "labels": [
+        "area:core",
+        "area:testing",
+        "kind:test",
+        "kind:parity",
+        "platform-parity:ios",
+        "origin:rn-windows",
+        "priority:P2"
+      ],
+      "priority": "P2",
+      "body": "## Context\n\nOnce the native driver exists, its arithmetic is the next thing to drift:\n\n- [#4312](https://github.com/microsoft/react-native-windows/issues/4312) `Animated.Value` does not increment properly — open, 11 comments.\n- [#10197](https://github.com/microsoft/react-native-windows/issues/10197) `translateX` throws on percentage values.\n- [#3283](https://github.com/microsoft/react-native-windows/issues/3283) `StringToFacadeType` missing `\"progress\"` — a value type the driver simply did not know\n  about, so the animation silently did nothing.\n- [#9155](https://github.com/microsoft/react-native-windows/issues/9155) a version bump where \"some React Native stuff\" stopped working, 15 comments, no smaller\n  description available because there was no conformance suite to bisect against.\n\n## What to verify\n\nAgainst the upstream shared animated node graph rather than a hand-rolled one: value/interpolation/addition/\nmultiplication/division/modulo/diffClamp node types, string-and-unit values (`deg`, `rad`, `%`, `px`),\n`extrapolate` clamping at both ends, additive composition of two animations on one prop, and `useNativeDriver`\nfalling back cleanly for a prop the driver cannot own.\n\n## Acceptance criteria\n\n- Unit (C++): a table-driven suite over every node type and every value shape, with an injected clock so the\n  frames are exact; inside the 100% gate.\n- The table is derived from the upstream node-type enumeration, so a new upstream type appears as a missing-case\n  failure — the same drift-oracle trick as the prop-coverage report.\n- E2E: an animation trace over `wp_presentation_feedback` timestamps proving the value at frame N is the value the\n  unit test predicts.\n\nRelated: #19 (open), #20 (open).\n"
+    },
+    {
+      "title": "test(core): instance teardown and reload leak gate — nothing survives an unload",
+      "milestone": "M2",
+      "labels": [
+        "area:core",
+        "area:testing",
+        "kind:test",
+        "platform-parity:windows",
+        "origin:rn-windows",
+        "priority:P0"
+      ],
+      "priority": "P0",
+      "body": "## Context\n\n`react-native-windows` has a whole `Area: Instance Management` label, and its contents are all one bug:\n\n- [#9661](https://github.com/microsoft/react-native-windows/issues/9661) `HermesRuntimeHolder` and `DevSettings` leaked on `ReactNativeHost::UnloadInstance` — open.\n- [#12247](https://github.com/microsoft/react-native-windows/issues/12247) `ReactRootView` does not unmount on navigation.\n- [#8010](https://github.com/microsoft/react-native-windows/issues/8010) crash with `RPC_E_WRONG_THREAD` destroying `UIManagerModule` off-thread while destructing\n  the runtime — the teardown *order* was wrong.\n- [#5002](https://github.com/microsoft/react-native-windows/issues/5002) intermittent crash due to instance management, [#5497](https://github.com/microsoft/react-native-windows/issues/5497) crash when disabling web\n  debugging, [#1783](https://github.com/microsoft/react-native-windows/issues/1783) race when multiple apps load from the debug server simultaneously.\n- [#8156](https://github.com/microsoft/react-native-windows/issues/8156) gradual slowdown when calling into a native method from JS — a leak that presents as perf.\n\nEvery one of these is a lifetime bug that only appears on the *second* instance, which is why a one-shot smoke\ntest never sees it. Fast Refresh, reload-on-error and multi-window all create second instances.\n\n## What to verify\n\n1. Constructing and destroying a `ReactHost` + `FabricHost` + `WindowSession` N times returns to a steady state:\n   no growth in allocations, threads, Wayland objects, Vulkan objects or Skia caches.\n2. Teardown order is explicit and asserted — the JS thread stops before the runtime is destroyed, the frame thread\n   stops before the scene is destroyed, and no mounting transaction is in flight.\n3. Destroying a surface with an animation running, an image decode in flight and a composition open is safe.\n\n## Acceptance criteria\n\n- Unit/integration (C++): an N-iteration create/destroy loop under ASan with `detect_leaks=1` — the existing\n  sanitizer job already fails on a leak, so the gate is the loop, not new infrastructure.\n- TSan-clean under the same loop with the frame thread running.\n- A counter probe (Wayland proxies, Vulkan handles, live scene nodes) asserted to return to its initial value,\n  because ASan does not see a leak that a still-reachable cache holds.\n\nRelated: #9 (Hermes integration, closed), #10 (Fabric bootstrap, closed), #4 (CI sanitizers, closed).\n"
+    },
+    {
+      "title": "test(core): cross-thread contract stress — a promise resolved off the JS thread must not crash",
+      "milestone": "M2",
+      "labels": [
+        "area:core",
+        "area:testing",
+        "kind:test",
+        "platform-parity:windows",
+        "origin:rn-windows",
+        "priority:P0"
+      ],
+      "priority": "P0",
+      "body": "## Context\n\n- [#10707](https://github.com/microsoft/react-native-windows/issues/10707) \"Crash when trying to resolve JS promise on UI thread\" — open, 10 comments. A module author\n  did the obvious thing and the platform had no contract to stop them.\n- [#13925](https://github.com/microsoft/react-native-windows/issues/13925) a TurboModule using JSI crashes with `this` at address `0x1`.\n- [#8010](https://github.com/microsoft/react-native-windows/issues/8010) destroying a module off the wrong apartment.\n- [#1027](https://github.com/microsoft/react-native-windows/issues/1027) `System.AccessViolationException` in Yoga — 34 comments, a decade-old thread with no root\n  cause, which is what a missing threading contract looks like from the outside.\n- [#7354](https://github.com/microsoft/react-native-windows/issues/7354) \"Try using ASan (C++ memory bug detector) for RNW\" — filed as an *enhancement*, still open.\n  We already run ASan, UBSan and TSan as merge gates on every PR; this issue is about pointing them at the right\n  scenario.\n\nAGENTS.md rule 6 already says threading contracts are load-bearing and every cross-thread type states its\ncontract and is covered by a TSan-clean test. `docs/cpp-toolchain.md` names four threads: JS, commit, UI/mounting,\nand our frame thread. What is missing is the adversarial test.\n\n## What to verify\n\n1. Every public entry point states which thread may call it, and calling it from the wrong one fails an assertion\n   in a debug build rather than corrupting the runtime.\n2. `jsi::Runtime` is touched only on the JS thread; a callback or promise resolution originating on the frame,\n   commit or a module thread is marshalled, and the marshalling is the only path.\n3. A mounting transaction concurrent with a frame-thread snapshot, an image decode completion and an input flush\n   is race-free.\n\n## Acceptance criteria\n\n- TSan job: a stress scenario driving mounting, input injection, image decodes, animation ticks and a module\n  promise resolution concurrently for a fixed number of iterations, clean, with no suppression file (AGENTS.md\n  forbids one without an issue link, and there is no issue).\n- Unit (C++): thread-affinity assertions on the public surface, tested by calling from a foreign thread.\n- The contract is written in the class docblocks, per AGENTS.md rule 6, and the test names the docblock it proves.\n\nRelated: #10 (closed), #19 (open), #23 (native modules, open).\n"
+    },
+    {
+      "title": "perf: build wall-clock, incrementality and disk budget for the C++ toolchain",
+      "milestone": "M2",
+      "labels": ["area:infra", "kind:perf", "platform-parity:windows", "origin:rn-windows", "priority:P1"],
+      "priority": "P1",
+      "body": "## Context\n\nThe cost of building the platform is a first-class `react-native-windows` complaint, and it is the one that most\ndirectly limits contribution:\n\n- [#8103](https://github.com/microsoft/react-native-windows/issues/8103) \"Reduce building react-native-windows memory and disk space requirements\" — open, 4\n  reactions.\n- [#9619](https://github.com/microsoft/react-native-windows/issues/9619) \"Building M.RN takes longer and sometimes breaks incrementality\" — open, 13 comments,\n  labelled `Recent Regression`. Incrementality broke and nothing detected it.\n- [#4787](https://github.com/microsoft/react-native-windows/issues/4787) a new app includes 1.6 GB of unused packages; [#4775](https://github.com/microsoft/react-native-windows/issues/4775) a user reporting 12 GB.\n- [#9518](https://github.com/microsoft/react-native-windows/issues/9518) autolinking regressed in speed and stayed regressed for a release.\n- [#4004](https://github.com/microsoft/react-native-windows/issues/4004) investigate PGO; [#4649](https://github.com/microsoft/react-native-windows/issues/4649) `std::map`/`std::string` usage hinders performance.\n\nOur side: `docs/cpp-toolchain.md` records three `native` CI entries at a **120-minute timeout each**, ~113 MB of\nvendored caches, a 2 GB ccache ceiling per preset, and already documents the escape hatch (\"if the wall clock ever\nstops being tolerable, move the two sanitizer entries into their own workflow\"). That escape hatch is a decision\nthat should be triggered by a number, not by irritation.\n\n## What to verify\n\n1. A recorded cold-build and warm-build wall clock per preset, and a ccache hit rate, published per CI run.\n2. Incrementality: touching one `.cpp` rebuilds a bounded set of targets, and that bound is asserted — the\n   [#9619](https://github.com/microsoft/react-native-windows/issues/9619) detector.\n3. Peak memory per compile job and peak disk for a full checkout plus build, against a stated ceiling.\n4. A threshold that, when crossed, mechanically triggers the documented escape hatch.\n\n## Acceptance criteria\n\n- A CI step that emits the four numbers as a job summary and fails on a regression beyond threshold, in the same\n  shape as the frame-time gates AGENTS.md already requires.\n- The numbers are checked in and diffed, so a dependency bump that doubles the build shows up in review.\n- `docs/cpp-toolchain.md` gains the budget table next to the existing CI table.\n\nRelated: #4 (CI pipeline, closed), #3 (C++ toolchain, closed), #28 (quality toolchain, closed).\n"
+    },
+    {
+      "title": "feat(core): Metro dev server and an HTTP networking stack — the platform has no network at all",
+      "milestone": "M3",
+      "labels": [
+        "area:core",
+        "area:modules",
+        "kind:feat",
+        "platform-parity:windows",
+        "origin:rn-windows",
+        "priority:P0"
+      ],
+      "priority": "P0",
+      "body": "## Context\n\n`docs/cpp-toolchain.md` states it plainly: \"There is no networking stack in this build at all —\n`ReactCxxPlatform`'s HTTP client needs nlohmann_json and OpenSSL, and neither is linked.\" That single gap blocks\nremote `<Image>` sources, `fetch`, `XMLHttpRequest`, WebSocket, Fast Refresh, and every third-party library that\nassumes a network exists.\n\n`react-native-windows` shows what the surface costs once it exists:\n\n- [#7451](https://github.com/microsoft/react-native-windows/issues/7451) \"Error on metro server after 'successfully' loading app\" — 16 reactions, 31 comments, the\n  single loudest developer-experience bug in the repository.\n- [#8642](https://github.com/microsoft/react-native-windows/issues/8642) add support for the Metro `http` scheme; [#10062](https://github.com/microsoft/react-native-windows/issues/10062) sync dev-server URL parameters\n  with core — the dev server contract is not just \"download a bundle\".\n- [#9510](https://github.com/microsoft/react-native-windows/issues/9510) a 10 MB limit on `fetch`; [#12168](https://github.com/microsoft/react-native-windows/issues/12168) cannot upload files with form data;\n  [#10036](https://github.com/microsoft/react-native-windows/issues/10036) and [#11439](https://github.com/microsoft/react-native-windows/issues/11439) invalid response for blobs; [#2460](https://github.com/microsoft/react-native-windows/issues/2460) Axios fails\n  without incremental updates.\n\nThose last five are one lesson: the Networking module is a **streaming** contract, and every platform that\nimplements it as request-then-buffer ships the same five bugs.\n\n## What to verify\n\n1. The dev-server contract: bundle URL parameters (`platform=linux`, `dev`, `minify`, `modulesOnly`,\n   `runModule`), the `/status` probe, symbolication, and the reload/HMR websocket endpoints.\n2. `fetch`/`XMLHttpRequest` with streaming request and response bodies, no size ceiling, `blob` and `formData`\n   support, redirects, timeouts and cancellation.\n3. TLS through the system trust store, since a Linux distribution — not us — owns the CA bundle.\n4. Remote `<Image>` sources through the same client, with the `ImageResponseObserverCoordinator` already wired.\n\n## Acceptance criteria\n\n- Unit (TypeScript + C++): the URL-construction and response-state machines against a local fixture server;\n  100% coverage per the gospel.\n- Integration: a >10 MB streamed download and a multipart upload asserted, because those are the two cases the\n  reference platform got wrong.\n- E2E: the harness serves a bundle over the dev server and the app renders it — this is also the prerequisite for\n  the Fast Refresh test in this batch.\n- ASan/TSan clean with a download in flight during teardown.\n\nRelated: #15 (`<Image>`, closed — the `http`/`https` deferral is here), #22 (CLI/Metro, open), #23 (modules, open).\n"
+    },
+    {
+      "title": "feat(core): React Native DevTools over CDP — retire FallbackRuntimeTargetDelegate",
+      "milestone": "M3",
+      "labels": ["area:core", "kind:feat", "platform-parity:windows", "origin:rn-windows", "priority:P0"],
+      "priority": "P0",
+      "body": "## Context\n\n`react-native-windows` has a *named workstream label* — `Fix Hermes Debugger for RNW` — because the debugger was\nbroken for years:\n\n- [#9407](https://github.com/microsoft/react-native-windows/issues/9407) \"Hermes direct debugging not working as `InstanceImpl` does not call\n  `DevSupportManager.StartInspector`\" — 26 comments. The inspector was simply never started; everything\n  downstream reported a different symptom.\n- [#15349](https://github.com/microsoft/react-native-windows/issues/15349) \"Modern Inspector Outstanding Issues\" — open.\n- [#12654](https://github.com/microsoft/react-native-windows/issues/12654) watch-window variables not evaluated; [#9359](https://github.com/microsoft/react-native-windows/issues/9359) VS Code extension cannot attach;\n  [#14037](https://github.com/microsoft/react-native-windows/issues/14037) DevTools unavailable after a version bump; [#16354](https://github.com/microsoft/react-native-windows/issues/16354) the DevTools Performance\n  panel disconnects the app when you stop a trace.\n\nOur side, from `docs/cpp-toolchain.md`: \"`react/runtime/hermes` (`bridgelesshermes`) is deliberately not used …\nthe debugger is off in this build. The consequence is that `JSRuntime` falls back to\n`FallbackRuntimeTargetDelegate`, so no CDP-backed console or sampling profiler.\" That is [#9407](https://github.com/microsoft/react-native-windows/issues/9407)'s\nexact starting position, chosen deliberately and correctly for M0 — and it becomes a defect the moment anyone\nother than us writes an app.\n\n## What to verify\n\n1. `hermes_inspector_modern` linked, the CDP endpoint served, and the inspector target registered so\n   `react-native devtools` and the Chrome DevTools frontend attach to a running app.\n2. `console.*` reaches DevTools rather than only stdout/stderr, and a thrown error produces a symbolicated stack\n   against the Metro source map rather than the raw bundle offsets `JsErrorHandler` prints today.\n3. The sampling profiler and the Performance panel start and stop without disconnecting the app\n   ([#16354](https://github.com/microsoft/react-native-windows/issues/16354)).\n4. Attaching and detaching repeatedly leaves no leaked thread or socket — see the instance-teardown gate in this\n   batch.\n\n## Acceptance criteria\n\n- Integration: a CDP client in the harness attaches, sets a breakpoint in a fixture bundle, hits it, reads a\n  local, and detaches; asserted end to end.\n- Unit: the target-registration path, 100% covered.\n- The build cost of `hermes_inspector_modern` is recorded against the build budget issue in this batch, because\n  it is the reason it was excluded in the first place.\n\nRelated: #9 (Hermes integration, closed), and the Metro dev-server issue in this batch, which it depends on.\n"
+    },
+    {
+      "title": "test(core): Fast Refresh and reload proven by a UI test, not by hand",
+      "milestone": "M3",
+      "labels": [
+        "area:core",
+        "area:testing",
+        "kind:test",
+        "platform-parity:windows",
+        "origin:rn-windows",
+        "priority:P1"
+      ],
+      "priority": "P1",
+      "body": "## Context\n\n`react-native-windows` carries a `Scenario: Reload` label, and its most telling entry is\n[#8609](https://github.com/microsoft/react-native-windows/issues/8609) — \"Add UI Tests Validating Live Reload/Fast Refresh\", still open. Around it:\n[#4779](https://github.com/microsoft/react-native-windows/issues/4779) Fast Refresh does not work on 0.62, [#8608](https://github.com/microsoft/react-native-windows/issues/8608) Fast Refresh broken on 0.66-preview.2,\n[#4062](https://github.com/microsoft/react-native-windows/issues/4062) the original React Refresh support, [#4385](https://github.com/microsoft/react-native-windows/issues/4385) reload from the Metro prompt,\n[#3774](https://github.com/microsoft/react-native-windows/issues/3774) Escape should dismiss the developer menu, [#3822](https://github.com/microsoft/react-native-windows/issues/3822) exposing the developer menu to the\napp.\n\nFast Refresh broke at least twice across releases and each time a human found it. It is the developer inner loop:\nif it regresses silently, every other contribution slows down.\n\nThe comparison point worth beating is `lucid-softworks/react-native-linux`, which ADR-0001 records as achieving\n\"Fast Refresh at ~135 ms edit-to-visible\".\n\n## What to verify\n\n1. Editing a module in a running app applies without losing component state, within a stated edit-to-visible\n   budget.\n2. A full reload (from the dev menu, from the Metro prompt, and on a fatal error) rebuilds the instance and leaves\n   nothing behind — this is the reload half of the instance-teardown gate.\n3. A syntax error shows an error surface and recovers on the next good save rather than wedging the app.\n4. The developer menu exists, is reachable from the keyboard, and Escape dismisses it.\n\n## Acceptance criteria\n\n- E2E: the harness edits a fixture module on disk, waits for the HMR update, and asserts the new render via\n  screenshot plus event trace; edit-to-visible latency recorded as a perf number and gated.\n- E2E: reload-under-load — reload while an animation runs and a request is in flight — asserted leak-free.\n- The syntax-error recovery path asserted, because that is the one users hit hourly.\n\nRelated: #7 (e2e driver, open), and the Metro dev-server and DevTools issues in this batch.\n"
+    },
+    {
+      "title": "test(core): release-mode parity — precompiled bytecode, source maps, and a release smoke gate",
+      "milestone": "M3",
+      "labels": [
+        "area:core",
+        "area:infra",
+        "area:testing",
+        "kind:test",
+        "platform-parity:windows",
+        "origin:rn-windows",
+        "priority:P0"
+      ],
+      "priority": "P0",
+      "body": "## Context\n\nThe most expensive recurring failure in `react-native-windows` is that release builds behave differently from\ndebug builds and nothing in CI noticed:\n\n- [#12258](https://github.com/microsoft/react-native-windows/issues/12258) \"Can't Run In Release Mode\" — 19 comments.\n- [#10255](https://github.com/microsoft/react-native-windows/issues/10255) \"Bundles generated offline do not start running the RN app when executed (white screen on\n  version 0.69+)\" — 15 comments, labelled `must-have` and `Recent Regression`.\n- [#12708](https://github.com/microsoft/react-native-windows/issues/12708) Hermes bytecode compilation fails in release when the app lives in a separate project.\n- [#11952](https://github.com/microsoft/react-native-windows/issues/11952) `Array.prototype.flat()` breaks the application **in release builds only** — open, with a\n  `workaround exists` label, which is how a JS-engine configuration difference presents.\n- [#9732](https://github.com/microsoft/react-native-windows/issues/9732) and [#7855](https://github.com/microsoft/react-native-windows/issues/7855) third-party libraries that work in debug and not in release.\n- [#13636](https://github.com/microsoft/react-native-windows/issues/13636) release build stuck after \"Done copying assets\".\n\nOur side: everything today runs a development bundle from a path on disk. `hermesc` is built (for\n`InternalBytecode`) but nothing compiles an app bundle to `.hbc`, nothing consumes a source map, and CI's\nacceptance steps are all debug.\n\n## What to verify\n\n1. A release bundle: Metro production build, Hermes bytecode compilation, asset copying, and the bytecode version\n   matching the runtime — Hermes' own README warns that a mismatch crashes instantly, and ADR-0001 repeats it.\n2. The same fixture app produces the same rendered output in debug and in release, asserted by the same golden.\n3. A thrown error in a release build symbolicates through the source map to the original file and line.\n4. Engine feature parity between the two configurations — the [#11952](https://github.com/microsoft/react-native-windows/issues/11952) class — proven by running the\n   same JS conformance fixture in both.\n\n## Acceptance criteria\n\n- CI: a release-configuration job that builds the bundle, compiles bytecode, launches under the headless\n  compositor and compares against the debug golden. A white screen fails the job, which is the whole point of\n  [#10255](https://github.com/microsoft/react-native-windows/issues/10255).\n- Unit: the bytecode-version check is an explicit assertion with a readable failure, not a segfault.\n- The symbolication path asserted against a fixture stack.\n\nRelated: #4 (CI, closed), #9 (Hermes, closed), #7 (e2e driver, open).\n"
+    },
+    {
+      "title": "feat(core): Intl and ECMA-402 stance — decide PlatformIntlICU versus polyfills, then gate it",
+      "milestone": "M3",
+      "labels": [
+        "area:core",
+        "kind:feat",
+        "platform-parity:windows",
+        "origin:rn-windows",
+        "priority:P1",
+        "needs:decision"
+      ],
+      "priority": "P1",
+      "body": "## Context\n\n[#14741](https://github.com/microsoft/react-native-windows/issues/14741) — `\"hello\".toLocaleUpperCase()` and `Intl.getCanonicalLocales(['und'])` issues — is open with\n15 comments under `Area: JavaScript Engine`. `react-native-windows` also carries a small but chronic\n`Area: Globalization` set: [#3742](https://github.com/microsoft/react-native-windows/issues/3742) `Alert`'s \"OK\" needs localizing, [#10272](https://github.com/microsoft/react-native-windows/issues/10272) a backport for\nfloating-point conversion in non-`en-US` locales, [#4791](https://github.com/microsoft/react-native-windows/issues/4791) system locale not reflected in date\nformatting, [#2657](https://github.com/microsoft/react-native-windows/issues/2657) \"Implement i18n setters\".\n\nADR-0001 lists this as an explicitly accepted risk: \"**`Intl` is a Linux-specific hole.** Hermes' ECMA-402 support\nis documented for Android and iOS only, and the generic `PlatformIntlICU` path behind `HERMES_ENABLE_INTL` is\nundocumented and untested on Linux. Either the untested `PlatformIntlICU` path is brought up and verified against\nECMA-402, or the polyfill route is made an explicit platform recommendation.\" The flagship already depends on\n`@formatjs/intl-pluralrules`, `expo-localization` and Lingui `plural()`.\n\nThis issue closes that open decision. It is deliberately labelled `needs:decision`: the outcome may be an ADR.\n\n## What to verify\n\n1. Whether `HERMES_ENABLE_INTL` with `PlatformIntlICU` builds and links on our Linux Hermes build, and what it\n   costs in binary size — ADR-0001 already notes ICU inflates the binary via SkUnicode, so we may be paying for\n   ICU twice.\n2. Which of `Intl.NumberFormat`, `DateTimeFormat`, `Collator`, `PluralRules`, `RelativeTimeFormat`, `ListFormat`,\n   `DisplayNames` and the `toLocale*` string methods actually work, per locale, against a conformance fixture.\n3. `Intl.getCanonicalLocales` on structurally valid but unusual tags (`'und'`) — [#14741](https://github.com/microsoft/react-native-windows/issues/14741)'s exact\n   case.\n4. Locale acquisition on Linux: `LC_ALL`/`LC_MESSAGES`/`LANG`, and what `expo-localization` should be told.\n\n## Acceptance criteria\n\n- A written decision (ADR if the answer is \"build ICU in\") recording the size cost and the supported surface.\n- Unit: an ECMA-402 conformance fixture — a curated `test262` subset — run in CI against whichever path is\n  chosen, so the answer stays true across Hermes bumps.\n- If the answer is polyfills, the platform documents the exact recommended set and the harness app uses it, so\n  the recommendation is executed rather than asserted.\n\nRelated: #9 (Hermes integration, closed), #30 (Hermes benchmark gate, open), #24 (flagship bring-up, open).\n"
+    },
+    {
+      "title": "feat(cli): dependency preflight doctor — a clean-machine check that fails loudly",
+      "milestone": "M3",
+      "labels": ["area:cli", "area:infra", "kind:feat", "platform-parity:windows", "origin:rn-windows", "priority:P0"],
+      "priority": "P0",
+      "body": "## Context\n\nThe highest-comment bugs in `react-native-windows` are not rendering bugs. They are \"it will not build on my\nmachine\":\n\n- [#3263](https://github.com/microsoft/react-native-windows/issues/3263) \"`react-native run-windows` command is failing at build step\" — **63 comments**.\n- [#10236](https://github.com/microsoft/react-native-windows/issues/10236) a duplicate attribute error on launch — 46 comments, still open.\n- [#2420](https://github.com/microsoft/react-native-windows/issues/2420) \"MSBuild tools not found\" — 35 comments.\n- [#16274](https://github.com/microsoft/react-native-windows/issues/16274) \"`init-windows` fails silently with 'unknown command' when `pwsh.exe` is missing; **not\n  documented in rnw-dependencies**\" — open. They *have* a dependency checker (`rnw-dependencies`) and it still\n  missed a prerequisite, which is why this issue is about the check being **verified**, not about writing one.\n- [#13339](https://github.com/microsoft/react-native-windows/issues/13339) labelled `Blocking`: unable to deploy after a Visual Studio point upgrade.\n- [#11642](https://github.com/microsoft/react-native-windows/issues/11642) build failure on a specific compiler preview.\n\nOur exposure is larger than theirs, not smaller. `docs/cpp-toolchain.md` lists prerequisites for Arch, a\nwithout-root path and Ubuntu/CI, spanning a Vulkan loader and ICD, Wayland and `xkbcommon` development packages,\na C++20 clang, CMake, Ninja, ccache, Python and Node — on a distribution matrix nobody controls.\n\n## What to verify\n\n1. A `doctor` command that checks every prerequisite, reports the missing ones by distribution package name, and\n   exits non-zero. No silent path, ever — [#16274](https://github.com/microsoft/react-native-windows/issues/16274) is what silence costs.\n2. Graceful degradation is explicit: `docs/cpp-toolchain.md` already requires configure to print\n   `rnl_window is disabled, missing: ...` and continue. The doctor states the same facts before the build starts.\n3. The check list and the documented prerequisite list are the **same list**, generated from one source, so they\n   cannot drift — that is precisely the [#16274](https://github.com/microsoft/react-native-windows/issues/16274) failure.\n\n## Acceptance criteria\n\n- Unit (TypeScript, Vitest, 100%): the check registry and the report renderer against fixture environments,\n  including \"all present\", \"one missing\", and \"present but too old\".\n- CI: a container job with a deliberately minimal image asserts the doctor names every missing package and exits\n  non-zero; a second job on the full image asserts it exits zero. This is the only way the check stays true.\n- The prerequisite tables in `docs/cpp-toolchain.md` are generated from the registry.\n\nRelated: #22 (platform registration and init template, open), #3 (toolchain, closed), #28 (quality toolchain,\nclosed).\n"
+    },
+    {
+      "title": "test(cli): codegen determinism and spec coverage — byte-identical output over the full type surface",
+      "milestone": "M3",
+      "labels": [
+        "area:cli",
+        "area:testing",
+        "kind:test",
+        "platform-parity:windows",
+        "origin:rn-windows",
+        "priority:P0"
+      ],
+      "priority": "P0",
+      "body": "## Context\n\nADR-0001 accepts that we take on a parallel codegen driver, because React Native's codegen targets are a closed\nunion hardcoded to Android, iOS and C++. `react-native-windows` ships exactly such a package, and the failures it\nproduces are always the same shape — something is not generated, and the error names something else:\n\n- [#7566](https://github.com/microsoft/react-native-windows/issues/7566) `requireNativeComponent \"RNSScreen\" was not found in the UIManager` — 23 comments. A\n  registration failure presented as a missing component.\n- [#13183](https://github.com/microsoft/react-native-windows/issues/13183) tracking the host component properties still to be implemented for Fabric.\n- [#12641](https://github.com/microsoft/react-native-windows/issues/12641) \"Add ViewComponent support to new library template\" — the generator did not cover a whole\n  category.\n- [#13884](https://github.com/microsoft/react-native-windows/issues/13884) the library template fails on a library created by `create-react-native-library`.\n- [#13925](https://github.com/microsoft/react-native-windows/issues/13925) a TurboModule using JSI crashes with `this` at `0x1` — a generated binding with a wrong\n  lifetime.\n\n## What to verify\n\n1. **Determinism:** running the generator twice over the same specs produces byte-identical output; generated\n   files are checked in and CI fails on a diff. Non-deterministic codegen makes every upgrade diff unreadable.\n2. **Type-surface coverage:** a fixture spec set exercising every construct the codegen schema admits — all\n   primitive prop types, enums (string and int), objects, arrays, nullable and optional, default values, events\n   with and without payloads, bubbling and direct events, commands with each argument type, and TurboModule\n   methods across sync/async/promise/callback returns and every return type.\n3. **Error surface:** a component registered in JS with no generated counterpart produces a message naming the\n   component and the file that should have declared it — the [#7566](https://github.com/microsoft/react-native-windows/issues/7566) fix.\n4. **Upstream drift:** the fixture set is regenerated against the vendored React Native pin, so a schema change\n   upstream fails our build rather than a user's.\n\n## Acceptance criteria\n\n- Unit (TypeScript, Vitest, 100%): the generator over the fixture spec set, golden-file compared.\n- CI: a \"codegen is clean\" step that regenerates and fails on any diff.\n- Integration: the generated C++ for the fixture set compiles and its TurboModule methods round-trip every type\n  through JSI, under ASan.\n- The missing-registration diagnostic asserted by its text.\n\nNote: the macOS plan owns the Metro *resolution* chain and the autolinking error surface; this issue owns the\ngenerator's own output and type coverage. Related: #21 (codegen and autolinking, open), #22 (open).\n"
+    },
+    {
+      "title": "feat(cli): platform-override manifest with a validate gate and an upstream-diff report",
+      "milestone": "M3",
+      "labels": ["area:cli", "area:infra", "kind:feat", "platform-parity:windows", "origin:rn-windows", "priority:P1"],
+      "priority": "P1",
+      "body": "## Context\n\n`react-native-windows` carries a label called **`Deforking`** with **122 issues** on it. That is not a bug\ncategory; it is a decade-long programme to *reduce* the number of upstream files they had forked, because every\nfork is a merge conflict on every React Native release. Representative:\n\n- [#3907](https://github.com/microsoft/react-native-windows/issues/3907) \"Build tool to help integrate diffs in platform overrides\" — they had to build the tool,\n  which is `react-native-platform-override`, the one ADR-0001 decision 9 already commits us to.\n- [#4222](https://github.com/microsoft/react-native-windows/issues/4222) \"Fix or Remove Cross-Plat Stubs of Windows-Specific Components\" and [#7231](https://github.com/microsoft/react-native-windows/issues/7231)\n  re-exporting the React Native types with forked props — platform-specific components leaking into the shared\n  type surface, which then has to be maintained forever.\n- [#5269](https://github.com/microsoft/react-native-windows/issues/5269) removing a fork of `StyleSheetValidation.js` once an upstream nightly made it unnecessary —\n  the successful case, and note it took a scheduled review to notice.\n- [#10619](https://github.com/microsoft/react-native-windows/issues/10619) upstreaming changes to `resolveAssetSource.js`; [#4592](https://github.com/microsoft/react-native-windows/issues/4592) integrating new upstream\n  view events; [#4678](https://github.com/microsoft/react-native-windows/issues/4678) removing a patched example file.\n- [#11961](https://github.com/microsoft/react-native-windows/issues/11961) migration documentation for removing `Glyph`, a platform-only non-core component — the cost\n  of having added one.\n\nADR-0001 sizes our fork at \"roughly thirteen core JS files\" and states the obligation \"grows with every React\nNative release\". Thirteen is a number that only stays thirteen if something counts it.\n\n## What to verify\n\n1. `react-native-platform-override` is configured with a manifest covering every overridden file, each entry\n   carrying the upstream version it was derived from and a stated reason.\n2. `validate` runs in CI and fails when an override's upstream base has moved — this is the merge-pain detector,\n   and it must run on the bump PR, not after.\n3. A generated report shows, per override, the diff against upstream and its age in React Native minors, so\n   \"should this still be forked?\" is a review question with data.\n4. An override budget is stated in the ADR terms (a number, currently ~13) and a PR that raises it says why.\n\n## Acceptance criteria\n\n- Unit (TypeScript, Vitest, 100%): manifest parsing, staleness computation and report rendering.\n- CI: `override:validate` in `pnpm validate`, failing on a stale entry.\n- The report is checked in and diffed in review, so growth is visible without anyone asking.\n- Adding a platform-only component or prop requires an entry that states its deforking exit, per\n  [#4222](https://github.com/microsoft/react-native-windows/issues/4222) and [#11961](https://github.com/microsoft/react-native-windows/issues/11961).\n\nRelated: #29 (linux platform identity, closed), #22 (open). Complements the macOS plan's upstream-parity\nconformance suite: that one detects *behaviour* drift, this one detects *source* drift.\n"
+    },
+    {
+      "title": "feat(modules): ecosystem support matrix — the libraries the flagship needs, tracked and gated",
+      "milestone": "M4",
+      "labels": ["area:modules", "kind:feat", "platform-parity:windows", "origin:rn-windows", "priority:P0"],
+      "priority": "P0",
+      "body": "## Context\n\nSorted by reactions, the `react-native-windows` tracker is not a list of rendering bugs. It is a list of libraries\nthat do not work:\n\n- [#13534](https://github.com/microsoft/react-native-windows/issues/13534) \"Expo support\" — 27 reactions, the most-reacted **open** issue in the repository.\n- [#3326](https://github.com/microsoft/react-native-windows/issues/3326) support `react-native-svg` — 20 reactions.\n- [#4151](https://github.com/microsoft/react-native-windows/issues/4151) support `react-native-reanimated` — 16 reactions.\n- [#4140](https://github.com/microsoft/react-native-windows/issues/4140) support `react-native-gesture-handler` — 15 reactions.\n- [#5173](https://github.com/microsoft/react-native-windows/issues/5173) Expo Snack should support Windows — 13 reactions, open.\n- [#3884](https://github.com/microsoft/react-native-windows/issues/3884) support React Navigation — 28 comments; [#2829](https://github.com/microsoft/react-native-windows/issues/2829) support `react-native-fs` — 29\n  comments, open since 2019; [#3278](https://github.com/microsoft/react-native-windows/issues/3278) Lottie — 26 comments; [#12567](https://github.com/microsoft/react-native-windows/issues/12567) re-add Windows support\n  to `react-native-localize`; [#6028](https://github.com/microsoft/react-native-windows/issues/6028) WebRTC, closed `Won't Fix`.\n- [#15078](https://github.com/microsoft/react-native-windows/issues/15078) \"Streamline RNW Community Modules Integration & Creation Process\" — their own conclusion.\n\nThey built a label for it (`Extensions`) and a `Partner:` axis to record who was asking. Ten years in, Expo\nsupport is still the top open request.\n\nADR-0001's M4 is already \"an ecosystem porting programme, not a single milestone\", and names roughly thirty\ndependencies plus the gating **port-or-decline decision on Reanimated** — which no out-of-tree platform, Microsoft\nor Huawei, has ever made. #24 owns running the flagship. This issue owns the *ledger*.\n\n## What to verify\n\n1. A checked-in matrix: every native dependency the flagship needs, with a state — `works`, `shimmed`,\n   `in progress`, `declined` (with the substitute), `blocked` (on which of our issues) — and the version pinned.\n2. Each `works` and `shimmed` row is backed by a test in the harness app, not by a manual check.\n3. The Reanimated decision is recorded as an ADR with its substitute animation story if declined, per ADR-0001.\n4. The matrix is what M4 is measured against, and it is public — the `react-native-windows` lesson is that\n   applicants ask this question first and a tracker full of \"does X work?\" issues is the cost of not answering it.\n\n## Acceptance criteria\n\n- The matrix is generated from the harness app's dependency set, so a dependency added without a row fails\n  `pnpm validate`.\n- E2E: the harness app imports every `works` row and renders a smoke screen per library under the headless\n  compositor.\n- A `declined` row must link the ADR or issue that declined it — no silent gaps.\n\nRelated: #24 (flagship bring-up, open), #21 (codegen and autolinking, open), #23 (core modules, open).\n"
+    },
+    {
+      "title": "feat(cli): library template and a third-party module authoring path",
+      "milestone": "M4",
+      "labels": [
+        "area:cli",
+        "area:modules",
+        "kind:feat",
+        "platform-parity:windows",
+        "origin:rn-windows",
+        "priority:P1"
+      ],
+      "priority": "P1",
+      "body": "## Context\n\n`react-native-windows` maintains an `Area: Library Template` alongside its app template, and the issues on it are\nall about the gap between \"we can build the platform\" and \"someone else can extend it\":\n\n- [#13250](https://github.com/microsoft/react-native-windows/issues/13250) align the new-architecture C++ library template with the React Native \"golden\" template.\n- [#12641](https://github.com/microsoft/react-native-windows/issues/12641) \"Add ViewComponent support to new library template\" — the template covered modules but not\n  components.\n- [#13884](https://github.com/microsoft/react-native-windows/issues/13884) the template fails on a library created by `create-react-native-library`, the tool every\n  React Native library author actually uses.\n- [#12786](https://github.com/microsoft/react-native-windows/issues/12786) non-UI component projects (async-storage, clipboard) could not be included in a Fabric\n  project.\n- [#15078](https://github.com/microsoft/react-native-windows/issues/15078) \"Streamline RNW Community Modules Integration & Creation Process\".\n- [#8321](https://github.com/microsoft/react-native-windows/issues/8321) \"How `Func<T,TResult>` works in a `ReactMethod`?\" — 7 reactions, an *open question* about the\n  authoring API, which is what missing documentation of a module surface looks like.\n\nAn out-of-tree platform whose only module author is the platform team is a platform with an ecosystem of one, and\nthe previous issue in this batch shows what that costs.\n\n## What to verify\n\n1. A library template that produces both a TurboModule and a Fabric host component, builds against the platform,\n   and is consumed by the harness app through autolinking.\n2. Compatibility with `create-react-native-library` output: adding Linux support to an existing library is a\n   documented, tested path, not a fork.\n3. The authoring surface — how a module declares methods, promises, callbacks, events and constants, and which\n   thread each runs on — is documented with the threading contract from the cross-thread stress issue in this\n   batch.\n\n## Acceptance criteria\n\n- CI: a job that scaffolds a library from the template, builds it, links it into the harness app, and asserts the\n  module and the component both work end to end. This is the library analogue of the macOS plan's fresh-project\n  smoke test and must not duplicate it — one covers apps, this one covers libraries.\n- Unit (TypeScript, Vitest, 100%): the template generator.\n- The threading contract for each authoring construct is asserted by a test, not only documented.\n\nRelated: #21 (open), #22 (open), #23 (open).\n"
+    },
+    {
+      "title": "build(packaging): prebuilt core binaries and a stated ABI boundary",
+      "milestone": "M4",
+      "labels": [
+        "area:packaging",
+        "area:infra",
+        "kind:feat",
+        "platform-parity:windows",
+        "origin:rn-windows",
+        "priority:P2",
+        "needs:decision"
+      ],
+      "priority": "P2",
+      "body": "## Context\n\n`react-native-windows` invested years in *not* making every app rebuild its C++:\n\n- [#4540](https://github.com/microsoft/react-native-windows/issues/4540) \"Split up `Microsoft.ReactNative.dll` into two DLLs: Core and UWP\" — open; and a whole\n  `Area: Core DLL` label (52 issues) whose description is literally \"ABI-safe RNW DLL\".\n- [#4552](https://github.com/microsoft/react-native-windows/issues/4552) \"ABI-safe JavaScript Engine API\" — open.\n- [#4787](https://github.com/microsoft/react-native-windows/issues/4787) a new app pulling in 1.6 GB; [#8103](https://github.com/microsoft/react-native-windows/issues/8103) reduce build memory and disk — the user-facing\n  reason the ABI work exists.\n- [#12970](https://github.com/microsoft/react-native-windows/issues/12970) creating a native UI component crashes on ARM64 — 19 comments, open; the architecture\n  matrix is not free.\n- [#15608](https://github.com/microsoft/react-native-windows/issues/15608) \"NuGet packages are missing for 0.81.3\" — the distribution channel is itself a failure mode.\n\nOur side: ADR-0001 records that Skia is vendored at a git hash with no ABI and no releases, that Shopify ships\nprebuilt packages \"because source builds are slow enough to matter\", and that Hermes must be built from source per\nReact Native version. If every application developer must build Skia and Hermes, the platform has an audience of\npeople who enjoy building Skia and Hermes.\n\nThis is deliberately `needs:decision`: the honest options are (a) prebuilt binaries with a stated C++ ABI, (b)\nprebuilt binaries with a C ABI shim, (c) source-only and own it. ADR-0001's Prime Directive argues against\nbuilding an ABI layer before there is a second consumer — so the *decision*, and its trigger condition, is the\ndeliverable here, not necessarily the layer.\n\n## What to verify\n\n1. What an application actually has to compile today, measured (wall clock, peak RAM, disk) on a clean machine.\n2. Whether a prebuilt `@react-native-linux/core` is feasible given the vendored-Skia-at-a-hash constraint, and\n   what its versioning contract with React Native minors and Hermes bytecode versions would be.\n3. Which architectures we claim: x86-64 certainly, aarch64 as a question with a cost.\n4. Where the artefacts live, and what happens when a release is missing ([#15608](https://github.com/microsoft/react-native-windows/issues/15608)).\n\n## Acceptance criteria\n\n- A written decision with the measured numbers, recorded as an ADR if it changes ADR-0001's build model.\n- If prebuilt: CI publishes the artefact, and a job consumes the *published* artefact rather than a local build,\n  because a distribution channel that is never consumed is a distribution channel that is broken.\n- If source-only: the build budget issue in this batch owns the numbers and a stated ceiling above which this\n  decision is reopened.\n\nRelated: #25 (AUR and omarchy-pkgs packaging, open), #3 (toolchain, closed).\n"
+    },
+    {
+      "title": "perf: an app-developer-facing performance surface — traces a user can capture",
+      "milestone": "M4",
+      "labels": [
+        "area:testing",
+        "area:core",
+        "kind:perf",
+        "platform-parity:windows",
+        "origin:rn-windows",
+        "priority:P3"
+      ],
+      "priority": "P3",
+      "body": "## Context\n\n[#6681](https://github.com/microsoft/react-native-windows/issues/6681) — \"Provide better ways to analyze React Native performance on Windows\" — is open with 9\nreactions, one of the most-reacted open issues in the repository, and it is filed by Microsoft against itself.\nAlongside it: [#4872](https://github.com/microsoft/react-native-windows/issues/4872) \"Build baseline perf app(s)\", [#8024](https://github.com/microsoft/react-native-windows/issues/8024) Hermes extremely slow in debug\nbuilds, [#8156](https://github.com/microsoft/react-native-windows/issues/8156) gradual slowdown when calling into a native method from JS, [#10484](https://github.com/microsoft/react-native-windows/issues/10484)\nchanging one accessibility prop re-mounts all children recursively — a perf bug found by a user, not by a tool.\n\nThe distinction that matters: our #20 gives *us* Tracy instrumentation and a CI frame-time gate. Neither helps an\napplication developer answer \"why is my screen slow?\" on their machine, and every issue above is that question.\n\n## What to verify\n\n1. A supported way for an application developer to capture a frame timeline with the phases named — JS,\n   commit/layout, mounting, snapshot, paint, present — plus `wp_presentation_feedback` realized times.\n2. Counters worth reading: nodes mounted, damage area per frame, paragraph cache hit rate, image cache hit rate,\n   glyph atlas pressure. `docs/cpp-toolchain.md` already notes the text and image caches have \"no hit-rate probe …\n   there is nowhere to report a number to until #20\"; this is that somewhere.\n3. A baseline sample app with known-slow and known-fast screens, so a number has a reference.\n4. The React Native DevTools Performance panel path, once the CDP work in this batch lands.\n\n## Acceptance criteria\n\n- The harness exposes the trace and the counters through a documented flag; the same probe feeds the CI gate, so\n  there is one implementation and not two.\n- A baseline app with recorded reference numbers is checked in, and the numbers are diffed like goldens.\n- Documented in `docs/cpp-toolchain.md` next to the pacing section.\n\nRelated: #20 (pacing and Tracy, open), #30 (Hermes benchmark gate, open), #7 (e2e driver, open).\n"
+    },
+    {
+      "title": "test(a11y): keyboard-only operability gate — every interactive node reachable and activatable",
+      "milestone": "M5",
+      "labels": [
+        "area:a11y",
+        "area:input",
+        "area:testing",
+        "kind:test",
+        "kind:parity",
+        "platform-parity:host-linux",
+        "origin:rn-windows",
+        "priority:P1"
+      ],
+      "priority": "P1",
+      "body": "## Context\n\n`Area: Accessibility` is the **largest area label in `react-native-windows` — 253 issues**, more than `Area: Text`\n(121) or `Area: TextInput` (148). In the most mature out-of-tree React Native platform, accessibility is the\nbiggest single body of defects. ADR-0001 already calls this a graveyard; the tracker quantifies it.\n\nThe half of it that is not screen-reader-specific is keyboard operability, and it is a long, unglamorous list:\n\n- [#9826](https://github.com/microsoft/react-native-windows/issues/9826) \"Keyboard Focus and Accessibility Focus should be the same\" — they diverged, and everything\n  downstream inherited the divergence.\n- [#4703](https://github.com/microsoft/react-native-windows/issues/4703) keyboard navigation to, or activation of, `Touchable`s did not work at all in 0.61.\n- [#6181](https://github.com/microsoft/react-native-windows/issues/6181) unexpected tab order with a `ScrollView` and components around it; [#6765](https://github.com/microsoft/react-native-windows/issues/6765) unusual\n  focus order with a picker; [#6566](https://github.com/microsoft/react-native-windows/issues/6566) cannot tab into `SectionList` headers; [#3006](https://github.com/microsoft/react-native-windows/issues/3006) cannot\n  tab in or out of a popup; [#2107](https://github.com/microsoft/react-native-windows/issues/2107) improved keyboarding behaviours for lists.\n- [#9292](https://github.com/microsoft/react-native-windows/issues/9292) `ref.focus()` does not work after the first render, \"requires ugly workaround\" — 15 comments.\n- [#10254](https://github.com/microsoft/react-native-windows/issues/10254) `onPressIn`/`onPressOut` do not fire in scan mode.\n- [#16363](https://github.com/microsoft/react-native-windows/issues/16363) a request, filed in 2026, for a non-mutating focusability query for focus-zone scenarios —\n  the focus model was still being extended a decade in.\n\n## What to verify\n\nThe macOS plan owns *building* the focus model (`focusable`, focus ring, Tab traversal, `onFocus`/`onBlur`,\nEnter/Space). This issue owns proving it holds up as a **gate**, over the containers that broke it there:\n\n1. Every interactive node in a fixture screen is reachable by Tab and Shift+Tab in visual order, including inside\n   a `ScrollView` (with the scroll following focus), inside a list, and across an overlay.\n2. Focus cannot be trapped: entering an overlay and leaving it returns to the invoking node.\n3. `ref.focus()` works on the first render and after a re-mount ([#9292](https://github.com/microsoft/react-native-windows/issues/9292)).\n4. Keyboard focus and the AT-SPI accessible focus are the same object at all times ([#9826](https://github.com/microsoft/react-native-windows/issues/9826)) — this is\n   the requirement that must be true *before* #27 builds the tree, not after.\n5. Every action reachable by pointer is reachable by keyboard. A screen where it is not fails the gate.\n\n## Acceptance criteria\n\n- E2E: a keyboard-only traversal of the harness app's fixture screens under the headless compositor with virtual\n  Wayland input, asserting the visited order as a checked-in trace.\n- Unit (C++): traversal order over synthetic trees — nested scrollers, hidden and disabled nodes, overlays,\n  `display: none` — inside the 100% gate.\n- CI gate: adding an interactive component without a traversal assertion fails, in the same shape as the\n  prop-coverage report in this batch.\n\nRelated: #18 (input pipeline, closed), #27 (AT-SPI groundwork, open), #16 (`<ScrollView>`, open).\n"
+    },
+    {
+      "title": "feat(a11y): announcements, focus and caret events, text scale and high contrast",
+      "milestone": "M5",
+      "labels": ["area:a11y", "kind:feat", "platform-parity:host-linux", "origin:rn-windows", "priority:P1"],
+      "priority": "P1",
+      "body": "## Context\n\nThe other half of `react-native-windows`'s 253 accessibility issues is what a screen reader is told, and when:\n\n- [#14426](https://github.com/microsoft/react-native-windows/issues/14426) \"Narrator does not provide any audio output after initial focus on New Architecture\n  applications\" — the tree existed and the *events* did not.\n- [#3836](https://github.com/microsoft/react-native-windows/issues/3836) `accessibilityLabel` on a `<View>` does nothing without also setting `accessibilityRole` —\n  10 comments; a mapping rule nobody could have guessed.\n- [#10259](https://github.com/microsoft/react-native-windows/issues/10259) Narrator does not announce `TouchableOpacity`/`TouchableHighlight` when they have a\n  `borderRadius`, and [#6706](https://github.com/microsoft/react-native-windows/issues/6706) setting a `borderRadius` stops `accessibilityLabel` being read — a\n  *visual* prop silently removing a node from the accessibility tree, twice.\n- [#10484](https://github.com/microsoft/react-native-windows/issues/10484) changing `importantForAccessibility` re-mounts all children recursively — labelled both\n  `Area: Accessibility` and `Area: Performance`.\n- [#10253](https://github.com/microsoft/react-native-windows/issues/10253) an OS text-scale change should trigger a re-layout; [#5177](https://github.com/microsoft/react-native-windows/issues/5177) the template app\n  does not respect high-contrast mode; [#14099](https://github.com/microsoft/react-native-windows/issues/14099) `AccessibilityInfo::isHighTextContrastEnabled()`\n  unimplemented; [#11476](https://github.com/microsoft/react-native-windows/issues/11476) `Slider` accessibility — 27 comments; [#12981](https://github.com/microsoft/react-native-windows/issues/12981) scan mode escapes\n  a popup's region.\n\n## What to verify\n\nThe macOS plan owns the static role and name mapping. This issue owns everything dynamic:\n\n1. Focus, selection, value, text-caret and text-changed events are emitted on AT-SPI as they happen, and the\n   screen reader speaks after the first focus ([#14426](https://github.com/microsoft/react-native-windows/issues/14426)).\n2. `AccessibilityInfo.announceForAccessibility` reaches the screen reader, and live-region semantics\n   (`accessibilityLiveRegion`) are honoured.\n3. A visual prop can never remove a node from the accessibility tree — the [#6706](https://github.com/microsoft/react-native-windows/issues/6706)/[#10259](https://github.com/microsoft/react-native-windows/issues/10259)\n   class, which for us is real because our accessible geometry derives from the same `RetainedScene` that owns\n   `borderRadius` and clipping.\n4. `importantForAccessibility` / `accessibilityElementsHidden` change the tree without re-mounting anything\n   ([#10484](https://github.com/microsoft/react-native-windows/issues/10484)).\n5. Desktop-environment settings: text scale factor, high contrast and reduced motion are read (portal or\n   `org.gnome.desktop.interface` over D-Bus), surfaced through `AccessibilityInfo`, and a change triggers a\n   re-layout rather than requiring a restart.\n\n## Acceptance criteria\n\n- Unit (C++): the event-emission decisions computed in a testable layer — which mutation produces which AT-SPI\n  event — inside the 100% gate.\n- Integration: an AT-SPI client in the harness subscribes and asserts the event stream for focus, caret and value\n  changes on a fixture screen.\n- A property test asserting no combination of visual props changes the accessible tree.\n- E2E: a text-scale change re-lays out, asserted by golden.\n\nRelated: #27 (AT-SPI groundwork, open), #13 (view props, closed), #17 (`<TextInput>`, open).\n"
+    },
+    {
+      "title": "test(harness): the e2e harness must drive more than one window",
+      "milestone": "M5",
+      "labels": [
+        "area:testing",
+        "area:core",
+        "kind:test",
+        "platform-parity:windows",
+        "origin:rn-windows",
+        "priority:P1"
+      ],
+      "priority": "P1",
+      "body": "## Context\n\n[#14069](https://github.com/microsoft/react-native-windows/issues/14069) — \"[Modal] Test if our current testing infrastructure can handle multiple windows\" — is a\n`react-native-windows` issue filed because they implemented `Modal` and then discovered their test harness could\nonly see one window. The bugs that followed were exactly the ones a single-window harness cannot catch:\n\n- [#15165](https://github.com/microsoft/react-native-windows/issues/15165) app crashes after creating a `Modal` and then moving the window.\n- [#12927](https://github.com/microsoft/react-native-windows/issues/12927) a layout assertion fails on a secondary window; [#12247](https://github.com/microsoft/react-native-windows/issues/12247) a root view does not\n  unmount on navigation; [#4923](https://github.com/microsoft/react-native-windows/issues/4923) maximize/restore crashes the app.\n- [#8251](https://github.com/microsoft/react-native-windows/issues/8251) prevent window focus stealing for auto-focus scenarios — focus is a *global* resource once\n  there are two windows.\n- [#885](https://github.com/microsoft/react-native-windows/issues/885) \"Support multi-window apps\" and [#618](https://github.com/microsoft/react-native-windows/issues/618) `RCTModalHostView` (12 reactions) are the\n  feature requests those bugs are the price of.\n\nADR-0001 puts multi-window in M5, and the macOS plan owns the `Modal`-versus-`xdg_popup` design decision. This\nissue is the prerequisite neither of them covers: our harness today drives one `rnl_window` under\n`weston --backend=headless`, screenshots one surface, and injects input to one seat. Building the feature before\nthe harness can observe it is how [#14069](https://github.com/microsoft/react-native-windows/issues/14069) happened.\n\n## What to verify\n\n1. The harness can launch an app that creates N surfaces, address each by identity, screenshot each, and compare\n   each against its own golden.\n2. Virtual Wayland input can be directed at a chosen surface, and keyboard focus transitions between surfaces are\n   observable as a trace — the [#8251](https://github.com/microsoft/react-native-windows/issues/8251) case.\n3. Window lifecycle events (create, configure, activate, deactivate, close) are asserted per surface, including\n   closing the parent while a child is open.\n4. Teardown leaves no orphaned surface, which ties into the instance-teardown gate in this batch.\n\n## Acceptance criteria\n\n- The window-golden rig gains a per-surface addressing model; the existing single-window fixtures keep passing\n  unchanged.\n- E2E: a two-surface fixture asserting independent goldens, a focus transition trace, and a parent-closes-child\n  case.\n- The harness fails loudly, not silently, if a surface it was asked to observe never appeared.\n\nRelated: #7 (e2e driver, open), #33 (window golden, closed), #6 (golden rig, closed).\n"
+    }
+  ]
+}
