@@ -26,9 +26,6 @@ const binaryPath = path.join(packageDirectory, "..", "..", "build", "dev", "bin"
 const isRegenerating = env["RNL_UPDATE_GOLDENS"] === "1";
 const hasBinary = existsSync(binaryPath);
 
-// --damage-golden renders its bundle's second commit twice, once in full and once clipped to the damage the scene
-// reported, and exits non-zero unless the two are byte-identical. The PNG it writes is the damage-clipped one, so
-// the fixture below is both the partial-redraw proof and an ordinary golden.
 const fixtures: readonly GoldenFixture[] = [
   { bundleFileName: "fabric-view.js", goldenFileName: "fabric-view.png", renderFlag: "--golden" },
   { bundleFileName: "view-props.js", goldenFileName: "view-props.png", renderFlag: "--golden" },

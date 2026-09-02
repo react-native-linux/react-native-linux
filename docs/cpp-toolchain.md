@@ -434,7 +434,7 @@ or resized surface has no relationship at all to the pixels that were there.
 
 | Mutation | Damage |
 | --- | --- |
-| `Create` | The new extent. Fabric emits `Create` before `Insert`, so this measures the node where it stands, unparented — one redundant rectangle per created node, which the cap below absorbs. |
+| `Create` | The new extent. Fabric emits `Create` before `Insert`, so this measures the node where it stands, parentless — one redundant rectangle per created node, which the cap below absorbs. |
 | `Insert` | The extent before the insert and after it, which is what makes a reparent damage both places. |
 | `Remove` | The same pair. A removed node is not a deleted node: it becomes its own root and keeps painting at its own frame origin until the `Delete` arrives. |
 | `Delete` | The old extent. |

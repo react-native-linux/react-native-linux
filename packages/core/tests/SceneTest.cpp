@@ -163,6 +163,25 @@ MountingTransaction transactionOf(ShadowViewMutationList&& mutations) {
     return MountingTransaction{kSurfaceTag, 1, std::move(mutations), facebook::react::TransactionTelemetry{}};
 }
 
+SceneDamage damageAfterUpdatingPaintedChild(Rect newFrame) {
+    RetainedScene scene = sceneWithPaintedChild();
+
+    scene.takeDamage();
+    scene.updateNode(makePaintedView(2, newFrame, red()));
+
+    return scene.takeDamage();
+}
+
+RetainedScene sceneWithClippingParent(const std::shared_ptr<ViewProps>& clippingProps, Rect frame) {
+    RetainedScene scene;
+
+    clippingProps->yogaStyle.setOverflow(yoga::Overflow::Hidden);
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, makeStyledView(2, frame, clippingProps));
+
+    return scene;
+}
+
 TEST(RetainedSceneTest, EmptySceneRendersAndDumpsNothing) {
     const RetainedScene scene;
 
@@ -622,12 +641,7 @@ TEST(RetainedSceneDamageTest, InsertingAChildDamagesTheOldAndTheNewPosition) {
 }
 
 TEST(RetainedSceneDamageTest, MovingANodeDamagesTheOldAndTheNewPosition) {
-    RetainedScene scene = sceneWithPaintedChild();
-
-    scene.takeDamage();
-    scene.updateNode(makePaintedView(2, makeRect(300, 400, 50, 60), red()));
-
-    const SceneDamage damage = scene.takeDamage();
+    const SceneDamage damage = damageAfterUpdatingPaintedChild(makeRect(300, 400, 50, 60));
 
     ASSERT_EQ(damage.size(), 2U);
     expectRect(damage[0], makeRect(10, 20, 200, 100));
@@ -635,12 +649,7 @@ TEST(RetainedSceneDamageTest, MovingANodeDamagesTheOldAndTheNewPosition) {
 }
 
 TEST(RetainedSceneDamageTest, AColorOnlyChangeDamagesThePrimitiveBoundsTwice) {
-    RetainedScene scene = sceneWithPaintedChild();
-
-    scene.takeDamage();
-    scene.updateNode(makePaintedView(2, makeRect(10, 20, 200, 100), red()));
-
-    const SceneDamage damage = scene.takeDamage();
+    const SceneDamage damage = damageAfterUpdatingPaintedChild(makeRect(10, 20, 200, 100));
 
     ASSERT_EQ(damage.size(), 2U);
     expectRect(damage[0], makeRect(10, 20, 200, 100));
@@ -710,13 +719,8 @@ TEST(RetainedSceneDamageTest, ATransformIsMappedIntoTheDamageBounds) {
 }
 
 TEST(RetainedSceneDamageTest, AnAncestorClipCutsTheDamageBounds) {
-    RetainedScene scene;
-    const std::shared_ptr<ViewProps> clippingProps = propsWithBackground(blue());
+    RetainedScene scene = sceneWithClippingParent(propsWithBackground(blue()), makeRect(25, 35, 200, 150));
 
-    clippingProps->yogaStyle.setOverflow(yoga::Overflow::Hidden);
-
-    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
-    addChild(scene, kSurfaceTag, makeStyledView(2, makeRect(25, 35, 200, 150), clippingProps));
     scene.takeDamage();
     addChild(scene, 2, makePaintedView(3, makeRect(10, 10, 400, 400), red()));
 
@@ -727,13 +731,7 @@ TEST(RetainedSceneDamageTest, AnAncestorClipCutsTheDamageBounds) {
 }
 
 TEST(RetainedSceneDamageTest, APrimitiveEntirelyOutsideItsClipDamagesNothing) {
-    RetainedScene scene;
-    const std::shared_ptr<ViewProps> clippingProps = std::make_shared<ViewProps>();
-
-    clippingProps->yogaStyle.setOverflow(yoga::Overflow::Hidden);
-
-    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
-    addChild(scene, kSurfaceTag, makeStyledView(2, makeRect(0, 0, 100, 100), clippingProps));
+    RetainedScene scene = sceneWithClippingParent(std::make_shared<ViewProps>(), makeRect(0, 0, 100, 100));
 
     const ShadowView hidden = makePaintedView(3, makeRect(200, 200, 50, 50), red());
 
