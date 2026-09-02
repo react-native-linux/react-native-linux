@@ -642,6 +642,56 @@ if(TARGET rnl_skia)
         PRIVATE "RNL_BUNDLED_ASSET_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/assets\"")
 endif()
 
+# ---------------------------------------------------------------------------
+# The Linux <TextInput>
+#
+# react/renderer/components/textinput ships the shared half of the component — BaseTextInputProps,
+# BaseTextInputShadowNode, TextInputState and TextInputEventEmitter — and no platform/cxx directory beside them.
+# Its own CMakeLists globs platform/android/**/*.cpp unconditionally and puts platform/android/ on the public
+# include path, with no react_native_android_selector anywhere in it, so unlike rrc_view and
+# react_renderer_textlayoutmanager there is no platform slot to swap a source into and nothing to swap in.
+#
+# This is therefore the other half of the same pattern: rather than replacing a source inside a vendored target,
+# we add our own target over the two vendored sources we do want. No vendored file is edited, the Android props,
+# shadow node and MapBuffer state are never compiled, and the descriptor, shadow node and props for this platform
+# live in src/TextInputComponent.h on top of the base classes. See *TextInput* in docs/cpp-toolchain.md.
+# ---------------------------------------------------------------------------
+
+set(RNL_TEXT_INPUT_DIR ${REACT_COMMON_DIR}/react/renderer/components/textinput)
+set(RNL_TEXT_INPUT_SHARED_SOURCES
+    ${RNL_TEXT_INPUT_DIR}/BaseTextInputProps.cpp
+    ${RNL_TEXT_INPUT_DIR}/TextInputEventEmitter.cpp)
+
+foreach(rnl_text_input_source IN LISTS RNL_TEXT_INPUT_SHARED_SOURCES)
+    if(NOT EXISTS "${rnl_text_input_source}")
+        message(FATAL_ERROR
+            "The upstream shared <TextInput> sources are no longer at ${RNL_TEXT_INPUT_DIR}; the target in packages/core/CMakeLists.txt needs updating for this React Native pin")
+    endif()
+endforeach()
+
+add_library(rnl_textinput OBJECT ${RNL_TEXT_INPUT_SHARED_SOURCES})
+target_include_directories(rnl_textinput PUBLIC ${REACT_COMMON_DIR} ${RNL_TEXT_INPUT_DIR})
+target_compile_reactnative_options(rnl_textinput PRIVATE)
+target_compile_options(rnl_textinput PRIVATE -Wno-error)
+target_link_libraries(rnl_textinput
+    PUBLIC
+        folly_runtime
+        glog
+        glog_init
+        jsi
+        react_debug
+        react_renderer_attributedstring
+        react_renderer_core
+        react_renderer_graphics
+        react_renderer_imagemanager
+        react_renderer_mounting
+        react_renderer_textlayoutmanager
+        react_utils
+        rrc_image
+        rrc_text
+        rrc_view
+        yoga)
+
 # The test configure stops here: everything below links hermesvm, and the reason this build
 # exists at all is that Hermes cannot share a configure with googletest.
 if(RNL_BUILD_TESTS)
@@ -662,7 +712,9 @@ endif()
 # ---------------------------------------------------------------------------
 
 add_library(rnl_react_core STATIC
+    src/Clipboard.cpp
     src/ConsoleBinding.cpp
+    src/EditorModel.cpp
     src/FabricHost.cpp
     src/FocusModel.cpp
     src/HermesJSRuntimeFactory.cpp
@@ -674,7 +726,9 @@ add_library(rnl_react_core STATIC
     src/ReactHost.cpp
     src/RetainedScene.cpp
     src/ScrollController.cpp
-    src/ScrollPhysics.cpp)
+    src/ScrollPhysics.cpp
+    src/TextInputComponent.cpp
+    src/TextInputController.cpp)
 target_compile_options(rnl_react_core PRIVATE -Wall -Wextra)
 target_compile_options(rnl_react_core PUBLIC -fexceptions -frtti)
 target_include_directories(rnl_react_core PUBLIC src)
@@ -684,13 +738,20 @@ target_link_libraries(rnl_react_core
         jsi
         rnl_jsidynamic
         folly_runtime
+        rnl_textinput
         ${RNL_REACT_COMMON_TARGETS}
         atomic)
 
 # The decode-completion listener the Fabric host installs only exists when the ImageManager swap above happened.
 # Without Skia there is no decoder, so there is nothing to listen to.
+#
+# RNL_ENABLE_TEXT_GEOMETRY is the same conditional for the same reason: caret rectangles, selection rectangles
+# and the point-to-offset hit test are SkParagraph calls declared in src/TextGeometry.h and defined beside
+# layoutParagraph in src/TextPipeline.cpp, which is only compiled when the TextLayoutManager swap happened.
+# Without it a paragraph already measures as zero, so a field has no geometry to ask about; the caret still moves
+# by grapheme, because that half is arithmetic.
 if(TARGET rnl_skia)
-    target_compile_definitions(rnl_react_core PRIVATE RNL_ENABLE_IMAGES)
+    target_compile_definitions(rnl_react_core PRIVATE RNL_ENABLE_IMAGES RNL_ENABLE_TEXT_GEOMETRY)
 endif()
 
 # ---------------------------------------------------------------------------

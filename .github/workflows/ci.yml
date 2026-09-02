@@ -377,6 +377,13 @@ jobs:
           grep -q "scroll: committed surface 1" /tmp/rnl-scroll.log
           grep -qE 'ScrollView #3 frame=\(60\.00, 60\.00, 200\.00, 150\.00\).*contentOffset=\(0\.00, 0\.00\)' /tmp/rnl-scroll.log
 
+          # The <TextInput> descriptor is ours rather than upstream's, so this proves it is registered and that a
+          # secure field reaches the mounting layer masked. It needs no Skia: the dump is the scene, not a layout.
+          "$binary" --fabric packages/core/test-bundles/text-input.js | tee /tmp/rnl-text-input.log
+          grep -q "text-input: committed surface 1" /tmp/rnl-text-input.log
+          grep -q "TextInput #10" /tmp/rnl-text-input.log
+          ! grep -q "hunter2" /tmp/rnl-text-input.log
+
       # Only the Skia entry has a TextLayoutManager behind Yoga; with -DRNL_ENABLE_SKIA=OFF the upstream stub is
       # still compiled in and every paragraph measures as zero, so this assertion belongs to the dev entry alone.
       - name: Run the text acceptance path
@@ -388,6 +395,15 @@ jobs:
           "$binary" --fabric packages/core/test-bundles/text.js | tee /tmp/rnl-text.log
           grep -q "text: committed surface 1" /tmp/rnl-text.log
           grep -qE 'Paragraph #[0-9]+ frame=.* text="Text renders on Linux"' /tmp/rnl-text.log
+
+          # Typing into the field: the ordered event trace of issues #17, #53 and #54, and the caret geometry it
+          # implies. It needs Skia because a caret is measured against a laid-out paragraph.
+          "$binary" --type packages/core/test-bundles/text-input.js /tmp/rnl-typing.png "Hello{Left}{Left}X" \
+            | tee /tmp/rnl-typing.log
+          grep -q "text-input: topFocus on plain" /tmp/rnl-typing.log
+          grep -q 'text-input: topChange on plain text="H"' /tmp/rnl-typing.log
+          grep -q 'text-input: topChange on plain text="HelXlo"' /tmp/rnl-typing.log
+          grep -q "text-input: topKeyPress on plain key=H" /tmp/rnl-typing.log
 
       - name: Compare golden images
         if: matrix.skia == 'ON'

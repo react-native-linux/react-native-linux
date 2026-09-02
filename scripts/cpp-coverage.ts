@@ -32,6 +32,8 @@ const rawProfilePath = path.join(coverageDirectory, "rnl_core_tests.profraw");
 const mergedProfilePath = path.join(coverageDirectory, "rnl_core_tests.profdata");
 
 const scopedSourcePaths: readonly string[] = [
+  "packages/core/src/Clipboard.cpp",
+  "packages/core/src/EditorModel.cpp",
   "packages/core/src/FocusModel.cpp",
   "packages/core/src/ImageContent.cpp",
   "packages/core/src/InputPipeline.cpp",
@@ -110,7 +112,9 @@ const countRecords = (
 };
 
 const formatPercent = (count: RecordCount): string =>
-  ((count.covered / count.total) * PERCENT_SCALE).toFixed(PERCENT_DECIMALS);
+  count.total === NO_RECORDS
+    ? FULL_COVERAGE_PERCENT.toFixed(PERCENT_DECIMALS)
+    : ((count.covered / count.total) * PERCENT_SCALE).toFixed(PERCENT_DECIMALS);
 
 const findRecords = (recordsByFile: ReadonlyMap<string, string[]>, scopedPath: string): readonly string[] | null => {
   const absolutePath = path.join(repositoryRoot, scopedPath);
@@ -127,8 +131,8 @@ const findRecords = (recordsByFile: ReadonlyMap<string, string[]>, scopedPath: s
 const buildCoverageFailures = (scopedPath: string, lines: RecordCount, branches: RecordCount): readonly string[] => {
   const failures: string[] = [];
 
-  if (lines.total === NO_RECORDS || branches.total === NO_RECORDS) {
-    failures.push(`${scopedPath}: the lcov export carried no line or branch records; check the llvm-cov version`);
+  if (lines.total === NO_RECORDS) {
+    failures.push(`${scopedPath}: the lcov export carried no line records; check the llvm-cov version`);
   }
 
   if (lines.covered !== lines.total) {

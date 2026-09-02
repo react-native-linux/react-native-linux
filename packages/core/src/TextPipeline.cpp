@@ -1,5 +1,7 @@
 #include "TextPipeline.h"
 
+#include "TextGeometry.h"
+
 #include "include/core/SkFontTypes.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkFontMgr.h"
@@ -42,6 +44,12 @@ constexpr char kFallbackFontFamily[] = DEFAULT_FONT_FAMILY;
 constexpr char kEllipsisUtf8[] = "\xE2\x80\xA6";
 constexpr float kDefaultFontSize = 14.0F;
 constexpr float kUnlimitedLayoutWidth = 1.0e6F;
+constexpr float kCaretWidth = 1.0F;
+// The line height of an empty field, where there is no glyph to measure the caret against. It is the ratio
+// SkParagraph's own strut uses for a font that reports no metrics, and it is only ever reached before the first
+// character is typed.
+constexpr float kEmptyLineHeightRatio = 1.2F;
+constexpr char kSegmentationLocale[] = "en";
 
 /**
  * `layout` takes a finite width, and React Native expresses "as wide as it wants" as an infinite maximum. A very
@@ -246,6 +254,70 @@ TextPipelineState& textPipelineState() {
     return state;
 }
 
+facebook::react::Rect toRect(const SkRect& rect) {
+    return facebook::react::Rect{
+        .origin = facebook::react::Point{.x = rect.fLeft, .y = rect.fTop},
+        .size = facebook::react::Size{.width = rect.width(), .height = rect.height()}};
+}
+
+std::vector<facebook::react::Rect> toRects(const std::vector<skia::textlayout::TextBox>& boxes) {
+    std::vector<facebook::react::Rect> rects;
+
+    rects.reserve(boxes.size());
+
+    for (const skia::textlayout::TextBox& box : boxes) {
+        rects.push_back(toRect(box.rect));
+    }
+
+    return rects;
+}
+
+std::vector<skia::textlayout::TextBox> rangeBoxes(skia::textlayout::Paragraph& paragraph, size_t beginUtf16,
+                                                  size_t endUtf16) {
+    if (endUtf16 <= beginUtf16) {
+        return {};
+    }
+
+    return paragraph.getRectsForRange(static_cast<unsigned>(beginUtf16), static_cast<unsigned>(endUtf16),
+                                      skia::textlayout::RectHeightStyle::kMax,
+                                      skia::textlayout::RectWidthStyle::kTight);
+}
+
+/**
+ * The caret as a one-point-wide rectangle on the line it sits on.
+ *
+ * It is measured from the glyph after it, so it inherits that line's height rather than a constant — which is
+ * react-native-macos#1395, where a caret kept a fixed height as the font size grew. At the end of the text there
+ * is no glyph after it, so the glyph before it supplies the line and the caret goes on its trailing edge; an
+ * empty field has neither, and only then is a height invented.
+ */
+facebook::react::Rect caretRectangle(skia::textlayout::Paragraph& paragraph, size_t caretUtf16, float emptyHeight) {
+    const std::vector<skia::textlayout::TextBox> following = rangeBoxes(paragraph, caretUtf16, caretUtf16 + 1);
+
+    if (!following.empty()) {
+        const SkRect& rect = following.front().rect;
+
+        return facebook::react::Rect{
+            .origin = facebook::react::Point{.x = rect.fLeft, .y = rect.fTop},
+            .size = facebook::react::Size{.width = kCaretWidth, .height = rect.height()}};
+    }
+
+    const std::vector<skia::textlayout::TextBox> preceding =
+        caretUtf16 == 0 ? std::vector<skia::textlayout::TextBox>{}
+                        : rangeBoxes(paragraph, caretUtf16 - 1, caretUtf16);
+
+    if (!preceding.empty()) {
+        const SkRect& rect = preceding.back().rect;
+
+        return facebook::react::Rect{
+            .origin = facebook::react::Point{.x = rect.fRight, .y = rect.fTop},
+            .size = facebook::react::Size{.width = kCaretWidth, .height = rect.height()}};
+    }
+
+    return facebook::react::Rect{.origin = facebook::react::Point{.x = 0, .y = 0},
+                                 .size = facebook::react::Size{.width = kCaretWidth, .height = emptyHeight}};
+}
+
 } // namespace
 
 std::unique_ptr<skia::textlayout::Paragraph>
@@ -273,6 +345,90 @@ layoutParagraph(const facebook::react::AttributedString& attributedString,
     paragraph->layout(toLayoutWidth(maximumWidth));
 
     return paragraph;
+}
+
+EditorGeometry measureEditorGeometry(const facebook::react::AttributedString& attributedString,
+                                     const facebook::react::ParagraphAttributes& paragraphAttributes,
+                                     float maximumWidth, const EditorGeometryRequest& request) {
+    // A single line is measured unwrapped, because a value longer than its box scrolls rather than wrapping. If
+    // it turns out to fit, it is laid out again against the box so `textAlign` still applies — a field centred
+    // in a 1e6-point line would otherwise be drawn a long way off screen.
+    const float unwrappedWidth = request.isMultiline ? maximumWidth : kUnlimitedLayoutWidth;
+    const std::unique_ptr<skia::textlayout::Paragraph> paragraph =
+        layoutParagraph(attributedString, paragraphAttributes, unwrappedWidth);
+    const float contentWidth = paragraph->getLongestLine();
+    float layoutWidth = unwrappedWidth;
+
+    if (!request.isMultiline && contentWidth <= maximumWidth) {
+        TextPipelineState& state = textPipelineState();
+        const std::lock_guard<std::mutex> guard(state.mutex);
+
+        paragraph->layout(toLayoutWidth(maximumWidth));
+        layoutWidth = maximumWidth;
+    }
+
+    const float emptyHeight = paragraph->getHeight() > 0.0F
+                                  ? paragraph->getHeight()
+                                  : resolvedFontSize(attributedString.getBaseTextAttributes()) * kEmptyLineHeightRatio;
+
+    return EditorGeometry{
+        .caret = caretRectangle(*paragraph, request.caretUtf16, emptyHeight),
+        .selection = toRects(rangeBoxes(*paragraph, request.selectionBeginUtf16, request.selectionEndUtf16)),
+        .composition = toRects(rangeBoxes(*paragraph, request.compositionBeginUtf16, request.compositionEndUtf16)),
+        .contentWidth = contentWidth,
+        .layoutWidth = layoutWidth};
+}
+
+size_t utf16IndexAtPoint(const facebook::react::AttributedString& attributedString,
+                         const facebook::react::ParagraphAttributes& paragraphAttributes, float maximumWidth,
+                         facebook::react::Point localPoint) {
+    const std::unique_ptr<skia::textlayout::Paragraph> paragraph =
+        layoutParagraph(attributedString, paragraphAttributes, maximumWidth);
+    const skia::textlayout::PositionWithAffinity position =
+        paragraph->getGlyphPositionAtCoordinate(static_cast<SkScalar>(localPoint.x),
+                                                static_cast<SkScalar>(localPoint.y));
+
+    return position.position <= 0 ? 0 : static_cast<size_t>(position.position);
+}
+
+TextSegments segmentText(const std::string& text) {
+    TextSegments segments;
+
+    segments.graphemeStarts.push_back(0);
+    segments.wordStarts.push_back(0);
+
+    if (text.empty()) {
+        return segments;
+    }
+
+    TextPipelineState& state = textPipelineState();
+    const std::lock_guard<std::mutex> guard(state.mutex);
+    std::string segmented = text;
+    skia_private::TArray<SkUnicode::CodeUnitFlags, true> codeUnitFlags;
+
+    if (state.unicode->computeCodeUnitFlags(segmented.data(), static_cast<int>(segmented.size()), false,
+                                            &codeUnitFlags)) {
+        for (int index = 1; index < codeUnitFlags.size() && index < static_cast<int>(text.size()); ++index) {
+            if (SkUnicode::hasGraphemeStartFlag(codeUnitFlags[index])) {
+                segments.graphemeStarts.push_back(static_cast<size_t>(index));
+            }
+        }
+    }
+
+    std::vector<SkUnicode::Position> words;
+
+    if (state.unicode->getUtf8Words(text.data(), static_cast<int>(text.size()), kSegmentationLocale, &words)) {
+        for (const SkUnicode::Position word : words) {
+            if (word > 0 && word < text.size()) {
+                segments.wordStarts.push_back(word);
+            }
+        }
+    }
+
+    segments.graphemeStarts.push_back(text.size());
+    segments.wordStarts.push_back(text.size());
+
+    return segments;
 }
 
 } // namespace react_native_linux

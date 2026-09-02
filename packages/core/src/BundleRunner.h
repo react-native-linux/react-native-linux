@@ -70,6 +70,20 @@ FabricRunResult runScrolledFabricBundle(const std::string& bundlePath, facebook:
  */
 FabricRunResult runFocusTabbedFabricBundle(const std::string& bundlePath, facebook::react::Size surfaceSize,
                                            int tabPresses);
+
+/**
+ * Runs a bundle, presses Tab once to land on the first focusable — which the fixture makes the `<TextInput>` —
+ * and then types `keySequence` through the same `InputQueue` and `InputDispatcher` a window uses.
+ *
+ * The sequence is `parseKeySequence`'s notation: literal characters, `{Left}`, `{Shift+Left}`, `{Ctrl+A}`,
+ * `{Backspace}`, `{Enter}` and the composition tokens `{Preedit:...}` and `{Commit:...}`. Every event is
+ * delivered on its own frame, so what reaches JavaScript is the ordered trace a real typing session produces.
+ *
+ * The caret blink is never advanced, so the caret in the returned scene is always in its visible phase and a
+ * checked-in picture of it is reproducible. See *TextInput* in docs/cpp-toolchain.md.
+ */
+FabricRunResult runTypedFabricBundle(const std::string& bundlePath, facebook::react::Size surfaceSize,
+                                     const std::string& keySequence);
 FabricDamageRunResult runFabricBundleAcrossCommits(const std::string& bundlePath, facebook::react::Size surfaceSize);
 
 } // namespace react_native_linux

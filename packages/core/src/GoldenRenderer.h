@@ -43,6 +43,16 @@ int renderFocusGolden(const std::string& bundlePath, const std::string& outputPa
                       int height);
 
 /**
+ * The same rig, after Tab has focused the fixture's `<TextInput>` and `keySequence` has been typed into it.
+ *
+ * A text field renders nothing a `<Text>` could not until something has been typed: the caret, the selection
+ * highlight and the composing run's underline are all properties of an editing state, and this is how one gets
+ * into a checked-in PNG. See *TextInput* in docs/cpp-toolchain.md.
+ */
+int renderTypedGolden(const std::string& bundlePath, const std::string& outputPath, const std::string& keySequence,
+                      int width, int height);
+
+/**
  * Runs a bundle that commits twice and proves that painting only the damaged region produces the same picture as
  * repainting everything.
  *

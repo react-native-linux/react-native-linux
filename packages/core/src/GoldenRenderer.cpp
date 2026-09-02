@@ -168,6 +168,12 @@ int renderFocusGolden(const std::string& bundlePath, const std::string& outputPa
                              outputPath, width, height);
 }
 
+int renderTypedGolden(const std::string& bundlePath, const std::string& outputPath, const std::string& keySequence,
+                      int width, int height) {
+    return paintSettledScene(runTypedFabricBundle(bundlePath, toSurfaceSize(width, height), keySequence),
+                             outputPath, width, height);
+}
+
 int renderDamageGolden(const std::string& bundlePath, const std::string& outputPath, int width, int height) {
     const sk_sp<SkSurface> fullSurface = makeRasterSurface(width, height);
     const sk_sp<SkSurface> damagedSurface = makeRasterSurface(width, height);

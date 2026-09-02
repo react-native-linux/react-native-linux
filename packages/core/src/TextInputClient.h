@@ -43,8 +43,8 @@ struct ImeCursorRectangle {
  * enable again. There are therefore two focuses in play — the compositor's, which decides whether a request is
  * legal, and the platform's own, which decides whether one should be made. `TextInputFocusSink` is the second:
  * `InputDispatcher` enables this client while a `TextInput` component holds focus and disables it when focus
- * leaves. `rnl_window --ime-debug` drives the same two calls by hand instead, which is why it does not register
- * the sink; issue #17's `<TextInput>` is what replaces both.
+ * leaves, and hands the same sink to the field so the caret rectangle and the surrounding text follow the caret.
+ * `rnl_window --ime-debug` drives these calls by hand instead, which is why it does not register the sink.
  *
  * An empty surrounding text is not sent at all. The protocol reads an empty value as "this client does not
  * support surrounding text", and it says later attempts to change it may then have no effect, so a field that
@@ -64,8 +64,8 @@ public:
 
     void enable() override;
     void disable() override;
-    void setSurroundingText(std::string text, int32_t cursor, int32_t anchor);
-    void setCursorRectangle(int32_t x, int32_t y, int32_t width, int32_t height);
+    void setSurroundingText(std::string text, int32_t cursor, int32_t anchor) override;
+    void setCursorRectangle(int32_t x, int32_t y, int32_t width, int32_t height) override;
 
     bool isFocused() const noexcept;
     bool isEnabled() const noexcept;

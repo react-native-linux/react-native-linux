@@ -50,6 +50,19 @@ const fixtures: readonly GoldenFixture[] = [
     renderArguments: ["3"],
     renderFlag: "--focus-tab",
   },
+  // A text field draws nothing new until it is typed into: a caret and a selection are both editing state.
+  {
+    bundleFileName: "text-input.js",
+    goldenFileName: "text-input-typing.png",
+    renderArguments: ["Hello{Left}{Left}X"],
+    renderFlag: "--type",
+  },
+  {
+    bundleFileName: "text-input.js",
+    goldenFileName: "text-input-selection.png",
+    renderArguments: ["Hello world{Ctrl+A}"],
+    renderFlag: "--type",
+  },
 ];
 
 const renderFixture = (fixture: GoldenFixture, outputPath: string): void => {

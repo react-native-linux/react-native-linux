@@ -1,5 +1,7 @@
 #include "FabricHost.h"
 
+#include "TextInputComponent.h"
+
 #ifdef RNL_ENABLE_IMAGES
 #include "ImageDecoder.h"
 #endif
@@ -46,6 +48,12 @@ constexpr facebook::react::SurfaceId kSurfaceId = 1;
 //
 // `ScrollView` needs nothing beyond its descriptor: upstream owns the shadow node, the state and the event
 // emitter, and the platform's whole contribution is moving `contentOffset`. See src/ScrollController.cpp.
+//
+// `TextInput` is the one component whose descriptor is ours rather than upstream's. Upstream ships the shared
+// half — `BaseTextInputProps`, `BaseTextInputShadowNode`, `TextInputState` and `TextInputEventEmitter` — with no
+// `platform/cxx` directory beside them, and its own CMakeLists globs `platform/android` unconditionally, so
+// there is nothing to swap a source into. `src/TextInputComponent.h` therefore declares the descriptor, the
+// shadow node and the props on top of those base classes; see *TextInput* in docs/cpp-toolchain.md.
 facebook::react::ComponentRegistryFactory createComponentRegistryFactory(
     const std::shared_ptr<facebook::react::ComponentDescriptorProviderRegistry>& providerRegistry) {
     providerRegistry->add(
@@ -62,6 +70,7 @@ facebook::react::ComponentRegistryFactory createComponentRegistryFactory(
         facebook::react::concreteComponentDescriptorProvider<facebook::react::TextComponentDescriptor>());
     providerRegistry->add(
         facebook::react::concreteComponentDescriptorProvider<facebook::react::RawTextComponentDescriptor>());
+    providerRegistry->add(facebook::react::concreteComponentDescriptorProvider<TextInputComponentDescriptor>());
 
     return [providerRegistry](const facebook::react::EventDispatcher::Weak& eventDispatcher,
                               const std::shared_ptr<const facebook::react::ContextContainer>& contextContainer) {
@@ -196,6 +205,10 @@ void FabricHost::dispatchInput(const std::vector<InputEvent>& events) {
 }
 
 bool FabricHost::advanceScroll(double frameMilliseconds) { return scrollController_->advance(frameMilliseconds); }
+
+bool FabricHost::advanceCaretBlink(double frameMilliseconds) {
+    return inputDispatcher_->advanceCaretBlink(frameMilliseconds);
+}
 
 void FabricHost::induceEventBeat() { eventBeatInducer_(); }
 

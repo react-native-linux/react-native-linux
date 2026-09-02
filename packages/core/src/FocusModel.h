@@ -99,8 +99,8 @@ bool isActivationKey(const std::string& key);
 
 /**
  * Whether a focused component owns a text cursor, and therefore whether the compositor's text input is enabled
- * while it holds focus. No component registers this name yet; issue #17 is what makes one, and this is the whole
- * of what it has to satisfy. See *Focus and keyboard* in docs/cpp-toolchain.md.
+ * while it holds focus. `src/TextInputComponent.h` registers this name, and this is the whole of what it has to
+ * satisfy. See *Focus and keyboard* and *TextInput* in docs/cpp-toolchain.md.
  */
 bool isTextInputComponent(const std::string& componentName);
 

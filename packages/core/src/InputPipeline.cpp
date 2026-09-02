@@ -4,6 +4,7 @@
 #include <react/renderer/graphics/Float.h>
 #include <react/timing/primitives.h>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -243,6 +244,122 @@ bool isScrollDelta(const InputEvent& event) {
            event.kind == InputEventKind::PointerScrollDiscrete;
 }
 
+constexpr char kTokenOpen = '{';
+constexpr char kTokenClose = '}';
+constexpr char kModifierSeparator = '+';
+constexpr char kPayloadSeparator = ':';
+constexpr std::string_view kControlModifier = "Ctrl";
+constexpr std::string_view kShiftModifier = "Shift";
+constexpr std::string_view kAltModifier = "Alt";
+constexpr std::string_view kPreeditToken = "Preedit";
+constexpr std::string_view kCommitToken = "Commit";
+constexpr unsigned char kTwoByteLeadValue = 0xC0;
+constexpr unsigned char kThreeByteLeadValue = 0xE0;
+constexpr unsigned char kFourByteLeadValue = 0xF0;
+constexpr size_t kOneByteLength = 1;
+constexpr size_t kTwoByteLength = 2;
+constexpr size_t kThreeByteLength = 3;
+constexpr size_t kFourByteLength = 4;
+constexpr char kAsciiCaseDistance = 'a' - 'A';
+
+/**
+ * The number of bytes the UTF-8 code point starting at `index` occupies, never running past the end of the
+ * string. A lead byte is what says how long its sequence is, which is the property that makes UTF-8 scannable
+ * from any position.
+ */
+size_t codePointLength(const std::string& text, size_t index) {
+    const unsigned char lead = static_cast<unsigned char>(text[index]);
+    size_t length = kOneByteLength;
+
+    if (lead >= kFourByteLeadValue) {
+        length = kFourByteLength;
+    } else if (lead >= kThreeByteLeadValue) {
+        length = kThreeByteLength;
+    } else if (lead >= kTwoByteLeadValue) {
+        length = kTwoByteLength;
+    }
+
+    return std::min(length, text.size() - index);
+}
+
+/**
+ * The DOM `key` value one token name stands for. A single-character name is the character it types, lowercased,
+ * because that is what `domKeyName` produces for a key pressed with Ctrl held: the shortcut is `Ctrl` plus the
+ * unmodified key, not `Ctrl` plus whatever the modifier turned it into.
+ */
+std::string tokenKeyName(const std::string& name) {
+    constexpr std::array<NamedKey, 11> kTokenKeys{{{"Left", "ArrowLeft"},
+                                                      {"Right", "ArrowRight"},
+                                                      {"Up", "ArrowUp"},
+                                                      {"Down", "ArrowDown"},
+                                                      {"Home", "Home"},
+                                                      {"End", "End"},
+                                                      {"Backspace", "Backspace"},
+                                                      {"Delete", "Delete"},
+                                                      {"Enter", "Enter"},
+                                                      {"Escape", "Escape"},
+                                                      {"Tab", "Tab"}}};
+
+    for (const NamedKey& tokenKey : kTokenKeys) {
+        if (tokenKey.keysymName == name) {
+            return std::string(tokenKey.keyName);
+        }
+    }
+
+    if (name.size() != kSingleCharacterNameLength) {
+        return {};
+    }
+
+    const char character = name.front();
+
+    return std::string(1, character >= 'A' && character <= 'Z' ? static_cast<char>(character + kAsciiCaseDistance)
+                                                               : character);
+}
+
+void appendKeyPress(std::vector<InputEvent>& events, const std::string& key, InputModifiers modifiers) {
+    if (key.empty()) {
+        return;
+    }
+
+    events.push_back(InputEvent{.kind = InputEventKind::KeyPress, .key = key, .modifiers = modifiers});
+    events.push_back(InputEvent{.kind = InputEventKind::KeyRelease, .key = key, .modifiers = modifiers});
+}
+
+void appendToken(std::vector<InputEvent>& events, const std::string& token) {
+    const size_t payloadSeparator = token.find(kPayloadSeparator);
+
+    if (payloadSeparator != std::string::npos) {
+        const std::string name = token.substr(0, payloadSeparator);
+        const std::string payload = token.substr(payloadSeparator + 1);
+
+        if (name == kPreeditToken) {
+            events.push_back(InputEvent{.kind = InputEventKind::ImePreedit,
+                                        .text = payload,
+                                        .preeditCursorBegin = static_cast<int32_t>(payload.size()),
+                                        .preeditCursorEnd = static_cast<int32_t>(payload.size())});
+        } else if (name == kCommitToken) {
+            events.push_back(InputEvent{.kind = InputEventKind::ImeCommit, .text = payload});
+        }
+
+        return;
+    }
+
+    InputModifiers modifiers;
+    size_t start = 0;
+
+    for (size_t separator = token.find(kModifierSeparator); separator != std::string::npos;
+         separator = token.find(kModifierSeparator, start)) {
+        const std::string_view modifier(token.data() + start, separator - start);
+
+        modifiers.control |= modifier == kControlModifier;
+        modifiers.shift |= modifier == kShiftModifier;
+        modifiers.alt |= modifier == kAltModifier;
+        start = separator + 1;
+    }
+
+    appendKeyPress(events, tokenKeyName(token.substr(start)), modifiers);
+}
+
 /**
  * Folds `event` into the event already at the back of the queue when the two describe the same thing, and reports
  * whether it did. Motion collapses to the latest position because the intermediate ones are not information;
@@ -396,6 +513,40 @@ PointerDispatch makeActivationDispatch(const InputEvent& event, facebook::react:
 bool isScrollEvent(const InputEvent& event) {
     return event.kind == InputEventKind::PointerScrollContinuous ||
            event.kind == InputEventKind::PointerScrollDiscrete || event.kind == InputEventKind::PointerScrollStop;
+}
+
+bool isTextKey(const std::string& key) {
+    if (key.empty()) {
+        return false;
+    }
+
+    return codePointLength(key, 0) == key.size() && isPrintableText(key);
+}
+
+std::vector<InputEvent> parseKeySequence(const std::string& sequence) {
+    std::vector<InputEvent> events;
+
+    for (size_t index = 0; index < sequence.size();) {
+        if (sequence[index] != kTokenOpen) {
+            const size_t width = codePointLength(sequence, index);
+
+            appendKeyPress(events, sequence.substr(index, width), {});
+            index += width;
+
+            continue;
+        }
+
+        const size_t close = sequence.find(kTokenClose, index);
+
+        if (close == std::string::npos) {
+            return events;
+        }
+
+        appendToken(events, sequence.substr(index + 1, close - index - 1));
+        index = close + 1;
+    }
+
+    return events;
 }
 
 void deliverImeEvent(const InputEvent& event, ImeSink& sink) {

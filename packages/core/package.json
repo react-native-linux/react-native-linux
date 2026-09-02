@@ -16,6 +16,8 @@
     "run:golden:image": "../../build/dev/bin/hello_react --golden test-bundles/image.js /tmp/rnl-image.png",
     "run:golden:scroll": "../../build/dev/bin/hello_react --scroll-to test-bundles/scroll.js /tmp/rnl-scroll.png 160 100 3",
     "run:golden:text": "../../build/dev/bin/hello_react --golden test-bundles/text.js /tmp/rnl-text.png",
+    "run:golden:text-input": "../../build/dev/bin/hello_react --type test-bundles/text-input.js /tmp/rnl-text-input.png \"Hello{Left}{Left}X\"",
+    "run:golden:text-input:selection": "../../build/dev/bin/hello_react --type test-bundles/text-input.js /tmp/rnl-text-input-selection.png \"Hello world{Ctrl+A}\"",
     "run:hello": "../../build/dev/bin/hello_react",
     "run:input": "../../build/dev/bin/hello_react --inject-pointer test-bundles/pressable.js 200 140",
     "run:window": "../../build/dev/bin/rnl_window",

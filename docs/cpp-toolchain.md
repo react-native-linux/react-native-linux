@@ -23,6 +23,12 @@ issue #6: it boots the same headless Fabric host, renders the settled scene into
 headless Fabric host, synthesises a mouse sweep and a click at those coordinates through the same input pipeline
 the window uses, and lets the bundle report what reached JavaScript. See *Input*.
 
+`hello_react --type <bundle> <out.png> "<sequence>"` is the fifth, and the proof for issue #17: it boots the same
+headless Fabric host, presses Tab to land on the fixture's `<TextInput>`, types a key sequence written in a one-line
+notation — literal characters, `{Left}`, `{Shift+Left}`, `{Ctrl+A}`, `{Backspace}`, `{Enter}` and the composition
+tokens `{Preedit:...}` and `{Commit:...}` — and renders the result. The bundle prints the event trace and the PNG
+shows the caret, the selection and the composing underline. See *TextInput*.
+
 `rnl_window --ime-debug` is issue #26's proof and needs a compositor, not a bundle: it enables `zwp_text_input_v3`
 on the window as soon as it has focus and prints every composition batch an input method sends, so typing CJK with
 fcitx5 running prints the pre-edit and the commit. See *IME*.
@@ -52,7 +58,7 @@ and the remaining ten `ReactCxxPlatform` subdirectories are still out.
 
 - `FabricHost` builds a `SchedulerToolbox` (context container carrying the `RuntimeScheduler`, buffered runtime
   executor, unbuffered bindings executor, a `FrameEventBeat`, and a component registry with the `RootView`,
-  `View`, `Image`, `ScrollView`, `Paragraph`, `Text` and `RawText` descriptors), constructs a `Scheduler`, and starts one
+  `View`, `Image`, `ScrollView`, `Paragraph`, `Text`, `RawText` and `TextInput` descriptors), constructs a `Scheduler`, and starts one
   `SurfaceHandler` with an 800x600 layout constraint. Constructing the `Scheduler` is what installs
   `nativeFabricUIManager` into the runtime, and constructing the `Paragraph` descriptor is what constructs the
   `TextLayoutManager`; see *Text*. Constructing the `Image` descriptor is what constructs the `ImageManager`;
@@ -87,8 +93,9 @@ same `FabricHost`; the headless host dumps the scene once the JavaScript thread 
 draws it every frame. See *The retained scene, and the threads it crosses*.
 
 Not covered yet, each with an owning milestone: `Scheduler::reportMount` and mount-hook telemetry,
-`dispatchCommand`, multiple surfaces, and every component past `View`, `Paragraph`, `Image` and `ScrollView` —
-`TextInput` in particular. Events are covered; see *Input*. Scrolling is covered; see *ScrollView*.
+`dispatchCommand`, multiple surfaces, and every component past `View`, `Paragraph`, `Image`, `ScrollView` and
+`TextInput`. Events are covered; see *Input*. Scrolling is covered; see *ScrollView*. Text editing is covered;
+see *TextInput*.
 
 ## Window host
 
@@ -812,8 +819,10 @@ Each is deliberate, and each is a thing to fix rather than a thing to argue abou
 - **Every paint rebuilds the paragraph, and every snapshot copies the attributed string.** The damage walk runs
   the same snapshot code over a subtree per mutation, so a text-heavy tree copies its strings more than it needs
   to. Skia's shaped-run cache absorbs the layout half. Both are #20 concerns, not correctness ones.
-- **`<TextInput>` is not here at all.** It has no `platform/cxx` upstream and is issue #17; selection, the caret,
-  and `zwp_text_input_v3` IME all belong to it.
+- **`<TextInput>` is a section of its own.** It has no `platform/cxx` upstream, so its descriptor, shadow node
+  and props are ours; the caret, the selection, the composing run and the editing model are in *TextInput*. It
+  lays its text out through this same `layoutParagraph`, which is what makes a caret land on the glyph it looks
+  like it lands on.
 
 ## Image
 
@@ -1343,9 +1352,9 @@ came out, and the sixteen that did not arrive are the acceptance criterion. The 
   the root is dropped before the hover chain runs. The consequence is visible: moving off a view onto the
   background does not currently produce `pointerOut`. Fixing it means giving the root a fiber-shaped handle, which
   belongs with React Native's JavaScript surface registry rather than here.
-- **IME.** `zwp_text_input_v3` is issue #26 and is implemented; see *IME* below. What is still deferred there is
-  pre-edit **rendering**, which needs the `<TextInput>` of issue #17 to have something to render it in, and
-  xkbcommon compose sequences and dead keys, which are a keyboard concern rather than an input-method one.
+- **IME.** `zwp_text_input_v3` is issue #26 and is implemented; see *IME* below. Pre-edit rendering is no longer
+  deferred either — the field of *TextInput* draws it. What is still missing is xkbcommon compose sequences and
+  dead keys, which are a keyboard concern rather than an input-method one.
 - **E2E traces.** Issue #18 also asks for hover/press traces and keyboard focus order under a headless compositor
   with virtual Wayland input. `--inject-pointer` is the unit-level and integration-level proof; the compositor-level
   one belongs with the harness that runs the lavapipe window golden, and neither exists yet.
@@ -1484,8 +1493,10 @@ react-native-macos#1622 was missing.
 `TextInputFocusSink` in `InputPipeline.h` is the second half of the `ImeSink` seam. `ImeSink` is where a
 composition lands; this is what decides whether a composition can start at all, and `zwp_text_input_v3` needs
 both because `enable` is a request the client makes rather than a state the compositor infers. `TextInputClient`
-implements it with the two methods it already had, and `InputDispatcher` calls them when focus enters or leaves a
-component named `TextInput` — a name nothing registers yet, so issue #17 has to register it and nothing else.
+implements it with the four methods it already had — `enable`, `disable`, `setSurroundingText` and
+`setCursorRectangle` — and `InputDispatcher` calls the first two when focus enters or leaves a component named
+`TextInput`, which `src/TextInputComponent.h` registers. The other two follow the caret and are the field's to
+supply; see *TextInput*.
 
 `rnl_window --ime-debug` is unchanged and deliberately does **not** register the sink: it drives the same two
 calls by hand, and both driving them would be two owners racing over one protocol object.
@@ -1556,9 +1567,9 @@ in it is Fabric plumbing that needs a `UIManager` and a committed tree, and `--f
   where a component declares the keys it wants — is the same deferral: it is a prop, and props are the fork above.
 - **Key repeat.** `wl_keyboard.repeat_info` is still accepted and ignored, so `repeat` is always false. Named in
   *Input* as well; it needs a timer in the frame loop.
-- **Focus during composition.** No key is suppressed while a `zwp_text_input_v3` composition is active. *IME*
-  explains why the platform does not second-guess the compositor, and until #17 there is nothing that inserts
-  text from a key event, so nothing can double a character. The rule and its test land with the field.
+- **Keys during composition** is no longer a deferral. While a `zwp_text_input_v3` composition is active no key
+  is dispatched at all — not to the focused field and not to React — because text arrives as a commit and only as
+  a commit. The rule, and why it is the one place this platform filters a key, is in *TextInput*.
 - **The ring's colour.** Fixed accent, not the compositor's. Reading the system accent is an
   `org.freedesktop.portal.Settings` round trip and a theming subsystem, and there is no other themed value yet.
 - **Clipped-out nodes.** A focusable scrolled out of an `overflow: hidden` ancestor is still in the tab order.
@@ -1665,13 +1676,14 @@ disagrees with the compositor.
 ### How `<TextInput>` plugs in
 
 `ImeSink` in `InputPipeline.h` is the contract: `onImePreedit`, `onImeCommit`, `onImeDeleteSurrounding`.
-`InputDispatcher::setImeSink` registers the platform-level focus owner, and composition events are the one input
-that is not hit-tested — the target is whatever holds the text cursor, not whatever is under the pointer. Issue
-#17 makes the focused field that owner and gives `TextInputClient::setSurroundingText` and
-`setCursorRectangle(x, y, width, height)` real values: the text around the caret, and the caret's rectangle in
-surface-local coordinates so the candidate window lands beside it instead of on top of it. Until then the only
-implementation is the debug sink below, and an unregistered sink means composition events are dropped rather than
-queued.
+`TextInputController` implements it, and `InputDispatcher` routes composition events straight to it — they are the
+one input that is not hit-tested, because the target is whatever holds the text cursor rather than whatever is
+under the pointer. A composition that arrives with no field focused is dropped rather than queued.
+
+The controller is also what gives `TextInputClient::setSurroundingText` and
+`setCursorRectangle(x, y, width, height)` real values: the text around the caret and the caret's rectangle in
+surface-local coordinates, so the candidate window lands beside the caret instead of on top of it. Both are sent
+for the focused field on every frame its caret moves. See *TextInput*.
 
 ### The proof, without a `<TextInput>`
 
@@ -1758,8 +1770,10 @@ implementation and the *Deferrals* below explain why it is not this issue's.
 
 ### Deferrals, with owners
 
-- **Pre-edit rendering.** Underlined, highlighted composing text inside a text field is issue #17's, because
-  there is no field to render it in. `ImePreedit` already carries the cursor pair the styling needs.
+- **Pre-edit rendering** is no longer deferred: the field of *TextInput* draws the composing run as an underlined
+  span and places the caret from the cursor pair `ImePreedit` carries. What is still absent is a *styled* pre-edit
+  — version 2's `preedit_hint` would let an input method mark part of a run differently, and there is one style
+  here for the whole of it.
 - **`input-method-v2`.** The compositor side of the protocol — being the input method rather than talking to one
   — is what a virtual-IME e2e test and any in-process candidate window would need. It is not on the M1 path and
   the Prime Directive says a second protocol implementation waits for a second reason to exist.
@@ -1775,6 +1789,317 @@ implementation and the *Deferrals* below explain why it is not this issue's.
   that composition does not supply.
 - **Version 2.** `preedit_hint` would let an input method style parts of a pre-edit, and `language` would let a
   field follow the input method's language. Both need a rendering field first.
+
+## TextInput
+
+Issue #17, milestone M1, with the parity matrix of #53 and the key and focus contract of #54 as its acceptance.
+This is the component ADR-0001 says is not "working" without IME, and it is six pieces: a component descriptor
+that upstream does not ship, a pure editing model, a controller that reconciles that model with React, caret and
+selection geometry from the same paragraph the text is drawn with, the painting of all of it, and the key routing
+that decides who gets a keystroke.
+
+`react-native-macos` has 79 `TextInput` issues and the only component-specific label in the repository. That list
+is this section's specification: macOS inherits `NSTextView` and only has to reconcile with it, and we inherit
+nothing — the buffer, the selection model, the caret geometry, the scroll offset, the paste normalisation and the
+secure masking are all ours to get wrong.
+
+### The component, and why the descriptor is ours
+
+`ReactCommon/react/renderer/components/textinput` ships the shared half of the component — `BaseTextInputProps`,
+`BaseTextInputShadowNode`, `TextInputState` and `TextInputEventEmitter` — and **no `platform/cxx` directory**.
+Its own `CMakeLists.txt` globs `*.cpp platform/android/**/*.cpp` unconditionally and puts `platform/android/` on
+the public include path; unlike `rrc_view` and `react_renderer_textlayoutmanager` it calls no
+`react_native_android_selector`, so there is no platform slot to swap a source into and nothing to swap into it.
+The source-list edit that replaced the `TextLayoutManager` and `ImageManager` stubs therefore does not apply.
+
+The other half of the same pattern does. `packages/core/CMakeLists.txt` adds **our own target**, `rnl_textinput`,
+over the two vendored translation units we want — `BaseTextInputProps.cpp` and `TextInputEventEmitter.cpp` — and
+`src/TextInputComponent.h` defines `TextInputProps`, `TextInputShadowNode` and `TextInputComponentDescriptor` on
+top of the base classes. No vendored file is edited, the Android props, shadow node and `MapBuffer` state are
+never compiled, and the configure fails loudly with a named error if those two sources ever move.
+
+`TextInputProps` adds exactly three props to the shared base, because upstream keeps them on its platform props:
+`secureTextEntry` (iOS carries it inside `TextInputTraits`, Android on `AndroidTextInputProps`), `caretHidden` and
+`selectTextOnFocus`. The descriptor constructs the `TextLayoutManager`, exactly as iOS' does, so a field and a
+`<Paragraph>` measure through one implementation of SkParagraph.
+
+### The pipeline, end to end
+
+```text
+wl_keyboard / zwp_text_input_v3 ─▶ InputQueue ─┐                                    frame thread
+                                               │
+                            InputDispatcher ◀──┘
+                                  │ focused node, key routing, composition
+                                  ▼
+                          TextInputController ──▶ EditorModel          the buffer, pure, gated at 100%
+                                  │                    │
+                                  │                    └─▶ TextSegments   ICU graphemes and words
+                                  ├──▶ ConcreteState<TextInputState>::updateState   → Yoga → the scene
+                                  ├──▶ TextInputEventEmitter    onChange, onSelectionChange, onKeyPress, onSubmitEditing
+                                  ├──▶ LinuxMountingManager::setEditorState        caret, selection, composing run
+                                  └──▶ TextInputFocusSink       enable, surrounding text, cursor rectangle
+                                                       │
+                          RetainedScene ◀──────────────┘
+                                  │ SceneEditorContent on the primitive
+                                  ▼
+                          ScenePainter::paintEditor    selection, text, underline, caret
+```
+
+The split between `EditorModel` and `TextInputController` is the one this codebase makes everywhere.
+`EditorModel.cpp` is pure — no React types, no Skia, no Wayland — and is inside the 100% line-and-branch coverage
+gate; `TextInputController.cpp` is a `UIManager` lookup, a state write, four emitter calls and a scene mark, none
+of which exists without a committed shadow tree, and `--type` is the test for it.
+
+### The text lives in three places, and that is the contract
+
+React Native's controlled-value contract is not a convention here, it is the reason three copies of the same
+string exist and the direction of travel between them:
+
+| Where | What it is | Who writes it |
+| --- | --- | --- |
+| `EditorModel` | the buffer the user is editing, plus the event count of the last edit | the platform |
+| `TextInputState.attributedStringBox` | what is displayed and measured — the **masked** string for a secure field | the platform, after every edit |
+| `TextInputState.reactTreeAttributedString` | what React believes the value is, built from `props.text` | upstream's `BaseTextInputShadowNode::updateStateIfNeeded` |
+
+The rule, and both halves of it are load-bearing:
+
+**A value from React is adopted only when `reactTreeAttributedString` changed *and* the `mostRecentEventCount` it
+arrived with equals the buffer's.**
+
+- Without the *changed* test, an uncontrolled field is emptied on every re-render: `TextInput.js` sends
+  `text: ''` for a field with no `value`, and echoes the event count faithfully, so the counts match and an
+  unconditional adopt would delete what the user typed.
+- Without the *count* test, a render that is one keystroke behind wins: React re-renders with `value` as it was
+  two frames ago, the buffer is replaced, and the caret jumps backwards mid-word. That is
+  react-native-macos#2127, and #2066 is the same machinery failing in the other direction.
+
+When an update is ignored the platform writes its own buffer back into the state on the same frame, so the
+picture never shows a value React proposed and the platform rejected. `EditorModel::reconcileProps` owns the
+count half and is unit-tested against both; `TextInputController::reconcile` owns the changed half.
+
+`mostRecentEventCount` is incremented by an edit and by nothing else. A pre-edit is not an edit — the value React
+owns has not changed until the commit arrives — so composing does not move it.
+
+### The editing model
+
+`EditorModel` is byte offsets and nothing else, and every offset it produces is on a grapheme boundary by
+construction: the public mutators clamp what they are given, so a caret that would split a UTF-8 sequence or a
+combining mark cannot be produced from outside.
+
+| Operation | Rule |
+| --- | --- |
+| Insert | replaces the selection, or the composing run when one is open — which is why a commit needs no method of its own. |
+| Backspace / Delete | remove the selection when there is one, otherwise one **grapheme cluster**, and are a no-op at the ends. react-native-macos#480 is a crash on the second of those. |
+| Left / Right | one grapheme; with a selection and no Shift they collapse it to the edge they point at. |
+| Ctrl+Left / Ctrl+Right | the start of the previous word and the end of the next, skipping the whitespace run — a boundary list alone would stop inside it. |
+| Home / End | the line's own ends, which is the whole buffer for a single-line field. |
+| Shift + any of them | moves the caret and leaves the anchor, so the selection grows from where it started. |
+| `maxLength` | counted in **UTF-16 code units**, as iOS and Android count it, so an emoji costs two. An insertion is truncated to what fits; one that truncates to nothing is refused rather than deleting the selection. |
+| Newlines in a single-line field | collapsed to spaces on the way in, so a multi-line paste cannot put a break in a line that has no way to show it — react-native-macos#2303. |
+
+Grapheme and word boundaries come from ICU, through the same `SkUnicode` instance the paragraph builder uses:
+`segmentText` in `TextPipeline.cpp` calls `computeCodeUnitFlags` for grapheme starts and `getUtf8Words` for word
+boundaries. `EditorModel` takes them as an injected `TextSegmenter` rather than calling Skia itself, which is what
+keeps it in a coverage gate whose binary links no Skia at all. Without one it falls back to
+`segmentUtf8CodePoints`, a deliberate subset: every grapheme boundary is also a code-point boundary, so a caret
+driven by the fallback never lands inside a UTF-8 sequence — it only fails to treat a combining sequence as one
+step. That is the same Skia-off degradation the text pipeline already has rather than a second Unicode
+implementation to keep in sync.
+
+### secureTextEntry, and where the masking happens
+
+The buffer is never masked; the string that reaches a paragraph always is. `EditorModel::displayText` replaces
+each grapheme cluster with one U+2022, `displayOffsetForByte` and `byteForDisplayOffset` move offsets between the
+two, and the controller writes the **masked** string into `TextInputState`. So the paragraph the scene builds,
+the paragraph Yoga measures and the string the caret geometry is computed against are all bullets, and the value
+exists only in the editor and in the `onChange` payload React needs it in.
+
+That is structural rather than conditional, and it is why every mounted field gets a buffer rather than only the
+focused one: `InputDispatcher` collects `TextInput` nodes in the same per-commit walk that collects focusables and
+hands them to the controller, so a field that is never focused still publishes its masked string on the first
+frame. The headless render paths dispatch one empty input frame before reading the scene for the same reason — a
+frame is not only what the compositor sent, it is also where fields publish. react-native-macos#423 is the bug
+this arrangement is shaped around.
+
+### Caret and selection geometry
+
+Every rectangle comes from `measureEditorGeometry` in `TextPipeline.cpp`, beside `layoutParagraph` and through it,
+so the caret is measured against the paragraph that is drawn. A second layout of the same string would eventually
+disagree with the first, and a caret in the wrong place is the most visible bug a text field has —
+react-native-macos#1395, #1921 and #2127 are three of them.
+
+- The **caret** is a one-point-wide rectangle taking its height from the glyph after it, so it follows the line
+  rather than a constant; at the end of the text the glyph before it supplies the line and the caret sits on its
+  trailing edge. Only an empty field invents a height, and only then.
+- The **selection** is `getRectsForRange` with `RectHeightStyle::kMax`, so the rectangles of one line share a
+  height and a selection across a line break is two boxes rather than a ragged one.
+- The **composing run** is the same call, drawn as a one-point underline along the bottom of each box.
+- Offsets crossing into Skia are **UTF-16 indices** into the displayed string, because that is the index space
+  SkParagraph's public API speaks. `utf16LengthOfUtf8` and `utf8OffsetForUtf16Index` are the two conversions, and
+  they live in `EditorModel.h` because they are arithmetic and arithmetic belongs where the gate can see it.
+
+The declarations are in `src/TextGeometry.h`, which links no Skia, and the definitions are in `TextPipeline.cpp`,
+which does. Call sites are guarded by `RNL_ENABLE_TEXT_GEOMETRY`, defined only when the Skia build is on; without
+it a paragraph already measures as zero, so a field has no geometry to ask about and the caret still moves by
+grapheme because that half is arithmetic.
+
+**Single-line scrolling** is the caret dragging the window: the offset moves only far enough to keep the caret
+inside the content box, clamped to the laid-out width, and the painter clips to that box and translates by it.
+A multiline field wraps instead and never scrolls horizontally; vertical scrolling is deferred below.
+
+### The caret blink
+
+Frame-driven, not timer-driven: `FabricHost::advanceCaretBlink` is called once per frame from the window loop,
+flips the phase every 600 ms, and every flip goes through `RetainedScene::setEditorState`, which damages that one
+field's frame and nothing else. There is no timer in the frame path and ADR-0001 says there will not be one.
+
+A headless run **never advances it**, so the caret in a golden is always in its visible phase and a checked-in
+picture is reproducible. Any edit or caret move also resets the phase to visible, which is what makes a caret
+stay solid while a key is held down.
+
+### Key routing, and every decision this makes
+
+`InputDispatcher` asks the focused field before it applies the traversal and activation rules, and the field
+answers with one of three things: the key was ignored, it was consumed, or it was consumed and focus should
+leave. The numbered decisions issue #54 asks to be written down:
+
+1. **Tab always traverses**, in a multiline field as well as a single-line one. A field that inserted a tab would
+   be a field with no keyboard way out, and there is no `blurOnSubmit` equivalent for Tab to opt out with.
+2. **Enter always fires `onSubmitEditing`** and is never swallowed — react-native-macos#1082. What it does
+   besides that is `submitBehavior`, through upstream's own `getNonDefaultSubmitBehavior`: `newline` (the
+   multiline default) inserts a line break, `blurAndSubmit` (the single-line default) submits and blurs, and
+   `submit` — which is what `blurOnSubmit={false}` compiles to — submits and keeps focus. `onEndEditing` follows
+   `onSubmitEditing` in all three of the submitting cases.
+3. **Escape blurs.** It is the other keyboard way out, and a field that swallowed both Escape and Enter would be
+   a trap.
+4. **Ctrl+C, Ctrl+X, Ctrl+V and Ctrl+A reach the field and never the application** — react-native-macos#2075 —
+   and `disableKeyboardShortcuts` turns all four off. Ctrl+Left and Ctrl+Right are word motion rather than
+   shortcuts. **Ctrl+Z is deliberately not consumed**: there is no undo stack, and swallowing a key that does
+   nothing would make undo look implemented and broken rather than absent.
+5. **Space types a space**, because it is a character key and the field consumes it before the activation rule
+   sees it. On a `<Pressable>` the same key still activates, for the same reason: nothing consumed it first.
+6. **A click outside blurs the field and emits `onBlur` once**, which is the focus model's existing rule and
+   react-native-macos#999. A click inside places the caret at the glyph nearest the pointer, and a drag from
+   there extends the selection.
+7. **While a composition is active no key is dispatched at all** — not to the editor, not to React. Text arrives
+   as a commit and only as a commit, so a field that also inserted the key events an input method leaves behind
+   would double every composed character. That is the react-native-macos#683 and #2312 ordering rule, and it is
+   the one place this platform filters a key.
+
+A read-only or non-`editable` field still selects and copies; only the mutating branches are gated.
+
+### The events
+
+Through upstream's `TextInputEventEmitter`, so the payloads are the ones `TextInput.js` already parses:
+
+| Event | When | Payload |
+| --- | --- | --- |
+| `change` | the buffer differs from what was last reported | the **unmasked** text, the selection, the event count |
+| `selectionChange` | the selection differs from what was last reported | the same shape |
+| `keyPress` | before the edit a key makes | the key, as upstream's own mapping of the text — an empty string is `Backspace`, a line feed is `Enter` |
+| `submitEditing`, `endEditing` | Enter, per the table above | text and event count |
+
+`onChangeText` has no C++ event of its own on any platform: `TextInput.js` derives it from `change`, which is why
+`change` is emitted before `selectionChange` — a selection that arrived first would describe a string React has
+not been told about yet.
+
+`focus` and `blur` are the focus model's, dispatched by `InputDispatcher` through `ViewEventEmitter` as they are
+for every other focusable node. They carry no text or selection, which is a divergence from iOS and is listed as
+a deferral below rather than fixed by emitting a second event with the same name.
+
+One reconciliation, one state write and one set of change events happen **per frame**, after the frame's input,
+not per event. That is the same batching the event beat already imposes on everything else.
+
+### The proof
+
+```bash
+hello_react --type packages/core/test-bundles/text-input.js /tmp/rnl-typing.png "Hello{Left}{Left}X"
+```
+
+`packages/core/test-bundles/text-input.js` is three fields in tab order: a plain single-line one with a border, a
+radius and a placeholder, a `secureTextEntry` one that already has a value, and a multiline one whose value wraps.
+One Tab focuses the first, so everything after it is typed there. The trace begins:
+
+```text
+text-input: committed surface 1
+text-input: topFocus on plain
+text-input: topKeyUp on plain key=Tab
+text-input: topKeyDown on plain key=H
+text-input: topKeyPress on plain key=H eventCount=0
+text-input: topChange on plain text="H" selection=1..1 eventCount=1
+text-input: topSelectionChange on plain text="H" selection=1..1 eventCount=1
+```
+
+Four things in there are the claims. The first Tab produces **no** `topKeyDown`, because nothing was focused yet
+and an unfocused key is dropped — the unhandled-key policy, unchanged. `topKeyPress` carries the event count
+*before* the edit and `topChange` the count after it, which is the reconciliation counter moving. The two arrow
+presses in the middle of the sequence produce a `topSelectionChange` and no `topChange`, because moving a caret
+is not an edit. And `X` lands between the two `l`s, so the run ends with `text="HelXlo"`.
+
+The notation is `parseKeySequence` in `InputPipeline.cpp`, which is inside the coverage gate: every character is
+itself, `{Left}` `{Right}` `{Home}` `{End}` `{Backspace}` `{Delete}` `{Enter}` `{Escape}` `{Tab}` name a key,
+`{Shift+Left}` and `{Ctrl+A}` add modifiers, and `{Preedit:nih}` and `{Commit:你好}` inject the composition
+events an input method would have sent — which is what lets a headless run exercise the IME path with no
+compositor and no input method installed. Every event is delivered on its own frame.
+
+Two goldens are registered in `goldens/golden.spec.ts`, both from that one fixture:
+
+- `text-input-typing.png`, from `"Hello{Left}{Left}X"`. The first field reads `HelXlo` with the caret between
+  `X` and `l`; the second shows seven bullets and no trace of its value; the third shows its value wrapped onto
+  several lines. The first field's border and radius are drawn, which is react-native-macos#2738, and its
+  18-point text is drawn in the field's own style, which is #447.
+- `text-input-selection.png`, from `"Hello world{Ctrl+A}"`. The same picture with `Hello world` in the first
+  field, every character of it behind a translucent selection rectangle, and the caret at the end of it.
+
+### Tests
+
+`EditorModel.cpp` and `Clipboard.cpp` are in `scopedSourcePaths` at 100% line and branch, covered by
+`packages/core/tests/EditorTest.cpp`: insertion and deletion at the caret, grapheme-aware motion with and without
+a segmenter, word motion including the whitespace-only case, selection extension and collapse, replace-selection,
+`maxLength` in UTF-16 code units, single-line newline collapsing, secure masking and both offset conversions,
+pre-edit apply/replace/end, commit, `delete_surrounding_text` including the boundary snap, and every
+`mostRecentEventCount` reconciliation rule. The crash cases from react-native-macos#480, #486, #432 and #2270 are
+regression tests named after what they do rather than after their issue numbers.
+
+`InputPipeline.cpp` gains the key-sequence parser and `isTextKey`, both inside the same gate.
+`TextInputController.cpp` and `TextInputComponent.cpp` are outside it for the reason `ScrollController.cpp` is:
+what is left in them needs a `UIManager` and a committed tree, and `--type` is the test.
+
+### Deferrals, with owners
+
+- **`wl_data_device`.** Ctrl+C, Ctrl+X and Ctrl+V move text through an **in-process clipboard**
+  (`src/Clipboard.cpp`), not the system one. A Wayland clipboard is a data source, a data offer, a MIME
+  negotiation and a file-descriptor transfer, all of which need a compositor and a second client to mean
+  anything — and the rig for this component is `hello_react`, which has neither. The in-process version is
+  behaviourally identical for everything the editing model can get wrong, and it is issue #60 to replace its two
+  functions. The primary selection and middle-click paste land with it.
+- **Undo and redo.** No stack, and Ctrl+Z is deliberately left unconsumed so the absence is visible.
+- **Vertical caret motion.** Up and Down do not move by line: that needs line geometry rather than boundaries,
+  and it lands with multiline vertical scrolling. A multiline field therefore keeps the caret visible only
+  horizontally, which is react-native-macos#2905 still open here.
+- **Bidi caret placement.** The paragraph direction is hardcoded left-to-right, as *Text* already records, so a
+  caret in a right-to-left run is placed by visual order and not by logical order. It lands with
+  `writingDirection`.
+- **Autocorrect, spellcheck and text prediction.** No dictionary service, no underline model, no suggestion UI.
+  `autoCorrect` and `spellCheck` are accepted and ignored.
+- **Selection handles and the context menu.** Both are touch and mouse affordances with their own hit testing;
+  neither is on the M1 path and the Prime Directive says the second consumer has to exist first.
+- **Text shadows on a field.** The same deferral *Text* already records for `<Text>`.
+- **`onFocus` and `onBlur` payloads.** They arrive through `ViewEventEmitter` with no text or selection in them,
+  because emitting a second event of the same name from `TextInputEventEmitter` would double them.
+- **`selectTextOnFocus`, `autoFocus` and programmatic `focus()`/`blur()`/`clear()`.** The first two are parsed
+  and not acted on, and the third arrives as a Fabric command through `IMountingManager::dispatchCommand`, which
+  is still a no-op — the same deferral *Focus and keyboard* records.
+- **`set_content_type` and `set_text_change_cause`.** `keyboardType`, `autoCapitalize`, `secureTextEntry` and
+  `autoComplete` map onto the content hints `zwp_text_input_v3` carries, and the protocol asks a client to say
+  when its text changed for a reason other than composition. Both are small and both need an input method to
+  test against, so they wait for the fcitx5 checklist to grow a field to type into.
+- **Two paragraph layouts per field per frame.** The painter measures the geometry and then paints, and both
+  build the paragraph. SkParagraph's shaped-run cache absorbs the repeat; removing it means a paragraph type
+  crossing the Skia-free header boundary, and it belongs with the frame-time work in #20.
+- **Auto-sized secure fields.** Yoga measures the masked string, so a field sized by its content is sized by its
+  bullets rather than by its value. That is the correct trade — the alternative is the value reaching a
+  paragraph — and it is only visible for a field with no explicit width.
 
 ## Golden images
 
@@ -1947,6 +2272,14 @@ The sixth is `packages/core/test-bundles/focus.js` to `packages/core/goldens/foc
 after three Tab presses. Five views in a row, the ring on the fifth, because the third declared no `accessible`
 and the fourth is disabled — the picture is the traversal order and the focusable filtering at once. See
 *Focus and keyboard*.
+
+The seventh and eighth are `packages/core/test-bundles/text-input.js` to
+`packages/core/goldens/text-input-typing.png` and `packages/core/goldens/text-input-selection.png`, rendered by
+`--type` for the same reason again: a caret, a selection and a composing underline only exist after something has
+been typed. One fixture, two sequences. Both pictures show the same three fields — a bordered single-line one, a
+`secureTextEntry` one showing seven bullets and no trace of its value, and a multiline one whose value wraps —
+and differ in the first field: `HelXlo` with the caret between `X` and `l` in one, `Hello world` entirely behind a
+selection rectangle in the other. See *TextInput*.
 
 ### The partial-redraw equivalence proof
 
@@ -2151,10 +2484,12 @@ needs neither Hermes nor Skia, so it skips both the multi-hour Hermes build and 
 Vulkan prerequisites `RNL_ENABLE_SKIA` and `RNL_ENABLE_WINDOW` probe for.
 
 `packages/core/tests/CMakeLists.txt` fetches googletest at a pinned commit, builds `rnl_core_tests` from
-`SceneTest.cpp`, `InputTest.cpp`, `FocusTest.cpp`, `ImeTest.cpp`, `ImageTest.cpp` and `ScrollTest.cpp` plus the
-seven sources they exercise — `RetainedScene.cpp`, `LinuxMountingManager.cpp`, `InputPipeline.cpp`,
-`FocusModel.cpp`, `ImageContent.cpp`, `ScrollPhysics.cpp` and `TextInputV3State.cpp`, compiled
-directly into the test binary rather than linked from a Hermes-linked library — and registers them with
+`SceneTest.cpp`, `InputTest.cpp`, `FocusTest.cpp`, `ImeTest.cpp`, `ImageTest.cpp`, `ScrollTest.cpp` and
+`EditorTest.cpp` plus the nine sources they exercise — `RetainedScene.cpp`, `LinuxMountingManager.cpp`,
+`InputPipeline.cpp`, `FocusModel.cpp`, `ImageContent.cpp`, `ScrollPhysics.cpp`, `TextInputV3State.cpp`,
+`EditorModel.cpp` and `Clipboard.cpp`, compiled
+directly into the test binary rather than linked from a Hermes-linked library, plus `TextInputComponent.cpp` and
+the `rnl_textinput` target, which the scene needs to read a field's props — and registers them with
 `gtest_discover_tests` so `ctest` finds every `TEST` individually. Under Clang, `rnl_core_tests` also gets
 `-fprofile-instr-generate -fcoverage-mapping`, LLVM's source-based coverage instrumentation.
 
@@ -2162,22 +2497,27 @@ directly into the test binary rather than linked from a Hermes-linked library �
 `build/test/coverage`, merges the raw profile with `llvm-profdata merge -sparse`, exports it as lcov with
 `llvm-cov export --format=lcov`, and grades line and branch coverage per file against an explicit list
 (`scopedSourcePaths` in the script — today `RetainedScene.cpp`, `LinuxMountingManager.cpp`, `InputPipeline.cpp`,
-`FocusModel.cpp`, `ImageContent.cpp`, `ScrollPhysics.cpp` and `TextInputV3State.cpp`, the seven sources the test
+`FocusModel.cpp`, `ImageContent.cpp`, `ScrollPhysics.cpp`, `TextInputV3State.cpp`, `EditorModel.cpp` and
+`Clipboard.cpp`, the nine sources the test
 binary actually exercises). A source with no tests behind it is
 deliberately not in that list: adding a file there without coverage behind it is what turns the gate red, rather
 than a silent average across the whole of `packages/core`.
 
-`InputDispatcher.cpp`, `WaylandSeat.cpp` and `TextInputClient.cpp` are the input sources deliberately left outside
-that scope, and the split between them and `InputPipeline.cpp`, `FocusModel.cpp` and `TextInputV3State.cpp` is
+`InputDispatcher.cpp`, `WaylandSeat.cpp`, `TextInputClient.cpp` and `TextInputController.cpp` are the input
+sources deliberately left outside that scope, and the split between them and `InputPipeline.cpp`,
+`FocusModel.cpp`, `TextInputV3State.cpp` and `EditorModel.cpp` is
 what makes the scope honest rather than convenient: everything that
 can be arithmetically wrong — motion coalescing, the queue bound, the buttons bitmask, the press-to-click state
-machine, offset points, modifier flags, the key-name and key-code tables, the traversal order and its wraps, and
-the `done` batching, ordering and serial rules of `zwp_text_input_v3` — lives in those three where the gate sees
-it. What is left in
+machine, offset points, modifier flags, the key-name and key-code tables, the key-sequence notation, the
+traversal order and its wraps,
+the `done` batching, ordering and serial rules of `zwp_text_input_v3`, and the whole of the text buffer, its
+selection, its composition range and its `mostRecentEventCount` reconciliation — lives in those four where the
+gate sees it. What is left in
 `InputDispatcher.cpp` is a `UIManager` hit test, a shadow-tree walk and a switch over five emitter calls, what is
-left in `WaylandSeat.cpp` is protocol plumbing that needs a compositor, and what is left in `TextInputClient.cpp`
-is requests and listeners that need one too. `--inject-pointer`, `--focus-tab` and `--ime-debug` are the tests for
-those three.
+left in `WaylandSeat.cpp` is protocol plumbing that needs a compositor, what is left in `TextInputClient.cpp`
+is requests and listeners that need one too, and what is left in `TextInputController.cpp` is a shadow-node
+lookup, a state write and four emitter calls. `--inject-pointer`, `--focus-tab`, `--ime-debug` and `--type` are
+the tests for those four.
 
 `ImageContent.cpp` is inside it, and the split between it and `ImagePipeline.cpp` is what makes the image scope
 honest: everything that can be arithmetically wrong — base64 decoding, source-scheme resolution, the five

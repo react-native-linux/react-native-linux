@@ -211,9 +211,9 @@ PointerDispatch makeActivationDispatch(const InputEvent& event, facebook::react:
  * `onImeCommit` is the only source of text on this path. A key event that arrives while a composition is active
  * is the compositor's business and not text; see *IME* in docs/cpp-toolchain.md.
  *
- * There is no `<TextInput>` yet, so the only implementation is `rnl_window --ime-debug`. Issue #17 is what makes
- * the focused text field one, and `InputDispatcher::setImeSink` is where it is registered. The sink is borrowed,
- * never owned, and must outlive whatever it was given to.
+ * `TextInputController` is the implementation the input dispatcher routes to, and it delivers the composition to
+ * whichever field holds focus, dropping it when none does. `rnl_window --ime-debug` is the second one, and it
+ * consumes the frame's events itself rather than going through the dispatcher.
  */
 class ImeSink {
 public:
@@ -232,13 +232,14 @@ public:
 void deliverImeEvent(const InputEvent& event, ImeSink& sink);
 
 /**
- * The compositor's text input, as the focus model drives it: enabled while the focused node owns a text cursor,
- * disabled the moment focus leaves it.
+ * The compositor's text input, as the focus model and the focused field drive it: enabled while the focused node
+ * owns a text cursor, disabled the moment focus leaves it, and told where that cursor is while it is there.
  *
  * This is the other half of the `ImeSink` seam. `ImeSink` is where a composition lands; this is what decides
- * whether a composition can start at all, and `zwp_text_input_v3` needs both because `enable` is a request the
- * client makes rather than a state the compositor infers. `TextInputClient` is the only implementation, and it
- * already had these two methods; issue #17 has to register a component named `TextInput` and nothing else.
+ * whether a composition can start at all and where the input method may not put its candidate window, and
+ * `zwp_text_input_v3` needs all of it because `enable`, `set_surrounding_text` and `set_cursor_rectangle` are
+ * requests the client makes rather than state the compositor infers. `TextInputClient` is the only
+ * implementation, and it already had all four methods.
  *
  * The sink is borrowed, never owned, and must outlive the dispatcher it was given to.
  */
@@ -253,6 +254,31 @@ public:
 
     virtual void enable() = 0;
     virtual void disable() = 0;
+    virtual void setSurroundingText(std::string text, int32_t cursor, int32_t anchor) = 0;
+    virtual void setCursorRectangle(int32_t x, int32_t y, int32_t width, int32_t height) = 0;
 };
+
+/**
+ * Whether a DOM `key` value is a character to insert rather than a key to act on.
+ *
+ * The DOM's own rule, and therefore no table: a key that produced a character has that character as its `key`,
+ * so a value that is exactly one code point is text and everything longer — `Enter`, `Tab`, `ArrowLeft`, `F1`,
+ * `Unidentified` — is a name. The one entry that looks like an exception is the space bar, whose `key` is `" "`;
+ * it is a character, it types a space in a text field, and it activates a `<Pressable>` only because nothing
+ * consumed it first.
+ */
+bool isTextKey(const std::string& key);
+
+/**
+ * Parses the key-sequence notation `hello_react --type` takes into the events a compositor would have sent.
+ *
+ * The grammar is one line long: every character is itself, and `{...}` is one named key, optionally with
+ * modifiers and a payload. `{Left}`, `{Backspace}`, `{Enter}`, `{Home}` and the rest name a key; `{Shift+Left}`
+ * and `{Ctrl+A}` add modifiers; `{Preedit:nih}` and `{Commit:你好}` inject the composition events a
+ * `zwp_text_input_v3` input method would have sent, which is what lets a headless run prove the IME path with no
+ * compositor and no input method. An unrecognised token produces no events rather than failing the run, because
+ * a sequence is test input and a typo in one should read as a missing keystroke rather than a crash.
+ */
+std::vector<InputEvent> parseKeySequence(const std::string& sequence);
 
 } // namespace react_native_linux

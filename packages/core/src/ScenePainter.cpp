@@ -2,6 +2,7 @@
 
 #include "ImageContent.h"
 #include "ImagePipeline.h"
+#include "TextGeometry.h"
 #include "TextPipeline.h"
 
 #include "include/core/SkBlendMode.h"
@@ -29,6 +30,8 @@
 namespace react_native_linux {
 
 namespace {
+
+constexpr facebook::react::Float kCompositionUnderlineHeight = 1.0F;
 
 SkMatrix toSkMatrix(const SceneMatrix& matrix) {
     return SkMatrix::MakeAll(matrix.scaleX, matrix.skewX, matrix.translateX, matrix.skewY, matrix.scaleY,
@@ -157,11 +160,71 @@ void paintBorder(SkCanvas& canvas, const ScenePrimitive& primitive, const SkRRec
  * `AttributedString` through the same `layoutParagraph` the measurement used, so the lines drawn here are the
  * lines that were measured.
  */
-void paintText(SkCanvas& canvas, const SceneTextContent& text) {
+void paintText(SkCanvas& canvas, const SceneTextContent& text, float layoutWidth) {
     const std::unique_ptr<skia::textlayout::Paragraph> paragraph =
-        layoutParagraph(text.attributedString, text.paragraphAttributes, static_cast<float>(text.frame.size.width));
+        layoutParagraph(text.attributedString, text.paragraphAttributes, layoutWidth);
 
     paragraph->paint(&canvas, text.frame.origin.x, text.frame.origin.y);
+}
+
+void fillRect(SkCanvas& canvas, const facebook::react::Rect& rect, uint32_t colorArgb) {
+    SkPaint paint;
+
+    paint.setAntiAlias(false);
+    paint.setColor(colorArgb);
+    canvas.drawRect(toSkRect(rect), paint);
+}
+
+facebook::react::Rect offsetRect(const facebook::react::Rect& rect, facebook::react::Point origin) {
+    return facebook::react::Rect{.origin = rect.origin + origin, .size = rect.size};
+}
+
+/**
+ * A `<TextInput>`: the selection behind the text, the text, the composing run's underline, and the caret.
+ *
+ * All four are clipped to the field's content box and shifted by the field's own scroll offset, which is the
+ * whole of horizontal scrolling for a single-line field — a caret that walked past the right edge moves the
+ * paragraph left instead of drawing outside the box. react-native-macos#2905 is the same feature missing.
+ *
+ * The geometry is measured through `measureEditorGeometry`, which lays the paragraph out exactly as
+ * `paintText` does two lines later. That is two layouts of one string per frame, and it is deliberate for now:
+ * the alternative is a second paragraph type crossing the Skia-free header boundary, and SkParagraph's own
+ * shaped-run cache absorbs the repeat. It belongs with the rest of the frame-time work in issue #20.
+ */
+void paintEditor(SkCanvas& canvas, const SceneTextContent& text, const SceneEditorContent& editor) {
+    const SkAutoCanvasRestore restore(&canvas, true);
+    const EditorGeometryRequest request{.caretUtf16 = editor.state.caretUtf16,
+                                        .selectionBeginUtf16 = editor.state.selectionBeginUtf16,
+                                        .selectionEndUtf16 = editor.state.selectionEndUtf16,
+                                        .compositionBeginUtf16 = editor.state.compositionBeginUtf16,
+                                        .compositionEndUtf16 = editor.state.compositionEndUtf16,
+                                        .isMultiline = editor.isMultiline};
+    const EditorGeometry geometry = measureEditorGeometry(text.attributedString, text.paragraphAttributes,
+                                                          static_cast<float>(text.frame.size.width), request);
+
+    canvas.clipRect(toSkRect(text.frame), false);
+    canvas.translate(-editor.state.scrollOffsetX, 0);
+
+    for (const facebook::react::Rect& selection : geometry.selection) {
+        fillRect(canvas, offsetRect(selection, text.frame.origin), editor.selectionColorArgb);
+    }
+
+    paintText(canvas, text, geometry.layoutWidth);
+
+    for (const facebook::react::Rect& composition : geometry.composition) {
+        const facebook::react::Rect underline{
+            .origin = facebook::react::Point{.x = composition.origin.x + text.frame.origin.x,
+                                             .y = composition.origin.y + text.frame.origin.y +
+                                                  composition.size.height - kCompositionUnderlineHeight},
+            .size = facebook::react::Size{.width = composition.size.width,
+                                          .height = kCompositionUnderlineHeight}};
+
+        fillRect(canvas, underline, editor.caretColorArgb);
+    }
+
+    if (editor.state.isCaretVisible) {
+        fillRect(canvas, offsetRect(geometry.caret, text.frame.origin), editor.caretColorArgb);
+    }
 }
 
 /**
@@ -262,8 +325,10 @@ void paintPrimitive(SkCanvas& canvas, const ScenePrimitive& primitive) {
 
     paintBorder(canvas, primitive, outer);
 
-    if (primitive.text.has_value()) {
-        paintText(canvas, primitive.text.value());
+    if (primitive.text.has_value() && primitive.editor.has_value()) {
+        paintEditor(canvas, primitive.text.value(), primitive.editor.value());
+    } else if (primitive.text.has_value()) {
+        paintText(canvas, primitive.text.value(), static_cast<float>(primitive.text.value().frame.size.width));
     }
 
     // Last, so the ring is never covered by the node's own content.

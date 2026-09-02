@@ -37,8 +37,13 @@ void WindowSession::setTextInputFocusSink(TextInputFocusSink* textInputFocusSink
 }
 
 void WindowSession::deliverInput(const std::vector<InputEvent>& events) {
+    const double frameMilliseconds = takeFrameMilliseconds();
+
+    // The blink is advanced before the frame's input, because dispatching input is also what republishes the
+    // caret into the scene: toggling afterwards would show every phase one frame late.
+    fabricHost_->advanceCaretBlink(frameMilliseconds);
     fabricHost_->dispatchInput(events);
-    fabricHost_->advanceScroll(takeFrameMilliseconds());
+    fabricHost_->advanceScroll(frameMilliseconds);
     fabricHost_->induceEventBeat();
 }
 

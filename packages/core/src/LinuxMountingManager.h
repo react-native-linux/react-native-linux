@@ -54,6 +54,13 @@ public:
      * dispatcher, which is the other thing besides a mutation that changes what the next frame paints.
      */
     void setFocus(facebook::react::Tag tag, bool isFocusVisible);
+
+    /**
+     * Publishes a `<TextInput>`'s caret, selection and composing run. Called from the frame thread by the text
+     * input controller, and the third thing besides a mutation and a focus change that decides what the next
+     * frame paints.
+     */
+    void setEditorState(facebook::react::Tag tag, const SceneEditorState& editorState);
     SceneFrame takeFrame();
     SceneSnapshot snapshotScene() const;
     std::string dumpScene() const;

@@ -78,6 +78,46 @@ struct SceneTextContent {
 };
 
 /**
+ * Where a `<TextInput>`'s caret, selection and composing run are, as UTF-16 indices into the string the scene is
+ * about to draw, plus how far a single-line field has scrolled to keep the caret visible.
+ *
+ * UTF-16 rather than bytes because that is the index space SkParagraph's `getRectsForRange` speaks, and the
+ * conversion is arithmetic the editor has already done — see `EditorModel.h`. The painter therefore hands these
+ * numbers straight to Skia and computes nothing.
+ *
+ * This half of a field's state does not arrive as a mounting transaction, because none of it is React's: a
+ * blinking caret would be a commit per half-second and a drag-selection a commit per frame. It comes through
+ * `setEditorState` instead, which is the same side channel `setFocus` uses and damages the field for the same
+ * reason.
+ */
+struct SceneEditorState {
+    size_t caretUtf16{0};
+    size_t selectionBeginUtf16{0};
+    size_t selectionEndUtf16{0};
+    size_t compositionBeginUtf16{0};
+    size_t compositionEndUtf16{0};
+    float scrollOffsetX{0.0F};
+    bool isCaretVisible{false};
+};
+
+/**
+ * Everything a `<TextInput>` draws that its text does not: the caret, the selection highlight, the composing
+ * run's underline, and whether the string in `SceneTextContent` is the value or the placeholder.
+ *
+ * The value itself is not here. It travels as ordinary text, in `SceneTextContent`, because a field's text is
+ * laid out and painted by exactly the same code a `<Text>` is — and because it is the **masked** string when
+ * `secureTextEntry` is set, so the buffer never reaches a paragraph at all. See *TextInput* in
+ * docs/cpp-toolchain.md.
+ */
+struct SceneEditorContent {
+    SceneEditorState state;
+    uint32_t caretColorArgb{};
+    uint32_t selectionColorArgb{};
+    bool isPlaceholder{false};
+    bool isMultiline{false};
+};
+
+/**
  * How a decoded image is fitted into the node's frame. These are React Native's own `resizeMode` values, minus
  * `none`, which maps onto `Center` because both draw the image at its natural size.
  */
@@ -120,6 +160,7 @@ struct ScenePrimitive {
     uint32_t backgroundColorArgb{};
     std::optional<SceneTextContent> text;
     std::optional<SceneImageContent> image;
+    std::optional<SceneEditorContent> editor;
 
     /**
      * Whether this node draws the focus ring, which is the focused node and only while focus arrived from the
@@ -159,6 +200,7 @@ struct SceneNode {
     bool clipsChildren{false};
     std::optional<SceneTextContent> text;
     std::optional<SceneImageContent> image;
+    std::optional<SceneEditorContent> editor;
 
     /**
      * The `contentOffset` a `<ScrollView>` mounted with, and the marker that this node is one at all.
@@ -222,6 +264,13 @@ public:
      * pointer does not draw, so an invisible focus damages nothing.
      */
     void setFocus(facebook::react::Tag tag, bool isFocusVisible);
+
+    /**
+     * Publishes where a `<TextInput>`'s caret, selection and composing run are, and damages that field when any
+     * of it moved. An unchanged state damages nothing, which is what keeps a caret that is not blinking and a
+     * field nobody is typing in from repainting every frame.
+     */
+    void setEditorState(facebook::react::Tag tag, const SceneEditorState& editorState);
     SceneSnapshot snapshot() const;
     SceneDamage takeDamage();
     std::string dump() const;
@@ -236,6 +285,7 @@ private:
 
     SceneNodes nodes_;
     SceneDamage damage_;
+    std::unordered_map<facebook::react::Tag, SceneEditorState> editorStates_;
     facebook::react::Tag focusedTag_{0};
     bool isFocusVisible_{false};
 };

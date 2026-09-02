@@ -261,11 +261,45 @@ FabricRunResult runFocusTabbedFabricBundle(const std::string& bundlePath, facebo
     return finishFabricRun(reactHost, fabricHost);
 }
 
+FabricRunResult runTypedFabricBundle(const std::string& bundlePath, facebook::react::Size surfaceSize,
+                                     const std::string& keySequence) {
+    ReactHost reactHost;
+    std::unique_ptr<FabricHost> fabricHost = startFabricRun(reactHost, bundlePath, surfaceSize);
+
+    if (waitForFirstCommit(reactHost, *fabricHost).empty()) {
+        std::cerr << "[bundle-runner] the bundle committed no scene, so there is nothing to type into"
+                  << std::endl;
+    }
+
+    // The same Tab a user presses to reach the field, through the same traversal `--focus-tab` proves: the
+    // fixture puts the input first, so one press focuses it and the compositor's text input is enabled.
+    deliverInputFrame(reactHost, *fabricHost,
+                      {InputEvent{.kind = InputEventKind::KeyPress, .key = kTabKeyName, .code = kTabKeyCode},
+                       InputEvent{.kind = InputEventKind::KeyRelease, .key = kTabKeyName, .code = kTabKeyCode}});
+
+    // One event per frame rather than one sequence per frame, because a frame is what the event beat batches and
+    // a caret that moved twice inside one would only ever report where it ended up.
+    for (const InputEvent& event : parseKeySequence(keySequence)) {
+        deliverInputFrame(reactHost, *fabricHost, {event});
+    }
+
+    // One more empty frame, so the commit the last keystroke produced is reconciled before the scene is read.
+    deliverInputFrame(reactHost, *fabricHost, {});
+
+    return finishFabricRun(reactHost, fabricHost);
+}
+
 FabricRunResult runFabricBundle(const std::optional<std::string>& bundlePath, facebook::react::Size surfaceSize) {
     ReactHost reactHost;
     std::unique_ptr<FabricHost> fabricHost = std::make_unique<FabricHost>(reactHost.reactInstance(), surfaceSize);
 
     loadAndSettle(reactHost, bundlePath);
+
+    // One empty frame before the scene is read, because a frame is not only what the compositor sent: it is also
+    // where every mounted `<TextInput>` publishes its buffer into the shadow tree. Without it a `secureTextEntry`
+    // field would rasterise from the string React mounted rather than from the masked one, which is the whole of
+    // react-native-macos#423. A window does this every frame; a headless render has to do it once.
+    deliverInputFrame(reactHost, *fabricHost, {});
 
     return finishFabricRun(reactHost, fabricHost);
 }

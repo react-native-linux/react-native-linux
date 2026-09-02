@@ -3,6 +3,7 @@
 #include "FocusModel.h"
 #include "InputPipeline.h"
 #include "LinuxMountingManager.h"
+#include "TextInputController.h"
 
 #include <react/renderer/core/ReactPrimitives.h>
 #include <react/renderer/core/ShadowNode.h>
@@ -38,10 +39,17 @@ namespace react_native_linux {
  * this client should receive it.
  *
  * Composition is the one input that is not routed at all. `zwp_text_input_v3` follows the compositor's keyboard
- * focus, so the target of a pre-edit or a commit is whatever holds the text cursor. Those events go to the
- * registered `ImeSink` — a borrowed, platform-level focus owner that must outlive this dispatcher — and are
- * dropped when there is none, while the `TextInputFocusSink` is enabled and disabled as focus enters and leaves a
- * text component. See *IME* and *Focus and keyboard* in docs/cpp-toolchain.md.
+ * focus, so the target of a pre-edit or a commit is whatever holds the text cursor: the `TextInputController`
+ * this class owns is the `ImeSink`, and it drops a composition that arrives with no field focused. The
+ * `TextInputFocusSink` is enabled and disabled as focus enters and leaves a text component, and is handed to the
+ * controller so the caret rectangle reaches the input method. See *IME*, *Focus and keyboard* and *TextInput* in
+ * docs/cpp-toolchain.md.
+ *
+ * A key the focused field consumes stops here: it reaches React as a `keyDown` and then goes no further, so
+ * Space types a space instead of activating the field and Enter submits instead of clicking it. Tab is never
+ * consumed, which is what keeps it moving focus out. While a composition is active no key is dispatched at all,
+ * because text arrives as a commit and a field that also inserted the keys would double every composed
+ * character.
  *
  * Threading contract: `dispatch` runs on the platform frame thread. Everything it touches is documented as
  * callable from any thread — `ShadowTreeRegistry::visit` and `ShadowTree::getCurrentRevision` take a shared lock,
@@ -54,8 +62,13 @@ public:
                     std::shared_ptr<LinuxMountingManager> mountingManager, facebook::react::SurfaceId surfaceId);
 
     void dispatch(const std::vector<InputEvent>& events);
-    void setImeSink(ImeSink* imeSink) noexcept;
     void setTextInputFocusSink(TextInputFocusSink* textInputFocusSink) noexcept;
+
+    /**
+     * Advances the focused field's caret blink by one frame. Called from the frame loop rather than from a
+     * timer, because there is no timer in the frame path.
+     */
+    bool advanceCaretBlink(double frameMilliseconds);
 
 private:
     std::shared_ptr<const facebook::react::ShadowNode> rootShadowNode() const;
@@ -80,10 +93,11 @@ private:
     PointerRouter router_;
     FocusModel focusModel_;
     std::vector<std::shared_ptr<const facebook::react::ShadowNode>> focusableNodes_;
+    std::vector<std::shared_ptr<const TextInputShadowNode>> textInputNodes_;
     std::shared_ptr<const facebook::react::ShadowNode> focusedNode_;
     std::shared_ptr<const facebook::react::ShadowNode> syncedRoot_;
+    TextInputController textInputController_;
     bool isTextInputEnabled_{false};
-    ImeSink* imeSink_{nullptr};
     TextInputFocusSink* textInputFocusSink_{nullptr};
 };
 

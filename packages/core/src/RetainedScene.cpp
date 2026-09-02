@@ -1,6 +1,10 @@
 #include "RetainedScene.h"
 
+#include "TextInputComponent.h"
+
 #include <react/renderer/attributedstring/AttributedString.h>
+#include <react/renderer/attributedstring/TextAttributes.h>
+#include <react/renderer/components/textinput/TextInputState.h>
 #include <react/renderer/components/image/ImageProps.h>
 #include <react/renderer/components/image/ImageState.h>
 #include <react/renderer/components/root/RootShadowNode.h>
@@ -22,6 +26,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -65,6 +70,11 @@ constexpr size_t kIndentWidth = 2;
 constexpr uint32_t kAlphaShift = 24U;
 constexpr uint32_t kRedShift = 16U;
 constexpr uint32_t kGreenShift = 8U;
+// The caret and the selection follow the same fixed accent the focus ring does, for the same reason: there is no
+// theme service to ask, and reading the compositor's accent is an org.freedesktop.portal.Settings round trip.
+// `cursorColor` and `selectionColor` override both, which is react-native-macos#1096.
+constexpr uint32_t kDefaultCaretColorArgb = 0xFF599EFFU;
+constexpr uint32_t kDefaultSelectionColorArgb = 0x59599EFFU;
 
 std::string formatFrame(const facebook::react::Rect& frame) {
     std::array<char, kFrameBufferSize> buffer{};
@@ -206,6 +216,14 @@ SceneImageContent resolveImage(const SceneImageContent& image, float opacity) {
                              .opacity = opacity};
 }
 
+SceneEditorContent resolveEditor(const SceneEditorContent& editor, float opacity) {
+    return SceneEditorContent{.state = editor.state,
+                              .caretColorArgb = scaleArgbAlpha(editor.caretColorArgb, opacity),
+                              .selectionColorArgb = scaleArgbAlpha(editor.selectionColorArgb, opacity),
+                              .isPlaceholder = editor.isPlaceholder,
+                              .isMultiline = editor.isMultiline};
+}
+
 SceneImageResizeMode toSceneImageResizeMode(facebook::react::ImageResizeMode resizeMode) {
     if (resizeMode == facebook::react::ImageResizeMode::Cover) {
         return SceneImageResizeMode::Cover;
@@ -297,6 +315,69 @@ void readTextContent(SceneNode& node, const facebook::react::ShadowView& shadowV
 
     node.text = SceneTextContent{.attributedString = paragraphState->getData().attributedString,
                                  .paragraphAttributes = paragraphState->getData().paragraphAttributes};
+}
+
+/**
+ * The value a `<TextInput>` mounts with, and the colours its caret and selection are drawn in.
+ *
+ * The string is read off `TextInputState`, not off `props.text`, for the reason the scroll offset is read off
+ * `ScrollViewState`: the state is what the platform writes back into when the user types, so it is the one
+ * description of the field's contents that React, Yoga's measurement and the picture all share. A `props.text`
+ * that has not been reconciled yet is by definition the value React thinks is current, which is not the same
+ * thing — and drawing it is react-native-macos#2127, the caret jumping back mid-word.
+ *
+ * An empty value draws the placeholder instead, in `placeholderTextColor` when there is one. The placeholder is
+ * resolved here rather than pushed into the state because upstream's `updateStateIfNeeded` treats a non-empty
+ * state string as the field's content: a placeholder in there would become the value on the next commit.
+ */
+void readEditorContent(SceneNode& node, const facebook::react::ShadowView& shadowView) {
+    node.editor = std::nullopt;
+
+    const std::shared_ptr<const TextInputProps> textInputProps =
+        std::dynamic_pointer_cast<const TextInputProps>(shadowView.props);
+    const std::shared_ptr<const facebook::react::ConcreteState<facebook::react::TextInputState>> textInputState =
+        std::dynamic_pointer_cast<const facebook::react::ConcreteState<facebook::react::TextInputState>>(
+            shadowView.state);
+
+    if (textInputProps == nullptr || textInputState == nullptr) {
+        return;
+    }
+
+    const facebook::react::AttributedString& value =
+        textInputState->getData().attributedStringBox.getValue();
+    const bool isPlaceholder = value.isEmpty();
+    facebook::react::AttributedString displayed = value;
+
+    if (isPlaceholder) {
+        facebook::react::TextAttributes placeholderAttributes = textInputProps->getEffectiveTextAttributes(1.0F);
+
+        if (facebook::react::isColorMeaningful(textInputProps->placeholderTextColor)) {
+            placeholderAttributes.foregroundColor = textInputProps->placeholderTextColor;
+        }
+
+        displayed.setBaseTextAttributes(placeholderAttributes);
+
+        if (!textInputProps->placeholder.empty()) {
+            displayed.appendFragment(facebook::react::AttributedString::Fragment{
+                .string = textInputProps->placeholder, .textAttributes = placeholderAttributes,
+                .parentShadowView = {}});
+        }
+    }
+
+    node.text = SceneTextContent{.attributedString = displayed,
+                                 .paragraphAttributes = textInputProps->paragraphAttributes};
+
+    const uint32_t authoredCaretColorArgb = toArgb(textInputProps->cursorColor, 1.0F);
+    const uint32_t authoredSelectionColorArgb = toArgb(textInputProps->selectionColor, 1.0F);
+    const uint32_t caretColorArgb =
+        authoredCaretColorArgb != 0 ? authoredCaretColorArgb : kDefaultCaretColorArgb;
+    const uint32_t selectionColorArgb =
+        authoredSelectionColorArgb != 0 ? authoredSelectionColorArgb : kDefaultSelectionColorArgb;
+
+    node.editor = SceneEditorContent{.caretColorArgb = textInputProps->caretHidden ? 0 : caretColorArgb,
+                                     .selectionColorArgb = selectionColorArgb,
+                                     .isPlaceholder = isPlaceholder,
+                                     .isMultiline = textInputProps->multiline};
 }
 
 /**
@@ -402,7 +483,11 @@ SceneVisit visitNode(const SceneNode& node, const ScenePaintState& state) {
                                                  .image = node.image.has_value()
                                                               ? std::optional<SceneImageContent>{resolveImage(
                                                                     node.image.value(), opacity)}
-                                                              : std::nullopt},
+                                                              : std::nullopt,
+                                                 .editor = node.editor.has_value()
+                                                               ? std::optional<SceneEditorContent>{resolveEditor(
+                                                                     node.editor.value(), opacity)}
+                                                               : std::nullopt},
                      .childState = ScenePaintState{.origin = contentOrigin(node, frame.origin),
                                                    .matrix = matrix,
                                                    .opacity = opacity,
@@ -530,6 +615,7 @@ void RetainedScene::createNode(const facebook::react::ShadowView& shadowView) {
 void RetainedScene::deleteNode(facebook::react::Tag tag) {
     damageSubtree(tag);
     nodes_.erase(tag);
+    editorStates_.erase(tag);
 }
 
 void RetainedScene::insertChild(facebook::react::Tag parentTag, const facebook::react::ShadowView& childShadowView,
@@ -610,6 +696,25 @@ void RetainedScene::setFocus(facebook::react::Tag tag, bool isFocusVisible) {
     }
 }
 
+void RetainedScene::setEditorState(facebook::react::Tag tag, const SceneEditorState& editorState) {
+    SceneEditorState& current = editorStates_[tag];
+
+    if (std::tie(current.caretUtf16, current.selectionBeginUtf16, current.selectionEndUtf16,
+                 current.compositionBeginUtf16, current.compositionEndUtf16, current.scrollOffsetX,
+                 current.isCaretVisible) ==
+        std::tie(editorState.caretUtf16, editorState.selectionBeginUtf16, editorState.selectionEndUtf16,
+                 editorState.compositionBeginUtf16, editorState.compositionEndUtf16, editorState.scrollOffsetX,
+                 editorState.isCaretVisible)) {
+        return;
+    }
+
+    current = editorState;
+
+    // One rectangle, not two: everything a caret, a selection or a composing underline draws is inside the
+    // field's own frame, which is also the extent this damages. A blink is therefore one field's repaint.
+    damageSubtree(tag);
+}
+
 SceneSnapshot RetainedScene::snapshot() const {
     SceneSnapshot primitives;
     const ScenePaintState rootState{};
@@ -643,6 +748,7 @@ SceneNode& RetainedScene::writeNode(const facebook::react::ShadowView& shadowVie
     node.layoutMetrics = shadowView.layoutMetrics;
     readPaintProps(node, shadowView);
     readTextContent(node, shadowView);
+    readEditorContent(node, shadowView);
     readImageContent(node, shadowView);
     readScrollContent(node, shadowView);
 
@@ -675,6 +781,14 @@ void RetainedScene::appendPrimitives(SceneSnapshot& primitives, facebook::react:
     SceneVisit visit = visitNode(node, state);
 
     visit.primitive.focusRing = isFocusVisible_ && tag == focusedTag_;
+
+    if (visit.primitive.editor.has_value()) {
+        const auto editorState = editorStates_.find(tag);
+
+        if (editorState != editorStates_.end()) {
+            visit.primitive.editor.value().state = editorState->second;
+        }
+    }
 
     if (isPrimitiveVisible(visit.primitive)) {
         primitives.push_back(std::move(visit.primitive));

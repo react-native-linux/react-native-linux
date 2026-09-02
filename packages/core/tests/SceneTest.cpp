@@ -1,5 +1,6 @@
 #include "LinuxMountingManager.h"
 #include "RetainedScene.h"
+#include "TextInputComponent.h"
 
 #include <gtest/gtest.h>
 
@@ -10,7 +11,9 @@
 #include <react/renderer/components/image/ImageProps.h>
 #include <react/renderer/components/image/ImageState.h>
 #include <react/renderer/components/scrollview/ScrollViewState.h>
+#include <react/renderer/attributedstring/AttributedStringBox.h>
 #include <react/renderer/components/text/ParagraphState.h>
+#include <react/renderer/components/textinput/TextInputState.h>
 #include <react/renderer/components/view/ViewProps.h>
 #include <react/renderer/core/ConcreteState.h>
 #include <react/renderer/core/ReactPrimitives.h>
@@ -59,6 +62,7 @@ using facebook::react::ViewProps;
 using react_native_linux::LinuxMountingManager;
 using react_native_linux::RetainedScene;
 using react_native_linux::SceneDamage;
+using react_native_linux::SceneEditorState;
 using react_native_linux::SceneFrame;
 using react_native_linux::SceneSnapshot;
 
@@ -1343,6 +1347,21 @@ TEST(LinuxMountingManagerTest, FocusIsMarkedUnderTheSceneMutex) {
     expectRect(boundsOf(frame.damage), makeRect(24, 24, 120, 80));
 }
 
+TEST(LinuxMountingManagerTest, EditorStateIsAppliedUnderTheSceneMutex) {
+    LinuxMountingManager mountingManager;
+
+    mountBlueChild(mountingManager);
+    mountingManager.takeFrame();
+
+    mountingManager.setEditorState(2, SceneEditorState{.caretUtf16 = 1, .isCaretVisible = true});
+
+    const SceneFrame frame = mountingManager.takeFrame();
+
+    ASSERT_EQ(frame.scene.size(), 1U);
+    ASSERT_FALSE(frame.damage.empty());
+    expectRect(boundsOf(frame.damage), makeRect(24, 24, 120, 80));
+}
+
 TEST(LinuxMountingManagerTest, StartSurfaceCreatesTheRootTheDifferNeverEmits) {
     LinuxMountingManager mountingManager;
 
@@ -1435,6 +1454,191 @@ TEST(LinuxMountingManagerTest, DispatchCommandLeavesTheSceneUntouched) {
     mountingManager.dispatchCommand(makeView(2, makeRect(0, 0, 1, 1)), "focus", folly::dynamic::array());
 
     EXPECT_EQ(mountingManager.dumpScene(), dumpBefore);
+}
+
+constexpr uint32_t kDefaultCaretArgb = 0xFF599EFFU;
+constexpr uint32_t kDefaultSelectionArgb = 0x59599EFFU;
+
+/**
+ * A `<TextInput>` as it reaches the mounting layer. The value lives in `TextInputState` for the reason a
+ * ScrollView's offset lives in its own state: the platform writes it back there after every edit, so it is the
+ * one description of the field that the picture and React share. See *TextInput* in docs/cpp-toolchain.md.
+ */
+ShadowView makeTextInput(Tag tag, Rect frame, const std::string& value,
+                         const std::shared_ptr<react_native_linux::TextInputProps>& textInputProps) {
+    facebook::react::AttributedString attributedString;
+
+    if (!value.empty()) {
+        facebook::react::AttributedString::Fragment fragment;
+
+        fragment.string = value;
+        fragment.textAttributes = facebook::react::TextAttributes::defaultTextAttributes();
+        attributedString.appendFragment(std::move(fragment));
+    }
+
+    ShadowView shadowView;
+
+    shadowView.tag = tag;
+    shadowView.componentName = "TextInput";
+    shadowView.layoutMetrics.frame = frame;
+    shadowView.props = textInputProps;
+    shadowView.state = std::make_shared<const facebook::react::ConcreteState<facebook::react::TextInputState>>(
+        std::make_shared<const facebook::react::TextInputState>(
+            facebook::react::TextInputState{facebook::react::AttributedStringBox{attributedString}, attributedString,
+                                            facebook::react::ParagraphAttributes{}, 0}),
+        facebook::react::ShadowNodeFamily::Weak{});
+
+    return shadowView;
+}
+
+Rect textInputFrame() {
+    return makeRect(10, 20, 200, 40);
+}
+
+SceneSnapshot snapshotOfTextInput(const ShadowView& field) {
+    RetainedScene scene;
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, field);
+
+    return scene.snapshot();
+}
+
+SceneSnapshot snapshotOfFieldWith(const std::string& value,
+                                  const std::shared_ptr<react_native_linux::TextInputProps>& textInputProps) {
+    return snapshotOfTextInput(makeTextInput(2, textInputFrame(), value, textInputProps));
+}
+
+std::shared_ptr<react_native_linux::TextInputProps> textInputProps() {
+    return std::make_shared<react_native_linux::TextInputProps>();
+}
+
+TEST(RetainedSceneTextInputTest, TheStateBecomesTheTextAndTheNodeBecomesAnEditor) {
+    const SceneSnapshot snapshot = snapshotOfFieldWith("hi", textInputProps());
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    ASSERT_TRUE(snapshot[0].text.has_value());
+    EXPECT_EQ(snapshot[0].text.value().attributedString.getString(), "hi");
+    ASSERT_TRUE(snapshot[0].editor.has_value());
+    EXPECT_FALSE(snapshot[0].editor.value().isPlaceholder);
+    EXPECT_FALSE(snapshot[0].editor.value().isMultiline);
+    EXPECT_EQ(snapshot[0].editor.value().caretColorArgb, kDefaultCaretArgb);
+    EXPECT_EQ(snapshot[0].editor.value().selectionColorArgb, kDefaultSelectionArgb);
+
+    // Nothing has published a caret yet, so the field draws its text and no caret at all.
+    EXPECT_EQ(snapshot[0].editor.value().state.caretUtf16, 0U);
+    EXPECT_FALSE(snapshot[0].editor.value().state.isCaretVisible);
+}
+
+TEST(RetainedSceneTextInputTest, AnEmptyValueDrawsThePlaceholderInItsOwnColour) {
+    const std::shared_ptr<react_native_linux::TextInputProps> withPlaceholder = textInputProps();
+
+    withPlaceholder->placeholder = "Type here";
+    withPlaceholder->placeholderTextColor = red();
+
+    const SceneSnapshot snapshot = snapshotOfFieldWith({}, withPlaceholder);
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    ASSERT_TRUE(snapshot[0].text.has_value());
+    EXPECT_EQ(snapshot[0].text.value().attributedString.getString(), "Type here");
+    EXPECT_TRUE(snapshot[0].editor.value().isPlaceholder);
+}
+
+TEST(RetainedSceneTextInputTest, AnEmptyFieldWithNoPlaceholderIsStillPainted) {
+    const SceneSnapshot snapshot = snapshotOfFieldWith({}, textInputProps());
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    EXPECT_EQ(snapshot[0].text.value().attributedString.getString(), "");
+    EXPECT_TRUE(snapshot[0].editor.value().isPlaceholder);
+}
+
+TEST(RetainedSceneTextInputTest, CursorAndSelectionColoursOverrideTheAccent) {
+    const std::shared_ptr<react_native_linux::TextInputProps> coloured = textInputProps();
+
+    coloured->cursorColor = red();
+    coloured->selectionColor = blue();
+    coloured->multiline = true;
+
+    const SceneSnapshot snapshot = snapshotOfFieldWith("hi", coloured);
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    EXPECT_EQ(snapshot[0].editor.value().caretColorArgb, kRedArgb);
+    EXPECT_EQ(snapshot[0].editor.value().selectionColorArgb, kBlueArgb);
+    EXPECT_TRUE(snapshot[0].editor.value().isMultiline);
+}
+
+TEST(RetainedSceneTextInputTest, CaretHiddenRemovesTheCaretColourAndTheCaretWithIt) {
+    const std::shared_ptr<react_native_linux::TextInputProps> hidden = textInputProps();
+
+    hidden->caretHidden = true;
+
+    const SceneSnapshot snapshot = snapshotOfFieldWith("hi", hidden);
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    EXPECT_EQ(snapshot[0].editor.value().caretColorArgb, 0U);
+}
+
+TEST(RetainedSceneTextInputTest, ANodeWithoutTextInputStateCarriesNoEditor) {
+    ShadowView field = makeTextInput(2, textInputFrame(), "hi", textInputProps());
+
+    field.state = nullptr;
+
+    EXPECT_TRUE(snapshotOfTextInput(field).empty());
+}
+
+TEST(RetainedSceneTextInputTest, TheCaretAndSelectionReachTheSnapshotAndDamageOnlyWhenTheyMove) {
+    RetainedScene scene;
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, makeTextInput(2, textInputFrame(), "hi", textInputProps()));
+    scene.takeDamage();
+
+    const SceneEditorState editorState{.caretUtf16 = 1,
+                                       .selectionBeginUtf16 = 0,
+                                       .selectionEndUtf16 = 1,
+                                       .compositionBeginUtf16 = 0,
+                                       .compositionEndUtf16 = 1,
+                                       .scrollOffsetX = 4.0F,
+                                       .isCaretVisible = true};
+
+    scene.setEditorState(2, editorState);
+
+    const SceneDamage moved = scene.takeDamage();
+
+    ASSERT_EQ(moved.size(), 1U);
+    expectRect(moved[0], textInputFrame());
+
+    const SceneSnapshot snapshot = scene.snapshot();
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    ASSERT_TRUE(snapshot[0].editor.has_value());
+    EXPECT_EQ(snapshot[0].editor.value().state.caretUtf16, 1U);
+    EXPECT_EQ(snapshot[0].editor.value().state.selectionEndUtf16, 1U);
+    EXPECT_EQ(snapshot[0].editor.value().state.compositionEndUtf16, 1U);
+    EXPECT_TRUE(snapshot[0].editor.value().state.isCaretVisible);
+    EXPECT_EQ(snapshot[0].editor.value().state.scrollOffsetX, 4.0F);
+
+    // A caret that has not moved is not a repaint, which is what keeps a field nobody is typing in idle.
+    scene.setEditorState(2, editorState);
+
+    EXPECT_TRUE(scene.takeDamage().empty());
+}
+
+TEST(RetainedSceneTextInputTest, DeletingAFieldForgetsItsEditorState) {
+    RetainedScene scene;
+    const ShadowView field = makeTextInput(2, textInputFrame(), "hi", textInputProps());
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, field);
+    scene.setEditorState(2, SceneEditorState{.caretUtf16 = 1, .isCaretVisible = true});
+    scene.removeChild(kSurfaceTag, field);
+    scene.deleteNode(2);
+    addChild(scene, kSurfaceTag, field);
+
+    const SceneSnapshot snapshot = scene.snapshot();
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    EXPECT_FALSE(snapshot[0].editor.value().state.isCaretVisible);
 }
 
 } // namespace

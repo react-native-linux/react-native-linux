@@ -108,7 +108,8 @@ void emitPointerDispatch(const facebook::react::TouchEventEmitter& emitter, cons
 InputDispatcher::InputDispatcher(std::shared_ptr<facebook::react::UIManager> uiManager,
                                  std::shared_ptr<LinuxMountingManager> mountingManager,
                                  facebook::react::SurfaceId surfaceId)
-    : uiManager_(std::move(uiManager)), mountingManager_(std::move(mountingManager)), surfaceId_(surfaceId) {}
+    : uiManager_(std::move(uiManager)), mountingManager_(std::move(mountingManager)), surfaceId_(surfaceId),
+      textInputController_(uiManager_, mountingManager_) {}
 
 void InputDispatcher::dispatch(const std::vector<InputEvent>& events) {
     // Before the events rather than with them: a commit that unmounted the focused node has to blur it even on a
@@ -123,21 +124,26 @@ void InputDispatcher::dispatch(const std::vector<InputEvent>& events) {
         }
 
         if (isImeEvent(event)) {
-            if (imeSink_ != nullptr) {
-                deliverImeEvent(event, *imeSink_);
-            }
+            deliverImeEvent(event, textInputController_);
 
             continue;
         }
 
         dispatchPointerEvent(event);
     }
-}
 
-void InputDispatcher::setImeSink(ImeSink* imeSink) noexcept { imeSink_ = imeSink; }
+    // After the frame's events rather than per event: one reconciliation, one state write and one set of change
+    // events per frame, whatever the compositor sent inside it.
+    textInputController_.synchronize();
+}
 
 void InputDispatcher::setTextInputFocusSink(TextInputFocusSink* textInputFocusSink) noexcept {
     textInputFocusSink_ = textInputFocusSink;
+    textInputController_.setTextInputFocusSink(textInputFocusSink);
+}
+
+bool InputDispatcher::advanceCaretBlink(double frameMilliseconds) {
+    return textInputController_.advanceCaretBlink(frameMilliseconds);
 }
 
 std::shared_ptr<const facebook::react::ShadowNode> InputDispatcher::rootShadowNode() const {
@@ -180,6 +186,10 @@ void InputDispatcher::dispatchPointerEvent(const InputEvent& event) {
         applyFocusTransition(focusModel_.focusTag(focusableAncestorTag(*target), FocusOrigin::Pointer));
     }
 
+    // After the focus transition, so a press that focuses a field also places its caret, and a drag that started
+    // inside it keeps extending the selection wherever the pointer goes.
+    textInputController_.handlePointer(event);
+
     const std::shared_ptr<const facebook::react::TouchEventEmitter> emitter =
         std::dynamic_pointer_cast<const facebook::react::TouchEventEmitter>(target->getEventEmitter());
 
@@ -193,10 +203,29 @@ void InputDispatcher::dispatchPointerEvent(const InputEvent& event) {
 }
 
 void InputDispatcher::dispatchKeyEvent(const InputEvent& event) {
+    // While an input method is composing, a key is neither text nor a command: the commit is the text, and a
+    // field that also saw the key would insert the character twice. Nothing reaches React either, which is the
+    // react-native-macos#683 and #2312 ordering rule from *IME* in docs/cpp-toolchain.md.
+    if (textInputController_.isComposing()) {
+        return;
+    }
+
     // The key reaches React before the traversal it may also trigger, so a Tab is visible to the node that had
     // focus rather than swallowed by the platform. There is no return channel from JavaScript on this path, so
     // nothing can cancel the traversal; that is the `preventDefault` deferral in docs/cpp-toolchain.md.
     emitKeyEvent(event);
+
+    const TextInputKeyResult editorResult = textInputController_.handleKey(event);
+
+    if (editorResult == TextInputKeyResult::ConsumedAndBlurred) {
+        applyFocusTransition(focusModel_.focusTag(kNoTag, FocusOrigin::Keyboard));
+
+        return;
+    }
+
+    if (editorResult == TextInputKeyResult::Consumed) {
+        return;
+    }
 
     if (event.kind != InputEventKind::KeyPress) {
         return;
@@ -267,10 +296,15 @@ void InputDispatcher::syncFocusables() {
 
     syncedRoot_ = root;
     focusableNodes_.clear();
+    textInputNodes_.clear();
 
     if (root != nullptr) {
         collectFocusables(*root);
     }
+
+    // Before the focus transition below, so a commit that dropped the focused field finds the new field set
+    // already in place, and so every mounted field has a buffer before anything can be typed into one.
+    textInputController_.setMountedFields(textInputNodes_);
 
     std::vector<facebook::react::Tag> focusableTags;
 
@@ -301,6 +335,13 @@ void InputDispatcher::collectFocusables(const facebook::react::ShadowNode& shado
             focusableNodes_.push_back(child);
         }
 
+        const std::shared_ptr<const TextInputShadowNode> textInput =
+            std::dynamic_pointer_cast<const TextInputShadowNode>(child);
+
+        if (textInput != nullptr) {
+            textInputNodes_.push_back(textInput);
+        }
+
         collectFocusables(*child);
     }
 }
@@ -323,6 +364,7 @@ void InputDispatcher::applyFocusTransition(const FocusTransition& transition) {
     }
 
     mountingManager_->setFocus(focusModel_.focusedTag(), focusModel_.isFocusVisible());
+    textInputController_.setFocusedNode(focusedNode_);
     updateTextInput();
 }
 

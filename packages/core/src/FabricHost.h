@@ -73,6 +73,13 @@ public:
      * same beat as everything else the frame queued.
      */
     bool advanceScroll(double frameMilliseconds);
+
+    /**
+     * Advances the focused `<TextInput>`'s caret blink by one frame, and reports whether it changed phase. The
+     * blink lives on the frame clock rather than on a timer because there is no timer in the frame path; a
+     * headless run never calls it, which is what makes a caret in a golden reproducible.
+     */
+    bool advanceCaretBlink(double frameMilliseconds);
     void induceEventBeat();
     SceneFrame takeFrame();
     SceneSnapshot snapshotScene() const;

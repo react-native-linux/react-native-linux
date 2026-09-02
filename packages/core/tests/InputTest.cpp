@@ -21,6 +21,8 @@ using react_native_linux::InputQueue;
 using react_native_linux::kInputQueueCapacity;
 using react_native_linux::domKeyCode;
 using react_native_linux::domKeyName;
+using react_native_linux::isTextKey;
+using react_native_linux::parseKeySequence;
 using react_native_linux::makeActivationDispatch;
 using react_native_linux::PointerDispatch;
 using react_native_linux::PointerDispatchType;
@@ -326,6 +328,94 @@ TEST(PointerRouterTest, BatchesAFullFrameInQueueOrder) {
                                                     PointerDispatchType::Up, PointerDispatchType::Click};
 
     EXPECT_EQ(types, expected);
+}
+
+TEST(IsTextKeyTest, TreatsASingleCodePointAsTextAndANameAsAKey) {
+    EXPECT_TRUE(isTextKey("a"));
+    EXPECT_TRUE(isTextKey(" "));
+    EXPECT_TRUE(isTextKey("\xC3\xA9"));
+    EXPECT_TRUE(isTextKey("\xE4\xBD\xA0"));
+    EXPECT_TRUE(isTextKey("\xF0\x9F\x98\x80"));
+
+    EXPECT_FALSE(isTextKey({}));
+    EXPECT_FALSE(isTextKey("Enter"));
+    EXPECT_FALSE(isTextKey("ArrowLeft"));
+    EXPECT_FALSE(isTextKey("\x1B"));
+}
+
+TEST(ParseKeySequenceTest, TurnsEveryCharacterIntoAPressAndARelease) {
+    const std::vector<InputEvent> events = parseKeySequence("h\xC3\xA9");
+
+    ASSERT_EQ(events.size(), 4U);
+    EXPECT_EQ(events[0].kind, InputEventKind::KeyPress);
+    EXPECT_EQ(events[0].key, "h");
+    EXPECT_EQ(events[1].kind, InputEventKind::KeyRelease);
+    EXPECT_EQ(events[2].key, "\xC3\xA9");
+    EXPECT_EQ(events[3].kind, InputEventKind::KeyRelease);
+}
+
+TEST(ParseKeySequenceTest, NamesAKeyAndItsModifiers) {
+    const std::vector<InputEvent> arrow = parseKeySequence("{Left}");
+
+    ASSERT_EQ(arrow.size(), 2U);
+    EXPECT_EQ(arrow[0].key, "ArrowLeft");
+    EXPECT_FALSE(arrow[0].modifiers.shift);
+
+    const std::vector<InputEvent> shifted = parseKeySequence("{Shift+Left}");
+
+    ASSERT_EQ(shifted.size(), 2U);
+    EXPECT_EQ(shifted[0].key, "ArrowLeft");
+    EXPECT_TRUE(shifted[0].modifiers.shift);
+
+    const std::vector<InputEvent> selectAll = parseKeySequence("{Ctrl+A}");
+
+    ASSERT_EQ(selectAll.size(), 2U);
+    EXPECT_EQ(selectAll[0].key, "a");
+    EXPECT_TRUE(selectAll[0].modifiers.control);
+
+    const std::vector<InputEvent> copy = parseKeySequence("{Ctrl+c}");
+
+    ASSERT_EQ(copy.size(), 2U);
+    EXPECT_EQ(copy[0].key, "c");
+
+    const std::vector<InputEvent> digit = parseKeySequence("{Ctrl+1}");
+
+    ASSERT_EQ(digit.size(), 2U);
+    EXPECT_EQ(digit[0].key, "1");
+
+    const std::vector<InputEvent> combined = parseKeySequence("{Ctrl+Shift+Alt+Left}");
+
+    ASSERT_EQ(combined.size(), 2U);
+    EXPECT_TRUE(combined[0].modifiers.control);
+    EXPECT_TRUE(combined[0].modifiers.shift);
+    EXPECT_TRUE(combined[0].modifiers.alt);
+}
+
+TEST(ParseKeySequenceTest, InjectsCompositionEventsFromTheirTokens) {
+    const std::vector<InputEvent> preedit = parseKeySequence("{Preedit:ni}");
+
+    ASSERT_EQ(preedit.size(), 1U);
+    EXPECT_EQ(preedit[0].kind, InputEventKind::ImePreedit);
+    EXPECT_EQ(preedit[0].text, "ni");
+    EXPECT_EQ(preedit[0].preeditCursorBegin, 2);
+    EXPECT_EQ(preedit[0].preeditCursorEnd, 2);
+
+    const std::vector<InputEvent> commit = parseKeySequence("{Commit:\xE4\xBD\xA0}");
+
+    ASSERT_EQ(commit.size(), 1U);
+    EXPECT_EQ(commit[0].kind, InputEventKind::ImeCommit);
+    EXPECT_EQ(commit[0].text, "\xE4\xBD\xA0");
+}
+
+TEST(ParseKeySequenceTest, IgnoresTokensItDoesNotRecogniseAndStopsAtAnUnclosedOne) {
+    EXPECT_TRUE(parseKeySequence("{Nonsense}").empty());
+    EXPECT_TRUE(parseKeySequence("{Unknown:payload}").empty());
+    EXPECT_TRUE(parseKeySequence("{Ctrl+}").empty());
+
+    const std::vector<InputEvent> truncated = parseKeySequence("a{Left");
+
+    ASSERT_EQ(truncated.size(), 2U);
+    EXPECT_EQ(truncated[0].key, "a");
 }
 
 } // namespace
