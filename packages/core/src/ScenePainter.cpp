@@ -211,6 +211,32 @@ void paintImage(SkCanvas& canvas, const ScenePrimitive& primitive, const SceneIm
     canvas.drawImageRect(decoded, toSkRect(placement), sampling, &paint);
 }
 
+/**
+ * The focus ring, stroked on the inside edge of the node's own rounded border box.
+ *
+ * Inside rather than around it, which is the one place this departs from the macOS ring: an outset ring would
+ * paint outside the frame the scene damages for that node, and every damage rectangle in this renderer is a
+ * primitive's own transformed frame. A ring the damage math already covers needs no term of its own, and
+ * react-native-macos#2063 is what an outset ring that disagrees with its own geometry looks like.
+ */
+void paintFocusRing(SkCanvas& canvas, const ScenePrimitive& primitive) {
+    // Half the stroke, because a stroke is centred on its path: the ring then occupies exactly the outermost
+    // kFocusRingWidth points of the frame and not one point outside it.
+    constexpr facebook::react::Float kRingInset = kFocusRingWidth / 2;
+    const facebook::react::BorderWidths ringWidths{
+        .left = kRingInset, .top = kRingInset, .right = kRingInset, .bottom = kRingInset};
+    const SkRect ringBounds = innerBounds(toSkRect(primitive.frame), ringWidths);
+    const SkRRect ring = toSkRRect(ringBounds, innerRadii(primitive.borderRadii, ringWidths));
+
+    SkPaint paint;
+
+    paint.setAntiAlias(true);
+    paint.setStyle(SkPaint::kStroke_Style);
+    paint.setStrokeWidth(kFocusRingWidth);
+    paint.setColor(kFocusRingColor);
+    canvas.drawRRect(ring, paint);
+}
+
 void paintPrimitive(SkCanvas& canvas, const ScenePrimitive& primitive) {
     const SkRRect outer = toSkRRect(toSkRect(primitive.frame), primitive.borderRadii);
 
@@ -238,6 +264,11 @@ void paintPrimitive(SkCanvas& canvas, const ScenePrimitive& primitive) {
 
     if (primitive.text.has_value()) {
         paintText(canvas, primitive.text.value());
+    }
+
+    // Last, so the ring is never covered by the node's own content.
+    if (primitive.focusRing) {
+        paintFocusRing(canvas, primitive);
     }
 }
 

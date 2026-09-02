@@ -24,6 +24,9 @@ constexpr int kAuxiliaryButton = 1;
 constexpr int kSecondaryButton = 2;
 constexpr int kUnmappedButton = -1;
 constexpr size_t kKeysymNameCapacity = 64;
+// The longest text one key can produce is one UTF-8 code point, which is four bytes, plus the terminator
+// xkb_state_key_get_utf8 always writes.
+constexpr size_t kKeyTextCapacity = 8;
 // libxkbcommon reports a key as pressed with the evdev keycode the kernel used plus this offset, which is the X11
 // keycode convention every keymap in the wild is written against.
 constexpr uint32_t kEvdevToXkbKeycodeOffset = 8;
@@ -51,6 +54,22 @@ std::string keysymName(xkb_state* keyboardState, uint32_t keycode) {
     }
 
     return std::string(name.data(), static_cast<size_t>(written));
+}
+
+/**
+ * The text this key produces under the modifiers currently held, which is one half of the DOM `key` value.
+ * A key that produces none — every named key, and every modifier — reports nothing rather than a control
+ * character; `domKeyName` is what decides between the two.
+ */
+std::string keyText(xkb_state* keyboardState, uint32_t keycode) {
+    std::array<char, kKeyTextCapacity> text{};
+    const int written = xkb_state_key_get_utf8(keyboardState, keycode, text.data(), text.size());
+
+    if (written <= 0 || static_cast<size_t>(written) >= text.size()) {
+        return {};
+    }
+
+    return std::string(text.data(), static_cast<size_t>(written));
 }
 
 bool isModifierActive(xkb_state* keyboardState, const char* modifierName) {
@@ -235,10 +254,15 @@ void WaylandSeat::pushKey(uint32_t key, uint32_t state) {
 
     const InputEventKind kind =
         state == WL_KEYBOARD_KEY_STATE_PRESSED ? InputEventKind::KeyPress : InputEventKind::KeyRelease;
+    const uint32_t xkbKeycode = key + kEvdevToXkbKeycodeOffset;
 
+    // The DOM names are computed here rather than downstream because this is the only place that has an
+    // xkb_state; the naming rules themselves are in InputPipeline, where the coverage gate scores them.
     queue_.push(InputEvent{.kind = kind,
                            .surfacePoint = pointerPosition_,
-                           .key = keysymName(keyboardState_, key + kEvdevToXkbKeycodeOffset),
+                           .key = domKeyName(keysymName(keyboardState_, xkbKeycode),
+                                             keyText(keyboardState_, xkbKeycode)),
+                           .code = domKeyCode(key),
                            .modifiers = modifiers_});
 }
 

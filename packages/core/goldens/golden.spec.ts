@@ -44,6 +44,12 @@ const fixtures: readonly GoldenFixture[] = [
     renderArguments: ["160", "100", "3"],
     renderFlag: "--scroll-to",
   },
+  {
+    bundleFileName: "focus.js",
+    goldenFileName: "focus.png",
+    renderArguments: ["3"],
+    renderFlag: "--focus-tab",
+  },
 ];
 
 const renderFixture = (fixture: GoldenFixture, outputPath: string): void => {

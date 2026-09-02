@@ -60,15 +60,17 @@ enum class ScrollAxisKind : uint8_t {
  * One thing the compositor told us, in surface coordinates and with no Wayland types in it.
  *
  * `button` is the DOM button number — 0 primary, 1 auxiliary, 2 secondary — not the `BTN_*` code Wayland sends;
- * the seat maps it. `key` is the xkbcommon keysym name and is empty for pointer events. `scrollAmount` is points
- * for `PointerScrollContinuous`, whole notches for `PointerScrollDiscrete`, and unused otherwise; both grow in the
- * direction `contentOffset` grows in, which is content moving up or left.
+ * the seat maps it. `key` and `code` are the DOM key values `domKeyName` and `domKeyCode` produce, and are empty
+ * for pointer events. `scrollAmount` is points for `PointerScrollContinuous`, whole notches for
+ * `PointerScrollDiscrete`, and unused otherwise; both grow in the direction `contentOffset` grows in, which is
+ * content moving up or left.
  */
 struct InputEvent {
     InputEventKind kind{InputEventKind::PointerMotion};
     facebook::react::Point surfacePoint{};
     int button{0};
     std::string key{};
+    std::string code{};
     InputModifiers modifiers{};
     std::string text{};
     int32_t preeditCursorBegin{0};
@@ -166,6 +168,39 @@ private:
 };
 
 /**
+ * The DOM `key` value for a key press: the text the key produced, or the name of the key when it produced none.
+ *
+ * Both halves come from the same xkbcommon call sequence the seat already makes — `keysymName` is
+ * `xkb_keysym_get_name` and `keyText` is `xkb_state_key_get_utf8` — and the order they are consulted in is what
+ * makes the result a DOM value rather than an X11 one. The named table wins first, so Tab, Enter, Escape and
+ * Backspace do not arrive as the control characters their keysyms also produce. A single-character keysym name
+ * wins next, so `Ctrl`+`a` is still `a` rather than the U+0001 the modified text would be. The text is the
+ * fallback, which is what turns keysyms named `slash`, `period` and `exclam` into `/`, `.` and `!` without a
+ * table entry each.
+ *
+ * `ISO_Left_Tab` — what a keymap reports for `Shift`+`Tab` — maps to `Tab`, because the DOM says the key is `Tab`
+ * and the shift is in the modifiers. Anything left over is `Unidentified`, which is the DOM's own name for it.
+ */
+std::string domKeyName(const std::string& keysymName, const std::string& keyText);
+
+/**
+ * The DOM `code` value for a key: the physical key, independent of whatever keymap is on top of it, taken from
+ * the evdev keycode the kernel reported. Unknown keys are `Unidentified`, which is also the DOM's answer.
+ */
+std::string domKeyCode(uint32_t evdevKeycode);
+
+/**
+ * The click a key activation produces on the focused node.
+ *
+ * It is deliberately the same synthetic `click` a press and a release on one target produce, built by the same
+ * code, so `Pressability` turns Enter and Space into `onPressIn`, `onPressOut` and `onPress` with no keyboard
+ * path of its own — which is what react-native-macos#1622 was missing. The coordinates are the target's own
+ * origin rather than wherever the pointer happens to be resting, so the offset inside the target is zero and no
+ * handler can mistake the activation for a click somewhere else.
+ */
+PointerDispatch makeActivationDispatch(const InputEvent& event, facebook::react::Point targetOrigin);
+
+/**
  * Whatever owns the text cursor, from the platform's side of `zwp_text_input_v3`.
  *
  * The three calls are the three things a v3 `done` can ask a text buffer to do, and they arrive already batched
@@ -195,5 +230,29 @@ public:
 };
 
 void deliverImeEvent(const InputEvent& event, ImeSink& sink);
+
+/**
+ * The compositor's text input, as the focus model drives it: enabled while the focused node owns a text cursor,
+ * disabled the moment focus leaves it.
+ *
+ * This is the other half of the `ImeSink` seam. `ImeSink` is where a composition lands; this is what decides
+ * whether a composition can start at all, and `zwp_text_input_v3` needs both because `enable` is a request the
+ * client makes rather than a state the compositor infers. `TextInputClient` is the only implementation, and it
+ * already had these two methods; issue #17 has to register a component named `TextInput` and nothing else.
+ *
+ * The sink is borrowed, never owned, and must outlive the dispatcher it was given to.
+ */
+class TextInputFocusSink {
+public:
+    TextInputFocusSink() = default;
+    TextInputFocusSink(const TextInputFocusSink&) = delete;
+    TextInputFocusSink(TextInputFocusSink&&) = delete;
+    TextInputFocusSink& operator=(const TextInputFocusSink&) = delete;
+    TextInputFocusSink& operator=(TextInputFocusSink&&) = delete;
+    virtual ~TextInputFocusSink() = default;
+
+    virtual void enable() = 0;
+    virtual void disable() = 0;
+};
 
 } // namespace react_native_linux

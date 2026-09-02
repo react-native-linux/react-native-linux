@@ -48,6 +48,12 @@ public:
      * one thing that changes the picture without a Fabric mutation behind it.
      */
     void damageImageSource(const std::string& uri);
+
+    /**
+     * Marks the focused node and whether it draws the focus ring. Called from the frame thread by the input
+     * dispatcher, which is the other thing besides a mutation that changes what the next frame paints.
+     */
+    void setFocus(facebook::react::Tag tag, bool isFocusVisible);
     SceneFrame takeFrame();
     SceneSnapshot snapshotScene() const;
     std::string dumpScene() const;

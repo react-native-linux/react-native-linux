@@ -1228,6 +1228,121 @@ ShadowView mountBlueChild(LinuxMountingManager& mountingManager) {
     return child;
 }
 
+TEST(RetainedSceneFocusTest, AKeyboardFocusMarksThePrimitiveAndAPointerFocusDoesNot) {
+    RetainedScene scene = sceneWithPaintedChild();
+
+    scene.setFocus(2, true);
+
+    const SceneSnapshot focused = scene.snapshot();
+
+    ASSERT_EQ(focused.size(), 1U);
+    EXPECT_TRUE(focused[0].focusRing);
+
+    scene.setFocus(2, false);
+
+    const SceneSnapshot clicked = scene.snapshot();
+
+    ASSERT_EQ(clicked.size(), 1U);
+    EXPECT_FALSE(clicked[0].focusRing);
+}
+
+TEST(RetainedSceneFocusTest, AFocusChangeDamagesExactlyTheFocusedFrame) {
+    RetainedScene scene = sceneWithPaintedChild();
+
+    scene.takeDamage();
+    scene.setFocus(2, true);
+
+    const SceneDamage damage = scene.takeDamage();
+
+    ASSERT_FALSE(damage.empty());
+    expectRect(boundsOf(damage), makeRect(10, 20, 200, 100));
+}
+
+TEST(RetainedSceneFocusTest, MovingFocusDamagesBothTheOldAndTheNewNode) {
+    RetainedScene scene = sceneWithPaintedChild();
+
+    addChild(scene, kSurfaceTag, makePaintedView(3, makeRect(400, 300, 100, 50), red()));
+    scene.setFocus(2, true);
+    scene.takeDamage();
+
+    scene.setFocus(3, true);
+
+    const SceneSnapshot moved = scene.snapshot();
+
+    ASSERT_EQ(moved.size(), 2U);
+    EXPECT_TRUE(moved[0].focusRing);
+    EXPECT_FALSE(moved[1].focusRing);
+
+    const SceneDamage damage = scene.takeDamage();
+
+    ASSERT_FALSE(damage.empty());
+    expectRect(boundsOf(damage), makeRect(10, 20, 490, 330));
+}
+
+TEST(RetainedSceneFocusTest, ReMarkingTheSameFocusDamagesNothing) {
+    RetainedScene scene = sceneWithPaintedChild();
+
+    scene.setFocus(2, true);
+    scene.takeDamage();
+
+    scene.setFocus(2, true);
+
+    EXPECT_TRUE(scene.takeDamage().empty());
+}
+
+// A <Pressable> with no background of its own paints nothing until it is focused, and a ring that only appears on
+// nodes the scene already had a reason to paint would be missing on exactly the controls that need it most.
+TEST(RetainedSceneFocusTest, ANodeThatPaintsNothingElseIsPaintedForItsRingAlone) {
+    RetainedScene scene;
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, makeView(2, makeRect(10, 20, 200, 100)));
+
+    EXPECT_TRUE(scene.snapshot().empty());
+
+    scene.takeDamage();
+    scene.setFocus(2, true);
+
+    const SceneSnapshot focused = scene.snapshot();
+
+    ASSERT_EQ(focused.size(), 1U);
+    EXPECT_TRUE(focused[0].focusRing);
+    expectRect(boundsOf(scene.takeDamage()), makeRect(10, 20, 200, 100));
+}
+
+TEST(RetainedSceneFocusTest, BlurringAnUnpaintedNodeStillDamagesTheRingItDrew) {
+    RetainedScene scene;
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, makeView(2, makeRect(10, 20, 200, 100)));
+    scene.setFocus(2, true);
+    scene.takeDamage();
+
+    scene.setFocus(0, false);
+
+    const SceneDamage damage = scene.takeDamage();
+
+    ASSERT_FALSE(damage.empty());
+    expectRect(boundsOf(damage), makeRect(10, 20, 200, 100));
+    EXPECT_TRUE(scene.snapshot().empty());
+}
+
+TEST(LinuxMountingManagerTest, FocusIsMarkedUnderTheSceneMutex) {
+    LinuxMountingManager mountingManager;
+
+    mountBlueChild(mountingManager);
+    mountingManager.takeFrame();
+
+    mountingManager.setFocus(2, true);
+
+    const SceneFrame frame = mountingManager.takeFrame();
+
+    ASSERT_EQ(frame.scene.size(), 1U);
+    EXPECT_TRUE(frame.scene[0].focusRing);
+    ASSERT_FALSE(frame.damage.empty());
+    expectRect(boundsOf(frame.damage), makeRect(24, 24, 120, 80));
+}
+
 TEST(LinuxMountingManagerTest, StartSurfaceCreatesTheRootTheDifferNeverEmits) {
     LinuxMountingManager mountingManager;
 

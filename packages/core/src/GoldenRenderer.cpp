@@ -162,6 +162,12 @@ int renderScrollGolden(const std::string& bundlePath, const std::string& outputP
         width, height);
 }
 
+int renderFocusGolden(const std::string& bundlePath, const std::string& outputPath, int tabPresses, int width,
+                      int height) {
+    return paintSettledScene(runFocusTabbedFabricBundle(bundlePath, toSurfaceSize(width, height), tabPresses),
+                             outputPath, width, height);
+}
+
 int renderDamageGolden(const std::string& bundlePath, const std::string& outputPath, int width, int height) {
     const sk_sp<SkSurface> fullSurface = makeRasterSurface(width, height);
     const sk_sp<SkSurface> damagedSurface = makeRasterSurface(width, height);

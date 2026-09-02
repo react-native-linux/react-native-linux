@@ -27,11 +27,13 @@ FetchContent_MakeAvailable(googletest)
 include(GoogleTest)
 
 add_executable(rnl_core_tests
+    FocusTest.cpp
     ImageTest.cpp
     ImeTest.cpp
     InputTest.cpp
     SceneTest.cpp
     ScrollTest.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/FocusModel.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ImageContent.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/InputPipeline.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/LinuxMountingManager.cpp

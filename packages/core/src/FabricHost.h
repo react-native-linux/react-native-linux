@@ -59,6 +59,12 @@ public:
 
     void setSurfaceSize(facebook::react::Size surfaceSize);
     void stopSurface();
+
+    /**
+     * Registers the compositor's text input, which focus enables while a text component holds it. The sink is
+     * borrowed and must outlive this host; passing null is how a caller that has no text input says so.
+     */
+    void setTextInputFocusSink(TextInputFocusSink* textInputFocusSink);
     void dispatchInput(const std::vector<InputEvent>& events);
 
     /**

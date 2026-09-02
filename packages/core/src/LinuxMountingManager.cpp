@@ -19,6 +19,12 @@ void LinuxMountingManager::damageImageSource(const std::string& uri) {
     scene_.damageImageSource(uri);
 }
 
+void LinuxMountingManager::setFocus(facebook::react::Tag tag, bool isFocusVisible) {
+    const std::lock_guard<std::mutex> guard(sceneMutex_);
+
+    scene_.setFocus(tag, isFocusVisible);
+}
+
 SceneFrame LinuxMountingManager::takeFrame() {
     const std::lock_guard<std::mutex> guard(sceneMutex_);
 

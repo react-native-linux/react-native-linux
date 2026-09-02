@@ -59,6 +59,17 @@ FabricRunResult runFabricBundle(const std::optional<std::string>& bundlePath, fa
  */
 FabricRunResult runScrolledFabricBundle(const std::string& bundlePath, facebook::react::Size surfaceSize,
                                         facebook::react::Point surfacePoint, int wheelNotches);
+
+/**
+ * Runs a bundle and presses Tab `tabPresses` times, one press per frame, through the same `InputQueue` and
+ * `InputDispatcher` a window uses — so what lands on the Nth focusable is the traversal order and the focusable
+ * filtering rather than a list this function built.
+ *
+ * The returned scene carries the focus ring, because a keyboard-driven focus is the case that draws one. See
+ * *Focus and keyboard* in docs/cpp-toolchain.md.
+ */
+FabricRunResult runFocusTabbedFabricBundle(const std::string& bundlePath, facebook::react::Size surfaceSize,
+                                           int tabPresses);
 FabricDamageRunResult runFabricBundleAcrossCommits(const std::string& bundlePath, facebook::react::Size surfaceSize);
 
 } // namespace react_native_linux

@@ -23,8 +23,10 @@ constexpr std::string_view kGoldenFlag = "--golden";
 constexpr std::string_view kDamageGoldenFlag = "--damage-golden";
 constexpr std::string_view kInjectPointerFlag = "--inject-pointer";
 constexpr std::string_view kScrollToFlag = "--scroll-to";
+constexpr std::string_view kFocusTabFlag = "--focus-tab";
 constexpr size_t kInjectPointerArgumentCount = 5;
 constexpr size_t kScrollToArgumentCount = 7;
+constexpr size_t kFocusTabArgumentCount = 5;
 
 std::optional<int> parsePositiveDimension(std::string_view text) {
     int value = 0;
@@ -92,6 +94,19 @@ int runScrollToCommand(std::span<char*> arguments) {
                                                   kGoldenDefaultHeight);
 }
 
+int runFocusTabCommand(std::span<char*> arguments) {
+    const std::optional<int> parsedPresses = parsePositiveDimension(arguments[4]);
+
+    if (!parsedPresses.has_value()) {
+        std::cerr << "[hello_react] " << kFocusTabFlag << " presses must be a positive integer" << std::endl;
+
+        return 1;
+    }
+
+    return react_native_linux::renderFocusGolden(std::string(arguments[2]), std::string(arguments[3]),
+                                                 parsedPresses.value(), kGoldenDefaultWidth, kGoldenDefaultHeight);
+}
+
 int runGoldenCommand(std::span<char*> arguments, bool isDamageRequested) {
     const std::string_view flag = isDamageRequested ? kDamageGoldenFlag : kGoldenFlag;
 
@@ -131,7 +146,8 @@ int runGoldenCommand(std::span<char*> arguments, bool isDamageRequested) {
 #else
 
 int reportMissingSkia() {
-    std::cerr << "[hello_react] " << kGoldenFlag << ", " << kDamageGoldenFlag << " and " << kScrollToFlag
+    std::cerr << "[hello_react] " << kGoldenFlag << ", " << kDamageGoldenFlag << ", " << kScrollToFlag << " and "
+              << kFocusTabFlag
               << " need Skia, which this build was configured without; run node scripts/vendor-skia.ts and "
                  "reconfigure"
               << std::endl;
@@ -142,6 +158,8 @@ int reportMissingSkia() {
 int runGoldenCommand(std::span<char*> /*arguments*/, bool /*isDamageRequested*/) { return reportMissingSkia(); }
 
 int runScrollToCommand(std::span<char*> /*arguments*/) { return reportMissingSkia(); }
+
+int runFocusTabCommand(std::span<char*> /*arguments*/) { return reportMissingSkia(); }
 
 #endif
 
@@ -154,6 +172,7 @@ int main(int argc, char** argv) {
     const bool isFabricRequested = arguments.size() > 1 && kFabricFlag == arguments[1];
     const bool isInjectPointerRequested = arguments.size() > 1 && kInjectPointerFlag == arguments[1];
     const bool isScrollToRequested = arguments.size() > 1 && kScrollToFlag == arguments[1];
+    const bool isFocusTabRequested = arguments.size() > 1 && kFocusTabFlag == arguments[1];
 
     if (isFabricRequested && arguments.size() < 3) {
         std::cerr << "[hello_react] " << kFabricFlag << " requires a bundle path" << std::endl;
@@ -168,6 +187,12 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    if (isFocusTabRequested && arguments.size() != kFocusTabArgumentCount) {
+        std::cerr << "[hello_react] " << kFocusTabFlag << " requires <bundle> <output.png> <presses>" << std::endl;
+
+        return 1;
+    }
+
     try {
         if (isInjectPointerRequested) {
             return runInjectPointerCommand(arguments);
@@ -175,6 +200,10 @@ int main(int argc, char** argv) {
 
         if (isScrollToRequested) {
             return runScrollToCommand(arguments);
+        }
+
+        if (isFocusTabRequested) {
+            return runFocusTabCommand(arguments);
         }
 
         if (isGoldenRequested || isDamageGoldenRequested) {

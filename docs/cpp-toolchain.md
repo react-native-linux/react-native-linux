@@ -348,6 +348,7 @@ pnpm --filter @react-native-linux/core run:golden:damage  # hello_react --damage
 pnpm --filter @react-native-linux/core run:golden:text    # hello_react --golden text.js /tmp/rnl-text.png
 pnpm --filter @react-native-linux/core run:golden:image   # hello_react --golden image.js /tmp/rnl-image.png
 pnpm --filter @react-native-linux/core run:golden:scroll  # hello_react --scroll-to scroll.js /tmp/rnl-scroll.png 160 100 3
+pnpm --filter @react-native-linux/core run:golden:focus   # hello_react --focus-tab focus.js /tmp/rnl-focus.png 3
 pnpm --filter @react-native-linux/core assets:test-image  # node scripts/make-test-image.ts — see *Image*
 pnpm --filter @react-native-linux/core run:input    # hello_react --inject-pointer pressable.js 200 140
 pnpm --filter @react-native-linux/core run:window   # build/dev/bin/rnl_window
@@ -373,6 +374,7 @@ cmake --build build/dev
 ./build/dev/bin/hello_react packages/core/test-bundles/hello.js
 ./build/dev/bin/hello_react --fabric packages/core/test-bundles/fabric-view.js
 ./build/dev/bin/hello_react --inject-pointer packages/core/test-bundles/pressable.js 200 140
+./build/dev/bin/hello_react --focus-tab packages/core/test-bundles/focus.js /tmp/rnl-focus.png 3
 ./build/dev/bin/rnl_window
 ./build/dev/bin/rnl_window --fabric packages/core/test-bundles/fabric-view.js
 ./build/dev/bin/rnl_window --ime-debug
@@ -388,7 +390,9 @@ runs a bundle that commits twice, and writes a PNG only if the damage-clipped re
 byte-identical to a full one; see *Golden images*. On a build configured
 without Skia it exits 1 with a message naming `scripts/vendor-skia.ts`. `--scroll-to` takes the bundle path, an
 output path, a surface coordinate and a wheel notch count, turns the wheel over that point, lets the momentum
-settle, and writes the PNG of where it stopped; see *ScrollView*. `--inject-pointer` takes the bundle path
+settle, and writes the PNG of where it stopped; see *ScrollView*. `--focus-tab` takes the bundle path, an output
+path and a press count, presses Tab that many times and writes the PNG of where the focus ring landed, printing
+whatever the bundle prints on the way; see *Focus and keyboard*. `--inject-pointer` takes the bundle path
 and a surface coordinate, clicks there, and prints whatever the bundle prints; see *Input*. `--ime-debug` takes no
 value, composes with every other `rnl_window` flag, and prints composition events; see *IME*.
 
@@ -1284,10 +1288,8 @@ the platform's call. That is the event `Pressability` turns into `onPressIn`, `o
 Keyboard has no cross-platform Fabric surface to target. On the `cxx` platform `ViewEventEmitter` is
 `BaseViewEventEmitter`, which carries touch, pointer, layout, focus and accessibility events and no key events at
 all — `react-native-macos` adds `onKeyDown` through a platform `HostPlatformViewEventEmitter`, which is the shape
-this will eventually take. Until then keys are dispatched as generic `keyDown`/`keyUp` events with a
-`{key, ctrlKey, shiftKey, altKey, metaKey}` payload, to the node the pointer is currently over, and to nothing at
-all when the pointer is over no node. That is hover-follows-focus, and it is a placeholder for a focus model, not
-one.
+this would eventually take if the vendored header were forked. Keys are dispatched as generic `keyDown`/`keyUp`
+events to the **focused** node; `onFocus` and `onBlur` are the emitter's own. See *Focus and keyboard* below.
 
 ### The proof
 
@@ -1333,9 +1335,9 @@ came out, and the sixteen that did not arrive are the acceptance criterion. The 
   node. `axis_source` is still ignored, and *ScrollView* says why.
 - **Key repeat.** `wl_keyboard.repeat_info` is accepted and ignored, so a held key produces one `keyDown`.
   Synthesising repeat means a timer in the frame loop, which is the same machinery text input will need.
-- **Focus traversal.** Issue #18 asks for react-native-macos tab order. There is no focus model here yet: no
-  `focusable` prop, no focus ring, no Tab handling, and `BaseViewEventEmitter::onFocus`/`onBlur` are never called.
-  Keyboard events follow the pointer instead, which is honest about being a placeholder.
+- **Focus traversal** is no longer a deferral. Tab order, the focus ring, `onFocus`/`onBlur` and Enter/Space
+  activation are issues #37 and #38 and are implemented; *Focus and keyboard* below is the contract and its own
+  deferral list.
 - **A root instance handle.** `UIManager::startEmptySurface` does not give the root shadow node one, and
   `PointerEventsProcessor::getShadowNodeFromEventTarget` returns null without it, so an event whose target is only
   the root is dropped before the hover chain runs. The consequence is visible: moving off a view onto the
@@ -1347,6 +1349,221 @@ came out, and the sixteen that did not arrive are the acceptance criterion. The 
 - **E2E traces.** Issue #18 also asks for hover/press traces and keyboard focus order under a headless compositor
   with virtual Wayland input. `--inject-pointer` is the unit-level and integration-level proof; the compositor-level
   one belongs with the harness that runs the lavapipe window golden, and neither exists yet.
+
+## Focus and keyboard
+
+Issues #37 and #38, milestone M1. One focused node per surface, Tab traversal, a focus ring, `onFocus`/`onBlur`,
+Enter and Space activation, and a written-down key payload and routing rule. Both are prerequisites for the
+`<TextInput>` of #17, and both exist because React Native's cross-platform surface has neither: thirteen
+react-native-macos issues over six years are what a platform that invents `focusable`, an order, a ring and
+activation keys separately and then keeps them consistent by hand costs.
+
+```text
+wl_keyboard ─▶ WaylandSeat ─▶ InputQueue ─┐                                    frame thread
+   domKeyName, domKeyCode                 │
+                       InputDispatcher ◀──┘
+                             │ syncFocusables, once per commit
+                             ▼
+                        FocusModel ─┬─▶ ViewEventEmitter::onFocus / onBlur ─▶ EventQueue
+                                    ├─▶ EventEmitter::dispatchEvent keyDown / keyUp
+                                    ├─▶ TouchEventEmitter::onClick             (Enter, Space)
+                                    ├─▶ LinuxMountingManager::setFocus         (the ring, and its damage)
+                                    └─▶ TextInputFocusSink::enable / disable   (#17)
+```
+
+### What makes a node focusable, and why it is `accessible`
+
+There is no `focusable` prop to read. Android and tvOS each declare one on their own `HostPlatformViewProps`;
+the shared `BaseViewProps` the `cxx` platform aliases has none, and neither does `Props::rawProps`, which only
+exists under `RN_SERIALIZABLE_STATE`. Adding one means a `platform/linux/.../HostPlatformViewProps.h` inside the
+vendored tree, which is a fork of upstream headers and an ADR-level decision rather than an input one.
+
+So the signal is **`accessible`**, from `AccessibilityProps`, minus **`accessibilityState.disabled`**. That is not
+a workaround dressed up: `Pressable` already sets `accessible` on every control it renders, the web platform
+draws the same equivalence between the interactive-and-exposed set and the tab order, and
+react-native-macos#1655 is the bug filed when disabled controls stayed focusable. A `display: none` node is
+skipped as well, because Yoga has already decided it is not on screen.
+
+The set is read from the **committed shadow tree**, not from the retained scene. Both carry the tree and both
+carry mount order, but only the shadow tree carries the event emitters `onFocus` and `onBlur` go through, so
+reading the scene would cost a second lookup to emit anything. It is not a per-frame walk: a commit produces one
+new root object, so an unchanged root pointer is an unchanged focusable set, and the walk runs once per commit.
+
+### Traversal, and what the model owns
+
+`FocusModel` in `src/FocusModel.cpp` is the part that can be arithmetically wrong, kept where the coverage gate
+can see it — the same split `TextInputV3State` makes for composition. Its whole vocabulary is tags:
+
+- **Order** is the caller's, and it is the pre-order walk of the committed tree, which is mount order and
+  therefore already `zIndex` order because Fabric stable-sorts siblings by `getOrderIndex` before it diffs them.
+- **Tab** moves forward, **Shift+Tab** backward, and both **wrap**. With nothing focused, forward starts at the
+  first focusable and backward at the last, which is where a wrap from outside the list lands.
+- **A click** moves focus to the deepest focusable on the path from the root to the hit node — so clicking the
+  label inside a `<Pressable>` focuses the `<Pressable>` — and a click on anything else **blurs**, which is
+  react-native-macos#999.
+- **A commit that drops the focused node** blurs it. Focus does not walk to a neighbour: that needs a tree, and
+  this class deliberately has none.
+- Every transition names at most one blurred tag and one focused tag, and names neither when focus did not move,
+  so `onFocus` and `onBlur` fire exactly once per change by construction rather than by a guard at the call site.
+
+`tabIndex` is not implemented, because there is no prop to read it from; see the deferrals.
+
+### Focus-visible, and where the ring is drawn
+
+The ring follows the keyboard and not the pointer: Tab shows it, a click does not. That is the desktop
+convention, it is CSS `:focus-visible`, and it is the difference between the two `FocusOrigin` values —
+the model tracks the focused tag either way, so a click still decides where the next Tab goes.
+
+`RetainedScene::setFocus` marks the focused primitive and `ScenePainter` strokes a 2 point ring in the platform
+accent colour around that node's rounded border box. Two decisions are worth naming:
+
+- The ring is **inside** the border box, not around it. Every damage rectangle in this renderer is a primitive's
+  own transformed frame, cut by its inherited clips; an outset ring would paint outside the rectangle the scene
+  damages for that node, and would need a term of its own in the damage math to stay correct through transforms
+  and clips. react-native-macos#2063 is what a ring that disagrees with its own geometry looks like.
+- A node that paints nothing else is **still painted for its ring**. A `<Pressable>` with no background is the
+  common case, and a ring that only appeared on nodes the scene already had a reason to paint would be missing on
+  exactly the controls that need it.
+
+Damage is therefore the old node's frame plus the new one's, and the old one is damaged before the mark moves —
+a node whose only reason to be painted was the ring has no extent once the mark has left it. A focus that draws
+no ring damages nothing at all: a click changes where the next Tab starts and not a single pixel.
+
+### The key payload, and where it diverges
+
+`keyDown` and `keyUp` carry:
+
+```text
+{ key, code, ctrlKey, shiftKey, altKey, metaKey, repeat }
+```
+
+`key` and `code` are DOM values, computed by `domKeyName` and `domKeyCode` in `InputPipeline.cpp` where the
+coverage gate scores them, from what xkbcommon already hands the seat. `domKeyName` consults three things in
+order, and the order is the whole of the rule: the named-key table first, so Tab, Enter, Escape and Backspace do
+not arrive as the control characters their keysyms also produce; a single-character **keysym name** next, so
+`Ctrl`+`a` is still `a` rather than the U+0001 the modified text would be; and the **text** last, which is what
+turns keysyms named `slash`, `exclam` and `eacute` into `/`, `!` and `é` without a table entry each. Anything
+left over is `Unidentified`, which is the DOM's own answer. `ISO_Left_Tab` — what a keymap reports for
+`Shift`+`Tab` — maps to `Tab`, because the DOM says the key is `Tab` and the shift is in the modifiers.
+
+`code` is the physical key, from the evdev keycode, so it does not move when the keymap does. Divergences from
+the two platforms this is meant to match, named here rather than discovered later — react-native-macos#702 is the
+issue filed when they were not:
+
+| Field | Here | react-native-macos | react-native-windows |
+| --- | --- | --- | --- |
+| `key` | DOM value | DOM-ish, subset of keys (#437) | DOM value |
+| `code` | DOM physical code | absent | present |
+| `ctrlKey`/`shiftKey`/`altKey`/`metaKey` | present | present | present |
+| `repeat` | present, always `false` | present | present |
+| `capsLockKey`, `numLockKey`, … | absent | present | absent |
+| `nativeEvent.keyCode` | absent | absent | present |
+
+`repeat` is always `false` because `wl_keyboard.repeat_info` is accepted and ignored — a held key produces one
+`keyDown`. It is in the payload rather than absent from it so a component reading it never sees `undefined`.
+
+### Routing, and the unhandled-key policy
+
+Keys go to the focused node and to nothing else. A key pressed with nothing focused is **dropped**, and that is a
+policy rather than an omission: the surface root has no instance handle — see the deferral in *Input* — so it
+cannot be an event target, and on Wayland a key that reached this client is a key the compositor already routed
+here, so there is nothing to escape to. react-native-macos#683 is what a platform that passes unconsumed keys
+back to the system sounds like.
+
+The key reaches React **before** the traversal or activation it may also trigger, so a Tab is visible to the node
+that had focus rather than swallowed by the platform. Nothing can cancel that traversal: there is no return
+channel from JavaScript on this path, which is the `preventDefault` deferral below.
+
+Enter and Space on a focused node synthesise **the same `click` the pointer path produces**, built by the same
+code, with the target's own origin as the coordinates so the offset inside the target is zero. `Pressability`
+therefore turns them into `onPressIn`, `onPressOut` and `onPress` with no keyboard path of its own, which is what
+react-native-macos#1622 was missing.
+
+### The IME enable path
+
+`TextInputFocusSink` in `InputPipeline.h` is the second half of the `ImeSink` seam. `ImeSink` is where a
+composition lands; this is what decides whether a composition can start at all, and `zwp_text_input_v3` needs
+both because `enable` is a request the client makes rather than a state the compositor infers. `TextInputClient`
+implements it with the two methods it already had, and `InputDispatcher` calls them when focus enters or leaves a
+component named `TextInput` — a name nothing registers yet, so issue #17 has to register it and nothing else.
+
+`rnl_window --ime-debug` is unchanged and deliberately does **not** register the sink: it drives the same two
+calls by hand, and both driving them would be two owners racing over one protocol object.
+
+### The proof
+
+```bash
+hello_react --focus-tab packages/core/test-bundles/focus.js /tmp/rnl-focus.png 3
+```
+
+`packages/core/test-bundles/focus.js` is five views in a row: `alpha` and `beta` accessible, `gamma` with no
+`accessible` at all, `delta` accessible but disabled, and `epsilon` accessible. Three Tab presses, one per frame
+through the same `InputQueue` and `InputDispatcher` a window uses, and the trace is:
+
+```text
+focus: committed surface 1
+focus: topFocus on alpha
+focus: topKeyUp on alpha key=Tab code=Tab
+focus: topKeyDown on alpha key=Tab code=Tab
+focus: topBlur on alpha
+focus: topFocus on beta
+focus: topKeyUp on beta key=Tab code=Tab
+focus: topKeyDown on beta key=Tab code=Tab
+focus: topBlur on beta
+focus: topFocus on epsilon
+focus: topKeyUp on epsilon key=Tab code=Tab
+```
+
+Four things in there are the claims. The first press produces **no** `topKeyDown`, because nothing was focused
+yet and an unfocused key is dropped — that is the unhandled-key policy, visible. Every press after it produces a
+`topKeyDown` on the node that was focused *before* the traversal, which is the ordering rule: the key reaches
+React before the traversal it triggers. The third `topFocus` is `epsilon` rather than `gamma`, which is the
+focusable filtering — one view was never accessible and the next was disabled. And every `topBlur` is immediately
+followed by exactly one `topFocus`, which is the double-emit prevention.
+
+Adding a Space press to the same fixture adds one line, `focus: topClick on epsilon`, which is the activation
+click: the same event the pointer path produces, and therefore the same `onPress` on the JavaScript side.
+
+The golden `packages/core/goldens/focus.png` is the same run's picture: the ring on `epsilon`, the fifth view.
+It is registered in `goldens/golden.spec.ts` alongside the scroll fixture and regenerates with
+`pnpm test:golden:update`.
+
+### Tests
+
+`FocusModel.cpp` is in `scopedSourcePaths` at 100% line and branch, covered by `packages/core/tests/FocusTest.cpp`:
+traversal order, both wraps, Shift+Tab, click-to-focus, blur-on-background, unmount-clears, reorder-across-commit,
+keyboard-origin versus pointer-origin visibility, and the traversal, activation and text-component key rules.
+`InputTest.cpp` covers the key naming and the activation click; `SceneTest.cpp` covers the focus mark, the ring on
+a node that paints nothing else, and that a focus change damages exactly the old and the new frame.
+`InputDispatcher` itself is outside the gate for the reason `TextInputClient` and `WaylandSeat` are: what is left
+in it is Fabric plumbing that needs a `UIManager` and a committed tree, and `--focus-tab` is the test for it.
+
+### Deferrals, with owners
+
+- **`focusable`, `tabIndex` and `nextFocus*` as props.** All three need a platform `HostPlatformViewProps` inside
+  the vendored tree, which is a fork of upstream headers and belongs in an ADR rather than in this issue.
+  `accessible` is what stands in for `focusable`; `tabIndex` is why traversal is mount order and only mount order.
+- **Programmatic `focus()`, `blur()` and `isFocused()`.** react-native-macos#518 and #913. They arrive as Fabric
+  commands through `IMountingManager::dispatchCommand`, which is implemented as a no-op here, and they need a
+  JavaScript surface to be called from. Not on the M1 path.
+- **Directional navigation and focus zones.** Arrow-key movement needs a geometric model of "the next control to
+  the right", and focus zones need containers that trap it. Neither is on the M1 path and the Prime Directive
+  says the second consumer has to exist first.
+- **Accessibility focus.** The screen-reader cursor is a second focus with its own order, and there is no
+  accessibility tree here at all — no AT-SPI bridge, no `accessibilityRole` mapping. A separate subsystem.
+- **`preventDefault` on a key.** A component cannot cancel a traversal or an activation, because Fabric's event
+  path has no return channel a platform can read synchronously. `validKeysDown`/`validKeysUp` — Windows' answer,
+  where a component declares the keys it wants — is the same deferral: it is a prop, and props are the fork above.
+- **Key repeat.** `wl_keyboard.repeat_info` is still accepted and ignored, so `repeat` is always false. Named in
+  *Input* as well; it needs a timer in the frame loop.
+- **Focus during composition.** No key is suppressed while a `zwp_text_input_v3` composition is active. *IME*
+  explains why the platform does not second-guess the compositor, and until #17 there is nothing that inserts
+  text from a key event, so nothing can double a character. The rule and its test land with the field.
+- **The ring's colour.** Fixed accent, not the compositor's. Reading the system accent is an
+  `org.freedesktop.portal.Settings` round trip and a theming subsystem, and there is no other themed value yet.
+- **Clipped-out nodes.** A focusable scrolled out of an `overflow: hidden` ancestor is still in the tab order.
+  Skipping it means asking the scene for visibility during a shadow-tree walk, which is the one place the two
+  models would have to agree; it waits for a case that needs it.
 
 ## IME
 
@@ -1725,9 +1942,15 @@ with `overflow: hidden` does not already prove, so it is rendered by `--scroll-t
 (160, 100). The picture, the geometry behind it and why the marker rectangle is the clip assertion are all in
 *ScrollView*.
 
+The sixth is `packages/core/test-bundles/focus.js` to `packages/core/goldens/focus.png`, and it is not rendered by
+`--golden` for the same reason: a focus ring only exists after a traversal, so it is rendered by `--focus-tab`
+after three Tab presses. Five views in a row, the ring on the fifth, because the third declared no `accessible`
+and the fourth is disabled — the picture is the traversal order and the focusable filtering at once. See
+*Focus and keyboard*.
+
 ### The partial-redraw equivalence proof
 
-The sixth fixture is different in kind: `--damage-golden` is issue #12's acceptance criterion — "partial redraw
+The last fixture is different in kind: `--damage-golden` is issue #12's acceptance criterion — "partial redraw
 equals full redraw" — turned into an assertion, and the PNG is a by-product.
 
 `packages/core/test-bundles/damage.js` commits twice. The first commit is an ordinary frame. A `setTimeout`
@@ -1928,9 +2151,9 @@ needs neither Hermes nor Skia, so it skips both the multi-hour Hermes build and 
 Vulkan prerequisites `RNL_ENABLE_SKIA` and `RNL_ENABLE_WINDOW` probe for.
 
 `packages/core/tests/CMakeLists.txt` fetches googletest at a pinned commit, builds `rnl_core_tests` from
-`SceneTest.cpp`, `InputTest.cpp`, `ImeTest.cpp`, `ImageTest.cpp` and `ScrollTest.cpp` plus the six sources they
-exercise — `RetainedScene.cpp`, `LinuxMountingManager.cpp`, `InputPipeline.cpp`, `ImageContent.cpp`,
-`ScrollPhysics.cpp` and `TextInputV3State.cpp`, compiled
+`SceneTest.cpp`, `InputTest.cpp`, `FocusTest.cpp`, `ImeTest.cpp`, `ImageTest.cpp` and `ScrollTest.cpp` plus the
+seven sources they exercise — `RetainedScene.cpp`, `LinuxMountingManager.cpp`, `InputPipeline.cpp`,
+`FocusModel.cpp`, `ImageContent.cpp`, `ScrollPhysics.cpp` and `TextInputV3State.cpp`, compiled
 directly into the test binary rather than linked from a Hermes-linked library — and registers them with
 `gtest_discover_tests` so `ctest` finds every `TEST` individually. Under Clang, `rnl_core_tests` also gets
 `-fprofile-instr-generate -fcoverage-mapping`, LLVM's source-based coverage instrumentation.
@@ -1939,20 +2162,22 @@ directly into the test binary rather than linked from a Hermes-linked library �
 `build/test/coverage`, merges the raw profile with `llvm-profdata merge -sparse`, exports it as lcov with
 `llvm-cov export --format=lcov`, and grades line and branch coverage per file against an explicit list
 (`scopedSourcePaths` in the script — today `RetainedScene.cpp`, `LinuxMountingManager.cpp`, `InputPipeline.cpp`,
-`ImageContent.cpp`, `ScrollPhysics.cpp` and `TextInputV3State.cpp`, the six sources the test binary actually
-exercises). A source with no tests behind it is
+`FocusModel.cpp`, `ImageContent.cpp`, `ScrollPhysics.cpp` and `TextInputV3State.cpp`, the seven sources the test
+binary actually exercises). A source with no tests behind it is
 deliberately not in that list: adding a file there without coverage behind it is what turns the gate red, rather
 than a silent average across the whole of `packages/core`.
 
 `InputDispatcher.cpp`, `WaylandSeat.cpp` and `TextInputClient.cpp` are the input sources deliberately left outside
-that scope, and the split between them and `InputPipeline.cpp` and `TextInputV3State.cpp` is what makes the scope
-honest rather than convenient: everything that
+that scope, and the split between them and `InputPipeline.cpp`, `FocusModel.cpp` and `TextInputV3State.cpp` is
+what makes the scope honest rather than convenient: everything that
 can be arithmetically wrong — motion coalescing, the queue bound, the buttons bitmask, the press-to-click state
-machine, offset points, modifier flags, and the `done` batching, ordering and serial rules of `zwp_text_input_v3`
-— lives in those two where the gate sees it. What is left in
-`InputDispatcher.cpp` is a `UIManager` hit test and a switch over five emitter calls, what is left in
-`WaylandSeat.cpp` is protocol plumbing that needs a compositor, and what is left in `TextInputClient.cpp` is
-requests and listeners that need one too. `--inject-pointer` and `--ime-debug` are the tests for those three.
+machine, offset points, modifier flags, the key-name and key-code tables, the traversal order and its wraps, and
+the `done` batching, ordering and serial rules of `zwp_text_input_v3` — lives in those three where the gate sees
+it. What is left in
+`InputDispatcher.cpp` is a `UIManager` hit test, a shadow-tree walk and a switch over five emitter calls, what is
+left in `WaylandSeat.cpp` is protocol plumbing that needs a compositor, and what is left in `TextInputClient.cpp`
+is requests and listeners that need one too. `--inject-pointer`, `--focus-tab` and `--ime-debug` are the tests for
+those three.
 
 `ImageContent.cpp` is inside it, and the split between it and `ImagePipeline.cpp` is what makes the image scope
 honest: everything that can be arithmetically wrong — base64 decoding, source-scheme resolution, the five

@@ -132,7 +132,7 @@ FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::
     schedulerDelegate_ = std::make_unique<facebook::react::SchedulerDelegateImpl>(mountingManager_);
     scheduler_ = std::make_unique<facebook::react::Scheduler>(schedulerToolbox, nullptr, schedulerDelegate_.get());
     schedulerDelegate_->setUIManager(scheduler_->getUIManager());
-    inputDispatcher_ = std::make_unique<InputDispatcher>(scheduler_->getUIManager(), kSurfaceId);
+    inputDispatcher_ = std::make_unique<InputDispatcher>(scheduler_->getUIManager(), mountingManager_, kSurfaceId);
     scrollController_ = std::make_unique<ScrollController>(scheduler_->getUIManager(), kSurfaceId);
 
     reactInstance.getUnbufferedRuntimeExecutor()(installStopSurfaceBinding);
@@ -173,6 +173,10 @@ void FabricHost::stopSurface() {
     if (surfaceHandler_->getStatus() == facebook::react::SurfaceHandler::Status::Running) {
         surfaceHandler_->stop();
     }
+}
+
+void FabricHost::setTextInputFocusSink(TextInputFocusSink* textInputFocusSink) {
+    inputDispatcher_->setTextInputFocusSink(textInputFocusSink);
 }
 
 void FabricHost::dispatchInput(const std::vector<InputEvent>& events) {

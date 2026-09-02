@@ -40,7 +40,11 @@ struct ImeCursorRectangle {
  * `enable` is refused while the text input has no focus, because the protocol says the compositor ignores every
  * request from a text input that has not been sent `enter`. Focus is the compositor's keyboard focus: the
  * `enter` event follows it, and it invalidates all state, so a field that wants input after a focus change must
- * enable again. `rnl_window --ime-debug` is what does that today; issue #17's `<TextInput>` is what will.
+ * enable again. There are therefore two focuses in play — the compositor's, which decides whether a request is
+ * legal, and the platform's own, which decides whether one should be made. `TextInputFocusSink` is the second:
+ * `InputDispatcher` enables this client while a `TextInput` component holds focus and disables it when focus
+ * leaves. `rnl_window --ime-debug` drives the same two calls by hand instead, which is why it does not register
+ * the sink; issue #17's `<TextInput>` is what replaces both.
  *
  * An empty surrounding text is not sent at all. The protocol reads an empty value as "this client does not
  * support surrounding text", and it says later attempts to change it may then have no effect, so a field that
@@ -49,17 +53,17 @@ struct ImeCursorRectangle {
  * Threading contract: constructed, called and destroyed on the thread that owns the Wayland connection. The
  * listeners run inside that thread's `wl_display_dispatch_pending`, which is also where the queue is filled.
  */
-class TextInputClient final {
+class TextInputClient final : public TextInputFocusSink {
 public:
     TextInputClient(zwp_text_input_manager_v3* manager, wl_seat* seat, InputQueue& queue);
     TextInputClient(const TextInputClient&) = delete;
     TextInputClient(TextInputClient&&) = delete;
     TextInputClient& operator=(const TextInputClient&) = delete;
     TextInputClient& operator=(TextInputClient&&) = delete;
-    ~TextInputClient() noexcept;
+    ~TextInputClient() noexcept override;
 
-    void enable();
-    void disable();
+    void enable() override;
+    void disable() override;
     void setSurroundingText(std::string text, int32_t cursor, int32_t anchor);
     void setCursorRectangle(int32_t x, int32_t y, int32_t width, int32_t height);
 

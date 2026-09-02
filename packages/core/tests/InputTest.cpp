@@ -6,6 +6,7 @@
 #include <react/renderer/graphics/Point.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -18,6 +19,9 @@ using react_native_linux::InputEventKind;
 using react_native_linux::InputModifiers;
 using react_native_linux::InputQueue;
 using react_native_linux::kInputQueueCapacity;
+using react_native_linux::domKeyCode;
+using react_native_linux::domKeyName;
+using react_native_linux::makeActivationDispatch;
 using react_native_linux::PointerDispatch;
 using react_native_linux::PointerDispatchType;
 using react_native_linux::PointerRouter;
@@ -217,6 +221,86 @@ TEST(PointerRouterTest, CarriesTheModifierStateOntoThePointerEvent) {
     EXPECT_FALSE(dispatches[0].event.shiftKey);
     EXPECT_TRUE(dispatches[0].event.altKey);
     EXPECT_TRUE(dispatches[0].event.metaKey);
+}
+
+TEST(KeyEventTest, NamedKeysBecomeTheirDomNamesRatherThanTheirControlCharacters) {
+    EXPECT_EQ(domKeyName("Return", "\r"), "Enter");
+    EXPECT_EQ(domKeyName("KP_Enter", "\r"), "Enter");
+    EXPECT_EQ(domKeyName("Tab", "\t"), "Tab");
+    EXPECT_EQ(domKeyName("BackSpace", "\b"), "Backspace");
+    EXPECT_EQ(domKeyName("Escape", "\x1B"), "Escape");
+    EXPECT_EQ(domKeyName("space", " "), " ");
+    EXPECT_EQ(domKeyName("Prior", ""), "PageUp");
+    EXPECT_EQ(domKeyName("Left", ""), "ArrowLeft");
+    EXPECT_EQ(domKeyName("Super_L", ""), "Meta");
+    EXPECT_EQ(domKeyName("F5", ""), "F5");
+}
+
+// Shift+Tab is a different keysym rather than Tab with a modifier, and every desktop platform has shipped a bug
+// where the two stopped being the same key. See react-native-macos#823.
+TEST(KeyEventTest, TheShiftTabKeysymIsStillTheTabKey) {
+    EXPECT_EQ(domKeyName("ISO_Left_Tab", ""), "Tab");
+}
+
+TEST(KeyEventTest, ASingleCharacterKeysymWinsOverTheTextTheModifiersProduced) {
+    EXPECT_EQ(domKeyName("a", "a"), "a");
+    EXPECT_EQ(domKeyName("A", "A"), "A");
+    EXPECT_EQ(domKeyName("a", "\x01"), "a");
+    EXPECT_EQ(domKeyName("1", "1"), "1");
+}
+
+TEST(KeyEventTest, PunctuationComesFromTheTextRatherThanFromATableEntryEach) {
+    EXPECT_EQ(domKeyName("slash", "/"), "/");
+    EXPECT_EQ(domKeyName("exclam", "!"), "!");
+    EXPECT_EQ(domKeyName("eacute", "\xC3\xA9"), "\xC3\xA9");
+}
+
+TEST(KeyEventTest, AKeyWithNoNameAndNoPrintableTextIsUnidentified) {
+    EXPECT_EQ(domKeyName("XF86AudioPlay", ""), "Unidentified");
+    EXPECT_EQ(domKeyName("XF86AudioPlay", "\x01"), "Unidentified");
+    EXPECT_EQ(domKeyName("XF86AudioPlay", "\x7F"), "Unidentified");
+    EXPECT_EQ(domKeyName("", ""), "Unidentified");
+}
+
+TEST(KeyEventTest, CodeIsThePhysicalKeyRatherThanTheKeymapOnTopOfIt) {
+    constexpr uint32_t kEvdevA = 30;
+    constexpr uint32_t kEvdevTab = 15;
+    constexpr uint32_t kEvdevSpace = 57;
+    constexpr uint32_t kEvdevLeftShift = 42;
+    constexpr uint32_t kEvdevUnassigned = 0xFFFF;
+
+    EXPECT_EQ(domKeyCode(kEvdevA), "KeyA");
+    EXPECT_EQ(domKeyCode(kEvdevTab), "Tab");
+    EXPECT_EQ(domKeyCode(kEvdevSpace), "Space");
+    EXPECT_EQ(domKeyCode(kEvdevLeftShift), "ShiftLeft");
+    EXPECT_EQ(domKeyCode(kEvdevUnassigned), "Unidentified");
+}
+
+TEST(KeyEventTest, ActivationIsTheSameClickThePointerPathProduces) {
+    const InputEvent activationKey{
+        .kind = InputEventKind::KeyPress, .surfacePoint = makePoint(700, 500), .key = std::string(" ")};
+    const PointerDispatch dispatch = makeActivationDispatch(activationKey, makePoint(100, 80));
+
+    EXPECT_EQ(dispatch.type, PointerDispatchType::Click);
+    EXPECT_EQ(dispatch.event.detail, 1);
+    EXPECT_EQ(dispatch.event.button, 0);
+    EXPECT_EQ(dispatch.event.buttons, 0);
+    EXPECT_FLOAT_EQ(dispatch.event.clientPoint.x, 100);
+    EXPECT_FLOAT_EQ(dispatch.event.clientPoint.y, 80);
+    EXPECT_FLOAT_EQ(dispatch.event.offsetPoint.x, 0);
+    EXPECT_FLOAT_EQ(dispatch.event.offsetPoint.y, 0);
+}
+
+TEST(KeyEventTest, ActivationCarriesTheModifiersTheKeyWasPressedWith) {
+    InputEvent activationKey{.kind = InputEventKind::KeyPress, .key = std::string("Enter")};
+
+    activationKey.modifiers = InputModifiers{.control = true, .shift = false, .alt = false, .meta = true};
+
+    const PointerDispatch dispatch = makeActivationDispatch(activationKey, makePoint(0, 0));
+
+    EXPECT_TRUE(dispatch.event.ctrlKey);
+    EXPECT_FALSE(dispatch.event.shiftKey);
+    EXPECT_TRUE(dispatch.event.metaKey);
 }
 
 TEST(PointerRouterTest, BatchesAFullFrameInQueueOrder) {

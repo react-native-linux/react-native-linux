@@ -50,6 +50,12 @@ public:
     ~WindowSession() noexcept;
 
     void resize(WindowSize size);
+
+    /**
+     * Registers the seat's `zwp_text_input_v3` with the focus model, so the compositor's text input is enabled
+     * exactly while a text component holds focus. Null when the compositor advertises no text-input manager.
+     */
+    void setTextInputFocusSink(TextInputFocusSink* textInputFocusSink);
     void deliverInput(const std::vector<InputEvent>& events);
     SceneFrame takeFrame();
     bool hasReportedFatalError() const;

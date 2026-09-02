@@ -664,6 +664,7 @@ endif()
 add_library(rnl_react_core STATIC
     src/ConsoleBinding.cpp
     src/FabricHost.cpp
+    src/FocusModel.cpp
     src/HermesJSRuntimeFactory.cpp
     src/HostTimerRegistry.cpp
     src/InputDispatcher.cpp

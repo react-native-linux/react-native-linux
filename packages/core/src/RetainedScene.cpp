@@ -240,7 +240,7 @@ bool isEdgeVisible(facebook::react::Float width, uint32_t colorArgb) {
 }
 
 bool isPrimitiveVisible(const ScenePrimitive& primitive) {
-    return primitive.text.has_value() || primitive.image.has_value() ||
+    return primitive.focusRing || primitive.text.has_value() || primitive.image.has_value() ||
            (primitive.backgroundColorArgb >> kAlphaShift) != 0U ||
            isEdgeVisible(primitive.borderWidths.left, primitive.borderColorsArgb.left) ||
            isEdgeVisible(primitive.borderWidths.top, primitive.borderColorsArgb.top) ||
@@ -591,6 +591,25 @@ void RetainedScene::damageImageSource(const std::string& uri) {
     }
 }
 
+void RetainedScene::setFocus(facebook::react::Tag tag, bool isFocusVisible) {
+    if (tag == focusedTag_ && isFocusVisible == isFocusVisible_) {
+        return;
+    }
+
+    // Only a ring that appears or disappears changes a pixel. The focused tag is tracked either way, because it
+    // is what the next Tab moves from, so a click that focuses without drawing anything damages nothing.
+    if (isFocusVisible_) {
+        damageSubtree(focusedTag_);
+    }
+
+    focusedTag_ = tag;
+    isFocusVisible_ = isFocusVisible;
+
+    if (isFocusVisible) {
+        damageSubtree(tag);
+    }
+}
+
 SceneSnapshot RetainedScene::snapshot() const {
     SceneSnapshot primitives;
     const ScenePaintState rootState{};
@@ -654,6 +673,8 @@ void RetainedScene::appendPrimitives(SceneSnapshot& primitives, facebook::react:
 
     const SceneNode& node = entry->second;
     SceneVisit visit = visitNode(node, state);
+
+    visit.primitive.focusRing = isFocusVisible_ && tag == focusedTag_;
 
     if (isPrimitiveVisible(visit.primitive)) {
         primitives.push_back(std::move(visit.primitive));

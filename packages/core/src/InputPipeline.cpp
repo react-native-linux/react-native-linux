@@ -4,7 +4,12 @@
 #include <react/renderer/graphics/Float.h>
 #include <react/timing/primitives.h>
 
+#include <array>
 #include <cstddef>
+#include <cstdint>
+#include <linux/input-event-codes.h>
+#include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -71,6 +76,166 @@ facebook::react::PointerEvent makePointerEvent(const InputEvent& event, facebook
     pointerEvent.timeStamp = facebook::react::HighResTimeStamp::now();
 
     return pointerEvent;
+}
+
+constexpr char kUnidentifiedKey[] = "Unidentified";
+constexpr size_t kSingleCharacterNameLength = 1;
+constexpr unsigned char kFirstPrintableByte = 0x20;
+constexpr unsigned char kDeleteByte = 0x7F;
+
+/**
+ * One key whose DOM `key` value is a name rather than the text it produces. Everything printable is absent on
+ * purpose: `domKeyName` derives those from the keysym name or the text, which is a rule instead of a list and
+ * therefore cannot be missing an entry — which is what react-native-macos#437 turned out to be.
+ */
+struct NamedKey {
+    std::string_view keysymName;
+    std::string_view keyName;
+};
+
+constexpr std::array<NamedKey, 40> kNamedKeys{{{"Return", "Enter"},
+                                               {"KP_Enter", "Enter"},
+                                               {"Tab", "Tab"},
+                                               {"ISO_Left_Tab", "Tab"},
+                                               {"space", " "},
+                                               {"Escape", "Escape"},
+                                               {"BackSpace", "Backspace"},
+                                               {"Delete", "Delete"},
+                                               {"Insert", "Insert"},
+                                               {"Home", "Home"},
+                                               {"End", "End"},
+                                               {"Prior", "PageUp"},
+                                               {"Next", "PageDown"},
+                                               {"Left", "ArrowLeft"},
+                                               {"Right", "ArrowRight"},
+                                               {"Up", "ArrowUp"},
+                                               {"Down", "ArrowDown"},
+                                               {"Shift_L", "Shift"},
+                                               {"Shift_R", "Shift"},
+                                               {"Control_L", "Control"},
+                                               {"Control_R", "Control"},
+                                               {"Alt_L", "Alt"},
+                                               {"Alt_R", "Alt"},
+                                               {"Super_L", "Meta"},
+                                               {"Super_R", "Meta"},
+                                               {"Caps_Lock", "CapsLock"},
+                                               {"Num_Lock", "NumLock"},
+                                               {"Menu", "ContextMenu"},
+                                               {"F1", "F1"},
+                                               {"F2", "F2"},
+                                               {"F3", "F3"},
+                                               {"F4", "F4"},
+                                               {"F5", "F5"},
+                                               {"F6", "F6"},
+                                               {"F7", "F7"},
+                                               {"F8", "F8"},
+                                               {"F9", "F9"},
+                                               {"F10", "F10"},
+                                               {"F11", "F11"},
+                                               {"F12", "F12"}}};
+
+/**
+ * One physical key, as the kernel numbers it and as the DOM names it. The evdev codes are `linux/input-event-codes.h`'s
+ * own, so this table is a keyboard layout's worth of rows and no arithmetic: evdev numbers the letters in QWERTY
+ * row order, which is a physical order that no alphabetical formula reproduces.
+ */
+struct PhysicalKey {
+    uint32_t evdevKeycode;
+    std::string_view codeName;
+};
+
+constexpr std::array<PhysicalKey, 87> kPhysicalKeys{{{KEY_A, "KeyA"},
+                                                     {KEY_B, "KeyB"},
+                                                     {KEY_C, "KeyC"},
+                                                     {KEY_D, "KeyD"},
+                                                     {KEY_E, "KeyE"},
+                                                     {KEY_F, "KeyF"},
+                                                     {KEY_G, "KeyG"},
+                                                     {KEY_H, "KeyH"},
+                                                     {KEY_I, "KeyI"},
+                                                     {KEY_J, "KeyJ"},
+                                                     {KEY_K, "KeyK"},
+                                                     {KEY_L, "KeyL"},
+                                                     {KEY_M, "KeyM"},
+                                                     {KEY_N, "KeyN"},
+                                                     {KEY_O, "KeyO"},
+                                                     {KEY_P, "KeyP"},
+                                                     {KEY_Q, "KeyQ"},
+                                                     {KEY_R, "KeyR"},
+                                                     {KEY_S, "KeyS"},
+                                                     {KEY_T, "KeyT"},
+                                                     {KEY_U, "KeyU"},
+                                                     {KEY_V, "KeyV"},
+                                                     {KEY_W, "KeyW"},
+                                                     {KEY_X, "KeyX"},
+                                                     {KEY_Y, "KeyY"},
+                                                     {KEY_Z, "KeyZ"},
+                                                     {KEY_1, "Digit1"},
+                                                     {KEY_2, "Digit2"},
+                                                     {KEY_3, "Digit3"},
+                                                     {KEY_4, "Digit4"},
+                                                     {KEY_5, "Digit5"},
+                                                     {KEY_6, "Digit6"},
+                                                     {KEY_7, "Digit7"},
+                                                     {KEY_8, "Digit8"},
+                                                     {KEY_9, "Digit9"},
+                                                     {KEY_0, "Digit0"},
+                                                     {KEY_ENTER, "Enter"},
+                                                     {KEY_ESC, "Escape"},
+                                                     {KEY_BACKSPACE, "Backspace"},
+                                                     {KEY_TAB, "Tab"},
+                                                     {KEY_SPACE, "Space"},
+                                                     {KEY_MINUS, "Minus"},
+                                                     {KEY_EQUAL, "Equal"},
+                                                     {KEY_LEFTBRACE, "BracketLeft"},
+                                                     {KEY_RIGHTBRACE, "BracketRight"},
+                                                     {KEY_BACKSLASH, "Backslash"},
+                                                     {KEY_SEMICOLON, "Semicolon"},
+                                                     {KEY_APOSTROPHE, "Quote"},
+                                                     {KEY_GRAVE, "Backquote"},
+                                                     {KEY_COMMA, "Comma"},
+                                                     {KEY_DOT, "Period"},
+                                                     {KEY_SLASH, "Slash"},
+                                                     {KEY_CAPSLOCK, "CapsLock"},
+                                                     {KEY_F1, "F1"},
+                                                     {KEY_F2, "F2"},
+                                                     {KEY_F3, "F3"},
+                                                     {KEY_F4, "F4"},
+                                                     {KEY_F5, "F5"},
+                                                     {KEY_F6, "F6"},
+                                                     {KEY_F7, "F7"},
+                                                     {KEY_F8, "F8"},
+                                                     {KEY_F9, "F9"},
+                                                     {KEY_F10, "F10"},
+                                                     {KEY_F11, "F11"},
+                                                     {KEY_F12, "F12"},
+                                                     {KEY_LEFTSHIFT, "ShiftLeft"},
+                                                     {KEY_RIGHTSHIFT, "ShiftRight"},
+                                                     {KEY_LEFTCTRL, "ControlLeft"},
+                                                     {KEY_RIGHTCTRL, "ControlRight"},
+                                                     {KEY_LEFTALT, "AltLeft"},
+                                                     {KEY_RIGHTALT, "AltRight"},
+                                                     {KEY_LEFTMETA, "MetaLeft"},
+                                                     {KEY_RIGHTMETA, "MetaRight"},
+                                                     {KEY_HOME, "Home"},
+                                                     {KEY_END, "End"},
+                                                     {KEY_PAGEUP, "PageUp"},
+                                                     {KEY_PAGEDOWN, "PageDown"},
+                                                     {KEY_INSERT, "Insert"},
+                                                     {KEY_DELETE, "Delete"},
+                                                     {KEY_LEFT, "ArrowLeft"},
+                                                     {KEY_RIGHT, "ArrowRight"},
+                                                     {KEY_UP, "ArrowUp"},
+                                                     {KEY_DOWN, "ArrowDown"},
+                                                     {KEY_NUMLOCK, "NumLock"},
+                                                     {KEY_KPENTER, "NumpadEnter"},
+                                                     {KEY_COMPOSE, "ContextMenu"},
+                                                     {KEY_102ND, "IntlBackslash"}}};
+
+bool isPrintableText(const std::string& keyText) {
+    const unsigned char first = static_cast<unsigned char>(keyText.front());
+
+    return first >= kFirstPrintableByte && first != kDeleteByte;
 }
 
 bool isScrollDelta(const InputEvent& event) {
@@ -188,6 +353,44 @@ std::vector<PointerDispatch> PointerRouter::route(const InputEvent& event, faceb
     }
 
     return {};
+}
+
+std::string domKeyName(const std::string& keysymName, const std::string& keyText) {
+    for (const NamedKey& namedKey : kNamedKeys) {
+        if (namedKey.keysymName == keysymName) {
+            return std::string(namedKey.keyName);
+        }
+    }
+
+    if (keysymName.size() == kSingleCharacterNameLength) {
+        return keysymName;
+    }
+
+    if (!keyText.empty() && isPrintableText(keyText)) {
+        return keyText;
+    }
+
+    return std::string(kUnidentifiedKey);
+}
+
+std::string domKeyCode(uint32_t evdevKeycode) {
+    for (const PhysicalKey& physicalKey : kPhysicalKeys) {
+        if (physicalKey.evdevKeycode == evdevKeycode) {
+            return std::string(physicalKey.codeName);
+        }
+    }
+
+    return std::string(kUnidentifiedKey);
+}
+
+PointerDispatch makeActivationDispatch(const InputEvent& event, facebook::react::Point targetOrigin) {
+    InputEvent activation = event;
+
+    activation.surfacePoint = targetOrigin;
+
+    return PointerDispatch{
+        .type = PointerDispatchType::Click,
+        .event = makePointerEvent(activation, targetOrigin, kPrimaryButton, kClickDetail, kNoButtonsBits)};
 }
 
 bool isScrollEvent(const InputEvent& event) {

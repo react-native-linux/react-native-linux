@@ -33,6 +33,16 @@ int renderScrollGolden(const std::string& bundlePath, const std::string& outputP
                        facebook::react::Point surfacePoint, int wheelNotches, int width, int height);
 
 /**
+ * The same rig, after Tab has been pressed `tabPresses` times.
+ *
+ * A focus ring is the one part of the focus model that is a picture rather than an event trace, and where it
+ * lands after N presses is the traversal order, the wrap and the focusable filtering all at once. See
+ * *Focus and keyboard* in docs/cpp-toolchain.md.
+ */
+int renderFocusGolden(const std::string& bundlePath, const std::string& outputPath, int tabPresses, int width,
+                      int height);
+
+/**
  * Runs a bundle that commits twice and proves that painting only the damaged region produces the same picture as
  * repainting everything.
  *

@@ -32,6 +32,10 @@ WindowSession::~WindowSession() noexcept {
 
 void WindowSession::resize(WindowSize size) { fabricHost_->setSurfaceSize(toSurfaceSize(size)); }
 
+void WindowSession::setTextInputFocusSink(TextInputFocusSink* textInputFocusSink) {
+    fabricHost_->setTextInputFocusSink(textInputFocusSink);
+}
+
 void WindowSession::deliverInput(const std::vector<InputEvent>& events) {
     fabricHost_->dispatchInput(events);
     fabricHost_->advanceScroll(takeFrameMilliseconds());

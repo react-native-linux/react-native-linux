@@ -11,6 +11,14 @@ namespace react_native_linux {
 constexpr SkColor kSceneBackgroundColor = SkColorSetRGB(0x14, 0x16, 0x1A);
 
 /**
+ * The focus ring's colour and width. A desktop focus ring is the platform's accent colour rather than the app's,
+ * and this platform has no theme service to ask yet — following the compositor's accent is a portal round trip
+ * and a deferral, named in *Focus and keyboard* in docs/cpp-toolchain.md.
+ */
+constexpr SkColor kFocusRingColor = SkColorSetRGB(0x59, 0x9E, 0xFF);
+constexpr float kFocusRingWidth = 2.0F;
+
+/**
  * Draws one scene snapshot onto a canvas: the background clear, then per painted node its `overflow: hidden`
  * ancestor clips, its absolute transform, its rounded background fill, its per-side borders, and — for a
  * `<Paragraph>` — the SkParagraph built from the attributed string the node carries.

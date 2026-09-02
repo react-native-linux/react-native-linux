@@ -120,6 +120,14 @@ struct ScenePrimitive {
     uint32_t backgroundColorArgb{};
     std::optional<SceneTextContent> text;
     std::optional<SceneImageContent> image;
+
+    /**
+     * Whether this node draws the focus ring, which is the focused node and only while focus arrived from the
+     * keyboard. A primitive that paints nothing else is still emitted when this is set — a `<Pressable>` with no
+     * background is still focusable — and the ring is drawn inside the border box, so the frame that damages the
+     * node also damages its ring.
+     */
+    bool focusRing{false};
 };
 
 using SceneSnapshot = std::vector<ScenePrimitive>;
@@ -203,6 +211,17 @@ public:
      * repaint. Nothing else can: a decode changes no shadow node, so Fabric emits no mutation for it.
      */
     void damageImageSource(const std::string& uri);
+
+    /**
+     * Marks which node draws the focus ring, and damages the node that stops drawing it and the node that starts.
+     * The old node is damaged before the mark moves, because a node whose only reason to be painted was the ring
+     * has no extent once the mark has left it.
+     *
+     * `tag` of zero is "nothing is focused", and `isFocusVisible` is false for a focus that came from a click:
+     * the platform still knows where focus is — it is what the next Tab moves from — and the ring is what a
+     * pointer does not draw, so an invisible focus damages nothing.
+     */
+    void setFocus(facebook::react::Tag tag, bool isFocusVisible);
     SceneSnapshot snapshot() const;
     SceneDamage takeDamage();
     std::string dump() const;
@@ -217,6 +236,8 @@ private:
 
     SceneNodes nodes_;
     SceneDamage damage_;
+    facebook::react::Tag focusedTag_{0};
+    bool isFocusVisible_{false};
 };
 
 } // namespace react_native_linux

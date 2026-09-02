@@ -202,6 +202,12 @@ int main(int argc, char** argv) {
 
         if (parsedArguments.bundlePath.has_value()) {
             session.emplace(parsedArguments.bundlePath.value(), window.size());
+
+            // --ime-debug owns the text input by hand, so focus must not also drive it: the two would race to
+            // enable and disable the same object. Without that flag, focus is the only thing that touches it.
+            if (!parsedArguments.imeDebug) {
+                session->setTextInputFocusSink(window.textInput());
+            }
         }
 
         if (parsedArguments.imeDebug && window.textInput() == nullptr) {

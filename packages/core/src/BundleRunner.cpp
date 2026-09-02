@@ -36,6 +36,10 @@ constexpr double kInjectedFrameMilliseconds = 1000.0 / 60.0;
 // About thirty-three seconds of 60 Hz frames, which is longer than the slowest deceleration curve React Native's
 // `decelerationRate` can ask for. It exists so a physics bug is a run that ends rather than a run that hangs.
 constexpr size_t kMaximumInjectedScrollFrames = 2000;
+// What a keymap reports for the Tab key, already in the DOM names the seat produces. `domKeyName` is what turns
+// the keysym into these; injecting them directly is what lets a headless run press Tab with no keymap at all.
+constexpr char kTabKeyName[] = "Tab";
+constexpr char kTabKeyCode[] = "Tab";
 
 std::unique_ptr<const facebook::react::JSBigString> readScript(const std::optional<std::string>& bundlePath) {
     if (bundlePath.has_value()) {
@@ -231,6 +235,27 @@ FabricRunResult runScrolledFabricBundle(const std::string& bundlePath, facebook:
 
     if (!reactHost.runUntilQuiescent(kQuiescenceBudget)) {
         std::cerr << "[bundle-runner] gave up waiting for pending timers" << std::endl;
+    }
+
+    return finishFabricRun(reactHost, fabricHost);
+}
+
+FabricRunResult runFocusTabbedFabricBundle(const std::string& bundlePath, facebook::react::Size surfaceSize,
+                                           int tabPresses) {
+    ReactHost reactHost;
+    std::unique_ptr<FabricHost> fabricHost = startFabricRun(reactHost, bundlePath, surfaceSize);
+
+    if (waitForFirstCommit(reactHost, *fabricHost).empty()) {
+        std::cerr << "[bundle-runner] the bundle committed no scene, so there is nothing to focus" << std::endl;
+    }
+
+    // One press per frame, press and release together, because that is what a compositor delivers: a key held
+    // across a frame boundary is a repeat, and repeats are not synthesised. See *Input* in docs/cpp-toolchain.md.
+    for (int press = 0; press < tabPresses; ++press) {
+        deliverInputFrame(
+            reactHost, *fabricHost,
+            {InputEvent{.kind = InputEventKind::KeyPress, .key = kTabKeyName, .code = kTabKeyCode},
+             InputEvent{.kind = InputEventKind::KeyRelease, .key = kTabKeyName, .code = kTabKeyCode}});
     }
 
     return finishFabricRun(reactHost, fabricHost);

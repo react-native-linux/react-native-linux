@@ -211,14 +211,7 @@
     {
       "title": "feat(input): key repeat and xkbcommon compose sequences and dead keys",
       "milestone": "M1",
-      "labels": [
-        "area:input",
-        "area:text",
-        "kind:feat",
-        "origin:rn-macos",
-        "platform-parity:macos",
-        "priority:P2"
-      ],
+      "labels": ["area:input", "area:text", "kind:feat", "origin:rn-macos", "platform-parity:macos", "priority:P2"],
       "priority": "P2",
       "body": "## Context\n\n`docs/cpp-toolchain.md` records both as deferrals with owners:\n\n- \"`wl_keyboard.repeat_info` is accepted and ignored, so a held key produces one `keyDown`. Synthesising\n  repeat means a timer in the frame loop, which is the same machinery text input will need.\"\n- \"`xkb_compose_state` turns `dead_acute` + `e` into `é` without any input method running. It is\n  xkbcommon's, it belongs beside the keymap in `WaylandSeat`, and it is a keyboard feature that composition\n  does not supply.\"\n\nThe macOS evidence that this is not cosmetic: [rn-macos#683](https://github.com/microsoft/react-native-macos/issues/683) (unhandled keys escaping to the system produce\nfeedback on every keystroke) and [rn-macos#437](https://github.com/microsoft/react-native-macos/issues/437) (partial key coverage filed as a bug). A text field that cannot\ntype `é` without an input method running is a text field for English, which is the same argument ADR-0001\nmakes for IME.\n\n## What to verify / build\n\n- `wl_keyboard.repeat_info` honoured: rate and delay from the compositor, repeat cancelled on key release, on\n  focus loss, and on any other key press. Repeated events carry `repeat: true`.\n- The repeat timer lives in the frame loop, not in a private thread, and does not keep the loop awake when no\n  key is held.\n- `xkb_compose_state` fed from `XKB_DEFAULT_*`/locale, with `XKB_COMPOSE_COMPOSING` swallowing the\n  intermediate keys and `XKB_COMPOSE_COMPOSED` producing the composed string.\n- Compose and `zwp_text_input_v3` composition are mutually exclusive: an active IME composition takes\n  precedence and compose state is reset on focus change.\n\n## Acceptance criteria\n\n- **Unit (C++):** the repeat state machine and the compose-state wrapper as pure classes at 100% line and\n  branch — delay/rate arithmetic, cancellation on the four cancel paths, the three `xkb_compose_feed` outcomes,\n  and the IME-precedence rule.\n- **E2E:** virtual keyboard input holding a key across N frames and asserting the repeat count against the\n  compositor-advertised rate; and `dead_acute` + `e` producing one `é` and no intermediate character.\n- **Perf:** a held key must not raise the idle frame cost above the empty-scene baseline.\n\n## Related\n\nDeferral named in `docs/cpp-toolchain.md` *Input → Deferrals*. Feeds #17. Sits beside #26.\n"
     },
@@ -240,14 +233,7 @@
     {
       "title": "test(text): the measured paragraph must equal the painted paragraph",
       "milestone": "M1",
-      "labels": [
-        "area:text",
-        "area:testing",
-        "kind:test",
-        "origin:rn-macos",
-        "platform-parity:macos",
-        "priority:P0"
-      ],
+      "labels": ["area:text", "area:testing", "kind:test", "origin:rn-macos", "platform-parity:macos", "priority:P0"],
       "priority": "P0",
       "body": "## Context\n\n- [rn-macos#2857](https://github.com/microsoft/react-native-macos/issues/2857) — closed, 7 comments: a large `<Text>` inside a `ScrollView` gets an enormous phantom content\n  size on the first render, and resizing the window forces a re-measure that fixes it. Measurement and painting\n  disagreed, and only the layout consumer noticed.\n- [rn-macos#2607](https://github.com/microsoft/react-native-macos/issues/2607) — open: `<Text>` below a certain size **redraws forever** after a window resize. A\n  measure/layout feedback loop, which on our roadmap is a pacing failure, not a text failure.\n- [rn-macos#650](https://github.com/microsoft/react-native-macos/issues/650) — `Text > View > Text` renders nothing (inline attachments).\n- [rn-macos#1521](https://github.com/microsoft/react-native-macos/issues/1521) — `transform` on `<Text>` throws.\n\n`docs/cpp-toolchain.md` records exactly the configuration that produces this: \"every paint rebuilds the\nparagraph, and every snapshot copies the attributed string\", with a measure cache in front of the measure half\nonly, and no `measureLines` so no `onTextLayout` to cross-check against.\n\n## What to verify\n\nFor a fixture matrix — single line, wrapped multi-line, `numberOfLines` with ellipsis, `letterSpacing`,\n`lineHeight`, mixed `fontWeight`/`fontSize` fragments, an inline attachment, and a fragment with a\n`backgroundColor` — the paragraph the `TextLayoutManager` answered Yoga with and the paragraph\n`ScenePainter` draws must have identical line count, line breaks, per-line width and height, and total height.\n\n## Acceptance criteria\n\n- **Unit (C++):** a `ParagraphEquivalence` suite that builds both paragraphs from the same attributed string\n  and constraints and asserts the metrics above field by field. Any divergence names the fixture, the field\n  and both values.\n- **Unit:** the same assertion after a cache hit, after a cache eviction, and after a fragment-level prop\n  change, so the cache cannot make the two answers differ.\n- **Golden-image:** the matrix rendered, goldens committed, so a paint-side change fails independently of the\n  measure-side assertion.\n- No fixture in the matrix produces a different measured height on its second measure than on its first\n  (the [rn-macos#2857](https://github.com/microsoft/react-native-macos/issues/2857) shape).\n\n## Related\n\nFollows #14. Feeds #16 (`ScrollView` content size) and #17. The redraw-storm half is the next issue in this batch.\n"
     },
@@ -389,14 +375,7 @@
     {
       "title": "feat(core): output enter/leave and fractional-scale change — re-rasterize, re-pick, re-hit-test",
       "milestone": "M1",
-      "labels": [
-        "area:core",
-        "area:renderer",
-        "kind:feat",
-        "origin:rn-macos",
-        "platform-parity:macos",
-        "priority:P1"
-      ],
+      "labels": ["area:core", "area:renderer", "kind:feat", "origin:rn-macos", "platform-parity:macos", "priority:P1"],
       "priority": "P1",
       "body": "## Context\n\n- [rn-macos#2084](https://github.com/microsoft/react-native-macos/issues/2084) — open, 17 comments: the wrong pixel-density image variant on first launch, right afterwards.\n- [rn-macos#1165](https://github.com/microsoft/react-native-macos/issues/1165) — `RCTScreenScale` had to be reimplemented for macOS.\n- [rn-macos#322](https://github.com/microsoft/react-native-macos/issues/322) and [rn-macos#1144](https://github.com/microsoft/react-native-macos/issues/1144) — layout wrong / lag while the window is resized.\n\nADR-0001 lists this as a first-class subsystem and an accepted risk: \"`wp_fractional_scale_v1` (scale/120),\n`wl_surface.set_buffer_scale`, `wp_viewporter`, per-output scale changes when a window is dragged between\nmonitors, glyph atlas invalidation and re-rasterization at the new scale, and hit-testing in the correct\ncoordinate space. GTK4 and Qt6 each took years on this.\" Nothing in the tracker owns it yet: M1 mentions\n\"fractional-scale handling for a single monitor\" and there is no issue.\n\n## What to verify / build\n\n- `wp_fractional_scale_v1` bound; `preferred_scale` applied via `wp_viewporter` with a buffer sized to\n  `ceil(logical * scale/120)`.\n- `wl_surface.enter`/`leave` tracked so the surface knows its current output(s).\n- On a scale change: the glyph atlas is invalidated and re-rasterized, image sources are re-picked (see the\n  image issue in this batch), the cursor surface is re-created, and the swapchain is recreated at the new\n  pixel extent.\n- Pointer coordinates are converted from surface-local logical coordinates to scene coordinates using the\n  current scale — a scale change must not shift hit-testing by the scale factor.\n- The first frame after a scale change is correct, not a scaled-up copy of the previous one.\n\n## Acceptance criteria\n\n- **Unit (C++):** the scale/120 arithmetic, buffer-extent derivation and logical-to-scene coordinate mapping\n  at 100% line and branch, including a scale change arriving between a commit and a paint.\n- **Golden-image:** the same fixture rendered at 1x and at 1.5x (scale 180), with separate goldens; the 1.5x\n  golden must be rendered at that scale, not upscaled.\n- **E2E:** the headless compositor advertising a scale change mid-run; assert one atlas invalidation, one\n  swapchain recreation and a correct first frame afterwards, plus a pointer hit at a known logical point\n  landing on the same node before and after.\n\n## Related\n\nM1 scope from ADR-0001 with no owning issue. Feeds the image, cursor and `Dimensions` issues in this batch,\nand #33 (window goldens) gains a second scale row.\n"
     },
@@ -526,14 +505,7 @@
     {
       "title": "feat(modules): clipboard, primary selection, and drag-and-drop over wl_data_device",
       "milestone": "M3",
-      "labels": [
-        "area:modules",
-        "area:input",
-        "kind:feat",
-        "origin:rn-macos",
-        "platform-parity:macos",
-        "priority:P2"
-      ],
+      "labels": ["area:modules", "area:input", "kind:feat", "origin:rn-macos", "platform-parity:macos", "priority:P2"],
       "priority": "P2",
       "body": "## Context\n\n- [rn-macos#2075](https://github.com/microsoft/react-native-macos/issues/2075) — closed, 6 comments: copy, paste and select-all shortcuts do nothing in a `TextInput`. A\n  clipboard gap presenting as a keyboard bug.\n- [rn-macos#842](https://github.com/microsoft/react-native-macos/issues/842) — closed, 12 comments: drag-and-drop support, requested and never delivered as a cross-platform API.\n- [rn-macos#388](https://github.com/microsoft/react-native-macos/issues/388) — Clipboard, from 2020.\n- [rn-macos#1916](https://github.com/microsoft/react-native-macos/issues/1916) — document picker requests, i.e. the same file-exchange need from the other direction.\n\nOn Wayland this is `wl_data_device`, `wl_data_source`, `wl_data_offer`, plus\n`zwp_primary_selection_v1` for middle-click paste, which desktop Linux users expect and which has no macOS\nanalogue at all. `docs/cpp-toolchain.md` lists no clipboard implementation, and #17's editing model needs one\nbefore it is usable.\n\n## What to verify / build\n\n- React Native's `Clipboard` module (`getString`, `setString`, `hasString`) over `wl_data_device`,\n  with `text/plain;charset=utf-8` as the required MIME type and the offer/selection serial handled correctly.\n- Primary selection: selecting text in a field publishes it; middle-click pastes it. Decide and document\n  whether this is on by default.\n- Clipboard ownership survives focus loss; losing the selection to another client is handled without a crash.\n- Drag-and-drop is explicitly **out of scope** for this issue and recorded as a separate decision — the macOS\n  record shows it is a multi-year API design problem, not an afternoon.\n\n## Acceptance criteria\n\n- **Unit (C++):** the offer/selection state machine and MIME negotiation as a pure class at 100% line and\n  branch, including the lost-selection and unsupported-MIME paths.\n- **E2E:** under the headless compositor, copy from the app and read the selection from the compositor side;\n  set a selection compositor-side and paste it into a field.\n- The primary-selection and drag-and-drop decisions are recorded in `docs/cpp-toolchain.md`.\n\n## Related\n\nScoped inside #23. Prerequisite for the `TextInput` interaction contract issue in this batch and for #17.\n"
     },
@@ -570,14 +542,7 @@
     {
       "title": "feat(input): secondary-button and context-menu event — a right click is not a left click",
       "milestone": "M4",
-      "labels": [
-        "area:input",
-        "kind:feat",
-        "kind:parity",
-        "origin:rn-macos",
-        "platform-parity:macos",
-        "priority:P3"
-      ],
+      "labels": ["area:input", "kind:feat", "kind:parity", "origin:rn-macos", "platform-parity:macos", "priority:P3"],
       "priority": "P3",
       "body": "## Context\n\n- [rn-macos#379](https://github.com/microsoft/react-native-macos/issues/379) — closed, 4 comments: \"Right clicking on Button and other Touchable based components is\n  triggering the action as if it were a left click.\" The most basic desktop expectation, violated.\n- [rn-macos#2085](https://github.com/microsoft/react-native-macos/issues/2085) — closed, 5 comments: right-click context menu.\n- [rn-macos#1209](https://github.com/microsoft/react-native-macos/issues/1209) — closed: click handling breaks entirely after a context menu is opened over a `TextInput`.\n- [rn-macos#754](https://github.com/microsoft/react-native-macos/issues/754) — right-click hit region wrong on selectable text.\n- [rn-macos#492](https://github.com/microsoft/react-native-macos/issues/492) — closed: no API to add menu items.\n\n`docs/cpp-toolchain.md` describes `PointerRouter` as \"a mouse state machine and nothing more: which buttons\nare down, which node the press started on, and therefore whether a release is also a click\", and notes that\n`click` is the platform's synthetic call. Nothing there distinguishes buttons, so a secondary-button release\non the press target is currently as much a `click` as a primary one — which is [rn-macos#379](https://github.com/microsoft/react-native-macos/issues/379) exactly.\n\nOnly the event half of the macOS lesson transfers: Wayland has no menu bar and no system context menu, so the\nmenu itself would be ours to draw and is out of scope here.\n\n## What to verify / build\n\n- `BTN_RIGHT` and `BTN_MIDDLE` carry `button`/`buttons` in the pointer payload and do **not** synthesise\n  `click` ([rn-macos#379](https://github.com/microsoft/react-native-macos/issues/379)).\n- A secondary press-and-release on a node emits `contextMenu` in the shape upstream's\n  `PointerEventsProcessor` expects, so `onContextMenu` works where React Native supports it.\n- Middle click pastes the primary selection into a focused editor rather than clicking (see the clipboard\n  issue in this batch).\n- Button state is per-button: a primary press held while a secondary press occurs does not lose the primary\n  press target ([rn-macos#1209](https://github.com/microsoft/react-native-macos/issues/1209)).\n\n## Acceptance criteria\n\n- **Unit (C++):** `PointerRouter` button-state tests at 100% line and branch — each button's press/release\n  pairing independently, interleaved presses, and the assertion that only the primary produces `click`.\n- **E2E:** injected secondary and middle button sequences, asserting the trace contains no `topClick`.\n\n## Related\n\nFollows #18. Depends on the clipboard issue in this batch for middle-click paste. Menu drawing is explicitly\nnot in scope.\n"
     }
