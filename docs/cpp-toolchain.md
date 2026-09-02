@@ -136,8 +136,10 @@ platform-owned frame thread, and it calls exactly two things on the session:
 
 - `snapshotScene`, once per frame, which copies the scene out under `LinuxMountingManager`'s mutex. The copy carries
   absolute frames — parent-relative Fabric frames are accumulated during the walk, in the scene, not in the paint
-  loop — and one packed ARGB colour per node that has a meaningful `backgroundColor`. Nodes without one, including
-  the surface root, contribute nothing, because the background clear already covers them.
+  loop — plus the absolute transform, the inherited `overflow: hidden` clips, the resolved border metrics, and
+  packed ARGB colours with the inherited opacity already multiplied in. See *View props fidelity*. Nodes with
+  neither a visible background nor a visible border, including the surface root, contribute nothing, because the
+  background clear already covers them.
 - `resize`, on `xdg_toplevel.configure`, which calls `SurfaceHandler::constraintLayout` with the new size as both
   the minimum and the maximum. That commit uses the default commit options, whose `mountSynchronously` is true, so
   the Yoga relayout **and** the resulting mount run on the frame thread. Thread affinity is therefore not what keeps
@@ -152,9 +154,10 @@ destruct. `xdg_toplevel.close` and a `wl_display` error both leave the run loop 
 `Ctrl-C` does not: there is still no signal handler, so `SIGINT` terminates the process where it stands and the
 compositor reclaims the surface when the connection's file descriptor closes.
 
-Not drawn yet, each with an owning milestone: text (#14), borders, radii, opacity and transforms, `overflow`
-clipping, and `display: none`. Events are M1/M2 — the `EventBeat` is still never induced, so the window is a
-display, not an application.
+Not drawn yet, each with an owning milestone: text (#14), shadows and elevation, `boxShadow`, `filter`,
+`mixBlendMode`, `outline`, `backgroundImage` gradients, and `display: none`. Backgrounds, per-corner radii,
+per-side borders, opacity, transforms and `overflow` clipping are drawn; see *View props fidelity*. Events are
+M1/M2 — the `EventBeat` is still never induced, so the window is a display, not an application.
 
 ### Skia acquisition
 
@@ -404,6 +407,44 @@ background filling the window with one blue `#3366CC` rounded rectangle inset 64
 Not covered by this checklist, because it is not implemented yet: fractional scale, pointer and keyboard input,
 `wp_presentation_feedback` timing, and any measurement of the frame budget.
 
+## View props fidelity
+
+ADR-0001's paint-model ownership means React Native's `<View>` styling semantics are implemented on the canvas
+rather than negotiated with a widget toolkit. This is what issue #13 implemented, and what it deliberately did not.
+
+`RetainedScene` reads the props and does all the composition; `ScenePainter` only issues Skia calls. That split is
+not stylistic: `RetainedScene.cpp` is inside the 100% line-and-branch coverage gate and `ScenePainter.cpp` is not,
+so every number that can be wrong is computed where a unit test can see it.
+
+| Prop | How it is implemented |
+| --- | --- |
+| `backgroundColor` | Filled as the outer rounded rect. Skipped when `isColorMeaningful` is false, as before. |
+| `opacity` | Multiplied down the tree during the snapshot walk and folded into the alpha channel of every colour the node emits. |
+| `borderRadius` and the per-corner props | `BaseViewProps::resolveBorderMetrics` — the same call iOS and Android make — cascades the corners, resolves percentages against the frame, and applies the CSS corner-overlap clamp. The painter turns the result into an `SkRRect` with per-corner x/y radii. |
+| `borderWidth` and the per-side props | Read from the Yoga style through `resolveBorderMetrics`, drawn **inside** the frame as the ring between the outer rounded rect and the inset inner one (`drawDRRect`). |
+| `borderColor` and the per-side props | One `drawDRRect` when the four colours are equal; otherwise one wedge clip per side, so each side keeps its own colour and each corner is split on the diagonal. |
+| `overflow: hidden` | `getClipsContentToBounds` pushes the node's rounded border box onto a clip stack that descendant primitives carry; the painter replays it with `clipRRect` under the clipping ancestor's own transform. |
+| `transform` | `BaseViewProps::resolveTransform` resolves the operation list and folds in `transformOrigin`; the scene applies it about the centre of the absolute frame, composes it with every ancestor transform, and reduces the 4x4 to a 2D affine the painter hands to `SkMatrix`. |
+| `zIndex` | Nothing to implement. Fabric sets `ShadowNode::orderIndex_` from `zIndex` in `ConcreteViewShadowNode` and stable-sorts siblings by it in `sliceChildShadowNodeViewPairs` before diffing, so mount order — which is the scene's child order and therefore paint order — is already `zIndex` order. |
+
+Known deviations from iOS and Android, all deliberate:
+
+- **Opacity is per-primitive, not group opacity.** React Native composites a translucent subtree as one layer; we
+  multiply the alpha of each primitive instead. Overlapping descendants of a translucent ancestor therefore blend
+  against each other where the real thing would not. Fixing it means `saveLayerAlphaf` per stacking context.
+- **`borderStyle` is ignored.** Every border is solid; `dotted` and `dashed` are not drawn differently.
+- **`borderCurve` is ignored.** Corners are always circular, never iOS' `continuous` squircle.
+- **An unset `borderColor` draws nothing.** The edge is skipped when the resolved colour is not meaningful, which
+  keeps borders consistent with the background path; iOS and Android fall back to black.
+- **`overflow: hidden` clips to the border box**, matching iOS `clipsToBounds`, where CSS clips to the padding box.
+- **Transforms are 2D only.** The 4x4 is reduced to its affine part, so `perspective`, `rotateX` and `rotateY` lose
+  their depth and collapse to their in-plane component, and `backfaceVisibility` is not honoured.
+- **Anti-aliased wedge clips can leave a hairline seam** where two border sides of different colours meet.
+
+Not implemented at all, and owned elsewhere: `shadowColor`/elevation and `boxShadow`, `filter`, `mixBlendMode` and
+`isolation`, `outline*`, and `backgroundImage` gradients. Each needs its own issue under M1; none of them is a
+variation on what is here.
+
 ## Golden images
 
 The rig has two halves. `hello_react --golden` produces a PNG; a Vitest spec compares it against a checked-in one.
@@ -482,6 +523,28 @@ The first fixture is `packages/core/test-bundles/fabric-view.js` to `packages/co
 dark `#14161A` background with one flat blue `#3366CC` rectangle, 120x80, its top-left corner at (24, 24) — the
 frame `hello_react --fabric` prints for `View #4`, rasterised instead of dumped.
 
+The second is `packages/core/test-bundles/view-props.js` to `packages/core/goldens/view-props.png`, the fixture for
+*View props fidelity* above. Every element is positioned absolutely so the picture is fixed, and each one isolates
+one prop group. Left to right, top to bottom, on the same `#14161A` background:
+
+1. (40, 40) 160x120 blue `#3366CC` with a 40 px radius on the **top-left and bottom-right corners only** — the
+   other two stay square.
+2. (230, 40) 160x120 dark `#1E2430` with a uniform 10 px amber `#E5C07B` border and a 24 px radius on all corners.
+   The border is drawn inside the frame, so the tile is still exactly 160x120.
+3. (420, 40) 160x120 dark `#1E2430` with four different borders: 6 px red `#E06C75` left, 12 px green `#98C379`
+   top, 18 px blue `#61AFEF` right, 24 px purple `#C678DD` bottom, meeting on the diagonal at each corner.
+4. (610, 70) 150x60 cyan `#56B6C2` asking for a 200 px radius. The corner-overlap clamp reduces it to 30 px, so
+   this must render as a **perfect pill**, not a lozenge and not a rounded rectangle with visible flat corners.
+5. (40, 200) 200x140 red `#E06C75` at `opacity: 0.5`, containing a 140x80 white block at `opacity: 0.5` inset 30 px
+   from its top-left. The white block therefore paints at an effective 0.25 alpha.
+6. (280, 200) 200x140 dark `#1E2430`, 28 px radius, `overflow: hidden`, containing a 300x220 green `#98C379` child
+   offset 60 px down and right. The green must stop exactly on the parent's rounded edge, leaving a dark L-shaped
+   band along the top and left.
+7. (520, 200) 160x110 blue `#61AFEF`, 12 px radius, rotated -15° and scaled 1.15 **about its own centre**.
+8. (40, 380) 340x200 slate `#1A1F2B` panel holding three overlapping 150x150 squares declared red, green, blue in
+   that order and carrying `zIndex` 3, 1, 2. The stack must read green at the bottom, blue in the middle, **red on
+   top**. A renderer that ignored `zIndex` would put blue on top instead, which is what makes this element a test.
+
 ## Unit tests and coverage
 
 `packages/core/tests` is a second, Hermes-free CMake configure of the same source tree, reached only through the
@@ -505,7 +568,16 @@ directly into the test binary rather than linked from a Hermes-linked library �
 (`scopedSourcePaths` in the script — today `RetainedScene.cpp` and `LinuxMountingManager.cpp`, the two sources
 `SceneTest.cpp` actually exercises). A source with no tests behind it is deliberately not in that list: adding a
 file there without coverage behind it is what turns the gate red, rather than a silent average across the whole of
-`packages/core`. The gate honors `// COV_EXCL: <reason>` markers per AGENTS.md — a marked line is dropped from both
+`packages/core`.
+
+`ScenePainter.cpp` is deliberately **not** in that scope. It could be: a `SkSurfaces::Raster` surface needs no GPU,
+no Vulkan driver and no compositor, exactly as `hello_react --golden` proves. The cost is what rules it out — the
+`unit` CI job today needs neither Hermes nor Skia and so skips both the vendored 93 MB Skia archive and the
+freetype/fontconfig prerequisites, and linking `libskia.a` into `rnl_core_tests` would put all of that back into
+the one job that is currently cheap. The answer instead is the split described in *View props fidelity*: every
+number that could be wrong is computed in `RetainedScene.cpp`, where the gate does see it, and what is left in the
+painter is Skia geometry that a golden image is a better test of than an assertion on a pixel would be. If the
+painter ever grows logic that is not a draw call, that logic belongs in the scene, not in a new coverage entry. The gate honors `// COV_EXCL: <reason>` markers per AGENTS.md — a marked line is dropped from both
 the line and the branch count, and a marker with no reason after the colon fails the script outright. `LLVM_COV`
 and `LLVM_PROFDATA` name the binaries to run and default to unversioned `llvm-cov`/`llvm-profdata`, which is what a
 recent Arch `llvm` package puts on `PATH`; Ubuntu's `llvm-18` package installs only the versioned

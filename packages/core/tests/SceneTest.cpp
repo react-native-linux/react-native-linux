@@ -10,10 +10,15 @@
 #include <react/renderer/graphics/Point.h>
 #include <react/renderer/graphics/Rect.h>
 #include <react/renderer/graphics/Size.h>
+#include <react/renderer/graphics/Transform.h>
+#include <react/renderer/graphics/ValueUnit.h>
 #include <react/renderer/mounting/MountingTransaction.h>
 #include <react/renderer/mounting/ShadowView.h>
 #include <react/renderer/mounting/ShadowViewMutation.h>
 #include <react/renderer/telemetry/TransactionTelemetry.h>
+#include <yoga/enums/Edge.h>
+#include <yoga/enums/Overflow.h>
+#include <yoga/style/StyleLength.h>
 
 #include <cstdint>
 #include <memory>
@@ -22,6 +27,8 @@
 #include <vector>
 
 namespace {
+
+namespace yoga = facebook::yoga;
 
 using facebook::react::MountingTransaction;
 using facebook::react::Point;
@@ -32,6 +39,10 @@ using facebook::react::ShadowViewMutation;
 using facebook::react::ShadowViewMutationList;
 using facebook::react::Size;
 using facebook::react::Tag;
+using facebook::react::Transform;
+using facebook::react::UnitType;
+using facebook::react::ValueUnit;
+using facebook::react::ViewProps;
 using react_native_linux::LinuxMountingManager;
 using react_native_linux::RetainedScene;
 using react_native_linux::SceneSnapshot;
@@ -39,6 +50,8 @@ using react_native_linux::SceneSnapshot;
 constexpr Tag kSurfaceTag = 1;
 constexpr uint32_t kBlueArgb = 0xFF3366CCU;
 constexpr uint32_t kRedArgb = 0xFFCC3333U;
+constexpr uint32_t kHalfBlueArgb = 0x803366CCU;
+constexpr uint32_t kQuarterRedArgb = 0x40CC3333U;
 
 Rect makeRect(float x, float y, float width, float height) {
     return Rect{.origin = Point{.x = x, .y = y}, .size = Size{.width = width, .height = height}};
@@ -66,35 +79,65 @@ ShadowView makeView(Tag tag, Rect frame) {
     return shadowView;
 }
 
-ShadowView makePaintedView(Tag tag, Rect frame, SharedColor backgroundColor) {
+ShadowView makeStyledView(Tag tag, Rect frame, const std::shared_ptr<ViewProps>& viewProps) {
     ShadowView shadowView = makeView(tag, frame);
-    const std::shared_ptr<facebook::react::ViewProps> viewProps = std::make_shared<facebook::react::ViewProps>();
 
-    viewProps->backgroundColor = backgroundColor;
     shadowView.props = viewProps;
 
     return shadowView;
+}
+
+std::shared_ptr<ViewProps> propsWithBackground(SharedColor backgroundColor) {
+    const std::shared_ptr<ViewProps> viewProps = std::make_shared<ViewProps>();
+
+    viewProps->backgroundColor = backgroundColor;
+
+    return viewProps;
+}
+
+ShadowView makePaintedView(Tag tag, Rect frame, SharedColor backgroundColor) {
+    return makeStyledView(tag, frame, propsWithBackground(backgroundColor));
+}
+
+void addChild(RetainedScene& scene, Tag parentTag, const ShadowView& child) {
+    scene.createNode(child);
+    scene.insertChild(parentTag, child, 0);
+}
+
+SceneSnapshot snapshotOfSingleChild(const std::shared_ptr<ViewProps>& viewProps, Rect frame) {
+    RetainedScene scene;
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, makeStyledView(2, frame, viewProps));
+
+    return scene.snapshot();
 }
 
 RetainedScene sceneWithPaintedChild() {
     RetainedScene scene;
 
     scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
-
-    const ShadowView child = makePaintedView(2, makeRect(10, 20, 200, 100), blue());
-
-    scene.createNode(child);
-    scene.insertChild(kSurfaceTag, child, 0);
+    addChild(scene, kSurfaceTag, makePaintedView(2, makeRect(10, 20, 200, 100), blue()));
 
     return scene;
 }
 
-void expectRectangle(const react_native_linux::SceneRectangle& rectangle, Rect frame, uint32_t colorArgb) {
-    EXPECT_FLOAT_EQ(rectangle.frame.origin.x, frame.origin.x);
-    EXPECT_FLOAT_EQ(rectangle.frame.origin.y, frame.origin.y);
-    EXPECT_FLOAT_EQ(rectangle.frame.size.width, frame.size.width);
-    EXPECT_FLOAT_EQ(rectangle.frame.size.height, frame.size.height);
-    EXPECT_EQ(rectangle.colorArgb, colorArgb);
+void expectPrimitive(const react_native_linux::ScenePrimitive& primitive, Rect frame, uint32_t colorArgb) {
+    EXPECT_FLOAT_EQ(primitive.frame.origin.x, frame.origin.x);
+    EXPECT_FLOAT_EQ(primitive.frame.origin.y, frame.origin.y);
+    EXPECT_FLOAT_EQ(primitive.frame.size.width, frame.size.width);
+    EXPECT_FLOAT_EQ(primitive.frame.size.height, frame.size.height);
+    EXPECT_EQ(primitive.backgroundColorArgb, colorArgb);
+}
+
+void expectMatrix(const react_native_linux::SceneMatrix& matrix, float scaleX, float scaleY, float translateX,
+                  float translateY) {
+    EXPECT_FLOAT_EQ(matrix.scaleX, scaleX);
+    EXPECT_FLOAT_EQ(matrix.scaleY, scaleY);
+    EXPECT_FLOAT_EQ(matrix.translateX, translateX);
+    EXPECT_FLOAT_EQ(matrix.translateY, translateY);
+    EXPECT_FLOAT_EQ(matrix.skewX, 0);
+    EXPECT_FLOAT_EQ(matrix.skewY, 0);
 }
 
 MountingTransaction transactionOf(ShadowViewMutationList&& mutations) {
@@ -119,24 +162,20 @@ TEST(RetainedSceneTest, SurfaceRootCarriesItsSizeAndPaintsNothing) {
 
 TEST(RetainedSceneTest, NestedFramesComposeIntoAbsoluteOrigins) {
     RetainedScene scene = sceneWithPaintedChild();
-    const ShadowView grandChild = makePaintedView(3, makeRect(5, 7, 50, 40), red());
 
-    scene.createNode(grandChild);
-    scene.insertChild(2, grandChild, 0);
+    addChild(scene, 2, makePaintedView(3, makeRect(5, 7, 50, 40), red()));
 
     const SceneSnapshot snapshot = scene.snapshot();
 
     ASSERT_EQ(snapshot.size(), 2U);
-    expectRectangle(snapshot[0], makeRect(10, 20, 200, 100), kBlueArgb);
-    expectRectangle(snapshot[1], makeRect(15, 27, 50, 40), kRedArgb);
+    expectPrimitive(snapshot[0], makeRect(10, 20, 200, 100), kBlueArgb);
+    expectPrimitive(snapshot[1], makeRect(15, 27, 50, 40), kRedArgb);
 }
 
 TEST(RetainedSceneTest, DumpKeepsParentRelativeFramesAndIndentsByDepth) {
     RetainedScene scene = sceneWithPaintedChild();
-    const ShadowView grandChild = makeView(3, makeRect(5, 7, 50, 40));
 
-    scene.createNode(grandChild);
-    scene.insertChild(2, grandChild, 0);
+    addChild(scene, 2, makeView(3, makeRect(5, 7, 50, 40)));
 
     EXPECT_EQ(scene.dump(),
               "RootView #1 frame=(0.00, 0.00, 800.00, 600.00)\n"
@@ -152,7 +191,7 @@ TEST(RetainedSceneTest, UpdateReplacesFrameAndBackgroundColorInPlace) {
     const SceneSnapshot snapshot = scene.snapshot();
 
     ASSERT_EQ(snapshot.size(), 1U);
-    expectRectangle(snapshot[0], makeRect(1, 2, 30, 40), kRedArgb);
+    expectPrimitive(snapshot[0], makeRect(1, 2, 30, 40), kRedArgb);
     EXPECT_NE(scene.dump().find("View #2 frame=(1.00, 2.00, 30.00, 40.00)"), std::string::npos);
 }
 
@@ -169,20 +208,14 @@ TEST(RetainedSceneTest, NodesWithoutAMeaningfulBackgroundColorAreNotPainted) {
     RetainedScene scene;
 
     scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
-
-    const ShadowView withoutProps = makeView(2, makeRect(0, 0, 10, 10));
-    const ShadowView fullyTransparent = makePaintedView(3, makeRect(0, 0, 10, 10), invisibleBlue());
-    const ShadowView opaque = makePaintedView(4, makeRect(0, 0, 10, 10), blue());
-
-    for (const ShadowView& child : {withoutProps, fullyTransparent, opaque}) {
-        scene.createNode(child);
-        scene.insertChild(kSurfaceTag, child, 0);
-    }
+    addChild(scene, kSurfaceTag, makeView(2, makeRect(0, 0, 10, 10)));
+    addChild(scene, kSurfaceTag, makePaintedView(3, makeRect(0, 0, 10, 10), invisibleBlue()));
+    addChild(scene, kSurfaceTag, makePaintedView(4, makeRect(0, 0, 10, 10), blue()));
 
     const SceneSnapshot snapshot = scene.snapshot();
 
     ASSERT_EQ(snapshot.size(), 1U);
-    EXPECT_EQ(snapshot[0].colorArgb, kBlueArgb);
+    EXPECT_EQ(snapshot[0].backgroundColorArgb, kBlueArgb);
 }
 
 TEST(RetainedSceneTest, RemoveDetachesTheChildAndLeavesItAsItsOwnRoot) {
@@ -208,7 +241,7 @@ TEST(RetainedSceneTest, ReparentingRecomposesTheAbsoluteOrigin) {
     const SceneSnapshot snapshot = scene.snapshot();
 
     ASSERT_EQ(snapshot.size(), 1U);
-    expectRectangle(snapshot[0], makeRect(110, 220, 200, 100), kBlueArgb);
+    expectPrimitive(snapshot[0], makeRect(110, 220, 200, 100), kBlueArgb);
 }
 
 TEST(RetainedSceneTest, InsertPlacesTheChildAtTheRequestedIndex) {
@@ -286,7 +319,7 @@ TEST(RetainedSceneTest, RemoveToleratesAnUnknownParentAndAnUnknownChild) {
     const SceneSnapshot snapshot = scene.snapshot();
 
     ASSERT_EQ(snapshot.size(), 1U);
-    expectRectangle(snapshot[0], makeRect(10, 20, 200, 100), kBlueArgb);
+    expectPrimitive(snapshot[0], makeRect(10, 20, 200, 100), kBlueArgb);
     EXPECT_EQ(scene.dump(),
               "RootView #1 frame=(0.00, 0.00, 800.00, 600.00)\n"
               "View #2 frame=(10.00, 20.00, 200.00, 100.00) backgroundColor=rgba(51, 102, 204, 1)\n");
@@ -311,6 +344,212 @@ TEST(RetainedSceneTest, RootsAreOrderedByTagRegardlessOfCreationOrder) {
     EXPECT_EQ(scene.dump(),
               "RootView #2 frame=(0.00, 0.00, 20.00, 20.00)\n"
               "RootView #3 frame=(0.00, 0.00, 30.00, 30.00)\n");
+}
+
+TEST(RetainedSceneTest, ANodeWithoutATransformCarriesTheIdentityMatrixAndNoClips) {
+    const RetainedScene scene = sceneWithPaintedChild();
+    const SceneSnapshot snapshot = scene.snapshot();
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    expectMatrix(snapshot[0].matrix, 1, 1, 0, 0);
+    EXPECT_TRUE(snapshot[0].clips.empty());
+}
+
+TEST(RetainedSceneTest, OpacityMultipliesDownTheTree) {
+    RetainedScene scene;
+    const std::shared_ptr<ViewProps> parentProps = propsWithBackground(blue());
+    const std::shared_ptr<ViewProps> childProps = propsWithBackground(red());
+
+    parentProps->opacity = 0.5;
+    childProps->opacity = 0.5;
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, makeStyledView(2, makeRect(0, 0, 100, 100), parentProps));
+    addChild(scene, 2, makeStyledView(3, makeRect(0, 0, 50, 50), childProps));
+
+    const SceneSnapshot snapshot = scene.snapshot();
+
+    ASSERT_EQ(snapshot.size(), 2U);
+    EXPECT_EQ(snapshot[0].backgroundColorArgb, kHalfBlueArgb);
+    EXPECT_EQ(snapshot[1].backgroundColorArgb, kQuarterRedArgb);
+}
+
+TEST(RetainedSceneTest, AZeroOpacitySubtreePaintsNothing) {
+    RetainedScene scene;
+    const std::shared_ptr<ViewProps> parentProps = propsWithBackground(blue());
+
+    parentProps->opacity = 0;
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, makeStyledView(2, makeRect(0, 0, 100, 100), parentProps));
+    addChild(scene, 2, makePaintedView(3, makeRect(0, 0, 50, 50), red()));
+
+    EXPECT_TRUE(scene.snapshot().empty());
+}
+
+TEST(RetainedSceneTest, BorderRadiiAreClampedSoAdjacentCornersDoNotOverlap) {
+    const std::shared_ptr<ViewProps> viewProps = propsWithBackground(blue());
+
+    viewProps->borderRadii.all = ValueUnit{200.0F, UnitType::Point};
+
+    const SceneSnapshot snapshot = snapshotOfSingleChild(viewProps, makeRect(0, 0, 150, 60));
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    EXPECT_FLOAT_EQ(snapshot[0].borderRadii.topLeft.horizontal, 30);
+    EXPECT_FLOAT_EQ(snapshot[0].borderRadii.topLeft.vertical, 30);
+    EXPECT_FLOAT_EQ(snapshot[0].borderRadii.bottomRight.horizontal, 30);
+    EXPECT_FLOAT_EQ(snapshot[0].borderRadii.bottomRight.vertical, 30);
+}
+
+TEST(RetainedSceneTest, PerCornerBorderRadiiOverrideTheShorthand) {
+    const std::shared_ptr<ViewProps> viewProps = propsWithBackground(blue());
+
+    viewProps->borderRadii.all = ValueUnit{8.0F, UnitType::Point};
+    viewProps->borderRadii.topLeft = ValueUnit{20.0F, UnitType::Point};
+
+    const SceneSnapshot snapshot = snapshotOfSingleChild(viewProps, makeRect(0, 0, 200, 200));
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    EXPECT_FLOAT_EQ(snapshot[0].borderRadii.topLeft.horizontal, 20);
+    EXPECT_FLOAT_EQ(snapshot[0].borderRadii.topRight.horizontal, 8);
+    EXPECT_FLOAT_EQ(snapshot[0].borderRadii.bottomLeft.vertical, 8);
+    EXPECT_FLOAT_EQ(snapshot[0].borderRadii.bottomRight.vertical, 8);
+}
+
+TEST(RetainedSceneTest, BorderWidthsAndColorsAreReadPerSide) {
+    const std::shared_ptr<ViewProps> viewProps = propsWithBackground(blue());
+
+    viewProps->yogaStyle.setBorder(yoga::Edge::Left, yoga::StyleLength::points(1));
+    viewProps->yogaStyle.setBorder(yoga::Edge::Top, yoga::StyleLength::points(2));
+    viewProps->yogaStyle.setBorder(yoga::Edge::Right, yoga::StyleLength::points(3));
+    viewProps->yogaStyle.setBorder(yoga::Edge::Bottom, yoga::StyleLength::points(4));
+    viewProps->borderColors.left = red();
+    viewProps->borderColors.top = blue();
+
+    const SceneSnapshot snapshot = snapshotOfSingleChild(viewProps, makeRect(0, 0, 100, 100));
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    EXPECT_FLOAT_EQ(snapshot[0].borderWidths.left, 1);
+    EXPECT_FLOAT_EQ(snapshot[0].borderWidths.top, 2);
+    EXPECT_FLOAT_EQ(snapshot[0].borderWidths.right, 3);
+    EXPECT_FLOAT_EQ(snapshot[0].borderWidths.bottom, 4);
+    EXPECT_EQ(snapshot[0].borderColorsArgb.left, kRedArgb);
+    EXPECT_EQ(snapshot[0].borderColorsArgb.top, kBlueArgb);
+    EXPECT_EQ(snapshot[0].borderColorsArgb.right, 0U);
+    EXPECT_EQ(snapshot[0].borderColorsArgb.bottom, 0U);
+}
+
+TEST(RetainedSceneTest, BorderOpacityFollowsTheInheritedOpacity) {
+    const std::shared_ptr<ViewProps> viewProps = std::make_shared<ViewProps>();
+
+    viewProps->opacity = 0.5;
+    viewProps->yogaStyle.setBorder(yoga::Edge::All, yoga::StyleLength::points(2));
+    viewProps->borderColors.all = blue();
+
+    const SceneSnapshot snapshot = snapshotOfSingleChild(viewProps, makeRect(0, 0, 100, 100));
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    EXPECT_EQ(snapshot[0].backgroundColorArgb, 0U);
+    EXPECT_EQ(snapshot[0].borderColorsArgb.left, kHalfBlueArgb);
+}
+
+TEST(RetainedSceneTest, EachBorderSideAloneIsEnoughToPaintANode) {
+    RetainedScene scene;
+    const std::shared_ptr<ViewProps> transparentBorder = std::make_shared<ViewProps>();
+
+    transparentBorder->yogaStyle.setBorder(yoga::Edge::All, yoga::StyleLength::points(5));
+    transparentBorder->borderColors.all = invisibleBlue();
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, makeView(2, makeRect(0, 0, 10, 10)));
+    addChild(scene, kSurfaceTag, makeStyledView(3, makeRect(0, 0, 10, 10), transparentBorder));
+
+    Tag nextTag = 4;
+
+    for (const yoga::Edge edge : {yoga::Edge::Bottom, yoga::Edge::Right, yoga::Edge::Top, yoga::Edge::Left}) {
+        const std::shared_ptr<ViewProps> viewProps = std::make_shared<ViewProps>();
+
+        viewProps->yogaStyle.setBorder(edge, yoga::StyleLength::points(3));
+        viewProps->borderColors.all = red();
+        addChild(scene, kSurfaceTag, makeStyledView(nextTag, makeRect(0, 0, 10, 10), viewProps));
+        nextTag++;
+    }
+
+    EXPECT_EQ(scene.snapshot().size(), 4U);
+}
+
+TEST(RetainedSceneTest, ATransformIsAppliedAboutTheCenterOfTheAbsoluteFrame) {
+    const std::shared_ptr<ViewProps> viewProps = propsWithBackground(blue());
+
+    viewProps->transform = Transform::Scale(2, 2, 1);
+
+    const SceneSnapshot snapshot = snapshotOfSingleChild(viewProps, makeRect(100, 50, 200, 100));
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    expectMatrix(snapshot[0].matrix, 2, 2, -200, -100);
+    expectPrimitive(snapshot[0], makeRect(100, 50, 200, 100), kBlueArgb);
+}
+
+TEST(RetainedSceneTest, TransformsComposeFromAncestorToDescendant) {
+    RetainedScene scene;
+    const std::shared_ptr<ViewProps> parentProps = propsWithBackground(blue());
+    const std::shared_ptr<ViewProps> childProps = propsWithBackground(red());
+
+    parentProps->transform = Transform::Translate(30, 40, 0);
+    childProps->transform = Transform::Scale(2, 2, 1);
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, makeStyledView(2, makeRect(10, 20, 200, 100), parentProps));
+    addChild(scene, 2, makeStyledView(3, makeRect(5, 5, 50, 50), childProps));
+
+    const SceneSnapshot snapshot = scene.snapshot();
+
+    ASSERT_EQ(snapshot.size(), 2U);
+    expectMatrix(snapshot[0].matrix, 1, 1, 30, 40);
+    expectMatrix(snapshot[1].matrix, 2, 2, -10, -10);
+}
+
+TEST(RetainedSceneTest, OverflowHiddenClipsDescendantsToTheRoundedBorderBox) {
+    RetainedScene scene;
+    const std::shared_ptr<ViewProps> clippingProps = propsWithBackground(blue());
+
+    clippingProps->yogaStyle.setOverflow(yoga::Overflow::Hidden);
+    clippingProps->borderRadii.all = ValueUnit{16.0F, UnitType::Point};
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, makeStyledView(2, makeRect(20, 30, 200, 150), clippingProps));
+    addChild(scene, 2, makePaintedView(3, makeRect(10, 10, 400, 400), red()));
+
+    const SceneSnapshot snapshot = scene.snapshot();
+
+    ASSERT_EQ(snapshot.size(), 2U);
+    EXPECT_TRUE(snapshot[0].clips.empty());
+    ASSERT_EQ(snapshot[1].clips.size(), 1U);
+    EXPECT_FLOAT_EQ(snapshot[1].clips[0].frame.origin.x, 20);
+    EXPECT_FLOAT_EQ(snapshot[1].clips[0].frame.origin.y, 30);
+    EXPECT_FLOAT_EQ(snapshot[1].clips[0].frame.size.width, 200);
+    EXPECT_FLOAT_EQ(snapshot[1].clips[0].frame.size.height, 150);
+    EXPECT_FLOAT_EQ(snapshot[1].clips[0].borderRadii.topLeft.horizontal, 16);
+    expectMatrix(snapshot[1].clips[0].matrix, 1, 1, 0, 0);
+}
+
+TEST(RetainedSceneTest, AClipCarriesTheTransformOfTheClippingAncestor) {
+    RetainedScene scene;
+    const std::shared_ptr<ViewProps> clippingProps = std::make_shared<ViewProps>();
+
+    clippingProps->yogaStyle.setOverflow(yoga::Overflow::Hidden);
+    clippingProps->transform = Transform::Scale(2, 2, 1);
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, makeStyledView(2, makeRect(0, 0, 100, 100), clippingProps));
+    addChild(scene, 2, makePaintedView(3, makeRect(10, 10, 10, 10), red()));
+
+    const SceneSnapshot snapshot = scene.snapshot();
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    ASSERT_EQ(snapshot[0].clips.size(), 1U);
+    expectMatrix(snapshot[0].clips[0].matrix, 2, 2, -50, -50);
+    expectMatrix(snapshot[0].matrix, 2, 2, -50, -50);
 }
 
 ShadowView mountBlueChild(LinuxMountingManager& mountingManager) {
@@ -343,7 +582,7 @@ TEST(LinuxMountingManagerTest, CreateAndInsertMutationsReachTheScene) {
     const SceneSnapshot snapshot = mountingManager.snapshotScene();
 
     ASSERT_EQ(snapshot.size(), 1U);
-    expectRectangle(snapshot[0], makeRect(24, 24, 120, 80), kBlueArgb);
+    expectPrimitive(snapshot[0], makeRect(24, 24, 120, 80), kBlueArgb);
 }
 
 TEST(LinuxMountingManagerTest, UpdateRemoveAndDeleteMutationsReachTheScene) {
@@ -359,7 +598,7 @@ TEST(LinuxMountingManagerTest, UpdateRemoveAndDeleteMutationsReachTheScene) {
     const SceneSnapshot updated = mountingManager.snapshotScene();
 
     ASSERT_EQ(updated.size(), 1U);
-    expectRectangle(updated[0], makeRect(8, 8, 120, 80), kRedArgb);
+    expectPrimitive(updated[0], makeRect(8, 8, 120, 80), kRedArgb);
 
     ShadowViewMutationList unmount;
 

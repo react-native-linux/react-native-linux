@@ -25,7 +25,10 @@ const binaryPath = path.join(packageDirectory, "..", "..", "build", "dev", "bin"
 const isRegenerating = env["RNL_UPDATE_GOLDENS"] === "1";
 const hasBinary = existsSync(binaryPath);
 
-const fixtures: readonly GoldenFixture[] = [{ bundleFileName: "fabric-view.js", goldenFileName: "fabric-view.png" }];
+const fixtures: readonly GoldenFixture[] = [
+  { bundleFileName: "fabric-view.js", goldenFileName: "fabric-view.png" },
+  { bundleFileName: "view-props.js", goldenFileName: "view-props.png" },
+];
 
 const renderFixture = (fixture: GoldenFixture, outputPath: string): void => {
   execFileSync(binaryPath, ["--golden", path.join(bundlesDirectory, fixture.bundleFileName), outputPath], {

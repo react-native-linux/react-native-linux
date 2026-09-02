@@ -11,7 +11,13 @@ namespace react_native_linux {
 constexpr SkColor kSceneBackgroundColor = SkColorSetRGB(0x14, 0x16, 0x1A);
 
 /**
- * Draws one scene snapshot onto a canvas: the background clear plus one filled rectangle per painted node.
+ * Draws one scene snapshot onto a canvas: the background clear, then per painted node its `overflow: hidden`
+ * ancestor clips, its absolute transform, its rounded background fill and its per-side borders.
+ *
+ * Every number the snapshot carries is already absolute and already composed — opacity is multiplied into the
+ * colours, radii are clamped, transforms are reduced to 2D affines — so nothing here computes scene state. What
+ * remains is Skia geometry: `SkRRect`, `drawDRRect` for the border ring, and one mitred wedge clip per side when
+ * the four side colours are not identical.
  *
  * There is exactly one implementation of this because there is exactly one picture. The window draws it into a
  * swapchain-backed `SkSurface` every frame and the golden-image rig draws it into an offscreen raster surface once;
