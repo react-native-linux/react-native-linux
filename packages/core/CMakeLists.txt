@@ -286,6 +286,83 @@ target_link_libraries(rnl_jsidynamic PUBLIC jsi folly_runtime glog)
 set_target_properties(rnl_jsidynamic PROPERTIES CXX_STANDARD 20)
 
 # ---------------------------------------------------------------------------
+# Skia
+#
+# Skia has three consumers: rnl_window draws the retained scene into a swapchain-backed SkSurface,
+# hello_react --golden draws the same scene into an offscreen raster SkSurface, and the Linux TextLayoutManager
+# lays text out with SkParagraph so Yoga can measure it. The detection therefore runs before ReactCommon is
+# added, because whether Skia is available is what decides whether the vendored TextLayoutManager stub is
+# replaced; see *The Linux TextLayoutManager* below.
+#
+# Skia is a prebuilt static archive pinned by scripts/skia.lock.json; see docs/cpp-toolchain.md for the
+# acquisition decision and the accepted risk. Configure with -DRNL_ENABLE_SKIA=OFF to skip it and everything
+# that draws or shapes text.
+#
+# The test configure never takes this path: RNL_BUILD_TESTS is the Hermes-free GoogleTest build, and keeping it
+# Skia-free is what keeps the unit CI job free of the 93 MB archive and the freetype/fontconfig prerequisites.
+# ---------------------------------------------------------------------------
+
+option(RNL_ENABLE_SKIA "Build the Skia-dependent targets: text layout, the scene painter, rnl_window, and hello_react --golden" ON)
+
+if(RNL_ENABLE_SKIA AND NOT RNL_BUILD_TESTS)
+    set(RNL_SKIA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/skia)
+    set(RNL_SKIA_LIBRARY ${RNL_SKIA_DIR}/lib/libskia.a)
+    set(RNL_SKIA_MISSING "")
+
+    find_package(PkgConfig QUIET)
+
+    if(PkgConfig_FOUND)
+        pkg_check_modules(RNL_FREETYPE QUIET IMPORTED_TARGET freetype2)
+        pkg_check_modules(RNL_FONTCONFIG QUIET IMPORTED_TARGET fontconfig)
+    else()
+        list(APPEND RNL_SKIA_MISSING "pkg-config")
+    endif()
+
+    if(NOT RNL_FREETYPE_FOUND)
+        list(APPEND RNL_SKIA_MISSING "freetype2")
+    endif()
+
+    if(NOT RNL_FONTCONFIG_FOUND)
+        list(APPEND RNL_SKIA_MISSING "fontconfig")
+    endif()
+
+    if(NOT EXISTS "${RNL_SKIA_LIBRARY}")
+        list(APPEND RNL_SKIA_MISSING "third_party/skia (run: node scripts/vendor-skia.ts)")
+    endif()
+endif()
+
+if(RNL_ENABLE_SKIA AND NOT RNL_BUILD_TESTS AND RNL_SKIA_MISSING)
+    string(REPLACE ";" ", " RNL_SKIA_MISSING_TEXT "${RNL_SKIA_MISSING}")
+    message(WARNING "Skia is unavailable, missing: ${RNL_SKIA_MISSING_TEXT}; text layout, rnl_window and hello_react --golden are disabled")
+elseif(RNL_ENABLE_SKIA AND NOT RNL_BUILD_TESTS)
+    # SK_RELEASE is not an optimisation switch here: the pinned archive is a release build, and
+    # Skia's public headers change class layout when SK_DEBUG is defined, so a Debug preset would
+    # otherwise compile against a different ABI than the one in libskia.a.
+    #
+    # The rust-skia `textlayout` variant ships SkParagraph, SkShaper and SkUnicode as four archives beside
+    # libskia.a, and each of them is self-contained: HarfBuzz is compiled into libskshaper.a and ICU 78,
+    # including its data, into libskunicode_icu.a, so neither adds a system dependency. They reference libskia
+    # and libskia references none of them, so `rnl_skia` is an interface library that names them in that one
+    # valid order rather than four things every consumer has to remember to list.
+    foreach(rnl_skia_module skia skparagraph skshaper skunicode_icu skunicode_core)
+        add_library(rnl_skia_${rnl_skia_module} STATIC IMPORTED GLOBAL)
+        set_target_properties(rnl_skia_${rnl_skia_module} PROPERTIES
+            IMPORTED_LOCATION ${RNL_SKIA_DIR}/lib/lib${rnl_skia_module}.a)
+    endforeach()
+
+    add_library(rnl_skia INTERFACE)
+    target_include_directories(rnl_skia INTERFACE ${RNL_SKIA_DIR})
+    target_compile_definitions(rnl_skia INTERFACE SK_GANESH SK_VULKAN SK_RELEASE)
+    target_link_libraries(rnl_skia
+        INTERFACE
+            rnl_skia_skparagraph
+            rnl_skia_skshaper
+            rnl_skia_skunicode_icu
+            rnl_skia_skunicode_core
+            rnl_skia_skia)
+endif()
+
+# ---------------------------------------------------------------------------
 # ReactCommon
 #
 # This is the transitive closure of react_renderer_core, yoga and the bridgeless
@@ -305,8 +382,8 @@ set_target_properties(rnl_jsidynamic PROPERTIES CXX_STANDARD 20)
 # below is named by a target already in that closure, none of them introduces a system
 # dependency, and the two text subdirectories arrive because react_renderer_uimanager links
 # react_renderer_dom, which links rrc_text. The C++ platform selector resolves rrc_text and
-# react_renderer_textlayoutmanager to their platform/cxx sources, where TextLayoutManager is a
-# stub with no shaping engine behind it.
+# react_renderer_textlayoutmanager to their platform/cxx sources; rrc_text keeps those, and
+# react_renderer_textlayoutmanager has its one stub source replaced below.
 #
 # ReactCxxPlatform's react/renderer/{uimanager,scheduler} carry IMountingManager and
 # SchedulerDelegateImpl. They are the only two subdirectories of that tree used here besides
@@ -454,6 +531,61 @@ foreach(rnl_target IN LISTS RNL_REACT_COMMON_TARGETS)
     endif()
 endforeach()
 
+# ---------------------------------------------------------------------------
+# The Linux TextLayoutManager
+#
+# react/renderer/textlayoutmanager's own CMakeLists globs platform/cxx, whose TextLayoutManager::measure returns
+# layoutConstraints.minimumSize and shapes nothing. Replacing it is replacing one translation unit, and the least
+# invasive place to do that is here, at our own add_subdirectory call site: drop the stub from the object
+# library's source list and add ours in its place. The vendored tree is never edited, and the vendored header is
+# still the declaration everything compiles against, which is what keeps measureLines and prepareLayout absent
+# and the C++20 concepts in TextLayoutManagerExtended reporting them unsupported.
+#
+# Our two sources join that object library rather than rnl_scene_painter because the references to
+# TextLayoutManager::measure live in the same library, and a static archive only resolves backwards.
+#
+# With Skia off the stub stays, so the sanitizer presets and the Hermes-free test configure are unchanged and
+# neither has to link libskia.a. Text then measures as zero and draws as nothing, which is the pre-existing
+# behaviour rather than a new failure mode.
+# ---------------------------------------------------------------------------
+
+if(TARGET rnl_skia)
+    set(RNL_TEXT_LAYOUT_MANAGER_STUB
+        ${REACT_COMMON_DIR}/react/renderer/textlayoutmanager/platform/cxx/react/renderer/textlayoutmanager/TextLayoutManager.cpp)
+    cmake_path(SET RNL_TEXT_LAYOUT_MANAGER_STUB NORMALIZE "${RNL_TEXT_LAYOUT_MANAGER_STUB}")
+    get_target_property(RNL_TEXT_LAYOUT_MANAGER_RAW_SOURCES react_renderer_textlayoutmanager SOURCES)
+    set(RNL_TEXT_LAYOUT_MANAGER_SOURCES "")
+
+    foreach(rnl_source IN LISTS RNL_TEXT_LAYOUT_MANAGER_RAW_SOURCES)
+        cmake_path(SET rnl_normalized_source NORMALIZE "${rnl_source}")
+        list(APPEND RNL_TEXT_LAYOUT_MANAGER_SOURCES "${rnl_normalized_source}")
+    endforeach()
+
+    if(NOT "${RNL_TEXT_LAYOUT_MANAGER_STUB}" IN_LIST RNL_TEXT_LAYOUT_MANAGER_SOURCES)
+        message(FATAL_ERROR
+            "The upstream TextLayoutManager stub is no longer at ${RNL_TEXT_LAYOUT_MANAGER_STUB}; the source swap in packages/core/CMakeLists.txt needs updating for this React Native pin")
+    endif()
+
+    list(REMOVE_ITEM RNL_TEXT_LAYOUT_MANAGER_SOURCES ${RNL_TEXT_LAYOUT_MANAGER_STUB})
+    list(APPEND RNL_TEXT_LAYOUT_MANAGER_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/TextLayoutManager.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/TextPipeline.cpp)
+    set_property(TARGET react_renderer_textlayoutmanager PROPERTY SOURCES ${RNL_TEXT_LAYOUT_MANAGER_SOURCES})
+
+    # The vendored CMakeLists calls target_link_libraries without keywords, and the two signatures cannot be
+    # mixed on one target, so this addition drops the keyword too. freetype and fontconfig follow the Skia
+    # archives rather than travelling as usage requirements of them, for the reason rnl_window already documents;
+    # fontconfig is also where SkFontMgr_fontconfig.h's own include of <fontconfig/fontconfig.h> resolves.
+    target_link_libraries(react_renderer_textlayoutmanager
+        rnl_skia
+        PkgConfig::RNL_FONTCONFIG
+        PkgConfig::RNL_FREETYPE)
+    # An absolute source path, because there is no asset packaging yet: fonts are vendored beside the sources and
+    # read from there. Packaging them into an installable bundle belongs with the CLI work in M3.
+    target_compile_definitions(react_renderer_textlayoutmanager
+        PRIVATE "RNL_BUNDLED_FONT_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/fonts\"")
+endif()
+
 # The test configure stops here: everything below links hermesvm, and the reason this build
 # exists at all is that Hermes cannot share a configure with googletest.
 if(RNL_BUILD_TESTS)
@@ -467,8 +599,10 @@ endif()
 #
 # The engine and Fabric half of the platform: the bridgeless ReactInstance, the Fabric host and the retained
 # scene. Both executables link it, so the ReactCommon closure and the atomic hazard from the fix ledger are named
-# once instead of being duplicated onto each target. Nothing here draws: Skia and the SK_* definitions live on
-# rnl_scene_painter, which is the only translation unit that turns a scene into pixels.
+# once instead of being duplicated onto each target. Nothing in src/ here draws; rnl_scene_painter is the only
+# translation unit that turns a scene into pixels. Skia still reaches this target transitively when it is
+# enabled, because the TextLayoutManager swapped into react_renderer_textlayoutmanager needs SkParagraph to
+# answer Yoga.
 # ---------------------------------------------------------------------------
 
 add_library(rnl_react_core STATIC
@@ -476,6 +610,8 @@ add_library(rnl_react_core STATIC
     src/FabricHost.cpp
     src/HermesJSRuntimeFactory.cpp
     src/HostTimerRegistry.cpp
+    src/InputDispatcher.cpp
+    src/InputPipeline.cpp
     src/JsErrorReporter.cpp
     src/LinuxMountingManager.cpp
     src/ReactHost.cpp
@@ -493,60 +629,17 @@ target_link_libraries(rnl_react_core
         atomic)
 
 # ---------------------------------------------------------------------------
-# Skia, and the one place the scene is painted
+# The one place the scene is painted
 #
-# Skia has two consumers now: rnl_window draws the retained scene into a swapchain-backed SkSurface, and
-# hello_react --golden draws the same scene into an offscreen raster SkSurface for the golden-image rig. The
-# detection therefore lives here rather than inside the window block, and rnl_scene_painter carries the single
-# paint implementation both of them call. A golden that came from a second painter would prove nothing.
+# rnl_window draws the retained scene into a swapchain-backed SkSurface and hello_react --golden draws the same
+# scene into an offscreen raster SkSurface, both through this one implementation. A golden that came from a
+# second painter would prove nothing.
 #
-# Skia is a prebuilt static archive pinned by scripts/skia.lock.json; see docs/cpp-toolchain.md for the
-# acquisition decision and the accepted risk. Configure with -DRNL_ENABLE_SKIA=OFF to skip it and everything
-# that draws.
+# Text is the exception to "nothing outside this target draws": the paragraph the painter draws is built by
+# layoutParagraph, which lives with the TextLayoutManager because measurement has to build the same one.
 # ---------------------------------------------------------------------------
 
-option(RNL_ENABLE_SKIA "Build the Skia-dependent targets: the scene painter, rnl_window, and hello_react --golden" ON)
-
-if(RNL_ENABLE_SKIA)
-    set(RNL_SKIA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/skia)
-    set(RNL_SKIA_LIBRARY ${RNL_SKIA_DIR}/lib/libskia.a)
-    set(RNL_SKIA_MISSING "")
-
-    find_package(PkgConfig QUIET)
-
-    if(PkgConfig_FOUND)
-        pkg_check_modules(RNL_FREETYPE QUIET IMPORTED_TARGET freetype2)
-        pkg_check_modules(RNL_FONTCONFIG QUIET IMPORTED_TARGET fontconfig)
-    else()
-        list(APPEND RNL_SKIA_MISSING "pkg-config")
-    endif()
-
-    if(NOT RNL_FREETYPE_FOUND)
-        list(APPEND RNL_SKIA_MISSING "freetype2")
-    endif()
-
-    if(NOT RNL_FONTCONFIG_FOUND)
-        list(APPEND RNL_SKIA_MISSING "fontconfig")
-    endif()
-
-    if(NOT EXISTS "${RNL_SKIA_LIBRARY}")
-        list(APPEND RNL_SKIA_MISSING "third_party/skia (run: node scripts/vendor-skia.ts)")
-    endif()
-endif()
-
-if(RNL_ENABLE_SKIA AND RNL_SKIA_MISSING)
-    string(REPLACE ";" ", " RNL_SKIA_MISSING_TEXT "${RNL_SKIA_MISSING}")
-    message(WARNING "Skia is unavailable, missing: ${RNL_SKIA_MISSING_TEXT}; rnl_window and hello_react --golden are disabled")
-elseif(RNL_ENABLE_SKIA)
-    # SK_RELEASE is not an optimisation switch here: the pinned archive is a release build, and
-    # Skia's public headers change class layout when SK_DEBUG is defined, so a Debug preset would
-    # otherwise compile against a different ABI than the one in libskia.a.
-    add_library(rnl_skia STATIC IMPORTED GLOBAL)
-    set_target_properties(rnl_skia PROPERTIES
-        IMPORTED_LOCATION ${RNL_SKIA_LIBRARY}
-        INTERFACE_INCLUDE_DIRECTORIES ${RNL_SKIA_DIR}
-        INTERFACE_COMPILE_DEFINITIONS "SK_GANESH;SK_VULKAN;SK_RELEASE")
-
+if(TARGET rnl_skia)
     add_library(rnl_scene_painter STATIC src/ScenePainter.cpp)
     target_compile_options(rnl_scene_painter PRIVATE -Wall -Wextra)
     target_include_directories(rnl_scene_painter PUBLIC src)
@@ -601,6 +694,7 @@ if(RNL_ENABLE_WINDOW)
 
     if(PkgConfig_FOUND)
         pkg_check_modules(RNL_WAYLAND_CLIENT QUIET IMPORTED_TARGET wayland-client)
+        pkg_check_modules(RNL_XKBCOMMON QUIET IMPORTED_TARGET xkbcommon)
         pkg_get_variable(RNL_WAYLAND_SCANNER wayland-scanner wayland_scanner)
         pkg_get_variable(RNL_WAYLAND_PROTOCOLS_DIR wayland-protocols pkgdatadir)
     endif()
@@ -613,6 +707,12 @@ if(RNL_ENABLE_WINDOW)
 
     if(NOT RNL_WAYLAND_CLIENT_FOUND)
         list(APPEND RNL_WINDOW_MISSING "wayland-client")
+    endif()
+
+    # wl_seat carries no keysym translation of its own: the compositor sends a keymap and every client compiles it
+    # with libxkbcommon. See *Input* in docs/cpp-toolchain.md.
+    if(NOT RNL_XKBCOMMON_FOUND)
+        list(APPEND RNL_WINDOW_MISSING "xkbcommon")
     endif()
 
     if(NOT RNL_WAYLAND_SCANNER OR NOT EXISTS "${RNL_WAYLAND_SCANNER}")
@@ -663,6 +763,7 @@ elseif(RNL_ENABLE_WINDOW)
 
     add_executable(rnl_window
         src/SkiaVulkanRenderer.cpp
+        src/WaylandSeat.cpp
         src/WaylandWindow.cpp
         src/WindowMain.cpp
         src/WindowSession.cpp)
@@ -677,6 +778,7 @@ elseif(RNL_ENABLE_WINDOW)
             rnl_xdg_shell
             rnl_skia
             Vulkan::Vulkan
+            PkgConfig::RNL_XKBCOMMON
             PkgConfig::RNL_FREETYPE
             PkgConfig::RNL_FONTCONFIG
             Threads::Threads

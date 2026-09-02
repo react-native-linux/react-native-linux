@@ -3,6 +3,7 @@
 #include "LinuxMountingManager.h"
 #include "RetainedScene.h"
 
+#include <react/renderer/graphics/Point.h>
 #include <react/renderer/graphics/Size.h>
 
 #include <optional>
@@ -45,6 +46,7 @@ struct FabricDamageRunResult {
 };
 
 int runBundle(const std::optional<std::string>& bundlePath, BundleMode bundleMode);
+int runInjectedClick(const std::string& bundlePath, facebook::react::Point surfacePoint);
 FabricRunResult runFabricBundle(const std::optional<std::string>& bundlePath, facebook::react::Size surfaceSize);
 FabricDamageRunResult runFabricBundleAcrossCommits(const std::string& bundlePath, facebook::react::Size surfaceSize);
 

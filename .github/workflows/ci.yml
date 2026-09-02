@@ -294,6 +294,19 @@ jobs:
         if: matrix.skia == 'ON'
         run: node scripts/vendor-skia.ts
 
+      # The text golden is only reproducible against the pinned font files; without them the paragraph would be
+      # shaped with whatever fontconfig finds on the runner, which is not what the checked-in PNG was made from.
+      - name: Cache vendored fonts
+        if: matrix.skia == 'ON'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: packages/core/fonts
+          key: rnl-vendor-fonts-ubuntu-24.04-${{ hashFiles('scripts/fonts.lock.json', 'scripts/vendor-fonts.ts') }}
+
+      - name: Vendor fonts
+        if: matrix.skia == 'ON'
+        run: node scripts/vendor-fonts.ts
+
       # Restored on every event, saved only from main: a per-preset ccache is ~2 GB and the repository cache
       # ceiling is 10 GB, so letting every pull request write its own copy would evict the warm entry the
       # rest of them read. Pull requests therefore warm from main and never pay the storage.
@@ -359,6 +372,18 @@ jobs:
           "$binary" --fabric packages/core/test-bundles/fabric-view.js | tee /tmp/rnl-fabric.log
           grep -q "fabric-view: committed surface 1" /tmp/rnl-fabric.log
           grep -q "View #4 frame=(24.00, 24.00, 120.00, 80.00) backgroundColor=rgba(51, 102, 204, 1)" /tmp/rnl-fabric.log
+
+      # Only the Skia entry has a TextLayoutManager behind Yoga; with -DRNL_ENABLE_SKIA=OFF the upstream stub is
+      # still compiled in and every paragraph measures as zero, so this assertion belongs to the dev entry alone.
+      - name: Run the text acceptance path
+        if: matrix.skia == 'ON'
+        run: |
+          set -euo pipefail
+          binary="build/$RNL_PRESET/bin/hello_react"
+
+          "$binary" --fabric packages/core/test-bundles/text.js | tee /tmp/rnl-text.log
+          grep -q "text: committed surface 1" /tmp/rnl-text.log
+          grep -qE 'Paragraph #[0-9]+ frame=.* text="Text renders on Linux"' /tmp/rnl-text.log
 
       - name: Compare golden images
         if: matrix.skia == 'ON'

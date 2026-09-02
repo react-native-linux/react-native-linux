@@ -1,5 +1,7 @@
 #include "ScenePainter.h"
 
+#include "TextPipeline.h"
+
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkMatrix.h"
@@ -9,9 +11,11 @@
 #include "include/core/SkPoint.h"
 #include "include/core/SkRRect.h"
 #include "include/core/SkRect.h"
+#include "modules/skparagraph/include/Paragraph.h"
 
 #include <algorithm>
 #include <array>
+#include <memory>
 
 namespace react_native_linux {
 
@@ -137,6 +141,20 @@ void paintBorder(SkCanvas& canvas, const ScenePrimitive& primitive, const SkRRec
               edgeWedge(outerBottomLeft, outerTopLeft, innerTopLeft, innerBottomLeft), colors.left);
 }
 
+/**
+ * Draws the paragraph in the content box the scene resolved, laid out against that box's width.
+ *
+ * That width is the one Yoga laid the node out with, and the paragraph is rebuilt from the same
+ * `AttributedString` through the same `layoutParagraph` the measurement used, so the lines drawn here are the
+ * lines that were measured.
+ */
+void paintText(SkCanvas& canvas, const SceneTextContent& text) {
+    const std::unique_ptr<skia::textlayout::Paragraph> paragraph =
+        layoutParagraph(text.attributedString, text.paragraphAttributes, static_cast<float>(text.frame.size.width));
+
+    paragraph->paint(&canvas, text.frame.origin.x, text.frame.origin.y);
+}
+
 void paintPrimitive(SkCanvas& canvas, const ScenePrimitive& primitive) {
     const SkRRect outer = toSkRRect(toSkRect(primitive.frame), primitive.borderRadii);
 
@@ -156,6 +174,10 @@ void paintPrimitive(SkCanvas& canvas, const ScenePrimitive& primitive) {
     }
 
     paintBorder(canvas, primitive, outer);
+
+    if (primitive.text.has_value()) {
+        paintText(canvas, primitive.text.value());
+    }
 }
 
 /**

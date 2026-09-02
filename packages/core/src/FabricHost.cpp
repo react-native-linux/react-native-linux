@@ -3,6 +3,9 @@
 #include <jsi/jsi.h>
 #include <react/renderer/componentregistry/ComponentDescriptorProviderRegistry.h>
 #include <react/renderer/components/root/RootComponentDescriptor.h>
+#include <react/renderer/components/text/ParagraphComponentDescriptor.h>
+#include <react/renderer/components/text/RawTextComponentDescriptor.h>
+#include <react/renderer/components/text/TextComponentDescriptor.h>
 #include <react/renderer/components/view/ViewComponentDescriptor.h>
 #include <react/renderer/core/EventBeat.h>
 #include <react/renderer/core/LayoutConstraints.h>
@@ -14,6 +17,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace react_native_linux {
 
@@ -23,12 +27,24 @@ constexpr facebook::react::SurfaceId kSurfaceId = 1;
 
 // ComponentDescriptorRegistry keeps a reference to the provider registry that created it, so the provider
 // registry has to outlive the Scheduler rather than the factory call.
+//
+// The set is StubComponentRegistryFactory's, minus the components that have no renderer behind them yet.
+// `Text` and `RawText` are registered even though neither ever reaches the mounting layer — they are not
+// view-forming, and `ParagraphShadowNode` flattens them into the `AttributedString` its state carries — because
+// the reconciler cannot create a node whose component has no descriptor. `Paragraph`'s descriptor is what
+// constructs the `TextLayoutManager`, so registering it is also what wires SkParagraph into Yoga measurement.
 facebook::react::ComponentRegistryFactory createComponentRegistryFactory(
     const std::shared_ptr<facebook::react::ComponentDescriptorProviderRegistry>& providerRegistry) {
     providerRegistry->add(
         facebook::react::concreteComponentDescriptorProvider<facebook::react::RootComponentDescriptor>());
     providerRegistry->add(
         facebook::react::concreteComponentDescriptorProvider<facebook::react::ViewComponentDescriptor>());
+    providerRegistry->add(
+        facebook::react::concreteComponentDescriptorProvider<facebook::react::ParagraphComponentDescriptor>());
+    providerRegistry->add(
+        facebook::react::concreteComponentDescriptorProvider<facebook::react::TextComponentDescriptor>());
+    providerRegistry->add(
+        facebook::react::concreteComponentDescriptorProvider<facebook::react::RawTextComponentDescriptor>());
 
     return [providerRegistry](const facebook::react::EventDispatcher::Weak& eventDispatcher,
                               const std::shared_ptr<const facebook::react::ContextContainer>& contextContainer) {
@@ -50,6 +66,24 @@ void installStopSurfaceBinding(facebook::jsi::Runtime& runtime) {
     runtime.global().setProperty(runtime, "RN$stopSurface", stopSurface);
 }
 
+/**
+ * The platform `EventBeat`, which upstream requires every host to subclass because only the host knows when a
+ * frame's events are complete.
+ *
+ * `EventBeat::induce` is protected and does nothing until an `EventQueue` has asked for a beat, so a subclass that
+ * widens it is the entire platform contribution: the queue requests, the frame thread induces, and the base class
+ * hands the flush to `RuntimeScheduler::scheduleWork`, which is what puts the beat callback on the JavaScript
+ * thread. `ReactCxxPlatform`'s `RunLoopObserverManager` produces the same behaviour through a `RunLoopObserver`
+ * whose `startObserving` and `stopObserving` are empty; there is no run loop to observe here either, and its
+ * `induce` is declared but never defined, so the observer indirection would buy an unresolved symbol.
+ */
+class FrameEventBeat final : public facebook::react::EventBeat {
+public:
+    using facebook::react::EventBeat::EventBeat;
+
+    void induceFromFrameThread() const { induce(); }
+};
+
 } // namespace
 
 FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::react::Size surfaceSize)
@@ -66,14 +100,22 @@ FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::
     schedulerToolbox.runtimeExecutor = reactInstance.getBufferedRuntimeExecutor();
     schedulerToolbox.bridgelessBindingsExecutor = reactInstance.getUnbufferedRuntimeExecutor();
     schedulerToolbox.componentRegistryFactory = createComponentRegistryFactory(componentDescriptorProviderRegistry_);
+    // Scheduler calls this factory exactly once, synchronously, from the constructor below, and does not retain the
+    // toolbox; the beat it produces lives inside the EventDispatcher for as long as the Scheduler does.
     schedulerToolbox.eventBeatFactory =
-        [runtimeScheduler](std::shared_ptr<facebook::react::EventBeat::OwnerBox> ownerBox) {
-            return std::make_unique<facebook::react::EventBeat>(std::move(ownerBox), *runtimeScheduler);
+        [runtimeScheduler, this](std::shared_ptr<facebook::react::EventBeat::OwnerBox> ownerBox) {
+            std::unique_ptr<FrameEventBeat> eventBeat =
+                std::make_unique<FrameEventBeat>(std::move(ownerBox), *runtimeScheduler);
+
+            eventBeatInducer_ = [beat = eventBeat.get()]() { beat->induceFromFrameThread(); };
+
+            return eventBeat;
         };
 
     schedulerDelegate_ = std::make_unique<facebook::react::SchedulerDelegateImpl>(mountingManager_);
     scheduler_ = std::make_unique<facebook::react::Scheduler>(schedulerToolbox, nullptr, schedulerDelegate_.get());
     schedulerDelegate_->setUIManager(scheduler_->getUIManager());
+    inputDispatcher_ = std::make_unique<InputDispatcher>(scheduler_->getUIManager(), kSurfaceId);
 
     reactInstance.getUnbufferedRuntimeExecutor()(installStopSurfaceBinding);
 
@@ -102,6 +144,10 @@ void FabricHost::stopSurface() {
         surfaceHandler_->stop();
     }
 }
+
+void FabricHost::dispatchInput(const std::vector<InputEvent>& events) { inputDispatcher_->dispatch(events); }
+
+void FabricHost::induceEventBeat() { eventBeatInducer_(); }
 
 SceneFrame FabricHost::takeFrame() {
     return mountingManager_->takeFrame();

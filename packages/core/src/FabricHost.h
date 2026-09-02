@@ -1,5 +1,7 @@
 #pragma once
 
+#include "InputDispatcher.h"
+#include "InputPipeline.h"
 #include "LinuxMountingManager.h"
 #include "RetainedScene.h"
 
@@ -11,8 +13,10 @@
 #include <react/runtime/ReactInstance.h>
 #include <react/utils/ContextContainer.h>
 
+#include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace react_native_linux {
 
@@ -36,6 +40,11 @@ namespace react_native_linux {
  * Shutdown contract: stopSurface commits an empty tree and queues the resulting unmount onto the JavaScript
  * thread. The owner drains that thread before destroying the host, because the queued rendering update holds a
  * raw pointer to the scheduler delegate and upstream only guards it behind a feature flag that is off by default.
+ *
+ * Input is the other pair the frame thread calls while the surface is running. `dispatchInput` hit-tests and
+ * enqueues, `induceEventBeat` releases everything the queue has accumulated onto the JavaScript thread, and the
+ * frame loop calls them in that order once per frame — which is what makes event delivery frame-paced rather than
+ * per raw compositor event. See *Input* in docs/cpp-toolchain.md.
  */
 class FabricHost final {
 public:
@@ -48,6 +57,8 @@ public:
 
     void setSurfaceSize(facebook::react::Size surfaceSize);
     void stopSurface();
+    void dispatchInput(const std::vector<InputEvent>& events);
+    void induceEventBeat();
     SceneFrame takeFrame();
     SceneSnapshot snapshotScene() const;
     std::string dumpScene() const;
@@ -56,8 +67,10 @@ private:
     std::shared_ptr<const facebook::react::ContextContainer> contextContainer_;
     std::shared_ptr<facebook::react::ComponentDescriptorProviderRegistry> componentDescriptorProviderRegistry_;
     std::shared_ptr<LinuxMountingManager> mountingManager_;
+    std::function<void()> eventBeatInducer_;
     std::unique_ptr<facebook::react::SchedulerDelegateImpl> schedulerDelegate_;
     std::unique_ptr<facebook::react::Scheduler> scheduler_;
+    std::unique_ptr<InputDispatcher> inputDispatcher_;
     std::unique_ptr<facebook::react::SurfaceHandler> surfaceHandler_;
 };
 

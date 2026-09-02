@@ -27,7 +27,9 @@ FetchContent_MakeAvailable(googletest)
 include(GoogleTest)
 
 add_executable(rnl_core_tests
+    InputTest.cpp
     SceneTest.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/InputPipeline.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/LinuxMountingManager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/RetainedScene.cpp)
 target_compile_options(rnl_core_tests PRIVATE -Wall -Wextra -fexceptions -frtti)

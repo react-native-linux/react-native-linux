@@ -29,6 +29,8 @@ const hasBinary = existsSync(binaryPath);
 const fixtures: readonly GoldenFixture[] = [
   { bundleFileName: "fabric-view.js", goldenFileName: "fabric-view.png", renderFlag: "--golden" },
   { bundleFileName: "view-props.js", goldenFileName: "view-props.png", renderFlag: "--golden" },
+  // Text is reproducible only against the fonts scripts/vendor-fonts.ts pins into packages/core/fonts.
+  { bundleFileName: "text.js", goldenFileName: "text.png", renderFlag: "--golden" },
   { bundleFileName: "damage.js", goldenFileName: "damage.png", renderFlag: "--damage-golden" },
 ];
 

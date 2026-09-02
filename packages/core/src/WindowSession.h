@@ -1,12 +1,14 @@
 #pragma once
 
 #include "FabricHost.h"
+#include "InputPipeline.h"
 #include "LinuxMountingManager.h"
 #include "ReactHost.h"
 #include "WaylandWindow.h"
 
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace react_native_linux {
 
@@ -27,6 +29,11 @@ namespace react_native_linux {
  * `mountSynchronously` is true, so a resize relayouts and mounts on the frame thread itself. Thread affinity is
  * therefore not what keeps the scene consistent; the mounting manager's mutex is.
  *
+ * `deliverInput` is the third, and is called once per frame whether or not the compositor sent anything: it
+ * hit-tests and enqueues the frame's events and then induces the event beat, which is what releases everything
+ * Fabric has queued — input, layout events, JavaScript-driven events — onto the JavaScript thread at frame
+ * cadence instead of per raw compositor event.
+ *
  * Shutdown contract: destruction stops the surface, drains the JavaScript thread so the queued unmount runs while
  * the scheduler delegate is still alive, and only then destroys the Fabric host and the instance, in that order.
  */
@@ -40,6 +47,7 @@ public:
     ~WindowSession() noexcept;
 
     void resize(WindowSize size);
+    void deliverInput(const std::vector<InputEvent>& events);
     SceneFrame takeFrame();
     bool hasReportedFatalError() const;
 

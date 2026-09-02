@@ -5,8 +5,10 @@
 #include <algorithm>
 #include <cerrno>
 #include <cstring>
+#include <memory>
 #include <poll.h>
 #include <stdexcept>
+#include <vector>
 #include <wayland-client.h>
 
 namespace react_native_linux {
@@ -88,6 +90,9 @@ WaylandWindow::WaylandWindow(const std::string& title, WindowSize initialSize) :
 WaylandWindow::~WaylandWindow() noexcept {
     destroyFrameCallback();
 
+    // Before the connection goes away: releasing the pointer, the keyboard and the seat are all requests on it.
+    seat_.reset();
+
     if (toplevel_ != nullptr) {
         xdg_toplevel_destroy(toplevel_);
     }
@@ -153,6 +158,14 @@ bool WaylandWindow::waitForRedraw(std::chrono::milliseconds fallbackTimeout) {
     return !closed_;
 }
 
+std::vector<InputEvent> WaylandWindow::takeInputEvents() {
+    if (seat_ == nullptr) {
+        return {};
+    }
+
+    return seat_->takeEvents();
+}
+
 void WaylandWindow::bindGlobal(wl_registry* registry, uint32_t name, const char* interfaceName, uint32_t version) {
     if (std::strcmp(interfaceName, wl_compositor_interface.name) == 0) {
         void* bound =
@@ -162,6 +175,9 @@ void WaylandWindow::bindGlobal(wl_registry* registry, uint32_t name, const char*
         void* bound =
             wl_registry_bind(registry, name, &xdg_wm_base_interface, std::min(version, kMaximumWmBaseVersion));
         wmBase_ = static_cast<xdg_wm_base*>(bound);
+    } else if (std::strcmp(interfaceName, wl_seat_interface.name) == 0 && version >= kMinimumSeatVersion) {
+        void* bound = wl_registry_bind(registry, name, &wl_seat_interface, kMinimumSeatVersion);
+        seat_ = std::make_unique<WaylandSeat>(static_cast<wl_seat*>(bound));
     }
 }
 

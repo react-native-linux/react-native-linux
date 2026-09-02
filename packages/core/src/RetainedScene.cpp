@@ -1,7 +1,10 @@
 #include "RetainedScene.h"
 
+#include <react/renderer/attributedstring/AttributedString.h>
 #include <react/renderer/components/root/RootShadowNode.h>
+#include <react/renderer/components/text/ParagraphState.h>
 #include <react/renderer/components/view/ViewProps.h>
+#include <react/renderer/core/ConcreteState.h>
 #include <react/renderer/graphics/Color.h>
 #include <react/renderer/graphics/Rect.h>
 #include <react/renderer/graphics/Transform.h>
@@ -123,6 +126,50 @@ uint32_t toArgb(facebook::react::SharedColor color, float opacity) {
     return (alpha << kAlphaShift) | (red << kRedShift) | (green << kGreenShift) | blue;
 }
 
+/**
+ * The same alpha multiplication `toArgb` performs, kept in React Native's own colour type because text colours
+ * travel to the painter inside the `AttributedString` rather than as packed pixels.
+ */
+facebook::react::SharedColor scaleColorAlpha(facebook::react::SharedColor color, float opacity) {
+    if (!facebook::react::isColorMeaningful(color)) {
+        return color;
+    }
+
+    const float scaledAlpha = static_cast<float>(facebook::react::alphaFromColor(color)) * opacity;
+
+    return facebook::react::colorFromRGBA(facebook::react::redFromColor(color), facebook::react::greenFromColor(color),
+                                          facebook::react::blueFromColor(color),
+                                          static_cast<uint8_t>(std::lround(scaledAlpha)));
+}
+
+/**
+ * Resolves a node's text for one snapshot: the absolute content box the paragraph occupies, and the inherited
+ * opacity folded into every colour a fragment can paint with.
+ *
+ * Copying the string first is what makes the colour rewrite safe: `Sealable` clears the seal on copy, so the
+ * retained node's own content is never mutated.
+ */
+SceneTextContent resolveText(const SceneTextContent& text, const facebook::react::EdgeInsets& contentInsets,
+                             const facebook::react::Rect& frame, float opacity) {
+    SceneTextContent resolved = text;
+
+    resolved.frame = facebook::react::Rect{
+        .origin = facebook::react::Point{.x = frame.origin.x + contentInsets.left,
+                                         .y = frame.origin.y + contentInsets.top},
+        .size = facebook::react::Size{.width = frame.size.width - contentInsets.left - contentInsets.right,
+                                      .height = frame.size.height - contentInsets.top - contentInsets.bottom}};
+
+    for (facebook::react::AttributedString::Fragment& fragment : resolved.attributedString.getFragments()) {
+        facebook::react::TextAttributes& attributes = fragment.textAttributes;
+
+        attributes.foregroundColor = scaleColorAlpha(attributes.foregroundColor, opacity);
+        attributes.backgroundColor = scaleColorAlpha(attributes.backgroundColor, opacity);
+        attributes.textDecorationColor = scaleColorAlpha(attributes.textDecorationColor, opacity);
+    }
+
+    return resolved;
+}
+
 facebook::react::RectangleEdges<uint32_t> toArgbEdges(const facebook::react::BorderColors& colors, float opacity) {
     return facebook::react::RectangleEdges<uint32_t>{.left = toArgb(colors.left, opacity),
                                                      .top = toArgb(colors.top, opacity),
@@ -135,7 +182,7 @@ bool isEdgeVisible(facebook::react::Float width, uint32_t colorArgb) {
 }
 
 bool isPrimitiveVisible(const ScenePrimitive& primitive) {
-    return (primitive.backgroundColorArgb >> kAlphaShift) != 0U ||
+    return primitive.text.has_value() || (primitive.backgroundColorArgb >> kAlphaShift) != 0U ||
            isEdgeVisible(primitive.borderWidths.left, primitive.borderColorsArgb.left) ||
            isEdgeVisible(primitive.borderWidths.top, primitive.borderColorsArgb.top) ||
            isEdgeVisible(primitive.borderWidths.right, primitive.borderColorsArgb.right) ||
@@ -170,6 +217,29 @@ void readPaintProps(SceneNode& node, const facebook::react::ShadowView& shadowVi
     node.clipsChildren = viewProps->getClipsContentToBounds();
 }
 
+/**
+ * The paragraph inputs a `<Paragraph>` mounts with. React never mounts the nested `<Text>` and `<RawText>` shadow
+ * nodes — they are not view-forming — so `ParagraphState`, which `ParagraphShadowNode::layout` fills in with the
+ * flattened `AttributedString`, is the only place the text exists at the mounting layer.
+ *
+ * The state pointer is what identifies a paragraph, not the component name: `<Paragraph>` and
+ * `<SelectableParagraph>` both carry this state and neither of the other components carries any.
+ */
+void readTextContent(SceneNode& node, const facebook::react::ShadowView& shadowView) {
+    node.text = std::nullopt;
+
+    const std::shared_ptr<const facebook::react::ConcreteState<facebook::react::ParagraphState>> paragraphState =
+        std::dynamic_pointer_cast<const facebook::react::ConcreteState<facebook::react::ParagraphState>>(
+            shadowView.state);
+
+    if (paragraphState == nullptr || paragraphState->getData().attributedString.isEmpty()) {
+        return;
+    }
+
+    node.text = SceneTextContent{.attributedString = paragraphState->getData().attributedString,
+                                 .paragraphAttributes = paragraphState->getData().paragraphAttributes};
+}
+
 std::string readComponentName(const facebook::react::ShadowView& shadowView) {
     if (shadowView.componentName == nullptr) {
         return {};
@@ -193,7 +263,12 @@ SceneVisit visitNode(const SceneNode& node, const ScenePaintState& state) {
                                                  .backgroundColorArgb =
                                                      node.backgroundColor.has_value()
                                                          ? toArgb(node.backgroundColor.value(), opacity)
-                                                         : 0},
+                                                         : 0,
+                                                 .text = node.text.has_value()
+                                                             ? std::optional<SceneTextContent>{resolveText(
+                                                                   node.text.value(),
+                                                                   node.layoutMetrics.contentInsets, frame, opacity)}
+                                                             : std::nullopt},
                      .childState = ScenePaintState{
                          .origin = frame.origin, .matrix = matrix, .opacity = opacity, .clips = state.clips}};
 
@@ -398,6 +473,7 @@ SceneNode& RetainedScene::writeNode(const facebook::react::ShadowView& shadowVie
     node.componentName = readComponentName(shadowView);
     node.layoutMetrics = shadowView.layoutMetrics;
     readPaintProps(node, shadowView);
+    readTextContent(node, shadowView);
 
     return node;
 }
@@ -487,6 +563,12 @@ void RetainedScene::appendNode(std::string& output, facebook::react::Tag tag, si
     if (node.backgroundColor.has_value()) {
         output += " backgroundColor=";
         output += node.backgroundColor.value().toString();
+    }
+
+    if (node.text.has_value()) {
+        output += " text=\"";
+        output += node.text.value().attributedString.getString();
+        output += '"';
     }
 
     output += '\n';

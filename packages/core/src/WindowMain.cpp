@@ -78,6 +78,10 @@ int main(int argc, char** argv) {
             }
 
             if (session.has_value()) {
+                // Input first, and unconditionally: the event beat is induced inside this call, and it is what
+                // releases everything Fabric has queued since the last frame onto the JavaScript thread.
+                session->deliverInput(window.takeInputEvents());
+
                 // The scene and the damage that describes it have to come out of the mounting manager together,
                 // under one lock: a transaction landing between them would leave damage this scene cannot satisfy.
                 const react_native_linux::SceneFrame frame = session->takeFrame();

@@ -12,7 +12,8 @@ constexpr SkColor kSceneBackgroundColor = SkColorSetRGB(0x14, 0x16, 0x1A);
 
 /**
  * Draws one scene snapshot onto a canvas: the background clear, then per painted node its `overflow: hidden`
- * ancestor clips, its absolute transform, its rounded background fill and its per-side borders.
+ * ancestor clips, its absolute transform, its rounded background fill, its per-side borders, and — for a
+ * `<Paragraph>` — the SkParagraph built from the attributed string the node carries.
  *
  * `damage` restricts all of that to the region that changed. An empty list means no restriction, which is the
  * full repaint the golden rig and the first frame of any surface want. A non-empty list is clipped to the union
@@ -22,8 +23,9 @@ constexpr SkColor kSceneBackgroundColor = SkColorSetRGB(0x14, 0x16, 0x1A);
  *
  * Every number the snapshot carries is already absolute and already composed — opacity is multiplied into the
  * colours, radii are clamped, transforms are reduced to 2D affines — so nothing here computes scene state. What
- * remains is Skia geometry: `SkRRect`, `drawDRRect` for the border ring, and one mitred wedge clip per side when
- * the four side colours are not identical.
+ * remains is Skia geometry: `SkRRect`, `drawDRRect` for the border ring, one mitred wedge clip per side when the
+ * four side colours are not identical, and the paragraph build, which is Skia's own text layout rather than
+ * anything this project computes.
  *
  * There is exactly one implementation of this because there is exactly one picture. The window draws it into a
  * swapchain-backed `SkSurface` every frame and the golden-image rig draws it into an offscreen raster surface once;

@@ -2,31 +2,27 @@
 
 #ifdef RNL_ENABLE_GOLDEN
 #include "GoldenRenderer.h"
-
-#include <charconv>
-#include <system_error>
 #endif
 
+#include <charconv>
 #include <cstddef>
 #include <exception>
 #include <iostream>
 #include <optional>
+#include <react/renderer/graphics/Float.h>
+#include <react/renderer/graphics/Point.h>
 #include <span>
 #include <string>
 #include <string_view>
+#include <system_error>
 
 namespace {
 
 constexpr std::string_view kFabricFlag = "--fabric";
 constexpr std::string_view kGoldenFlag = "--golden";
 constexpr std::string_view kDamageGoldenFlag = "--damage-golden";
-
-#ifdef RNL_ENABLE_GOLDEN
-
-constexpr size_t kGoldenDefaultArgumentCount = 4;
-constexpr size_t kGoldenSizedArgumentCount = 6;
-constexpr int kGoldenDefaultWidth = 800;
-constexpr int kGoldenDefaultHeight = 600;
+constexpr std::string_view kInjectPointerFlag = "--inject-pointer";
+constexpr size_t kInjectPointerArgumentCount = 5;
 
 std::optional<int> parsePositiveDimension(std::string_view text) {
     int value = 0;
@@ -38,6 +34,35 @@ std::optional<int> parsePositiveDimension(std::string_view text) {
 
     return value;
 }
+
+int runInjectPointerCommand(std::span<char*> arguments) {
+    if (arguments.size() != kInjectPointerArgumentCount) {
+        std::cerr << "[hello_react] " << kInjectPointerFlag << " requires <bundle> <x> <y>" << std::endl;
+
+        return 1;
+    }
+
+    const std::optional<int> parsedX = parsePositiveDimension(arguments[3]);
+    const std::optional<int> parsedY = parsePositiveDimension(arguments[4]);
+
+    if (!parsedX.has_value() || !parsedY.has_value()) {
+        std::cerr << "[hello_react] " << kInjectPointerFlag << " x and y must be positive integers" << std::endl;
+
+        return 1;
+    }
+
+    const facebook::react::Point surfacePoint{.x = static_cast<facebook::react::Float>(parsedX.value()),
+                                              .y = static_cast<facebook::react::Float>(parsedY.value())};
+
+    return react_native_linux::runInjectedClick(std::string(arguments[2]), surfacePoint);
+}
+
+#ifdef RNL_ENABLE_GOLDEN
+
+constexpr size_t kGoldenDefaultArgumentCount = 4;
+constexpr size_t kGoldenSizedArgumentCount = 6;
+constexpr int kGoldenDefaultWidth = 800;
+constexpr int kGoldenDefaultHeight = 600;
 
 int runGoldenCommand(std::span<char*> arguments, bool isDamageRequested) {
     const std::string_view flag = isDamageRequested ? kDamageGoldenFlag : kGoldenFlag;
@@ -95,6 +120,7 @@ int main(int argc, char** argv) {
     const bool isGoldenRequested = arguments.size() > 1 && kGoldenFlag == arguments[1];
     const bool isDamageGoldenRequested = arguments.size() > 1 && kDamageGoldenFlag == arguments[1];
     const bool isFabricRequested = arguments.size() > 1 && kFabricFlag == arguments[1];
+    const bool isInjectPointerRequested = arguments.size() > 1 && kInjectPointerFlag == arguments[1];
 
     if (isFabricRequested && arguments.size() < 3) {
         std::cerr << "[hello_react] " << kFabricFlag << " requires a bundle path" << std::endl;
@@ -103,6 +129,10 @@ int main(int argc, char** argv) {
     }
 
     try {
+        if (isInjectPointerRequested) {
+            return runInjectPointerCommand(arguments);
+        }
+
         if (isGoldenRequested || isDamageGoldenRequested) {
             return runGoldenCommand(arguments, isDamageGoldenRequested);
         }

@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace react_native_linux {
 
@@ -29,6 +30,11 @@ WindowSession::~WindowSession() noexcept {
 }
 
 void WindowSession::resize(WindowSize size) { fabricHost_->setSurfaceSize(toSurfaceSize(size)); }
+
+void WindowSession::deliverInput(const std::vector<InputEvent>& events) {
+    fabricHost_->dispatchInput(events);
+    fabricHost_->induceEventBeat();
+}
 
 SceneFrame WindowSession::takeFrame() { return fabricHost_->takeFrame(); }
 

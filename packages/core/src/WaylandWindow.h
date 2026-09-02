@@ -1,8 +1,13 @@
 #pragma once
 
+#include "InputPipeline.h"
+#include "WaylandSeat.h"
+
 #include <chrono>
 #include <cstdint>
+#include <memory>
 #include <string>
+#include <vector>
 
 struct wl_array;
 struct wl_callback;
@@ -11,6 +16,7 @@ struct wl_compositor;
 struct wl_display;
 struct wl_registry;
 struct wl_registry_listener;
+struct wl_seat;
 struct wl_surface;
 struct xdg_surface;
 struct xdg_surface_listener;
@@ -39,6 +45,11 @@ struct WindowSize {
  * connection dispatching and the close event reachable on an occluded window; it is not a frame source for a
  * visible one.
  *
+ * Input arrives on the same connection and therefore on the same thread. `WaylandSeat` fills a queue from inside
+ * the dispatch this class performs, and `takeInputEvents` empties it once per frame; the window itself makes no
+ * decision about what an event means. A compositor that advertises no `wl_seat` leaves that queue permanently
+ * empty rather than failing construction, because a window without input is still a window.
+ *
  * Threading contract: every member runs on the thread that constructed the window, which is the thread that owns
  * the process run loop. The Wayland connection is never touched from another thread. The Vulkan WSI dispatches the
  * same connection on its own private event queue, which is why this class uses the prepare-read/read-events
@@ -61,6 +72,7 @@ public:
 
     void requestFrameCallback();
     bool waitForRedraw(std::chrono::milliseconds fallbackTimeout);
+    std::vector<InputEvent> takeInputEvents();
 
 private:
     void bindGlobal(wl_registry* registry, uint32_t name, const char* interfaceName, uint32_t version);
@@ -88,6 +100,7 @@ private:
 
     wl_display* display_{nullptr};
     wl_compositor* compositor_{nullptr};
+    std::unique_ptr<WaylandSeat> seat_;
     xdg_wm_base* wmBase_{nullptr};
     wl_surface* surface_{nullptr};
     xdg_surface* xdgSurface_{nullptr};

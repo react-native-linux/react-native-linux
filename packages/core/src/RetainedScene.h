@@ -1,5 +1,7 @@
 #pragma once
 
+#include <react/renderer/attributedstring/AttributedString.h>
+#include <react/renderer/attributedstring/ParagraphAttributes.h>
 #include <react/renderer/components/view/primitives.h>
 #include <react/renderer/core/LayoutMetrics.h>
 #include <react/renderer/core/ReactPrimitives.h>
@@ -48,6 +50,34 @@ struct SceneClip {
 };
 
 /**
+ * Everything a `<Paragraph>` needs to be laid out and drawn: the fragment list React built out of the nested
+ * `<Text>` and `<RawText>` children, and the paragraph-level attributes.
+ *
+ * These are the two values `ParagraphState` carries to the mounting layer, kept as the upstream types rather than
+ * copied into a parallel model on purpose: `TextLayoutManager::measure` was given exactly these during layout, so
+ * the paragraph the painter builds from them is the paragraph Yoga measured. A second description of the same
+ * text is a second chance for the drawn line breaks to disagree with the measured ones.
+ *
+ * Fragment colours arrive here with the inherited opacity already multiplied into their alpha channel, exactly
+ * like every other colour in a snapshot; nothing else about them is resolved, because resolving a font needs
+ * Skia and the scene does not link it.
+ */
+struct SceneTextContent {
+    facebook::react::AttributedString attributedString;
+    facebook::react::ParagraphAttributes paragraphAttributes;
+
+    /**
+     * The absolute content box the paragraph is laid out and drawn in: the node's frame inset by its borders and
+     * padding, which is the box `ParagraphShadowNode` measured against and therefore the box the same text has to
+     * be re-laid-out in to break the same way.
+     *
+     * Only a snapshot fills this in, because only a snapshot knows the absolute frame; on a retained `SceneNode`
+     * the whole struct is the unresolved half and this member is empty.
+     */
+    facebook::react::Rect frame;
+};
+
+/**
  * One painted node in surface coordinates: the frame origin is absolute, composed from every ancestor frame,
  * because a renderer that walks a flat list per frame must not repeat the tree walk.
  *
@@ -63,6 +93,7 @@ struct ScenePrimitive {
     facebook::react::BorderWidths borderWidths;
     facebook::react::RectangleEdges<uint32_t> borderColorsArgb;
     uint32_t backgroundColorArgb{};
+    std::optional<SceneTextContent> text;
 };
 
 using SceneSnapshot = std::vector<ScenePrimitive>;
@@ -92,6 +123,7 @@ struct SceneNode {
     SceneMatrix transform{};
     float opacity{1.0F};
     bool clipsChildren{false};
+    std::optional<SceneTextContent> text;
 };
 
 using SceneNodes = std::unordered_map<facebook::react::Tag, SceneNode>;

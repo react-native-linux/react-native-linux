@@ -11,10 +11,13 @@
     "run:fabric": "../../build/dev/bin/hello_react --fabric test-bundles/fabric-view.js",
     "run:golden": "../../build/dev/bin/hello_react --golden test-bundles/fabric-view.js /tmp/rnl-fabric-view.png",
     "run:golden:damage": "../../build/dev/bin/hello_react --damage-golden test-bundles/damage.js /tmp/rnl-damage.png",
+    "run:golden:text": "../../build/dev/bin/hello_react --golden test-bundles/text.js /tmp/rnl-text.png",
     "run:hello": "../../build/dev/bin/hello_react",
+    "run:input": "../../build/dev/bin/hello_react --inject-pointer test-bundles/pressable.js 200 140",
     "run:window": "../../build/dev/bin/rnl_window",
     "run:window:fabric": "../../build/dev/bin/rnl_window --fabric test-bundles/fabric-view.js",
     "vendor": "node ../../scripts/vendor-react-native.ts",
+    "vendor:fonts": "node ../../scripts/vendor-fonts.ts",
     "vendor:skia": "node ../../scripts/vendor-skia.ts"
   },
   "devDependencies": {

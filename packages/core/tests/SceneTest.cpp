@@ -4,11 +4,18 @@
 #include <gtest/gtest.h>
 
 #include <folly/dynamic.h>
+#include <react/renderer/attributedstring/AttributedString.h>
+#include <react/renderer/attributedstring/ParagraphAttributes.h>
+#include <react/renderer/attributedstring/TextAttributes.h>
+#include <react/renderer/components/text/ParagraphState.h>
 #include <react/renderer/components/view/ViewProps.h>
+#include <react/renderer/core/ConcreteState.h>
 #include <react/renderer/core/ReactPrimitives.h>
+#include <react/renderer/core/ShadowNodeFamily.h>
 #include <react/renderer/graphics/Color.h>
 #include <react/renderer/graphics/Point.h>
 #include <react/renderer/graphics/Rect.h>
+#include <react/renderer/graphics/RectangleEdges.h>
 #include <react/renderer/graphics/Size.h>
 #include <react/renderer/graphics/Transform.h>
 #include <react/renderer/graphics/ValueUnit.h>
@@ -99,6 +106,39 @@ std::shared_ptr<ViewProps> propsWithBackground(SharedColor backgroundColor) {
 
 ShadowView makePaintedView(Tag tag, Rect frame, SharedColor backgroundColor) {
     return makeStyledView(tag, frame, propsWithBackground(backgroundColor));
+}
+
+/**
+ * A `<Paragraph>` as it reaches the mounting layer: the nested `<Text>` and `<RawText>` nodes never do, so the
+ * flattened `AttributedString` arrives inside `ParagraphState`. The family is an empty weak pointer because
+ * nothing here dispatches a state update; `ConcreteState` only locks it for that.
+ */
+ShadowView makeParagraph(Tag tag, Rect frame, const std::string& text, int maximumNumberOfLines) {
+    facebook::react::AttributedString attributedString;
+
+    if (!text.empty()) {
+        facebook::react::AttributedString::Fragment fragment;
+
+        fragment.string = text;
+        fragment.textAttributes = facebook::react::TextAttributes::defaultTextAttributes();
+        attributedString.appendFragment(std::move(fragment));
+    }
+
+    facebook::react::ParagraphAttributes paragraphAttributes;
+
+    paragraphAttributes.maximumNumberOfLines = maximumNumberOfLines;
+
+    ShadowView shadowView;
+
+    shadowView.tag = tag;
+    shadowView.componentName = "Paragraph";
+    shadowView.layoutMetrics.frame = frame;
+    shadowView.state = std::make_shared<const facebook::react::ConcreteState<facebook::react::ParagraphState>>(
+        std::make_shared<const facebook::react::ParagraphState>(
+            facebook::react::ParagraphState{attributedString, paragraphAttributes, {}}),
+        facebook::react::ShadowNodeFamily::Weak{});
+
+    return shadowView;
 }
 
 void addChild(RetainedScene& scene, Tag parentTag, const ShadowView& child) {
@@ -806,6 +846,127 @@ TEST(RetainedSceneDamageTest, MergingDamageFollowsTheSameCapPolicy) {
     ASSERT_EQ(damage.size(), 2U);
     expectRect(damage[0], makeRect(0, 0, 45, 5));
     expectRect(damage[1], makeRect(40, 0, 5, 5));
+}
+
+SceneSnapshot snapshotOfParagraph(const ShadowView& paragraphView) {
+    RetainedScene scene;
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, paragraphView);
+
+    return scene.snapshot();
+}
+
+TEST(RetainedSceneTextTest, ParagraphStateBecomesTheTextOnTheNode) {
+    const SceneSnapshot snapshot = snapshotOfParagraph(makeParagraph(2, makeRect(40, 60, 300, 48), "Hello Linux", 2));
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    ASSERT_TRUE(snapshot[0].text.has_value());
+    EXPECT_EQ(snapshot[0].text.value().attributedString.getString(), "Hello Linux");
+    EXPECT_EQ(snapshot[0].text.value().paragraphAttributes.maximumNumberOfLines, 2);
+    expectRect(snapshot[0].text.value().frame, makeRect(40, 60, 300, 48));
+    expectPrimitive(snapshot[0], makeRect(40, 60, 300, 48), 0);
+}
+
+TEST(RetainedSceneTextTest, TextIsLaidOutInTheContentBoxRatherThanTheFrame) {
+    ShadowView paragraphView = makeParagraph(2, makeRect(40, 60, 300, 48), "inset", 0);
+
+    paragraphView.layoutMetrics.contentInsets =
+        facebook::react::EdgeInsets{.left = 10, .top = 4, .right = 6, .bottom = 2};
+
+    const SceneSnapshot snapshot = snapshotOfParagraph(paragraphView);
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    ASSERT_TRUE(snapshot[0].text.has_value());
+    expectRect(snapshot[0].text.value().frame, makeRect(50, 64, 284, 42));
+    expectRect(snapshot[0].frame, makeRect(40, 60, 300, 48));
+}
+
+TEST(RetainedSceneTextTest, TextIsPaintedWithoutABackgroundColorOrABorder) {
+    RetainedScene scene;
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, makeView(2, makeRect(0, 0, 100, 20)));
+    addChild(scene, kSurfaceTag, makeParagraph(3, makeRect(0, 40, 100, 20), "painted", 0));
+
+    const SceneSnapshot snapshot = scene.snapshot();
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    expectRect(snapshot[0].frame, makeRect(0, 40, 100, 20));
+}
+
+TEST(RetainedSceneTextTest, ANodeWithoutParagraphStateCarriesNoText) {
+    RetainedScene scene = sceneWithPaintedChild();
+    const SceneSnapshot snapshot = scene.snapshot();
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    EXPECT_FALSE(snapshot[0].text.has_value());
+}
+
+TEST(RetainedSceneTextTest, AnEmptyAttributedStringPaintsNothing) {
+    EXPECT_TRUE(snapshotOfParagraph(makeParagraph(2, makeRect(40, 60, 300, 48), "", 0)).empty());
+}
+
+TEST(RetainedSceneTextTest, UpdateReplacesTheAttributedStringInPlace) {
+    RetainedScene scene;
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, makeParagraph(2, makeRect(40, 60, 300, 48), "before", 0));
+    scene.updateNode(makeParagraph(2, makeRect(40, 60, 300, 48), "after", 0));
+
+    const SceneSnapshot snapshot = scene.snapshot();
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    ASSERT_TRUE(snapshot[0].text.has_value());
+    EXPECT_EQ(snapshot[0].text.value().attributedString.getString(), "after");
+}
+
+TEST(RetainedSceneTextTest, OpacityMultipliesIntoTheFragmentColors) {
+    const std::shared_ptr<ViewProps> translucent = std::make_shared<ViewProps>();
+
+    translucent->opacity = 0.5;
+
+    RetainedScene scene;
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, makeStyledView(2, makeRect(0, 0, 400, 200), translucent));
+    addChild(scene, 2, makeParagraph(3, makeRect(0, 0, 400, 40), "faded", 0));
+
+    const SceneSnapshot snapshot = scene.snapshot();
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    ASSERT_TRUE(snapshot[0].text.has_value());
+
+    const facebook::react::AttributedString::Fragment& fragment =
+        snapshot[0].text.value().attributedString.getFragments().front();
+
+    EXPECT_EQ(facebook::react::alphaFromColor(fragment.textAttributes.foregroundColor), 128U);
+    EXPECT_EQ(facebook::react::redFromColor(fragment.textAttributes.foregroundColor), 0U);
+    EXPECT_FALSE(facebook::react::isColorMeaningful(fragment.textAttributes.backgroundColor));
+}
+
+TEST(RetainedSceneTextTest, AParagraphDamagesItsOwnFrame) {
+    RetainedScene scene;
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    scene.takeDamage();
+    addChild(scene, kSurfaceTag, makeParagraph(2, makeRect(40, 60, 300, 48), "damaging", 0));
+
+    const SceneDamage damage = scene.takeDamage();
+
+    ASSERT_FALSE(damage.empty());
+    expectRect(boundsOf(damage), makeRect(40, 60, 300, 48));
+}
+
+TEST(RetainedSceneTextTest, DumpCarriesTheParagraphText) {
+    RetainedScene scene;
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, makeParagraph(2, makeRect(40, 60, 300, 48), "dumped", 0));
+
+    EXPECT_EQ(scene.dump(),
+              "RootView #1 frame=(0.00, 0.00, 800.00, 600.00)\n"
+              "  Paragraph #2 frame=(40.00, 60.00, 300.00, 48.00) text=\"dumped\"\n");
 }
 
 ShadowView mountBlueChild(LinuxMountingManager& mountingManager) {

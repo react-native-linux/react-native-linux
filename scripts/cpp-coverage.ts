@@ -32,6 +32,7 @@ const rawProfilePath = path.join(coverageDirectory, "rnl_core_tests.profraw");
 const mergedProfilePath = path.join(coverageDirectory, "rnl_core_tests.profdata");
 
 const scopedSourcePaths: readonly string[] = [
+  "packages/core/src/InputPipeline.cpp",
   "packages/core/src/LinuxMountingManager.cpp",
   "packages/core/src/RetainedScene.cpp",
 ];

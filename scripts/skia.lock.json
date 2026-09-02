@@ -12,7 +12,9 @@
       "modules/skcms",
       "modules/skparagraph/include",
       "modules/skshaper/include",
-      "modules/skunicode/include"
+      "modules/skunicode/include",
+      "src/base",
+      "src/core"
     ]
   }
 }

@@ -14,6 +14,10 @@ placeholder card and runs no JavaScript.
 issue #6: it boots the same headless Fabric host, renders the settled scene into an **offscreen raster**
 `SkSurface` and writes a PNG. No GPU, no Vulkan driver, no Wayland compositor. See *Golden images*.
 
+`hello_react --inject-pointer <bundle> <x> <y>` is the fourth, and the proof for issue #18: it boots the same
+headless Fabric host, synthesises a mouse sweep and a click at those coordinates through the same input pipeline
+the window uses, and lets the bundle report what reached JavaScript. See *Input*.
+
 Two halves are shared rather than duplicated: `rnl_react_core` is a static library carrying the instance, the
 Fabric host and the retained scene, and `rnl_scene_painter` is a static library carrying `paintScene`, the single
 implementation that turns a `SceneSnapshot` into draw calls. `rnl_window` calls it once per frame into a
@@ -38,9 +42,11 @@ and the remaining ten `ReactCxxPlatform` subdirectories are still out.
 `hello_react --fabric <bundle>` adds a headless Fabric host on top of the same `ReactInstance`:
 
 - `FabricHost` builds a `SchedulerToolbox` (context container carrying the `RuntimeScheduler`, buffered runtime
-  executor, unbuffered bindings executor, a base `EventBeat`, and a component registry with the `RootView` and
-  `View` descriptors), constructs a `Scheduler`, and starts one `SurfaceHandler` with an 800x600 layout
-  constraint. Constructing the `Scheduler` is what installs `nativeFabricUIManager` into the runtime.
+  executor, unbuffered bindings executor, a `FrameEventBeat`, and a component registry with the `RootView`,
+  `View`, `Paragraph`, `Text` and `RawText` descriptors), constructs a `Scheduler`, and starts one
+  `SurfaceHandler` with an 800x600 layout constraint. Constructing the `Scheduler` is what installs
+  `nativeFabricUIManager` into the runtime, and constructing the `Paragraph` descriptor is what constructs the
+  `TextLayoutManager`; see *Text*.
 - The surface is started with an **empty module name**, so `SurfaceHandler::start` goes through
   `UIManager::startEmptySurface` instead of `AppRegistryBinding::startSurface`. That is the whole reason a bundle
   without React Native's JavaScript runtime can drive the renderer. `SurfaceHandler::stop` has no such branch and
@@ -70,17 +76,19 @@ Nothing in this bootstrap is headless-only. `hello_react` and `rnl_window` const
 same `FabricHost`; the headless host dumps the scene once the JavaScript thread goes quiet, and the window host
 draws it every frame. See *The retained scene, and the threads it crosses*.
 
-Not covered yet, each with an owning milestone: events (the `EventBeat` is never induced, so nothing can be
-dispatched), `Scheduler::reportMount` and mount-hook telemetry, `dispatchCommand`, multiple surfaces, and every
-component past `View`.
+Not covered yet, each with an owning milestone: `Scheduler::reportMount` and mount-hook telemetry,
+`dispatchCommand`, multiple surfaces, and every component past `View` and `Paragraph` — `Image`, `ScrollView` and
+`TextInput` in particular. Events are covered; see *Input*.
 
 ## Window host
 
-`rnl_window` is four files under `packages/core/src`, in the order the frame flows through them:
+`rnl_window` is five files under `packages/core/src`, in the order the frame flows through them:
 
 - `WaylandWindow` owns one connection, one `wl_surface`, one `xdg_toplevel` titled `react-native-linux` at 800x600,
   and the run loop. It never attaches a buffer; `vkQueuePresentKHR` does that. `xdg_toplevel.close` sets the exit
   flag, `xdg_toplevel.configure` records a resize, and `xdg_wm_base.ping` is answered.
+- `WaylandSeat` owns the `wl_seat` the window binds, and turns pointer and keyboard events into a queue of
+  platform-neutral ones. See *Input*.
 - `SkiaVulkanRenderer` owns the `VkInstance` (`VK_KHR_surface` + `VK_KHR_wayland_surface`), the device, the FIFO
   swapchain, and the `GrDirectContext`.
 - `WindowSession` is the React half, and only exists with `--fabric`: it owns a `ReactHost` and a `FabricHost`
@@ -157,10 +165,10 @@ destruct. `xdg_toplevel.close` and a `wl_display` error both leave the run loop 
 `Ctrl-C` does not: there is still no signal handler, so `SIGINT` terminates the process where it stands and the
 compositor reclaims the surface when the connection's file descriptor closes.
 
-Not drawn yet, each with an owning milestone: text (#14), shadows and elevation, `boxShadow`, `filter`,
-`mixBlendMode`, `outline`, `backgroundImage` gradients, and `display: none`. Backgrounds, per-corner radii,
-per-side borders, opacity, transforms and `overflow` clipping are drawn; see *View props fidelity*. Events are
-M1/M2 — the `EventBeat` is still never induced, so the window is a display, not an application.
+Not drawn yet, each with an owning milestone: shadows and elevation, `boxShadow`, `filter`, `mixBlendMode`,
+`outline`, `backgroundImage` gradients, and `display: none`. Backgrounds, per-corner radii, per-side borders,
+opacity, transforms and `overflow` clipping are drawn; see *View props fidelity*. Text is drawn; see *Text*.
+Pointer and keyboard events reach JavaScript once per frame; see *Input*.
 
 ### Skia acquisition
 
@@ -205,6 +213,7 @@ depend on a third party's release cadence.
 | Boost (fallback only) | `1.83.0` | `RNL_BOOST_VERSION`, same mirror; used only when no system Boost is found |
 | glog (fallback only) | `v0.7.1` | `RNL_GLOG_VERSION`; used only when no system glog is found |
 | Skia | `m153` prebuilt | `scripts/skia.lock.json` |
+| Noto Sans | `notofonts.github.io@2ad4e55`, per-file sha256 | `scripts/fonts.lock.json` |
 | xdg-shell | system `wayland-protocols` | `pkg-config --variable=pkgdatadir wayland-protocols` |
 
 The Hermes tag is derived, never hardcoded: `hermes-v${HERMES_VERSION_NAME}`. `sdks/.hermesversion` was removed
@@ -228,12 +237,16 @@ sudo pacman -S --needed base-devel git cmake ninja ccache python \
 `rnl_window` needs, on top of that:
 
 ```bash
-sudo pacman -S --needed wayland wayland-protocols vulkan-headers vulkan-icd-loader \
+sudo pacman -S --needed wayland wayland-protocols libxkbcommon vulkan-headers vulkan-icd-loader \
   freetype2 fontconfig
 ```
 
-`hello_react --golden` needs only `freetype2` and `fontconfig` from that list, plus the vendored Skia archive. It
-never opens a Wayland connection and never loads a Vulkan driver.
+`libxkbcommon` is what turns the keymap the compositor sends into keysyms; `RNL_ENABLE_WINDOW` probes for it and
+disables `rnl_window` without it. See *Input*.
+
+`hello_react --golden` needs only `freetype2` and `fontconfig` from that list, plus the vendored Skia archive and,
+for anything with text in it, the vendored fonts. It never opens a Wayland connection and never loads a Vulkan
+driver.
 
 `wayland-scanner` ships inside the `wayland` package and is located through
 `pkg-config --variable=wayland_scanner wayland-scanner`, so it is never assumed to be on `PATH`. A Vulkan driver
@@ -296,14 +309,17 @@ would double the wall-clock cost of the matrix to test a path nothing else exerc
 ## Commands
 
 ```bash
-pnpm --filter @react-native-linux/core vendor       # node scripts/vendor-react-native.ts
-pnpm --filter @react-native-linux/core vendor:skia  # node scripts/vendor-skia.ts
+pnpm --filter @react-native-linux/core vendor        # node scripts/vendor-react-native.ts
+pnpm --filter @react-native-linux/core vendor:skia   # node scripts/vendor-skia.ts
+pnpm --filter @react-native-linux/core vendor:fonts  # node scripts/vendor-fonts.ts — see *Text*
 pnpm --filter @react-native-linux/core configure    # cmake -S <repo root> --preset dev
 pnpm --filter @react-native-linux/core build        # cmake --build build/dev
 pnpm --filter @react-native-linux/core run:hello    # build/dev/bin/hello_react
 pnpm --filter @react-native-linux/core run:fabric   # build/dev/bin/hello_react --fabric <bundle>
 pnpm --filter @react-native-linux/core run:golden   # hello_react --golden <bundle> /tmp/rnl-fabric-view.png
 pnpm --filter @react-native-linux/core run:golden:damage  # hello_react --damage-golden damage.js /tmp/rnl-damage.png
+pnpm --filter @react-native-linux/core run:golden:text    # hello_react --golden text.js /tmp/rnl-text.png
+pnpm --filter @react-native-linux/core run:input    # hello_react --inject-pointer pressable.js 200 140
 pnpm --filter @react-native-linux/core run:window   # build/dev/bin/rnl_window
 pnpm --filter @react-native-linux/core run:window:fabric  # build/dev/bin/rnl_window --fabric <bundle>
 
@@ -322,6 +338,7 @@ cmake --build build/dev
 ./build/dev/bin/hello_react
 ./build/dev/bin/hello_react packages/core/test-bundles/hello.js
 ./build/dev/bin/hello_react --fabric packages/core/test-bundles/fabric-view.js
+./build/dev/bin/hello_react --inject-pointer packages/core/test-bundles/pressable.js 200 140
 ./build/dev/bin/rnl_window
 ./build/dev/bin/rnl_window --fabric packages/core/test-bundles/fabric-view.js
 ```
@@ -334,7 +351,8 @@ retained scene after the JavaScript thread goes quiet; see *Fabric bootstrap* ab
 path and an output path, prints nothing of its own, and writes a PNG. `--damage-golden` takes the same arguments,
 runs a bundle that commits twice, and writes a PNG only if the damage-clipped redraw of the second commit is
 byte-identical to a full one; see *Golden images*. On a build configured
-without Skia it exits 1 with a message naming `scripts/vendor-skia.ts`.
+without Skia it exits 1 with a message naming `scripts/vendor-skia.ts`. `--inject-pointer` takes the bundle path
+and a surface coordinate, clicks there, and prints whatever the bundle prints; see *Input*.
 
 When `cmake` and `ninja` are not on `PATH`, wrap the two CMake steps:
 
@@ -415,6 +433,14 @@ background filling the window with one blue `#3366CC` rounded rectangle inset 64
     when it gets anything wrong; and both before and after that second, the window is idle and drawing nothing.
     Resize it while it is idle — the picture must come back intact, because a new swapchain full-damages every
     image. See *Damage tracking*.
+
+14. `./build/dev/bin/rnl_window --fabric packages/core/test-bundles/text.js` shows the text golden's picture in a
+    real window: a bold heading, a wrapping paragraph with coloured fragments, a one-line paragraph ending in an
+    ellipsis, centred and right-aligned lines, a letter-spaced line and an underlined one. Resize it — the text
+    must not reflow, because every element is absolutely positioned and fixed-width, which is what makes the
+    picture comparable to the golden. Run
+    `pnpm --filter @react-native-linux/core vendor:fonts` first; without it the paragraphs are shaped with a
+    system font and the window will not match the golden. See *Text*.
 
 Not covered by this checklist, because it is not implemented yet: fractional scale, pointer and keyboard input,
 `wp_presentation_feedback` timing, and any measurement of the frame budget.
@@ -554,6 +580,339 @@ Not implemented at all, and owned elsewhere: `shadowColor`/elevation and `boxSha
 `isolation`, `outline*`, and `backgroundImage` gradients. Each needs its own issue under M1; none of them is a
 variation on what is here.
 
+## Text
+
+ADR-0001 decision 7 chose SkParagraph. This is issue #14, and it is four pieces: a `TextLayoutManager` that
+answers Yoga, a font strategy that makes the answer reproducible, the paragraph inputs travelling through the
+scene, and the painter drawing the same paragraph that was measured.
+
+### The pipeline, end to end
+
+```text
+<Text>/<RawText> shadow nodes
+  → ParagraphShadowNode::getContent          flattens them into one AttributedString
+  → TextLayoutManager::measure               SkParagraph layout → Size → Yoga
+  → ParagraphState                           the AttributedString + ParagraphAttributes, mounted
+  → RetainedScene::writeNode                 read off the state into SceneNode::text
+  → SceneSnapshot                            SceneTextContent on the primitive, opacity folded in
+  → ScenePainter::paintText                  the same layoutParagraph call, painted at the frame origin
+```
+
+`<Text>` and `<RawText>` never reach the mounting layer: they are not view-forming, and `ParagraphShadowNode`
+flattens the whole subtree into a single `AttributedString`. `<Paragraph>` is the only text component the scene
+ever sees, and `ParagraphState` is the only place its content exists there. All three descriptors are registered
+in `FabricHost` anyway, because the reconciler cannot create a node for a component with no descriptor.
+
+There is exactly one function that turns an `AttributedString` into a laid-out `skia::textlayout::Paragraph`,
+`layoutParagraph` in `src/TextPipeline.cpp`, and both the measurement and the paint call it with the same two
+values. That is deliberate and it is the whole reason the scene carries React Native's own types rather than a
+resolved copy of them: a second description of the same text is a second chance for the drawn line breaks to
+disagree with the measured ones, and a paragraph that wraps differently than it was measured is the classic text
+bug in a GPU renderer.
+
+Shaping is HarfBuzz, compiled into `libskshaper.a`. Segmentation — grapheme, word and line breaks — is ICU 78,
+compiled with its data into `libskunicode_icu.a`. Rasterisation is FreeType. None of them is a system dependency:
+only freetype and fontconfig are linked from the machine, which `RNL_ENABLE_SKIA` already probed for.
+
+### Replacing the upstream stub
+
+`react/renderer/textlayoutmanager/platform/cxx/.../TextLayoutManager.cpp` is a stub whose `measure` returns
+`layoutConstraints.minimumSize` and shapes nothing; `docs/research/prior-art.md` §2.4 names it as one of the two
+real C++ gaps. Replacing it is replacing one translation unit, and the mechanism is a **source-list edit at our
+own `add_subdirectory` call site**, in `packages/core/CMakeLists.txt`:
+
+```cmake
+get_target_property(RNL_TEXT_LAYOUT_MANAGER_SOURCES react_renderer_textlayoutmanager SOURCES)
+list(REMOVE_ITEM RNL_TEXT_LAYOUT_MANAGER_SOURCES ${RNL_TEXT_LAYOUT_MANAGER_STUB})
+list(APPEND RNL_TEXT_LAYOUT_MANAGER_SOURCES .../src/TextLayoutManager.cpp .../src/TextPipeline.cpp)
+set_property(TARGET react_renderer_textlayoutmanager PROPERTY SOURCES ${RNL_TEXT_LAYOUT_MANAGER_SOURCES})
+```
+
+Four properties of that choice are load-bearing:
+
+- **No vendored file is edited.** The vendored `CMakeLists.txt` globs its own platform directory; we change what
+  the resulting target compiles, from outside it, after `add_subdirectory` returns. A re-vendor is still a clean
+  checkout. The configure fails loudly with a named error if the stub ever moves, rather than silently keeping it.
+- **Our sources join that object library rather than `rnl_scene_painter`,** because the references to
+  `TextLayoutManager::measure` are in that library's own objects and a static archive only resolves backwards.
+- **The declaration stays the vendored `platform/cxx` header,** which fixes the shape of the class. `measure` is
+  the only method there, so the C++20 concepts in `TextLayoutManagerExtended` report `measureLines` and
+  `prepareLayout` unsupported and `ParagraphShadowNode` takes its non-prepared path. See *Fidelity limits*.
+- **It is conditional on Skia.** `-DRNL_ENABLE_SKIA=OFF` keeps the upstream stub, so the two sanitizer presets and
+  the Hermes-free `test` configure link no Skia at all and are byte-for-byte the builds they were before. The cost
+  is that text measures as zero under those presets, which is the pre-existing behaviour rather than a new bug.
+
+### Font strategy, and why goldens need it
+
+Pixel-exact goldens and system font resolution are incompatible: Arch and `ubuntu-24.04` do not ship the same
+default sans-serif, so the same bundle would produce two different PNGs. The `FontCollection` therefore has two
+managers, and the order matters:
+
+| Manager | What it is | Reproducible |
+| --- | --- | --- |
+| Asset | `SkFontMgr_New_Custom_Directory` over `packages/core/fonts` | Yes — pinned files, verified by sha256 |
+| Default | `SkFontMgr_New_FontConfig` | No — whatever the machine has installed |
+
+Skia consults the asset manager first, so the default family resolves to the vendored file everywhere. Fontconfig
+remains behind it, which is what satisfies issue #14's "fonts resolved through fontconfig" for a bundle that asks
+for a family by name, and what supplies glyph fallback for codepoints the bundled font does not cover.
+
+**Goldens must stay inside the vendored font's coverage.** Anything that falls through to fontconfig — another
+family, an emoji, a script Noto Sans does not carry — is not reproducible and must not go into a checked-in PNG.
+That is the honest reason `text.js` is ASCII, and the reason issue #14's RTL and emoji goldens are deferred rather
+than approximated.
+
+The font is **Noto Sans**, hinted static Regular, Bold and Italic, under the **SIL Open Font License 1.1**, pinned
+by commit and sha256 in `scripts/fonts.lock.json` and fetched by `scripts/vendor-fonts.ts` into
+`packages/core/fonts`, which is git-ignored exactly like `third_party`. The licence text is fetched alongside the
+faces. It is vendored rather than checked in for the same reason Skia is: the lock file is the artifact under
+review, and a re-run against an unchanged lock is a no-op.
+
+```bash
+pnpm --filter @react-native-linux/core vendor:fonts
+```
+
+The directory path reaches the code as `RNL_BUNDLED_FONT_DIR`, an absolute path baked in at configure time. That
+is deliberate for now — there is no asset packaging, and inventing one before the CLI exists is the kind of
+scaffolding the Prime Directive rejects. Packaging fonts into an installable bundle belongs with M3.
+
+### The cache
+
+`TextLayoutManager` already owns `textMeasureCache_`, upstream's `TextMeasureCache`: a 1024-entry thread-safe LRU
+keyed on the layout-affecting parts of the attributed string, the paragraph attributes, the layout constraints and
+the pixel scale factor, with equality and hashing that deliberately ignore colour. `measure` populates it and
+nothing else caches anything, because a paragraph cache keyed on the same inputs would be the same cache. Skia's
+own `ParagraphCache`, inside the `FontCollection`, caches shaped runs underneath both.
+
+What is **not** implemented is issue #14's measurable hit-rate probe. Instrumenting it belongs with the frame-time
+work in #20, where there is somewhere to report a number to.
+
+### Threading
+
+`measure` runs on whichever thread commits, and the painter runs on the frame thread, so both can be inside
+`layoutParagraph` at once. The `Paragraph` objects are per-call and never shared, but the `FontCollection` behind
+them is a process-wide singleton carrying Skia's paragraph cache, and neither it nor `layout` is documented as
+thread-safe. Build-and-layout therefore runs under one mutex in `TextPipeline.cpp`. Note that the TSan job
+configures with `-DRNL_ENABLE_SKIA=OFF`, so TSan does not exercise this path; the mutex is reasoning, not a
+measured result.
+
+### Props implemented
+
+| Prop | How it is implemented |
+| --- | --- |
+| `color` | `TextStyle::setColor`, with the inherited view opacity already multiplied into the alpha by the scene. |
+| `backgroundColor` on a `<Text>` fragment | `TextStyle::setBackgroundPaint`. On the `<Paragraph>` itself it is a `<View>` background and upstream deliberately strips it from the text attributes. |
+| `fontSize` | Multiplied by `fontSizeMultiplier`; unset means upstream's 14. |
+| `fontWeight` | The numeric weight straight into `SkFontStyle`; synthetic bolding is Skia's business. |
+| `fontStyle` | `italic` and `oblique` map to the matching `SkFontStyle::Slant`. |
+| `fontFamily` | Asked for first, ahead of the bundled family and `sans-serif`, as one name rather than a CSS list. |
+| `lineHeight` | Points converted to Skia's multiple-of-font-size `height`, with half leading, which is what CSS and both React Native platforms do. |
+| `letterSpacing` | `TextStyle::setLetterSpacing`. |
+| `textAlign` | `left`, `right`, `center`, `justify`, `start`/`end`, and `auto` as `start`. |
+| `textDecorationLine` | `underline`, `line-through` and both together; `textDecorationColor` falls back to the foreground colour. |
+| `numberOfLines` | `ParagraphStyle::setMaxLines`. |
+| `ellipsizeMode` | Anything but `clip` sets a `…` ellipsis. |
+| Inline attachments | Added as SkParagraph placeholders sized from the attachment's own measured frame, and reported back through `getRectsForPlaceholders`. |
+
+### Fidelity limits
+
+Each is deliberate, and each is a thing to fix rather than a thing to argue about:
+
+- **No `measureLines`, so no baseline alignment and no `onTextLayout`.** Both go through
+  `TextLayoutManagerExtended`, which detects them with a concept on the class the vendored header declares. Adding
+  them means adding methods to a vendored header, which is a different decision from swapping one source file.
+- **No prepared-layout path.** `prepareLayout`/`measurePreparedLayout` are absent for the same reason, so every
+  measure lays out from scratch behind the measure cache.
+- **RTL is not handled.** The paragraph direction is hardcoded left-to-right. ICU is present and SkParagraph does
+  the bidi work, so mixed-direction runs inside a paragraph resolve correctly; what is missing is `writingDirection`
+  and an RTL base direction, and there is no golden for either.
+- **Ellipsis is always at the tail.** SkParagraph truncates nowhere else, so `head` and `middle` are accepted and
+  drawn as `tail`.
+- **Emoji are whatever fontconfig finds.** Skia's COLRv1 support exists, but the vendored font carries no emoji,
+  so every emoji is a fallback lookup and therefore machine-dependent. Not goldenable as things stand.
+- **`adjustsFontSizeToFit`, `textTransform`, `fontVariant`, text shadows, `textAlignVertical` and
+  `textBreakStrategy` are ignored.**
+- **Group opacity applies to text the same way it applies to views**: per-fragment alpha, not a composited layer.
+  Overlapping translucent text blends against itself. Same deviation, same fix, as *View props fidelity*.
+- **Every paint rebuilds the paragraph, and every snapshot copies the attributed string.** The damage walk runs
+  the same snapshot code over a subtree per mutation, so a text-heavy tree copies its strings more than it needs
+  to. Skia's shaped-run cache absorbs the layout half. Both are #20 concerns, not correctness ones.
+- **`<TextInput>` is not here at all.** It has no `platform/cxx` upstream and is issue #17; selection, the caret,
+  and `zwp_text_input_v3` IME all belong to it.
+
+## Input
+
+Issue #18, milestone M1. A mouse pointer and a keyboard, delivered to React once per frame. Touch, gestures beyond
+press, focus traversal and IME are not here; the deferrals are at the end of this section and each names its owner.
+
+The pipeline is four hops, and only the first and the third are ours:
+
+```text
+wl_pointer / wl_keyboard ─▶ WaylandSeat ─▶ InputQueue ─┐        frame thread
+                                                       │
+                              InputDispatcher ◀────────┘
+                                    │ findNodeAtPoint, PointerRouter
+                                    ▼
+                              TouchEventEmitter ─▶ EventQueue ─▶ EventBeat
+                                                                    │ induce, once per frame
+─────────────────────────────────────────────────────────────────── ▼ ──────────  JavaScript thread
+                              PointerEventsProcessor ─▶ UIManagerBinding ─▶ RN$ event handler
+```
+
+### The event beat, and why per-frame batching falls out of it
+
+Upstream requires every platform to subclass `EventBeat`, because only the host knows when a frame's events are
+complete: iOS induces before the main run loop sleeps, Android induces from the Choreographer. `EventQueue`
+requests a beat whenever an event is enqueued, `EventBeat::induce` schedules the flush through
+`RuntimeScheduler::scheduleWork`, and the queue then drains on the JavaScript thread. Until this issue, `FabricHost`
+handed `SchedulerToolbox` a plain `EventBeat`, which has no way to be induced from outside — so events queued and
+never left. The window was a display, not an application.
+
+`FrameEventBeat` in `FabricHost.cpp` is the whole platform contribution: a subclass that widens the protected
+`induce` to something the frame thread can call. `WindowMain` calls `WindowSession::deliverInput` once per frame,
+before `takeFrame`, whether or not the compositor sent anything, and that call dispatches the frame's input and
+then induces. Batching is therefore not a policy layered on top of upstream — it is what upstream already does
+once the beat exists, and it applies to every queued event, not only input: a layout event and a
+JavaScript-driven event ride the same flush.
+
+`ReactCxxPlatform` ships `RunLoopObserverManager`, which reaches the same behaviour through a `RunLoopObserver`
+whose `startObserving` and `stopObserving` are both empty and whose `onRender` is the induce trigger. It was read
+before this was written and not adopted: there is no run loop to observe here either, so the observer buys an
+indirection and no behaviour, and `RunLoopObserverManager::induce` is declared in the header with no definition in
+the `.cpp`, which would be a link error the first time it was called.
+
+Thread affinity is the base class's problem, deliberately. `induce` is called on the frame thread and the beat
+callback runs on the JavaScript thread, because `scheduleWork` is what crosses over; nothing in our code touches a
+`jsi::Runtime`.
+
+### The seat
+
+`WaylandSeat` binds `wl_seat` at version 5 and takes the pointer and the keyboard from it. Five is the floor
+because `wl_pointer.frame` and the `release` requests both arrive there; a compositor that advertises less gets no
+seat at all rather than a version ladder, and the window still opens with input permanently empty.
+
+Keysyms are libxkbcommon's. The compositor sends a keymap over a file descriptor, the client `mmap`s it, compiles
+it with `xkb_keymap_new_from_string`, and thereafter `xkb_state_key_get_one_sym` turns an evdev keycode — plus the
+X11 keycode offset of 8 that every keymap in the wild is written against — into a keysym, and
+`xkb_state_mod_name_is_active` reports Ctrl, Shift, Alt and Super after each `wl_keyboard.modifiers`. This is the
+same library that `zwp_text_input_v3` compose sequences and dead keys will need in #26, so it is where the IME
+work starts rather than a stopgap.
+
+Buttons are mapped from `BTN_LEFT`/`BTN_MIDDLE`/`BTN_RIGHT` to the DOM button numbers 0, 1 and 2 at the seat, so
+nothing above it knows an evdev code. Anything else the mouse has is dropped, because there is no DOM button
+number for it. `wl_pointer.button` carries no coordinates, so the seat remembers the last motion position and
+attaches it.
+
+The listener structs are value-initialised and then filled member by member instead of with a designated
+initialiser. `wl_pointer_listener` grows a member with every `wl_pointer` version libwayland learns — `warp`
+arrived in 1.24 — and naming them all would pin this file to one libwayland release, while naming only some is
+what `-Wmissing-field-initializers` exists to complain about. Everything version 5 can send is assigned; the rest
+stay null and are unreachable, because the bound version is what decides which events a compositor may send.
+
+### The queue, and what coalescing actually promises
+
+`InputQueue` collapses **consecutive** motion events into the last one. A 1000 Hz mouse produces about seventeen
+motions inside a 60 Hz frame and nine inside a 120 Hz one, and React has no use for the intermediate positions —
+but it does need to know that a button went down between two of them, so a press splits the run and the positions
+on either side survive independently. Contiguity is the whole rule; there is no time window and no sampling.
+
+The queue is bounded at 256 events and counts what it drops rather than dropping silently. Coalescing is what
+keeps a real device orders of magnitude below the cap, so reaching it means a stream no human produced.
+
+`InputQueue` needs no lock. Wayland listeners run inside `wl_display_dispatch_pending`, which the frame thread
+calls, and the frame thread is also what drains the queue.
+
+### Hit testing is upstream's
+
+`UIManager::findNodeAtPoint` — the same call `NativeDOM` uses for `elementFromPoint` — walks the committed shadow
+tree from the root, honours `pointerEvents`, transforms and overflow inset, and returns the deepest node that can
+be a touch target. The retained scene also carries absolute frames and could answer the same question, but it has
+no shadow nodes behind those frames and therefore no event emitters, and a second hit-test implementation would be
+a second chance to disagree with React about what was clicked. When nothing is hit the target is the surface root,
+which is what lets the hover chain notice that the pointer left a view for the background.
+
+Reading the shadow tree from the frame thread is allowed rather than tolerated: `ShadowTreeRegistry::visit` and
+`ShadowTree::getCurrentRevision` both take a shared lock and are documented as callable from any thread, committed
+shadow nodes are immutable, and `EventQueue::enqueueEvent` takes its own mutex.
+
+### What the platform decides, and what React decides
+
+`PointerRouter` is a mouse state machine and nothing more: which buttons are down, which node the press started
+on, and therefore whether a release is also a click. Everything else a desktop pointer implies —
+`pointerEnter`, `pointerLeave` between siblings, `pointerOver`, `pointerOut`, the hover chain, pointer capture and
+bubbling — is computed by upstream's `PointerEventsProcessor` when the event reaches `UIManagerBinding` on the
+JavaScript thread, and the platform's job is to feed it the raw events it expects.
+
+`click` is the one exception. Upstream treats it as synthetic and passes it straight through without hover
+processing or listener filtering, so deciding that a press and a release on the same target are a press gesture is
+the platform's call. That is the event `Pressability` turns into `onPressIn`, `onPressOut` and `onPress`.
+
+Keyboard has no cross-platform Fabric surface to target. On the `cxx` platform `ViewEventEmitter` is
+`BaseViewEventEmitter`, which carries touch, pointer, layout, focus and accessibility events and no key events at
+all — `react-native-macos` adds `onKeyDown` through a platform `HostPlatformViewEventEmitter`, which is the shape
+this will eventually take. Until then keys are dispatched as generic `keyDown`/`keyUp` events with a
+`{key, ctrlKey, shiftKey, altKey, metaKey}` payload, to the node the pointer is currently over, and to nothing at
+all when the pointer is over no node. That is hover-follows-focus, and it is a placeholder for a focus model, not
+one.
+
+### The proof
+
+```bash
+hello_react --inject-pointer packages/core/test-bundles/pressable.js 200 140
+```
+
+Headless, for the same reason `--golden` is: no GPU, no Vulkan driver, no compositor, so it runs anywhere the unit
+tests do. It boots the same `FabricHost` the window boots, waits for the bundle's first commit, and then delivers
+three frames through the same `InputQueue`, `InputDispatcher` and `FrameEventBeat` the window uses — seventeen
+motion events in the first, a press in the second, a release in the third — inducing the beat once per frame.
+
+`packages/core/test-bundles/pressable.js` is a `<Pressable>` with the React removed: one 200x120 view at (100, 80)
+declaring the pointer props `Pressability` declares, and a `registerEventHandler` callback that prints every event
+Fabric hands it. Because there is no React, the instance handle is built by hand in the shape
+`PointerEventsProcessor` resolves targets through — `instanceHandle.stateNode.node` — which is React's fiber
+shape.
+
+Expected output, in order:
+
+```text
+pressable: committed surface 1
+pressable: topPointerOver on box at 200,140
+pressable: topPointerEnter on box at 200,140
+pressable: topPointerMove on box at 200,140
+pressable: topPointerDown on box at 200,140
+pressable: topPointerUp on box at 200,140
+pressable: topClick on box at 200,140
+```
+
+The line that carries the batching claim is the single `topPointerMove`: seventeen motion events went in and one
+came out, and the sixteen that did not arrive are the acceptance criterion. The `topPointerOver` and
+`topPointerEnter` lines are the hover chain, and they are evidence the pipeline reaches
+`PointerEventsProcessor` rather than bypassing it — neither event was ever dispatched by this platform.
+
+### Deferrals, with owners
+
+- **Touch and gestures.** `TouchEventEmitter::onTouchStart` and the responder system are untouched. Nothing on a
+  desktop Wayland seat produces them without `wl_touch`, and a `PanResponder` needs the responder negotiation as
+  well as the events. Not in M1.
+- **Scroll.** `wl_pointer.axis`, `axis_source`, `axis_stop` and `axis_discrete` are accepted and discarded. They
+  become meaningful with `ScrollView`, and ADR-0001 already records that its physics is a subsystem of its own.
+- **Key repeat.** `wl_keyboard.repeat_info` is accepted and ignored, so a held key produces one `keyDown`.
+  Synthesising repeat means a timer in the frame loop, which is the same machinery text input will need.
+- **Focus traversal.** Issue #18 asks for react-native-macos tab order. There is no focus model here yet: no
+  `focusable` prop, no focus ring, no Tab handling, and `BaseViewEventEmitter::onFocus`/`onBlur` are never called.
+  Keyboard events follow the pointer instead, which is honest about being a placeholder.
+- **A root instance handle.** `UIManager::startEmptySurface` does not give the root shadow node one, and
+  `PointerEventsProcessor::getShadowNodeFromEventTarget` returns null without it, so an event whose target is only
+  the root is dropped before the hover chain runs. The consequence is visible: moving off a view onto the
+  background does not currently produce `pointerOut`. Fixing it means giving the root a fiber-shaped handle, which
+  belongs with React Native's JavaScript surface registry rather than here.
+- **IME.** `zwp_text_input_v3`, pre-edit rendering, cursor rectangles, surrounding-text sync and xkbcommon compose
+  sequences are issue #26, and ADR-0001 makes them a prerequisite of a usable `TextInput` rather than a later
+  nicety.
+- **E2E traces.** Issue #18 also asks for hover/press traces and keyboard focus order under a headless compositor
+  with virtual Wayland input. `--inject-pointer` is the unit-level and integration-level proof; the compositor-level
+  one belongs with the harness that runs the lavapipe window golden, and neither exists yet.
+
 ## Golden images
 
 The rig has two halves. `hello_react --golden` produces a PNG; a Vitest spec compares it against a checked-in one.
@@ -655,9 +1014,29 @@ one prop group. Left to right, top to bottom, on the same `#14161A` background:
    that order and carrying `zIndex` 3, 1, 2. The stack must read green at the bottom, blue in the middle, **red on
    top**. A renderer that ignored `zIndex` would put blue on top instead, which is what makes this element a test.
 
+The third is `packages/core/test-bundles/text.js` to `packages/core/goldens/text.png`, the fixture for *Text*
+above. It needs `pnpm --filter @react-native-linux/core vendor:fonts` to have run; without the vendored faces the
+paragraphs are shaped with whatever fontconfig finds and the comparison fails, which is the correct outcome. Every
+string is ASCII so that nothing falls through to a system font. On the same `#14161A` background, top to bottom:
+
+1. (40, 32) a 32 px bold white `#F2F4F8` heading, `Text renders on Linux`, on one line.
+2. (40, 96) a 300 px wide `#1E2430` panel with 12 px padding holding a 16 px, 24 px line-height paragraph that
+   **wraps onto several lines**. Its fragments are white, bold amber `#E5C07B`, white, italic green `#98C379`,
+   white — proving per-fragment attributes survive the flattening into one `AttributedString`, and that a bold or
+   italic run inside a line does not restart the line box.
+3. (380, 96) a 380 px wide panel holding a 16 px muted `#9AA4B2` paragraph with `numberOfLines: 1`, which must be
+   **cut on the first line and end in a `…`** rather than wrapping or being clipped mid-glyph.
+4. (40, 300) and (40, 340) two 20 px sky `#61AFEF` lines in a 720 px wide box, one `textAlign: center` and one
+   `textAlign: right`. Their left edges must differ from each other and from every other line in the picture.
+5. (40, 396) an 18 px white line with `letterSpacing: 6`, visibly tracked out.
+6. (40, 440) an 18 px amber line with `textDecorationLine: underline`.
+
+The heading and the two aligned lines carry no `backgroundColor` and no border, so they also prove the scene's
+visibility rule: a node that paints only text is still emitted as a primitive.
+
 ### The partial-redraw equivalence proof
 
-The third fixture is different in kind: `--damage-golden` is issue #12's acceptance criterion — "partial redraw
+The fourth fixture is different in kind: `--damage-golden` is issue #12's acceptance criterion — "partial redraw
 equals full redraw" — turned into an assertion, and the PNG is a by-product.
 
 `packages/core/test-bundles/damage.js` commits twice. The first commit is an ordinary frame. A `setTimeout`
@@ -708,7 +1087,8 @@ needs neither Hermes nor Skia, so it skips both the multi-hour Hermes build and 
 Vulkan prerequisites `RNL_ENABLE_SKIA` and `RNL_ENABLE_WINDOW` probe for.
 
 `packages/core/tests/CMakeLists.txt` fetches googletest at a pinned commit, builds `rnl_core_tests` from
-`SceneTest.cpp` plus the two sources it exercises — `RetainedScene.cpp` and `LinuxMountingManager.cpp`, compiled
+`SceneTest.cpp` and `InputTest.cpp` plus the three sources they exercise — `RetainedScene.cpp`,
+`LinuxMountingManager.cpp` and `InputPipeline.cpp`, compiled
 directly into the test binary rather than linked from a Hermes-linked library — and registers them with
 `gtest_discover_tests` so `ctest` finds every `TEST` individually. Under Clang, `rnl_core_tests` also gets
 `-fprofile-instr-generate -fcoverage-mapping`, LLVM's source-based coverage instrumentation.
@@ -716,10 +1096,24 @@ directly into the test binary rather than linked from a Hermes-linked library �
 `scripts/cpp-coverage.ts` is the gate: it runs `rnl_core_tests` with `LLVM_PROFILE_FILE` pointed at
 `build/test/coverage`, merges the raw profile with `llvm-profdata merge -sparse`, exports it as lcov with
 `llvm-cov export --format=lcov`, and grades line and branch coverage per file against an explicit list
-(`scopedSourcePaths` in the script — today `RetainedScene.cpp` and `LinuxMountingManager.cpp`, the two sources
-`SceneTest.cpp` actually exercises). A source with no tests behind it is deliberately not in that list: adding a
-file there without coverage behind it is what turns the gate red, rather than a silent average across the whole of
-`packages/core`.
+(`scopedSourcePaths` in the script — today `RetainedScene.cpp`, `LinuxMountingManager.cpp` and
+`InputPipeline.cpp`, the three sources the test binary actually exercises). A source with no tests behind it is
+deliberately not in that list: adding a file there without coverage behind it is what turns the gate red, rather
+than a silent average across the whole of `packages/core`.
+
+`InputDispatcher.cpp` and `WaylandSeat.cpp` are the input sources deliberately left outside that scope, and the
+split between them and `InputPipeline.cpp` is what makes the scope honest rather than convenient: everything that
+can be arithmetically wrong — motion coalescing, the queue bound, the buttons bitmask, the press-to-click state
+machine, offset points, modifier flags — lives in `InputPipeline.cpp` where the gate sees it. What is left in
+`InputDispatcher.cpp` is a `UIManager` hit test and a switch over five emitter calls, and what is left in
+`WaylandSeat.cpp` is protocol plumbing that needs a compositor. `--inject-pointer` is the test for those two.
+
+`TextPipeline.cpp` and `TextLayoutManager.cpp` are outside that scope for the same reason, and one stronger one:
+they are the only two sources that are not even compiled in the `test` configure, because the stub swap is
+conditional on Skia. Their correctness is visible as layout — a wrong measurement moves every line in the picture
+— so the text golden is what tests them, and `packages/core/tests` never links Skia. The scene half of text is
+inside the gate: extraction from `ParagraphState`, the opacity fold into fragment colours, the visibility rule and
+the damage all live in `RetainedScene.cpp` and are covered by `RetainedSceneTextTest`.
 
 `ScenePainter.cpp` is deliberately **not** in that scope. It could be: a `SkSurfaces::Raster` surface needs no GPU,
 no Vulkan driver and no compositor, exactly as `hello_react --golden` proves. The cost is what rules it out — the
@@ -783,8 +1177,8 @@ so here.
 
 ### What the native job actually does
 
-Vendoring is the two pinned scripts, unchanged from local use: `node scripts/vendor-react-native.ts` always, and
-`node scripts/vendor-skia.ts` only for the `dev` entry. The sanitizer entries configure with
+Vendoring is the three pinned scripts, unchanged from local use: `node scripts/vendor-react-native.ts` always,
+and `node scripts/vendor-skia.ts` plus `node scripts/vendor-fonts.ts` only for the `dev` entry. The sanitizer entries configure with
 `-DRNL_ENABLE_SKIA=OFF`, which drops the painter, the window and the golden path in one flag. That is deliberate:
 the pinned Skia archive is an uninstrumented release build, so linking it into a sanitized binary buys shadow-memory
 noise and no coverage.
@@ -808,6 +1202,11 @@ entries:
    `View #4 frame=(24.00, 24.00, 120.00, 80.00) backgroundColor=rgba(51, 102, 204, 1)` line, so the Yoga output and
    the flattened-parent origin are pinned, not merely the fact that a commit happened.
 
+A fifth acceptance step runs on the `dev` entry alone: `hello_react --fabric packages/core/test-bundles/text.js`
+must print a `Paragraph` line carrying the heading's text, which proves the descriptors are registered and that
+`ParagraphState` reached the scene. It is `dev`-only because the sanitizer entries build the upstream stub, where
+every paragraph measures as zero.
+
 `pnpm test:golden` then runs on the `dev` entry only. It is not a smoke test: `golden.spec.ts` skips itself when the
 binary is missing, so the assertion that it does *not* skip is what proves the Skia half configured at all, and the
 comparison is exact-equality against the checked-in PNG.
@@ -830,11 +1229,12 @@ abort with `unexpected memory mapping` when the kernel hands out more ASLR entro
 | --- | --- | --- | --- |
 | Vendored React Native | `third_party/react-native` | `rnl-vendor-react-native-ubuntu-24.04-<hash of scripts/vendor.lock.json + scripts/vendor-react-native.ts>` | ~18 MB |
 | Vendored Skia | `third_party/skia` | `rnl-vendor-skia-ubuntu-24.04-<hash of scripts/skia.lock.json + scripts/vendor-skia.ts>` | ~93 MB |
+| Vendored fonts | `packages/core/fonts` | `rnl-vendor-fonts-ubuntu-24.04-<hash of scripts/fonts.lock.json + scripts/vendor-fonts.ts>` | ~2 MB |
 | ccache | `.ccache` | `rnl-ccache-ubuntu-24.04-clang-18-<preset>-<hash of the CMake files and both lock files>-<run id>` | 2 GB ceiling per preset |
 | pnpm store | handled by `actions/setup-node` | `pnpm-lock.yaml` | small |
 
-The two vendor caches are keyed on the lock file **and** the script that reads it, because a change to either can
-change the tree. Both keys are content-deterministic, so the plain `actions/cache` action is used and a miss saves
+The three vendor caches are keyed on the lock file **and** the script that reads it, because a change to either
+can change the tree. Both keys are content-deterministic, so the plain `actions/cache` action is used and a miss saves
 automatically; both vendor scripts are no-ops on a hit, since they compare the restored `.vendor-stamp.json`
 against the lock.
 
