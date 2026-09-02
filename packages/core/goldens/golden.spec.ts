@@ -63,6 +63,7 @@ const fixtures: readonly GoldenFixture[] = [
     renderArguments: ["Hello world{Ctrl+A}"],
     renderFlag: "--type",
   },
+  { bundleFileName: "gradient.js", goldenFileName: "gradient.png", renderArguments: [], renderFlag: "--golden" },
 ];
 
 const renderFixture = (fixture: GoldenFixture, outputPath: string): void => {

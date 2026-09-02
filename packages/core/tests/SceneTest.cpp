@@ -18,7 +18,10 @@
 #include <react/renderer/core/ConcreteState.h>
 #include <react/renderer/core/ReactPrimitives.h>
 #include <react/renderer/core/ShadowNodeFamily.h>
+#include <react/renderer/graphics/BackgroundImage.h>
 #include <react/renderer/graphics/Color.h>
+#include <react/renderer/graphics/ColorStop.h>
+#include <react/renderer/graphics/LinearGradient.h>
 #include <react/renderer/imagemanager/ImageRequest.h>
 #include <react/renderer/imagemanager/ImageRequestParams.h>
 #include <react/renderer/imagemanager/primitives.h>
@@ -117,6 +120,26 @@ std::shared_ptr<ViewProps> propsWithBackground(SharedColor backgroundColor) {
 
 ShadowView makePaintedView(Tag tag, Rect frame, SharedColor backgroundColor) {
     return makeStyledView(tag, frame, propsWithBackground(backgroundColor));
+}
+
+/**
+ * One `experimental_backgroundImage` layer as `BaseViewProps` parses it: a corner keyword and two stops, the
+ * first unpositioned so the scene is proved to copy the authored values rather than a resolved ramp.
+ */
+facebook::react::LinearGradient blueToRedGradient() {
+    return facebook::react::LinearGradient{
+        .direction = facebook::react::GradientKeyword::ToBottomRight,
+        .colorStops = {facebook::react::ColorStop{.color = blue(), .position = ValueUnit{}},
+                       facebook::react::ColorStop{.color = red(),
+                                                  .position = ValueUnit{100.0F, UnitType::Percent}}}};
+}
+
+std::shared_ptr<ViewProps> propsWithGradients(std::vector<facebook::react::BackgroundImage> backgroundImage) {
+    const std::shared_ptr<ViewProps> viewProps = std::make_shared<ViewProps>();
+
+    viewProps->backgroundImage = std::move(backgroundImage);
+
+    return viewProps;
 }
 
 /**
@@ -565,6 +588,44 @@ TEST(RetainedSceneTest, EachBorderSideAloneIsEnoughToPaintANode) {
     }
 
     EXPECT_EQ(scene.snapshot().size(), 4U);
+}
+
+TEST(RetainedSceneTest, ABackgroundImageGradientTravelsToThePrimitiveWithTheInheritedOpacity) {
+    const std::shared_ptr<ViewProps> viewProps = propsWithGradients({blueToRedGradient()});
+
+    viewProps->opacity = 0.5;
+
+    const SceneSnapshot snapshot = snapshotOfSingleChild(viewProps, makeRect(0, 0, 120, 80));
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    ASSERT_EQ(snapshot[0].backgroundImage.size(), 1U);
+    EXPECT_TRUE(snapshot[0].backgroundImage.front() == facebook::react::BackgroundImage{blueToRedGradient()});
+    EXPECT_FLOAT_EQ(snapshot[0].backgroundImageOpacity, 0.5F);
+    EXPECT_EQ(snapshot[0].backgroundColorArgb, 0U);
+}
+
+TEST(RetainedSceneTest, ANodeWithoutABackgroundImageCarriesNoGradientLayers) {
+    const SceneSnapshot snapshot = snapshotOfSingleChild(propsWithBackground(blue()), makeRect(0, 0, 40, 40));
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    EXPECT_TRUE(snapshot[0].backgroundImage.empty());
+    EXPECT_FLOAT_EQ(snapshot[0].backgroundImageOpacity, 1.0F);
+}
+
+TEST(RetainedSceneTest, AGradientAloneIsEnoughToPaintAndDamageANodeButAnEmptyListIsNot) {
+    RetainedScene scene;
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    scene.takeDamage();
+    addChild(scene, kSurfaceTag, makeStyledView(2, makeRect(0, 0, 40, 40), propsWithGradients({})));
+    addChild(scene, kSurfaceTag,
+             makeStyledView(3, makeRect(10, 20, 200, 100), propsWithGradients({blueToRedGradient()})));
+
+    const SceneSnapshot snapshot = scene.snapshot();
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    EXPECT_EQ(snapshot[0].backgroundImage.size(), 1U);
+    expectRect(boundsOf(scene.takeDamage()), makeRect(10, 20, 200, 100));
 }
 
 TEST(RetainedSceneTest, ATransformIsAppliedAboutTheCenterOfTheAbsoluteFrame) {

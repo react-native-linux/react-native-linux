@@ -763,10 +763,14 @@ endif()
 #
 # Text is the exception to "nothing outside this target draws": the paragraph the painter draws is built by
 # layoutParagraph, which lives with the TextLayoutManager because measurement has to build the same one.
+#
+# GradientShader.cpp is the second source rather than more anonymous helpers inside ScenePainter.cpp: the CSS
+# gradient-line, colour-stop fix-up and radial-sizing formulas are a self-contained body of geometry with one
+# entry point, and they are the only Skia code here that is not a draw call.
 # ---------------------------------------------------------------------------
 
 if(TARGET rnl_skia)
-    add_library(rnl_scene_painter STATIC src/ScenePainter.cpp)
+    add_library(rnl_scene_painter STATIC src/GradientShader.cpp src/ScenePainter.cpp)
     target_compile_options(rnl_scene_painter PRIVATE -Wall -Wextra)
     target_include_directories(rnl_scene_painter PUBLIC src)
     target_link_libraries(rnl_scene_painter PUBLIC rnl_react_core rnl_skia)

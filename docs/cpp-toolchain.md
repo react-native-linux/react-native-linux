@@ -659,8 +659,106 @@ Known deviations from iOS and Android, all deliberate:
 - **Anti-aliased wedge clips can leave a hairline seam** where two border sides of different colours meet.
 
 Not implemented at all, and owned elsewhere: `shadowColor`/elevation and `boxShadow`, `filter`, `mixBlendMode` and
-`isolation`, `outline*`, and `backgroundImage` gradients. Each needs its own issue under M1; none of them is a
-variation on what is here.
+`isolation`, and `outline*`. Each needs its own issue under M1; none of them is a variation on what is here.
+`experimental_backgroundImage` gradients were the last entry on that list and are now implemented; see *Gradients*
+below.
+
+## Gradients
+
+`experimental_backgroundImage` — CSS `linear-gradient()` and `radial-gradient()` as a `<View>` background. This is
+issue #34, and almost all of it is upstream's: React Native already parses the prop into
+`std::vector<facebook::react::BackgroundImage>`, a `std::variant<LinearGradient, RadialGradient>`, on
+`BaseViewProps::backgroundImage`. Nothing in this repository re-models those types.
+
+### The pipeline, end to end
+
+```text
+experimental_backgroundImage           a CSS string, or the list processBackgroundImage produces
+  → BackgroundImagePropsConversions    upstream: LinearGradient / RadialGradient with ColorStop lists
+  → RetainedScene::writeNode           copied onto SceneNode::backgroundImage, unresolved
+  → SceneSnapshot                      ScenePrimitive::backgroundImage + backgroundImageOpacity
+  → makeGradientShader                 src/GradientShader.cpp: the CSS geometry, one SkShader per layer
+  → ScenePainter::paintBackgroundImages  filled into the same rounded border box the solid colour uses
+```
+
+The stops are **not** resolved in the scene, which is the one place this feature departs from the rule that
+`RetainedScene` composes everything and `ScenePainter` only issues Skia calls. Resolving them needs the CSS
+gradient line, and the gradient line needs the box being filled — so the arithmetic would have to be redone in the
+painter anyway. Opacity is the visible consequence: every other colour a snapshot carries has the inherited
+opacity multiplied into its alpha, and a gradient cannot, because it has an unbounded number of colours. It
+travels as `ScenePrimitive::backgroundImageOpacity` and becomes the paint alpha, exactly as an untinted `<Image>`
+already does.
+
+A node whose only visible content is a gradient is painted and damaged like any other: `isPrimitiveVisible` counts
+a non-empty layer list, so a `<View>` with no `backgroundColor` and no border still emits a primitive, and the
+damage rules need no term of their own because a gradient is painted inside the frame.
+
+### Paint order
+
+CSS paints the **first** background image nearest the viewer, so the last entry in the list is bottom-most. The
+painter therefore walks `ScenePrimitive::backgroundImage` back to front, which is what React Native's own Android
+`BackgroundImageDrawable::draw` does — "iterate in reverse to match CSS spec i.e first background image appears
+closer to user". A solid `backgroundColor` stays underneath all of them, and an `<Image>`'s pixels stay above.
+
+### The formulas
+
+All of them are ports of React Native's Android implementation
+(`com.facebook.react.uimanager.style.{LinearGradient,RadialGradient,ColorStopUtils}`), which is itself a port of
+Blink's `css_gradient_value.cc`. Porting rather than inventing is the point: a gradient that differs from Android
+by a few degrees is a bug nobody can see until a designer notices.
+
+- **Colour-stop fix-up** (`fixedColorStops`) is the CSS algorithm from
+  [css-images-4](https://drafts.csswg.org/css-images-4/#coloring-gradient-line): an unpositioned first stop sits at
+  0 and an unpositioned last stop at 1; a percentage is a fraction of the gradient line and a length is `px /
+  gradient-line-length`; a position never moves backwards past the largest one before it; each run of unpositioned
+  stops is spread evenly between the positioned stops around it. `ProcessedColorStop` is upstream's own struct.
+- **Linear direction.** An angle arrives as a `Float` in CSS degrees — `to right` and the other three axis
+  keywords are already turned into 0/90/180/270 by the JavaScript side. The four *corner* keywords arrive as
+  `GradientKeyword` and become `atan(width / height)` offsets from the nearest axis, so the line is perpendicular
+  to the box's other diagonal.
+- **Linear gradient line.** Centred on the box, at that angle, ending where the perpendicular through the corner
+  the angle points at crosses it. The four axis-aligned angles are returned directly, because the perpendicular
+  slope is infinite there.
+- **Radial position.** `left`/`top` resolve against width/height through upstream's `ValueUnit::resolve`;
+  `right`/`bottom` resolve the same way and are subtracted from the box; an unset axis is the centre.
+- **Radial size.** `closest-side`/`farthest-side` are the distances to the nearest or farthest edge on each axis,
+  collapsed to one radius for a circle. `closest-corner`/`farthest-corner` take the ellipse through that corner
+  with the aspect ratio of the same-named side-sized ellipse, per
+  [css-images-3](https://www.w3.org/TR/css-images-3/#typedef-radial-size). Explicit lengths resolve directly.
+- **Ellipses** are `SkShaders::RadialGradient` of the horizontal radius with a local matrix scaling y by
+  `ry / rx` about the centre — one matrix rather than a second shader type, again matching Android.
+
+### Fidelity limits
+
+- **Transition hints are not interpolated.** `linear-gradient(red, 20%, blue)` is a stop whose colour is absent,
+  and upstream's C++ `ColorStop` models an absent colour as `SharedColor{0}` — which is also what
+  `transparent` processes to. The two are indistinguishable in that type, so the literal reading is taken:
+  `transparent` stops are correct, and a transition hint paints a transparent-black stop instead of the nine
+  interpolated stops browsers and Android insert.
+- **Colours are interpolated unpremultiplied, in the destination colour space.** That is Skia's default and what
+  Android gets from `android.graphics.LinearGradient`; the web premultiplies, so a ramp to `transparent` darkens
+  differently here than in a browser. `interpolation` hints (`in oklch`, hue methods) are not supported at all —
+  React Native does not parse them.
+- **`repeating-linear-gradient` and `repeating-radial-gradient` are not supported**, because React Native does not
+  parse them either. Every gradient is `SkTileMode::kClamp`.
+- **`background-size`, `background-position` and `background-repeat` are ignored.** Each layer fills the whole
+  border box. Upstream parses those props into `BaseViewProps`; honouring them is a separate issue.
+- **The layer is clipped to the border box**, matching the solid `backgroundColor`, where CSS would paint a
+  background image into the padding box by default.
+- **The CSS string form needs a feature flag.** `fromRawValue` only routes a string through the native CSS parser
+  when `ReactNativeFeatureFlags::enableNativeCSSParsing()` is on, and it is off in this build. A bundle that talks
+  to `nativeFabricUIManager` directly must therefore send the list shape `processBackgroundImage` produces, which
+  is what a real app sends anyway. `packages/core/test-bundles/gradient.js` does exactly that.
+- **A radial layer must carry `size` for its `position` to be read**, because upstream's
+  `parseProcessedBackgroundImage` nests the position branch inside the size branch, and must carry `shape`,
+  because `RadialGradient::shape` has no default member initialiser. Both are always present in what
+  `processBackgroundImage` emits.
+
+The golden is `packages/core/goldens/gradient.png`, from `packages/core/test-bundles/gradient.js`; see
+*Golden images*. The extraction half — the layers reaching the primitive, the opacity travelling beside them, and
+a gradient alone being enough to paint and damage a node — is in `packages/core/tests/SceneTest.cpp`, inside the
+100% gate. `GradientShader.cpp` is not in the gate, for the same reason `ScenePainter.cpp` is not: it produces
+pixels, and the golden is what reads them.
 
 ## Text
 
@@ -2280,6 +2378,26 @@ been typed. One fixture, two sequences. Both pictures show the same three fields
 `secureTextEntry` one showing seven bullets and no trace of its value, and a multiline one whose value wraps —
 and differ in the first field: `HelXlo` with the caret between `X` and `l` in one, `Hello world` entirely behind a
 selection rectangle in the other. See *TextInput*.
+
+The ninth is `packages/core/test-bundles/gradient.js` to `packages/core/goldens/gradient.png`, the fixture for
+*Gradients* above. Nothing in it needs a vendored asset or font. On the same `#14161A` background:
+
+1. (40, 40) 220x160, 28 px radius, `linear-gradient(45deg, red #E06C75, blue #3366CC)`. The ramp runs toward the
+   **top right**, because CSS 0° is up and angles turn clockwise; the two corners it does not point at are the
+   pure endpoint colours, and the rounded corners cut the ramp rather than the ramp stopping short of them.
+2. (300, 40) 220x160, 28 px radius, a `to bottom right` **corner keyword** with three explicitly positioned stops:
+   red at 0%, green `#98C379` at 35%, blue at 100%. The green band therefore sits nearer the top-left corner than
+   the middle, which is what makes the explicit percentages visible rather than decorative.
+3. (40, 240) 220x160, 24 px radius, a **circle** `farthest-corner` radial from white `#FFFFFF` to slate `#1A1F2B`,
+   centred. It must read as a circle in a wider-than-tall box — concentric rings, not an oval — with the corners
+   at the far end of the ramp.
+4. (300, 240) 220x160, 24 px radius, an **ellipse** `farthest-corner` radial positioned at 30% 30%, amber
+   `#E5C07B` to green at 55% to panel `#1E2430`. The rings are elliptical and their centre is up and to the left,
+   so the bottom-right corner is the farthest point and the darkest.
+5. (560, 40) a 200x360 amber `#E5C07B` panel, 20 px radius, holding a 160x320 child inset 20 px with 16 px radius,
+   `opacity: 0.5`, and a `180deg` white-to-slate gradient. The child is the opacity assertion: the gradient is
+   half-transparent over amber, so the top reads as pale amber and the bottom as a muted brown, and neither end is
+   the flat white or flat slate a renderer that dropped the opacity would draw.
 
 ### The partial-redraw equivalence proof
 

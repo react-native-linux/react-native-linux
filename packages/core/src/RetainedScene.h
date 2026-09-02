@@ -5,6 +5,7 @@
 #include <react/renderer/components/view/primitives.h>
 #include <react/renderer/core/LayoutMetrics.h>
 #include <react/renderer/core/ReactPrimitives.h>
+#include <react/renderer/graphics/BackgroundImage.h>
 #include <react/renderer/graphics/Color.h>
 #include <react/renderer/graphics/Point.h>
 #include <react/renderer/graphics/Rect.h>
@@ -158,6 +159,24 @@ struct ScenePrimitive {
     facebook::react::BorderWidths borderWidths;
     facebook::react::RectangleEdges<uint32_t> borderColorsArgb;
     uint32_t backgroundColorArgb{};
+
+    /**
+     * The `experimental_backgroundImage` gradient layers, in the order React Native parsed them, which is CSS
+     * paint order: the first entry is nearest the viewer and the last is behind all the others.
+     *
+     * These are React Native's own parsed types rather than resolved ramps, for the reason `SceneTextContent`
+     * keeps an `AttributedString`: turning a gradient into stop positions needs the box it fills and the CSS
+     * gradient-line length, which is Skia geometry rather than scene state. See *Gradients* in
+     * docs/cpp-toolchain.md.
+     */
+    std::vector<facebook::react::BackgroundImage> backgroundImage;
+
+    /**
+     * The cumulative opacity the gradient layers are painted with. It is not folded into the colour stops the
+     * way every other colour in a snapshot carries it, because a gradient has an unbounded number of colours and
+     * one paint alpha covers all of them.
+     */
+    float backgroundImageOpacity{1.0F};
     std::optional<SceneTextContent> text;
     std::optional<SceneImageContent> image;
     std::optional<SceneEditorContent> editor;
@@ -194,6 +213,7 @@ struct SceneNode {
     std::vector<facebook::react::Tag> childTags;
     facebook::react::LayoutMetrics layoutMetrics{};
     std::optional<facebook::react::SharedColor> backgroundColor;
+    std::vector<facebook::react::BackgroundImage> backgroundImage;
     facebook::react::BorderMetrics borderMetrics{};
     SceneMatrix transform{};
     float opacity{1.0F};

@@ -259,7 +259,7 @@ bool isEdgeVisible(facebook::react::Float width, uint32_t colorArgb) {
 
 bool isPrimitiveVisible(const ScenePrimitive& primitive) {
     return primitive.focusRing || primitive.text.has_value() || primitive.image.has_value() ||
-           (primitive.backgroundColorArgb >> kAlphaShift) != 0U ||
+           !primitive.backgroundImage.empty() || (primitive.backgroundColorArgb >> kAlphaShift) != 0U ||
            isEdgeVisible(primitive.borderWidths.left, primitive.borderColorsArgb.left) ||
            isEdgeVisible(primitive.borderWidths.top, primitive.borderColorsArgb.top) ||
            isEdgeVisible(primitive.borderWidths.right, primitive.borderColorsArgb.right) ||
@@ -272,6 +272,7 @@ void readPaintProps(SceneNode& node, const facebook::react::ShadowView& shadowVi
 
     if (viewProps == nullptr) {
         node.backgroundColor = std::nullopt;
+        node.backgroundImage.clear();
         node.borderMetrics = {};
         node.transform = {};
         node.opacity = 1.0F;
@@ -285,6 +286,10 @@ void readPaintProps(SceneNode& node, const facebook::react::ShadowView& shadowVi
     } else {
         node.backgroundColor = std::nullopt;
     }
+
+    // Copied rather than resolved: the gradient stops cannot be turned into a ramp without the CSS gradient line,
+    // which needs Skia geometry. See *Gradients* in docs/cpp-toolchain.md.
+    node.backgroundImage = viewProps->backgroundImage;
 
     // resolveBorderMetrics is what iOS and Android call too: it cascades the per-edge and per-corner props,
     // converts percentage radii to points, and applies the CSS corner-overlap clamp.
@@ -475,6 +480,8 @@ SceneVisit visitNode(const SceneNode& node, const ScenePaintState& state) {
                                                      node.backgroundColor.has_value()
                                                          ? toArgb(node.backgroundColor.value(), opacity)
                                                          : 0,
+                                                 .backgroundImage = node.backgroundImage,
+                                                 .backgroundImageOpacity = opacity,
                                                  .text = node.text.has_value()
                                                              ? std::optional<SceneTextContent>{resolveText(
                                                                    node.text.value(),

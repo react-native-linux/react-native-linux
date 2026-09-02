@@ -1,5 +1,6 @@
 #include "ScenePainter.h"
 
+#include "GradientShader.h"
 #include "ImageContent.h"
 #include "ImagePipeline.h"
 #include "TextGeometry.h"
@@ -25,6 +26,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <memory>
 
 namespace react_native_linux {
@@ -300,6 +302,44 @@ void paintFocusRing(SkCanvas& canvas, const ScenePrimitive& primitive) {
     canvas.drawRRect(ring, paint);
 }
 
+/**
+ * Fills the node's own rounded border box, which is the one geometry the solid background colour and every
+ * gradient layer share, so a rounded corner cuts all of them identically.
+ */
+void fillBorderBox(SkCanvas& canvas, const SkRRect& outer, const SkPaint& paint) {
+    // drawRRect is documented to accept a square-cornered rrect, but not documented to route it to drawRect.
+    // Saying so here keeps the pre-radius goldens byte-identical instead of relying on an internal fast path.
+    if (outer.isRect()) {
+        canvas.drawRect(outer.rect(), paint);
+    } else {
+        canvas.drawRRect(outer, paint);
+    }
+}
+
+/**
+ * The `experimental_backgroundImage` gradient layers, over the solid background colour and under everything else.
+ *
+ * Back to front, because CSS paints the first background image nearest the viewer — which is why React Native's
+ * Android drawable walks the same list in reverse. The node's opacity is the paint alpha rather than something
+ * multiplied into every stop.
+ */
+void paintBackgroundImages(SkCanvas& canvas, const ScenePrimitive& primitive, const SkRRect& outer) {
+    for (size_t remaining = primitive.backgroundImage.size(); remaining > 0; remaining--) {
+        const sk_sp<SkShader> shader = makeGradientShader(primitive.backgroundImage[remaining - 1], primitive.frame);
+
+        if (shader == nullptr) {
+            continue;
+        }
+
+        SkPaint paint;
+
+        paint.setAntiAlias(true);
+        paint.setAlphaf(primitive.backgroundImageOpacity);
+        paint.setShader(shader);
+        fillBorderBox(canvas, outer, paint);
+    }
+}
+
 void paintPrimitive(SkCanvas& canvas, const ScenePrimitive& primitive) {
     const SkRRect outer = toSkRRect(toSkRect(primitive.frame), primitive.borderRadii);
 
@@ -308,15 +348,10 @@ void paintPrimitive(SkCanvas& canvas, const ScenePrimitive& primitive) {
 
         paint.setAntiAlias(true);
         paint.setColor(primitive.backgroundColorArgb);
-
-        // drawRRect is documented to accept a square-cornered rrect, but not documented to route it to drawRect.
-        // Saying so here keeps the pre-radius goldens byte-identical instead of relying on an internal fast path.
-        if (outer.isRect()) {
-            canvas.drawRect(outer.rect(), paint);
-        } else {
-            canvas.drawRRect(outer, paint);
-        }
+        fillBorderBox(canvas, outer, paint);
     }
+
+    paintBackgroundImages(canvas, primitive, outer);
 
     // Before the border, because React Native draws borders inside the frame and therefore over the content.
     if (primitive.image.has_value()) {
