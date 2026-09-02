@@ -269,7 +269,7 @@ bool EditorModel::moveCaret(CaretMotion motion, bool isExtending) {
     const bool isHorizontalStep = motion == CaretMotion::Left || motion == CaretMotion::Right;
 
     // An arrow key with a selection collapses it to the edge it points at instead of stepping from the caret,
-    // which is what every desktop toolkit does and what makes a mis-aimed Shift+Left recoverable.
+    // which is what every desktop toolkit does and what makes a misaimed Shift+Left recoverable.
     if (!isExtending && isHorizontalStep && hasSelection()) {
         collapseCaretTo(motion == CaretMotion::Left ? selectionBeginByte() : selectionEndByte());
 

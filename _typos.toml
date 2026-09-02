@@ -3,3 +3,4 @@ extend-exclude = ["pnpm-lock.yaml"]
 
 [default.extend-identifiers]
 KEY_102ND = "KEY_102ND"
+HelXlo = "HelXlo"

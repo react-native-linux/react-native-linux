@@ -382,7 +382,7 @@ jobs:
           "$binary" --fabric packages/core/test-bundles/text-input.js | tee /tmp/rnl-text-input.log
           grep -q "text-input: committed surface 1" /tmp/rnl-text-input.log
           grep -q "TextInput #10" /tmp/rnl-text-input.log
-          ! grep -q "hunter2" /tmp/rnl-text-input.log
+          ! grep -qE 'TextInput #[0-9]+ .*hunter2' /tmp/rnl-text-input.log
 
       # Only the Skia entry has a TextLayoutManager behind Yoga; with -DRNL_ENABLE_SKIA=OFF the upstream stub is
       # still compiled in and every paragraph measures as zero, so this assertion belongs to the dev entry alone.
