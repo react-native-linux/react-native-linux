@@ -134,19 +134,22 @@ The handoff is ADR-0001 decision 6 applied literally. JavaScript runs on the ins
 driven from JavaScript mounts there, when the `RuntimeScheduler` drains its rendering update. The window loop is the
 platform-owned frame thread, and it calls exactly two things on the session:
 
-- `snapshotScene`, once per frame, which copies the scene out under `LinuxMountingManager`'s mutex. The copy carries
+- `takeFrame`, once per frame, which copies the scene out under `LinuxMountingManager`'s mutex **and** takes the
+  damage accumulated since the last frame in the same lock. The copy carries
   absolute frames — parent-relative Fabric frames are accumulated during the walk, in the scene, not in the paint
   loop — plus the absolute transform, the inherited `overflow: hidden` clips, the resolved border metrics, and
   packed ARGB colours with the inherited opacity already multiplied in. See *View props fidelity*. Nodes with
   neither a visible background nor a visible border, including the surface root, contribute nothing, because the
-  background clear already covers them.
+  background clear already covers them. The pair is atomic on purpose: a transaction landing between a snapshot
+  and a damage take would hand the frame thread damage its scene cannot satisfy, and that region would be painted
+  from stale state and never repainted. See *Damage tracking*.
 - `resize`, on `xdg_toplevel.configure`, which calls `SurfaceHandler::constraintLayout` with the new size as both
   the minimum and the maximum. That commit uses the default commit options, whose `mountSynchronously` is true, so
   the Yoga relayout **and** the resulting mount run on the frame thread. Thread affinity is therefore not what keeps
   the scene consistent — the mutex is, and it is the only thing that is.
 
-A snapshot is a full copy and every frame is a full repaint. At one `View` that is cheaper than any alternative, and
-damage tracking is issue #12, not this one.
+A snapshot is still a full copy — at this scene size that is cheaper than any alternative — but a frame is no
+longer a full repaint. See *Damage tracking*.
 
 Shutdown is stop, drain, destroy, in that order: `~WindowSession` stops the surface, drains the JavaScript thread so
 the queued unmount runs while the scheduler delegate is still alive, and then lets the Fabric host and the instance
@@ -300,6 +303,7 @@ pnpm --filter @react-native-linux/core build        # cmake --build build/dev
 pnpm --filter @react-native-linux/core run:hello    # build/dev/bin/hello_react
 pnpm --filter @react-native-linux/core run:fabric   # build/dev/bin/hello_react --fabric <bundle>
 pnpm --filter @react-native-linux/core run:golden   # hello_react --golden <bundle> /tmp/rnl-fabric-view.png
+pnpm --filter @react-native-linux/core run:golden:damage  # hello_react --damage-golden damage.js /tmp/rnl-damage.png
 pnpm --filter @react-native-linux/core run:window   # build/dev/bin/rnl_window
 pnpm --filter @react-native-linux/core run:window:fabric  # build/dev/bin/rnl_window --fabric <bundle>
 
@@ -327,7 +331,9 @@ Without an argument the expected output is `react-native-linux: hermes alive`. W
 process exits 0. `packages/core/test-bundles/throws.js` is the error fixture: it prints a `[js-error] fatal` block
 with a parsed stack to stderr and exits 1. `--fabric` takes the bundle path as its own argument and prints the
 retained scene after the JavaScript thread goes quiet; see *Fabric bootstrap* above. `--golden` takes the bundle
-path and an output path, prints nothing of its own, and writes a PNG; see *Golden images*. On a build configured
+path and an output path, prints nothing of its own, and writes a PNG. `--damage-golden` takes the same arguments,
+runs a bundle that commits twice, and writes a PNG only if the damage-clipped redraw of the second commit is
+byte-identical to a full one; see *Golden images*. On a build configured
 without Skia it exits 1 with a message naming `scripts/vendor-skia.ts`.
 
 When `cmake` and `ninja` are not on `PATH`, wrap the two CMake steps:
@@ -403,9 +409,112 @@ background filling the window with one blue `#3366CC` rounded rectangle inset 64
 12. `./build/dev/bin/hello_react --golden packages/core/test-bundles/fabric-view.js /tmp/fabric-view.png` writes
     that same picture as an 800x600 PNG without opening a window, without a Vulkan driver and with
     `WAYLAND_DISPLAY` unset. That is the golden-image rig; see *Golden images*.
+13. `./build/dev/bin/rnl_window --fabric packages/core/test-bundles/damage.js` shows a blue tile, a green tile and
+    a red tile, and one second later the green tile has moved down and right and turned amber while the red one is
+    gone. **No stale rectangle is left behind at either old position**, which is what partial redraw gets wrong
+    when it gets anything wrong; and both before and after that second, the window is idle and drawing nothing.
+    Resize it while it is idle — the picture must come back intact, because a new swapchain full-damages every
+    image. See *Damage tracking*.
 
 Not covered by this checklist, because it is not implemented yet: fractional scale, pointer and keyboard input,
 `wp_presentation_feedback` timing, and any measurement of the frame budget.
+
+## Damage tracking
+
+ADR-0001 decision 2 asks for per-frame cost proportional to change rather than to scene size. This is issue #12,
+and it is three pieces: the scene accounts for what changed, the renderer decides what a given swapchain image
+still owes, and `paintScene` turns that into a clip. Nothing about the scene model changed to make room for it.
+
+### What a mutation damages
+
+The rule is uniform, and it is the whole of the accounting: **every mutation damages the extent of the affected
+subtree as it was before the mutation and as it is after it.** A create has no before, a delete has no after, and
+everything else has both. `createSurfaceRoot` is the one special case: it damages the whole surface, because a new
+or resized surface has no relationship at all to the pixels that were there.
+
+| Mutation | Damage |
+| --- | --- |
+| `Create` | The new extent. Fabric emits `Create` before `Insert`, so this measures the node where it stands, unparented — one redundant rectangle per created node, which the cap below absorbs. |
+| `Insert` | The extent before the insert and after it, which is what makes a reparent damage both places. |
+| `Remove` | The same pair. A removed node is not a deleted node: it becomes its own root and keeps painting at its own frame origin until the `Delete` arrives. |
+| `Delete` | The old extent. |
+| `Update` | The old and the new extent, which covers a move, a resize, a colour change, an opacity change and a transform change without distinguishing between them. |
+| `createSurfaceRoot` | The whole root frame. |
+
+A **subtree extent** is the union of the bounds of every primitive the subtree paints, where one primitive's bounds
+are its absolute frame's four corners mapped through its absolute matrix and bounded, then intersected with every
+`overflow: hidden` clip it inherited — each clip's own frame mapped through the clip's own matrix. Three
+consequences are worth stating because they are the reason the rule stays this short:
+
+- **Borders need no term.** React Native draws them inside the frame, so the frame already contains them.
+- **A parent's transform, opacity or clip change damages its whole subtree**, because the extent is defined over
+  the subtree rather than over the node. That is the correct answer and it is also the cheap one; per-descendant
+  precision would cost an analysis nobody has asked for yet.
+- **A primitive that its clips cut away entirely damages nothing**, and a subtree that paints nothing — a layout
+  container with no background, an `opacity: 0` subtree — has no extent and damages nothing.
+
+The extent is computed by running the ordinary snapshot walk over that one subtree, seeded with the paint state its
+ancestors produce. There is no second implementation of frame composition, transform composition or clip
+inheritance for damage to get subtly wrong; that is the point.
+
+A node whose parent chain is broken — an insert under a tag that was never created — is measured as if it were a
+root. Nothing paints it, so the damage is a region that did not need repainting. A superset is safe; the inverse
+is not.
+
+### The merge policy
+
+Damage is a list of absolute-space rectangles, capped at **eight**. The ninth rectangle collapses the entire list
+into its bounding rectangle, and accumulation continues from there. Rectangles are never merged pairwise and
+overlapping rectangles are kept: an overlap costs the intersection being painted twice, and a merge heuristic costs
+code that would need its own tests. A mutation batch large enough to blow the cap is a batch whose bounding
+rectangle is most of the surface anyway.
+
+`mergeDamage` applies the same policy when one damage list is folded into another, which is what the renderer does
+per swapchain image.
+
+### Swapchain images are not one buffer
+
+`vkAcquireNextImageKHR` returns whichever image is free. The pixels already in it are **not** last frame's — they
+are from the last frame that used *that* image, two or three frames ago. Clipping to the damage since the previous
+frame would leave every image carrying the changes it personally missed.
+
+`SkiaVulkanRenderer` therefore keeps **one damage list per swapchain image**, adds every frame's damage to all of
+them, hands the acquired image its own accumulated list, and clears that list once the image is painted. That is
+the buffer-age approach — the region an image owes is everything that changed since it was last drawn — without
+needing `VK_EXT_swapchain_maintenance1`'s age query, because we know when we drew each image. The alternative,
+falling back to a full redraw whenever the acquired image is not the most recent one, was rejected: with three
+images it would make two frames out of three full redraws, which is most of the win.
+
+Two properties fall out of it rather than being special-cased:
+
+- **A new swapchain is a full repaint.** `createBackbuffers` seeds every list with the whole surface, so startup
+  and every resize repaint everything, for every image, before any partial redraw happens.
+- **An idle frame costs nothing.** An empty list means that image already holds the current scene, so `drawFrame`
+  skips the paint call entirely and presents. Skia is still flushed, because the acquire semaphore has to be waited
+  on and the render semaphore has to be signalled for the present to proceed. **If the window ever stalls after
+  this lands, this is the first thing to check**: it assumes `GrDirectContext::flush` with a signal semaphore
+  submits a command buffer even when no drawing was recorded. The fallback, if that assumption is wrong, is to
+  paint unconditionally and lose only the idle-frame saving.
+
+Not done, and deferred to the perf issue #20: `wl_surface.damage_buffer` and `VK_KHR_incremental_present`. Both
+tell the *compositor* which part of the surface changed, so it can composite less. Everything above only stops
+*us* from drawing; the compositor still treats every commit as a full-surface update. They are additive to this
+design — the per-image list is already exactly the rectangle set both APIs want — and neither is a correctness
+requirement.
+
+### Where the clip happens
+
+`paintScene` takes the damage and, when it is non-empty, clips to the union of its rectangles before it clears.
+Each rectangle is rounded out to whole pixels and outset by one, and the clip is not anti-aliased: a partially
+covered clip edge would blend new drawing into whatever the previous frame left there, and a partial pixel is
+exactly what a full repaint would not produce. `SkCanvas::clear` is `SkBlendMode::kSrc` and respects the clip, so
+the damaged region is replaced rather than blended and everything outside it is left byte-for-byte as it was.
+
+An empty damage list means no clip at all — the full repaint the golden rig and the first frame of a surface want.
+
+Primitives outside the damage are still submitted to Skia and clipped there rather than culled in our loop.
+Culling them is a CPU-side saving that belongs with the rest of the frame-time work in #20; the correctness
+argument does not need it.
 
 ## View props fidelity
 
@@ -451,6 +560,7 @@ The rig has two halves. `hello_react --golden` produces a PNG; a Vitest spec com
 
 ```text
 hello_react --golden <bundle> <output.png> [width height]
+hello_react --damage-golden <bundle> <output.png> [width height]
 ```
 
 The default size is 800x600, the same constraint the headless Fabric surface uses. The run is the ordinary headless
@@ -545,6 +655,47 @@ one prop group. Left to right, top to bottom, on the same `#14161A` background:
    that order and carrying `zIndex` 3, 1, 2. The stack must read green at the bottom, blue in the middle, **red on
    top**. A renderer that ignored `zIndex` would put blue on top instead, which is what makes this element a test.
 
+### The partial-redraw equivalence proof
+
+The third fixture is different in kind: `--damage-golden` is issue #12's acceptance criterion — "partial redraw
+equals full redraw" — turned into an assertion, and the PNG is a by-product.
+
+`packages/core/test-bundles/damage.js` commits twice. The first commit is an ordinary frame. A `setTimeout`
+callback then commits a second tree, so it arrives as its own mounting transaction rather than as a second tree in
+the same commit, and it does three things at once: it moves and recolours one view, it unmounts another, and it
+leaves a third untouched.
+
+`renderDamageGolden` paints the first commit's scene in full onto **two** raster surfaces, then paints the second
+commit's scene over one of them in full and over the other clipped to the damage the scene accumulated — the same
+`paintScene` call the window makes, minus the swapchain. The two surfaces are compared pixel by pixel in C++ and a
+single mismatch fails the run with its coordinate. Only then is the **damage-clipped** surface written, so the
+checked-in golden is the partial redraw rather than a full one that happens to match it.
+
+Under-damage and over-damage both fail, and each of the fixture's three elements is there to catch one way of
+being wrong:
+
+- The **moved** view fails the comparison if the position it left is not damaged: its old green rectangle would
+  survive the partial redraw and not the full one.
+- The **unmounted** view fails it if a delete does not damage the node's old extent.
+- The **untouched** view proves the clip is doing something: it is outside every damage rectangle, so its pixels in
+  the damage-clipped surface come from the first frame and have to match what the full redraw painted from scratch.
+
+There is no C++ equivalent of "the damage was suspiciously large", and there does not need to be — an oversized
+damage region is a wasted repaint, not a wrong picture, and the merge policy is unit-tested where it lives.
+
+The run is timing-sensitive in one place and fails loudly rather than silently there: the host has to observe the
+first commit before the timer fires the second one, which it does by polling the scene after loading the bundle.
+If it ever missed that window, the second commit's damage would already have been taken and discarded, and the run
+exits 1 with `the bundle produced no damage after its first commit` instead of writing a golden that proves
+nothing. The bundle's one-second delay is the margin.
+
+The expected picture, on the same `#14161A` background, is the second frame:
+
+1. (60, 50) 180x130 blue `#3366CC` — the untouched view, unchanged from the first frame.
+2. (420, 260) 140x100 amber `#E5C07B` — the moved view, which was green `#98C379` at (300, 200) in the first frame.
+3. Nothing at (300, 200) and nothing at (600, 80): the moved view's old position and the unmounted view's
+   rectangle are both damaged, cleared, and left as background.
+
 ## Unit tests and coverage
 
 `packages/core/tests` is a second, Hermes-free CMake configure of the same source tree, reached only through the
@@ -577,7 +728,15 @@ freetype/fontconfig prerequisites, and linking `libskia.a` into `rnl_core_tests`
 the one job that is currently cheap. The answer instead is the split described in *View props fidelity*: every
 number that could be wrong is computed in `RetainedScene.cpp`, where the gate does see it, and what is left in the
 painter is Skia geometry that a golden image is a better test of than an assertion on a pixel would be. If the
-painter ever grows logic that is not a draw call, that logic belongs in the scene, not in a new coverage entry. The gate honors `// COV_EXCL: <reason>` markers per AGENTS.md — a marked line is dropped from both
+painter ever grows logic that is not a draw call, that logic belongs in the scene, not in a new coverage entry.
+
+Damage tracking tests that rule rather than breaking it. Every rectangle is computed in `RetainedScene.cpp` — the
+transform mapping, the clip intersection, the subtree union, the merge policy — and what `clipToDamage` adds in the
+painter is `SkRect::roundOut` plus a one-pixel outset, which is Skia's own pixel-coverage rule and cannot be
+expressed in a Skia-free translation unit. The proof it is right is `--damage-golden`, which fails on a single
+differing pixel; that is a stronger statement about pixel rounding than a line-coverage percentage would be.
+
+The gate honors `// COV_EXCL: <reason>` markers per AGENTS.md — a marked line is dropped from both
 the line and the branch count, and a marker with no reason after the colon fails the script outright. `LLVM_COV`
 and `LLVM_PROFDATA` name the binaries to run and default to unversioned `llvm-cov`/`llvm-profdata`, which is what a
 recent Arch `llvm` package puts on `PATH`; Ubuntu's `llvm-18` package installs only the versioned

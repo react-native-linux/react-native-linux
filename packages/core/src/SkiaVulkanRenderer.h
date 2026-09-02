@@ -1,5 +1,6 @@
 #pragma once
 
+#include "RetainedScene.h"
 #include "WaylandWindow.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSurface.h"
@@ -30,6 +31,15 @@ namespace react_native_linux {
  * frame callback for the next frame must therefore be requested before `drawFrame` returns to the run loop, which
  * is why `drawFrame` takes the window rather than a bare surface handle.
  *
+ * Partial redraw is where the swapchain stops being an implementation detail. `vkAcquireNextImageKHR` hands back
+ * whichever image is free, so the pixels already in it are not last frame's — they are from the last frame that
+ * used *that* image, several frames ago. This class therefore keeps one damage list per swapchain image, adds
+ * every frame's damage to all of them, and hands the acquired image its own accumulated list, which is the
+ * buffer-age approach without the extension: the region a given image has to repaint is everything that changed
+ * since that image was last drawn. A new swapchain seeds every list with the full surface, so the first frame
+ * after startup or a resize is a full repaint by construction. `VK_KHR_incremental_present` and
+ * `wl_surface.damage_buffer` would additionally tell the compositor what changed; neither is bound here.
+ *
  * Threading contract: every member runs on the thread that owns the process run loop, the same thread the Wayland
  * connection is dispatched on. Nothing here is safe to call concurrently.
  */
@@ -43,7 +53,8 @@ public:
     ~SkiaVulkanRenderer() noexcept;
 
     void resize(WindowSize size);
-    void drawFrame(WaylandWindow& window, const std::function<void(SkCanvas&, WindowSize)>& paint);
+    void drawFrame(WaylandWindow& window, const SceneDamage& frameDamage,
+                   const std::function<void(SkCanvas&, WindowSize, const SceneDamage&)>& paint);
 
 private:
     struct Backbuffer {
@@ -73,6 +84,7 @@ private:
     WindowSize requestedSize_;
     WindowSize swapchainSize_;
     std::vector<sk_sp<SkSurface>> imageSurfaces_;
+    std::vector<SceneDamage> imageDamage_;
     std::vector<Backbuffer> backbuffers_;
     size_t currentBackbufferIndex_{0};
 };

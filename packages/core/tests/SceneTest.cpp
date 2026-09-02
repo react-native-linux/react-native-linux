@@ -45,6 +45,8 @@ using facebook::react::ValueUnit;
 using facebook::react::ViewProps;
 using react_native_linux::LinuxMountingManager;
 using react_native_linux::RetainedScene;
+using react_native_linux::SceneDamage;
+using react_native_linux::SceneFrame;
 using react_native_linux::SceneSnapshot;
 
 constexpr Tag kSurfaceTag = 1;
@@ -128,6 +130,23 @@ void expectPrimitive(const react_native_linux::ScenePrimitive& primitive, Rect f
     EXPECT_FLOAT_EQ(primitive.frame.size.width, frame.size.width);
     EXPECT_FLOAT_EQ(primitive.frame.size.height, frame.size.height);
     EXPECT_EQ(primitive.backgroundColorArgb, colorArgb);
+}
+
+void expectRect(const Rect& rect, Rect expected) {
+    EXPECT_FLOAT_EQ(rect.origin.x, expected.origin.x);
+    EXPECT_FLOAT_EQ(rect.origin.y, expected.origin.y);
+    EXPECT_FLOAT_EQ(rect.size.width, expected.size.width);
+    EXPECT_FLOAT_EQ(rect.size.height, expected.size.height);
+}
+
+Rect boundsOf(const SceneDamage& damage) {
+    Rect bounds = damage.front();
+
+    for (const Rect& rect : damage) {
+        bounds.unionInPlace(rect);
+    }
+
+    return bounds;
 }
 
 void expectMatrix(const react_native_linux::SceneMatrix& matrix, float scaleX, float scaleY, float translateX,
@@ -552,6 +571,245 @@ TEST(RetainedSceneTest, AClipCarriesTheTransformOfTheClippingAncestor) {
     expectMatrix(snapshot[0].matrix, 2, 2, -50, -50);
 }
 
+TEST(RetainedSceneDamageTest, ANewSurfaceRootDamagesTheWholeSurface) {
+    RetainedScene scene;
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+
+    const SceneDamage damage = scene.takeDamage();
+
+    ASSERT_EQ(damage.size(), 1U);
+    expectRect(damage[0], makeRect(0, 0, 800, 600));
+}
+
+TEST(RetainedSceneDamageTest, TakingTheDamageClearsIt) {
+    RetainedScene scene = sceneWithPaintedChild();
+
+    EXPECT_FALSE(scene.takeDamage().empty());
+    EXPECT_TRUE(scene.takeDamage().empty());
+}
+
+TEST(RetainedSceneDamageTest, CreatingANodeDamagesWhereItStands) {
+    RetainedScene scene;
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    scene.takeDamage();
+    scene.createNode(makePaintedView(2, makeRect(10, 20, 30, 40), blue()));
+
+    const SceneDamage damage = scene.takeDamage();
+
+    ASSERT_EQ(damage.size(), 1U);
+    expectRect(damage[0], makeRect(10, 20, 30, 40));
+}
+
+TEST(RetainedSceneDamageTest, InsertingAChildDamagesTheOldAndTheNewPosition) {
+    RetainedScene scene;
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, makePaintedView(2, makeRect(100, 200, 400, 300), blue()));
+
+    const ShadowView child = makePaintedView(3, makeRect(10, 20, 50, 60), red());
+
+    scene.createNode(child);
+    scene.takeDamage();
+    scene.insertChild(2, child, 0);
+
+    const SceneDamage damage = scene.takeDamage();
+
+    ASSERT_EQ(damage.size(), 2U);
+    expectRect(damage[0], makeRect(10, 20, 50, 60));
+    expectRect(damage[1], makeRect(110, 220, 50, 60));
+}
+
+TEST(RetainedSceneDamageTest, MovingANodeDamagesTheOldAndTheNewPosition) {
+    RetainedScene scene = sceneWithPaintedChild();
+
+    scene.takeDamage();
+    scene.updateNode(makePaintedView(2, makeRect(300, 400, 50, 60), red()));
+
+    const SceneDamage damage = scene.takeDamage();
+
+    ASSERT_EQ(damage.size(), 2U);
+    expectRect(damage[0], makeRect(10, 20, 200, 100));
+    expectRect(damage[1], makeRect(300, 400, 50, 60));
+}
+
+TEST(RetainedSceneDamageTest, AColorOnlyChangeDamagesThePrimitiveBoundsTwice) {
+    RetainedScene scene = sceneWithPaintedChild();
+
+    scene.takeDamage();
+    scene.updateNode(makePaintedView(2, makeRect(10, 20, 200, 100), red()));
+
+    const SceneDamage damage = scene.takeDamage();
+
+    ASSERT_EQ(damage.size(), 2U);
+    expectRect(damage[0], makeRect(10, 20, 200, 100));
+    expectRect(damage[1], makeRect(10, 20, 200, 100));
+}
+
+TEST(RetainedSceneDamageTest, RemovingAChildDamagesBothPlacesItOccupies) {
+    RetainedScene scene;
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, makeView(2, makeRect(100, 200, 400, 300)));
+
+    const ShadowView child = makePaintedView(3, makeRect(10, 20, 50, 60), red());
+
+    addChild(scene, 2, child);
+    scene.takeDamage();
+    scene.removeChild(2, child);
+
+    const SceneDamage removal = scene.takeDamage();
+
+    ASSERT_EQ(removal.size(), 2U);
+    expectRect(removal[0], makeRect(110, 220, 50, 60));
+    expectRect(removal[1], makeRect(10, 20, 50, 60));
+
+    scene.deleteNode(3);
+
+    const SceneDamage deletion = scene.takeDamage();
+
+    ASSERT_EQ(deletion.size(), 1U);
+    expectRect(deletion[0], makeRect(10, 20, 50, 60));
+}
+
+TEST(RetainedSceneDamageTest, DeletingAnUnknownNodeDamagesNothing) {
+    RetainedScene scene = sceneWithPaintedChild();
+
+    scene.takeDamage();
+    scene.deleteNode(404);
+
+    EXPECT_TRUE(scene.takeDamage().empty());
+}
+
+TEST(RetainedSceneDamageTest, UpdatingANodeThatPaintsNothingDamagesNothing) {
+    RetainedScene scene;
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, makeView(2, makeRect(0, 0, 50, 50)));
+    scene.takeDamage();
+    scene.updateNode(makeView(2, makeRect(10, 10, 50, 50)));
+
+    EXPECT_TRUE(scene.takeDamage().empty());
+}
+
+TEST(RetainedSceneDamageTest, ATransformIsMappedIntoTheDamageBounds) {
+    RetainedScene scene;
+    const std::shared_ptr<ViewProps> viewProps = propsWithBackground(blue());
+
+    viewProps->transform = Transform::Scale(2, 2, 1);
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    scene.takeDamage();
+    addChild(scene, kSurfaceTag, makeStyledView(2, makeRect(100, 50, 200, 100), viewProps));
+
+    const SceneDamage damage = scene.takeDamage();
+
+    ASSERT_FALSE(damage.empty());
+    expectRect(boundsOf(damage), makeRect(0, 0, 400, 200));
+}
+
+TEST(RetainedSceneDamageTest, AnAncestorClipCutsTheDamageBounds) {
+    RetainedScene scene;
+    const std::shared_ptr<ViewProps> clippingProps = propsWithBackground(blue());
+
+    clippingProps->yogaStyle.setOverflow(yoga::Overflow::Hidden);
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, makeStyledView(2, makeRect(25, 35, 200, 150), clippingProps));
+    scene.takeDamage();
+    addChild(scene, 2, makePaintedView(3, makeRect(10, 10, 400, 400), red()));
+
+    const SceneDamage damage = scene.takeDamage();
+
+    ASSERT_FALSE(damage.empty());
+    expectRect(damage.back(), makeRect(35, 45, 190, 140));
+}
+
+TEST(RetainedSceneDamageTest, APrimitiveEntirelyOutsideItsClipDamagesNothing) {
+    RetainedScene scene;
+    const std::shared_ptr<ViewProps> clippingProps = std::make_shared<ViewProps>();
+
+    clippingProps->yogaStyle.setOverflow(yoga::Overflow::Hidden);
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, makeStyledView(2, makeRect(0, 0, 100, 100), clippingProps));
+
+    const ShadowView hidden = makePaintedView(3, makeRect(200, 200, 50, 50), red());
+
+    addChild(scene, 2, hidden);
+    scene.takeDamage();
+    scene.updateNode(hidden);
+
+    EXPECT_TRUE(scene.takeDamage().empty());
+}
+
+TEST(RetainedSceneDamageTest, AParentUpdateDamagesItsWholeSubtree) {
+    RetainedScene scene;
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, makeView(2, makeRect(0, 0, 300, 300)));
+    addChild(scene, 2, makePaintedView(3, makeRect(10, 10, 50, 50), blue()));
+    addChild(scene, 2, makePaintedView(4, makeRect(100, 100, 50, 50), red()));
+    scene.takeDamage();
+    scene.updateNode(makeView(2, makeRect(200, 0, 300, 300)));
+
+    const SceneDamage damage = scene.takeDamage();
+
+    ASSERT_EQ(damage.size(), 2U);
+    expectRect(damage[0], makeRect(10, 10, 140, 140));
+    expectRect(damage[1], makeRect(210, 10, 140, 140));
+}
+
+TEST(RetainedSceneDamageTest, ANodeUnderAMissingParentIsMeasuredFromTheRoot) {
+    RetainedScene scene;
+    const ShadowView orphan = makePaintedView(2, makeRect(5, 6, 7, 8), blue());
+
+    scene.createNode(orphan);
+    scene.takeDamage();
+    scene.insertChild(404, orphan, 0);
+
+    const SceneDamage damage = scene.takeDamage();
+
+    ASSERT_EQ(damage.size(), 2U);
+    expectRect(damage[1], makeRect(5, 6, 7, 8));
+}
+
+TEST(RetainedSceneDamageTest, TheNinthRectangleCollapsesTheListIntoItsBoundingRectangle) {
+    RetainedScene scene = sceneWithPaintedChild();
+
+    scene.takeDamage();
+
+    for (int step = 0; step < 5; ++step) {
+        scene.updateNode(makePaintedView(2, makeRect(static_cast<float>(step) * 100, 0, 10, 10), blue()));
+    }
+
+    const SceneDamage damage = scene.takeDamage();
+
+    ASSERT_EQ(damage.size(), 2U);
+    expectRect(damage[0], makeRect(0, 0, 310, 120));
+    expectRect(damage[1], makeRect(400, 0, 10, 10));
+}
+
+TEST(RetainedSceneDamageTest, MergingDamageFollowsTheSameCapPolicy) {
+    SceneDamage damage;
+    SceneDamage additions;
+
+    for (int step = 0; step < 5; ++step) {
+        additions.push_back(makeRect(static_cast<float>(step) * 10, 0, 5, 5));
+    }
+
+    react_native_linux::mergeDamage(damage, additions);
+
+    EXPECT_EQ(damage.size(), 5U);
+
+    react_native_linux::mergeDamage(damage, additions);
+
+    ASSERT_EQ(damage.size(), 2U);
+    expectRect(damage[0], makeRect(0, 0, 45, 5));
+    expectRect(damage[1], makeRect(40, 0, 5, 5));
+}
+
 ShadowView mountBlueChild(LinuxMountingManager& mountingManager) {
     mountingManager.startSurface(kSurfaceTag, Size{.width = 800, .height = 600});
 
@@ -608,6 +866,24 @@ TEST(LinuxMountingManagerTest, UpdateRemoveAndDeleteMutationsReachTheScene) {
 
     EXPECT_TRUE(mountingManager.snapshotScene().empty());
     EXPECT_EQ(mountingManager.dumpScene(), "RootView #1 frame=(0.00, 0.00, 800.00, 600.00)\n");
+}
+
+TEST(LinuxMountingManagerTest, TakeFramePairsTheSceneWithItsDamageAndClearsThatDamage) {
+    LinuxMountingManager mountingManager;
+
+    mountBlueChild(mountingManager);
+
+    const SceneFrame frame = mountingManager.takeFrame();
+
+    ASSERT_EQ(frame.scene.size(), 1U);
+    expectPrimitive(frame.scene[0], makeRect(24, 24, 120, 80), kBlueArgb);
+    ASSERT_FALSE(frame.damage.empty());
+    expectRect(boundsOf(frame.damage), makeRect(0, 0, 800, 600));
+
+    const SceneFrame second = mountingManager.takeFrame();
+
+    EXPECT_EQ(second.scene.size(), 1U);
+    EXPECT_TRUE(second.damage.empty());
 }
 
 TEST(LinuxMountingManagerTest, DispatchCommandLeavesTheSceneUntouched) {

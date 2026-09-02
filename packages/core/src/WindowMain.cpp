@@ -1,3 +1,4 @@
+#include "LinuxMountingManager.h"
 #include "RetainedScene.h"
 #include "ScenePainter.h"
 #include "SkiaVulkanRenderer.h"
@@ -29,7 +30,8 @@ constexpr SkScalar kCardInset = 64.0F;
 constexpr SkScalar kCardCornerRadius = 24.0F;
 constexpr std::string_view kFabricFlag = "--fabric";
 
-void paintPlaceholderFrame(SkCanvas& canvas, react_native_linux::WindowSize size) {
+void paintPlaceholderFrame(SkCanvas& canvas, react_native_linux::WindowSize size,
+                           const react_native_linux::SceneDamage& /*damage*/) {
     canvas.clear(react_native_linux::kSceneBackgroundColor);
 
     const SkRect cardBounds = SkRect::MakeLTRB(kCardInset, kCardInset, static_cast<SkScalar>(size.width) - kCardInset,
@@ -60,7 +62,7 @@ int main(int argc, char** argv) {
         react_native_linux::SkiaVulkanRenderer renderer(window.display(), window.surface(), window.size());
         std::optional<react_native_linux::WindowSession> session;
 
-        renderer.drawFrame(window, paintPlaceholderFrame);
+        renderer.drawFrame(window, {}, paintPlaceholderFrame);
 
         if (isFabricRequested) {
             session.emplace(std::string(arguments[2]), window.size());
@@ -76,13 +78,17 @@ int main(int argc, char** argv) {
             }
 
             if (session.has_value()) {
-                const react_native_linux::SceneSnapshot scene = session->snapshotScene();
+                // The scene and the damage that describes it have to come out of the mounting manager together,
+                // under one lock: a transaction landing between them would leave damage this scene cannot satisfy.
+                const react_native_linux::SceneFrame frame = session->takeFrame();
 
-                renderer.drawFrame(window, [&scene](SkCanvas& canvas, react_native_linux::WindowSize /*size*/) {
-                    react_native_linux::paintScene(canvas, scene);
-                });
+                renderer.drawFrame(window, frame.damage,
+                                   [&frame](SkCanvas& canvas, react_native_linux::WindowSize /*size*/,
+                                            const react_native_linux::SceneDamage& imageDamage) {
+                                       react_native_linux::paintScene(canvas, frame.scene, imageDamage);
+                                   });
             } else {
-                renderer.drawFrame(window, paintPlaceholderFrame);
+                renderer.drawFrame(window, {}, paintPlaceholderFrame);
             }
 
             if (!window.waitForRedraw(kFrameCallbackFallback)) {

@@ -14,6 +14,12 @@ constexpr SkColor kSceneBackgroundColor = SkColorSetRGB(0x14, 0x16, 0x1A);
  * Draws one scene snapshot onto a canvas: the background clear, then per painted node its `overflow: hidden`
  * ancestor clips, its absolute transform, its rounded background fill and its per-side borders.
  *
+ * `damage` restricts all of that to the region that changed. An empty list means no restriction, which is the
+ * full repaint the golden rig and the first frame of any surface want. A non-empty list is clipped to the union
+ * of its rectangles, rounded out to whole pixels and outset by one so no anti-aliased edge falls outside the
+ * clip; the background clear is `SkBlendMode::kSrc` and respects that clip, so a damaged region is replaced
+ * rather than blended and pixels outside it are left exactly as the previous frame drew them.
+ *
  * Every number the snapshot carries is already absolute and already composed — opacity is multiplied into the
  * colours, radii are clamped, transforms are reduced to 2D affines — so nothing here computes scene state. What
  * remains is Skia geometry: `SkRRect`, `drawDRRect` for the border ring, and one mitred wedge clip per side when
@@ -26,6 +32,6 @@ constexpr SkColor kSceneBackgroundColor = SkColorSetRGB(0x14, 0x16, 0x1A);
  * Threading contract: the canvas and the snapshot both belong to the calling thread. The snapshot is already a
  * copy taken under the mounting manager's mutex, so nothing here touches the retained scene.
  */
-void paintScene(SkCanvas& canvas, const SceneSnapshot& scene);
+void paintScene(SkCanvas& canvas, const SceneSnapshot& scene, const SceneDamage& damage);
 
 } // namespace react_native_linux

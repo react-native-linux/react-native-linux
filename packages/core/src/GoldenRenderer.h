@@ -19,4 +19,20 @@ namespace react_native_linux {
  */
 int renderGolden(const std::string& bundlePath, const std::string& outputPath, int width, int height);
 
+/**
+ * Runs a bundle that commits twice and proves that painting only the damaged region produces the same picture as
+ * repainting everything.
+ *
+ * The first commit's scene is painted in full onto two surfaces. The second commit's scene is then painted over
+ * one of them in full and over the other clipped to the damage the scene accumulated, which is exactly what the
+ * window does per frame minus the swapchain. The two are compared byte by byte; a single differing pixel fails the
+ * run with its coordinate, because a partial redraw that is nearly right is a partial redraw that is wrong. The
+ * damage-clipped surface is what gets written, so the checked-in golden is the partial redraw rather than a full
+ * one that happens to match it.
+ *
+ * Returns a process exit status: 0 when the two redraws matched, the file was written, and the bundle reported no
+ * fatal JavaScript error.
+ */
+int renderDamageGolden(const std::string& bundlePath, const std::string& outputPath, int width, int height);
+
 } // namespace react_native_linux

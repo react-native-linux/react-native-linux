@@ -30,7 +30,7 @@ WindowSession::~WindowSession() noexcept {
 
 void WindowSession::resize(WindowSize size) { fabricHost_->setSurfaceSize(toSurfaceSize(size)); }
 
-SceneSnapshot WindowSession::snapshotScene() const { return fabricHost_->snapshotScene(); }
+SceneFrame WindowSession::takeFrame() { return fabricHost_->takeFrame(); }
 
 bool WindowSession::hasReportedFatalError() const { return reactHost_.hasReportedFatalError(); }
 

@@ -67,6 +67,20 @@ struct ScenePrimitive {
 
 using SceneSnapshot = std::vector<ScenePrimitive>;
 
+/**
+ * The region that has to be repainted, as axis-aligned rectangles in absolute surface coordinates.
+ *
+ * The list is bounded: past a small cap it collapses into its own bounding rectangle, so a large mutation batch
+ * costs one oversized repaint rather than an unbounded rectangle list. Rectangles may overlap; nothing here merges
+ * them pairwise, because the intersection costs a repaint and a merge heuristic costs code.
+ */
+using SceneDamage = std::vector<facebook::react::Rect>;
+
+/**
+ * Appends every rectangle of `additions` to `damage` under the same bounded-merge policy the scene applies.
+ */
+void mergeDamage(SceneDamage& damage, const SceneDamage& additions);
+
 struct SceneNode {
     facebook::react::Tag tag{};
     facebook::react::Tag parentTag{};
@@ -79,6 +93,8 @@ struct SceneNode {
     float opacity{1.0F};
     bool clipsChildren{false};
 };
+
+using SceneNodes = std::unordered_map<facebook::react::Tag, SceneNode>;
 
 struct ScenePaintState;
 
@@ -94,6 +110,14 @@ struct ScenePaintState;
  * coordinates by `snapshot` rather than by whoever draws them. Opacity, transforms and `overflow: hidden` clips
  * are composed down the tree in the same walk, for the same reason.
  *
+ * Every mutation also accumulates damage: the region a renderer has to repaint for the picture to match the scene
+ * again. The rule is uniform — a mutation damages the extent of the affected subtree as it was before the mutation
+ * and as it is after it, so a create damages only its new extent, a delete only its old one, and a move both. A
+ * subtree extent is the union of the absolute frames of the primitives it paints, each mapped through its own
+ * transform and cut by its inherited clips, which is why a change to a parent's transform, opacity or clip damages
+ * everything below it without any per-descendant analysis. Borders need no term of their own: React Native draws
+ * them inside the frame. See *Damage tracking* in docs/cpp-toolchain.md.
+ *
  * Threading contract: this type is not synchronised. Its owner serialises access.
  */
 class RetainedScene final {
@@ -105,6 +129,7 @@ public:
     void removeChild(facebook::react::Tag parentTag, const facebook::react::ShadowView& childShadowView);
     void updateNode(const facebook::react::ShadowView& shadowView);
     SceneSnapshot snapshot() const;
+    SceneDamage takeDamage();
     std::string dump() const;
 
 private:
@@ -112,8 +137,11 @@ private:
     std::vector<facebook::react::Tag> sortedRootTags() const;
     void appendPrimitives(SceneSnapshot& primitives, facebook::react::Tag tag, const ScenePaintState& state) const;
     void appendNode(std::string& output, facebook::react::Tag tag, size_t depth) const;
+    std::optional<facebook::react::Rect> subtreeExtent(facebook::react::Tag tag) const;
+    void damageSubtree(facebook::react::Tag tag);
 
-    std::unordered_map<facebook::react::Tag, SceneNode> nodes_;
+    SceneNodes nodes_;
+    SceneDamage damage_;
 };
 
 } // namespace react_native_linux

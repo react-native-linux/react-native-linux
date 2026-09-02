@@ -19,6 +19,7 @@ namespace {
 
 constexpr std::string_view kFabricFlag = "--fabric";
 constexpr std::string_view kGoldenFlag = "--golden";
+constexpr std::string_view kDamageGoldenFlag = "--damage-golden";
 
 #ifdef RNL_ENABLE_GOLDEN
 
@@ -38,9 +39,11 @@ std::optional<int> parsePositiveDimension(std::string_view text) {
     return value;
 }
 
-int runGoldenCommand(std::span<char*> arguments) {
+int runGoldenCommand(std::span<char*> arguments, bool isDamageRequested) {
+    const std::string_view flag = isDamageRequested ? kDamageGoldenFlag : kGoldenFlag;
+
     if (arguments.size() != kGoldenDefaultArgumentCount && arguments.size() != kGoldenSizedArgumentCount) {
-        std::cerr << "[hello_react] " << kGoldenFlag << " requires <bundle> <output.png> [width height]" << std::endl;
+        std::cerr << "[hello_react] " << flag << " requires <bundle> <output.png> [width height]" << std::endl;
 
         return 1;
     }
@@ -53,7 +56,7 @@ int runGoldenCommand(std::span<char*> arguments) {
         const std::optional<int> parsedHeight = parsePositiveDimension(arguments[5]);
 
         if (!parsedWidth.has_value() || !parsedHeight.has_value()) {
-            std::cerr << "[hello_react] " << kGoldenFlag << " width and height must be positive integers" << std::endl;
+            std::cerr << "[hello_react] " << flag << " width and height must be positive integers" << std::endl;
 
             return 1;
         }
@@ -62,14 +65,21 @@ int runGoldenCommand(std::span<char*> arguments) {
         height = parsedHeight.value();
     }
 
-    return react_native_linux::renderGolden(std::string(arguments[2]), std::string(arguments[3]), width, height);
+    const std::string bundlePath(arguments[2]);
+    const std::string outputPath(arguments[3]);
+
+    if (isDamageRequested) {
+        return react_native_linux::renderDamageGolden(bundlePath, outputPath, width, height);
+    }
+
+    return react_native_linux::renderGolden(bundlePath, outputPath, width, height);
 }
 
 #else
 
-int runGoldenCommand(std::span<char*> /*arguments*/) {
-    std::cerr << "[hello_react] " << kGoldenFlag
-              << " needs Skia, which this build was configured without; run node scripts/vendor-skia.ts and "
+int runGoldenCommand(std::span<char*> /*arguments*/, bool /*isDamageRequested*/) {
+    std::cerr << "[hello_react] " << kGoldenFlag << " and " << kDamageGoldenFlag
+              << " need Skia, which this build was configured without; run node scripts/vendor-skia.ts and "
                  "reconfigure"
               << std::endl;
 
@@ -83,6 +93,7 @@ int runGoldenCommand(std::span<char*> /*arguments*/) {
 int main(int argc, char** argv) {
     const std::span<char*> arguments(argv, static_cast<size_t>(argc));
     const bool isGoldenRequested = arguments.size() > 1 && kGoldenFlag == arguments[1];
+    const bool isDamageGoldenRequested = arguments.size() > 1 && kDamageGoldenFlag == arguments[1];
     const bool isFabricRequested = arguments.size() > 1 && kFabricFlag == arguments[1];
 
     if (isFabricRequested && arguments.size() < 3) {
@@ -92,8 +103,8 @@ int main(int argc, char** argv) {
     }
 
     try {
-        if (isGoldenRequested) {
-            return runGoldenCommand(arguments);
+        if (isGoldenRequested || isDamageGoldenRequested) {
+            return runGoldenCommand(arguments, isDamageGoldenRequested);
         }
 
         std::optional<std::string> bundlePath;

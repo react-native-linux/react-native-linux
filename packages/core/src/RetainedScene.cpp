@@ -31,6 +31,14 @@ struct ScenePaintState {
     std::vector<SceneClip> clips{};
 };
 
+/**
+ * What one node contributes to a walk: the primitive it would paint, and the state its children inherit.
+ */
+struct SceneVisit {
+    ScenePrimitive primitive;
+    ScenePaintState childState;
+};
+
 namespace {
 
 template <typename Nodes>
@@ -170,7 +178,126 @@ std::string readComponentName(const facebook::react::ShadowView& shadowView) {
     return shadowView.componentName;
 }
 
+SceneVisit visitNode(const SceneNode& node, const ScenePaintState& state) {
+    const facebook::react::Rect frame{.origin = state.origin + node.layoutMetrics.frame.origin,
+                                      .size = node.layoutMetrics.frame.size};
+    const SceneMatrix matrix = composeMatrices(state.matrix, matrixAboutCenter(node.transform, frame.getCenter()));
+    const float opacity = state.opacity * node.opacity;
+    SceneVisit visit{.primitive = ScenePrimitive{.frame = frame,
+                                                 .matrix = matrix,
+                                                 .clips = state.clips,
+                                                 .borderRadii = node.borderMetrics.borderRadii,
+                                                 .borderWidths = node.borderMetrics.borderWidths,
+                                                 .borderColorsArgb = toArgbEdges(node.borderMetrics.borderColors,
+                                                                                 opacity),
+                                                 .backgroundColorArgb =
+                                                     node.backgroundColor.has_value()
+                                                         ? toArgb(node.backgroundColor.value(), opacity)
+                                                         : 0},
+                     .childState = ScenePaintState{
+                         .origin = frame.origin, .matrix = matrix, .opacity = opacity, .clips = state.clips}};
+
+    if (node.clipsChildren) {
+        visit.childState.clips.push_back(
+            SceneClip{.frame = frame, .borderRadii = node.borderMetrics.borderRadii, .matrix = matrix});
+    }
+
+    return visit;
+}
+
+/**
+ * The state a node's own walk starts from: every ancestor between it and its root, composed top down. A node whose
+ * parent chain is broken — an insert under a tag that was never created — is measured as if it were a root, which
+ * damages a region that nothing paints. That is a superset, and a superset is safe.
+ */
+ScenePaintState paintStateOfAncestors(const SceneNodes& nodes, facebook::react::Tag tag) {
+    const auto entry = nodes.find(tag);
+    facebook::react::Tag current = entry == nodes.end() ? 0 : entry->second.parentTag;
+    std::vector<const SceneNode*> ancestors;
+
+    while (current != 0) {
+        const auto ancestor = nodes.find(current);
+
+        if (ancestor == nodes.end()) {
+            break;
+        }
+
+        ancestors.push_back(&ancestor->second);
+        current = ancestor->second.parentTag;
+    }
+
+    std::reverse(ancestors.begin(), ancestors.end());
+
+    ScenePaintState state;
+
+    for (const SceneNode* ancestor : ancestors) {
+        state = visitNode(*ancestor, state).childState;
+    }
+
+    return state;
+}
+
+facebook::react::Point mapPoint(const SceneMatrix& matrix, facebook::react::Point point) {
+    return facebook::react::Point{.x = (matrix.scaleX * point.x) + (matrix.skewX * point.y) + matrix.translateX,
+                                  .y = (matrix.skewY * point.x) + (matrix.scaleY * point.y) + matrix.translateY};
+}
+
+/**
+ * The axis-aligned box a transformed rectangle occupies: its four corners mapped through the matrix, bounded.
+ */
+facebook::react::Rect mappedBounds(const facebook::react::Rect& frame, const SceneMatrix& matrix) {
+    const facebook::react::Float right = frame.origin.x + frame.size.width;
+    const facebook::react::Float bottom = frame.origin.y + frame.size.height;
+
+    return facebook::react::Rect::boundingRect(
+        mapPoint(matrix, frame.origin), mapPoint(matrix, facebook::react::Point{.x = right, .y = frame.origin.y}),
+        mapPoint(matrix, facebook::react::Point{.x = right, .y = bottom}),
+        mapPoint(matrix, facebook::react::Point{.x = frame.origin.x, .y = bottom}));
+}
+
+/**
+ * What one primitive can dirty: its transformed frame, cut by every clip it inherited. Borders are inside the
+ * frame, so the frame is the whole extent.
+ */
+facebook::react::Rect primitiveDamageBounds(const ScenePrimitive& primitive) {
+    facebook::react::Rect bounds = mappedBounds(primitive.frame, primitive.matrix);
+
+    for (const SceneClip& clip : primitive.clips) {
+        bounds = facebook::react::Rect::intersect(bounds, mappedBounds(clip.frame, clip.matrix));
+    }
+
+    return bounds;
+}
+
+bool hasArea(const facebook::react::Rect& rect) {
+    return rect.size.width * rect.size.height > 0;
+}
+
+constexpr size_t kMaxDamageRects = 8;
+
+void addDamageRect(SceneDamage& damage, const facebook::react::Rect& rect) {
+    damage.push_back(rect);
+
+    if (damage.size() <= kMaxDamageRects) {
+        return;
+    }
+
+    facebook::react::Rect bounds = damage.front();
+
+    for (const facebook::react::Rect& merged : damage) {
+        bounds.unionInPlace(merged);
+    }
+
+    damage.assign(1, bounds);
+}
+
 } // namespace
+
+void mergeDamage(SceneDamage& damage, const SceneDamage& additions) {
+    for (const facebook::react::Rect& rect : additions) {
+        addDamageRect(damage, rect);
+    }
+}
 
 void RetainedScene::createSurfaceRoot(facebook::react::SurfaceId surfaceId, facebook::react::Size size) {
     SceneNode& node = nodes_[surfaceId];
@@ -178,34 +305,44 @@ void RetainedScene::createSurfaceRoot(facebook::react::SurfaceId surfaceId, face
     node.tag = surfaceId;
     node.componentName = facebook::react::RootComponentName;
     node.layoutMetrics.frame.size = size;
+
+    // The root paints nothing, so its subtree extent would be empty on a fresh surface. A new or resized surface
+    // is a full repaint regardless: the pixels behind it belong to whatever was there before.
+    addDamageRect(damage_, node.layoutMetrics.frame);
 }
 
 void RetainedScene::createNode(const facebook::react::ShadowView& shadowView) {
     writeNode(shadowView);
+    damageSubtree(shadowView.tag);
 }
 
 void RetainedScene::deleteNode(facebook::react::Tag tag) {
+    damageSubtree(tag);
     nodes_.erase(tag);
 }
 
 void RetainedScene::insertChild(facebook::react::Tag parentTag, const facebook::react::ShadowView& childShadowView,
                                 int index) {
+    damageSubtree(childShadowView.tag);
+
     SceneNode& child = writeNode(childShadowView);
     child.parentTag = parentTag;
 
     const auto parent = nodes_.find(parentTag);
 
-    if (parent == nodes_.end()) {
-        return;
+    if (parent != nodes_.end()) {
+        std::vector<facebook::react::Tag>& childTags = parent->second.childTags;
+        const size_t position = std::min(static_cast<size_t>(std::max(index, 0)), childTags.size());
+
+        childTags.insert(childTags.begin() + static_cast<std::ptrdiff_t>(position), childShadowView.tag);
     }
 
-    std::vector<facebook::react::Tag>& childTags = parent->second.childTags;
-    const size_t position = std::min(static_cast<size_t>(std::max(index, 0)), childTags.size());
-
-    childTags.insert(childTags.begin() + static_cast<std::ptrdiff_t>(position), childShadowView.tag);
+    damageSubtree(childShadowView.tag);
 }
 
 void RetainedScene::removeChild(facebook::react::Tag parentTag, const facebook::react::ShadowView& childShadowView) {
+    damageSubtree(childShadowView.tag);
+
     const auto child = nodes_.find(childShadowView.tag);
     facebook::react::Tag formerParentTag = parentTag;
 
@@ -219,10 +356,14 @@ void RetainedScene::removeChild(facebook::react::Tag parentTag, const facebook::
     if (formerParentTag != parentTag) {
         eraseChildTag(nodes_, formerParentTag, childShadowView.tag);
     }
+
+    damageSubtree(childShadowView.tag);
 }
 
 void RetainedScene::updateNode(const facebook::react::ShadowView& shadowView) {
+    damageSubtree(shadowView.tag);
     writeNode(shadowView);
+    damageSubtree(shadowView.tag);
 }
 
 SceneSnapshot RetainedScene::snapshot() const {
@@ -234,6 +375,10 @@ SceneSnapshot RetainedScene::snapshot() const {
     }
 
     return primitives;
+}
+
+SceneDamage RetainedScene::takeDamage() {
+    return std::exchange(damage_, SceneDamage{});
 }
 
 std::string RetainedScene::dump() const {
@@ -280,32 +425,46 @@ void RetainedScene::appendPrimitives(SceneSnapshot& primitives, facebook::react:
     }
 
     const SceneNode& node = entry->second;
-    const facebook::react::Rect frame{.origin = state.origin + node.layoutMetrics.frame.origin,
-                                      .size = node.layoutMetrics.frame.size};
-    const SceneMatrix matrix = composeMatrices(state.matrix, matrixAboutCenter(node.transform, frame.getCenter()));
-    const float opacity = state.opacity * node.opacity;
-    ScenePrimitive primitive{.frame = frame,
-                             .matrix = matrix,
-                             .clips = state.clips,
-                             .borderRadii = node.borderMetrics.borderRadii,
-                             .borderWidths = node.borderMetrics.borderWidths,
-                             .borderColorsArgb = toArgbEdges(node.borderMetrics.borderColors, opacity),
-                             .backgroundColorArgb =
-                                 node.backgroundColor.has_value() ? toArgb(node.backgroundColor.value(), opacity) : 0};
+    SceneVisit visit = visitNode(node, state);
 
-    if (isPrimitiveVisible(primitive)) {
-        primitives.push_back(std::move(primitive));
-    }
-
-    ScenePaintState childState{.origin = frame.origin, .matrix = matrix, .opacity = opacity, .clips = state.clips};
-
-    if (node.clipsChildren) {
-        childState.clips.push_back(
-            SceneClip{.frame = frame, .borderRadii = node.borderMetrics.borderRadii, .matrix = matrix});
+    if (isPrimitiveVisible(visit.primitive)) {
+        primitives.push_back(std::move(visit.primitive));
     }
 
     for (facebook::react::Tag childTag : node.childTags) {
-        appendPrimitives(primitives, childTag, childState);
+        appendPrimitives(primitives, childTag, visit.childState);
+    }
+}
+
+std::optional<facebook::react::Rect> RetainedScene::subtreeExtent(facebook::react::Tag tag) const {
+    SceneSnapshot primitives;
+
+    appendPrimitives(primitives, tag, paintStateOfAncestors(nodes_, tag));
+
+    std::optional<facebook::react::Rect> extent;
+
+    for (const ScenePrimitive& primitive : primitives) {
+        const facebook::react::Rect bounds = primitiveDamageBounds(primitive);
+
+        if (!hasArea(bounds)) {
+            continue;
+        }
+
+        if (extent.has_value()) {
+            extent.value().unionInPlace(bounds);
+        } else {
+            extent = bounds;
+        }
+    }
+
+    return extent;
+}
+
+void RetainedScene::damageSubtree(facebook::react::Tag tag) {
+    const std::optional<facebook::react::Rect> extent = subtreeExtent(tag);
+
+    if (extent.has_value()) {
+        addDamageRect(damage_, extent.value());
     }
 }
 

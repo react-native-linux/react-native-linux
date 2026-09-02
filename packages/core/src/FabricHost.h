@@ -28,10 +28,10 @@ namespace react_native_linux {
  *
  * Threading contract: construction and destruction happen on the thread that owns the process run loop, before
  * the JavaScript bundle is loaded and after the JavaScript thread has been drained. Everything Fabric does in
- * between happens on the JavaScript thread. `setSurfaceSize` and `snapshotScene` are the two members that may be
- * called while the surface is running: `constraintLayout` commits on the calling thread and, because the default
- * commit options mount synchronously, mounts there as well, and `snapshotScene` copies the scene under the
- * mounting manager's mutex.
+ * between happens on the JavaScript thread. `setSurfaceSize`, `takeFrame` and `snapshotScene` are the members that
+ * may be called while the surface is running: `constraintLayout` commits on the calling thread and, because the
+ * default commit options mount synchronously, mounts there as well, and the other two copy the scene — and, for
+ * `takeFrame`, its accumulated damage — out under the mounting manager's mutex.
  *
  * Shutdown contract: stopSurface commits an empty tree and queues the resulting unmount onto the JavaScript
  * thread. The owner drains that thread before destroying the host, because the queued rendering update holds a
@@ -48,6 +48,7 @@ public:
 
     void setSurfaceSize(facebook::react::Size surfaceSize);
     void stopSurface();
+    SceneFrame takeFrame();
     SceneSnapshot snapshotScene() const;
     std::string dumpScene() const;
 

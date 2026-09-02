@@ -158,9 +158,35 @@ void paintPrimitive(SkCanvas& canvas, const ScenePrimitive& primitive) {
     paintBorder(canvas, primitive, outer);
 }
 
+/**
+ * Clips to the union of the damage rectangles, in the canvas' current coordinate space.
+ *
+ * Each rectangle is rounded out to whole pixels and outset by one before it becomes part of the clip path, and
+ * the clip itself is not anti-aliased: a partially covered clip edge would blend the new drawing into whatever
+ * the previous frame left there, and a partial pixel is exactly what a full repaint would not produce.
+ */
+void clipToDamage(SkCanvas& canvas, const SceneDamage& damage) {
+    SkPathBuilder region;
+
+    for (const facebook::react::Rect& rect : damage) {
+        SkIRect pixels = toSkRect(rect).roundOut();
+
+        pixels.outset(1, 1);
+        region.addRect(SkRect::Make(pixels));
+    }
+
+    canvas.clipPath(region.detach(), false);
+}
+
 } // namespace
 
-void paintScene(SkCanvas& canvas, const SceneSnapshot& scene) {
+void paintScene(SkCanvas& canvas, const SceneSnapshot& scene, const SceneDamage& damage) {
+    const SkAutoCanvasRestore damageRestore(&canvas, true);
+
+    if (!damage.empty()) {
+        clipToDamage(canvas, damage);
+    }
+
     canvas.clear(kSceneBackgroundColor);
 
     // Every matrix in a snapshot is absolute, so the canvas matrix is replaced rather than concatenated. The

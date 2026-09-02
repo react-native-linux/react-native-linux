@@ -120,9 +120,16 @@ void SkiaVulkanRenderer::resize(WindowSize size) {
     createSwapchain();
 }
 
-void SkiaVulkanRenderer::drawFrame(WaylandWindow& window, const std::function<void(SkCanvas&, WindowSize)>& paint) {
+void SkiaVulkanRenderer::drawFrame(WaylandWindow& window, const SceneDamage& frameDamage,
+                                   const std::function<void(SkCanvas&, WindowSize, const SceneDamage&)>& paint) {
     if (backbuffers_.empty()) {
         return;
+    }
+
+    // Before any early return: this frame's damage belongs to every image that is not about to be drawn, and the
+    // paths that bail out rebuild the swapchain, which re-seeds every list with the full surface anyway.
+    for (SceneDamage& pendingDamage : imageDamage_) {
+        mergeDamage(pendingDamage, frameDamage);
     }
 
     currentBackbufferIndex_ = (currentBackbufferIndex_ + 1) % backbuffers_.size();
@@ -153,7 +160,16 @@ void SkiaVulkanRenderer::drawFrame(WaylandWindow& window, const std::function<vo
     GrBackendSemaphore acquiredSemaphore = GrBackendSemaphores::MakeVk(acquireSemaphore);
 
     imageSurface->wait(1, &acquiredSemaphore);
-    paint(*imageSurface->getCanvas(), swapchainSize_);
+
+    SceneDamage& imageDamage = imageDamage_[backbuffer.imageIndex];
+
+    // An empty list means this image already holds the current scene: nothing has changed since it was drawn, so
+    // the frame costs one present and no drawing at all. Skia is still flushed below, because the acquire
+    // semaphore has to be waited on and the render semaphore has to be signalled for the present to proceed.
+    if (!imageDamage.empty()) {
+        paint(*imageSurface->getCanvas(), swapchainSize_, imageDamage);
+        imageDamage.clear();
+    }
 
     GrBackendSemaphore renderedSemaphore = GrBackendSemaphores::MakeVk(backbuffer.renderSemaphore);
     GrFlushInfo flushInfo;
@@ -478,6 +494,15 @@ void SkiaVulkanRenderer::createBackbuffers(VkFormat imageFormat, VkImageUsageFla
         imageSurfaces_.push_back(std::move(imageSurface));
     }
 
+    // Every image of a fresh swapchain holds undefined pixels, so each one owes a full repaint before any partial
+    // one is meaningful. This is also what makes a resize a full redraw without a special case for it.
+    const facebook::react::Rect fullSurface{
+        .origin = {},
+        .size = {.width = static_cast<facebook::react::Float>(swapchainSize_.width),
+                 .height = static_cast<facebook::react::Float>(swapchainSize_.height)}};
+
+    imageDamage_.assign(imageCount, SceneDamage{fullSurface});
+
     // Skia's own VulkanWindowContext keeps one more backbuffer than there are swapchain images so a command buffer
     // has a chance to retire before its render semaphore is reused.
     backbuffers_.resize(imageCount + 1);
@@ -499,6 +524,7 @@ void SkiaVulkanRenderer::destroyBackbuffers() noexcept {
 
     vkDeviceWaitIdle(device_);
     imageSurfaces_.clear();
+    imageDamage_.clear();
 
     for (Backbuffer& backbuffer : backbuffers_) {
         if (backbuffer.renderSemaphore != VK_NULL_HANDLE) {

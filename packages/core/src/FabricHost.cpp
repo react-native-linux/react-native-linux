@@ -103,6 +103,10 @@ void FabricHost::stopSurface() {
     }
 }
 
+SceneFrame FabricHost::takeFrame() {
+    return mountingManager_->takeFrame();
+}
+
 SceneSnapshot FabricHost::snapshotScene() const {
     return mountingManager_->snapshotScene();
 }
