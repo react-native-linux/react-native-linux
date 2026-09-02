@@ -77,7 +77,7 @@ describe("evaluateCheck / binary probe: version at or above the minimum", () => 
   });
 });
 
-describe("evaluateCheck / binary probe: version below the minimum or unparseable", () => {
+describe("evaluateCheck / binary probe: version below the minimum or unparsable", () => {
   it("fails when the found version is older than the minimum", () => {
     const check = buildCheck({ probe: cmakeProbe });
     const environment = buildEnvironment({
