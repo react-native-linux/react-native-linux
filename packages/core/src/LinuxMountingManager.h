@@ -65,6 +65,15 @@ public:
     SceneSnapshot snapshotScene() const;
     std::string dumpScene() const;
 
+    /**
+     * Whether the scene has changed since the last `takeFrame`, for the frame clock's fallback-timeout decision
+     * (see *Frame clock* in docs/cpp-toolchain.md): a caller pacing redraw off a withheld `wl_surface.frame` needs
+     * to know there is a mounted change to paint before it spends a fallback tick drawing one. A mutation batch,
+     * an image decode, a focus change and an editor-state publish all set it; only `takeFrame` clears it, so it
+     * stays true across calls that do not consume the frame.
+     */
+    bool hasPendingDamage() const;
+
     void executeMount(facebook::react::SurfaceId surfaceId,
                       facebook::react::MountingTransaction&& mountingTransaction) override;
     void dispatchCommand(const facebook::react::ShadowView& shadowView, const std::string& commandName,
@@ -73,6 +82,7 @@ public:
 private:
     mutable std::mutex sceneMutex_;
     RetainedScene scene_;
+    bool hasPendingDamage_{false};
 };
 
 } // namespace react_native_linux

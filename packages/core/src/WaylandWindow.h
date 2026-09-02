@@ -77,6 +77,15 @@ public:
 
     void requestFrameCallback();
     bool waitForRedraw(std::chrono::milliseconds fallbackTimeout);
+
+    /**
+     * Whether the compositor has sent `wl_callback.done` for the frame callback currently or most recently
+     * requested. `requestFrameCallback` — called from inside `SkiaVulkanRenderer::drawFrame` — is what resets this,
+     * so a caller that skips drawing on a fallback timeout leaves it exactly as `waitForRedraw` last left it: a
+     * caller can use it right after `waitForRedraw` returns to tell a callback-driven wake from a timeout one. See
+     * *Frame clock* in docs/cpp-toolchain.md.
+     */
+    bool hasFrameCallbackFired() const noexcept;
     std::vector<InputEvent> takeInputEvents();
     TextInputClient* textInput() const noexcept;
 

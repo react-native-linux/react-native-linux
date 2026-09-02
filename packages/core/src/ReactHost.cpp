@@ -70,4 +70,6 @@ bool ReactHost::runUntilQuiescent(std::chrono::milliseconds budget) {
 
 bool ReactHost::hasReportedFatalError() const { return errorReporter_.hasReportedFatalError(); }
 
+bool ReactHost::hasPendingTimers() const { return timerRegistry_->hasPendingTimers(); }
+
 } // namespace react_native_linux

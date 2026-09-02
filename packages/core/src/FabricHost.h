@@ -81,6 +81,13 @@ public:
      */
     bool advanceCaretBlink(double frameMilliseconds);
     void induceEventBeat();
+
+    /**
+     * Whether the mounting manager or the scroll controller have anything the frame clock should treat as pending
+     * work: a mount that has not been painted yet, or a scroll that is still being dragged or gliding. See
+     * *Frame clock* in docs/cpp-toolchain.md.
+     */
+    bool hasPendingWork() const;
     SceneFrame takeFrame();
     SceneSnapshot snapshotScene() const;
     std::string dumpScene() const;

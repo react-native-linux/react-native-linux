@@ -17,24 +17,35 @@ void LinuxMountingManager::damageImageSource(const std::string& uri) {
     const std::lock_guard<std::mutex> guard(sceneMutex_);
 
     scene_.damageImageSource(uri);
+    hasPendingDamage_ = true;
 }
 
 void LinuxMountingManager::setFocus(facebook::react::Tag tag, bool isFocusVisible) {
     const std::lock_guard<std::mutex> guard(sceneMutex_);
 
     scene_.setFocus(tag, isFocusVisible);
+    hasPendingDamage_ = true;
 }
 
 void LinuxMountingManager::setEditorState(facebook::react::Tag tag, const SceneEditorState& editorState) {
     const std::lock_guard<std::mutex> guard(sceneMutex_);
 
     scene_.setEditorState(tag, editorState);
+    hasPendingDamage_ = true;
 }
 
 SceneFrame LinuxMountingManager::takeFrame() {
     const std::lock_guard<std::mutex> guard(sceneMutex_);
 
+    hasPendingDamage_ = false;
+
     return SceneFrame{.scene = scene_.snapshot(), .damage = scene_.takeDamage()};
+}
+
+bool LinuxMountingManager::hasPendingDamage() const {
+    const std::lock_guard<std::mutex> guard(sceneMutex_);
+
+    return hasPendingDamage_;
 }
 
 SceneSnapshot LinuxMountingManager::snapshotScene() const {
@@ -52,6 +63,10 @@ std::string LinuxMountingManager::dumpScene() const {
 void LinuxMountingManager::executeMount(facebook::react::SurfaceId /*surfaceId*/,
                                         facebook::react::MountingTransaction&& mountingTransaction) {
     const std::lock_guard<std::mutex> guard(sceneMutex_);
+
+    if (!mountingTransaction.getMutations().empty()) {
+        hasPendingDamage_ = true;
+    }
 
     for (const facebook::react::ShadowViewMutation& mutation : mountingTransaction.getMutations()) {
         switch (mutation.type) { // COV_EXCL: every ShadowViewMutation::Type value has a case, so the implicit no-match branch cannot execute

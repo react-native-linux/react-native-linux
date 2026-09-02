@@ -212,6 +212,10 @@ bool FabricHost::advanceCaretBlink(double frameMilliseconds) {
 
 void FabricHost::induceEventBeat() { eventBeatInducer_(); }
 
+bool FabricHost::hasPendingWork() const {
+    return mountingManager_->hasPendingDamage() || scrollController_->isScrollActive();
+}
+
 SceneFrame FabricHost::takeFrame() {
     return mountingManager_->takeFrame();
 }

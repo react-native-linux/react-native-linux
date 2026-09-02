@@ -147,6 +147,61 @@ with a 60 or 120 Hz callback stream and fast enough that a hidden window still n
 Issue #8's acceptance criteria say "no timer-based render loop exists anywhere in the frame path", which predates
 the ADR amendment that made the fallback mandatory. The ADR wins; the issue text needs the correction.
 
+### Frame clock (#59)
+
+The fallback in *Pacing* keeps the connection dispatching, but on its own it says nothing about whether the frame
+it wakes for should actually be drawn. Gating that naively on "did the callback fire" would make an occluded
+window's animation stop dead the moment Hyprland stops sending callbacks for it; drawing unconditionally on every
+wakeup, callback or fallback, makes a hidden window redraw every 50 ms forever for no reason. `FrameClock`
+(`packages/core/src/FrameClock.h`) is the state machine that picks neither of those: a pure, dependency-free class
+with no Wayland and no clock reads of its own — every timestamp is a `std::chrono::steady_clock::time_point` the
+caller passes in.
+
+Two inputs, one flag:
+
+- `onFrameCallback(now)` always draws. `wl_surface.frame` firing means the compositor is presenting this surface,
+  so there is never a reason to skip it.
+- `onFallbackTimeout(now, hasPendingWork)` draws only if `hasPendingWork` is true. An idle occluded window with a
+  static picture must not spin the GPU on every 50 ms wakeup; a window with something still moving must not stall
+  just because nothing sent it a callback.
+
+The delta each drawing tick reports is wall-clock time since the *last drawing tick*, regardless of which input
+produced either one — a fallback-timeout draw is not measured from the last callback, and a skipped (no-work)
+timeout does not move that reference at all, so the next real tick's delta is still correct. The first callback to
+arrive after one or more fallback-driven ticks is flagged `resumed`, exactly once, which is what a caller would use
+to detect "the frame source came back" rather than "vsync ticked again". Liveness is otherwise just counters:
+`callbackTicks`, `timerTicks`, `resumeTransitions` and `lastCallbackAt` — a frame source that has gone silent shows
+up as `timerTicks` climbing while `callbackTicks` stops. There is no Tracy integration yet; `WindowSession::frameClock()`
+is a plain getter until one exists.
+
+`WindowSession` owns one `FrameClock`, separate from the `lastFrameTime_` clock `deliverInput` already uses for
+scroll physics and the caret blink — that clock paces *input*, once per loop iteration regardless of whether a
+paint happens, and does not need to know about draw gating. `recordFrameTick` is the bridge: `WindowMain`'s run
+loop calls it once per iteration with `Source::Callback` when `WaylandWindow::hasFrameCallbackFired()` is true (the
+callback fired during the previous `waitForRedraw`) and `Source::Timer` otherwise, and only calls `takeFrame` plus
+`SkiaVulkanRenderer::drawFrame` when the returned `Tick::shouldDraw` is true. Skipping the call is what skips the
+GPU work — `drawFrame` is also what re-arms the next frame callback, so a skipped iteration correctly leaves the
+previous callback (or lack of one) outstanding rather than requesting a new one it would just have to skip again.
+
+`hasPendingWork` for a `Timer` tick is three existing signals, ORed, computed by `WindowSession` itself:
+
+- `LinuxMountingManager::hasPendingDamage()` — a mount, an image decode, a focus change or an editor-state publish
+  since the last `takeFrame`. This is a dedicated flag on the mounting manager, not a peek at `RetainedScene`'s
+  damage list, because the retained scene has no non-consuming way to ask "is there damage" without changing its
+  mutation-tracking contract.
+- `ScrollController::isScrollActive()` — any target still being dragged or still gliding, read from the controller's
+  own state rather than by calling `advance` a second time for the same frame.
+- `ReactHost::hasPendingTimers()` — any JS timer outstanding. `HostTimerRegistry` tracks a timer's delay and whether
+  it recurs, not an absolute deadline, so this is "a timer exists" rather than "a timer is due before the next
+  tick": a conservative signal that can hold the fallback awake a little ahead of when a distant `setTimeout`
+  actually fires, never behind. A precise `hasDueTimer(now)` would need the registry to track absolute deadlines
+  across the JS-thread/frame-thread boundary it does not track today, which is more machinery than this fix needs.
+
+What this does not cover: an end-to-end test under the headless compositor that actually withholds frame callbacks
+and asserts the window keeps animating from the fallback alone is a follow-up, not part of this change. `FrameClock`
+itself is unit-tested exhaustively (`packages/core/tests/FrameClockTest.cpp`); the withheld-callback path is
+exercised today only by reasoning about `WaylandWindow` and `SkiaVulkanRenderer`, not by a running compositor.
+
 ### The retained scene, and the threads it crosses
 
 `rnl_window --fabric <bundle>` runs the whole stack in one process: `WindowSession` constructs a `ReactHost`
@@ -238,6 +293,77 @@ upstream and must not be used. The Hermes CMake library target is `hermesvm`, no
 
 Re-vendoring on a React Native bump: edit `tag` in `scripts/vendor.lock.json`, run `pnpm --filter @react-native-linux/core vendor`,
 reconfigure. The script re-clones when the pin changes and is a no-op when it has not.
+
+## Core codegen (#21)
+
+React Native's TurboModule and Fabric component artifacts are generated, not shipped. Upstream produces them from
+Gradle on Android and from CocoaPods on Apple, and neither exists here, so `scripts/codegen-core.ts` drives the
+same `@react-native/codegen` entry points the upstream executor calls and writes the result into
+`packages/core/generated`, which is checked in.
+
+```bash
+pnpm codegen   # node scripts/codegen-core.ts
+```
+
+It reads every platform-agnostic spec file under `third_party/react-native/packages/react-native/src` — the
+`jsSrcsDir` React Native's own `codegenConfig` declares for its single `FBReactNativeSpec` library, and the same
+directory `ReactAndroid/build.gradle.kts` passes as `jsRootDir`. That directory is vendored for this reason;
+`scripts/vendor.lock.json` lists it as a sparse path. A file qualifies when its name matches `Native*` or
+`*NativeComponent` with exactly one extension, it is not `NativeUIManager.js`, no directory on its path starts
+with `__`, and its contents declare `extends TurboModule` or `export default codegenNativeComponent<`. That is
+`combine-utils.js`' `filterJSFile` plus `combine-js-to-schema.js`' content test, restated here so the file list
+can be sorted before it is merged.
+
+It writes:
+
+```text
+packages/core/generated/
+├── codegen.lock.json
+├── FBReactNativeSpec/
+│   └── FBReactNativeSpecJSI.h
+└── react/renderer/components/FBReactNativeSpec/
+    ├── ComponentDescriptors.h, ComponentDescriptors.cpp
+    ├── EventEmitters.h, EventEmitters.cpp
+    ├── Props.h, Props.cpp
+    ├── ShadowNodes.h, ShadowNodes.cpp
+    └── States.h, States.cpp
+```
+
+The two subtrees are the two include spellings the C++ sources use. `ReactCxxPlatform`'s `DeviceInfoModule.h` and
+nine siblings include `<FBReactNativeSpec/FBReactNativeSpecJSI.h>`; the Fabric artifacts are included as
+`<react/renderer/components/FBReactNativeSpec/...>`. `packages/core/generated` is the one include root that
+answers both, and it is what `react_codegen_rncore` exports. That target keeps the `rncore` name because
+`GenerateModuleJniH.js` renames `FBReactNativeSpec` to it and every ReactCommon CMakeLists in this graph links
+the old name; `ReactCommon/react/renderer/components/rncore/*.h` are deprecation shims that include the
+`FBReactNativeSpec` headers, so they resolve through the same directory. Only the five `.cpp` files are
+compiled — the JSI header is header-only and nothing includes it until #50.
+
+The generator is reached through the two entry points upstream's `scripts/codegen/generate-artifacts-executor`
+reaches through `codegen-utils.js`, `FlowParser` and `RNCodegen`:
+
+| Call | Arguments | Output |
+| --- | --- | --- |
+| `FlowParser#parseFile` | one spec path at a time, in sorted order | a per-file `SchemaType`, merged into one `modules` map |
+| `RNCodegen.generate` | `{libraryName: 'FBReactNativeSpec', schema, outputDirectory: '<generated>/FBReactNativeSpec', packageName: 'com.facebook.fbreact.specs', assumeNonnull: false}` and `{generators: ['modulesCxx']}` | `FBReactNativeSpecJSI.h` |
+| `RNCodegen.generate` | the same options with `outputDirectory: '<generated>'` and `{generators: ['componentsIOS']}` | `react/renderer/components/FBReactNativeSpec/*` |
+
+`componentsIOS` is the generator group whose composed output folder is the `react/renderer/components/<library>`
+path this build needs. It is a superset of the C++ generators by exactly one file, `RCTComponentViewHelpers.h`,
+which is Objective-C++ and is deleted after generation; that deletion is the only normalisation the script
+performs. `combine-js-to-schema.js` is deliberately not called: it globs with `tinyglobby`, and glob order
+decides the merge order and therefore the declaration order inside every generated file. Doing the walk here,
+sorting it, and merging in that order is what makes the output byte-identical from one machine to the next.
+Nothing else in the generator is non-deterministic — no timestamps, no random values, no environment reads in
+any template.
+
+`codegen.lock.json` records the codegen package version and the sha256 of every input, so a generation that
+predates a React Native bump is detectable without rerunning the generator. The `validate` CI job runs
+`pnpm codegen` and fails on any diff under `packages/core/generated`; that is issue #85's determinism gate.
+
+Deliberately not generated yet: third-party library specs and the autolinking that would discover them, the
+`RCTThirdPartyFabricComponentsProvider` equivalent, and the JNI, Java and Objective-C++ artifact families, none
+of which a Linux target can compile. Those are follow-ups to #21 and #22. The `DeviceInfoModule` that consumes
+`FBReactNativeSpecJSI.h` is #50.
 
 ## Prerequisites
 
@@ -346,6 +472,7 @@ would double the wall-clock cost of the matrix to test a path nothing else exerc
 pnpm --filter @react-native-linux/core vendor        # node scripts/vendor-react-native.ts
 pnpm --filter @react-native-linux/core vendor:skia   # node scripts/vendor-skia.ts
 pnpm --filter @react-native-linux/core vendor:fonts  # node scripts/vendor-fonts.ts — see *Text*
+pnpm codegen                                        # node scripts/codegen-core.ts — see *Core codegen*
 pnpm --filter @react-native-linux/core configure    # cmake -S <repo root> --preset dev
 pnpm --filter @react-native-linux/core build        # cmake --build build/dev
 pnpm --filter @react-native-linux/core run:hello    # build/dev/bin/hello_react
@@ -375,6 +502,7 @@ The same sequence without pnpm, from the repository root:
 ```bash
 node scripts/vendor-react-native.ts
 node scripts/vendor-skia.ts
+node scripts/codegen-core.ts
 cmake --preset dev
 cmake --build build/dev
 ./build/dev/bin/hello_react

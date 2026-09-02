@@ -47,6 +47,14 @@ public:
     bool runUntilQuiescent(std::chrono::milliseconds budget);
     bool hasReportedFatalError() const;
 
+    /**
+     * Whether a JS timer is outstanding, for the frame clock's fallback-timeout pending-work signal (see
+     * *Frame clock* in docs/cpp-toolchain.md). This is "any timer scheduled", not "a timer due before the next
+     * tick" — `HostTimerRegistry` tracks delay and recurrence, not an absolute deadline — so it is a conservative
+     * signal: it can hold the fallback awake slightly ahead of when a distant timer actually fires, never behind.
+     */
+    bool hasPendingTimers() const;
+
 private:
     std::shared_ptr<facebook::react::MessageQueueThreadImpl> javaScriptThread_;
     HostTimerRegistry* timerRegistry_{nullptr};

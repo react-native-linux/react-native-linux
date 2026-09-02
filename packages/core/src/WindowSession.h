@@ -1,6 +1,7 @@
 #pragma once
 
 #include "FabricHost.h"
+#include "FrameClock.h"
 #include "InputPipeline.h"
 #include "LinuxMountingManager.h"
 #include "ReactHost.h"
@@ -37,6 +38,10 @@ namespace react_native_linux {
  * event. The session is where the frame clock lives, because the scroll physics is the first thing in this stack
  * that needs to know how long the last frame took.
  *
+ * `recordFrameTick` is a second, separate clock: `FrameClock` decides whether the *paint* — `takeFrame` plus the
+ * renderer's present — happens at all this iteration, which `deliverInput`'s per-input frame timing does not need
+ * to know about. See *Frame clock* in docs/cpp-toolchain.md for why the two are independent.
+ *
  * Shutdown contract: destruction stops the surface, drains the JavaScript thread so the queued unmount runs while
  * the scheduler delegate is still alive, and only then destroys the Fabric host and the instance, in that order.
  */
@@ -57,15 +62,31 @@ public:
      */
     void setTextInputFocusSink(TextInputFocusSink* textInputFocusSink);
     void deliverInput(const std::vector<InputEvent>& events);
+
+    /**
+     * Feeds one `WaylandWindow::waitForRedraw` outcome to the frame clock and returns its draw decision. `source`
+     * is `Callback` when `WaylandWindow::hasFrameCallbackFired` was true and `Timer` otherwise; the pending-work
+     * flag `FrameClock` needs for a `Timer` tick is computed here from the Fabric host and the JS timer registry,
+     * so the caller only has to say which frame source woke it.
+     */
+    FrameClock::Tick recordFrameTick(FrameClock::Source source, std::chrono::steady_clock::time_point now);
     SceneFrame takeFrame();
     bool hasReportedFatalError() const;
 
+    /**
+     * Liveness counters for the frame clock. There is no Tracy integration yet; this is a plain getter until one
+     * exists.
+     */
+    const FrameClock& frameClock() const noexcept;
+
 private:
     double takeFrameMilliseconds();
+    bool hasPendingWork() const;
 
     ReactHost reactHost_;
     std::unique_ptr<FabricHost> fabricHost_;
     std::chrono::steady_clock::time_point lastFrameTime_{std::chrono::steady_clock::now()};
+    FrameClock frameClock_;
 };
 
 } // namespace react_native_linux

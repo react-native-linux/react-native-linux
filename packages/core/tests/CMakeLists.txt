@@ -29,14 +29,17 @@ include(GoogleTest)
 add_executable(rnl_core_tests
     EditorTest.cpp
     FocusTest.cpp
+    FrameClockTest.cpp
     ImageTest.cpp
     ImeTest.cpp
     InputTest.cpp
+    LinuxMountingManagerPendingDamageTest.cpp
     SceneTest.cpp
     ScrollTest.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/Clipboard.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/EditorModel.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/FocusModel.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/FrameClock.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ImageContent.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/InputPipeline.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/LinuxMountingManager.cpp

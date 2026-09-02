@@ -178,6 +178,16 @@ bool ScrollController::advance(double frameMilliseconds) {
     return isScrolling;
 }
 
+bool ScrollController::isScrollActive() const noexcept {
+    for (const auto& entry : targets_) {
+        if (entry.second.isFingerDown || entry.second.isMomentumRunning) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 void ScrollController::route(const InputEvent& event) {
     if (event.kind == InputEventKind::PointerScrollStop) {
         // The stop carries no position, and at most one ScrollView can have a finger on it, so releasing every

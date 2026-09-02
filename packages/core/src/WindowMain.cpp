@@ -1,3 +1,4 @@
+#include "FrameClock.h"
 #include "InputPipeline.h"
 #include "LinuxMountingManager.h"
 #include "RetainedScene.h"
@@ -254,15 +255,29 @@ int main(int argc, char** argv) {
                 // releases everything Fabric has queued since the last frame onto the JavaScript thread.
                 session->deliverInput(frameEvents);
 
-                // The scene and the damage that describes it have to come out of the mounting manager together,
-                // under one lock: a transaction landing between them would leave damage this scene cannot satisfy.
-                const react_native_linux::SceneFrame frame = session->takeFrame();
+                // A frame callback always draws; a fallback timeout draws only if the session reports pending
+                // work, so an occluded window with nothing left to animate stops spinning the GPU every fallback
+                // tick instead of chasing a callback the compositor is never going to send. See *Frame clock* in
+                // docs/cpp-toolchain.md.
+                const react_native_linux::FrameClock::Source frameSource = window.hasFrameCallbackFired()
+                    ? react_native_linux::FrameClock::Source::Callback
+                    : react_native_linux::FrameClock::Source::Timer;
+                const react_native_linux::FrameClock::Tick tick =
+                    session->recordFrameTick(frameSource, std::chrono::steady_clock::now());
 
-                presented = renderer.drawFrame(window, frame.damage,
-                                               [&frame](SkCanvas& canvas, react_native_linux::WindowSize /*size*/,
-                                                        const react_native_linux::SceneDamage& imageDamage) {
-                                                   react_native_linux::paintScene(canvas, frame.scene, imageDamage);
-                                               });
+                if (tick.shouldDraw) {
+                    // The scene and the damage that describes it have to come out of the mounting manager
+                    // together, under one lock: a transaction landing between them would leave damage this scene
+                    // cannot satisfy.
+                    const react_native_linux::SceneFrame frame = session->takeFrame();
+
+                    presented = renderer.drawFrame(
+                        window, frame.damage,
+                        [&frame](SkCanvas& canvas, react_native_linux::WindowSize /*size*/,
+                                const react_native_linux::SceneDamage& imageDamage) {
+                            react_native_linux::paintScene(canvas, frame.scene, imageDamage);
+                        });
+                }
             } else {
                 presented = renderer.drawFrame(window, {}, paintPlaceholderFrame);
             }

@@ -962,7 +962,8 @@ elseif(RNL_ENABLE_WINDOW)
         src/WaylandSeat.cpp
         src/WaylandWindow.cpp
         src/WindowMain.cpp
-        src/WindowSession.cpp)
+        src/FrameClock.cpp
+    src/WindowSession.cpp)
     target_compile_options(rnl_window PRIVATE -Wall -Wextra)
     target_include_directories(rnl_window PRIVATE src)
     # libskia.a is a single static archive built against system freetype and fontconfig, so those two

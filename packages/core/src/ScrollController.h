@@ -69,6 +69,14 @@ public:
      */
     bool advance(double frameMilliseconds);
 
+    /**
+     * Whether any target is still being dragged or gliding, as of the last `advance`. Peeking this costs no
+     * `UIManager` lookup, unlike `advance` itself, which is what makes it usable as the frame clock's
+     * fallback-timeout pending-work signal (see *Frame clock* in docs/cpp-toolchain.md) without advancing physics
+     * twice for the same frame.
+     */
+    bool isScrollActive() const noexcept;
+
 private:
     struct ScrollTarget {
         std::shared_ptr<const facebook::react::ScrollViewShadowNode> shadowNode;

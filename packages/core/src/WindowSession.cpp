@@ -47,6 +47,18 @@ void WindowSession::deliverInput(const std::vector<InputEvent>& events) {
     fabricHost_->induceEventBeat();
 }
 
+FrameClock::Tick WindowSession::recordFrameTick(FrameClock::Source source, std::chrono::steady_clock::time_point now) {
+    if (source == FrameClock::Source::Callback) {
+        return frameClock_.onFrameCallback(now);
+    }
+
+    return frameClock_.onFallbackTimeout(now, hasPendingWork());
+}
+
+const FrameClock& WindowSession::frameClock() const noexcept { return frameClock_; }
+
+bool WindowSession::hasPendingWork() const { return fabricHost_->hasPendingWork() || reactHost_.hasPendingTimers(); }
+
 double WindowSession::takeFrameMilliseconds() {
     const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
     const double elapsed = std::chrono::duration<double, std::milli>(now - lastFrameTime_).count();

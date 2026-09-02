@@ -172,6 +172,8 @@ bool WaylandWindow::waitForRedraw(std::chrono::milliseconds fallbackTimeout) {
     return !closed_;
 }
 
+bool WaylandWindow::hasFrameCallbackFired() const noexcept { return frameCallbackFired_; }
+
 std::vector<InputEvent> WaylandWindow::takeInputEvents() {
     if (seat_ == nullptr) {
         return {};
