@@ -671,7 +671,9 @@ add_library(rnl_react_core STATIC
     src/JsErrorReporter.cpp
     src/LinuxMountingManager.cpp
     src/ReactHost.cpp
-    src/RetainedScene.cpp)
+    src/RetainedScene.cpp
+    src/ScrollController.cpp
+    src/ScrollPhysics.cpp)
 target_compile_options(rnl_react_core PRIVATE -Wall -Wextra)
 target_compile_options(rnl_react_core PUBLIC -fexceptions -frtti)
 target_include_directories(rnl_react_core PUBLIC src)
@@ -762,6 +764,9 @@ if(RNL_ENABLE_WINDOW)
     endif()
 
     set(RNL_XDG_SHELL_XML ${RNL_WAYLAND_PROTOCOLS_DIR}/stable/xdg-shell/xdg-shell.xml)
+    # zwp_text_input_v3 is still an unstable protocol, so it lives under unstable/ rather than stable/ and the
+    # file keeps the version in its name. See *IME* in docs/cpp-toolchain.md.
+    set(RNL_TEXT_INPUT_XML ${RNL_WAYLAND_PROTOCOLS_DIR}/unstable/text-input/text-input-unstable-v3.xml)
 
     if(NOT PkgConfig_FOUND)
         list(APPEND RNL_WINDOW_MISSING "pkg-config")
@@ -783,6 +788,10 @@ if(RNL_ENABLE_WINDOW)
 
     if(NOT RNL_WAYLAND_PROTOCOLS_DIR OR NOT EXISTS "${RNL_XDG_SHELL_XML}")
         list(APPEND RNL_WINDOW_MISSING "wayland-protocols (stable/xdg-shell)")
+    endif()
+
+    if(NOT RNL_WAYLAND_PROTOCOLS_DIR OR NOT EXISTS "${RNL_TEXT_INPUT_XML}")
+        list(APPEND RNL_WINDOW_MISSING "wayland-protocols (unstable/text-input)")
     endif()
 
     if(NOT Vulkan_FOUND)
@@ -823,8 +832,32 @@ elseif(RNL_ENABLE_WINDOW)
     target_include_directories(rnl_xdg_shell PUBLIC ${RNL_PROTOCOL_DIR})
     target_link_libraries(rnl_xdg_shell PUBLIC PkgConfig::RNL_WAYLAND_CLIENT)
 
+    add_custom_command(
+        OUTPUT ${RNL_PROTOCOL_DIR}/text-input-unstable-v3-client-protocol.h
+        COMMAND ${RNL_WAYLAND_SCANNER} client-header ${RNL_TEXT_INPUT_XML}
+                ${RNL_PROTOCOL_DIR}/text-input-unstable-v3-client-protocol.h
+        DEPENDS ${RNL_TEXT_INPUT_XML}
+        COMMENT "wayland-scanner client-header text-input-unstable-v3"
+        VERBATIM)
+
+    add_custom_command(
+        OUTPUT ${RNL_PROTOCOL_DIR}/text-input-unstable-v3-protocol.c
+        COMMAND ${RNL_WAYLAND_SCANNER} private-code ${RNL_TEXT_INPUT_XML}
+                ${RNL_PROTOCOL_DIR}/text-input-unstable-v3-protocol.c
+        DEPENDS ${RNL_TEXT_INPUT_XML}
+        COMMENT "wayland-scanner private-code text-input-unstable-v3"
+        VERBATIM)
+
+    add_library(rnl_text_input STATIC
+        ${RNL_PROTOCOL_DIR}/text-input-unstable-v3-protocol.c
+        ${RNL_PROTOCOL_DIR}/text-input-unstable-v3-client-protocol.h)
+    target_include_directories(rnl_text_input PUBLIC ${RNL_PROTOCOL_DIR})
+    target_link_libraries(rnl_text_input PUBLIC PkgConfig::RNL_WAYLAND_CLIENT)
+
     add_executable(rnl_window
         src/SkiaVulkanRenderer.cpp
+        src/TextInputClient.cpp
+        src/TextInputV3State.cpp
         src/WaylandSeat.cpp
         src/WaylandWindow.cpp
         src/WindowMain.cpp
@@ -838,6 +871,7 @@ elseif(RNL_ENABLE_WINDOW)
             rnl_react_core
             rnl_scene_painter
             rnl_xdg_shell
+            rnl_text_input
             rnl_skia
             Vulkan::Vulkan
             PkgConfig::RNL_XKBCOMMON

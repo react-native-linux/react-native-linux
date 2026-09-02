@@ -22,7 +22,9 @@ constexpr std::string_view kFabricFlag = "--fabric";
 constexpr std::string_view kGoldenFlag = "--golden";
 constexpr std::string_view kDamageGoldenFlag = "--damage-golden";
 constexpr std::string_view kInjectPointerFlag = "--inject-pointer";
+constexpr std::string_view kScrollToFlag = "--scroll-to";
 constexpr size_t kInjectPointerArgumentCount = 5;
+constexpr size_t kScrollToArgumentCount = 7;
 
 std::optional<int> parsePositiveDimension(std::string_view text) {
     int value = 0;
@@ -35,6 +37,21 @@ std::optional<int> parsePositiveDimension(std::string_view text) {
     return value;
 }
 
+/**
+ * A surface coordinate parsed off two arguments, or nothing when either of them is not a positive integer.
+ */
+std::optional<facebook::react::Point> parseSurfacePoint(std::string_view x, std::string_view y) {
+    const std::optional<int> parsedX = parsePositiveDimension(x);
+    const std::optional<int> parsedY = parsePositiveDimension(y);
+
+    if (!parsedX.has_value() || !parsedY.has_value()) {
+        return std::nullopt;
+    }
+
+    return facebook::react::Point{.x = static_cast<facebook::react::Float>(parsedX.value()),
+                                  .y = static_cast<facebook::react::Float>(parsedY.value())};
+}
+
 int runInjectPointerCommand(std::span<char*> arguments) {
     if (arguments.size() != kInjectPointerArgumentCount) {
         std::cerr << "[hello_react] " << kInjectPointerFlag << " requires <bundle> <x> <y>" << std::endl;
@@ -42,19 +59,15 @@ int runInjectPointerCommand(std::span<char*> arguments) {
         return 1;
     }
 
-    const std::optional<int> parsedX = parsePositiveDimension(arguments[3]);
-    const std::optional<int> parsedY = parsePositiveDimension(arguments[4]);
+    const std::optional<facebook::react::Point> surfacePoint = parseSurfacePoint(arguments[3], arguments[4]);
 
-    if (!parsedX.has_value() || !parsedY.has_value()) {
+    if (!surfacePoint.has_value()) {
         std::cerr << "[hello_react] " << kInjectPointerFlag << " x and y must be positive integers" << std::endl;
 
         return 1;
     }
 
-    const facebook::react::Point surfacePoint{.x = static_cast<facebook::react::Float>(parsedX.value()),
-                                              .y = static_cast<facebook::react::Float>(parsedY.value())};
-
-    return react_native_linux::runInjectedClick(std::string(arguments[2]), surfacePoint);
+    return react_native_linux::runInjectedClick(std::string(arguments[2]), surfacePoint.value());
 }
 
 #ifdef RNL_ENABLE_GOLDEN
@@ -63,6 +76,21 @@ constexpr size_t kGoldenDefaultArgumentCount = 4;
 constexpr size_t kGoldenSizedArgumentCount = 6;
 constexpr int kGoldenDefaultWidth = 800;
 constexpr int kGoldenDefaultHeight = 600;
+
+int runScrollToCommand(std::span<char*> arguments) {
+    const std::optional<facebook::react::Point> surfacePoint = parseSurfacePoint(arguments[4], arguments[5]);
+    const std::optional<int> parsedNotches = parsePositiveDimension(arguments[6]);
+
+    if (!surfacePoint.has_value() || !parsedNotches.has_value()) {
+        std::cerr << "[hello_react] " << kScrollToFlag << " x, y and notches must be positive integers" << std::endl;
+
+        return 1;
+    }
+
+    return react_native_linux::renderScrollGolden(std::string(arguments[2]), std::string(arguments[3]),
+                                                  surfacePoint.value(), parsedNotches.value(), kGoldenDefaultWidth,
+                                                  kGoldenDefaultHeight);
+}
 
 int runGoldenCommand(std::span<char*> arguments, bool isDamageRequested) {
     const std::string_view flag = isDamageRequested ? kDamageGoldenFlag : kGoldenFlag;
@@ -102,14 +130,18 @@ int runGoldenCommand(std::span<char*> arguments, bool isDamageRequested) {
 
 #else
 
-int runGoldenCommand(std::span<char*> /*arguments*/, bool /*isDamageRequested*/) {
-    std::cerr << "[hello_react] " << kGoldenFlag << " and " << kDamageGoldenFlag
+int reportMissingSkia() {
+    std::cerr << "[hello_react] " << kGoldenFlag << ", " << kDamageGoldenFlag << " and " << kScrollToFlag
               << " need Skia, which this build was configured without; run node scripts/vendor-skia.ts and "
                  "reconfigure"
               << std::endl;
 
     return 1;
 }
+
+int runGoldenCommand(std::span<char*> /*arguments*/, bool /*isDamageRequested*/) { return reportMissingSkia(); }
+
+int runScrollToCommand(std::span<char*> /*arguments*/) { return reportMissingSkia(); }
 
 #endif
 
@@ -121,6 +153,7 @@ int main(int argc, char** argv) {
     const bool isDamageGoldenRequested = arguments.size() > 1 && kDamageGoldenFlag == arguments[1];
     const bool isFabricRequested = arguments.size() > 1 && kFabricFlag == arguments[1];
     const bool isInjectPointerRequested = arguments.size() > 1 && kInjectPointerFlag == arguments[1];
+    const bool isScrollToRequested = arguments.size() > 1 && kScrollToFlag == arguments[1];
 
     if (isFabricRequested && arguments.size() < 3) {
         std::cerr << "[hello_react] " << kFabricFlag << " requires a bundle path" << std::endl;
@@ -128,9 +161,20 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    if (isScrollToRequested && arguments.size() != kScrollToArgumentCount) {
+        std::cerr << "[hello_react] " << kScrollToFlag << " requires <bundle> <output.png> <x> <y> <notches>"
+                  << std::endl;
+
+        return 1;
+    }
+
     try {
         if (isInjectPointerRequested) {
             return runInjectPointerCommand(arguments);
+        }
+
+        if (isScrollToRequested) {
+            return runScrollToCommand(arguments);
         }
 
         if (isGoldenRequested || isDamageGoldenRequested) {

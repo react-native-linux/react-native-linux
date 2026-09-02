@@ -8,6 +8,7 @@
 #include <react/renderer/componentregistry/ComponentDescriptorProviderRegistry.h>
 #include <react/renderer/components/image/ImageComponentDescriptor.h>
 #include <react/renderer/components/root/RootComponentDescriptor.h>
+#include <react/renderer/components/scrollview/ScrollViewComponentDescriptor.h>
 #include <react/renderer/components/text/ParagraphComponentDescriptor.h>
 #include <react/renderer/components/text/RawTextComponentDescriptor.h>
 #include <react/renderer/components/text/TextComponentDescriptor.h>
@@ -42,6 +43,9 @@ constexpr facebook::react::SurfaceId kSurfaceId = 1;
 // `Image`'s descriptor resolves its `ImageManager` through `getManagerByName`, which constructs one when the
 // context container carries no `"ImageManager"` entry — and this host inserts none, because the implementation
 // behind that class is already ours. See src/ImageManager.cpp.
+//
+// `ScrollView` needs nothing beyond its descriptor: upstream owns the shadow node, the state and the event
+// emitter, and the platform's whole contribution is moving `contentOffset`. See src/ScrollController.cpp.
 facebook::react::ComponentRegistryFactory createComponentRegistryFactory(
     const std::shared_ptr<facebook::react::ComponentDescriptorProviderRegistry>& providerRegistry) {
     providerRegistry->add(
@@ -50,6 +54,8 @@ facebook::react::ComponentRegistryFactory createComponentRegistryFactory(
         facebook::react::concreteComponentDescriptorProvider<facebook::react::ViewComponentDescriptor>());
     providerRegistry->add(
         facebook::react::concreteComponentDescriptorProvider<facebook::react::ImageComponentDescriptor>());
+    providerRegistry->add(
+        facebook::react::concreteComponentDescriptorProvider<facebook::react::ScrollViewComponentDescriptor>());
     providerRegistry->add(
         facebook::react::concreteComponentDescriptorProvider<facebook::react::ParagraphComponentDescriptor>());
     providerRegistry->add(
@@ -127,6 +133,7 @@ FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::
     scheduler_ = std::make_unique<facebook::react::Scheduler>(schedulerToolbox, nullptr, schedulerDelegate_.get());
     schedulerDelegate_->setUIManager(scheduler_->getUIManager());
     inputDispatcher_ = std::make_unique<InputDispatcher>(scheduler_->getUIManager(), kSurfaceId);
+    scrollController_ = std::make_unique<ScrollController>(scheduler_->getUIManager(), kSurfaceId);
 
     reactInstance.getUnbufferedRuntimeExecutor()(installStopSurfaceBinding);
 
@@ -168,7 +175,23 @@ void FabricHost::stopSurface() {
     }
 }
 
-void FabricHost::dispatchInput(const std::vector<InputEvent>& events) { inputDispatcher_->dispatch(events); }
+void FabricHost::dispatchInput(const std::vector<InputEvent>& events) {
+    std::vector<InputEvent> pointerEvents;
+
+    // Scroll and pointer routing answer different questions about the same coordinate — which ScrollView owns it
+    // versus which node was clicked — so the frame is split rather than hit-tested twice for events one of them
+    // would discard.
+    for (const InputEvent& event : events) {
+        if (!isScrollEvent(event)) {
+            pointerEvents.push_back(event);
+        }
+    }
+
+    scrollController_->dispatch(events);
+    inputDispatcher_->dispatch(pointerEvents);
+}
+
+bool FabricHost::advanceScroll(double frameMilliseconds) { return scrollController_->advance(frameMilliseconds); }
 
 void FabricHost::induceEventBeat() { eventBeatInducer_(); }
 

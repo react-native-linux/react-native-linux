@@ -151,6 +151,16 @@ struct SceneNode {
     bool clipsChildren{false};
     std::optional<SceneTextContent> text;
     std::optional<SceneImageContent> image;
+
+    /**
+     * The `contentOffset` a `<ScrollView>` mounted with, and the marker that this node is one at all.
+     *
+     * Fabric lays a ScrollView's children out relative to the ScrollView itself and never moves them, so scrolling
+     * is entirely this number: children are composed from the frame origin minus it. That is the same
+     * `-contentOffset` translation `ScrollViewShadowNode::getContentOriginOffset` applies for hit testing, so the
+     * picture and the hit test agree by construction.
+     */
+    std::optional<facebook::react::Point> scrollContentOffset;
 };
 
 using SceneNodes = std::unordered_map<facebook::react::Tag, SceneNode>;

@@ -13,11 +13,13 @@
     "run:golden": "../../build/dev/bin/hello_react --golden test-bundles/fabric-view.js /tmp/rnl-fabric-view.png",
     "run:golden:damage": "../../build/dev/bin/hello_react --damage-golden test-bundles/damage.js /tmp/rnl-damage.png",
     "run:golden:image": "../../build/dev/bin/hello_react --golden test-bundles/image.js /tmp/rnl-image.png",
+    "run:golden:scroll": "../../build/dev/bin/hello_react --scroll-to test-bundles/scroll.js /tmp/rnl-scroll.png 160 100 3",
     "run:golden:text": "../../build/dev/bin/hello_react --golden test-bundles/text.js /tmp/rnl-text.png",
     "run:hello": "../../build/dev/bin/hello_react",
     "run:input": "../../build/dev/bin/hello_react --inject-pointer test-bundles/pressable.js 200 140",
     "run:window": "../../build/dev/bin/rnl_window",
     "run:window:fabric": "../../build/dev/bin/rnl_window --fabric test-bundles/fabric-view.js",
+    "run:window:ime": "../../build/dev/bin/rnl_window --ime-debug",
     "vendor": "node ../../scripts/vendor-react-native.ts",
     "vendor:fonts": "node ../../scripts/vendor-fonts.ts",
     "vendor:skia": "node ../../scripts/vendor-skia.ts"

@@ -1,11 +1,14 @@
 #include "WaylandSeat.h"
 
+#include "TextInputClient.h"
+
 #include <sys/mman.h>
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <linux/input-event-codes.h>
+#include <memory>
 #include <string>
 #include <unistd.h>
 #include <vector>
@@ -109,6 +112,8 @@ WaylandSeat::WaylandSeat(wl_seat* seat) : seat_(seat), xkbContext_(xkb_context_n
 }
 
 WaylandSeat::~WaylandSeat() noexcept {
+    // Before the seat proxy goes away: destroying a zwp_text_input_v3 is a request that names it.
+    textInput_.reset();
     releasePointer();
     releaseKeyboard();
 
@@ -277,18 +282,56 @@ void WaylandSeat::handlePointerButton(void* data, wl_pointer* /*pointer*/, uint3
     static_cast<WaylandSeat*>(data)->pushPointerButton(button, state);
 }
 
-void WaylandSeat::handlePointerAxis(void* /*data*/, wl_pointer* /*pointer*/, uint32_t /*time*/, uint32_t /*axis*/,
-                                    int32_t /*value*/) {}
+namespace {
+
+/**
+ * One scroll event, with the seat's last pointer position and modifier state attached because `wl_pointer` sends
+ * neither with an axis event.
+ *
+ * Wayland's axis value grows as the surface scrolls down or right, which is the direction React Native's
+ * `contentOffset` grows in, so the sign passes through untouched. Nothing here decides what a value means: the
+ * queue pairs a discrete notch with the `axis` event that duplicates it and the `ScrollController` turns whatever
+ * survives into motion, because both of those are arithmetic a unit test can see and this file is not.
+ */
+InputEvent makeScrollEvent(InputEventKind kind, uint32_t waylandAxis, double amount,
+                           facebook::react::Point surfacePoint, InputModifiers modifiers) {
+    return InputEvent{.kind = kind,
+                      .surfacePoint = surfacePoint,
+                      .modifiers = modifiers,
+                      .scrollAxis = waylandAxis == WL_POINTER_AXIS_HORIZONTAL_SCROLL ? ScrollAxisKind::Horizontal
+                                                                                     : ScrollAxisKind::Vertical,
+                      .scrollAmount = amount};
+}
+
+} // namespace
+
+void WaylandSeat::handlePointerAxis(void* data, wl_pointer* /*pointer*/, uint32_t /*time*/, uint32_t axis,
+                                    int32_t value) {
+    WaylandSeat* seat = static_cast<WaylandSeat*>(data);
+
+    seat->queue_.push(makeScrollEvent(InputEventKind::PointerScrollContinuous, axis, wl_fixed_to_double(value),
+                                      seat->pointerPosition_, seat->modifiers_));
+}
 
 void WaylandSeat::handlePointerFrame(void* /*data*/, wl_pointer* /*pointer*/) {}
 
+// wl_pointer.axis_source distinguishes a wheel from a finger, and nothing here needs it: axis_discrete is what a
+// wheel sends and axis_stop is what a finger sends, and those two are already the whole distinction.
 void WaylandSeat::handlePointerAxisSource(void* /*data*/, wl_pointer* /*pointer*/, uint32_t /*axisSource*/) {}
 
-void WaylandSeat::handlePointerAxisStop(void* /*data*/, wl_pointer* /*pointer*/, uint32_t /*time*/,
-                                        uint32_t /*axis*/) {}
+void WaylandSeat::handlePointerAxisStop(void* data, wl_pointer* /*pointer*/, uint32_t /*time*/, uint32_t axis) {
+    WaylandSeat* seat = static_cast<WaylandSeat*>(data);
 
-void WaylandSeat::handlePointerAxisDiscrete(void* /*data*/, wl_pointer* /*pointer*/, uint32_t /*axis*/,
-                                            int32_t /*discrete*/) {}
+    seat->queue_.push(makeScrollEvent(InputEventKind::PointerScrollStop, axis, 0.0, seat->pointerPosition_,
+                                      seat->modifiers_));
+}
+
+void WaylandSeat::handlePointerAxisDiscrete(void* data, wl_pointer* /*pointer*/, uint32_t axis, int32_t discrete) {
+    WaylandSeat* seat = static_cast<WaylandSeat*>(data);
+
+    seat->queue_.push(makeScrollEvent(InputEventKind::PointerScrollDiscrete, axis, discrete,
+                                      seat->pointerPosition_, seat->modifiers_));
+}
 
 void WaylandSeat::handleKeyboardKeymap(void* data, wl_keyboard* /*keyboard*/, uint32_t format, int32_t keymapDescriptor,
                                        uint32_t size) {
@@ -313,5 +356,11 @@ void WaylandSeat::handleKeyboardModifiers(void* data, wl_keyboard* /*keyboard*/,
 
 void WaylandSeat::handleKeyboardRepeatInfo(void* /*data*/, wl_keyboard* /*keyboard*/, int32_t /*rate*/,
                                            int32_t /*delay*/) {}
+
+void WaylandSeat::attachTextInput(zwp_text_input_manager_v3* manager) {
+    textInput_ = std::make_unique<TextInputClient>(manager, seat_, queue_);
+}
+
+TextInputClient* WaylandSeat::textInput() const noexcept { return textInput_.get(); }
 
 } // namespace react_native_linux

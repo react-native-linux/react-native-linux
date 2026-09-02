@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 struct wl_array;
@@ -17,8 +18,11 @@ struct wl_surface;
 struct xkb_context;
 struct xkb_keymap;
 struct xkb_state;
+struct zwp_text_input_manager_v3;
 
 namespace react_native_linux {
+
+class TextInputClient;
 
 /**
  * The lowest `wl_seat` version this binds. `wl_pointer.frame` and the `release` requests that let a client drop a
@@ -31,11 +35,15 @@ constexpr uint32_t kMinimumSeatVersion = 5;
  * One `wl_seat`: a mouse pointer, a keyboard, and the queue of platform-neutral events they produce.
  *
  * Scope is ADR-0001's minimal surface for M1 and nothing else — pointer motion, buttons, and keys with modifiers.
- * Touch is not bound, axis events are accepted and discarded until there is a `ScrollView` to scroll, and key
- * repeat is not synthesised from `wl_keyboard.repeat_info`.
+ * Touch is not bound, axis events are queued raw for the scroll pipeline to interpret, and key repeat is not
+ * synthesised from `wl_keyboard.repeat_info`.
+ *
+ * Text composition hangs off the same seat, because `zwp_text_input_v3` is created for one: `attachTextInput`
+ * builds a `TextInputClient` when the compositor advertises the manager, and its events land on this queue in
+ * the same order as everything else. See *IME* in docs/cpp-toolchain.md.
  *
  * Keysym translation is xkbcommon's, from the keymap the compositor sends over a file descriptor: the same library
- * every Wayland toolkit uses, and the one `zwp_text_input_v3` compose sequences and dead keys will need in #26.
+ * every Wayland toolkit uses, and the one compose sequences and dead keys will need when they land here.
  * Coordinates arrive as `wl_fixed_t` in surface-local space, which is already the coordinate space Fabric lays
  * out in.
  *
@@ -54,6 +62,8 @@ public:
 
     std::vector<InputEvent> takeEvents();
     size_t droppedEventCount() const noexcept;
+    void attachTextInput(zwp_text_input_manager_v3* manager);
+    TextInputClient* textInput() const noexcept;
 
 private:
     void updateCapabilities(uint32_t capabilities);
@@ -107,6 +117,7 @@ private:
     InputQueue queue_;
     InputModifiers modifiers_;
     facebook::react::Point pointerPosition_{};
+    std::unique_ptr<TextInputClient> textInput_;
 };
 
 } // namespace react_native_linux

@@ -36,6 +36,8 @@ const scopedSourcePaths: readonly string[] = [
   "packages/core/src/InputPipeline.cpp",
   "packages/core/src/LinuxMountingManager.cpp",
   "packages/core/src/RetainedScene.cpp",
+  "packages/core/src/ScrollPhysics.cpp",
+  "packages/core/src/TextInputV3State.cpp",
 ];
 
 const coverageTool = env["LLVM_COV"] ?? "llvm-cov";

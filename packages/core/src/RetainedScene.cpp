@@ -4,6 +4,7 @@
 #include <react/renderer/components/image/ImageProps.h>
 #include <react/renderer/components/image/ImageState.h>
 #include <react/renderer/components/root/RootShadowNode.h>
+#include <react/renderer/components/scrollview/ScrollViewState.h>
 #include <react/renderer/components/text/ParagraphState.h>
 #include <react/renderer/components/view/ViewProps.h>
 #include <react/renderer/imagemanager/primitives.h>
@@ -71,6 +72,15 @@ std::string formatFrame(const facebook::react::Rect& frame) {
     std::snprintf(buffer.data(), buffer.size(), "(%.2f, %.2f, %.2f, %.2f)", static_cast<double>(frame.origin.x),
                   static_cast<double>(frame.origin.y), static_cast<double>(frame.size.width),
                   static_cast<double>(frame.size.height));
+
+    return buffer.data();
+}
+
+std::string formatPoint(facebook::react::Point point) {
+    std::array<char, kFrameBufferSize> buffer{};
+
+    std::snprintf(buffer.data(), buffer.size(), "(%.2f, %.2f)", static_cast<double>(point.x),
+                  static_cast<double>(point.y));
 
     return buffer.data();
 }
@@ -324,12 +334,48 @@ void readImageContent(SceneNode& node, const facebook::react::ShadowView& shadow
                                    .tintColorArgb = toArgb(imageProps->tintColor, 1.0F)};
 }
 
+/**
+ * The scroll position a `<ScrollView>` mounts with, read off `ScrollViewState` for the same reason the image
+ * source is read off `ImageState`: the state is what the platform writes back into when it scrolls, so it is the
+ * one description of the offset that React, the hit test and the picture all share.
+ *
+ * A ScrollView clips unconditionally, which is `UIScrollView.clipsToBounds` and does not depend on `overflow`
+ * reaching the props. Setting it here rather than in `readPaintProps` is what makes it survive that function's
+ * reset, and the two are called in that order.
+ */
+void readScrollContent(SceneNode& node, const facebook::react::ShadowView& shadowView) {
+    node.scrollContentOffset = std::nullopt;
+
+    const std::shared_ptr<const facebook::react::ConcreteState<facebook::react::ScrollViewState>> scrollState =
+        std::dynamic_pointer_cast<const facebook::react::ConcreteState<facebook::react::ScrollViewState>>(
+            shadowView.state);
+
+    if (scrollState == nullptr) {
+        return;
+    }
+
+    node.scrollContentOffset = scrollState->getData().contentOffset;
+    node.clipsChildren = true;
+}
+
 std::string readComponentName(const facebook::react::ShadowView& shadowView) {
     if (shadowView.componentName == nullptr) {
         return {};
     }
 
     return shadowView.componentName;
+}
+
+/**
+ * The absolute origin a node's children are composed from. It is the node's own origin for everything but a
+ * `<ScrollView>`, which shifts its children by `-contentOffset` — the whole of scrolling, in one subtraction.
+ */
+facebook::react::Point contentOrigin(const SceneNode& node, facebook::react::Point origin) {
+    if (!node.scrollContentOffset.has_value()) {
+        return origin;
+    }
+
+    return origin - node.scrollContentOffset.value();
 }
 
 SceneVisit visitNode(const SceneNode& node, const ScenePaintState& state) {
@@ -357,8 +403,10 @@ SceneVisit visitNode(const SceneNode& node, const ScenePaintState& state) {
                                                               ? std::optional<SceneImageContent>{resolveImage(
                                                                     node.image.value(), opacity)}
                                                               : std::nullopt},
-                     .childState = ScenePaintState{
-                         .origin = frame.origin, .matrix = matrix, .opacity = opacity, .clips = state.clips}};
+                     .childState = ScenePaintState{.origin = contentOrigin(node, frame.origin),
+                                                   .matrix = matrix,
+                                                   .opacity = opacity,
+                                                   .clips = state.clips}};
 
     if (node.clipsChildren) {
         visit.childState.clips.push_back(
@@ -577,6 +625,7 @@ SceneNode& RetainedScene::writeNode(const facebook::react::ShadowView& shadowVie
     readPaintProps(node, shadowView);
     readTextContent(node, shadowView);
     readImageContent(node, shadowView);
+    readScrollContent(node, shadowView);
 
     return node;
 }
@@ -678,6 +727,11 @@ void RetainedScene::appendNode(std::string& output, facebook::react::Tag tag, si
         output += " image=\"";
         output += node.image.value().uri;
         output += '"';
+    }
+
+    if (node.scrollContentOffset.has_value()) {
+        output += " contentOffset=";
+        output += formatPoint(node.scrollContentOffset.value());
     }
 
     output += '\n';

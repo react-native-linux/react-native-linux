@@ -24,6 +24,7 @@ struct xdg_toplevel;
 struct xdg_toplevel_listener;
 struct xdg_wm_base;
 struct xdg_wm_base_listener;
+struct zwp_text_input_manager_v3;
 
 namespace react_native_linux {
 
@@ -50,6 +51,10 @@ struct WindowSize {
  * decision about what an event means. A compositor that advertises no `wl_seat` leaves that queue permanently
  * empty rather than failing construction, because a window without input is still a window.
  *
+ * `zwp_text_input_manager_v3` is bound on the same terms: with it, the seat gets a `TextInputClient` and
+ * composition events join that queue; without it, `textInput` is null and typing is whatever the keyboard sends.
+ * Text composition is per-seat, so the text input is created once the seat exists, not per surface.
+ *
  * Threading contract: every member runs on the thread that constructed the window, which is the thread that owns
  * the process run loop. The Wayland connection is never touched from another thread. The Vulkan WSI dispatches the
  * same connection on its own private event queue, which is why this class uses the prepare-read/read-events
@@ -73,6 +78,7 @@ public:
     void requestFrameCallback();
     bool waitForRedraw(std::chrono::milliseconds fallbackTimeout);
     std::vector<InputEvent> takeInputEvents();
+    TextInputClient* textInput() const noexcept;
 
 private:
     void bindGlobal(wl_registry* registry, uint32_t name, const char* interfaceName, uint32_t version);
@@ -101,6 +107,7 @@ private:
     wl_display* display_{nullptr};
     wl_compositor* compositor_{nullptr};
     std::unique_ptr<WaylandSeat> seat_;
+    zwp_text_input_manager_v3* textInputManager_{nullptr};
     xdg_wm_base* wmBase_{nullptr};
     wl_surface* surface_{nullptr};
     xdg_surface* xdgSurface_{nullptr};

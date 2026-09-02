@@ -31,11 +31,13 @@ std::vector<InputEvent> TextInputV3State::leave() {
 
 void TextInputV3State::enable() {
     enabled_ = true;
+    needsStateResend_ = false;
     resetComposition();
 }
 
 void TextInputV3State::disable() {
     enabled_ = false;
+    needsStateResend_ = false;
     resetComposition();
 }
 

@@ -9,6 +9,7 @@
 #include <react/renderer/attributedstring/TextAttributes.h>
 #include <react/renderer/components/image/ImageProps.h>
 #include <react/renderer/components/image/ImageState.h>
+#include <react/renderer/components/scrollview/ScrollViewState.h>
 #include <react/renderer/components/text/ParagraphState.h>
 #include <react/renderer/components/view/ViewProps.h>
 #include <react/renderer/core/ConcreteState.h>
@@ -1126,6 +1127,92 @@ TEST(RetainedSceneImageTest, DumpCarriesTheImageSource) {
     EXPECT_EQ(sceneWithTile(makeTile(2, makeRect(40, 60, 120, 90), "tile.png")).dump(),
               "RootView #1 frame=(0.00, 0.00, 800.00, 600.00)\n"
               "  Image #2 frame=(40.00, 60.00, 120.00, 90.00) image=\"tile.png\"\n");
+}
+
+/**
+ * A `<ScrollView>` as it reaches the mounting layer. `ScrollViewState` is where the scroll position lives — the
+ * platform writes it and Fabric mounts it — so the state pointer is what makes a node one, exactly as
+ * `ParagraphState` is what makes a node a paragraph.
+ */
+ShadowView makeScrollView(Tag tag, Rect frame, Point contentOffset, Rect contentBoundingRect) {
+    ShadowView shadowView;
+
+    shadowView.tag = tag;
+    shadowView.componentName = "ScrollView";
+    shadowView.layoutMetrics.frame = frame;
+    shadowView.state = std::make_shared<const facebook::react::ConcreteState<facebook::react::ScrollViewState>>(
+        std::make_shared<const facebook::react::ScrollViewState>(
+            facebook::react::ScrollViewState{contentOffset, contentBoundingRect, 0}),
+        facebook::react::ShadowNodeFamily::Weak{});
+
+    return shadowView;
+}
+
+// The fixture every scroll test below shares: a 200x150 viewport at (60, 60) holding 470 points of content, one
+// 200x70 row of which sits 80 points down.
+Rect scrollViewFrame() {
+    return makeRect(60, 60, 200, 150);
+}
+
+Rect scrollContentBounds() {
+    return makeRect(0, 0, 200, 470);
+}
+
+RetainedScene sceneWithScrollView(Point contentOffset) {
+    RetainedScene scene;
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, makeScrollView(2, scrollViewFrame(), contentOffset, scrollContentBounds()));
+    addChild(scene, 2, makePaintedView(3, makeRect(0, 80, 200, 70), blue()));
+
+    return scene;
+}
+
+TEST(RetainedSceneScrollTest, ContentOffsetTranslatesTheChildrenOnBothAxes) {
+    const SceneSnapshot snapshot = sceneWithScrollView(Point{.x = 25, .y = 120}).snapshot();
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    expectPrimitive(snapshot[0], makeRect(35, 20, 200, 70), kBlueArgb);
+}
+
+TEST(RetainedSceneScrollTest, AScrollViewClipsItsChildrenWithNoOverflowPropInvolved) {
+    const SceneSnapshot snapshot = sceneWithScrollView(Point{.x = 0, .y = 120}).snapshot();
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    ASSERT_EQ(snapshot[0].clips.size(), 1U);
+    expectRect(snapshot[0].clips.front().frame, scrollViewFrame());
+}
+
+TEST(RetainedSceneScrollTest, ANodeThatIsNotAScrollViewTranslatesAndClipsNothing) {
+    const SceneSnapshot snapshot = sceneWithPaintedChild().snapshot();
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    EXPECT_TRUE(snapshot[0].clips.empty());
+    expectPrimitive(snapshot[0], makeRect(10, 20, 200, 100), kBlueArgb);
+}
+
+TEST(RetainedSceneScrollTest, AnOffsetChangeDamagesExactlyTheScrollViewFrame) {
+    RetainedScene scene = sceneWithScrollView(Point{});
+
+    scene.takeDamage();
+    scene.updateNode(makeScrollView(2, scrollViewFrame(), Point{.x = 0, .y = 120}, scrollContentBounds()));
+
+    const SceneDamage damage = scene.takeDamage();
+
+    ASSERT_FALSE(damage.empty());
+    expectRect(boundsOf(damage), scrollViewFrame());
+}
+
+TEST(RetainedSceneScrollTest, DumpCarriesTheContentOffset) {
+    RetainedScene scene;
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag,
+             makeScrollView(2, scrollViewFrame(), Point{.x = 0, .y = 120}, scrollContentBounds()));
+
+    EXPECT_EQ(scene.dump(),
+              "RootView #1 frame=(0.00, 0.00, 800.00, 600.00)\n"
+              "  ScrollView #2 frame=(60.00, 60.00, 200.00, 150.00) contentOffset=(0.00, 120.00)\n");
 }
 
 ShadowView mountBlueChild(LinuxMountingManager& mountingManager) {

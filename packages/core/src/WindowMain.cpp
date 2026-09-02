@@ -1,7 +1,9 @@
+#include "InputPipeline.h"
 #include "LinuxMountingManager.h"
 #include "RetainedScene.h"
 #include "ScenePainter.h"
 #include "SkiaVulkanRenderer.h"
+#include "TextInputClient.h"
 #include "WaylandWindow.h"
 #include "WindowSession.h"
 #include "include/core/SkCanvas.h"
@@ -21,6 +23,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <vector>
 
 namespace {
 
@@ -34,6 +37,12 @@ constexpr SkScalar kCardCornerRadius = 24.0F;
 constexpr std::string_view kFabricFlag = "--fabric";
 constexpr std::string_view kScreenshotFlag = "--screenshot";
 constexpr std::string_view kFramesFlag = "--frames";
+constexpr std::string_view kImeDebugFlag = "--ime-debug";
+constexpr std::string_view kImeDebugSurroundingText = "react-native-linux";
+constexpr int32_t kImeDebugCursorX = 64;
+constexpr int32_t kImeDebugCursorY = 64;
+constexpr int32_t kImeDebugCursorWidth = 2;
+constexpr int32_t kImeDebugCursorHeight = 24;
 
 /**
  * `--screenshot <path>` runs the ordinary loop and reads the last presented swapchain image back into a PNG, so
@@ -44,8 +53,48 @@ struct WindowArguments {
     std::optional<std::string> bundlePath;
     std::optional<std::string> screenshotPath;
     uint32_t frameCount{kDefaultScreenshotFrames};
+    bool imeDebug{false};
     std::string error;
 };
+
+/**
+ * `--ime-debug` is what proves `zwp_text_input_v3` before there is a `<TextInput>` to prove it with: it enables
+ * the text input on the window itself as soon as the compositor gives it focus, reports a stub surrounding text
+ * and a fixed caret rectangle so an input method has somewhere to put its candidate window, and prints every
+ * composition batch. With fcitx5 running, typing CJK into the window prints the pre-edit as it is composed and
+ * the commit that replaces it. See *IME* in docs/cpp-toolchain.md.
+ */
+class ImeDebugSink final : public react_native_linux::ImeSink {
+public:
+    void onImePreedit(const std::string& text, int32_t cursorBegin, int32_t cursorEnd) override {
+        std::cout << "[rnl-ime] preedit \"" << text << "\" cursor " << cursorBegin << ".." << cursorEnd << std::endl;
+    }
+
+    void onImeCommit(const std::string& text) override {
+        std::cout << "[rnl-ime] commit \"" << text << "\"" << std::endl;
+    }
+
+    void onImeDeleteSurrounding(uint32_t beforeLength, uint32_t afterLength) override {
+        std::cout << "[rnl-ime] delete-surrounding before " << beforeLength << " after " << afterLength << std::endl;
+    }
+};
+
+void enableImeDebug(react_native_linux::TextInputClient* textInput) {
+    if (textInput == nullptr || !textInput->isFocused() || textInput->isEnabled()) {
+        return;
+    }
+
+    const std::string surroundingText(kImeDebugSurroundingText);
+    const int32_t cursor = static_cast<int32_t>(surroundingText.size());
+
+    // State first: a request issued before the text input is enabled is cached rather than sent, so enabling is
+    // what puts all of it on the wire in one commit.
+    textInput->setSurroundingText(surroundingText, cursor, cursor);
+    textInput->setCursorRectangle(kImeDebugCursorX, kImeDebugCursorY, kImeDebugCursorWidth, kImeDebugCursorHeight);
+    textInput->enable();
+
+    std::cout << "[rnl-ime] enabled on the focused surface" << std::endl;
+}
 
 std::string describeMissingValue(std::string_view flag) {
     if (flag == kFabricFlag) {
@@ -75,6 +124,12 @@ WindowArguments parseArguments(std::span<char*> arguments) {
 
     for (size_t index = 1; index < arguments.size(); ++index) {
         const std::string_view flag = arguments[index];
+
+        if (flag == kImeDebugFlag) {
+            parsed.imeDebug = true;
+
+            continue;
+        }
 
         if (flag != kFabricFlag && flag != kScreenshotFlag && flag != kFramesFlag) {
             parsed.error = "unknown argument " + std::string(flag);
@@ -149,6 +204,11 @@ int main(int argc, char** argv) {
             session.emplace(parsedArguments.bundlePath.value(), window.size());
         }
 
+        if (parsedArguments.imeDebug && window.textInput() == nullptr) {
+            std::cerr << "[rnl-window] the compositor does not advertise zwp_text_input_manager_v3" << std::endl;
+        }
+
+        ImeDebugSink imeDebugSink;
         uint32_t presentedFrames = 0;
         bool hasCaptured = false;
 
@@ -171,12 +231,22 @@ int main(int argc, char** argv) {
                 renderer.captureNextFrame(parsedArguments.screenshotPath.value());
             }
 
+            const std::vector<react_native_linux::InputEvent> frameEvents = window.takeInputEvents();
+
+            if (parsedArguments.imeDebug) {
+                enableImeDebug(window.textInput());
+
+                for (const react_native_linux::InputEvent& event : frameEvents) {
+                    react_native_linux::deliverImeEvent(event, imeDebugSink);
+                }
+            }
+
             bool presented = false;
 
             if (session.has_value()) {
                 // Input first, and unconditionally: the event beat is induced inside this call, and it is what
                 // releases everything Fabric has queued since the last frame onto the JavaScript thread.
-                session->deliverInput(window.takeInputEvents());
+                session->deliverInput(frameEvents);
 
                 // The scene and the damage that describes it have to come out of the mounting manager together,
                 // under one lock: a transaction landing between them would leave damage this scene cannot satisfy.

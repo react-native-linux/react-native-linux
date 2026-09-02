@@ -23,6 +23,10 @@ issue #6: it boots the same headless Fabric host, renders the settled scene into
 headless Fabric host, synthesises a mouse sweep and a click at those coordinates through the same input pipeline
 the window uses, and lets the bundle report what reached JavaScript. See *Input*.
 
+`rnl_window --ime-debug` is issue #26's proof and needs a compositor, not a bundle: it enables `zwp_text_input_v3`
+on the window as soon as it has focus and prints every composition batch an input method sends, so typing CJK with
+fcitx5 running prints the pre-edit and the commit. See *IME*.
+
 Two halves are shared rather than duplicated: `rnl_react_core` is a static library carrying the instance, the
 Fabric host and the retained scene, and `rnl_scene_painter` is a static library carrying `paintScene`, the single
 implementation that turns a `SceneSnapshot` into draw calls. `rnl_window` calls it once per frame into a
@@ -48,7 +52,7 @@ and the remaining ten `ReactCxxPlatform` subdirectories are still out.
 
 - `FabricHost` builds a `SchedulerToolbox` (context container carrying the `RuntimeScheduler`, buffered runtime
   executor, unbuffered bindings executor, a `FrameEventBeat`, and a component registry with the `RootView`,
-  `View`, `Image`, `Paragraph`, `Text` and `RawText` descriptors), constructs a `Scheduler`, and starts one
+  `View`, `Image`, `ScrollView`, `Paragraph`, `Text` and `RawText` descriptors), constructs a `Scheduler`, and starts one
   `SurfaceHandler` with an 800x600 layout constraint. Constructing the `Scheduler` is what installs
   `nativeFabricUIManager` into the runtime, and constructing the `Paragraph` descriptor is what constructs the
   `TextLayoutManager`; see *Text*. Constructing the `Image` descriptor is what constructs the `ImageManager`;
@@ -83,8 +87,8 @@ same `FabricHost`; the headless host dumps the scene once the JavaScript thread 
 draws it every frame. See *The retained scene, and the threads it crosses*.
 
 Not covered yet, each with an owning milestone: `Scheduler::reportMount` and mount-hook telemetry,
-`dispatchCommand`, multiple surfaces, and every component past `View`, `Paragraph` and `Image` — `ScrollView` and
-`TextInput` in particular. Events are covered; see *Input*.
+`dispatchCommand`, multiple surfaces, and every component past `View`, `Paragraph`, `Image` and `ScrollView` —
+`TextInput` in particular. Events are covered; see *Input*. Scrolling is covered; see *ScrollView*.
 
 ## Window host
 
@@ -248,7 +252,13 @@ sudo pacman -S --needed wayland wayland-protocols libxkbcommon vulkan-headers vu
 ```
 
 `libxkbcommon` is what turns the keymap the compositor sends into keysyms; `RNL_ENABLE_WINDOW` probes for it and
-disables `rnl_window` without it. See *Input*.
+disables `rnl_window` without it. See *Input*. `wayland-protocols` carries two XML files this build generates
+from — `stable/xdg-shell/xdg-shell.xml` and `unstable/text-input/text-input-unstable-v3.xml` — and both are probed
+for by path; see *IME*.
+
+Typing CJK into the window needs an input method, which is a developer-machine dependency rather than a build one
+and is never installed in CI: `sudo pacman -S --needed fcitx5 fcitx5-configtool fcitx5-chinese-addons`. See the
+checklist in *IME*.
 
 `hello_react --golden` needs only `freetype2` and `fontconfig` from that list, plus the vendored Skia archive and,
 for anything with text in it, the vendored fonts. It never opens a Wayland connection and never loads a Vulkan
@@ -337,10 +347,12 @@ pnpm --filter @react-native-linux/core run:golden   # hello_react --golden <bund
 pnpm --filter @react-native-linux/core run:golden:damage  # hello_react --damage-golden damage.js /tmp/rnl-damage.png
 pnpm --filter @react-native-linux/core run:golden:text    # hello_react --golden text.js /tmp/rnl-text.png
 pnpm --filter @react-native-linux/core run:golden:image   # hello_react --golden image.js /tmp/rnl-image.png
+pnpm --filter @react-native-linux/core run:golden:scroll  # hello_react --scroll-to scroll.js /tmp/rnl-scroll.png 160 100 3
 pnpm --filter @react-native-linux/core assets:test-image  # node scripts/make-test-image.ts — see *Image*
 pnpm --filter @react-native-linux/core run:input    # hello_react --inject-pointer pressable.js 200 140
 pnpm --filter @react-native-linux/core run:window   # build/dev/bin/rnl_window
 pnpm --filter @react-native-linux/core run:window:fabric  # build/dev/bin/rnl_window --fabric <bundle>
+pnpm --filter @react-native-linux/core run:window:ime      # build/dev/bin/rnl_window --ime-debug — see *IME*
 
 pnpm test:golden          # compare renders against the checked-in goldens
 pnpm test:golden:update   # regenerate the goldens, for review before committing
@@ -363,6 +375,7 @@ cmake --build build/dev
 ./build/dev/bin/hello_react --inject-pointer packages/core/test-bundles/pressable.js 200 140
 ./build/dev/bin/rnl_window
 ./build/dev/bin/rnl_window --fabric packages/core/test-bundles/fabric-view.js
+./build/dev/bin/rnl_window --ime-debug
 ```
 
 Without an argument the expected output is `react-native-linux: hermes alive`. With
@@ -373,8 +386,11 @@ retained scene after the JavaScript thread goes quiet; see *Fabric bootstrap* ab
 path and an output path, prints nothing of its own, and writes a PNG. `--damage-golden` takes the same arguments,
 runs a bundle that commits twice, and writes a PNG only if the damage-clipped redraw of the second commit is
 byte-identical to a full one; see *Golden images*. On a build configured
-without Skia it exits 1 with a message naming `scripts/vendor-skia.ts`. `--inject-pointer` takes the bundle path
-and a surface coordinate, clicks there, and prints whatever the bundle prints; see *Input*.
+without Skia it exits 1 with a message naming `scripts/vendor-skia.ts`. `--scroll-to` takes the bundle path, an
+output path, a surface coordinate and a wheel notch count, turns the wheel over that point, lets the momentum
+settle, and writes the PNG of where it stopped; see *ScrollView*. `--inject-pointer` takes the bundle path
+and a surface coordinate, clicks there, and prints whatever the bundle prints; see *Input*. `--ime-debug` takes no
+value, composes with every other `rnl_window` flag, and prints composition events; see *IME*.
 
 When `cmake` and `ninja` are not on `PATH`, wrap the two CMake steps:
 
@@ -411,7 +427,10 @@ Both skip rather than fail, so the headless build survives on a machine that has
 `-DRNL_ENABLE_SKIA=OFF` skips everything that draws.
 
 The xdg-shell client header and private code are generated at build time by `wayland-scanner` into
-`build/<preset>/packages/core/wayland-protocols` and compiled into `rnl_xdg_shell`. Nothing generated is checked in.
+`build/<preset>/packages/core/wayland-protocols` and compiled into `rnl_xdg_shell`. The same happens for
+`text-input-unstable-v3` into `rnl_text_input`; that one comes from `unstable/` rather than `stable/`, and
+`RNL_ENABLE_WINDOW` probes for both XML files separately so a missing one names itself. Nothing generated is
+checked in. See *IME*.
 
 ### Window test checklist
 
@@ -471,8 +490,17 @@ background filling the window with one blue `#3366CC` rounded rectangle inset 64
     until the window is resized means the decode-completion damage did not reach the frame thread. The
     `https://` tile at (182, 360) is expected to stay empty panel forever. See *Image*.
 
+16. `./build/dev/bin/rnl_window --fabric packages/core/test-bundles/scroll.js` shows a 200x150 dark panel at
+    (60, 60) with a red band at its top, and a blue marker rectangle at (60, 240) that must never change. Turn the
+    wheel over the panel: the coloured rows move, they are cut cleanly at the panel's top and bottom edges, and
+    **nothing paints outside the panel** — a row appearing beside or on the marker is a broken clip. Let the wheel
+    go and the rows keep gliding and slow to a stop rather than halting with the notch. Turn it up past the top or
+    down past the bottom and the content stops dead at the edge, with no bounce, which is the deferred rubber band.
+    Two-finger scroll on a touchpad tracks the fingers one-to-one and flings when they lift. See *ScrollView*.
+
 Not covered by this checklist, because it is not implemented yet: fractional scale, pointer and keyboard input,
-`wp_presentation_feedback` timing, and any measurement of the frame budget.
+`wp_presentation_feedback` timing, and any measurement of the frame budget. Composition has a checklist of its own,
+because it needs an input method running; see *IME*.
 
 ## Damage tracking
 
@@ -934,6 +962,218 @@ Each is deliberate, and each is a thing to fix rather than a thing to argue abou
 - **The cache has no hit-rate probe**, for the same reason the text measure cache has none: there is nowhere to
   report a number to until #20.
 
+## ScrollView
+
+Issue #16, milestone M1. ADR-0001 already records this one as an accepted risk — *"ScrollView physics fidelity is
+hand-written and will feel wrong for a long time"* — because React Native's scrolling semantics are `UIScrollView`
+semantics and a GPU canvas gets nothing free from a scrolled-window widget. This is the first slice of it: the two
+axes, the clip, wheel and touchpad input, the deceleration curve, and `onScroll`. The deferrals are at the end and
+each names what it would take.
+
+Upstream owns more of this than any other component so far. `ScrollViewShadowNode` lays children out relative to
+the ScrollView and never moves them; the scroll position lives in `ScrollViewState::contentOffset`, which
+`getContentOriginOffset` already subtracts for hit testing and view culling; and `ScrollViewEventEmitter` already
+has every event. **There is no cross-platform scrolling**: every platform is expected to move that number itself
+and emit those events from it, which is exactly what `RCTScrollViewComponentView` does on iOS from
+`scrollViewDidScroll`. So the platform contribution is three pieces and nothing else.
+
+### The pipeline, end to end
+
+```text
+wl_pointer.axis / axis_discrete / axis_stop
+  → WaylandSeat                    queued raw, with the last pointer position attached
+  → InputQueue                     deltas summed per axis; the axis event behind a notch dropped
+  → FabricHost::dispatchInput      the frame is split: scroll here, pointer there
+  → ScrollController::route        findNodeAtPoint, then the deepest ScrollView above the hit node
+  → ScrollController::advance      one frame of ScrollPhysics per axis, per ScrollView
+      ├─ ConcreteState::updateState        contentOffset back into the shadow tree
+      └─ ScrollViewEventEmitter            onScroll, onMomentumScrollBegin, onMomentumScrollEnd
+  → FabricHost::induceEventBeat    both of those flush on the JavaScript thread together
+  → commit → mount → RetainedScene::writeNode      contentOffset read back off ScrollViewState
+  → SceneSnapshot                  children composed from the frame origin minus contentOffset, clipped
+```
+
+### The physics, and what the constants mean
+
+`ScrollPhysics.{h,cpp}` is pure arithmetic over doubles — no React types, no Skia, no threads — which is what puts
+it inside the coverage gate. Everything that can be numerically wrong lives there.
+
+| Constant | Value | Where it comes from |
+| --- | --- | --- |
+| `kDecelerationRateNormal` | `0.998` | `UIScrollViewDecelerationRateNormal`. React Native's `decelerationRate` prop resolves `"normal"` to it and `BaseScrollViewProps::decelerationRate` carries it unchanged, so the prop is read rather than remapped. |
+| `kDecelerationRateFast` | `0.99` | `UIScrollViewDecelerationRateFast`, the same way. |
+| `kWheelNotchDistance` | `40.0` points | Ours. A notch has no distance on iOS because iOS has no wheel. |
+| `kMinimumMomentumTravel` | `0.5` points | Ours. When less than half a point of travel is left, the glide ends. |
+
+**The rate is per millisecond, not per frame.** Momentum at `v` points per millisecond is at `v * rate^t` after `t`
+milliseconds, and one frame advances by `v * (rate^dt - 1) / ln(rate)` — the exact integral over the frame rather
+than a rectangle of it. Two things follow, and both are asserted in `ScrollTest.cpp` rather than claimed here:
+
+- **The distance is frame-rate independent.** A 120 Hz window and a 60 Hz one travel the same distance for the
+  same flick, and a dropped frame changes when the content arrives rather than where it stops.
+- **The per-frame factors at 60 Hz are `0.998^16.667 = 0.967184` and `0.99^16.667 = 0.845771`.** Those are the
+  numbers to compare against a per-frame implementation elsewhere; they are not what this code stores.
+
+Three consequences of that shape are worth stating because they are why it is this short:
+
+- **A wheel notch is a velocity, not a jump.** `velocityForTravel(distance, rate)` is the inverse of the momentum
+  integral, so a notch injects the velocity whose curve covers exactly 40 points. A wheel and a touchpad fling
+  therefore share one curve, turning the wheel again mid-glide accelerates for the same reason a second flick
+  does, and *n* notches travel exactly *n* × 40 points because the curve is linear in the velocity.
+- **The stop threshold costs frames, not distance.** When under half a point of travel remains, the remainder is
+  applied in that same step and the velocity is zeroed, so a fling always covers the full analytic distance of its
+  velocity. That is what makes a scrolled golden reproducible: the settled offset is `notches × 40` and not
+  `notches × 40` minus whatever the threshold happened to swallow.
+- **`decelerationRate` values the curve is undefined at are clamped, not rejected.** React Native accepts `0`
+  ("stop the moment the finger lifts") and `1` ("never stop"), and both divide by `ln(rate)`. They resolve to
+  `0.5` and `0.9999` per millisecond, which are the two ends of the range where the integral is finite.
+
+A touchpad is the other input and does not go through that curve while the fingers are down: `wl_pointer.axis`
+deltas move the content one-to-one, and the velocity they imply over their frame is tracked so that the
+`axis_stop` that follows starts the fling from it. A frame in which the fingers were still therefore flings
+nothing, which is correct, and it relies on libinput sending `axis_stop` in the same display frame as the last
+delta — which it does, since it emits it immediately after the fingers lift.
+
+`axis_source` is bound and ignored. `axis_discrete` is what a wheel sends and `axis_stop` is what a finger sends,
+and those two already are the whole distinction, so consulting a third event would add a state machine and no
+information. The one thing the queue does need to know is that a `wl_pointer` frame carrying a notch sends
+`axis_discrete` **and** an `axis` measuring the same notch in units nobody standardises, so a continuous delta
+directly behind a discrete one on the same axis is dropped as the duplicate it is.
+
+### Routing, and why it is not the pointer's target
+
+`ScrollController::route` hit-tests with `UIManager::findNodeAtPoint` — the same call a click uses, so a wheel and
+a click agree about what is under the pointer — and then walks up: `ShadowNodeFamily::getAncestors` returns the
+path from the root down as (parent, child index) pairs, and the first `ScrollViewShadowNode` found walking that
+path backwards is the innermost ScrollView containing the hit node. That is nested-ScrollView behaviour with no
+second rule for it, and a wheel over a node with no ScrollView above it does nothing.
+
+`FabricHost::dispatchInput` splits the frame rather than handing every event to both routers, because the two
+answer different questions about the same coordinate and a shared pass would hit-test each event twice.
+
+### Threading, and the state write-back path
+
+Everything the controller does runs on the platform frame thread, between `dispatchInput` and `induceEventBeat`.
+That is not incidental: `ConcreteState::updateState` enqueues into the same `EventQueue` the event emitters
+enqueue into, so the offset and the `onScroll` describing it flush together, in one beat, on the JavaScript thread.
+Three upstream guarantees carry it:
+
+- `findNodeAtPoint`, `getNewestCloneOfShadowNode` and `getAncestors` all take the shadow tree's shared lock and are
+  documented as callable from any thread, and committed shadow nodes are immutable.
+- `EventQueue::enqueueStateUpdate` **replaces** a queued update for the same family rather than appending, so a
+  frame's worth of intermediate positions costs one commit no matter how many frames went by before the beat.
+- `EventEmitter::dispatchUniqueEvent`, which is what `onScroll` uses, collapses repeated `scroll` events for one
+  target the same way. The `onScroll` cadence is therefore **at most one per frame**, and one per beat when the
+  JavaScript thread is behind.
+
+**The platform's offset is authoritative between commits, not the mounted one.** A controller that read
+`contentOffset` back off the shadow tree every frame would stall for a frame every time the JavaScript thread was
+busy, because the write it made last frame may not have been applied yet. The controller therefore seeds its
+position from `ScrollViewState::contentOffset` the first time a ScrollView is scrolled — so a `contentOffset` prop
+and a remembered position both survive — and owns it from then on. `updateState` is called in its transforming
+form rather than its replacing one, so a commit landing mid-frame keeps its own `contentBoundingRect`.
+
+The entry for a ScrollView lives as long as the ScrollView does: `getNewestCloneOfShadowNode` returning null is an
+unmounted node, and that is what drops it.
+
+### What the scene does with it
+
+`RetainedScene` reads `contentOffset` off `ScrollViewState` in `writeNode`, exactly as it reads text off
+`ParagraphState` and an image source off `ImageState`, and the whole of scrolling in the scene is one subtraction:
+a ScrollView's children are composed from its frame origin **minus** `contentOffset`. That is the same
+`-contentOffset` translation `getContentOriginOffset` applies for hit testing, so the picture and the hit test
+cannot disagree.
+
+A ScrollView also clips unconditionally, which is `UIScrollView.clipsToBounds` and matches every other platform.
+It reuses the existing `overflow: hidden` clip stack rather than adding a second clipping mechanism, so the painter
+needs no ScrollView case at all — see *View props fidelity*.
+
+Damage needs no new rule either. A state change is a `ShadowView` change, so Fabric emits an `Update` for the
+ScrollView, and *Damage tracking*'s uniform rule already damages the subtree extent before and after — which for a
+clipping node is bounded by its own frame. `RetainedSceneScrollTest` asserts that an offset change damages exactly
+the ScrollView frame and nothing outside it.
+
+### The proof
+
+```bash
+hello_react --fabric packages/core/test-bundles/scroll.js
+hello_react --scroll-to packages/core/test-bundles/scroll.js /tmp/rnl-scroll.png 160 100 3
+```
+
+`packages/core/test-bundles/scroll.js` is a 200x150 `<ScrollView>` at (60, 60) holding six 200x70 rows spaced 80
+points apart — 470 points of content, so 320 points of it can be scrolled — plus a blue marker rectangle at
+(60, 240), directly below the viewport and outside it.
+
+`--fabric` prints the scene, including the ScrollView's `contentOffset`, which is what proves the descriptor is
+registered and the state reached the mounting layer. `--scroll-to` turns the wheel three notches over (160, 100),
+integrates the physics at a fixed 60 Hz step until it comes to rest, and writes the PNG of where it stopped. The
+fixed step is deliberate: a headless run has no compositor to pace it, and the settled position has to be a
+property of the notch count rather than of how fast the machine looped. The beat is induced once at the end rather
+than once per frame, because a state update replaces the previous one for the same node and only the last position
+could survive the flush anyway.
+
+Three notches is 120 points, so `packages/core/goldens/scroll.png` is the picture at `contentOffset = (0, 120)`:
+
+1. The second row, green `#98C379`, **cut off at the top edge** of the viewport — 30 points of it, at the top.
+2. Ten points of panel `#1E2430`, the gap between rows.
+3. The third row, blue `#61AFEF`, whole.
+4. Ten more points of panel.
+5. The fourth row, amber `#E5C07B`, **cut off at the bottom edge** — 30 points of it.
+6. The blue `#3366CC` marker at (60, 240), a clean 200x40 block. Content that leaked past the clip would land on
+   or beside it, so this rectangle is the clip assertion.
+
+The first row is above the viewport and the last two are below it; neither may appear anywhere. A golden at offset
+zero would prove none of this, which is why the flag exists rather than a sixth `--golden` fixture.
+
+`ScrollPhysics.cpp` is in the coverage gate at 100% line and branch, and `ScrollTest.cpp` is what holds it there:
+the clamp, the two named rates' per-frame decay, the wheel notch travelling exactly its distance, 60 Hz and 120 Hz
+agreeing, the stop threshold folding its remainder in, an edge stopping momentum dead, the degenerate rates, the
+drag velocity, and the queue's scroll coalescing. `ScrollController.cpp` is deliberately outside it, and the split
+is the same one *Unit tests and coverage* draws for `InputDispatcher.cpp`: what is left there is a `UIManager` hit
+test, an ancestor walk and four upstream calls, all of which need a committed shadow tree. `--scroll-to` is the
+test for those.
+
+### Deferrals, with owners
+
+- **Rubber-band overscroll.** Reaching either end stops the momentum dead. `UIScrollView` stretches past the edge
+  with a logarithmic resistance curve and springs back, `bounces` and `alwaysBounce*` select it, and every one of
+  those props is parsed and ignored here. It is a second curve and a second state, and it belongs with the issue
+  that also gets `onScrollEndDrag`'s `targetContentOffset` right.
+- **`pagingEnabled`, `snapToInterval`, `snapToOffsets`, `snapToAlignment`, `disableIntervalMomentum`.** All parsed,
+  none implemented. Snapping is a projection of the momentum's landing point onto a grid, which needs the
+  landing-point calculation the rubber band also needs.
+- **`onScrollBeginDrag` and `onScrollEndDrag`.** Only `onScroll`, `onMomentumScrollBegin` and `onMomentumScrollEnd`
+  are emitted. The drag pair carries the velocity and target offset `FlatList` and paging read, so it lands with
+  snapping rather than before it.
+- **Scroll indicators.** `showsVerticalScrollIndicator`, `scrollIndicatorInsets`, `indicatorStyle` and
+  `persistentScrollbar` draw nothing. A scrollbar is a painted overlay with its own fade timer and its own hit
+  region, which is a component, not a prop.
+- **`contentInset`, `contentInsetAdjustmentBehavior`, `scrollAwayPaddingTop`, `centerContent`.** The viewport is
+  the ScrollView's frame and the content is `contentBoundingRect.size`; no inset is applied and the offset range is
+  `[0, content - viewport]` on each axis. `ScrollEvent::contentInset` is emitted as zero.
+- **`maintainVisibleContentPosition`.** Content growing above the viewport currently moves what is on screen. The
+  prop is parsed and ignored; honouring it means comparing child frames across commits, which is a commit hook.
+- **Programmatic scrolling.** `scrollTo`, `scrollToEnd` and `scrollResponderScrollTo` arrive as `dispatchCommand`,
+  and `LinuxMountingManager::dispatchCommand` is still empty. Nothing animates to a position yet.
+- **`scrollEventThrottle` is ignored.** The cadence is one `onScroll` per frame, which is the fastest React Native
+  ever asks for; a throttle that fires *less* often is what `FlatList` sets, and honouring it means dropping events
+  the frame already coalesced. Whether `FlatList` windowing behaves correctly at this cadence is untested — there
+  is no `FlatList` here yet, because there is no React Native JavaScript runtime in this host.
+- **Zoom.** `zoomScale`, `minimumZoomScale`, `maximumZoomScale` and `pinchGestureEnabled` do nothing;
+  `ScrollEvent::zoomScale` is always 1. A pinch needs `wl_touch` or a gesture protocol neither of which is bound.
+- **`horizontal`, `directionalLockEnabled` and RTL.** Both axes are always live and clamp independently, so a
+  `horizontal` ScrollView works because its vertical axis has nothing to scroll rather than because the prop was
+  read. Directional lock and a right-to-left origin are not modelled.
+- **`axis_value120` and high-resolution wheels.** `wl_pointer` version 8 replaces `axis_discrete` with
+  `axis_value120`, which reports fractional notches from a free-spinning wheel. The seat binds version 5, and
+  raising that floor is a change to what a compositor must advertise rather than a change to this code — the
+  controller already takes a fractional notch count.
+- **Keyboard scrolling.** Page Up, Page Down, Home, End and arrow keys scroll nothing. That needs the focus model
+  *Input* defers.
+- **E2E scroll traces.** Issue #16 asks for scroll-position-over-time assertions under a headless compositor with
+  virtual Wayland input. `--scroll-to` is the unit-level and integration-level proof and asserts the settled
+  position; a trace over frames belongs with the same harness the lavapipe window golden runs under.
+
 ## Input
 
 Issue #18, milestone M1. A mouse pointer and a keyboard, delivered to React once per frame. Touch, gestures beyond
@@ -1088,8 +1328,9 @@ came out, and the sixteen that did not arrive are the acceptance criterion. The 
 - **Touch and gestures.** `TouchEventEmitter::onTouchStart` and the responder system are untouched. Nothing on a
   desktop Wayland seat produces them without `wl_touch`, and a `PanResponder` needs the responder negotiation as
   well as the events. Not in M1.
-- **Scroll.** `wl_pointer.axis`, `axis_source`, `axis_stop` and `axis_discrete` are accepted and discarded. They
-  become meaningful with `ScrollView`, and ADR-0001 already records that its physics is a subsystem of its own.
+- **Scroll** is no longer a deferral. `wl_pointer.axis`, `axis_stop` and `axis_discrete` are queued and routed to
+  a `<ScrollView>` rather than to the pointer state machine, because a wheel moves a container and a click hits a
+  node. `axis_source` is still ignored, and *ScrollView* says why.
 - **Key repeat.** `wl_keyboard.repeat_info` is accepted and ignored, so a held key produces one `keyDown`.
   Synthesising repeat means a timer in the frame loop, which is the same machinery text input will need.
 - **Focus traversal.** Issue #18 asks for react-native-macos tab order. There is no focus model here yet: no
@@ -1100,12 +1341,223 @@ came out, and the sixteen that did not arrive are the acceptance criterion. The 
   the root is dropped before the hover chain runs. The consequence is visible: moving off a view onto the
   background does not currently produce `pointerOut`. Fixing it means giving the root a fiber-shaped handle, which
   belongs with React Native's JavaScript surface registry rather than here.
-- **IME.** `zwp_text_input_v3`, pre-edit rendering, cursor rectangles, surrounding-text sync and xkbcommon compose
-  sequences are issue #26, and ADR-0001 makes them a prerequisite of a usable `TextInput` rather than a later
-  nicety.
+- **IME.** `zwp_text_input_v3` is issue #26 and is implemented; see *IME* below. What is still deferred there is
+  pre-edit **rendering**, which needs the `<TextInput>` of issue #17 to have something to render it in, and
+  xkbcommon compose sequences and dead keys, which are a keyboard concern rather than an input-method one.
 - **E2E traces.** Issue #18 also asks for hover/press traces and keyboard focus order under a headless compositor
   with virtual Wayland input. `--inject-pointer` is the unit-level and integration-level proof; the compositor-level
   one belongs with the harness that runs the lavapipe window golden, and neither exists yet.
+
+## IME
+
+Issue #26, milestone M1. Composition through `zwp_text_input_v3`, which ADR-0001 makes a prerequisite of
+`<TextInput>` rather than an accessibility afterthought: most of the world's languages cannot be typed at all
+without it, so a text field that has keys but no input method is a text field for English.
+
+Nothing here draws a candidate window. On Wayland the compositor's input method owns that popup, and the only
+thing a client owes it is the rectangle around the cursor to avoid — which is the single largest reason this is a
+few hundred lines rather than a subsystem.
+
+```text
+zwp_text_input_v3 ─▶ TextInputClient ─▶ TextInputV3State ─▶ InputQueue ─┐   frame thread
+   preedit_string                          batches until done           │
+   commit_string                                                        │
+   delete_surrounding_text                       InputDispatcher ◀──────┘
+   done(serial)                                        │ ImeSink
+                                                       ▼
+                                              the focused text field (#17)
+```
+
+### Binding, and which version
+
+`WaylandWindow` binds `zwp_text_input_manager_v3` from the registry and asks the seat for one `zwp_text_input_v3`
+— the object is per seat, not per surface, because text-input focus follows the seat's keyboard focus. A
+compositor that does not advertise the manager leaves `WaylandWindow::textInput` null and the window keeps
+working with keys alone; that is not hypothetical, it is what a bare weston without an input method does.
+
+The manager is bound at **version 1**. The protocol XML lives at
+`$(pkg-config --variable=pkgdatadir wayland-protocols)/unstable/text-input/text-input-unstable-v3.xml` — under
+`unstable/`, not `stable/`, because v3 is still an unstable protocol and its `z` prefix says so. wayland-protocols
+1.49 raised the interface itself to version 2, which adds `action`, `language` and `preedit_hint` events plus
+`set_available_actions`, `show_input_panel` and `hide_input_panel`. Binding version 2 would oblige us to answer
+events no component exists to render, so version 1 it is; the generated listener struct still carries the version 2
+members, which is exactly why `TextInputClient::makeTextInputListener` value-initialises the struct and fills it
+member by member instead of using a designated initialiser. `wayland-scanner` generates the client header and the
+private code into `build/<preset>/packages/core/wayland-protocols`, into `rnl_text_input`, mirroring what
+`rnl_xdg_shell` already does for xdg-shell. Nothing generated is checked in.
+
+### Everything is double-buffered, in both directions
+
+v3 sends a composition in pieces and none of them mean anything on their own. `preedit_string`, `commit_string`
+and `delete_surrounding_text` each modify pending state; `done` replaces the current state with all of it at once
+and resets the pending values to initial. Applying a piece when it arrives is not a shortcut, it is a different
+protocol, and it is what produces the duplicated and reordered characters that IME bug reports are made of.
+
+`TextInputV3State` is that buffer, as a pure class with no Wayland types in it, and `applyDone` returns the
+`InputEvent`s in the order the protocol's own `done` description evaluates them:
+
+1. replace the existing pre-edit with the cursor,
+2. delete the requested surrounding text,
+3. insert the commit string with the cursor at its end,
+4. insert the new pre-edit and place the cursor inside it.
+
+So a batch that deletes, commits and re-composes yields `ImeDeleteSurrounding`, then `ImeCommit`, then
+`ImePreedit`, and a text buffer that applies them in arrival order is correct by construction. A pre-edit that
+changed only its cursor pair is still an event, because an input method moving the highlight through a candidate
+is telling the field to repaint. `-1, -1` means the cursor is hidden.
+
+Requests are double-buffered the same way: `enable`, `set_surrounding_text` and `set_cursor_rectangle` are all
+pending until a `commit`, so `TextInputClient` caches what it was told and issues the three together. A text field
+never has to know that `commit` exists.
+
+Two empty values are protocol-significant rather than harmless. An empty surrounding text means "this client does
+not support surrounding text", and an all-zero cursor rectangle means "this client does not know where its cursor
+is" — and the protocol warns that once the empty value is applied, later attempts to change it may have no effect.
+Neither is sent until there is something real to say.
+
+### The serial, and what a mismatch means
+
+The compositor counts our `commit` requests and sends that count back as the serial on `done`. A serial that is
+not our own count means the compositor answered a state we have already replaced: the composition still applies —
+the user's keystrokes are not negotiable — but our own state requests wait for a `done` whose serial matches
+before they are sent again. That is `needsStateResend`, and `TextInputClient` re-sends the cached state on the
+first matching `done`. `enable` and `enter` clear the gate, because the `commit` that carries an `enable` cannot
+wait for a serial that only another `commit` would produce.
+
+### Focus, and what enabling costs
+
+`enter` and `leave` follow the compositor's keyboard focus. Both invalidate every piece of state the protocol
+carries, in both directions: after either one the compositor knows nothing about this text input, the pre-edit on
+screen is gone, and a field that wants composition must `enable` again and re-send its state. `leave` therefore
+emits an empty `ImePreedit` when a composition was on screen, so the field clears it rather than leaving a
+half-composed word behind.
+
+`enable` is refused while the text input has no focus, because the protocol says the compositor ignores every
+request from a text input that has not been sent `enter`.
+
+### Keys during composition
+
+While a composition is active the compositor may still send `wl_keyboard.key` events, and the rule for React is
+that **key events are not text**. Text arrives only as `ImeCommit`. A `keyDown` that arrives during a pre-edit is
+either a key the input method did not consume or one the compositor chose to forward, and a `<TextInput>` that
+inserts characters from key events as well as from commits will double every character the moment an input method
+is running. The platform does not filter those keys — with fcitx5 under a wlroots compositor the keyboard grab
+means most of them never arrive in the first place, and second-guessing which ones did would be a filter that
+disagrees with the compositor.
+
+### How `<TextInput>` plugs in
+
+`ImeSink` in `InputPipeline.h` is the contract: `onImePreedit`, `onImeCommit`, `onImeDeleteSurrounding`.
+`InputDispatcher::setImeSink` registers the platform-level focus owner, and composition events are the one input
+that is not hit-tested — the target is whatever holds the text cursor, not whatever is under the pointer. Issue
+#17 makes the focused field that owner and gives `TextInputClient::setSurroundingText` and
+`setCursorRectangle(x, y, width, height)` real values: the text around the caret, and the caret's rectangle in
+surface-local coordinates so the candidate window lands beside it instead of on top of it. Until then the only
+implementation is the debug sink below, and an unregistered sink means composition events are dropped rather than
+queued.
+
+### The proof, without a `<TextInput>`
+
+```bash
+./build/dev/bin/rnl_window --ime-debug
+```
+
+`--ime-debug` enables the text input on the window itself as soon as the compositor gives it focus, reports a stub
+surrounding text and a fixed 2x24 caret rectangle at (64, 64), and prints every composition batch. It composes
+with `--fabric` and `--screenshot`; on a compositor with no text-input manager it says so on stderr and carries on.
+
+With fcitx5 running and its input method switched to Pinyin, focusing the window and typing `nihao` then space
+prints:
+
+```text
+[rnl-ime] enabled on the focused surface
+[rnl-ime] preedit "n" cursor 1..1
+[rnl-ime] preedit "ni" cursor 2..2
+[rnl-ime] preedit "niha" cursor 4..4
+[rnl-ime] preedit "nihao" cursor 5..5
+[rnl-ime] commit "你好"
+[rnl-ime] preedit "" cursor 0..0
+```
+
+The last two lines are the whole claim: the commit and the pre-edit that ends the composition arrive in one
+`done` batch and in that order, and the empty pre-edit is what tells a field to remove the composing run. The
+exact pre-edit strings are the input method's business — fcitx5's Pinyin engine shows the typed letters, Anthy
+and Hangul engines show composed syllables instead — so the shape of the sequence is the assertion, not the
+strings.
+
+### Manual checklist, Hyprland with fcitx5
+
+`fcitx5` is not a build dependency and CI never installs it; this is a developer-machine check. On Arch:
+`sudo pacman -S --needed fcitx5 fcitx5-configtool fcitx5-chinese-addons`, then run `fcitx5` with
+`fcitx5 --replace -d`. It needs no `GTK_IM_MODULE` or `QT_IM_MODULE` for this: those environment variables are for
+toolkit clients, and a Wayland text-input client is reached through the compositor.
+
+1. `pnpm --filter @react-native-linux/core run:window:ime` opens the usual placeholder window and, once the
+   compositor focuses it, prints `[rnl-ime] enabled on the focused surface`. Nothing else is printed while typing
+   with the input method off.
+2. Switch to Pinyin with fcitx5's toggle (`SUPER SPACE` on stock Omarchy) and type `nihao`. The candidate window
+   appears **beside the caret rectangle**, near (64, 64) in the window rather than at the window's corner or the
+   pointer, and each letter prints a `preedit` line.
+3. Press space. One `commit` line with the composed characters, immediately followed by an empty `preedit` line.
+   No further output until the next composition.
+4. Press escape mid-composition. The pre-edit is abandoned with an empty `preedit` line and no commit.
+5. Click another window and come back. Focus loss prints an empty `preedit` line if a composition was open, and
+   the return prints `enabled on the focused surface` again — that is `enter` invalidating all state and the
+   client re-enabling, which is the sequence a compositor is entitled to require.
+6. Switch the input method back off and type ASCII. Nothing is printed, because plain keys are not composition;
+   they arrive as `keyDown`/`keyUp` and go to the pointer's node. See *Input*.
+7. `./build/dev/bin/rnl_window --ime-debug --fabric packages/core/test-bundles/fabric-view.js` behaves the same
+   with a bundle loaded, and the bundle's own output is unaffected.
+8. On a compositor without the manager — `weston --backend=headless` is one —
+   `[rnl-window] the compositor does not advertise zwp_text_input_manager_v3` goes to stderr and the window still
+   opens and still closes cleanly.
+
+### The compositor and input-method matrix
+
+The client half of this is uniform; the half that draws the candidate window is not.
+
+| Compositor | `text-input-v3` | `input-method-v2` | What that means here |
+| --- | --- | --- | --- |
+| Hyprland, sway, wlroots | yes | yes | fcitx5 runs as the input method and draws its own popup. The reference configuration for this checklist. |
+| KDE / kwin | yes | yes | Same, and kwin also ships its own virtual keyboard path. |
+| GNOME / mutter | yes | **no** | Composition works, but fcitx5 cannot render a candidate window without the `kimpanel` shell extension. That is a GNOME limitation, not something a client can fix. |
+
+ibus is the other common input method and speaks `input_method_v1` on Wayland, so under wlroots compositors it
+effectively only serves XWayland clients; fcitx5 is the one to test against. None of this changes what this client
+sends — it is the same protocol either way — which is the argument for having implemented v3 and nothing else.
+
+### Tests
+
+`TextInputV3State` is a pure class for exactly one reason: it is the part that can be arithmetically wrong, so it
+belongs where the coverage gate can see it. `packages/core/tests/ImeTest.cpp` covers the batching order, the
+last-preedit-wins rule, the cursor-pair change, the composition-ending empty pre-edit, focus invalidation and the
+serial mismatch, and `TextInputV3State.cpp` is in `scopedSourcePaths` at 100% line and branch. `TextInputClient.cpp`
+is outside that scope for the same reason `WaylandSeat.cpp` is: what is left in it is protocol plumbing that needs
+a compositor, and `--ime-debug` is the test for it.
+
+The e2e layer issue #26 asks for — a virtual input method injecting composition under the headless compositor —
+is not built. It needs the harness to speak the compositor side, `input-method-v2`, which is a second protocol
+implementation and the *Deferrals* below explain why it is not this issue's.
+
+### Deferrals, with owners
+
+- **Pre-edit rendering.** Underlined, highlighted composing text inside a text field is issue #17's, because
+  there is no field to render it in. `ImePreedit` already carries the cursor pair the styling needs.
+- **`input-method-v2`.** The compositor side of the protocol — being the input method rather than talking to one
+  — is what a virtual-IME e2e test and any in-process candidate window would need. It is not on the M1 path and
+  the Prime Directive says a second protocol implementation waits for a second reason to exist.
+- **`text-input-unstable-v1` and XIM.** Neither is implemented and neither is planned. v1 is the GTK-era protocol
+  that v3 replaced, and XIM is X11's, which reaches this platform only through XWayland — which this platform
+  does not use. ADR-0001's Wayland-only decision is what makes that a closed question rather than an open one.
+- **Content hints and purpose.** `set_content_type` maps to `<TextInput>`'s `keyboardType`, `autoCapitalize`,
+  `secureTextEntry` and `autoComplete` props, so it lands with the props, in #17.
+- **`set_text_change_cause`.** The client must tell the input method when the text changed for a reason other
+  than composition. That needs a text buffer that can change for another reason, which is #17.
+- **Compose sequences and dead keys.** `xkb_compose_state` turns `dead_acute` + `e` into `é` without any input
+  method running. It is xkbcommon's, it belongs beside the keymap in `WaylandSeat`, and it is a keyboard feature
+  that composition does not supply.
+- **Version 2.** `preedit_hint` would let an input method style parts of a pre-edit, and `language` would let a
+  field follow the input method's language. Both need a rendering field first.
 
 ## Golden images
 
@@ -1267,9 +1719,15 @@ Every tile is 130x120 on a `#1E2430` panel, so whatever the image does not cover
     prints one `[image] unsupported source` line to stderr, which is the graceful-degradation path being proved
     rather than a failure.
 
+The fifth is `packages/core/test-bundles/scroll.js` to `packages/core/goldens/scroll.png`, and it is the one
+fixture that is not rendered by `--golden`: a `<ScrollView>` at rest at zero would prove nothing that a `<View>`
+with `overflow: hidden` does not already prove, so it is rendered by `--scroll-to` after three wheel notches over
+(160, 100). The picture, the geometry behind it and why the marker rectangle is the clip assertion are all in
+*ScrollView*.
+
 ### The partial-redraw equivalence proof
 
-The fifth fixture is different in kind: `--damage-golden` is issue #12's acceptance criterion — "partial redraw
+The sixth fixture is different in kind: `--damage-golden` is issue #12's acceptance criterion — "partial redraw
 equals full redraw" — turned into an assertion, and the PNG is a by-product.
 
 `packages/core/test-bundles/damage.js` commits twice. The first commit is an ordinary frame. A `setTimeout`
@@ -1470,8 +1928,9 @@ needs neither Hermes nor Skia, so it skips both the multi-hour Hermes build and 
 Vulkan prerequisites `RNL_ENABLE_SKIA` and `RNL_ENABLE_WINDOW` probe for.
 
 `packages/core/tests/CMakeLists.txt` fetches googletest at a pinned commit, builds `rnl_core_tests` from
-`SceneTest.cpp`, `InputTest.cpp` and `ImageTest.cpp` plus the four sources they exercise — `RetainedScene.cpp`,
-`LinuxMountingManager.cpp`, `InputPipeline.cpp` and `ImageContent.cpp`, compiled
+`SceneTest.cpp`, `InputTest.cpp`, `ImeTest.cpp`, `ImageTest.cpp` and `ScrollTest.cpp` plus the six sources they
+exercise — `RetainedScene.cpp`, `LinuxMountingManager.cpp`, `InputPipeline.cpp`, `ImageContent.cpp`,
+`ScrollPhysics.cpp` and `TextInputV3State.cpp`, compiled
 directly into the test binary rather than linked from a Hermes-linked library — and registers them with
 `gtest_discover_tests` so `ctest` finds every `TEST` individually. Under Clang, `rnl_core_tests` also gets
 `-fprofile-instr-generate -fcoverage-mapping`, LLVM's source-based coverage instrumentation.
@@ -1479,17 +1938,21 @@ directly into the test binary rather than linked from a Hermes-linked library �
 `scripts/cpp-coverage.ts` is the gate: it runs `rnl_core_tests` with `LLVM_PROFILE_FILE` pointed at
 `build/test/coverage`, merges the raw profile with `llvm-profdata merge -sparse`, exports it as lcov with
 `llvm-cov export --format=lcov`, and grades line and branch coverage per file against an explicit list
-(`scopedSourcePaths` in the script — today `RetainedScene.cpp`, `LinuxMountingManager.cpp`, `InputPipeline.cpp`
-and `ImageContent.cpp`, the four sources the test binary actually exercises). A source with no tests behind it is
+(`scopedSourcePaths` in the script — today `RetainedScene.cpp`, `LinuxMountingManager.cpp`, `InputPipeline.cpp`,
+`ImageContent.cpp`, `ScrollPhysics.cpp` and `TextInputV3State.cpp`, the six sources the test binary actually
+exercises). A source with no tests behind it is
 deliberately not in that list: adding a file there without coverage behind it is what turns the gate red, rather
 than a silent average across the whole of `packages/core`.
 
-`InputDispatcher.cpp` and `WaylandSeat.cpp` are the input sources deliberately left outside that scope, and the
-split between them and `InputPipeline.cpp` is what makes the scope honest rather than convenient: everything that
+`InputDispatcher.cpp`, `WaylandSeat.cpp` and `TextInputClient.cpp` are the input sources deliberately left outside
+that scope, and the split between them and `InputPipeline.cpp` and `TextInputV3State.cpp` is what makes the scope
+honest rather than convenient: everything that
 can be arithmetically wrong — motion coalescing, the queue bound, the buttons bitmask, the press-to-click state
-machine, offset points, modifier flags — lives in `InputPipeline.cpp` where the gate sees it. What is left in
-`InputDispatcher.cpp` is a `UIManager` hit test and a switch over five emitter calls, and what is left in
-`WaylandSeat.cpp` is protocol plumbing that needs a compositor. `--inject-pointer` is the test for those two.
+machine, offset points, modifier flags, and the `done` batching, ordering and serial rules of `zwp_text_input_v3`
+— lives in those two where the gate sees it. What is left in
+`InputDispatcher.cpp` is a `UIManager` hit test and a switch over five emitter calls, what is left in
+`WaylandSeat.cpp` is protocol plumbing that needs a compositor, and what is left in `TextInputClient.cpp` is
+requests and listeners that need one too. `--inject-pointer` and `--ime-debug` are the tests for those three.
 
 `ImageContent.cpp` is inside it, and the split between it and `ImagePipeline.cpp` is what makes the image scope
 honest: everything that can be arithmetically wrong — base64 decoding, source-scheme resolution, the five
@@ -1499,6 +1962,14 @@ upstream's request type. Those two are also outside the `test` configure entirel
 is conditional on Skia; the image golden is what tests them. The scene half of images is inside the gate:
 extraction from `ImageState`, the `resizeMode` mapping, the opacity fold into the tint and the decode-completion
 damage all live in `RetainedScene.cpp` and `LinuxMountingManager.cpp` and are covered by `RetainedSceneImageTest`.
+
+`ScrollPhysics.cpp` is inside it and `ScrollController.cpp` is outside it, and that split is the same one again:
+the deceleration integral, the wheel impulse, the clamp, the stop threshold and the drag velocity are pure
+arithmetic over doubles with no React types in them at all, and what is left in the controller is a `UIManager`
+hit test, an ancestor walk, a state update and three emitter calls — none of which exists without a committed
+shadow tree. `--scroll-to` is the test for that half. The scene half of scrolling is inside the gate: the
+`contentOffset` read off `ScrollViewState`, the translation of the children, the unconditional clip and the damage
+all live in `RetainedScene.cpp` and are covered by `RetainedSceneScrollTest`.
 
 `TextPipeline.cpp` and `TextLayoutManager.cpp` are outside that scope for the same reason, and one stronger one:
 they are the only two sources that are not even compiled in the `test` configure, because the stub swap is

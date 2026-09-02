@@ -30,6 +30,12 @@ constexpr char kSmokeSource[] = "console.log('react-native-linux: hermes alive')
 constexpr char kSmokeSourceUrl[] = "smoke.js";
 constexpr facebook::react::Size kHeadlessSurfaceSize{.width = 800, .height = 600};
 constexpr size_t kInjectedMotionCount = 17;
+// One 60 Hz frame, in milliseconds. A headless run has no compositor to pace it, so the scroll physics is stepped
+// at a fixed rate instead of a measured one and the settled position stops depending on the machine.
+constexpr double kInjectedFrameMilliseconds = 1000.0 / 60.0;
+// About thirty-three seconds of 60 Hz frames, which is longer than the slowest deceleration curve React Native's
+// `decelerationRate` can ask for. It exists so a physics bug is a run that ends rather than a run that hangs.
+constexpr size_t kMaximumInjectedScrollFrames = 2000;
 
 std::unique_ptr<const facebook::react::JSBigString> readScript(const std::optional<std::string>& bundlePath) {
     if (bundlePath.has_value()) {
@@ -95,6 +101,23 @@ std::vector<InputEvent> makeMotionFrame(facebook::react::Point surfacePoint) {
     return queue.drain();
 }
 
+/**
+ * One frame's worth of a mouse wheel turned `wheelNotches` times over `surfacePoint`, pushed through the same
+ * `InputQueue` the Wayland seat fills — so the notches arrive coalesced into the one event a real frame would
+ * hand over, rather than as a shape only this function produces.
+ */
+std::vector<InputEvent> makeWheelFrame(facebook::react::Point surfacePoint, int wheelNotches) {
+    InputQueue queue;
+
+    for (int notch = 0; notch < wheelNotches; ++notch) {
+        queue.push(InputEvent{.kind = InputEventKind::PointerScrollDiscrete,
+                              .surfacePoint = surfacePoint,
+                              .scrollAmount = 1.0});
+    }
+
+    return queue.drain();
+}
+
 void deliverInputFrame(ReactHost& reactHost, FabricHost& fabricHost, const std::vector<InputEvent>& events) {
     fabricHost.dispatchInput(events);
     fabricHost.induceEventBeat();
@@ -104,14 +127,38 @@ void deliverInputFrame(ReactHost& reactHost, FabricHost& fabricHost, const std::
     }
 }
 
+std::unique_ptr<FabricHost> startFabricRun(ReactHost& reactHost, const std::string& bundlePath,
+                                           facebook::react::Size surfaceSize) {
+    std::unique_ptr<FabricHost> fabricHost = std::make_unique<FabricHost>(reactHost.reactInstance(), surfaceSize);
+
+    reactHost.loadScript(facebook::react::JSBigFileString::fromPath(bundlePath), bundlePath);
+
+    return fabricHost;
+}
+
+/**
+ * Reads the scene out and tears the host down, in the one order that is safe: both readings happen before the
+ * surface is stopped, because stopping it commits an empty tree, and the JavaScript thread is drained before the
+ * host is destroyed so the queued unmount runs while the scheduler delegate is still alive.
+ */
+FabricRunResult finishFabricRun(ReactHost& reactHost, std::unique_ptr<FabricHost>& fabricHost) {
+    SceneSnapshot scene = fabricHost->snapshotScene();
+    std::string sceneDump = fabricHost->dumpScene();
+
+    fabricHost->stopSurface();
+    reactHost.drainJavaScriptThread();
+    fabricHost.reset();
+
+    return FabricRunResult{.scene = std::move(scene),
+                           .sceneDump = std::move(sceneDump),
+                           .hasReportedFatalError = reactHost.hasReportedFatalError()};
+}
+
 } // namespace
 
 int runInjectedClick(const std::string& bundlePath, facebook::react::Point surfacePoint) {
     ReactHost reactHost;
-    std::unique_ptr<FabricHost> fabricHost = std::make_unique<FabricHost>(reactHost.reactInstance(),
-                                                                         kHeadlessSurfaceSize);
-
-    reactHost.loadScript(facebook::react::JSBigFileString::fromPath(bundlePath), bundlePath);
+    std::unique_ptr<FabricHost> fabricHost = startFabricRun(reactHost, bundlePath, kHeadlessSurfaceSize);
 
     const bool hasCommitted = !waitForFirstCommit(reactHost, *fabricHost).empty();
 
@@ -134,9 +181,7 @@ int runInjectedClick(const std::string& bundlePath, facebook::react::Point surfa
 
 FabricDamageRunResult runFabricBundleAcrossCommits(const std::string& bundlePath, facebook::react::Size surfaceSize) {
     ReactHost reactHost;
-    std::unique_ptr<FabricHost> fabricHost = std::make_unique<FabricHost>(reactHost.reactInstance(), surfaceSize);
-
-    reactHost.loadScript(facebook::react::JSBigFileString::fromPath(bundlePath), bundlePath);
+    std::unique_ptr<FabricHost> fabricHost = startFabricRun(reactHost, bundlePath, surfaceSize);
 
     FabricDamageRunResult result{.firstScene = waitForFirstCommit(reactHost, *fabricHost)};
 
@@ -164,22 +209,40 @@ FabricDamageRunResult runFabricBundleAcrossCommits(const std::string& bundlePath
     return result;
 }
 
+FabricRunResult runScrolledFabricBundle(const std::string& bundlePath, facebook::react::Size surfaceSize,
+                                        facebook::react::Point surfacePoint, int wheelNotches) {
+    ReactHost reactHost;
+    std::unique_ptr<FabricHost> fabricHost = startFabricRun(reactHost, bundlePath, surfaceSize);
+
+    if (waitForFirstCommit(reactHost, *fabricHost).empty()) {
+        std::cerr << "[bundle-runner] the bundle committed no scene, so there is nothing to scroll" << std::endl;
+    }
+
+    fabricHost->dispatchInput(makeWheelFrame(surfacePoint, wheelNotches));
+
+    // The beat is induced after the glide rather than inside it: a state update replaces the previous one for the
+    // same node, so only the last position could survive the flush anyway, and inducing per frame would buy this
+    // run a JavaScript round trip per frame and no extra assertion.
+    for (size_t frame = 0;
+         frame < kMaximumInjectedScrollFrames && fabricHost->advanceScroll(kInjectedFrameMilliseconds); ++frame) {
+    }
+
+    fabricHost->induceEventBeat();
+
+    if (!reactHost.runUntilQuiescent(kQuiescenceBudget)) {
+        std::cerr << "[bundle-runner] gave up waiting for pending timers" << std::endl;
+    }
+
+    return finishFabricRun(reactHost, fabricHost);
+}
+
 FabricRunResult runFabricBundle(const std::optional<std::string>& bundlePath, facebook::react::Size surfaceSize) {
     ReactHost reactHost;
     std::unique_ptr<FabricHost> fabricHost = std::make_unique<FabricHost>(reactHost.reactInstance(), surfaceSize);
 
     loadAndSettle(reactHost, bundlePath);
 
-    SceneSnapshot scene = fabricHost->snapshotScene();
-    std::string sceneDump = fabricHost->dumpScene();
-
-    fabricHost->stopSurface();
-    reactHost.drainJavaScriptThread();
-    fabricHost.reset();
-
-    return FabricRunResult{.scene = std::move(scene),
-                           .sceneDump = std::move(sceneDump),
-                           .hasReportedFatalError = reactHost.hasReportedFatalError()};
+    return finishFabricRun(reactHost, fabricHost);
 }
 
 int runBundle(const std::optional<std::string>& bundlePath, BundleMode bundleMode) {

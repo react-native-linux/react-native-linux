@@ -1,5 +1,6 @@
 #include "WaylandWindow.h"
 
+#include "text-input-unstable-v3-client-protocol.h"
 #include "xdg-shell-client-protocol.h"
 
 #include <algorithm>
@@ -17,6 +18,10 @@ namespace {
 
 constexpr uint32_t kMaximumCompositorVersion = 4;
 constexpr uint32_t kMaximumWmBaseVersion = 5;
+// Version 1 is every event and request this platform uses. wayland-protocols 1.49 added version 2 — actions,
+// language reporting, pre-edit style hints and the input-panel requests — and binding it would oblige us to
+// answer events that no `<TextInput>` exists to render yet. See *IME* in docs/cpp-toolchain.md.
+constexpr uint32_t kMaximumTextInputManagerVersion = 1;
 
 } // namespace
 
@@ -85,13 +90,22 @@ WaylandWindow::WaylandWindow(const std::string& title, WindowSize initialSize) :
     if (!configured_) {
         throw std::runtime_error("compositor never sent the initial xdg_surface configure");
     }
+
+    if (seat_ != nullptr && textInputManager_ != nullptr) {
+        seat_->attachTextInput(textInputManager_);
+    }
 }
 
 WaylandWindow::~WaylandWindow() noexcept {
     destroyFrameCallback();
 
     // Before the connection goes away: releasing the pointer, the keyboard and the seat are all requests on it.
+    // The seat also owns the text input, which is destroyed before the manager that created it.
     seat_.reset();
+
+    if (textInputManager_ != nullptr) {
+        zwp_text_input_manager_v3_destroy(textInputManager_);
+    }
 
     if (toplevel_ != nullptr) {
         xdg_toplevel_destroy(toplevel_);
@@ -166,6 +180,10 @@ std::vector<InputEvent> WaylandWindow::takeInputEvents() {
     return seat_->takeEvents();
 }
 
+TextInputClient* WaylandWindow::textInput() const noexcept {
+    return seat_ == nullptr ? nullptr : seat_->textInput();
+}
+
 void WaylandWindow::bindGlobal(wl_registry* registry, uint32_t name, const char* interfaceName, uint32_t version) {
     if (std::strcmp(interfaceName, wl_compositor_interface.name) == 0) {
         void* bound =
@@ -178,6 +196,10 @@ void WaylandWindow::bindGlobal(wl_registry* registry, uint32_t name, const char*
     } else if (std::strcmp(interfaceName, wl_seat_interface.name) == 0 && version >= kMinimumSeatVersion) {
         void* bound = wl_registry_bind(registry, name, &wl_seat_interface, kMinimumSeatVersion);
         seat_ = std::make_unique<WaylandSeat>(static_cast<wl_seat*>(bound));
+    } else if (std::strcmp(interfaceName, zwp_text_input_manager_v3_interface.name) == 0) {
+        void* bound = wl_registry_bind(registry, name, &zwp_text_input_manager_v3_interface,
+                                       std::min(version, kMaximumTextInputManagerVersion));
+        textInputManager_ = static_cast<zwp_text_input_manager_v3*>(bound);
     }
 }
 

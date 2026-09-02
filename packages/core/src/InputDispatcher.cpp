@@ -27,6 +27,11 @@ bool isKeyEvent(const InputEvent& event) {
     return event.kind == InputEventKind::KeyPress || event.kind == InputEventKind::KeyRelease;
 }
 
+bool isImeEvent(const InputEvent& event) {
+    return event.kind == InputEventKind::ImePreedit || event.kind == InputEventKind::ImeCommit ||
+           event.kind == InputEventKind::ImeDeleteSurrounding;
+}
+
 void emitPointerDispatch(const facebook::react::TouchEventEmitter& emitter, const PointerDispatch& dispatch) {
     switch (dispatch.type) {
         case PointerDispatchType::Move:
@@ -61,6 +66,14 @@ void InputDispatcher::dispatch(const std::vector<InputEvent>& events) {
             continue;
         }
 
+        if (isImeEvent(event)) {
+            if (imeSink_ != nullptr) {
+                deliverImeEvent(event, *imeSink_);
+            }
+
+            continue;
+        }
+
         const std::shared_ptr<const facebook::react::ShadowNode> target = resolveTarget(event);
 
         if (target == nullptr) {
@@ -82,6 +95,8 @@ void InputDispatcher::dispatch(const std::vector<InputEvent>& events) {
         }
     }
 }
+
+void InputDispatcher::setImeSink(ImeSink* imeSink) noexcept { imeSink_ = imeSink; }
 
 std::shared_ptr<const facebook::react::ShadowNode> InputDispatcher::rootShadowNode() const {
     std::shared_ptr<const facebook::react::ShadowNode> root;

@@ -31,13 +31,38 @@ enum class InputEventKind : uint8_t {
     ImePreedit,
     ImeCommit,
     ImeDeleteSurrounding,
+    /**
+     * `wl_pointer.axis`: a smooth scroll delta in surface points, which is what a touchpad produces while two
+     * fingers are down.
+     */
+    PointerScrollContinuous,
+    /**
+     * `wl_pointer.axis_discrete`: whole wheel notches. A compositor sends an `axis` event carrying the same notch
+     * in units of its own choosing alongside it, and the queue drops that one in favour of this one.
+     */
+    PointerScrollDiscrete,
+    /**
+     * `wl_pointer.axis_stop`: the fingers left the touchpad, so whatever velocity the last deltas implied becomes
+     * a fling.
+     */
+    PointerScrollStop,
+};
+
+/**
+ * Which axis a scroll event moved. `wl_pointer` numbers these 0 and 1; this is the same pair, named.
+ */
+enum class ScrollAxisKind : uint8_t {
+    Vertical,
+    Horizontal,
 };
 
 /**
  * One thing the compositor told us, in surface coordinates and with no Wayland types in it.
  *
  * `button` is the DOM button number — 0 primary, 1 auxiliary, 2 secondary — not the `BTN_*` code Wayland sends;
- * the seat maps it. `key` is the xkbcommon keysym name and is empty for pointer events.
+ * the seat maps it. `key` is the xkbcommon keysym name and is empty for pointer events. `scrollAmount` is points
+ * for `PointerScrollContinuous`, whole notches for `PointerScrollDiscrete`, and unused otherwise; both grow in the
+ * direction `contentOffset` grows in, which is content moving up or left.
  */
 struct InputEvent {
     InputEventKind kind{InputEventKind::PointerMotion};
@@ -50,7 +75,15 @@ struct InputEvent {
     int32_t preeditCursorEnd{0};
     uint32_t deleteBeforeLength{0};
     uint32_t deleteAfterLength{0};
+    ScrollAxisKind scrollAxis{ScrollAxisKind::Vertical};
+    double scrollAmount{0.0};
 };
+
+/**
+ * Whether this event belongs to the scroll pipeline rather than the pointer one. The two are routed separately
+ * because a wheel moves the deepest `<ScrollView>` under the pointer, which is not the node a click would land on.
+ */
+bool isScrollEvent(const InputEvent& event);
 
 /**
  * The number of events one frame may carry. Motion coalescing is what keeps a 1000 Hz mouse well under it, so
@@ -66,6 +99,11 @@ constexpr size_t kInputQueueCapacity = 256;
  * seventeen per 120 Hz frame, and React has no use for the intermediate positions — but it does need to know that
  * a button went down between two of them, so a press splits the run and the positions on either side survive
  * independently.
+ *
+ * Scroll deltas coalesce by the same contiguity rule and a different arithmetic: consecutive deltas on one axis are
+ * **summed**, because every one of them is displacement rather than a position. A `wl_pointer` frame carrying a
+ * wheel notch sends `axis_discrete` and then an `axis` measuring the same notch in compositor-defined units, so a
+ * continuous delta that lands directly behind a discrete one on the same axis is dropped as the duplicate it is.
  *
  * Threading contract: this type is not synchronised, and does not need to be. Wayland listeners run inside
  * `wl_display_dispatch_pending` on the frame thread, which is also the thread that drains the queue.

@@ -4,6 +4,7 @@
 #include "InputPipeline.h"
 #include "LinuxMountingManager.h"
 #include "RetainedScene.h"
+#include "ScrollController.h"
 
 #include <react/renderer/componentregistry/ComponentDescriptorProviderRegistry.h>
 #include <react/renderer/graphics/Size.h>
@@ -41,10 +42,11 @@ namespace react_native_linux {
  * thread. The owner drains that thread before destroying the host, because the queued rendering update holds a
  * raw pointer to the scheduler delegate and upstream only guards it behind a feature flag that is off by default.
  *
- * Input is the other pair the frame thread calls while the surface is running. `dispatchInput` hit-tests and
- * enqueues, `induceEventBeat` releases everything the queue has accumulated onto the JavaScript thread, and the
- * frame loop calls them in that order once per frame — which is what makes event delivery frame-paced rather than
- * per raw compositor event. See *Input* in docs/cpp-toolchain.md.
+ * Input is the other trio the frame thread calls while the surface is running. `dispatchInput` hit-tests and
+ * enqueues, `advanceScroll` integrates a frame of scroll physics and writes the resulting `contentOffset` back
+ * through a state update, `induceEventBeat` releases everything the queue has accumulated onto the JavaScript
+ * thread, and the frame loop calls them in that order once per frame — which is what makes event delivery
+ * frame-paced rather than per raw compositor event. See *Input* and *ScrollView* in docs/cpp-toolchain.md.
  */
 class FabricHost final {
 public:
@@ -58,6 +60,13 @@ public:
     void setSurfaceSize(facebook::react::Size surfaceSize);
     void stopSurface();
     void dispatchInput(const std::vector<InputEvent>& events);
+
+    /**
+     * Integrates one frame of scrolling and reports whether any `<ScrollView>` is still moving. Called between
+     * `dispatchInput` and `induceEventBeat`, so the state write-back and the scroll events this produces ride the
+     * same beat as everything else the frame queued.
+     */
+    bool advanceScroll(double frameMilliseconds);
     void induceEventBeat();
     SceneFrame takeFrame();
     SceneSnapshot snapshotScene() const;
@@ -71,6 +80,7 @@ private:
     std::unique_ptr<facebook::react::SchedulerDelegateImpl> schedulerDelegate_;
     std::unique_ptr<facebook::react::Scheduler> scheduler_;
     std::unique_ptr<InputDispatcher> inputDispatcher_;
+    std::unique_ptr<ScrollController> scrollController_;
     std::unique_ptr<facebook::react::SurfaceHandler> surfaceHandler_;
 };
 

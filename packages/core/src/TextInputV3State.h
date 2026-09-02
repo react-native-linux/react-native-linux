@@ -27,7 +27,8 @@ namespace react_native_linux {
  *
  * `enter` and `enable` both invalidate every piece of state the protocol carries, which is why they clear the
  * current pre-edit rather than only the pending one: after either, the compositor knows nothing about this text
- * input until the client says it again.
+ * input until the client says it again. They clear `needsStateResend` for the same reason, and because the
+ * `commit` that carries an `enable` cannot wait for a serial that only another `commit` would produce.
  *
  * Threading contract: constructed, called and destroyed on the frame thread, from inside the Wayland dispatch
  * `TextInputClient` listens on. Nothing here is synchronised and nothing here needs to be.

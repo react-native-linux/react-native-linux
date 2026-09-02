@@ -28,12 +28,16 @@ include(GoogleTest)
 
 add_executable(rnl_core_tests
     ImageTest.cpp
+    ImeTest.cpp
     InputTest.cpp
     SceneTest.cpp
+    ScrollTest.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ImageContent.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/InputPipeline.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/LinuxMountingManager.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/RetainedScene.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/RetainedScene.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ScrollPhysics.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputV3State.cpp)
 target_compile_options(rnl_core_tests PRIVATE -Wall -Wextra -fexceptions -frtti)
 target_include_directories(rnl_core_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
 target_link_libraries(rnl_core_tests

@@ -26,6 +26,12 @@ namespace react_native_linux {
  * JavaScript thread. That is where `PointerEventsProcessor` runs, and therefore where hover chains, `pointerEnter`
  * and `pointerLeave` between siblings, capture and bubbling are computed. See *Input* in docs/cpp-toolchain.md.
  *
+ * Composition is the one input that is not hit-tested. `zwp_text_input_v3` follows the compositor's keyboard
+ * focus, so the target of a pre-edit or a commit is whatever holds the text cursor, and until issue #17 adds
+ * `<TextInput>` there is no shadow node that can hold one. Those events therefore go to the registered `ImeSink`
+ * — a borrowed, platform-level focus owner that must outlive this dispatcher — and are dropped when there is
+ * none. See *IME* in docs/cpp-toolchain.md.
+ *
  * Threading contract: `dispatch` runs on the platform frame thread. Everything it touches is documented as
  * callable from any thread — `ShadowTreeRegistry::visit` and `ShadowTree::getCurrentRevision` take a shared lock,
  * shadow nodes are immutable once committed, and `EventQueue::enqueueEvent` takes its own mutex.
@@ -35,6 +41,7 @@ public:
     InputDispatcher(std::shared_ptr<facebook::react::UIManager> uiManager, facebook::react::SurfaceId surfaceId);
 
     void dispatch(const std::vector<InputEvent>& events);
+    void setImeSink(ImeSink* imeSink) noexcept;
 
 private:
     std::shared_ptr<const facebook::react::ShadowNode> rootShadowNode() const;
@@ -46,6 +53,7 @@ private:
     facebook::react::SurfaceId surfaceId_;
     PointerRouter router_;
     std::shared_ptr<const facebook::react::ShadowNode> keyboardTarget_;
+    ImeSink* imeSink_{nullptr};
 };
 
 } // namespace react_native_linux

@@ -73,15 +73,47 @@ facebook::react::PointerEvent makePointerEvent(const InputEvent& event, facebook
     return pointerEvent;
 }
 
+bool isScrollDelta(const InputEvent& event) {
+    return event.kind == InputEventKind::PointerScrollContinuous ||
+           event.kind == InputEventKind::PointerScrollDiscrete;
+}
+
+/**
+ * Folds `event` into the event already at the back of the queue when the two describe the same thing, and reports
+ * whether it did. Motion collapses to the latest position because the intermediate ones are not information;
+ * scroll deltas sum because every one of them is.
+ */
+bool coalesceIntoPrevious(InputEvent& previous, const InputEvent& event) {
+    if (event.kind == InputEventKind::PointerMotion && previous.kind == InputEventKind::PointerMotion) {
+        previous = event;
+
+        return true;
+    }
+
+    if (!isScrollDelta(event) || event.scrollAxis != previous.scrollAxis) {
+        return false;
+    }
+
+    // wl_pointer sends axis_discrete before the axis event carrying the same notch, so a continuous delta directly
+    // behind a discrete one on the same axis is that notch measured a second time in units nobody defines.
+    if (event.kind == InputEventKind::PointerScrollContinuous &&
+        previous.kind == InputEventKind::PointerScrollDiscrete) {
+        return true;
+    }
+
+    if (event.kind != previous.kind) {
+        return false;
+    }
+
+    previous.scrollAmount += event.scrollAmount;
+
+    return true;
+}
+
 } // namespace
 
 void InputQueue::push(const InputEvent& event) {
-    const bool isCoalescible = event.kind == InputEventKind::PointerMotion && !events_.empty() &&
-                               events_.back().kind == InputEventKind::PointerMotion;
-
-    if (isCoalescible) {
-        events_.back() = event;
-
+    if (!events_.empty() && coalesceIntoPrevious(events_.back(), event)) {
         return;
     }
 
@@ -149,10 +181,18 @@ std::vector<PointerDispatch> PointerRouter::route(const InputEvent& event, faceb
         case InputEventKind::ImePreedit:
         case InputEventKind::ImeCommit:
         case InputEventKind::ImeDeleteSurrounding:
+        case InputEventKind::PointerScrollContinuous:
+        case InputEventKind::PointerScrollDiscrete:
+        case InputEventKind::PointerScrollStop:
             break;
     }
 
     return {};
+}
+
+bool isScrollEvent(const InputEvent& event) {
+    return event.kind == InputEventKind::PointerScrollContinuous ||
+           event.kind == InputEventKind::PointerScrollDiscrete || event.kind == InputEventKind::PointerScrollStop;
 }
 
 void deliverImeEvent(const InputEvent& event, ImeSink& sink) {

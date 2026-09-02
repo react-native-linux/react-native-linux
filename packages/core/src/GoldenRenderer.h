@@ -1,5 +1,7 @@
 #pragma once
 
+#include <react/renderer/graphics/Point.h>
+
 #include <string>
 
 namespace react_native_linux {
@@ -18,6 +20,17 @@ namespace react_native_linux {
  * Returns a process exit status: 0 when the file was written and the bundle reported no fatal JavaScript error.
  */
 int renderGolden(const std::string& bundlePath, const std::string& outputPath, int width, int height);
+
+/**
+ * The same rig, after a mouse wheel has been turned `wheelNotches` times over `surfacePoint`.
+ *
+ * A `<ScrollView>` renders nothing a static golden could not already prove until it has been scrolled: the
+ * translation of its children, the clip at its edges and the deceleration curve that decided where they stopped
+ * are all properties of a scroll position other than zero. This is how one gets into a checked-in PNG. See
+ * *ScrollView* in docs/cpp-toolchain.md.
+ */
+int renderScrollGolden(const std::string& bundlePath, const std::string& outputPath,
+                       facebook::react::Point surfacePoint, int wheelNotches, int width, int height);
 
 /**
  * Runs a bundle that commits twice and proves that painting only the damaged region produces the same picture as

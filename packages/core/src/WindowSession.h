@@ -6,6 +6,7 @@
 #include "ReactHost.h"
 #include "WaylandWindow.h"
 
+#include <chrono>
 #include <memory>
 #include <string>
 #include <vector>
@@ -30,9 +31,11 @@ namespace react_native_linux {
  * therefore not what keeps the scene consistent; the mounting manager's mutex is.
  *
  * `deliverInput` is the third, and is called once per frame whether or not the compositor sent anything: it
- * hit-tests and enqueues the frame's events and then induces the event beat, which is what releases everything
- * Fabric has queued — input, layout events, JavaScript-driven events — onto the JavaScript thread at frame
- * cadence instead of per raw compositor event.
+ * hit-tests and enqueues the frame's events, integrates a frame of scroll physics, and then induces the event
+ * beat, which is what releases everything Fabric has queued — input, scroll-position state updates, layout
+ * events, JavaScript-driven events — onto the JavaScript thread at frame cadence instead of per raw compositor
+ * event. The session is where the frame clock lives, because the scroll physics is the first thing in this stack
+ * that needs to know how long the last frame took.
  *
  * Shutdown contract: destruction stops the surface, drains the JavaScript thread so the queued unmount runs while
  * the scheduler delegate is still alive, and only then destroys the Fabric host and the instance, in that order.
@@ -52,8 +55,11 @@ public:
     bool hasReportedFatalError() const;
 
 private:
+    double takeFrameMilliseconds();
+
     ReactHost reactHost_;
     std::unique_ptr<FabricHost> fabricHost_;
+    std::chrono::steady_clock::time_point lastFrameTime_{std::chrono::steady_clock::now()};
 };
 
 } // namespace react_native_linux

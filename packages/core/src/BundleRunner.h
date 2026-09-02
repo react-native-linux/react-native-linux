@@ -48,6 +48,17 @@ struct FabricDamageRunResult {
 int runBundle(const std::optional<std::string>& bundlePath, BundleMode bundleMode);
 int runInjectedClick(const std::string& bundlePath, facebook::react::Point surfacePoint);
 FabricRunResult runFabricBundle(const std::optional<std::string>& bundlePath, facebook::react::Size surfaceSize);
+
+/**
+ * Runs a bundle, turns `wheelNotches` of a mouse wheel over `surfacePoint` into a scroll, and returns the scene
+ * once that scroll has come to rest.
+ *
+ * The physics is integrated at a fixed 60 Hz step rather than at whatever rate this machine happens to loop at, so
+ * the settled position is a property of the notch count and the deceleration curve and of nothing else. That is
+ * what makes a scrolled golden reproducible; see *ScrollView* in docs/cpp-toolchain.md.
+ */
+FabricRunResult runScrolledFabricBundle(const std::string& bundlePath, facebook::react::Size surfaceSize,
+                                        facebook::react::Point surfacePoint, int wheelNotches);
 FabricDamageRunResult runFabricBundleAcrossCommits(const std::string& bundlePath, facebook::react::Size surfaceSize);
 
 } // namespace react_native_linux

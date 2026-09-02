@@ -373,6 +373,10 @@ jobs:
           grep -q "fabric-view: committed surface 1" /tmp/rnl-fabric.log
           grep -q "View #4 frame=(24.00, 24.00, 120.00, 80.00) backgroundColor=rgba(51, 102, 204, 1)" /tmp/rnl-fabric.log
 
+          "$binary" --fabric packages/core/test-bundles/scroll.js | tee /tmp/rnl-scroll.log
+          grep -q "scroll: committed surface 1" /tmp/rnl-scroll.log
+          grep -qE 'ScrollView #3 frame=\(60\.00, 60\.00, 200\.00, 150\.00\).*contentOffset=\(0\.00, 0\.00\)' /tmp/rnl-scroll.log
+
       # Only the Skia entry has a TextLayoutManager behind Yoga; with -DRNL_ENABLE_SKIA=OFF the upstream stub is
       # still compiled in and every paragraph measures as zero, so this assertion belongs to the dev entry alone.
       - name: Run the text acceptance path

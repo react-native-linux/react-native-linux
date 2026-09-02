@@ -4,6 +4,7 @@
 #include <react/renderer/graphics/Float.h>
 #include <react/renderer/graphics/Size.h>
 
+#include <chrono>
 #include <memory>
 #include <string>
 #include <vector>
@@ -33,7 +34,17 @@ void WindowSession::resize(WindowSize size) { fabricHost_->setSurfaceSize(toSurf
 
 void WindowSession::deliverInput(const std::vector<InputEvent>& events) {
     fabricHost_->dispatchInput(events);
+    fabricHost_->advanceScroll(takeFrameMilliseconds());
     fabricHost_->induceEventBeat();
+}
+
+double WindowSession::takeFrameMilliseconds() {
+    const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+    const double elapsed = std::chrono::duration<double, std::milli>(now - lastFrameTime_).count();
+
+    lastFrameTime_ = now;
+
+    return elapsed;
 }
 
 SceneFrame WindowSession::takeFrame() { return fabricHost_->takeFrame(); }

@@ -17,6 +17,8 @@ interface GoldenFixture {
   readonly bundleFileName: string;
   readonly goldenFileName: string;
   readonly renderFlag: string;
+  /** Whatever the flag needs after the output path. Empty for the flags that need nothing. */
+  readonly renderArguments: readonly string[];
 }
 
 const goldensDirectory = import.meta.dirname;
@@ -28,17 +30,26 @@ const isRegenerating = env["RNL_UPDATE_GOLDENS"] === "1";
 const hasBinary = existsSync(binaryPath);
 
 const fixtures: readonly GoldenFixture[] = [
-  { bundleFileName: "fabric-view.js", goldenFileName: "fabric-view.png", renderFlag: "--golden" },
-  { bundleFileName: "view-props.js", goldenFileName: "view-props.png", renderFlag: "--golden" },
+  { bundleFileName: "fabric-view.js", goldenFileName: "fabric-view.png", renderArguments: [], renderFlag: "--golden" },
+  { bundleFileName: "view-props.js", goldenFileName: "view-props.png", renderArguments: [], renderFlag: "--golden" },
   // Text is reproducible only against the fonts scripts/vendor-fonts.ts pins into packages/core/fonts.
-  { bundleFileName: "text.js", goldenFileName: "text.png", renderFlag: "--golden" },
-  { bundleFileName: "damage.js", goldenFileName: "damage.png", renderFlag: "--damage-golden" },
+  { bundleFileName: "text.js", goldenFileName: "text.png", renderArguments: [], renderFlag: "--golden" },
+  { bundleFileName: "damage.js", goldenFileName: "damage.png", renderArguments: [], renderFlag: "--damage-golden" },
   // Images are reproducible only against the asset packages/core/scripts/make-test-image.ts generates.
-  { bundleFileName: "image.js", goldenFileName: "image.png", renderFlag: "--golden" },
+  { bundleFileName: "image.js", goldenFileName: "image.png", renderArguments: [], renderFlag: "--golden" },
+  // Three wheel notches is 120 points of travel; a ScrollView at rest at zero would prove nothing at all.
+  {
+    bundleFileName: "scroll.js",
+    goldenFileName: "scroll.png",
+    renderArguments: ["160", "100", "3"],
+    renderFlag: "--scroll-to",
+  },
 ];
 
 const renderFixture = (fixture: GoldenFixture, outputPath: string): void => {
-  execFileSync(binaryPath, [fixture.renderFlag, path.join(bundlesDirectory, fixture.bundleFileName), outputPath], {
+  const bundlePath = path.join(bundlesDirectory, fixture.bundleFileName);
+
+  execFileSync(binaryPath, [fixture.renderFlag, bundlePath, outputPath, ...fixture.renderArguments], {
     stdio: ["ignore", "ignore", "inherit"],
   });
 };

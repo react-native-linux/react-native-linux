@@ -128,16 +128,16 @@ bool areSurfacesIdentical(SkSurface& first, SkSurface& second) {
     return true;
 }
 
-} // namespace
-
-int renderGolden(const std::string& bundlePath, const std::string& outputPath, int width, int height) {
+/**
+ * Rasterises a settled scene and writes it, which is the half every single-frame golden shares regardless of what
+ * the run did before it settled.
+ */
+int paintSettledScene(const FabricRunResult& run, const std::string& outputPath, int width, int height) {
     const sk_sp<SkSurface> surface = makeRasterSurface(width, height);
 
     if (surface == nullptr) {
         return 1;
     }
-
-    const FabricRunResult run = runFabricBundle(bundlePath, toSurfaceSize(width, height));
 
     settleImageDecodes();
     paintScene(*surface->getCanvas(), run.scene, {});
@@ -147,6 +147,19 @@ int renderGolden(const std::string& bundlePath, const std::string& outputPath, i
     }
 
     return run.hasReportedFatalError ? 1 : 0;
+}
+
+} // namespace
+
+int renderGolden(const std::string& bundlePath, const std::string& outputPath, int width, int height) {
+    return paintSettledScene(runFabricBundle(bundlePath, toSurfaceSize(width, height)), outputPath, width, height);
+}
+
+int renderScrollGolden(const std::string& bundlePath, const std::string& outputPath,
+                       facebook::react::Point surfacePoint, int wheelNotches, int width, int height) {
+    return paintSettledScene(
+        runScrolledFabricBundle(bundlePath, toSurfaceSize(width, height), surfacePoint, wheelNotches), outputPath,
+        width, height);
 }
 
 int renderDamageGolden(const std::string& bundlePath, const std::string& outputPath, int width, int height) {
