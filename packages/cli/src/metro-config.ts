@@ -32,4 +32,28 @@ const resolveLinuxOverlay = (
   return overlayIndex[upstreamSubpath] ?? null;
 };
 
-export { linuxOverlayIndex, resolveLinuxOverlay };
+const nativePlatformExtension = "native";
+
+const buildPlatformExtensionCandidates = (
+  moduleName: string,
+  platform: string,
+  sourceExtension: string,
+): readonly string[] => [
+  `${moduleName}.${platform}.${sourceExtension}`,
+  `${moduleName}.${nativePlatformExtension}.${sourceExtension}`,
+  `${moduleName}.${sourceExtension}`,
+];
+
+const resolvePlatformCandidates = (
+  moduleName: string,
+  platform: string,
+  sourceExts: readonly string[],
+): readonly string[] =>
+  sourceExts.flatMap((sourceExtension) => buildPlatformExtensionCandidates(moduleName, platform, sourceExtension));
+
+const resolveAgainstFilesystem = (
+  candidates: readonly string[],
+  exists: (candidatePath: string) => boolean,
+): string | null => candidates.find((candidatePath) => exists(candidatePath)) ?? null;
+
+export { linuxOverlayIndex, resolveAgainstFilesystem, resolveLinuxOverlay, resolvePlatformCandidates };

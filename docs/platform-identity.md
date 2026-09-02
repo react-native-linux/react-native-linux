@@ -28,7 +28,10 @@ document only records what actually landed and why, not the survey.
 - `packages/cli/src/metro-config.ts` — `resolveLinuxOverlay(moduleName, platform, overlayIndex)`, a pure function
   used to prefer the `src-linux` overlay over the plain package-name redirect for the handful of `react-native`
   deep imports (`react-native/Libraries/Utilities/Platform`, `.../PlatformTypes`) this package currently overrides.
-  100%-covered in `packages/cli/src/metro-config.spec.ts`.
+  The same file also has `resolvePlatformCandidates(moduleName, platform, sourceExts)` and
+  `resolveAgainstFilesystem(candidates, exists)`, the pure functions for Metro's platform-extension fallback chain
+  (issue #55) — see "Resolution order" below. Both are 100%-covered in `packages/cli/src/metro-config.spec.ts`,
+  the latter against a committed fixture tree under `packages/cli/test-fixtures/resolution/`.
 
 ## Injection mechanism, and why this one
 
@@ -58,6 +61,57 @@ of an unaudited full copy, which is what ADR-0001 decision 9 explicitly commits 
 A "patch `node_modules/react-native` in place" alternative was rejected: it would mutate a dependency outside
 version control, is invisible to `overrides.json`-style tracking, and every other maintained out-of-tree platform
 researched (§2 of the research doc) resolves through Metro instead.
+
+## Resolution order: `.linux` → `.native` → default
+
+Tracks issue #55, filed after `microsoft/react-native-macos#2778`: for nine years, macOS's resolver chain was
+`.macos.<ext>` → `.<ext>`, silently missing the `.native.<ext>` step that iOS and Android both have. Any library
+that ships a `.native.ts` file for "any real device, not web" fell through to its web/default implementation on
+macOS instead — no crash, no warning. This section is the guard against the same one-line omission on Linux.
+
+Metro's documented algorithm (`docs/research/codegen-and-oot-platform-tooling.md` §4.2) tries, for a given
+`platform` and `sourceExts`, every source extension in turn, and for each extension the three suffixes
+`.<platform>`, `.native`, then no suffix — it does **not** try every suffix across all extensions before moving
+to the next extension. `resolvePlatformCandidates(moduleName, platform, sourceExts)` in
+`packages/cli/src/metro-config.ts` encodes exactly that order as a pure function with no filesystem access:
+
+```ts
+resolvePlatformCandidates("Foo", "linux", ["ts", "js"]);
+// → ["Foo.linux.ts", "Foo.native.ts", "Foo.ts", "Foo.linux.js", "Foo.native.js", "Foo.js"]
+```
+
+`resolveAgainstFilesystem(candidates, exists)` takes that ordered list and an injected `exists` predicate (Metro
+itself would pass something backed by its own file map; the fixture tests below pass `node:fs`'s `existsSync`)
+and returns the first candidate that exists, or `null` if none do. Neither function imports Metro or touches the
+filesystem directly — per the Prime Directive, the resolver logic is a pure function a real `metro.config.js` can
+call once Metro is actually wired in (issue #22); no Metro dependency is added by this change.
+
+**Where this sits relative to the `src-linux` overlay:** `resolveLinuxOverlay` runs *before* the extension chain
+and, when it matches, bypasses the chain entirely — it maps a fixed `react-native/<subpath>` straight to one
+specific `src-linux` file that already has its own extension (e.g. `Platform.linux.ts`), because that subpath is
+a permanent override, not a per-extension fallback. The extension chain only applies afterwards, to whatever
+`moduleName` survives both the overlay check and the free package-name redirect (`react-native` →
+`@react-native-linux/core`) — i.e. to ordinary third-party modules and to the small number of `@react-native-linux/core`
+subpaths that are *not* in the overlay index. The full composed order for a single `resolveRequest` call is:
+
+1. `resolveLinuxOverlay` — fixed-path override, short-circuits the chain.
+2. `reactNativePlatformResolver`-style package-name redirect (free, from RN core).
+3. `resolvePlatformCandidates` + `resolveAgainstFilesystem` — the `.linux` → `.native` → default chain, applied by
+   Metro's own file resolver to whatever moduleName step 2 produced.
+
+**Fixture proof** (`packages/cli/test-fixtures/resolution/`, exercised in `packages/cli/src/metro-config.spec.ts`):
+
+| Fixture on disk | Candidates tried (`sourceExts: ["ts"]`) | Resolves to | Proves |
+| --- | --- | --- | --- |
+| `foo.linux.ts`, `foo.native.ts`, `foo.ts` | `foo.linux.ts`, `foo.native.ts`, `foo.ts` | `foo.linux.ts` | `.linux` wins over both `.native` and default |
+| `bar.native.ts`, `bar.ts` (no `.linux`) | `bar.linux.ts`, `bar.native.ts`, `bar.ts` | `bar.native.ts` | `.native` wins over default when `.linux` is absent |
+| `baz.ts` only | `baz.linux.ts`, `baz.native.ts`, `baz.ts` | `baz.ts` | default is used when neither `.linux` nor `.native` exist |
+| `qux.web.ts` only | `qux.linux.ts`, `qux.native.ts`, `qux.ts` | `null` (unresolved) | `.web` is never a candidate for `linux`, even though a `.web` file exists on disk |
+| `cycle.native.ts`, `cycle.linux.js` (`sourceExts: ["ts", "js"]`) | `cycle.linux.ts`, `cycle.native.ts`, `cycle.ts`, `cycle.linux.js`, `cycle.native.js`, `cycle.js` | `cycle.native.ts` | cycling is per-extension: `.ts` is exhausted (all three suffixes) before `.js` is tried at all, so `.native.ts` beats `.linux.js` |
+
+The three-files-progressively-removed scenario from the issue's acceptance criteria is represented as three
+separate fixtures (`foo`, `bar`, `baz`) rather than one fixture mutated between test runs, so the committed
+fixture tree stays static and every assertion stays independent and order-independent.
 
 ## What this is not (and the real reason why)
 
@@ -138,10 +192,12 @@ merge upstream changes into the three `derived` files and bump `baseVersion`.
   real lookup requires both the native module landing and a decision on the self-reference guard above (since a
   real lookup needs `TurboModuleRegistry`, which lives under `react-native/Libraries/TurboModule/...`).
 - **Metro registration end-to-end (issue #22).** There is no `metro.config.js` anywhere in this repository yet —
-  no app package exists to hold one. `resolveLinuxOverlay` and `linuxOverlayIndex` are written and 100%-tested as
-  pure functions; composing them with `reactNativePlatformResolver` into an actual `resolver.resolveRequest`
-  (including the origin-aware guard described above, and adapting to Metro's real `CustomResolver`/`Resolution`
-  types, which are not a dependency of this repo yet) is that issue's job, not this one's.
+  no app package exists to hold one. `resolveLinuxOverlay`, `linuxOverlayIndex`, `resolvePlatformCandidates`, and
+  `resolveAgainstFilesystem` are written and 100%-tested as pure functions; composing them with
+  `reactNativePlatformResolver` into an actual `resolver.resolveRequest` (including the origin-aware guard
+  described above, honouring a user-supplied `resolver.resolveRequest` instead of replacing it, and adapting to
+  Metro's real `CustomResolver`/`Resolution` types and its own `sourceExts` config, none of which are a dependency
+  of this repo yet) is that issue's job, not this one's.
 - **The remaining ~11 core JS overrides.** Land with the component/API issue that needs them (e.g. `BaseViewConfig`
   with the first Fabric component that needs prop parity), each adding one more `overrides.json` entry and one
   more `linuxOverlayIndex` key — not speculatively ahead of a real consumer.
