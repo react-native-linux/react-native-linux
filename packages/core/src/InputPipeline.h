@@ -28,6 +28,9 @@ enum class InputEventKind : uint8_t {
     PointerLeave,
     KeyPress,
     KeyRelease,
+    ImePreedit,
+    ImeCommit,
+    ImeDeleteSurrounding,
 };
 
 /**
@@ -42,6 +45,11 @@ struct InputEvent {
     int button{0};
     std::string key{};
     InputModifiers modifiers{};
+    std::string text{};
+    int32_t preeditCursorBegin{0};
+    int32_t preeditCursorEnd{0};
+    uint32_t deleteBeforeLength{0};
+    uint32_t deleteAfterLength{0};
 };
 
 /**
@@ -118,5 +126,36 @@ private:
     facebook::react::Tag pressedTag_{0};
     int pressedButtons_{0};
 };
+
+/**
+ * Whatever owns the text cursor, from the platform's side of `zwp_text_input_v3`.
+ *
+ * The three calls are the three things a v3 `done` can ask a text buffer to do, and they arrive already batched
+ * and already ordered by `TextInputV3State`. `onImePreedit` carries the composition as it stands after that
+ * batch — an empty string means the composition ended and the pre-edit run must disappear — and the cursor pair
+ * is the byte range inside it that the input method wants marked, with `-1, -1` meaning no cursor at all.
+ *
+ * `onImeCommit` is the only source of text on this path. A key event that arrives while a composition is active
+ * is the compositor's business and not text; see *IME* in docs/cpp-toolchain.md.
+ *
+ * There is no `<TextInput>` yet, so the only implementation is `rnl_window --ime-debug`. Issue #17 is what makes
+ * the focused text field one, and `InputDispatcher::setImeSink` is where it is registered. The sink is borrowed,
+ * never owned, and must outlive whatever it was given to.
+ */
+class ImeSink {
+public:
+    ImeSink() = default;
+    ImeSink(const ImeSink&) = delete;
+    ImeSink(ImeSink&&) = delete;
+    ImeSink& operator=(const ImeSink&) = delete;
+    ImeSink& operator=(ImeSink&&) = delete;
+    virtual ~ImeSink() = default;
+
+    virtual void onImePreedit(const std::string& text, int32_t cursorBegin, int32_t cursorEnd) = 0;
+    virtual void onImeCommit(const std::string& text) = 0;
+    virtual void onImeDeleteSurrounding(uint32_t beforeLength, uint32_t afterLength) = 0;
+};
+
+void deliverImeEvent(const InputEvent& event, ImeSink& sink);
 
 } // namespace react_native_linux

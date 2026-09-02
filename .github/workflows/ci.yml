@@ -443,6 +443,8 @@ jobs:
             weston
           clang-18 --version
           weston --version
+          ls -la /usr/share/vulkan/icd.d /etc/vulkan/icd.d 2>/dev/null || true
+          dpkg -L mesa-vulkan-drivers | grep -iE "lvp|icd" || true
           ls /usr/share/vulkan/icd.d
 
       - name: Enable corepack

@@ -346,7 +346,7 @@ pnpm test:golden          # compare renders against the checked-in goldens
 pnpm test:golden:update   # regenerate the goldens, for review before committing
 pnpm test:golden:window          # the same, for the window goldens: weston + lavapipe + the real swapchain
 pnpm test:golden:window:update   # regenerate the window goldens
-pnpm test:golden:window:render   # run the rig alone, writing PNGs into build/window-goldens
+pnpm test:golden:window:render   # run the rig alone, writing PNG files into build/window-goldens
 pnpm test:native          # configure/build the `test` preset, run ctest, gate on coverage — see *Unit tests and coverage*
 ```
 
@@ -1454,7 +1454,7 @@ skip is the assertion that it ran.
 
 Its ccache entry is keyed `rnl-ccache-ubuntu-24.04-clang-18-window-...` and falls back through its own prefix to
 the `dev` one, so a cold window job warms from the native job's cache; only the window sources are new. It saves
-under its own key, so the two jobs never race for the same entry on a push to `main`. On failure the rendered PNGs
+under its own key, so the two jobs never race for the same entry on a push to `main`. On failure the rendered PNG files
 are uploaded as the `window-goldens` artifact, which is also how the first pair of goldens is produced on a machine
 without weston: let the job fail on the missing goldens, download the artifact, review it, commit it.
 

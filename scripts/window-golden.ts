@@ -1,5 +1,5 @@
 import { argv, env, pid, stderr, stdout } from "node:process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import path from "node:path";
@@ -23,7 +23,11 @@ const COMPOSITOR_NAME = "weston";
 const OUTPUT_FLAG = "--output";
 
 const lavapipeIcdPattern = /^lvp_icd\..+\.json$/u;
-const icdDirectories = ["/usr/share/vulkan/icd.d", "/etc/vulkan/icd.d"];
+const icdDirectories = ["/usr/share/vulkan/icd.d", "/etc/vulkan/icd.d", "/usr/local/share/vulkan/icd.d"];
+const lavapipeLibraryDirectories = ["/usr/lib/x86_64-linux-gnu", "/usr/lib64", "/usr/lib"];
+const lavapipeLibraryName = "libvulkan_lvp.so";
+const lavapipeOverrideName = "RNL_LAVAPIPE_ICD";
+const generatedManifestName = "rnl-lvp_icd.generated.json";
 
 /**
  * Every variable that could point the client at the developer's own session or driver. The rig owns all four, so
@@ -59,7 +63,36 @@ const findExecutable = (executableName: string): string | null => {
   return null;
 };
 
+const writeGeneratedManifest = (libraryPath: string): string => {
+  const manifestPath = path.join(tmpdir(), generatedManifestName);
+
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({ ICD: { api_version: "1.3.0", library_path: libraryPath }, file_format_version: "1.0.0" }),
+  );
+
+  return manifestPath;
+};
+
+const findLavapipeLibraryManifest = (): string | null => {
+  for (const libraryDirectory of lavapipeLibraryDirectories) {
+    const libraryPath = path.join(libraryDirectory, lavapipeLibraryName);
+
+    if (existsSync(libraryPath)) {
+      return writeGeneratedManifest(libraryPath);
+    }
+  }
+
+  return null;
+};
+
 const findLavapipeIcd = (): string | null => {
+  const override = env[lavapipeOverrideName];
+
+  if (typeof override === "string" && override !== "" && existsSync(override)) {
+    return override;
+  }
+
   for (const icdDirectory of icdDirectories) {
     const manifests = existsSync(icdDirectory)
       ? readdirSync(icdDirectory).filter((entry) => lavapipeIcdPattern.test(entry))
@@ -71,7 +104,7 @@ const findLavapipeIcd = (): string | null => {
     }
   }
 
-  return null;
+  return findLavapipeLibraryManifest();
 };
 
 const buildEnvironment = (overrides: Record<string, string>): Record<string, string | undefined> => {
@@ -211,7 +244,7 @@ const unavailableReasons = [
   ...(compositorPath === null ? [`${COMPOSITOR_NAME} is not on PATH; install the "weston" package`] : []),
   ...(lavapipeIcdPath === null
     ? [
-        `no lavapipe ICD manifest under ${icdDirectories.join(" or ")}; ` +
+        `no lavapipe ICD manifest under ${icdDirectories.join(" or ")} and no ${lavapipeLibraryName} under ${lavapipeLibraryDirectories.join(" or ")} (set ${lavapipeOverrideName} to a manifest path); ` +
           'install "vulkan-swrast" on Arch or "mesa-vulkan-drivers" on Ubuntu',
       ]
     : []),

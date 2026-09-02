@@ -146,10 +146,32 @@ std::vector<PointerDispatch> PointerRouter::route(const InputEvent& event, faceb
 
         case InputEventKind::KeyPress:
         case InputEventKind::KeyRelease:
+        case InputEventKind::ImePreedit:
+        case InputEventKind::ImeCommit:
+        case InputEventKind::ImeDeleteSurrounding:
             break;
     }
 
     return {};
+}
+
+void deliverImeEvent(const InputEvent& event, ImeSink& sink) {
+    switch (event.kind) {
+        case InputEventKind::ImePreedit:
+            sink.onImePreedit(event.text, event.preeditCursorBegin, event.preeditCursorEnd);
+            break;
+
+        case InputEventKind::ImeCommit:
+            sink.onImeCommit(event.text);
+            break;
+
+        case InputEventKind::ImeDeleteSurrounding:
+            sink.onImeDeleteSurrounding(event.deleteBeforeLength, event.deleteAfterLength);
+            break;
+
+        default:
+            break;
+    }
 }
 
 } // namespace react_native_linux
