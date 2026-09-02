@@ -6,3 +6,4 @@ packages/core/fonts/
 *.tsbuildinfo
 compile_commands.json
 .DS_Store
+*.profraw
