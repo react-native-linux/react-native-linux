@@ -1,0 +1,585 @@
+{
+  "labels": [
+    {
+      "name": "area:renderer",
+      "color": "1D76DB",
+      "description": "Skia/Vulkan rendering, scene, damage tracking"
+    },
+    {
+      "name": "area:core",
+      "color": "5319E7",
+      "description": "Platform core: window, Hermes, Fabric, threading"
+    },
+    {
+      "name": "area:input",
+      "color": "D93F0B",
+      "description": "Pointer, keyboard, and input pipeline"
+    },
+    {
+      "name": "area:text",
+      "color": "B60205",
+      "description": "Text shaping, layout, and editing"
+    },
+    {
+      "name": "area:testing",
+      "color": "0052CC",
+      "description": "Unit, golden-image, e2e, and perf test harness"
+    },
+    {
+      "name": "area:infra",
+      "color": "0E8A16",
+      "description": "Build/CI/tooling infrastructure"
+    },
+    {
+      "name": "area:cli",
+      "color": "FBCA04",
+      "description": "CLI, codegen, autolinking, Metro platform registration"
+    },
+    {
+      "name": "area:modules",
+      "color": "C2E0C6",
+      "description": "TurboModules and native module implementations"
+    },
+    {
+      "name": "area:a11y",
+      "color": "F9D0C4",
+      "description": "Accessibility: IME and AT-SPI"
+    },
+    {
+      "name": "area:packaging",
+      "color": "6F4E37",
+      "description": "Distribution packaging: AUR, omarchy-pkgs"
+    },
+    {
+      "name": "kind:bug",
+      "color": "D73A4A",
+      "description": "Something implemented behaves incorrectly"
+    },
+    {
+      "name": "kind:feat",
+      "color": "84B6EB",
+      "description": "New platform capability that does not exist yet"
+    },
+    {
+      "name": "kind:test",
+      "color": "C5DEF5",
+      "description": "Adds or hardens a test layer without changing behaviour"
+    },
+    {
+      "name": "kind:parity",
+      "color": "7057FF",
+      "description": "Nothing is broken; we do not yet match iOS/Android/desktop reference behaviour"
+    },
+    {
+      "name": "kind:perf",
+      "color": "FEF2C0",
+      "description": "Frame budget, allocation, or throughput work with a measured gate"
+    },
+    {
+      "name": "kind:docs",
+      "color": "E8E8E8",
+      "description": "Documentation, ADRs, and research records"
+    },
+    {
+      "name": "priority:P0",
+      "color": "990000",
+      "description": "Rocket-blocker: the milestone or the flagship app cannot ship without it"
+    },
+    {
+      "name": "priority:P1",
+      "color": "E36209",
+      "description": "Important: schedule inside its milestone"
+    },
+    {
+      "name": "priority:P2",
+      "color": "DBAB09",
+      "description": "Wanted: do it when the surrounding area is open"
+    },
+    {
+      "name": "priority:P3",
+      "color": "CCCCCC",
+      "description": "Nice to have; no milestone depends on it"
+    },
+    {
+      "name": "platform-parity:macos",
+      "color": "8DB3E2",
+      "description": "react-native-macos behaviour is the oracle for this issue"
+    },
+    {
+      "name": "platform-parity:windows",
+      "color": "8DB3E2",
+      "description": "react-native-windows behaviour is the oracle for this issue"
+    },
+    {
+      "name": "platform-parity:ios",
+      "color": "8DB3E2",
+      "description": "iOS behaviour is the oracle for this issue"
+    },
+    {
+      "name": "platform-parity:android",
+      "color": "8DB3E2",
+      "description": "Android behaviour is the oracle for this issue"
+    },
+    {
+      "name": "origin:rn-macos",
+      "color": "6F42C1",
+      "description": "Derived from the microsoft/react-native-macos issue history"
+    },
+    {
+      "name": "origin:rn-windows",
+      "color": "6F42C1",
+      "description": "Derived from the microsoft/react-native-windows issue history"
+    },
+    {
+      "name": "needs:triage",
+      "color": "EDEDED",
+      "description": "Unreviewed; area, milestone, or priority still missing"
+    },
+    {
+      "name": "needs:decision",
+      "color": "E4E669",
+      "description": "Blocked on an architectural decision, possibly an ADR"
+    },
+    {
+      "name": "needs:repro",
+      "color": "D876E3",
+      "description": "Blocked on a minimal reproduction or a failing test"
+    }
+  ],
+  "issues": [
+    {
+      "title": "test(renderer): hit-testing must agree with painted geometry — transform, zIndex, overflow",
+      "milestone": "M1",
+      "labels": [
+        "area:renderer",
+        "area:input",
+        "area:testing",
+        "kind:test",
+        "kind:parity",
+        "origin:rn-macos",
+        "platform-parity:macos",
+        "priority:P0"
+      ],
+      "priority": "P0",
+      "body": "## Context\n\nThe longest-running bug cluster in `react-native-macos`, spanning six years and every architecture: the\npicture is right and the click is wrong.\n\n- [rn-macos#914](https://github.com/microsoft/react-native-macos/issues/914) — open, 25 comments. A click and the text cursor go to a `TextInput` *underneath* an opaque\n  overlay; hit-testing ignores z-order.\n- [rn-macos#1842](https://github.com/microsoft/react-native-macos/issues/1842) and [rn-macos#1389](https://github.com/microsoft/react-native-macos/issues/1389) — `zIndex` does not reorder anything.\n- [rn-macos#2147](https://github.com/microsoft/react-native-macos/issues/2147) — `translate` moves the pixels but not the hitbox.\n- [rn-macos#2063](https://github.com/microsoft/react-native-macos/issues/2063) — the focus ring of a `TextInput` inside a translated parent stays at the untransformed position.\n- [rn-macos#754](https://github.com/microsoft/react-native-macos/issues/754) — right-click on selectable text only hits the top few pixels.\n- [rn-macos#629](https://github.com/microsoft/react-native-macos/issues/629) — clicking a scrollbar also clicks the row behind it.\n- [rn-macos#2361](https://github.com/microsoft/react-native-macos/issues/2361) — `transformOrigin: center` rotates about the top-left corner.\n\nThe cause is structural: paint geometry and hit geometry are two pipelines and nothing forces them to agree.\nWe have exactly that shape. `docs/cpp-toolchain.md` records that hit testing is upstream's\n(`PointerEventsProcessor`) while transform composition, clip stacks and paint order are ours in\n`RetainedScene` — and that our transform is reduced to a 2D affine before painting, which upstream's\nhit-test does not do. Our `zIndex` note (\"nothing to implement, Fabric stable-sorts by `orderIndex`\") is\nproven for paint order and unproven for hit order.\n\n## What to verify\n\nFor each fixture, the node reported as the pointer target at point *p* must be the node whose pixels are\nvisible at *p* in the golden render of the same scene:\n\n1. Two overlapping siblings, equal frames, later child on top — target is the later child.\n2. Same, with `zIndex` reversing the visual order — target follows `zIndex`, not document order.\n3. A child translated out from under the pointer — the vacated point hits the parent, the new location hits\n  the child.\n4. `rotate` with `transformOrigin` at `center`, `top left` and `bottom right` — the hit region rotates\n  with the painted region.\n5. `scale` — hit region scales about the same origin the paint does.\n6. A child clipped by an ancestor's `overflow: hidden` (including a rounded border box) — points outside the\n  clip do not hit the clipped child.\n7. Nested transformed ancestors — composed, not last-wins.\n\n## Acceptance criteria\n\n- **Unit (C++, GoogleTest):** a `HitPaintAgreement` suite over `RetainedScene`: for each fixture, the scene's\n  own point-to-node answer and the painted top-most primitive at that point are the same node. 100% line and\n  branch on the new scene code, per the gospel.\n- **Golden-image:** one fixture bundle per case above, with the goldens committed, so a paint-side regression\n  fails independently.\n- **E2E:** `--inject-pointer` traces for cases 1, 2, 3 and 6, asserting the `topPointerDown`/`topClick`\n  target id.\n- The suite fails if the two answers ever diverge, and the failure message names the point, the painted node\n  and the hit node.\n\n## Related\n\nFollows #13 (View visual props) and #18 (pointer pipeline), neither of which asserts this. Feeds #16\n(ScrollView adds a scroll offset to the same problem).\n"
+    },
+    {
+      "title": "test(input): hover chain conformance — enter/leave/over/out across siblings, z-order and clipped ancestors",
+      "milestone": "M1",
+      "labels": [
+        "area:input",
+        "area:testing",
+        "kind:test",
+        "kind:parity",
+        "origin:rn-macos",
+        "platform-parity:macos",
+        "priority:P1"
+      ],
+      "priority": "P1",
+      "body": "## Context\n\nHover is desktop-only, so upstream's mobile-first CI never exercises it, and `react-native-macos` has\nre-broken it at every architecture migration:\n\n- [rn-macos#1516](https://github.com/microsoft/react-native-macos/issues/1516) — \"Hover Events Missing\".\n- [rn-macos#871](https://github.com/microsoft/react-native-macos/issues/871) and [rn-macos#588](https://github.com/microsoft/react-native-macos/issues/588) — `onHoverIn`/`onHoverOut` added, then silently dropped by an RN 0.62 bump.\n- [rn-macos#2313](https://github.com/microsoft/react-native-macos/issues/2313) — open, 7 comments: hover regressed **again** on Fabric/0.76 after working on the old architecture.\n- [rn-macos#1861](https://github.com/microsoft/react-native-macos/issues/1861) — closed, 8 comments: hover is \"too slow to be used in a list\". Correctness was not the problem.\n- [rn-macos#2781](https://github.com/microsoft/react-native-macos/issues/2781) — \"Keyboard and Mouse events on views not working\".\n\n`docs/cpp-toolchain.md` records that we observe `topPointerOver`/`topPointerEnter` from a single injected\nposition, and that moving off a view onto the background does **not** currently produce `pointerOut` because\n`UIManager::startEmptySurface` gives the root shadow node no instance handle.\n\n## What to verify\n\n1. Enter/leave between two adjacent siblings in one motion — `pointerLeave` on the old, `pointerEnter` on the\n   new, in that order, one pair per crossing.\n2. Enter/leave into and out of a nested child — `pointerOver`/`pointerOut` bubble, `pointerEnter`/`pointerLeave`\n   do not.\n3. Moving from a view onto the empty root — `pointerOut`/`pointerLeave` fire. This is the known root\n   instance-handle gap and is in scope.\n4. Hover over a point covered by a higher `zIndex` sibling — the hover chain is the covering node's.\n5. Hover over a point outside an ancestor's `overflow: hidden` clip — the clipped child is not entered.\n6. Cost: the per-motion-event work stays inside a stated budget.\n\n## Acceptance criteria\n\n- **Unit (C++):** the hover-chain transitions above asserted on the event trace produced by `InputQueue` +\n  `InputDispatcher` at fixed injected positions.\n- **E2E:** a `--inject-pointer` path across all five geometric cases with the full ordered event trace\n  compared against a committed expectation file.\n- **Perf:** a budget test on a 500-row list fixture — a single motion event that crosses one row boundary\n  must stay under the stated per-event budget, tracked as a number in CI and failing on regression. This is the\n  [rn-macos#1861](https://github.com/microsoft/react-native-macos/issues/1861) failure mode, and per the gospel the number is tracked, not vibed.\n- Case 3 either passes or the issue closes with the root instance-handle fix landed.\n\n## Related\n\nFollows #18. Depends on the geometry agreement from the hit/paint issue in this batch. Perf gate lands beside #20.\n"
+    },
+    {
+      "title": "feat(input): focus model — focusable, focus ring, Tab traversal, onFocus/onBlur, Enter/Space activation",
+      "milestone": "M1",
+      "labels": [
+        "area:input",
+        "area:core",
+        "kind:feat",
+        "kind:parity",
+        "origin:rn-macos",
+        "platform-parity:macos",
+        "priority:P0"
+      ],
+      "priority": "P0",
+      "body": "## Context\n\nReact Native core has no focus concept: `BaseViewEventEmitter` carries `onFocus`/`onBlur` and nothing else.\nEvery desktop platform invents `focusable`, a traversal order, a focus ring and activation keys, and then\nspends years keeping the four consistent. `react-native-macos` has thirteen issues on it across six years:\n\n- [rn-macos#518](https://github.com/microsoft/react-native-macos/issues/518) and [rn-macos#500](https://github.com/microsoft/react-native-macos/issues/500) — add `focusable`, `.focus()`, `.blur()`, `onFocus`, `onBlur`, `isFocused()`.\n- [rn-macos#483](https://github.com/microsoft/react-native-macos/issues/483) and [rn-macos#795](https://github.com/microsoft/react-native-macos/issues/795) — 10 comments: `enableFocusRing` has no effect; the ring cannot be turned off.\n- [rn-macos#2954](https://github.com/microsoft/react-native-macos/issues/2954) — open, 2026-05: the focus ring re-enables itself after a re-mount.\n- [rn-macos#1007](https://github.com/microsoft/react-native-macos/issues/1007) — focus must not depend on an OS-level \"full keyboard access\" setting.\n- [rn-macos#999](https://github.com/microsoft/react-native-macos/issues/999) — open, 8 comments: a `TextInput` never loses focus when the empty background is clicked.\n- [rn-macos#1622](https://github.com/microsoft/react-native-macos/issues/1622) — Return and Space do not trigger `onPress` on a focused control.\n- [rn-macos#1655](https://github.com/microsoft/react-native-macos/issues/1655), [rn-macos#1412](https://github.com/microsoft/react-native-macos/issues/1412), [rn-macos#243](https://github.com/microsoft/react-native-macos/issues/243), [rn-macos#272](https://github.com/microsoft/react-native-macos/issues/272) — disabled-is-not-focusable, focus immediately after\n  mount, and years of upstreaming attempts.\n- [rn-macos#913](https://github.com/microsoft/react-native-macos/issues/913) — `.blur()` does nothing.\n\nOur state, from `docs/cpp-toolchain.md`: \"There is no focus model here yet: no `focusable` prop, no focus\nring, no Tab handling, and `BaseViewEventEmitter::onFocus`/`onBlur` are never called. Keyboard events follow\nthe pointer instead, which is honest about being a placeholder.\" That is the state macOS was in at [rn-macos#272](https://github.com/microsoft/react-native-macos/issues/272)\nin 2020.\n\n## What to verify / build\n\n- A single focused node per surface, owned by the platform, surviving mount, unmount and re-mount of unrelated\n  nodes. When the focused node unmounts, focus moves to the nearest still-mounted focusable ancestor or to none.\n- `focusable` prop; `disabled` implies not focusable ([rn-macos#1655](https://github.com/microsoft/react-native-macos/issues/1655)).\n- Tab and Shift+Tab traverse focusable nodes in Fabric's document order, wrapping at the ends, skipping\n  clipped-out and `display: none` nodes.\n- `onFocus`/`onBlur` emitted through `BaseViewEventEmitter` on every transition, exactly once.\n- Clicking a non-focusable area blurs the focused node ([rn-macos#999](https://github.com/microsoft/react-native-macos/issues/999)).\n- Enter and Space activate a focused `Pressable` — `onPressIn`/`onPressOut`/`onPress`, same shape the\n  pointer path produces ([rn-macos#1622](https://github.com/microsoft/react-native-macos/issues/1622)).\n- A focus ring drawn by the renderer, following the node's painted (transformed) border box — see [rn-macos#2063](https://github.com/microsoft/react-native-macos/issues/2063) —\n  and suppressible per node.\n- Keyboard events stop following the pointer and go to the focused node; see the keyboard-contract issue in\n  this batch.\n\n## Acceptance criteria\n\n- **Unit (C++):** a pure focus-manager class (mirroring the `TextInputV3State` pattern: the arithmetically\n  wrong part lives where the coverage gate can see it) at 100% line and branch — traversal order, wrap,\n  skip rules, unmount fallback, blur-on-background, double-emit prevention.\n- **Golden-image:** focus-ring fixtures including a focused node inside a translated and a rotated parent, and\n  a focused node clipped by `overflow: hidden`.\n- **E2E:** virtual keyboard input under the headless compositor driving Tab/Shift+Tab across a five-control\n  fixture, asserting the ordered `onFocus`/`onBlur` trace and a Space-activation `onPress`.\n\n## Related\n\n#18 named macOS tab order as a goal and closed without it. Prerequisite for #17 (`<TextInput>`) and for the\nkeyboard-contract issue in this batch. `needs:decision` if the focus ring's visual spec has to become an ADR.\n"
+    },
+    {
+      "title": "feat(input): keyboard event contract — onKeyDown/onKeyUp on the focused node, modifiers, unhandled-key policy",
+      "milestone": "M1",
+      "labels": [
+        "area:input",
+        "area:core",
+        "kind:feat",
+        "kind:parity",
+        "origin:rn-macos",
+        "platform-parity:macos",
+        "priority:P0"
+      ],
+      "priority": "P0",
+      "body": "## Context\n\nTwo failure modes in `react-native-macos`, both ours to avoid:\n\n- **The payload has no cross-platform contract.** [rn-macos#702](https://github.com/microsoft/react-native-macos/issues/702) — key event payload inconsistent with\n  `react-native-windows`. [rn-macos#437](https://github.com/microsoft/react-native-macos/issues/437) — `onKeyPress` supports only a subset of keys.\n- **Routing is undocumented, so it silently changes.** [rn-macos#823](https://github.com/microsoft/react-native-macos/issues/823) — 16 comments, `onKey*` events stopped\n  firing across a version bump. [rn-macos#930](https://github.com/microsoft/react-native-macos/issues/930) and [rn-macos#2781](https://github.com/microsoft/react-native-macos/issues/2781) — \"Keyboard events not working\", filed four years\n  apart. [rn-macos#966](https://github.com/microsoft/react-native-macos/issues/966) (3 reactions) and [rn-macos#2220](https://github.com/microsoft/react-native-macos/issues/2220) — window-level key listening has no API at all.\n  [rn-macos#683](https://github.com/microsoft/react-native-macos/issues/683) — NSBeep on every keystroke, because unhandled keys escaped to the system.\n  [rn-macos#1082](https://github.com/microsoft/react-native-macos/issues/1082) — `blurOnSubmit={false}` swallows Enter entirely: no `onSubmitEditing`, no `onKeyPress`.\n\n`docs/cpp-toolchain.md`: keyboard \"has no cross-platform Fabric surface to target … `react-native-macos` adds\n`onKeyDown` through a platform `HostPlatformViewEventEmitter`, which is the shape this will eventually take.\nUntil then keys are dispatched as generic `keyDown`/`keyUp` events … to the node the pointer is currently over,\nand to nothing at all when the pointer is over no node.\"\n\n## What to verify / build\n\n- A platform `HostPlatformViewEventEmitter` carrying `onKeyDown`/`onKeyUp`, with the prop names and payload\n  fields chosen to match `react-native-macos` and `react-native-windows` where they already agree, and the\n  divergences written down in the issue before the code lands.\n- Payload: `key` (the xkb keysym mapped to the DOM-style name), `code` (physical key), `ctrlKey`,\n  `shiftKey`, `altKey`, `metaKey`, `repeat`.\n- Routing: the focused node, bubbling to ancestors, **not** the node under the pointer.\n- `validKeysDown`/`validKeysUp` filtering, so a component opts into the keys it handles and everything else\n  keeps travelling.\n- An explicit unhandled-key policy: what happens to a key no node consumed ([rn-macos#683](https://github.com/microsoft/react-native-macos/issues/683)).\n- Ordering rule from the IME work: **no key is dispatched to React while a `zwp_text_input_v3` composition is\n  active.** `docs/cpp-toolchain.md` already handles keys during composition at the protocol layer; this makes\n  it a contract with a test.\n\n## Acceptance criteria\n\n- **Unit (C++):** keysym-to-`key`/`code` mapping table, modifier-mask decoding, valid-key filtering and the\n  composition-suppression rule, all at 100% line and branch.\n- **E2E:** virtual Wayland keyboard input under the headless compositor: an ordered `keyDown`/`keyUp` trace\n  for a modifier combination, a filtered key that is not delivered, and a key pressed during an active\n  composition that is not delivered.\n- The chosen payload shape is documented in `docs/cpp-toolchain.md` with the macOS/Windows divergences named.\n\n## Related\n\nDepends on the focus model issue in this batch. Complements #26 (IME). Follows #18.\n"
+    },
+    {
+      "title": "feat(input): key repeat and xkbcommon compose sequences and dead keys",
+      "milestone": "M1",
+      "labels": [
+        "area:input",
+        "area:text",
+        "kind:feat",
+        "origin:rn-macos",
+        "platform-parity:macos",
+        "priority:P2"
+      ],
+      "priority": "P2",
+      "body": "## Context\n\n`docs/cpp-toolchain.md` records both as deferrals with owners:\n\n- \"`wl_keyboard.repeat_info` is accepted and ignored, so a held key produces one `keyDown`. Synthesising\n  repeat means a timer in the frame loop, which is the same machinery text input will need.\"\n- \"`xkb_compose_state` turns `dead_acute` + `e` into `é` without any input method running. It is\n  xkbcommon's, it belongs beside the keymap in `WaylandSeat`, and it is a keyboard feature that composition\n  does not supply.\"\n\nThe macOS evidence that this is not cosmetic: [rn-macos#683](https://github.com/microsoft/react-native-macos/issues/683) (unhandled keys escaping to the system produce\nfeedback on every keystroke) and [rn-macos#437](https://github.com/microsoft/react-native-macos/issues/437) (partial key coverage filed as a bug). A text field that cannot\ntype `é` without an input method running is a text field for English, which is the same argument ADR-0001\nmakes for IME.\n\n## What to verify / build\n\n- `wl_keyboard.repeat_info` honoured: rate and delay from the compositor, repeat cancelled on key release, on\n  focus loss, and on any other key press. Repeated events carry `repeat: true`.\n- The repeat timer lives in the frame loop, not in a private thread, and does not keep the loop awake when no\n  key is held.\n- `xkb_compose_state` fed from `XKB_DEFAULT_*`/locale, with `XKB_COMPOSE_COMPOSING` swallowing the\n  intermediate keys and `XKB_COMPOSE_COMPOSED` producing the composed string.\n- Compose and `zwp_text_input_v3` composition are mutually exclusive: an active IME composition takes\n  precedence and compose state is reset on focus change.\n\n## Acceptance criteria\n\n- **Unit (C++):** the repeat state machine and the compose-state wrapper as pure classes at 100% line and\n  branch — delay/rate arithmetic, cancellation on the four cancel paths, the three `xkb_compose_feed` outcomes,\n  and the IME-precedence rule.\n- **E2E:** virtual keyboard input holding a key across N frames and asserting the repeat count against the\n  compositor-advertised rate; and `dead_acute` + `e` producing one `é` and no intermediate character.\n- **Perf:** a held key must not raise the idle frame cost above the empty-scene baseline.\n\n## Related\n\nDeferral named in `docs/cpp-toolchain.md` *Input → Deferrals*. Feeds #17. Sits beside #26.\n"
+    },
+    {
+      "title": "feat(renderer): cursor shape — the `cursor` prop through wl_pointer.set_cursor, resolved in hit order",
+      "milestone": "M1",
+      "labels": [
+        "area:renderer",
+        "area:input",
+        "kind:feat",
+        "kind:parity",
+        "origin:rn-macos",
+        "platform-parity:macos",
+        "priority:P2"
+      ],
+      "priority": "P2",
+      "body": "## Context\n\n- [rn-macos#1804](https://github.com/microsoft/react-native-macos/issues/1804) — 8 comments: \"Cursor property doesn't work in React Native macOS\".\n- [rn-macos#926](https://github.com/microsoft/react-native-macos/issues/926) — 9 comments: wrong cursor on hover for a non-editable `TextInput`.\n- [rn-macos#525](https://github.com/microsoft/react-native-macos/issues/525) — the same question, four years earlier.\n- [rn-macos#914](https://github.com/microsoft/react-native-macos/issues/914) — open, 25 comments: the **text cursor appears for a `TextInput` underneath an opaque overlay**.\n  The cursor is the most visible symptom of a hit-order bug, because it is wrong before you even click.\n\nOn Wayland the client owns the pointer image: `wl_pointer.set_cursor` with a surface, on the enter serial,\nusing the cursor theme from `XCURSOR_THEME`/`XCURSOR_SIZE`, scaled to the current fractional scale.\n\n## What to verify / build\n\n- React Native's `cursor` style values mapped to cursor-theme names (`auto`, `default`, `pointer`, `text`,\n  `grab`, `grabbing`, `crosshair`, `not-allowed`, resize family).\n- The applied cursor comes from the **top-most hit node** with a defined `cursor`, walking ancestors when the\n  hit node inherits `auto` — the same resolution order as the hover chain, so [rn-macos#914](https://github.com/microsoft/react-native-macos/issues/914) cannot happen here.\n- The cursor surface is re-created when the output scale changes (see the fractional-scale issue in this batch).\n- `wl_pointer.leave` restores nothing: the compositor owns the cursor once the pointer is elsewhere.\n\n## Acceptance criteria\n\n- **Unit (C++):** the value-to-theme-name table and the ancestor-walk resolution at 100% line and branch,\n  including the covered-node case from [rn-macos#914](https://github.com/microsoft/react-native-macos/issues/914).\n- **E2E:** the pointer moved over each of a covered node, a covering node and an `overflow: hidden` boundary,\n  asserting the requested cursor name in the event trace.\n- Documented in `docs/cpp-toolchain.md` beside the pointer pipeline.\n\n## Related\n\nDepends on the hit/paint agreement issue in this batch. Follows #18.\n"
+    },
+    {
+      "title": "test(text): the measured paragraph must equal the painted paragraph",
+      "milestone": "M1",
+      "labels": [
+        "area:text",
+        "area:testing",
+        "kind:test",
+        "origin:rn-macos",
+        "platform-parity:macos",
+        "priority:P0"
+      ],
+      "priority": "P0",
+      "body": "## Context\n\n- [rn-macos#2857](https://github.com/microsoft/react-native-macos/issues/2857) — closed, 7 comments: a large `<Text>` inside a `ScrollView` gets an enormous phantom content\n  size on the first render, and resizing the window forces a re-measure that fixes it. Measurement and painting\n  disagreed, and only the layout consumer noticed.\n- [rn-macos#2607](https://github.com/microsoft/react-native-macos/issues/2607) — open: `<Text>` below a certain size **redraws forever** after a window resize. A\n  measure/layout feedback loop, which on our roadmap is a pacing failure, not a text failure.\n- [rn-macos#650](https://github.com/microsoft/react-native-macos/issues/650) — `Text > View > Text` renders nothing (inline attachments).\n- [rn-macos#1521](https://github.com/microsoft/react-native-macos/issues/1521) — `transform` on `<Text>` throws.\n\n`docs/cpp-toolchain.md` records exactly the configuration that produces this: \"every paint rebuilds the\nparagraph, and every snapshot copies the attributed string\", with a measure cache in front of the measure half\nonly, and no `measureLines` so no `onTextLayout` to cross-check against.\n\n## What to verify\n\nFor a fixture matrix — single line, wrapped multi-line, `numberOfLines` with ellipsis, `letterSpacing`,\n`lineHeight`, mixed `fontWeight`/`fontSize` fragments, an inline attachment, and a fragment with a\n`backgroundColor` — the paragraph the `TextLayoutManager` answered Yoga with and the paragraph\n`ScenePainter` draws must have identical line count, line breaks, per-line width and height, and total height.\n\n## Acceptance criteria\n\n- **Unit (C++):** a `ParagraphEquivalence` suite that builds both paragraphs from the same attributed string\n  and constraints and asserts the metrics above field by field. Any divergence names the fixture, the field\n  and both values.\n- **Unit:** the same assertion after a cache hit, after a cache eviction, and after a fragment-level prop\n  change, so the cache cannot make the two answers differ.\n- **Golden-image:** the matrix rendered, goldens committed, so a paint-side change fails independently of the\n  measure-side assertion.\n- No fixture in the matrix produces a different measured height on its second measure than on its first\n  (the [rn-macos#2857](https://github.com/microsoft/react-native-macos/issues/2857) shape).\n\n## Related\n\nFollows #14. Feeds #16 (`ScrollView` content size) and #17. The redraw-storm half is the next issue in this batch.\n"
+    },
+    {
+      "title": "test(text): no measure/layout redraw storm under continuous window resize",
+      "milestone": "M2",
+      "labels": [
+        "area:text",
+        "area:renderer",
+        "area:testing",
+        "kind:test",
+        "kind:perf",
+        "origin:rn-macos",
+        "platform-parity:macos",
+        "priority:P1"
+      ],
+      "priority": "P1",
+      "body": "## Context\n\n- [rn-macos#2607](https://github.com/microsoft/react-native-macos/issues/2607) — open: \"`<Text>` views redraw constantly when below a certain size\". Resizing the window down\n  and back up starts an endless stream of redraws that only stops when the window is resized again. The\n  reproduction is a native log count, not a screenshot — the picture looks fine.\n- [rn-macos#1144](https://github.com/microsoft/react-native-macos/issues/1144) — background view lags while the window is stretched.\n- [rn-macos#322](https://github.com/microsoft/react-native-macos/issues/322) — layout wrong while the main window is resized.\n\nWe are more exposed than macOS: our per-frame cost is supposed to be proportional to damage, so a measure\ncache that invalidates on every configure turns a resize into a full-scene repaint every frame, and a\nmeasure/layout feedback loop never settles at all. ADR-0001's whole pacing argument assumes the scene settles.\n\n## What to verify\n\n1. A continuous resize sequence (N `xdg_toplevel.configure` events with monotonically changing extents)\n   produces at most one layout pass and one paint per configure.\n2. After the resize stops, the number of paints goes to zero within one frame. Nothing self-triggers.\n3. Text below the size that broke macOS (very small font, very small frame, wrapped and ellipsised) is\n   included in the fixture.\n4. The measure cache's hit rate over the sequence is reported and non-trivial — a cache that misses on every\n   configure is the bug, not the fix.\n\n## Acceptance criteria\n\n- **Unit (C++):** a driver that feeds a synthetic configure sequence into the commit path and counts layout\n  passes, paragraph constructions and damage rectangles. Assert the bounds in 1 and the settle in 2.\n- **E2E:** the same sequence under the headless compositor via the window rig, asserting frames-presented after\n  the last configure is exactly one.\n- **Perf:** paints-after-settle is a tracked CI number with a hard zero threshold.\n\n## Related\n\nFollows #14 and the paragraph-equivalence issue in this batch. Lands beside #20 (Tracy instrumentation, which\nis where the counters should surface).\n"
+    },
+    {
+      "title": "feat(text): nested <Text>, fragment backgroundColor extent, and selectable text",
+      "milestone": "M1",
+      "labels": [
+        "area:text",
+        "area:renderer",
+        "kind:feat",
+        "kind:parity",
+        "origin:rn-macos",
+        "platform-parity:macos",
+        "priority:P2"
+      ],
+      "priority": "P2",
+      "body": "## Context\n\n- [rn-macos#650](https://github.com/microsoft/react-native-macos/issues/650) — closed, 5 comments: `Text > View > Text` renders nothing. Inline attachments are the seam\n  where the text system and the view system meet, and it is where both platforms break.\n- [rn-macos#2109](https://github.com/microsoft/react-native-macos/issues/2109) and [rn-macos#2402](https://github.com/microsoft/react-native-macos/issues/2402) — a `<Text>` fragment's `backgroundColor` extends across the entire\n  background instead of the run. [rn-macos#2402](https://github.com/microsoft/react-native-macos/issues/2402) is still open as \"remove the workaround\".\n- [rn-macos#906](https://github.com/microsoft/react-native-macos/issues/906) (2 reactions) and [rn-macos#2844](https://github.com/microsoft/react-native-macos/issues/2844) — `selectable` does nothing; then it worked; then it regressed\n  under Fabric.\n- [rn-macos#447](https://github.com/microsoft/react-native-macos/issues/447) — single-line inputs ignore most text styles in `style`.\n\n`docs/cpp-toolchain.md` records that we already place inline attachments as SkParagraph placeholders and read\nthem back through `getRectsForPlaceholders`, and that fragment `backgroundColor` goes to\n`TextStyle::setBackgroundPaint` while paragraph-level `backgroundColor` is stripped upstream as a\n`<View>` background. Both are the right shape and neither has a fixture proving the extent.\n\n## What to verify / build\n\n- `Text > View > Text` and `Text > Image > Text` render, with the attachment's measured frame driving the\n  placeholder and the surrounding runs flowing around it.\n- A fragment `backgroundColor` paints exactly the run's rectangles and nothing else, including across a line\n  break and under an ellipsis.\n- `selectable` text: selection by pointer drag, selection rectangles from\n  `Paragraph::getRectsForRange`, Ctrl+C copying the selected range, selection cleared on blur.\n\n## Acceptance criteria\n\n- **Unit (C++):** placeholder rect arithmetic and the selection range-to-rect mapping at 100% line and branch.\n- **Golden-image:** nested attachment fixtures, a multi-line fragment background, and a rendered selection\n  highlight.\n- **E2E:** pointer-drag selection across a line break, then Ctrl+C, asserting the clipboard contents.\n- No paragraph-level `backgroundColor` leaks into a fragment paint ([rn-macos#2109](https://github.com/microsoft/react-native-macos/issues/2109)).\n\n## Related\n\nFollows #14. Selection shares its model with #17. Clipboard depends on the `wl_data_device` issue in this batch.\n"
+    },
+    {
+      "title": "feat(renderer): image scale selection under fractional scale, resizeMode golden matrix, load lifecycle events",
+      "milestone": "M1",
+      "labels": [
+        "area:renderer",
+        "kind:feat",
+        "kind:parity",
+        "origin:rn-macos",
+        "platform-parity:macos",
+        "priority:P1"
+      ],
+      "priority": "P1",
+      "body": "## Context\n\n- [rn-macos#2084](https://github.com/microsoft/react-native-macos/issues/2084) — open, 17 comments, 1 reaction: the **wrong pixel-density variant** is chosen on first launch\n  and the right one afterwards. Density selection ran before the surface knew its scale.\n- [rn-macos#2498](https://github.com/microsoft/react-native-macos/issues/2498) — open: `resizeMode=\"contain\"` distorts. [rn-macos#316](https://github.com/microsoft/react-native-macos/issues/316) — `cover` wrong, four years earlier.\n- [rn-macos#1722](https://github.com/microsoft/react-native-macos/issues/1722) — open: no proper rescale when the view resizes.\n- [rn-macos#1948](https://github.com/microsoft/react-native-macos/issues/1948) and [rn-macos#315](https://github.com/microsoft/react-native-macos/issues/315) — `tintColor` ignored.\n- [rn-macos#921](https://github.com/microsoft/react-native-macos/issues/921) — a network image unloads itself after inactivity: cache eviction visible to the user, with no\n  reload.\n- [rn-macos#507](https://github.com/microsoft/react-native-macos/issues/507) — GIFs do not animate.\n\nWe are structurally guaranteed the [rn-macos#2084](https://github.com/microsoft/react-native-macos/issues/2084) shape rather than accidentally exposed to it: our fractional\nscale arrives from `wp_fractional_scale_v1` *after* the first commit and changes again when the window moves\nbetween outputs. `docs/cpp-toolchain.md` states \"No `srcSet` or scale selection … because there is no\nfractional scale support yet either\", and \"No `onLoad`, `onLoadStart`, `onLoadEnd`, `onError` or\n`onProgress` … the state is truthful and these events are a matter of emitting them from an observer\".\n\n## What to verify / build\n\n- Scale-aware source selection: `ImageShadowNode` picks by area today; add device-pixel-ratio reasoning and\n  **re-pick when the output scale changes**, without flashing the previously decoded image.\n- A `resizeMode` golden matrix — `cover`, `contain`, `stretch`, `center`, `repeat`, `none` — against\n  images wider than, taller than and equal to the frame, at 1x and at a fractional scale.\n- `tintColor` combined with `borderRadius` and with `opacity`.\n- Load lifecycle events emitted from the existing `ImageResponseObserverCoordinator`: `onLoadStart`,\n  `onLoad`, `onLoadEnd`, `onError`. `onProgress` only when there is a network source to progress.\n- A failed decode is remembered and a re-request is possible; cache eviction re-requests rather than showing\n  nothing ([rn-macos#921](https://github.com/microsoft/react-native-macos/issues/921)).\n\n## Acceptance criteria\n\n- **Unit (C++):** `imagePlacement` arithmetic for the full matrix at 100% line and branch, including the\n  fractional-scale cases and the aspect-ratio edge cases from [rn-macos#2498](https://github.com/microsoft/react-native-macos/issues/2498)/[rn-macos#316](https://github.com/microsoft/react-native-macos/issues/316).\n- **Golden-image:** the whole matrix committed; the fractional-scale row rendered at the scale, not upscaled\n  after the fact.\n- **Unit/E2E:** the observer emits exactly one of each lifecycle event per request, in order, including on\n  failure; and a scale change after first paint re-picks the source with no intermediate blank frame.\n\n## Related\n\nFollows #15. Depends on the output-scale issue in this batch. `repeat` and `tintColor` already have paint\npaths; this is verification plus scale.\n"
+    },
+    {
+      "title": "test(renderer): ScrollView onScroll cadence contract for VirtualizedList windowing",
+      "milestone": "M1",
+      "labels": [
+        "area:renderer",
+        "area:testing",
+        "kind:test",
+        "kind:parity",
+        "origin:rn-macos",
+        "platform-parity:macos",
+        "priority:P0"
+      ],
+      "priority": "P0",
+      "body": "## Context\n\n- [rn-macos#1119](https://github.com/microsoft/react-native-macos/issues/1119) — **open, 24 comments**, the second most discussed issue in the repository: a `FlatList` with\n  500 rows of one `<Text>` each is unusably slow. Read the thread and it is not a raster problem; it is the\n  windowing layer not getting the scroll events it assumes.\n- [rn-macos#2965](https://github.com/microsoft/react-native-macos/issues/2965) — open, 2026-05: `VirtualizedList`/`ScrollView` refs broken.\n- [rn-macos#1421](https://github.com/microsoft/react-native-macos/issues/1421) — inverted `FlatList` mis-handles keyboard.\n- [rn-macos#1698](https://github.com/microsoft/react-native-macos/issues/1698) — \"[Fabric] Fix RCTScrollViewComponentView\", open since 2023-01.\n\nADR-0001 already records that `ScrollView` semantics are `UIScrollView` semantics and that we get nothing\nfree. The part that is easy to miss is that the **event cadence is part of the contract**. The in-flight #16\nwork already emits `onScroll` with a full `ScrollEvent` payload and brackets the glide with\n`onMomentumScrollBegin`/`onMomentumScrollEnd`. What has no owner is `scrollEventThrottle`, the drag\nbracket, and the assertion that the cadence is the one `VirtualizedList` windowing actually assumes. Get the\npicture right and the cadence wrong and every list in the ecosystem reports a renderer bug.\n\n## What to verify\n\n1. `onScroll` fires with a `contentOffset` matching the offset the frame actually painted — no lag of one frame.\n2. **Gap:** `scrollEventThrottle` honoured, including `0`/`16` and the \"as often as possible\" case.\n3. **Gap:** `onScrollBeginDrag`/`onScrollEndDrag` fire exactly once each per gesture and bracket the\n   existing `onMomentumScrollBegin`/`onMomentumScrollEnd` pair, in order, for a wheel flick, a touchpad\n   kinetic gesture and a programmatic `scrollTo`.\n4. `contentSize` and `layoutMeasurement` in the event payload are the values `VirtualizedList` needs to\n   compute its window.\n5. A 500-row fixture: the number of mounted rows stays bounded across a full scroll.\n\n## Acceptance criteria\n\n- **Unit (C++):** the scroll-event emitter as a pure class at 100% line and branch — throttle arithmetic,\n  begin/end pairing, momentum transitions, and payload construction.\n- **E2E:** a real `FlatList` bundle under the headless compositor with injected wheel and kinetic axis\n  events, asserting the ordered event trace and the bounded mounted-row count.\n- **Perf:** frame time during the 500-row scroll is a tracked CI number against the 8.33 ms scenario budget.\n\n## Related\n\nScoped inside #16, which owns the physics and already emits `onScroll` and the momentum bracket. This issue\nowns the remaining cadence contract and its tests. Feeds #24 (flagship bring-up: Suuudokuuu has lists).\n"
+    },
+    {
+      "title": "feat(renderer): ScrollView content size correct on the first frame",
+      "milestone": "M1",
+      "labels": [
+        "area:renderer",
+        "area:text",
+        "kind:feat",
+        "kind:bug",
+        "origin:rn-macos",
+        "platform-parity:macos",
+        "priority:P1"
+      ],
+      "priority": "P1",
+      "body": "## Context\n\n[rn-macos#2857](https://github.com/microsoft/react-native-macos/issues/2857) — closed, 7 comments, filed 2026-03 by the Software Mansion team while porting a library: a large\n`<Text>` inside a `ScrollView` produces \"massive vertical and horizontal overflow on the first render\", and\nresizing the window makes it correct. [rn-macos#2905](https://github.com/microsoft/react-native-macos/issues/2905) — open: multiline `TextInput` does not scroll under Fabric.\n\nThe shape is always the same: the scrollable content size is computed from a measurement that is not yet\nfinal, nothing re-computes it, and only an unrelated relayout repairs it. On our stack the risk is higher\nbecause the first frame runs before the fractional scale is known and before fonts are necessarily resolved.\n\n## What to verify / build\n\n- Content size is derived from the committed layout of the content view, and any later layout of any\n  descendant updates it in the same commit — not on the next configure.\n- The first presented frame already has the correct content size, with no scrollable overflow beyond the\n  content, for: a long `<Text>`, a column of images whose decodes complete after mount, and a nested\n  `ScrollView`.\n- Scroll offset is clamped when the content shrinks, and `maintainVisibleContentPosition` semantics are\n  either implemented or explicitly recorded as not implemented.\n\n## Acceptance criteria\n\n- **Unit (C++):** content-size derivation and offset clamping at 100% line and branch, including the\n  shrink-below-current-offset case.\n- **Golden-image:** first-frame renders of the three fixtures, with a golden that would fail on phantom\n  overflow (a visible scrollbar/indicator or a wrongly positioned last child).\n- **E2E:** capture frame 1 and frame 60 of the same bundle under the window rig; the two must be identical.\n  That single assertion is the whole [rn-macos#2857](https://github.com/microsoft/react-native-macos/issues/2857) bug.\n\n## Related\n\nScoped inside #16. Depends on the paragraph-equivalence issue in this batch.\n"
+    },
+    {
+      "title": "test(renderer): transform inside a scrolling subtree — clip and damage correctness",
+      "milestone": "M2",
+      "labels": [
+        "area:renderer",
+        "area:testing",
+        "kind:test",
+        "origin:rn-macos",
+        "platform-parity:macos",
+        "priority:P1"
+      ],
+      "priority": "P1",
+      "body": "## Context\n\n[rn-macos#2935](https://github.com/microsoft/react-native-macos/issues/2935) — open, 2026-04, with a video and a public reproduction: rows carrying a `transform` \"appear to\nbe clipped while scrolling\" and get progressively worse the further you scroll. At rest everything is correct.\n\nThis is a damage-tracking bug wearing a transform costume: the damage rectangle for a transformed node was\ncomputed in the wrong space, so the region actually repainted did not cover the region that moved. Our\nrenderer is built on precisely this — \"a persistent scene diffs mounting transactions into minimal damage\nregions\" — and `docs/cpp-toolchain.md` describes the clip stack and the transform composition as separate\nmechanisms that meet in the painter.\n\n## What to verify\n\n1. A scrolled list of transformed (rotated, scaled, translated) rows repaints identically to a full-repaint\n   reference at every scroll offset.\n2. The damage rectangle for a transformed node is the bounding box of the node's **transformed** frame under\n   all ancestor transforms and scroll offsets, not its layout frame.\n3. A node partially outside an `overflow: hidden` scroll container is clipped identically whether it arrived\n   there by scrolling or by an initial layout.\n4. Scrolling by N and then by -N returns pixel-identical output to the starting frame.\n\n## Acceptance criteria\n\n- **Unit (C++):** damage-rect computation for transformed nodes under a scroll offset, at 100% line and\n  branch, asserted against an independently computed bounding box.\n- **Golden-image:** the existing partial-redraw equivalence proof extended with a scrolling transformed\n  fixture — the incremental result must equal the full-repaint result byte for byte, which is the rig's\n  zero-tolerance contract.\n- **E2E:** the scroll-and-return assertion in 4 under the window rig.\n\n## Related\n\nFollows #12 (retained scene and damage tracking). Scoped beside #16. Reuses the partial-redraw equivalence\nharness described in `docs/cpp-toolchain.md`.\n"
+    },
+    {
+      "title": "test(input): wheel versus touchpad scroll conformance — axis_source, axis_stop, value120, shift-wheel",
+      "milestone": "M1",
+      "labels": [
+        "area:input",
+        "area:renderer",
+        "area:testing",
+        "kind:test",
+        "kind:parity",
+        "origin:rn-macos",
+        "platform-parity:macos",
+        "priority:P1"
+      ],
+      "priority": "P1",
+      "body": "## Context\n\n- [rn-macos#1922](https://github.com/microsoft/react-native-macos/issues/1922) — open: horizontal scrolling does not work with a mouse on the desktop.\n- [rn-macos#705](https://github.com/microsoft/react-native-macos/issues/705) — closed, 8 comments: cannot pinch-zoom a `ScrollView`.\n- [rn-macos#629](https://github.com/microsoft/react-native-macos/issues/629) — closed, 2 reactions: clicking the scrollbar also clicks the row behind it (see the separate\n  indicator-chrome issue).\n\nADR-0001 states it directly: \"Kinetic touchpad input and discrete wheel input are separate problems.\"\nThe in-flight #16 work already separates them — `ScrollPhysics` has a discrete-notch path and a directly\ntracked finger path, and `InputPipeline` already treats `axis_stop` as the point where the gesture's\nvelocity becomes momentum. **This issue does not re-implement that**; it is the conformance layer plus the\nnamed gaps below.\n\n## What to verify / build\n\n- **Verify:** `axis_source` routing — `wheel`/`wheel_tilt` take the discrete path, `finger`/`continuous`\n  take the tracked path — with a test per source value, including the sources we do not handle.\n- **Verify:** `axis_stop` hands the measured exit velocity to momentum, and a gesture that ends with no\n  `axis_stop` still terminates.\n- **Verify:** momentum matches React Native's `decelerationRate` `normal` and `fast` constants, not an\n  approximation.\n- **Gap:** `wl_pointer.axis_value120` (the modern high-resolution notch count) preferred over\n  `axis_discrete` when the seat advertises version 5+.\n- **Gap:** horizontal scrolling from a mouse without a horizontal wheel — shift-wheel mapped to the\n  horizontal axis ([rn-macos#1922](https://github.com/microsoft/react-native-macos/issues/1922)).\n- **Gap:** a wheel event arriving mid-kinetic-gesture, and a finger gesture arriving mid-momentum.\n- **Decision:** `wp_pointer_gestures` pinch is out of scope and recorded as such ([rn-macos#705](https://github.com/microsoft/react-native-macos/issues/705)), so it is\n  written down rather than forgotten.\n\n## Acceptance criteria\n\n- **Unit (C++):** the axis-source state machine and the velocity/deceleration integrator as pure classes at\n  100% line and branch, including a gesture with no `axis_stop` and a wheel event arriving mid-kinetic-gesture.\n- **E2E:** injected wheel and injected finger axis sequences under the headless compositor, asserting the\n  offset trajectory and the momentum event bracket for each.\n- **Perf:** a kinetic fling holds the frame budget for its full deceleration.\n\n## Related\n\nScoped inside #16, whose `ScrollPhysics`/`ScrollController` already implement the discrete and tracked\npaths. This issue adds the conformance tests and the four named gaps.\n"
+    },
+    {
+      "title": "feat(renderer): scroll indicator chrome must not participate in hit testing",
+      "milestone": "M1",
+      "labels": [
+        "area:renderer",
+        "area:input",
+        "kind:feat",
+        "kind:parity",
+        "origin:rn-macos",
+        "platform-parity:macos",
+        "priority:P2"
+      ],
+      "priority": "P2",
+      "body": "## Context\n\n- [rn-macos#629](https://github.com/microsoft/react-native-macos/issues/629) — closed, 2 reactions: \"Clicking on a scroll bar triggers a click on component within the\n  scroll view.\" Reproducible in their own RNTester by turning on always-visible scrollbars.\n- [rn-macos#252](https://github.com/microsoft/react-native-macos/issues/252) — always-on scroll indicators do not adjust layout.\n- [rn-macos#1573](https://github.com/microsoft/react-native-macos/issues/1573) — `contentInsetAdjustmentBehavior`.\n\nmacOS at least *has* a system scrollbar. We do not: on a canvas the indicator is something we paint, which\nmeans it is also something we must deliberately keep out of the hit path — and something that must not be\nmistaken for content when a golden is compared.\n\n## What to verify / build\n\n- An overlay scroll indicator painted above the content, following `showsVerticalScrollIndicator` /\n  `showsHorizontalScrollIndicator`, fading per the usual desktop convention.\n- The indicator is not a scene node the pointer can hit: a press on it scrolls or does nothing, and never\n  reaches the content beneath ([rn-macos#629](https://github.com/microsoft/react-native-macos/issues/629)).\n- The indicator does not change the content layout (overlay, not inset) unless `contentInset` says otherwise.\n- Dragging the indicator scrolls proportionally and emits the same drag/momentum bracket as a wheel gesture.\n\n## Acceptance criteria\n\n- **Unit (C++):** indicator geometry (track, thumb length, thumb offset) and the hit-exclusion rule at 100%\n  line and branch.\n- **Golden-image:** a fixture with the indicator visible, and one with it hidden, so its pixels are pinned.\n- **E2E:** a press at a point over the indicator that overlaps a `Pressable` — the `Pressable` receives\n  nothing.\n\n## Related\n\nScoped inside #16. Shares the hit-order machinery with the hit/paint agreement issue in this batch.\n"
+    },
+    {
+      "title": "feat(core): Dimensions and useWindowDimensions on Wayland — never report 0x0",
+      "milestone": "M1",
+      "labels": [
+        "area:core",
+        "area:modules",
+        "kind:feat",
+        "kind:parity",
+        "origin:rn-macos",
+        "platform-parity:macos",
+        "priority:P0"
+      ],
+      "priority": "P0",
+      "body": "## Context\n\n- [rn-macos#2296](https://github.com/microsoft/react-native-macos/issues/2296) — open, 2 reactions, title ends \"[cause and solution provided]\": `Dimensions.get('window')` and\n  `useWindowDimensions()` both return `{width: 0, height: 0}` **whenever no window has keyboard focus**,\n  because the implementation asks AppKit for `[NSApp keyWindow]`, which is `nil` in that perfectly ordinary\n  state. Affects `main` as well as the reported version.\n- [rn-macos#2129](https://github.com/microsoft/react-native-macos/issues/2129) — open: the same, for a popover-hosted surface.\n- [rn-macos#915](https://github.com/microsoft/react-native-macos/issues/915) — open, 8 comments, and [rn-macos#326](https://github.com/microsoft/react-native-macos/issues/326) — closed, 9 comments: `window` dimensions default to\n  *screen* dimensions.\n- [rn-macos#2083](https://github.com/microsoft/react-native-macos/issues/2083) — `useWindowDimensions` causing infinite re-render.\n\nThe cause is a mobile-shaped API answered by a global lookup. Wayland is stricter than AppKit here: a client\n**cannot ask for the screen size at all**, there is no \"key window\", and the only authoritative size is the\nlast `xdg_toplevel.configure`. So the macOS bug is not merely possible for us, it is the default outcome of\na naive port.\n\n## What to verify / build\n\n- `Dimensions.get('window')` answers from the surface's own configured extent and its fractional scale —\n  never from a global, never zero after the first configure.\n- `Dimensions.get('screen')`: decide and document what this means with no screen-size API. Options are the\n  current output's mode from `wl_output` (needs `wl_surface.enter`) or equality with `window`. This is the\n  `needs:decision` part of the issue.\n- Change events fire on configure and on scale change, coalesced to at most one per frame so a\n  `useWindowDimensions` consumer cannot re-render per event ([rn-macos#2083](https://github.com/microsoft/react-native-macos/issues/2083)).\n- Before the first configure the value is the surface's requested default, not `0`.\n\n## Acceptance criteria\n\n- **Unit (C++/TS):** the dimensions source at 100% line and branch — pre-configure default, post-configure\n  value, scale applied, coalescing, and the explicit assertion that no code path can produce `0`.\n- **E2E:** a bundle rendering `useWindowDimensions()` into the scene, captured under the window rig at the\n  initial size and after a compositor-driven resize; both frames show the right numbers.\n- The `screen` semantics decision is recorded in `docs/cpp-toolchain.md`.\n\n## Related\n\nScoped inside #23 (core native modules), which lists `Dimensions` without semantics. Depends on the\noutput-scale issue in this batch. Carries `needs:decision` until `screen` is settled.\n"
+    },
+    {
+      "title": "feat(core): output enter/leave and fractional-scale change — re-rasterize, re-pick, re-hit-test",
+      "milestone": "M1",
+      "labels": [
+        "area:core",
+        "area:renderer",
+        "kind:feat",
+        "origin:rn-macos",
+        "platform-parity:macos",
+        "priority:P1"
+      ],
+      "priority": "P1",
+      "body": "## Context\n\n- [rn-macos#2084](https://github.com/microsoft/react-native-macos/issues/2084) — open, 17 comments: the wrong pixel-density image variant on first launch, right afterwards.\n- [rn-macos#1165](https://github.com/microsoft/react-native-macos/issues/1165) — `RCTScreenScale` had to be reimplemented for macOS.\n- [rn-macos#322](https://github.com/microsoft/react-native-macos/issues/322) and [rn-macos#1144](https://github.com/microsoft/react-native-macos/issues/1144) — layout wrong / lag while the window is resized.\n\nADR-0001 lists this as a first-class subsystem and an accepted risk: \"`wp_fractional_scale_v1` (scale/120),\n`wl_surface.set_buffer_scale`, `wp_viewporter`, per-output scale changes when a window is dragged between\nmonitors, glyph atlas invalidation and re-rasterization at the new scale, and hit-testing in the correct\ncoordinate space. GTK4 and Qt6 each took years on this.\" Nothing in the tracker owns it yet: M1 mentions\n\"fractional-scale handling for a single monitor\" and there is no issue.\n\n## What to verify / build\n\n- `wp_fractional_scale_v1` bound; `preferred_scale` applied via `wp_viewporter` with a buffer sized to\n  `ceil(logical * scale/120)`.\n- `wl_surface.enter`/`leave` tracked so the surface knows its current output(s).\n- On a scale change: the glyph atlas is invalidated and re-rasterized, image sources are re-picked (see the\n  image issue in this batch), the cursor surface is re-created, and the swapchain is recreated at the new\n  pixel extent.\n- Pointer coordinates are converted from surface-local logical coordinates to scene coordinates using the\n  current scale — a scale change must not shift hit-testing by the scale factor.\n- The first frame after a scale change is correct, not a scaled-up copy of the previous one.\n\n## Acceptance criteria\n\n- **Unit (C++):** the scale/120 arithmetic, buffer-extent derivation and logical-to-scene coordinate mapping\n  at 100% line and branch, including a scale change arriving between a commit and a paint.\n- **Golden-image:** the same fixture rendered at 1x and at 1.5x (scale 180), with separate goldens; the 1.5x\n  golden must be rendered at that scale, not upscaled.\n- **E2E:** the headless compositor advertising a scale change mid-run; assert one atlas invalidation, one\n  swapchain recreation and a correct first frame afterwards, plus a pointer hit at a known logical point\n  landing on the same node before and after.\n\n## Related\n\nM1 scope from ADR-0001 with no owning issue. Feeds the image, cursor and `Dimensions` issues in this batch,\nand #33 (window goldens) gains a second scale row.\n"
+    },
+    {
+      "title": "feat(modules): Appearance and PlatformColor — a theme change invalidates every resolved colour",
+      "milestone": "M3",
+      "labels": [
+        "area:modules",
+        "area:renderer",
+        "kind:feat",
+        "kind:parity",
+        "origin:rn-macos",
+        "platform-parity:macos",
+        "priority:P2"
+      ],
+      "priority": "P2",
+      "body": "## Context\n\n- [rn-macos#2717](https://github.com/microsoft/react-native-macos/issues/2717) — open, 8 comments: setting the app appearance makes the window stop responding to OS theme\n  changes entirely.\n- [rn-macos#2830](https://github.com/microsoft/react-native-macos/issues/2830) — closed, 2026-02: \"[0.81] Fabric colors don't respect current appearance\".\n- [rn-macos#2347](https://github.com/microsoft/react-native-macos/issues/2347) — colours \"(sometimes)\" do not update when the OS theme is switched.\n- [rn-macos#911](https://github.com/microsoft/react-native-macos/issues/911), [rn-macos#638](https://github.com/microsoft/react-native-macos/issues/638) — appearance overrides not applied / reverted on reload.\n- [rn-macos#2736](https://github.com/microsoft/react-native-macos/issues/2736) — open: additional `PlatformColor` types not implemented under Fabric.\n- [rn-macos#1846](https://github.com/microsoft/react-native-macos/issues/1846) — open: refactor macOS `PlatformColor` to share more with iOS.\n- [rn-macos#413](https://github.com/microsoft/react-native-macos/issues/413) — a dynamic colour throws an unhandled JS exception.\n\nCause pattern: a dynamic colour is resolved once, cached in the render tree, and the theme change has no path\nto invalidate it. This is a *renderer* bug that presents as a module bug, which is why it recurs.\n\n## What to verify / build\n\n- A colour scheme source for Linux: `org.freedesktop.appearance color-scheme` over the XDG desktop portal\n  settings interface, with a documented fallback when no portal is present.\n- `Appearance.getColorScheme()`, `Appearance.addChangeListener`, and `useColorScheme()` driven by it.\n- A theme change forces re-resolution of every dynamic colour currently in the scene, in one commit, with a\n  single full-surface damage rather than a partial one.\n- `PlatformColor` for Linux: decide the token set (portal accent colour and the standard semantic names, or\n  an explicit \"not supported on linux\" that throws a clear error rather than an unhandled exception,\n  [rn-macos#413](https://github.com/microsoft/react-native-macos/issues/413)). `needs:decision`.\n\n## Acceptance criteria\n\n- **Unit (C++/TS):** the portal-signal-to-scheme mapping, the listener fan-out, and the invalidation walk at\n  100% line and branch, including a theme change arriving during a commit.\n- **Golden-image:** one fixture rendered in light and in dark from the same bundle.\n- **E2E:** a simulated portal change mid-run; assert exactly one full-surface repaint and correct colours in\n  the captured frame.\n\n## Related\n\nScoped inside #23. Carries `needs:decision` for the `PlatformColor` token set.\n"
+    },
+    {
+      "title": "test(text): TextInput parity matrix — controlled value, multiline, selection, paste, secureTextEntry",
+      "milestone": "M1",
+      "labels": [
+        "area:text",
+        "area:input",
+        "area:testing",
+        "kind:test",
+        "kind:parity",
+        "origin:rn-macos",
+        "platform-parity:macos",
+        "priority:P0"
+      ],
+      "priority": "P0",
+      "body": "## Context\n\n`TextInput` is the largest bug generator in `react-native-macos` — 79 issues, and the only component with a\ndedicated label. The recurring cause is that a text field is a state machine (buffer, selection, composition,\nundo, scroll offset, typing attributes) duplicated between the editor and React's controlled `value`, and\nevery divergence is a bug:\n\n- [rn-macos#2955](https://github.com/microsoft/react-native-macos/issues/2955) — closed, 2026-05: \"TextInput multiline is completely broken in new arch\".\n- [rn-macos#2905](https://github.com/microsoft/react-native-macos/issues/2905) — open: multiline does not scroll under Fabric.\n- [rn-macos#2066](https://github.com/microsoft/react-native-macos/issues/2066) — open: controlled `value`, `.clear()` and `setNativeProps({text: ''})` do not update the UI.\n- [rn-macos#2303](https://github.com/microsoft/react-native-macos/issues/2303) — open: pasting into a single-line input inserts line feeds.\n- [rn-macos#2312](https://github.com/microsoft/react-native-macos/issues/2312) — open, 6 comments: `typingAttributes` — styles lost mid-typing.\n- [rn-macos#1395](https://github.com/microsoft/react-native-macos/issues/1395) — caret height wrong at large font sizes. [rn-macos#1921](https://github.com/microsoft/react-native-macos/issues/1921), [rn-macos#2127](https://github.com/microsoft/react-native-macos/issues/2127) — caret jumps to the end /\n  jumps on multiline.\n- [rn-macos#1096](https://github.com/microsoft/react-native-macos/issues/1096) — selection highlight and caret colour wrong.\n- [rn-macos#423](https://github.com/microsoft/react-native-macos/issues/423) — 1 reaction: `secureTextEntry` text is readable.\n- [rn-macos#480](https://github.com/microsoft/react-native-macos/issues/480), [rn-macos#486](https://github.com/microsoft/react-native-macos/issues/486), [rn-macos#432](https://github.com/microsoft/react-native-macos/issues/432), [rn-macos#357](https://github.com/microsoft/react-native-macos/issues/357), [rn-macos#2270](https://github.com/microsoft/react-native-macos/issues/2270) — crashes on backspace past a buffer size,\n  on losing focus, on gaining focus.\n- [rn-macos#2738](https://github.com/microsoft/react-native-macos/issues/2738) — the Fabric `TextInput` renders no border. [rn-macos#447](https://github.com/microsoft/react-native-macos/issues/447) — single-line inputs ignore text styles.\n\nmacOS inherits `NSTextView` and only has to reconcile. We inherit nothing: the buffer, the selection model,\nthe caret geometry, the scroll offset, the undo stack, the paste normalisation and the secure masking are all\nours. **Their bug list is our specification.**\n\n## What to verify\n\nA parity matrix, one case per macOS bug above:\n\n1. Controlled `value` — a prop update replaces the buffer and clamps the selection; `.clear()` and an empty\n   `value` both empty it.\n2. Uncontrolled typing then a controlled override mid-stream — the override wins, once.\n3. Multiline: wrapping, caret at the end of a wrapped line, vertical scroll of the content, caret kept visible.\n4. Caret geometry at three font sizes and with `lineHeight` set — height follows the line, not a constant.\n5. Selection: drag, shift-arrow, select-all; selection rectangles across a line break; selection colour.\n6. Paste of multi-line text into `multiline={false}` — newlines collapsed, not inserted.\n7. `secureTextEntry` — the buffer never reaches the paragraph unmasked, including in a golden.\n8. Backspace to empty, backspace past empty, and delete of a whole multi-byte grapheme cluster.\n9. `<View>` paint props on the field itself: border, radius, background ([rn-macos#2738](https://github.com/microsoft/react-native-macos/issues/2738)).\n10. Style props on a single-line field are honoured ([rn-macos#447](https://github.com/microsoft/react-native-macos/issues/447)).\n\n## Acceptance criteria\n\n- **Unit (C++):** the editing state machine as a pure class in the coverage scope, at 100% line and branch,\n  covering every case above plus every crash case from [rn-macos#480](https://github.com/microsoft/react-native-macos/issues/480)/[rn-macos#486](https://github.com/microsoft/react-native-macos/issues/486)/[rn-macos#432](https://github.com/microsoft/react-native-macos/issues/432)/[rn-macos#2270](https://github.com/microsoft/react-native-macos/issues/2270) as a\n  regression test named after its macOS issue number.\n- **Golden-image:** caret at three sizes, a rendered selection, a wrapped multiline field, a secure field, and\n  a field with a border and radius.\n- **E2E:** typing, selecting, pasting and clearing under the headless compositor with virtual keyboard input.\n- **Sanitizers:** the whole suite runs clean under ASan+UBSan; the macOS crash cases are memory bugs and this\n  is where we would find ours.\n\n## Related\n\nScoped inside #17, which owns the component. This issue owns the matrix and the tests. Depends on the focus\nmodel issue in this batch.\n"
+    },
+    {
+      "title": "test(input): TextInput key and focus interaction contract — Enter, Escape, Tab, shortcuts, composition ordering",
+      "milestone": "M1",
+      "labels": [
+        "area:input",
+        "area:text",
+        "area:testing",
+        "kind:test",
+        "kind:parity",
+        "origin:rn-macos",
+        "platform-parity:macos",
+        "priority:P1"
+      ],
+      "priority": "P1",
+      "body": "## Context\n\nThe other half of the `TextInput` bug mass is not the buffer, it is who gets the key:\n\n- [rn-macos#1082](https://github.com/microsoft/react-native-macos/issues/1082) — open: `blurOnSubmit={false}` swallows Enter entirely — no `onSubmitEditing`, no\n  `onEndEditing`, not even `onKeyPress`.\n- [rn-macos#2075](https://github.com/microsoft/react-native-macos/issues/2075) — closed, 6 comments: Ctrl/Cmd+C, +V, +A do nothing inside a `TextInput`.\n- [rn-macos#999](https://github.com/microsoft/react-native-macos/issues/999) — open, 8 comments: the field never blurs when you click empty background.\n- [rn-macos#913](https://github.com/microsoft/react-native-macos/issues/913) — open: `.blur()` does nothing.\n- [rn-macos#1251](https://github.com/microsoft/react-native-macos/issues/1251) — a multiline field never takes keyboard focus.\n- [rn-macos#1209](https://github.com/microsoft/react-native-macos/issues/1209) — click handling dies after a context menu is opened over a field.\n- [rn-macos#683](https://github.com/microsoft/react-native-macos/issues/683) — a system beep on every keystroke, from keys nobody consumed.\n- [rn-macos#2127](https://github.com/microsoft/react-native-macos/issues/2127), [rn-macos#2312](https://github.com/microsoft/react-native-macos/issues/2312) — caret jumps and lost typing attributes, i.e. composition interfering with editing.\n\n## What to verify\n\n1. Tab moves focus **out** of a single-line field; `multiline` decides whether Tab inserts a tab or traverses,\n   and the decision is documented.\n2. Enter in a single-line field fires `onSubmitEditing`; with `blurOnSubmit={false}` it fires and does not\n   blur — and is never swallowed ([rn-macos#1082](https://github.com/microsoft/react-native-macos/issues/1082)).\n3. Escape blurs or does nothing, decided once and documented.\n4. Ctrl+C / Ctrl+V / Ctrl+X / Ctrl+A / Ctrl+Z reach the editor and not the app, and the reverse for\n   unhandled combinations.\n5. Clicking outside the field blurs it and emits `onBlur` exactly once ([rn-macos#999](https://github.com/microsoft/react-native-macos/issues/999)); `.blur()` from JS does\n   the same ([rn-macos#913](https://github.com/microsoft/react-native-macos/issues/913)).\n6. While a `zwp_text_input_v3` composition is active, no raw key reaches React and no editing command runs;\n   ending the composition restores normal routing. This is the [rn-macos#683](https://github.com/microsoft/react-native-macos/issues/683)/[rn-macos#2312](https://github.com/microsoft/react-native-macos/issues/2312) ordering rule.\n\n## Acceptance criteria\n\n- **Unit (C++):** the key-routing decision table (focused editor vs app vs unhandled) and the composition\n  suppression at 100% line and branch.\n- **E2E:** virtual keyboard sequences under the headless compositor for each numbered case, asserting the\n  ordered event trace, and a virtual-IME composition interleaved with key presses for case 6.\n- Every decision marked \"documented\" above is written into `docs/cpp-toolchain.md` in the same PR.\n\n## Related\n\nScoped inside #17. Depends on the focus model and keyboard contract issues in this batch, and on #26.\n"
+    },
+    {
+      "title": "feat(cli): Metro resolver fallback chain — .linux → .native → default, proven by a fixture",
+      "milestone": "M3",
+      "labels": [
+        "area:cli",
+        "area:testing",
+        "kind:feat",
+        "kind:test",
+        "origin:rn-macos",
+        "platform-parity:macos",
+        "priority:P0"
+      ],
+      "priority": "P0",
+      "body": "## Context\n\n[rn-macos#2778](https://github.com/microsoft/react-native-macos/issues/2778) — closed 2025-12, and the single most instructive issue in the whole repository:\n\n> When using Metro bundler with `react-native-macos`, the `.native.ts` / `.native.js` extension is not\n> included in the resolution fallback chain for the `macos` platform. […] Libraries that provide\n> platform-specific implementations via `.native` files fail **silently** on macOS because Metro loads the\n> non-native fallback file instead.\n>\n> - iOS: `.ios.ts` → `.native.ts` → `.ts`\n> - Android: `.android.ts` → `.native.ts` → `.ts`\n> - macOS (actual): `.macos.ts` → `.ts`\n\nNine years of a maintained platform, and a one-line omission in the resolver silently gave every consumer the\n**web build** of any library that uses `.native`. No crash, no warning.\n\nRelated: [rn-macos#53](https://github.com/microsoft/react-native-macos/issues/53) (2019 — `macos` missing from Metro's default platform list), [rn-macos#564](https://github.com/microsoft/react-native-macos/issues/564) (20 comments) and\n[rn-macos#575](https://github.com/microsoft/react-native-macos/issues/575) (unresolvable core modules presented as unrelated errors), [rn-macos#2123](https://github.com/microsoft/react-native-macos/issues/2123) (the platform silently\noverwrote the app's own `resolver.resolveRequest`).\n\nADR-0001 decision 9 commits us to `Platform.OS === 'linux'` and `.linux.tsx`/`.linux.ts` resolution, and\n#29 landed the platform identity. Nothing tests the *chain*.\n\n## What to verify / build\n\n- The registered platform's resolver chain is exactly `.linux.<ext>` → `.native.<ext>` → `.<ext>`, matching\n  iOS and Android.\n- `linux` is in Metro's platform list from the platform package's own config, not from the app's\n  `metro.config.js`.\n- Our config **composes** with a user-supplied `resolver.resolveRequest` instead of replacing it\n  ([rn-macos#2123](https://github.com/microsoft/react-native-macos/issues/2123)).\n- An unresolvable module produces an error naming the platform and the chain that was tried, not a bare\n  \"unable to resolve\" ([rn-macos#564](https://github.com/microsoft/react-native-macos/issues/564)).\n\n## Acceptance criteria\n\n- **Unit (TS, Vitest, 100% thresholds):** a fixture package on disk containing `mod.linux.ts`,\n  `mod.native.ts` and `mod.ts`, resolved three times with the files progressively removed; assert the exact\n  file chosen at each step. This is the test whose absence cost macOS nine years.\n- **Unit:** a user `resolveRequest` is called and its result honoured.\n- **E2E:** the init-template app bundles and the running app reports the `.linux` variant of a fixture module.\n\n## Related\n\nScoped inside #22 (platform registration). Follows #29.\n"
+    },
+    {
+      "title": "test(cli): autolinking and codegen error surface — an unknown component must name itself",
+      "milestone": "M3",
+      "labels": [
+        "area:cli",
+        "area:modules",
+        "area:testing",
+        "kind:test",
+        "origin:rn-macos",
+        "platform-parity:macos",
+        "priority:P1"
+      ],
+      "priority": "P1",
+      "body": "## Context\n\nEvery out-of-tree platform's second failure mode: registration goes wrong and the error names something else.\n\n- [rn-macos#2742](https://github.com/microsoft/react-native-macos/issues/2742) — \"No component found for view with name\" when using a custom Fabric component on macOS.\n- [rn-macos#1821](https://github.com/microsoft/react-native-macos/issues/1821) — closed, 3 reactions: a third-party TurboModule \"cannot be found\" as soon as the new\n  architecture is enabled.\n- [rn-macos#1224](https://github.com/microsoft/react-native-macos/issues/1224) — open, 3 reactions: the autolinking opt-out uses the wrong platform key, so opting out is\n  impossible.\n- [rn-macos#414](https://github.com/microsoft/react-native-macos/issues/414) — closed, 13 comments: cannot exclude an unsupported library from autolinking at all.\n- [rn-macos#2192](https://github.com/microsoft/react-native-macos/issues/2192) — a generated modulemap silently missing after an upgrade.\n- [rn-macos#2723](https://github.com/microsoft/react-native-macos/issues/2723) — autolinking behaviour \"unstable\" for the documented getting-started flow.\n\nADR-0001 already accepts that we ship a parallel codegen driver. What the macOS record adds is that the\n**diagnostics** are the deliverable, not a nicety: a silent or misattributed registration failure costs days\nper user.\n\n## What to verify\n\n1. A component in the JS spec with no native registration fails at startup with an error naming the component,\n   the platform, and the generated file that should have registered it.\n2. A TurboModule in the spec with no native implementation does the same.\n3. A dependency declaring no `linux` platform support is skipped by autolinking with a log line naming it —\n   not an error, and not silence ([rn-macos#414](https://github.com/microsoft/react-native-macos/issues/414)).\n4. A dependency can opt out per platform through a documented key, and the key is asserted by a test\n   ([rn-macos#1224](https://github.com/microsoft/react-native-macos/issues/1224)).\n5. Regenerating codegen after a spec change produces a diff; a stale generated file is detected rather than\n   used ([rn-macos#2192](https://github.com/microsoft/react-native-macos/issues/2192)).\n\n## Acceptance criteria\n\n- **Unit (TS, Vitest, 100% thresholds):** fixture projects for each of the five cases, asserting the exact\n  diagnostic text.\n- **E2E:** case 1 exercised against a real bundle so the message comes from the runtime, not from a mock.\n- Every diagnostic string is asserted, so improving it is a deliberate change.\n\n## Related\n\nScoped inside #21 (codegen and autolinking).\n"
+    },
+    {
+      "title": "test(cli): fresh-project smoke test in CI — init, build, render, screenshot",
+      "milestone": "M3",
+      "labels": [
+        "area:cli",
+        "area:infra",
+        "area:testing",
+        "kind:test",
+        "origin:rn-macos",
+        "platform-parity:macos",
+        "priority:P1"
+      ],
+      "priority": "P1",
+      "body": "## Context\n\n`react-native-macos-init` has failed on fresh projects repeatedly for five years, and each failure is a\nfirst-impression failure:\n\n- [rn-macos#1797](https://github.com/microsoft/react-native-macos/issues/1797) — open, 3 reactions: implement init in `react-native.config.js` instead.\n- [rn-macos#2304](https://github.com/microsoft/react-native-macos/issues/2304) — \"[0.76] npx react-native-macos-init fails\". [rn-macos#2152](https://github.com/microsoft/react-native-macos/issues/2152) — same, 0.74.\n- [rn-macos#2165](https://github.com/microsoft/react-native-macos/issues/2165) — 2 reactions: \"react-native-macos 0.74.1 fails on fresh project\".\n- [rn-macos#2743](https://github.com/microsoft/react-native-macos/issues/2743) — open: init expects a project that already has dependencies installed.\n- [rn-macos#1856](https://github.com/microsoft/react-native-macos/issues/1856) — 3 reactions: init cannot even add the dependency.\n- [rn-macos#2482](https://github.com/microsoft/react-native-macos/issues/2482), [rn-macos#1806](https://github.com/microsoft/react-native-macos/issues/1806), [rn-macos#873](https://github.com/microsoft/react-native-macos/issues/873), [rn-macos#2089](https://github.com/microsoft/react-native-macos/issues/2089) — \"No version of react-native-macos@latest found\".\n\nNone of these would survive a CI job that creates a project from scratch and runs it. They shipped for years\nbecause the only person who ever ran init was a new user.\n\n## What to verify\n\nA single scheduled + on-PR job that, in a clean container with no repo checkout on the `node_modules` path:\n\n1. Creates a project from the `@react-native-linux/cli` init template at the version under test.\n2. Installs (pnpm, strict symlinked layout — the job is also the proof that our own layout rules hold for a\n   consumer).\n3. Runs codegen and builds the native binary.\n4. Bundles with Metro for `--platform linux`.\n5. Runs the app under the headless compositor and captures a screenshot.\n6. Compares it against a committed golden of the template's first screen.\n\n## Acceptance criteria\n\n- **E2E:** the job above, green, on `ubuntu-24.04`, reusing the compositor rig and caches from the existing\n  `window` job described in `docs/cpp-toolchain.md`.\n- The job fails loudly rather than skipping when the compositor or the ICD is missing, matching the existing\n  \"assert the rig did not skip\" rule.\n- Failure uploads the build log and the rendered PNG as artifacts.\n\n## Related\n\nScoped inside #22. Reuses #33's compositor rig. Gates #25 (packaging) — an AUR package of something that\ncannot be initialised is not shippable.\n"
+    },
+    {
+      "title": "test: upstream-parity conformance suite pinned per React Native minor — the drift oracle",
+      "milestone": "M2",
+      "labels": [
+        "area:testing",
+        "area:core",
+        "kind:test",
+        "kind:parity",
+        "origin:rn-macos",
+        "platform-parity:macos",
+        "priority:P0"
+      ],
+      "priority": "P0",
+      "body": "## Context\n\nThis is the most important lesson in the study, and it is about process, not code.\n\n[rn-macos#2901](https://github.com/microsoft/react-native-macos/issues/2901) — \"Road to 0.83\", **12 reactions, the most-reacted open issue in the repository** — is a tracking\nissue for catching up with upstream. Around it sits a cluster of regressions filed *after* their Fabric\nmigration, every one of them reported by a user rather than by CI:\n\n| macOS issue | Regression |\n| --- | --- |\n| [rn-macos#2662](https://github.com/microsoft/react-native-macos/issues/2662) | Per-side `borderWidth` draws nothing; uniform width works |\n| [rn-macos#2661](https://github.com/microsoft/react-native-macos/issues/2661) / [rn-macos#3079](https://github.com/microsoft/react-native-macos/issues/3079) | `useNativeDriver: true` animations never run |\n| [rn-macos#2663](https://github.com/microsoft/react-native-macos/issues/2663) | `TouchableOpacity` active state never appears |\n| [rn-macos#2313](https://github.com/microsoft/react-native-macos/issues/2313) | Hover events gone |\n| [rn-macos#2844](https://github.com/microsoft/react-native-macos/issues/2844) | `selectable` ignored |\n| [rn-macos#2498](https://github.com/microsoft/react-native-macos/issues/2498) | `resizeMode` broken |\n| [rn-macos#2738](https://github.com/microsoft/react-native-macos/issues/2738) | `TextInput` border gone |\n| [rn-macos#2607](https://github.com/microsoft/react-native-macos/issues/2607) | `<Text>` redraw storm |\n| [rn-macos#2905](https://github.com/microsoft/react-native-macos/issues/2905) / [rn-macos#2955](https://github.com/microsoft/react-native-macos/issues/2955) | Multiline `TextInput` broken |\n| [rn-macos#2038](https://github.com/microsoft/react-native-macos/issues/2038) | `transform` broke in 0.73 and is still open |\n| [rn-macos#2379](https://github.com/microsoft/react-native-macos/issues/2379) | Build breaks on an upstream C++ feature-flag member that vanished |\n\nADR-0001 states that we will sit three to six minors behind React Native **permanently**, and that upstream's\nstability programme covers the JavaScript API and says nothing about C++ or out-of-tree platforms. A fork that\nre-implements upstream behaviour has no oracle for \"did this still work?\" — unless it builds one.\n\nNote the shape of the list: the visual regressions ([rn-macos#2662](https://github.com/microsoft/react-native-macos/issues/2662), [rn-macos#2738](https://github.com/microsoft/react-native-macos/issues/2738), [rn-macos#2844](https://github.com/microsoft/react-native-macos/issues/2844), [rn-macos#2498](https://github.com/microsoft/react-native-macos/issues/2498)) are\nexactly what a golden suite catches for free, and the timing ones ([rn-macos#2705](https://github.com/microsoft/react-native-macos/issues/2705), [rn-macos#3079](https://github.com/microsoft/react-native-macos/issues/3079)) are exactly what\na frame-timing probe catches for free. We already have both rigs. What is missing is the ritual that runs them\nagainst a *new* React Native pin before anyone writes code against it.\n\n## What to verify / build\n\n- A `conformance` suite that is the union of the golden fixtures, event traces and frame-timing probes,\n  runnable as one command against the currently vendored React Native pin.\n- A documented **RN bump procedure**: bump the pin in `scripts/vendor.lock.json`, run `conformance`, and\n  triage every diff before any adaptation code is written. A golden that changed is a behaviour change to\n  explain, not a golden to regenerate — the existing \"a golden updated because the test failed is a deleted\n  test\" rule, applied to upstream drift.\n- A matrix entry that additionally builds against the **next** minor, allowed to fail, reported as a signal.\n- A checklist in the suite that names each macOS regression above and the fixture that would have caught it.\n  Any row with no fixture is a gap and blocks the issue.\n\n## Acceptance criteria\n\n- `pnpm conformance` runs golden, window-golden, event-trace and frame-timing layers in one command and\n  produces a single report.\n- The macOS-regression checklist is complete: every row maps to a named fixture that exists and fails when the\n  behaviour is broken (proved by deliberately breaking it in the PR and showing the failure).\n- The bump procedure is in `docs/cpp-toolchain.md`, and the next RN bump follows it.\n- CI runs `conformance` on every PR and on a schedule.\n\n## Related\n\nBuilds on #4, #5, #6, #7, #33. This is the concrete answer to ADR-0001's \"we plan to sit three to six minors\nbehind React Native, permanently\".\n"
+    },
+    {
+      "title": "test(core): frame-source liveness — animation must not stop when the frame source stops",
+      "milestone": "M2",
+      "labels": [
+        "area:core",
+        "area:renderer",
+        "area:testing",
+        "kind:test",
+        "kind:perf",
+        "origin:rn-macos",
+        "platform-parity:macos",
+        "priority:P0"
+      ],
+      "priority": "P0",
+      "body": "## Context\n\n[rn-macos#2705](https://github.com/microsoft/react-native-macos/issues/2705) — open: \"Usage of deprecated function breaks animations\". A deprecated OS timing API\n(`CVDisplayLinkGetCurrentTime`) stopped delivering, and **every animation froze**. The app still ran, still\npainted, still responded — it just never advanced. Users ship a `patch-package` patch to work around it.\n[rn-macos#3079](https://github.com/microsoft/react-native-macos/issues/3079) and [rn-macos#2661](https://github.com/microsoft/react-native-macos/issues/2661) are the same silence from a different cause: `useNativeDriver: true` animations\n\"never run\" on the new architecture.\n\nWe have a structurally guaranteed version of this, already written down in ADR-0001 decision 3:\n\n> `wl_surface.frame` callbacks **throttle** […] a compositor *should avoid signalling frame callbacks for a\n> surface that is not visible*. Hyprland only sends frame events for the active and active-special workspaces\n> […] **A window on an inactive workspace receives no frame callbacks at all, so a timer fallback is\n> mandatory, not optional.**\n\nMandatory, and currently untested. An app moved to another workspace, minimised, or fully occluded stops\nreceiving frame callbacks; if animation time is driven from those callbacks, everything freezes, and when the\nwindow comes back the animation either jumps or resumes from where it stalled. Both are wrong.\n\n## What to verify\n\n1. With frame callbacks flowing, animation time advances from `wp_presentation_feedback` timestamps.\n2. With frame callbacks withheld (the inactive-workspace case), the timer fallback engages within a stated\n   deadline and animation state keeps advancing.\n3. When callbacks resume, there is exactly one transition, no duplicate frame, and the animated value equals\n   what wall-clock time says it should be — no jump, no rewind, no accumulated drift.\n4. The fallback does not spin: with no active animation and no damage, withheld callbacks produce no frames\n   and no measurable CPU.\n5. A frame source that stops permanently is detectable — a liveness counter, surfaced through the Tracy\n   instrumentation, that a test can assert on.\n\n## Acceptance criteria\n\n- **Unit (C++):** the frame-clock source-selection state machine as a pure class at 100% line and branch —\n  callback-driven, timer-driven, and the transitions in both directions, including a callback arriving during\n  the fallback.\n- **E2E:** the headless compositor deliberately withholding frame callbacks for N frames while an animation\n  runs; assert the value trajectory against wall clock across the gap and exactly one resume transition.\n- **Perf:** the idle-with-withheld-callbacks case asserts zero frames presented.\n- **TSan:** clean, since this crosses the frame thread and the commit thread.\n\n## Related\n\nDirectly implements the \"timer fallback is mandatory\" clause of ADR-0001 decision 3, which no issue owns.\nFeeds #19 (native-driven animations) and #20 (pacing). This is our [rn-macos#2705](https://github.com/microsoft/react-native-macos/issues/2705), before it happens.\n"
+    },
+    {
+      "title": "feat(modules): clipboard, primary selection, and drag-and-drop over wl_data_device",
+      "milestone": "M3",
+      "labels": [
+        "area:modules",
+        "area:input",
+        "kind:feat",
+        "origin:rn-macos",
+        "platform-parity:macos",
+        "priority:P2"
+      ],
+      "priority": "P2",
+      "body": "## Context\n\n- [rn-macos#2075](https://github.com/microsoft/react-native-macos/issues/2075) — closed, 6 comments: copy, paste and select-all shortcuts do nothing in a `TextInput`. A\n  clipboard gap presenting as a keyboard bug.\n- [rn-macos#842](https://github.com/microsoft/react-native-macos/issues/842) — closed, 12 comments: drag-and-drop support, requested and never delivered as a cross-platform API.\n- [rn-macos#388](https://github.com/microsoft/react-native-macos/issues/388) — Clipboard, from 2020.\n- [rn-macos#1916](https://github.com/microsoft/react-native-macos/issues/1916) — document picker requests, i.e. the same file-exchange need from the other direction.\n\nOn Wayland this is `wl_data_device`, `wl_data_source`, `wl_data_offer`, plus\n`zwp_primary_selection_v1` for middle-click paste, which desktop Linux users expect and which has no macOS\nanalogue at all. `docs/cpp-toolchain.md` lists no clipboard implementation, and #17's editing model needs one\nbefore it is usable.\n\n## What to verify / build\n\n- React Native's `Clipboard` module (`getString`, `setString`, `hasString`) over `wl_data_device`,\n  with `text/plain;charset=utf-8` as the required MIME type and the offer/selection serial handled correctly.\n- Primary selection: selecting text in a field publishes it; middle-click pastes it. Decide and document\n  whether this is on by default.\n- Clipboard ownership survives focus loss; losing the selection to another client is handled without a crash.\n- Drag-and-drop is explicitly **out of scope** for this issue and recorded as a separate decision — the macOS\n  record shows it is a multi-year API design problem, not an afternoon.\n\n## Acceptance criteria\n\n- **Unit (C++):** the offer/selection state machine and MIME negotiation as a pure class at 100% line and\n  branch, including the lost-selection and unsupported-MIME paths.\n- **E2E:** under the headless compositor, copy from the app and read the selection from the compositor side;\n  set a selection compositor-side and paste it into a field.\n- The primary-selection and drag-and-drop decisions are recorded in `docs/cpp-toolchain.md`.\n\n## Related\n\nScoped inside #23. Prerequisite for the `TextInput` interaction contract issue in this batch and for #17.\n"
+    },
+    {
+      "title": "test(a11y): AT-SPI role and name mapping conformance — every accessibilityRole reaches an AT-SPI role",
+      "milestone": "M5",
+      "labels": [
+        "area:a11y",
+        "area:testing",
+        "kind:test",
+        "kind:parity",
+        "origin:rn-macos",
+        "platform-parity:macos",
+        "priority:P2"
+      ],
+      "priority": "P2",
+      "body": "## Context\n\nAccessibility is small in the `react-native-macos` tracker only because AppKit does the work — and even so:\n\n- [rn-macos#266](https://github.com/microsoft/react-native-macos/issues/266) — \"Accessibility props for macOS need to be normalized with core\": the platform invented its own\n  prop names and had to be reconciled.\n- [rn-macos#1359](https://github.com/microsoft/react-native-macos/issues/1359) — VoiceOver does not localise some of the roles they claim to support.\n- [rn-macos#1349](https://github.com/microsoft/react-native-macos/issues/1349) and [rn-macos#1607](https://github.com/microsoft/react-native-macos/issues/1607) — accessibility *commands* and custom actions never investigated.\n- [rn-macos#428](https://github.com/microsoft/react-native-macos/issues/428) — `<Image>` is inaccessible unless `accessible={false}`, which is backwards.\n- [rn-macos#2645](https://github.com/microsoft/react-native-macos/issues/2645) — open, 2025-08: accessibility traits still unshimmed under Fabric, years after the migration.\n- [rn-macos#1348](https://github.com/microsoft/react-native-macos/issues/1348) — VoiceOver announces \"No selection\" for the first `FlatList` item.\n\nADR-0001 is blunt about our position: AT-SPI2 over D-Bus is \"a mapping from React Native's\n`accessibilityRole`/`accessibilityLabel` props that has no upstream precedent to copy\", and Flutter's own\ndirect-AT-SPI proposal has been open and unfinished since November 2024.\n\nThe lesson from macOS is narrow and useful: the *mapping table* is the artefact that rots. Roles get added\nupstream, the platform table does not grow, and nobody notices because no test enumerates it.\n\n## What to verify\n\n1. Every value React Native's `accessibilityRole` accepts maps to a named AT-SPI role, or to an explicitly\n   recorded \"no equivalent\" with a fallback — and the test enumerates the values from the upstream type, so a\n   new upstream role fails the build.\n2. `accessibilityLabel`, `accessibilityHint`, `accessibilityValue` and `accessibilityState` reach the\n   corresponding AT-SPI properties and state set.\n3. Focus and caret changes emit the corresponding AT-SPI events (the ADR names these explicitly).\n4. `accessible={false}` removes a node from the tree; an image with a label is present, not absent\n   ([rn-macos#428](https://github.com/microsoft/react-native-macos/issues/428)).\n5. The exposed tree is the *painted* tree — clipped-out and `zIndex`-covered nodes are ordered the way a\n   screen reader should traverse them.\n\n## Acceptance criteria\n\n- **Unit (C++):** the role and state mapping tables, driven by an enumeration of the upstream prop values, at\n  100% line and branch. Adding a role upstream must fail this test.\n- **E2E:** an AT-SPI client attached over D-Bus under the headless compositor, walking the tree of a fixture\n  bundle and asserting roles, names and the focus event sequence.\n\n## Related\n\nScoped inside #27 (AT-SPI groundwork), which owns the implementation. This issue owns the enumeration and the\nconformance test that keeps the table honest.\n"
+    },
+    {
+      "title": "feat(core): Modal and overlay surfaces — decide xdg_popup versus in-surface overlay",
+      "milestone": "M5",
+      "labels": [
+        "area:core",
+        "area:renderer",
+        "kind:feat",
+        "needs:decision",
+        "origin:rn-macos",
+        "platform-parity:macos",
+        "priority:P2"
+      ],
+      "priority": "P2",
+      "body": "## Context\n\n[rn-macos#481](https://github.com/microsoft/react-native-macos/issues/481) — **open since July 2020, 6 reactions, 22 comments: \"Modal not implemented\".** It is the most\nreacted open bug in the repository and it has been open for six years. [rn-macos#479](https://github.com/microsoft/react-native-macos/issues/479) (14 comments) and\n[rn-macos#1701](https://github.com/microsoft/react-native-macos/issues/1701) (\"[Fabric] Disable RCTModalHostViewComponentView for Fabric\") are the same hole from other angles.\n[rn-macos#604](https://github.com/microsoft/react-native-macos/issues/604) and [rn-macos#617](https://github.com/microsoft/react-native-macos/issues/617) (5 reactions) ask the adjacent question — multiple windows and desktop window APIs —\nand were closed without an answer.\n\nThe reason it stayed open for six years is that it is a *decision*, not a feature: a modal is either a real\nplatform window with its own lifecycle, focus and stacking, or a subtree painted above everything inside the\nexisting surface. Each choice is cheap once made and expensive to change.\n\nFor us the fork is sharper. An `xdg_popup` is grab-based, positioned relative to a parent, dismissed by the\ncompositor and constrained by `xdg_positioner` — correct for menus, wrong for a full-screen dimmed modal. A\nsecond `xdg_toplevel` is a real window the compositor may tile, which on Hyprland is emphatically not what a\nReact Native `Modal` means. An in-surface overlay costs nothing extra to composite in a retained scene we\nalready own — which is the argument the GPU-canvas architecture makes for itself.\n\n## What to verify / decide\n\n- Write the decision down first: in-surface overlay for `Modal`, with `xdg_popup` reserved for future menu\n  and tooltip work. If that is the answer, this issue is small; if it is not, it needs an ADR.\n- Overlay stacking above all content regardless of `zIndex`, with its own hit-test layer that blocks\n  everything beneath (the [rn-macos#914](https://github.com/microsoft/react-native-macos/issues/914) failure mode applies directly).\n- Focus is trapped inside the overlay while it is open, and restored to the previously focused node on close.\n- `onRequestClose` fired on Escape and on a compositor close request.\n- `transparent`, `animationType` and the backdrop dim are paint concerns and land as goldens.\n\n## Acceptance criteria\n\n- **Decision recorded** in `docs/cpp-toolchain.md` (or an ADR if it is not the in-surface answer) before any\n  code.\n- **Unit (C++):** overlay stacking, hit blocking, and the focus trap/restore at 100% line and branch.\n- **Golden-image:** an open modal over content, transparent and opaque backdrops.\n- **E2E:** open, Tab through the trapped focus set, Escape to close, assert focus restored to the original node.\n\n## Related\n\nDepends on the focus model issue in this batch. Carries `needs:decision`. Deliberately M5 (multi-window and\nhardening) rather than M1: ADR-0001's minimal surface is six components and `Modal` is not one of them.\n"
+    },
+    {
+      "title": "feat(input): secondary-button and context-menu event — a right click is not a left click",
+      "milestone": "M4",
+      "labels": [
+        "area:input",
+        "kind:feat",
+        "kind:parity",
+        "origin:rn-macos",
+        "platform-parity:macos",
+        "priority:P3"
+      ],
+      "priority": "P3",
+      "body": "## Context\n\n- [rn-macos#379](https://github.com/microsoft/react-native-macos/issues/379) — closed, 4 comments: \"Right clicking on Button and other Touchable based components is\n  triggering the action as if it were a left click.\" The most basic desktop expectation, violated.\n- [rn-macos#2085](https://github.com/microsoft/react-native-macos/issues/2085) — closed, 5 comments: right-click context menu.\n- [rn-macos#1209](https://github.com/microsoft/react-native-macos/issues/1209) — closed: click handling breaks entirely after a context menu is opened over a `TextInput`.\n- [rn-macos#754](https://github.com/microsoft/react-native-macos/issues/754) — right-click hit region wrong on selectable text.\n- [rn-macos#492](https://github.com/microsoft/react-native-macos/issues/492) — closed: no API to add menu items.\n\n`docs/cpp-toolchain.md` describes `PointerRouter` as \"a mouse state machine and nothing more: which buttons\nare down, which node the press started on, and therefore whether a release is also a click\", and notes that\n`click` is the platform's synthetic call. Nothing there distinguishes buttons, so a secondary-button release\non the press target is currently as much a `click` as a primary one — which is [rn-macos#379](https://github.com/microsoft/react-native-macos/issues/379) exactly.\n\nOnly the event half of the macOS lesson transfers: Wayland has no menu bar and no system context menu, so the\nmenu itself would be ours to draw and is out of scope here.\n\n## What to verify / build\n\n- `BTN_RIGHT` and `BTN_MIDDLE` carry `button`/`buttons` in the pointer payload and do **not** synthesise\n  `click` ([rn-macos#379](https://github.com/microsoft/react-native-macos/issues/379)).\n- A secondary press-and-release on a node emits `contextMenu` in the shape upstream's\n  `PointerEventsProcessor` expects, so `onContextMenu` works where React Native supports it.\n- Middle click pastes the primary selection into a focused editor rather than clicking (see the clipboard\n  issue in this batch).\n- Button state is per-button: a primary press held while a secondary press occurs does not lose the primary\n  press target ([rn-macos#1209](https://github.com/microsoft/react-native-macos/issues/1209)).\n\n## Acceptance criteria\n\n- **Unit (C++):** `PointerRouter` button-state tests at 100% line and branch — each button's press/release\n  pairing independently, interleaved presses, and the assertion that only the primary produces `click`.\n- **E2E:** injected secondary and middle button sequences, asserting the trace contains no `topClick`.\n\n## Related\n\nFollows #18. Depends on the clipboard issue in this batch for middle-click paste. Menu drawing is explicitly\nnot in scope.\n"
+    }
+  ]
+}
