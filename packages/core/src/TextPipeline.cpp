@@ -1,5 +1,6 @@
 #include "TextPipeline.h"
 
+#include "include/core/SkFontTypes.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkFontMgr.h"
 #include "include/core/SkFontStyle.h"
@@ -144,6 +145,7 @@ skia::textlayout::TextStyle toTextStyle(const facebook::react::TextAttributes& a
     style.setFontFamilies(toFontFamilies(attributes));
     style.setFontStyle(toFontStyle(attributes));
     style.setFontSize(fontSize);
+    style.setFontHinting(SkFontHinting::kNone);
     style.setColor(toSkColor(attributes.foregroundColor));
     style.setDecoration(toDecoration(attributes));
 

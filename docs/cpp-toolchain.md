@@ -645,7 +645,7 @@ Four properties of that choice are load-bearing:
 ### Font strategy, and why goldens need it
 
 Pixel-exact goldens and system font resolution are incompatible: Arch and `ubuntu-24.04` do not ship the same
-default sans-serif, so the same bundle would produce two different PNGs. The `FontCollection` therefore has two
+default sans-serif, so the same bundle would produce two different golden images. The `FontCollection` therefore has two
 managers, and the order matters:
 
 | Manager | What it is | Reproducible |
