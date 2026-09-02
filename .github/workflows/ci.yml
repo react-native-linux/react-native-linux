@@ -37,6 +37,24 @@ jobs:
       - name: Validate
         run: pnpm validate
 
+      - name: Cache vendored React Native
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: third_party/react-native
+          key: rnl-vendor-react-native-ubuntu-24.04-${{ hashFiles('scripts/vendor.lock.json', 'scripts/vendor-react-native.ts') }}
+
+      - name: Vendor React Native
+        run: node scripts/vendor-react-native.ts
+
+      # Issue #85: the codegen artifacts are checked in, so a regeneration must be a no-op. --intent-to-add makes
+      # a file the generator added but nobody committed show up in the diff instead of staying untracked.
+      - name: Assert the checked-in core codegen is current
+        run: |
+          set -euo pipefail
+          pnpm codegen
+          git add --intent-to-add -- packages/core/generated
+          git diff --exit-code -- packages/core/generated
+
   meta:
     name: meta
     runs-on: ubuntu-24.04

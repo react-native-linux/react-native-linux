@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "codegen": "node scripts/codegen-core.ts",
     "cpd": "jscpd packages",
     "deadcode": "knip",
     "doctor": "node scripts/doctor.ts",
@@ -21,6 +22,7 @@
     "validate:meta": "node scripts/validate-meta.ts"
   },
   "devDependencies": {
+    "@react-native/codegen": "0.87.1",
     "@vitest/coverage-v8": "catalog:",
     "jscpd": "catalog:",
     "knip": "catalog:",

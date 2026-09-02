@@ -1,0 +1,323 @@
+{
+  "codegenVersion": "0.87.1",
+  "inputs": [
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/components/activityindicator/specs/ActivityIndicatorViewNativeComponent.js",
+      "sha256": "38fe7bda9d8abcc9a5e95331b945ddb31e7e7516fbafb0bf61e32a4a6aca1546"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/components/debuggingoverlay/specs/DebuggingOverlayNativeComponent.js",
+      "sha256": "4d7c00b07841cb17296e3e588fb0f8f67504385bef686178fa9d3feb201044a4"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/components/drawerlayoutandroid/specs/AndroidDrawerLayoutNativeComponent.js",
+      "sha256": "e181b9fa2533448ec922857479c65cb62fe2ce8955aabd87dbe4c47e9bdc2b3f"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/components/inputaccessoryview/specs/RCTInputAccessoryViewNativeComponent.js",
+      "sha256": "57c264c4221a43242477e59db7047ec83558b8a6f97a9f139e18e7bedee66287"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/components/modal/specs/RCTModalHostViewNativeComponent.js",
+      "sha256": "d8458e8b7a9036589f4633f8289d58bdcb6bfdba9716b7fcb8b03101e1b064cd"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/components/progressbarandroid/specs/ProgressBarAndroidNativeComponent.js",
+      "sha256": "1f5ee0430393e70a9777369c9e4e1b5dfd441f47ed8af49f9bbd118f7a3dd2fa"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/components/refreshcontrol/specs/AndroidSwipeRefreshLayoutNativeComponent.js",
+      "sha256": "28193cc9b3e8b9046523e80608cc7754994ccf286fc273bab6a0f5c77d51968b"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/components/refreshcontrol/specs/PullToRefreshViewNativeComponent.js",
+      "sha256": "26917177615b9870c66ec3d64d44b63a7584492ef5d267ccf90f96d3d1b58437"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/components/safeareaview/specs/RCTSafeAreaViewNativeComponent.js",
+      "sha256": "9ac4911dcba91435ab00c3a9adbb6fdef83ef6ac5ba32d58720ff99b98975a3e"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/components/scrollview/specs/AndroidHorizontalScrollContentViewNativeComponent.js",
+      "sha256": "f348966aec57522fa343fc2e8b83e44c422b0ca41a7eeece1e61ff8c1c57b476"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/components/switch/specs/AndroidSwitchNativeComponent.js",
+      "sha256": "c6d61cddc81dbea4450730f6b26a11634e9f86dad155514a9f52b8ac754b9abe"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/components/switch/specs/SwitchNativeComponent.js",
+      "sha256": "e6e197072a5f88a5ce23406f1c0a23042f8ff2a1f9aabfabf2eacbfc1e2270de"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/components/unimplementedview/specs/UnimplementedNativeViewNativeComponent.js",
+      "sha256": "608c426855a2bbb699b1863103933b9c103a5bf597ad87655123b7af57643713"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/components/virtualview/VirtualViewExperimentalNativeComponent.js",
+      "sha256": "5028d4675a623f32f57a7aa37b460b6c9e5c2a34740441050b4fee3a970701e4"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/components/virtualview/VirtualViewNativeComponent.js",
+      "sha256": "5c924922f72ed8d1656578a1c03e1d3941d36fabe2074ec2ee0ca219c42a659d"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/devsupport/devmenu/specs/NativeDevMenu.js",
+      "sha256": "0ba121360395d74e425199790e8d4e1bc0ac09e190231138647056f5f217c36f"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/devsupport/rndevtools/specs/NativeReactDevToolsRuntimeSettingsModule.js",
+      "sha256": "b7fe598ddf5a58973cc3ff94bc47987f3d9e646da2908890262bdf63421c882d"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/devsupport/rndevtools/specs/NativeReactDevToolsSettingsManager.js",
+      "sha256": "5b845d794ecf202065b3f581bc9e470f21f2fee4663f6a59eefb7a84b0834d54"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/featureflags/specs/NativeReactNativeFeatureFlags.js",
+      "sha256": "f9230bd2d50bcc9ef1ddc2d5ec176e485080681946b14b7e9d06456766aa0c80"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeAccessibilityInfo.js",
+      "sha256": "ccd6c43108d8dc0d4a3932fc823a26be0b9c9ae8771060dca6712bed4d0d6172"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeAccessibilityManager.js",
+      "sha256": "94348daf5bd33be2e832a9ca3801da58b8c9459467578a538061a2174d7c6b56"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeActionSheetManager.js",
+      "sha256": "ef1bd59d8b0fff31eb0e922f1122c9a3380ad663ba37704a1968b6bac999508f"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeAlertManager.js",
+      "sha256": "99de3002eb32d1341d110aec80ee8890e8375b56b607eb8d3a831b6bdbc9660f"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeAnimatedModule.js",
+      "sha256": "9d7ecc001b82b440441b7724b3d3010f3e4818e606cf2bb003df8cb8754f9e07"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeAnimatedTurboModule.js",
+      "sha256": "22205d76367e7272d1c73b2ccb702590edd70bf153fdd96e44f899122febd4b1"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeAppState.js",
+      "sha256": "f10bb50c2265d75c96f36830fb733c5517d6098386e4d26e0bfb04983ef6b3e1"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeAppearance.js",
+      "sha256": "80b41cdb495b6e18585fbd01dbdee819dc6b9918b2bff6e4e4a363f3a709f81a"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeBlobModule.js",
+      "sha256": "cd22553a309f2f2912fd10a1225f4000a14d308c8be8cca2b048bfbe06ee4f25"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeClipboard.js",
+      "sha256": "ef16112953913a14d40c213bcc7b1e33281ad8f3745e8ee9cf7b874cc79d2c82"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeDevLoadingView.js",
+      "sha256": "68244cf932af5ce2e587ecf08c395571fbf9e0b58eac72844068e41bd6ca4148"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeDevSettings.js",
+      "sha256": "a6704a37fd94253e935d212313ea050bf0143dea979e7dc2752682fe683ba618"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeDeviceEventManager.js",
+      "sha256": "71d1d1ac8f1c13c059e847a892740578e7ae3c5f6df2719b7abccc8e7dda0036"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeDeviceInfo.js",
+      "sha256": "5d054b0b974c0c857698e6e2890e68eebf8b826e191230aa523c43b36e8cd835"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeDialogManagerAndroid.js",
+      "sha256": "f36175af86fa1b50ca7ba7986a5ef28e55e9d86aa504bb5e07f88cfffc6f1163"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeExceptionsManager.js",
+      "sha256": "000e06c4e23e53b1b35168883021bc2518b0fcc2c204eb3e3dc437b9ecdf45f8"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeFileReaderModule.js",
+      "sha256": "af12fda7ca8b5e607b891b5c5c9c7f1a9340d5a35d2c88c25f3ed7796359107b"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeFrameRateLogger.js",
+      "sha256": "cbb2d468d1cd0133f9767ba0db95777faaac5effe56d05ee6158c2af7f471865"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeHeadlessJsTaskSupport.js",
+      "sha256": "d15b28a778be8a7d13823c26de4fc4aa1e9f9ec4f0fcb8220ee3c3a7943fb15a"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeI18nManager.js",
+      "sha256": "24d93ebbb939a1aa0df6bdcdd4157f383125a1fb8651917a6fcb5d950c866829"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeImageEditor.js",
+      "sha256": "3fb61b62b346f67fcbb3589906562183c51bd47fd9ad303e494f515f9be6f850"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeImageLoaderAndroid.js",
+      "sha256": "e0a92fb4f07dfac5bb89ab5f296a7e53a488328f1fa72b430ca24f9752d22511"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeImageLoaderIOS.js",
+      "sha256": "a041f39db8aed07a6a7f3fbaccc852bf9c211de5134b35ca18b9d192d3f721d0"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeImageStoreAndroid.js",
+      "sha256": "feb605a6057104b84e4701ff24dbc02096867d2f8e5a0b8c3bc784d69d1cd8f2"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeImageStoreIOS.js",
+      "sha256": "448b58c7d64c21af9d5b44efdf8a4331449cf3057f10058d097ef6c3b3c476bd"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeIntentAndroid.js",
+      "sha256": "268a02316c0ba2121e940e36e0d39742169679fc37b5b8fe0add0c4d067241b0"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeJSCHeapCapture.js",
+      "sha256": "f0328c1e537ce52ac743b50fec860df130a76fb3667062a6a554e76b511b30fa"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeKeyboardObserver.js",
+      "sha256": "260078747e99fc37bcae30a763e215b4dd5e18d0fa23abe474942909047d4a40"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeLinkingManager.js",
+      "sha256": "a42391012ebdfe3ba4898c1ddd05612935b9584af55ad0ab0eea2d94bc4e0571"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeLogBox.js",
+      "sha256": "fa12a85ca82c90a53b73e5451c638d7fc0397b041a4bf59111b4e79e40515914"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeModalManager.js",
+      "sha256": "9f7b297391a3f3a9153ac7b7570b964ca6bd65fcf08ba7507aa0f3a3ae92ef06"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeNetworkingAndroid.js",
+      "sha256": "31269a59001b502a305b221dba4592bf439c083c97808fcd45dbd4561e432821"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeNetworkingIOS.js",
+      "sha256": "25c2dbd03f3a6583cd374b667ca8c228a3b5e04d65f4e541bcb9183eaada1d10"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativePermissionsAndroid.js",
+      "sha256": "c8d2401c1c8507a681ec738c8206c6b95984901c39019cac303590a093433061"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativePlatformConstantsAndroid.js",
+      "sha256": "7908cbcb155ffb9b74683e693286ff2561e5b8ddc2b162d16f7edec17127479e"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativePlatformConstantsIOS.js",
+      "sha256": "a622edf78579760d99f0b26f8fdf9f261fa868d3994cf2ccc063a311734d0fe4"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativePushNotificationManagerIOS.js",
+      "sha256": "87c04c0f18bf55b6f8ae4ddfda80909212ff28a125c66b056c5a3c4eecf26bbb"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeRedBox.js",
+      "sha256": "eeb966cef14868427024ad5939f3362950e81fa08034acffc66cc2bd97109f18"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeSampleTurboModule.js",
+      "sha256": "dd97eb6a22fbcee90b5a51126f6724253bd50516e8bf469029e0fc37ad392194"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeSegmentFetcher.js",
+      "sha256": "c2716b209927f50986aa2712657819a858c3804b618310c35b96c7bae3104ada"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeSettingsManager.js",
+      "sha256": "9cb54c6d9ef336be65ac620b23093e1606674cecf43e1cc581b96076fe4e5780"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeShareModule.js",
+      "sha256": "ba10ea0a56b603c085469ed9b0270fed45a6f57e22de5a9c7ae59c548d6f9d3e"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeSoundManager.js",
+      "sha256": "7376ffd1328643fe3a1546e5405c7dd539ab3c36d59fcb67785cb4adec67d927"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeSourceCode.js",
+      "sha256": "95420260015d314f7d823754208309a2c79832ace82abc72d718a4d36f30e39d"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeStatusBarManagerAndroid.js",
+      "sha256": "2f12f09e532322ad699868eb42b2c1704f2b05be229d984abed80d9327ac8357"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeStatusBarManagerIOS.js",
+      "sha256": "633798da411d1915217e4e9084c0e08cdf3bfcecc48a49b2195c10c8f282f0fa"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeTiming.js",
+      "sha256": "3843a38c719491484d22fb358d19ee75412ec58edbe8c836c12af0ad07dd0187"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeToastAndroid.js",
+      "sha256": "a59e64cb6d53bfc1fa10919a6d6195b4589975481d5111c1c771e9676cb0fbfe"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeVibration.js",
+      "sha256": "4f0acee137dc4681460b8e650cf619b19ab0ac29335c55394733772db7e9f074"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeWebSocketModule.js",
+      "sha256": "804e022406865433e3836757bafc37895873ab8039641e340192ddb5612e8b6a"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/testing/fantom/specs/NativeCPUTime.js",
+      "sha256": "62d604f8231192b6c81878a30f87406a4458cdd137ba99ca623acc5fd1f33c07"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/testing/fantom/specs/NativeFantom.js",
+      "sha256": "7491f87423d7100326a741a1dcc4bd196c1fa2e9fe8aa097e6d700de21c91089"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/testing/fantom/specs/NativeFantomTestSpecificMethods.js",
+      "sha256": "7935c0120559385c9ac5c8359cba655d208c06754e61b0862cf62f85e4480050"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/viewtransition/specs/NativeViewTransition.js",
+      "sha256": "98f15a50fea1cfd202f01e936df3f57bf905c22f3a39ad7a2ef62fb5dea646f5"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/webapis/dom/nodes/specs/NativeDOM.js",
+      "sha256": "f2c52937519e4dd2dee8bc30881e7a9f9ab826d3a481b57a90efce8b9d131234"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/webapis/idlecallbacks/specs/NativeIdleCallbacks.js",
+      "sha256": "e181df1a83968547b3e9c7c0673194306f89c909fc3c956a5ab58dd64c0102c0"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/webapis/intersectionobserver/specs/NativeIntersectionObserver.js",
+      "sha256": "a7ca50aebe077ef8d94457a3a9583cd975403a56312b3e95133ad8a43506edb7"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/webapis/microtasks/specs/NativeMicrotasks.js",
+      "sha256": "1871e92a5e288064066c2a7ed6080561e3e70cda9e9ae8449970b9b6576fa4dc"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/webapis/mutationobserver/specs/NativeMutationObserver.js",
+      "sha256": "ee7e2d1aa21aaa3d9f28be5cda6afaf1f3ebdf9d6a3d208ea0631ef261a78b9d"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/webapis/performance/specs/NativePerformance.js",
+      "sha256": "8ac76c2356dd95f2b03d31b214cfeba7211d5bd351819d5277c6752e73760e41"
+    }
+  ],
+  "libraryName": "FBReactNativeSpec",
+  "specSourceDirectory": "third_party/react-native/packages/react-native/src"
+}

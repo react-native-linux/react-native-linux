@@ -123,11 +123,6 @@ endif()
 # fbgloginit is an Android-only shim; ReactCommon links the target unconditionally.
 add_library(glog_init INTERFACE)
 
-# React Native's codegen output is produced by Gradle and is not vendored, so react_codegen_rncore has no
-# definition here. react_renderer_animationbackend is the only target in this graph that names it, and none of
-# its sources include a generated header, so an empty interface library satisfies the link line.
-add_library(react_codegen_rncore INTERFACE)
-
 FetchContent_Declare(fast_float
     URL https://github.com/fastfloat/fast_float/archive/refs/tags/v${RNL_FAST_FLOAT_VERSION}.tar.gz
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE
@@ -396,6 +391,46 @@ add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:SHELL:-include cstdint>")
 
 add_subdirectory(${REACT_COMMON_DIR}/yoga ReactCommon/yoga)
 add_library(yoga ALIAS yogacore)
+
+# ---------------------------------------------------------------------------
+# react_codegen_rncore
+#
+# The core codegen artifacts, produced by `pnpm codegen` and checked in under packages/core/generated. The
+# library upstream generates is called FBReactNativeSpec; the CMake target keeps the older `rncore` name because
+# GenerateModuleJniH.js does that rename, and every ReactCommon and ReactCxxPlatform CMakeLists in this graph
+# links the old name. One include root carries both spellings the sources expect:
+#   <FBReactNativeSpec/FBReactNativeSpecJSI.h>              header-only C++ TurboModule specs, for issue #50
+#   <react/renderer/components/FBReactNativeSpec/Props.h>   the Fabric component artifacts, compiled here
+# ReactCommon's own react/renderer/components/rncore headers are deprecation shims that include the second
+# spelling, so they resolve through this directory too.
+#
+# OBJECT, like every generated codegen target upstream and every ReactCommon target here: a STATIC archive would
+# absorb the object libraries it links and duplicate them into every consumer. The link items below are resolved
+# at generate time, so naming targets the subdirectory loop has not created yet is fine.
+# See docs/cpp-toolchain.md.
+# ---------------------------------------------------------------------------
+
+set(RNL_CODEGEN_DIR ${CMAKE_CURRENT_SOURCE_DIR}/generated)
+
+if(NOT EXISTS ${RNL_CODEGEN_DIR}/FBReactNativeSpec/FBReactNativeSpecJSI.h)
+    message(FATAL_ERROR "Core codegen artifacts are missing. Run: pnpm codegen")
+endif()
+
+file(GLOB RNL_CODEGEN_SOURCES CONFIGURE_DEPENDS
+    ${RNL_CODEGEN_DIR}/react/renderer/components/FBReactNativeSpec/*.cpp)
+
+add_library(react_codegen_rncore OBJECT ${RNL_CODEGEN_SOURCES})
+target_include_directories(react_codegen_rncore PUBLIC ${RNL_CODEGEN_DIR})
+target_compile_options(react_codegen_rncore PRIVATE -fexceptions -frtti -Wno-error)
+target_link_libraries(react_codegen_rncore
+    folly_runtime
+    jsi
+    react_debug
+    react_renderer_componentregistry
+    react_renderer_core
+    react_renderer_debug
+    react_renderer_graphics
+    rrc_view)
 
 set(RNL_REACT_COMMON_SUBDIRS
     callinvoker

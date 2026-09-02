@@ -4,6 +4,7 @@
     "packages/react-native/ReactCommon",
     "packages/react-native/ReactCxxPlatform",
     "packages/react-native/ReactAndroid/src/main/jni/first-party/jni-lib-merge",
+    "packages/react-native/src",
     "packages/react-native/sdks/hermes-engine"
   ],
   "tag": "v0.87.1"
