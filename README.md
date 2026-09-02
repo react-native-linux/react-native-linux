@@ -10,19 +10,37 @@ so React Native's styling semantics are ours to implement rather than to approxi
 somebody else's widget tree, and the frame loop is ours to pace.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-3DA639?style=flat-square)](LICENSE)
-[![Status](https://img.shields.io/badge/status-founding%20%C2%B7%20pre--alpha-E05D44?style=flat-square)](https://github.com/react-native-linux/react-native-linux/issues/1)
+[![Status](https://img.shields.io/badge/status-pre--alpha%20%C2%B7%20M1-E05D44?style=flat-square)](https://github.com/react-native-linux/react-native-linux/issues/1)
 [![Target](https://img.shields.io/badge/target-RN%200.87%2B%20%C2%B7%20New%20Architecture-61DAFB?style=flat-square)](docs/adr/0001-gpu-first-out-of-tree-react-native-platform-for-linux.md)
 [![Stack](https://img.shields.io/badge/Wayland%20%C2%B7%20Vulkan%20%C2%B7%20Hermes-7C4DFF?style=flat-square)](#architecture)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square)](AGENTS.md)
 
 </div>
 
-> [!IMPORTANT]
-> **There is no working code yet — this is the founding phase.**
-> The architecture is decided and recorded in [ADR-0001](docs/adr/0001-gpu-first-out-of-tree-react-native-platform-for-linux.md),
-> the prior-art research is being published under [`docs/research/`](docs/research), and implementation
-> lands milestone by milestone starting at M0. Nothing is published to npm, nothing installs, nothing renders today.
-> Track the whole thing in the founding epic: [#1 — react-native-linux v0.1](https://github.com/react-native-linux/react-native-linux/issues/1).
+> [!NOTE]
+> **Status: pre-alpha, M0 done, M1 in progress.** A Wayland/Vulkan/Skia Ganesh window runs a bridgeless
+> `ReactInstance` built from source (RN 0.87.1 + Hermes) and draws Fabric's retained scene with
+> `View`, `Text`, `Image` and `ScrollView`, damage tracking, pointer/keyboard input, a focus model
+> and IME over `zwp_text_input_v3`; `TextInput` is in verification. ~220 GoogleTest cases at 100%
+> line+branch coverage, ten visually reviewed goldens plus two window goldens, and seven CI jobs gate
+> every change. Still missing from M1: gradients (#34), the e2e driver (#7); no npm publish, no app
+> template or Metro wiring (M3), no accessibility (M5) yet. Track it all in the founding epic:
+> [#1 — react-native-linux v0.1](https://github.com/react-native-linux/react-native-linux/issues/1).
+
+## Try it
+
+```bash
+pnpm install
+pnpm doctor
+pnpm --filter @react-native-linux/core vendor
+pnpm --filter @react-native-linux/core vendor:skia
+pnpm --filter @react-native-linux/core vendor:fonts
+cmake --preset dev && cmake --build build/dev
+./build/dev/bin/rnl_window --fabric packages/core/test-bundles/view-props.js
+pnpm test:golden
+```
+
+See [`docs/cpp-toolchain.md`](docs/cpp-toolchain.md) for what each step and binary proves.
 
 ---
 
@@ -130,8 +148,8 @@ Each milestone is demonstrable on its own — a thing you can run and watch, not
 
 | Milestone | Goal |
 |---|---|
-| [**M0**](https://github.com/react-native-linux/react-native-linux/milestone/1) | Wayland window + Skia Ganesh Vulkan surface + Hermes running a bundle; a `View` renders |
-| [**M1**](https://github.com/react-native-linux/react-native-linux/milestone/2) | The six core components, Yoga layout, pointer + keyboard events, `zwp_text_input_v3` IME so `TextInput` is genuinely usable |
+| [**M0**](https://github.com/react-native-linux/react-native-linux/milestone/1) ✅ | Wayland window + Skia Ganesh Vulkan surface + Hermes running a bundle; a `View` renders |
+| [**M1**](https://github.com/react-native-linux/react-native-linux/milestone/2) 🚧 | The six core components, Yoga layout, pointer + keyboard events, `zwp_text_input_v3` IME so `TextInput` is genuinely usable |
 | [**M2**](https://github.com/react-native-linux/react-native-linux/milestone/3) | Native-driven animations, damage tracking, `wp_fifo_v1` + `wp_commit_timer_v1` pacing measured with `wp_presentation_feedback` on Hyprland; the Hermes performance baseline |
 | [**M3**](https://github.com/react-native-linux/react-native-linux/milestone/4) | Parallel codegen driver + TurboModule autolinking; CLI/Metro registration (`--platform linux`) |
 | [**M4**](https://github.com/react-native-linux/react-native-linux/milestone/5) | Ecosystem porting programme — ~30 native dependencies, an explicit port-or-decline decision on Reanimated/worklets, then [Suuudokuuu](https://www.suuudokuuu.com) and AUR / omarchy-pkgs packaging |
