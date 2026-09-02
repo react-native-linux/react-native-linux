@@ -7,8 +7,14 @@ export default defineConfig({
         "packages/*/src/**/*.spec.ts",
         "packages/core/goldens/*.spec.ts",
         "packages/core/src-linux/**/*.spec.ts",
+        "scripts/doctor/**/*.spec.ts",
       ],
-      include: ["packages/*/src/**/*.ts", "packages/core/goldens/*.ts", "packages/core/src-linux/**/*.ts"],
+      include: [
+        "packages/*/src/**/*.ts",
+        "packages/core/goldens/*.ts",
+        "packages/core/src-linux/**/*.ts",
+        "scripts/doctor/**/*.ts",
+      ],
       provider: "v8",
       reporter: ["text", "lcov"],
       thresholds: {
@@ -18,6 +24,11 @@ export default defineConfig({
         statements: 100,
       },
     },
-    include: ["packages/*/src/**/*.spec.ts", "packages/core/goldens/*.spec.ts", "packages/core/src-linux/**/*.spec.ts"],
+    include: [
+      "packages/*/src/**/*.spec.ts",
+      "packages/core/goldens/*.spec.ts",
+      "packages/core/src-linux/**/*.spec.ts",
+      "scripts/doctor/**/*.spec.ts",
+    ],
   },
 });

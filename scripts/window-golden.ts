@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync 
 import { spawn, spawnSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
 
 const FAILURE_EXIT_STATUS = 1;
@@ -74,19 +75,7 @@ const writeGeneratedManifest = (libraryPath: string): string => {
   return manifestPath;
 };
 
-const findLavapipeLibraryManifest = (): string | null => {
-  for (const libraryDirectory of lavapipeLibraryDirectories) {
-    const libraryPath = path.join(libraryDirectory, lavapipeLibraryName);
-
-    if (existsSync(libraryPath)) {
-      return writeGeneratedManifest(libraryPath);
-    }
-  }
-
-  return null;
-};
-
-const findLavapipeIcd = (): string | null => {
+const findLavapipeIcdManifestPath = (): string | null => {
   const override = env[lavapipeOverrideName];
 
   if (typeof override === "string" && override !== "" && existsSync(override)) {
@@ -104,7 +93,31 @@ const findLavapipeIcd = (): string | null => {
     }
   }
 
-  return findLavapipeLibraryManifest();
+  return null;
+};
+
+const findLavapipeLibraryPath = (): string | null => {
+  for (const libraryDirectory of lavapipeLibraryDirectories) {
+    const libraryPath = path.join(libraryDirectory, lavapipeLibraryName);
+
+    if (existsSync(libraryPath)) {
+      return libraryPath;
+    }
+  }
+
+  return null;
+};
+
+const findLavapipeIcd = (): string | null => {
+  const manifestPath = findLavapipeIcdManifestPath();
+
+  if (manifestPath !== null) {
+    return manifestPath;
+  }
+
+  const libraryPath = findLavapipeLibraryPath();
+
+  return libraryPath === null ? null : writeGeneratedManifest(libraryPath);
 };
 
 const buildEnvironment = (overrides: Record<string, string>): Record<string, string | undefined> => {
@@ -235,36 +248,46 @@ const renderFixtures = async (
   }
 };
 
-const compositorPath = findExecutable(COMPOSITOR_NAME);
-const lavapipeIcdPath = findLavapipeIcd();
-const hasBinary = existsSync(binaryPath);
+const isMainModule = (): boolean => {
+  const [, entryPath] = argv;
 
-const unavailableReasons = [
-  ...(hasBinary ? [] : [`${binaryPath} is missing; build it with "cmake --build build/dev --target rnl_window"`]),
-  ...(compositorPath === null ? [`${COMPOSITOR_NAME} is not on PATH; install the "weston" package`] : []),
-  ...(lavapipeIcdPath === null
-    ? [
-        `no lavapipe ICD manifest under ${icdDirectories.join(" or ")} and no ${lavapipeLibraryName} under ${lavapipeLibraryDirectories.join(" or ")} (set ${lavapipeOverrideName} to a manifest path); ` +
-          'install "vulkan-swrast" on Arch or "mesa-vulkan-drivers" on Ubuntu',
-      ]
-    : []),
-];
+  return typeof entryPath === "string" && import.meta.url === pathToFileURL(entryPath).href;
+};
 
-if (hasBinary && compositorPath !== null && lavapipeIcdPath !== null) {
-  const outputDirectory = readOutputDirectory();
+if (isMainModule()) {
+  const compositorPath = findExecutable(COMPOSITOR_NAME);
+  const lavapipeIcdPath = findLavapipeIcd();
+  const hasBinary = existsSync(binaryPath);
 
-  mkdirSync(outputDirectory, { recursive: true });
+  const unavailableReasons = [
+    ...(hasBinary ? [] : [`${binaryPath} is missing; build it with "cmake --build build/dev --target rnl_window"`]),
+    ...(compositorPath === null ? [`${COMPOSITOR_NAME} is not on PATH; install the "weston" package`] : []),
+    ...(lavapipeIcdPath === null
+      ? [
+          `no lavapipe ICD manifest under ${icdDirectories.join(" or ")} and no ${lavapipeLibraryName} under ${lavapipeLibraryDirectories.join(" or ")} (set ${lavapipeOverrideName} to a manifest path); ` +
+            'install "vulkan-swrast" on Arch or "mesa-vulkan-drivers" on Ubuntu',
+        ]
+      : []),
+  ];
 
-  try {
-    await renderFixtures(compositorPath, lavapipeIcdPath, outputDirectory);
-  } catch (error) {
-    stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-    process.exitCode = FAILURE_EXIT_STATUS;
+  if (hasBinary && compositorPath !== null && lavapipeIcdPath !== null) {
+    const outputDirectory = readOutputDirectory();
+
+    mkdirSync(outputDirectory, { recursive: true });
+
+    try {
+      await renderFixtures(compositorPath, lavapipeIcdPath, outputDirectory);
+    } catch (error) {
+      stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+      process.exitCode = FAILURE_EXIT_STATUS;
+    }
+  } else {
+    for (const reason of unavailableReasons) {
+      stderr.write(`${reason}\n`);
+    }
+
+    process.exitCode = UNAVAILABLE_EXIT_STATUS;
   }
-} else {
-  for (const reason of unavailableReasons) {
-    stderr.write(`${reason}\n`);
-  }
-
-  process.exitCode = UNAVAILABLE_EXIT_STATUS;
 }
+
+export { findLavapipeIcdManifestPath, findLavapipeLibraryPath };

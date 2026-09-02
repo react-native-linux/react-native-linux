@@ -28,6 +28,8 @@
     "packages/core/scripts/**/*.ts",
     "packages/core/src-linux/**/*.ts",
     "packages/core/index.ts",
+    "scripts/doctor/**/*.ts",
+    "scripts/doctor.ts",
     "vitest.config.ts"
   ]
 }
