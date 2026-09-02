@@ -78,6 +78,31 @@ struct SceneTextContent {
 };
 
 /**
+ * How a decoded image is fitted into the node's frame. These are React Native's own `resizeMode` values, minus
+ * `none`, which maps onto `Center` because both draw the image at its natural size.
+ */
+enum class SceneImageResizeMode : uint8_t { Cover, Contain, Stretch, Center, Repeat };
+
+/**
+ * Everything a `<Image>` needs to be drawn that does not need Skia: which source to draw, how to fit it into the
+ * frame, and the colours it is drawn with.
+ *
+ * The pixels are deliberately absent. Decoding produces an `SkImage`, and the scene links no Skia, so the decoded
+ * image lives in the painter-side cache and this struct carries only the key into it. That is the same split
+ * `SceneTextContent` makes: the inputs travel through the scene, the Skia object is built where Skia is linked.
+ *
+ * On a retained `SceneNode` the tint is the colour as authored and `opacity` is unused. Only a snapshot resolves
+ * them: the tint alpha carries the inherited opacity, exactly like every other colour a primitive emits, and
+ * `opacity` carries the same value for the untinted case, where there is no colour to fold it into.
+ */
+struct SceneImageContent {
+    std::string uri;
+    SceneImageResizeMode resizeMode{SceneImageResizeMode::Stretch};
+    uint32_t tintColorArgb{};
+    float opacity{1.0F};
+};
+
+/**
  * One painted node in surface coordinates: the frame origin is absolute, composed from every ancestor frame,
  * because a renderer that walks a flat list per frame must not repeat the tree walk.
  *
@@ -94,6 +119,7 @@ struct ScenePrimitive {
     facebook::react::RectangleEdges<uint32_t> borderColorsArgb;
     uint32_t backgroundColorArgb{};
     std::optional<SceneTextContent> text;
+    std::optional<SceneImageContent> image;
 };
 
 using SceneSnapshot = std::vector<ScenePrimitive>;
@@ -124,6 +150,7 @@ struct SceneNode {
     float opacity{1.0F};
     bool clipsChildren{false};
     std::optional<SceneTextContent> text;
+    std::optional<SceneImageContent> image;
 };
 
 using SceneNodes = std::unordered_map<facebook::react::Tag, SceneNode>;
@@ -160,6 +187,12 @@ public:
     void insertChild(facebook::react::Tag parentTag, const facebook::react::ShadowView& childShadowView, int index);
     void removeChild(facebook::react::Tag parentTag, const facebook::react::ShadowView& childShadowView);
     void updateNode(const facebook::react::ShadowView& shadowView);
+
+    /**
+     * Damages every node drawing `uri`, which is what turns a decode that finished after the last frame into a
+     * repaint. Nothing else can: a decode changes no shadow node, so Fabric emits no mutation for it.
+     */
+    void damageImageSource(const std::string& uri);
     SceneSnapshot snapshot() const;
     SceneDamage takeDamage();
     std::string dump() const;

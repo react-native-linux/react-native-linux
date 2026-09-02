@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <string>
 #include <vector>
 #include <vulkan/vulkan_core.h>
 
@@ -40,6 +41,20 @@ namespace react_native_linux {
  * after startup or a resize is a full repaint by construction. `VK_KHR_incremental_present` and
  * `wl_surface.damage_buffer` would additionally tell the compositor what changed; neither is bound here.
  *
+ * An image that owes nothing is not drawn at all, and such a frame bypasses Skia rather than flushing it with no
+ * work. `GrDirectContext::flush` documents that it returns `GrSemaphoresSubmitted::kNo` when it submits no
+ * semaphores, and that the client must then not have the GPU wait on the semaphores it passed in — which is
+ * exactly what `vkQueuePresentKHR` does with the render semaphore. An idle frame is therefore one empty
+ * `vkQueueSubmit` that waits on the acquire semaphore and signals the render semaphore, which is the whole of a
+ * frame that draws nothing; the image keeps the `VK_IMAGE_LAYOUT_PRESENT_SRC_KHR` the last flush left it in.
+ *
+ * `captureNextFrame` is the window golden's producer. The frame it arms copies the swapchain image back into a
+ * host-visible buffer and writes it as a PNG, between Skia's submit and `vkQueuePresentKHR`. That gap is the only
+ * point at which the application still owns the image and knows its layout, which is why the capture is a mode of
+ * `drawFrame` rather than a second read of an already-presented image. The captured picture is complete because
+ * of the per-image damage rule above: an acquired image either owes a repaint, which it has just been given, or
+ * owes nothing, which means it already holds the current scene.
+ *
  * Threading contract: every member runs on the thread that owns the process run loop, the same thread the Wayland
  * connection is dispatched on. Nothing here is safe to call concurrently.
  */
@@ -53,12 +68,15 @@ public:
     ~SkiaVulkanRenderer() noexcept;
 
     void resize(WindowSize size);
-    void drawFrame(WaylandWindow& window, const SceneDamage& frameDamage,
+    void captureNextFrame(std::string outputPath);
+    bool hasPendingCapture() const noexcept;
+    bool drawFrame(WaylandWindow& window, const SceneDamage& frameDamage,
                    const std::function<void(SkCanvas&, WindowSize, const SceneDamage&)>& paint);
 
 private:
     struct Backbuffer {
         VkSemaphore renderSemaphore{VK_NULL_HANDLE};
+        VkSemaphore idleAcquireSemaphore{VK_NULL_HANDLE};
         uint32_t imageIndex{0};
     };
 
@@ -70,6 +88,9 @@ private:
     void createSwapchain();
     void createBackbuffers(VkFormat imageFormat, VkImageUsageFlags imageUsage);
     void destroyBackbuffers() noexcept;
+    void submitIdleFrame(VkSemaphore acquireSemaphore, Backbuffer& backbuffer);
+    uint32_t findHostVisibleMemoryType(uint32_t acceptedMemoryTypes) const;
+    void copyImageToPng(uint32_t imageIndex, const std::string& outputPath);
 
     VkInstance instance_{VK_NULL_HANDLE};
     VkSurfaceKHR vulkanSurface_{VK_NULL_HANDLE};
@@ -81,8 +102,12 @@ private:
     skgpu::VulkanExtensions extensions_;
     sk_sp<GrDirectContext> directContext_;
     VkSwapchainKHR swapchain_{VK_NULL_HANDLE};
+    VkFormat swapchainFormat_{VK_FORMAT_UNDEFINED};
+    VkImageUsageFlags swapchainImageUsage_{0};
     WindowSize requestedSize_;
     WindowSize swapchainSize_;
+    std::string pendingCapturePath_;
+    std::vector<VkImage> images_;
     std::vector<sk_sp<SkSurface>> imageSurfaces_;
     std::vector<SceneDamage> imageDamage_;
     std::vector<Backbuffer> backbuffers_;

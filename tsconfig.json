@@ -25,6 +25,7 @@
   "include": [
     "packages/*/src/**/*.ts",
     "packages/core/goldens/*.ts",
+    "packages/core/scripts/**/*.ts",
     "packages/core/src-linux/**/*.ts",
     "packages/core/index.ts",
     "vitest.config.ts"

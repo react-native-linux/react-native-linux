@@ -417,6 +417,7 @@ set(RNL_REACT_COMMON_SUBDIRS
     react/renderer/attributedstring
     react/renderer/bridging
     react/renderer/componentregistry
+    react/renderer/components/image
     react/renderer/components/legacyviewmanagerinterop
     react/renderer/components/root
     react/renderer/components/scrollview
@@ -428,6 +429,7 @@ set(RNL_REACT_COMMON_SUBDIRS
     react/renderer/debug
     react/renderer/dom
     react/renderer/graphics
+    react/renderer/imagemanager
     react/renderer/leakchecker
     react/renderer/mapbuffer
     react/renderer/mounting
@@ -488,6 +490,7 @@ set(RNL_REACT_COMMON_TARGETS
     react_renderer_debug
     react_renderer_dom
     react_renderer_graphics
+    react_renderer_imagemanager
     react_renderer_leakchecker
     react_renderer_mapbuffer
     react_renderer_mounting
@@ -502,6 +505,7 @@ set(RNL_REACT_COMMON_TARGETS
     react_timing
     react_utils
     reactperflogger
+    rrc_image
     rrc_legacyviewmanagerinterop
     rrc_root
     rrc_scrollview
@@ -586,6 +590,58 @@ if(TARGET rnl_skia)
         PRIVATE "RNL_BUNDLED_FONT_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/fonts\"")
 endif()
 
+# ---------------------------------------------------------------------------
+# The Linux ImageManager
+#
+# The same source swap, for the same reason: react/renderer/imagemanager globs platform/cxx, whose
+# ImageManager::requestImage is marked "Not implemented" and returns a request nothing ever completes. Dropping
+# that one translation unit and adding ours in its place is what gives every ImageComponentDescriptor a working
+# manager, because getManagerByName constructs an ImageManager when the context container carries no
+# "ImageManager" entry — so there is no registration step and no second implementation to disagree with.
+#
+# Three sources join that object library rather than rnl_scene_painter: the reference to
+# ImageManager::requestImage lives in rrc_image, and imagePlacement and the cache are reached the other way, by
+# rnl_scene_painter through rnl_react_core, which is forwards along the link line.
+#
+# With Skia off the stub stays, so the sanitizer presets and the Hermes-free test configure are unchanged and an
+# <Image> simply never paints, which is the pre-existing behaviour rather than a new failure mode.
+# ---------------------------------------------------------------------------
+
+if(TARGET rnl_skia)
+    set(RNL_IMAGE_MANAGER_STUB
+        ${REACT_COMMON_DIR}/react/renderer/imagemanager/platform/cxx/react/renderer/imagemanager/ImageManager.cpp)
+    cmake_path(SET RNL_IMAGE_MANAGER_STUB NORMALIZE "${RNL_IMAGE_MANAGER_STUB}")
+    get_target_property(RNL_IMAGE_MANAGER_RAW_SOURCES react_renderer_imagemanager SOURCES)
+    set(RNL_IMAGE_MANAGER_SOURCES "")
+
+    foreach(rnl_source IN LISTS RNL_IMAGE_MANAGER_RAW_SOURCES)
+        cmake_path(SET rnl_normalized_source NORMALIZE "${rnl_source}")
+        list(APPEND RNL_IMAGE_MANAGER_SOURCES "${rnl_normalized_source}")
+    endforeach()
+
+    if(NOT "${RNL_IMAGE_MANAGER_STUB}" IN_LIST RNL_IMAGE_MANAGER_SOURCES)
+        message(FATAL_ERROR
+            "The upstream ImageManager stub is no longer at ${RNL_IMAGE_MANAGER_STUB}; the source swap in packages/core/CMakeLists.txt needs updating for this React Native pin")
+    endif()
+
+    list(REMOVE_ITEM RNL_IMAGE_MANAGER_SOURCES ${RNL_IMAGE_MANAGER_STUB})
+    list(APPEND RNL_IMAGE_MANAGER_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/ImageContent.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/ImageManager.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/ImagePipeline.cpp)
+    set_property(TARGET react_renderer_imagemanager PROPERTY SOURCES ${RNL_IMAGE_MANAGER_SOURCES})
+    target_include_directories(react_renderer_imagemanager PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+    # Keyword-less, because the vendored CMakeLists calls target_link_libraries without keywords and the two
+    # signatures cannot be mixed on one target. Skia's codecs need no system library beyond what the archive
+    # already carries: libpng, zlib and libjpeg-turbo are compiled into it.
+    target_link_libraries(react_renderer_imagemanager rnl_skia)
+    # An absolute path for the same reason RNL_BUNDLED_FONT_DIR is one: there is no asset packaging yet, so a
+    # relative <Image> source resolves against the assets vendored beside the sources. That belongs with M3.
+    target_compile_definitions(react_renderer_imagemanager
+        PRIVATE "RNL_BUNDLED_ASSET_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/assets\"")
+endif()
+
 # The test configure stops here: everything below links hermesvm, and the reason this build
 # exists at all is that Hermes cannot share a configure with googletest.
 if(RNL_BUILD_TESTS)
@@ -627,6 +683,12 @@ target_link_libraries(rnl_react_core
         folly_runtime
         ${RNL_REACT_COMMON_TARGETS}
         atomic)
+
+# The decode-completion listener the Fabric host installs only exists when the ImageManager swap above happened.
+# Without Skia there is no decoder, so there is nothing to listen to.
+if(TARGET rnl_skia)
+    target_compile_definitions(rnl_react_core PRIVATE RNL_ENABLE_IMAGES)
+endif()
 
 # ---------------------------------------------------------------------------
 # The one place the scene is painted

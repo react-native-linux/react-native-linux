@@ -9,8 +9,8 @@
       "project": ["src/**/*.ts"]
     },
     "packages/core": {
-      "entry": ["goldens/*.spec.ts"],
-      "project": ["goldens/**/*.ts", "src-linux/**/*.ts"],
+      "entry": ["goldens/*.spec.ts", "scripts/*.ts"],
+      "project": ["goldens/**/*.ts", "scripts/**/*.ts", "src-linux/**/*.ts"],
       "ignoreBinaries": ["cmake"]
     }
   }

@@ -27,8 +27,10 @@ FetchContent_MakeAvailable(googletest)
 include(GoogleTest)
 
 add_executable(rnl_core_tests
+    ImageTest.cpp
     InputTest.cpp
     SceneTest.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ImageContent.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/InputPipeline.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/LinuxMountingManager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/RetainedScene.cpp)

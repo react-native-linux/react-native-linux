@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { env, stdout } from "node:process";
+import { env, execPath, stdout } from "node:process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 
 import { PNG } from "pngjs";
 
 import { compareImages } from "./png-diff.ts";
-import { execFileSync } from "node:child_process";
+import { compareImagesPerceptually } from "./perceptual-diff.ts";
 import path from "node:path";
 import { tmpdir } from "node:os";
 
@@ -32,6 +33,8 @@ const fixtures: readonly GoldenFixture[] = [
   // Text is reproducible only against the fonts scripts/vendor-fonts.ts pins into packages/core/fonts.
   { bundleFileName: "text.js", goldenFileName: "text.png", renderFlag: "--golden" },
   { bundleFileName: "damage.js", goldenFileName: "damage.png", renderFlag: "--damage-golden" },
+  // Images are reproducible only against the asset packages/core/scripts/make-test-image.ts generates.
+  { bundleFileName: "image.js", goldenFileName: "image.png", renderFlag: "--golden" },
 ];
 
 const renderFixture = (fixture: GoldenFixture, outputPath: string): void => {
@@ -84,6 +87,59 @@ describe.skipIf(!hasBinary)("golden images", () => {
 
       expect(existsSync(goldenPath), buildMissingGoldenMessage(goldenPath)).toBe(true);
       expectGoldenToMatch(fixture, goldenPath);
+    });
+  }
+});
+
+const UNAVAILABLE_EXIT_STATUS = 2;
+const SUCCESSFUL_EXIT_STATUS = 0;
+
+const windowRigPath = path.join(packageDirectory, "..", "..", "scripts", "window-golden.ts");
+const windowRenderDirectory = path.join(packageDirectory, "..", "..", "build", "window-goldens");
+const windowGoldenFileNames = ["window-fabric-view.png", "window-view-props.png"];
+
+/**
+ * One rig process renders every window fixture, because starting a compositor per image would cost more than the
+ * renders do. It runs at collection time, so the compositor is gone before the first assertion, and it writes
+ * straight into the goldens directory when regenerating, so nothing has to be copied afterwards.
+ */
+const windowRig = spawnSync(
+  execPath,
+  [windowRigPath, "--output", isRegenerating ? goldensDirectory : windowRenderDirectory],
+  {
+    encoding: "utf8",
+    timeout: RENDER_TIMEOUT_MS,
+  },
+);
+
+const isWindowRigUnavailable = windowRig.status === UNAVAILABLE_EXIT_STATUS;
+
+if (isWindowRigUnavailable) {
+  stdout.write(`skipping window goldens:\n${windowRig.stderr}`);
+}
+
+const buildMissingWindowGoldenMessage = (goldenPath: string): string =>
+  `${goldenPath} does not exist. Regenerate it with "pnpm test:golden:window:update", review the image, then commit it.`;
+
+describe.skipIf(isWindowRigUnavailable)("window goldens", () => {
+  it("renders every fixture through the window path", () => {
+    expect(windowRig.status, `${windowRig.stdout}${windowRig.stderr}`).toBe(SUCCESSFUL_EXIT_STATUS);
+  });
+
+  for (const goldenFileName of windowGoldenFileNames) {
+    it(`matches ${goldenFileName} through the window path`, () => {
+      const goldenPath = path.join(goldensDirectory, goldenFileName);
+
+      expect(existsSync(goldenPath), buildMissingWindowGoldenMessage(goldenPath)).toBe(true);
+
+      if (isRegenerating) {
+        return;
+      }
+
+      const renderedPath = path.join(windowRenderDirectory, goldenFileName);
+
+      expect(existsSync(renderedPath), `${windowRig.stdout}${windowRig.stderr}`).toBe(true);
+      expect(compareImagesPerceptually(decodePng(renderedPath), decodePng(goldenPath))).toBeNull();
     });
   }
 });

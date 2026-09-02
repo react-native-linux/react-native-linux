@@ -7,12 +7,17 @@
 #include <react/renderer/attributedstring/AttributedString.h>
 #include <react/renderer/attributedstring/ParagraphAttributes.h>
 #include <react/renderer/attributedstring/TextAttributes.h>
+#include <react/renderer/components/image/ImageProps.h>
+#include <react/renderer/components/image/ImageState.h>
 #include <react/renderer/components/text/ParagraphState.h>
 #include <react/renderer/components/view/ViewProps.h>
 #include <react/renderer/core/ConcreteState.h>
 #include <react/renderer/core/ReactPrimitives.h>
 #include <react/renderer/core/ShadowNodeFamily.h>
 #include <react/renderer/graphics/Color.h>
+#include <react/renderer/imagemanager/ImageRequest.h>
+#include <react/renderer/imagemanager/ImageRequestParams.h>
+#include <react/renderer/imagemanager/primitives.h>
 #include <react/renderer/graphics/Point.h>
 #include <react/renderer/graphics/Rect.h>
 #include <react/renderer/graphics/RectangleEdges.h>
@@ -60,6 +65,7 @@ constexpr Tag kSurfaceTag = 1;
 constexpr uint32_t kBlueArgb = 0xFF3366CCU;
 constexpr uint32_t kRedArgb = 0xFFCC3333U;
 constexpr uint32_t kHalfBlueArgb = 0x803366CCU;
+constexpr uint32_t kHalfRedArgb = 0x80CC3333U;
 constexpr uint32_t kQuarterRedArgb = 0x40CC3333U;
 
 Rect makeRect(float x, float y, float width, float height) {
@@ -921,7 +927,11 @@ TEST(RetainedSceneTextTest, UpdateReplacesTheAttributedStringInPlace) {
     EXPECT_EQ(snapshot[0].text.value().attributedString.getString(), "after");
 }
 
-TEST(RetainedSceneTextTest, OpacityMultipliesIntoTheFragmentColors) {
+/**
+ * A half-opaque parent with nothing of its own to paint, so the only primitive a snapshot produces is the child's
+ * and every colour on it carries the inherited opacity.
+ */
+RetainedScene sceneWithTranslucentParent() {
     const std::shared_ptr<ViewProps> translucent = std::make_shared<ViewProps>();
 
     translucent->opacity = 0.5;
@@ -930,6 +940,13 @@ TEST(RetainedSceneTextTest, OpacityMultipliesIntoTheFragmentColors) {
 
     scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
     addChild(scene, kSurfaceTag, makeStyledView(2, makeRect(0, 0, 400, 200), translucent));
+
+    return scene;
+}
+
+TEST(RetainedSceneTextTest, OpacityMultipliesIntoTheFragmentColors) {
+    RetainedScene scene = sceneWithTranslucentParent();
+
     addChild(scene, 2, makeParagraph(3, makeRect(0, 0, 400, 40), "faded", 0));
 
     const SceneSnapshot snapshot = scene.snapshot();
@@ -967,6 +984,148 @@ TEST(RetainedSceneTextTest, DumpCarriesTheParagraphText) {
     EXPECT_EQ(scene.dump(),
               "RootView #1 frame=(0.00, 0.00, 800.00, 600.00)\n"
               "  Paragraph #2 frame=(40.00, 60.00, 300.00, 48.00) text=\"dumped\"\n");
+}
+
+/**
+ * An `<Image>` as it reaches the mounting layer: the fit and the tint stay on `ImageProps`, and the source is on
+ * `ImageState`, because `ImageShadowNode` is what chooses it and what hands it to `ImageManager::requestImage`.
+ */
+ShadowView makeImage(Tag tag, Rect frame, const std::string& uri, facebook::react::ImageResizeMode resizeMode,
+                     SharedColor tintColor) {
+    const std::shared_ptr<facebook::react::ImageProps> imageProps =
+        std::make_shared<facebook::react::ImageProps>();
+
+    imageProps->resizeMode = resizeMode;
+    imageProps->tintColor = tintColor;
+
+    facebook::react::ImageSource imageSource;
+
+    imageSource.type = facebook::react::ImageSource::Type::Local;
+    imageSource.uri = uri;
+
+    ShadowView shadowView;
+
+    shadowView.tag = tag;
+    shadowView.componentName = "Image";
+    shadowView.layoutMetrics.frame = frame;
+    shadowView.props = imageProps;
+    shadowView.state = std::make_shared<const facebook::react::ConcreteState<facebook::react::ImageState>>(
+        std::make_shared<const facebook::react::ImageState>(
+            imageSource, facebook::react::ImageRequest{imageSource, nullptr},
+            facebook::react::ImageRequestParams{}),
+        facebook::react::ShadowNodeFamily::Weak{});
+
+    return shadowView;
+}
+
+ShadowView makeTile(Tag tag, Rect frame, const std::string& uri) {
+    return makeImage(tag, frame, uri, facebook::react::ImageResizeMode::Cover, SharedColor{});
+}
+
+RetainedScene sceneWithTile(const ShadowView& imageView) {
+    RetainedScene scene;
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, imageView);
+
+    return scene;
+}
+
+react_native_linux::SceneImageResizeMode
+snapshotResizeMode(facebook::react::ImageResizeMode resizeMode) {
+    return sceneWithTile(makeImage(2, makeRect(0, 0, 64, 48), "tile.png", resizeMode, SharedColor{}))
+        .snapshot()
+        .front()
+        .image.value()
+        .resizeMode;
+}
+
+TEST(RetainedSceneImageTest, ImageStateBecomesTheImageOnTheNode) {
+    const SceneSnapshot snapshot = sceneWithTile(makeTile(2, makeRect(40, 60, 120, 90), "tile.png")).snapshot();
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    ASSERT_TRUE(snapshot[0].image.has_value());
+    EXPECT_EQ(snapshot[0].image.value().uri, "tile.png");
+    EXPECT_EQ(snapshot[0].image.value().tintColorArgb, 0U);
+    EXPECT_FLOAT_EQ(snapshot[0].image.value().opacity, 1.0F);
+    expectPrimitive(snapshot[0], makeRect(40, 60, 120, 90), 0);
+}
+
+TEST(RetainedSceneImageTest, EveryResizeModeMapsOntoASceneResizeMode) {
+    EXPECT_EQ(snapshotResizeMode(facebook::react::ImageResizeMode::Cover),
+              react_native_linux::SceneImageResizeMode::Cover);
+    EXPECT_EQ(snapshotResizeMode(facebook::react::ImageResizeMode::Contain),
+              react_native_linux::SceneImageResizeMode::Contain);
+    EXPECT_EQ(snapshotResizeMode(facebook::react::ImageResizeMode::Stretch),
+              react_native_linux::SceneImageResizeMode::Stretch);
+    EXPECT_EQ(snapshotResizeMode(facebook::react::ImageResizeMode::Repeat),
+              react_native_linux::SceneImageResizeMode::Repeat);
+    EXPECT_EQ(snapshotResizeMode(facebook::react::ImageResizeMode::Center),
+              react_native_linux::SceneImageResizeMode::Center);
+    EXPECT_EQ(snapshotResizeMode(facebook::react::ImageResizeMode::None),
+              react_native_linux::SceneImageResizeMode::Center);
+}
+
+TEST(RetainedSceneImageTest, AnImageAloneIsEnoughToPaintANode) {
+    EXPECT_FALSE(sceneWithTile(makeTile(2, makeRect(0, 0, 64, 48), "tile.png")).snapshot().empty());
+}
+
+TEST(RetainedSceneImageTest, ANodeWithoutImagePropsCarriesNoImage) {
+    EXPECT_FALSE(sceneWithPaintedChild().snapshot().front().image.has_value());
+}
+
+TEST(RetainedSceneImageTest, ANodeWithImagePropsButNoStateCarriesNoImage) {
+    ShadowView statelessImage = makeTile(2, makeRect(0, 0, 64, 48), "tile.png");
+
+    statelessImage.state = nullptr;
+
+    EXPECT_TRUE(sceneWithTile(statelessImage).snapshot().empty());
+}
+
+TEST(RetainedSceneImageTest, AnUnrequestedSourcePaintsNothing) {
+    EXPECT_TRUE(sceneWithTile(makeTile(2, makeRect(0, 0, 64, 48), "")).snapshot().empty());
+}
+
+TEST(RetainedSceneImageTest, OpacityMultipliesIntoTheTintAlphaAndTheImageAlpha) {
+    RetainedScene scene = sceneWithTranslucentParent();
+
+    addChild(scene, 2, makeImage(3, makeRect(0, 0, 64, 48), "tile.png",
+                                 facebook::react::ImageResizeMode::Cover, red()));
+
+    const SceneSnapshot snapshot = scene.snapshot();
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    ASSERT_TRUE(snapshot[0].image.has_value());
+    EXPECT_EQ(snapshot[0].image.value().tintColorArgb, kHalfRedArgb);
+    EXPECT_FLOAT_EQ(snapshot[0].image.value().opacity, 0.5F);
+}
+
+TEST(RetainedSceneImageTest, ADecodedSourceDamagesEveryNodeDrawingIt) {
+    RetainedScene scene = sceneWithTile(makeTile(2, makeRect(40, 60, 120, 90), "tile.png"));
+
+    addChild(scene, kSurfaceTag, makeTile(3, makeRect(400, 300, 100, 100), "other.png"));
+    scene.takeDamage();
+    scene.damageImageSource("tile.png");
+
+    const SceneDamage damage = scene.takeDamage();
+
+    ASSERT_FALSE(damage.empty());
+    expectRect(boundsOf(damage), makeRect(40, 60, 120, 90));
+}
+
+TEST(RetainedSceneImageTest, ASourceNothingDrawsDamagesNothing) {
+    RetainedScene scene = sceneWithTile(makeTile(2, makeRect(40, 60, 120, 90), "tile.png"));
+
+    scene.takeDamage();
+    scene.damageImageSource("missing.png");
+
+    EXPECT_TRUE(scene.takeDamage().empty());
+}
+
+TEST(RetainedSceneImageTest, DumpCarriesTheImageSource) {
+    EXPECT_EQ(sceneWithTile(makeTile(2, makeRect(40, 60, 120, 90), "tile.png")).dump(),
+              "RootView #1 frame=(0.00, 0.00, 800.00, 600.00)\n"
+              "  Image #2 frame=(40.00, 60.00, 120.00, 90.00) image=\"tile.png\"\n");
 }
 
 ShadowView mountBlueChild(LinuxMountingManager& mountingManager) {
@@ -1043,6 +1202,25 @@ TEST(LinuxMountingManagerTest, TakeFramePairsTheSceneWithItsDamageAndClearsThatD
 
     EXPECT_EQ(second.scene.size(), 1U);
     EXPECT_TRUE(second.damage.empty());
+}
+
+TEST(LinuxMountingManagerTest, ADecodedImageDamagesTheFrameUnderTheSceneMutex) {
+    LinuxMountingManager mountingManager;
+    const ShadowView imageView = makeTile(2, makeRect(24, 24, 120, 80), "tile.png");
+    ShadowViewMutationList mutations;
+
+    mountingManager.startSurface(kSurfaceTag, Size{.width = 800, .height = 600});
+    mutations.push_back(ShadowViewMutation::CreateMutation(imageView));
+    mutations.push_back(ShadowViewMutation::InsertMutation(kSurfaceTag, imageView, 0));
+    mountingManager.executeMount(kSurfaceTag, transactionOf(std::move(mutations)));
+    mountingManager.takeFrame();
+
+    mountingManager.damageImageSource("tile.png");
+
+    const SceneFrame frame = mountingManager.takeFrame();
+
+    ASSERT_FALSE(frame.damage.empty());
+    expectRect(boundsOf(frame.damage), makeRect(24, 24, 120, 80));
 }
 
 TEST(LinuxMountingManagerTest, DispatchCommandLeavesTheSceneUntouched) {

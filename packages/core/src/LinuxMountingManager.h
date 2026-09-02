@@ -31,8 +31,9 @@ struct SceneFrame {
  *
  * Threading contract: executeMount runs on the JS thread, inside the rendering update the `RuntimeScheduler`
  * drains at the end of an event loop tick. takeFrame runs on the platform frame thread, once per frame, and
- * snapshotScene and dumpScene on the thread that owns the process run loop. The mutex is what makes those pairs
- * safe, and copying the scene out under it is why the frame thread never reads a half-applied transaction.
+ * snapshotScene and dumpScene on the thread that owns the process run loop. damageImageSource runs on the image
+ * decode thread. The mutex is what makes those pairs safe, and copying the scene out under it is why the frame
+ * thread never reads a half-applied transaction.
  *
  * takeFrame exists because the pair has to be atomic: a transaction landing between a snapshot and a damage take
  * would leave the frame thread with damage it cannot satisfy from the scene it holds, and the region would be
@@ -41,6 +42,12 @@ struct SceneFrame {
 class LinuxMountingManager final : public facebook::react::IMountingManager {
 public:
     void startSurface(facebook::react::SurfaceId surfaceId, facebook::react::Size size);
+
+    /**
+     * Damages every node drawing `uri`. Called from a decode thread when an image finishes decoding, which is the
+     * one thing that changes the picture without a Fabric mutation behind it.
+     */
+    void damageImageSource(const std::string& uri);
     SceneFrame takeFrame();
     SceneSnapshot snapshotScene() const;
     std::string dumpScene() const;

@@ -1,7 +1,12 @@
 #include "FabricHost.h"
 
+#ifdef RNL_ENABLE_IMAGES
+#include "ImageDecoder.h"
+#endif
+
 #include <jsi/jsi.h>
 #include <react/renderer/componentregistry/ComponentDescriptorProviderRegistry.h>
+#include <react/renderer/components/image/ImageComponentDescriptor.h>
 #include <react/renderer/components/root/RootComponentDescriptor.h>
 #include <react/renderer/components/text/ParagraphComponentDescriptor.h>
 #include <react/renderer/components/text/RawTextComponentDescriptor.h>
@@ -33,12 +38,18 @@ constexpr facebook::react::SurfaceId kSurfaceId = 1;
 // view-forming, and `ParagraphShadowNode` flattens them into the `AttributedString` its state carries — because
 // the reconciler cannot create a node whose component has no descriptor. `Paragraph`'s descriptor is what
 // constructs the `TextLayoutManager`, so registering it is also what wires SkParagraph into Yoga measurement.
+//
+// `Image`'s descriptor resolves its `ImageManager` through `getManagerByName`, which constructs one when the
+// context container carries no `"ImageManager"` entry — and this host inserts none, because the implementation
+// behind that class is already ours. See src/ImageManager.cpp.
 facebook::react::ComponentRegistryFactory createComponentRegistryFactory(
     const std::shared_ptr<facebook::react::ComponentDescriptorProviderRegistry>& providerRegistry) {
     providerRegistry->add(
         facebook::react::concreteComponentDescriptorProvider<facebook::react::RootComponentDescriptor>());
     providerRegistry->add(
         facebook::react::concreteComponentDescriptorProvider<facebook::react::ViewComponentDescriptor>());
+    providerRegistry->add(
+        facebook::react::concreteComponentDescriptorProvider<facebook::react::ImageComponentDescriptor>());
     providerRegistry->add(
         facebook::react::concreteComponentDescriptorProvider<facebook::react::ParagraphComponentDescriptor>());
     providerRegistry->add(
@@ -119,6 +130,15 @@ FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::
 
     reactInstance.getUnbufferedRuntimeExecutor()(installStopSurfaceBinding);
 
+#ifdef RNL_ENABLE_IMAGES
+    // A finished decode changes the picture with no Fabric mutation behind it, so this is the only path that can
+    // damage the frame for one. The listener runs on the decode thread and takes the mounting manager's mutex; the
+    // pipeline holds no lock of its own while it calls back.
+    setImageDecodeListener([mountingManager = mountingManager_](const std::string& uri) {
+        mountingManager->damageImageSource(uri);
+    });
+#endif
+
     mountingManager_->startSurface(kSurfaceId, surfaceSize);
 
     surfaceHandler_ = std::make_unique<facebook::react::SurfaceHandler>("", kSurfaceId);
@@ -128,6 +148,9 @@ FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::
 }
 
 FabricHost::~FabricHost() noexcept {
+#ifdef RNL_ENABLE_IMAGES
+    setImageDecodeListener({});
+#endif
     stopSurface();
     scheduler_->unregisterSurface(*surfaceHandler_);
 }

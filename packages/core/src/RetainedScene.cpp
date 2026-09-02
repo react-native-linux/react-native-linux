@@ -1,9 +1,12 @@
 #include "RetainedScene.h"
 
 #include <react/renderer/attributedstring/AttributedString.h>
+#include <react/renderer/components/image/ImageProps.h>
+#include <react/renderer/components/image/ImageState.h>
 #include <react/renderer/components/root/RootShadowNode.h>
 #include <react/renderer/components/text/ParagraphState.h>
 #include <react/renderer/components/view/ViewProps.h>
+#include <react/renderer/imagemanager/primitives.h>
 #include <react/renderer/core/ConcreteState.h>
 #include <react/renderer/graphics/Color.h>
 #include <react/renderer/graphics/Rect.h>
@@ -170,6 +173,51 @@ SceneTextContent resolveText(const SceneTextContent& text, const facebook::react
     return resolved;
 }
 
+/**
+ * The same alpha multiplication `toArgb` performs, applied to an already packed colour. An image's tint is read
+ * off the props once and folded down the tree per snapshot, so the retained node keeps the authored colour.
+ */
+uint32_t scaleArgbAlpha(uint32_t colorArgb, float opacity) {
+    const uint32_t alpha = colorArgb >> kAlphaShift;
+
+    if (alpha == 0U) {
+        return 0;
+    }
+
+    const uint32_t scaledAlpha = static_cast<uint32_t>(std::lround(static_cast<float>(alpha) * opacity));
+
+    return (scaledAlpha << kAlphaShift) | (colorArgb & ~(0xFFU << kAlphaShift));
+}
+
+SceneImageContent resolveImage(const SceneImageContent& image, float opacity) {
+    return SceneImageContent{.uri = image.uri,
+                             .resizeMode = image.resizeMode,
+                             .tintColorArgb = scaleArgbAlpha(image.tintColorArgb, opacity),
+                             .opacity = opacity};
+}
+
+SceneImageResizeMode toSceneImageResizeMode(facebook::react::ImageResizeMode resizeMode) {
+    if (resizeMode == facebook::react::ImageResizeMode::Cover) {
+        return SceneImageResizeMode::Cover;
+    }
+
+    if (resizeMode == facebook::react::ImageResizeMode::Contain) {
+        return SceneImageResizeMode::Contain;
+    }
+
+    if (resizeMode == facebook::react::ImageResizeMode::Stretch) {
+        return SceneImageResizeMode::Stretch;
+    }
+
+    if (resizeMode == facebook::react::ImageResizeMode::Repeat) {
+        return SceneImageResizeMode::Repeat;
+    }
+
+    // `center` and `none` both draw the image at its natural size; upstream distinguishes them only for Android's
+    // legacy scale types, which this renderer has no equivalent of.
+    return SceneImageResizeMode::Center;
+}
+
 facebook::react::RectangleEdges<uint32_t> toArgbEdges(const facebook::react::BorderColors& colors, float opacity) {
     return facebook::react::RectangleEdges<uint32_t>{.left = toArgb(colors.left, opacity),
                                                      .top = toArgb(colors.top, opacity),
@@ -182,7 +230,8 @@ bool isEdgeVisible(facebook::react::Float width, uint32_t colorArgb) {
 }
 
 bool isPrimitiveVisible(const ScenePrimitive& primitive) {
-    return primitive.text.has_value() || (primitive.backgroundColorArgb >> kAlphaShift) != 0U ||
+    return primitive.text.has_value() || primitive.image.has_value() ||
+           (primitive.backgroundColorArgb >> kAlphaShift) != 0U ||
            isEdgeVisible(primitive.borderWidths.left, primitive.borderColorsArgb.left) ||
            isEdgeVisible(primitive.borderWidths.top, primitive.borderColorsArgb.top) ||
            isEdgeVisible(primitive.borderWidths.right, primitive.borderColorsArgb.right) ||
@@ -240,6 +289,41 @@ void readTextContent(SceneNode& node, const facebook::react::ShadowView& shadowV
                                  .paragraphAttributes = paragraphState->getData().paragraphAttributes};
 }
 
+/**
+ * The source an `<Image>` mounts with, read off `ImageState` rather than off `ImageProps.sources`.
+ *
+ * `ImageShadowNode` is what chooses between several sources and what stamps the laid-out size and scale onto the
+ * one it chose, and the source it chose is the source `ImageManager::requestImage` was given and therefore the
+ * source the decoder is filling the cache with. Reading the props instead would be a second answer to the same
+ * question. The fit and the tint are only on the props, because neither reaches the state.
+ *
+ * A node whose state still holds the `Invalid` source `ImageShadowNode::initialStateData` seeds — which is every
+ * `<Image>` before its first layout — has an empty uri and paints nothing.
+ */
+void readImageContent(SceneNode& node, const facebook::react::ShadowView& shadowView) {
+    node.image = std::nullopt;
+
+    const std::shared_ptr<const facebook::react::ImageProps> imageProps =
+        std::dynamic_pointer_cast<const facebook::react::ImageProps>(shadowView.props);
+    const std::shared_ptr<const facebook::react::ConcreteState<facebook::react::ImageState>> imageState =
+        std::dynamic_pointer_cast<const facebook::react::ConcreteState<facebook::react::ImageState>>(
+            shadowView.state);
+
+    if (imageProps == nullptr || imageState == nullptr) {
+        return;
+    }
+
+    const facebook::react::ImageSource imageSource = imageState->getData().getImageSource();
+
+    if (imageSource.uri.empty()) {
+        return;
+    }
+
+    node.image = SceneImageContent{.uri = imageSource.uri,
+                                   .resizeMode = toSceneImageResizeMode(imageProps->resizeMode),
+                                   .tintColorArgb = toArgb(imageProps->tintColor, 1.0F)};
+}
+
 std::string readComponentName(const facebook::react::ShadowView& shadowView) {
     if (shadowView.componentName == nullptr) {
         return {};
@@ -268,7 +352,11 @@ SceneVisit visitNode(const SceneNode& node, const ScenePaintState& state) {
                                                              ? std::optional<SceneTextContent>{resolveText(
                                                                    node.text.value(),
                                                                    node.layoutMetrics.contentInsets, frame, opacity)}
-                                                             : std::nullopt},
+                                                             : std::nullopt,
+                                                 .image = node.image.has_value()
+                                                              ? std::optional<SceneImageContent>{resolveImage(
+                                                                    node.image.value(), opacity)}
+                                                              : std::nullopt},
                      .childState = ScenePaintState{
                          .origin = frame.origin, .matrix = matrix, .opacity = opacity, .clips = state.clips}};
 
@@ -441,6 +529,20 @@ void RetainedScene::updateNode(const facebook::react::ShadowView& shadowView) {
     damageSubtree(shadowView.tag);
 }
 
+void RetainedScene::damageImageSource(const std::string& uri) {
+    std::vector<facebook::react::Tag> drawingTags;
+
+    for (const auto& [tag, node] : nodes_) {
+        if (node.image.has_value() && node.image.value().uri == uri) {
+            drawingTags.push_back(tag);
+        }
+    }
+
+    for (facebook::react::Tag tag : drawingTags) {
+        damageSubtree(tag);
+    }
+}
+
 SceneSnapshot RetainedScene::snapshot() const {
     SceneSnapshot primitives;
     const ScenePaintState rootState{};
@@ -474,6 +576,7 @@ SceneNode& RetainedScene::writeNode(const facebook::react::ShadowView& shadowVie
     node.layoutMetrics = shadowView.layoutMetrics;
     readPaintProps(node, shadowView);
     readTextContent(node, shadowView);
+    readImageContent(node, shadowView);
 
     return node;
 }
@@ -568,6 +671,12 @@ void RetainedScene::appendNode(std::string& output, facebook::react::Tag tag, si
     if (node.text.has_value()) {
         output += " text=\"";
         output += node.text.value().attributedString.getString();
+        output += '"';
+    }
+
+    if (node.image.has_value()) {
+        output += " image=\"";
+        output += node.image.value().uri;
         output += '"';
     }
 

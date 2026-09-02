@@ -1,9 +1,14 @@
 #include "ScenePainter.h"
 
+#include "ImageContent.h"
+#include "ImagePipeline.h"
 #include "TextPipeline.h"
 
+#include "include/core/SkBlendMode.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
+#include "include/core/SkColorFilter.h"
+#include "include/core/SkImage.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
@@ -11,6 +16,10 @@
 #include "include/core/SkPoint.h"
 #include "include/core/SkRRect.h"
 #include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSamplingOptions.h"
+#include "include/core/SkShader.h"
+#include "include/core/SkTileMode.h"
 #include "modules/skparagraph/include/Paragraph.h"
 
 #include <algorithm>
@@ -155,6 +164,53 @@ void paintText(SkCanvas& canvas, const SceneTextContent& text) {
     paragraph->paint(&canvas, text.frame.origin.x, text.frame.origin.y);
 }
 
+/**
+ * Draws the decoded image inside the node's border box, clipped to the same rounded rectangle the background is
+ * filled with, so a rounded `<Image>` is cut by its own corners and a `cover` fit is cut by its own frame.
+ *
+ * A source that has not finished decoding draws nothing. That is not an error state: the decode damages the frame
+ * when it completes, so the next frame draws it.
+ *
+ * `repeat` is the one mode that is not a single `drawImageRect`: the placement rectangle is the first tile, and a
+ * repeating shader anchored at it fills the frame.
+ */
+void paintImage(SkCanvas& canvas, const ScenePrimitive& primitive, const SceneImageContent& image,
+                const SkRRect& outer) {
+    const sk_sp<SkImage> decoded = decodedImage(image.uri);
+
+    if (decoded == nullptr) {
+        return;
+    }
+
+    const facebook::react::Size imageSize{.width = static_cast<facebook::react::Float>(decoded->width()),
+                                          .height = static_cast<facebook::react::Float>(decoded->height())};
+    const facebook::react::Rect placement = imagePlacement(image.resizeMode, primitive.frame, imageSize);
+    const SkAutoCanvasRestore restore(&canvas, true);
+    const SkSamplingOptions sampling{SkFilterMode::kLinear, SkMipmapMode::kNone};
+    SkPaint paint;
+
+    canvas.clipRRect(outer, true);
+    paint.setAntiAlias(true);
+
+    // A tint carries the inherited opacity in its own alpha, because `SkSrcIn` multiplies the constant colour by
+    // the image's coverage; setting the paint alpha as well would apply it twice.
+    if (SkColorGetA(image.tintColorArgb) != 0) {
+        paint.setColorFilter(SkColorFilters::Blend(image.tintColorArgb, SkBlendMode::kSrcIn));
+    } else {
+        paint.setAlphaf(image.opacity);
+    }
+
+    if (image.resizeMode == SceneImageResizeMode::Repeat) {
+        paint.setShader(decoded->makeShader(SkTileMode::kRepeat, SkTileMode::kRepeat, sampling,
+                                            SkMatrix::Translate(placement.origin.x, placement.origin.y)));
+        canvas.drawRect(toSkRect(primitive.frame), paint);
+
+        return;
+    }
+
+    canvas.drawImageRect(decoded, toSkRect(placement), sampling, &paint);
+}
+
 void paintPrimitive(SkCanvas& canvas, const ScenePrimitive& primitive) {
     const SkRRect outer = toSkRRect(toSkRect(primitive.frame), primitive.borderRadii);
 
@@ -171,6 +227,11 @@ void paintPrimitive(SkCanvas& canvas, const ScenePrimitive& primitive) {
         } else {
             canvas.drawRRect(outer, paint);
         }
+    }
+
+    // Before the border, because React Native draws borders inside the frame and therefore over the content.
+    if (primitive.image.has_value()) {
+        paintImage(canvas, primitive, primitive.image.value(), outer);
     }
 
     paintBorder(canvas, primitive, outer);

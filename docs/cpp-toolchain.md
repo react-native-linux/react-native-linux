@@ -10,6 +10,11 @@ for issue #9, and the headless half of the Fabric bootstrap for issue #10. It is
 retained scene every frame — issue #32, the first React-driven pixels. Without the flag it draws the static
 placeholder card and runs no JavaScript.
 
+`rnl_window --screenshot <output.png> [--frames N]` is the same window, run for `N` presented frames and then
+read back: the last presented swapchain image is copied into a host buffer and written as a PNG, and the process
+exits. That is issue #33, and with a headless compositor and lavapipe it is the only rig that proves
+`SkiaVulkanRenderer`. See *Window goldens*.
+
 `hello_react --golden <bundle> <output.png>` is the third mode and the producer half of the golden-image rig from
 issue #6: it boots the same headless Fabric host, renders the settled scene into an **offscreen raster**
 `SkSurface` and writes a PNG. No GPU, no Vulkan driver, no Wayland compositor. See *Golden images*.
@@ -43,10 +48,11 @@ and the remaining ten `ReactCxxPlatform` subdirectories are still out.
 
 - `FabricHost` builds a `SchedulerToolbox` (context container carrying the `RuntimeScheduler`, buffered runtime
   executor, unbuffered bindings executor, a `FrameEventBeat`, and a component registry with the `RootView`,
-  `View`, `Paragraph`, `Text` and `RawText` descriptors), constructs a `Scheduler`, and starts one
+  `View`, `Image`, `Paragraph`, `Text` and `RawText` descriptors), constructs a `Scheduler`, and starts one
   `SurfaceHandler` with an 800x600 layout constraint. Constructing the `Scheduler` is what installs
   `nativeFabricUIManager` into the runtime, and constructing the `Paragraph` descriptor is what constructs the
-  `TextLayoutManager`; see *Text*.
+  `TextLayoutManager`; see *Text*. Constructing the `Image` descriptor is what constructs the `ImageManager`;
+  see *Image*.
 - The surface is started with an **empty module name**, so `SurfaceHandler::start` goes through
   `UIManager::startEmptySurface` instead of `AppRegistryBinding::startSurface`. That is the whole reason a bundle
   without React Native's JavaScript runtime can drive the renderer. `SurfaceHandler::stop` has no such branch and
@@ -77,7 +83,7 @@ same `FabricHost`; the headless host dumps the scene once the JavaScript thread 
 draws it every frame. See *The retained scene, and the threads it crosses*.
 
 Not covered yet, each with an owning milestone: `Scheduler::reportMount` and mount-hook telemetry,
-`dispatchCommand`, multiple surfaces, and every component past `View` and `Paragraph` — `Image`, `ScrollView` and
+`dispatchCommand`, multiple surfaces, and every component past `View`, `Paragraph` and `Image` — `ScrollView` and
 `TextInput` in particular. Events are covered; see *Input*.
 
 ## Window host
@@ -168,7 +174,7 @@ compositor reclaims the surface when the connection's file descriptor closes.
 Not drawn yet, each with an owning milestone: shadows and elevation, `boxShadow`, `filter`, `mixBlendMode`,
 `outline`, `backgroundImage` gradients, and `display: none`. Backgrounds, per-corner radii, per-side borders,
 opacity, transforms and `overflow` clipping are drawn; see *View props fidelity*. Text is drawn; see *Text*.
-Pointer and keyboard events reach JavaScript once per frame; see *Input*.
+Images are drawn; see *Image*. Pointer and keyboard events reach JavaScript once per frame; see *Input*.
 
 ### Skia acquisition
 
@@ -248,6 +254,17 @@ disables `rnl_window` without it. See *Input*.
 for anything with text in it, the vendored fonts. It never opens a Wayland connection and never loads a Vulkan
 driver.
 
+The window golden rig needs two more, and only for that rig:
+
+```bash
+sudo pacman -S --needed weston vulkan-swrast
+```
+
+`weston` is the headless compositor and `vulkan-swrast` is lavapipe, whose ICD manifest the rig finds at
+`/usr/share/vulkan/icd.d/lvp_icd.x86_64.json`. Note that lavapipe is **not** in the `mesa` package on Arch; a
+machine with `mesa` and a hardware driver still has no `lvp_icd` manifest and the rig will say so and skip. See
+*Window goldens*.
+
 `wayland-scanner` ships inside the `wayland` package and is located through
 `pkg-config --variable=wayland_scanner wayland-scanner`, so it is never assumed to be on `PATH`. A Vulkan driver
 package is separate from the loader: `vulkan-radeon`, `vulkan-intel`, `nvidia-utils`, or `vulkan-swrast` for
@@ -319,12 +336,17 @@ pnpm --filter @react-native-linux/core run:fabric   # build/dev/bin/hello_react 
 pnpm --filter @react-native-linux/core run:golden   # hello_react --golden <bundle> /tmp/rnl-fabric-view.png
 pnpm --filter @react-native-linux/core run:golden:damage  # hello_react --damage-golden damage.js /tmp/rnl-damage.png
 pnpm --filter @react-native-linux/core run:golden:text    # hello_react --golden text.js /tmp/rnl-text.png
+pnpm --filter @react-native-linux/core run:golden:image   # hello_react --golden image.js /tmp/rnl-image.png
+pnpm --filter @react-native-linux/core assets:test-image  # node scripts/make-test-image.ts — see *Image*
 pnpm --filter @react-native-linux/core run:input    # hello_react --inject-pointer pressable.js 200 140
 pnpm --filter @react-native-linux/core run:window   # build/dev/bin/rnl_window
 pnpm --filter @react-native-linux/core run:window:fabric  # build/dev/bin/rnl_window --fabric <bundle>
 
 pnpm test:golden          # compare renders against the checked-in goldens
 pnpm test:golden:update   # regenerate the goldens, for review before committing
+pnpm test:golden:window          # the same, for the window goldens: weston + lavapipe + the real swapchain
+pnpm test:golden:window:update   # regenerate the window goldens
+pnpm test:golden:window:render   # run the rig alone, writing PNGs into build/window-goldens
 pnpm test:native          # configure/build the `test` preset, run ctest, gate on coverage — see *Unit tests and coverage*
 ```
 
@@ -412,8 +434,8 @@ background filling the window with one blue `#3366CC` rounded rectangle inset 64
    `[rnl-window] wl_display_connect failed; is WAYLAND_DISPLAY set?` and exits 1.
 8. Optional, for a driver-independent check:
    `VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json ./build/dev/bin/rnl_window` renders the same
-   picture through lavapipe. That is the path the deferred full-window golden will use; the golden rig that exists
-   today renders offscreen on the CPU and never reaches a driver. See *Golden images*.
+   picture through lavapipe. That is the driver the window goldens use; the raster golden rig renders offscreen on
+   the CPU and never reaches one. See *Window goldens*.
 9. `./build/dev/bin/rnl_window --fabric packages/core/test-bundles/fabric-view.js` opens the same window on the
    same dark background with one flat blue `#3366CC` rectangle, 120x80, its top-left corner at (24, 24) — the
    frame `hello_react --fabric` prints for `View #4`, drawn instead of dumped. The bundle's
@@ -441,6 +463,13 @@ background filling the window with one blue `#3366CC` rounded rectangle inset 64
     picture comparable to the golden. Run
     `pnpm --filter @react-native-linux/core vendor:fonts` first; without it the paragraphs are shaped with a
     system font and the window will not match the golden. See *Text*.
+
+15. `./build/dev/bin/rnl_window --fabric packages/core/test-bundles/image.js` shows the image golden's picture in
+    a real window: twelve tiles, five of them one `resizeMode` each. The point of running it in a window rather
+    than headless is the **damage** path — the tiles appear a frame or two after the window opens, because the
+    decodes finish after the first commit, and every one of them has to appear. A tile that stays empty panel
+    until the window is resized means the decode-completion damage did not reach the frame thread. The
+    `https://` tile at (182, 360) is expected to stay empty panel forever. See *Image*.
 
 Not covered by this checklist, because it is not implemented yet: fractional scale, pointer and keyboard input,
 `wp_presentation_feedback` timing, and any measurement of the frame budget.
@@ -515,12 +544,26 @@ Two properties fall out of it rather than being special-cased:
 
 - **A new swapchain is a full repaint.** `createBackbuffers` seeds every list with the whole surface, so startup
   and every resize repaint everything, for every image, before any partial redraw happens.
-- **An idle frame costs nothing.** An empty list means that image already holds the current scene, so `drawFrame`
-  skips the paint call entirely and presents. Skia is still flushed, because the acquire semaphore has to be waited
-  on and the render semaphore has to be signalled for the present to proceed. **If the window ever stalls after
-  this lands, this is the first thing to check**: it assumes `GrDirectContext::flush` with a signal semaphore
-  submits a command buffer even when no drawing was recorded. The fallback, if that assumption is wrong, is to
-  paint unconditionally and lose only the idle-frame saving.
+- **An idle frame costs nothing, and it bypasses Skia.** An empty list means that image already holds the current
+  scene, so `drawFrame` skips the paint entirely. The first version of this also flushed Skia anyway, on the
+  assumption that `GrDirectContext::flush` with a signal semaphore submits a command buffer even when no drawing
+  was recorded. **That assumption was wrong, and it deadlocked the window on hardware** — see item 8 of the window
+  fix ledger. Skia's own header says so: flush returns `GrSemaphoresSubmitted::kNo` when it submits no semaphores,
+  and in that case "the client should not have the GPU wait on any of the semaphores passed in with the
+  `GrFlushInfo`", which is exactly what `vkQueuePresentKHR` does with the render semaphore. An idle frame is
+  therefore a submission of its own: one `vkQueueSubmit` with **zero command buffers**, waiting on the acquire
+  semaphore at `VK_PIPELINE_STAGE_ALL_COMMANDS_BIT` and signalling the render semaphore. That is the whole of a
+  frame that draws nothing, and it needs no layout handling because nothing touched the image since the flush that
+  left it in `VK_IMAGE_LAYOUT_PRESENT_SRC_KHR`.
+
+  Ownership of the acquire semaphore moves with the branch. On the drawing path `SkSurface::wait` takes it and
+  Skia deletes it; on the idle path Skia never sees it, so it is parked on the backbuffer and destroyed the next
+  time that backbuffer comes round. That is the same retirement guarantee the extra backbuffer already provides
+  for reusing the render semaphore, and it is what keeps an idle window from leaking one semaphore per frame.
+
+  A pending `--screenshot` capture is the one thing that overrides the idle path: the frame is painted even when
+  the image owes nothing, so the screenshot always comes from a full repaint on the ordinary path and the readback
+  is ordered after real submitted work. See *Window goldens*.
 
 Not done, and deferred to the perf issue #20: `wl_surface.damage_buffer` and `VK_KHR_incremental_present`. Both
 tell the *compositor* which part of the surface changed, so it can composite less. Everything above only stops
@@ -740,6 +783,157 @@ Each is deliberate, and each is a thing to fix rather than a thing to argue abou
 - **`<TextInput>` is not here at all.** It has no `platform/cxx` upstream and is issue #17; selection, the caret,
   and `zwp_text_input_v3` IME all belong to it.
 
+## Image
+
+Issue #15, milestone M1. This is four pieces: an `ImageManager` that answers `ImageShadowNode`, a decode pipeline
+that never runs on a frame thread, a bounded cache the painter reads, and a damage path for the one event in this
+renderer that no Fabric mutation stands behind — a decode finishing.
+
+### The pipeline, end to end
+
+```text
+<Image> props
+  → ImageShadowNode::getImageSource        picks the source and stamps the laid-out size onto it
+  → ImageManager::requestImage             queues the decode, returns an ImageRequest
+  → ImageState                             the chosen ImageSource + that request, mounted
+  → RetainedScene::writeNode               read off the state and the props into SceneNode::image
+  → SceneSnapshot                          SceneImageContent on the primitive, opacity folded in
+  → ScenePainter::paintImage               the cached SkImage, fitted and clipped to the frame
+
+  decode worker thread → ImageCache → decode listener → LinuxMountingManager::damageImageSource
+```
+
+The pixels never travel through the scene. `RetainedScene` links no Skia, so a `ScenePrimitive` carries the source
+URI, the fit and the tint, and the decoded `SkImage` lives in a process-wide cache the painter looks the URI up
+in. That is the same split *Text* makes for a different reason, and it is what keeps the whole of the image model
+inside the coverage gate.
+
+The source is read off `ImageState`, not off `ImageProps.sources`. `ImageShadowNode` is what chooses between
+several sources and what stamps the laid-out size and scale onto the one it chose, and that is the source
+`requestImage` was given and therefore the source the decoder is filling the cache with; reading the props would
+be a second answer to the same question. `resizeMode` and `tintColor` come off the props, because neither reaches
+the state.
+
+### Replacing the upstream stub
+
+`react/renderer/imagemanager/platform/cxx/.../ImageManager.cpp` is marked `// Not implemented` and returns a
+request nothing ever completes — the second of the two real C++ gaps `docs/research/prior-art.md` §2.4 names.
+Replacing it is the same **source-list edit at our own `add_subdirectory` call site** the `TextLayoutManager` swap
+uses, in `packages/core/CMakeLists.txt`, against `react_renderer_imagemanager` instead. `ImageContent.cpp`,
+`ImageManager.cpp` and `ImagePipeline.cpp` join that object library; no vendored file is edited; the configure
+fails loudly with a named error if the stub ever moves; and `-DRNL_ENABLE_SKIA=OFF` keeps the stub, so the
+sanitizer presets and the Hermes-free `test` configure link no Skia and an `<Image>` there simply never paints.
+
+Replacing the definition rather than subclassing `ImageManager` is deliberate, and it is why nothing inserts an
+`"ImageManager"` entry into the context container. `ImageComponentDescriptor` resolves its manager with
+`getManagerByName<ImageManager>(contextContainer, "ImageManager")`, which **constructs**
+`std::make_shared<ImageManager>(contextContainer)` when that key is absent. Neither shipping platform registers
+under it either; iOS and Android inject their loaders under their own keys from inside the manager. Replacing the
+definition therefore gives every descriptor this implementation with no registration step and no second
+implementation to disagree with.
+
+### Threading, and what the frame thread is promised
+
+`requestImage` runs during layout, on whichever thread commits. It queues the URI and returns immediately; one
+process-wide worker thread does every decode. A frame is therefore never blocked on a codec, which is the whole
+acceptance criterion, and the painter draws whatever is in the cache at the moment it asks — a source that has
+not finished decoding draws nothing at all rather than stalling the frame.
+
+Two requests for the same URI decode once: the second joins the first's completion list. The queue, the cache,
+the completion lists and the listener live under one mutex, and that mutex is never held while a codec runs or
+while a completion or the listener is called, so the listener may take the mounting manager's lock without
+inverting a lock order.
+
+`ImagePipelineState` is a function-local static exactly like the text pipeline's `FontCollection`, and its
+destructor stops and joins the worker before any member the worker touches is destroyed. That is what makes a
+function-local static safe to hand a thread.
+
+### Damage, because a decode is not a mutation
+
+Every other thing that changes the picture arrives as a `ShadowViewMutation`, and *Damage tracking* accounts for
+it. A decode does not: no shadow node changed, so Fabric emits nothing. The pipeline therefore calls one listener
+with the URI it just decoded, `FabricHost` installs a listener that calls
+`LinuxMountingManager::damageImageSource`, and that damages the subtree extent of every node drawing that URI
+under the scene mutex. The next `takeFrame` hands the frame thread that damage with the scene it belongs to,
+which is the same atomic pair every other mutation goes through.
+
+The listener is process-wide and installed by `FabricHost`, under `RNL_ENABLE_IMAGES` — the definition only
+exists when the swap above happened. It is cleared in `~FabricHost` so a decode that lands after a host is gone
+damages nothing.
+
+`hello_react --golden` has no run loop to notice that damage, so it settles the decode queue with
+`waitForPendingImageDecodes` before it rasterises. Without that the same bundle would produce a picture that
+depends on how fast a codec ran.
+
+### The cache
+
+`ImageCache` is a least-recently-used cache keyed by source URI, bounded at **64 MiB of decoded pixels**. The
+bound is bytes rather than entries because the cost of a decoded image is its pixels and two sources can differ by
+three orders of magnitude in area. An insert past the capacity evicts from the least recently used end until the
+total fits, and an entry that alone exceeds the capacity is not cached at all, so one oversized image cannot flush
+everything else out on its way to being evicted itself. Both a hit and an insert make an entry most recently used.
+
+The value is a `std::shared_ptr<void>`, which is what keeps `ImageContent.cpp` free of Skia and therefore inside
+the coverage gate; it is the same type erasure upstream's own `ImageResponse` uses, for the same reason. An
+evicted image stays alive as long as a frame is still drawing it, because the painter takes its own reference.
+
+### Sources
+
+| Source | Handled how |
+| --- | --- |
+| `data:<type>;base64,<payload>` | Decoded in `ImageContent.cpp`, then handed to Skia as an `SkData`. Only base64 is accepted, which is the only form React Native's tooling emits. |
+| `file:///absolute/path` | The scheme is stripped and the rest is a path. |
+| `/absolute/path` | A path already. |
+| `relative/path.png` | Resolved against `RNL_BUNDLED_ASSET_DIR`, an absolute path baked in at configure time pointing at `packages/core/assets`. |
+| `http://`, `https://`, any other scheme | Unsupported. One line on stderr, no decode, nothing painted. |
+
+`RNL_BUNDLED_ASSET_DIR` is the same placeholder `RNL_BUNDLED_FONT_DIR` is, for the same reason: there is no asset
+packaging, and inventing one before the CLI exists is the kind of scaffolding the Prime Directive rejects. Real
+asset packaging belongs with M3.
+
+Decoding is Skia's own codecs, compiled into `libskia.a`: `SkPngDecoder` and `SkJpegDecoder` are passed to
+`SkCodec::MakeFromData` as an explicit decoder list rather than relying on `SkCodecs::Register`, so the supported
+set is visible in the source instead of depending on which objects the linker happened to pull in. libpng, zlib
+and libjpeg-turbo are inside the archive, so images add no system dependency — the pinned release's name carries
+`jpegd` and `jpege`.
+
+### Props implemented
+
+| Prop | How it is implemented |
+| --- | --- |
+| `source` | The first — or best-fitting — entry of `ImageProps.sources`, chosen by `ImageShadowNode` and read back off `ImageState`. |
+| `resizeMode` | `cover`, `contain`, `stretch`, `center` and `repeat` are `imagePlacement` in `ImageContent.cpp`: a destination rectangle from the frame and the decoded size. `none` maps onto `center`, because both draw at the natural size. |
+| `tintColor` | `SkColorFilters::Blend` with `SkBlendMode::kSrcIn`, so the image becomes a silhouette in that colour. The inherited opacity is folded into the tint's own alpha. |
+| `opacity` and every `<View>` paint prop | `ImageProps` derives from `ViewProps`, so backgrounds, borders, radii, transforms and clips are exactly *View props fidelity*. The image is drawn after the background and before the border, because React Native draws borders inside the frame and therefore over the content. |
+| `borderRadius` | The image is clipped to the same rounded rectangle the background is filled with, so `cover` overflow and rounded corners are cut by one clip. |
+
+`repeat` is the one mode that is not a single `drawImageRect`: the placement rectangle is the first tile, and a
+repeating shader anchored at it fills the frame.
+
+### Fidelity limits
+
+Each is deliberate, and each is a thing to fix rather than a thing to argue about:
+
+- **No `http` or `https`.** There is no networking stack in this build at all — `ReactCxxPlatform`'s HTTP client
+  needs nlohmann_json and OpenSSL, and neither is linked. A remote source is not a decode that failed; it is a
+  decode that was never attempted. It arrives with the Metro dev server work.
+- **No animated images.** `SkCodec` is asked for one frame. APNG, animated WebP and GIF decode to their first
+  frame at best; GIF is not in the decoder list at all.
+- **No `srcSet` or scale selection.** `ImageShadowNode` picks the best area fit among several sources and we paint
+  what it picked, but nothing here reasons about `scale` or a device pixel ratio, because there is no fractional
+  scale support yet either.
+- **No `onLoad`, `onLoadStart`, `onLoadEnd`, `onError` or `onProgress`.** The `ImageResponseObserverCoordinator`
+  upstream builds for every request **is** completed or failed by the decoder, so the state is truthful and these
+  events are a matter of emitting them from an observer rather than of plumbing. Nothing observes one yet.
+- **The image fills the border box, not the padding box.** iOS and Android inset the content by padding; here
+  `padding` on an `<Image>` moves nothing.
+- **`blurRadius`, `capInsets`, `overlayColor`, `fadeDuration`, `progressiveRenderingEnabled`, `defaultSource` and
+  `loadingIndicatorSource` are ignored.** `capInsets` in particular means no nine-patch stretching.
+- **A failed decode is not retried and not remembered.** The next commit that changes the source requests it
+  again; nothing polls.
+- **The cache has no hit-rate probe**, for the same reason the text measure cache has none: there is nowhere to
+  report a number to until #20.
+
 ## Input
 
 Issue #18, milestone M1. A mouse pointer and a keyboard, delivered to React once per frame. Touch, gestures beyond
@@ -940,8 +1134,8 @@ slice does not do that, deliberately:
   rendering observable.
 - The cost is honest and bounded. A raster golden proves the scene, the geometry and the paint code path. It does
   **not** prove `SkiaVulkanRenderer`: swapchain wrapping, image layout transitions, semaphore handling, colour
-  space through the WSI, or `wl_surface` presentation. Every one of those is exactly what the lavapipe plus
-  `weston --backend=headless` golden is for, and that rig is a follow-up issue, not this one.
+  space through the WSI, or `wl_surface` presentation. Every one of those is what the lavapipe plus
+  `weston --backend=headless` rig covers; it landed separately, as issue #33. See *Window goldens*.
 
 ### Link impact on hello_react
 
@@ -967,8 +1161,9 @@ devDependencies through the workspace catalog.
 
 The gospel's perceptual threshold exists because GPU rasterisation and font hinting vary between drivers. Skia's
 raster backend does not: one Skia build given one scene produces the same bytes on every machine, so the threshold
-here is exact equality. A tolerance would only hide a real regression. When the lavapipe window golden lands it
-needs its own comparator with its own stated threshold, not a loosened version of this one.
+here is exact equality. A tolerance would only hide a real regression. The lavapipe window golden has its own
+comparator with its own stated thresholds, `packages/core/goldens/perceptual-diff.ts`, rather than a loosened
+version of this one; see *Window goldens*.
 
 ### The workflow
 
@@ -1034,9 +1229,47 @@ string is ASCII so that nothing falls through to a system font. On the same `#14
 The heading and the two aligned lines carry no `backgroundColor` and no border, so they also prove the scene's
 visibility rule: a node that paints only text is still emitted as a primitive.
 
+The fourth is `packages/core/test-bundles/image.js` to `packages/core/goldens/image.png`, the fixture for *Image*
+above. It needs `pnpm --filter @react-native-linux/core assets:test-image` to have produced
+`packages/core/assets/rnl-test-image.png`; that file is checked in, so the command is only needed when the asset
+itself changes. The asset is a 64x48 PNG with a 2 px light `#F2F4F8` border, four quadrants — red `#E06C75` top
+left, green `#98C379` top right, blue `#61AFEF` bottom left, amber `#E5C07B` bottom right — and an 8x8 dark
+`#14161A` square in the middle. Its 4:3 aspect is what makes `cover` and `contain` produce visibly different
+rectangles inside the fixture's 130x120 tiles.
+
+Every tile is 130x120 on a `#1E2430` panel, so whatever the image does not cover reads as panel. On the same
+`#14161A` background, left to right, top to bottom:
+
+1. (30, 40) `cover`. The image scales 2.5x to 160x120, fills the tile top to bottom, and is **cropped left and
+   right**: no panel is visible and the light border survives only along the top and bottom edges.
+2. (182, 40) `contain`. The image scales 2.03x to 130x97.5 and is centred, leaving a **panel band above and
+   below** and the whole light border intact.
+3. (334, 40) `stretch`. The image fills all 130x120 with its aspect ratio distorted; the centre square is a
+   rectangle.
+4. (486, 40) `center`. The image is drawn at its natural 64x48 in the middle of the tile, surrounded by panel on
+   all four sides.
+5. (638, 40) `repeat`. The image tiles from the tile's **top-left corner** at natural size: two full columns and
+   two full rows, then a partial third of each cut off by the frame.
+6. (30, 200) the `data:` URI at `stretch`: a 4x4 image of four colour quadrants blown up to 130x120 with the
+   bilinear filtering iOS and Android also apply, so the tile reads as the four colours blending into each
+   other across a soft cross, not as four hard-edged rectangles.
+7. (182, 200) the same `data:` URI at `repeat`: the 4x4 tile repeated, which reads as a fine regular checker.
+8. (334, 200) `cover` with `borderRadius: 28`. Same picture as tile 1, with **all four corners cut away** to the
+   panel-free background.
+9. (486, 200) `cover` with `borderRadius: 20` and an 8 px uniform amber `#E5C07B` border, which is drawn **over**
+   the image and inside the frame, so the tile is still exactly 130x120.
+10. (638, 200) `cover` at `opacity: 0.4`, so the whole tile is the same picture as tile 1 blended toward the
+    background.
+11. (30, 360) `contain` with `tintColor` sky `#61AFEF`. The image becomes a flat sky-blue silhouette of itself:
+    every opaque pixel is the same colour, so the quadrants and the centre square disappear and only the shape
+    and the letterboxing remain.
+12. (182, 360) an `https://` source. **Nothing but the panel**, because there is no networking stack; the run
+    prints one `[image] unsupported source` line to stderr, which is the graceful-degradation path being proved
+    rather than a failure.
+
 ### The partial-redraw equivalence proof
 
-The fourth fixture is different in kind: `--damage-golden` is issue #12's acceptance criterion — "partial redraw
+The fifth fixture is different in kind: `--damage-golden` is issue #12's acceptance criterion — "partial redraw
 equals full redraw" — turned into an assertion, and the PNG is a by-product.
 
 `packages/core/test-bundles/damage.js` commits twice. The first commit is an ordinary frame. A `setTimeout`
@@ -1075,6 +1308,156 @@ The expected picture, on the same `#14161A` background, is the second frame:
 3. Nothing at (300, 200) and nothing at (600, 80): the moved view's old position and the unmounted view's
    rectangle are both damaged, cleared, and left as background.
 
+## Window goldens
+
+The raster rig above proves the scene and the paint code path on the CPU. This one proves the half it cannot
+reach: `SkiaVulkanRenderer` wrapping swapchain images as `SkSurface`s, the image layout transitions, the acquire
+and render semaphores, the format the WSI negotiated, and `vkQueuePresentKHR` actually committing a `wl_surface`.
+It is issue #33, and it is the gospel's "lavapipe software Vulkan + headless Wayland compositor" clause taken
+literally. Three parts: a screenshot mode in the binary, a compositor rig, and a comparator that is not the raster
+one.
+
+```text
+rnl_window [--fabric <bundle>] --screenshot <output.png> [--frames N]
+```
+
+`--frames` defaults to 60, which under a 60 Hz headless output is about a second — long enough for the bundle to
+load, mount and settle before the frame that is captured. Without `--screenshot` the frame count is ignored and
+the window runs until it is closed, exactly as before.
+
+### The readback
+
+The capture is a mode of `drawFrame`, not a separate pass over an image that has already been presented, and that
+is a correctness point rather than a convenience. Between `vkAcquireNextImageKHR` and `vkQueuePresentKHR` the
+application owns the image and knows its layout; afterwards it owns neither, and re-acquiring returns whichever
+image is free rather than the one just shown. `captureNextFrame` therefore arms a path that runs after Skia's
+`flush`/`submit` and before the present request:
+
+1. A host-visible, host-coherent `VkBuffer` of `width * height * 4` bytes, from the first memory type that accepts
+   the buffer and carries both properties.
+2. A transient command pool and one primary command buffer.
+3. A barrier from `VK_IMAGE_LAYOUT_PRESENT_SRC_KHR` to `VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL`, with
+   `VK_PIPELINE_STAGE_ALL_COMMANDS_BIT` as the source stage. `PRESENT_SRC_KHR` is the layout Skia was asked for
+   through the `MutableTextureState` on the flush, so it is the layout the image is in. The barrier's first
+   synchronisation scope covers everything already submitted to this queue, which is what orders the copy after
+   Skia's rendering without adding a second semaphore to the frame.
+4. `vkCmdCopyImageToBuffer` with `bufferRowLength` and `bufferImageHeight` left at zero, so the rows are tightly
+   packed and the stride is `width * 4`.
+5. A barrier back to `PRESENT_SRC_KHR`, restoring exactly the layout Skia recorded, so both the present that
+   follows and Skia's own tracking stay valid.
+6. Submit with a fence, wait on the fence, map the memory.
+
+A pending capture also suppresses the idle path in *Damage tracking*, so the captured frame is always painted and
+always submitted through Skia. Two things follow. The picture is a **full repaint** — an image that owed nothing
+has an empty damage list, and an empty list is what `paintScene` treats as no clip at all — so a screenshot never
+depends on the partial-redraw arithmetic being right, which the raster `--damage-golden` rig proves separately.
+And the readback is ordered after real submitted work, which is what the `ALL_COMMANDS` barrier above needs; an
+empty submission would give it nothing to order against.
+
+Format handling is explicit. The swapchain is whichever of `VK_FORMAT_B8G8R8A8_UNORM` or `VK_FORMAT_R8G8B8A8_UNORM`
+the surface offered — B8G8R8A8 wins the preference loop, so in practice the mapped bytes are BGRA. The mapped
+memory is wrapped in an `SkPixmap` carrying the swapchain's own `SkColorType`, and `SkPixmap::readPixels` converts
+it into a second `kRGBA_8888_SkColorType` pixmap that `SkPngEncoder` writes. The swizzle is therefore Skia's
+conversion rather than a hand-rolled byte shuffle, and the golden does not depend on which format the surface
+happened to offer. `kTopLeft_GrSurfaceOrigin` is what the surfaces are wrapped with and image row 0 is the top row,
+so nothing is flipped.
+
+A failure at any step throws, and `WindowMain` turns that into a `[rnl-window]` line and exit 1. If a frame
+rebuilds the swapchain instead of painting — a resize, or `VK_ERROR_OUT_OF_DATE_KHR` — the request stays pending
+and the next frame takes it, so a compositor that reconfigures the window during startup delays the capture
+instead of losing it.
+
+### The compositor rig
+
+`scripts/window-golden.ts` is the rig, and it renders; it does not compare. It creates a private
+`XDG_RUNTIME_DIR` under `TMPDIR`, starts
+
+```text
+weston --backend=headless --no-config --socket=<private> --width=800 --height=600 --idle-time=0
+```
+
+with `DISPLAY`, `WAYLAND_DISPLAY`, `VK_ICD_FILENAMES` and `VK_DRIVER_FILES` stripped from the inherited
+environment, waits for the socket to appear in that directory, then runs `rnl_window --fabric <bundle>
+--screenshot <out> --frames 60` once per fixture with `WAYLAND_DISPLAY` and `XDG_RUNTIME_DIR` pointed at the
+private compositor and `VK_ICD_FILENAMES` pinned to the lavapipe manifest it found under
+`/usr/share/vulkan/icd.d` or `/etc/vulkan/icd.d`. Then it kills weston and removes the directory.
+
+The compositor's own renderer is irrelevant, which is worth stating because it is the reason this rig is cheap:
+the golden's pixels come out of the swapchain image, not out of anything weston composited, so weston only has to
+accept and release buffers. Mesa's Wayland WSI uses `wl_shm` for lavapipe, since there is no DRM device to import
+a dma-buf from, and every compositor advertises `wl_shm`.
+
+Only weston is supported. `cage` and `sway` were considered and rejected for this rig rather than deferred: cage
+launches a client instead of offering a socket, which is a different shape, and adding a second compositor before
+the first one has failed anywhere is the speculative generality AGENTS.md forbids.
+
+The script exits **2**, with the reason on stderr, when `build/dev/bin/rnl_window`, `weston` or the lavapipe ICD is
+missing. That is what keeps a checkout without a graphics stack green, and it is one detection path rather than one
+in the script and another in the spec.
+
+### The comparator, and why zero tolerance is wrong here
+
+`packages/core/goldens/perceptual-diff.ts` is a second comparator beside `png-diff.ts`, not a loosened version of
+it. The raster goldens compare byte for byte because Skia's raster backend given one scene produces the same bytes
+on every machine. A window golden is a function of the Mesa version the distribution ships, of which swapchain
+format the surface offered, and of a GPU rasteriser whose antialiasing coverage is not the raster backend's. The
+Arch development machine and the Ubuntu 24.04 runner do not ship the same Mesa, and pinning a byte would pin the
+driver rather than the renderer.
+
+Two thresholds, doing two different jobs:
+
+| Threshold | Value | What it catches |
+| --- | --- | --- |
+| `MAX_CHANNEL_DELTA` | 8 of 255 | What counts as a differing pixel at all. A wrong colour, a swizzled channel order, a black frame or a stale buffer moves whole channels, not three percent of one. |
+| `MAX_DIFFERING_PIXEL_FRACTION` | 1% | How much of the image may differ. 1% of 800x600 is 4800 pixels: more than the antialiased perimeter of every shape in both fixtures together, and far less than the smallest shape in them, so a moved, missing or unpainted element still fails. |
+
+The division of labour is deliberate. Geometry to the pixel is the raster rig's job, and it already asserts it with
+zero tolerance on the same two bundles. This rig's job is that the same scene survives the swapchain path at all.
+
+### The fixtures and the workflow
+
+`packages/core/test-bundles/fabric-view.js` and `view-props.js`, the same two bundles the raster rig uses, to
+`packages/core/goldens/window-fabric-view.png` and `window-view-props.png`. They are separate files from the raster
+goldens on purpose: the pictures describe the same scene but not the same bytes, and a shared file would force one
+of the two rigs to accept the other's rasteriser. `text.js` is not a window fixture yet — the GPU glyph atlas is a
+third rasterisation path and deserves its own thresholds rather than a share of these.
+
+The comparison lives in `golden.spec.ts`, which runs the rig once at collection time — one compositor for all
+fixtures, because starting one per image would cost more than the renders do — and skips the whole block with the
+rig's own message when it exits 2.
+
+```bash
+cmake --build build/dev --target rnl_window
+pnpm test:golden:window:update   # renders straight into packages/core/goldens
+pnpm test:golden:window          # compares; must pass immediately afterwards
+```
+
+The review rule from *Golden images* applies unchanged: a regenerated golden is read as code, and one updated
+because the test failed is a deleted test. When a window golden is missing the spec fails and names
+`pnpm test:golden:window:update` rather than creating a baseline.
+
+### The CI job
+
+`window` is its own job on `ubuntu-24.04`, not a fourth entry in the `native` matrix. The reason is that
+`native (dev)` proves the opposite property — that a configure with no Wayland and no Vulkan loader prints
+`rnl_window is disabled, missing: ...` and carries on — so installing the graphics stack there would delete a
+test. On top of the native apt list it adds `libwayland-dev` and `wayland-protocols` for the xdg-shell client,
+`libxkbcommon-dev` for the keymap, `libvulkan-dev` for the loader and headers, `mesa-vulkan-drivers` for the
+lavapipe ICD, and `weston`. It vendors React Native, Skia and the fonts from the same caches the native job uses,
+builds `--target rnl_window` — which is also the assertion that the window half configured, since a skipped target
+fails as an unknown target rather than silently — and runs `pnpm test:golden:window`.
+
+That last step also greps its own output for `skipping window goldens` and fails if it finds it. The spec skips
+when weston, lavapipe or the binary is missing, which is what keeps a laptop green and what would otherwise let an
+incomplete apt list pass CI without rendering anything. As with the raster job, the assertion that the rig did not
+skip is the assertion that it ran.
+
+Its ccache entry is keyed `rnl-ccache-ubuntu-24.04-clang-18-window-...` and falls back through its own prefix to
+the `dev` one, so a cold window job warms from the native job's cache; only the window sources are new. It saves
+under its own key, so the two jobs never race for the same entry on a push to `main`. On failure the rendered PNGs
+are uploaded as the `window-goldens` artifact, which is also how the first pair of goldens is produced on a machine
+without weston: let the job fail on the missing goldens, download the artifact, review it, commit it.
+
 ## Unit tests and coverage
 
 `packages/core/tests` is a second, Hermes-free CMake configure of the same source tree, reached only through the
@@ -1087,8 +1470,8 @@ needs neither Hermes nor Skia, so it skips both the multi-hour Hermes build and 
 Vulkan prerequisites `RNL_ENABLE_SKIA` and `RNL_ENABLE_WINDOW` probe for.
 
 `packages/core/tests/CMakeLists.txt` fetches googletest at a pinned commit, builds `rnl_core_tests` from
-`SceneTest.cpp` and `InputTest.cpp` plus the three sources they exercise — `RetainedScene.cpp`,
-`LinuxMountingManager.cpp` and `InputPipeline.cpp`, compiled
+`SceneTest.cpp`, `InputTest.cpp` and `ImageTest.cpp` plus the four sources they exercise — `RetainedScene.cpp`,
+`LinuxMountingManager.cpp`, `InputPipeline.cpp` and `ImageContent.cpp`, compiled
 directly into the test binary rather than linked from a Hermes-linked library — and registers them with
 `gtest_discover_tests` so `ctest` finds every `TEST` individually. Under Clang, `rnl_core_tests` also gets
 `-fprofile-instr-generate -fcoverage-mapping`, LLVM's source-based coverage instrumentation.
@@ -1096,8 +1479,8 @@ directly into the test binary rather than linked from a Hermes-linked library �
 `scripts/cpp-coverage.ts` is the gate: it runs `rnl_core_tests` with `LLVM_PROFILE_FILE` pointed at
 `build/test/coverage`, merges the raw profile with `llvm-profdata merge -sparse`, exports it as lcov with
 `llvm-cov export --format=lcov`, and grades line and branch coverage per file against an explicit list
-(`scopedSourcePaths` in the script — today `RetainedScene.cpp`, `LinuxMountingManager.cpp` and
-`InputPipeline.cpp`, the three sources the test binary actually exercises). A source with no tests behind it is
+(`scopedSourcePaths` in the script — today `RetainedScene.cpp`, `LinuxMountingManager.cpp`, `InputPipeline.cpp`
+and `ImageContent.cpp`, the four sources the test binary actually exercises). A source with no tests behind it is
 deliberately not in that list: adding a file there without coverage behind it is what turns the gate red, rather
 than a silent average across the whole of `packages/core`.
 
@@ -1107,6 +1490,15 @@ can be arithmetically wrong — motion coalescing, the queue bound, the buttons 
 machine, offset points, modifier flags — lives in `InputPipeline.cpp` where the gate sees it. What is left in
 `InputDispatcher.cpp` is a `UIManager` hit test and a switch over five emitter calls, and what is left in
 `WaylandSeat.cpp` is protocol plumbing that needs a compositor. `--inject-pointer` is the test for those two.
+
+`ImageContent.cpp` is inside it, and the split between it and `ImagePipeline.cpp` is what makes the image scope
+honest: everything that can be arithmetically wrong — base64 decoding, source-scheme resolution, the five
+`resizeMode` placements, the LRU order and the byte-bounded eviction — lives in `ImageContent.cpp` where the gate
+sees it, and what is left in `ImagePipeline.cpp` and `ImageManager.cpp` is a Skia codec call, a worker thread and
+upstream's request type. Those two are also outside the `test` configure entirely, because the ImageManager swap
+is conditional on Skia; the image golden is what tests them. The scene half of images is inside the gate:
+extraction from `ImageState`, the `resizeMode` mapping, the opacity fold into the tint and the decode-completion
+damage all live in `RetainedScene.cpp` and `LinuxMountingManager.cpp` and are covered by `RetainedSceneImageTest`.
 
 `TextPipeline.cpp` and `TextLayoutManager.cpp` are outside that scope for the same reason, and one stronger one:
 they are the only two sources that are not even compiled in the `test` configure, because the stub swap is
@@ -1167,6 +1559,7 @@ with the version in a trailing comment; Renovate keeps those SHAs fresh through 
 | `native (dev)` | `ubuntu-24.04` | 120 min | The whole C++ toolchain: vendor, configure, build, the four `hello_react` acceptance paths, and the golden-image comparison. |
 | `native (asan)` | `ubuntu-24.04` | 120 min | The same build and the same four paths under ASan + UBSan. |
 | `native (tsan)` | `ubuntu-24.04` | 120 min | The same build and the same four paths under TSan. |
+| `window` | `ubuntu-24.04` | 120 min | `rnl_window` built and run under `weston --backend=headless` with lavapipe, and the window goldens compared. The only job that reaches the Vulkan swapchain. See *Window goldens*. |
 
 The three `native` entries are one matrix job with `fail-fast: false`, so a sanitizer failure never hides the
 headless result. They are ordinary pull-request jobs rather than a push-to-main or label-gated workflow: they run
@@ -1267,8 +1660,9 @@ shows up as a mystery failure.
 
 ### Not wired up yet
 
-Issue #4's `llvm-cov` C++ coverage gate is wired now; see *Unit tests and coverage* below. The gcc column of the
-matrix, and the lavapipe window golden, are the remaining deferred pieces.
+Issue #4's `llvm-cov` C++ coverage gate is wired now; see *Unit tests and coverage* below. The lavapipe window
+golden is wired now too; see *Window goldens*. The gcc column of the matrix is the remaining deferred piece, along
+with the e2e driver's virtual Wayland input, which will run on the same compositor rig this job starts.
 
 ## Dependencies, and how they differ from Meta's
 
@@ -1336,3 +1730,4 @@ and libstdc++: `FOLLY_USE_LIBCPP` (folly would include libc++'s `<__config>`) an
 5. Skia's `tools/window/VulkanWindowContext.cpp` is the reference for the frame path but cannot be linked: it includes `src/` private headers that no prebuilt ships. The structure is copied, the code is not.
 6. `VkSurfaceCapabilitiesKHR::currentExtent` is `0xFFFFFFFF` on Wayland, so the swapchain extent comes from the last `xdg_toplevel.configure` clamped to the reported min and max, never from the surface.
 7. `wl_display_dispatch` cannot be used. The Vulkan WSI dispatches the same connection on its own private event queue, so the run loop uses the `wl_display_prepare_read`/`wl_display_read_events` protocol with `poll` in between.
+8. **A Skia flush with no recorded drawing signals no semaphores, and the window deadlocks on the next acquire.** Found with `rnl_window --screenshot --frames 30` on hardware: five frames worked, thirty hung with no output. Once every swapchain image had painted the settled scene, every later frame was idle, and the idle path flushed Skia with a signal semaphore and no work. `GrDirectContext::flush` documents the outcome — it returns `GrSemaphoresSubmitted::kNo` and "the client should not have the GPU wait on any of the semaphores passed in" — but `vkQueuePresentKHR` was waiting on that render semaphore regardless, so the present never completed, the image was never released, and the next `vkAcquireNextImageKHR(UINT64_MAX)` blocked forever. The fix is an explicit empty `vkQueueSubmit` on the idle path instead of the flush; see *Damage tracking*. The general lesson is that `flush`'s return value is a contract, not a status code to discard.

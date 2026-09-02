@@ -13,6 +13,12 @@ void LinuxMountingManager::startSurface(facebook::react::SurfaceId surfaceId, fa
     scene_.createSurfaceRoot(surfaceId, size);
 }
 
+void LinuxMountingManager::damageImageSource(const std::string& uri) {
+    const std::lock_guard<std::mutex> guard(sceneMutex_);
+
+    scene_.damageImageSource(uri);
+}
+
 SceneFrame LinuxMountingManager::takeFrame() {
     const std::lock_guard<std::mutex> guard(sceneMutex_);
 

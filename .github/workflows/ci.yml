@@ -388,3 +388,160 @@ jobs:
       - name: Compare golden images
         if: matrix.skia == 'ON'
         run: pnpm test:golden
+
+  # The only job that reaches SkiaVulkanRenderer: a real swapchain on a real wl_surface, drawn by lavapipe under
+  # a headless weston. It is deliberately separate from native (dev), which proves the opposite thing — that a
+  # configure with no Wayland and no Vulkan loader disables rnl_window and carries on. Installing the graphics
+  # stack there would delete that test.
+  window:
+    name: window
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      CC: clang-18
+      CXX: clang++-18
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+    steps:
+      - name: Free disk space
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The native list plus what rnl_window needs to build and what the rig needs to run: libwayland-dev and
+      # wayland-protocols for the xdg-shell client, libxkbcommon-dev for the keymap, libvulkan-dev for the loader
+      # and headers, mesa-vulkan-drivers for the lavapipe ICD, and weston for the headless compositor.
+      - name: Install build prerequisites
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            ccache \
+            clang-18 \
+            clang-tools-18 \
+            cmake \
+            git \
+            libboost-dev \
+            libdouble-conversion-dev \
+            libfmt-dev \
+            libfontconfig-dev \
+            libfreetype-dev \
+            libgoogle-glog-dev \
+            libicu-dev \
+            libvulkan-dev \
+            libwayland-dev \
+            libxkbcommon-dev \
+            mesa-vulkan-drivers \
+            ninja-build \
+            pkg-config \
+            python3 \
+            wayland-protocols \
+            weston
+          clang-18 --version
+          weston --version
+          ls /usr/share/vulkan/icd.d
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Cache vendored React Native
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: third_party/react-native
+          key: rnl-vendor-react-native-ubuntu-24.04-${{ hashFiles('scripts/vendor.lock.json', 'scripts/vendor-react-native.ts') }}
+
+      - name: Vendor React Native
+        run: node scripts/vendor-react-native.ts
+
+      - name: Cache vendored Skia
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: third_party/skia
+          key: rnl-vendor-skia-ubuntu-24.04-${{ hashFiles('scripts/skia.lock.json', 'scripts/vendor-skia.ts') }}
+
+      - name: Vendor Skia
+        run: node scripts/vendor-skia.ts
+
+      # Neither window fixture draws text, but the Linux TextLayoutManager is linked either way and the fonts are
+      # what keep a future text fixture reproducible.
+      - name: Cache vendored fonts
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: packages/core/fonts
+          key: rnl-vendor-fonts-ubuntu-24.04-${{ hashFiles('scripts/fonts.lock.json', 'scripts/vendor-fonts.ts') }}
+
+      - name: Vendor fonts
+        run: node scripts/vendor-fonts.ts
+
+      # Warms from the native (dev) entry's cache, which shares the compiler, the preset and every expensive
+      # translation unit; only the window sources are new. Saved under its own key so the two jobs never race
+      # for the same entry on a push to main.
+      - name: Restore ccache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .ccache
+          key: rnl-ccache-ubuntu-24.04-clang-18-window-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'packages/core/CMakeLists.txt', 'scripts/vendor.lock.json', 'scripts/skia.lock.json') }}-${{ github.run_id }}
+          restore-keys: |
+            rnl-ccache-ubuntu-24.04-clang-18-window-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'packages/core/CMakeLists.txt', 'scripts/vendor.lock.json', 'scripts/skia.lock.json') }}-
+            rnl-ccache-ubuntu-24.04-clang-18-window-
+            rnl-ccache-ubuntu-24.04-clang-18-dev-
+
+      - name: Configure ccache
+        run: |
+          set -euo pipefail
+          mkdir -p "$CCACHE_DIR"
+          printf 'max_size = 2G\ncompression = true\n' > "$CCACHE_DIR/ccache.conf"
+          ccache --zero-stats
+
+      - name: Configure
+        run: cmake --preset dev
+
+      # This is also the assertion that the window half configured: RNL_ENABLE_WINDOW skips the target rather
+      # than failing when Wayland or Vulkan is missing, so an incomplete apt list shows up here as an unknown
+      # target rather than as a silent skip.
+      - name: Build rnl_window
+        run: cmake --build build/dev --target rnl_window
+
+      - name: Report ccache and disk usage
+        if: always()
+        run: |
+          set -euo pipefail
+          ccache --show-stats
+          df -h /
+          du -sh build/dev || true
+
+      - name: Save ccache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .ccache
+          key: rnl-ccache-ubuntu-24.04-clang-18-window-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'packages/core/CMakeLists.txt', 'scripts/vendor.lock.json', 'scripts/skia.lock.json') }}-${{ github.run_id }}
+
+      # The spec skips itself when weston, lavapipe or the binary is missing, so on a runner the assertion that it
+      # did *not* skip is what proves the rig ran at all. Without it an incomplete apt list would pass silently.
+      - name: Compare window goldens
+        run: |
+          set -euo pipefail
+          pnpm test:golden:window | tee /tmp/rnl-window-golden.log
+          ! grep -q "skipping window goldens" /tmp/rnl-window-golden.log
+
+      - name: Upload the rendered window images
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: window-goldens
+          path: build/window-goldens/*.png
+          if-no-files-found: warn
