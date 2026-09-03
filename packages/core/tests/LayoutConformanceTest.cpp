@@ -167,6 +167,13 @@ protected:
             {NodeSpec{.tag = containerTag, .props = std::move(containerProps), .children = std::move(items)}});
     }
 
+    const std::map<Tag, Rect>& commitItemInRowContainer(const NodeSpec& item) {
+        return commitTree(LayoutConstraints{}, {NodeSpec{.tag = 10,
+                                                         .props = folly::dynamic::object("width", 300)("height", 300)(
+                                                             "flexDirection", "row")("alignItems", "flex-start"),
+                                                         .children = std::vector<NodeSpec>{item}}});
+    }
+
 private:
     std::shared_ptr<const ChildList> makeChildren(const std::vector<NodeSpec>& specs) {
         ChildList children;
@@ -388,6 +395,237 @@ TEST_F(LayoutConformanceTest, PercentageRowGapWithIndefiniteHeightResolvesAgains
     expectFrameNear(frames, 11, 0, 0, 60, 20);
     expectFrameNear(frames, 12, 60, 0, 60, 20);
     expectFrameNear(frames, 13, 0, 30, 60, 20);
+}
+
+#pragma mark - aspectRatio constraint ordering (#117)
+
+constexpr double kNoConstraint = -1.0;
+
+folly::dynamic constrainedBox(double width, double height, folly::dynamic extra) {
+    const folly::dynamic dimensions = box(width, height);
+    folly::dynamic props = folly::dynamic::object();
+
+    for (const auto& entry : dimensions.items()) {
+        props[entry.first] = entry.second;
+    }
+    for (const auto& entry : extra.items()) {
+        props[entry.first] = entry.second;
+    }
+
+    return props;
+}
+
+struct AspectRatioCase {
+    const char* name;
+    double width;
+    double height;
+    double minWidth;
+    double maxWidth;
+    double minHeight;
+    double maxHeight;
+    double expectedWidth;
+    double expectedHeight;
+};
+
+/**
+ * The constraint table of #57304, pinned as Yoga resolves it: the width anchors, the height is width / ratio even
+ * when the height was itself definite, min/max on the anchoring axis clamp first and re-derive the other axis
+ * through the ratio, and min/max on the derived axis clamp without propagating back. Contradictory constraints on
+ * the derived axis resolve to the min. Contradictory constraints on the anchoring axis keep the min but leave the
+ * height derived from the max-clamped width, so the ratio does not hold between the final axes — that deviation
+ * from CSS is documented in docs/cpp-toolchain.md. Every case is a single item at the origin of a 300x300 row
+ * container aligned to flex-start, so the derived axis is the only degree of freedom.
+ */
+TEST_F(LayoutConformanceTest, CoreIssue57304AspectRatioClampsAndReDerivesThroughTheRatio) {
+    const double ratio = 2.0;
+    const std::vector<AspectRatioCase> cases = {
+        // A definite width derives the height; only the height constraints can bind.
+        {.name = "widthAndRatio",
+         .width = 100,
+         .height = kNoConstraint,
+         .minWidth = kNoConstraint,
+         .maxWidth = kNoConstraint,
+         .minHeight = kNoConstraint,
+         .maxHeight = kNoConstraint,
+         .expectedWidth = 100,
+         .expectedHeight = 50},
+        {.name = "widthAndRatioMaxHeight",
+         .width = 100,
+         .height = kNoConstraint,
+         .minWidth = kNoConstraint,
+         .maxWidth = kNoConstraint,
+         .minHeight = kNoConstraint,
+         .maxHeight = 30,
+         .expectedWidth = 100,
+         .expectedHeight = 30},
+        {.name = "widthAndRatioMinHeight",
+         .width = 100,
+         .height = kNoConstraint,
+         .minWidth = kNoConstraint,
+         .maxWidth = kNoConstraint,
+         .minHeight = 80,
+         .maxHeight = kNoConstraint,
+         .expectedWidth = 100,
+         .expectedHeight = 80},
+        {.name = "widthAndRatioUnbindingMaxWidth",
+         .width = 100,
+         .height = kNoConstraint,
+         .minWidth = kNoConstraint,
+         .maxWidth = 200,
+         .minHeight = kNoConstraint,
+         .maxHeight = kNoConstraint,
+         .expectedWidth = 100,
+         .expectedHeight = 50},
+        {.name = "widthAndRatioUnbindingMinWidth",
+         .width = 100,
+         .height = kNoConstraint,
+         .minWidth = 50,
+         .maxWidth = kNoConstraint,
+         .minHeight = kNoConstraint,
+         .maxHeight = kNoConstraint,
+         .expectedWidth = 100,
+         .expectedHeight = 50},
+        {.name = "widthAndRatioContradictoryHeightConstraintsResolveToTheMin",
+         .width = 100,
+         .height = kNoConstraint,
+         .minWidth = kNoConstraint,
+         .maxWidth = kNoConstraint,
+         .minHeight = 200,
+         .maxHeight = 30,
+         .expectedWidth = 100,
+         .expectedHeight = 200},
+        // A definite height derives the width; only the width constraints can bind.
+        {.name = "heightAndRatio",
+         .width = kNoConstraint,
+         .height = 60,
+         .minWidth = kNoConstraint,
+         .maxWidth = kNoConstraint,
+         .minHeight = kNoConstraint,
+         .maxHeight = kNoConstraint,
+         .expectedWidth = 120,
+         .expectedHeight = 60},
+        {.name = "heightAndRatioMaxWidthReDerivesTheHeight",
+         .width = kNoConstraint,
+         .height = 60,
+         .minWidth = kNoConstraint,
+         .maxWidth = 100,
+         .minHeight = kNoConstraint,
+         .maxHeight = kNoConstraint,
+         .expectedWidth = 100,
+         .expectedHeight = 50},
+        {.name = "heightAndRatioMinWidthReDerivesTheHeight",
+         .width = kNoConstraint,
+         .height = 60,
+         .minWidth = 150,
+         .maxWidth = kNoConstraint,
+         .minHeight = kNoConstraint,
+         .maxHeight = kNoConstraint,
+         .expectedWidth = 150,
+         .expectedHeight = 75},
+        {.name = "heightAndRatioContradictoryWidthConstraintsKeepTheMinButTheHeightFollowsTheMax",
+         .width = kNoConstraint,
+         .height = 60,
+         .minWidth = 150,
+         .maxWidth = 100,
+         .minHeight = kNoConstraint,
+         .maxHeight = kNoConstraint,
+         .expectedWidth = 150,
+         .expectedHeight = 50},
+        // Without a definite axis the ratio has nothing to derive from.
+        {.name = "ratioAloneSizesToZero",
+         .width = kNoConstraint,
+         .height = kNoConstraint,
+         .minWidth = kNoConstraint,
+         .maxWidth = kNoConstraint,
+         .minHeight = kNoConstraint,
+         .maxHeight = kNoConstraint,
+         .expectedWidth = 0,
+         .expectedHeight = 0},
+        {.name = "ratioAloneWithMaxWidthStaysZero",
+         .width = kNoConstraint,
+         .height = kNoConstraint,
+         .minWidth = kNoConstraint,
+         .maxWidth = 80,
+         .minHeight = kNoConstraint,
+         .maxHeight = kNoConstraint,
+         .expectedWidth = 0,
+         .expectedHeight = 0},
+        // Two definite axes win over the ratio; min/max still clamp the definite values.
+        {.name = "definiteAxesReAnchorOnTheWidth",
+         .width = 100,
+         .height = 40,
+         .minWidth = kNoConstraint,
+         .maxWidth = kNoConstraint,
+         .minHeight = kNoConstraint,
+         .maxHeight = kNoConstraint,
+         .expectedWidth = 100,
+         .expectedHeight = 50},
+        {.name = "definiteAxesStillClampHeight",
+         .width = 100,
+         .height = 40,
+         .minWidth = kNoConstraint,
+         .maxWidth = kNoConstraint,
+         .minHeight = kNoConstraint,
+         .maxHeight = 30,
+         .expectedWidth = 100,
+         .expectedHeight = 30},
+        {.name = "definiteAxesClampWidthAndReDeriveTheHeight",
+         .width = 100,
+         .height = 40,
+         .minWidth = kNoConstraint,
+         .maxWidth = 60,
+         .minHeight = kNoConstraint,
+         .maxHeight = kNoConstraint,
+         .expectedWidth = 60,
+         .expectedHeight = 30},
+    };
+
+    for (const AspectRatioCase& layoutCase : cases) {
+        folly::dynamic extra = folly::dynamic::object("aspectRatio", ratio);
+
+        if (layoutCase.minWidth != kNoConstraint) {
+            extra["minWidth"] = layoutCase.minWidth;
+        }
+        if (layoutCase.maxWidth != kNoConstraint) {
+            extra["maxWidth"] = layoutCase.maxWidth;
+        }
+        if (layoutCase.minHeight != kNoConstraint) {
+            extra["minHeight"] = layoutCase.minHeight;
+        }
+        if (layoutCase.maxHeight != kNoConstraint) {
+            extra["maxHeight"] = layoutCase.maxHeight;
+        }
+
+        const std::map<Tag, Rect>& frames = commitItemInRowContainer(
+            NodeSpec{.tag = 11, .props = constrainedBox(layoutCase.width, layoutCase.height, extra)});
+
+        SCOPED_TRACE(layoutCase.name);
+
+        expectFrameNear(frames, 11, 0, 0, layoutCase.expectedWidth, layoutCase.expectedHeight);
+    }
+}
+
+/**
+ * The #35858 boundary: a ratio that is not a positive finite number must default to auto at the parse boundary
+ * instead of reaching the layout engine. Zero and infinity are normalized by Yoga itself; NaN is Yoga's undefined;
+ * negative values fall out of the derivation and are bounded to zero.
+ */
+TEST_F(LayoutConformanceTest, CoreIssue35858DegenerateAspectRatioValuesDefaultToAuto) {
+    const std::vector<std::pair<const char*, folly::dynamic>> degenerateRatios = {
+        {"zero", 0.0},
+        {"negative", -2.0},
+        {"notANumber", std::nan("")},
+        {"infinity", std::numeric_limits<double>::infinity()},
+    };
+
+    for (const auto& [name, ratio] : degenerateRatios) {
+        const std::map<Tag, Rect>& frames = commitItemInRowContainer(NodeSpec{
+            .tag = 11, .props = constrainedBox(100, kNoConstraint, folly::dynamic::object("aspectRatio", ratio))});
+
+        SCOPED_TRACE(name);
+
+        expectFrameNear(frames, 11, 0, 0, 100, 0);
+    }
 }
 
 } // namespace

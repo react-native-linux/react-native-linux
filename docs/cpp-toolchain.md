@@ -1332,6 +1332,33 @@ Known deviation from CSS, pinned as observed rather than "fixed":
   (`PercentageGapsResolveAgainstTheContainerDimensionTheyAreDeclaredOn`) states the correct-dimension rule: percent
   `column-gap` resolves against width, percent `row-gap` against height.
 
+## aspectRatio constraint ordering (#117)
+
+`aspectRatio` is Yoga's constraint solver, and the conformance table
+(`CoreIssue57304AspectRatioClampsAndReDerivesThroughTheRatio`) pins the order it actually applies, which is not the
+order its consumers assume in the upstream reports:
+
+- The **width anchors**. A definite height does not survive a defined ratio: Yoga re-derives the height as
+  width / ratio even when the height was itself definite, so `width: 100, height: 40, aspectRatio: 2` lays out
+  100x50.
+- Min/max on the anchoring axis clamp **before** the derivation and the clamp re-derives the other axis through the
+  ratio: `height: 60, aspectRatio: 2, maxWidth: 100` lays out 100x50, not 100x60 — the width clamp feeds forward.
+- Min/max on the derived axis clamp **without** propagating back: `width: 100, aspectRatio: 2, maxHeight: 30` lays
+  out 100x30, and the width never learns about it. Contradictory constraints on the derived axis resolve to the
+  min, as CSS says.
+- **Contradictory constraints on the anchoring axis keep the min but derive the height from the max**:
+  `height: 60, aspectRatio: 2, minWidth: 150, maxWidth: 100` lays out 150x50 — the width honours `minWidth`, but
+  the height was already derived from the max-clamped 100, so the ratio does not hold between the final axes. CSS
+  would re-derive 75. This is the one place the table pins a genuine Yoga inconsistency; a Yoga bump that changes
+  it fails `heightAndRatioContradictoryWidthConstraintsKeepTheMinButTheHeightFollowsTheMax`.
+- Degenerate ratios — zero, negative, NaN, infinity — default to auto at the parse boundary
+  (`CoreIssue35858DegenerateAspectRatioValuesDefaultToAuto`). Zero and infinity are normalised by `Style::setAspectRatio`
+  itself, NaN is Yoga's undefined, and a negative ratio falls out of the derivation and bounds to zero; none of
+  them reaches the layout engine as a usable number.
+
+The golden for this table is `test-bundles/aspect-ratio.js`: one image at width + ratio, and the same image clamped
+by `maxWidth`, side by side.
+
 ## Native-driver allowlist (#122)
 
 *Sync props fast path* explains why `opacity`, `backgroundColor` and `transform` are the three props an animation
