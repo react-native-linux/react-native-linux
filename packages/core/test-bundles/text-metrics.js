@@ -21,31 +21,19 @@ if (fabric === undefined) {
 // C++ holds instance handles weakly, so React retains them on its fibers. Keep them alive for the same reason.
 const instanceHandles = [];
 
-let nextTag = 2;
-
 const createNode = (componentName, props, children = []) => {
-  const instanceHandle = {};
+  const handle = {};
+  const node = fabric.createNode(instanceHandles.length + 2, componentName, surfaceId, props, handle);
 
-  instanceHandles.push(instanceHandle);
-
-  const node = fabric.createNode(nextTag, componentName, surfaceId, props, instanceHandle);
-
-  nextTag += 1;
-
-  for (const child of children) {
-    fabric.appendChild(node, child);
-  }
+  instanceHandles.push(handle);
+  children.forEach((child) => fabric.appendChild(node, child));
 
   return node;
 };
 
-const rawText = (text) => createNode('RawText', { text });
-
-const text = (props, children) => createNode('Text', props, children);
-
-const paragraph = (props, children) => createNode('Paragraph', props, children);
-
-const view = (props, children = []) => createNode('View', props, children);
+const component = (componentName) => (props, children = []) => createNode(componentName, props, children);
+const rawText = (value) => createNode('RawText', { text: value });
+const [text, paragraph, view] = ['Text', 'Paragraph', 'View'].map(component);
 
 const white = 0xfff2f4f8 | 0;
 const muted = 0xff9aa4b2 | 0;
