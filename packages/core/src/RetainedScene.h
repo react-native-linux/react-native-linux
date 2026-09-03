@@ -1,5 +1,7 @@
 #pragma once
 
+#include "AnimatedPropAllowlist.h"
+
 #include <folly/dynamic.h>
 #include <react/renderer/attributedstring/AttributedString.h>
 #include <react/renderer/attributedstring/ParagraphAttributes.h>
@@ -338,11 +340,15 @@ public:
      * being correct where it was as well as where it now is. This is the fourth thing besides a mutation, a decode
      * and a focus change that decides what the next frame paints, and the only one React never commits.
      *
-     * Returns the prop names it does not implement, in arrival order, for its caller to count: a prop the driver
-     * is allowed to send and this does not apply is a silently wrong picture, which is the failure the whole
-     * missing-tag policy exists to remove. An unknown tag and a payload that is not an object are both no-ops.
+     * `kAnimatableProps` is the one table that decides which of the three a key is, so the set this applies and
+     * the set the diagnostic names are the same set by construction.
+     *
+     * Returns the props it dropped, in arrival order, each with why — outside the table, or carrying a value that
+     * is not finite — for its caller to count and name. A prop the driver is allowed to send and this does not
+     * apply is a silently wrong picture, which is the failure the whole missing-tag policy exists to remove. An
+     * unknown tag and a payload that is not an object are both no-ops.
      */
-    std::vector<std::string> applyAnimatedProps(facebook::react::Tag tag, const folly::dynamic& props);
+    std::vector<RejectedAnimatedProp> applyAnimatedProps(facebook::react::Tag tag, const folly::dynamic& props);
 
     /**
      * The deepest node painted under `surfacePoint`, searched from `rootTag` down, and the absolute origin it was

@@ -34,6 +34,7 @@ set(RNL_UPSTREAM_ANIMATED_TESTS_DIR ${REACT_COMMON_DIR}/react/renderer/animated/
 
 add_executable(rnl_core_tests
     AnimatedHitTestTest.cpp
+    AnimatedPropAllowlistTest.cpp
     AnimatedPropsTest.cpp
     AnimationChoreographerTest.cpp
     AnimationFrameCostTest.cpp

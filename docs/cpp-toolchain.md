@@ -719,7 +719,8 @@ between an animation that costs a matrix multiply and one that costs a relayout.
 
 `animationbackend::packAnimatedProps` repacks `AnimatedProps` into a `folly::dynamic` object, and
 `ReactCommon/react/renderer/animated/internal/NativeAnimatedAllowlist.h` is the upstream oracle for which keys can
-appear in it. Three are applied:
+appear in it, and `kAnimatableProps` — see *Native-driver allowlist* — is the one place the three below are
+written down. Three are applied:
 
 - `opacity`, a double, clamped to `[0, 1]` exactly as `readPaintProps` clamps `ViewProps::opacity`. The snapshot
   folds it into every colour the subtree paints, so an opacity ramp is arithmetic on the alpha channel and nothing
@@ -750,9 +751,11 @@ The same policy as the missing-tag one, for the same reason: silence is the bug.
   in `MountDiagnostics::unknownTagOperations` under the operation name `SyncUpdate`, logged once with the tag and
   the last transaction number, and then the update is **dropped** — nothing is written, no damage is recorded, and
   `hasPendingDamage_` stays as it was, because damage a frame cannot satisfy is worse than a missed frame.
-- A prop outside the applied three increments `MountDiagnostics::rejectedAnimatedProps`; the first one is kept in
-  `firstRejectedAnimatedProp` and logged once. The rest of the payload still applies, exactly as a bad mutation
-  never stops the rest of its transaction.
+- A prop outside the applied three, and an allowlisted prop carrying a non-finite value, both increment
+  `MountDiagnostics::rejectedAnimatedProps`; the first one is kept in `firstRejectedAnimatedProp` and logged once,
+  with the message `rejectedAnimatedPropMessage` composes. The rest of the payload still applies, exactly as a bad
+  mutation never stops the rest of its transaction. See *Native-driver allowlist* for the table both the applying
+  and the naming read from, and for the exact text.
 - Nothing on this path throws. A payload that is not an object is a no-op, and no prop value is trusted far enough
   to matter beyond the type `packAnimatedProps` gives it.
 
@@ -1290,6 +1293,115 @@ stay there; there is nothing to exclude because there was never anything to incl
 names this suite as a bump gate: a version bump that changes the tests directory's file list is a build-time
 `UpstreamAnimatedSuiteTest` failure, and a version bump that changes what the five suites assert is a CTest failure,
 both before either reaches an app.
+
+## Native-driver allowlist (#122)
+
+*Sync props fast path* explains why `opacity`, `backgroundColor` and `transform` are the three props an animation
+frame can change without a Fabric commit. This section is about keeping that number honest: what the fast path
+applies, what the JavaScript side advertises, and what a user is told when the two do not meet.
+
+### One table
+
+`packages/core/src/AnimatedPropAllowlist.h` is the single definition. `AnimatableProp` is the enumeration,
+`kAnimatableProps` is a `constexpr std::array` of name-to-enumerator entries, and `animatablePropFor` is the
+lookup. `RetainedScene::applyAnimatedProps` no longer compares strings: it calls `animatablePropFor`, pushes a
+`RejectedAnimatedProp` when the lookup misses, and otherwise switches over the enumerator. That switch is what
+makes the table load-bearing in both directions — an entry added to `kAnimatableProps` without a `case` is a
+`-Wswitch` warning on a build that already runs `-Wall -Wextra`, and paint code added without an entry is
+unreachable, because the lookup that gates it would still miss.
+
+### The oracle, and drift in both directions
+
+`ReactCommon/react/renderer/animated/internal/NativeAnimatedAllowlist.h` is upstream's
+`getDirectManipulationAllowlist()`: the thirty-three style keys `NativeAnimatedAllowlist.js` advertises as direct
+manipulation eligible, vendored as C++ rather than JavaScript, so nothing here parses anything. It is the same
+function `StyleAnimatedNode` uses to decide whether an update is a layout update, which is what decides whether a
+frame reaches us through the fast path at all — so it is the oracle by construction rather than by convention.
+
+`packages/core/tests/AnimatedPropAllowlistTest.cpp` holds the two lists against each other:
+
+- `EveryPropWePaintIsOneTheJavaScriptSideAdvertises` — every name in `kAnimatableProps` is in upstream's set. We
+  never claim more than JavaScript offers, and an upstream removal on a version bump fails here.
+- `EveryAdvertisedPropWeDoNotPaintIsAnEnumeratedDifference` — the thirty upstream names outside `kAnimatableProps`,
+  sorted, against a written-out list. Painting a new prop means deleting its line; an upstream addition on a
+  version bump appears in the difference and fails here.
+- `TheTableIsWhatDecidesWhetherTheFastPathAppliesAProp` — `animatablePropFor` answers for each of the three and
+  misses for a prop that is only advertised.
+
+The thirty are the ten border and shadow colours minus `backgroundColor`, the thirteen border radii, `color`,
+`tintColor`, `elevation`, `zIndex`, `shadowOpacity`, `shadowRadius` and the four legacy Android transform
+operations. None is a refusal in principle. Border colours and radii live inside `BorderMetrics`, which
+`resolveBorderMetrics` cascades out of nine props, so animating a single edge is a re-cascade rather than a field
+write; it belongs with whoever needs it first.
+
+### The diagnostic
+
+`rejectedAnimatedPropMessage` in `LinuxMountingManager.cpp` composes the line, joining the supported set out of
+`kAnimatableProps` so the message cannot name a set the code does not implement. It is a free function of its
+arguments, so the assertion on the exact text is a unit test rather than a log-capture rig, and it is inside the
+100% gate because `LinuxMountingManager.cpp` is. The two shapes, asserted verbatim:
+
+```text
+[mounting] synchronous update carries prop shadowRadius, which the Linux native driver cannot animate; supported:
+opacity, backgroundColor, transform — animate it with useNativeDriver: false or file an issue
+```
+
+```text
+[mounting] synchronous update carries prop opacity with a non-finite value, which the Linux native driver cannot
+paint; supported: opacity, backgroundColor, transform — check the interpolation output range or animate it with
+useNativeDriver: false
+```
+
+The counting policy is unchanged: every rejection increments `MountDiagnostics::rejectedAnimatedProps`, the first
+name is kept in `firstRejectedAnimatedProp`, only the first is logged, and the rest of the payload still applies.
+
+### The non-finite boundary
+
+The second shape exists because `std::clamp` propagates `NaN` through both of its comparisons, so a `NaN` opacity
+would have reached `toArgb`, multiplied every alpha in the subtree and been rounded by `std::lround` into an
+unspecified value. `applyAnimatedProps` now refuses any allowlisted prop whose payload is a non-finite double —
+issue #73's boundary rule applied to animation — and counts it like any other rejection.
+`ANonFiniteOpacityFromTheRealNodesManagerIsRejectedAndCounted` drives it through a real
+`NativeAnimatedNodesManager`: a value node holding `NaN`, a style node, a props node connected to a mounted view,
+one `onRender`, and the assertion that the scene still paints the colour it mounted with. A `NaN` inside a
+`transform` operation array is not covered by this check — the guard reads the payload value, and a transform
+arrives as an array — and is a follow-up.
+
+### What upstream's suites cover, and what they do not
+
+Items 2 to 4 of #122 are interpolation and node-graph behaviour, which is upstream's code and, where it is tested
+at all, upstream's tests. Read against `react/renderer/animated/nodes`, the five suites compiled in by #132 cover:
+
+- **Node types:** `value` (including `setOffset` idempotence), `color`, `style`, `props`, `modulus`, `diffclamp`,
+  `round` and `object`. `AnimatedNodeTests` builds an RGBA colour graph and an opacity graph and asserts the props
+  that reach the mounting callback.
+- **Drivers:** `frames` (`AnimationDriverTests`, including reconfiguration and deferred start) and `decay`
+  (`DecayAnimationDriverTest`, five cases against the analytical curve).
+- **Events:** `EventAnimationDriverTests` maps a `ScrollEvent`'s `contentOffset.y` and `zoomScale` onto two value
+  nodes through `getEventEmitterListener`.
+- **Managed props:** `ManagedPropsMountingOverrideTests` covers the live-value mirror across frames, on connect,
+  mid-flight, and per view.
+
+Nothing upstream covers, and therefore nothing this platform's animation stack has a test for:
+
+- **Interpolation, entirely.** No suite creates an `interpolation` node. That means no numeric output range, no
+  `extrapolateLeft`/`extrapolateRight` (`identity`, `clamp`, `extend`), no `easingStops`, no degenerate
+  `inputMin == inputMax` range, and no non-finite input — the whole of #122 item 2.
+- **Colour interpolation** (`outputType: "color"` and `"platform_color"`), which is the crash path of core#34022.
+- **Unit-carrying output ranges** (`deg`, `rad`, `%`), which is core#36608. `InterpolationAnimatedNode` reads a
+  non-colour output range with `asDouble()`, so a unit suffix is a `folly` conversion rather than a modelled type.
+- **The remaining node types:** `interpolation`, `addition`, `subtraction`, `multiplication`, `division`,
+  `transform` and `tracking`. `transform` is exercised end to end by our own `AnimatedHitTestTest` and
+  `AnimatedPropsTest` rather than by a node unit test; the operators and `tracking` are untouched. `division` by
+  zero is the one that produces a non-finite value with no guard anywhere upstream, which is what the boundary
+  check above exists for.
+- **Value listeners.** `startListeningToAnimatedNodeValue` has no coverage, so core#37061 and core#49719 —
+  listeners never firing on operator-built values — are unverified here.
+- **The spring driver.** `SpringAnimationDriver` has no suite at all.
+
+Writing those tests is upstream work; the entry cost is `AnimationTestsBase`, which is already compiled into
+`rnl_core_tests`, so an interpolation suite is a new `.cpp` in the vendored tests directory and an
+`UpstreamAnimatedSuiteTest` list update, not new plumbing.
 
 ## Prerequisites
 

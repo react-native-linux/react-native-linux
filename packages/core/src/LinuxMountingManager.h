@@ -44,6 +44,15 @@ struct SceneCommand {
 };
 
 /**
+ * The line logged for a prop the synchronous fast path dropped, and the whole of what a user has to go on.
+ *
+ * It names the prop, the set the Linux native driver can animate — read from `kAnimatableProps`, so the message
+ * and the code cannot disagree — and the way out. It is a pure function of its arguments so the assertion on the
+ * exact text is a unit test rather than a log-capture rig. See *Native-driver allowlist* in docs/cpp-toolchain.md.
+ */
+std::string rejectedAnimatedPropMessage(std::string_view propName, AnimatedPropRejection rejection);
+
+/**
  * What the mounting layer saw that the scene could not explain.
  *
  * A mutation that updates, removes or deletes a tag the scene does not hold, and a command aimed at one, are the
@@ -54,8 +63,8 @@ struct SceneCommand {
  *
  * A synchronous animated prop the fast path does not apply is counted the same way and for the same reason: the
  * driver's allowlist is wider than what this renderer can paint without a commit, and a prop dropped in silence
- * is an animation that runs at the wrong values with nothing to point at. See *Sync props fast path* in
- * docs/cpp-toolchain.md.
+ * is an animation that runs at the wrong values with nothing to point at. See *Sync props fast path* and
+ * *Native-driver allowlist* in docs/cpp-toolchain.md.
  */
 struct MountDiagnostics {
     uint64_t unknownTagOperations{0};
@@ -157,15 +166,15 @@ public:
      * `UIManager::synchronouslyUpdateViewOnUIThread` for every frame whose mutations touch no layout, which at
      * 120 Hz is the difference between a matrix multiply and a relayout per frame.
      *
-     * `opacity`, `backgroundColor` and `transform` are applied; every other key the driver's allowlist permits is
-     * counted in the diagnostics and logged once. An unknown tag is counted like any other missing tag and
-     * damages nothing.
+     * The props of `kAnimatableProps` are applied; every other key the driver's allowlist permits, and any value
+     * that is not finite, is counted in the diagnostics and logged once. An unknown tag is counted like any other
+     * missing tag and damages nothing.
      */
     void synchronouslyUpdateViewOnUIThread(facebook::react::Tag tag, const folly::dynamic& props) override;
 
 private:
     bool verifyTagIsKnown(std::string_view operation, facebook::react::Tag tag);
-    void reportRejectedAnimatedProp(const std::string& propName);
+    void reportRejectedAnimatedProp(const RejectedAnimatedProp& rejectedProp);
 
     mutable std::mutex sceneMutex_;
     RetainedScene scene_;

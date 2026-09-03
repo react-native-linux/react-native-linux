@@ -11,6 +11,37 @@
 
 namespace react_native_linux {
 
+namespace {
+
+std::string supportedAnimatedPropNames() {
+    std::string names;
+
+    for (const AnimatablePropEntry& entry : kAnimatableProps) {
+        if (!names.empty()) {
+            names += ", ";
+        }
+
+        names += entry.name;
+    }
+
+    return names;
+}
+
+} // namespace
+
+std::string rejectedAnimatedPropMessage(std::string_view propName, AnimatedPropRejection rejection) {
+    const std::string prefix = "[mounting] synchronous update carries prop " + std::string{propName};
+
+    if (rejection == AnimatedPropRejection::NonFinite) {
+        return prefix + " with a non-finite value, which the Linux native driver cannot paint; supported: " +
+               supportedAnimatedPropNames() +
+               " — check the interpolation output range or animate it with useNativeDriver: false";
+    }
+
+    return prefix + ", which the Linux native driver cannot animate; supported: " + supportedAnimatedPropNames() +
+           " — animate it with useNativeDriver: false or file an issue";
+}
+
 void LinuxMountingManager::startSurface(facebook::react::SurfaceId surfaceId, facebook::react::Size size) {
     const std::lock_guard<std::mutex> guard(sceneMutex_);
 
@@ -132,8 +163,8 @@ void LinuxMountingManager::synchronouslyUpdateViewOnUIThread(facebook::react::Ta
         return;
     }
 
-    for (const std::string& propName : scene_.applyAnimatedProps(tag, props)) {
-        reportRejectedAnimatedProp(propName);
+    for (const RejectedAnimatedProp& rejectedProp : scene_.applyAnimatedProps(tag, props)) {
+        reportRejectedAnimatedProp(rejectedProp);
     }
 
     hasPendingDamage_ = true;
@@ -158,12 +189,11 @@ bool LinuxMountingManager::verifyTagIsKnown(std::string_view operation, facebook
     return false;
 }
 
-void LinuxMountingManager::reportRejectedAnimatedProp(const std::string& propName) {
+void LinuxMountingManager::reportRejectedAnimatedProp(const RejectedAnimatedProp& rejectedProp) {
     if (diagnostics_.rejectedAnimatedProps == 0) {
-        diagnostics_.firstRejectedAnimatedProp = propName;
+        diagnostics_.firstRejectedAnimatedProp = rejectedProp.name;
 
-        LOG(ERROR) << "[mounting] synchronous update carries prop " << propName
-                   << ", which the non-layout fast path does not apply";
+        LOG(ERROR) << rejectedAnimatedPropMessage(rejectedProp.name, rejectedProp.rejection);
     }
 
     diagnostics_.rejectedAnimatedProps++;

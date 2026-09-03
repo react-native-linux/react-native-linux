@@ -839,8 +839,9 @@ void RetainedScene::setEditorState(facebook::react::Tag tag, const SceneEditorSt
     damageSubtree(tag);
 }
 
-std::vector<std::string> RetainedScene::applyAnimatedProps(facebook::react::Tag tag, const folly::dynamic& props) {
-    std::vector<std::string> rejectedProps;
+std::vector<RejectedAnimatedProp> RetainedScene::applyAnimatedProps(facebook::react::Tag tag,
+                                                                    const folly::dynamic& props) {
+    std::vector<RejectedAnimatedProp> rejectedProps;
     const auto entry = nodes_.find(tag);
 
     if (entry == nodes_.end() || !props.isObject()) {
@@ -853,17 +854,32 @@ std::vector<std::string> RetainedScene::applyAnimatedProps(facebook::react::Tag 
 
     for (const auto& [key, value] : props.items()) {
         const std::string propName = key.asString();
+        const std::optional<AnimatableProp> animatableProp = animatablePropFor(propName);
 
-        if (propName == "opacity") {
-            node.opacity = std::clamp(static_cast<float>(value.asDouble()), 0.0F, 1.0F);
-        } else if (propName == "backgroundColor") {
-            node.backgroundColor =
-                meaningfulColor(facebook::react::SharedColor{static_cast<facebook::react::Color>(value.asInt())});
-        } else if (propName == "transform") {
-            node.transform = toSceneMatrix(facebook::react::BaseViewProps::resolveTransform(
-                node.layoutMetrics.frame.size, parseAnimatedTransform(value), node.transformOrigin));
-        } else {
-            rejectedProps.push_back(propName);
+        if (!animatableProp.has_value()) {
+            rejectedProps.push_back(
+                RejectedAnimatedProp{.name = propName, .rejection = AnimatedPropRejection::Unsupported});
+            continue;
+        }
+
+        if (value.isDouble() && !std::isfinite(value.asDouble())) {
+            rejectedProps.push_back(
+                RejectedAnimatedProp{.name = propName, .rejection = AnimatedPropRejection::NonFinite});
+            continue;
+        }
+
+        switch (*animatableProp) { // COV_EXCL: every AnimatableProp value has a case, so the implicit no-match branch cannot execute
+            case AnimatableProp::Opacity:
+                node.opacity = std::clamp(static_cast<float>(value.asDouble()), 0.0F, 1.0F);
+                break;
+            case AnimatableProp::BackgroundColor:
+                node.backgroundColor =
+                    meaningfulColor(facebook::react::SharedColor{static_cast<facebook::react::Color>(value.asInt())});
+                break;
+            case AnimatableProp::Transform:
+                node.transform = toSceneMatrix(facebook::react::BaseViewProps::resolveTransform(
+                    node.layoutMetrics.frame.size, parseAnimatedTransform(value), node.transformOrigin));
+                break;
         }
     }
 
