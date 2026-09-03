@@ -2,6 +2,7 @@
 
 #include "InputDispatcher.h"
 #include "InputPipeline.h"
+#include "LinuxAnimationChoreographer.h"
 #include "LinuxMountingManager.h"
 #include "RetainedScene.h"
 #include "ScrollController.h"
@@ -14,6 +15,7 @@
 #include <react/runtime/ReactInstance.h>
 #include <react/utils/ContextContainer.h>
 
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <string>
@@ -83,9 +85,17 @@ public:
     void induceEventBeat();
 
     /**
-     * Whether the mounting manager or the scroll controller have anything the frame clock should treat as pending
-     * work: a mount that has not been painted yet, or a scroll that is still being dragged or gliding. See
-     * *Frame clock* in docs/cpp-toolchain.md.
+     * Delivers one frame to the shared animation backend, or nothing when no animation is running. Called once per
+     * drawn frame, after the frame's input and before `takeFrame`, so a layout-affecting animated mutation — which
+     * commits and mounts synchronously on this thread — is in the scene the same frame paints. See *Animation
+     * choreographer* in docs/cpp-toolchain.md.
+     */
+    void tickAnimations(std::chrono::steady_clock::time_point now);
+
+    /**
+     * Whether the mounting manager, the scroll controller or the animation choreographer have anything the frame
+     * clock should treat as pending work: a mount that has not been painted yet, a scroll that is still being
+     * dragged or gliding, or a running animation. See *Frame clock* in docs/cpp-toolchain.md.
      */
     bool hasPendingWork() const;
     SceneFrame takeFrame();
@@ -96,6 +106,7 @@ private:
     std::shared_ptr<const facebook::react::ContextContainer> contextContainer_;
     std::shared_ptr<facebook::react::ComponentDescriptorProviderRegistry> componentDescriptorProviderRegistry_;
     std::shared_ptr<LinuxMountingManager> mountingManager_;
+    std::shared_ptr<LinuxAnimationChoreographer> animationChoreographer_;
     std::function<void()> eventBeatInducer_;
     std::unique_ptr<facebook::react::SchedulerDelegateImpl> schedulerDelegate_;
     std::unique_ptr<facebook::react::Scheduler> scheduler_;

@@ -270,7 +270,8 @@ callback fired during the previous `waitForRedraw`) and `Source::Timer` otherwis
 GPU work — `drawFrame` is also what re-arms the next frame callback, so a skipped iteration correctly leaves the
 previous callback (or lack of one) outstanding rather than requesting a new one it would just have to skip again.
 
-`hasPendingWork` for a `Timer` tick is three existing signals, ORed, computed by `WindowSession` itself:
+`hasPendingWork` for a `Timer` tick is four signals, ORed, computed by `WindowSession` and `FabricHost` between
+them:
 
 - `LinuxMountingManager::hasPendingDamage()` — a mount, an image decode, a focus change or an editor-state publish
   since the last `takeFrame`. This is a dedicated flag on the mounting manager, not a peek at `RetainedScene`'s
@@ -283,6 +284,10 @@ previous callback (or lack of one) outstanding rather than requesting a new one 
   tick": a conservative signal that can hold the fallback awake a little ahead of when a distant `setTimeout`
   actually fires, never behind. A precise `hasDueTimer(now)` would need the registry to track absolute deadlines
   across the JS-thread/frame-thread boundary it does not track today, which is more machinery than this fix needs.
+- `LinuxAnimationChoreographer::isActive()` — a running animation, which is the signal #129 added. `resume` and
+  `pause` come from `AnimationBackend::start` and `::stop`, so this is exactly "the backend has a frame callback
+  registered", and it is what stops an animation freezing the moment Hyprland withholds callbacks for a background
+  workspace. See *Animation choreographer*.
 
 What this does not cover: an end-to-end test under the headless compositor that actually withholds frame callbacks
 and asserts the window keeps animating from the fallback alone is a follow-up, not part of this change. `FrameClock`
@@ -585,8 +590,7 @@ read.
 `useSharedAnimatedBackend` reaches further than Animated. `Scheduler`'s constructor reads it and, when it is set,
 builds an `AnimationBackend` and calls `setAnimationBackend` on `SchedulerToolbox::animationChoreographer` with no
 null check — so turning the flag on makes a choreographer mandatory for every host that builds a `Scheduler`.
-`FabricHost` supplies `IdleAnimationChoreographer`, whose `resume` and `pause` are empty: it exists to satisfy
-that contract, and connecting it to a frame source is #129.
+`FabricHost` supplies `LinuxAnimationChoreographer`; see *Animation choreographer*.
 
 ### What is registered
 
@@ -617,22 +621,6 @@ with an `AnimationBackend` attached to the `UIManager` it takes the shared-backe
 the legacy path with `MergedValueDispatcher` and `AnimatedMountingOverrideDelegate`. The choreographer therefore
 has to be in place before the first module lookup, not merely before the first animation.
 
-### What #129 still owes
-
-Everything that turns a queued operation into a frame:
-
-- an `AnimationChoreographer` over `FrameClock` in place of `IdleAnimationChoreographer` — `resume` means the
-  backend has work and the frame loop must keep ticking, `pause` means it does not, and `onAnimationFrame` has to
-  be called once per frame with a `std::chrono::duration<double, std::milli>` timestamp;
-- `hasPendingWork` for a timer tick to include "the animation backend has an active callback", beside the
-  mounting-manager, scroll and JS-timer signals already listed under *Frame clock*;
-- `LinuxMountingManager::synchronouslyUpdateViewOnUIThread`, which `IMountingManager` leaves defaulted to a no-op.
-  Without it every animated frame takes the Fabric-commit path even when it touches no layout, which is the exact
-  cost the backend's fast path exists to avoid.
-
-Until then `NativeAnimatedNodesManager::onRender` is never called, so operations sit in the manager's UI-task
-queue and no animation runs.
-
 ### Proving it
 
 `packages/core/test-bundles/animated.js` reads the module the way React Native's `TurboModuleRegistry` does and
@@ -643,12 +631,88 @@ hello_react --fabric packages/core/test-bundles/animated.js
 ```
 
 It prints `animated: module present` for a non-null `NativeAnimatedModule` and `animated: batch ok` after
-`startOperationBatch`, `createAnimatedNode` twice, `connectAnimatedNodes`, `setAnimatedNodeValue`, `getValue` and
-`finishOperationBatch`; CI greps both. That proves registration, the JSI bindings install, and the full argument
-path through the generated spec. It deliberately does not assert on the `getValue` callback: the value comes back
-from `onRender`, which is #129's frame. Asserting a `createAnimatedNode`/`startAnimatingNode` trace arriving at
-the manager — the E2E acceptance criterion of #127 — belongs to the same change, because there is no frame in
-which to observe one before it.
+`startOperationBatch`, `createAnimatedNode` twice, `connectAnimatedNodes`, `setAnimatedNodeValue`,
+`startAnimatingNode` and `finishOperationBatch`, which proves registration, the JSI bindings install, and the full
+argument path through the generated spec. `animated: value 0.75` is the third line, and it is the one that needs a
+frame; see *Animation choreographer*. CI greps all three.
+
+## Animation choreographer (#129)
+
+`AnimationChoreographer` is the one part upstream's `__docs__/AnimationBackend.md` says a new platform has to
+implement: "On iOS, it has a corresponding `RCTDisplayLink`, and on Android, it uses the `Choreographer`." The
+interface is three calls — `resume`, `pause` and a defaulted `now` — plus a non-virtual `onAnimationFrame` that
+forwards to the weakly-held `UIManagerAnimationBackend`. `LinuxAnimationChoreographer`
+(`packages/core/src/LinuxAnimationChoreographer.h`) is that seam and nothing else: an atomic flag and one
+forwarding call, because this platform already owns a frame source and does not need a second one.
+
+`resume` and `pause` are `AnimationBackend::start` and `::stop`, which are called when the first render callback is
+registered and when the last one goes away. They can arrive from either side — the JavaScript thread when
+`AnimatedModule::finishOperationBatch` schedules a batch, the frame thread when a frame drains the last active
+animation and `NativeAnimatedNodesManager::stopRenderCallbackIfNeeded` runs inside `pullAnimationMutations` — so
+the flag is `std::atomic<bool>` and nothing else in the class is shared state.
+
+The timestamp is `AnimationTimestamp`, which is `std::chrono::duration<double, std::milli>`, and the value handed
+over is `steady_clock` time since epoch — the same basis as `AnimationChoreographer::now`'s default, which is why
+that virtual is not overridden. It is the *tick's* timestamp, not a fresh clock read: `FrameAnimationDriver` and
+the spring and decay drivers all integrate against the delta between the timestamps they are given, so a driver
+stepped with a clock read taken after the frame's other work would drift away from the scroll physics and the caret
+blink, which are already paced by the tick.
+
+### The tick point, in both loops
+
+One `tick` per drawn frame, after the frame's input has been released onto the JavaScript thread and before the
+scene is taken:
+
+- `WindowMain`'s run loop: `session->deliverInput(frameEvents)`, then `recordFrameTick`, then — only when
+  `Tick::shouldDraw` — `session->tickAnimations(frameTime)` and `session->takeFrame()`. `frameTime` is read once
+  and used for both the frame clock and the choreographer, so the two never disagree about when the frame was.
+- `BundleRunner`'s headless loop: `deliverInputFrame` calls `dispatchInput`, `induceEventBeat`, `tickAnimations`,
+  then `runUntilQuiescent` — so whatever an animation frame posts back to JavaScript is delivered by the drain that
+  immediately follows it. `runFabricBundle` runs three of those frames rather than the one it used to: a headless
+  run has no compositor to supply frames, and one is not enough to both step a driver and answer the read-back the
+  driver's end callback asks for.
+
+Ordering matters in one direction only: a layout-affecting animated mutation takes the Fabric-commit path, and that
+commit carries `mountSynchronously = true`, so it relayouts *and* mounts on the calling thread. Ticking before
+`takeFrame` is what puts it in the snapshot the same frame paints instead of the next one.
+
+### The pending-work coupling
+
+`isActive()` is the fourth signal in `hasPendingWork` (see *Frame clock*), reached through
+`FabricHost::hasPendingWork`. Without it a running animation stops dead the moment the compositor withholds
+`wl_surface.frame` — an occluded window, an inactive workspace — which is the failure #59 exists to prevent,
+restated for animation. With it, and only with it, the fallback timeout keeps drawing; an idle window with no
+animation still performs no GPU work, because the flag is false exactly when the backend has no callback
+registered.
+
+The loop terminates itself, which is the part worth stating: nothing calls `pause` from the outside. The frame that
+finds no active animation left is the frame that calls `stopRenderCallbackIfNeeded`, which is
+`AnimationBackend::stop`, which is `pause` — so an animation that ends costs exactly one more tick, and the flag it
+was holding open is what delivered that tick. A choreographer that stopped being ticked once its animations ended
+would never be told to pause and would keep the fallback awake forever.
+
+### What #130 still owes
+
+`LinuxMountingManager::synchronouslyUpdateViewOnUIThread` is still `IMountingManager`'s defaulted no-op, so the
+non-layout fast path drops its updates and only layout-affecting animations paint. `AnimationBackend` splits every
+frame's mutations by `hasLayoutUpdates`: with layout it commits, without it calls
+`UIManager::synchronouslyUpdateViewOnUIThread`, which reaches this platform through
+`SchedulerDelegateImpl::schedulerShouldSynchronouslyUpdateViewOnUIThread`. At 120 Hz a `transform` or `opacity`
+animation that took the commit path instead would be 120 Fabric commits per second with a Yoga relayout in each
+one, which is the cost the fast path exists to avoid — so the fast path is not an optimisation to schedule later,
+it is the difference between an animation that costs a matrix multiply and one that costs a relayout.
+
+Implementing it is a prop-decoding problem, not a scene problem: `AnimationBackend::synchronouslyUpdateProps`
+repacks `AnimatedProps` into a `folly::dynamic` through `animationbackend::packAnimatedProps`, so what arrives is
+`{"opacity": <double>}`, `{"backgroundColor": <int32 ARGB>}` or `{"transform": [<the raw JS operation array>]}`.
+`opacity` and `backgroundColor` are direct writes to `SceneNode`; `transform` needs `fromRawValue` into a
+`Transform` and then the same `resolveTransform(layoutMetrics)` cascade `RetainedScene::readPaintProps` applies,
+because a percentage translation is only meaningful against the node's frame. All of it has to run under
+`sceneMutex_` and end in `damageSubtree(tag)` plus `hasPendingDamage_ = true`, or the next frame paints stale
+pixels forever. `ReactCommon/react/renderer/animated/internal/NativeAnimatedAllowlist.h` is the upstream oracle for
+which props the driver is allowed to send, and #130's acceptance criteria add an opacity and a translate golden
+plus an event-trace assertion that a 120-frame transform animation performs zero commits — which is why it is its
+own change rather than a rider on this one.
 
 ## Prerequisites
 

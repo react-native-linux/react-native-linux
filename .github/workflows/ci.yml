@@ -412,11 +412,13 @@ jobs:
           test "$(grep -c 'dimensions: didUpdateDimensions window' /tmp/rnl-dimensions.log)" -eq 1
 
           # The C++ AnimatedModule of #127 and #128: registered under its own name, and a full operation batch
-          # accepted through the generated NativeAnimatedModule spec. The operations are queued for a frame that
-          # does not exist yet, so there is no value to read back until the choreographer of #129 lands.
+          # accepted through the generated NativeAnimatedModule spec. The value is the choreographer of #129: the
+          # batch is drained by an animation frame, the frames driver runs to its toValue on that frame, and the
+          # end callback asks for the value back on the next one. Without a frame source none of the three prints.
           "$binary" --fabric packages/core/test-bundles/animated.js | tee /tmp/rnl-animated.log
           grep -q "animated: module present" /tmp/rnl-animated.log
           grep -q "animated: batch ok" /tmp/rnl-animated.log
+          grep -q "animated: value 0.75" /tmp/rnl-animated.log
 
       # Only the Skia entry has a TextLayoutManager behind Yoga; with -DRNL_ENABLE_SKIA=OFF the upstream stub is
       # still compiled in and every paragraph measures as zero, so this assertion belongs to the dev entry alone.

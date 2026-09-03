@@ -68,6 +68,9 @@ public:
     void setTextInputFocusSink(TextInputFocusSink* textInputFocusSink);
     void deliverInput(const std::vector<InputEvent>& events);
 
+    /** Delegates to `FabricHost::tickAnimations` once per drawn frame. */
+    void tickAnimations(std::chrono::steady_clock::time_point now);
+
     /**
      * Feeds one `WaylandWindow::waitForRedraw` outcome to the frame clock and returns its draw decision. `source`
      * is `Callback` when `WaylandWindow::hasFrameCallbackFired` was true and `Timer` otherwise; the pending-work

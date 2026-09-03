@@ -27,6 +27,7 @@ FetchContent_MakeAvailable(googletest)
 include(GoogleTest)
 
 add_executable(rnl_core_tests
+    AnimationChoreographerTest.cpp
     DimensionsTest.cpp
     SceneReuseTest.cpp
     EditorTest.cpp
@@ -50,6 +51,7 @@ add_executable(rnl_core_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ImageContent.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/InputPipeline.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/LineBoxMetrics.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/LinuxAnimationChoreographer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/LinuxMountingManager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/RetainedScene.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ScrollPhysics.cpp

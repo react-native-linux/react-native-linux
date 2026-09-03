@@ -262,10 +262,16 @@ int main(int argc, char** argv) {
                 const react_native_linux::FrameClock::Source frameSource = window.hasFrameCallbackFired()
                     ? react_native_linux::FrameClock::Source::Callback
                     : react_native_linux::FrameClock::Source::Timer;
-                const react_native_linux::FrameClock::Tick tick =
-                    session->recordFrameTick(frameSource, std::chrono::steady_clock::now());
+                const std::chrono::steady_clock::time_point frameTime = std::chrono::steady_clock::now();
+                const react_native_linux::FrameClock::Tick tick = session->recordFrameTick(frameSource, frameTime);
 
                 if (tick.shouldDraw) {
+                    // The animation backend is driven by the same instant the frame clock measured, and before
+                    // the scene is taken, so a mutation this frame produces is in the snapshot it paints. A
+                    // running animation is also pending work, so a fallback timeout keeps drawing it when the
+                    // compositor withholds callbacks. See *Animation choreographer* in docs/cpp-toolchain.md.
+                    session->tickAnimations(frameTime);
+
                     // The scene and the damage that describes it have to come out of the mounting manager
                     // together, under one lock: a transaction landing between them would leave damage this scene
                     // cannot satisfy.

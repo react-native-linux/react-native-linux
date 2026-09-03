@@ -59,6 +59,8 @@ void WindowSession::deliverInput(const std::vector<InputEvent>& events) {
     fabricHost_->induceEventBeat();
 }
 
+void WindowSession::tickAnimations(std::chrono::steady_clock::time_point now) { fabricHost_->tickAnimations(now); }
+
 FrameClock::Tick WindowSession::recordFrameTick(FrameClock::Source source, std::chrono::steady_clock::time_point now) {
     if (source == FrameClock::Source::Callback) {
         return frameClock_.onFrameCallback(now);

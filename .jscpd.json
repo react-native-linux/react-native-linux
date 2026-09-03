@@ -4,5 +4,5 @@
   "gitignore": true,
   "minLines": 5,
   "minTokens": 50,
-  "ignore": ["**/node_modules/**", "**/coverage/**", "**/packages/core/generated/**"]
+  "ignore": ["**/node_modules/**", "**/coverage/**", "**/packages/core/generated/**", "**/packages/core/protocols/**"]
 }

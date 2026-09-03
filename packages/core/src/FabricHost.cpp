@@ -7,7 +7,6 @@
 #endif
 
 #include <jsi/jsi.h>
-#include <react/renderer/animationbackend/AnimationChoreographer.h>
 #include <react/renderer/componentregistry/ComponentDescriptorProviderRegistry.h>
 #include <react/renderer/components/image/ImageComponentDescriptor.h>
 #include <react/renderer/components/root/RootComponentDescriptor.h>
@@ -22,6 +21,7 @@
 #include <react/renderer/runtimescheduler/RuntimeScheduler.h>
 #include <react/renderer/scheduler/SchedulerToolbox.h>
 
+#include <chrono>
 #include <cstddef>
 #include <memory>
 #include <string>
@@ -111,32 +111,14 @@ public:
     void induceFromFrameThread() const { induce(); }
 };
 
-/**
- * The frame source the shared animation backend is driven from, with no frames in it yet.
- *
- * `Scheduler`'s constructor reads `useSharedAnimatedBackend()` — true since #128 — and, when it is set, builds an
- * `AnimationBackend` and calls `setAnimationBackend` on `SchedulerToolbox::animationChoreographer` without
- * checking it for null. A host that turns the flag on and supplies no choreographer therefore crashes before it
- * has an animation to run, so this exists to satisfy that contract and nothing else.
- *
- * `resume` and `pause` are the backend saying "I have work" and "I am done"; connecting them to `FrameClock` and
- * calling `onAnimationFrame` once per frame is #129. Until then the backend is attached, `AnimatedModule` reaches
- * it through the `UIManager`, and queued animated operations sit in the manager's UI-task queue unexecuted.
- */
-class IdleAnimationChoreographer final : public facebook::react::AnimationChoreographer {
-public:
-    void resume() override {}
-
-    void pause() override {}
-};
-
 } // namespace
 
 FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::react::Size surfaceSize)
     : contextContainer_(std::make_shared<const facebook::react::ContextContainer>()),
       componentDescriptorProviderRegistry_(
           std::make_shared<facebook::react::ComponentDescriptorProviderRegistry>()),
-      mountingManager_(std::make_shared<LinuxMountingManager>()) {
+      mountingManager_(std::make_shared<LinuxMountingManager>()),
+      animationChoreographer_(std::make_shared<LinuxAnimationChoreographer>()) {
     const std::shared_ptr<facebook::react::RuntimeScheduler> runtimeScheduler = reactInstance.getRuntimeScheduler();
     contextContainer_->insert(facebook::react::RuntimeSchedulerKey,
                               std::weak_ptr<facebook::react::RuntimeScheduler>(runtimeScheduler));
@@ -146,7 +128,11 @@ FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::
     schedulerToolbox.runtimeExecutor = reactInstance.getBufferedRuntimeExecutor();
     schedulerToolbox.bridgelessBindingsExecutor = reactInstance.getUnbufferedRuntimeExecutor();
     schedulerToolbox.componentRegistryFactory = createComponentRegistryFactory(componentDescriptorProviderRegistry_);
-    schedulerToolbox.animationChoreographer = std::make_shared<IdleAnimationChoreographer>();
+    // `Scheduler`'s constructor reads `useSharedAnimatedBackend()` — true since #128 — and, when it is set, builds
+    // an `AnimationBackend` over this choreographer and calls `setAnimationBackend` on it without a null check, so
+    // a host that turns the flag on must supply one before the Scheduler exists. See *Animation choreographer* in
+    // docs/cpp-toolchain.md.
+    schedulerToolbox.animationChoreographer = animationChoreographer_;
     // Scheduler calls this factory exactly once, synchronously, from the constructor below, and does not retain the
     // toolbox; the beat it produces lives inside the EventDispatcher for as long as the Scheduler does.
     schedulerToolbox.eventBeatFactory =
@@ -233,8 +219,11 @@ bool FabricHost::advanceCaretBlink(double frameMilliseconds) {
 
 void FabricHost::induceEventBeat() { eventBeatInducer_(); }
 
+void FabricHost::tickAnimations(std::chrono::steady_clock::time_point now) { animationChoreographer_->tick(now); }
+
 bool FabricHost::hasPendingWork() const {
-    return mountingManager_->hasPendingDamage() || scrollController_->isScrollActive();
+    return mountingManager_->hasPendingDamage() || scrollController_->isScrollActive() ||
+        animationChoreographer_->isActive();
 }
 
 SceneFrame FabricHost::takeFrame() {

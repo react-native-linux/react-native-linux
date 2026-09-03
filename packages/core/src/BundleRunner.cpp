@@ -30,6 +30,7 @@ constexpr std::chrono::milliseconds kCommitPollInterval{1};
 constexpr char kSmokeSource[] = "console.log('react-native-linux: hermes alive');";
 constexpr char kSmokeSourceUrl[] = "smoke.js";
 constexpr facebook::react::Size kHeadlessSurfaceSize{.width = 800, .height = 600};
+constexpr size_t kHeadlessFrameCount = 3;
 constexpr size_t kInjectedMotionCount = 17;
 // One 60 Hz frame, in milliseconds. A headless run has no compositor to pace it, so the scroll physics is stepped
 // at a fixed rate instead of a measured one and the settled position stops depending on the machine.
@@ -135,6 +136,11 @@ std::vector<InputEvent> makeWheelFrame(facebook::react::Point surfacePoint, int 
 void deliverInputFrame(ReactHost& reactHost, FabricHost& fabricHost, const std::vector<InputEvent>& events) {
     fabricHost.dispatchInput(events);
     fabricHost.induceEventBeat();
+
+    // The headless counterpart of the window loop's tick, in the same place: after the frame's input has been
+    // released onto the JavaScript thread and before the run settles, so whatever an animation frame hands back to
+    // JavaScript is delivered by the drain that follows. See *Animation choreographer* in docs/cpp-toolchain.md.
+    fabricHost.tickAnimations(std::chrono::steady_clock::now());
 
     if (!reactHost.runUntilQuiescent(kQuiescenceBudget)) {
         std::cerr << "[bundle-runner] gave up waiting for pending timers" << std::endl;
@@ -332,11 +338,18 @@ FabricRunResult runFabricBundle(const std::optional<std::string>& bundlePath, fa
     configureDimensions(reactHost, surfaceSize);
     loadAndSettle(reactHost, bundlePath);
 
-    // One empty frame before the scene is read, because a frame is not only what the compositor sent: it is also
-    // where every mounted `<TextInput>` publishes its buffer into the shadow tree. Without it a `secureTextEntry`
+    // Empty frames before the scene is read, because a frame is not only what the compositor sent: it is also
+    // where every mounted `<TextInput>` publishes its buffer into the shadow tree. Without one a `secureTextEntry`
     // field would rasterise from the string React mounted rather than from the masked one, which is the whole of
-    // react-native-macos#423. A window does this every frame; a headless render has to do it once.
-    deliverInputFrame(reactHost, *fabricHost, {});
+    // react-native-macos#423.
+    //
+    // A window supplies frames for as long as it is open; a headless run has to say how many. It is more than one
+    // because a frame is also the animation backend's only tick: the first runs the operations a batch queued and
+    // steps its drivers, and a value the resulting callback makes JavaScript ask for again is answered by the
+    // next. See *Animation choreographer* in docs/cpp-toolchain.md.
+    for (size_t frame = 0; frame < kHeadlessFrameCount; ++frame) {
+        deliverInputFrame(reactHost, *fabricHost, {});
+    }
 
     return finishFabricRun(reactHost, fabricHost);
 }

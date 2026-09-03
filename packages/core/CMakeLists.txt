@@ -786,6 +786,7 @@ add_library(rnl_react_core STATIC
     src/InputDispatcher.cpp
     src/InputPipeline.cpp
     src/JsErrorReporter.cpp
+    src/LinuxAnimationChoreographer.cpp
     src/LinuxMountingManager.cpp
     src/ReactHost.cpp
     src/RetainedScene.cpp
@@ -1013,4 +1014,56 @@ elseif(RNL_ENABLE_WINDOW)
             Threads::Threads
             ${CMAKE_DL_LIBS})
     set_target_properties(rnl_window PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+    # Neither virtual-input protocol is part of wayland-protocols, and Ubuntu ships no wlr-protocols package, so
+    # both XML files are vendored under protocols/ from wlroots 0.17.4 — the wlroots the CI compositor (cage)
+    # links against. See *E2E driver (#7)* in docs/cpp-toolchain.md.
+    set(RNL_VIRTUAL_POINTER_XML ${CMAKE_CURRENT_SOURCE_DIR}/protocols/wlr-virtual-pointer-unstable-v1.xml)
+    set(RNL_VIRTUAL_KEYBOARD_XML ${CMAKE_CURRENT_SOURCE_DIR}/protocols/virtual-keyboard-unstable-v1.xml)
+
+    add_custom_command(
+        OUTPUT ${RNL_PROTOCOL_DIR}/wlr-virtual-pointer-unstable-v1-client-protocol.h
+        COMMAND ${RNL_WAYLAND_SCANNER} client-header ${RNL_VIRTUAL_POINTER_XML}
+                ${RNL_PROTOCOL_DIR}/wlr-virtual-pointer-unstable-v1-client-protocol.h
+        DEPENDS ${RNL_VIRTUAL_POINTER_XML}
+        COMMENT "wayland-scanner client-header wlr-virtual-pointer-unstable-v1"
+        VERBATIM)
+
+    add_custom_command(
+        OUTPUT ${RNL_PROTOCOL_DIR}/wlr-virtual-pointer-unstable-v1-protocol.c
+        COMMAND ${RNL_WAYLAND_SCANNER} private-code ${RNL_VIRTUAL_POINTER_XML}
+                ${RNL_PROTOCOL_DIR}/wlr-virtual-pointer-unstable-v1-protocol.c
+        DEPENDS ${RNL_VIRTUAL_POINTER_XML}
+        COMMENT "wayland-scanner private-code wlr-virtual-pointer-unstable-v1"
+        VERBATIM)
+
+    add_custom_command(
+        OUTPUT ${RNL_PROTOCOL_DIR}/virtual-keyboard-unstable-v1-client-protocol.h
+        COMMAND ${RNL_WAYLAND_SCANNER} client-header ${RNL_VIRTUAL_KEYBOARD_XML}
+                ${RNL_PROTOCOL_DIR}/virtual-keyboard-unstable-v1-client-protocol.h
+        DEPENDS ${RNL_VIRTUAL_KEYBOARD_XML}
+        COMMENT "wayland-scanner client-header virtual-keyboard-unstable-v1"
+        VERBATIM)
+
+    add_custom_command(
+        OUTPUT ${RNL_PROTOCOL_DIR}/virtual-keyboard-unstable-v1-protocol.c
+        COMMAND ${RNL_WAYLAND_SCANNER} private-code ${RNL_VIRTUAL_KEYBOARD_XML}
+                ${RNL_PROTOCOL_DIR}/virtual-keyboard-unstable-v1-protocol.c
+        DEPENDS ${RNL_VIRTUAL_KEYBOARD_XML}
+        COMMENT "wayland-scanner private-code virtual-keyboard-unstable-v1"
+        VERBATIM)
+
+    add_library(rnl_virtual_input STATIC
+        ${RNL_PROTOCOL_DIR}/wlr-virtual-pointer-unstable-v1-protocol.c
+        ${RNL_PROTOCOL_DIR}/wlr-virtual-pointer-unstable-v1-client-protocol.h
+        ${RNL_PROTOCOL_DIR}/virtual-keyboard-unstable-v1-protocol.c
+        ${RNL_PROTOCOL_DIR}/virtual-keyboard-unstable-v1-client-protocol.h)
+    target_include_directories(rnl_virtual_input PUBLIC ${RNL_PROTOCOL_DIR})
+    target_link_libraries(rnl_virtual_input PUBLIC PkgConfig::RNL_WAYLAND_CLIENT)
+
+    # The e2e driver's input half: a Wayland client that owns no window, so it needs neither Vulkan nor Skia.
+    add_executable(rnl_inject src/InputInjector.cpp)
+    target_compile_options(rnl_inject PRIVATE -Wall -Wextra)
+    target_link_libraries(rnl_inject PRIVATE rnl_virtual_input PkgConfig::RNL_XKBCOMMON)
+    set_target_properties(rnl_inject PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 endif()
