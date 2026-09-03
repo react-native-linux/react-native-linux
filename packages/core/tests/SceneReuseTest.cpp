@@ -1,40 +1,23 @@
 #include "LinuxMountingManager.h"
 #include "RetainedScene.h"
-#include "TextInputComponent.h"
+#include "SceneTestSupport.h"
 
 #include <gtest/gtest.h>
 
 #include <stdexcept>
 
-#include <react/renderer/attributedstring/AttributedString.h>
-#include <react/renderer/attributedstring/AttributedStringBox.h>
-#include <react/renderer/attributedstring/ParagraphAttributes.h>
-#include <react/renderer/attributedstring/TextAttributes.h>
-#include <react/renderer/components/image/ImageProps.h>
-#include <react/renderer/components/image/ImageState.h>
-#include <react/renderer/components/scrollview/ScrollViewState.h>
-#include <react/renderer/components/text/ParagraphState.h>
-#include <react/renderer/components/textinput/TextInputState.h>
 #include <react/renderer/components/view/ViewProps.h>
-#include <react/renderer/core/ConcreteState.h>
 #include <react/renderer/core/ReactPrimitives.h>
-#include <react/renderer/core/ShadowNodeFamily.h>
 #include <react/renderer/graphics/Color.h>
 #include <react/renderer/graphics/Point.h>
 #include <react/renderer/graphics/Rect.h>
 #include <react/renderer/graphics/Size.h>
 #include <react/renderer/graphics/ValueUnit.h>
-#include <react/renderer/imagemanager/ImageRequest.h>
-#include <react/renderer/imagemanager/ImageRequestParams.h>
-#include <react/renderer/imagemanager/primitives.h>
-#include <react/renderer/mounting/MountingTransaction.h>
 #include <react/renderer/mounting/ShadowView.h>
 #include <react/renderer/mounting/ShadowViewMutation.h>
-#include <react/renderer/telemetry/TransactionTelemetry.h>
 #include <yoga/enums/Edge.h>
 #include <yoga/style/StyleLength.h>
 
-#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
@@ -45,79 +28,19 @@
 // core#55768, core#48790) is the same hazard with a different noun — state keyed by something that survives a
 // node it should have died with. This file is the mutation script the issue asks for: build a node up, replace it
 // or its neighbour, and assert the replacement started clean.
+//
+// The fixture builders shared with `SceneTest.cpp` (makeRect/makeView/makePaintedView/makeParagraph/makeImage/
+// makeScrollView/makeTextInput/addChild/transactionOf/kSurfaceTag/kBlueArgb/kRedArgb), and the `using`
+// declarations every suite spells, live in `SceneTestSupport.h`; only the reuse-suite-specific helpers are
+// defined here.
 
 namespace {
 
-using facebook::react::MountingTransaction;
-using facebook::react::Point;
-using facebook::react::Rect;
-using facebook::react::SharedColor;
-using facebook::react::ShadowView;
-using facebook::react::ShadowViewMutation;
-using facebook::react::ShadowViewMutationList;
-using facebook::react::Size;
-using facebook::react::Tag;
-using facebook::react::UnitType;
-using facebook::react::ValueUnit;
-using facebook::react::ViewProps;
-using react_native_linux::LinuxMountingManager;
-using react_native_linux::RetainedScene;
-using react_native_linux::SceneEditorState;
-using react_native_linux::ScenePrimitive;
-using react_native_linux::SceneSnapshot;
-using react_native_linux::TextInputProps;
-
 namespace yoga = facebook::yoga;
-
-constexpr Tag kSurfaceTag = 1;
-constexpr uint32_t kBlueArgb = 0xFF3366CCU;
-constexpr uint32_t kRedArgb = 0xFFCC3333U;
-
-Rect makeRect(float x, float y, float width, float height) {
-    return Rect{.origin = Point{.x = x, .y = y}, .size = Size{.width = width, .height = height}};
-}
-
-SharedColor blue() {
-    return facebook::react::colorFromRGBA(51, 102, 204, 255);
-}
-
-SharedColor red() {
-    return facebook::react::colorFromRGBA(204, 51, 51, 255);
-}
-
-ShadowView makeView(Tag tag, Rect frame) {
-    ShadowView shadowView;
-
-    shadowView.tag = tag;
-    shadowView.componentName = "View";
-    shadowView.layoutMetrics.frame = frame;
-
-    return shadowView;
-}
-
-ShadowView makeStyledView(Tag tag, Rect frame, const std::shared_ptr<ViewProps>& viewProps) {
-    ShadowView shadowView = makeView(tag, frame);
-
-    shadowView.props = viewProps;
-
-    return shadowView;
-}
-
-std::shared_ptr<ViewProps> propsWithBackground(SharedColor backgroundColor) {
-    const std::shared_ptr<ViewProps> viewProps = std::make_shared<ViewProps>();
-
-    viewProps->backgroundColor = backgroundColor;
-
-    return viewProps;
-}
-
-ShadowView makePaintedView(Tag tag, Rect frame, SharedColor backgroundColor) {
-    return makeStyledView(tag, frame, propsWithBackground(backgroundColor));
-}
 
 /**
  * A view with every non-content paint prop turned on at once — opacity, a border, and a radius — so a single
- * replacement test can prove none of the three survives it, the way `propsWithBackground` alone could not.
+ * replacement test can prove none of the three survives it, the way a plain painted view alone could not.
  */
 std::shared_ptr<ViewProps> decoratedProps(SharedColor backgroundColor, SharedColor borderColor) {
     const std::shared_ptr<ViewProps> viewProps = propsWithBackground(backgroundColor);
@@ -130,117 +53,9 @@ std::shared_ptr<ViewProps> decoratedProps(SharedColor backgroundColor, SharedCol
     return viewProps;
 }
 
-/**
- * A `<Paragraph>` as it reaches the mounting layer, exactly as `SceneTest.cpp` builds one: the nested `<Text>`
- * and `<RawText>` nodes never do, so the flattened `AttributedString` arrives inside `ParagraphState`.
- */
-ShadowView makeParagraph(Tag tag, Rect frame, const std::string& text) {
-    facebook::react::AttributedString attributedString;
-
-    if (!text.empty()) {
-        facebook::react::AttributedString::Fragment fragment;
-
-        fragment.string = text;
-        fragment.textAttributes = facebook::react::TextAttributes::defaultTextAttributes();
-        attributedString.appendFragment(std::move(fragment));
-    }
-
-    ShadowView shadowView;
-
-    shadowView.tag = tag;
-    shadowView.componentName = "Paragraph";
-    shadowView.layoutMetrics.frame = frame;
-    shadowView.state = std::make_shared<const facebook::react::ConcreteState<facebook::react::ParagraphState>>(
-        std::make_shared<const facebook::react::ParagraphState>(
-            facebook::react::ParagraphState{attributedString, facebook::react::ParagraphAttributes{}, {}}),
-        facebook::react::ShadowNodeFamily::Weak{});
-
-    return shadowView;
-}
-
-ShadowView makeImage(Tag tag, Rect frame, const std::string& uri, SharedColor tintColor) {
-    const std::shared_ptr<facebook::react::ImageProps> imageProps =
-        std::make_shared<facebook::react::ImageProps>();
-
-    imageProps->resizeMode = facebook::react::ImageResizeMode::Cover;
-    imageProps->tintColor = tintColor;
-
-    facebook::react::ImageSource imageSource;
-
-    imageSource.type = facebook::react::ImageSource::Type::Local;
-    imageSource.uri = uri;
-
-    ShadowView shadowView;
-
-    shadowView.tag = tag;
-    shadowView.componentName = "Image";
-    shadowView.layoutMetrics.frame = frame;
-    shadowView.props = imageProps;
-    shadowView.state = std::make_shared<const facebook::react::ConcreteState<facebook::react::ImageState>>(
-        std::make_shared<const facebook::react::ImageState>(
-            imageSource, facebook::react::ImageRequest{imageSource, nullptr},
-            facebook::react::ImageRequestParams{}),
-        facebook::react::ShadowNodeFamily::Weak{});
-
-    return shadowView;
-}
-
-ShadowView makeScrollView(Tag tag, Rect frame, Point contentOffset, Rect contentBoundingRect) {
-    ShadowView shadowView;
-
-    shadowView.tag = tag;
-    shadowView.componentName = "ScrollView";
-    shadowView.layoutMetrics.frame = frame;
-    shadowView.state = std::make_shared<const facebook::react::ConcreteState<facebook::react::ScrollViewState>>(
-        std::make_shared<const facebook::react::ScrollViewState>(
-            facebook::react::ScrollViewState{contentOffset, contentBoundingRect, 0}),
-        facebook::react::ShadowNodeFamily::Weak{});
-
-    return shadowView;
-}
-
-std::shared_ptr<TextInputProps> textInputProps() {
-    return std::make_shared<TextInputProps>();
-}
-
-/**
- * A `<TextInput>` as it reaches the mounting layer, exactly as `SceneTest.cpp` builds one: the value lives in
- * `TextInputState`, which is the one description of the field's contents the picture and React share.
- */
-ShadowView makeTextInput(Tag tag, Rect frame, const std::string& value,
-                         const std::shared_ptr<TextInputProps>& props) {
-    facebook::react::AttributedString attributedString;
-
-    if (!value.empty()) {
-        facebook::react::AttributedString::Fragment fragment;
-
-        fragment.string = value;
-        fragment.textAttributes = facebook::react::TextAttributes::defaultTextAttributes();
-        attributedString.appendFragment(std::move(fragment));
-    }
-
-    ShadowView shadowView;
-
-    shadowView.tag = tag;
-    shadowView.componentName = "TextInput";
-    shadowView.layoutMetrics.frame = frame;
-    shadowView.props = props;
-    shadowView.state = std::make_shared<const facebook::react::ConcreteState<facebook::react::TextInputState>>(
-        std::make_shared<const facebook::react::TextInputState>(
-            facebook::react::TextInputState{facebook::react::AttributedStringBox{attributedString}, attributedString,
-                                            facebook::react::ParagraphAttributes{}, 0}),
-        facebook::react::ShadowNodeFamily::Weak{});
-
-    return shadowView;
-}
-
 void insertChildAt(RetainedScene& scene, Tag parentTag, const ShadowView& child, int index) {
     scene.createNode(child);
     scene.insertChild(parentTag, child, index);
-}
-
-void addChild(RetainedScene& scene, Tag parentTag, const ShadowView& child) {
-    insertChildAt(scene, parentTag, child, 0);
 }
 
 void removeAndDelete(RetainedScene& scene, Tag parentTag, const ShadowView& child) {
@@ -248,8 +63,51 @@ void removeAndDelete(RetainedScene& scene, Tag parentTag, const ShadowView& chil
     scene.deleteNode(child.tag);
 }
 
-MountingTransaction transactionOf(ShadowViewMutationList&& mutations) {
-    return MountingTransaction{kSurfaceTag, 1, std::move(mutations), facebook::react::TransactionTelemetry{}};
+// The mutation script every case-1 test below runs: delete the old node, then create its replacement under the
+// same tag in what stands in for "a later transaction". Folding it into one call is what keeps five near-identical
+// test bodies from being flagged as clones of each other.
+void replaceWithSameTag(RetainedScene& scene, Tag parentTag, const ShadowView& oldView, const ShadowView& newView) {
+    removeAndDelete(scene, parentTag, oldView);
+    addChild(scene, parentTag, newView);
+}
+
+// The `LinuxMountingManager` analogue of the same script, for the one case (TextInput) whose replaced-in-place
+// state travels through `setEditorState` rather than through `ShadowView` props alone and therefore has to be
+// proven at the mounting-manager layer, not the bare `RetainedScene` one.
+void replaceWithSameTag(LinuxMountingManager& mountingManager, Tag parentTag, const ShadowView& oldView,
+                        const ShadowView& newView) {
+    ShadowViewMutationList mutations;
+
+    mutations.push_back(ShadowViewMutation::RemoveMutation(parentTag, oldView, 0));
+    mutations.push_back(ShadowViewMutation::DeleteMutation(oldView));
+    mutations.push_back(ShadowViewMutation::CreateMutation(newView));
+    mutations.push_back(ShadowViewMutation::InsertMutation(parentTag, newView, 0));
+    mountingManager.executeMount(kSurfaceTag, transactionOf(std::move(mutations)));
+}
+
+// The arrange every case-1 test shares: an 800x600 surface with one node under its root.
+void mountUnderRoot(RetainedScene& scene, const ShadowView& view) {
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, view);
+}
+
+// Arrange, replace and snapshot in one call, because otherwise every case-1 test body is the same six lines with
+// one builder swapped and the duplication check reads them as copies of each other rather than as cases.
+SceneSnapshot snapshotAfterReplacement(RetainedScene& scene, const ShadowView& oldView, const ShadowView& newView) {
+    mountUnderRoot(scene, oldView);
+    replaceWithSameTag(scene, kSurfaceTag, oldView, newView);
+
+    return scene.snapshot();
+}
+
+// Both focus cases start from the same place: one painted node under the root, focused with the ring showing.
+ShadowView mountFocusedView(RetainedScene& scene) {
+    const ShadowView view = makePaintedView(2, makeRect(10, 20, 200, 100), blue());
+
+    mountUnderRoot(scene, view);
+    scene.setFocus(2, true);
+
+    return view;
 }
 
 // Case 1: delete a node, then create a new node with the same tag in a later transaction.
@@ -260,18 +118,13 @@ TEST(RetainedSceneReuseTest, AScrollViewReplacedByTheSameTagStartsWithNoContentO
     const ShadowView oldScrollView = makeScrollView(2, scrollFrame, Point{.x = 0, .y = 120}, makeRect(0, 0, 200, 470));
     const ShadowView oldRow = makePaintedView(3, makeRect(0, 80, 200, 70), blue());
 
-    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
-    addChild(scene, kSurfaceTag, oldScrollView);
+    mountUnderRoot(scene, oldScrollView);
     addChild(scene, 2, oldRow);
 
     removeAndDelete(scene, 2, oldRow);
-    removeAndDelete(scene, kSurfaceTag, oldScrollView);
-
-    const ShadowView newScrollView = makeScrollView(2, scrollFrame, Point{}, makeRect(0, 0, 200, 470));
-    const ShadowView newRow = makePaintedView(4, makeRect(0, 80, 200, 70), blue());
-
-    addChild(scene, kSurfaceTag, newScrollView);
-    addChild(scene, 2, newRow);
+    replaceWithSameTag(scene, kSurfaceTag, oldScrollView,
+                       makeScrollView(2, scrollFrame, Point{}, makeRect(0, 0, 200, 470)));
+    addChild(scene, 2, makePaintedView(4, makeRect(0, 80, 200, 70), blue()));
 
     const SceneSnapshot snapshot = scene.snapshot();
 
@@ -281,15 +134,9 @@ TEST(RetainedSceneReuseTest, AScrollViewReplacedByTheSameTagStartsWithNoContentO
 
 TEST(RetainedSceneReuseTest, AParagraphReplacedByTheSameTagCarriesNoOldText) {
     RetainedScene scene;
-    const ShadowView oldParagraph = makeParagraph(2, makeRect(0, 0, 200, 40), "the old paragraph");
-
-    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
-    addChild(scene, kSurfaceTag, oldParagraph);
-    removeAndDelete(scene, kSurfaceTag, oldParagraph);
-
-    addChild(scene, kSurfaceTag, makeParagraph(2, makeRect(0, 0, 200, 40), "new"));
-
-    const SceneSnapshot snapshot = scene.snapshot();
+    const SceneSnapshot snapshot =
+        snapshotAfterReplacement(scene, makeParagraph(2, makeRect(0, 0, 200, 40), "the old paragraph"),
+                                 makeParagraph(2, makeRect(0, 0, 200, 40), "new"));
 
     ASSERT_EQ(snapshot.size(), 1U);
     ASSERT_TRUE(snapshot[0].text.has_value());
@@ -298,29 +145,18 @@ TEST(RetainedSceneReuseTest, AParagraphReplacedByTheSameTagCarriesNoOldText) {
 
 TEST(RetainedSceneReuseTest, AParagraphReplacedByAnEmptyOneCarriesNoOldTextEither) {
     RetainedScene scene;
-    const ShadowView oldParagraph = makeParagraph(2, makeRect(0, 0, 200, 40), "the old paragraph");
 
-    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
-    addChild(scene, kSurfaceTag, oldParagraph);
-    removeAndDelete(scene, kSurfaceTag, oldParagraph);
-
-    addChild(scene, kSurfaceTag, makeParagraph(2, makeRect(0, 0, 200, 40), ""));
-
-    EXPECT_TRUE(scene.snapshot().empty());
+    EXPECT_TRUE(snapshotAfterReplacement(scene, makeParagraph(2, makeRect(0, 0, 200, 40), "the old paragraph"),
+                                         makeParagraph(2, makeRect(0, 0, 200, 40), ""))
+                    .empty());
     EXPECT_EQ(scene.dump().find("text="), std::string::npos);
 }
 
 TEST(RetainedSceneReuseTest, AnImageReplacedByTheSameTagCarriesNoOldSourceOrTint) {
     RetainedScene scene;
-    const ShadowView oldImage = makeImage(2, makeRect(0, 0, 64, 48), "old.png", red());
-
-    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
-    addChild(scene, kSurfaceTag, oldImage);
-    removeAndDelete(scene, kSurfaceTag, oldImage);
-
-    addChild(scene, kSurfaceTag, makeImage(2, makeRect(0, 0, 64, 48), "new.png", blue()));
-
-    const SceneSnapshot snapshot = scene.snapshot();
+    const SceneSnapshot snapshot = snapshotAfterReplacement(scene, makeImage(2, makeRect(0, 0, 64, 48), "old.png",
+                                                                            red()),
+                                                            makeImage(2, makeRect(0, 0, 64, 48), "new.png", blue()));
 
     ASSERT_EQ(snapshot.size(), 1U);
     ASSERT_TRUE(snapshot[0].image.has_value());
@@ -330,15 +166,10 @@ TEST(RetainedSceneReuseTest, AnImageReplacedByTheSameTagCarriesNoOldSourceOrTint
 
 TEST(RetainedSceneReuseTest, AnImageReplacedByAnUnrequestedSourceCarriesNoOldSourceEither) {
     RetainedScene scene;
-    const ShadowView oldImage = makeImage(2, makeRect(0, 0, 64, 48), "old.png", red());
 
-    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
-    addChild(scene, kSurfaceTag, oldImage);
-    removeAndDelete(scene, kSurfaceTag, oldImage);
-
-    addChild(scene, kSurfaceTag, makeImage(2, makeRect(0, 0, 64, 48), "", SharedColor{}));
-
-    EXPECT_TRUE(scene.snapshot().empty());
+    EXPECT_TRUE(snapshotAfterReplacement(scene, makeImage(2, makeRect(0, 0, 64, 48), "old.png", red()),
+                                         makeImage(2, makeRect(0, 0, 64, 48), "", SharedColor{}))
+                    .empty());
 }
 
 /**
@@ -349,19 +180,13 @@ TEST(RetainedSceneReuseTest, AnImageReplacedByAnUnrequestedSourceCarriesNoOldSou
  */
 TEST(RetainedSceneReuseTest, AFocusedNodeReplacedByTheSameTagDoesNotInheritTheFocusRing) {
     RetainedScene scene;
-    const ShadowView oldView = makePaintedView(2, makeRect(10, 20, 200, 100), blue());
-
-    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
-    addChild(scene, kSurfaceTag, oldView);
-    scene.setFocus(2, true);
-
+    const ShadowView oldView = mountFocusedView(scene);
     const SceneSnapshot beforeReplacement = scene.snapshot();
 
     ASSERT_EQ(beforeReplacement.size(), 1U);
     ASSERT_TRUE(beforeReplacement[0].focusRing);
 
-    removeAndDelete(scene, kSurfaceTag, oldView);
-    addChild(scene, kSurfaceTag, makePaintedView(2, makeRect(10, 20, 200, 100), blue()));
+    replaceWithSameTag(scene, kSurfaceTag, oldView, makePaintedView(2, makeRect(10, 20, 200, 100), blue()));
 
     const SceneSnapshot snapshot = scene.snapshot();
 
@@ -371,14 +196,9 @@ TEST(RetainedSceneReuseTest, AFocusedNodeReplacedByTheSameTagDoesNotInheritTheFo
 
 TEST(RetainedSceneReuseTest, AFocusChangeAfterTheDeleteStillMarksTheNewNode) {
     RetainedScene scene;
-    const ShadowView oldView = makePaintedView(2, makeRect(10, 20, 200, 100), blue());
+    const ShadowView oldView = mountFocusedView(scene);
 
-    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
-    addChild(scene, kSurfaceTag, oldView);
-    scene.setFocus(2, true);
-    removeAndDelete(scene, kSurfaceTag, oldView);
-    addChild(scene, kSurfaceTag, makePaintedView(2, makeRect(10, 20, 200, 100), blue()));
-
+    replaceWithSameTag(scene, kSurfaceTag, oldView, makePaintedView(2, makeRect(10, 20, 200, 100), blue()));
     scene.setFocus(2, true);
 
     const SceneSnapshot snapshot = scene.snapshot();
@@ -389,15 +209,9 @@ TEST(RetainedSceneReuseTest, AFocusChangeAfterTheDeleteStillMarksTheNewNode) {
 
 TEST(RetainedSceneReuseTest, ADecoratedViewReplacedByAPlainOneCarriesNoOpacityBorderOrRadius) {
     RetainedScene scene;
-    const ShadowView oldView = makeStyledView(2, makeRect(0, 0, 100, 100), decoratedProps(red(), blue()));
-
-    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
-    addChild(scene, kSurfaceTag, oldView);
-    removeAndDelete(scene, kSurfaceTag, oldView);
-
-    addChild(scene, kSurfaceTag, makePaintedView(2, makeRect(0, 0, 100, 100), blue()));
-
-    const SceneSnapshot snapshot = scene.snapshot();
+    const SceneSnapshot snapshot =
+        snapshotAfterReplacement(scene, makeStyledView(2, makeRect(0, 0, 100, 100), decoratedProps(red(), blue())),
+                                 makePaintedView(2, makeRect(0, 0, 100, 100), blue()));
 
     ASSERT_EQ(snapshot.size(), 1U);
     EXPECT_EQ(snapshot[0].backgroundColorArgb, kBlueArgb);
@@ -430,14 +244,7 @@ TEST(RetainedSceneReuseTest, ATextInputReplacedByTheSameTagStartsWithNoCaretSele
                                                        .isCaretVisible = true});
     mountingManager.takeFrame();
 
-    const ShadowView newField = makeTextInput(2, fieldFrame, "", textInputProps());
-    ShadowViewMutationList replace;
-
-    replace.push_back(ShadowViewMutation::RemoveMutation(kSurfaceTag, oldField, 0));
-    replace.push_back(ShadowViewMutation::DeleteMutation(oldField));
-    replace.push_back(ShadowViewMutation::CreateMutation(newField));
-    replace.push_back(ShadowViewMutation::InsertMutation(kSurfaceTag, newField, 0));
-    mountingManager.executeMount(kSurfaceTag, transactionOf(std::move(replace)));
+    replaceWithSameTag(mountingManager, kSurfaceTag, oldField, makeTextInput(2, fieldFrame, "", textInputProps()));
 
     const SceneSnapshot snapshot = mountingManager.snapshotScene();
 

@@ -1,5 +1,6 @@
 #include "LinuxMountingManager.h"
 #include "RetainedScene.h"
+#include "SceneTestSupport.h"
 #include "TextInputComponent.h"
 
 #include <gtest/gtest.h>
@@ -49,77 +50,12 @@ namespace {
 
 namespace yoga = facebook::yoga;
 
-using facebook::react::MountingTransaction;
-using facebook::react::Point;
-using facebook::react::Rect;
-using facebook::react::SharedColor;
-using facebook::react::ShadowView;
-using facebook::react::ShadowViewMutation;
-using facebook::react::ShadowViewMutationList;
-using facebook::react::Size;
-using facebook::react::Tag;
-using facebook::react::Transform;
-using facebook::react::UnitType;
-using facebook::react::ValueUnit;
-using facebook::react::ViewProps;
-using react_native_linux::LinuxMountingManager;
-using react_native_linux::RetainedScene;
-using react_native_linux::SceneDamage;
-using react_native_linux::SceneEditorState;
-using react_native_linux::SceneFrame;
-using react_native_linux::SceneSnapshot;
-
-constexpr Tag kSurfaceTag = 1;
-constexpr uint32_t kBlueArgb = 0xFF3366CCU;
-constexpr uint32_t kRedArgb = 0xFFCC3333U;
 constexpr uint32_t kHalfBlueArgb = 0x803366CCU;
 constexpr uint32_t kHalfRedArgb = 0x80CC3333U;
 constexpr uint32_t kQuarterRedArgb = 0x40CC3333U;
 
-Rect makeRect(float x, float y, float width, float height) {
-    return Rect{.origin = Point{.x = x, .y = y}, .size = Size{.width = width, .height = height}};
-}
-
-SharedColor blue() {
-    return facebook::react::colorFromRGBA(51, 102, 204, 255);
-}
-
-SharedColor red() {
-    return facebook::react::colorFromRGBA(204, 51, 51, 255);
-}
-
 SharedColor invisibleBlue() {
     return facebook::react::colorFromRGBA(51, 102, 204, 0);
-}
-
-ShadowView makeView(Tag tag, Rect frame) {
-    ShadowView shadowView;
-
-    shadowView.tag = tag;
-    shadowView.componentName = "View";
-    shadowView.layoutMetrics.frame = frame;
-
-    return shadowView;
-}
-
-ShadowView makeStyledView(Tag tag, Rect frame, const std::shared_ptr<ViewProps>& viewProps) {
-    ShadowView shadowView = makeView(tag, frame);
-
-    shadowView.props = viewProps;
-
-    return shadowView;
-}
-
-std::shared_ptr<ViewProps> propsWithBackground(SharedColor backgroundColor) {
-    const std::shared_ptr<ViewProps> viewProps = std::make_shared<ViewProps>();
-
-    viewProps->backgroundColor = backgroundColor;
-
-    return viewProps;
-}
-
-ShadowView makePaintedView(Tag tag, Rect frame, SharedColor backgroundColor) {
-    return makeStyledView(tag, frame, propsWithBackground(backgroundColor));
 }
 
 /**
@@ -140,44 +76,6 @@ std::shared_ptr<ViewProps> propsWithGradients(std::vector<facebook::react::Backg
     viewProps->backgroundImage = std::move(backgroundImage);
 
     return viewProps;
-}
-
-/**
- * A `<Paragraph>` as it reaches the mounting layer: the nested `<Text>` and `<RawText>` nodes never do, so the
- * flattened `AttributedString` arrives inside `ParagraphState`. The family is an empty weak pointer because
- * nothing here dispatches a state update; `ConcreteState` only locks it for that.
- */
-ShadowView makeParagraph(Tag tag, Rect frame, const std::string& text, int maximumNumberOfLines) {
-    facebook::react::AttributedString attributedString;
-
-    if (!text.empty()) {
-        facebook::react::AttributedString::Fragment fragment;
-
-        fragment.string = text;
-        fragment.textAttributes = facebook::react::TextAttributes::defaultTextAttributes();
-        attributedString.appendFragment(std::move(fragment));
-    }
-
-    facebook::react::ParagraphAttributes paragraphAttributes;
-
-    paragraphAttributes.maximumNumberOfLines = maximumNumberOfLines;
-
-    ShadowView shadowView;
-
-    shadowView.tag = tag;
-    shadowView.componentName = "Paragraph";
-    shadowView.layoutMetrics.frame = frame;
-    shadowView.state = std::make_shared<const facebook::react::ConcreteState<facebook::react::ParagraphState>>(
-        std::make_shared<const facebook::react::ParagraphState>(
-            facebook::react::ParagraphState{attributedString, paragraphAttributes, {}}),
-        facebook::react::ShadowNodeFamily::Weak{});
-
-    return shadowView;
-}
-
-void addChild(RetainedScene& scene, Tag parentTag, const ShadowView& child) {
-    scene.createNode(child);
-    scene.insertChild(parentTag, child, 0);
 }
 
 SceneSnapshot snapshotOfSingleChild(const std::shared_ptr<ViewProps>& viewProps, Rect frame) {
@@ -231,10 +129,6 @@ void expectMatrix(const react_native_linux::SceneMatrix& matrix, float scaleX, f
     EXPECT_FLOAT_EQ(matrix.translateY, translateY);
     EXPECT_FLOAT_EQ(matrix.skewX, 0);
     EXPECT_FLOAT_EQ(matrix.skewY, 0);
-}
-
-MountingTransaction transactionOf(ShadowViewMutationList&& mutations) {
-    return MountingTransaction{kSurfaceTag, 1, std::move(mutations), facebook::react::TransactionTelemetry{}};
 }
 
 SceneDamage damageAfterUpdatingPaintedChild(Rect newFrame) {
@@ -1052,38 +946,6 @@ TEST(RetainedSceneTextTest, DumpCarriesTheParagraphText) {
               "  Paragraph #2 frame=(40.00, 60.00, 300.00, 48.00) text=\"dumped\"\n");
 }
 
-/**
- * An `<Image>` as it reaches the mounting layer: the fit and the tint stay on `ImageProps`, and the source is on
- * `ImageState`, because `ImageShadowNode` is what chooses it and what hands it to `ImageManager::requestImage`.
- */
-ShadowView makeImage(Tag tag, Rect frame, const std::string& uri, facebook::react::ImageResizeMode resizeMode,
-                     SharedColor tintColor) {
-    const std::shared_ptr<facebook::react::ImageProps> imageProps =
-        std::make_shared<facebook::react::ImageProps>();
-
-    imageProps->resizeMode = resizeMode;
-    imageProps->tintColor = tintColor;
-
-    facebook::react::ImageSource imageSource;
-
-    imageSource.type = facebook::react::ImageSource::Type::Local;
-    imageSource.uri = uri;
-
-    ShadowView shadowView;
-
-    shadowView.tag = tag;
-    shadowView.componentName = "Image";
-    shadowView.layoutMetrics.frame = frame;
-    shadowView.props = imageProps;
-    shadowView.state = std::make_shared<const facebook::react::ConcreteState<facebook::react::ImageState>>(
-        std::make_shared<const facebook::react::ImageState>(
-            imageSource, facebook::react::ImageRequest{imageSource, nullptr},
-            facebook::react::ImageRequestParams{}),
-        facebook::react::ShadowNodeFamily::Weak{});
-
-    return shadowView;
-}
-
 ShadowView makeTile(Tag tag, Rect frame, const std::string& uri) {
     return makeImage(tag, frame, uri, facebook::react::ImageResizeMode::Cover, SharedColor{});
 }
@@ -1192,25 +1054,6 @@ TEST(RetainedSceneImageTest, DumpCarriesTheImageSource) {
     EXPECT_EQ(sceneWithTile(makeTile(2, makeRect(40, 60, 120, 90), "tile.png")).dump(),
               "RootView #1 frame=(0.00, 0.00, 800.00, 600.00)\n"
               "  Image #2 frame=(40.00, 60.00, 120.00, 90.00) image=\"tile.png\"\n");
-}
-
-/**
- * A `<ScrollView>` as it reaches the mounting layer. `ScrollViewState` is where the scroll position lives — the
- * platform writes it and Fabric mounts it — so the state pointer is what makes a node one, exactly as
- * `ParagraphState` is what makes a node a paragraph.
- */
-ShadowView makeScrollView(Tag tag, Rect frame, Point contentOffset, Rect contentBoundingRect) {
-    ShadowView shadowView;
-
-    shadowView.tag = tag;
-    shadowView.componentName = "ScrollView";
-    shadowView.layoutMetrics.frame = frame;
-    shadowView.state = std::make_shared<const facebook::react::ConcreteState<facebook::react::ScrollViewState>>(
-        std::make_shared<const facebook::react::ScrollViewState>(
-            facebook::react::ScrollViewState{contentOffset, contentBoundingRect, 0}),
-        facebook::react::ShadowNodeFamily::Weak{});
-
-    return shadowView;
 }
 
 // The fixture every scroll test below shares: a 200x150 viewport at (60, 60) holding 470 points of content, one
@@ -1520,38 +1363,6 @@ TEST(LinuxMountingManagerTest, DispatchCommandLeavesTheSceneUntouched) {
 constexpr uint32_t kDefaultCaretArgb = 0xFF599EFFU;
 constexpr uint32_t kDefaultSelectionArgb = 0x59599EFFU;
 
-/**
- * A `<TextInput>` as it reaches the mounting layer. The value lives in `TextInputState` for the reason a
- * ScrollView's offset lives in its own state: the platform writes it back there after every edit, so it is the
- * one description of the field that the picture and React share. See *TextInput* in docs/cpp-toolchain.md.
- */
-ShadowView makeTextInput(Tag tag, Rect frame, const std::string& value,
-                         const std::shared_ptr<react_native_linux::TextInputProps>& textInputProps) {
-    facebook::react::AttributedString attributedString;
-
-    if (!value.empty()) {
-        facebook::react::AttributedString::Fragment fragment;
-
-        fragment.string = value;
-        fragment.textAttributes = facebook::react::TextAttributes::defaultTextAttributes();
-        attributedString.appendFragment(std::move(fragment));
-    }
-
-    ShadowView shadowView;
-
-    shadowView.tag = tag;
-    shadowView.componentName = "TextInput";
-    shadowView.layoutMetrics.frame = frame;
-    shadowView.props = textInputProps;
-    shadowView.state = std::make_shared<const facebook::react::ConcreteState<facebook::react::TextInputState>>(
-        std::make_shared<const facebook::react::TextInputState>(
-            facebook::react::TextInputState{facebook::react::AttributedStringBox{attributedString}, attributedString,
-                                            facebook::react::ParagraphAttributes{}, 0}),
-        facebook::react::ShadowNodeFamily::Weak{});
-
-    return shadowView;
-}
-
 Rect textInputFrame() {
     return makeRect(10, 20, 200, 40);
 }
@@ -1568,10 +1379,6 @@ SceneSnapshot snapshotOfTextInput(const ShadowView& field) {
 SceneSnapshot snapshotOfFieldWith(const std::string& value,
                                   const std::shared_ptr<react_native_linux::TextInputProps>& textInputProps) {
     return snapshotOfTextInput(makeTextInput(2, textInputFrame(), value, textInputProps));
-}
-
-std::shared_ptr<react_native_linux::TextInputProps> textInputProps() {
-    return std::make_shared<react_native_linux::TextInputProps>();
 }
 
 TEST(RetainedSceneTextInputTest, TheStateBecomesTheTextAndTheNodeBecomesAnEditor) {
