@@ -1304,6 +1304,34 @@ names this suite as a bump gate: a version bump that changes the tests directory
 `UpstreamAnimatedSuiteTest` failure, and a version bump that changes what the five suites assert is a CTest failure,
 both before either reaches an app.
 
+## Layout conformance suite (#118)
+
+`packages/core/tests/LayoutConformanceTest.cpp` is the harness the layout conformance issues hang their tables on.
+Every case commits a real tree through `ShadowTree` — the same Yoga layout the platform runs on the commit thread —
+and reads absolute frames back out of the committed revision, so a case fails exactly when our pipeline would lay
+the tree out differently from the rule the case states. Nothing talks to Yoga directly; props are parsed through
+`ViewComponentDescriptor::cloneProps` from the same top-level style keys the JavaScript bundles send, and the
+ScrollView cases reuse the production content-size state path. Cases are named after the upstream reports they pin:
+#48527 (`alignItems: 'flex-end'` must not change where `flexWrap` breaks lines), #49984 (`alignContent: 'stretch'`
+distributes leftover cross space across lines), #35351 (gap participates in available space, with `alignContent`)
+and #36024 (gap sizing inside a `ScrollView` matches the same container outside one). The golden for this suite is
+`test-bundles/wrapping.js`: one tile grid rendered at two container widths so a break-point regression is a visible
+image difference, not a number in a table.
+
+React Native's default flex direction is `column`, not CSS's `row`, so every wrapping case states `row` explicitly —
+the questions these cases ask are about horizontal line breaking.
+
+Known deviation from CSS, pinned as observed rather than "fixed":
+
+- **Percentage gaps with an indefinite dimension resolve circularly.** CSS Box Alignment treats a percentage
+  `row-gap`/`column-gap` as zero when the corresponding dimension is indefinite. Yoga instead resolves it against
+  the resulting content height — a `row-gap: 25%` on a two-line container whose content height comes out at 40
+  points becomes a 10-point gap — and then lets the shifted line overflow the container instead of re-including it
+  in the measured height. `PercentageRowGapWithIndefiniteHeightResolvesAgainstTheContentHeightLikeYogaNotCss` pins
+  this; if a Yoga bump changes it, that test is the tripwire, and the definite-dimension case
+  (`PercentageGapsResolveAgainstTheContainerDimensionTheyAreDeclaredOn`) states the correct-dimension rule: percent
+  `column-gap` resolves against width, percent `row-gap` against height.
+
 ## Native-driver allowlist (#122)
 
 *Sync props fast path* explains why `opacity`, `backgroundColor` and `transform` are the three props an animation
