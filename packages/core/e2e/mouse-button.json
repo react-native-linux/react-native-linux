@@ -1,0 +1,23 @@
+{
+  "name": "mouse-button-payload",
+  "bundle": "mouse-button.js",
+  "ready": "mouse-button: committed surface 1",
+  "frames": 600,
+  "steps": [
+    "sleep 500",
+    "move 200 140",
+    "sleep 100",
+    "button right press",
+    "sleep 100",
+    "button right release",
+    "sleep 200",
+    "click 200 140",
+    "sleep 500"
+  ],
+  "expect": [
+    "mouse-button: topPointerDown on box button=2 buttons=2 at 200,140",
+    "mouse-button: topPointerUp on box button=2 buttons=0 at 200,140",
+    "mouse-button: topPointerDown on box button=0 buttons=1 at 200,140",
+    "mouse-button: topClick on box button=0"
+  ]
+}

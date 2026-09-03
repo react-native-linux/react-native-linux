@@ -88,6 +88,19 @@ struct InputEvent {
 bool isScrollEvent(const InputEvent& event);
 
 /**
+ * The W3C `button` number an evdev button code maps to: 0 primary, 1 auxiliary, 2 secondary, 3 and 4 the
+ * backward/forward pair the side buttons of a five-button mouse send. Returns -1 for codes the platform does not
+ * name, and the seat drops the events carrying those.
+ */
+int domButtonOfEvdevCode(uint32_t evdevCode);
+
+/**
+ * The W3C `buttons` bitmask bit for one DOM button number: 1 primary, 2 secondary, 4 auxiliary, 8 backward, 16
+ * forward. Returns 0 for anything else, which is the mask of a pointer with no buttons held.
+ */
+int buttonsMaskOfDomButton(int domButton);
+
+/**
  * The number of events one frame may carry. Motion coalescing is what keeps a 1000 Hz mouse well under it, so
  * reaching the cap means a button or key stream no human produced; the overflow is counted rather than ignored.
  */
