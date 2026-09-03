@@ -623,6 +623,13 @@ void RetainedScene::deleteNode(facebook::react::Tag tag) {
     damageSubtree(tag);
     nodes_.erase(tag);
     editorStates_.erase(tag);
+
+    // Otherwise a later commit that reuses this tag inherits a focus ring it never earned: `focusedTag_` is scene
+    // state keyed by tag, exactly like `editorStates_`, and the node it names is gone.
+    if (tag == focusedTag_) {
+        focusedTag_ = 0;
+        isFocusVisible_ = false;
+    }
 }
 
 void RetainedScene::insertChild(facebook::react::Tag parentTag, const facebook::react::ShadowView& childShadowView,

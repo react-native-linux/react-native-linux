@@ -4,3 +4,7 @@ extend-exclude = ["pnpm-lock.yaml", "packages/core/generated/"]
 [default.extend-identifiers]
 KEY_102ND = "KEY_102ND"
 HelXlo = "HelXlo"
+
+[default.extend-words]
+collapsable = "collapsable"
+truncat = "truncat"

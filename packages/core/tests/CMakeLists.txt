@@ -28,6 +28,7 @@ include(GoogleTest)
 
 add_executable(rnl_core_tests
     DimensionsTest.cpp
+    SceneReuseTest.cpp
     EditorTest.cpp
     FocusTest.cpp
     FrameClockTest.cpp
