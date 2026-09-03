@@ -4468,9 +4468,12 @@ Blessing a golden:
 3. Commit it as `packages/core/e2e/goldens/<name>.png` and review the picture in the PR diff, exactly as the
    window goldens are reviewed.
 
-`pressable-click.png` is wired this way and **not committed**: cage sizes the surface to its own output rather
-than to the 800x600 the window goldens are checked in at, so no existing picture is it and nothing here guessed
-one. The coordinator blesses it from the next CI run's artifact.
+`pressable-click.png` was wired this way and skipped for exactly as long as nobody blessed it — the expectation
+was declared, the file did not exist, and the screenshot half of the driver therefore asserted nothing. It is
+committed now, at cage's own output size of **1280x720** rather than the 800x600 the window goldens use, taken
+from CI run 33779667104's artifact. What made it blessable rather than a flake waiting to happen is that the same
+picture came out of two independent runs **byte for byte**: 0 differing pixels between 33779667104 and
+33778339030, against a tolerance of 50.
 
 ### Running it
 
@@ -4496,8 +4499,8 @@ Named here so they are not mistaken for oversights, all of them still #7:
   would let a scenario assert on events no fixture was written to report.
 - **Deterministic capture.** The window captures at a fixed frame number, so a scenario sizes `frames` to cover
   its own injection. Capturing on demand — a signal, or a step in the script — would remove the budget entirely.
-- **The first screenshot golden.** `pressable-click.png` is wired and skipped; it becomes an assertion the moment
-  a picture is blessed from a CI artifact. See *Screenshots*.
+- **Screenshot goldens beyond the first.** `pressable-click.png` is blessed and asserting; the other scenarios
+  declare no screenshot, so an unexpected picture in them is still only caught by their event traces.
 - **One comparator, not two.** `scripts/e2e/screenshot.ts` and `packages/core/goldens/perceptual-diff.ts` now
   carry the same per-channel tolerance for the same reason, because oxlint forbids the root script importing the
   package one. Moving the shared half into a package both can depend on is the fix, and it is not worth a package
