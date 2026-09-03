@@ -4052,6 +4052,20 @@ and height, the longest line and the total. It is declared beside the caret and 
 reason they are there — the definitions live with `layoutParagraph`, so nothing measures a second paragraph to
 ask a question about the first.
 
+**Three more properties of the measure path** ride on the same run (#111), because a fixture is where a real
+`AttributedString` with real fonts and real fragments comes from, and a table of strings is not:
+
+- **A paragraph shrinks to its longest line.** Measured against a constraint far wider than the text, the answer
+  is the width the glyphs occupy rather than the constraint —
+  [core#54571](https://github.com/facebook/react-native/issues/54571) is multi-line `<Text>` that stopped being
+  able to.
+- **An empty paragraph has no width.** The same attributed string with its fragments removed measures zero, which
+  is [core#55468](https://github.com/facebook/react-native/issues/55468) the right way round.
+- **The cache key includes the paragraph attributes.** A paragraph that wraps onto more than one line must measure
+  strictly shorter when it is limited to one; a cache keyed on less than it depends on answers with the height it
+  already had. Verified as a check that can fail: removing the limit makes it report `tag 11 measured 98 points
+  tall over 4 lines and 98 limited to one`.
+
 **The precondition, and it is a real one.** A box smaller than its own text is a legitimate thing for an author to
 write — an explicit `height` on a `<Text>` overflows on every platform — and this proof cannot tell that apart
 from a paragraph that re-wrapped. So it runs on the fixtures whose text boxes are auto-sized, which today is
