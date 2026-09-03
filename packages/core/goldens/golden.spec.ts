@@ -42,13 +42,14 @@ const fixtures: readonly GoldenFixture[] = [
     renderFlag: "--golden",
   },
   // Text is reproducible only against the fonts scripts/vendor-fonts.ts pins into packages/core/fonts.
-  { bundleFileName: "text.js", goldenFileName: "text.png", renderArguments: [], renderFlag: "--golden" },
+  // Issue #41: the flag also asserts that each box still holds the paragraph it was measured for.
+  { bundleFileName: "text.js", goldenFileName: "text.png", renderArguments: [], renderFlag: "--text-fit-golden" },
   // The vertical-metrics matrix of #110: every row draws its measured frame under its painted line box.
   {
     bundleFileName: "text-metrics.js",
     goldenFileName: "text-metrics.png",
     renderArguments: [],
-    renderFlag: "--golden",
+    renderFlag: "--text-fit-golden",
   },
   { bundleFileName: "damage.js", goldenFileName: "damage.png", renderArguments: [], renderFlag: "--damage-golden" },
   // Issue #35: this render flag is itself the assertion, and the PNG it writes is the paint side of that proof.

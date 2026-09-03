@@ -3819,6 +3819,45 @@ The expected picture, on the same `#14161A` background, is the second frame:
 3. Nothing at (300, 200) and nothing at (600, 80): the moved view's old position and the unmounted view's
    rectangle are both damaged, cleared, and left as background.
 
+### The measured-paragraph proof (#41)
+
+`--text-fit-golden` is the same idea applied to text, and it is the answer to issue #41 that this architecture
+admits.
+
+The deep half of that issue cannot fail here by construction: measurement and painting call **one**
+`layoutParagraph`, so they cannot shape a string differently, and the scene carries the `AttributedString` and
+`ParagraphAttributes` from `ParagraphState` to the painter untouched. What they can differ in is the **width they
+are called with**. `TextLayoutManager::measure` is given Yoga's constraint and answers with
+`ceil(getLongestLine())` by `ceil(getHeight())`; Yoga then assigns a frame from that answer; and the painter lays
+the same string out again at the content box inside that frame. A paragraph that re-wraps at the second width
+overflows the box that was measured for it, which is react-native-macos#2857 — the phantom content size that a
+window resize "fixes" by forcing a re-measure.
+
+So for every text node in the scene the run lays the paragraph out at the width the painter uses and fails when
+it is taller or wider than the box, with one point of slack for Yoga's rounding:
+
+```text
+[golden] tag 3 was given a 300x20 box and paints 3 lines of 294.96x66
+```
+
+It then measures the same string through `TextLayoutManager` twice. The second call is a cache hit, so the pair
+is the cache cross-check the issue asks for — a measure cache that could answer differently from the paragraph
+behind it is the other half of the same bug — and the answer is compared against the paragraph that was painted.
+
+`measureParagraphMetrics` in `TextGeometry.h` is what makes the paint side observable: line count, per-line width
+and height, the longest line and the total. It is declared beside the caret and hit-test geometry for the same
+reason they are there — the definitions live with `layoutParagraph`, so nothing measures a second paragraph to
+ask a question about the first.
+
+**The precondition, and it is a real one.** A box smaller than its own text is a legitimate thing for an author to
+write — an explicit `height` on a `<Text>` overflows on every platform — and this proof cannot tell that apart
+from a paragraph that re-wrapped. So it runs on the fixtures whose text boxes are auto-sized, which today is
+`text.js` and `text-metrics.js`, and a fixture that deliberately constrains a paragraph belongs on plain
+`--golden`.
+
+`--text-fit-golden` replaces `--golden` for those two rather than adding a golden of its own: the picture is the
+same picture, and it is now written only if the paragraph in it fits the box it was measured into.
+
 ### The hit-versus-paint agreement proof (#35)
 
 `--hit-paint-golden` is the second fixture of that kind: issue #35's acceptance criterion — "the node reported as

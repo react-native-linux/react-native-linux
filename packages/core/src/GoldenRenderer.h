@@ -87,4 +87,23 @@ int renderDamageGolden(const std::string& bundlePath, const std::string& outputP
  */
 int renderHitPaintGolden(const std::string& bundlePath, const std::string& outputPath, int width, int height);
 
+/**
+ * Runs a bundle and proves that every box a paragraph was measured into still holds the paragraph that is painted
+ * in it, and that measuring it again answers the same thing.
+ *
+ * Issue #41's failure is a box measured for one paragraph and painted with another. Measurement and painting
+ * cannot shape a string differently here — they call one `layoutParagraph` — but they are called with different
+ * widths: measurement is given Yoga's constraint, painting is given the content box Yoga assigned from the
+ * answer. A paragraph that re-wraps at that second width overflows its box, which is react-native-macos#2857.
+ *
+ * So for every text node in the scene this lays the paragraph out at the content-box width the painter uses, and
+ * fails when it is taller or wider than that box. It then measures the same string through `TextLayoutManager`
+ * twice — the second call is a cache hit — and fails when the two answers differ, or when they disagree with the
+ * paragraph that was painted.
+ *
+ * Returns a process exit status: 0 when every paragraph fitted, the file was written, and the bundle reported no
+ * fatal JavaScript error.
+ */
+int renderTextFitGolden(const std::string& bundlePath, const std::string& outputPath, int width, int height);
+
 } // namespace react_native_linux

@@ -357,6 +357,25 @@ layoutParagraph(const facebook::react::AttributedString& attributedString,
     return paragraph;
 }
 
+ParagraphMetrics measureParagraphMetrics(const facebook::react::AttributedString& attributedString,
+                                         const facebook::react::ParagraphAttributes& paragraphAttributes,
+                                         float maximumWidth) {
+    const std::unique_ptr<skia::textlayout::Paragraph> paragraph =
+        layoutParagraph(attributedString, paragraphAttributes, maximumWidth);
+    ParagraphMetrics metrics{.longestLineWidth = paragraph->getLongestLine(), .height = paragraph->getHeight()};
+
+    std::vector<skia::textlayout::LineMetrics> lines;
+
+    paragraph->getLineMetrics(lines);
+
+    for (const skia::textlayout::LineMetrics& line : lines) {
+        metrics.lines.push_back(ParagraphLineMetrics{.width = static_cast<float>(line.fWidth),
+                                                     .height = static_cast<float>(line.fHeight)});
+    }
+
+    return metrics;
+}
+
 EditorGeometry measureEditorGeometry(const facebook::react::AttributedString& attributedString,
                                      const facebook::react::ParagraphAttributes& paragraphAttributes,
                                      float maximumWidth, const EditorGeometryRequest& request) {

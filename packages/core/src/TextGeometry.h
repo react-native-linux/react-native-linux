@@ -73,6 +73,31 @@ size_t utf16IndexAtPoint(const facebook::react::AttributedString& attributedStri
                          facebook::react::Point localPoint);
 
 /**
+ * One laid-out paragraph reduced to the numbers a layout consumer can be wrong about: how many lines it broke
+ * into, how tall each of them is, how wide the longest one is, and how tall the whole is.
+ *
+ * This is the paint side of issue #41 made observable. Measurement and painting call one `layoutParagraph`, so
+ * they cannot shape a string differently; what they can differ in is the **width they call it with**, because
+ * measurement is given Yoga's constraint and painting is given the frame Yoga assigned from the answer. A
+ * paragraph that re-wraps at that second width is react-native-macos#2857 — a box measured for one paragraph and
+ * painted with another.
+ */
+struct ParagraphLineMetrics {
+    float width{0.0F};
+    float height{0.0F};
+};
+
+struct ParagraphMetrics {
+    std::vector<ParagraphLineMetrics> lines;
+    float longestLineWidth{0.0F};
+    float height{0.0F};
+};
+
+ParagraphMetrics measureParagraphMetrics(const facebook::react::AttributedString& attributedString,
+                                         const facebook::react::ParagraphAttributes& paragraphAttributes,
+                                         float maximumWidth);
+
+/**
  * ICU's grapheme and word boundaries for one string, through the same SkUnicode instance the paragraph builder
  * uses. This is what makes a caret step over a combining sequence or an emoji ZWJ sequence in one press instead
  * of splitting it.

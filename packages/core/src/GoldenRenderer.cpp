@@ -2,6 +2,9 @@
 
 #include "BundleRunner.h"
 #include "ScenePainter.h"
+#include "TextGeometry.h"
+
+#include <react/renderer/textlayoutmanager/TextLayoutManager.h>
 
 #include "include/core/SkAlphaType.h"
 #include "include/core/SkCanvas.h"
@@ -22,6 +25,7 @@
 #include <cstring>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -210,6 +214,79 @@ bool doHitsMatchPixels(const std::vector<FabricHitSample>& hits, const SkPixmap&
     return haveAgreed;
 }
 
+// Issue #41. Yoga rounds a measured size up to whole points and then assigns a frame, so the width a paragraph is
+// painted at is never *more* than the width it was measured at, but it can be a fraction less — and a line that
+// only just fitted then does not fit now. One point of slack absorbs the rounding; anything past that is a
+// paragraph that re-wrapped, which is the whole of react-native-macos#2857.
+constexpr float kTextFitTolerance = 1.0F;
+
+bool doesParagraphFitItsBox(const ScenePrimitive& primitive, const facebook::react::TextLayoutManager& layoutManager) {
+    const SceneTextContent& content = primitive.text.value();
+    const float boxWidth = static_cast<float>(content.frame.size.width);
+    const float boxHeight = static_cast<float>(content.frame.size.height);
+    const ParagraphMetrics painted = measureParagraphMetrics(content.attributedString, content.paragraphAttributes,
+                                                             boxWidth);
+    bool doesFit = true;
+
+    if (painted.height > boxHeight + kTextFitTolerance || painted.longestLineWidth > boxWidth + kTextFitTolerance) {
+        std::cerr << "[golden] tag " << primitive.tag << " was given a " << boxWidth << "x" << boxHeight
+                  << " box and paints " << painted.lines.size() << " lines of " << painted.longestLineWidth << "x"
+                  << painted.height << std::endl;
+
+        doesFit = false;
+    }
+
+    // The measure path, twice: the second call is a cache hit, and a cache that could answer differently from the
+    // paragraph behind it is the other half of the same bug.
+    const facebook::react::LayoutConstraints constraints{
+        .maximumSize = facebook::react::Size{.width = content.frame.size.width,
+                                             .height = std::numeric_limits<facebook::react::Float>::infinity()}};
+    const facebook::react::AttributedStringBox box{content.attributedString};
+    const facebook::react::TextMeasurement first = layoutManager.measure(box, content.paragraphAttributes, {},
+                                                                        constraints);
+    const facebook::react::TextMeasurement second = layoutManager.measure(box, content.paragraphAttributes, {},
+                                                                          constraints);
+
+    if (first.size.height != second.size.height || first.size.width != second.size.width) {
+        std::cerr << "[golden] tag " << primitive.tag << " measured " << first.size.width << "x" << first.size.height
+                  << " and then " << second.size.width << "x" << second.size.height << std::endl;
+
+        doesFit = false;
+    }
+
+    if (first.size.height < painted.height) {
+        std::cerr << "[golden] tag " << primitive.tag << " measured " << first.size.height
+                  << " points tall and paints " << painted.height << std::endl;
+
+        doesFit = false;
+    }
+
+    return doesFit;
+}
+
+bool doParagraphsFitTheirBoxes(const SceneSnapshot& scene) {
+    const facebook::react::TextLayoutManager layoutManager{nullptr};
+    size_t paragraphCount = 0;
+    bool doAllFit = true;
+
+    for (const ScenePrimitive& primitive : scene) {
+        if (!primitive.text.has_value()) {
+            continue;
+        }
+
+        paragraphCount++;
+        doAllFit = doesParagraphFitItsBox(primitive, layoutManager) && doAllFit;
+    }
+
+    if (paragraphCount == 0) {
+        std::cerr << "[golden] the scene has no text, so there is nothing to prove about it" << std::endl;
+
+        return false;
+    }
+
+    return doAllFit;
+}
+
 /**
  * Rasterises a settled scene and writes it, which is the half every single-frame golden shares regardless of what
  * the run did before it settled.
@@ -326,6 +403,16 @@ int renderHitPaintGolden(const std::string& bundlePath, const std::string& outpu
     }
 
     return run.hasReportedFatalError ? 1 : 0;
+}
+
+int renderTextFitGolden(const std::string& bundlePath, const std::string& outputPath, int width, int height) {
+    const FabricRunResult run = runFabricBundle(bundlePath, toSurfaceSize(width, height));
+
+    if (!doParagraphsFitTheirBoxes(run.scene)) {
+        return 1;
+    }
+
+    return paintSettledScene(run, outputPath, width, height);
 }
 
 } // namespace react_native_linux
