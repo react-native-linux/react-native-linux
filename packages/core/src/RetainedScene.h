@@ -269,6 +269,14 @@ public:
     void updateNode(const facebook::react::ShadowView& shadowView);
 
     /**
+     * Whether `tag` names a node the scene holds. A mutation that updates, removes or deletes a tag this returns
+     * false for is describing a node the scene never mounted or has already dropped, which is the missing-tag
+     * case its owner counts instead of applying blind. See *Commit termination and mounting atomicity* in
+     * docs/cpp-toolchain.md.
+     */
+    bool hasNode(facebook::react::Tag tag) const;
+
+    /**
      * Damages every node drawing `uri`, which is what turns a decode that finished after the last frame into a
      * repaint. Nothing else can: a decode changes no shadow node, so Fabric emits no mutation for it.
      */

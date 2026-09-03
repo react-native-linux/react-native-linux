@@ -36,9 +36,11 @@ add_executable(rnl_core_tests
     ImeTest.cpp
     InputTest.cpp
     LineBoxMetricsTest.cpp
+    LinuxMountingManagerDiagnosticsTest.cpp
     LinuxMountingManagerPendingDamageTest.cpp
     SceneTest.cpp
     ScrollTest.cpp
+    ShadowTreeCommitTest.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/Clipboard.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/DimensionsSource.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/EditorModel.cpp

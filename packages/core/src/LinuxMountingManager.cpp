@@ -1,9 +1,13 @@
 #include "LinuxMountingManager.h"
 
+#include <glog/logging.h>
 #include <react/renderer/mounting/ShadowViewMutation.h>
 
 #include <mutex>
 #include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 namespace react_native_linux {
 
@@ -42,6 +46,18 @@ SceneFrame LinuxMountingManager::takeFrame() {
     return SceneFrame{.scene = scene_.snapshot(), .damage = scene_.takeDamage()};
 }
 
+std::vector<SceneCommand> LinuxMountingManager::takeCommands() {
+    const std::lock_guard<std::mutex> guard(sceneMutex_);
+
+    return std::exchange(commands_, std::vector<SceneCommand>{});
+}
+
+MountDiagnostics LinuxMountingManager::mountDiagnostics() const {
+    const std::lock_guard<std::mutex> guard(sceneMutex_);
+
+    return diagnostics_;
+}
+
 bool LinuxMountingManager::hasPendingDamage() const {
     const std::lock_guard<std::mutex> guard(sceneMutex_);
 
@@ -64,6 +80,8 @@ void LinuxMountingManager::executeMount(facebook::react::SurfaceId /*surfaceId*/
                                         facebook::react::MountingTransaction&& mountingTransaction) {
     const std::lock_guard<std::mutex> guard(sceneMutex_);
 
+    lastTransactionNumber_ = mountingTransaction.getNumber();
+
     if (!mountingTransaction.getMutations().empty()) {
         hasPendingDamage_ = true;
     }
@@ -74,23 +92,47 @@ void LinuxMountingManager::executeMount(facebook::react::SurfaceId /*surfaceId*/
                 scene_.createNode(mutation.newChildShadowView);
                 break;
             case facebook::react::ShadowViewMutation::Delete:
+                verifyTagIsKnown("Delete", mutation.oldChildShadowView.tag);
                 scene_.deleteNode(mutation.oldChildShadowView.tag);
                 break;
             case facebook::react::ShadowViewMutation::Insert:
                 scene_.insertChild(mutation.parentTag, mutation.newChildShadowView, mutation.index);
                 break;
             case facebook::react::ShadowViewMutation::Remove:
+                verifyTagIsKnown("Remove", mutation.oldChildShadowView.tag);
                 scene_.removeChild(mutation.parentTag, mutation.oldChildShadowView);
                 break;
             case facebook::react::ShadowViewMutation::Update:
+                verifyTagIsKnown("Update", mutation.newChildShadowView.tag);
                 scene_.updateNode(mutation.newChildShadowView);
                 break;
         }
     }
 }
 
-void LinuxMountingManager::dispatchCommand(const facebook::react::ShadowView& /*shadowView*/,
-                                           const std::string& /*commandName*/,
-                                           const folly::dynamic& /*args*/) {}
+void LinuxMountingManager::dispatchCommand(const facebook::react::ShadowView& shadowView,
+                                           const std::string& commandName, const folly::dynamic& args) {
+    const std::lock_guard<std::mutex> guard(sceneMutex_);
+
+    verifyTagIsKnown("Command", shadowView.tag);
+    commands_.push_back(SceneCommand{.tag = shadowView.tag, .name = commandName, .args = args});
+}
+
+void LinuxMountingManager::verifyTagIsKnown(std::string_view operation, facebook::react::Tag tag) {
+    if (scene_.hasNode(tag)) {
+        return;
+    }
+
+    if (diagnostics_.unknownTagOperations == 0) {
+        diagnostics_.firstUnknownOperation = operation;
+        diagnostics_.firstUnknownTag = tag;
+        diagnostics_.firstUnknownTransactionNumber = lastTransactionNumber_;
+
+        LOG(ERROR) << "[mounting] " << operation << " names tag " << tag
+                   << ", which the scene does not hold, in transaction " << lastTransactionNumber_;
+    }
+
+    diagnostics_.unknownTagOperations++;
+}
 
 } // namespace react_native_linux

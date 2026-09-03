@@ -9,8 +9,11 @@
 #include <react/renderer/mounting/ShadowView.h>
 #include <react/renderer/uimanager/IMountingManager.h>
 
+#include <cstdint>
 #include <mutex>
 #include <string>
+#include <string_view>
+#include <vector>
 
 namespace react_native_linux {
 
@@ -21,6 +24,38 @@ namespace react_native_linux {
 struct SceneFrame {
     SceneSnapshot scene;
     SceneDamage damage;
+};
+
+/**
+ * One `dispatchCommand` call, as the frame consumer receives it: which node it names, which command it is, and
+ * the arguments React passed.
+ *
+ * Commands are queued rather than executed where they arrive because they arrive on the JavaScript thread and
+ * every one of them acts on a node the frame thread owns. Queueing them under the same mutex the mutations take
+ * is what makes them ordered against mounting rather than racing it: a command queued after a transaction is
+ * drained after that transaction was applied, which is upstream's `dispatchCommand` timing bug read as a
+ * contract. See *Commit termination and mounting atomicity* in docs/cpp-toolchain.md.
+ */
+struct SceneCommand {
+    facebook::react::Tag tag{};
+    std::string name;
+    folly::dynamic args;
+};
+
+/**
+ * What the mounting layer saw that the scene could not explain.
+ *
+ * A mutation that updates, removes or deletes a tag the scene does not hold, and a command aimed at one, are the
+ * Linux face of upstream's "Unable to find viewState for tag N". The policy is loud but not fatal: count every
+ * one, keep the first with enough context to name the commit that produced it, log that first one, and apply the
+ * transaction anyway. The frame thread never throws and never aborts, because a dropped frame is worse than a
+ * wrong one and a crash is worse than both.
+ */
+struct MountDiagnostics {
+    uint64_t unknownTagOperations{0};
+    std::string firstUnknownOperation;
+    facebook::react::Tag firstUnknownTag{0};
+    facebook::react::MountingTransaction::Number firstUnknownTransactionNumber{0};
 };
 
 /**
@@ -38,6 +73,10 @@ struct SceneFrame {
  * takeFrame exists because the pair has to be atomic: a transaction landing between a snapshot and a damage take
  * would leave the frame thread with damage it cannot satisfy from the scene it holds, and the region would be
  * repainted from stale state and never repainted again. Taking both under one lock is the whole guarantee.
+ *
+ * dispatchCommand also runs on the JS thread and takes the same mutex, which is what orders a command against the
+ * transactions around it; the frame thread drains the queue with takeCommands right after takeFrame. See *Commit
+ * termination and mounting atomicity* in docs/cpp-toolchain.md.
  */
 class LinuxMountingManager final : public facebook::react::IMountingManager {
 public:
@@ -62,6 +101,19 @@ public:
      */
     void setEditorState(facebook::react::Tag tag, const SceneEditorState& editorState);
     SceneFrame takeFrame();
+
+    /**
+     * Hands over every command queued since the last call, in arrival order, and empties the queue. The frame
+     * consumer calls it right after `takeFrame`, so a command is delivered against the scene the same frame
+     * paints and never against an older one.
+     */
+    std::vector<SceneCommand> takeCommands();
+
+    /**
+     * What the mounting layer could not explain, for whoever is debugging a commit. Reading it never clears it:
+     * the counter is cumulative for the life of the surface.
+     */
+    MountDiagnostics mountDiagnostics() const;
     SceneSnapshot snapshotScene() const;
     std::string dumpScene() const;
 
@@ -80,8 +132,13 @@ public:
                          const folly::dynamic& args) override;
 
 private:
+    void verifyTagIsKnown(std::string_view operation, facebook::react::Tag tag);
+
     mutable std::mutex sceneMutex_;
     RetainedScene scene_;
+    std::vector<SceneCommand> commands_;
+    MountDiagnostics diagnostics_;
+    facebook::react::MountingTransaction::Number lastTransactionNumber_{0};
     bool hasPendingDamage_{false};
 };
 

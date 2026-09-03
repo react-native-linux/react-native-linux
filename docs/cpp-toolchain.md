@@ -92,10 +92,97 @@ Nothing in this bootstrap is headless-only. `hello_react` and `rnl_window` const
 same `FabricHost`; the headless host dumps the scene once the JavaScript thread goes quiet, and the window host
 draws it every frame. See *The retained scene, and the threads it crosses*.
 
-Not covered yet, each with an owning milestone: `Scheduler::reportMount` and mount-hook telemetry,
-`dispatchCommand`, multiple surfaces, and every component past `View`, `Paragraph`, `Image`, `ScrollView` and
-`TextInput`. Events are covered; see *Input*. Scrolling is covered; see *ScrollView*. Text editing is covered;
-see *TextInput*.
+Not covered yet, each with an owning milestone: `Scheduler::reportMount` and mount-hook telemetry, multiple
+surfaces, and every component past `View`, `Paragraph`, `Image`, `ScrollView` and `TextInput`. Events are covered;
+see *Input*. Scrolling is covered; see *ScrollView*. Text editing is covered; see *TextInput*.
+`dispatchCommand` is ordered and delivered but not yet executed against a component; see *Commit termination and
+mounting atomicity*.
+
+## Commit termination and mounting atomicity (#125)
+
+`ReactCommon`'s commit and mounting code is compiled into `rnl_window`, so its Fabric-era defects reach this
+platform by linkage rather than by analogy. Three of them have a contract here, and
+`packages/core/tests/ShadowTreeCommitTest.cpp` asserts them against a real `facebook::react::ShadowTree` and its
+`MountingCoordinator` rather than against a scripted mutation list.
+
+### The missing-tag policy
+
+A mutation that updates, removes or deletes a tag `RetainedScene` does not hold — upstream's "Unable to find
+viewState for tag N. Surface stopped: false", [core#49077][core-49077] — used to be a silent skip: `deleteNode`
+erased nothing, `removeChild` unlinked nothing, and `updateNode` quietly conjured a node that no commit had
+created. Silence is the bug. The policy is now loud but not fatal:
+
+- `LinuxMountingManager::verifyTagIsKnown` asks `RetainedScene::hasNode` before an `Update`, a `Remove`, a
+  `Delete` or a `dispatchCommand` is applied.
+- Every miss increments `MountDiagnostics::unknownTagOperations`. The **first** one is kept whole — which
+  operation, which tag, which transaction number — and logged once through `LOG(ERROR)`. Logging once is what
+  keeps a systematically broken commit from turning the frame thread into a log writer.
+- The operation is then applied anyway and the transaction runs to its end. The frame thread never throws and
+  never aborts, because a wrong frame is recoverable and a dead frame thread is not.
+
+`mountDiagnostics()` is the read side, and it is cumulative for the life of the surface: reading it does not clear
+it. A well-formed transaction leaves it at zero, which is what the `ShadowTree`-driven tests assert after mounting
+a real transaction — the strongest available statement that our mounting layer and upstream's differ agree about
+which tags exist.
+
+### The command ordering contract
+
+`dispatchCommand` arrives on the JavaScript thread and names a node the frame thread owns, so executing it where
+it arrives would race mounting — [core#47576][core-47576] with the sign flipped. Instead:
+
+- A command is appended to a queue under the same mutex `executeMount` takes, in arrival order.
+- The frame consumer calls `takeCommands()` right after `takeFrame()`. It drains the whole queue and empties it.
+- Therefore a command queued after a transaction is observed after that transaction has been applied to the
+  scene, and before any transaction that lands afterwards. `LinuxMountingManagerCommandTest` asserts exactly that
+  with a sequence log built from what the consumer sees: `mounted 10x10`, `command scrollToEnd #2`,
+  `mounted 20x20`.
+- A command naming an unknown tag is recorded in the diagnostics and **still delivered**. Dropping it would be
+  the same silence the missing-tag policy exists to remove.
+
+Executing a command against a component is still out of scope; the ordering is the part that had to be decided
+before any component could rely on it.
+
+### What the ShadowTree tests prove
+
+`ShadowTreeCommitTest.cpp` builds the real thing: a `ShadowTree` with a pass-through `ShadowTreeDelegate`, a
+`ViewComponentDescriptor` for the children, and the `MountingCoordinator` the tree owns. It needs no Hermes, no
+JSI runtime and no upstream test-utility tree — `react_renderer_mounting`, `rrc_root` and `rrc_view` are already
+linked into `rnl_core_tests`, so the only build change is the source file itself.
+
+- **Termination.** `ShadowTree::commit` retries `tryCommit` in a loop that, with the default feature flags, has no
+  bound other than `react_native_assert(attempts < 1024)` — [core#51870][core-51870]. A transaction whose
+  re-entrant state update moves the base tree once converges on the second attempt and reports `Succeeded`. One
+  that moves it on every attempt is only bounded when `preventShadowTreeCommitExhaustion` is on, where the loop
+  stops after three attempts, takes the recursive revision lock, tries once more, and reports `Failed` — four
+  transaction calls, an outcome instead of a spin. That is the flag this platform wants on.
+- **Atomicity.** Two commits before a single `pullTransaction` produce **one** `MountingTransaction` whose
+  mutations describe only the final tree: the child the first commit rendered never appears in any mutation, so
+  the intermediate tree is not observable through the coordinator at all. That is [core#44111][core-44111]'s
+  visible intermediate frame, ruled out at the coordinator rather than papered over downstream.
+- **Cross-thread serialisation.** Commits on one thread and `pullTransaction` on another —
+  [core#52373][core-52373], which is this platform's default rather than an edge case — leave the scene holding
+  exactly the last committed tree with zero unknown-tag operations, whatever the interleaving. The test is
+  deterministic by construction: a `std::latch` starts both threads and a commit counter, not a sleep, ends the
+  consumer loop.
+
+### Follow-ups
+
+- **TSan.** `ConcurrentPullTransactionIsSerializedAgainstCommitsOnAnotherThread` is written to run under the
+  `tsan` preset; wiring it into the sanitizer job is separate work.
+- **Draining commands in the window.** `takeCommands` has no production consumer yet: `FabricHost`,
+  `WindowSession` and `WindowMain` still call only `takeFrame`. Nothing dispatches a command on this platform
+  today, so the queue stays empty, but the first component that accepts one has to pull `takeCommands` through
+  those three files in the same change.
+- **E2E.** A frame-by-frame capture proving no intermediate frame reaches the compositor for a layout-effect
+  update needs the harness, not a unit test.
+- **Drift.** The code under test is vendored, so this file re-runs on every React Native bump as part of the
+  upstream-parity oracle.
+
+[core-44111]: https://github.com/facebook/react-native/issues/44111
+[core-47576]: https://github.com/facebook/react-native/issues/47576
+[core-49077]: https://github.com/facebook/react-native/issues/49077
+[core-51870]: https://github.com/facebook/react-native/issues/51870
+[core-52373]: https://github.com/facebook/react-native/issues/52373
 
 ## Window host
 
@@ -1552,7 +1639,8 @@ test for those.
 - **`maintainVisibleContentPosition`.** Content growing above the viewport currently moves what is on screen. The
   prop is parsed and ignored; honouring it means comparing child frames across commits, which is a commit hook.
 - **Programmatic scrolling.** `scrollTo`, `scrollToEnd` and `scrollResponderScrollTo` arrive as `dispatchCommand`,
-  and `LinuxMountingManager::dispatchCommand` is still empty. Nothing animates to a position yet.
+  which queues them in order but executes none of them; see *Commit termination and mounting atomicity*. Nothing
+  animates to a position yet.
 - **`scrollEventThrottle` is ignored.** The cadence is one `onScroll` per frame, which is the fastest React Native
   ever asks for; a throttle that fires *less* often is what `FlatList` sets, and honouring it means dropping events
   the frame already coalesced. Whether `FlatList` windowing behaves correctly at this cadence is untested — there
@@ -1940,8 +2028,8 @@ in it is Fabric plumbing that needs a `UIManager` and a committed tree, and `--f
   the vendored tree, which is a fork of upstream headers and belongs in an ADR rather than in this issue.
   `accessible` is what stands in for `focusable`; `tabIndex` is why traversal is mount order and only mount order.
 - **Programmatic `focus()`, `blur()` and `isFocused()`.** react-native-macos#518 and #913. They arrive as Fabric
-  commands through `IMountingManager::dispatchCommand`, which is implemented as a no-op here, and they need a
-  JavaScript surface to be called from. Not on the M1 path.
+  commands through `IMountingManager::dispatchCommand`, which queues them in order but executes none of them, and
+  they need a JavaScript surface to be called from. Not on the M1 path.
 - **Directional navigation and focus zones.** Arrow-key movement needs a geometric model of "the next control to
   the right", and focus zones need containers that trap it. Neither is on the M1 path and the Prime Directive
   says the second consumer has to exist first.
@@ -2474,7 +2562,7 @@ what is left in them needs a `UIManager` and a committed tree, and `--type` is t
   because emitting a second event of the same name from `TextInputEventEmitter` would double them.
 - **`selectTextOnFocus`, `autoFocus` and programmatic `focus()`/`blur()`/`clear()`.** The first two are parsed
   and not acted on, and the third arrives as a Fabric command through `IMountingManager::dispatchCommand`, which
-  is still a no-op — the same deferral *Focus and keyboard* records.
+  queues it but executes nothing — the same deferral *Focus and keyboard* records.
 - **`set_content_type` and `set_text_change_cause`.** `keyboardType`, `autoCapitalize`, `secureTextEntry` and
   `autoComplete` map onto the content hints `zwp_text_input_v3` carries, and the protocol asks a client to say
   when its text changed for a reason other than composition. Both are small and both need an input method to

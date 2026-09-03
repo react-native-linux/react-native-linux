@@ -677,6 +677,10 @@ void RetainedScene::updateNode(const facebook::react::ShadowView& shadowView) {
     damageSubtree(shadowView.tag);
 }
 
+bool RetainedScene::hasNode(facebook::react::Tag tag) const {
+    return nodes_.contains(tag);
+}
+
 void RetainedScene::damageImageSource(const std::string& uri) {
     std::vector<facebook::react::Tag> drawingTags;
 
