@@ -1,6 +1,7 @@
 #pragma once
 
 #include "InputPipeline.h"
+#include "LinuxMountingManager.h"
 #include "ScrollEventCadence.h"
 #include "ScrollPhysics.h"
 
@@ -10,6 +11,7 @@
 #include <react/renderer/uimanager/UIManager.h>
 
 #include <memory>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 
@@ -27,6 +29,15 @@ struct ScrollTargetAxis {
     ScrollAxisState state;
     double pendingDrag{0.0};
     double pendingNotches{0.0};
+
+    /**
+     * What a `scrollTo` command left for the next frame: an offset to jump to, a velocity to glide with, or
+     * neither. It is pending rather than applied because `advanceTarget` reads the offset it is going to compare
+     * against *before* it advances — a jump written straight into the state would already be the previous offset
+     * by the time the frame looked, and would emit no `onScroll` for a scroll that did move.
+     */
+    std::optional<double> pendingOffset;
+    std::optional<double> pendingVelocity;
 };
 
 /**
@@ -66,6 +77,17 @@ public:
     void dispatch(const std::vector<InputEvent>& events);
 
     /**
+     * Applies the frame's `dispatchCommand` queue. Commands that are not `scrollTo` or `scrollToEnd`, and
+     * commands naming a node that is not a `<ScrollView>`, are ignored, so the caller may hand over the whole
+     * queue exactly as it does with input.
+     *
+     * A command that asks for the offset the content is already at does nothing at all, which is the rule
+     * core#34327 landed on: it must not emit `onScroll` and must not open a momentum bracket. See
+     * `scrollToDestination`.
+     */
+    void dispatchCommands(const std::vector<SceneCommand>& commands);
+
+    /**
      * Integrates one frame and returns whether anything is still moving, which is what lets a headless run know
      * when a fling has settled. `frameMilliseconds` is confined to a plausible range, so a stalled frame slows the
      * scroll down instead of teleporting it.
@@ -99,7 +121,11 @@ private:
     };
 
     void route(const InputEvent& event);
+    void routeCommand(const SceneCommand& command);
     ScrollTarget* acquire(facebook::react::Point surfacePoint);
+    ScrollTarget* acquireNode(const std::shared_ptr<const facebook::react::ScrollViewShadowNode>& scrollView);
+    std::shared_ptr<const facebook::react::ScrollViewShadowNode> scrollViewWithTag(facebook::react::Tag tag) const;
+    std::shared_ptr<const facebook::react::ShadowNode> rootShadowNode() const;
     bool advanceTarget(ScrollTarget& target, const facebook::react::ScrollViewShadowNode& scrollView,
                        double frameMilliseconds);
     std::shared_ptr<const facebook::react::ScrollViewShadowNode> scrollViewUnderPointer(

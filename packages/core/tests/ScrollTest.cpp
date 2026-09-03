@@ -29,7 +29,9 @@ using react_native_linux::ScrollAxisKind;
 using react_native_linux::ScrollAxisState;
 using react_native_linux::ScrollCadenceEvents;
 using react_native_linux::ScrollCadenceFrame;
+using react_native_linux::ScrollDestination;
 using react_native_linux::ScrollEventCadence;
+using react_native_linux::scrollToDestination;
 using react_native_linux::velocityForTravel;
 
 // One 60 Hz frame and one 120 Hz frame, in milliseconds.
@@ -183,6 +185,62 @@ TEST(ScrollEventCadenceTest, AThrottledFlingReportsWhereItStopped) {
 
     EXPECT_TRUE(stopped.momentumEnd);
     EXPECT_TRUE(stopped.scroll);
+}
+
+// Issue #109, and the rule core#34327 landed: a `scrollTo` to where the content already is is not a scroll. The
+// geometry is the fixture's own — 470 points of content in a 150 point viewport — so the offset range is
+// [0, kMaximumOffset].
+
+ScrollDestination destinationFor(double currentOffset, double targetOffset, bool isAnimated = false) {
+    return scrollToDestination(currentOffset, targetOffset, isAnimated, kDecelerationRateNormal, kContentLength,
+                               kViewportLength);
+}
+
+TEST(ScrollToDestinationTest, ScrollingToWhereTheContentAlreadyIsIsNoWorkAndEmitsNothing) {
+    EXPECT_FALSE(destinationFor(120.0, 120.0).hasWork);
+    EXPECT_FALSE(destinationFor(120.0, 120.0, true).hasWork);
+}
+
+TEST(ScrollToDestinationTest, ATargetPastEitherEndIsClampedBeforeItIsReturned) {
+    // core#41034: the negative offset reached JavaScript because the clamp came after the event.
+    const ScrollDestination beforeTheStart = destinationFor(120.0, -500.0);
+    const ScrollDestination pastTheEnd = destinationFor(120.0, 5000.0);
+
+
+    EXPECT_TRUE(beforeTheStart.hasWork);
+    EXPECT_DOUBLE_EQ(beforeTheStart.offset, 0.0);
+    EXPECT_TRUE(pastTheEnd.hasWork);
+    EXPECT_DOUBLE_EQ(pastTheEnd.offset, kMaximumOffset);
+}
+
+TEST(ScrollToDestinationTest, AClampedTargetThatLandsOnTheCurrentOffsetIsStillNoWork) {
+    // Already at the end, asked to go further: the clamp makes it the offset it is already at.
+    EXPECT_FALSE(destinationFor(kMaximumOffset, 5000.0).hasWork);
+    EXPECT_FALSE(destinationFor(0.0, -1.0).hasWork);
+}
+
+TEST(ScrollToDestinationTest, ContentShorterThanTheViewportSettlesAtZero) {
+    const ScrollDestination destination = scrollToDestination(0.0, 300.0, false, kDecelerationRateNormal, 100.0,
+                                                              kViewportLength);
+
+    EXPECT_FALSE(destination.hasWork);
+}
+
+TEST(ScrollToDestinationTest, AnUnanimatedScrollArrivesImmediatelyAndCarriesNoVelocity) {
+    const ScrollDestination destination = destinationFor(120.0, 300.0);
+
+    EXPECT_TRUE(destination.hasWork);
+    EXPECT_DOUBLE_EQ(destination.offset, 300.0);
+    EXPECT_DOUBLE_EQ(destination.velocity, 0.0);
+}
+
+TEST(ScrollToDestinationTest, AnAnimatedScrollLeavesTheOffsetAloneAndFlicksTowardsTheTarget) {
+    const ScrollDestination forwards = destinationFor(120.0, 300.0, true);
+    const ScrollDestination backwards = destinationFor(300.0, 120.0, true);
+
+    EXPECT_DOUBLE_EQ(forwards.offset, 120.0);
+    EXPECT_DOUBLE_EQ(forwards.velocity, velocityForTravel(180.0, kDecelerationRateNormal));
+    EXPECT_DOUBLE_EQ(backwards.velocity, -velocityForTravel(180.0, kDecelerationRateNormal));
 }
 
 TEST(ScrollPhysicsTest, ClampsBetweenZeroAndTheContentThatDoesNotFit) {

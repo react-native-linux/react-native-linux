@@ -35,7 +35,10 @@ constexpr std::chrono::milliseconds kCommitPollInterval{1};
 constexpr char kSmokeSource[] = "console.log('react-native-linux: hermes alive');";
 constexpr char kSmokeSourceUrl[] = "smoke.js";
 constexpr facebook::react::Size kHeadlessSurfaceSize{.width = 800, .height = 600};
-constexpr size_t kHeadlessFrameCount = 3;
+// Five rather than three since #109: a `scrollTo` issued from a frame's `onScroll` is applied by the frame after
+// it, so a fixture that chains three commands off each other's events needs three frames beyond the first commit.
+// Every additional frame is empty for a static fixture, so no golden moves.
+constexpr size_t kHeadlessFrameCount = 5;
 constexpr size_t kInjectedMotionCount = 17;
 // One 60 Hz frame, in milliseconds. A headless run has no compositor to pace it, so the scroll physics is stepped
 // at a fixed rate instead of a measured one and the settled position stops depending on the machine.
@@ -166,6 +169,11 @@ void deliverInputFrame(ReactHost& reactHost, FabricHost& fabricHost, const std::
     // released onto the JavaScript thread and before the run settles, so whatever an animation frame hands back to
     // JavaScript is delivered by the drain that follows. See *Animation choreographer* in docs/cpp-toolchain.md.
     fabricHost.tickAnimations(std::chrono::steady_clock::now());
+
+    // The scroll half of the same frame, for the same reason: the window advances scroll on every frame, so a
+    // headless frame that did not would never apply a `scrollTo` command at all — the queue is drained here. With
+    // no input and nothing moving this costs one pass over an empty target list and changes no existing run.
+    fabricHost.advanceScroll(kInjectedFrameMilliseconds);
 
     if (!reactHost.runUntilQuiescent(kQuiescenceBudget)) {
         std::cerr << "[bundle-runner] gave up waiting for pending timers" << std::endl;

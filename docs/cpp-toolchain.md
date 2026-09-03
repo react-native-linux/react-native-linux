@@ -2610,6 +2610,45 @@ they also read different trees: a click reads the retained scene, so it lands wh
 reads the shadow tree, because the ScrollView a wheel moves is not what an animation moves. Aligning them is a
 follow-up in *Hit-testing under animation*.
 
+### Programmatic scrolling (#109)
+
+`scrollTo(x, y, animated)` and `scrollToEnd(animated)` arrive as `dispatchCommand`, which fills a queue on the
+JavaScript thread under the mounting mutex. **`FabricHost::advanceScroll` drains that queue at the top of every
+frame**, before the physics runs, so a command committed since the last frame is applied by this one rather than
+by the one after it. Nothing drained it before this issue: the queue was filled and never read.
+
+What a command turns into is `scrollToDestination` in `ScrollPhysics.h`, which is arithmetic and therefore inside
+the coverage gate:
+
+- **A `scrollTo` to the offset the content is already at is not a scroll.** It produces no work, so nothing moves,
+  so the cadence emits nothing — no `onScroll` and no momentum bracket. That is the rule
+  [core#34327](https://github.com/facebook/react-native/issues/34327) landed after a library built on Paper's
+  behaviour looped forever on iOS Fabric, and it needs no special case here: the cadence emits on movement.
+- **The destination is clamped before it is returned**, not after the event is sent, which is the other half —
+  [core#41034](https://github.com/facebook/react-native/issues/41034) is a fast scroll to the top reporting
+  negative offsets to JavaScript. A target that clamps onto the current offset is therefore also no work.
+- **An animated scroll reuses the deceleration curve** rather than introducing a second motion model: the velocity
+  whose curve travels exactly the remaining distance is what `velocityForTravel` already answers for a wheel
+  notch, so an animated `scrollTo` is a flick aimed at a known destination and its bracket is the ordinary
+  momentum bracket.
+- **The destination is pending until the next frame consumes it.** `advanceTarget` reads the offset it is going to
+  compare against before it advances, so an offset written straight into the state would already *be* the previous
+  offset and would emit no `onScroll` for a scroll that did move.
+
+`packages/core/test-bundles/scroll-to.js` is the trace, and each command is issued from the previous one's
+`onScroll` because the event beat is the only frame boundary a bundle can see:
+
+```text
+scroll-to: asking for 120     scroll-to: topScroll at 0,120
+scroll-to: asking for -400    scroll-to: topScroll at 0,0
+scroll-to: asking for 0       (nothing)
+```
+
+The no-op is deliberately last: nothing can be scheduled from its event because there is not going to be one, so
+**the run ending in silence is the assertion**. `kHeadlessFrameCount` is five rather than three for it — a command
+issued from a frame's event is applied by the frame after it — and every extra frame is empty for a static
+fixture, so no golden moved.
+
 ### The cadence contract (#45)
 
 `VirtualizedList` windowing is written against a cadence rather than against a picture, so a renderer that gets
@@ -2737,9 +2776,8 @@ test for those.
   `[0, content - viewport]` on each axis. `ScrollEvent::contentInset` is emitted as zero.
 - **`maintainVisibleContentPosition`.** Content growing above the viewport currently moves what is on screen. The
   prop is parsed and ignored; honouring it means comparing child frames across commits, which is a commit hook.
-- **Programmatic scrolling.** `scrollTo`, `scrollToEnd` and `scrollResponderScrollTo` arrive as `dispatchCommand`,
-  which queues them in order but executes none of them; see *Commit termination and mounting atomicity*. Nothing
-  animates to a position yet.
+- **`scrollResponderScrollTo` and the rest of the responder API.** `scrollTo` and `scrollToEnd` execute — see
+  *Programmatic scrolling* — but the legacy responder methods are not bound.
 - **Whether `FlatList` windowing behaves correctly at this cadence is still untested**, because there is no
   `FlatList` in this host yet: the fixtures talk to `nativeFabricUIManager` directly, and a real `VirtualizedList`
   needs the React Native JavaScript runtime that arrives with the flagship bring-up (#24). The cadence itself is
