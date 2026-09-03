@@ -341,7 +341,7 @@ void TextInputController::placeCaretAtPoint(TextInputField& field, const faceboo
                                             facebook::react::Point surfacePoint, bool isExtending) {
     const std::string displayed = field.editor.displayText();
     const facebook::react::Point localPoint{.x = surfacePoint.x - box.origin.x + field.scrollOffsetX,
-                                            .y = surfacePoint.y - box.origin.y};
+                                            .y = surfacePoint.y - box.origin.y + field.scrollOffsetY};
     const TextInputProps& props = field.shadowNode->getConcreteProps();
     // The width the last frame measured this field against, so a click lands on the glyph that was drawn rather
     // than on the one a differently wrapped layout would have put there. A field that has never been published
@@ -482,6 +482,7 @@ void TextInputController::publish(TextInputField& field) {
         .compositionEndUtf16 =
             utf16LengthOfUtf8(displayed, field.editor.displayOffsetForByte(field.editor.compositionEndByte())),
         .scrollOffsetX = field.scrollOffsetX,
+        .scrollOffsetY = field.scrollOffsetY,
         .isCaretVisible = isFocused && isCaretVisible_};
 
 #ifdef RNL_ENABLE_TEXT_GEOMETRY
@@ -498,16 +499,23 @@ void TextInputController::publish(TextInputField& field) {
 
     field.layoutWidth = geometry.layoutWidth;
 
-    // A single-line field is a window onto a line that is allowed to be longer than it is: a caret leaving
-    // either edge moves the window rather than the caret. A multiline field wraps instead, so it never scrolls
-    // horizontally at all; vertical scrolling is the deferral in docs/cpp-toolchain.md.
-    if (!props.multiline) {
-        const float boxWidth = static_cast<float>(box.size.width);
-        const float caretLeft = static_cast<float>(geometry.caret.origin.x);
-        const float caretRight = caretLeft + static_cast<float>(geometry.caret.size.width);
-        const float followedOffset = std::max(std::min(field.scrollOffsetX, caretLeft), caretRight - boxWidth);
+    // A field is a window onto content allowed to be longer than it is, and the caret drags that window —
+    // `followedScrollOffset` is that rule and is the same on both axes. A single-line field is a window on one
+    // long line, so it scrolls horizontally; a multiline field wraps instead, so it never scrolls horizontally
+    // and scrolls vertically when its lines outgrow the box.
+    if (props.multiline) {
+        const float caretTop = static_cast<float>(geometry.caret.origin.y);
 
-        field.scrollOffsetX = std::clamp(followedOffset, 0.0F, std::max(0.0F, geometry.contentWidth - boxWidth));
+        field.scrollOffsetY = followedScrollOffset(field.scrollOffsetY, caretTop,
+                                                   caretTop + static_cast<float>(geometry.caret.size.height),
+                                                   static_cast<float>(box.size.height), geometry.contentHeight);
+        editorState.scrollOffsetY = field.scrollOffsetY;
+    } else {
+        const float caretLeft = static_cast<float>(geometry.caret.origin.x);
+
+        field.scrollOffsetX = followedScrollOffset(field.scrollOffsetX, caretLeft,
+                                                   caretLeft + static_cast<float>(geometry.caret.size.width),
+                                                   static_cast<float>(box.size.width), geometry.contentWidth);
         editorState.scrollOffsetX = field.scrollOffsetX;
     }
 

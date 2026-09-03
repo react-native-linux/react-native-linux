@@ -51,6 +51,21 @@ size_t utf16LengthOfUtf8(const std::string& text, size_t byteOffset);
  */
 size_t utf8OffsetForUtf16Index(const std::string& text, size_t utf16Index);
 
+/**
+ * Where a field's window has to sit for the caret to be inside it, on one axis.
+ *
+ * A field is a window onto content that is allowed to be longer than it is, and the caret drags that window: it
+ * moves only far enough to bring the caret back inside, so a caret in the middle of the text leaves the window
+ * exactly where the last edit left it. `caretBegin` and `caretEnd` are the caret's own extent on the axis, in
+ * content coordinates; `boxLength` is the visible extent and `contentLength` the whole of it.
+ *
+ * The result is clamped to `[0, contentLength - boxLength]`, so content that fits scrolls to zero rather than
+ * anywhere else. This is one function rather than two because a single-line field scrolls horizontally and a
+ * multiline one vertically by exactly the same rule.
+ */
+float followedScrollOffset(float currentOffset, float caretBegin, float caretEnd, float boxLength,
+                           float contentLength);
+
 enum class CaretMotion : uint8_t { Left, Right, WordLeft, WordRight, LineStart, LineEnd };
 
 /**

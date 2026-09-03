@@ -143,6 +143,7 @@ struct SceneEditorState {
     size_t compositionBeginUtf16{0};
     size_t compositionEndUtf16{0};
     float scrollOffsetX{0.0F};
+    float scrollOffsetY{0.0F};
     bool isCaretVisible{false};
 };
 

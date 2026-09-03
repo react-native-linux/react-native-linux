@@ -97,6 +97,19 @@ const sized = (tag, name, left, top, width, height, textAttributes, value) =>
 const twelvePoint = sized(13, 'twelve', 40, 290, 220, 40, { fontSize: 12 }, 'Twelve point');
 const twentyFourPoint = sized(14, 'twenty-four', 280, 290, 240, 56, { fontSize: 24 }, 'Twenty four');
 const fortyPoint = sized(15, 'forty', 540, 290, 220, 80, { fontSize: 40 }, 'Forty');
+// #53, case 3: four lines of text in a box two lines tall. The caret at the end of the value is below the box,
+// so the field has to be scrolled to it — `--type` with `{Tab}{Tab}{Tab}{Tab}{Tab}{Tab}{Tab}{End}` is the picture.
+const overflowing = sized(
+  17,
+  'overflowing',
+  40,
+  480,
+  340,
+  62,
+  { fontSize: 14, multiline: true },
+  'A multiline field taller than its box scrolls to keep the caret in view, and this value is four lines long in a box that is two.',
+);
+
 const tallLine = sized(
   16,
   'tall-line',
@@ -144,6 +157,7 @@ fabric.appendChild(container, twelvePoint);
 fabric.appendChild(container, twentyFourPoint);
 fabric.appendChild(container, fortyPoint);
 fabric.appendChild(container, tallLine);
+fabric.appendChild(container, overflowing);
 
 const rootChildren = fabric.createChildSet();
 

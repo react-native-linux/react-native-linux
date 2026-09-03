@@ -214,7 +214,7 @@ void paintEditor(SkCanvas& canvas, const SceneTextContent& text, const SceneEdit
     const EditorGeometry geometry = measureEditorGeometry(text, editor);
 
     canvas.clipRect(toSkRect(text.frame), false);
-    canvas.translate(-editor.state.scrollOffsetX, 0);
+    canvas.translate(-editor.state.scrollOffsetX, -editor.state.scrollOffsetY);
 
     for (const facebook::react::Rect& selection : geometry.selection) {
         fillRect(canvas, offsetRect(selection, text.frame.origin), editor.selectionColorArgb);

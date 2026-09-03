@@ -17,6 +17,7 @@ using react_native_linux::TextSegments;
 using react_native_linux::clipboardText;
 using react_native_linux::segmentUtf8CodePoints;
 using react_native_linux::setClipboardText;
+using react_native_linux::followedScrollOffset;
 using react_native_linux::utf16LengthOfUtf8;
 using react_native_linux::utf8OffsetForUtf16Index;
 
@@ -62,6 +63,34 @@ TextSegments graphemeAwareSegmenter(const std::string& text) {
     segments.graphemeStarts = merged;
 
     return segments;
+}
+
+// Issue #53, case 3. A field is a window onto content allowed to be longer than it is, and the caret drags that
+// window: this is the rule for both axes, so a single-line field's horizontal scroll and a multiline field's
+// vertical one cannot drift apart. `boxLength` here is 100 and the content is 300.
+
+TEST(FollowedScrollOffsetTest, ContentThatFitsIsNeverScrolled) {
+    EXPECT_FLOAT_EQ(followedScrollOffset(0.0F, 10.0F, 20.0F, 100.0F, 60.0F), 0.0F);
+
+    // Including when the window was somehow already moved: there is nowhere for it to be but the start.
+    EXPECT_FLOAT_EQ(followedScrollOffset(40.0F, 10.0F, 20.0F, 100.0F, 60.0F), 0.0F);
+}
+
+TEST(FollowedScrollOffsetTest, ACaretInsideTheWindowLeavesItWhereItWas) {
+    EXPECT_FLOAT_EQ(followedScrollOffset(50.0F, 60.0F, 70.0F, 100.0F, 300.0F), 50.0F);
+}
+
+TEST(FollowedScrollOffsetTest, ACaretPastTheFarEdgeBringsItBackByExactlyItsOwnOvershoot) {
+    // The caret ends at 180 with a 100-point window at 50, so the window moves to 80 and not one point further.
+    EXPECT_FLOAT_EQ(followedScrollOffset(50.0F, 170.0F, 180.0F, 100.0F, 300.0F), 80.0F);
+}
+
+TEST(FollowedScrollOffsetTest, ACaretBeforeTheNearEdgeMovesTheWindowBackToIt) {
+    EXPECT_FLOAT_EQ(followedScrollOffset(120.0F, 40.0F, 50.0F, 100.0F, 300.0F), 40.0F);
+}
+
+TEST(FollowedScrollOffsetTest, TheWindowNeverPassesTheEndOfTheContent) {
+    EXPECT_FLOAT_EQ(followedScrollOffset(0.0F, 295.0F, 305.0F, 100.0F, 300.0F), 200.0F);
 }
 
 TEST(EditorModelTest, InsertsAtTheCaretAndMovesItToTheEnd) {

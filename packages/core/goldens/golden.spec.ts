@@ -87,6 +87,13 @@ const fixtures: readonly GoldenFixture[] = [
     renderArguments: ["Hello world{Ctrl+A}"],
     renderFlag: "--type",
   },
+  // Issue #53, case 3: seven Tabs reach a field four lines long in a two-line box, and its caret is below the box.
+  {
+    bundleFileName: "text-input.js",
+    goldenFileName: "text-input-multiline-scroll.png",
+    renderArguments: ["{Tab}{Tab}{Tab}{Tab}{Tab}{Tab}{Tab}{Ctrl+A}{Right}"],
+    renderFlag: "--type",
+  },
   // Issue #53, case 5: two Tabs reach the multiline field, so the selection spans a line break rather than a line.
   {
     bundleFileName: "text-input.js",

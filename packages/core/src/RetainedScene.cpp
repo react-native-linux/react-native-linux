@@ -927,10 +927,10 @@ void RetainedScene::setEditorState(facebook::react::Tag tag, const SceneEditorSt
 
     if (std::tie(current.caretUtf16, current.selectionBeginUtf16, current.selectionEndUtf16,
                  current.compositionBeginUtf16, current.compositionEndUtf16, current.scrollOffsetX,
-                 current.isCaretVisible) ==
+                 current.scrollOffsetY, current.isCaretVisible) ==
         std::tie(editorState.caretUtf16, editorState.selectionBeginUtf16, editorState.selectionEndUtf16,
                  editorState.compositionBeginUtf16, editorState.compositionEndUtf16, editorState.scrollOffsetX,
-                 editorState.isCaretVisible)) {
+                 editorState.scrollOffsetY, editorState.isCaretVisible)) {
         return;
     }
 

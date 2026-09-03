@@ -312,11 +312,17 @@ bool doParagraphsFitTheirBoxes(const SceneSnapshot& scene) {
         }
 
         paragraphCount++;
-        doAllFit = doesParagraphFitItsBox(primitive, layoutManager) && doAllFit;
 
+        // A `<TextInput>` is a window onto content that is allowed to be longer than it is — that is what
+        // scrolling a field means — so the box-holds-the-paragraph rule is a `<Text>` rule and the caret rule is
+        // the field's. See *The measured-paragraph proof* in docs/cpp-toolchain.md.
         if (primitive.editor.has_value()) {
             doAllFit = doesCaretMatchItsLine(primitive) && doAllFit;
+
+            continue;
         }
+
+        doAllFit = doesParagraphFitItsBox(primitive, layoutManager) && doAllFit;
     }
 
     if (paragraphCount == 0) {

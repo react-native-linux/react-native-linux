@@ -45,8 +45,9 @@ struct EditorGeometryRequest {
  * and the composing run's underline. All of them are relative to the paragraph's own origin, so the painter adds
  * the content-box origin and nothing else.
  *
- * `contentWidth` is the laid-out width of the longest line, which is what a single-line field scrolls by when the
- * caret leaves the visible box.
+ * `contentWidth` is the laid-out width of the longest line and `contentHeight` the height of the whole
+ * paragraph: the two extents a field is a window onto, scrolled by a single-line field and a multiline one
+ * respectively.
  *
  * `layoutWidth` is the width these rectangles were measured against, and the painter has to draw the paragraph
  * against the same one or the two disagree. It is **not** always the content box: a single-line field is laid out
@@ -58,6 +59,7 @@ struct EditorGeometry {
     std::vector<facebook::react::Rect> selection;
     std::vector<facebook::react::Rect> composition;
     float contentWidth{0.0F};
+    float contentHeight{0.0F};
     float layoutWidth{0.0F};
 };
 

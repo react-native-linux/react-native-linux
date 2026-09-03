@@ -3427,9 +3427,19 @@ The tolerance is one point, because the caret is the line's exact height and the
 caret that took a constant height — react-native-macos#1395 — would be wrong by tens of points at the fourth
 field and by a fraction at the first, so one font size can never carry the others.
 
-**Single-line scrolling** is the caret dragging the window: the offset moves only far enough to keep the caret
-inside the content box, clamped to the laid-out width, and the painter clips to that box and translates by it.
-A multiline field wraps instead and never scrolls horizontally; vertical scrolling is deferred below.
+**Scrolling is the caret dragging the window**, on whichever axis the field is a window on.
+`followedScrollOffset` in `EditorModel.h` is that rule and is the same function for both: the offset moves only
+far enough to bring the caret back inside the content box and is clamped to `[0, content - box]`, so a caret in
+the middle of the text leaves the window exactly where the last edit left it, and content that fits scrolls to
+zero. A single-line field is a window on one long line and scrolls horizontally; a multiline field wraps instead,
+so it never scrolls horizontally and scrolls **vertically** when its lines outgrow the box —
+react-native-macos#2905 is that feature missing. The painter clips to the content box and translates by both
+offsets, and the click-to-caret hit test adds both back, so a press lands on the glyph it looks like it lands on
+in a scrolled field.
+
+`text-input-multiline-scroll.png` is the picture: a value four lines long in a box two lines tall, with the caret
+at its end, so the last two lines are what is drawn. The rule itself is `FollowedScrollOffsetTest` in
+`EditorTest.cpp`, inside the 100% gate.
 
 ### The caret blink
 
@@ -3558,9 +3568,9 @@ what is left in them needs a `UIManager` and a committed tree, and `--type` is t
   behaviourally identical for everything the editing model can get wrong, and it is issue #60 to replace its two
   functions. The primary selection and middle-click paste land with it.
 - **Undo and redo.** No stack, and Ctrl+Z is deliberately left unconsumed so the absence is visible.
-- **Vertical caret motion.** Up and Down do not move by line: that needs line geometry rather than boundaries,
-  and it lands with multiline vertical scrolling. A multiline field therefore keeps the caret visible only
-  horizontally, which is react-native-macos#2905 still open here.
+- **Vertical caret motion.** Up and Down do not move by line: that needs line geometry rather than the grapheme
+  and word boundaries the editing model has. A multiline field scrolls to keep the caret visible now, so what is
+  missing is the motion, not the window.
 - **Bidi caret placement.** The paragraph direction is hardcoded left-to-right, as *Text* already records, so a
   caret in a right-to-left run is placed by visual order and not by logical order. It lands with
   `writingDirection`.

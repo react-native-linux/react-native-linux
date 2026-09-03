@@ -133,6 +133,7 @@ private:
         size_t emittedSelectionBegin{0};
         size_t emittedSelectionEnd{0};
         float scrollOffsetX{0.0F};
+        float scrollOffsetY{0.0F};
         float layoutWidth{0.0F};
         int writtenEventCount{-1};
     };

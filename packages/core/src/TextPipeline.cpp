@@ -417,6 +417,7 @@ EditorGeometry measureEditorGeometry(const facebook::react::AttributedString& at
         .selection = toRects(rangeBoxes(*paragraph, request.selectionBeginUtf16, request.selectionEndUtf16)),
         .composition = toRects(rangeBoxes(*paragraph, request.compositionBeginUtf16, request.compositionEndUtf16)),
         .contentWidth = contentWidth,
+        .contentHeight = paragraph->getHeight(),
         .layoutWidth = layoutWidth};
 }
 
