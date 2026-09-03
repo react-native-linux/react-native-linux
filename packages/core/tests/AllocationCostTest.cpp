@@ -17,6 +17,9 @@
 #include <memory>
 #include <string>
 
+// The one translation unit that can watch the allocator: `AllocationProbe.h` replaces the global operators and
+// permits exactly one includer, so the frame cost of #124 and the mounting cost of #106 are measured together.
+//
 // Issue #124: the unit half of the native-driver frame-cost gate. The e2e half asserts the p95 frame time of a
 // continuously animating view; this half asserts the thing that makes that number move — how many times a steady
 // state animation frame reaches the allocator on the frame thread.
@@ -261,6 +264,172 @@ TEST(AnimationFrameCostTest, TakingTheDamageListAllocatesNothingAndTheNextFrameR
     EXPECT_EQ(damage.size(), 2U);
     EXPECT_EQ(cost.laterFrameAllocations, cost.earlierFrameAllocations);
     EXPECT_LE(cost.laterFrameAllocations, kPaintPropFrameAllocationCeiling);
+}
+
+
+// Issue #106. Upstream shipped a first mount that allocated about 6.9 GB of raster data before the bundle had
+// finished evaluating (core#56980), and a mounting cost of about a millisecond per view (core#51869). Neither is
+// visible without a counter, so this is the counter.
+//
+// Two different shapes of claim, because the two paths have two different costs:
+//
+//  - **The mounting transaction is per node** and always will be: each mutation writes a node into the scene. The
+//    ceiling is therefore per node, and it is what catches a new container per mounted view.
+//  - **The snapshot is not.** It walks the tree into one flat list, so its cost is the handful of reallocations
+//    that list's growth costs and nothing else. Asserting that a four-times-larger tree does not cost four times
+//    as much is what catches a per-primitive allocation appearing in the walk — a ceiling alone would not, because
+//    a per-node cost hides under any ceiling at a small enough node count.
+//
+// The mount-and-unmount cycle is issue #106's second item, as a count rather than as RSS: a cycle that allocates
+// more than the cycle before it is the leak, and it is deterministic here where a resident-set number is not.
+
+constexpr size_t kLargeTreeNodeCount = 2000;
+constexpr size_t kSmallTreeNodeCount = 500;
+constexpr Tag kFirstCostTag = 100;
+
+// 5.01 measured, on a tree whose nodes each carry a background, a border, a radius and a frame. The ceiling is
+// six, which is headroom for one more container per node and not for a second one.
+constexpr size_t kMountAllocationsPerNodeCeiling = 6;
+
+// 13 measured for 2000 nodes: the growth of one `SceneSnapshot` vector from empty to 2048, plus the damage list.
+// The ceiling is 32, which is what the same doubling costs if the vector ever starts at one element again.
+constexpr size_t kSnapshotAllocationCeiling = 32;
+
+// A four-times-larger tree may cost at most one more doubling than twice the smaller one. Linear-in-nodes fails
+// this by two orders of magnitude; logarithmic passes it with room.
+constexpr size_t kSnapshotGrowthFactorCeiling = 3;
+
+std::shared_ptr<ViewProps> decoratedProps() {
+    const std::shared_ptr<ViewProps> viewProps = propsWithBackground(blue());
+
+    viewProps->borderRadii.all = ValueUnit{8.0F, UnitType::Point};
+    viewProps->borderColors.all = red();
+    viewProps->yogaStyle.setBorder(facebook::yoga::Edge::All, facebook::yoga::StyleLength::points(2));
+
+    return viewProps;
+}
+
+ShadowView costView(size_t index) {
+    return makeStyledView(static_cast<Tag>(kFirstCostTag + index),
+                          makeRect(static_cast<float>(index % 40) * 20.0F, static_cast<float>(index / 40) * 20.0F,
+                                   18, 18),
+                          decoratedProps());
+}
+
+/**
+ * A flat tree of `nodeCount` painted views under the surface root, each with the decorations core#56980
+ * rasterized per view. Flat rather than deep, because a mounting transaction is a list of mutations and its cost
+ * is per mutation rather than per level.
+ */
+ShadowViewMutationList mountMutations(size_t nodeCount) {
+    ShadowViewMutationList mutations;
+
+    for (size_t index = 0; index < nodeCount; index++) {
+        const ShadowView child = costView(index);
+
+        mutations.push_back(ShadowViewMutation::CreateMutation(child));
+        mutations.push_back(ShadowViewMutation::InsertMutation(kSurfaceTag, child, static_cast<int>(index)));
+    }
+
+    return mutations;
+}
+
+/**
+ * The other half of the cycle, in the order Fabric sends it: every child is removed from its parent and then
+ * deleted, last one first.
+ */
+ShadowViewMutationList unmountMutations(size_t nodeCount) {
+    ShadowViewMutationList mutations;
+
+    for (size_t index = nodeCount; index > 0; index--) {
+        const ShadowView child = costView(index - 1);
+
+        mutations.push_back(ShadowViewMutation::RemoveMutation(kSurfaceTag, child, static_cast<int>(index - 1)));
+        mutations.push_back(ShadowViewMutation::DeleteMutation(child));
+    }
+
+    return mutations;
+}
+
+void startSurface(LinuxMountingManager& mountingManager) {
+    mountingManager.startSurface(kSurfaceTag, Size{.width = 800, .height = 1200});
+}
+
+size_t allocationsMounting(LinuxMountingManager& mountingManager, ShadowViewMutationList&& mutations) {
+    return allocationsDuringFrame([&]() {
+        mountingManager.executeMount(kSurfaceTag, transactionOf(std::move(mutations)));
+    });
+}
+
+TEST(MountingCostTest, AMountingTransactionCostsABoundedNumberOfAllocationsPerNode) {
+    LinuxMountingManager mountingManager;
+
+    startSurface(mountingManager);
+
+    const size_t allocations = allocationsMounting(mountingManager, mountMutations(kLargeTreeNodeCount));
+
+    std::cout << "[cost] mount: " << allocations << " allocations for " << kLargeTreeNodeCount << " nodes"
+              << std::endl;
+
+    EXPECT_LE(allocations, kMountAllocationsPerNodeCeiling * kLargeTreeNodeCount);
+}
+
+TEST(MountingCostTest, ASnapshotCostsItsVectorGrowthRatherThanOneAllocationPerPrimitive) {
+    LinuxMountingManager mountingManager;
+
+    startSurface(mountingManager);
+    mountingManager.executeMount(kSurfaceTag, transactionOf(mountMutations(kLargeTreeNodeCount)));
+
+    const size_t allocations = allocationsDuringFrame([&]() { mountingManager.takeFrame(); });
+
+    std::cout << "[cost] snapshot: " << allocations << " allocations for " << kLargeTreeNodeCount << " primitives"
+              << std::endl;
+
+    EXPECT_LE(allocations, kSnapshotAllocationCeiling);
+}
+
+TEST(MountingCostTest, AFourTimesLargerTreeDoesNotSnapshotForFourTimesTheAllocations) {
+    LinuxMountingManager smallManager;
+    LinuxMountingManager largeManager;
+
+    startSurface(smallManager);
+    startSurface(largeManager);
+    smallManager.executeMount(kSurfaceTag, transactionOf(mountMutations(kSmallTreeNodeCount)));
+    largeManager.executeMount(kSurfaceTag, transactionOf(mountMutations(kLargeTreeNodeCount)));
+
+    const size_t small = allocationsDuringFrame([&]() { smallManager.takeFrame(); });
+    const size_t large = allocationsDuringFrame([&]() { largeManager.takeFrame(); });
+
+    std::cout << "[cost] snapshot growth: " << small << " for " << kSmallTreeNodeCount << ", " << large << " for "
+              << kLargeTreeNodeCount << std::endl;
+
+    EXPECT_LE(large, small * kSnapshotGrowthFactorCeiling);
+}
+
+TEST(MountingCostTest, MountingAndUnmountingTheSameScreenCostsTheSameEveryCycle) {
+    LinuxMountingManager mountingManager;
+
+    startSurface(mountingManager);
+
+    // The first cycle also pays for whatever the scene's containers reserve once, so the assertion is between the
+    // second and the third — the same shape as the animation frame tests above.
+    for (size_t cycle = 0; cycle < 2; cycle++) {
+        mountingManager.executeMount(kSurfaceTag, transactionOf(mountMutations(kSmallTreeNodeCount)));
+        mountingManager.executeMount(kSurfaceTag, transactionOf(unmountMutations(kSmallTreeNodeCount)));
+    }
+
+    const size_t secondCycle = allocationsDuringFrame([&]() {
+        mountingManager.executeMount(kSurfaceTag, transactionOf(mountMutations(kSmallTreeNodeCount)));
+        mountingManager.executeMount(kSurfaceTag, transactionOf(unmountMutations(kSmallTreeNodeCount)));
+    });
+    const size_t thirdCycle = allocationsDuringFrame([&]() {
+        mountingManager.executeMount(kSurfaceTag, transactionOf(mountMutations(kSmallTreeNodeCount)));
+        mountingManager.executeMount(kSurfaceTag, transactionOf(unmountMutations(kSmallTreeNodeCount)));
+    });
+
+    std::cout << "[cost] cycle: " << secondCycle << " then " << thirdCycle << std::endl;
+
+    EXPECT_EQ(secondCycle, thirdCycle);
 }
 
 } // namespace

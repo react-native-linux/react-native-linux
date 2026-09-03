@@ -1185,7 +1185,8 @@ p95 until the machine is loaded, and by then it is in a release.
 Global operator replacement is program-wide by nature; what is scoped is the counting, not the replacement. The
 operator definitions are therefore deliberately **not** `inline`, so a second translation unit that includes the
 header is a duplicate-symbol link error rather than a silent second replacement. Today that one includer is
-`AnimationFrameCostTest.cpp`. Over-aligned allocations are left to the library's own
+`AllocationCostTest.cpp`, which is why the animation frame cost of #124 and the mounting cost of #106 are
+measured in one file: there is exactly one place the allocator can be watched from. Over-aligned allocations are left to the library's own
 `operator new(size_t, align_val_t)`, which the library pairs with its own aligned delete: the counts stay balanced
 and the uncounted path is one nothing on the animation frame path takes.
 
@@ -1195,7 +1196,7 @@ coverage it already had.
 
 ### What is measured
 
-`packages/core/tests/AnimationFrameCostTest.cpp` drives the two calls the window makes between delivering a
+`packages/core/tests/AllocationCostTest.cpp` drives the two calls the window makes between delivering a
 frame's input and taking its scene, after two warm-up frames — the first frame through any of these paths also
 pays for the runtime's, the feature flags' and the containers' one-time initialisation, and a gate that measured
 that would be measuring startup.
@@ -1268,6 +1269,41 @@ The `animated-frames.json` p95 gate already exists in the e2e driver — `animat
 - **CI artifact trend.** `build/e2e` is uploaded on every run, but nothing reads yesterday's numbers, so a
   regression that stays under the ceiling is invisible. The allocation counts this suite prints have the same gap
   and the same fix.
+
+## Mounting cost (#106)
+
+Upstream shipped a first mounting transaction that allocated about **6.9 GB of raster data** while the JavaScript
+bundle was still evaluating, and the crash report blamed the engine
+([core#56980](https://github.com/facebook/react-native/issues/56980)); a separate report measured about a
+millisecond per view on the new architecture
+([core#51869](https://github.com/facebook/react-native/issues/51869)). Neither is visible without a counter, so
+`MountingCostTest` in `AllocationCostTest.cpp` is the counter — the same `AllocationProbe.h` the frame-cost gate
+uses, because the header permits exactly one includer.
+
+Two shapes of claim, because the two paths have two different costs, and the second is the one worth having:
+
+| What | Measured | Gate |
+| --- | --- | --- |
+| One mounting transaction, 2000 decorated nodes | 10,023 allocations, **5.01 per node** | ≤ 6 per node |
+| One snapshot of those 2000 primitives | **13 allocations, total** | ≤ 32 |
+| The same snapshot at 500 versus 2000 nodes | 11 versus 13 | large ≤ 3 × small |
+| Mount and unmount 500 nodes, cycle over cycle | 5,522 then **5,522** | exactly equal |
+
+- **The mounting transaction is per node** and always will be: each mutation writes a node into the scene. A
+  ceiling per node is what catches a new container per mounted view — the shape of core#56980.
+- **The snapshot is not per node**, and asserting a ceiling alone would not prove it: a per-primitive allocation
+  hides under any ceiling at a small enough tree. The assertion that a four-times-larger tree does not cost four
+  times as much is what actually holds the line, and 11 against 13 is the growth of one vector from empty to 2048
+  rather than anything per primitive.
+- **The cycle is exact, not bounded.** Mounting and unmounting the same screen twice costs the same number of
+  allocations both times, which is issue #106's second item —
+  [core#57198](https://github.com/facebook/react-native/issues/57198), memory not reclaimed across repeated
+  navigations — as a deterministic count where a resident-set number would be noise.
+
+What this does **not** cover, with the issues that own it: raster memory and peak RSS under the headless
+compositor are #20's harness and #76's leak gate, and decoration rasterization keyed by its parameters is a cache
+that does not exist yet — there is no raster cache for borders, gradients or shadows to key, because those are
+painted straight onto the canvas every frame.
 
 ## Upstream animated tests (#132)
 
