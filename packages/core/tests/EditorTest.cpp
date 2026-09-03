@@ -1,23 +1,22 @@
 #include "Clipboard.h"
 #include "EditorModel.h"
 
-#include <gtest/gtest.h>
-
 #include <cstddef>
 #include <cstdint>
+#include <gtest/gtest.h>
 #include <string>
 #include <vector>
 
 namespace {
 
 using react_native_linux::CaretMotion;
+using react_native_linux::clipboardText;
 using react_native_linux::EditorModel;
 using react_native_linux::EditorSelection;
-using react_native_linux::TextSegments;
-using react_native_linux::clipboardText;
+using react_native_linux::followedScrollOffset;
 using react_native_linux::segmentUtf8CodePoints;
 using react_native_linux::setClipboardText;
-using react_native_linux::followedScrollOffset;
+using react_native_linux::TextSegments;
 using react_native_linux::utf16LengthOfUtf8;
 using react_native_linux::utf8OffsetForUtf16Index;
 
@@ -52,8 +51,7 @@ TextSegments graphemeAwareSegmenter(const std::string& text) {
     std::vector<size_t> merged;
 
     for (const size_t start : segments.graphemeStarts) {
-        const bool isCombiningMark = start + 1 < text.size() &&
-                                     static_cast<unsigned char>(text[start]) == 0xCCU;
+        const bool isCombiningMark = start + 1 < text.size() && static_cast<unsigned char>(text[start]) == 0xCCU;
 
         if (!isCombiningMark) {
             merged.push_back(start);
@@ -606,6 +604,74 @@ TEST(ClipboardTest, RoundTripsTheTextItWasGiven) {
     setClipboardText({});
 
     EXPECT_EQ(clipboardText(), "");
+}
+
+#pragma mark - the parity matrix rows #53 leaves open (#53)
+
+/**
+ * Issue #53, case 6, the Windows half: clipboard text arrives CRLF, so a paste that left bare carriage returns in
+ * the buffer would put react-native-macos#2303's garbage on every Windows-shaped paste. A multiline field keeps
+ * line endings as bare newlines; a single-line field turns each pair into exactly one space.
+ */
+TEST(EditorModelTest, AMultilinePasteNormalizesWindowsLineEndings) {
+    EditorModel model;
+
+    model.setMultiline(true);
+    model.insertText("a\r\nb\r\nc");
+
+    EXPECT_EQ(model.text(), "a\nb\nc");
+}
+
+TEST(EditorModelTest, ASingleLinePasteTurnsAWindowsLineEndingIntoOneSpace) {
+    EditorModel model;
+
+    model.insertText("a\r\nb");
+
+    EXPECT_EQ(model.text(), "a b");
+}
+
+/**
+ * Issue #53, case 2, the whole of react-native-macos#2066 in one sequence: the user types uncontrolled, a stale
+ * controlled update is ignored, the caught-up override wins exactly once, and after the user types again a
+ * repeat of the old update still cannot clobber what the user wrote.
+ */
+TEST(EditorModelTest, TheControlledOverrideWinsOnceAndLaterTypingIsSafeFromStaleUpdates) {
+    EditorModel model;
+
+    model.insertText("abc");
+    EXPECT_EQ(model.mostRecentEventCount(), 1);
+
+    EXPECT_FALSE(model.reconcileProps("stale", 0));
+    EXPECT_EQ(model.text(), "abc");
+
+    EXPECT_TRUE(model.reconcileProps("fresh", 1));
+    EXPECT_EQ(model.text(), "fresh");
+
+    // The override keeps the caret where the user left it rather than jumping to the end - a controlled update
+    // that moved the caret on every render is react-native-macos#2066 from the other side. It was 3 in "abc" and
+    // clamps to 3 inside "fresh".
+    EXPECT_EQ(model.selection().caretByte, 3U);
+
+    model.insertText("d");
+    EXPECT_EQ(model.text(), "fredsh");
+
+    EXPECT_FALSE(model.reconcileProps("stale again", 1));
+    EXPECT_EQ(model.text(), "fredsh");
+}
+
+/**
+ * Issue #53, cases 1 and 7 composed: a controlled update into a secure field replaces the buffer the change
+ * events carry and never the masked display, which is what makes react-native-macos#423 impossible.
+ */
+TEST(EditorModelTest, AControlledValueIntoASecureFieldKeepsTheBufferAndMasksTheDisplay) {
+    EditorModel model;
+
+    model.setSecure(true);
+
+    EXPECT_TRUE(model.reconcileProps("secret", 0));
+
+    EXPECT_EQ(model.text(), "secret");
+    EXPECT_EQ(model.displayText(), "\xE2\x80\xA2\xE2\x80\xA2\xE2\x80\xA2\xE2\x80\xA2\xE2\x80\xA2\xE2\x80\xA2");
 }
 
 } // namespace
