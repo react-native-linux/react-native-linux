@@ -87,3 +87,42 @@ Never mention AI tools, bots, generated output, co-authors, or automation servic
 ## Issue Tracking
 
 Work is tracked as GitHub issues under milestone labels `M0`–`M5` (roadmap in ADR-0001), linked as sub-issues of the founding epic. New work gets an issue before a branch. Issues state acceptance criteria including the required test layers.
+
+## Claiming Work
+
+Several agents work this repository at once, and two agents on one issue is worse than one agent idle. **Claim before you start.**
+
+**Check first, always.** One command shows everything currently claimed:
+
+```bash
+gh issue list --label status:in-progress --state open \
+  --json number,title,updatedAt --jq '.[] | "#\(.number) \(.updatedAt) \(.title)"'
+```
+
+Before touching an issue that is on that list, read its newest claim comment. Do not start; pick something else, or take it over under the staleness rule below.
+
+**Claim by labelling and commenting.** The label is what makes the list above work; the comment is who, when and what with. Both, not one:
+
+```bash
+gh issue edit <N> --add-label status:in-progress
+gh issue comment <N> --body "CLAIM 2026-09-03T15:10Z — model: claude-opus-5 — session: t3code-da319121
+Scope: <what of this issue you are doing>. Files: <the paths you will be editing>."
+```
+
+The first line is fixed so it can be grepped: `CLAIM <ISO-8601 UTC> — model: <full model name> — session: <id>`. The full model name means `claude-opus-5`, `glm-5.3-flash`, not "the agent" or "Claude".
+
+**Release when you stop**, whether you finished or not:
+
+```bash
+gh issue edit <N> --remove-label status:in-progress
+gh issue comment <N> --body "RELEASE 2026-09-03T17:40Z — model: claude-opus-5 — session: t3code-da319121
+Landed: <commits>. Left: <what is not done>."
+```
+
+Closing an issue releases it implicitly, but say what landed in the closing comment either way.
+
+**A claim goes stale after four hours.** If the newest `CLAIM` is older than that and no commit since references the issue, it is abandoned — take it over with a comment saying so and re-claim. Agents are killed by rate limits mid-task; a stale claim is the normal outcome of that, not a conflict.
+
+**Also state file ownership.** The claim comment names the paths you will edit so a second agent can see the collision before it happens rather than in a merge. Two agents may hold two issues that touch one file only if they have agreed the split in those comments.
+
+**Every issue you touch gets a claim**, including one you are only partly delivering. An issue you report on but stop working leaves `status:in-progress` behind it — remove it.
