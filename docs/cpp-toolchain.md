@@ -386,6 +386,10 @@ upstream and must not be used. The Hermes CMake library target is `hermesvm`, no
 Re-vendoring on a React Native bump: edit `tag` in `scripts/vendor.lock.json`, run `pnpm --filter @react-native-linux/core vendor`,
 reconfigure. The script re-clones when the pin changes and is a no-op when it has not.
 
+That reconfigure is also the bump gate for *Upstream animated tests* below: `UpstreamAnimatedSuiteTest` fails the
+build if the vendored `animated/tests/` file list moved, and `rnl_core_tests` fails if any upstream test itself
+changed behaviour — both are read before a bump PR merges, not after an app looks wrong.
+
 ## Core codegen (#21)
 
 React Native's TurboModule and Fabric component artifacts are generated, not shipped. Upstream produces them from
@@ -691,28 +695,146 @@ finds no active animation left is the frame that calls `stopRenderCallbackIfNeed
 was holding open is what delivered that tick. A choreographer that stopped being ticked once its animations ended
 would never be told to pause and would keep the fallback awake forever.
 
-### What #130 still owes
+### What the tick is for
 
-`LinuxMountingManager::synchronouslyUpdateViewOnUIThread` is still `IMountingManager`'s defaulted no-op, so the
-non-layout fast path drops its updates and only layout-affecting animations paint. `AnimationBackend` splits every
+A ticked choreographer with nowhere to put a non-layout frame is half a system. `AnimationBackend` splits every
 frame's mutations by `hasLayoutUpdates`: with layout it commits, without it calls
-`UIManager::synchronouslyUpdateViewOnUIThread`, which reaches this platform through
-`SchedulerDelegateImpl::schedulerShouldSynchronouslyUpdateViewOnUIThread`. At 120 Hz a `transform` or `opacity`
-animation that took the commit path instead would be 120 Fabric commits per second with a Yoga relayout in each
-one, which is the cost the fast path exists to avoid — so the fast path is not an optimisation to schedule later,
-it is the difference between an animation that costs a matrix multiply and one that costs a relayout.
+`UIManager::synchronouslyUpdateViewOnUIThread`. That second half is *Sync props fast path*, below, and the two are
+one mechanism read from opposite ends — this section says when a frame happens, that one says what a frame that
+changes no layout does.
 
-Implementing it is a prop-decoding problem, not a scene problem: `AnimationBackend::synchronouslyUpdateProps`
-repacks `AnimatedProps` into a `folly::dynamic` through `animationbackend::packAnimatedProps`, so what arrives is
-`{"opacity": <double>}`, `{"backgroundColor": <int32 ARGB>}` or `{"transform": [<the raw JS operation array>]}`.
-`opacity` and `backgroundColor` are direct writes to `SceneNode`; `transform` needs `fromRawValue` into a
-`Transform` and then the same `resolveTransform(layoutMetrics)` cascade `RetainedScene::readPaintProps` applies,
-because a percentage translation is only meaningful against the node's frame. All of it has to run under
-`sceneMutex_` and end in `damageSubtree(tag)` plus `hasPendingDamage_ = true`, or the next frame paints stale
-pixels forever. `ReactCommon/react/renderer/animated/internal/NativeAnimatedAllowlist.h` is the upstream oracle for
-which props the driver is allowed to send, and #130's acceptance criteria add an opacity and a translate golden
-plus an event-trace assertion that a 120-frame transform animation performs zero commits — which is why it is its
-own change rather than a rider on this one.
+## Sync props fast path (#130)
+
+`LinuxMountingManager::synchronouslyUpdateViewOnUIThread` is the platform side of `AnimationBackend`'s non-layout
+half. It used to be `IMountingManager`'s defaulted no-op, which meant every animated frame that changed no layout
+was silently dropped. The path in is upstream's: `AnimationBackend::synchronouslyUpdateProps` →
+`UIManager::synchronouslyUpdateViewOnUIThread` → `SchedulerDelegateImpl` →
+`IMountingManager::synchronouslyUpdateViewOnUIThread`. At 120 Hz the alternative is 120 Fabric commits per second
+with a Yoga relayout in each one, so this is not an optimisation layered on a working path; it is the difference
+between an animation that costs a matrix multiply and one that costs a relayout.
+
+### Which props, and what they are worth
+
+`animationbackend::packAnimatedProps` repacks `AnimatedProps` into a `folly::dynamic` object, and
+`ReactCommon/react/renderer/animated/internal/NativeAnimatedAllowlist.h` is the upstream oracle for which keys can
+appear in it. Three are applied:
+
+- `opacity`, a double, clamped to `[0, 1]` exactly as `readPaintProps` clamps `ViewProps::opacity`. The snapshot
+  folds it into every colour the subtree paints, so an opacity ramp is arithmetic on the alpha channel and nothing
+  else.
+- `backgroundColor`, a packed int32 ARGB — the same representation `HostPlatformColor` uses on this platform, so
+  it is a `SharedColor` cast rather than a conversion. A fully transparent colour is stored as no colour at all,
+  which is what `meaningfulColor` decides for the commit path too.
+- `transform`, the raw JS operation array. It is read back through `fromRawValue` — the same overload `ViewProps`
+  parsing uses, so `{"translateX": 20}`, `{"rotateZ": <radians>}` and `{"translateX": "50%"}` mean here exactly
+  what they mean in a commit — and then resolved by the static `BaseViewProps::resolveTransform(frameSize,
+  transform, transformOrigin)`, which is the same cascade `readPaintProps` reaches through the member overload.
+  The frame is load-bearing: a percentage translation is only meaningful against the node's own size. So is the
+  origin, which is why `SceneNode` now retains `transformOrigin` unresolved next to the resolved matrix — a
+  `transform` arrives without one, and resolving it about the centre when the node mounted with a corner origin
+  would make the fast path paint a different picture from the commit path.
+
+Everything else the allowlist permits — border and shadow colours, border radii, `elevation`, `zIndex`,
+`shadowOpacity`, `shadowRadius`, the legacy `scaleX`/`translateY` style operations — is **rejected, counted and
+named**, not applied. Border colours are the nearest follow-up: they live inside `BorderMetrics`, which
+`resolveBorderMetrics` cascades out of nine props, so a single animated edge colour is a re-cascade rather than a
+field write and belongs with whoever needs it first.
+
+### The diagnostic policy
+
+The same policy as the missing-tag one, for the same reason: silence is the bug.
+
+- An unknown tag goes through `verifyTagIsKnown`, which now returns whether the tag was known. The miss is counted
+  in `MountDiagnostics::unknownTagOperations` under the operation name `SyncUpdate`, logged once with the tag and
+  the last transaction number, and then the update is **dropped** — nothing is written, no damage is recorded, and
+  `hasPendingDamage_` stays as it was, because damage a frame cannot satisfy is worse than a missed frame.
+- A prop outside the applied three increments `MountDiagnostics::rejectedAnimatedProps`; the first one is kept in
+  `firstRejectedAnimatedProp` and logged once. The rest of the payload still applies, exactly as a bad mutation
+  never stops the rest of its transaction.
+- Nothing on this path throws. A payload that is not an object is a no-op, and no prop value is trusted far enough
+  to matter beyond the type `packAnimatedProps` gives it.
+
+### No commit, and the mutex that makes that safe
+
+`RetainedScene::applyAnimatedProps` is one entry point rather than three setters because the damage has to bracket
+the whole payload: `damageSubtree(tag)` before the writes and again after, which is what `updateNode` does and what
+makes a node that moved repaint where it was as well as where it is. The manager then sets `hasPendingDamage_`, so
+a window pacing off a withheld `wl_surface.frame` still knows there is something to draw (see *Frame clock*).
+
+No `ShadowTree` commit happens on this path and none is wanted: the shadow tree is not the source of truth for an
+animated value between commits — `AnimationBackendCommitHook` re-applies animated props on top of whatever React
+commits next, which is what keeps a rerender mid-animation from painting a stale frame. The write is to the
+retained scene only.
+
+The call arrives on the frame thread, inside the animation tick that runs just before `takeFrame`, while the
+JavaScript thread may be committing. `sceneMutex_` is therefore the only thing keeping the scene consistent — the
+same statement this file already makes about `resize` — and it is the same mutex `takeFrame` takes, so a
+synchronous update is never half-visible to the frame that follows it.
+
+### The proof
+
+`packages/core/tests/AnimatedPropsTest.cpp`, inside the 100% line and branch gate that covers
+`LinuxMountingManager.cpp` and `RetainedScene.cpp`:
+
+- an `opacity` update folds into the painted alpha, damages exactly the node's bounds, and is carried by the next
+  `takeFrame`, which clears the pending flag;
+- a packed int32 `backgroundColor` becomes the painted colour, and a fully transparent one leaves the node
+  painting nothing;
+- a `transform` array — translate then rotate, and a percentage translation that needs the frame — produces the
+  **same matrix** as mounting the same `Transform` on `ViewProps` through a mounting transaction, and resolves
+  about the `transformOrigin` the node mounted with. The payload is built with upstream's own
+  `updateTransformProps`, which is the serializer `packAnimatedProps` uses, so the test parses what the driver
+  would have sent;
+- an unknown tag is a `SyncUpdate` diagnostic with no damage and no pending flag;
+- a non-allowlisted key is counted with its name while the rest of the payload still applies, and a second
+  rejection is counted without displacing the first.
+
+### Follow-ups
+
+- **Golden-image.** An opacity ramp and a translate ramp at three fixed progress values, driven by the injected
+  clock, are still owed; the unit equality above says the fast path computes what the commit path computes, not
+  that Skia paints it identically. Both remain #130 acceptance criteria that this change does not close.
+- **E2E and perf.** The 120-frame transform animation that performs **zero** Fabric commits, asserted from the
+  event trace, and its p95 frame time under #20's harness, are also still owed: nothing in a unit test can observe
+  a commit that did not happen.
+- **TSan.** Synchronous updates on the frame thread concurrent with commits on the JavaScript thread need the
+  sanitizer job, like `ShadowTreeCommitTest`'s cross-thread case.
+- **Border colours.** Rejected and counted today; see above for why they are a re-cascade rather than a write.
+
+## Upstream animated tests (#132)
+
+We do not write the animated node graph, so we do not write its unit tests either. React Native ships them at
+`ReactCommon/react/renderer/animated/tests/`, and that whole path is already inside the `packages/react-native/ReactCommon`
+sparse path `scripts/vendor.lock.json` lists for *Core codegen*'s and everything else's sake, so no sparse-path
+change was needed to reach it. Verified at `v0.87.1` against `gh api .../animated/tests?ref=v0.87.1`, the tree is
+exactly six files: `AnimatedNodeTests.cpp`, `AnimationDriverTests.cpp`, `AnimationTestsBase.h`,
+`DecayAnimationDriverTest.cpp`, `EventAnimationDriverTests.cpp` and `ManagedPropsMountingOverrideTests.cpp` — the
+same six the vendored checkout already has on disk.
+
+All five `.cpp` files include only `AnimationTestsBase.h` (quoted, resolved relative to their own directory —
+no include-path change needed), `<react/renderer/animated/...>`, `<react/renderer/core/ReactRootViewTagGenerator.h>`,
+`<react/renderer/graphics/Color.h>` and, for the event-driver test, `<react/renderer/components/scrollview/ScrollEvent.h>`.
+Every one of those is already in `RNL_REACT_COMMON_TARGETS` — `react_renderer_animated`, `react_renderer_core`,
+`react_renderer_graphics` and `rrc_scrollview` are all linked into `rnl_core_tests` already, from *Animated backend*
+and from ScrollView support elsewhere in this file. None of them need `react/test_utils`, `react/renderer/element`
+or `rrc_view`/`rrc_root`: `AnimationTestsBase` builds a bare `NativeAnimatedNodesManager` and drives it with
+`folly::dynamic` operation payloads, the same shape `AnimatedModule` sends, so nothing here needs a shadow tree,
+a `ComponentBuilder`, or a mounted view. That is the same reason `ShadowTreeCommitTest.cpp` avoided
+`test_utils::simpleComponentBuilder`, restated for a suite that never touches mounting at all. The five `.cpp` files
+therefore compile directly into `rnl_core_tests` — the smaller change over adding subdirectories nothing in this
+suite actually calls into. All five build and pass unmodified; none is skipped.
+
+`packages/core/tests/UpstreamAnimatedSuiteTest.cpp` lists the vendored tests directory with `std::filesystem` and
+asserts it against the same six-name list above, compiled in through the `RNL_ANIMATED_TESTS_DIR` definition set in
+`packages/core/tests/CMakeLists.txt`. An upstream add or remove on the next version bump fails that test instead of
+silently changing what this suite covers.
+
+None of the six sources are in `scripts/cpp-coverage.ts`'s `scopedSourcePaths` — that list only ever named our own
+`packages/core/src` files, so vendored upstream sources were already outside the 100% gate before this change and
+stay there; there is nothing to exclude because there was never anything to include. *Pins*' re-vendoring paragraph
+names this suite as a bump gate: a version bump that changes the tests directory's file list is a build-time
+`UpstreamAnimatedSuiteTest` failure, and a version bump that changes what the five suites assert is a CTest failure,
+both before either reaches an app.
 
 ## Prerequisites
 

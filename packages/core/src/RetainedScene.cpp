@@ -10,12 +10,24 @@
 #include <react/renderer/components/root/RootShadowNode.h>
 #include <react/renderer/components/scrollview/ScrollViewState.h>
 #include <react/renderer/components/text/ParagraphState.h>
+#include <react/renderer/components/view/BaseViewProps.h>
 #include <react/renderer/components/view/ViewProps.h>
+
+// conversions.h names the PropsParserContext parameter in sixteen overloads that never read it, which -Wextra
+// reports once each. It is upstream's header and the only declaration of fromRawValue for a Transform.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#include <react/renderer/components/view/conversions.h>
+#pragma GCC diagnostic pop
+
 #include <react/renderer/imagemanager/primitives.h>
 #include <react/renderer/core/ConcreteState.h>
+#include <react/renderer/core/PropsParserContext.h>
+#include <react/renderer/core/RawValue.h>
 #include <react/renderer/graphics/Color.h>
 #include <react/renderer/graphics/Rect.h>
 #include <react/renderer/graphics/Transform.h>
+#include <react/utils/ContextContainer.h>
 
 #include <algorithm>
 #include <array>
@@ -133,6 +145,35 @@ SceneMatrix toSceneMatrix(const facebook::react::Transform& transform) {
                        .skewY = static_cast<float>(transform.matrix[1]),
                        .scaleY = static_cast<float>(transform.matrix[5]),
                        .translateY = static_cast<float>(transform.matrix[13])};
+}
+
+/**
+ * A colour the scene has a reason to keep: a fully transparent one paints nothing, so it is stored as no colour
+ * at all rather than as a colour whose alpha happens to be zero.
+ */
+std::optional<facebook::react::SharedColor> meaningfulColor(facebook::react::SharedColor color) {
+    if (!facebook::react::isColorMeaningful(color)) {
+        return std::nullopt;
+    }
+
+    return color;
+}
+
+/**
+ * The `transform` operation array an animation frame carries, read back through the same `fromRawValue` overload
+ * `ViewProps` parsing uses, so the fast path and the commit path cannot disagree about what an operation means.
+ *
+ * The parser context is inert: the transform parser takes it by reference and never reads it, and only the CSS
+ * string form — which an operation array is not — would reach anything that does.
+ */
+facebook::react::Transform parseAnimatedTransform(const folly::dynamic& value) {
+    const facebook::react::ContextContainer contextContainer;
+    const facebook::react::PropsParserContext parserContext{0, contextContainer};
+    facebook::react::Transform transform;
+
+    facebook::react::fromRawValue(parserContext, facebook::react::RawValue{value}, transform);
+
+    return transform;
 }
 
 uint32_t toArgb(facebook::react::SharedColor color, float opacity) {
@@ -275,17 +316,14 @@ void readPaintProps(SceneNode& node, const facebook::react::ShadowView& shadowVi
         node.backgroundImage.clear();
         node.borderMetrics = {};
         node.transform = {};
+        node.transformOrigin = {};
         node.opacity = 1.0F;
         node.clipsChildren = false;
 
         return;
     }
 
-    if (facebook::react::isColorMeaningful(viewProps->backgroundColor)) {
-        node.backgroundColor = viewProps->backgroundColor;
-    } else {
-        node.backgroundColor = std::nullopt;
-    }
+    node.backgroundColor = meaningfulColor(viewProps->backgroundColor);
 
     // Copied rather than resolved: the gradient stops cannot be turned into a ramp without the CSS gradient line,
     // which needs Skia geometry. See *Gradients* in docs/cpp-toolchain.md.
@@ -295,6 +333,7 @@ void readPaintProps(SceneNode& node, const facebook::react::ShadowView& shadowVi
     // converts percentage radii to points, and applies the CSS corner-overlap clamp.
     node.borderMetrics = viewProps->resolveBorderMetrics(shadowView.layoutMetrics);
     node.transform = toSceneMatrix(viewProps->resolveTransform(shadowView.layoutMetrics));
+    node.transformOrigin = viewProps->transformOrigin;
     node.opacity = std::clamp(static_cast<float>(viewProps->opacity), 0.0F, 1.0F);
     node.clipsChildren = viewProps->getClipsContentToBounds();
 }
@@ -731,6 +770,39 @@ void RetainedScene::setEditorState(facebook::react::Tag tag, const SceneEditorSt
     // One rectangle, not two: everything a caret, a selection or a composing underline draws is inside the
     // field's own frame, which is also the extent this damages. A blink is therefore one field's repaint.
     damageSubtree(tag);
+}
+
+std::vector<std::string> RetainedScene::applyAnimatedProps(facebook::react::Tag tag, const folly::dynamic& props) {
+    std::vector<std::string> rejectedProps;
+    const auto entry = nodes_.find(tag);
+
+    if (entry == nodes_.end() || !props.isObject()) {
+        return rejectedProps;
+    }
+
+    SceneNode& node = entry->second;
+
+    damageSubtree(tag);
+
+    for (const auto& [key, value] : props.items()) {
+        const std::string propName = key.asString();
+
+        if (propName == "opacity") {
+            node.opacity = std::clamp(static_cast<float>(value.asDouble()), 0.0F, 1.0F);
+        } else if (propName == "backgroundColor") {
+            node.backgroundColor =
+                meaningfulColor(facebook::react::SharedColor{static_cast<facebook::react::Color>(value.asInt())});
+        } else if (propName == "transform") {
+            node.transform = toSceneMatrix(facebook::react::BaseViewProps::resolveTransform(
+                node.layoutMetrics.frame.size, parseAnimatedTransform(value), node.transformOrigin));
+        } else {
+            rejectedProps.push_back(propName);
+        }
+    }
+
+    damageSubtree(tag);
+
+    return rejectedProps;
 }
 
 SceneSnapshot RetainedScene::snapshot() const {

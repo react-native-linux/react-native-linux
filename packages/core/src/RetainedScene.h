@@ -1,5 +1,6 @@
 #pragma once
 
+#include <folly/dynamic.h>
 #include <react/renderer/attributedstring/AttributedString.h>
 #include <react/renderer/attributedstring/ParagraphAttributes.h>
 #include <react/renderer/components/view/primitives.h>
@@ -11,6 +12,7 @@
 #include <react/renderer/graphics/Rect.h>
 #include <react/renderer/graphics/RectangleEdges.h>
 #include <react/renderer/graphics/Size.h>
+#include <react/renderer/graphics/Transform.h>
 #include <react/renderer/mounting/ShadowView.h>
 
 #include <cstddef>
@@ -216,6 +218,13 @@ struct SceneNode {
     std::vector<facebook::react::BackgroundImage> backgroundImage;
     facebook::react::BorderMetrics borderMetrics{};
     SceneMatrix transform{};
+
+    /**
+     * The origin the node's transform is resolved about, as authored. It is kept unresolved, next to the resolved
+     * matrix, because `applyAnimatedProps` re-resolves a transform that arrives without one and a percentage
+     * origin is only meaningful against the node's frame.
+     */
+    facebook::react::TransformOrigin transformOrigin{};
     float opacity{1.0F};
     bool clipsChildren{false};
     std::optional<SceneTextContent> text;
@@ -299,6 +308,22 @@ public:
      * field nobody is typing in from repainting every frame.
      */
     void setEditorState(facebook::react::Tag tag, const SceneEditorState& editorState);
+
+    /**
+     * Applies the non-layout props an animation frame changed, as `animationbackend::packAnimatedProps` packs
+     * them: `opacity` as a double, `backgroundColor` as a packed int32 colour, `transform` as the raw operation
+     * array. Each one is written where `readPaintProps` writes it, through the same conversions, so a node the
+     * fast path moved and a node a commit moved carry the same matrix and the same colours.
+     *
+     * The subtree is damaged before and after, exactly as `updateNode` does it, because a node that moves stops
+     * being correct where it was as well as where it now is. This is the fourth thing besides a mutation, a decode
+     * and a focus change that decides what the next frame paints, and the only one React never commits.
+     *
+     * Returns the prop names it does not implement, in arrival order, for its caller to count: a prop the driver
+     * is allowed to send and this does not apply is a silently wrong picture, which is the failure the whole
+     * missing-tag policy exists to remove. An unknown tag and a payload that is not an object are both no-ops.
+     */
+    std::vector<std::string> applyAnimatedProps(facebook::react::Tag tag, const folly::dynamic& props);
     SceneSnapshot snapshot() const;
     SceneDamage takeDamage();
     std::string dump() const;

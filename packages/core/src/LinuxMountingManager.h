@@ -50,12 +50,19 @@ struct SceneCommand {
  * one, keep the first with enough context to name the commit that produced it, log that first one, and apply the
  * transaction anyway. The frame thread never throws and never aborts, because a dropped frame is worse than a
  * wrong one and a crash is worse than both.
+ *
+ * A synchronous animated prop the fast path does not apply is counted the same way and for the same reason: the
+ * driver's allowlist is wider than what this renderer can paint without a commit, and a prop dropped in silence
+ * is an animation that runs at the wrong values with nothing to point at. See *Sync props fast path* in
+ * docs/cpp-toolchain.md.
  */
 struct MountDiagnostics {
     uint64_t unknownTagOperations{0};
     std::string firstUnknownOperation;
     facebook::react::Tag firstUnknownTag{0};
     facebook::react::MountingTransaction::Number firstUnknownTransactionNumber{0};
+    uint64_t rejectedAnimatedProps{0};
+    std::string firstRejectedAnimatedProp;
 };
 
 /**
@@ -77,6 +84,11 @@ struct MountDiagnostics {
  * dispatchCommand also runs on the JS thread and takes the same mutex, which is what orders a command against the
  * transactions around it; the frame thread drains the queue with takeCommands right after takeFrame. See *Commit
  * termination and mounting atomicity* in docs/cpp-toolchain.md.
+ *
+ * synchronouslyUpdateViewOnUIThread runs on the frame thread, inside the animation tick that precedes takeFrame,
+ * while the JS thread may be committing — so the mutex is the only thing keeping the scene consistent, exactly as
+ * it is for resize. It is also the one write to the scene that no Fabric commit follows. See *Sync props fast
+ * path* in docs/cpp-toolchain.md.
  */
 class LinuxMountingManager final : public facebook::react::IMountingManager {
 public:
@@ -131,8 +143,21 @@ public:
     void dispatchCommand(const facebook::react::ShadowView& shadowView, const std::string& commandName,
                          const folly::dynamic& args) override;
 
+    /**
+     * The non-layout fast path: the props an animation frame changed, applied straight to the retained scene with
+     * no Fabric commit and no Yoga relayout behind them. `AnimationBackend` calls it through
+     * `UIManager::synchronouslyUpdateViewOnUIThread` for every frame whose mutations touch no layout, which at
+     * 120 Hz is the difference between a matrix multiply and a relayout per frame.
+     *
+     * `opacity`, `backgroundColor` and `transform` are applied; every other key the driver's allowlist permits is
+     * counted in the diagnostics and logged once. An unknown tag is counted like any other missing tag and
+     * damages nothing.
+     */
+    void synchronouslyUpdateViewOnUIThread(facebook::react::Tag tag, const folly::dynamic& props) override;
+
 private:
-    void verifyTagIsKnown(std::string_view operation, facebook::react::Tag tag);
+    bool verifyTagIsKnown(std::string_view operation, facebook::react::Tag tag);
+    void reportRejectedAnimatedProp(const std::string& propName);
 
     mutable std::mutex sceneMutex_;
     RetainedScene scene_;

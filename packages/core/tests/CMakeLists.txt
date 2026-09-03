@@ -26,7 +26,9 @@ FetchContent_MakeAvailable(googletest)
 
 include(GoogleTest)
 
+
 add_executable(rnl_core_tests
+    AnimatedPropsTest.cpp
     AnimationChoreographerTest.cpp
     DimensionsTest.cpp
     SceneReuseTest.cpp
@@ -59,6 +61,7 @@ add_executable(rnl_core_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputV3State.cpp)
 target_compile_options(rnl_core_tests PRIVATE -Wall -Wextra -fexceptions -frtti)
 target_include_directories(rnl_core_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+target_compile_definitions(rnl_core_tests
 target_link_libraries(rnl_core_tests
     PRIVATE
         GTest::gtest_main

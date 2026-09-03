@@ -118,9 +118,23 @@ void LinuxMountingManager::dispatchCommand(const facebook::react::ShadowView& sh
     commands_.push_back(SceneCommand{.tag = shadowView.tag, .name = commandName, .args = args});
 }
 
-void LinuxMountingManager::verifyTagIsKnown(std::string_view operation, facebook::react::Tag tag) {
-    if (scene_.hasNode(tag)) {
+void LinuxMountingManager::synchronouslyUpdateViewOnUIThread(facebook::react::Tag tag, const folly::dynamic& props) {
+    const std::lock_guard<std::mutex> guard(sceneMutex_);
+
+    if (!verifyTagIsKnown("SyncUpdate", tag)) {
         return;
+    }
+
+    for (const std::string& propName : scene_.applyAnimatedProps(tag, props)) {
+        reportRejectedAnimatedProp(propName);
+    }
+
+    hasPendingDamage_ = true;
+}
+
+bool LinuxMountingManager::verifyTagIsKnown(std::string_view operation, facebook::react::Tag tag) {
+    if (scene_.hasNode(tag)) {
+        return true;
     }
 
     if (diagnostics_.unknownTagOperations == 0) {
@@ -133,6 +147,19 @@ void LinuxMountingManager::verifyTagIsKnown(std::string_view operation, facebook
     }
 
     diagnostics_.unknownTagOperations++;
+
+    return false;
+}
+
+void LinuxMountingManager::reportRejectedAnimatedProp(const std::string& propName) {
+    if (diagnostics_.rejectedAnimatedProps == 0) {
+        diagnostics_.firstRejectedAnimatedProp = propName;
+
+        LOG(ERROR) << "[mounting] synchronous update carries prop " << propName
+                   << ", which the non-layout fast path does not apply";
+    }
+
+    diagnostics_.rejectedAnimatedProps++;
 }
 
 } // namespace react_native_linux
