@@ -178,14 +178,7 @@
       "dependsOn": [],
       "title": "feat(core): install a TurboModule binding and register the C++ AnimatedModule",
       "milestone": "M4",
-      "labels": [
-        "area:core",
-        "area:animation",
-        "area:modules",
-        "kind:feat",
-        "origin:rn-core",
-        "priority:P0"
-      ],
+      "labels": ["area:core", "area:animation", "area:modules", "kind:feat", "origin:rn-core", "priority:P0"],
       "priority": "P0",
       "body": "## Context\n\nReact Native 0.87 already contains the entire `Animated` native driver in portable C++.\n`ReactCommon/react/renderer/animated/AnimatedModule.h` declares\n`class AnimatedModule : public NativeAnimatedModuleCxxSpec<AnimatedModule>, public TurboModuleWithJSIBindings`\nand implements the full nineteen-operation `NativeAnimatedModule` contract as a `std::variant<Operation>` —\n`CreateAnimatedNode`, `Connect`/`DisconnectAnimatedNodes`, `StartAnimatingNode`, `SetAnimatedNodeValue`,\n`ConnectAnimatedNodeToShadowNodeFamily`, `AddAnimatedEventToView`, and the rest. The spec header it consumes,\n`FBReactNativeSpec/FBReactNativeSpecJSI.h`, is produced by `react_codegen_rncore`, which our CMake already builds.\n\nUpstream reaches it through `ReactCxxPlatform/react/runtime/ReactCxxTurboModuleProvider.cpp`, which returns\n`std::make_shared<AnimatedModule>(jsInvoker_, animatedNodesManagerProvider_)` for `AnimatedModule::kModuleName`.\nWe cannot reuse that host: `packages/core/CMakeLists.txt` records that `ReactCxxPlatform`'s `ReactHost` is\ndeliberately not in our graph because it drags in `bridgelesshermes`, the HTTP and WebSocket clients, and the whole\n`nativemodule` tree.\n\nAnd we have no way in at all. `ReactHost::ReactHost()` calls\n`reactInstance_->initializeRuntime({}, installConsoleBinding)` — a console binding and nothing else. **There is no\nTurboModule binding in this platform.** No JavaScript can reach any native module today, animated or otherwise.\n\n## What to build\n\n1. A module provider and a `TurboModuleBinding` installed from `ReactHost`'s bindings installer, replacing the\n   console-binding-only call. Keep it minimal: a provider that resolves a module by name and returns `nullptr`\n   otherwise, with the console binding still installed.\n2. `NativeAnimatedNodesManagerProvider` constructed once and owned by the host, so `AnimatedModule` and the\n   scheduler see the same manager. Follow `ReactCxxTurboModuleProvider`'s ownership exactly rather than inventing\n   a lifetime.\n3. `AnimatedModule` registered under `AnimatedModule::kModuleName`.\n4. `AnimatedMountingOverrideDelegate` wired the way `ReactCxxPlatform`'s `ReactHost` does, so synchronously\n   applied props survive the next mount.\n\nDo not add a plugin system, a registry abstraction, or a module-registration DSL. One provider, one lookup, per\nthe Prime Directive; #23 and #79 will add their modules to the same list.\n\n## Acceptance criteria\n\n- **Unit (C++, GoogleTest):** the provider returns an `AnimatedModule` for the animated module name and `nullptr`\n  for an unknown name; the manager provider is constructed once and shared. Inside the 100% line-and-branch gate.\n- **E2E:** a bundle calling `Animated.timing(value, { useNativeDriver: true }).start()` reaches native — asserted\n  by an event trace showing `createAnimatedNode` and `startAnimatingNode` arriving, not by a screenshot.\n- Teardown is covered: destroying the host destroys the module and the manager provider in that order, ASan-clean.\n- The threading contract of the provider is stated in the class docblock, per Engineering Rule 6.\n\n## Related\n\nFirst task of Phase 1 of #95, and shared infrastructure for #23 (core native modules) and #79 (networking).\nBackground and source citations in `docs/research/animation-on-linux.md`, section 1.\n"
     },
@@ -195,42 +188,24 @@
       "dependsOn": [],
       "title": "feat(core): build react/renderer/animated and turn on the C++ Native Animated feature flags",
       "milestone": "M4",
-      "labels": [
-        "area:core",
-        "area:animation",
-        "area:infra",
-        "kind:feat",
-        "origin:rn-core",
-        "priority:P0"
-      ],
+      "labels": ["area:core", "area:animation", "area:infra", "kind:feat", "origin:rn-core", "priority:P0"],
       "priority": "P0",
       "body": "## Context\n\n`packages/core/CMakeLists.txt` lists `react/renderer/animationbackend` in `RNL_REACT_COMMON_SUBDIRS` and links\n`react_renderer_animationbackend`. It does **not** list `react/renderer/animated`, so the animated node graph —\n`NativeAnimatedNodesManager` (41.9 KB), sixteen node types, four drivers, the event driver, and\n`AnimatedModule` — is not compiled at all.\n\nUpstream's `react/renderer/animated/CMakeLists.txt` globs `*.cpp drivers/*.cpp event_drivers/*.cpp internal/*.cpp\nnodes/*.cpp` and links `react_codegen_rncore`, `react_debug`, `react_renderer_{core,graphics,mounting,uimanager,\nscheduler,animationbackend}`, `glog` and `folly_runtime` — every one of which is already in our graph. This is two\nlines of CMake, not a porting exercise.\n\nThe flags are the other half. `ReactNativeFeatureFlagsDefaults.h` has `cxxNativeAnimatedEnabled() → false`,\n`useSharedAnimatedBackend() → false` and `optimizedAnimatedPropUpdates() → false`. Our `ReactHost` installs\n`ReactNativeFeatureFlagsOverridesOSSStable`, which only overrides `enableBridgelessArchitecture` and\n`useNativeViewConfigsInBridgelessMode`. Upstream's `ReactNativeFeatureFlagsOverridesOSSCanary` is the class that\nenables `cxxNativeAnimatedEnabled`, and it is `@generated` — so we subclass `OSSStable` rather than adopt Canary\nwholesale and inherit four unrelated experiments.\n\n## What to build\n\n1. `react/renderer/animated` added to `RNL_REACT_COMMON_SUBDIRS` and `react_renderer_animated` to\n   `RNL_REACT_COMMON_TARGETS`, with the existing comment block extended to say why (the block already explains\n   every other entry; do not break that convention).\n2. A `ReactNativeFeatureFlagsOverridesLinux : ReactNativeFeatureFlagsOverridesOSSStable` overriding\n   `cxxNativeAnimatedEnabled` and `useSharedAnimatedBackend`, installed in place of the OSS-stable provider.\n   `optimizedAnimatedPropUpdates` stays off — its documentation describes Android JNI batching and an iOS\n   `cloneProps` path, neither of which is ours.\n3. One place that asserts the flag values, so a silent default change upstream is a test failure. Section 4.4 of\n   the research doc explains why this matters: three independent flag systems now decide behaviour and none of\n   them fails the build when it is wrong.\n\n## Acceptance criteria\n\n- **Build:** `pnpm validate` and the C++ build pass with the new subdirectory; the incremental build cost is\n  recorded against #78's budget.\n- **Unit (C++):** a flag-readback test asserting `cxxNativeAnimatedEnabled()` and `useSharedAnimatedBackend()` are\n  true and `optimizedAnimatedPropUpdates()` is false under our provider, with a comment naming the upstream\n  defaults it is guarding against.\n- The upgrade note in `docs/cpp-toolchain.md` records that these flags are ours to re-verify on every React Native\n  bump.\n\n## Related\n\nPhase 1 of #95. Feeds every other Phase 1 issue. Gated by the M2 conformance work in the react-native mining plan,\nnotably \"test(animation): the animated value and the shadow tree agree on every frame, not only at the end\".\n"
     },
     {
       "key": "p1-choreographer",
       "phase": 1,
-      "dependsOn": [
-        "p1-build-graph"
-      ],
+      "dependsOn": ["p1-build-graph"],
       "title": "feat(animation): LinuxAnimationChoreographer — drive the animation backend from the FrameClock",
       "milestone": "M4",
-      "labels": [
-        "area:animation",
-        "area:core",
-        "area:renderer",
-        "kind:feat",
-        "origin:rn-core",
-        "priority:P0"
-      ],
+      "labels": ["area:animation", "area:core", "area:renderer", "kind:feat", "origin:rn-core", "priority:P0"],
       "priority": "P0",
       "body": "## Context\n\nUpstream's own documentation names this issue. `ReactCommon/react/renderer/animationbackend/__docs__/AnimationBackend.md`:\n\n> ### AnimationChoreographer\n> This is an abstraction layer that wraps the native frame callback mechanisms. On iOS, it has a corresponding\n> `RCTDisplayLink`, and on Android, it uses the `Choreographer`. **For any new platform that wants to adopt the\n> Animation Backend, this is the part that needs to be implemented.**\n\nThe interface is 40 lines. Three virtuals — `resume()`, `pause()`, and a defaulted `now()` returning an\n`AnimationTimestamp` (`std::chrono::duration<double, std::milli>`) — plus a non-virtual `onAnimationFrame(timestamp)`\nthat forwards to the weakly-held `UIManagerAnimationBackend`. Its own comment says it \"serves as an interface for\nnative animation frame scheduling that can be used as abstraction in ReactCxxPlatform\".\n\nWe already own the frame source. `FrameClock` (`packages/core/src/FrameClock.h`) is a pure, dependency-free state\nmachine: `onFrameCallback(now)` always draws, `onFallbackTimeout(now, hasPendingWork)` draws only when there is\nwork, and `hasPendingWork` today ORs `LinuxMountingManager::hasPendingDamage()`,\n`ScrollController::isScrollActive()` and `ReactHost::hasPendingTimers()`. **A running animation is a fourth source\nand it is not in that OR.** That is the whole risk: too permissive and an occluded window spins the GPU on every\n50 ms fallback forever; too strict and an animation freezes the moment Hyprland stops sending frame callbacks for a\nbackground workspace — which is exactly the failure #59 exists to prevent, restated for animation.\n\n## What to build\n\n1. `LinuxAnimationChoreographer : facebook::react::AnimationChoreographer`, owned by `WindowSession` next to the\n   `FrameClock`. `resume()` sets a flag the session reports as pending work; `pause()` clears it. `now()` is\n   overridden only if `steady_clock` is not the clock the frame loop already uses — prefer the default.\n2. `WindowSession::hasPendingWork()` extended with the choreographer's flag, and `docs/cpp-toolchain.md`'s\n   *Frame clock (#59)* section updated to list four signals instead of three.\n3. `SchedulerToolbox::animationChoreographer` set in `FabricHost`, matching `ReactCxxPlatform`'s `ReactHost.cpp`\n   line for line rather than inventing a wiring order.\n4. `onAnimationFrame(timestamp)` called once per drawing tick from the frame thread, before `takeFrame`, so the\n   mutations a frame produces are in the snapshot that frame paints.\n\nThe timestamp handed to `onAnimationFrame` is the tick's, not a fresh clock read — the frame clock is the single\nsource of time, as it already is for scroll physics and caret blink.\n\n## Acceptance criteria\n\n- **Unit (C++):** a `LinuxAnimationChoreographer` suite with an injected clock and a fake `UIManagerAnimationBackend`:\n  `resume` then N ticks delivers N `onAnimationFrame` calls with monotonically increasing timestamps; `pause` stops\n  delivery within one tick; `resume` while already resumed is idempotent; a destroyed backend (the `weak_ptr`\n  expiring) is a no-op and not a crash. Inside the 100% gate.\n- **Unit (C++):** the extended `hasPendingWork` — an animation running with no damage, no scroll and no timers\n  still reports pending work; a paused choreographer with everything else idle does not.\n- **E2E:** an animation started, then frame callbacks withheld by the headless compositor, keeps producing frames\n  from the fallback path; and an idle occluded window with no animation performs no GPU work. This is the test #59\n  explicitly deferred, now with a second reason to exist.\n- **TSan:** `resume`/`pause` called from the JS thread concurrently with ticks on the frame thread, clean.\n\n## Related\n\nPhase 1 of #95, and the shared frame source for Phase 3 — `ReanimatedModuleProxy::startBackendIfNeeded` calls\n`UIManagerAnimationBackend::start` on React Native >= 0.85, so this class also paces Reanimated. Extends #59.\nMeasured by \"perf(animation): a native-driver frame-cost gate\" in the react-native mining plan, and by #20.\n"
     },
     {
       "key": "p1-sync-props",
       "phase": 1,
-      "dependsOn": [
-        "p1-build-graph"
-      ],
+      "dependsOn": ["p1-build-graph"],
       "title": "feat(renderer): synchronouslyUpdateViewOnUIThread — the non-layout fast path into the retained scene",
       "milestone": "M4",
       "labels": [
@@ -248,10 +223,7 @@
     {
       "key": "p1-event-driven",
       "phase": 1,
-      "dependsOn": [
-        "p1-choreographer",
-        "p1-sync-props"
-      ],
+      "dependsOn": ["p1-choreographer", "p1-sync-props"],
       "title": "feat(animation): event-driven Animated — Animated.event with useNativeDriver on scroll",
       "milestone": "M4",
       "labels": [
@@ -270,19 +242,10 @@
     {
       "key": "p1-upstream-tests",
       "phase": 1,
-      "dependsOn": [
-        "p1-build-graph"
-      ],
+      "dependsOn": ["p1-build-graph"],
       "title": "test(animation): adopt upstream's react/renderer/animated GoogleTest suite as a pinned drift oracle",
       "milestone": "M4",
-      "labels": [
-        "area:animation",
-        "area:testing",
-        "kind:test",
-        "kind:parity",
-        "origin:rn-core",
-        "priority:P1"
-      ],
+      "labels": ["area:animation", "area:testing", "kind:test", "kind:parity", "origin:rn-core", "priority:P1"],
       "priority": "P1",
       "body": "## Context\n\nWe are not writing the animated node graph, so we should not be writing its unit tests either. React Native ships\nthem: `ReactCommon/react/renderer/animated/tests/` contains `AnimatedNodeTests.cpp` (11.3 KB),\n`AnimationDriverTests.cpp`, `DecayAnimationDriverTest.cpp` (9.7 KB), `EventAnimationDriverTests.cpp`,\n`ManagedPropsMountingOverrideTests.cpp` and `AnimationTestsBase.h`. They are GoogleTest, they are in the tree we\nalready vendor, and they exercise exactly the arithmetic that #75 worries about drifting.\n\nRunning them in our CTest suite turns a React Native upgrade from \"hope the animation still works\" into a build-time\nsignal: if upstream adds a node type or changes a driver's easing, the suite tells us on the bump commit rather\nthan when an app looks wrong. That is the same drift-oracle trick #58 proposes for the parity suite and #69 uses for\nprop coverage.\n\nThis is deliberately *not* a behavioural conformance suite for our integration — the react-native mining plan\nalready covers that at M2 with \"test(animation): the animated value and the shadow tree agree on every frame, not\nonly at the end\" and \"test(animation): the native-driver style allowlist is enforced at the boundary\". This issue is\nabout compiling and running code we did not write.\n\n## What to verify\n\n1. The five upstream test files build against our target set and pass unmodified. Any that do not, do not get\n   deleted — they get skipped with a named reason and an issue link, the same standard as a sanitizer suppression.\n2. The vendoring script's sparse paths include the tests directory, so a re-vendor does not silently drop them.\n3. The suite's file list is asserted, so an upstream file that appears or disappears on a version bump is a test\n   failure and not a silent coverage loss.\n\n## Acceptance criteria\n\n- **Unit (C++):** upstream's animated tests run under CTest in the standard job and in the ASan+UBSan job.\n- The 100% coverage gate accounts for vendored upstream sources explicitly — they are not ours to cover, and the\n  exclusion is a reviewed, named marker rather than a silent path filter.\n- The React Native upgrade checklist in `docs/cpp-toolchain.md` names this suite as a bump gate.\n\n## Related\n\nPhase 1 of #95. Concrete instance of #58's per-minor parity suite. Reduces the scope of #75.\n"
     },
@@ -307,83 +270,47 @@
     {
       "key": "p2-worklets-build",
       "phase": 2,
-      "dependsOn": [
-        "p1-turbomodule-binding"
-      ],
+      "dependsOn": ["p1-turbomodule-binding"],
       "title": "feat(modules): build react-native-worklets Common/cpp for Linux — CMake, defines, version stamping",
       "milestone": "M4",
-      "labels": [
-        "area:modules",
-        "area:animation",
-        "area:infra",
-        "kind:feat",
-        "priority:P0"
-      ],
+      "labels": ["area:modules", "area:animation", "area:infra", "kind:feat", "priority:P0"],
       "priority": "P0",
       "body": "## Context\n\n`react-native-worklets` 0.12.1 ships `Common/cpp/worklets/` — 74 files in eight directories: `WorkletRuntime`,\n`SharedItems` (Serializable/Shareable/Synchronizable/MemoryManager), `NativeModules` (`WorkletsModuleProxy`,\n`JSIWorkletsModuleProxy`), `Tools` (`UIScheduler`, `JSScheduler`, `JSLogger`, `ThreadSafeQueue`),\n`RunLoop` (`AsyncQueue`, `EventLoop`), `Registries`, `AnimationFrameQueue`, `Compat`.\n\nThe encouraging finding: **it is nearly portable already.** There are ~15 conditional-compilation sites in that\ntree, every one in logging (`WorkletRuntimeDecorator.cpp`), tracing (`WorkletsSystraceSection.h`), version stamping\n(`WorkletsVersion.cpp`), or the opt-in `WORKLETS_FETCH_PREVIEW_ENABLED` block — and every one degrades to a no-op\nwhen neither `ANDROID` nor `__APPLE__` is defined. Nothing in worklets' shared C++ is hard-blocked on a third\nplatform. `WorkletHermesRuntime.h` includes `<hermes/hermes.h>` directly, which suits ADR-0001 decision 5.\n\n`android/CMakeLists.txt` is a usable template: glob `Common/cpp/worklets/*.cpp` plus the platform directory, define\n`WORKLETS_VERSION` and `WORKLETS_FEATURE_FLAGS`, apply `target_compile_reactnative_options`, and include\n`ReactCommon`, `callinvoker`, `runtimeexecutor`, `jsiexecutor` and `react/renderer/graphics/platform/cxx` — the last\nof which is already the platform selector's choice in our build.\n\n## What to build\n\n1. CMake that compiles `Common/cpp/worklets/*.cpp` plus a `linux/` platform directory into a target linked against\n   our existing `jsi`, `hermesvm`, `callinvoker` and ReactCommon objects. Do not vendor a copy — consume the\n   installed package path, pinned the way `scripts/vendor.lock.json` pins React Native.\n2. `PlatformLogger::log` (five overloads) over our existing logging, and the `-DWORKLETS_VERSION=` /\n   `-DWORKLETS_FEATURE_FLAGS=` definitions derived from the package's `package.json`, so a version mismatch is\n   caught by worklets' own `VersionUtils` rather than by a crash.\n3. `WORKLETS_FETCH_PREVIEW_ENABLED` explicitly off, and a note saying why (it is the only part of worklets that\n   wants a networking stack, which is #79's territory).\n4. A pinned worklets version recorded next to the React Native pin, with the compatibility matrix from the\n   package's `compatibility.json` noted — Reanimated 4.6.0 requires worklets `0.12.x` and React Native `0.83 - 0.87`.\n\n## Acceptance criteria\n\n- **Build:** the target compiles clean at our warning level with no `ANDROID`/`__APPLE__` defined; every upstream\n  file that needed a local patch is listed in one place with a link to the upstream issue or the RFC ask it maps to.\n- **Unit (C++):** the version stamp read back from `WorkletsVersion` matches the pinned package version, so a\n  package bump without a define bump fails a test rather than a runtime assertion.\n- The build cost is recorded against #78's budget; worklets is 74 translation units and it is not free.\n- The patch policy (vendored fork vs. install-time patch) is decided and written down, not left implicit.\n\n## Related\n\nPhase 2 of #95. Depends on the TurboModule binding. Prerequisite for the UI scheduler and the worklets module host.\nSection 2 of `docs/research/animation-on-linux.md` has the full seam inventory.\n"
     },
     {
       "key": "p2-ui-scheduler",
       "phase": 2,
-      "dependsOn": [
-        "p2-worklets-build"
-      ],
+      "dependsOn": ["p2-worklets-build"],
       "title": "feat(modules): LinuxUIScheduler and the worklets UI runtime — decide which thread runs a worklet",
       "milestone": "M4",
-      "labels": [
-        "area:modules",
-        "area:animation",
-        "area:core",
-        "kind:feat",
-        "needs:decision",
-        "priority:P0"
-      ],
+      "labels": ["area:modules", "area:animation", "area:core", "kind:feat", "needs:decision", "priority:P0"],
       "priority": "P0",
       "body": "## Context\n\nThe mechanical part is small. `worklets::UIScheduler` has exactly one pure virtual —\n`virtual bool queryIsOnUIThread() const = 0` — and two overridable methods, `scheduleOnUI` and `triggerUI`; the base\nclass already owns the `ThreadSafeQueue<std::function<void()>>` and the `scheduledOnUI_` flag. `IOSUIScheduler.mm`\nis 25 lines: `[NSThread isMainThread]`, and a `dispatch_async` to the main queue that calls `triggerUI`.\n\nThe architectural part is not small, and it is the largest open risk in this entire program.\n\nWorklets' UI runtime is a **second Hermes runtime**, owned by whatever thread the scheduler calls the UI thread. On\niOS and Android that is the main thread, which does not drive the GPU. Ours does: `WindowMain`'s run loop acquires\nthe swapchain image, paints through Skia, flushes, submits and presents. `IOSUIScheduler::scheduleOnUI` executes a\njob **inline** when already on the UI thread — so a worklet would run inside our frame, mid-budget, with no\npreemption and an 8.33 ms compositor deadline.\n\nThe candidates, none free:\n\n1. **UI runtime on the frame thread.** Exact iOS/Android semantics; a slow worklet drops frames and the compositor\n   deadline is the only backpressure.\n2. **A dedicated worklet thread with its own `AsyncQueue`.** The machinery exists —\n   `RuntimeManager::createWorkletRuntime` already takes an `AsyncQueue` and an `enableEventLoop` flag. Cost:\n   `runOnUI` stops being synchronous-when-already-on-UI, and Reanimated's assumption that a shared value written in\n   a worklet is visible to the same frame's prop application needs re-verifying. Permanent divergence from the\n   reference platforms is a permanent bug source.\n3. **Frame-thread runtime with a per-frame work budget** that defers overflow to the next tick, measured by the\n   perf gate.\n\nADR-0001 decision 6 already declares the frame thread \"our concept and not a React Native one\". This is where that\nbites, and the answer probably belongs in an ADR amendment rather than an issue comment.\n\n## What to build\n\n1. The decision, written down first, with the rejected options and their costs.\n2. `LinuxUIScheduler : worklets::UIScheduler` implementing the decision: `queryIsOnUIThread` comparing against the\n   chosen thread's `std::thread::id`, `scheduleOnUI` posting to that thread's queue, `triggerUI` draining it at the\n   agreed point in the frame.\n3. The UI worklet runtime created through `RuntimeManager`, with its lifetime tied to the window session and its\n   teardown ordered before the JS thread is quit — worklets' `SingleInstanceChecker` will catch a double\n   construction in debug, nothing catches a leaked runtime in release except #76's leak gate.\n4. The threading contract in the class docblock, per Engineering Rule 6, naming which thread owns which runtime and\n   what may cross.\n\n## Acceptance criteria\n\n- **Unit (C++):** `queryIsOnUIThread` is true only on the chosen thread; `scheduleOnUI` from another thread enqueues\n  and runs exactly once; jobs scheduled during a drain run on the next drain, not re-entrantly; teardown with jobs\n  still queued drops them without executing and without leaking. Inside the 100% gate.\n- **TSan:** a worklet runtime and the RN runtime driven concurrently, with values crossing the boundary, clean. This\n  is the test that catches a `jsi::Value` escaping its runtime — worklets' own `WorkletsReentrancyCheck` is compiled\n  in only when `NDEBUG` is undefined, so the sanitizer job is our real guard.\n- **Perf:** with option 1 or 3, a deliberately slow worklet is shown to affect frame time in a bounded, measured way\n  under #20's harness — the number is recorded, not assumed.\n- **E2E:** `runOnUI(() => { ... })()` executes and `runOnJS` returns, proven by an event trace.\n\n## Related\n\nPhase 2 of #95, and the top risk in section 4.1 of `docs/research/animation-on-linux.md`. Interacts with #77\n(cross-thread contract stress) and #76 (teardown leak gate). May require an amendment to ADR-0001 decision 6.\n"
     },
     {
       "key": "p2-worklets-module",
       "phase": 2,
-      "dependsOn": [
-        "p2-ui-scheduler",
-        "p1-choreographer"
-      ],
+      "dependsOn": ["p2-ui-scheduler", "p1-choreographer"],
       "title": "feat(modules): the WorkletsModule host — WorkletsModuleProxy, JSI bindings, and requestAnimationFrame on the FrameClock",
       "milestone": "M4",
-      "labels": [
-        "area:modules",
-        "area:animation",
-        "area:core",
-        "kind:feat",
-        "priority:P0"
-      ],
+      "labels": ["area:modules", "area:animation", "area:core", "kind:feat", "priority:P0"],
       "priority": "P0",
       "body": "## Context\n\nEverything worklets needs from a platform arrives through one constructor:\n\n```cpp\nWorkletsModuleProxy(\n    jsi::Runtime &rnRuntime,\n    const std::shared_ptr<CallInvoker> &jsCallInvoker,\n    const std::shared_ptr<UIScheduler> &uiScheduler,\n    std::function<bool()> &&isJavaScriptQueue,\n    const std::shared_ptr<RuntimeBindings> &runtimeBindings,\n    const BundleModeConfig &bundleModeConfig,\n    const std::shared_ptr<RNRuntimeStatus> &rnRuntimeStatus);\n```\n\n`RuntimeBindings` is two members: `requestAnimationFrame`, typed\n`std::function<void(std::function<void(const double)>)>`, and `nativeLoggingHook`, a `jsi::HostFunctionType` the\nheader will extract for us via `extractNativeLoggingHookFromRNRuntime(rnRuntime)`.\n\n**`requestAnimationFrame` is the FrameClock again.** The same tick that drives `LinuxAnimationChoreographer` drives\nworklets' `AnimationFrameBatchinator`, which coalesces every rAF callback registered during a frame into one flush.\nOne frame source for `Animated`, for worklets, and — via the shared animation backend — for Reanimated.\n\n`ScriptLoader` needs nothing from us: it is header-only, and its `loadScript` intercepts Metro's `__r` with a\nno-op getter, evaluates the bundle, restores the real `require`, then requires entry-point `-2`.\n\nWhat is missing is the host: `apple/worklets/apple/WorkletsModule.mm` and\n`android/src/main/cpp/worklets/android/WorkletsModule.cpp` have no C++ equivalent, and the module's codegen spec is\n`{ name: \"rnworklets\", type: \"modules\", jsSrcsDir: \"src/specs\" }` with no `ios` key — nothing platform-gated about\nthe spec itself.\n\n## What to build\n\n1. A C++ `WorkletsModule` TurboModule registered in the provider from `feat(core): install a TurboModule binding\n   and register the C++ AnimatedModule`, constructing `WorkletsModuleProxy` and installing\n   `globalThis.__workletsModuleProxy` through `JSIWorkletsModuleProxy`.\n2. `RuntimeBindings` built from `FrameClock` (`requestAnimationFrame`) and\n   `extractNativeLoggingHookFromRNRuntime` (`nativeLoggingHook`).\n3. `isJavaScriptQueue` answered from our `MessageQueueThreadImpl`, and `RNRuntimeStatus` reflecting instance\n   teardown so a late worklet does not touch a dead runtime.\n4. Bundle Mode explicitly off for now, with `BundleModeConfig` defaulted and a note saying so — it changes how the\n   bundle is loaded into the worklet runtime and is a separate decision.\n5. Codegen for the `rnworklets` spec through our parallel driver.\n\n## Acceptance criteria\n\n- **Unit (C++):** the proxy is constructed once per instance and destroyed before the JS thread is quit;\n  `requestAnimationFrame` callbacks registered from a worklet runtime fire on the next tick with the tick's\n  timestamp, and a callback registered *during* a flush runs on the following tick, not re-entrantly.\n- **E2E:** a bundle that defines a worklet, calls `runOnUI`, mutates a shared value, and returns it through\n  `runOnJS` completes — asserted from the event trace.\n- **ASan + TSan:** instance teardown with a worklet in flight, clean.\n- Bundle Mode's status is recorded in `docs/cpp-toolchain.md` rather than left as an unremarked default.\n\n## Related\n\nPhase 2 of #95. Depends on the UI scheduler and the choreographer. Prerequisite for all of Phase 3. Needs #21\n(codegen) for the `rnworklets` spec.\n"
     },
     {
       "key": "p2-toolchain",
       "phase": 2,
-      "dependsOn": [
-        "p2-worklets-build"
-      ],
+      "dependsOn": ["p2-worklets-build"],
       "title": "feat(cli): worklets Babel plugin, Metro platform resolution and autolinking for platform linux",
       "milestone": "M4",
-      "labels": [
-        "area:cli",
-        "area:animation",
-        "area:modules",
-        "kind:feat",
-        "priority:P1"
-      ],
+      "labels": ["area:cli", "area:animation", "area:modules", "kind:feat", "priority:P1"],
       "priority": "P1",
       "body": "## Context\n\nA worklet is not a runtime concept alone — it is a Babel transform. `react-native-worklets/plugin` rewrites\nfunctions carrying the `'worklet'` directive into serializable closures, and it is platform-agnostic: nothing in it\nbranches on `Platform.OS`. Reanimated's plugin re-exports it.\n\nThe platform-specific parts are ours:\n\n- **Resolution.** #55 landed our `.linux → .native → default` Metro resolver chain. Worklets ships\n  `NativeWorklets.native.ts` and `NativeWorklets.ts`, and the `.native` variant is what a native platform gets. That\n  is correct once we have a native module and wrong before then — the exact trap\n  [software-mansion/react-native-reanimated#10117](https://github.com/software-mansion/react-native-reanimated/pull/10117)\n  fixed for `react-native-windows`, where Metro's `.native` preference silently selected a module the platform did\n  not provide.\n- **Autolinking.** `codegenConfig` is `{ name: \"rnworklets\", type: \"modules\", jsSrcsDir: \"src/specs\", android: {…} }`\n  — no `ios` key, no platform gate. Reanimated's is `{ name: \"rnreanimated\", type: \"all\", jsSrcsDir: \"./src/specs\",\n  android: {…}, ios: {…} }`. Our codegen driver (#21) has to accept both shapes and produce Linux artifacts.\n- **Compile definitions.** `REANIMATED_FEATURE_FLAGS` and `WORKLETS_FEATURE_FLAGS` are strings parsed at compile\n  time; `StaticFeatureFlags::getFlag` returns `false` for everything when the macro is absent. A wrong string is a\n  silent behaviour change, not a build error.\n\n## What to build\n\n1. Babel configuration in the `linux` init template that includes the worklets plugin in the right position, with a\n   fixture proving a `'worklet'` function is transformed.\n2. Resolver behaviour for these two packages asserted by a fixture, including the case the resolver is *wrong* for —\n   selecting `.native` when no native module exists — so the failure mode is a named test rather than a runtime\n   `null` dereference.\n3. `codegenConfig` handling for `type: \"modules\"` and `type: \"all\"` in the Linux codegen driver.\n4. One asserted place that owns the feature-flag strings for both packages, readable back at runtime.\n\n## Acceptance criteria\n\n- **Unit (TypeScript, Vitest, 100%):** plugin ordering, resolver outcomes for both packages across the fallback\n  chain, and codegen config parsing for both `type` values.\n- **E2E:** #57's fresh-project smoke test extended — a project with `react-native-worklets` installed builds and\n  runs a worklet.\n- The feature-flag strings are asserted in a test that fails when a package is bumped without updating them.\n\n## Related\n\nPhase 2 of #95. Extends #21 (codegen/autolinking), #22 (platform registration), #55 (resolver chain) and #57\n(fresh-project smoke). The resolver hazard is the same one described in the JS-fallback research issue.\n"
     },
     {
       "key": "p2-worklets-conformance",
       "phase": 2,
-      "dependsOn": [
-        "p2-worklets-module"
-      ],
+      "dependsOn": ["p2-worklets-module"],
       "title": "test(animation): worklets conformance — serialization, runOnUI/runOnJS round trips, and the runtime-per-thread contract",
       "milestone": "M4",
       "labels": [
@@ -401,67 +328,37 @@
     {
       "key": "p3-platform-dep-methods",
       "phase": 3,
-      "dependsOn": [
-        "p2-worklets-module"
-      ],
+      "dependsOn": ["p2-worklets-module"],
       "title": "feat(modules): PlatformDepMethodsHolder for Linux — the Reanimated seam that does not compile today",
       "milestone": "M4",
-      "labels": [
-        "area:modules",
-        "area:animation",
-        "area:core",
-        "kind:feat",
-        "needs:decision",
-        "priority:P0"
-      ],
+      "labels": ["area:modules", "area:animation", "area:core", "kind:feat", "needs:decision", "priority:P0"],
       "priority": "P0",
       "body": "## Context\n\nReanimated's platform contract is one struct, `Common/cpp/reanimated/Tools/PlatformDepMethodsHolder.h`, and on\nLinux it does not compile. Four lines:\n\n```cpp\n#ifdef ANDROID\nusing SynchronouslyUpdateUIPropsFunction = std::function<void(const std::vector<int> &, const std::vector<double> &)>;\n#elif __APPLE__\nusing SynchronouslyUpdateUIPropsFunction = std::function<void(const int, const folly::dynamic &)>;\n#endif // ANDROID\n```\n\nThere is no `#else`, and `synchronouslyUpdateUIPropsFunction` is a required member of the struct. On a platform that\nis neither Android nor Apple the alias is undefined and the struct has a member with no type. This is the single\nsmallest, sharpest blocker in the whole program.\n\nThe rest of the struct is tractable: `requestRender` (a `std::function<void(std::function<void(const double)>)>` —\nour `FrameClock` again), `getAnimationTimestamp`, `registerSensor`/`unregisterSensor`, `setGestureStateFunction`,\n`subscribeForKeyboardEvents`/`unsubscribeFromKeyboardEvents`, `maybeFlushUIUpdatesQueueFunction`,\n`attachPseudoSelector`/`detachPseudoSelector`, and four CSS routing functions. The two `#ifdef`-guarded members\n(`filterUnmountedTagsFunction` on Android, `forceScreenSnapshotFunction` on Apple) are additive and vanish\nharmlessly.\n\nUpstream is already moving this way. The struct's last member carries the comment *\"Last so a platform that does\nnot supply it can omit it and get value-init\"*, and `CSS/utils/platform.cpp`'s `canRouteCSSProperty` and\n`shouldUseSynchronousUpdatesInPerformOperations` both have generic `#else` branches with honest comments. The\ngeneric branch is already a concept in this codebase; it is simply not enforced, and there are **99**\n`ANDROID`/`__APPLE__` conditionals in `Common/cpp` waiting to regress it.\n\n## What to build\n\n1. The minimal patch that makes the header compile: an `#else` giving `SynchronouslyUpdateUIPropsFunction` the Apple\n   shape, `std::function<void(const int, const folly::dynamic &)>` — which is also the shape React Native's own\n   `IMountingManager::synchronouslyUpdateViewOnUIThread(Tag, const folly::dynamic&)` uses, so it costs us no\n   conversion. Carried under the patch policy decided in the worklets build issue, and filed upstream as ask 1 of\n   the RFC.\n2. `PlatformDepMethodsHolderImpl` for Linux: `requestRender` and `getAnimationTimestamp` from `FrameClock`,\n   `synchronouslyUpdateUIPropsFunction` routed to `LinuxMountingManager::synchronouslyUpdateViewOnUIThread`,\n   `maybeFlushUIUpdatesQueueFunction` to the frame loop.\n3. Every member we do not implement supplied as an empty `std::function` and **null-checked at our call sites**, with\n   a single table in the code listing which are real and which are stubs. Not a stub-generating abstraction: a\n   struct literal and a comment.\n4. A compile-only guard in our CI that builds Reanimated's `Common/cpp` with neither platform macro defined, so an\n   upstream bump that adds a new two-way `#ifdef` fails our build rather than someone's animation. This is the job\n   we offer to contribute upstream as RFC ask 2.\n\n## Acceptance criteria\n\n- **Build:** Reanimated's `Common/cpp` compiles for Linux at our warning level, with every local patch listed in one\n  place, each mapped to an upstream ask.\n- **Unit (C++):** `requestRender` delivers a timestamp per tick; `synchronouslyUpdateUIPropsFunction` reaches the\n  mounting manager with the right tag and props; calling an unimplemented member is a named diagnostic, never a\n  null-function invocation. Inside the 100% gate.\n- The compile-only guard runs on every PR and on the React Native and Reanimated bump paths.\n- The patch set is small enough to list in the PR description. If it is not, that is the signal to stop and\n  re-decide, not to keep patching.\n\n## Related\n\nOpens Phase 3 of #95. Section 3.1 of `docs/research/animation-on-linux.md`. Blocks the module proxy. Its findings\nare the body of the upstream RFC.\n"
     },
     {
       "key": "p3-module-proxy",
       "phase": 3,
-      "dependsOn": [
-        "p3-platform-dep-methods",
-        "p1-choreographer"
-      ],
+      "dependsOn": ["p3-platform-dep-methods", "p1-choreographer"],
       "title": "feat(modules): ReanimatedModuleProxy host — commit hook, mount hook and props registries on the shared animation backend",
       "milestone": "M4",
-      "labels": [
-        "area:modules",
-        "area:animation",
-        "area:renderer",
-        "kind:feat",
-        "origin:flagship",
-        "priority:P0"
-      ],
+      "labels": ["area:modules", "area:animation", "area:renderer", "kind:feat", "origin:flagship", "priority:P0"],
       "priority": "P0",
       "body": "## Context\n\nThe strategic finding of this whole program lives here. `ReanimatedModuleProxy.h` guards on\n`#if REACT_NATIVE_VERSION_MINOR >= 85` and includes\n`<react/renderer/animationbackend/AnimationBackend.h>` and `<react/renderer/uimanager/UIManagerAnimationBackend.h>`.\nWhen the `USE_ANIMATION_BACKEND` static feature flag is on, `startBackendIfNeeded()` registers Reanimated's *entire*\nper-frame loop with `getAnimationBackend()->start(...)`, reached through\n`uiManager_->unstable_getAnimationBackend()`, and `stopBackendIfIdle()` computes a seven-term `hasWork` before\nunregistering.\n\n**Reanimated 4.6 already rides React Native's shared animation backend.** The choreographer built in Phase 1 is\nReanimated's frame source. `synchronouslyUpdateViewOnUIThread` built in Phase 1 is Reanimated's prop path.\n`PlatformDepMethodsHolder::requestRender` becomes the legacy route. This is why the three phases are one program and\nnot three projects.\n\nThe construction seam is:\n\n```cpp\nReanimatedModuleProxy(\n    const std::shared_ptr<worklets::WorkletRuntime> &uiRuntime,\n    const std::shared_ptr<worklets::UIScheduler> &uiScheduler,\n    jsi::Runtime &rnRuntime,\n    const std::shared_ptr<CallInvoker> &jsCallInvoker,\n    const PlatformDepMethodsHolder &platformDepMethodsHolder,\n    const bool isReducedMotion);\n```\n\nfollowed by a separate `init(platformDepMethodsHolder)` — the object registers callbacks with `weak_from_this()`,\nwhich is only valid after construction. Getting that two-step wrong is a dangling-pointer bug, not a compile error.\n\nThe Fabric integration is `ReanimatedCommitHook`, `ReanimatedMountHook`, `ReanimatedCommitShadowNode`,\n`ShadowTreeCloner` and `Fabric/updates/{AnimatedPropsRegistry, UpdatesRegistry, UpdatesRegistryManager,\nOperationsLoop}`. These coexist with React Native's own `AnimationBackendCommitHook`, which does the same job for\n`Animated`. **Two commit hooks writing animated props over the same shadow tree is the interaction most likely to\nproduce a bug nobody can reproduce**, and it is the thing this issue's tests exist to pin down.\n\n## What to build\n\n1. A C++ `ReanimatedModule` TurboModule registered in the shared provider, constructing `ReanimatedModuleProxy` with\n   the UI worklet runtime, the `LinuxUIScheduler` and the Linux `PlatformDepMethodsHolder`, then calling `init`.\n2. `-DREANIMATED_FEATURE_FLAGS=\"[USE_ANIMATION_BACKEND:true]…\"` set and asserted. `StaticFeatureFlags::getFlag`\n   parses this string at compile time and returns `false` for everything when the macro is absent — a wrong string\n   silently selects the legacy path.\n3. `ReanimatedCommitHook` and `ReanimatedMountHook` registered with our `UIManager`, and the ordering against\n   `AnimationBackendCommitHook` decided, written down, and tested.\n4. `isReducedMotion` answered from a platform source (see the platform-stubs issue) rather than hardcoded false —\n   the flagship already branches on reduced motion in three components.\n\n## Acceptance criteria\n\n- **Unit (C++):** a shared value driving a `transform` produces prop mutations through the animation backend, with\n  no Fabric commit when no layout prop changes; a React re-render during a running animation does not revert the\n  animated prop for a frame (the commit hook's whole purpose); both commit hooks active over one tree produce a\n  deterministic result, asserted, not observed. Inside the 100% gate for our glue.\n- **Golden-image:** an animation at three fixed progress values with a React re-render forced between two of them —\n  the goldens are identical to the run without the re-render.\n- **E2E:** `useSharedValue` + `useAnimatedStyle` + `withTiming` animates with the JS thread deliberately stalled,\n  proving the animation is not on it. This is ADR-0001 decision 6's promise, tested.\n- **TSan:** the commit hook and the frame thread's prop application under concurrent commits, clean.\n\n## Related\n\nPhase 3 of #95. Depends on the platform-dep-methods seam and on the Phase 1 choreographer. The flagship's 23\nReanimated files (`useAnimatedStyle` x37, `withTiming` x36, `useSharedValue` x32) all land on this path. Feeds #24.\n"
     },
     {
       "key": "p3-css",
       "phase": 3,
-      "dependsOn": [
-        "p3-module-proxy"
-      ],
+      "dependsOn": ["p3-module-proxy"],
       "title": "feat(animation): Reanimated CSS animations and transitions on the frame clock",
       "milestone": "M4",
-      "labels": [
-        "area:animation",
-        "area:renderer",
-        "kind:feat",
-        "kind:parity",
-        "platform-parity:ios",
-        "priority:P1"
-      ],
+      "labels": ["area:animation", "area:renderer", "kind:feat", "kind:parity", "platform-parity:ios", "priority:P1"],
       "priority": "P1",
       "body": "## Context\n\nCSS animations and transitions are Reanimated 4's headline feature and the largest single subsystem in its shared\nC++: `Common/cpp/reanimated/CSS/` spans 20 directories — `core` (including `core/transition`), `registries`,\n`interpolation` (with `styles`, `transforms`, `filters`, `groups`, `values`, `operations`), `common/values`\n(including `complex`), `easing`, `progress`, `events`, `configs`, `misc`, `svg`, `utils`.\n\nMost of it is pure interpolation arithmetic and therefore portable, and — usefully — it is exactly the shape of\ncode our 100% line-and-branch gate is good at. `CSSAnimationsRegistry` and `CSSTransitionsRegistry` are both guarded\nby `#if REACT_NATIVE_VERSION_MINOR >= 85`, so on our React Native they update through the shared animation backend\nrather than a private loop.\n\nThe platform-routing question is separate and already has a generic answer upstream. `CSS/utils/platform.cpp`'s\n`canRouteCSSProperty` returns `false` under `#else` with the comment *\"No native routing backend on this platform\nyet; every property runs on the loop.\"* iOS routes some properties to Core Animation under\n`IOS_CSS_CORE_ANIMATION`; Android routes `opacity` under `ANDROID_CSS_PLATFORM_TRANSITIONS`. **We route nothing**,\nand that is the correct answer for a canvas renderer: we have no separate platform animation system to hand work to,\nand our own frame loop is the thing being optimised. `CSSPlatformAnimationFactory` stays null and gets value-init,\nwhich the struct's own comment says is supported.\n\n## What to build\n\n1. The CSS subsystem compiling and running with `cssCanRouteProperty` returning false, `cssApplyTransition` and\n   `cssRemoveTransition` as no-ops, and `cssGetPlatformValue` returning nothing — each null-checked, each with a\n   one-line reason.\n2. Whatever glue the registries need to reach our prop application, which after the module-proxy issue should be\n   nothing beyond wiring.\n3. The list of CSS properties that reach the canvas correctly, and the list that do not, published in\n   `docs/cpp-toolchain.md` next to the existing *View props fidelity* and *Fidelity limits* sections — a\n   `mixBlendMode` transition we cannot paint should be a documented gap, not a silent no-op.\n\n## Acceptance criteria\n\n- **Unit (C++):** the interpolation surface table-driven across value types (numbers, lengths, percentages, colors,\n  transforms, shadows, filters) and easings (linear, cubic-bezier, steps), with an injected clock so frames are\n  exact. The table is derived from the upstream interpolator registry so a new upstream type appears as a\n  missing-case failure.\n- **Golden-image:** one fixture per animatable property group at three progress values, goldens committed.\n- **E2E:** a CSS animation and a CSS transition run at the display rate with the JS thread stalled.\n- The routing decision (\"we route nothing, and why\") is written down where the next person will look for it.\n\n## Related\n\nPhase 3 of #95. Depends on the module proxy. Interacts with #67 and #68 (`boxShadow`, `filter`, `mixBlendMode`,\n`outline`) — a property we cannot paint statically cannot be animated either, and this issue should not hide that.\n"
     },
     {
       "key": "p3-layout-animations",
       "phase": 3,
-      "dependsOn": [
-        "p3-module-proxy"
-      ],
+      "dependsOn": ["p3-module-proxy"],
       "title": "feat(animation): layout animations — entering, exiting, and the LayoutAnimationsProxy",
       "milestone": "M4",
       "labels": [
@@ -479,9 +376,7 @@
     {
       "key": "p3-stubs",
       "phase": 3,
-      "dependsOn": [
-        "p3-platform-dep-methods"
-      ],
+      "dependsOn": ["p3-platform-dep-methods"],
       "title": "feat(animation): the platform services Reanimated expects — keyboard, sensors, reduced motion, pseudo-selectors, gesture state",
       "milestone": "M4",
       "labels": [
@@ -498,10 +393,7 @@
     {
       "key": "p3-conformance",
       "phase": 3,
-      "dependsOn": [
-        "p3-css",
-        "p3-layout-animations"
-      ],
+      "dependsOn": ["p3-css", "p3-layout-animations"],
       "title": "test(animation): Reanimated conformance and the flagship animation gate",
       "milestone": "M4",
       "labels": [
@@ -521,18 +413,10 @@
     {
       "key": "p3-upstream-rfc",
       "phase": 3,
-      "dependsOn": [
-        "p3-platform-dep-methods"
-      ],
+      "dependsOn": ["p3-platform-dep-methods"],
       "title": "research(animation): upstream RFC to Software Mansion — a third-platform contract for Worklets and Reanimated",
       "milestone": "M4",
-      "labels": [
-        "area:animation",
-        "area:modules",
-        "kind:docs",
-        "needs:decision",
-        "priority:P1"
-      ],
+      "labels": ["area:animation", "area:modules", "kind:docs", "needs:decision", "priority:P1"],
       "priority": "P1",
       "body": "## Context\n\nThe draft is written and lives in Appendix A of `docs/research/animation-on-linux.md`. **Nothing is sent without an\nexplicit go**, per the decision recorded in #95.\n\nThe argument is narrow on purpose. We are not asking Software Mansion to support Linux, adopt a platform, or add a\n`linux` entry to `compatibility.json`. We are asking that the shared C++ stay compilable on a platform that is\nneither Android nor Apple, and that the seams have names. The evidence is specific and verifiable by anyone who\nreads the same files:\n\n- `PlatformDepMethodsHolder.h` defines `SynchronouslyUpdateUIPropsFunction` under `#ifdef ANDROID` / `#elif\n  __APPLE__` with **no `#else`**, then declares a required struct member of that type. The header does not compile\n  on a third platform.\n- There are 99 `ANDROID`/`__APPLE__` conditionals in Reanimated's `Common/cpp`, against ~15 in Worklets' — all of\n  Worklets' being no-op-safe. Worklets is close to a portable design and deserves to be stated as one.\n- Upstream is already writing generic branches: `canRouteCSSProperty` and\n  `shouldUseSynchronousUpdatesInPerformOperations` both carry `#else` with honest comments, and\n  `PlatformDepMethodsHolder`'s last member is ordered *\"so a platform that does not supply it can omit it and get\n  value-init.\"* Nothing enforces any of it.\n- Reanimated 4.6 already routes its whole frame loop through React Native's `UIManagerAnimationBackend` on RN >= 0.85\n  under `USE_ANIMATION_BACKEND`. For a canvas platform that path is not an optimisation, it is the only one.\n- [#10117](https://github.com/software-mansion/react-native-reanimated/pull/10117), merged 2026-09-02, restored the\n  JavaScript fallback for `react-native-windows` — the only maintained third-platform story that exists. It is keyed\n  on `Platform.OS === 'windows'`, so it helps nobody else.\n\nThe six asks are: an `#else` for `SynchronouslyUpdateUIPropsFunction`; a compile-only CI job for a generic target\n(offered as our contribution); a named platform contract with optional members documented as omittable; the\nanimation backend declared the supported prop path for platforms without UIKit or Android views; the JS fallback\nkeyed on capability rather than platform name; and a documented place for a third platform's autolinking metadata.\n\n## What to produce\n\n1. A review pass over Appendix A after the platform-dep-methods work is done, so every claim is backed by code we\n   have actually compiled rather than only read. An RFC with one wrong technical claim in it is worse than none.\n2. The compile-only CI job from ask 2, built for our own repository first, so the offer is a link and not a promise.\n3. A go/no-go decision, and if go, the venue: a discussion or an issue on\n   `software-mansion/react-native-reanimated`, referencing #10117, #4917 and #4669.\n4. A recorded fallback position: what we do if the answer is no, or if there is no answer. Carrying patches\n   indefinitely is a legitimate choice, but it should be a chosen one with a stated maintenance budget.\n\n## Acceptance criteria\n\n- Every technical claim in the RFC is verified against code we have built, with the file path and the version it was\n  read at.\n- The compile-only job exists in our CI and is green before anything is offered.\n- The go/no-go decision and its date are recorded. No outreach happens before it.\n- If sent: the thread is linked back from `docs/research/animation-on-linux.md` and from ADR-0001's M4 section, so\n  the ecosystem-porting record stays honest about what we asked for and what we got.\n\n## Related\n\nPhase 3 of #95, and the upstream track it names. Depends on the platform-dep-methods work for its evidence.\nInforms ADR-0001's M4 port-or-decline record and #87.\n"
     }
