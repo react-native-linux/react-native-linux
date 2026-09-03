@@ -101,9 +101,14 @@ a permanent override, not a per-extension fallback. The extension chain only app
 subpaths that are *not* in the overlay index. The full composed order for a single `resolveRequest` call is:
 
 1. `resolveLinuxOverlay` — fixed-path override, short-circuits the chain.
-2. `reactNativePlatformResolver`-style package-name redirect (free, from RN core).
-3. `resolvePlatformCandidates` + `resolveAgainstFilesystem` — the `.linux` → `.native` → default chain, applied by
-   Metro's own file resolver to whatever moduleName step 2 produced.
+2. `resolveLinuxPackageAlias` — the overlay packages of issue #180: an upstream package name, or a subpath of one,
+   becomes `@react-native-linux/<lib>` when that package is registered in `packages/cli/src/package-aliases.ts`
+   **and** resolves. The list ships empty, so today this step never fires. Steps 1 and 2 are the name-rewriting
+   head of the chain and are composed as `resolveLinuxModuleName(moduleName, platform, isPackageResolvable)`; see
+   `docs/ecosystem/package-template.md`.
+3. `reactNativePlatformResolver`-style package-name redirect (free, from RN core).
+4. `resolvePlatformCandidates` + `resolveAgainstFilesystem` — the `.linux` → `.native` → default chain, applied by
+   Metro's own file resolver to whatever moduleName step 3 produced.
 
 **Fixture proof** (`packages/cli/test-fixtures/resolution/`, exercised in `packages/cli/src/metro-config.spec.ts`):
 
@@ -359,7 +364,8 @@ merge upstream changes into the three `derived` files and bump `baseVersion`.
   real lookup needs `TurboModuleRegistry`, which lives under `react-native/Libraries/TurboModule/...`).
 - **Metro registration end-to-end (issue #22).** There is no `metro.config.js` anywhere in this repository yet —
   no app package exists to hold one. `resolveLinuxOverlay`, `linuxOverlayIndex`, `resolvePlatformCandidates`,
-  `resolveAgainstFilesystem`, `shouldUseJavaScriptFallback`, and `resolveOriginAwareCandidates` are written and
+  `resolveAgainstFilesystem`, `shouldUseJavaScriptFallback`, `resolveOriginAwareCandidates`,
+  `resolveLinuxPackageAlias` and `resolveLinuxModuleName` are written and
   100%-tested as pure functions; composing them with
   `reactNativePlatformResolver` into an actual `resolver.resolveRequest` (including the origin-aware guard
   described above, honouring a user-supplied `resolver.resolveRequest` instead of replacing it, and adapting to

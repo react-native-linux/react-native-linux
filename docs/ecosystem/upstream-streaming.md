@@ -138,14 +138,13 @@ With no `packages/*/upstream.lock.json` anywhere, discovery finds nothing, the c
 `no packages/*/upstream.lock.json found; nothing to check` and exits 0. That is the zero-package
 baseline: the gate is wired before the first ecosystem package exists.
 
-## What the first package still has to add
+## The package around the pipeline
 
-`upstream/` is third-party source held to upstream's standards, not ours. The package that lands
-first ([issue #180](https://github.com/react-native-linux/react-native-linux/issues/180)) has to keep
-it out of the repository-wide quality gates that assume our own code: the `ignorePatterns` of
-`.oxlintrc.json` and `.oxfmtrc.json`, and the `ignore` list of `.jscpd.json`, all of which already
-exclude `third_party` for the same reason. Our Linux sources in `packages/<lib>/src` stay inside every
-gate.
+`upstream/` is third-party source held to upstream's standards, not ours, so it sits outside the
+repository-wide quality gates that assume our own code. Those exclusions, the rest of the package
+layout, `pnpm create-package`, and the Metro alias that points a `linux` bundle at the overlay are
+[issue #180](https://github.com/react-native-linux/react-native-linux/issues/180), documented in
+`docs/ecosystem/package-template.md`. Our Linux sources in `packages/<lib>/src` stay inside every gate.
 
 ## Graduating a patch to an upstream PR
 

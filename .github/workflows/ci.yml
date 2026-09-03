@@ -61,6 +61,13 @@ jobs:
       - name: Assert the vendored upstream trees match their locks and patch queues
         run: pnpm upstream:check
 
+      # Issue #69: every prop the five shipped components declare is enumerated from the vendored props headers
+      # and has to be in docs/prop-coverage.json, every "implemented" entry has to name a test or golden that
+      # still exists, and docs/prop-coverage.md has to be the rendering of that ledger. It runs after the vendor
+      # step because the headers it parses are the vendored ones.
+      - name: Assert the prop-coverage ledger covers every declared prop
+        run: pnpm prop-coverage:check
+
   meta:
     name: meta
     runs-on: ubuntu-24.04

@@ -1,0 +1,311 @@
+{
+  "View": {
+    "opacity": { "state": "implemented", "test": "RetainedSceneTest, OpacityMultipliesDownTheTree" },
+    "backgroundColor": {
+      "state": "implemented",
+      "test": "RetainedSceneTest, UpdateReplacesFrameAndBackgroundColorInPlace"
+    },
+    "borderRadii": {
+      "state": "implemented",
+      "test": "RetainedSceneTest, BorderRadiiAreClampedSoAdjacentCornersDoNotOverlap"
+    },
+    "borderColors": { "state": "implemented", "test": "RetainedSceneTest, BorderWidthsAndColorsAreReadPerSide" },
+    "borderCurves": {
+      "state": "deviating",
+      "reason": "Corners are always circular; iOS' `continuous` squircle is never drawn. See *View props fidelity*."
+    },
+    "borderStyles": {
+      "state": "deviating",
+      "reason": "Every border is solid; `dotted` and `dashed` draw the same ring as `solid`. Issue #101 owns implementing them or refusing them in writing."
+    },
+    "outlineColor": { "state": "not-implemented", "issue": "#68" },
+    "outlineOffset": { "state": "not-implemented", "issue": "#68" },
+    "outlineStyle": { "state": "not-implemented", "issue": "#68" },
+    "outlineWidth": { "state": "not-implemented", "issue": "#68" },
+    "shadowColor": { "state": "not-implemented", "issue": "#67" },
+    "shadowOffset": { "state": "not-implemented", "issue": "#67" },
+    "shadowOpacity": { "state": "not-implemented", "issue": "#67" },
+    "shadowRadius": { "state": "not-implemented", "issue": "#67" },
+    "cursor": { "state": "not-implemented", "issue": "#40" },
+    "boxShadow": { "state": "not-implemented", "issue": "#67" },
+    "filter": { "state": "not-implemented", "issue": "#68" },
+    "backgroundImage": {
+      "state": "implemented",
+      "test": "RetainedSceneTest, ABackgroundImageGradientTravelsToThePrimitiveWithTheInheritedOpacity"
+    },
+    "backgroundSize": {
+      "state": "deviating",
+      "reason": "Every gradient layer fills the whole border box; CSS `background-size` is parsed and ignored. See *Gradients*, Fidelity limits."
+    },
+    "backgroundPosition": {
+      "state": "deviating",
+      "reason": "Every gradient layer fills the whole border box; CSS `background-position` is parsed and ignored. See *Gradients*, Fidelity limits."
+    },
+    "backgroundRepeat": {
+      "state": "deviating",
+      "reason": "Every gradient layer fills the whole border box; CSS `background-repeat` is parsed and ignored, and every gradient is `SkTileMode::kClamp`."
+    },
+    "mixBlendMode": { "state": "not-implemented", "issue": "#68" },
+    "isolation": { "state": "not-implemented", "issue": "#68" },
+    "transform": {
+      "state": "implemented",
+      "test": "RetainedSceneTest, ATransformIsAppliedAboutTheCenterOfTheAbsoluteFrame"
+    },
+    "transformOrigin": {
+      "state": "implemented",
+      "test": "AnimatedPropsTest, ATransformResolvesAboutTheOriginTheNodeMountedWith"
+    },
+    "backfaceVisibility": {
+      "state": "deviating",
+      "reason": "The 4x4 transform is reduced to its 2D affine part, so depth is lost and a back face is never culled. See *View props fidelity*."
+    },
+    "shouldRasterize": { "state": "not-implemented", "issue": "#69" },
+    "zIndex": { "state": "not-implemented", "issue": "#35" },
+    "pointerEvents": {
+      "state": "implemented",
+      "test": "AnimatedHitTestTest, PointerEventsNoneRemovesTheNodeAndItsChildren"
+    },
+    "hitSlop": { "state": "not-implemented", "issue": "#64" },
+    "onLayout": { "state": "not-implemented", "issue": "#115" },
+    "events": { "state": "not-implemented", "issue": "#36" },
+    "collapsable": { "state": "not-implemented", "issue": "#69" },
+    "collapsableChildren": { "state": "not-implemented", "issue": "#69" },
+    "removeClippedSubviews": { "state": "not-implemented", "issue": "#69" }
+  },
+  "Text": {
+    "paragraphAttributes": {
+      "state": "implemented",
+      "test": "RetainedSceneTextTest, ParagraphStateBecomesTheTextOnTheNode"
+    },
+    "isSelectable": { "state": "not-implemented", "issue": "#43" },
+    "onTextLayout": { "state": "not-implemented", "issue": "#111" },
+    "textAttributes": {
+      "state": "implemented",
+      "test": "RetainedSceneTextTest, OpacityMultipliesIntoTheFragmentColors"
+    },
+    "foregroundColor": {
+      "state": "implemented",
+      "test": "RetainedSceneTextTest, OpacityMultipliesIntoTheFragmentColors"
+    },
+    "backgroundColor": { "state": "implemented", "test": "text-metrics.png" },
+    "opacity": { "state": "not-implemented", "issue": "#69" },
+    "fontFamily": { "state": "not-implemented", "issue": "#70" },
+    "fontSize": { "state": "implemented", "test": "text.png" },
+    "fontSizeMultiplier": { "state": "not-implemented", "issue": "#113" },
+    "fontWeight": { "state": "implemented", "test": "text.png" },
+    "fontStyle": { "state": "implemented", "test": "text.png" },
+    "fontVariant": {
+      "state": "deviating",
+      "reason": "Ignored; SkParagraph is given no OpenType feature list. See *Text*, Fidelity limits."
+    },
+    "allowFontScaling": { "state": "not-implemented", "issue": "#113" },
+    "maxFontSizeMultiplier": { "state": "not-implemented", "issue": "#113" },
+    "dynamicTypeRamp": { "state": "not-implemented", "issue": "#113" },
+    "letterSpacing": { "state": "implemented", "test": "text.png" },
+    "textTransform": {
+      "state": "deviating",
+      "reason": "Ignored; the string reaches SkParagraph exactly as React sent it. See *Text*, Fidelity limits."
+    },
+    "lineHeight": {
+      "state": "implemented",
+      "test": "LineBoxMetricsTest, ConvertsLineHeightPointsToAMultipleOfTheFontSize"
+    },
+    "alignment": { "state": "implemented", "test": "text.png" },
+    "baseWritingDirection": { "state": "not-implemented", "issue": "#72" },
+    "lineBreakStrategy": { "state": "not-implemented", "issue": "#69" },
+    "lineBreakMode": { "state": "not-implemented", "issue": "#69" },
+    "textDecorationColor": { "state": "not-implemented", "issue": "#69" },
+    "textDecorationLineType": { "state": "implemented", "test": "text.png" },
+    "textDecorationStyle": { "state": "not-implemented", "issue": "#69" },
+    "textShadowOffset": {
+      "state": "deviating",
+      "reason": "Text shadows are not drawn at all. See *Text*, Fidelity limits."
+    },
+    "textShadowRadius": {
+      "state": "deviating",
+      "reason": "Text shadows are not drawn at all. See *Text*, Fidelity limits."
+    },
+    "textShadowColor": {
+      "state": "deviating",
+      "reason": "Text shadows are not drawn at all. See *Text*, Fidelity limits."
+    },
+    "isHighlighted": { "state": "not-implemented", "issue": "#43" },
+    "isPressable": { "state": "not-implemented", "issue": "#43" },
+    "layoutDirection": { "state": "not-implemented", "issue": "#119" },
+    "accessibilityRole": { "state": "not-implemented", "issue": "#61" },
+    "role": { "state": "not-implemented", "issue": "#61" },
+    "textEffects": { "state": "not-implemented", "issue": "#69" },
+    "maximumNumberOfLines": { "state": "implemented", "test": "text.png" },
+    "ellipsizeMode": {
+      "state": "deviating",
+      "reason": "Only `clip` versus not-`clip` is honoured: SkParagraph truncates at the tail only, so `head` and `middle` are drawn as `tail`."
+    },
+    "textBreakStrategy": {
+      "state": "deviating",
+      "reason": "Ignored; SkParagraph's own line breaking is used. See *Text*, Fidelity limits."
+    },
+    "adjustsFontSizeToFit": {
+      "state": "deviating",
+      "reason": "Ignored; a paragraph is never shrunk to fit its constraints. See *Text*, Fidelity limits."
+    },
+    "includeFontPadding": { "state": "not-implemented", "issue": "#69" },
+    "android_hyphenationFrequency": { "state": "not-implemented", "issue": "#69" },
+    "minimumFontSize": {
+      "state": "deviating",
+      "reason": "Only meaningful with `adjustsFontSizeToFit`, which is ignored."
+    },
+    "maximumFontSize": {
+      "state": "deviating",
+      "reason": "Only meaningful with `adjustsFontSizeToFit`, which is ignored."
+    },
+    "minimumFontScale": {
+      "state": "deviating",
+      "reason": "Only meaningful with `adjustsFontSizeToFit`, which is ignored."
+    },
+    "textAlignVertical": {
+      "state": "deviating",
+      "reason": "Ignored; a line box is placed by the vertical-metrics policy and not by an alignment. See *Text*, Fidelity limits."
+    }
+  },
+  "Image": {
+    "sources": { "state": "implemented", "test": "RetainedSceneImageTest, ImageStateBecomesTheImageOnTheNode" },
+    "defaultSource": {
+      "state": "deviating",
+      "reason": "Ignored; a source that has not decoded yet paints nothing rather than a placeholder. See *Image*, Fidelity limits."
+    },
+    "loadingIndicatorSource": {
+      "state": "deviating",
+      "reason": "Ignored; there is no loading affordance. See *Image*, Fidelity limits."
+    },
+    "resizeMode": { "state": "implemented", "test": "RetainedSceneImageTest, EveryResizeModeMapsOntoASceneResizeMode" },
+    "blurRadius": {
+      "state": "deviating",
+      "reason": "Ignored; no image filter is applied. See *Image*, Fidelity limits."
+    },
+    "capInsets": {
+      "state": "deviating",
+      "reason": "Ignored; there is no nine-patch stretching. See *Image*, Fidelity limits."
+    },
+    "tintColor": {
+      "state": "implemented",
+      "test": "RetainedSceneImageTest, OpacityMultipliesIntoTheTintAlphaAndTheImageAlpha"
+    },
+    "internal_analyticTag": { "state": "not-implemented", "issue": "#69" },
+    "resizeMethod": { "state": "not-implemented", "issue": "#44" },
+    "resizeMultiplier": { "state": "not-implemented", "issue": "#44" },
+    "shouldNotifyLoadEvents": { "state": "not-implemented", "issue": "#44" },
+    "overlayColor": {
+      "state": "deviating",
+      "reason": "Ignored; nothing is composited under a rounded image. See *Image*, Fidelity limits."
+    },
+    "fadeDuration": {
+      "state": "deviating",
+      "reason": "Ignored; a decoded image appears on the next damaged frame with no fade. See *Image*, Fidelity limits."
+    },
+    "progressiveRenderingEnabled": {
+      "state": "deviating",
+      "reason": "Ignored; `SkCodec` is asked for one complete frame. See *Image*, Fidelity limits."
+    }
+  },
+  "ScrollView": {
+    "alwaysBounceHorizontal": { "state": "not-implemented", "issue": "#69" },
+    "alwaysBounceVertical": { "state": "not-implemented", "issue": "#69" },
+    "bounces": { "state": "not-implemented", "issue": "#69" },
+    "bouncesZoom": { "state": "not-implemented", "issue": "#69" },
+    "canCancelContentTouches": { "state": "not-implemented", "issue": "#69" },
+    "centerContent": { "state": "not-implemented", "issue": "#69" },
+    "automaticallyAdjustContentInsets": { "state": "not-implemented", "issue": "#69" },
+    "automaticallyAdjustsScrollIndicatorInsets": { "state": "not-implemented", "issue": "#69" },
+    "automaticallyAdjustKeyboardInsets": { "state": "not-implemented", "issue": "#69" },
+    "decelerationRate": {
+      "state": "implemented",
+      "test": "ScrollPhysicsTest, DecaysVelocityByTheRateRaisedToTheFrameTime"
+    },
+    "endDraggingSensitivityMultiplier": { "state": "not-implemented", "issue": "#69" },
+    "directionalLockEnabled": { "state": "not-implemented", "issue": "#69" },
+    "indicatorStyle": { "state": "not-implemented", "issue": "#49" },
+    "keyboardDismissMode": { "state": "not-implemented", "issue": "#69" },
+    "maintainVisibleContentPosition": { "state": "not-implemented", "issue": "#69" },
+    "maximumZoomScale": { "state": "not-implemented", "issue": "#69" },
+    "minimumZoomScale": { "state": "not-implemented", "issue": "#69" },
+    "scrollEnabled": { "state": "not-implemented", "issue": "#69" },
+    "pagingEnabled": { "state": "not-implemented", "issue": "#69" },
+    "pinchGestureEnabled": { "state": "not-implemented", "issue": "#69" },
+    "scrollsToTop": { "state": "not-implemented", "issue": "#69" },
+    "showsHorizontalScrollIndicator": { "state": "not-implemented", "issue": "#49" },
+    "showsVerticalScrollIndicator": { "state": "not-implemented", "issue": "#49" },
+    "persistentScrollbar": { "state": "not-implemented", "issue": "#49" },
+    "horizontal": {
+      "state": "deviating",
+      "reason": "Both axes are always live and clamp independently, so a horizontal ScrollView works because its vertical axis has nothing to scroll rather than because the prop was read."
+    },
+    "scrollEventThrottle": {
+      "state": "deviating",
+      "reason": "The cadence is one `onScroll` per frame, the fastest React Native ever asks for; honouring a throttle means dropping events the frame already coalesced. Issue #45 owns the cadence contract."
+    },
+    "zoomScale": { "state": "not-implemented", "issue": "#69" },
+    "contentInset": { "state": "not-implemented", "issue": "#69" },
+    "contentOffset": {
+      "state": "implemented",
+      "test": "RetainedSceneScrollTest, ContentOffsetTranslatesTheChildrenOnBothAxes"
+    },
+    "scrollIndicatorInsets": { "state": "not-implemented", "issue": "#49" },
+    "snapToInterval": { "state": "not-implemented", "issue": "#69" },
+    "snapToAlignment": { "state": "not-implemented", "issue": "#69" },
+    "disableIntervalMomentum": { "state": "not-implemented", "issue": "#69" },
+    "snapToOffsets": { "state": "not-implemented", "issue": "#69" },
+    "snapToStart": { "state": "not-implemented", "issue": "#69" },
+    "snapToEnd": { "state": "not-implemented", "issue": "#69" },
+    "contentInsetAdjustmentBehavior": { "state": "not-implemented", "issue": "#69" },
+    "scrollToOverflowEnabled": { "state": "not-implemented", "issue": "#69" },
+    "isInvertedVirtualizedList": { "state": "not-implemented", "issue": "#69" }
+  },
+  "TextInput": {
+    "paragraphAttributes": {
+      "state": "implemented",
+      "test": "RetainedSceneTextInputTest, TheStateBecomesTheTextAndTheNodeBecomesAnEditor"
+    },
+    "defaultValue": { "state": "not-implemented", "issue": "#53" },
+    "placeholder": {
+      "state": "implemented",
+      "test": "RetainedSceneTextInputTest, AnEmptyValueDrawsThePlaceholderInItsOwnColour"
+    },
+    "placeholderTextColor": {
+      "state": "implemented",
+      "test": "RetainedSceneTextInputTest, AnEmptyValueDrawsThePlaceholderInItsOwnColour"
+    },
+    "cursorColor": {
+      "state": "implemented",
+      "test": "RetainedSceneTextInputTest, CursorAndSelectionColoursOverrideTheAccent"
+    },
+    "selectionColor": {
+      "state": "implemented",
+      "test": "RetainedSceneTextInputTest, CursorAndSelectionColoursOverrideTheAccent"
+    },
+    "selectionHandleColor": { "state": "not-implemented", "issue": "#69" },
+    "underlineColorAndroid": { "state": "not-implemented", "issue": "#69" },
+    "maxLength": { "state": "implemented", "test": "EditorModelTest, MaxLengthCountsUtf16CodeUnitsSoAnEmojiCostsTwo" },
+    "text": { "state": "implemented", "test": "EditorModelTest, AControlledValueIsAdoptedWhenTheEventCountMatches" },
+    "mostRecentEventCount": {
+      "state": "implemented",
+      "test": "EditorModelTest, AControlledValueIsIgnoredWhileAnEditIsInFlight"
+    },
+    "autoFocus": { "state": "not-implemented", "issue": "#54" },
+    "autoCapitalize": { "state": "not-implemented", "issue": "#69" },
+    "editable": { "state": "not-implemented", "issue": "#53" },
+    "readOnly": { "state": "not-implemented", "issue": "#53" },
+    "submitBehavior": { "state": "not-implemented", "issue": "#54" },
+    "multiline": { "state": "implemented", "test": "EditorModelTest, AMultilineFieldKeepsPastedNewlines" },
+    "disableKeyboardShortcuts": { "state": "not-implemented", "issue": "#54" },
+    "acceptDragAndDropTypes": { "state": "not-implemented", "issue": "#60" },
+    "secureTextEntry": {
+      "state": "implemented",
+      "test": "EditorModelTest, SecureTextEntryMasksEveryGraphemeAndNeverTheBuffer"
+    },
+    "caretHidden": {
+      "state": "implemented",
+      "test": "RetainedSceneTextInputTest, CaretHiddenRemovesTheCaretColourAndTheCaretWithIt"
+    },
+    "selectTextOnFocus": { "state": "not-implemented", "issue": "#54" }
+  }
+}
