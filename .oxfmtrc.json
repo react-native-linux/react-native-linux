@@ -1,4 +1,14 @@
 {
   "printWidth": 120,
-  "ignorePatterns": ["**/*.md", "**/*.yml", "**/*.yaml", "**/test-bundles", "build", "coverage", "third_party"]
+  "ignorePatterns": [
+    "**/*.md",
+    "**/*.yml",
+    "**/*.yaml",
+    "**/test-bundles",
+    "build",
+    "coverage",
+    "packages/*/upstream",
+    "packages/*/upstream.lock.json",
+    "third_party"
+  ]
 }

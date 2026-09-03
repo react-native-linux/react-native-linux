@@ -1,3 +1,4 @@
+import { packageAliases, resolveLinuxPackageAlias } from "./package-aliases.ts";
 import path from "node:path";
 
 const reactNativeModulePrefix = "react-native/";
@@ -31,6 +32,19 @@ const resolveLinuxOverlay = (
 
   return overlayIndex[upstreamSubpath] ?? null;
 };
+
+/**
+ * The name-rewriting head of the chain: the fixed `react-native` subpath overrides first, then the overlay
+ * packages of issue #180. Returns null when neither applies, which leaves the module name to the package-name
+ * redirect and the extension chain below.
+ */
+const resolveLinuxModuleName = (
+  moduleName: string,
+  platform: string | null,
+  isPackageResolvable: (packageName: string) => boolean,
+): string | null =>
+  resolveLinuxOverlay(moduleName, platform, linuxOverlayIndex) ??
+  resolveLinuxPackageAlias({ aliases: packageAliases, isPackageResolvable, moduleName, platform });
 
 const nativePlatformExtension = "native";
 
@@ -103,6 +117,7 @@ const resolveOriginAwareCandidates = (
 export {
   linuxOverlayIndex,
   resolveAgainstFilesystem,
+  resolveLinuxModuleName,
   resolveLinuxOverlay,
   resolveOriginAwareCandidates,
   resolvePlatformCandidates,

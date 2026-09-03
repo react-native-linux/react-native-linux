@@ -34,7 +34,13 @@
       "rules": {
         "unicorn/filename-case": "off"
       }
+    },
+    {
+      "files": ["packages/*/src/index.ts"],
+      "rules": {
+        "import/no-relative-parent-imports": "off"
+      }
     }
   ],
-  "ignorePatterns": ["**/test-bundles", "build", "coverage", "third_party"]
+  "ignorePatterns": ["**/test-bundles", "build", "coverage", "packages/*/upstream", "third_party"]
 }

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   linuxOverlayIndex,
   resolveAgainstFilesystem,
+  resolveLinuxModuleName,
   resolveLinuxOverlay,
   resolveOriginAwareCandidates,
   resolvePlatformCandidates,
@@ -37,6 +38,8 @@ const fallbackRequest = (moduleName: string, originModulePath: string, platform:
   originModulePath,
   platform,
 });
+
+const isPackageResolvable = (): boolean => true;
 
 describe("resolveLinuxOverlay", () => {
   it("resolves a react-native deep import that has a linux overlay", () => {
@@ -73,6 +76,18 @@ describe("linuxOverlayIndex", () => {
     expect(linuxOverlayIndex["Libraries/Utilities/PlatformTypes"]).toMatch(
       /src-linux[/\\]Libraries[/\\]Utilities[/\\]PlatformTypes\.ts$/u,
     );
+  });
+});
+
+describe("resolveLinuxModuleName", () => {
+  it("rewrites a react-native subpath the overlay index tracks", () => {
+    expect(resolveLinuxModuleName("react-native/Libraries/Utilities/Platform", "linux", isPackageResolvable)).toMatch(
+      /src-linux[/\\]Libraries[/\\]Utilities[/\\]Platform\.linux\.ts$/u,
+    );
+  });
+
+  it("leaves a package name alone while the shipped alias registry is empty", () => {
+    expect(resolveLinuxModuleName("react-native-reanimated", "linux", isPackageResolvable)).toBeNull();
   });
 });
 

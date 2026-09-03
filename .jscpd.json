@@ -4,5 +4,13 @@
   "gitignore": true,
   "minLines": 5,
   "minTokens": 50,
-  "ignore": ["**/node_modules/**", "**/coverage/**", "**/packages/core/generated/**", "**/packages/core/protocols/**"]
+  "ignore": [
+    "**/node_modules/**",
+    "**/coverage/**",
+    "**/packages/*/upstream/**",
+    "**/packages/*/README.md",
+    "**/packages/*/linux/README.md",
+    "**/packages/core/generated/**",
+    "**/packages/core/protocols/**"
+  ]
 }

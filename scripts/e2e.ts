@@ -1,12 +1,13 @@
 import { argv, stderr, stdout } from "node:process";
 import { buildEnvironment, findExecutable, findLavapipeIcd } from "./window-golden.ts";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { findMissingExpectations, formatInjectorScript, parseScenario, resolveArtifactPaths } from "./e2e/scenario.ts";
+import { findMissingExpectations, formatInjectorScript, resolveArtifactPaths } from "./e2e/scenario.ts";
 import { spawn, spawnSync } from "node:child_process";
 
 import { setTimeout as delay } from "node:timers/promises";
 import { gradeArtifacts } from "./e2e/grade.ts";
 import path from "node:path";
+import { readScenarioRuns } from "./e2e/discovery.ts";
 import { tmpdir } from "node:os";
 
 const FAILURE_EXIT_STATUS = 1;
@@ -32,15 +33,13 @@ const SCENARIO_FLAG = "--scenario";
 const SOCKET_PATTERN = /^wayland-\d+$/u;
 
 const repositoryRoot = path.resolve(import.meta.dirname, "..");
-const packageDirectory = path.join(repositoryRoot, "packages", "core");
-const bundlesDirectory = path.join(packageDirectory, "test-bundles");
-const scenariosDirectory = path.join(packageDirectory, "e2e");
-const goldensDirectory = path.join(scenariosDirectory, "goldens");
+const packagesDirectory = path.join(repositoryRoot, "packages");
 const windowBinaryPath = path.join(repositoryRoot, "build", "dev", "bin", "rnl_window");
 const injectorBinaryPath = path.join(repositoryRoot, "build", "dev", "bin", "rnl_inject");
 const artifactsRoot = path.join(repositoryRoot, "build", "e2e");
 
-type Scenario = ReturnType<typeof parseScenario>;
+type ScenarioRun = ReturnType<typeof readScenarioRuns>[number];
+type Scenario = ScenarioRun["scenario"];
 type Artifacts = ReturnType<typeof resolveArtifactPaths>;
 type Compositor = ReturnType<typeof spawn>;
 
@@ -60,18 +59,17 @@ interface Workspace {
   readonly trace: TraceSink;
 }
 
-const readScenarios = (): readonly Scenario[] => {
+const readScenarios = (): readonly ScenarioRun[] => {
   const flagIndex = argv.indexOf(SCENARIO_FLAG);
-  const requestedName = flagIndex === NOT_FOUND_INDEX ? null : (argv[flagIndex + NEXT_ARGUMENT] ?? null);
 
-  return readdirSync(scenariosDirectory)
-    .filter((fileName) => fileName.endsWith(".json"))
-    .map((fileName) => {
-      const parsed: unknown = JSON.parse(readFileSync(path.join(scenariosDirectory, fileName), "utf8"));
-
-      return parseScenario(parsed, fileName);
-    })
-    .filter((scenario) => requestedName === null || scenario.name === requestedName);
+  return readScenarioRuns(
+    packagesDirectory,
+    flagIndex === NOT_FOUND_INDEX ? null : (argv[flagIndex + NEXT_ARGUMENT] ?? null),
+    {
+      listEntries: (directory) => (existsSync(directory) ? readdirSync(directory) : []),
+      readTextFile: (filePath) => readFileSync(filePath, "utf8"),
+    },
+  );
 };
 
 const createWorkspace = (artifacts: Artifacts): Workspace => {
@@ -90,16 +88,16 @@ const createWorkspace = (artifacts: Artifacts): Workspace => {
  * compositor only has to accept the client's buffers, because the screenshot comes out of the client's own
  * swapchain. cage runs the window as its child and terminates when it exits, so the two are one process tree.
  */
-const startCompositor = (scenario: Scenario, rig: Rig, workspace: Workspace): Compositor =>
+const startCompositor = (run: ScenarioRun, rig: Rig, workspace: Workspace): Compositor =>
   spawn(
     rig.compositorPath,
     [
       "--",
       windowBinaryPath,
       "--fabric",
-      path.join(bundlesDirectory, scenario.bundle),
+      path.join(run.source.bundlesDirectory, run.scenario.bundle),
       "--frames",
-      String(scenario.frames),
+      String(run.scenario.frames),
       "--screenshot",
       workspace.screenshotPath,
       "--frame-log",
@@ -232,27 +230,27 @@ const driveAndStop = async (
   }
 };
 
-const runScenario = async (scenario: Scenario, rig: Rig): Promise<readonly string[]> => {
-  const artifacts = resolveArtifactPaths(artifactsRoot, scenario.name);
+const runScenario = async (run: ScenarioRun, rig: Rig): Promise<readonly string[]> => {
+  const artifacts = resolveArtifactPaths(artifactsRoot, run.scenario.name);
   const workspace = createWorkspace(artifacts);
-  const compositor = startCompositor(scenario, rig, workspace);
+  const compositor = startCompositor(run, rig, workspace);
 
   attachTrace(compositor, workspace.trace);
 
-  const runFailures = await driveAndStop(scenario, compositor, workspace);
+  const runFailures = await driveAndStop(run.scenario, compositor, workspace);
 
   collectArtifacts(artifacts.tracePath, workspace);
 
   const grade = gradeArtifacts({
     frameLogPath: artifacts.frameLogPath,
-    goldensDirectory,
-    scenario,
+    goldensDirectory: run.source.goldensDirectory,
+    scenario: run.scenario,
     screenshotPath: artifacts.screenshotPath,
   });
 
-  stdout.write(grade.notes.map((note) => `e2e ${scenario.name}: ${note}\n`).join(""));
+  stdout.write(grade.notes.map((note) => `e2e ${run.scenario.name}: ${note}\n`).join(""));
 
-  return [...runFailures, ...describeMissing(scenario, workspace.trace.text), ...grade.failures];
+  return [...runFailures, ...describeMissing(run.scenario, workspace.trace.text), ...grade.failures];
 };
 
 const reportScenario = (scenario: Scenario, failures: readonly string[]): void => {
@@ -293,7 +291,7 @@ if (compositorPath === null || lavapipeIcdPath === null || unavailableReasons.le
 } else {
   mkdirSync(artifactsRoot, { recursive: true });
 
-  for (const scenario of readScenarios()) {
-    reportScenario(scenario, await runScenario(scenario, { compositorPath, lavapipeIcdPath }));
+  for (const run of readScenarios()) {
+    reportScenario(run.scenario, await runScenario(run, { compositorPath, lavapipeIcdPath }));
   }
 }

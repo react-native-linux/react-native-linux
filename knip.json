@@ -5,6 +5,9 @@
       "project": ["*.ts", "scripts/**/*.ts"],
       "ignoreBinaries": ["cmake", "ctest"]
     },
+    "packages/*": {
+      "project": ["src/**/*.ts"]
+    },
     "packages/cli": {
       "project": ["src/**/*.ts"]
     },
