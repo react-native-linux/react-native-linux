@@ -87,3 +87,97 @@ Never mention AI tools, bots, generated output, co-authors, or automation servic
 ## Issue Tracking
 
 Work is tracked as GitHub issues under milestone labels `M0`–`M5` (roadmap in ADR-0001), linked as sub-issues of the founding epic. New work gets an issue before a branch. Issues state acceptance criteria including the required test layers.
+
+## Multi-Agent Protocol
+
+Several agents work this repository at once, with different models. Two agents on one issue is worse than one
+agent idle, and a silent collision costs more than both. This section is the whole coordination system; it is
+GitHub issues and labels and nothing else, because a second store would drift.
+
+### The state of an issue is a label
+
+| Label | Means |
+| --- | --- |
+| *(none)* | Untriaged. **Not eligible to pick up.** |
+| `status:ready` | Groomed, unblocked, free to take. |
+| `status:in-progress` | Claimed by the agent named in the `agent:*` label beside it. |
+| `status:blocked` | Waiting on another issue or on a decision, named in a comment. |
+| `status:review` | A pull request is open; the issue closes when it merges. |
+
+Exactly one status label at a time. An issue with `status:in-progress` also carries exactly one `agent:*` label —
+`agent:claude-opus-5`, `agent:glm-5.3-flash`, one per model, created as new models join.
+
+### What to work on
+
+Lanes first, priority second. **Lanes are how collisions are prevented structurally**, rather than by two agents
+being lucky:
+
+| Lane | Areas | Files |
+| --- | --- | --- |
+| Renderer and text | `area:renderer`, `area:text`, `area:animation` | `packages/core/src/{RetainedScene,ScenePainter,Text*,Scroll*,Image*,Golden*,BundleRunner}.*`, `goldens/`, `test-bundles/` |
+| Layout and conformance tests | `area:testing`, layout issues | `packages/core/tests/*Test.cpp` only |
+| Input and windowing | `area:input`, `area:infra` | `packages/core/src/{Input*,Wayland*,Window*}.*` |
+| CLI, modules, ecosystem | `area:cli`, `area:modules`, `area:packaging` | `packages/cli`, `packages/*/`, `scripts/` |
+
+Within your lane, take the **first** issue by: `priority:P0` before P1 before P2 before P3, then lowest issue
+number. That rule is deterministic, so two agents in one lane reading the same board pick the same next issue and
+the claim protocol below decides it in one round rather than in a merge conflict.
+
+```bash
+# The board: what is free in a lane, in the order it should be taken
+gh issue list --state open --label status:ready --label area:renderer --limit 50 \
+  --json number,title,labels \
+  --jq 'sort_by(([.labels[].name | select(startswith("priority:"))] + ["priority:P9"])[0], .number)
+        | .[] | "#\(.number) \(.title)"'
+
+# What is already being worked, by whom
+gh issue list --state open --label status:in-progress \
+  --json number,title,labels,updatedAt \
+  --jq '.[] | "#\(.number) \(.updatedAt) [\([.labels[].name | select(startswith("agent:"))] | join(","))] \(.title)"'
+```
+
+### Claiming, and the race
+
+Claiming is optimistic and then **verified**, because two agents can label the same issue in the same second:
+
+```bash
+gh issue edit <N> --add-label status:in-progress --add-label agent:<model> --remove-label status:ready
+gh issue comment <N> --body "CLAIM $(date -u +%Y-%m-%dT%H:%MZ) — model: <full model name> — session: <id>
+Scope: <what of this issue you are doing>
+Files: <every path you will edit>
+Expires: $(date -u -d '+4 hours' +%Y-%m-%dT%H:%MZ)"
+
+sleep 10 && gh issue view <N> --json labels,comments \
+  --jq '[.labels[].name | select(startswith("agent:"))], (.comments | map(select(.body | startswith("CLAIM"))) | last | .body)'
+```
+
+If that read shows another agent's `agent:*` label or a `CLAIM` comment newer than yours, **you lost the race**:
+remove your label, say so in a comment, and take the next issue. The agent whose claim comment is *oldest* wins.
+
+The first line of the comment is fixed so it can be grepped, and the model name is the full one —
+`claude-opus-5`, `glm-5.3-flash` — never "the agent" or "Claude". When two agents disagree about an approach it
+matters which model wrote what.
+
+### Holding, releasing, finishing
+
+- **A claim expires after four hours.** Agents are killed by rate limits mid-task, so an abandoned claim is
+  normal rather than a conflict. If the newest `CLAIM` has expired and no commit since names the issue, take it
+  over with a comment saying so, then re-claim. If you are still working, post a new `CLAIM` line to extend it.
+- **Release whenever you stop**, finished or not:
+
+  ```bash
+  gh issue edit <N> --remove-label status:in-progress --remove-label agent:<model>
+  gh issue comment <N> --body "RELEASE $(date -u +%Y-%m-%dT%H:%MZ) — model: <full model name>
+  Landed: <commits>. Left: <what is not done, and why>."
+  ```
+- **Opening a PR** swaps `status:in-progress` for `status:review` and the PR body says `Closes #N`. Merging
+  closes the issue; the closing comment states what landed and what was deferred, with the issue that now owns
+  each deferral.
+- **Partial delivery is normal and is not a close.** Report what is proved, name what is not, and release.
+
+### File ownership
+
+The lane table is the default split; the `Files:` line of a claim is the exact one. Two agents may hold issues
+that touch one file only if both claim comments say so and agree the split. When in doubt the rule is: the agent
+whose lane owns the file owns the edit, and the other one asks in the issue.
+
