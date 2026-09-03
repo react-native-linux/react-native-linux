@@ -603,3 +603,26 @@ jobs:
           name: window-goldens
           path: build/window-goldens/*.png
           if-no-files-found: warn
+
+      # The e2e driver of #7 needs a compositor that implements the virtual pointer and virtual keyboard
+      # protocols, and weston implements neither: its only injection surface is the weston-test plugin, which
+      # upstream builds with install: false and no distribution ships. cage is wlroots, runs headless through
+      # WLR_BACKENDS, and runs the window as its own child. See *E2E driver (#7)* in docs/cpp-toolchain.md.
+      - name: Install cage
+        run: sudo apt-get install -y cage
+
+      - name: Build rnl_inject
+        run: cmake --build build/dev --target rnl_inject
+
+      # pnpm e2e exits 2 when the compositor, the lavapipe ICD or a binary is missing, so an incomplete apt list
+      # fails the job here rather than passing as a silent skip.
+      - name: Run the e2e scenarios
+        run: pnpm e2e
+
+      - name: Upload the e2e artifacts
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e
+          path: build/e2e
+          if-no-files-found: warn

@@ -290,4 +290,4 @@ if (isMainModule()) {
   }
 }
 
-export { findLavapipeIcdManifestPath, findLavapipeLibraryPath };
+export { buildEnvironment, findExecutable, findLavapipeIcd, findLavapipeIcdManifestPath, findLavapipeLibraryPath };

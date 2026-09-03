@@ -32,6 +32,8 @@
     "scripts/codegen-core.ts",
     "scripts/doctor/**/*.ts",
     "scripts/doctor.ts",
+    "scripts/e2e/**/*.ts",
+    "scripts/e2e.ts",
     "vitest.config.ts"
   ]
 }

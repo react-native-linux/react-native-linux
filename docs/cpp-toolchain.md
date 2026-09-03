@@ -1998,7 +1998,8 @@ came out, and the sixteen that did not arrive are the acceptance criterion. The 
   dead keys, which are a keyboard concern rather than an input-method one.
 - **E2E traces.** Issue #18 also asks for hover/press traces and keyboard focus order under a headless compositor
   with virtual Wayland input. `--inject-pointer` is the unit-level and integration-level proof; the compositor-level
-  one belongs with the harness that runs the lavapipe window golden, and neither exists yet.
+  one is the first slice of #7 and is `pnpm e2e` — see *E2E driver (#7)*. Keyboard focus order under a compositor
+  is still only covered by the one Tab press `text-input.json` makes.
 
 ## Focus and keyboard
 
@@ -3062,9 +3063,10 @@ the golden's pixels come out of the swapchain image, not out of anything weston 
 accept and release buffers. Mesa's Wayland WSI uses `wl_shm` for lavapipe, since there is no DRM device to import
 a dma-buf from, and every compositor advertises `wl_shm`.
 
-Only weston is supported. `cage` and `sway` were considered and rejected for this rig rather than deferred: cage
-launches a client instead of offering a socket, which is a different shape, and adding a second compositor before
-the first one has failed anywhere is the speculative generality AGENTS.md forbids.
+Only weston is supported *by this rig*. `cage` and `sway` were considered and rejected for it rather than
+deferred: cage launches a client instead of offering a socket, which is a different shape. The e2e driver of #7
+does run under cage, because weston can inject no input at all — see *E2E driver (#7)* for the evidence — and the
+two rigs stay on the compositor each one's job needs.
 
 The script exits **2**, with the reason on stderr, when `build/dev/bin/rnl_window`, `weston` or the lavapipe ICD is
 missing. That is what keeps a checkout without a graphics stack green, and it is one detection path rather than one
@@ -3132,6 +3134,151 @@ the `dev` one, so a cold window job warms from the native job's cache; only the 
 under its own key, so the two jobs never race for the same entry on a push to `main`. On failure the rendered PNG files
 are uploaded as the `window-goldens` artifact, which is also how the first pair of goldens is produced on a machine
 without weston: let the job fail on the missing goldens, download the artifact, review it, commit it.
+
+## E2E driver (#7)
+
+Issue #7, milestone M1, first slice. A real bundle under a real compositor, driven by virtual Wayland input, asserted
+on the event trace it prints. The frame-timing probe and the perf gate the issue also asks for are the second slice
+and are named at the end of this section.
+
+### The compositor decision, and the evidence for it
+
+The e2e rig runs under **cage**, not under the weston the window goldens use. weston cannot inject input at all on
+a machine that installed it from a distribution package:
+
+- weston's only injection surface is its own `weston-test` protocol (`protocol/weston-test.xml`), implemented by
+  the `weston-test.so` plugin in `tests/`, which upstream builds with `install: false`. Ubuntu 24.04's `weston`
+  package ships ten plugins under `/usr/lib/x86_64-linux-gnu/weston/` and none of them is that one.
+- weston implements neither `zwlr_virtual_pointer_manager_v1` nor `zwp_virtual_keyboard_manager_v1`, and neither
+  protocol is part of wayland-protocols, so nothing under `/usr/share/wayland-protocols` describes them either.
+
+cage is a wlroots kiosk compositor: one window, always focused, no configuration. Ubuntu 24.04 ships
+`cage 0.1.5+20240127`, whose `cage.c` creates both `wlr_virtual_keyboard_manager_v1` and
+`wlr_virtual_pointer_manager_v1` and attaches every device they create to its seat, and its wlroots backend runs
+headless through `WLR_BACKENDS=headless` with no DRM device and no seat of its own. sway would work too and was
+not chosen: it needs a configuration file and a window manager's worth of behaviour between the injector and the
+surface, where cage fullscreens exactly one client so injected output coordinates are the surface's coordinates.
+
+Two compositors in one repository is a cost, and it is paid deliberately: the window golden rig needs a socket to
+connect a client to, which weston offers and cage does not, and this rig needs input injection, which cage offers
+and weston does not. Neither rig can do the other's job today.
+
+The virtual devices only exist while `rnl_inject` is connected. Attaching them is also what makes cage advertise
+`wl_seat` pointer and keyboard capabilities, so the window under test binds `wl_pointer` and `wl_keyboard` in the
+middle of its run — `WaylandSeat::updateCapabilities` already handles that, and wlroots sends a fresh keymap and,
+for the focused client, a `wl_keyboard.enter` when the resource is created.
+
+### The injector
+
+`packages/core/src/InputInjector.cpp` builds `rnl_inject`, a Wayland client with no window: it binds
+`zwlr_virtual_pointer_manager_v1`, `zwp_virtual_keyboard_manager_v1`, `wl_seat` and `wl_output`, creates one
+virtual pointer and one virtual keyboard on the seat, uploads a pinned `us` keymap through a `memfd`, and then
+executes a script from a file argument or from stdin. Neither protocol XML is in wayland-protocols and Ubuntu has
+no `wlr-protocols` package, so both files are vendored under `packages/core/protocols/` from wlroots 0.17.4 — the
+wlroots cage links against — and `wayland-scanner` generates `rnl_virtual_input` from them the way `rnl_xdg_shell`
+is generated from `xdg-shell.xml`.
+
+The script is one command per line, `#` comments ignored:
+
+```text
+move <x> <y>                 # absolute, in output pixels
+click <x> <y>                # move, then a left press and release
+button left|middle|right press|release
+key <keysym> press|release   # an xkb keysym name, for example Tab or Return
+type <text>                  # ASCII, shifted characters send the shift modifier
+sleep <milliseconds>
+```
+
+`wl_output`'s current mode is what the absolute motion's extents are, so a coordinate in the script is a pixel on
+the output; cage gives its single client the whole output, so it is also a pixel in the surface. Keysyms are
+resolved against the uploaded keymap by walking it — `xkb_keymap_key_get_syms_by_level` for every keycode and
+level — rather than against a table of characters, which is what makes `type` and `key` the same lookup, and the
+evdev keycode both protocols carry is the keymap's keycode minus the X11 offset of 8 that *Input* describes.
+
+### The rig
+
+`scripts/e2e.ts` is the driver. Per scenario it creates a private `XDG_RUNTIME_DIR`, starts
+
+```text
+cage -- rnl_window --fabric <bundle> --frames <n> --screenshot build/e2e/<scenario>/screenshot.png
+```
+
+with `WLR_BACKENDS=headless`, `WLR_RENDERER=pixman`, `WLR_LIBINPUT_NO_DEVICES=1`, `XKB_DEFAULT_LAYOUT=us` and the
+lavapipe ICD pinned by the same discovery `scripts/window-golden.ts` exports, waits for the wayland socket to
+appear in that directory, waits for the scenario's `ready` line on the window's stdout, runs `rnl_inject` with the
+scenario's steps on stdin, and then waits for the window to exit on its own frame budget.
+
+The event trace is the bundle's own `console.log` output: `rnl_window` has no trace format, and every fixture
+bundle already prints one line per Fabric event through `registerEventHandler`. cage passes its child's stdout
+through, so the trace is what the driver collects from the compositor process. Expectations are ordered
+substrings — each has to appear on a line after the previous one — which is what makes them assertions about a
+sequence of events rather than a set.
+
+Every run writes `build/e2e/<scenario>/trace.log` and `screenshot.png`, and CI uploads that tree on failure. The
+driver captures the screenshot; it does not compare it, which is the same split *Window goldens* already makes
+between `scripts/window-golden.ts` and `golden.spec.ts`. Comparing it needs a baseline nobody has captured — cage
+sizes the surface to its own output rather than to the 800x600 the window goldens are checked in at, so the
+existing pictures are not it — and a golden of a pressed or typed-into state is a picture this slice does not
+need to make its point. It is named in the second slice below rather than half-built here.
+
+### The scenarios
+
+`packages/core/e2e/*.json`, one object per file:
+
+```json
+{
+  "name": "pressable-click",
+  "bundle": "pressable.js",
+  "ready": "pressable: committed surface 1",
+  "frames": 600,
+  "steps": ["sleep 500", "move 200 140", "sleep 100", "click 200 140", "sleep 500"],
+  "expect": ["pressable: topClick on box at 200,140"]
+}
+```
+
+`pressable.json` clicks the middle of the 200x120 view `pressable.js` places at (100, 80) and expects the
+`topPointerDown`, `topPointerUp` and `topClick` lines the `--inject-pointer` proof in *Input* produces headlessly,
+now produced by a compositor's `wl_pointer` instead. `text-input.json` presses Tab to focus the first field of
+`text-input.js`, types `Hi`, and expects `topFocus on plain` and the two `topChange` lines — which is also the
+proof that the shift modifier reaches the field, since `H` is `shift+h` on the injected keymap.
+
+`scripts/e2e/scenario.ts` holds everything pure — scenario validation, the ordered-substring matcher and artifact
+naming — and `scripts/e2e/scenario.spec.ts` covers it at the repository's 100% threshold. The process side stays
+in `scripts/e2e.ts`, uncovered by Vitest for the reason `scripts/doctor.ts` is: it is spawns and sockets.
+
+### Running it
+
+```bash
+cmake --build build/dev --target rnl_window
+cmake --build build/dev --target rnl_inject
+pnpm e2e                        # every scenario
+pnpm e2e --scenario pressable-click
+```
+
+Like the window rig, the driver exits **2** with the reason on stderr when `cage`, the lavapipe ICD or either
+binary is missing, so a checkout without a graphics stack stays green. In CI that exit is a failure, which is what
+stops an incomplete apt list from passing as a silent skip. The `window` job installs `cage`, builds `rnl_inject`
+after the window goldens step, runs `pnpm e2e`, and uploads `build/e2e` as the `e2e` artifact on failure.
+
+### The second slice
+
+Named here so they are not mistaken for oversights, all of them still #7:
+
+- **`wp_presentation` frame-timing probes.** `rnl_window` does not bind `wp_presentation` at all yet, so there is
+  no presentation feedback to collect and no p95 to assert. The probe is a window-side change plus a machine-
+  readable timing report the driver reads, not a driver-side change.
+- **The perf regression gate.** The 8.33 ms budget scenarios and their threshold depend on that report existing,
+  and on a runner baseline nobody has measured. Asserting on wall-clock timings collected under lavapipe and
+  pixman before then would gate on the runner, not on the renderer.
+- **A structured event trace.** Today the trace is the fixture's `console.log` output, which means a scenario can
+  only assert on what its bundle happens to print. A `--trace` flag on `rnl_window` emitting typed lines is what
+  would let a scenario assert on events no fixture was written to report.
+- **Deterministic capture.** The window captures at a fixed frame number, so a scenario sizes `frames` to cover
+  its own injection. Capturing on demand — a signal, or a step in the script — would remove the budget entirely.
+- **Screenshot assertions.** A `golden` field on a scenario, compared with `compareImagesPerceptually` the way
+  the window goldens are, once a first cage-sized baseline has been rendered and reviewed. The comparison belongs
+  in a spec beside `golden.spec.ts`, not in the driver, because `pngjs` is a `packages/core` dependency and the
+  root workspace deliberately has none.
 
 ## Unit tests and coverage
 

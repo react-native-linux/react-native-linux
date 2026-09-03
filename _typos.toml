@@ -1,5 +1,5 @@
 [files]
-extend-exclude = ["pnpm-lock.yaml", "packages/core/generated/"]
+extend-exclude = ["pnpm-lock.yaml", "packages/core/generated/", "packages/core/protocols/"]
 
 [default.extend-identifiers]
 KEY_102ND = "KEY_102ND"

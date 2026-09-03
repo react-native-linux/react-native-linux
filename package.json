@@ -7,6 +7,7 @@
     "cpd": "jscpd packages",
     "deadcode": "knip",
     "doctor": "node scripts/doctor.ts",
+    "e2e": "node scripts/e2e.ts",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
     "lint": "oxlint --deny-warnings",

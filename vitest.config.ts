@@ -9,6 +9,7 @@ export default defineConfig({
         "packages/core/src-linux/**/*.spec.ts",
         "scripts/codegen-core/**/*.spec.ts",
         "scripts/doctor/**/*.spec.ts",
+        "scripts/e2e/**/*.spec.ts",
       ],
       include: [
         "packages/*/src/**/*.ts",
@@ -16,6 +17,7 @@ export default defineConfig({
         "packages/core/src-linux/**/*.ts",
         "scripts/codegen-core/**/*.ts",
         "scripts/doctor/**/*.ts",
+        "scripts/e2e/**/*.ts",
       ],
       provider: "v8",
       reporter: ["text", "lcov"],
@@ -32,6 +34,7 @@ export default defineConfig({
       "packages/core/src-linux/**/*.spec.ts",
       "scripts/codegen-core/**/*.spec.ts",
       "scripts/doctor/**/*.spec.ts",
+      "scripts/e2e/**/*.spec.ts",
     ],
   },
 });
