@@ -193,7 +193,8 @@ Contributions are welcome, and the founding phase is the best time to argue abou
 1. Read [AGENTS.md](AGENTS.md) — engineering rules, threading contracts, and the non-negotiable testing gospel.
 2. Read [ADR-0001](docs/adr/0001-gpu-first-out-of-tree-react-native-platform-for-linux.md) before proposing architectural changes; amendments require a new ADR.
 3. Run `pnpm doctor` before building — see [`docs/doctor.md`](docs/doctor.md) for what it checks and how it names missing packages by distro.
-4. Pick up work from the [milestone boards](https://github.com/react-native-linux/react-native-linux/milestones) or the [founding epic](https://github.com/react-native-linux/react-native-linux/issues/1). Every change starts with an issue that states its acceptance criteria and required test layers.
+4. Maintain a library with native code? [The Linux support contract](docs/ecosystem/linux-support-contract.md) is what we ask of you and what we guarantee back; nothing in it mentions our renderer.
+5. Pick up work from the [milestone boards](https://github.com/react-native-linux/react-native-linux/milestones) or the [founding epic](https://github.com/react-native-linux/react-native-linux/issues/1). Every change starts with an issue that states its acceptance criteria and required test layers.
 
 ## License
 
