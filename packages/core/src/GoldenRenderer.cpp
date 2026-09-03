@@ -220,6 +220,15 @@ bool doHitsMatchPixels(const std::vector<FabricHitSample>& hits, const SkPixmap&
 // only just fitted then does not fit now. One point of slack absorbs the rounding; anything past that is a
 // paragraph that re-wrapped, which is the whole of react-native-macos#2857.
 constexpr float kTextFitTolerance = 1.0F;
+// Wider than any fixture's text, so a measurement against it is the width the glyphs occupy or nothing at all.
+constexpr float kShrinkToFitWidth = 10000.0F;
+
+
+facebook::react::LayoutConstraints toConstraints(facebook::react::Float maximumWidth) {
+    return facebook::react::LayoutConstraints{
+        .maximumSize = facebook::react::Size{.width = maximumWidth,
+                                             .height = std::numeric_limits<facebook::react::Float>::infinity()}};
+}
 
 bool doesParagraphFitItsBox(const ScenePrimitive& primitive, const facebook::react::TextLayoutManager& layoutManager) {
     const SceneTextContent& content = primitive.text.value();
@@ -265,12 +274,89 @@ bool doesParagraphFitItsBox(const ScenePrimitive& primitive, const facebook::rea
     return doesFit;
 }
 
+/**
+ * Issue #111. Three properties of the measure path that a paragraph's own box cannot show, asserted for every
+ * text node in every fixture rather than for a table of strings, because a fixture is where a real
+ * `AttributedString` with real fonts and real fragments comes from.
+ *
+ * 1. **A paragraph shrinks to its longest line.** Measured against a constraint far wider than the text, the
+ *    answer has to be the width the glyphs occupy and not the constraint —
+ *    [core#54571](https://github.com/facebook/react-native/issues/54571) is multi-line `<Text>` that stopped
+ *    being able to.
+ * 2. **An empty paragraph has no width.** [core#55468](https://github.com/facebook/react-native/issues/55468) is
+ *    an empty `<Text>` measuring non-zero, and the check is the same string with its fragments removed.
+ * 3. **The cache key is the whole input.** Measuring the same string at a different width, and then with a
+ *    different `maximumNumberOfLines`, has to produce a different answer from the first measurement — a cache
+ *    keyed on less than it depends on returns the first answer forever, which is a stale size reaching layout.
+ */
+bool doesMeasurementDependOnItsInputs(const ScenePrimitive& primitive,
+                                      const facebook::react::TextLayoutManager& layoutManager) {
+    const SceneTextContent& content = primitive.text.value();
+    const facebook::react::AttributedStringBox box{content.attributedString};
+    const facebook::react::Size measured =
+        layoutManager.measure(box, content.paragraphAttributes, {}, toConstraints(content.frame.size.width)).size;
+    const facebook::react::Size unbounded =
+        layoutManager.measure(box, content.paragraphAttributes, {}, toConstraints(kShrinkToFitWidth)).size;
+    bool isDependent = true;
+
+    if (unbounded.width >= kShrinkToFitWidth) {
+        std::cerr << "[golden] tag " << primitive.tag << " measured " << unbounded.width
+                  << " wide against a " << kShrinkToFitWidth << " point constraint instead of shrinking to its text"
+                  << std::endl;
+
+        isDependent = false;
+    }
+
+    facebook::react::AttributedString emptied = content.attributedString;
+
+    emptied.getFragments().clear();
+
+    const facebook::react::Size empty =
+        layoutManager
+            .measure(facebook::react::AttributedStringBox{emptied}, content.paragraphAttributes, {},
+                     toConstraints(content.frame.size.width))
+            .size;
+
+    if (empty.width != 0) {
+        std::cerr << "[golden] tag " << primitive.tag << " measures an empty paragraph " << empty.width << " wide"
+                  << std::endl;
+
+        isDependent = false;
+    }
+
+    // The cache key has to include the paragraph attributes, and a line limit is the attribute with an
+    // unambiguous consequence: a paragraph that wraps onto more than one line must measure strictly shorter when
+    // it is limited to one. A cache that ignored the attributes would answer with the height it already had.
+    // A paragraph that is already one line has nothing to truncate and is skipped rather than asserted about.
+    const ParagraphMetrics painted = measureParagraphMetrics(content.attributedString, content.paragraphAttributes,
+                                                             static_cast<float>(content.frame.size.width));
+
+    if (painted.lines.size() > 1) {
+        facebook::react::ParagraphAttributes oneLine = content.paragraphAttributes;
+
+        oneLine.maximumNumberOfLines = 1;
+
+        const facebook::react::Size limited =
+            layoutManager.measure(box, oneLine, {}, toConstraints(content.frame.size.width)).size;
+
+        if (limited.height >= measured.height) {
+            std::cerr << "[golden] tag " << primitive.tag << " measured " << measured.height << " points tall over "
+                      << painted.lines.size() << " lines and " << limited.height << " limited to one" << std::endl;
+
+            isDependent = false;
+        }
+    }
+
+    return isDependent;
+}
+
 // Issue #53, and rn-macos#1395: a caret whose height is a constant looks right at one font size and wrong at
 // every other. The caret has to be as tall as the line it is on, whatever that line's font size and `lineHeight`
 // work out as, so this asks the paragraph which line the caret's own midpoint lands in and compares the two.
 // One point of tolerance, because the caret is the line's exact height and the line metric is a rounded one —
 // at forty points those differ by half a point. A caret that ignored the line would be wrong by tens.
 constexpr float kCaretHeightTolerance = 1.0F;
+
 
 bool doesCaretMatchItsLine(const ScenePrimitive& primitive) {
     const SceneTextContent& content = primitive.text.value();
@@ -323,6 +409,7 @@ bool doParagraphsFitTheirBoxes(const SceneSnapshot& scene) {
         }
 
         doAllFit = doesParagraphFitItsBox(primitive, layoutManager) && doAllFit;
+        doAllFit = doesMeasurementDependOnItsInputs(primitive, layoutManager) && doAllFit;
     }
 
     if (paragraphCount == 0) {
