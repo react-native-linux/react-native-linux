@@ -106,6 +106,30 @@ const threeQuarterHairline = tile(330, 415, 120, 60, { borderWidth: 0.75, border
 const onePointHairline = tile(480, 415, 120, 60, { borderWidth: 1, borderColor: color.white });
 const roundedHairline = tile(630, 415, 120, 60, { borderRadius: 20, borderWidth: 0.4, borderColor: color.white });
 
+// Issue #101: dashed and dotted, square and rounded, at one width and at four; a dashed border over a background
+// that must survive it (core#42289); and a four-colour dashed ring, where one phase runs around all four sides.
+const dashedSquare = tile(30, 585, 120, 70, { borderWidth: 4, borderColor: color.amber, borderStyle: 'dashed' });
+const dashedRounded = tile(180, 585, 120, 70, {
+  borderRadius: 24,
+  borderWidth: 4,
+  borderColor: color.amber,
+  borderStyle: 'dashed',
+});
+const dottedRounded = tile(330, 585, 120, 70, {
+  borderRadius: 24,
+  borderWidth: 6,
+  borderColor: color.sky,
+  borderStyle: 'dotted',
+});
+const dashedOverFill = tile(480, 585, 120, 70, {
+  backgroundColor: color.cyan,
+  borderRadius: 24,
+  borderWidth: 5,
+  borderColor: color.purple,
+  borderStyle: 'dashed',
+});
+const dashedPerSide = tile(630, 585, 120, 70, Object.assign({}, perSideColors, { borderStyle: 'dashed' }));
+
 const clampedRing = tile(30, 495, 180, 85, { backgroundColor: color.cyan, borderRadius: 200, borderWidth: 14, borderColor: color.purple });
 const largeRadiusPerSideWidths = tile(240, 495, 180, 85, {
   borderRadius: 40,
@@ -146,6 +170,11 @@ const container = createView({ flex: 1 });
   largeRadiusPerSideWidths,
   largeRadiusPerSideColors,
   circle,
+  dashedSquare,
+  dashedRounded,
+  dottedRounded,
+  dashedOverFill,
+  dashedPerSide,
 ].forEach((child) => fabric.appendChild(container, child));
 
 const rootChildren = fabric.createChildSet();

@@ -1911,6 +1911,31 @@ ellipse, scaled by `(horizontal * vertical)^2` so there is no division and a zer
 The consequence that is a behaviour change: **a press outside a rounded corner's arc misses.** Upstream's
 shadow-tree hit test presses the bounding rectangle; see *Hit-testing under animation* for why this one does not.
 
+### Dashed and dotted borders (#101)
+
+A dashed ring is **one stroke down the middle of the band**, with `SkDashPathEffect` on it, rather than four
+dashed sides. That is the whole reason it looks right: the dash phase runs continuously around the corner arcs,
+where a hand-rolled per-side implementation restarts it four times and produces the corners
+[core#32918](https://github.com/facebook/react-native/issues/32918) has been open about since 2022. `drawDRRect`
+cannot do it — it fills the difference between two rounded rects and has no path to dash along — so this is the
+one place the ring is a stroke instead of a fill.
+
+- The pattern is in **multiples of the border width**, not absolute points: a dash is three widths on and two
+  off, and a dot is a zero-length on-interval under a round cap. A four-point dashed border and a one-point one
+  are then the same border at two sizes, which is what an author means by `dashed`.
+- **Per-side colours still work**, through the same wedge clips the solid ring uses. Each side is a clipped
+  portion of the *same* stroked path, so a four-colour dashed ring keeps one phase rather than four.
+- **Four different widths fall back to solid.** A stroke has one width, and a ring with four is four strokes that
+  no dash phase can be continuous across. That is the deviation, and it is this narrow: uniform width, any
+  radius, any colours, dashes.
+- **The background is untouched by any of it.** The fill is painted before the ring and the ring is a stroke over
+  it, so [core#42289](https://github.com/facebook/react-native/issues/42289) and
+  [core#45368](https://github.com/facebook/react-native/issues/45368) — a dashed or dotted border taking the
+  background down with it — cannot happen here. `NoBorderStyleAtAnyWidthChangesWhatIsPaintedBehindTheRing` asserts
+  the whole table: three styles by three widths by an opaque and a translucent background.
+
+The picture is the sixth row of `border-matrix.png`, which is why that golden is 700 points tall rather than 600.
+
 ### Border painting (#100)
 
 - **Per-side colours are mitred wedge clips over one `drawDRRect`**, not four filled trapezoids. The ring is
@@ -1943,11 +1968,8 @@ Known deviations from iOS and Android, all deliberate:
 - **Opacity is per-primitive, not group opacity.** React Native composites a translucent subtree as one layer; we
   multiply the alpha of each primitive instead. Overlapping descendants of a translucent ancestor therefore blend
   against each other where the real thing would not. Fixing it means `saveLayerAlphaf` per stacking context.
-- **`borderStyle` is not implemented.** Every border is solid; `dotted` and `dashed` draw the same ring as
-  `solid`, and no test asserts otherwise. Issue #101 owns implementing them or refusing them in writing; the
-  ledger entry is `not-implemented`, not `deviating`, because there is nothing here to deviate deliberately.
-  [core#48078](https://github.com/facebook/react-native/issues/48078) is what the combination of a dashed border
-  and `overflow: hidden` costs upstream.
+- **`borderStyle` draws, and a ring with four different widths is the one case that does not** (#101). See
+  *Dashed and dotted borders* below.
 - **`borderCurve` is ignored.** Corners are always circular, never iOS' `continuous` squircle.
 - **An unset `borderColor` draws nothing, and cannot be told from a transparent one.** Upstream's own cxx
   `HostPlatformColor` is `using Color = int32_t` with `UndefinedColor = 0`, and `transparent` processes to

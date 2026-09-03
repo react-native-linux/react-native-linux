@@ -21,6 +21,7 @@
 #include "include/core/SkSamplingOptions.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkTileMode.h"
+#include "include/effects/SkDashPathEffect.h"
 #include "modules/skparagraph/include/Paragraph.h"
 
 #include <array>
@@ -127,6 +128,98 @@ void paintEdge(SkCanvas& canvas, const SkRRect& outer, const SkRRect& inner, con
 }
 
 /**
+ * The dash pattern one side's style asks for, or nothing when it is solid.
+ *
+ * CSS and both React Native platforms draw a dash as a run of the border's own width and a dot as a round cap on
+ * a zero-length run, so both patterns are expressed in multiples of that width rather than in absolute points: a
+ * four-point dashed border and a one-point one look like the same border at two sizes, which is what an author
+ * means by `dashed`.
+ */
+constexpr SkScalar kDashLengthInWidths = 3.0F;
+constexpr SkScalar kDashGapInWidths = 2.0F;
+constexpr SkScalar kDotGapInWidths = 2.0F;
+
+sk_sp<SkPathEffect> toDashEffect(facebook::react::BorderStyle borderStyle, SkScalar borderWidth) {
+    if (borderStyle == facebook::react::BorderStyle::Dashed) {
+        const std::array<SkScalar, 2> pattern{kDashLengthInWidths * borderWidth, kDashGapInWidths * borderWidth};
+
+        return SkDashPathEffect::Make(pattern, 0.0F);
+    }
+
+    if (borderStyle == facebook::react::BorderStyle::Dotted) {
+        // A zero-length on-interval under a round cap is a dot, which is what every other platform draws.
+        const std::array<SkScalar, 2> pattern{0.0F, kDotGapInWidths * borderWidth};
+
+        return SkDashPathEffect::Make(pattern, 0.0F);
+    }
+
+    return nullptr;
+}
+
+/**
+ * Whether a ring can be drawn as one dashed stroke: the four widths have to be the same, because a stroke has one
+ * width and a ring with four is four different strokes that no dash phase can be continuous across. A dashed
+ * border with uneven widths therefore draws solid, which is the deviation *View props fidelity* records.
+ */
+bool isUniformWidth(const facebook::react::BorderWidths& widths) {
+    return widths.left == widths.top && widths.left == widths.right && widths.left == widths.bottom &&
+           widths.left > 0;
+}
+
+/**
+ * The dashed or dotted ring: one stroke down the middle of the band, so the dash phase runs continuously around
+ * the corners instead of restarting on each side. `drawDRRect` cannot do this — it fills the difference between
+ * two rounded rects and has no path to dash along — so this is the one place the ring is a stroke.
+ *
+ * The per-side colours still come from the wedge clips the solid path uses, and each side is a clipped portion of
+ * the *same* stroked path, so a four-colour dashed border keeps one phase rather than four.
+ */
+void paintDashedBorder(SkCanvas& canvas, const ScenePrimitive& primitive, const SceneRoundedBox& borderBox,
+                       sk_sp<SkPathEffect> dashEffect) {
+    const SkScalar borderWidth = static_cast<SkScalar>(primitive.borderWidths.left);
+    const facebook::react::BorderWidths halfWidths{.left = primitive.borderWidths.left / 2,
+                                                   .top = primitive.borderWidths.top / 2,
+                                                   .right = primitive.borderWidths.right / 2,
+                                                   .bottom = primitive.borderWidths.bottom / 2};
+    const SkRRect centreLine = toSkRRect(roundedContentBox(borderBox, halfWidths));
+    const facebook::react::RectangleEdges<uint32_t>& colors = primitive.borderColorsArgb;
+    const std::array<uint32_t, 4> sideColors{colors.top, colors.right, colors.bottom, colors.left};
+    SkPaint paint;
+
+    paint.setAntiAlias(true);
+    paint.setStyle(SkPaint::kStroke_Style);
+    paint.setStrokeWidth(borderWidth);
+    paint.setStrokeCap(SkPaint::kRound_Cap);
+    paint.setPathEffect(std::move(dashEffect));
+
+    if (colors.left == colors.top && colors.left == colors.right && colors.left == colors.bottom) {
+        if (SkColorGetA(colors.left) == 0) {
+            return;
+        }
+
+        paint.setColor(colors.left);
+        canvas.drawRRect(centreLine, paint);
+
+        return;
+    }
+
+    const std::array<SkPath, 4> wedges = edgeWedges(toSkRect(borderBox),
+                                                    toSkRect(roundedContentBox(borderBox, primitive.borderWidths)));
+
+    for (size_t side = 0; side < wedges.size(); side++) {
+        if (SkColorGetA(sideColors[side]) == 0) {
+            continue;
+        }
+
+        const SkAutoCanvasRestore restore(&canvas, true);
+
+        paint.setColor(sideColors[side]);
+        canvas.clipPath(wedges[side], true);
+        canvas.drawRRect(centreLine, paint);
+    }
+}
+
+/**
  * The border ring: the difference between the node's rounded border box and the content box the per-side widths
  * leave inside it, painted in each side's own colour.
  *
@@ -145,6 +238,17 @@ void paintEdge(SkCanvas& canvas, const SkRRect& outer, const SkRRect& inner, con
  */
 void paintBorder(SkCanvas& canvas, const ScenePrimitive& primitive, const SceneRoundedBox& borderBox,
                  const SkRRect& outer) {
+    if (isUniformWidth(primitive.borderWidths)) {
+        sk_sp<SkPathEffect> dashEffect = toDashEffect(primitive.borderStyles.left,
+                                                      static_cast<SkScalar>(primitive.borderWidths.left));
+
+        if (dashEffect != nullptr) {
+            paintDashedBorder(canvas, primitive, borderBox, std::move(dashEffect));
+
+            return;
+        }
+    }
+
     const SceneRoundedBox contentBox = roundedContentBox(borderBox, primitive.borderWidths);
     const SkRRect inner = toSkRRect(contentBox);
     const facebook::react::RectangleEdges<uint32_t>& colors = primitive.borderColorsArgb;

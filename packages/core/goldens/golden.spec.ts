@@ -35,10 +35,11 @@ const fixtures: readonly GoldenFixture[] = [
   // #99: the fill, the gradient, the ring, the content clip and the child clip all cut by one rounded box.
   { bundleFileName: "rounded-box.js", goldenFileName: "rounded-box.png", renderArguments: [], renderFlag: "--golden" },
   // #100: per-side colours, transparent edges, hairline widths and the corner mitres, at three scales.
+  // 700 points tall rather than the default 600: the dashed and dotted row of #101 is a sixth row of tiles.
   {
     bundleFileName: "border-matrix.js",
     goldenFileName: "border-matrix.png",
-    renderArguments: [],
+    renderArguments: ["800", "700"],
     renderFlag: "--golden",
   },
   // Text is reproducible only against the fonts scripts/vendor-fonts.ts pins into packages/core/fonts.

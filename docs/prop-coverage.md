@@ -56,12 +56,12 @@ assertion and not an implementation.
 
 | Component | Props | Implemented | Deviating | Not implemented |
 | --- | --- | --- | --- | --- |
-| View | 35 | 8 | 5 | 22 |
+| View | 35 | 9 | 5 | 21 |
 | Text | 45 | 12 | 12 | 21 |
 | Image | 14 | 3 | 7 | 4 |
 | ScrollView | 39 | 2 | 2 | 35 |
 | TextInput | 22 | 11 | 0 | 11 |
-| **Total** | 155 | 36 | 26 | 93 |
+| **Total** | 155 | 37 | 26 | 92 |
 
 ## View
 
@@ -72,7 +72,7 @@ assertion and not an implementation.
 | `borderRadii` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:50` | implemented | `BorderGeometryTest, TheHitRegionIsTheSameRoundedBoxTheSnapshotIsPaintedWith` |
 | `borderColors` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:51` | implemented | `border-matrix.png` |
 | `borderCurves` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:52` | deviating | Corners are always circular; iOS' `continuous` squircle is never drawn. See *View props fidelity*. |
-| `borderStyles` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:53` | not-implemented | #101 |
+| `borderStyles` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:53` | implemented | `border-matrix.png` |
 | `outlineColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:56` | not-implemented | #68 |
 | `outlineOffset` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:57` | not-implemented | #68 |
 | `outlineStyle` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:58` | not-implemented | #68 |

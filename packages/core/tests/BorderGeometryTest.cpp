@@ -3,6 +3,8 @@
 #include <gtest/gtest.h>
 
 #include <react/renderer/components/view/primitives.h>
+
+#include <array>
 #include <yoga/enums/Edge.h>
 #include <yoga/enums/Overflow.h>
 #include <yoga/style/StyleLength.h>
@@ -162,6 +164,73 @@ TEST(BorderGeometryTest, EachRoundedCornerExcludesThePointsItsOwnArcDoesNotCover
     EXPECT_TRUE(roundedBoxContainsPoint(box, pointAt(50, 50)));
     EXPECT_TRUE(roundedBoxContainsPoint(box, pointAt(0, 50)));
     EXPECT_TRUE(roundedBoxContainsPoint(box, pointAt(50, 0)));
+}
+
+// Issue #101. `borderStyle` is a painter decision, and the one thing it must never do is change what the node
+// paints *behind* the ring: core#42289 and core#45368 are both a dashed or dotted border taking the background
+// down with it. The whole table is asserted rather than the interesting corner of it, because "the background
+// survived" is only a claim if the unset, zero and set widths are all in it.
+
+constexpr uint32_t kHalfBlueArgb = 0x803366CCU;
+
+facebook::react::SharedColor halfBlue() {
+    return facebook::react::colorFromRGBA(51, 102, 204, 128);
+}
+
+SceneSnapshot snapshotOfBorderStyle(yoga::StyleLength width, facebook::react::BorderStyle borderStyle,
+                                    facebook::react::SharedColor backgroundColor) {
+    const std::shared_ptr<ViewProps> viewProps = propsWithBackground(backgroundColor);
+
+    viewProps->yogaStyle.setBorder(yoga::Edge::All, width);
+    viewProps->borderColors.all = red();
+    viewProps->borderStyles.all = borderStyle;
+
+    RetainedScene scene;
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, makeStyledView(kBoxTag, boxFrame(), viewProps));
+
+    return scene.snapshot();
+}
+
+TEST(BorderGeometryTest, NoBorderStyleAtAnyWidthChangesWhatIsPaintedBehindTheRing) {
+    const std::array<facebook::react::BorderStyle, 3> styles{facebook::react::BorderStyle::Solid,
+                                                             facebook::react::BorderStyle::Dashed,
+                                                             facebook::react::BorderStyle::Dotted};
+    const std::array<yoga::StyleLength, 3> widths{yoga::StyleLength::undefined(), yoga::StyleLength::points(0),
+                                                  yoga::StyleLength::points(4)};
+
+    for (const facebook::react::BorderStyle style : styles) {
+        for (const yoga::StyleLength width : widths) {
+            const SceneSnapshot opaque = snapshotOfBorderStyle(width, style, blue());
+            const SceneSnapshot translucent = snapshotOfBorderStyle(width, style, halfBlue());
+
+            ASSERT_EQ(opaque.size(), 1U);
+            ASSERT_EQ(translucent.size(), 1U);
+            EXPECT_EQ(opaque[0].backgroundColorArgb, kBlueArgb);
+            EXPECT_EQ(translucent[0].backgroundColorArgb, kHalfBlueArgb);
+            EXPECT_EQ(opaque[0].borderStyles.left, style);
+        }
+    }
+}
+
+TEST(BorderGeometryTest, ABorderStyleIsCarriedPerSideExactlyAsAColourIs) {
+    const std::shared_ptr<ViewProps> viewProps = propsWithBackground(blue());
+
+    viewProps->yogaStyle.setBorder(yoga::Edge::All, yoga::StyleLength::points(4));
+    viewProps->borderStyles.all = facebook::react::BorderStyle::Dashed;
+    viewProps->borderStyles.top = facebook::react::BorderStyle::Dotted;
+
+    RetainedScene scene;
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, makeStyledView(kBoxTag, boxFrame(), viewProps));
+
+    const SceneSnapshot snapshot = scene.snapshot();
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    EXPECT_EQ(snapshot[0].borderStyles.top, facebook::react::BorderStyle::Dotted);
+    EXPECT_EQ(snapshot[0].borderStyles.left, facebook::react::BorderStyle::Dashed);
 }
 
 TEST(BorderGeometryTest, ASubPixelBorderWidthIsPromotedToOneDevicePixelAndAZeroWidthStaysZero) {

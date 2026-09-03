@@ -212,6 +212,7 @@ struct ScenePrimitive {
     std::vector<SceneClip> clips;
     facebook::react::BorderRadii borderRadii;
     facebook::react::BorderWidths borderWidths;
+    facebook::react::BorderStyles borderStyles;
     facebook::react::RectangleEdges<uint32_t> borderColorsArgb;
     uint32_t backgroundColorArgb{};
 

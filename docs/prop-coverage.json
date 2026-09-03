@@ -14,7 +14,7 @@
       "state": "deviating",
       "reason": "Corners are always circular; iOS' `continuous` squircle is never drawn. See *View props fidelity*."
     },
-    "borderStyles": { "state": "not-implemented", "issue": "#101" },
+    "borderStyles": { "state": "implemented", "test": "border-matrix.png" },
     "outlineColor": { "state": "not-implemented", "issue": "#68" },
     "outlineOffset": { "state": "not-implemented", "issue": "#68" },
     "outlineStyle": { "state": "not-implemented", "issue": "#68" },

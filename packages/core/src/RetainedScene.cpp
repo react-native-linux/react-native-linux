@@ -567,6 +567,7 @@ SceneVisit visitNode(const SceneNode& node, const ScenePaintState& state) {
                                                  .clips = state.clips,
                                                  .borderRadii = node.borderMetrics.borderRadii,
                                                  .borderWidths = node.borderMetrics.borderWidths,
+                                                 .borderStyles = node.borderMetrics.borderStyles,
                                                  .borderColorsArgb = toArgbEdges(node.borderMetrics.borderColors,
                                                                                  opacity),
                                                  .backgroundColorArgb =
