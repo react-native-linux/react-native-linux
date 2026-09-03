@@ -1161,6 +1161,32 @@ parses.
   this change is fully gated; the dispatcher half is proved only by `--inject-pointer` and by the e2e scenario
   above.
 
+## The animation that outlives its view (#74)
+
+`react-native-windows` [#16309](https://github.com/microsoft/react-native-windows/issues/16309) is a **permanent
+UI thread hang**: an unbounded `ProcessDelayedPropsNodes` retry loop when a native-driver animation targets a view
+the Fabric registry does not hold. The animated node graph and the mounting layer have independent lifetimes, so a
+driver can name a tag that was never mounted, was unmounted mid-animation, or was mounted again after that — and
+the thread that answers is the one that draws. ADR-0001 puts us in exactly that configuration: the shared C++
+animated graph, driven from a platform-owned frame thread, where an unbounded retry has no way out but SIGKILL.
+
+**It cannot happen here, and the reason is an absence:** there is no delayed-props queue.
+`synchronouslyUpdateViewOnUIThread` asks the scene once, counts a diagnostic if the tag is unknown, and returns.
+Nothing is parked, so nothing is retried.
+
+That is only true while nobody adds a queue, so `AnimatedPropsLifetimeTest` writes the answer down:
+
+- **An animation that outlives its view** costs one diagnostic per frame and nothing else. 120 frames after the
+  unmount produce 120 counts, no damage, and an empty frame — bounded work, in the shape a report of it would
+  need: the first unknown operation, tag and transaction number are kept whole.
+- **An animation attached before its view mounts** applies from the mount onwards. The tag is not poisoned by
+  having been unknown for 120 frames.
+- **A tag mounted again after its unmount** animates as the *new* node: the second node mounts red and animates to
+  half red, so nothing survived the unmount that should not have.
+- **Animating while another thread mounts and unmounts the same tag** is serialized by `sceneMutex_`, which both
+  sides take. The assertions only say the run finished and the scene holds either the node or nothing;
+  ThreadSanitizer is what checks the claim, and the CI TSan job runs this suite.
+
 ## Animation frame cost (#124)
 
 Upstream shipped a 20× native-driver animation regression to a stable release
