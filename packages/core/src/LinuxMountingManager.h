@@ -105,10 +105,17 @@ public:
     void startSurface(facebook::react::SurfaceId surfaceId, facebook::react::Size size);
 
     /**
-     * Damages every node drawing `uri`. Called from a decode thread when an image finishes decoding, which is the
-     * one thing that changes the picture without a Fabric mutation behind it.
+     * Damages every node drawing `uri` and hands them its decoded pixels. Called from a decode thread when an
+     * image finishes decoding, which is the one thing that changes the picture without a Fabric mutation behind
+     * it.
      */
     void damageImageSource(const std::string& uri);
+
+    /**
+     * Where the scene reads decoded pixels from. Set once by the host with the image pipeline's cache, before any
+     * surface starts; see `RetainedScene::setDecodedImageProvider`.
+     */
+    void setDecodedImageProvider(RetainedScene::DecodedImageProvider decodedImages);
 
     /**
      * Marks the focused node and whether it draws the focus ring. Called from the frame thread by the input

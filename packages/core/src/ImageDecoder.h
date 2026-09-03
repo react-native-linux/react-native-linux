@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <functional>
+#include <memory>
 #include <string>
 
 namespace react_native_linux {
@@ -15,10 +16,21 @@ namespace react_native_linux {
 using ImageDecodeListener = std::function<void(const std::string& uri)>;
 
 /**
- * The Skia-free half of the image pipeline's API, so the Fabric host and the headless runner can drive it without
- * putting Skia on their include path. The decoded pixels are on the other side, in `ImagePipeline.h`.
+ * The Skia-free half of the image pipeline's API, so the Fabric host, the scene and the headless runner can drive
+ * it without putting Skia on their include path. Requesting a decode is on the other side, in `ImagePipeline.h`,
+ * because only `ImageManager` asks for one.
  */
 void setImageDecodeListener(ImageDecodeListener listener);
+
+/**
+ * The decoded pixels for `uri`, or null when the source has not been decoded, failed, or has been evicted. Marks
+ * the entry as most recently used.
+ *
+ * Type-erased for the reason `ImageCache` erases its values and upstream's `ImageResponse` erases its own: this
+ * is what the scene attaches to the nodes drawing the source, and the scene links no Skia. The painter casts it
+ * back to `SkImage`.
+ */
+std::shared_ptr<void> decodedImagePixels(const std::string& uri);
 
 /**
  * Blocks until nothing is queued or decoding, or until `budget` runs out; returns whether the pipeline went idle.

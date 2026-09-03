@@ -19,6 +19,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -171,9 +173,11 @@ enum class SceneImageResizeMode : uint8_t { Cover, Contain, Stretch, Center, Rep
  * Everything a `<Image>` needs to be drawn that does not need Skia: which source to draw, how to fit it into the
  * frame, and the colours it is drawn with.
  *
- * The pixels are deliberately absent. Decoding produces an `SkImage`, and the scene links no Skia, so the decoded
- * image lives in the painter-side cache and this struct carries only the key into it. That is the same split
- * `SceneTextContent` makes: the inputs travel through the scene, the Skia object is built where Skia is linked.
+ * `pixels` is the decoded image itself, type-erased to `std::shared_ptr<void>` exactly as upstream's own
+ * `ImageResponse` erases it, because the scene links no Skia; the painter casts it back to `SkImage`. It travels
+ * with the node rather than being looked up by `uri` at paint time so that a decoded bitmap lives exactly as long
+ * as the nodes drawing it and the cache holding it — issue #108. A node that has it cannot be blanked by an
+ * eviction (react-native-macos#921), and the last node dropping it is what makes the pixels reclaimable.
  *
  * On a retained `SceneNode` the tint is the colour as authored and `opacity` is unused. Only a snapshot resolves
  * them: the tint alpha carries the inherited opacity, exactly like every other colour a primitive emits, and
@@ -181,6 +185,7 @@ enum class SceneImageResizeMode : uint8_t { Cover, Contain, Stretch, Center, Rep
  */
 struct SceneImageContent {
     std::string uri;
+    std::shared_ptr<void> pixels;
     SceneImageResizeMode resizeMode{SceneImageResizeMode::Stretch};
     uint32_t tintColorArgb{};
     float opacity{1.0F};
@@ -346,10 +351,26 @@ public:
     bool hasNode(facebook::react::Tag tag) const;
 
     /**
-     * Damages every node drawing `uri`, which is what turns a decode that finished after the last frame into a
-     * repaint. Nothing else can: a decode changes no shadow node, so Fabric emits no mutation for it.
+     * Attaches the freshly decoded pixels to every node drawing `uri` and damages them, which is what turns a
+     * decode that finished after the last frame into a repaint. Nothing else can: a decode changes no shadow
+     * node, so Fabric emits no mutation for it.
      */
     void damageImageSource(const std::string& uri);
+
+    /**
+     * Where decoded pixels come from: the image pipeline's cache, asked by source URI. Set once by the host, and
+     * unset in every test that does not decode anything, in which case an `<Image>` node mounts with no pixels
+     * and paints nothing until a decode reports one.
+     *
+     * The provider is asked at mount and at `damageImageSource`, never at paint time, so the pixels a frame draws
+     * are the ones its nodes were holding when it was snapshotted — an eviction between the two cannot blank a
+     * node that had them. See *Image* in docs/cpp-toolchain.md.
+     *
+     * Threading contract: called on whichever thread is writing the scene, under its owner's mutex.
+     */
+    using DecodedImageProvider = std::function<std::shared_ptr<void>(const std::string& uri)>;
+
+    void setDecodedImageProvider(DecodedImageProvider decodedImages);
 
     /**
      * Marks which node draws the focus ring, and damages the node that stops drawing it and the node that starts.
@@ -425,6 +446,7 @@ private:
     std::unordered_map<facebook::react::Tag, SceneEditorState> editorStates_;
     facebook::react::Tag focusedTag_{0};
     bool isFocusVisible_{false};
+    DecodedImageProvider decodedImages_;
 };
 
 } // namespace react_native_linux

@@ -7,6 +7,7 @@
 #include "include/codec/SkJpegDecoder.h"
 #include "include/codec/SkPngDecoder.h"
 #include "include/core/SkData.h"
+#include "include/core/SkImage.h"
 #include "include/core/SkSpan.h"
 
 #include <array>
@@ -153,8 +154,6 @@ struct ImagePipelineState {
                 }
             }
 
-            idle.notify_all();
-
             for (const ImageDecodeCompletion& completion : completions) {
                 completion(image);
             }
@@ -162,6 +161,11 @@ struct ImagePipelineState {
             if (decoded) {
                 decoded(uri);
             }
+
+            // Last, so that going idle means the pixels have been published, not merely cached: the golden rig
+            // waits on this and then snapshots the scene, and the nodes drawing this source are handed their
+            // pixels by the listener above. Notifying first is a race that draws a blank image (#108).
+            idle.notify_all();
         }
     }
 
@@ -215,16 +219,11 @@ void requestImageDecode(const std::string& uri, ImageDecodeCompletion completion
     state.queued.notify_one();
 }
 
-sk_sp<SkImage> decodedImage(const std::string& uri) {
+std::shared_ptr<void> decodedImagePixels(const std::string& uri) {
     ImagePipelineState& state = imagePipelineState();
     const std::lock_guard<std::mutex> guard(state.mutex);
-    const std::shared_ptr<void> cached = state.cache.find(uri);
 
-    if (cached == nullptr) {
-        return nullptr;
-    }
-
-    return sk_ref_sp(static_cast<SkImage*>(cached.get()));
+    return state.cache.find(uri);
 }
 
 void setImageDecodeListener(ImageDecodeListener listener) {

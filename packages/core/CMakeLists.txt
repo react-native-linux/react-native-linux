@@ -860,9 +860,11 @@ target_compile_options(hello_react PRIVATE -Wall -Wextra)
 target_link_libraries(hello_react PRIVATE rnl_react_core)
 set_target_properties(hello_react PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
+# RNL_ENABLE_IMAGES as well as RNL_ENABLE_GOLDEN: BundleRunner.cpp settles the decode queue before it reads a
+# scene, and the function that waits is defined only where Skia is, which is the same condition as this block.
 if(TARGET rnl_scene_painter)
     target_sources(hello_react PRIVATE src/GoldenRenderer.cpp)
-    target_compile_definitions(hello_react PRIVATE RNL_ENABLE_GOLDEN)
+    target_compile_definitions(hello_react PRIVATE RNL_ENABLE_GOLDEN RNL_ENABLE_IMAGES)
     target_link_libraries(hello_react
         PRIVATE
             rnl_scene_painter

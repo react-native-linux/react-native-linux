@@ -1,7 +1,6 @@
 #include "GoldenRenderer.h"
 
 #include "BundleRunner.h"
-#include "ImageDecoder.h"
 #include "ScenePainter.h"
 
 #include "include/core/SkAlphaType.h"
@@ -17,7 +16,6 @@
 #include <react/renderer/graphics/Float.h>
 #include <react/renderer/graphics/Size.h>
 
-#include <chrono>
 #include <cstddef>
 #include <cstring>
 #include <iostream>
@@ -32,17 +30,6 @@ struct PixelCoordinate {
     int x{};
     int y{};
 };
-
-// A decode is asynchronous, and a headless render has no run loop to notice the frame damage a completion
-// produces. Settling the decode queue before rasterising is what makes an image golden deterministic; without it
-// the same bundle would produce a picture that depends on how fast a codec ran.
-constexpr std::chrono::milliseconds kImageDecodeBudget{30000};
-
-void settleImageDecodes() {
-    if (!waitForPendingImageDecodes(kImageDecodeBudget)) {
-        std::cerr << "[golden] gave up waiting for image decoding" << std::endl;
-    }
-}
 
 facebook::react::Size toSurfaceSize(int width, int height) {
     return facebook::react::Size{.width = static_cast<facebook::react::Float>(width),
@@ -139,7 +126,6 @@ int paintSettledScene(const FabricRunResult& run, const std::string& outputPath,
         return 1;
     }
 
-    settleImageDecodes();
     paintScene(*surface->getCanvas(), run.scene, {});
 
     if (!writeSurfaceAsPng(*surface, outputPath)) {
@@ -189,8 +175,6 @@ int renderDamageGolden(const std::string& bundlePath, const std::string& outputP
 
         return 1;
     }
-
-    settleImageDecodes();
 
     // Both surfaces start as the same first frame, painted in full. The second frame is then drawn twice: once as
     // a full repaint, and once as the partial repaint a window would do, on top of the first frame's pixels. The

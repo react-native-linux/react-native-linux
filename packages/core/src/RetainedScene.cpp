@@ -252,6 +252,7 @@ uint32_t scaleArgbAlpha(uint32_t colorArgb, float opacity) {
 
 SceneImageContent resolveImage(const SceneImageContent& image, float opacity) {
     return SceneImageContent{.uri = image.uri,
+                             .pixels = image.pixels,
                              .resizeMode = image.resizeMode,
                              .tintColorArgb = scaleArgbAlpha(image.tintColorArgb, opacity),
                              .opacity = opacity};
@@ -485,7 +486,8 @@ void readEditorContent(SceneNode& node, const facebook::react::ShadowView& shado
  * A node whose state still holds the `Invalid` source `ImageShadowNode::initialStateData` seeds — which is every
  * `<Image>` before its first layout — has an empty uri and paints nothing.
  */
-void readImageContent(SceneNode& node, const facebook::react::ShadowView& shadowView) {
+void readImageContent(SceneNode& node, const facebook::react::ShadowView& shadowView,
+                      const RetainedScene::DecodedImageProvider& decodedImages) {
     node.image = std::nullopt;
 
     const std::shared_ptr<const facebook::react::ImageProps> imageProps =
@@ -505,6 +507,7 @@ void readImageContent(SceneNode& node, const facebook::react::ShadowView& shadow
     }
 
     node.image = SceneImageContent{.uri = imageSource.uri,
+                                   .pixels = decodedImages ? decodedImages(imageSource.uri) : nullptr,
                                    .resizeMode = toSceneImageResizeMode(imageProps->resizeMode),
                                    .tintColorArgb = toArgb(imageProps->tintColor, 1.0F)};
 }
@@ -877,10 +880,12 @@ bool RetainedScene::hasNode(facebook::react::Tag tag) const {
 }
 
 void RetainedScene::damageImageSource(const std::string& uri) {
+    const std::shared_ptr<void> pixels = decodedImages_ ? decodedImages_(uri) : nullptr;
     std::vector<facebook::react::Tag> drawingTags;
 
-    for (const auto& [tag, node] : nodes_) {
+    for (auto& [tag, node] : nodes_) {
         if (node.image.has_value() && node.image.value().uri == uri) {
+            node.image.value().pixels = pixels;
             drawingTags.push_back(tag);
         }
     }
@@ -888,6 +893,10 @@ void RetainedScene::damageImageSource(const std::string& uri) {
     for (facebook::react::Tag tag : drawingTags) {
         damageSubtree(tag);
     }
+}
+
+void RetainedScene::setDecodedImageProvider(DecodedImageProvider decodedImages) {
+    decodedImages_ = std::move(decodedImages);
 }
 
 void RetainedScene::setFocus(facebook::react::Tag tag, bool isFocusVisible) {
@@ -1015,7 +1024,7 @@ SceneNode& RetainedScene::writeNode(const facebook::react::ShadowView& shadowVie
     readPaintProps(node, shadowView);
     readTextContent(node, shadowView);
     readEditorContent(node, shadowView);
-    readImageContent(node, shadowView);
+    readImageContent(node, shadowView, decodedImages_);
     readScrollContent(node, shadowView);
 
     return node;

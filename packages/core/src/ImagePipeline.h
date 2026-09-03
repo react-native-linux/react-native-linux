@@ -1,8 +1,5 @@
 #pragma once
 
-#include "include/core/SkImage.h"
-#include "include/core/SkRefCnt.h"
-
 #include <functional>
 #include <memory>
 #include <string>
@@ -22,9 +19,10 @@ using ImageDecodeCompletion = std::function<void(const std::shared_ptr<void>& im
  *
  * `ImageManager::requestImage` calls `requestImageDecode` during layout, on whichever thread commits; the decode
  * itself runs on one process-wide worker thread, so a frame is never blocked on a codec. Two requests for the same
- * source decode once: the second one joins the first's completion list. The painter calls `decodedImage` on the
- * frame thread and draws whatever is there — a source that has not finished decoding yet draws nothing, and the
- * completion damages the frame so the next one draws it.
+ * source decode once: the second one joins the first's completion list. The scene asks `decodedImagePixels` for
+ * a source when it mounts a node and when a decode reports, and the painter draws the pixels the node is holding
+ * — a source that has not finished decoding yet draws nothing, and the completion damages the frame so the next
+ * one draws it.
  *
  * Threading contract: every function here is safe to call from any thread. The cache, the queue, the completion
  * lists and the listener all live under one mutex, and it is never held while a codec runs or while a completion
@@ -32,11 +30,5 @@ using ImageDecodeCompletion = std::function<void(const std::shared_ptr<void>& im
  * lock without inverting anything.
  */
 void requestImageDecode(const std::string& uri, ImageDecodeCompletion completion);
-
-/**
- * The decoded image for `uri`, or null when it has not been decoded, failed, or has been evicted. Marks the entry
- * as most recently used.
- */
-sk_sp<SkImage> decodedImage(const std::string& uri);
 
 } // namespace react_native_linux

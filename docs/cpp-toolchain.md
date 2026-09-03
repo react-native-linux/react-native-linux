@@ -2251,17 +2251,27 @@ renderer that no Fabric mutation stands behind — a decode finishing.
   → ImageShadowNode::getImageSource        picks the source and stamps the laid-out size onto it
   → ImageManager::requestImage             queues the decode, returns an ImageRequest
   → ImageState                             the chosen ImageSource + that request, mounted
-  → RetainedScene::writeNode               read off the state and the props into SceneNode::image
+  → RetainedScene::writeNode               read off the state and the props into SceneNode::image,
+                                           with the pixels the cache already has for that source
   → SceneSnapshot                          SceneImageContent on the primitive, opacity folded in
-  → ScenePainter::paintImage               the cached SkImage, fitted and clipped to the frame
+  → ScenePainter::paintImage               the node's own pixels, fitted and clipped to the frame
 
   decode worker thread → ImageCache → decode listener → LinuxMountingManager::damageImageSource
+                                                     → the pixels, onto every node drawing that URI
 ```
 
-The pixels never travel through the scene. `RetainedScene` links no Skia, so a `ScenePrimitive` carries the source
-URI, the fit and the tint, and the decoded `SkImage` lives in a process-wide cache the painter looks the URI up
-in. That is the same split *Text* makes for a different reason, and it is what keeps the whole of the image model
-inside the coverage gate.
+The pixels travel with the node, and they are the only thing in the scene that is not a number or a string:
+`SceneImageContent::pixels` is a `std::shared_ptr<void>`, so `RetainedScene` still links no Skia and the whole of
+the image model stays inside the coverage gate, and the painter casts it back to `SkImage` where Skia is linked.
+That is upstream's own type erasure — `ImageResponse` carries its bitmap the same way and for the same reason.
+
+The scene asks `decodedImagePixels` for a source at two moments and never at paint time: when it mounts a node,
+which covers a source decoded before this node existed, and in `damageImageSource`, which covers a decode that
+finished after the node mounted. A frame therefore draws the pixels its nodes were holding when it was
+snapshotted, which is what makes the two guarantees of issue #108 hold: **an eviction cannot blank a mounted
+node** — react-native-macos [#921](https://github.com/microsoft/react-native-macos/issues/921) is what that looks
+like when it can — and **the decoded bitmap is owned by the nodes drawing it and by the cache, and by nothing
+else**, so the last node to drop a source, once the cache has evicted it too, is what frees its bytes.
 
 The source is read off `ImageState`, not off `ImageProps.sources`. `ImageShadowNode` is what chooses between
 several sources and what stamps the laid-out size and scale onto the one it chose, and that is the source
@@ -2316,9 +2326,11 @@ The listener is process-wide and installed by `FabricHost`, under `RNL_ENABLE_IM
 exists when the swap above happened. It is cleared in `~FabricHost` so a decode that lands after a host is gone
 damages nothing.
 
-`hello_react --golden` has no run loop to notice that damage, so it settles the decode queue with
-`waitForPendingImageDecodes` before it rasterises. Without that the same bundle would produce a picture that
-depends on how fast a codec ran.
+A headless run has no run loop to notice that damage, so `BundleRunner` settles the decode queue with
+`waitForPendingImageDecodes` **before every read of the scene**, not before the paint: the completion is what
+hands the nodes their pixels, so a scene read first would carry none. Settling also makes an image golden
+deterministic — without it the same bundle would produce a picture that depends on how fast a codec ran. The
+decode worker calls its completions and the listener before it signals idle, for the same reason.
 
 ### The cache
 
@@ -2330,7 +2342,9 @@ everything else out on its way to being evicted itself. Both a hit and an insert
 
 The value is a `std::shared_ptr<void>`, which is what keeps `ImageContent.cpp` free of Skia and therefore inside
 the coverage gate; it is the same type erasure upstream's own `ImageResponse` uses, for the same reason. An
-evicted image stays alive as long as a frame is still drawing it, because the painter takes its own reference.
+evicted image stays alive as long as a node is still drawing it, because every such node holds the same pointer —
+see the pipeline diagram above. `ImageTest.cpp` states the whole of that lifetime, including a fifty-screen
+mount-and-unmount loop that ends with as many bitmaps alive as the cache has entries, and no more.
 
 ### Sources
 

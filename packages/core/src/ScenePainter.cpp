@@ -2,7 +2,6 @@
 
 #include "GradientShader.h"
 #include "ImageContent.h"
-#include "ImagePipeline.h"
 #include "TextGeometry.h"
 #include "TextPipeline.h"
 
@@ -258,7 +257,9 @@ void paintEditor(SkCanvas& canvas, const SceneTextContent& text, const SceneEdit
  */
 void paintImage(SkCanvas& canvas, const ScenePrimitive& primitive, const SceneImageContent& image,
                 const SkRRect& outer) {
-    const sk_sp<SkImage> decoded = decodedImage(image.uri);
+    // The node's own pixels, not a lookup by URI: the scene attached them when it mounted the node or when the
+    // decode reported, so an eviction since then cannot blank a node this frame was snapshotted with (#108).
+    SkImage* const decoded = static_cast<SkImage*>(image.pixels.get());
 
     if (decoded == nullptr) {
         return;

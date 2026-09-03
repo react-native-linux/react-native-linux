@@ -160,6 +160,7 @@ FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::
     // A finished decode changes the picture with no Fabric mutation behind it, so this is the only path that can
     // damage the frame for one. The listener runs on the decode thread and takes the mounting manager's mutex; the
     // pipeline holds no lock of its own while it calls back.
+    mountingManager_->setDecodedImageProvider(&decodedImagePixels);
     setImageDecodeListener([mountingManager = mountingManager_](const std::string& uri) {
         mountingManager->damageImageSource(uri);
     });

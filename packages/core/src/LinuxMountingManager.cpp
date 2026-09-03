@@ -55,6 +55,12 @@ void LinuxMountingManager::damageImageSource(const std::string& uri) {
     hasPendingDamage_ = true;
 }
 
+void LinuxMountingManager::setDecodedImageProvider(RetainedScene::DecodedImageProvider decodedImages) {
+    const std::lock_guard<std::mutex> guard(sceneMutex_);
+
+    scene_.setDecodedImageProvider(std::move(decodedImages));
+}
+
 void LinuxMountingManager::setFocus(facebook::react::Tag tag, bool isFocusVisible) {
     const std::lock_guard<std::mutex> guard(sceneMutex_);
 

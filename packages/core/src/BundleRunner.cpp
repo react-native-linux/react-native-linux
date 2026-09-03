@@ -5,6 +5,10 @@
 #include "InputPipeline.h"
 #include "ReactHost.h"
 
+#ifdef RNL_ENABLE_IMAGES
+#include "ImageDecoder.h"
+#endif
+
 #include <cxxreact/JSBigString.h>
 #include <react/renderer/graphics/Float.h>
 #include <react/renderer/graphics/Point.h>
@@ -72,6 +76,25 @@ void loadAndSettle(ReactHost& reactHost, const std::optional<std::string>& bundl
 }
 
 /**
+ * Waits for the decode queue to empty, because a scene is only read once the pixels are in it.
+ *
+ * A decode is asynchronous, and the completion is what hands the nodes drawing a source their pixels; a scene
+ * snapshotted before that carries none, and there is no run loop here to notice the damage the completion
+ * produced. Reading a settled scene is also what makes an image golden deterministic — without it the same
+ * bundle would produce a picture that depends on how fast a codec ran. Without Skia there is no decoder and
+ * nothing to wait for.
+ */
+void settlePendingImageDecodes() {
+#ifdef RNL_ENABLE_IMAGES
+    constexpr std::chrono::milliseconds kImageDecodeBudget{30000};
+
+    if (!waitForPendingImageDecodes(kImageDecodeBudget)) {
+        std::cerr << "[bundle-runner] gave up waiting for image decoding" << std::endl;
+    }
+#endif
+}
+
+/**
  * Waits for the first commit to reach the scene and returns it, leaving the damage take that came with it behind.
  *
  * There is no callback for "a transaction was mounted", so this polls: drain the JavaScript thread, look, repeat.
@@ -84,6 +107,7 @@ SceneSnapshot waitForFirstCommit(ReactHost& reactHost, FabricHost& fabricHost) {
 
     while (std::chrono::steady_clock::now() < deadline) {
         reactHost.drainJavaScriptThread();
+        settlePendingImageDecodes();
 
         SceneFrame frame = fabricHost.takeFrame();
 
@@ -206,6 +230,8 @@ int finishFabricRunWithStatus(ReactHost& reactHost, StartedFabricRun& startedRun
  * host is destroyed so the queued unmount runs while the scheduler delegate is still alive.
  */
 FabricRunResult finishFabricRun(ReactHost& reactHost, std::unique_ptr<FabricHost>& fabricHost) {
+    settlePendingImageDecodes();
+
     SceneSnapshot scene = fabricHost->snapshotScene();
     std::string sceneDump = fabricHost->dumpScene();
 
@@ -298,6 +324,8 @@ FabricDamageRunResult runFabricBundleAcrossCommits(const std::string& bundlePath
     if (!reactHost.runUntilQuiescent(kQuiescenceBudget)) {
         std::cerr << "[bundle-runner] gave up waiting for pending timers" << std::endl;
     }
+
+    settlePendingImageDecodes();
 
     SceneFrame secondFrame = fabricHost->takeFrame();
 
