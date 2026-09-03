@@ -619,6 +619,7 @@ if(TARGET rnl_skia)
 
     list(REMOVE_ITEM RNL_TEXT_LAYOUT_MANAGER_SOURCES ${RNL_TEXT_LAYOUT_MANAGER_STUB})
     list(APPEND RNL_TEXT_LAYOUT_MANAGER_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/LineBoxMetrics.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/TextLayoutManager.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/TextPipeline.cpp)
     set_property(TARGET react_renderer_textlayoutmanager PROPERTY SOURCES ${RNL_TEXT_LAYOUT_MANAGER_SOURCES})

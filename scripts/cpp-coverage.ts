@@ -39,6 +39,7 @@ const scopedSourcePaths: readonly string[] = [
   "packages/core/src/FrameClock.cpp",
   "packages/core/src/ImageContent.cpp",
   "packages/core/src/InputPipeline.cpp",
+  "packages/core/src/LineBoxMetrics.cpp",
   "packages/core/src/LinuxMountingManager.cpp",
   "packages/core/src/RetainedScene.cpp",
   "packages/core/src/ScrollPhysics.cpp",

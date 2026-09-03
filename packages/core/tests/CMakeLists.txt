@@ -35,6 +35,7 @@ add_executable(rnl_core_tests
     ImageTest.cpp
     ImeTest.cpp
     InputTest.cpp
+    LineBoxMetricsTest.cpp
     LinuxMountingManagerPendingDamageTest.cpp
     SceneTest.cpp
     ScrollTest.cpp
@@ -45,6 +46,7 @@ add_executable(rnl_core_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/FrameClock.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ImageContent.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/InputPipeline.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/LineBoxMetrics.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/LinuxMountingManager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/RetainedScene.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ScrollPhysics.cpp

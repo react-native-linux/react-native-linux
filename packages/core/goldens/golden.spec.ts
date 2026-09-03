@@ -34,6 +34,13 @@ const fixtures: readonly GoldenFixture[] = [
   { bundleFileName: "view-props.js", goldenFileName: "view-props.png", renderArguments: [], renderFlag: "--golden" },
   // Text is reproducible only against the fonts scripts/vendor-fonts.ts pins into packages/core/fonts.
   { bundleFileName: "text.js", goldenFileName: "text.png", renderArguments: [], renderFlag: "--golden" },
+  // The vertical-metrics matrix of #110: every row draws its measured frame under its painted line box.
+  {
+    bundleFileName: "text-metrics.js",
+    goldenFileName: "text-metrics.png",
+    renderArguments: [],
+    renderFlag: "--golden",
+  },
   { bundleFileName: "damage.js", goldenFileName: "damage.png", renderArguments: [], renderFlag: "--damage-golden" },
   // Images are reproducible only against the asset packages/core/scripts/make-test-image.ts generates.
   { bundleFileName: "image.js", goldenFileName: "image.png", renderArguments: [], renderFlag: "--golden" },

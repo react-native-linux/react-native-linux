@@ -400,7 +400,7 @@ jobs:
           "$binary" --fabric packages/core/test-bundles/text-input.js | tee /tmp/rnl-text-input.log
           grep -q "text-input: committed surface 1" /tmp/rnl-text-input.log
           grep -q "TextInput #10" /tmp/rnl-text-input.log
-          ! grep -qE 'TextInput #[0-9]+ .*hunter2' /tmp/rnl-text-input.log
+          if grep -qE 'TextInput #[0-9]+ .*hunter2' /tmp/rnl-text-input.log; then exit 1; fi
 
           # The first TurboModule, and the never-0x0 rule of issue #50: the surface's own extent at boot, screen
           # equal to window, and exactly one didUpdateDimensions for the resize that follows.

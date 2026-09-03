@@ -1,5 +1,6 @@
 #include "TextPipeline.h"
 
+#include "LineBoxMetrics.h"
 #include "TextGeometry.h"
 
 #include "include/core/SkFontTypes.h"
@@ -30,6 +31,7 @@
 #include <cstddef>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -133,15 +135,19 @@ skia::textlayout::TextDecoration toDecoration(const facebook::react::TextAttribu
 /**
  * `lineHeight` is an absolute point value in React Native and a multiple of the font size in Skia, so the ratio is
  * what crosses the boundary. Half leading splits the extra space above and below the line, which is what both
- * React Native platforms and CSS do.
+ * React Native platforms and CSS do; when `lineHeight` is under the font's own ascent plus descent that split is
+ * negative and the glyphs overflow their line box rather than being shrunk or clipped. The arithmetic and the
+ * policy are `src/LineBoxMetrics.h` and *Vertical metrics (#110)* in docs/cpp-toolchain.md.
  */
 void applyLineHeight(skia::textlayout::TextStyle& style, const facebook::react::TextAttributes& attributes,
                      float fontSize) {
-    if (std::isnan(attributes.lineHeight) || fontSize <= 0.0F) {
+    const std::optional<float> ratio = lineHeightRatio(fontSize, static_cast<float>(attributes.lineHeight));
+
+    if (!ratio.has_value()) {
         return;
     }
 
-    style.setHeight(static_cast<float>(attributes.lineHeight) / fontSize);
+    style.setHeight(ratio.value());
     style.setHeightOverride(true);
     style.setHalfLeading(true);
 }
@@ -215,6 +221,10 @@ skia::textlayout::ParagraphStyle toParagraphStyle(const facebook::react::Attribu
     style.setTextStyle(toTextStyle(baseAttributes));
     style.setTextAlign(toTextAlign(baseAttributes));
     style.setTextDirection(skia::textlayout::TextDirection::kLtr);
+    // kAll keeps the first line's ascent and the last line's descent inside the applied height, so every line box
+    // in a paragraph is the same size. kDisableFirstAscent/kDisableLastDescent are the asymmetry upstream's two
+    // platforms disagree over; see *Vertical metrics (#110)* in docs/cpp-toolchain.md.
+    style.setTextHeightBehavior(skia::textlayout::TextHeightBehavior::kAll);
 
     if (paragraphAttributes.maximumNumberOfLines > 0) {
         style.setMaxLines(static_cast<size_t>(paragraphAttributes.maximumNumberOfLines));

@@ -1111,13 +1111,75 @@ measured result.
 | `fontWeight` | The numeric weight straight into `SkFontStyle`; synthetic bolding is Skia's business. |
 | `fontStyle` | `italic` and `oblique` map to the matching `SkFontStyle::Slant`. |
 | `fontFamily` | Asked for first, ahead of the bundled family and `sans-serif`, as one name rather than a CSS list. |
-| `lineHeight` | Points converted to Skia's multiple-of-font-size `height`, with half leading, which is what CSS and both React Native platforms do. |
+| `lineHeight` | Points converted to Skia's multiple-of-font-size `height`, with half leading, which is what CSS and both React Native platforms do. See *Vertical metrics (#110)*. |
 | `letterSpacing` | `TextStyle::setLetterSpacing`. |
 | `textAlign` | `left`, `right`, `center`, `justify`, `start`/`end`, and `auto` as `start`. |
 | `textDecorationLine` | `underline`, `line-through` and both together; `textDecorationColor` falls back to the foreground colour. |
 | `numberOfLines` | `ParagraphStyle::setMaxLines`. |
 | `ellipsizeMode` | Anything but `clip` sets a `…` ellipsis. |
 | Inline attachments | Added as SkParagraph placeholders sized from the attachment's own measured frame, and reported back through `getRectsForPlaceholders`. |
+
+### Vertical metrics (#110)
+
+React Native's `lineHeight` is an absolute point value and SkParagraph's `TextStyle::height` is a multiple of the
+font size, so the ratio is what crosses the boundary. The arithmetic on both sides of it is
+`packages/core/src/LineBoxMetrics.h` — `lineHeightRatio` for the value SkParagraph takes, `measureLineBox` for
+where the line actually lands — and it is pure, so it is under the 100% gate rather than under a rasteriser.
+
+**The policy, for a font reporting ascent `A` and descent `D` at the resolved font size:**
+
+- With no `lineHeight`, the line box is the font's own `A + D`. The font decides; nothing is added or removed.
+- With a `lineHeight`, **the line box is exactly `lineHeight`**, and the difference `lineHeight - (A + D)` is split
+  evenly above and below the glyphs. Half leading is `(lineHeight - (A + D)) / 2` and the baseline sits at
+  `halfLeading + A` from the top of the box. react-native#39145 is what applying that leading to one side looks
+  like; we do not do it.
+- When `lineHeight` is smaller than `A + D` — which includes `lineHeight == fontSize`, since every real text font
+  has `A + D > fontSize` — **half leading is negative and the glyphs overflow their line box**. They are not
+  scaled down, the box is not grown, and the paragraph does not clip them: `ScenePainter::paintText` sets no clip,
+  so ascenders and descenders draw outside the measured frame exactly as CSS `line-height` and both React Native
+  platforms draw them. That is the deliberate answer to react-native#49886 and #53286. The only clip over text is
+  a `<TextInput>`'s own content box, which is horizontal scrolling and predates this.
+- **Measure and paint agree by construction.** Both go through the one `layoutParagraph`, so the height
+  `TextLayoutManager::measure` hands Yoga is the height of the same line boxes the painter fills. A parent `<View>`
+  with `overflow: hidden` still clips, because that is the view's rule, not the paragraph's.
+- **First and last lines follow the same rule as interior lines.** `ParagraphStyle::setTextHeightBehavior` is set
+  explicitly to `TextHeightBehavior::kAll`, so the first line's ascent and the last line's descent stay inside the
+  applied height. `kDisableFirstAscent`/`kDisableLastDescent` would trim the leading off the top and bottom of the
+  paragraph — the asymmetry upstream's platforms disagree about — and would make a one-line paragraph measure
+  differently from the same line in the middle of a longer one. `kAll` is also SkParagraph's default; it is set at
+  the call site so the choice is a line of code rather than an inherited default.
+
+The SkParagraph settings that add up to that are `TextStyle::setHeight(lineHeight / fontSize)`,
+`TextStyle::setHeightOverride(true)`, `TextStyle::setHalfLeading(true)` per fragment, and
+`ParagraphStyle::setTextHeightBehavior(kAll)` per paragraph. `lineHeight` is ignored — no override at all — when
+it is absent, which React Native spells NaN, or when the resolved font size is not positive, because a ratio
+against zero is not a number SkParagraph can use.
+
+With the synthetic font `packages/core/tests/LineBoxMetricsTest.cpp` asserts against, `A = 22` and `D = 6`, so the
+natural line box is 28 points at a font size of 20:
+
+| fontSize | lineHeight | Line box | Half leading | Baseline from top |
+| --- | --- | --- | --- | --- |
+| 20 | absent | 28 | 0 | 22 |
+| 20 | 20 (`== fontSize`) | 20 | -4 | 18 |
+| 20 | 14 (`0.7 * fontSize`) | 14 | -7 | 15 |
+| 20 | 28 (`== A + D`) | 28 | 0 | 22 |
+| 20 | 40 (`2 * fontSize`) | 40 | 6 | 28 |
+| 0 | 40 | 28 | 0 | 22 |
+
+The picture is `test-bundles/text-metrics.js` and `goldens/text-metrics.png`: one row per case, each drawing the
+`<View>` frame Yoga was given under the `<Text>` fragment background SkParagraph fills, which is the line box. A
+row with `letterSpacing` sits beside the same string without it at the same width, because react-native#46436 is
+letter spacing changing the line count; and one row is Latin Extended, Greek and Cyrillic — U+01FA, U+01F0,
+U+1E9E, U+038F, U+03BE, U+0402, U+045E — at `lineHeight == fontSize`, which is the tall-accent, deep-descender
+case that clips first.
+
+Two things this does not prove. The unit gate is a Skia-free build, so the table is arithmetic asserted against
+itself and the golden is what ties it to SkParagraph's own metrics; and the Devanagari, Arabic and Tibetan case of
+react-native#33704 needs those Noto faces vendored, which is a follow-up on #110 rather than something to
+approximate with a font that would resolve through fontconfig. Nothing reports a baseline to Fabric yet either —
+there is no `measureLines` and no `onTextLayout`, per *Fidelity limits* — so `measureLineBox` is the arithmetic
+that path will report when the vendored header grows it.
 
 ### Fidelity limits
 
