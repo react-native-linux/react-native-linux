@@ -4212,6 +4212,12 @@ now produced by a compositor's `wl_pointer` instead. `text-input.json` presses T
 `text-input.js`, types `Hi`, and expects `topFocus on plain` and the two `topChange` lines — which is also the
 proof that the shift modifier reaches the field, since `H` is `shift+h` on the injected keymap.
 
+`text-input-editing.json` is the editing half of the parity matrix (#53): Tab into the field, type, select all
+with Ctrl+A, copy, move to the end and paste, asserting `text="Hi"`, `selection=0..2` and `text="HiHi"` in that
+order. It is the scenario that needed `rnl_inject` to be able to **hold** a modifier — `key Control_L press`
+updates a mask that every key after it carries, and releasing it clears the mask — because until then the
+injector only ever sent the shift a shifted character implies, and no chord was expressible at all.
+
 `rounded-press.json` is the e2e half of issue #99. `rounded-press.js` places a 200x120 card at (100, 80) with a
 60-point radius over a full-surface container, and the scenario clicks twice: (105, 85), five points inside the
 frame on both axes but 77.8 from the corner's arc centre at (160, 140), and (200, 140) on the card itself. The

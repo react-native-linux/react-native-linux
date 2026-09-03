@@ -51,6 +51,11 @@ struct Injector {
     uint32_t outputWidth{0};
     uint32_t outputHeight{0};
     uint32_t shiftMask{kNoModifiers};
+    uint32_t controlMask{kNoModifiers};
+    uint32_t altMask{kNoModifiers};
+    // Which modifiers a `key <name> press` is currently holding down, so a chord is three lines of a script
+    // rather than something the vocabulary cannot say. Cleared key by key as each one is released.
+    uint32_t heldModifiers{kNoModifiers};
     std::chrono::steady_clock::time_point startedAt{std::chrono::steady_clock::now()};
 };
 
@@ -203,12 +208,16 @@ bool createDevices(Injector& injector) {
     }
 
     const xkb_mod_index_t shiftIndex = xkb_keymap_mod_get_index(injector.keymap, XKB_MOD_NAME_SHIFT);
+    const xkb_mod_index_t controlIndex = xkb_keymap_mod_get_index(injector.keymap, XKB_MOD_NAME_CTRL);
+    const xkb_mod_index_t altIndex = xkb_keymap_mod_get_index(injector.keymap, XKB_MOD_NAME_ALT);
 
-    if (shiftIndex == XKB_MOD_INVALID) {
-        return reportError("the us keymap has no shift modifier");
+    if (shiftIndex == XKB_MOD_INVALID || controlIndex == XKB_MOD_INVALID || altIndex == XKB_MOD_INVALID) {
+        return reportError("the us keymap is missing shift, control or alt");
     }
 
     injector.shiftMask = uint32_t{1} << shiftIndex;
+    injector.controlMask = uint32_t{1} << controlIndex;
+    injector.altMask = uint32_t{1} << altIndex;
 
     return uploadKeymap(injector);
 }
@@ -232,6 +241,27 @@ bool findKeyStroke(xkb_keymap* keymap, xkb_keysym_t keysym, KeyStroke& stroke) {
     return false;
 }
 
+/**
+ * The modifier bit a keysym *is*, or nothing when it is an ordinary key. A modifier held across other keys is
+ * what makes Ctrl+A and Shift+Left expressible, and the compositor only knows one is held because the state
+ * below says so on every key that follows.
+ */
+uint32_t modifierMaskOf(const Injector& injector, xkb_keysym_t keysym) {
+    if (keysym == XKB_KEY_Control_L || keysym == XKB_KEY_Control_R) {
+        return injector.controlMask;
+    }
+
+    if (keysym == XKB_KEY_Shift_L || keysym == XKB_KEY_Shift_R) {
+        return injector.shiftMask;
+    }
+
+    if (keysym == XKB_KEY_Alt_L || keysym == XKB_KEY_Alt_R) {
+        return injector.altMask;
+    }
+
+    return kNoModifiers;
+}
+
 bool sendKeysym(Injector& injector, xkb_keysym_t keysym, uint32_t state) {
     KeyStroke stroke;
 
@@ -239,9 +269,17 @@ bool sendKeysym(Injector& injector, xkb_keysym_t keysym, uint32_t state) {
         return reportError("the us keymap has no key for that keysym");
     }
 
-    const uint32_t modifiers = stroke.shifted && state == kPressedState ? injector.shiftMask : kNoModifiers;
+    const uint32_t held = modifierMaskOf(injector, keysym);
 
-    zwp_virtual_keyboard_v1_modifiers(injector.keyboard, modifiers, kNoModifiers, kNoModifiers, kFirstLayout);
+    if (held != kNoModifiers) {
+        injector.heldModifiers = state == kPressedState ? injector.heldModifiers | held
+                                                        : injector.heldModifiers & ~held;
+    }
+
+    const uint32_t shifted = stroke.shifted && state == kPressedState ? injector.shiftMask : kNoModifiers;
+
+    zwp_virtual_keyboard_v1_modifiers(injector.keyboard, injector.heldModifiers | shifted, kNoModifiers,
+                                      kNoModifiers, kFirstLayout);
     zwp_virtual_keyboard_v1_key(injector.keyboard, elapsedMilliseconds(injector), stroke.code, state);
 
     return true;

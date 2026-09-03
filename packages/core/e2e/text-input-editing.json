@@ -1,0 +1,35 @@
+{
+  "name": "text-input-editing",
+  "bundle": "text-input.js",
+  "ready": "text-input: committed surface 1",
+  "frames": 900,
+  "steps": [
+    "sleep 500",
+    "key Tab press",
+    "key Tab release",
+    "sleep 200",
+    "type Hi",
+    "sleep 200",
+    "key Control_L press",
+    "key a press",
+    "key a release",
+    "key c press",
+    "key c release",
+    "key Control_L release",
+    "sleep 200",
+    "key Right press",
+    "key Right release",
+    "sleep 200",
+    "key Control_L press",
+    "key v press",
+    "key v release",
+    "key Control_L release",
+    "sleep 500"
+  ],
+  "expect": [
+    "text-input: topFocus on plain",
+    "text-input: topChange on plain text=\"Hi\"",
+    "text-input: topSelectionChange on plain text=\"Hi\" selection=0..2",
+    "text-input: topChange on plain text=\"HiHi\""
+  ]
+}
