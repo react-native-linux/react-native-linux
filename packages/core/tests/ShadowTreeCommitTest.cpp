@@ -1,4 +1,5 @@
 #include "LinuxMountingManager.h"
+#include "ShadowTreeTestSupport.h"
 
 #include <gtest/gtest.h>
 
@@ -59,6 +60,7 @@ using facebook::react::SurfaceId;
 using facebook::react::Tag;
 using facebook::react::ViewComponentDescriptor;
 using react_native_linux::LinuxMountingManager;
+using react_native_linux::PassThroughShadowTreeDelegate;
 
 using ChildList = std::vector<std::shared_ptr<const ShadowNode>>;
 
@@ -68,29 +70,6 @@ constexpr Tag kEffectTag = 101;
 constexpr Tag kConcurrentBaseTag = 200;
 constexpr int kConcurrentCommitCount = 64;
 constexpr int kAttemptsBeforeLocking = 3;
-
-/**
- * The `ShadowTreeDelegate` upstream's own mounting tests use: it accepts every proposed tree and lets the
- * `MountingCoordinator` be the only observer of a commit, which is what makes `pullTransaction` the thing under
- * test rather than a mount callback.
- */
-class PassThroughShadowTreeDelegate final : public ShadowTreeDelegate {
-public:
-    RootShadowNode::Unshared shadowTreeWillCommit(const ShadowTree& /*shadowTree*/,
-                                                  const RootShadowNode::Shared& /*oldRootShadowNode*/,
-                                                  const RootShadowNode::Unshared& newRootShadowNode,
-                                                  const facebook::react::ShadowTreeCommitOptions& /*commitOptions*/)
-        const override {
-        return newRootShadowNode;
-    }
-
-    void shadowTreeDidFinishTransaction(std::shared_ptr<const MountingCoordinator> /*mountingCoordinator*/,
-                                        bool /*mountSynchronously*/) const override {}
-
-    void shadowTreeDidFinishReactCommit(const ShadowTree& /*shadowTree*/) const override {}
-
-    void shadowTreeDidPromoteReactRevision(const ShadowTree& /*shadowTree*/) const override {}
-};
 
 /**
  * `preventShadowTreeCommitExhaustion` is what turns `ShadowTree::commit`'s unbounded retry loop — the one guarded
