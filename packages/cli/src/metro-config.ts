@@ -56,4 +56,55 @@ const resolveAgainstFilesystem = (
   exists: (candidatePath: string) => boolean,
 ): string | null => candidates.find((candidatePath) => exists(candidatePath)) ?? null;
 
-export { linuxOverlayIndex, resolveAgainstFilesystem, resolveLinuxOverlay, resolvePlatformCandidates };
+const javaScriptFallbackPackageNames: readonly string[] = ["react-native-reanimated", "react-native-worklets"];
+
+const relativeModulePrefix = ".";
+
+interface LinuxResolutionRequest {
+  readonly moduleName: string;
+  readonly originModulePath: string;
+  readonly platform: string;
+}
+
+const isInsideJavaScriptFallbackPackage = (originModulePath: string): boolean =>
+  originModulePath.split(path.sep).some((pathSegment) => javaScriptFallbackPackageNames.includes(pathSegment));
+
+const shouldUseJavaScriptFallback = (request: LinuxResolutionRequest): boolean =>
+  request.platform === linuxPlatform &&
+  request.moduleName.startsWith(relativeModulePrefix) &&
+  isInsideJavaScriptFallbackPackage(request.originModulePath);
+
+const buildJavaScriptFallbackCandidates = (
+  moduleName: string,
+  platform: string,
+  sourceExts: readonly string[],
+): readonly string[] =>
+  sourceExts.flatMap((sourceExtension) => [
+    `${moduleName}.${platform}.${sourceExtension}`,
+    `${moduleName}.${sourceExtension}`,
+  ]);
+
+const resolveCandidateBasePath = (request: LinuxResolutionRequest): string =>
+  request.moduleName.startsWith(relativeModulePrefix)
+    ? path.join(path.dirname(request.originModulePath), request.moduleName)
+    : request.moduleName;
+
+const resolveOriginAwareCandidates = (
+  request: LinuxResolutionRequest,
+  sourceExts: readonly string[],
+): readonly string[] => {
+  const candidateBasePath = resolveCandidateBasePath(request);
+
+  return shouldUseJavaScriptFallback(request)
+    ? buildJavaScriptFallbackCandidates(candidateBasePath, request.platform, sourceExts)
+    : resolvePlatformCandidates(candidateBasePath, request.platform, sourceExts);
+};
+
+export {
+  linuxOverlayIndex,
+  resolveAgainstFilesystem,
+  resolveLinuxOverlay,
+  resolveOriginAwareCandidates,
+  resolvePlatformCandidates,
+  shouldUseJavaScriptFallback,
+};

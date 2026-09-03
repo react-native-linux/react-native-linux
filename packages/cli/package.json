@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/platform-config.ts",
+    "./animation-rung.ts": "./src/animation-rung.ts",
     "./metro-config.ts": "./src/metro-config.ts"
   },
   "devDependencies": {
