@@ -19,9 +19,6 @@ namespace react_native_linux {
 
 namespace {
 
-constexpr int kPrimaryButton = 0;
-constexpr int kAuxiliaryButton = 1;
-constexpr int kSecondaryButton = 2;
 constexpr int kUnmappedButton = -1;
 constexpr size_t kKeysymNameCapacity = 64;
 // The longest text one key can produce is one UTF-8 code point, which is four bytes, plus the terminator
@@ -30,19 +27,6 @@ constexpr size_t kKeyTextCapacity = 8;
 // libxkbcommon reports a key as pressed with the evdev keycode the kernel used plus this offset, which is the X11
 // keycode convention every keymap in the wild is written against.
 constexpr uint32_t kEvdevToXkbKeycodeOffset = 8;
-
-int toDomButton(uint32_t waylandButton) {
-    switch (waylandButton) {
-        case BTN_LEFT:
-            return kPrimaryButton;
-        case BTN_MIDDLE:
-            return kAuxiliaryButton;
-        case BTN_RIGHT:
-            return kSecondaryButton;
-        default:
-            return kUnmappedButton;
-    }
-}
 
 std::string keysymName(xkb_state* keyboardState, uint32_t keycode) {
     const xkb_keysym_t keysym = xkb_state_key_get_one_sym(keyboardState, keycode);
@@ -229,7 +213,7 @@ void WaylandSeat::pushPointerPosition(InputEventKind kind, int32_t surfaceX, int
 }
 
 void WaylandSeat::pushPointerButton(uint32_t button, uint32_t state) {
-    const int domButton = toDomButton(button);
+    const int domButton = domButtonOfEvdevCode(button);
 
     if (domButton == kUnmappedButton) {
         return;

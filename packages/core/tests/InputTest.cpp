@@ -1,12 +1,11 @@
 #include "InputPipeline.h"
 
-#include <gtest/gtest.h>
-
-#include <react/renderer/core/ReactPrimitives.h>
-#include <react/renderer/graphics/Point.h>
-
 #include <cstddef>
 #include <cstdint>
+#include <gtest/gtest.h>
+#include <linux/input-event-codes.h>
+#include <react/renderer/core/ReactPrimitives.h>
+#include <react/renderer/graphics/Point.h>
 #include <string>
 #include <vector>
 
@@ -14,16 +13,18 @@ namespace {
 
 using facebook::react::Point;
 using facebook::react::Tag;
+using react_native_linux::buttonsMaskOfDomButton;
+using react_native_linux::domButtonOfEvdevCode;
+using react_native_linux::domKeyCode;
+using react_native_linux::domKeyName;
 using react_native_linux::InputEvent;
 using react_native_linux::InputEventKind;
 using react_native_linux::InputModifiers;
 using react_native_linux::InputQueue;
-using react_native_linux::kInputQueueCapacity;
-using react_native_linux::domKeyCode;
-using react_native_linux::domKeyName;
 using react_native_linux::isTextKey;
-using react_native_linux::parseKeySequence;
+using react_native_linux::kInputQueueCapacity;
 using react_native_linux::makeActivationDispatch;
+using react_native_linux::parseKeySequence;
 using react_native_linux::PointerDispatch;
 using react_native_linux::PointerDispatchType;
 using react_native_linux::PointerRouter;
@@ -33,7 +34,7 @@ constexpr Tag kOtherTag = 5;
 constexpr int kPrimaryButton = 0;
 constexpr int kAuxiliaryButton = 1;
 constexpr int kSecondaryButton = 2;
-constexpr int kUnmappedButton = 9;
+constexpr int kUnmappedButton = -1;
 constexpr int kPrimaryButtonsBit = 1;
 constexpr int kSecondaryButtonsBit = 2;
 constexpr int kAuxiliaryButtonsBit = 4;
@@ -111,8 +112,7 @@ TEST(InputQueueTest, CountsWhatItDropsPastCapacity) {
 TEST(PointerRouterTest, MotionBecomesOneMoveWithNoButton) {
     PointerRouter router;
 
-    const std::vector<PointerDispatch> dispatches =
-        router.route(makeMotion(150, 120), kBoxTag, makePoint(100, 80));
+    const std::vector<PointerDispatch> dispatches = router.route(makeMotion(150, 120), kBoxTag, makePoint(100, 80));
 
     ASSERT_EQ(dispatches.size(), 1U);
     EXPECT_EQ(dispatches[0].type, PointerDispatchType::Move);
@@ -240,9 +240,7 @@ TEST(KeyEventTest, NamedKeysBecomeTheirDomNamesRatherThanTheirControlCharacters)
 
 // Shift+Tab is a different keysym rather than Tab with a modifier, and every desktop platform has shipped a bug
 // where the two stopped being the same key. See react-native-macos#823.
-TEST(KeyEventTest, TheShiftTabKeysymIsStillTheTabKey) {
-    EXPECT_EQ(domKeyName("ISO_Left_Tab", ""), "Tab");
-}
+TEST(KeyEventTest, TheShiftTabKeysymIsStillTheTabKey) { EXPECT_EQ(domKeyName("ISO_Left_Tab", ""), "Tab"); }
 
 TEST(KeyEventTest, ASingleCharacterKeysymWinsOverTheTextTheModifiersProduced) {
     EXPECT_EQ(domKeyName("a", "a"), "a");
@@ -416,6 +414,98 @@ TEST(ParseKeySequenceTest, IgnoresTokensItDoesNotRecogniseAndStopsAtAnUnclosedOn
 
     ASSERT_EQ(truncated.size(), 2U);
     EXPECT_EQ(truncated[0].key, "a");
+}
+
+#pragma mark - the mouse payload contract (#66)
+
+/**
+ * The mapping table of #66: every evdev button code the platform accepts maps to the W3C `button` number React
+ * Native's PointerEvent declares, and the codes a mouse nobody sells does not send map to -1, which the seat
+ * drops.
+ */
+TEST(MousePayloadTest, DomButtonOfEvdevCodeMapsTheW3CButtonNumbers) {
+    const std::vector<std::pair<uint32_t, int>> table = {
+        {BTN_LEFT, 0}, {BTN_MIDDLE, 1}, {BTN_RIGHT, 2},   {BTN_SIDE, 3},
+        {BTN_BACK, 3}, {BTN_EXTRA, 4},  {BTN_FORWARD, 4}, {BTN_TOUCH, -1},
+    };
+
+    for (const auto& [evdevCode, domButton] : table) {
+        EXPECT_EQ(domButtonOfEvdevCode(evdevCode), domButton) << "evdev code " << evdevCode;
+    }
+}
+
+/**
+ * The W3C `buttons` bitmask, pinned per button: 1 primary, 2 secondary, 4 auxiliary, 8 backward, 16 forward.
+ * Anything else is a pointer with no buttons held.
+ */
+TEST(MousePayloadTest, ButtonsMaskOfDomButtonMatchesTheW3CBitmask) {
+    const std::vector<std::pair<int, int>> table = {
+        {0, 1}, {1, 4}, {2, 2}, {3, 8}, {4, 16}, {kUnmappedButton, 0},
+    };
+
+    for (const auto& [domButton, mask] : table) {
+        EXPECT_EQ(buttonsMaskOfDomButton(domButton), mask) << "dom button " << domButton;
+    }
+}
+
+/**
+ * Chording: press the primary button, press and release the secondary while it is held. The `buttons` bitmask
+ * grows to 3 while both are held, shrinks back to 1 on the secondary release, and the secondary never produces a
+ * click even though it went down and up over the same target.
+ */
+TEST(MousePayloadTest, AChordedPressCarriesTheCombinedBitmaskAndNeverClicksForTheSecondary) {
+    PointerRouter router;
+
+    const std::vector<PointerDispatch> primaryDown =
+        router.route(makeButton(InputEventKind::PointerButtonPress, kPrimaryButton), kBoxTag, makePoint(0, 0));
+
+    ASSERT_EQ(primaryDown.size(), 1U);
+    EXPECT_EQ(primaryDown[0].type, PointerDispatchType::Down);
+    EXPECT_EQ(primaryDown[0].event.button, kPrimaryButton);
+    EXPECT_EQ(primaryDown[0].event.buttons, kPrimaryButtonsBit);
+
+    const std::vector<PointerDispatch> secondaryDown =
+        router.route(makeButton(InputEventKind::PointerButtonPress, kSecondaryButton), kBoxTag, makePoint(0, 0));
+
+    ASSERT_EQ(secondaryDown.size(), 1U);
+    EXPECT_EQ(secondaryDown[0].event.button, kSecondaryButton);
+    EXPECT_EQ(secondaryDown[0].event.buttons, kPrimaryButtonsBit | kSecondaryButtonsBit);
+
+    const std::vector<PointerDispatch> secondaryUp =
+        router.route(makeButton(InputEventKind::PointerButtonRelease, kSecondaryButton), kBoxTag, makePoint(0, 0));
+
+    ASSERT_EQ(secondaryUp.size(), 1U);
+    EXPECT_EQ(secondaryUp[0].type, PointerDispatchType::Up);
+    EXPECT_EQ(secondaryUp[0].event.button, kSecondaryButton);
+    EXPECT_EQ(secondaryUp[0].event.buttons, kPrimaryButtonsBit);
+
+    const std::vector<PointerDispatch> primaryUp =
+        router.route(makeButton(InputEventKind::PointerButtonRelease, kPrimaryButton), kBoxTag, makePoint(0, 0));
+
+    ASSERT_EQ(primaryUp.size(), 2U);
+    EXPECT_EQ(primaryUp[0].type, PointerDispatchType::Up);
+    EXPECT_EQ(primaryUp[0].event.buttons, 0);
+    EXPECT_EQ(primaryUp[1].type, PointerDispatchType::Click);
+    EXPECT_EQ(primaryUp[1].event.button, kPrimaryButton);
+}
+
+/**
+ * The behavioural half of the macOS plan, owned by the payload: a secondary or middle press over a target is two
+ * dispatches, Down and Up, and no Click — a context menu must be buildable without a native module.
+ */
+TEST(MousePayloadTest, SecondaryAndMiddlePressesNeverProduceAClick) {
+    for (const int button : {kSecondaryButton, kAuxiliaryButton}) {
+        PointerRouter router;
+
+        router.route(makeButton(InputEventKind::PointerButtonPress, button), kBoxTag, makePoint(0, 0));
+        const std::vector<PointerDispatch> dispatches =
+            router.route(makeButton(InputEventKind::PointerButtonRelease, button), kBoxTag, makePoint(0, 0));
+
+        ASSERT_EQ(dispatches.size(), 1U) << "button " << button;
+        EXPECT_EQ(dispatches[0].type, PointerDispatchType::Up) << "button " << button;
+        EXPECT_EQ(dispatches[0].event.button, button) << "button " << button;
+        EXPECT_EQ(dispatches[0].event.buttons, 0) << "button " << button;
+    }
 }
 
 } // namespace

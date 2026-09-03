@@ -16,17 +16,58 @@
 
 namespace react_native_linux {
 
-namespace {
-
-constexpr int kMousePointerId = 1;
 constexpr int kNoButton = -1;
+constexpr int kNoButtonsBits = 0;
 constexpr int kPrimaryButton = 0;
 constexpr int kAuxiliaryButton = 1;
 constexpr int kSecondaryButton = 2;
+constexpr int kBackwardButton = 3;
+constexpr int kForwardButton = 4;
 constexpr int kPrimaryButtonsBit = 1;
 constexpr int kSecondaryButtonsBit = 2;
 constexpr int kAuxiliaryButtonsBit = 4;
-constexpr int kNoButtonsBits = 0;
+constexpr int kBackwardButtonsBit = 8;
+constexpr int kForwardButtonsBit = 16;
+
+int domButtonOfEvdevCode(uint32_t evdevCode) {
+    switch (evdevCode) {
+        case BTN_LEFT:
+            return kPrimaryButton;
+        case BTN_MIDDLE:
+            return kAuxiliaryButton;
+        case BTN_RIGHT:
+            return kSecondaryButton;
+        case BTN_SIDE:
+        case BTN_BACK:
+            return kBackwardButton;
+        case BTN_EXTRA:
+        case BTN_FORWARD:
+            return kForwardButton;
+        default:
+            return kNoButton;
+    }
+}
+
+int buttonsMaskOfDomButton(int domButton) {
+    switch (domButton) {
+        case kPrimaryButton:
+            return kPrimaryButtonsBit;
+        case kSecondaryButton:
+            return kSecondaryButtonsBit;
+        case kAuxiliaryButton:
+            return kAuxiliaryButtonsBit;
+        case kBackwardButton:
+            return kBackwardButtonsBit;
+        case kForwardButton:
+            return kForwardButtonsBit;
+        default:
+            return kNoButtonsBits;
+    }
+}
+
+namespace {
+
+constexpr int kMousePointerId = 1;
 constexpr int kClickDetail = 1;
 constexpr int kNoDetail = 0;
 constexpr facebook::react::Float kActiveButtonPressure = 0.5F;
@@ -37,18 +78,7 @@ constexpr int kNoTilt = 0;
 constexpr int kNoTwist = 0;
 constexpr char kMousePointerType[] = "mouse";
 
-int buttonsBitOf(int button) {
-    switch (button) {
-        case kPrimaryButton:
-            return kPrimaryButtonsBit;
-        case kAuxiliaryButton:
-            return kAuxiliaryButtonsBit;
-        case kSecondaryButton:
-            return kSecondaryButtonsBit;
-        default:
-            return kNoButtonsBits;
-    }
-}
+int buttonsBitOf(int button) { return buttonsMaskOfDomButton(button); }
 
 facebook::react::PointerEvent makePointerEvent(const InputEvent& event, facebook::react::Point targetOrigin,
                                                int button, int detail, int buttons) {
@@ -420,13 +450,15 @@ std::vector<PointerDispatch> PointerRouter::routeRelease(const InputEvent& event
         .type = PointerDispatchType::Up,
         .event = makePointerEvent(event, targetOrigin, event.button, kNoDetail, pressedButtons_)}};
 
-    if (targetTag == pressedTag_) {
+    if (event.button == kPrimaryButton && targetTag == pressedTag_) {
         dispatches.push_back(PointerDispatch{
             .type = PointerDispatchType::Click,
             .event = makePointerEvent(event, targetOrigin, event.button, kClickDetail, pressedButtons_)});
     }
 
-    pressedTag_ = 0;
+    if (event.button == kPrimaryButton) {
+        pressedTag_ = 0;
+    }
 
     return dispatches;
 }
@@ -440,7 +472,10 @@ std::vector<PointerDispatch> PointerRouter::route(const InputEvent& event, faceb
                 .event = makePointerEvent(event, targetOrigin, kNoButton, kNoDetail, pressedButtons_)}};
 
         case InputEventKind::PointerButtonPress:
-            pressedTag_ = targetTag;
+            if (event.button == kPrimaryButton) {
+                pressedTag_ = targetTag;
+            }
+
             pressedButtons_ |= buttonsBitOf(event.button);
 
             return {PointerDispatch{
