@@ -417,7 +417,7 @@ out-of-tree platform, Microsoft or Huawei, has ever made"* — survives verifica
 alternative attached to it.
 
 The fallback is not free, and the plan should not pretend otherwise. It is keyed on `Platform.OS === 'windows'`
-(`IS_WINDOWS` in `src/common/constants/platform.ts` [V]); `linux` inherits nothing. It regressed once and went
+(`IS_WINDOWS` in `src/common/constants/platform.ts` [V] — true of 4.5.x; 4.6.0 deleted `SHOULD_BE_USE_WEB` and replaced the runtime branch with a 38-file `.native.*` suffix split, which is why `packages/reanimated` pins 4.6.0 and ships an empty patch queue; see `docs/platform-identity.md`); `linux` inherits nothing. It regressed once and went
 unnoticed until an outside contributor fixed it. In 4.6.0 as published, the non-`.native` `NativeWorklets.ts` is
 literally `export const WorkletsModule: IWorkletsModule = null!` [V] — the fallback ships broken in the version on
 disk, and the fix is unreleased. Taking this rung means depending on a path with one consumer and no CI on our

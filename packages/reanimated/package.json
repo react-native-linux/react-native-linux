@@ -1,0 +1,13 @@
+{
+  "name": "@react-native-linux/reanimated",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./upstream/packages/react-native-reanimated/src/index.ts"
+  },
+  "peerDependencies": {
+    "@react-native-linux/core": "workspace:*",
+    "react-native": "*"
+  }
+}

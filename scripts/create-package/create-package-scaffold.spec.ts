@@ -59,14 +59,13 @@ describe("buildPackageFiles", () => {
       "upstream.lock.json",
       "patches/.gitkeep",
       "linux/README.md",
-      "src/index.ts",
       "README.md",
     ]);
   });
 
   it("names the package after the platform scope and keeps it private with both peers", () => {
     expect(parsedJsonOf("package.json")).toStrictEqual({
-      exports: { ".": "./src/index.ts" },
+      exports: { ".": "./upstream/src/index.ts" },
       name: "@react-native-linux/reanimated",
       peerDependencies: { "@react-native-linux/core": "workspace:*", "react-native": "*" },
       private: true,
@@ -99,10 +98,6 @@ describe("buildPackageFiles", () => {
 });
 
 describe("the scaffolded sources and documentation", () => {
-  it("re-exports the upstream entry under the first sparse path", () => {
-    expect(contentsOf("src/index.ts")).toBe('export * from "../upstream/src/index.ts";\n');
-  });
-
   it("keeps the patch queue directory empty", () => {
     expect(contentsOf("patches/.gitkeep")).toBe("");
   });

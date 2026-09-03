@@ -7,7 +7,6 @@
     "**/test-bundles",
     "build",
     "coverage",
-    "packages/*/upstream",
     "packages/*/upstream.lock.json",
     "third_party"
   ]

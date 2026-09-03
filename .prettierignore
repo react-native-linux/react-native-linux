@@ -1,0 +1,4 @@
+# oxfmt reads this file by default. Its own `ignorePatterns` in .oxfmtrc.json does not match a
+# vendored tree nested under a workspace package, so the ignore that keeps upstream code out of our
+# formatter lives here. See docs/ecosystem/package-template.md.
+packages/*/upstream/

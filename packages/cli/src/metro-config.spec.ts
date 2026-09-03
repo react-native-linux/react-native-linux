@@ -86,8 +86,14 @@ describe("resolveLinuxModuleName", () => {
     );
   });
 
-  it("leaves a package name alone while the shipped alias registry is empty", () => {
-    expect(resolveLinuxModuleName("react-native-reanimated", "linux", isPackageResolvable)).toBeNull();
+  it("rewrites a package name the shipped alias registry carries", () => {
+    expect(resolveLinuxModuleName("react-native-reanimated", "linux", isPackageResolvable)).toBe(
+      "@react-native-linux/reanimated",
+    );
+  });
+
+  it("leaves a package name the shipped alias registry does not carry alone", () => {
+    expect(resolveLinuxModuleName("react-native-worklets", "linux", isPackageResolvable)).toBeNull();
   });
 });
 

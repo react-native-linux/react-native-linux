@@ -218,21 +218,30 @@ and Worklets `0.10.0`:
 - Both packages declare `"react-native": "src/index"`, so on a native platform Metro resolves their TypeScript
   sources and origin module paths land under `<package>/src/**`.
 
-### What the shim does not do
+### What the shim does and does not reach, by version
 
-The shim only decides files. Reanimated additionally branches at runtime on
-`SHOULD_BE_USE_WEB = IS_JEST || IS_WEB || IS_WINDOWS` (`src/common/constants/platform.ts`, where
-`IS_WINDOWS = Platform?.OS === 'windows'`), consumed by 23 files — for example
-`export const makeMutable = SHOULD_BE_USE_WEB ? makeMutableWeb : makeMutableNative;` (`src/mutables.ts`) and the
-`if (!SHOULD_BE_USE_WEB)` native initialisation in `src/initializers.ts`. `Platform.OS === 'linux'` makes that
-constant `false`, so Reanimated still takes its native branches even with every `.native` file resolved away, and
-`WorkletsModule` on the unsuffixed path is `export const WorkletsModule: IWorkletsModule = null!`
-(`react-native-worklets/src/WorkletsModule/NativeWorklets.ts`).
+This paragraph is version-specific, and the version we pin changed the answer.
 
-That gap is upstream's to close and is exactly ask 5 of the RFC in `docs/research/animation-on-linux.md` Appendix A
-(#145): key the fallback on "this platform has no native Worklets module" instead of on a hardcoded platform name.
-Until then the rung is resolver shim **plus** an upstream-side capability key; the shim is necessary and not
-sufficient, and the smoke bundle below is what proves how far it gets.
+**Reanimated 4.5.x** branched at runtime on `SHOULD_BE_USE_WEB = IS_JEST || IS_WEB || IS_WINDOWS`
+(`src/common/constants/platform.ts`), consumed by 23 files — `export const makeMutable = SHOULD_BE_USE_WEB ?
+makeMutableWeb : makeMutableNative` in `src/mutables.ts`, the `if (!SHOULD_BE_USE_WEB)` native initialisation in
+`src/initializers.ts`, and so on. On `linux` that constant is `false`, so a file-suffix shim alone could not have
+reached it, and the rung would have needed a patch.
+
+**Reanimated 4.6.0 — the tag `packages/reanimated` pins — deleted that constant.** The runtime branch was replaced
+by a file-suffix split: the tree went from 2 `.native.*` files at 4.5.0 to 38 at 4.6.0 (`mutables.native.ts`,
+`ReanimatedModule/index.native.ts`, `useAnimatedStyle.native.ts`, …), and `grep SHOULD_BE_USE_WEB` over the
+published 4.6.0 package returns nothing. `IS_WINDOWS` survives only as a `@knipIgnore`'d export with no consumers.
+A file-suffix split is precisely what this shim steers, so at 4.6.0 the rung is the shim and nothing else — the
+package's patch queue is empty for that reason.
+
+`react-native-worklets` still carries its own split (24 `.native.ts` files), reached by the same rule via the
+origin module path.
+
+Upstream's own Windows fallback (`shouldUseWindowsJsFallback` in `metro-config/index.js`, PR #10117) merged after
+4.6.0 was cut and first ships in 4.7.0. Ask 5 of the RFC in `docs/research/animation-on-linux.md` Appendix A (#145)
+still stands: key that fallback on "this platform has no native Worklets module" rather than on a hardcoded
+platform name, so the shim can be deleted rather than maintained.
 
 ### How the shim is exercised today
 

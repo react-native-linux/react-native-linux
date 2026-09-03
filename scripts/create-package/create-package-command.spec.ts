@@ -46,7 +46,6 @@ describe("createPackage", () => {
       "/repo/packages/reanimated/upstream.lock.json",
       "/repo/packages/reanimated/patches/.gitkeep",
       "/repo/packages/reanimated/linux/README.md",
-      "/repo/packages/reanimated/src/index.ts",
       "/repo/packages/reanimated/README.md",
     ]);
   });

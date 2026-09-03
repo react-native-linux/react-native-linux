@@ -53,7 +53,7 @@ const buildPackageManifest = (request: CreatePackageRequest): string => `{
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./${upstreamEntryOf(request)}"
   },
   "peerDependencies": {
     "@react-native-linux/core": "workspace:*",
@@ -75,8 +75,6 @@ ${formatSparsePaths(request.sparsePaths)}
 }
 `;
 
-const buildEntryModule = (request: CreatePackageRequest): string => `export * from "../${upstreamEntryOf(request)}";\n`;
-
 const buildLinuxReadme = (request: CreatePackageRequest): string => `# linux/
 
 The native Linux sources of \`${packageNameOf(request.libraryName)}\`, ours and never upstream's:
@@ -90,6 +88,15 @@ The native Linux sources of \`${packageNameOf(request.libraryName)}\`, ours and 
 goes into a patch instead, so that the next bump replays it.
 `;
 
+const buildReadmeChecklist = (request: CreatePackageRequest): string => `## Before the first release
+
+- [ ] Point the \`exports\` of \`package.json\` at this library's real entry points; the scaffold guesses
+      \`${upstreamEntryOf(request)}\` and maps only \`.\`.
+- [ ] Register \`{ linux: "${packageNameOf(request.libraryName)}", upstream: "<upstream package name>" }\` in
+      \`packages/cli/src/package-aliases.ts\` so that a \`linux\` bundle resolves this package instead.
+- [ ] Drop \`"private": true\` when the package is published as \`${packageNameOf(request.libraryName)}\`, versioned
+      with the platform.`;
+
 const buildReadme = (request: CreatePackageRequest): string => `# ${packageNameOf(request.libraryName)}
 
 The Linux overlay of ${request.repo}, vendored at \`${request.tag}\`.
@@ -100,7 +107,8 @@ The Linux overlay of ${request.repo}, vendored at \`${request.tag}\`.
   needs no network, and generated: change it through the commands below, never by hand.
 - \`patches/\` — our deviations from upstream, applied in numeric order.
 - \`linux/\` — our native Linux sources; see \`linux/README.md\`.
-- \`src/\` — our JavaScript, and the entry point this package exports.
+- \`src/\` — our own JavaScript, when a patch is not the right shape for it. Absent until something needs it:
+  the package exports the vendored entry directly, so our typecheck and coverage never reach upstream's sources.
 - \`e2e/\` — conformance scenarios, discovered by \`pnpm e2e\`.
 
 ## Upstream
@@ -129,16 +137,7 @@ accident. A patch that upstream merges is deleted on the bump that first contain
 ## Conformance
 
 Scenarios live in \`e2e/*.json\`, run against a real bundle under the headless compositor by
-\`pnpm e2e --scenario <scenario name>\`, and grade against \`e2e/goldens\` and \`test-bundles\` of this package.
-
-## Before the first release
-
-- [ ] Point \`src/index.ts\` and the \`exports\` of \`package.json\` at this library's real entry points; the scaffold
-      guesses \`${upstreamEntryOf(request)}\` and maps only \`.\`.
-- [ ] Register \`{ linux: "${packageNameOf(request.libraryName)}", upstream: "<upstream package name>" }\` in
-      \`packages/cli/src/package-aliases.ts\` so that a \`linux\` bundle resolves this package instead.
-- [ ] Drop \`"private": true\` when the package is published as \`${packageNameOf(request.libraryName)}\`, versioned
-      with the platform.
+\`pnpm e2e --scenario <scenario name>\`, and grade against \`e2e/goldens\` and \`test-bundles\` of this package.${buildReadmeChecklist(request)}
 `;
 
 const buildPackageFiles = (request: CreatePackageRequest): readonly ScaffoldFile[] => [
@@ -146,7 +145,6 @@ const buildPackageFiles = (request: CreatePackageRequest): readonly ScaffoldFile
   { contents: buildUpstreamLock(request), relativePath: "upstream.lock.json" },
   { contents: "", relativePath: "patches/.gitkeep" },
   { contents: buildLinuxReadme(request), relativePath: "linux/README.md" },
-  { contents: buildEntryModule(request), relativePath: "src/index.ts" },
   { contents: buildReadme(request), relativePath: "README.md" },
 ];
 

@@ -44,12 +44,18 @@ The scaffold is deliberately incomplete in two places, both listed as checkboxes
 ## The order of the first commands
 
 ```bash
-pnpm create-package reanimated https://github.com/software-mansion/react-native-reanimated.git 3.19.0 \
-  --sparse packages/react-native-reanimated/src packages/react-native-reanimated/Common
-pnpm upstream:bump reanimated 3.19.0     # vendors the tree and fills "sha256" in
+pnpm create-package reanimated https://github.com/software-mansion/react-native-reanimated 4.6.0 \
+  --sparse packages/react-native-reanimated/src
+pnpm upstream:bump reanimated 4.6.0      # vendors the tree and fills "sha256" in
 pnpm upstream:patch reanimated <name>    # captures edits to upstream/ as the next patch
 pnpm upstream:check reanimated           # the drift gate, also run for every package in CI
 ```
+
+That is the real invocation `packages/reanimated` was created with. The sparse cone is one path, not two, because
+the JavaScript bring-up rung of issue #178 needs only the TypeScript sources; `Common/` joins the cone on the bump
+that starts the native port. A library that releases its sibling packages under a separate tag namespace — as this
+monorepo does with `worklets-<version>` — needs one package per tag namespace, because `upstream.lock.json` holds
+exactly one tag.
 
 Scaffold and bump belong in one sitting: until the tree is vendored, `src/index.ts` re-exports a file that does not
 exist, so `pnpm ts` and `pnpm deadcode` fail on the package.
@@ -62,7 +68,10 @@ exist, so `pnpm ts` and `pnpm deadcode` fail on the package.
 const packageAliases: readonly PackageAlias[] = [{ linux: "@react-native-linux/reanimated", upstream: "react-native-reanimated" }];
 ```
 
-It ships empty; a package registers itself when it can actually replace its upstream. `resolveLinuxPackageAlias`
+The first consumer is `packages/reanimated` ([issue #181](https://github.com/react-native-linux/react-native-linux/issues/181)),
+and that one entry is the whole list: `react-native-worklets` stays unaliased until an overlay package vendors it,
+because an alias for a package that is not installed is exactly the failure mode the third condition below exists
+to prevent. A package registers itself when it can actually replace its upstream. `resolveLinuxPackageAlias`
 rewrites a module name when **all three** hold, and returns `null` otherwise, which leaves the name to the rest of
 the chain:
 

@@ -4,8 +4,6 @@ import { packageAliases, resolveLinuxPackageAlias } from "./package-aliases.ts";
 import { existsSync } from "node:fs";
 import path from "node:path";
 
-const NO_ALIASES = 0;
-
 const fixturesDirectory = path.join(import.meta.dirname, "..", "test-fixtures", "package-aliases");
 
 const isPackageResolvable = (packageName: string): boolean =>
@@ -20,8 +18,10 @@ const resolve = (moduleName: string, platform: string | null): string | null =>
   resolveLinuxPackageAlias({ aliases, isPackageResolvable, moduleName, platform });
 
 describe("packageAliases", () => {
-  it("ships no alias until the first overlay package exists", () => {
-    expect(packageAliases).toHaveLength(NO_ALIASES);
+  it("registers the reanimated overlay and nothing else", () => {
+    expect(packageAliases).toStrictEqual([
+      { linux: "@react-native-linux/reanimated", upstream: "react-native-reanimated" },
+    ]);
   });
 });
 
