@@ -87,6 +87,13 @@ const fixtures: readonly GoldenFixture[] = [
     renderArguments: ["Hello world{Ctrl+A}"],
     renderFlag: "--type",
   },
+  // Issue #53, case 5: two Tabs reach the multiline field, so the selection spans a line break rather than a line.
+  {
+    bundleFileName: "text-input.js",
+    goldenFileName: "text-input-multiline-selection.png",
+    renderArguments: ["{Tab}{Tab}{Ctrl+A}"],
+    renderFlag: "--type",
+  },
   { bundleFileName: "gradient.js", goldenFileName: "gradient.png", renderArguments: [], renderFlag: "--golden" },
 ];
 

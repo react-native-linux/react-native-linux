@@ -3399,7 +3399,10 @@ react-native-macos#1395, #1921 and #2127 are three of them.
   rather than a constant; at the end of the text the glyph before it supplies the line and the caret sits on its
   trailing edge. Only an empty field invents a height, and only then.
 - The **selection** is `getRectsForRange` with `RectHeightStyle::kMax`, so the rectangles of one line share a
-  height and a selection across a line break is two boxes rather than a ragged one.
+  height and a selection across a line break is two boxes rather than a ragged one. That is case 5 of the parity
+  matrix and `text-input-multiline-selection.png` is the picture of it: two Tabs reach the wrapped field and
+  Ctrl+A selects all 106 characters, so the first line is highlighted to its full width and the second stops
+  where the text does.
 - The **composing run** is the same call, drawn as a one-point underline along the bottom of each box.
 - Offsets crossing into Skia are **UTF-16 indices** into the displayed string, because that is the index space
   SkParagraph's public API speaks. `utf16LengthOfUtf8` and `utf8OffsetForUtf16Index` are the two conversions, and
