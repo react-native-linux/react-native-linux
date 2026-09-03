@@ -158,6 +158,8 @@ bool ScrollController::advance(double frameMilliseconds) {
     const double elapsed = std::clamp(frameMilliseconds, kMinimumFrameMilliseconds, kMaximumFrameMilliseconds);
     bool isScrolling = false;
 
+    hasDispatchedScrollEvent_ = false;
+
     for (auto entry = targets_.begin(); entry != targets_.end();) {
         ScrollTarget& target = entry->second;
         const std::shared_ptr<const facebook::react::ScrollViewShadowNode> scrollView =
@@ -177,6 +179,8 @@ bool ScrollController::advance(double frameMilliseconds) {
 
     return isScrolling;
 }
+
+bool ScrollController::hasDispatchedScrollEvent() const noexcept { return hasDispatchedScrollEvent_; }
 
 bool ScrollController::isScrollActive() const noexcept {
     for (const auto& entry : targets_) {
@@ -284,6 +288,7 @@ bool ScrollController::advanceTarget(ScrollTarget& target, const facebook::react
 
         if (hasMoved) {
             emitter->onScroll(scrollEvent);
+            hasDispatchedScrollEvent_ = true;
         }
 
         if (wasMomentumRunning && !target.isMomentumRunning) {

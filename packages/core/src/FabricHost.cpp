@@ -148,6 +148,9 @@ FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::
     schedulerDelegate_ = std::make_unique<facebook::react::SchedulerDelegateImpl>(mountingManager_);
     scheduler_ = std::make_unique<facebook::react::Scheduler>(schedulerToolbox, nullptr, schedulerDelegate_.get());
     schedulerDelegate_->setUIManager(scheduler_->getUIManager());
+    // The `AnimationBackend` the Scheduler built over the choreographer above. It is held weakly for the same
+    // reason `AnimationChoreographer` holds it weakly: the UIManager owns it, and this host outlives neither.
+    animationBackend_ = scheduler_->getUIManager()->unstable_getAnimationBackend();
     inputDispatcher_ = std::make_unique<InputDispatcher>(scheduler_->getUIManager(), mountingManager_, kSurfaceId);
     scrollController_ = std::make_unique<ScrollController>(scheduler_->getUIManager(), kSurfaceId);
 
@@ -211,7 +214,22 @@ void FabricHost::dispatchInput(const std::vector<InputEvent>& events) {
     inputDispatcher_->dispatch(pointerEvents);
 }
 
-bool FabricHost::advanceScroll(double frameMilliseconds) { return scrollController_->advance(frameMilliseconds); }
+bool FabricHost::advanceScroll(double frameMilliseconds) {
+    const bool isScrolling = scrollController_->advance(frameMilliseconds);
+
+    // After the offsets are written and the frame's `onScroll` is dispatched, and before the beat releases either
+    // onto the JavaScript thread: an event-driven animated value is therefore current in the scene this frame
+    // paints. See *Event-driven Animated* in docs/cpp-toolchain.md.
+    if (scrollController_->hasDispatchedScrollEvent()) {
+        const std::shared_ptr<facebook::react::UIManagerAnimationBackend> animationBackend = animationBackend_.lock();
+
+        if (animationBackend != nullptr) {
+            animationBackend->trigger();
+        }
+    }
+
+    return isScrolling;
+}
 
 bool FabricHost::advanceCaretBlink(double frameMilliseconds) {
     return inputDispatcher_->advanceCaretBlink(frameMilliseconds);

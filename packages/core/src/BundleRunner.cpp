@@ -16,6 +16,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -158,6 +159,48 @@ std::unique_ptr<FabricHost> startFabricRun(ReactHost& reactHost, const std::stri
 }
 
 /**
+ * A run that injects input, once its bundle has committed: the Fabric host, and whether there was a scene to
+ * inject into at all.
+ *
+ * The `ReactHost` stays with the caller rather than moving in here, because it owns the JavaScript thread this
+ * host's teardown has to drain and it outlives the host by construction.
+ */
+struct StartedFabricRun {
+    std::unique_ptr<FabricHost> fabricHost;
+    bool hasCommitted{};
+};
+
+/**
+ * Boots a bundle at the headless surface size and waits for its first commit. `subject` completes the message a
+ * bundle that committed nothing gets, which is the only thing that differs between the runs that call this.
+ */
+StartedFabricRun startFabricRunAtFirstCommit(ReactHost& reactHost, const std::string& bundlePath,
+                                             std::string_view subject) {
+    std::unique_ptr<FabricHost> fabricHost = startFabricRun(reactHost, bundlePath, kHeadlessSurfaceSize);
+    const bool hasCommitted = !waitForFirstCommit(reactHost, *fabricHost).empty();
+
+    if (!hasCommitted) {
+        std::cerr << "[bundle-runner] the bundle committed no scene, so there is nothing to " << subject
+                  << std::endl;
+    }
+
+    return StartedFabricRun{.fabricHost = std::move(fabricHost), .hasCommitted = hasCommitted};
+}
+
+/**
+ * Tears an injected run down in the same order `finishFabricRun` does — stop the surface, drain the JavaScript
+ * thread so the queued unmount runs while the scheduler delegate is still alive, then destroy the host — and
+ * reports the exit status the run earned.
+ */
+int finishFabricRunWithStatus(ReactHost& reactHost, StartedFabricRun& startedRun) {
+    startedRun.fabricHost->stopSurface();
+    reactHost.drainJavaScriptThread();
+    startedRun.fabricHost.reset();
+
+    return startedRun.hasCommitted && !reactHost.hasReportedFatalError() ? 0 : 1;
+}
+
+/**
  * Reads the scene out and tears the host down, in the one order that is safe: both readings happen before the
  * surface is stopped, because stopping it commits an empty tree, and the JavaScript thread is drained before the
  * host is destroyed so the queued unmount runs while the scheduler delegate is still alive.
@@ -179,25 +222,46 @@ FabricRunResult finishFabricRun(ReactHost& reactHost, std::unique_ptr<FabricHost
 
 int runInjectedClick(const std::string& bundlePath, facebook::react::Point surfacePoint) {
     ReactHost reactHost;
-    std::unique_ptr<FabricHost> fabricHost = startFabricRun(reactHost, bundlePath, kHeadlessSurfaceSize);
+    StartedFabricRun startedRun = startFabricRunAtFirstCommit(reactHost, bundlePath, "click");
+    FabricHost& fabricHost = *startedRun.fabricHost;
 
-    const bool hasCommitted = !waitForFirstCommit(reactHost, *fabricHost).empty();
-
-    if (!hasCommitted) {
-        std::cerr << "[bundle-runner] the bundle committed no scene, so there is nothing to click" << std::endl;
-    }
-
-    deliverInputFrame(reactHost, *fabricHost, makeMotionFrame(surfacePoint));
-    deliverInputFrame(reactHost, *fabricHost,
+    deliverInputFrame(reactHost, fabricHost, makeMotionFrame(surfacePoint));
+    deliverInputFrame(reactHost, fabricHost,
                       {InputEvent{.kind = InputEventKind::PointerButtonPress, .surfacePoint = surfacePoint}});
-    deliverInputFrame(reactHost, *fabricHost,
+    deliverInputFrame(reactHost, fabricHost,
                       {InputEvent{.kind = InputEventKind::PointerButtonRelease, .surfacePoint = surfacePoint}});
 
-    fabricHost->stopSurface();
-    reactHost.drainJavaScriptThread();
-    fabricHost.reset();
+    return finishFabricRunWithStatus(reactHost, startedRun);
+}
 
-    return hasCommitted && !reactHost.hasReportedFatalError() ? 0 : 1;
+int runAnimatedScroll(const std::string& bundlePath, facebook::react::Point surfacePoint, int wheelNotches) {
+    ReactHost reactHost;
+    StartedFabricRun startedRun = startFabricRunAtFirstCommit(reactHost, bundlePath, "scroll");
+    FabricHost& fabricHost = *startedRun.fabricHost;
+
+    // One frame before the wheel, because `NativeAnimatedNodesManager` ignores an event that does not arrive on
+    // the thread an animation frame has run on, and the bundle's operation batch is what that frame drains. A
+    // window ticks from the first frame it draws; a headless run has to spend a frame on it.
+    deliverInputFrame(reactHost, fabricHost, {});
+
+    fabricHost.dispatchInput(makeWheelFrame(surfacePoint, wheelNotches));
+
+    for (size_t frame = 0; frame < kMaximumInjectedScrollFrames; ++frame) {
+        const bool isScrolling = fabricHost.advanceScroll(kInjectedFrameMilliseconds);
+
+        fabricHost.induceEventBeat();
+        fabricHost.tickAnimations(std::chrono::steady_clock::now());
+
+        if (!reactHost.runUntilQuiescent(kQuiescenceBudget)) {
+            std::cerr << "[bundle-runner] gave up waiting for pending timers" << std::endl;
+        }
+
+        if (!isScrolling) {
+            break;
+        }
+    }
+
+    return finishFabricRunWithStatus(reactHost, startedRun);
 }
 
 int runResizedFabricBundle(const std::string& bundlePath, facebook::react::Size resizedSurfaceSize) {

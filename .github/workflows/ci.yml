@@ -420,6 +420,18 @@ jobs:
           grep -q "animated: batch ok" /tmp/rnl-animated.log
           grep -q "animated: value 0.75" /tmp/rnl-animated.log
 
+          # Event-driven Animated (#131): Animated.event wiring on a ScrollView, driven by three wheel notches.
+          # Every trace line carries the frame's scroll offset and the animated value it drove, and the two have
+          # to be the same number on the same line — a value applied one frame late is what upstream fixed in
+          # 0.86 and what the backreference below fails on. The last line is the settled 3 x 40 points.
+          "$binary" --animated-scroll packages/core/test-bundles/animated-scroll.js 160 100 3 \
+            | tee /tmp/rnl-animated-scroll.log
+          grep -q "animated-scroll: committed surface 1" /tmp/rnl-animated-scroll.log
+          grep -qE 'animated-scroll: offset ([0-9]+\.[0-9]{2}) value \1' /tmp/rnl-animated-scroll.log
+          if grep 'animated-scroll: offset' /tmp/rnl-animated-scroll.log \
+            | grep -vqE 'animated-scroll: offset ([0-9]+\.[0-9]{2}) value \1'; then exit 1; fi
+          grep -q "animated-scroll: offset 120.00 value 120.00" /tmp/rnl-animated-scroll.log
+
       # Only the Skia entry has a TextLayoutManager behind Yoga; with -DRNL_ENABLE_SKIA=OFF the upstream stub is
       # still compiled in and every paragraph measures as zero, so this assertion belongs to the dev entry alone.
       - name: Run the text acceptance path

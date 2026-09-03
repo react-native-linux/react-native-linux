@@ -70,6 +70,13 @@ public:
     bool advance(double frameMilliseconds);
 
     /**
+     * Whether the last `advance` dispatched an `onScroll`. That is the frame an `Animated.event` value bound to
+     * `contentOffset` can have changed in, and therefore the frame the animated graph has to be pushed through
+     * before anything is painted. See *Event-driven Animated* in docs/cpp-toolchain.md.
+     */
+    bool hasDispatchedScrollEvent() const noexcept;
+
+    /**
      * Whether any target is still being dragged or gliding, as of the last `advance`. Peeking this costs no
      * `UIManager` lookup, unlike `advance` itself, which is what makes it usable as the frame clock's
      * fallback-timeout pending-work signal (see *Frame clock* in docs/cpp-toolchain.md) without advancing physics
@@ -97,6 +104,7 @@ private:
     std::shared_ptr<facebook::react::UIManager> uiManager_;
     facebook::react::SurfaceId surfaceId_;
     std::unordered_map<facebook::react::Tag, ScrollTarget> targets_;
+    bool hasDispatchedScrollEvent_{false};
 };
 
 } // namespace react_native_linux

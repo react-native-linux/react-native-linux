@@ -49,6 +49,18 @@ int runBundle(const std::optional<std::string>& bundlePath, BundleMode bundleMod
 int runInjectedClick(const std::string& bundlePath, facebook::react::Point surfacePoint);
 
 /**
+ * Runs a bundle, turns `wheelNotches` of a mouse wheel over `surfacePoint` into a scroll, and drives the whole
+ * glide one frame at a time in the window loop's order: dispatch, `advanceScroll` — which pushes the animation
+ * backend for the frame it dispatched an `onScroll` in — beat, animation tick.
+ *
+ * This is the acceptance harness for issue #131, and the beat is induced per frame rather than once at the end,
+ * because what is being proved is per-frame agreement between the scroll offset and the animated value it drives.
+ * `--scroll-to`, which only cares where the content came to rest, deliberately does the opposite. See
+ * *Event-driven Animated* in docs/cpp-toolchain.md.
+ */
+int runAnimatedScroll(const std::string& bundlePath, facebook::react::Point surfacePoint, int wheelNotches);
+
+/**
  * Runs a bundle at the headless surface size, then resizes the surface to `resizedSurfaceSize` the way a
  * compositor's `xdg_toplevel.configure` would, and lets JavaScript observe both.
  *

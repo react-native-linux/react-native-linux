@@ -25,11 +25,13 @@ constexpr std::string_view kDamageGoldenFlag = "--damage-golden";
 constexpr std::string_view kInjectPointerFlag = "--inject-pointer";
 constexpr std::string_view kResizeFlag = "--resize";
 constexpr std::string_view kScrollToFlag = "--scroll-to";
+constexpr std::string_view kAnimatedScrollFlag = "--animated-scroll";
 constexpr std::string_view kFocusTabFlag = "--focus-tab";
 constexpr std::string_view kTypeFlag = "--type";
 constexpr size_t kInjectPointerArgumentCount = 5;
 constexpr size_t kResizeArgumentCount = 5;
 constexpr size_t kScrollToArgumentCount = 7;
+constexpr size_t kAnimatedScrollArgumentCount = 6;
 constexpr size_t kFocusTabArgumentCount = 5;
 constexpr size_t kTypeArgumentCount = 5;
 
@@ -75,6 +77,26 @@ int runInjectPointerCommand(std::span<char*> arguments) {
     }
 
     return react_native_linux::runInjectedClick(std::string(arguments[2]), surfacePoint.value());
+}
+
+int runAnimatedScrollCommand(std::span<char*> arguments) {
+    if (arguments.size() != kAnimatedScrollArgumentCount) {
+        std::cerr << "[hello_react] " << kAnimatedScrollFlag << " requires <bundle> <x> <y> <notches>" << std::endl;
+
+        return 1;
+    }
+
+    const std::optional<facebook::react::Point> surfacePoint = parseSurfacePoint(arguments[3], arguments[4]);
+    const std::optional<int> notches = parsePositiveDimension(arguments[5]);
+
+    if (!surfacePoint.has_value() || !notches.has_value()) {
+        std::cerr << "[hello_react] " << kAnimatedScrollFlag << " x, y and notches must be positive integers"
+                  << std::endl;
+
+        return 1;
+    }
+
+    return react_native_linux::runAnimatedScroll(std::string(arguments[2]), surfacePoint.value(), notches.value());
 }
 
 int runResizeCommand(std::span<char*> arguments) {
@@ -208,6 +230,7 @@ int main(int argc, char** argv) {
     const bool isInjectPointerRequested = arguments.size() > 1 && kInjectPointerFlag == arguments[1];
     const bool isResizeRequested = arguments.size() > 1 && kResizeFlag == arguments[1];
     const bool isScrollToRequested = arguments.size() > 1 && kScrollToFlag == arguments[1];
+    const bool isAnimatedScrollRequested = arguments.size() > 1 && kAnimatedScrollFlag == arguments[1];
     const bool isFocusTabRequested = arguments.size() > 1 && kFocusTabFlag == arguments[1];
     const bool isTypeRequested = arguments.size() > 1 && kTypeFlag == arguments[1];
 
@@ -243,6 +266,10 @@ int main(int argc, char** argv) {
 
         if (isResizeRequested) {
             return runResizeCommand(arguments);
+        }
+
+        if (isAnimatedScrollRequested) {
+            return runAnimatedScrollCommand(arguments);
         }
 
         if (isScrollToRequested) {

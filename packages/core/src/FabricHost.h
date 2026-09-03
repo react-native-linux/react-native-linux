@@ -12,6 +12,7 @@
 #include <react/renderer/scheduler/Scheduler.h>
 #include <react/renderer/scheduler/SchedulerDelegateImpl.h>
 #include <react/renderer/scheduler/SurfaceHandler.h>
+#include <react/renderer/uimanager/UIManagerAnimationBackend.h>
 #include <react/runtime/ReactInstance.h>
 #include <react/utils/ContextContainer.h>
 
@@ -73,6 +74,12 @@ public:
      * Integrates one frame of scrolling and reports whether any `<ScrollView>` is still moving. Called between
      * `dispatchInput` and `induceEventBeat`, so the state write-back and the scroll events this produces ride the
      * same beat as everything else the frame queued.
+     *
+     * A frame that dispatched an `onScroll` also pushes the animation backend synchronously — upstream's
+     * `UIManagerAnimationBackend::trigger` — before it returns, so an `Animated.event` value bound to
+     * `contentOffset` is applied in the frame the scroll is applied in rather than in the one after it. This is
+     * the only place that pushes it: both frame loops reach it through this call. See *Event-driven Animated* in
+     * docs/cpp-toolchain.md.
      */
     bool advanceScroll(double frameMilliseconds);
 
@@ -107,6 +114,7 @@ private:
     std::shared_ptr<facebook::react::ComponentDescriptorProviderRegistry> componentDescriptorProviderRegistry_;
     std::shared_ptr<LinuxMountingManager> mountingManager_;
     std::shared_ptr<LinuxAnimationChoreographer> animationChoreographer_;
+    std::weak_ptr<facebook::react::UIManagerAnimationBackend> animationBackend_;
     std::function<void()> eventBeatInducer_;
     std::unique_ptr<facebook::react::SchedulerDelegateImpl> schedulerDelegate_;
     std::unique_ptr<facebook::react::Scheduler> scheduler_;

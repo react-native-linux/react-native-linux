@@ -9,6 +9,7 @@
     "build": "cmake --build ../../build/dev",
     "configure": "cmake -S ../.. --preset dev",
     "override:validate": "react-native-platform-override validate",
+    "run:animated-scroll": "../../build/dev/bin/hello_react --animated-scroll test-bundles/animated-scroll.js 160 100 3",
     "run:fabric": "../../build/dev/bin/hello_react --fabric test-bundles/fabric-view.js",
     "run:golden": "../../build/dev/bin/hello_react --golden test-bundles/fabric-view.js /tmp/rnl-fabric-view.png",
     "run:golden:damage": "../../build/dev/bin/hello_react --damage-golden test-bundles/damage.js /tmp/rnl-damage.png",
