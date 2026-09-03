@@ -7,17 +7,14 @@
     },
     "borderRadii": {
       "state": "implemented",
-      "test": "RetainedSceneTest, BorderRadiiAreClampedSoAdjacentCornersDoNotOverlap"
+      "test": "BorderGeometryTest, TheHitRegionIsTheSameRoundedBoxTheSnapshotIsPaintedWith"
     },
-    "borderColors": { "state": "implemented", "test": "RetainedSceneTest, BorderWidthsAndColorsAreReadPerSide" },
+    "borderColors": { "state": "implemented", "test": "border-matrix.png" },
     "borderCurves": {
       "state": "deviating",
       "reason": "Corners are always circular; iOS' `continuous` squircle is never drawn. See *View props fidelity*."
     },
-    "borderStyles": {
-      "state": "deviating",
-      "reason": "Every border is solid; `dotted` and `dashed` draw the same ring as `solid`. Issue #101 owns implementing them or refusing them in writing."
-    },
+    "borderStyles": { "state": "not-implemented", "issue": "#101" },
     "outlineColor": { "state": "not-implemented", "issue": "#68" },
     "outlineOffset": { "state": "not-implemented", "issue": "#68" },
     "outlineStyle": { "state": "not-implemented", "issue": "#68" },

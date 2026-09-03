@@ -38,6 +38,7 @@ add_executable(rnl_core_tests
     AnimatedPropsTest.cpp
     AnimationChoreographerTest.cpp
     AnimationFrameCostTest.cpp
+    BorderGeometryTest.cpp
     DimensionsTest.cpp
     SceneReuseTest.cpp
     EditorTest.cpp

@@ -294,6 +294,52 @@ facebook::react::RectangleEdges<uint32_t> toArgbEdges(const facebook::react::Bor
                                                      .bottom = toArgb(colors.bottom, opacity)};
 }
 
+/**
+ * A border width the device grid can actually show. `StyleSheet.hairlineWidth` is `1 / PixelRatio`, so a border
+ * that is one device pixel wide arrives here as a fraction of a point; drawn literally it becomes a fraction of a
+ * pixel of coverage, which at small enough scales is indistinguishable from no border at all. That is
+ * core#58054 — `hairlineWidth` borders that are "not always rendered".
+ *
+ * A width of exactly zero stays zero, because "no border" is not a thin one. Everything else is promoted to one
+ * device pixel, which is what iOS and Android both do. The promotion lives here rather than in the painter so the
+ * ring, the content box the ring leaves behind and the coverage gate all see the same number.
+ */
+facebook::react::Float visibleBorderWidth(facebook::react::Float width, facebook::react::Float pointScaleFactor) {
+    if (width <= 0 || pointScaleFactor <= 0) {
+        return width;
+    }
+
+    return std::max(width, 1.0F / pointScaleFactor);
+}
+
+facebook::react::BorderWidths visibleBorderWidths(const facebook::react::BorderWidths& widths,
+                                                  facebook::react::Float pointScaleFactor) {
+    return facebook::react::BorderWidths{.left = visibleBorderWidth(widths.left, pointScaleFactor),
+                                         .top = visibleBorderWidth(widths.top, pointScaleFactor),
+                                         .right = visibleBorderWidth(widths.right, pointScaleFactor),
+                                         .bottom = visibleBorderWidth(widths.bottom, pointScaleFactor)};
+}
+
+facebook::react::CornerRadii contentCorner(const facebook::react::CornerRadii& corner,
+                                           facebook::react::Float horizontal, facebook::react::Float vertical) {
+    return facebook::react::CornerRadii{.vertical = std::max(corner.vertical - vertical, 0.0F),
+                                        .horizontal = std::max(corner.horizontal - horizontal, 0.0F)};
+}
+
+/**
+ * Whether the point is outside one corner's ellipse. `insetX` and `insetY` are its distances from the two edges
+ * that meet at that corner, so the arc only cuts the box the corner's own two radii span, and the comparison is
+ * the ellipse equation scaled by `(horizontal * vertical)^2` — no division, and therefore no zero-radius case.
+ */
+bool isOutsideCorner(const facebook::react::CornerRadii& corner, facebook::react::Float insetX,
+                     facebook::react::Float insetY) {
+    const facebook::react::Float overshootX = std::max(corner.horizontal - insetX, 0.0F) * corner.vertical;
+    const facebook::react::Float overshootY = std::max(corner.vertical - insetY, 0.0F) * corner.horizontal;
+    const facebook::react::Float radius = corner.horizontal * corner.vertical;
+
+    return (overshootX * overshootX) + (overshootY * overshootY) > radius * radius;
+}
+
 bool isEdgeVisible(facebook::react::Float width, uint32_t colorArgb) {
     return width > 0 && (colorArgb >> kAlphaShift) != 0U;
 }
@@ -333,6 +379,8 @@ void readPaintProps(SceneNode& node, const facebook::react::ShadowView& shadowVi
     // resolveBorderMetrics is what iOS and Android call too: it cascades the per-edge and per-corner props,
     // converts percentage radii to points, and applies the CSS corner-overlap clamp.
     node.borderMetrics = viewProps->resolveBorderMetrics(shadowView.layoutMetrics);
+    node.borderMetrics.borderWidths =
+        visibleBorderWidths(node.borderMetrics.borderWidths, shadowView.layoutMetrics.pointScaleFactor);
     node.transform = toSceneMatrix(viewProps->resolveTransform(shadowView.layoutMetrics));
     node.transformOrigin = viewProps->transformOrigin;
     node.opacity = std::clamp(static_cast<float>(viewProps->opacity), 0.0F, 1.0F);
@@ -644,7 +692,7 @@ std::optional<facebook::react::Point> toUntransformedPoint(const SceneMatrix& ma
     return mapPoint(inverse, surfacePoint);
 }
 
-bool coversSurfacePoint(const facebook::react::Rect& frame, const SceneMatrix& matrix,
+bool coversSurfacePoint(const SceneRoundedBox& box, const SceneMatrix& matrix,
                         facebook::react::Point surfacePoint) {
     const std::optional<facebook::react::Point> untransformedPoint = toUntransformedPoint(matrix, surfacePoint);
 
@@ -652,24 +700,26 @@ bool coversSurfacePoint(const facebook::react::Rect& frame, const SceneMatrix& m
         return false;
     }
 
-    facebook::react::Rect containingFrame = frame;
-
-    return containingFrame.containsPoint(untransformedPoint.value());
+    return roundedBoxContainsPoint(box, untransformedPoint.value());
 }
 
 /**
- * Whether the point lands on this primitive as it was painted: inside its own transformed frame, and inside every
- * `overflow: hidden` ancestor that cut it. Corner radii are not consulted, exactly as upstream's shadow-tree hit
- * test does not consult them — a press on the corner of a rounded card still presses the card.
+ * Whether the point lands on this primitive as it was painted: inside its own transformed rounded border box, and
+ * inside the rounded border box of every `overflow: hidden` ancestor that cut it.
+ *
+ * Both boxes come from `roundedBorderBox`, which is the box the painter fills and clips to, so the corner a press
+ * misses is exactly the corner no pixel was painted in. Upstream's shadow-tree hit test ignores radii and presses
+ * the whole bounding rectangle; issue #99 is the decision not to.
  */
 bool coversPrimitive(const ScenePrimitive& primitive, facebook::react::Point surfacePoint) {
     for (const SceneClip& clip : primitive.clips) {
-        if (!coversSurfacePoint(clip.frame, clip.matrix, surfacePoint)) {
+        if (!coversSurfacePoint(roundedBorderBox(clip.frame, clip.borderRadii), clip.matrix, surfacePoint)) {
             return false;
         }
     }
 
-    return coversSurfacePoint(primitive.frame, primitive.matrix, surfacePoint);
+    return coversSurfacePoint(roundedBorderBox(primitive.frame, primitive.borderRadii), primitive.matrix,
+                              surfacePoint);
 }
 
 bool isPointerTarget(const SceneNode& node) {
@@ -706,6 +756,45 @@ void mergeDamage(SceneDamage& damage, const SceneDamage& additions) {
     for (const facebook::react::Rect& rect : additions) {
         addDamageRect(damage, rect);
     }
+}
+
+SceneRoundedBox roundedBorderBox(const facebook::react::Rect& frame, const facebook::react::BorderRadii& radii) {
+    return SceneRoundedBox{.bounds = frame, .radii = radii};
+}
+
+SceneRoundedBox roundedContentBox(const SceneRoundedBox& borderBox, const facebook::react::BorderWidths& widths) {
+    const facebook::react::Float left = std::min(widths.left, borderBox.bounds.size.width);
+    const facebook::react::Float top = std::min(widths.top, borderBox.bounds.size.height);
+    const facebook::react::Float width = std::max(borderBox.bounds.size.width - left - widths.right, 0.0F);
+    const facebook::react::Float height = std::max(borderBox.bounds.size.height - top - widths.bottom, 0.0F);
+
+    return SceneRoundedBox{
+        .bounds = facebook::react::Rect{.origin = facebook::react::Point{.x = borderBox.bounds.origin.x + left,
+                                                                        .y = borderBox.bounds.origin.y + top},
+                                        .size = facebook::react::Size{.width = width, .height = height}},
+        .radii = facebook::react::BorderRadii{
+            .topLeft = contentCorner(borderBox.radii.topLeft, widths.left, widths.top),
+            .topRight = contentCorner(borderBox.radii.topRight, widths.right, widths.top),
+            .bottomLeft = contentCorner(borderBox.radii.bottomLeft, widths.left, widths.bottom),
+            .bottomRight = contentCorner(borderBox.radii.bottomRight, widths.right, widths.bottom)}};
+}
+
+bool roundedBoxContainsPoint(const SceneRoundedBox& box, facebook::react::Point point) {
+    facebook::react::Rect bounds = box.bounds;
+
+    if (!bounds.containsPoint(point)) {
+        return false;
+    }
+
+    const facebook::react::Float fromLeft = point.x - bounds.origin.x;
+    const facebook::react::Float fromTop = point.y - bounds.origin.y;
+    const facebook::react::Float fromRight = bounds.size.width - fromLeft;
+    const facebook::react::Float fromBottom = bounds.size.height - fromTop;
+
+    return !isOutsideCorner(box.radii.topLeft, fromLeft, fromTop) &&
+           !isOutsideCorner(box.radii.topRight, fromRight, fromTop) &&
+           !isOutsideCorner(box.radii.bottomRight, fromRight, fromBottom) &&
+           !isOutsideCorner(box.radii.bottomLeft, fromLeft, fromBottom);
 }
 
 void RetainedScene::createSurfaceRoot(facebook::react::SurfaceId surfaceId, facebook::react::Size size) {

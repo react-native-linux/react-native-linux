@@ -44,6 +44,45 @@ struct SceneMatrix {
 };
 
 /**
+ * One rounded box, in the untransformed coordinates the frame it came from is written in.
+ *
+ * This is the single geometry issue #99 requires every consumer of a node's shape to derive from: the background
+ * fill, the outer edge of the border ring, the `overflow: hidden` clip, the content clip an `<Image>` or a
+ * gradient layer is cut by, and the region a press has to land in. Five consumers that each computed their own
+ * rounded rect is what every upstream rounded-corner bug is made of; there is one here, and both the painter and
+ * the hit test read it.
+ *
+ * It carries no Skia type, because the hit test is one of those consumers and this translation unit links no
+ * Skia. `ScenePainter` turns it into an `SkRRect` where it draws.
+ */
+struct SceneRoundedBox {
+    facebook::react::Rect bounds;
+    facebook::react::BorderRadii radii;
+};
+
+/**
+ * The rounded border box of a frame: the box itself and the radii `BaseViewProps::resolveBorderMetrics` already
+ * cascaded, resolved against the frame and clamped so adjacent corners cannot overlap.
+ */
+SceneRoundedBox roundedBorderBox(const facebook::react::Rect& frame, const facebook::react::BorderRadii& radii);
+
+/**
+ * The box inside a ring of `widths`. React Native draws borders inside the frame, so the inner edge is the border
+ * box inset by the per-side widths with every corner reduced by the two widths that meet at it, which is the CSS
+ * inner-radius rule. Widths larger than the box collapse it to nothing rather than inverting it.
+ */
+SceneRoundedBox roundedContentBox(const SceneRoundedBox& borderBox, const facebook::react::BorderWidths& widths);
+
+/**
+ * Whether the point is inside the rounded box: inside its bounds and inside each of the four corner ellipses.
+ *
+ * The corner test is the ellipse equation multiplied through by `(horizontal * vertical)^2`, so it needs no
+ * division and therefore no zero-radius case: a square corner has an overshoot of zero on both axes and can never
+ * be outside. This is what makes a press miss a rounded card exactly where the card's corner was not painted.
+ */
+bool roundedBoxContainsPoint(const SceneRoundedBox& box, facebook::react::Point point);
+
+/**
  * One `overflow: hidden` ancestor: the rounded border box every descendant primitive is clipped to, together with
  * the transform that ancestor was drawn under. The matrix travels with the clip because an ancestor may carry a
  * transform its descendants do not.
@@ -361,8 +400,10 @@ public:
      * inverse of the composed matrix `snapshot` would paint it with — so one composition answers both questions.
      *
      * A node paints inside every `overflow: hidden` ancestor it inherited, so the clip stack is part of the test.
-     * A node that paints nothing is still a target, exactly as an empty `<View>` is on every other platform, and
-     * so is a node animated to `opacity: 0` — see *Hit-testing under animation* in docs/cpp-toolchain.md.
+     * The node and every clip are tested as `roundedBorderBox` — the same `SceneRoundedBox` the painter fills,
+     * rings and clips to — so a press outside a rounded corner's arc misses, which is issue #99. A node that
+     * paints nothing is still a target, exactly as an empty `<View>` is on every other platform, and so is a node
+     * animated to `opacity: 0` — see *Hit-testing under animation* in docs/cpp-toolchain.md.
      */
     SceneHit findNodeAtPoint(facebook::react::Tag rootTag, facebook::react::Point surfacePoint) const;
     SceneSnapshot snapshot() const;

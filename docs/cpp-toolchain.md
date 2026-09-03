@@ -1020,9 +1020,14 @@ Four rules are stated rather than inherited:
   by accident.
 - **A node that paints nothing is still a target.** An empty `<View>` contributes no primitive and is still
   pressed, which is what a `<Pressable>` with no background needs.
-- **Corner radii are not consulted.** A press on the corner of a rounded card presses the card. Upstream's shadow
-  tree hit test does not consult them either, and the clip that would need them is a rounded rect the painter
-  applies and the hit path approximates by its box.
+- **Corner radii are consulted**, which is issue #99 and a departure from upstream. A press outside a rounded
+  card's corner arc misses the card, and a press outside a rounded `overflow: hidden` ancestor's arc misses
+  everything inside it. `coversPrimitive` asks `roundedBoxContainsPoint` of the `roundedBorderBox` of the
+  primitive and of each clip — the same three functions the painter fills, rings and clips with, so the corner a
+  press misses is a corner no pixel was painted in. Upstream's `LayoutableShadowNode::findNodeAtPoint` presses
+  the bounding rectangle instead, which is why a `<Pressable>` ripple can paint outside its own rounded border
+  there ([core#34553](https://github.com/facebook/react-native/issues/34553)). See *One rounded box* under *View
+  props fidelity*.
 
 There is no re-sync step at animation end, because nothing was ever wrong: the scene held the current value on
 every frame, so the frame after the last one changes no answer.
@@ -1107,6 +1112,11 @@ The scene held the current value on every frame either way.
 - `AnOverflowHiddenAncestorClipsWhatCanBePressed`, the three `PointerEvents*` cases,
   `TheSiblingPaintedLastIsTheOneThePointFinds`, `ANodeScaledToNothingCannotBePressed` and the surface-root cases
   cover the rest of the walk.
+- `packages/core/tests/BorderGeometryTest.cpp` is the rounded half, issue #99:
+  `APressJustInsideARoundedCornerMissesTheNodeNoPixelWasPaintedFor`,
+  `ARoundedOverflowHiddenAncestorClipsAPressToItsOwnCorner`, and
+  `TheHitRegionIsTheSameRoundedBoxTheSnapshotIsPaintedWith`, which samples a grid over the node and asserts that
+  the hit test and `roundedBoxContainsPoint` of the snapshot's own box agree at every point.
 - `AnimatedFrameAgreementTest.EveryTickLeavesTheSceneAtTheValueTheDriverJustHandedOver` is #121. It builds a real
   `NativeAnimatedNodesManager` — value → transform → style → props → view, a `frames` driver, an injected
   `g_setNativeAnimatedNowTimestampFunction` clock — whose direct-manipulation callback is
@@ -1810,26 +1820,97 @@ so every number that can be wrong is computed where a unit test can see it.
 | --- | --- |
 | `backgroundColor` | Filled as the outer rounded rect. Skipped when `isColorMeaningful` is false, as before. |
 | `opacity` | Multiplied down the tree during the snapshot walk and folded into the alpha channel of every colour the node emits. |
-| `borderRadius` and the per-corner props | `BaseViewProps::resolveBorderMetrics` — the same call iOS and Android make — cascades the corners, resolves percentages against the frame, and applies the CSS corner-overlap clamp. The painter turns the result into an `SkRRect` with per-corner x/y radii. |
-| `borderWidth` and the per-side props | Read from the Yoga style through `resolveBorderMetrics`, drawn **inside** the frame as the ring between the outer rounded rect and the inset inner one (`drawDRRect`). |
-| `borderColor` and the per-side props | One `drawDRRect` when the four colours are equal; otherwise one wedge clip per side, so each side keeps its own colour and each corner is split on the diagonal. |
-| `overflow: hidden` | `getClipsContentToBounds` pushes the node's rounded border box onto a clip stack that descendant primitives carry; the painter replays it with `clipRRect` under the clipping ancestor's own transform. |
+| `borderRadius` and the per-corner props | `BaseViewProps::resolveBorderMetrics` — the same call iOS and Android make — cascades the corners, resolves percentages against the frame, and applies the CSS corner-overlap clamp. `roundedBorderBox` turns the result into the one `SceneRoundedBox` below, and the painter turns that into an `SkRRect` with per-corner x/y radii. |
+| `borderWidth` and the per-side props | Read from the Yoga style through `resolveBorderMetrics`, then promoted to at least one device pixel by `visibleBorderWidth`, drawn **inside** the frame as the ring between the border box and the content box `roundedContentBox` leaves inside it (`drawDRRect`). |
+| `borderColor` and the per-side props | One `drawDRRect` when the four colours are equal; otherwise one mitred wedge clip per side, overlapping its neighbours by one point, so each side keeps its own colour, each corner is split on the diagonal and no background survives between two sides. |
+| `overflow: hidden` | `getClipsContentToBounds` pushes the node's rounded border box onto a clip stack that descendant primitives carry; the painter replays it with `clipRRect` under the clipping ancestor's own transform, and the hit test replays it with `roundedBoxContainsPoint`. |
 | `transform` | `BaseViewProps::resolveTransform` resolves the operation list and folds in `transformOrigin`; the scene applies it about the centre of the absolute frame, composes it with every ancestor transform, and reduces the 4x4 to a 2D affine the painter hands to `SkMatrix`. |
 | `zIndex` | Nothing to implement. Fabric sets `ShadowNode::orderIndex_` from `zIndex` in `ConcreteViewShadowNode` and stable-sorts siblings by it in `sliceChildShadowNodeViewPairs` before diffing, so mount order — which is the scene's child order and therefore paint order — is already `zIndex` order. |
+
+### One rounded box (#99)
+
+Every consumer of a node's shape derives from one value. `RetainedScene.h` declares it:
+
+```text
+SceneRoundedBox roundedBorderBox(frame, radii)          the node's own rounded border box
+SceneRoundedBox roundedContentBox(borderBox, widths)    the box a ring of those widths leaves inside it
+bool            roundedBoxContainsPoint(box, point)     the containment every hit test asks
+```
+
+There are six consumers and none of them computes a rounded rect of its own:
+
+| Consumer | Where | Which box |
+| --- | --- | --- |
+| background fill | `ScenePainter::paintPrimitive` | `roundedBorderBox` |
+| gradient layers | `ScenePainter::paintBackgroundImages` | the same value, passed in |
+| `<Image>` content clip | `ScenePainter::paintImage` | the same value, passed in |
+| border ring | `ScenePainter::paintBorder` | `roundedBorderBox` and `roundedContentBox` of it |
+| focus ring | `ScenePainter::paintFocusRing` | `roundedContentBox` of it, inset by half the stroke |
+| `overflow: hidden` clip | `ScenePainter::paintScene` and `RetainedScene::coversPrimitive` | `roundedBorderBox` of the clip |
+| hit region | `RetainedScene::coversPrimitive` | `roundedBorderBox` of the primitive |
+
+The type carries `facebook::react::Rect` and `BorderRadii` and no Skia type, because the hit test is one of those
+consumers and `RetainedScene.cpp` links no Skia. `roundedBoxContainsPoint` tests the bounds and then each corner's
+ellipse, scaled by `(horizontal * vertical)^2` so there is no division and a zero radius needs no case of its own.
+
+The consequence that is a behaviour change: **a press outside a rounded corner's arc misses.** Upstream's
+shadow-tree hit test presses the bounding rectangle; see *Hit-testing under animation* for why this one does not.
+
+### Border painting (#100)
+
+- **Per-side colours are mitred wedge clips over one `drawDRRect`**, not four filled trapezoids. The ring is
+  where two rounded rects differ and Skia has that primitive; building each side as a path would re-derive the
+  outer arc, the inner arc and the CSS inner-radius rule by hand, next to a `SceneRoundedBox` that already
+  carries all three. Four equal colours skip the clips entirely and draw the whole ring at once.
+- **The wedges overlap by one point.** Two anti-aliased wedges that merely abut leave the diagonal half covered
+  by each, and compositing them one after the other leaves a quarter of the background showing — the seam
+  [core#33950](https://github.com/facebook/react-native/issues/33950) reports and this renderer had. Overlapping
+  them means the later side is drawn at full coverage over the earlier one, so a mitre is a colour boundary
+  rather than a gap. The cost is that the diagonal is displaced by up to one point toward whichever side is
+  painted later; the order is top, right, bottom, left, so each corner is won by a different side. The
+  overlap is why `view-props.png` was regenerated with this change: 144 of its 480,000 pixels differ, all of them
+  on the four mitre diagonals of its per-side-widths tile, where the background used to show through.
+- **A sub-pixel width is promoted to one device pixel** by `visibleBorderWidth`, against
+  `LayoutMetrics::pointScaleFactor`, which is what `StyleSheet.hairlineWidth` needs and what
+  [core#58054](https://github.com/facebook/react-native/issues/58054) reports missing. A width of exactly zero
+  stays zero: "no border" is not a thin one. The promotion is in the scene rather than the painter so the ring,
+  the content box it leaves behind and the coverage gate all read the same number.
+- **A transparent side removes only itself.** Each side is drawn independently, so the
+  [core#34722](https://github.com/facebook/react-native/issues/34722) failure — one transparent side erasing all
+  four — cannot happen here.
+- **A translucent ring composites against what is under it.** The ring is drawn straight onto the canvas with no
+  intervening layer, which is [core#39286](https://github.com/facebook/react-native/issues/39286), and a radius
+  changes nothing about that, which is
+  [core#49606](https://github.com/facebook/react-native/issues/49606).
 
 Known deviations from iOS and Android, all deliberate:
 
 - **Opacity is per-primitive, not group opacity.** React Native composites a translucent subtree as one layer; we
   multiply the alpha of each primitive instead. Overlapping descendants of a translucent ancestor therefore blend
   against each other where the real thing would not. Fixing it means `saveLayerAlphaf` per stacking context.
-- **`borderStyle` is ignored.** Every border is solid; `dotted` and `dashed` are not drawn differently.
+- **`borderStyle` is not implemented.** Every border is solid; `dotted` and `dashed` draw the same ring as
+  `solid`, and no test asserts otherwise. Issue #101 owns implementing them or refusing them in writing; the
+  ledger entry is `not-implemented`, not `deviating`, because there is nothing here to deviate deliberately.
+  [core#48078](https://github.com/facebook/react-native/issues/48078) is what the combination of a dashed border
+  and `overflow: hidden` costs upstream.
 - **`borderCurve` is ignored.** Corners are always circular, never iOS' `continuous` squircle.
-- **An unset `borderColor` draws nothing.** The edge is skipped when the resolved colour is not meaningful, which
-  keeps borders consistent with the background path; iOS and Android fall back to black.
+- **An unset `borderColor` draws nothing, and cannot be told from a transparent one.** Upstream's own cxx
+  `HostPlatformColor` is `using Color = int32_t` with `UndefinedColor = 0`, and `transparent` processes to
+  `rgba(0, 0, 0, 0)`, which is also 0. Unset and transparent are therefore the same value in the type
+  `resolveBorderMetrics` returns, so falling back to black for the unset case — which is what iOS and Android
+  both do — would black out every explicitly transparent edge instead. That is
+  [core#34722](https://github.com/facebook/react-native/issues/34722) turned inside out, and the literal reading
+  is taken instead: a border with no colour draws nothing. Distinguishing the two needs a change to upstream's
+  colour type, not to this renderer.
 - **`overflow: hidden` clips to the border box**, matching iOS `clipsToBounds`, where CSS clips to the padding box.
 - **Transforms are 2D only.** The 4x4 is reduced to its affine part, so `perspective`, `rotateX` and `rotateY` lose
   their depth and collapse to their in-plane component, and `backfaceVisibility` is not honoured.
-- **Anti-aliased wedge clips can leave a hairline seam** where two border sides of different colours meet.
+
+The proof is `packages/core/tests/BorderGeometryTest.cpp`, inside the 100% gate — the content-box arithmetic, the
+corner containment, the hairline promotion, and the identity between what the hit test answers and what
+`roundedBorderBox` says was painted, sampled over a grid — plus the goldens `rounded-box.png` and
+`border-matrix.png`; see *Golden images*. The third layer is the `rounded-press.json` e2e scenario, which presses
+a real card through a compositor's `wl_pointer` and watches the hit flip at the arc; see *The scenarios*.
 
 Not implemented at all, and owned elsewhere: `shadowColor`/elevation and `boxShadow`, `filter`, `mixBlendMode` and
 `isolation`, and `outline*`. Each needs its own issue under M1; none of them is a variation on what is here.
@@ -3648,6 +3729,41 @@ The ninth is `packages/core/test-bundles/gradient.js` to `packages/core/goldens/
    half-transparent over amber, so the top reads as pale amber and the bottom as a muted brown, and neither end is
    the flat white or flat slate a renderer that dropped the opacity would draw.
 
+The tenth is `packages/core/test-bundles/rounded-box.js` to `packages/core/goldens/rounded-box.png`, issue #99's
+fixture: four cards, each one a place where two of the consumers listed in *One rounded box* meet on the same arc.
+If any of them computed its own rounded rect the arcs would separate and this image would change.
+
+1. (60, 60) 320x240 dark `#1E2430`, 96 px radius, 16 px amber `#E5C07B` ring, `overflow: hidden`, holding a
+   400x300 blue `#61AFEF` child offset (40, 120). The child stops on the parent's bottom arc and draws **over**
+   the ring where it reaches it, which is what `clipsToBounds` does on iOS.
+2. (440, 60) 320x240, 96 px radius, a `to bottom right` gradient and a 16 px blue ring. The gradient must stop on
+   exactly the arc a solid fill would have.
+3. (60, 360) 320x180 cyan `#56B6C2` asking for a 200 px radius with a 24 px purple `#C678DD` ring. The clamp makes
+   it a pill; the ring's inner edge is the same pill inset by 24 on both axes, which is the CSS inner-radius rule
+   at its maximum.
+4. (440, 360) 320x180 dark, the same clamped pill, `overflow: hidden`, holding a red `#E06C75` child the size of
+   the whole box. Every pixel of the child's square corners is cut, so the picture is the parent's pill in the
+   child's colour inside the parent's amber ring.
+
+The eleventh is `packages/core/test-bundles/border-matrix.js` to `packages/core/goldens/border-matrix.png`, issue
+#100's, in five rows:
+
+1. **Uniform** — square and rounded rings, one side's width alone on a rounded box
+   ([core#37954](https://github.com/facebook/react-native/issues/37954)), a translucent ring over an opaque fill
+   ([core#39286](https://github.com/facebook/react-native/issues/39286)), and a translucent ring on a rounded box
+   ([core#49606](https://github.com/facebook/react-native/issues/49606)).
+2. **Per side, three scales** — the same four-colour tile at 1x, 1.5x and 2x. This is the seam row: a seam is a
+   scale-dependent artifact, so one scale would not find it.
+3. **Transparent and unset** — a transparent top beside three opaque sides, square and rounded, which must leave
+   the other three intact ([core#34722](https://github.com/facebook/react-native/issues/34722)); then the two
+   tiles that draw no border at all, an unset colour and an explicitly transparent one, which are the same value
+   in upstream's type and therefore the same picture; then a zero width beside a set one.
+4. **Hairlines** — 0.25, 0.5, 0.75 and 1 point uniform, and 0.4 on a rounded box. At this rig's point scale every
+   one of them is promoted to one device pixel and every one of them is visible
+   ([core#58054](https://github.com/facebook/react-native/issues/58054)).
+5. **Large radius** — a clamped pill with a ring, per-side widths and per-side colours at a 40 px radius, and a
+   circle, so the mitres meet on an arc rather than on a straight edge.
+
 ### The partial-redraw equivalence proof
 
 The last fixture is different in kind: `--damage-golden` is issue #12's acceptance criterion — "partial redraw
@@ -3948,6 +4064,12 @@ where the picture a screenshot golden gets blessed from comes out.
 now produced by a compositor's `wl_pointer` instead. `text-input.json` presses Tab to focus the first field of
 `text-input.js`, types `Hi`, and expects `topFocus on plain` and the two `topChange` lines — which is also the
 proof that the shift modifier reaches the field, since `H` is `shift+h` on the injected keymap.
+
+`rounded-press.json` is the e2e half of issue #99. `rounded-press.js` places a 200x120 card at (100, 80) with a
+60-point radius over a full-surface container, and the scenario clicks twice: (105, 85), five points inside the
+frame on both axes but 77.8 from the corner's arc centre at (160, 140), and (200, 140) on the card itself. The
+first click has to be reported on the container and the second on the card, so the trace is the hit result
+flipping at the arc rather than at the bounding rectangle.
 
 `scripts/e2e/scenario.ts` holds everything pure — scenario validation, the ordered-substring matcher and artifact
 naming — and `scripts/e2e/scenario.spec.ts` covers it at the repository's 100% threshold. `frame-log.ts` and

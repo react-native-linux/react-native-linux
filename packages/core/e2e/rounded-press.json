@@ -1,0 +1,18 @@
+{
+  "name": "rounded-corner-press",
+  "bundle": "rounded-press.js",
+  "ready": "rounded-press: committed surface 1",
+  "frames": 600,
+  "steps": [
+    "sleep 500",
+    "move 105 85",
+    "sleep 100",
+    "click 105 85",
+    "sleep 300",
+    "move 200 140",
+    "sleep 100",
+    "click 200 140",
+    "sleep 500"
+  ],
+  "expect": ["rounded-press: topClick on container at 105,85", "rounded-press: topClick on card at 200,140"]
+}

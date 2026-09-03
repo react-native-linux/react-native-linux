@@ -24,9 +24,9 @@
 #include "include/core/SkTileMode.h"
 #include "modules/skparagraph/include/Paragraph.h"
 
-#include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 
 namespace react_native_linux {
@@ -44,48 +44,43 @@ SkRect toSkRect(const facebook::react::Rect& frame) {
     return SkRect::MakeXYWH(frame.origin.x, frame.origin.y, frame.size.width, frame.size.height);
 }
 
-SkRRect toSkRRect(const SkRect& bounds, const facebook::react::BorderRadii& radii) {
+SkRect toSkRect(const SceneRoundedBox& box) {
+    return toSkRect(box.bounds);
+}
+
+/**
+ * The one `SkRRect` every consumer of a node's shape draws with: the fill, the ring's two edges, the
+ * `overflow: hidden` clip, the content clip and — through `roundedBoxContainsPoint` rather than this — the hit
+ * region. Nothing in this file computes a rounded rect of its own; issue #99 is that rule.
+ */
+SkRRect toSkRRect(const SceneRoundedBox& box) {
+    const facebook::react::BorderRadii& radii = box.radii;
     const std::array<SkVector, 4> corners{SkVector{radii.topLeft.horizontal, radii.topLeft.vertical},
                                           SkVector{radii.topRight.horizontal, radii.topRight.vertical},
                                           SkVector{radii.bottomRight.horizontal, radii.bottomRight.vertical},
                                           SkVector{radii.bottomLeft.horizontal, radii.bottomLeft.vertical}};
     SkRRect roundedRect;
 
-    roundedRect.setRectRadii(bounds, corners.data());
+    roundedRect.setRectRadii(toSkRect(box), corners.data());
 
     return roundedRect;
 }
 
 /**
- * React Native draws borders inside the frame, so the inner edge is the frame inset by the per-side widths and the
- * corner radii reduced by the two widths that meet at that corner, which is the CSS inner-radius rule.
+ * How far each mitre is pushed into the neighbouring side, in the primitive's own coordinates.
+ *
+ * Two anti-aliased wedges that merely abut leave the diagonal half-covered by each: composited one after the
+ * other, a quarter of the background survives between two opaque sides. That is the hairline seam
+ * [core#33950](https://github.com/facebook/react-native/issues/33950) reports and that this file used to have.
+ * Overlapping them instead means the later side is drawn at full coverage over the earlier one, so the mitre is a
+ * colour boundary rather than a gap, at the cost of displacing the diagonal by at most this much.
  */
-SkRect innerBounds(const SkRect& bounds, const facebook::react::BorderWidths& widths) {
-    const SkScalar left = std::min(bounds.fLeft + widths.left, bounds.fRight);
-    const SkScalar top = std::min(bounds.fTop + widths.top, bounds.fBottom);
-
-    return SkRect::MakeLTRB(left, top, std::max(bounds.fRight - widths.right, left),
-                            std::max(bounds.fBottom - widths.bottom, top));
-}
-
-facebook::react::CornerRadii innerCorner(const facebook::react::CornerRadii& corner, facebook::react::Float horizontal,
-                                         facebook::react::Float vertical) {
-    return facebook::react::CornerRadii{.vertical = std::max(corner.vertical - vertical, 0.0F),
-                                        .horizontal = std::max(corner.horizontal - horizontal, 0.0F)};
-}
-
-facebook::react::BorderRadii innerRadii(const facebook::react::BorderRadii& radii,
-                                        const facebook::react::BorderWidths& widths) {
-    return facebook::react::BorderRadii{.topLeft = innerCorner(radii.topLeft, widths.left, widths.top),
-                                        .topRight = innerCorner(radii.topRight, widths.right, widths.top),
-                                        .bottomLeft = innerCorner(radii.bottomLeft, widths.left, widths.bottom),
-                                        .bottomRight = innerCorner(radii.bottomRight, widths.right, widths.bottom)};
-}
+constexpr SkScalar kMitreOverlap = 1.0F;
 
 /**
- * The wedge one border side owns: the two outer corners of that side and the two inner corners behind them, so the
- * corner is split on the diagonal. The four wedges tile the border ring, and clipping the ring by one of them
- * isolates exactly one side.
+ * The wedge one border side owns: its own outer edge, its own inner edge, and the two diagonals between them, so
+ * each corner is split on the diagonal and the four wedges tile the ring. Clipping the ring by one isolates one
+ * side.
  */
 SkPath edgeWedge(const SkPoint& firstOuter, const SkPoint& secondOuter, const SkPoint& secondInner,
                  const SkPoint& firstInner) {
@@ -98,6 +93,22 @@ SkPath edgeWedge(const SkPoint& firstOuter, const SkPoint& secondOuter, const Sk
     wedge.close();
 
     return wedge.detach();
+}
+
+/**
+ * The four wedges, in paint order: top, right, bottom, left. Each is grown by `kMitreOverlap` along its own
+ * tangential axis, which pushes both of its mitres into its neighbours; the clip is intersected with the ring
+ * either way, so growing past the frame draws nothing extra.
+ */
+std::array<SkPath, 4> edgeWedges(const SkRect& outer, const SkRect& inner) {
+    return {edgeWedge({outer.fLeft - kMitreOverlap, outer.fTop}, {outer.fRight + kMitreOverlap, outer.fTop},
+                      {inner.fRight + kMitreOverlap, inner.fTop}, {inner.fLeft - kMitreOverlap, inner.fTop}),
+            edgeWedge({outer.fRight, outer.fTop - kMitreOverlap}, {outer.fRight, outer.fBottom + kMitreOverlap},
+                      {inner.fRight, inner.fBottom + kMitreOverlap}, {inner.fRight, inner.fTop - kMitreOverlap}),
+            edgeWedge({outer.fRight + kMitreOverlap, outer.fBottom}, {outer.fLeft - kMitreOverlap, outer.fBottom},
+                      {inner.fLeft - kMitreOverlap, inner.fBottom}, {inner.fRight + kMitreOverlap, inner.fBottom}),
+            edgeWedge({outer.fLeft, outer.fBottom + kMitreOverlap}, {outer.fLeft, outer.fTop - kMitreOverlap},
+                      {inner.fLeft, inner.fTop - kMitreOverlap}, {inner.fLeft, inner.fBottom + kMitreOverlap})};
 }
 
 void paintEdge(SkCanvas& canvas, const SkRRect& outer, const SkRRect& inner, const SkPath& wedge, uint32_t colorArgb) {
@@ -116,10 +127,27 @@ void paintEdge(SkCanvas& canvas, const SkRRect& outer, const SkRRect& inner, con
     canvas.drawDRRect(outer, inner, paint);
 }
 
-void paintBorder(SkCanvas& canvas, const ScenePrimitive& primitive, const SkRRect& outer) {
-    const SkRect outerBounds = outer.rect();
-    const SkRect inner = innerBounds(outerBounds, primitive.borderWidths);
-    const SkRRect innerRoundedRect = toSkRRect(inner, innerRadii(primitive.borderRadii, primitive.borderWidths));
+/**
+ * The border ring: the difference between the node's rounded border box and the content box the per-side widths
+ * leave inside it, painted in each side's own colour.
+ *
+ * `drawDRRect` rather than four filled trapezoids, because the ring is where the two rounded rects differ and
+ * Skia already has that primitive: building the outer arc, the inner arc and the two mitres into a path per side
+ * would re-derive by hand the geometry `SceneRoundedBox` already carries, and would have to re-derive the CSS
+ * inner-radius rule with it. Four identical colours skip the clips entirely and draw the whole ring at once,
+ * which is both the common case and the only way an entirely mitre-free ring is drawn.
+ *
+ * A side whose colour is fully transparent draws nothing and takes nothing away from its neighbours, which is the
+ * [core#34722](https://github.com/facebook/react-native/issues/34722) case: one transparent side must not erase
+ * the other three. The ring is drawn straight onto the canvas with no layer, so a translucent border composites
+ * against whatever is already there — [core#39286](https://github.com/facebook/react-native/issues/39286) — and
+ * a translucent border on a rounded box is no different from an opaque one:
+ * [core#49606](https://github.com/facebook/react-native/issues/49606).
+ */
+void paintBorder(SkCanvas& canvas, const ScenePrimitive& primitive, const SceneRoundedBox& borderBox,
+                 const SkRRect& outer) {
+    const SceneRoundedBox contentBox = roundedContentBox(borderBox, primitive.borderWidths);
+    const SkRRect inner = toSkRRect(contentBox);
     const facebook::react::RectangleEdges<uint32_t>& colors = primitive.borderColorsArgb;
 
     if (colors.left == colors.top && colors.left == colors.right && colors.left == colors.bottom) {
@@ -131,28 +159,17 @@ void paintBorder(SkCanvas& canvas, const ScenePrimitive& primitive, const SkRRec
 
         paint.setAntiAlias(true);
         paint.setColor(colors.left);
-        canvas.drawDRRect(outer, innerRoundedRect, paint);
+        canvas.drawDRRect(outer, inner, paint);
 
         return;
     }
 
-    const SkPoint outerTopLeft{outerBounds.fLeft, outerBounds.fTop};
-    const SkPoint outerTopRight{outerBounds.fRight, outerBounds.fTop};
-    const SkPoint outerBottomRight{outerBounds.fRight, outerBounds.fBottom};
-    const SkPoint outerBottomLeft{outerBounds.fLeft, outerBounds.fBottom};
-    const SkPoint innerTopLeft{inner.fLeft, inner.fTop};
-    const SkPoint innerTopRight{inner.fRight, inner.fTop};
-    const SkPoint innerBottomRight{inner.fRight, inner.fBottom};
-    const SkPoint innerBottomLeft{inner.fLeft, inner.fBottom};
+    const std::array<SkPath, 4> wedges = edgeWedges(toSkRect(borderBox), toSkRect(contentBox));
+    const std::array<uint32_t, 4> sideColors{colors.top, colors.right, colors.bottom, colors.left};
 
-    paintEdge(canvas, outer, innerRoundedRect,
-              edgeWedge(outerTopLeft, outerTopRight, innerTopRight, innerTopLeft), colors.top);
-    paintEdge(canvas, outer, innerRoundedRect,
-              edgeWedge(outerTopRight, outerBottomRight, innerBottomRight, innerTopRight), colors.right);
-    paintEdge(canvas, outer, innerRoundedRect,
-              edgeWedge(outerBottomRight, outerBottomLeft, innerBottomLeft, innerBottomRight), colors.bottom);
-    paintEdge(canvas, outer, innerRoundedRect,
-              edgeWedge(outerBottomLeft, outerTopLeft, innerTopLeft, innerBottomLeft), colors.left);
+    for (size_t side = 0; side < wedges.size(); side++) {
+        paintEdge(canvas, outer, inner, wedges[side], sideColors[side]);
+    }
 }
 
 /**
@@ -284,14 +301,13 @@ void paintImage(SkCanvas& canvas, const ScenePrimitive& primitive, const SceneIm
  * primitive's own transformed frame. A ring the damage math already covers needs no term of its own, and
  * react-native-macos#2063 is what an outset ring that disagrees with its own geometry looks like.
  */
-void paintFocusRing(SkCanvas& canvas, const ScenePrimitive& primitive) {
+void paintFocusRing(SkCanvas& canvas, const SceneRoundedBox& borderBox) {
     // Half the stroke, because a stroke is centred on its path: the ring then occupies exactly the outermost
     // kFocusRingWidth points of the frame and not one point outside it.
     constexpr facebook::react::Float kRingInset = kFocusRingWidth / 2;
     const facebook::react::BorderWidths ringWidths{
         .left = kRingInset, .top = kRingInset, .right = kRingInset, .bottom = kRingInset};
-    const SkRect ringBounds = innerBounds(toSkRect(primitive.frame), ringWidths);
-    const SkRRect ring = toSkRRect(ringBounds, innerRadii(primitive.borderRadii, ringWidths));
+    const SkRRect ring = toSkRRect(roundedContentBox(borderBox, ringWidths));
 
     SkPaint paint;
 
@@ -341,7 +357,8 @@ void paintBackgroundImages(SkCanvas& canvas, const ScenePrimitive& primitive, co
 }
 
 void paintPrimitive(SkCanvas& canvas, const ScenePrimitive& primitive) {
-    const SkRRect outer = toSkRRect(toSkRect(primitive.frame), primitive.borderRadii);
+    const SceneRoundedBox borderBox = roundedBorderBox(primitive.frame, primitive.borderRadii);
+    const SkRRect outer = toSkRRect(borderBox);
 
     if (SkColorGetA(primitive.backgroundColorArgb) != 0) {
         SkPaint paint;
@@ -358,7 +375,7 @@ void paintPrimitive(SkCanvas& canvas, const ScenePrimitive& primitive) {
         paintImage(canvas, primitive, primitive.image.value(), outer);
     }
 
-    paintBorder(canvas, primitive, outer);
+    paintBorder(canvas, primitive, borderBox, outer);
 
     if (primitive.text.has_value() && primitive.editor.has_value()) {
         paintEditor(canvas, primitive.text.value(), primitive.editor.value());
@@ -368,7 +385,7 @@ void paintPrimitive(SkCanvas& canvas, const ScenePrimitive& primitive) {
 
     // Last, so the ring is never covered by the node's own content.
     if (primitive.focusRing) {
-        paintFocusRing(canvas, primitive);
+        paintFocusRing(canvas, borderBox);
     }
 }
 
@@ -412,7 +429,7 @@ void paintScene(SkCanvas& canvas, const SceneSnapshot& scene, const SceneDamage&
 
         for (const SceneClip& clip : primitive.clips) {
             canvas.setMatrix(SkMatrix::Concat(baseMatrix, toSkMatrix(clip.matrix)));
-            canvas.clipRRect(toSkRRect(toSkRect(clip.frame), clip.borderRadii), true);
+            canvas.clipRRect(toSkRRect(roundedBorderBox(clip.frame, clip.borderRadii)), true);
         }
 
         canvas.setMatrix(SkMatrix::Concat(baseMatrix, toSkMatrix(primitive.matrix)));

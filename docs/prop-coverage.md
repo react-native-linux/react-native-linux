@@ -56,12 +56,12 @@ assertion and not an implementation.
 
 | Component | Props | Implemented | Deviating | Not implemented |
 | --- | --- | --- | --- | --- |
-| View | 35 | 8 | 6 | 21 |
+| View | 35 | 8 | 5 | 22 |
 | Text | 45 | 12 | 12 | 21 |
 | Image | 14 | 3 | 7 | 4 |
 | ScrollView | 39 | 2 | 2 | 35 |
 | TextInput | 22 | 11 | 0 | 11 |
-| **Total** | 155 | 36 | 27 | 92 |
+| **Total** | 155 | 36 | 26 | 93 |
 
 ## View
 
@@ -69,10 +69,10 @@ assertion and not an implementation.
 | --- | --- | --- | --- |
 | `opacity` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:46` | implemented | `RetainedSceneTest, OpacityMultipliesDownTheTree` |
 | `backgroundColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:47` | implemented | `RetainedSceneTest, UpdateReplacesFrameAndBackgroundColorInPlace` |
-| `borderRadii` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:50` | implemented | `RetainedSceneTest, BorderRadiiAreClampedSoAdjacentCornersDoNotOverlap` |
-| `borderColors` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:51` | implemented | `RetainedSceneTest, BorderWidthsAndColorsAreReadPerSide` |
+| `borderRadii` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:50` | implemented | `BorderGeometryTest, TheHitRegionIsTheSameRoundedBoxTheSnapshotIsPaintedWith` |
+| `borderColors` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:51` | implemented | `border-matrix.png` |
 | `borderCurves` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:52` | deviating | Corners are always circular; iOS' `continuous` squircle is never drawn. See *View props fidelity*. |
-| `borderStyles` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:53` | deviating | Every border is solid; `dotted` and `dashed` draw the same ring as `solid`. Issue #101 owns implementing them or refusing them in writing. |
+| `borderStyles` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:53` | not-implemented | #101 |
 | `outlineColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:56` | not-implemented | #68 |
 | `outlineOffset` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:57` | not-implemented | #68 |
 | `outlineStyle` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:58` | not-implemented | #68 |

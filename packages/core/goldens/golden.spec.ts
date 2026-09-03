@@ -32,6 +32,15 @@ const hasBinary = existsSync(binaryPath);
 const fixtures: readonly GoldenFixture[] = [
   { bundleFileName: "fabric-view.js", goldenFileName: "fabric-view.png", renderArguments: [], renderFlag: "--golden" },
   { bundleFileName: "view-props.js", goldenFileName: "view-props.png", renderArguments: [], renderFlag: "--golden" },
+  // #99: the fill, the gradient, the ring, the content clip and the child clip all cut by one rounded box.
+  { bundleFileName: "rounded-box.js", goldenFileName: "rounded-box.png", renderArguments: [], renderFlag: "--golden" },
+  // #100: per-side colours, transparent edges, hairline widths and the corner mitres, at three scales.
+  {
+    bundleFileName: "border-matrix.js",
+    goldenFileName: "border-matrix.png",
+    renderArguments: [],
+    renderFlag: "--golden",
+  },
   // Text is reproducible only against the fonts scripts/vendor-fonts.ts pins into packages/core/fonts.
   { bundleFileName: "text.js", goldenFileName: "text.png", renderArguments: [], renderFlag: "--golden" },
   // The vertical-metrics matrix of #110: every row draws its measured frame under its painted line box.

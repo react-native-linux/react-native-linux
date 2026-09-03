@@ -31,9 +31,11 @@ constexpr float kFocusRingWidth = 2.0F;
  *
  * Every number the snapshot carries is already absolute and already composed — opacity is multiplied into the
  * colours, radii are clamped, transforms are reduced to 2D affines — so nothing here computes scene state. What
- * remains is Skia geometry: `SkRRect`, `drawDRRect` for the border ring, one mitred wedge clip per side when the
- * four side colours are not identical, and the paragraph build, which is Skia's own text layout rather than
- * anything this project computes.
+ * remains is Skia geometry: the `SkRRect` built from the one `SceneRoundedBox` the scene hands over, `drawDRRect`
+ * for the border ring, one overlapping mitred wedge clip per side when the four side colours are not identical,
+ * and the paragraph build, which is Skia's own text layout rather than anything this project computes. Nothing
+ * here derives a second rounded rect; issue #99 is that rule, and `RetainedScene::findNodeAtPoint` is the
+ * consumer that proves it, because it answers with the same box and links no Skia at all.
  *
  * There is exactly one implementation of this because there is exactly one picture. The window draws it into a
  * swapchain-backed `SkSurface` every frame and the golden-image rig draws it into an offscreen raster surface once;
