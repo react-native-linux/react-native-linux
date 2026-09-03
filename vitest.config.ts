@@ -10,6 +10,7 @@ export default defineConfig({
         "scripts/codegen-core/**/*.spec.ts",
         "scripts/doctor/**/*.spec.ts",
         "scripts/e2e/**/*.spec.ts",
+        "scripts/upstream/**/*.spec.ts",
       ],
       include: [
         "packages/*/src/**/*.ts",
@@ -18,6 +19,7 @@ export default defineConfig({
         "scripts/codegen-core/**/*.ts",
         "scripts/doctor/**/*.ts",
         "scripts/e2e/**/*.ts",
+        "scripts/upstream/**/*.ts",
       ],
       provider: "v8",
       reporter: ["text", "lcov"],
@@ -35,6 +37,7 @@ export default defineConfig({
       "scripts/codegen-core/**/*.spec.ts",
       "scripts/doctor/**/*.spec.ts",
       "scripts/e2e/**/*.spec.ts",
+      "scripts/upstream/**/*.spec.ts",
     ],
   },
 });

@@ -55,6 +55,12 @@ jobs:
           git add --intent-to-add -- packages/core/generated
           git diff --exit-code -- packages/core/generated
 
+      # Issue #179: every packages/*/upstream.lock.json is re-vendored into a temporary directory and its patch
+      # queue replayed, then compared with the checked-in packages/*/upstream tree. A hand edit to a vendored
+      # file that never became a patch fails here. With no lock files present the step passes and says so.
+      - name: Assert the vendored upstream trees match their locks and patch queues
+        run: pnpm upstream:check
+
   meta:
     name: meta
     runs-on: ubuntu-24.04

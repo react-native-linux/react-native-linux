@@ -19,6 +19,10 @@
     "test:golden:window:update": "RNL_UPDATE_GOLDENS=1 vitest run packages/core/goldens/golden.spec.ts -t \"through the window\"",
     "test:native": "cmake --preset test && cmake --build --preset test && ctest --preset test && node scripts/cpp-coverage.ts",
     "ts": "tsc --noEmit",
+    "upstream:bump": "node scripts/upstream.ts bump",
+    "upstream:check": "node scripts/upstream.ts check",
+    "upstream:patch": "node scripts/upstream.ts patch",
+    "upstream:vendor": "node scripts/upstream.ts vendor",
     "validate": "pnpm format:check && pnpm ts && pnpm lint && pnpm deadcode && pnpm cpd && pnpm test && pnpm validate:meta",
     "validate:meta": "node scripts/validate-meta.ts"
   },

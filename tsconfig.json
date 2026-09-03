@@ -34,6 +34,8 @@
     "scripts/doctor.ts",
     "scripts/e2e/**/*.ts",
     "scripts/e2e.ts",
+    "scripts/upstream/**/*.ts",
+    "scripts/upstream.ts",
     "vitest.config.ts"
   ]
 }
