@@ -1,0 +1,662 @@
+{
+  "labels": [
+    {
+      "name": "area:renderer",
+      "color": "1D76DB",
+      "description": "Skia/Vulkan rendering, scene, damage tracking"
+    },
+    {
+      "name": "area:core",
+      "color": "5319E7",
+      "description": "Platform core: window, Hermes, Fabric, threading"
+    },
+    {
+      "name": "area:input",
+      "color": "D93F0B",
+      "description": "Pointer, keyboard, and input pipeline"
+    },
+    {
+      "name": "area:text",
+      "color": "B60205",
+      "description": "Text shaping, layout, and editing"
+    },
+    {
+      "name": "area:testing",
+      "color": "0052CC",
+      "description": "Unit, golden-image, e2e, and perf test harness"
+    },
+    {
+      "name": "area:infra",
+      "color": "0E8A16",
+      "description": "Build/CI/tooling infrastructure"
+    },
+    {
+      "name": "area:cli",
+      "color": "FBCA04",
+      "description": "CLI, codegen, autolinking, Metro platform registration"
+    },
+    {
+      "name": "area:modules",
+      "color": "C2E0C6",
+      "description": "TurboModules and native module implementations"
+    },
+    {
+      "name": "area:a11y",
+      "color": "F9D0C4",
+      "description": "Accessibility: IME and AT-SPI"
+    },
+    {
+      "name": "area:packaging",
+      "color": "6F4E37",
+      "description": "Distribution packaging: AUR, omarchy-pkgs"
+    },
+    {
+      "name": "kind:bug",
+      "color": "D73A4A",
+      "description": "Something implemented behaves incorrectly"
+    },
+    {
+      "name": "kind:feat",
+      "color": "84B6EB",
+      "description": "New platform capability that does not exist yet"
+    },
+    {
+      "name": "kind:test",
+      "color": "C5DEF5",
+      "description": "Adds or hardens a test layer without changing behaviour"
+    },
+    {
+      "name": "kind:parity",
+      "color": "7057FF",
+      "description": "Nothing is broken; we do not yet match iOS/Android/desktop reference behaviour"
+    },
+    {
+      "name": "kind:perf",
+      "color": "FEF2C0",
+      "description": "Frame budget, allocation, or throughput work with a measured gate"
+    },
+    {
+      "name": "kind:regression",
+      "color": "E99695",
+      "description": "Behaviour that used to work and stopped; always ships with the test that would have caught it"
+    },
+    {
+      "name": "kind:docs",
+      "color": "E8E8E8",
+      "description": "Documentation, ADRs, and research records"
+    },
+    {
+      "name": "priority:P0",
+      "color": "990000",
+      "description": "Rocket-blocker: the milestone or the flagship app cannot ship without it"
+    },
+    {
+      "name": "priority:P1",
+      "color": "E36209",
+      "description": "Important: schedule inside its milestone"
+    },
+    {
+      "name": "priority:P2",
+      "color": "DBAB09",
+      "description": "Wanted: do it when the surrounding area is open"
+    },
+    {
+      "name": "priority:P3",
+      "color": "CCCCCC",
+      "description": "Nice to have; no milestone depends on it"
+    },
+    {
+      "name": "platform-parity:macos",
+      "color": "8DB3E2",
+      "description": "react-native-macos behaviour is the oracle for this issue"
+    },
+    {
+      "name": "platform-parity:windows",
+      "color": "8DB3E2",
+      "description": "react-native-windows behaviour is the oracle for this issue"
+    },
+    {
+      "name": "platform-parity:ios",
+      "color": "8DB3E2",
+      "description": "iOS behaviour is the oracle for this issue"
+    },
+    {
+      "name": "platform-parity:android",
+      "color": "8DB3E2",
+      "description": "Android behaviour is the oracle for this issue"
+    },
+    {
+      "name": "platform-parity:host-linux",
+      "color": "8DB3E2",
+      "description": "Native Linux desktop convention is the oracle, not another React Native platform"
+    },
+    {
+      "name": "origin:rn-macos",
+      "color": "6F42C1",
+      "description": "Derived from the microsoft/react-native-macos issue history"
+    },
+    {
+      "name": "origin:rn-windows",
+      "color": "6F42C1",
+      "description": "Derived from the microsoft/react-native-windows issue history"
+    },
+    {
+      "name": "origin:rn-core",
+      "color": "6F42C1",
+      "description": "Derived from the upstream facebook/react-native (react/react-native) Fabric-era issue history"
+    },
+    {
+      "name": "origin:flagship",
+      "color": "6F42C1",
+      "description": "Raised by running the flagship consumer application, not by a research study"
+    },
+    {
+      "name": "needs:triage",
+      "color": "EDEDED",
+      "description": "Unreviewed; area, milestone, or priority still missing"
+    },
+    {
+      "name": "needs:decision",
+      "color": "E4E669",
+      "description": "Blocked on an architectural decision, possibly an ADR"
+    },
+    {
+      "name": "needs:repro",
+      "color": "D876E3",
+      "description": "Blocked on a minimal reproduction or a failing test"
+    }
+  ],
+  "issues": [
+    {
+      "title": "test(renderer): hit-testing during a running animation — the pressed node is the painted node",
+      "milestone": "M2",
+      "labels": [
+        "area:renderer",
+        "area:input",
+        "area:testing",
+        "kind:test",
+        "kind:parity",
+        "origin:rn-core",
+        "platform-parity:ios",
+        "platform-parity:android",
+        "priority:P0"
+      ],
+      "priority": "P0",
+      "body": "**Priority P0** — #19 adds a frame thread that writes geometry outside the commit; the day it lands we reproduce upstream's open regression exactly, and the bug is silent (the picture is right, the click is wrong).\n\n## Context\n\nUpstream's own tracker shows this failing on both platforms, for four years, and it is still open:\n\n- [core#51621](https://github.com/facebook/react-native/issues/51621) — open, 28 reactions, `Resolution: PR Submitted`. `onPress` does not fire **while** a view is animating on the new architecture; it works on the old one. The issue states the cause precisely: [PR 43374](https://github.com/facebook/react-native/pull/43374) syncs the animated value back into the shadow tree **on animation end**, so the shadow tree — which is what hit-testing reads — is stale for the whole duration of the animation.\n- [core#36504](https://github.com/facebook/react-native/issues/36504) — closed, `Resolution: Fixed`, 26 comments: `onPress` never called again after a `useNativeDriver` transform animation ran.\n- [core#44768](https://github.com/facebook/react-native/issues/44768) — animated children with `translate` inside a horizontal `Animated.ScrollView` are not pressable where they are painted.\n- [core#35612](https://github.com/facebook/react-native/issues/35612) — an `Animated.View` delivers touches to a **sibling** when its child is absolutely positioned.\n- [core#36710](https://github.com/facebook/react-native/issues/36710) (183 comments) and [core#44643](https://github.com/facebook/react-native/issues/44643) (51 comments) — the same failure reported as \"touchables randomly stop working\".\n- [core#54988](https://github.com/facebook/react-native/issues/54988) — the inverse leak: `measure()` returns doubled values under a scaled parent, i.e. paint geometry reaching a layout API.\n\nOur side: `docs/cpp-toolchain.md` records that hit testing is upstream's `PointerEventsProcessor` reading `LayoutMetrics`, while transform composition is ours in `RetainedScene` and is reduced to a 2D affine before painting. ADR-0001 decision 6 puts the animated node graph on a platform-owned frame thread. That is three writers of geometry and one reader.\n\n## What to verify\n\n1. A pointer press at the **painted** position of a node whose `transform` is being animated by the native driver targets that node, on every frame of the animation — not only after it settles.\n2. A press at the node's **pre-animation** position does not target it.\n3. The same, for an animated `opacity` crossing zero: a node animated to `opacity: 0` follows the same hit rule as a statically transparent one, and that rule is written down (upstream chose \"still hittable\"; [core#50465](https://github.com/facebook/react-native/issues/50465) shows iOS choosing the opposite by accident).\n4. Animation end does not change the answer — there is no re-sync step that fixes hit-testing, because it was never wrong.\n5. `measure()` on a node under an animated or static ancestor transform returns **layout** geometry, unscaled.\n\n## Acceptance criteria\n\n- **Unit (C++):** an injected clock advances the animated value; at each tick the hit-test result at the painted centre is asserted against the node identity. Inside the 100% line-and-branch gate.\n- **Golden:** a frame captured mid-animation, so the painted position under test is a reviewed artifact rather than a computed assumption.\n- **E2E:** `--inject-pointer` at a scripted time offset into a running animation under the headless compositor, asserting the ordered event trace.\n- The transform used by the hit path and the transform used by the painter come from **one** computation, proven by a test that fails if either is changed alone.\n\n## Related\n\nExtends #35 (static-tree hit/paint agreement) to the animated case. Depends on #19 (native-driven animations) and the frame clock in #59. Neighbour of #74 (unmounted animation targets). Sibling issue in this batch covers the scrolled/sticky case. See also the animation programme plan in #95."
+    },
+    {
+      "title": "test(input): touchables inside sticky, scrolled and out-of-flow subtrees stay touchable",
+      "milestone": "M1",
+      "labels": [
+        "area:renderer",
+        "area:input",
+        "area:testing",
+        "kind:test",
+        "kind:parity",
+        "origin:rn-core",
+        "platform-parity:ios",
+        "platform-parity:android",
+        "priority:P1"
+      ],
+      "priority": "P1",
+      "body": "**Priority P1** — #16 already ships scroll physics and #35 already asserts static hit/paint agreement; this is the intersection they leave uncovered, and upstream has two open 20-reaction regressions in it.\n\n## Context\n\n- [core#51763](https://github.com/facebook/react-native/issues/51763) — open, 21 reactions, 42 comments: sticky headers in `FlatList`/`ScrollView` became completely non-touchable in 0.79.2. They render correctly and ignore every press.\n- [core#51290](https://github.com/facebook/react-native/issues/51290) — open, 16 reactions: touchables in a horizontal `ScrollView` nested inside a sticky header stop responding.\n- [core#38730](https://github.com/facebook/react-native/issues/38730) — open, 9 reactions, 25 comments: a `ScrollView` inside `position: absolute` does not scroll at all on Android.\n- [core#34542](https://github.com/facebook/react-native/issues/34542) and [core#37181](https://github.com/facebook/react-native/issues/37181) — an absolutely positioned element rendered **outside** its parent's bounds receives no gestures, and a `TextInput` in that position cannot have its caret placed.\n- [core#33229](https://github.com/facebook/react-native/issues/33229) — Android `ScrollView` touch events may simply not fire.\n\nThe cause is the same one Group 1 of `docs/research/react-native-core-issues.md` names: a subtree is translated for scrolling or for stickiness, and the hit path reads the untranslated frame. Out-of-flow children add a second variant — the parent's bounds are used as a hit gate even though the child paints outside them.\n\nOur side: `ScrollPhysics`/`ScrollController` own the offset, `RetainedScene` applies it to paint, and `PointerEventsProcessor` never sees it. `docs/cpp-toolchain.md` also records that sticky headers, `contentInset` and indicator chrome are all unimplemented deferrals, so this test is written **before** the features rather than after them.\n\n## What to verify\n\n1. A press at the painted position of a row inside a scrolled `ScrollView` targets that row, at a scroll offset that is not zero and not the end.\n2. A press on a sticky header pinned at the top targets the header, not the row painted underneath it at the same coordinates.\n3. A child painted outside its parent's bounds (`position: absolute`, no `overflow: hidden`) is hittable at its painted position; the same child under `overflow: hidden` is not hittable outside the clip.\n4. A press during a momentum fling targets the node under the pointer at the **current** frame's offset.\n5. Horizontal and vertical nesting: a press inside a horizontal scroller nested in a vertical one targets the innermost node.\n\n## Acceptance criteria\n\n- **Unit (C++):** hit results asserted at scripted scroll offsets, driven by the injected clock the scroll controller already uses. Inside the 100% gate.\n- **Golden:** one fixture per geometric case, so the \"painted position\" in each assertion is a reviewed pixel, not an assumption.\n- **E2E:** virtual pointer press at each case under the headless compositor, comparing the full ordered event trace against a committed expectation file.\n- Test cases 2 and 3 stay in the suite as `xfail`-with-issue-link if sticky headers or clip-aware hit gating are not yet implemented; they must not be deleted.\n\n## Related\n\nExtends #35. Sits beside #16 (scroll physics), #45 (`onScroll` cadence), #47 (transform under scroll), #49 (indicator chrome out of the hit path), #64 (`pointerEvents`)."
+    },
+    {
+      "title": "test(renderer): one rounded box — fill, ring, clip, content and hit region all derive from it",
+      "milestone": "M1",
+      "labels": [
+        "area:renderer",
+        "area:input",
+        "area:testing",
+        "kind:test",
+        "kind:parity",
+        "origin:rn-core",
+        "platform-parity:ios",
+        "platform-parity:android",
+        "priority:P1"
+      ],
+      "priority": "P1",
+      "body": "**Priority P1** — `borderRadius` is the single most combinatorially exposed prop in upstream's tracker and we already ship five independent consumers of it.\n\n## Context\n\nUpstream's rounded-corner bugs are never about the corner; they are about a *second* feature not using the same rounded box:\n\n- [core#33862](https://github.com/facebook/react-native/issues/33862) — 11 reactions: `resizeMode: 'contain'` plus `borderRadius` smears the edge pixel across the whole container.\n- [core#34073](https://github.com/facebook/react-native/issues/34073) — an image stretches as soon as `borderRadius` appears.\n- [core#38124](https://github.com/facebook/react-native/issues/38124) — a child with `borderRadius` draws wrong when the **parent** has `transform: rotate`.\n- [core#48078](https://github.com/facebook/react-native/issues/48078) — open: `dashed`/`dotted` borders stopped working in combination with `overflow: hidden` in 0.76.\n- [core#49442](https://github.com/facebook/react-native/issues/49442) — open: a gradient artifact appears at `borderTopLeftRadius` inside a scaled View.\n- [core#34553](https://github.com/facebook/react-native/issues/34553) — open, 19 reactions: the Pressable ripple paints outside the rounded border.\n- [core#51489](https://github.com/facebook/react-native/issues/51489), [core#50029](https://github.com/facebook/react-native/issues/50029), [core#41226](https://github.com/facebook/react-native/issues/41226) — corner artifacts and aliasing.\n- [core#53977](https://github.com/facebook/react-native/issues/53977) — a **percentage** `borderRadius` on an `<Image>` crashes on Android API 35.\n\nOur side is favourable and untested. `docs/cpp-toolchain.md` records that `BaseViewProps::resolveBorderMetrics` — upstream's own C++, the same call iOS and Android make — cascades corners, resolves percentages against the frame and applies the CSS overlap clamp, and that the painter turns the result into a single `SkRRect`. Five things consume that box today: the background fill, the border ring (`drawDRRect`), the `overflow: hidden` clip stack, the gradient layer, and the image content box. Nothing forces them to derive from one value, and per #35 the hit region is a sixth consumer that currently does not use it at all.\n\n## What to verify\n\n1. One `SkRRect` is computed per node per commit and every consumer reads it; a test fails if any consumer recomputes its own.\n2. Percentage radii, per-corner radii, and the CSS overlap clamp match `resolveBorderMetrics` output exactly, including the degenerate cases (radius > half the frame, negative, zero-sized frame).\n3. An `<Image>` with each `resizeMode` inside a rounded box is clipped to the box and **not** resampled by it — the [core#33862](https://github.com/facebook/react-native/issues/33862) case.\n4. A gradient layer inside a rounded box is clipped identically to the solid background.\n5. A rounded child under a rotated ancestor clips correctly — the clip travels through the ancestor transform, not around it.\n6. The hit region for a rounded node is the rounded box, not its bounding rectangle (the corners are outside).\n\n## Acceptance criteria\n\n- **Unit (C++):** radius resolution and clamping asserted against `resolveBorderMetrics` for a table of frames and inputs, inside the 100% gate; a structural assertion that the consumers share one value.\n- **Golden:** a matrix fixture — {solid background, gradient, image × 4 resize modes, clipped child} × {uniform radius, per-corner, percentage} — with a perceptual diff.\n- **E2E:** a pointer press just inside and just outside a corner, asserting the hit result flips at the rounded boundary.\n\n## Related\n\nBuilds on #13 (View visual props, closed) and #34 (gradients, closed). Feeds #35 (hit vs paint) and #69 (prop-coverage conformance). Amends the golden matrix in #44."
+    },
+    {
+      "title": "test(renderer): border painting matrix — per-side colours, transparent edges, hairlines and corner seams",
+      "milestone": "M1",
+      "labels": [
+        "area:renderer",
+        "area:testing",
+        "kind:test",
+        "kind:parity",
+        "origin:rn-core",
+        "platform-parity:ios",
+        "platform-parity:android",
+        "priority:P1"
+      ],
+      "priority": "P1",
+      "body": "**Priority P1** — `docs/cpp-toolchain.md` documents two of upstream's reported bugs as our own deliberate deviations; a deviation with no test is a bug waiting to be rediscovered by the flagship app.\n\n## Context\n\n- [core#34722](https://github.com/facebook/react-native/issues/34722) — 12 reactions, 17 comments: when **one** border side is transparent, all four sides disappear. Our documented deviation reads \"an unset `borderColor` draws nothing … iOS and Android fall back to black\" — the same unset-vs-neutral confusion.\n- [core#33950](https://github.com/facebook/react-native/issues/33950) — vertical borders leave gaps on rounded Views. Our documented deviation reads \"anti-aliased wedge clips can leave a hairline seam where two border sides of different colours meet\".\n- [core#37954](https://github.com/facebook/react-native/issues/37954) — `borderRadius` with only `borderBottomWidth` is broken.\n- [core#58054](https://github.com/facebook/react-native/issues/58054) — open: `StyleSheet.hairlineWidth` borders are not always rendered — sub-pixel widths disappearing under rounding.\n- [core#39286](https://github.com/facebook/react-native/issues/39286) — a border colour's alpha is invisible when an opaque background sits under it: the border was composited against the wrong layer.\n- [core#49606](https://github.com/facebook/react-native/issues/49606) — open: borders with opacity **and** radius do not draw at all.\n- [core#51193](https://github.com/facebook/react-native/issues/51193) — `borderTopEndRadius`/`borderBottomEndRadius` resolve to the wrong physical corner under RTL.\n- [core#45938](https://github.com/facebook/react-native/issues/45938) and [core#42289](https://github.com/facebook/react-native/issues/42289) — a `borderWidth`/`borderStyle` combination silently kills the background fill.\n\n## What to verify\n\n1. Unset versus zero versus transparent, for each of `borderWidth` and `borderColor`, per side: three distinct, stated behaviours, and the choice matches iOS/Android where they agree with each other.\n2. Four different side colours: each side keeps its colour, and the diagonal corner split leaves **no** visible seam at 1×, 1.5× and 2× scale.\n3. A sub-pixel border width (`hairlineWidth` at each fractional scale) is drawn, not rounded away.\n4. A translucent border over an opaque background composites against the background, not against a fresh layer.\n5. A translucent border on a rounded box draws — the [core#49606](https://github.com/facebook/react-native/issues/49606) case.\n6. Setting only one side's width on a rounded box draws that side and leaves the rest of the box intact.\n\n## Acceptance criteria\n\n- **Unit (C++):** the ring/wedge geometry decisions in `RetainedScene` asserted for the whole unset/zero/transparent table, inside the 100% line-and-branch gate. `ScenePainter` stays outside the gate; the goldens read it.\n- **Golden:** one fixture covering the full side-colour matrix at three scales, with the seam region under the perceptual threshold. Regenerating it requires the reviewed regeneration command.\n- Each remaining deviation is either fixed here or re-stated in `docs/cpp-toolchain.md` with the upstream issue number that shows what it costs.\n\n## Related\n\nFollows #13 (closed). Sits beside the rounded-box issue in this batch and #69 (prop coverage). RTL corner resolution is covered by the RTL layout issue in this batch."
+    },
+    {
+      "title": "test(renderer): borderStyle dashed and dotted — implement it or refuse it in writing",
+      "milestone": "M1",
+      "labels": [
+        "area:renderer",
+        "area:testing",
+        "kind:test",
+        "kind:parity",
+        "origin:rn-core",
+        "platform-parity:ios",
+        "platform-parity:android",
+        "priority:P3",
+        "needs:decision"
+      ],
+      "priority": "P3",
+      "body": "**Priority P3** — nothing on the roadmap depends on it, but it is a documented silent deviation, and upstream shows the failure mode is *worse* than absence: partially implemented dashes take the background down with them.\n\n## Context\n\n- [core#32918](https://github.com/facebook/react-native/issues/32918) — **open**, 10 reactions, 27 comments, filed 2022: `borderStyle: 'dashed'` simply draws wrong.\n- [core#48078](https://github.com/facebook/react-native/issues/48078) — open: `dashed`/`dotted` stopped working in combination with `overflow: hidden` in 0.76.\n- [core#42289](https://github.com/facebook/react-native/issues/42289) — a `View`/`Pressable` **loses its background colour** when `borderStyle` is dashed and `borderWidth` is 0.\n- [core#45368](https://github.com/facebook/react-native/issues/45368) — the same background loss on `Text` and `View` for dotted.\n- [core#54956](https://github.com/facebook/react-native/issues/54956) — open: dashes break when the background colour has opacity.\n- [core#51658](https://github.com/facebook/react-native/issues/51658) — closed with a workaround, not a fix.\n\n`docs/cpp-toolchain.md` states our position: \"`borderStyle` is ignored. Every border is solid.\" That is a defensible answer. It is not currently a *tested* answer, and an app that styles a dashed placeholder gets a solid one with no diagnostic.\n\n## What to verify\n\n1. Decide: implement dashes on the `SkRRect` ring via `SkDashPathEffect`, or refuse the prop. Record the decision in `docs/cpp-toolchain.md` with this issue number.\n2. If implemented: dash phase is continuous around corners (the failure that makes hand-rolled implementations look wrong), the pattern scales with `borderWidth`, and it survives `overflow: hidden` on the same node.\n3. Either way: a dashed or dotted `borderStyle` never affects the background fill, at any `borderWidth` including 0 — the [core#42289](https://github.com/facebook/react-native/issues/42289) regression.\n4. Either way: the prop appears in the coverage matrix from #69 with its actual status, so \"ignored\" is a visible number rather than a sentence in a doc.\n\n## Acceptance criteria\n\n- **Unit (C++):** background-fill independence asserted across the whole `{solid, dashed, dotted} × {0, 1, 4} × {opaque, translucent background}` table, inside the 100% gate.\n- **Golden:** if implemented, a dashed and a dotted rounded box at two scales; if refused, a golden proving the solid fallback is drawn and the background is intact.\n- #69's matrix reports this prop's status without a human editing a list.\n\n## Related\n\nFollows #13. Feeds #69 (prop-coverage conformance). Neighbour of the border painting matrix in this batch."
+    },
+    {
+      "title": "test(renderer): shadow, transform and clip composition order",
+      "milestone": "M1",
+      "labels": [
+        "area:renderer",
+        "area:testing",
+        "kind:test",
+        "kind:parity",
+        "origin:rn-core",
+        "platform-parity:ios",
+        "platform-parity:android",
+        "priority:P1"
+      ],
+      "priority": "P1",
+      "body": "**Priority P1** — #67 will add `boxShadow` and #68 the filter family; on a canvas every one of them is a `saveLayer` decision, and `saveLayer` is exactly where upstream's composition order goes wrong.\n\n## Context\n\nA shadow is the only View feature that paints outside the node's own box, so its relationship to transforms and clips has to be decided rather than inherited:\n\n- [core#50775](https://github.com/facebook/react-native/issues/50775) — an initial `transform: scale` other than 1 makes `boxShadow` stop matching the view's layout: the shadow was computed in one space and drawn in another.\n- [core#34320](https://github.com/facebook/react-native/issues/34320) — shadows draw incorrectly as soon as the view has a transform.\n- [core#54612](https://github.com/facebook/react-native/issues/54612) (open) and [core#54556](https://github.com/facebook/react-native/issues/54556) — the most diagnostic pair: with `boxShadow` + `scale` + `overflow: hidden`, **children inherit the parent's properties**. An implicit layer promotion leaked its paint down the tree.\n- [core#52703](https://github.com/facebook/react-native/issues/52703) — `boxShadow` does nothing under `renderToHardwareTextureAndroid`: a different layer promotion dropped the effect entirely.\n- [core#47920](https://github.com/facebook/react-native/issues/47920) — a `boxShadow` on a `TextInput` alternates visible/hidden on every keystroke: the effect is not part of the damage calculation.\n- [core#48874](https://github.com/facebook/react-native/issues/48874) — 7 reactions: `elevation` + `borderRadius` \"looks weird\" — the shadow uses the rectangular outline, the fill uses the rounded one.\n- [core#37078](https://github.com/facebook/react-native/issues/37078) — a rotated view is clipped by its background image.\n\n## What to verify\n\n1. A stated, tested order: shadow outline is derived from the node's resolved `SkRRect`, drawn in the node's local space, and then subject to the same ancestor transform stack as the node's own paint.\n2. A shadow on a scaled node scales with it, and its offset/blur are in the pre-transform space — matched against iOS, which is the reference for `shadowOffset`/`shadowRadius`.\n3. An ancestor's `overflow: hidden` clips a descendant's shadow; the node's own `overflow: hidden` does **not** clip its own outer shadow (`inset` shadows are the opposite, and both are asserted).\n4. A layer promotion introduced for a shadow, filter or `mixBlendMode` never changes what descendants paint — the [core#54612](https://github.com/facebook/react-native/issues/54612) failure.\n5. A shadow participates in damage: changing a shadowed node's content damages the shadow's bounds, not only the node's frame — the [core#47920](https://github.com/facebook/react-native/issues/47920) failure.\n6. A shadow is never in the hit region.\n\n## Acceptance criteria\n\n- **Unit (C++):** damage-region arithmetic including shadow bounds, and the layer-promotion decision table, inside the 100% gate.\n- **Golden:** {no transform, scaled, rotated} × {no clip, self-clipped, ancestor-clipped} × {outer shadow, inset shadow} on a rounded box.\n- **E2E:** a keystroke-driven fixture proving no shadow flicker across repeated damage cycles.\n\n## Related\n\nDefinition-of-done for #67 (`boxShadow`) and #68 (`filter`, `mixBlendMode`, `isolation`, `outline`). Depends on the single rounded box from the issue above. Damage assertions extend #12."
+    },
+    {
+      "title": "test(renderer): raster scale under nested and inverse transforms",
+      "milestone": "M1",
+      "labels": [
+        "area:renderer",
+        "area:testing",
+        "kind:test",
+        "kind:parity",
+        "origin:rn-core",
+        "platform-parity:ios",
+        "priority:P1"
+      ],
+      "priority": "P1",
+      "body": "**Priority P1** — this is a canvas-specific failure with an open upstream report on the platform closest to our model, and `wp_fractional_scale_v1` gives us a second, runtime-variable scale that iOS does not have.\n\n## Context\n\n- [core#48673](https://github.com/facebook/react-native/issues/48673) — **open**, `API: Transforms`, `Type: New Architecture`: a production map scales a parent by 100 and counter-scales children by 0.01 to keep their size. Android renders sharp; iOS renders the children **pixelated and blurred**. The subtree was rasterized at one scale and then magnified by another.\n- [core#49442](https://github.com/facebook/react-native/issues/49442) — open: a gradient artifact appears at `borderTopLeftRadius` inside a scaled View — the same resampling problem at a corner.\n\nOur exposure is structural. Skia rasterizes a `saveLayer` at the current device scale; any subsequent matrix magnifies those pixels. `docs/cpp-toolchain.md` records that our transforms are reduced to a 2D affine and composed down the tree, and that fractional scale is not handled at all yet — so today there is exactly one scale, and the moment `wp_fractional_scale_v1` lands (#51) there are two, changeable at runtime when a window moves between outputs.\n\n## What to verify\n\n1. A node inside a scaled ancestor is rasterized at the **effective** device scale (ancestor scale × output scale), not at the output scale alone.\n2. The inverse-scale case: parent ×N, child ×1/N, for N in {4, 25, 100}, renders the child at the same visual quality as an untransformed sibling of the same final size.\n3. Text inside a scaled ancestor is shaped and rasterized at the effective scale — a glyph atlas populated at the wrong scale is the same bug with worse symptoms.\n4. An output scale change (#51) re-rasterizes affected subtrees rather than upsampling the previous frame.\n5. A stated ceiling: beyond some effective scale we stop scaling the raster and accept blur, and that ceiling is a named constant with a test, not an emergent property of memory pressure.\n\n## Acceptance criteria\n\n- **Unit (C++):** effective-scale computation over an ancestor chain asserted against a table, including the ceiling clamp, inside the 100% gate.\n- **Golden:** the inverse-scale fixture at each N, compared against an untransformed reference of the same final size under the perceptual threshold — this is the assertion that would fail today on iOS.\n- **Perf:** raster memory for the scaled fixture stays inside a stated budget, so the fix for blur cannot silently become the allocation bug in the mounting-ceiling issue in this batch.\n\n## Related\n\nExtends #12 (retained scene and damage) and #13. Depends on #51 (output enter/leave and fractional-scale change). Related to #14 (text pipeline) for the glyph-atlas half."
+    },
+    {
+      "title": "test(renderer): transformOrigin and perspective against the CSS reference",
+      "milestone": "M1",
+      "labels": [
+        "area:renderer",
+        "area:testing",
+        "kind:test",
+        "kind:parity",
+        "origin:rn-core",
+        "platform-parity:ios",
+        "platform-parity:android",
+        "priority:P2"
+      ],
+      "priority": "P2",
+      "body": "**Priority P2** — our 2D-affine reduction is a documented deviation with a real user-visible consequence, but nothing on the M1 path depends on 3D transforms.\n\n## Context\n\n- [core#49286](https://github.com/facebook/react-native/issues/49286) — **open**, 8 reactions, `API: Transforms`: `transformOrigin` combined with `perspective` works on iOS and is wrong on Android; the reporter points at the camera-perspective normalisation in `BaseViewManager`. Two platforms, one prop, two answers.\n- [core#47467](https://github.com/facebook/react-native/issues/47467) — a layout difference between `translateX` and the equivalent `matrix` form on the new architecture: two spellings of the same transform disagreeing.\n- `react-native-macos` [#2361](https://github.com/microsoft/react-native-macos/issues/2361) is the third data point: `transformOrigin: center` rotating about the top-left.\n\nOur side: `docs/cpp-toolchain.md` records that `BaseViewProps::resolveTransform` resolves the operation list and folds in `transformOrigin`, that the scene applies the result about the **centre of the absolute frame**, and that the 4×4 is then reduced to its affine part — so `perspective`, `rotateX`, `rotateY` collapse to their in-plane component and `backfaceVisibility` is ignored. That is a deliberate deviation that has never been measured against the reference.\n\n## What to verify\n\n1. Every `transformOrigin` spelling — keywords, lengths, percentages, one/two/three components — resolves to the same origin CSS and `resolveTransform` produce, for a table of frames.\n2. Applying the transform about the resolved origin, not about the frame centre, for non-default origins.\n3. `matrix` and the equivalent operation list produce identical results — the [core#47467](https://github.com/facebook/react-native/issues/47467) case.\n4. The affine reduction is measured: for a table of `perspective`/`rotateX`/`rotateY` inputs, record the delta against the full 4×4 projection and state which are acceptable. Where a case is unacceptable, it becomes a follow-up issue rather than a surprise.\n5. `backfaceVisibility` either works or is reported as unimplemented by the #69 matrix.\n\n## Acceptance criteria\n\n- **Unit (C++):** origin resolution and matrix composition asserted against `resolveTransform` output for the full table, inside the 100% gate; the affine-reduction delta computed and asserted against recorded bounds.\n- **Golden:** rotation about each origin keyword, and a perspective fixture that documents what our reduction actually produces.\n- The deviation list in `docs/cpp-toolchain.md` is updated with numbers instead of adjectives.\n\n## Related\n\nFollows #13. Feeds #35 (hit vs paint — the hit path must use the same origin) and #69."
+    },
+    {
+      "title": "test(renderer): opacity is a group property — a translucent subtree composites once",
+      "milestone": "M1",
+      "labels": [
+        "area:renderer",
+        "area:testing",
+        "kind:test",
+        "kind:parity",
+        "origin:rn-core",
+        "platform-parity:ios",
+        "platform-parity:android",
+        "priority:P2"
+      ],
+      "priority": "P2",
+      "body": "**Priority P2** — a documented deviation from both reference platforms that the flagship app will hit the first time it fades a card with overlapping content.\n\n## Context\n\n`docs/cpp-toolchain.md` records the deviation twice, for views and for text: \"Opacity is per-primitive, not group opacity. React Native composites a translucent subtree as one layer; we multiply the alpha of each primitive instead. Overlapping descendants of a translucent ancestor therefore blend against each other where the real thing would not. Fixing it means `saveLayerAlphaf` per stacking context.\"\n\nUpstream evidence that group compositing is load-bearing and that layer promotion is where it goes wrong:\n\n- [core#54612](https://github.com/facebook/react-native/issues/54612) / [core#54556](https://github.com/facebook/react-native/issues/54556) — children inherit the parent's properties once a layer promotion happens for `boxShadow` + `scale` + `overflow: hidden`.\n- [core#34553](https://github.com/facebook/react-native/issues/34553) — 19 reactions: a ripple painting outside the rounded border, i.e. an effect drawn outside the group's clip.\n- [core#53343](https://github.com/facebook/react-native/issues/53343) — open, 8 reactions: `<Text>` ignoring `color: 'transparent'` on Android — alpha handled in the wrong place in the text path.\n\n## What to verify\n\n1. A translucent ancestor with two overlapping opaque children renders as one composited layer at that alpha: the overlap region has the ancestor's alpha, not the product of two.\n2. Text and views behave identically under a translucent ancestor.\n3. A `saveLayerAlphaf` is introduced **only** where the subtree actually overlaps or where correctness requires it — measured, so the fix does not become a per-node layer and a frame-budget regression.\n4. Group opacity composes with `overflow: hidden` and with transforms in a stated order (shared with the shadow composition issue in this batch).\n5. `opacity: 0` renders nothing and follows the hit rule stated in the animated-hit-testing issue in this batch.\n\n## Acceptance criteria\n\n- **Unit (C++):** the stacking-context decision (which nodes get a layer) asserted over a tree table, inside the 100% gate.\n- **Golden:** the overlapping-children fixture — this is a case where the current implementation and the correct one differ by a visible amount, so the golden is the specification.\n- **Perf:** frame time for a deep translucent tree stays inside the stated budget, tracked as a number.\n\n## Related\n\nFollows #13 and #14. Shares the composition-order contract with the shadow issue in this batch. Budget tracked with #20."
+    },
+    {
+      "title": "perf(renderer): a mounting transaction has an allocation ceiling",
+      "milestone": "M2",
+      "labels": [
+        "area:renderer",
+        "area:testing",
+        "kind:perf",
+        "kind:test",
+        "origin:rn-core",
+        "platform-parity:ios",
+        "platform-parity:android",
+        "priority:P1"
+      ],
+      "priority": "P1",
+      "body": "**Priority P1** — upstream shipped a first-mount allocation bug that presents as a JavaScript engine OOM; our text and image paths already have the same profile with no probe to see it.\n\n## Context\n\n- [core#56980](https://github.com/facebook/react-native/issues/56980) — **open**: on one iOS point release, Fabric's first mounting transaction calls `RCTGetBorderImage` thousands of times while the JS bundle is still evaluating — ~18,900 CG raster regions, 6.9 GB of raster data, ~8.8 GB process VM, and then Hermes aborts with `LLVM ERROR: OOM`. The crash report blames the JS engine; the cause is border rasterization on the main thread with no cache keyed by the border's parameters.\n- [core#51869](https://github.com/facebook/react-native/issues/51869) — closed, `Resolution: Fixed`, 44 reactions: mounting costs about 1 ms **per view** on the new architecture.\n- [core#57198](https://github.com/facebook/react-native/issues/57198) — open: memory not reclaimed after unmounting a screen with many components, across repeated navigations.\n\nOur exposure is on record. `docs/cpp-toolchain.md`: \"every paint rebuilds the paragraph, and every snapshot copies the attributed string\", with the damage walk running the same snapshot code per subtree per mutation; the image cache \"has no hit-rate probe … there is nowhere to report a number to until #20\". Borders, gradients and shadows are all rasterizable decorations with parameter-keyed reuse potential and no current cache.\n\n## What to verify\n\n1. A first mount of a large tree (≥ 2,000 nodes with borders, radii and gradients) allocates raster memory inside a stated ceiling, asserted as a number.\n2. Repeated mount/unmount of the same screen returns to the baseline allocation — the [core#57198](https://github.com/facebook/react-native/issues/57198) case.\n3. Decoration rasterization is keyed by its parameters, so N identical rounded borders cost one raster, not N.\n4. Paragraph and attributed-string copies per mounting transaction are counted and bounded.\n5. The ceiling is enforced in CI and fails on regression beyond a stated threshold, with the number tracked over time.\n\n## Acceptance criteria\n\n- **Unit (C++):** allocation counters around the mounting path asserted against the ceiling, with an injected allocator so the test is deterministic and inside the 100% gate.\n- **Perf/E2E:** the large-tree fixture run under the headless compositor with peak RSS and raster-surface counts uploaded as CI artifacts, per the gospel's trend-tracking rule.\n- **Sanitizers:** the same fixture runs clean under ASan.\n\n## Related\n\nExtends #12 (retained scene and damage) and #20 (pacing and Tracy instrumentation). Neighbour of #76 (teardown leak gate) and of the per-view mounting cost issue in this batch."
+    },
+    {
+      "title": "test(renderer): scene-node reuse carries nothing from the node it replaced",
+      "milestone": "M1",
+      "labels": [
+        "area:renderer",
+        "area:core",
+        "area:testing",
+        "kind:test",
+        "kind:parity",
+        "origin:rn-core",
+        "platform-parity:ios",
+        "priority:P0"
+      ],
+      "priority": "P0",
+      "body": "**Priority P0** — an entire family of upstream Fabric bugs is state surviving reuse; our `RetainedScene` reuses nodes and caches paragraphs and decoded images against them, so the hazard exists today with no test.\n\n## Context\n\niOS Fabric recycles `RCTViewComponentView` instances through `prepareForRecycle`, and every property that method forgets to reset becomes a bug:\n\n- [core#55090](https://github.com/facebook/react-native/issues/55090) — `contentInset` and `contentOffset` are not reset when a `ScrollView` is recycled; the issue links the exact `prepareForRecycle` implementation. A new ScrollView inherits the previous one's scroll position.\n- [core#53050](https://github.com/facebook/react-native/issues/53050) — **open**, 17 reactions: a recycled `TextInput` after password autofill becomes non-editable and stops updating — the editor's state outlived its React node.\n- [core#55768](https://github.com/facebook/react-native/issues/55768) — a recycled ScrollView is offset to the left of the window under RTL.\n- [core#48790](https://github.com/facebook/react-native/issues/48790) — images cut off or not rendered correctly on the new architecture.\n\nWe do not recycle views, so the mechanism does not transfer — but the *hazard* does, with a different noun. `docs/cpp-toolchain.md` describes a retained scene diffed across commits, a measure cache in front of text layout, and an image cache; each is state keyed by something that must be invalidated when the node it belongs to is replaced rather than updated.\n\n## What to verify\n\n1. Deleting a node and creating a new one with the same tag in a later commit yields a scene node with **no** inherited state: no scroll offset, no cached paragraph, no decoded image, no caret or selection, no animation attachment.\n2. Reordering siblings does not transfer any per-node cache between them.\n3. The paragraph measure cache is keyed by content and constraints, not by node identity — or, if it is keyed by identity, identity is invalidated on replacement, proven by a test.\n4. The image cache holds a decoded bitmap by source, and a node's reference to it is dropped on unmount (shared with the decoded-image-lifetime issue in this batch).\n5. A `<TextInput>` replaced in place starts with an empty buffer, no selection and no composing run — our analogue of [core#53050](https://github.com/facebook/react-native/issues/53050).\n\n## Acceptance criteria\n\n- **Unit (C++):** a mutation script (create, delete, re-create with the same tag, reorder) asserted against scene-node state after each commit, inside the 100% line-and-branch gate.\n- **Golden:** the visual case — a screen with a scrolled list is unmounted and a different screen mounted; the new screen renders from a clean state.\n- **E2E:** navigate away and back under the headless compositor and assert the reconstructed state, not the inherited one.\n\n## Related\n\nExtends #12 (retained scene and damage tracking). Neighbours: #17/#53 (`TextInput` state), #16 (scroll offset), #15/#44 (image cache), #76 (teardown leak gate). Same lifecycle family as the commit-atomicity issue in this batch."
+    },
+    {
+      "title": "test(renderer): decoded image lifetime — a bitmap dies with its node",
+      "milestone": "M1",
+      "labels": [
+        "area:renderer",
+        "area:testing",
+        "kind:test",
+        "kind:perf",
+        "origin:rn-core",
+        "platform-parity:ios",
+        "platform-parity:android",
+        "priority:P1"
+      ],
+      "priority": "P1",
+      "body": "**Priority P1** — decoded pixels are the largest per-node allocation we make, our cache has no probe, and upstream's reports show the leak is invisible until a navigation loop makes it fatal.\n\n## Context\n\n- [core#51198](https://github.com/facebook/react-native/issues/51198) — a remote image's memory is not released when the `<Image>` unmounts.\n- [core#51333](https://github.com/facebook/react-native/issues/51333) — a high-resolution image fails to render on Android and leaks on iOS: the decode-size decision and the lifetime decision are the same bug seen from two ends.\n- [core#57198](https://github.com/facebook/react-native/issues/57198) — open, 11 reactions: memory not reclaimed after unmounting a screen with many components, across repeated navigations (Fabric 0.86).\n- [core#35706](https://github.com/facebook/react-native/issues/35706) — 25 comments: a crash inside blur-radius rendering.\n- [core#46095](https://github.com/facebook/react-native/issues/46095) — GIFs stopped working across a minor bump; [core#42132](https://github.com/facebook/react-native/issues/42132) — a GIF renders wrong with `resizeMode: 'repeat'`.\n\nOur side, from `docs/cpp-toolchain.md`: the decode pipeline has a cache with **no hit-rate probe**, a failed decode \"is not retried and not remembered\", there are no `onLoad*`/`onError` events even though the `ImageResponseObserverCoordinator` upstream builds is already completed or failed by our decoder, and animated images decode to one frame at best.\n\n## What to verify\n\n1. Unmounting the last `<Image>` referencing a source releases the decoded bitmap, measured as bytes, not as a boolean.\n2. A cache eviction policy exists, is bounded by a stated ceiling, and evicting an entry does not blank a mounted node — the failure `react-native-macos` [#921](https://github.com/microsoft/react-native-macos/issues/921) reported as \"the image unloads itself\".\n3. Decode size is bounded by the destination size and the effective raster scale, so a 12-megapixel source does not allocate a 12-megapixel surface for a thumbnail — the [core#51333](https://github.com/facebook/react-native/issues/51333) case.\n4. A failed decode is remembered (with a stated retry policy) and reports `onError`.\n5. Mount/unmount of an image-heavy screen 50 times returns to baseline RSS inside a stated tolerance.\n6. A cache hit-rate probe exists and is reported wherever #20 reports its numbers.\n\n## Acceptance criteria\n\n- **Unit (C++):** cache admission, eviction and reference-drop asserted with an injected allocator and clock, inside the 100% gate.\n- **Perf/E2E:** the 50-navigation loop under the headless compositor, peak and final RSS asserted against the tolerance and uploaded as a CI artifact.\n- **Sanitizers:** the loop runs clean under ASan and TSan.\n\n## Related\n\nFollows #15 (Image, closed) and #44 (scale selection, resizeMode matrix, load lifecycle). Feeds #76 (teardown leak gate) and #20. Shares the reuse contract with the scene-node reuse issue in this batch."
+    },
+    {
+      "title": "test(renderer): programmatic scroll must not feed itself — scrollTo, unchanged offsets, onScroll",
+      "milestone": "M1",
+      "labels": [
+        "area:renderer",
+        "area:testing",
+        "kind:test",
+        "kind:parity",
+        "origin:rn-core",
+        "platform-parity:ios",
+        "platform-parity:android",
+        "priority:P1"
+      ],
+      "priority": "P1",
+      "body": "**Priority P1** — upstream's fix for this is a one-sentence specification with a known-good answer, and `LinuxMountingManager::dispatchCommand` is empty today, so we can implement `scrollTo` correctly the first time.\n\n## Context\n\n- [core#34327](https://github.com/facebook/react-native/issues/34327) — closed, `Resolution: Fixed`, `Type: New Architecture`. The sharpest artifact in this whole study: on Paper, `scrollTo` did **not** trigger `onScroll` when the previous and next offsets were identical; on iOS Fabric it did, and a library built on the old behaviour entered an infinite loop. Android Fabric matched Paper. The fix is the rule: an offset that did not change emits no event.\n- [core#35575](https://github.com/facebook/react-native/issues/35575) — 7 reactions: `scrollTo` does nothing at all.\n- [core#41034](https://github.com/facebook/react-native/issues/41034) — open, 11 reactions: fast scrolling to the top produces **negative** offsets — the clamp is applied after the event, not before.\n- [core#42874](https://github.com/facebook/react-native/issues/42874) — 22 comments: odd behaviour when content is barely taller than the viewport.\n- [core#46592](https://github.com/facebook/react-native/issues/46592) — nested row ScrollViews never fire `onMomentumScrollEnd`, so a consumer waiting on the bracket waits forever.\n- [core#52757](https://github.com/facebook/react-native/issues/52757) — `maintainVisibleContentPosition` scrolls when an item is removed from the head.\n\nOur side, per `docs/cpp-toolchain.md`: `scrollTo`/`scrollToEnd` arrive as `dispatchCommand` and `LinuxMountingManager::dispatchCommand` is still empty; `maintainVisibleContentPosition` is parsed and ignored; `onScrollBeginDrag`/`onScrollEndDrag` are not emitted.\n\n## What to verify\n\n1. `scrollTo` to the current offset emits **no** `onScroll` and no momentum bracket. This is the landed upstream rule.\n2. `scrollTo` to a different offset emits exactly one `onScroll` with the clamped destination, and — when animated — a `onMomentumScrollBegin`/`onMomentumScrollEnd` bracket with no gap and no duplicate.\n3. Offsets are clamped to `[0, content − viewport]` **before** the event is emitted; no negative offset ever reaches JavaScript, at any input rate.\n4. Content shorter than the viewport: `scrollTo(anything)` settles at 0 and emits at most one event.\n5. `scrollToEnd` after a content-size change targets the new end, not the old one.\n6. Nested scrollers each complete their own momentum bracket.\n\n## Acceptance criteria\n\n- **Unit (C++):** the event trace for each case asserted against a table, driven by the injected clock `ScrollPhysics` already uses, inside the 100% gate.\n- **E2E:** `--scroll-to` under the headless compositor with the full serialized event trace compared to a committed expectation file, including the no-event case (an expectation file that is *empty* is the assertion).\n- A regression test named after [core#34327](https://github.com/facebook/react-native/issues/34327) so the rule survives a future refactor.\n\n## Related\n\nExtends #16 (ScrollView, closed) and #45 (`onScroll` cadence contract). Requires `dispatchCommand` plumbing shared with #47 and #46."
+    },
+    {
+      "title": "test(text): vertical metrics — lineHeight, half leading, ascent and descent",
+      "milestone": "M1",
+      "labels": [
+        "area:text",
+        "area:renderer",
+        "area:testing",
+        "kind:test",
+        "kind:parity",
+        "origin:rn-core",
+        "platform-parity:ios",
+        "platform-parity:android",
+        "priority:P0"
+      ],
+      "priority": "P0",
+      "body": "**Priority P0** — this is the tallest signal in upstream's entire Fabric-era text corpus (93 reactions across three filings of one bug), and our own docs state we have already made the half-leading choice whose asymmetry upstream reports.\n\n## Context\n\n- [core#53286](https://github.com/facebook/react-native/issues/53286) — closed, **48 reactions**, 62 comments: text rendering cut off on Android 15 and 16, in **both** architectures. Refiled as [core#56402](https://github.com/facebook/react-native/issues/56402) (open, 31 reactions) and mirrored on the other platform by [core#53450](https://github.com/facebook/react-native/issues/53450) (14 reactions, 43 comments, \"text not fully rendered on iOS\").\n- [core#49886](https://github.com/facebook/react-native/issues/49886) — `Type: New Architecture`: descenders clipped after 0.76 → 0.78 when `lineHeight` equals `fontSize`. The exact degenerate case.\n- [core#39145](https://github.com/facebook/react-native/issues/39145) — open, 13 reactions: `lineHeight` is not distributed evenly — leading applied to one side only.\n- [core#53307](https://github.com/facebook/react-native/issues/53307), [core#33704](https://github.com/facebook/react-native/issues/33704) (Tibetan clipped on multiline), [core#46436](https://github.com/facebook/react-native/issues/46436) (an extra line wrap for some `lineHeight` + `letterSpacing` combinations), [core#35951](https://github.com/facebook/react-native/issues/35951) (wrong `TextInput` height with `lineHeight`), [core#48921](https://github.com/facebook/react-native/issues/48921) (`selectable` breaking truncation and `lineHeight`).\n\nOur side, from `docs/cpp-toolchain.md`: `lineHeight` is \"points converted to Skia's multiple-of-font-size `height`, with half leading, which is what CSS and both React Native platforms do\". There is no golden for it, no test for `lineHeight < fontSize`, and no baseline API (`measureLines` and `onTextLayout` are absent), so nothing observes where the baseline actually lands.\n\n## What to verify\n\n1. `lineHeight` < the font's natural ascent+descent: a stated policy (clip, overflow, or grow), identical in the measure pass and the paint pass, with a golden that shows descenders.\n2. Half leading is distributed **evenly** above and below the baseline for every `lineHeight`/`fontSize` ratio in a table — the [core#39145](https://github.com/facebook/react-native/issues/39145) case.\n3. The first and last line boxes of a paragraph follow the same rule as the interior ones (upstream's platforms disagree here; ours must be stated).\n4. Scripts with tall ascenders and deep descenders (Tibetan, Devanagari, Arabic) are not clipped by a Latin-derived line box — [core#33704](https://github.com/facebook/react-native/issues/33704).\n5. `letterSpacing` does not change the line count for a given width — [core#46436](https://github.com/facebook/react-native/issues/46436).\n6. A `<TextInput>` whose text has `lineHeight` reports a height consistent with the same text in a `<Text>` — [core#35951](https://github.com/facebook/react-native/issues/35951).\n\n## Acceptance criteria\n\n- **Unit (C++):** ascent/descent/leading arithmetic asserted against a table of `{fontSize, lineHeight}` pairs and against SkParagraph's reported metrics, inside the 100% gate.\n- **Golden:** a vertical-metrics matrix fixture using the pinned bundled font (so the result is reproducible per the font strategy already recorded), including the `lineHeight == fontSize` and `lineHeight < fontSize` rows and at least one non-Latin script.\n- The policy chosen in point 1 is written into `docs/cpp-toolchain.md` with this issue number.\n\n## Related\n\nSharpens #41 (the measured paragraph must equal the painted paragraph) — that equality must include vertical metrics. Follows #14 (SkParagraph pipeline, closed). Feeds #53 (`TextInput` parity matrix)."
+    },
+    {
+      "title": "test(text): the text box fits the shaped paragraph, and onTextLayout proves it",
+      "milestone": "M1",
+      "labels": [
+        "area:text",
+        "area:testing",
+        "kind:test",
+        "kind:parity",
+        "origin:rn-core",
+        "platform-parity:ios",
+        "platform-parity:android",
+        "priority:P1"
+      ],
+      "priority": "P1",
+      "body": "**Priority P1** — measurement and painting build the paragraph twice from almost-identical inputs; upstream shows every gap between those inputs as a cropped glyph or a phantom box, and we currently have no API that reports what the painted paragraph did.\n\n## Context\n\n- [core#54571](https://github.com/facebook/react-native/issues/54571) — open, 10 reactions: multi-line `Text` can no longer shrink its width to fit its content.\n- [core#55468](https://github.com/facebook/react-native/issues/55468) — open: an **empty** `<Text>` has non-zero width.\n- [core#54182](https://github.com/facebook/react-native/issues/54182) — the last line of a paragraph is missing inside a `ScrollView`.\n- [core#52941](https://github.com/facebook/react-native/issues/52941) — `alignItems: 'center'` behaves differently on multiline `Text` after a minor bump.\n- [core#41476](https://github.com/facebook/react-native/issues/41476) — `TextView` does not work with dynamic heights under Fabric.\n- [core#54552](https://github.com/facebook/react-native/issues/54552) — open: `onTextLayout` reports multiple lines for text that renders on one; [core#37902](https://github.com/facebook/react-native/issues/37902) — open, 11 comments: `onTextLayout` never fires at all.\n- [core#37926](https://github.com/facebook/react-native/issues/37926) — open: the ellipsis carries the background colour of the text it replaced.\n- [core#39722](https://github.com/facebook/react-native/issues/39722) — `numberOfLines={1}` with `alignSelf: 'flex-start'` breaks the text mid-word.\n- [core#48727](https://github.com/facebook/react-native/issues/48727) — open: an `<Image>` nested in `<Text>` with `lineHeight` overflows its container.\n- [core#52642](https://github.com/facebook/react-native/issues/52642) — open, 17 reactions: incorrect font scaling with `adjustsFontSizeToFit`.\n\nOur side: a measure cache sits in front of the measure half only; `measureLines` and `onTextLayout` are absent because they need methods on a vendored header; inline attachments are sized from the attachment's own measured frame ([core#48727](https://github.com/facebook/react-native/issues/48727)'s exact mechanism); `adjustsFontSizeToFit` and `textAlignVertical` are ignored; the ellipsis is always at the tail.\n\n## What to verify\n\n1. For a table of {text, font, width constraint, `numberOfLines`}, the measured size equals the painted paragraph's bounding box exactly — same shaping inputs, same fallback fonts, same max-lines.\n2. An empty or whitespace-only `<Text>` measures the width its content implies and no more.\n3. A paragraph shrinks to its longest line when the constraint allows it — [core#54571](https://github.com/facebook/react-native/issues/54571).\n4. Cache invalidation: changing font, weight, `letterSpacing`, `lineHeight`, or the available width produces a re-measure, and a stale cached size can never reach layout.\n5. The truncation glyph carries the style of the truncation, not of the removed run — [core#37926](https://github.com/facebook/react-native/issues/37926).\n6. Inline attachment placeholders match the attachment's final painted frame.\n7. `onTextLayout` is implemented and reports the painted line boxes; it becomes the observability hook that makes points 1–6 assertable from a bundle.\n\n## Acceptance criteria\n\n- **Unit (C++):** measure/paint equality asserted over the table, plus every cache-invalidation trigger, inside the 100% gate.\n- **Golden:** truncation, shrink-to-fit, and inline-attachment fixtures with the pinned font.\n- **E2E:** a bundle reading `onTextLayout` and asserting line boxes against the golden's geometry.\n\n## Related\n\nSharpens #41 and follows #14. `onTextLayout` requires the `TextLayoutManagerExtended` decision already recorded as a deferral in `docs/cpp-toolchain.md`. Feeds #46 (ScrollView content size on the first frame)."
+    },
+    {
+      "title": "test(text): nested fragment inheritance and shaping across fragment boundaries",
+      "milestone": "M1",
+      "labels": [
+        "area:text",
+        "area:testing",
+        "kind:test",
+        "kind:parity",
+        "origin:rn-core",
+        "platform-parity:ios",
+        "platform-parity:android",
+        "priority:P2"
+      ],
+      "priority": "P2",
+      "body": "**Priority P2** — #43 already owns the nested-`<Text>` feature; this adds the two guarantees upstream proves are load-bearing and that no Latin-only golden can catch.\n\n## Context\n\n- [core#54434](https://github.com/facebook/react-native/issues/54434) — the sharpest entry in the group: **Arabic ligatures break** when a string is split across nested `<Text>` elements. Shaping was performed per fragment instead of per paragraph, so contextual forms at the boundary are wrong. A Latin fixture would show nothing.\n- [core#33418](https://github.com/facebook/react-native/issues/33418) and [core#33431](https://github.com/facebook/react-native/issues/33431) — `fontSize`, `fontWeight` and `fontStyle` inheritance breaking on nested `<Text>`.\n- [core#53092](https://github.com/facebook/react-native/issues/53092) — nested-text alignment broken on new-architecture iOS when `lineHeight` is provided.\n- [core#45925](https://github.com/facebook/react-native/issues/45925) — open, 14 comments: a border cannot be applied to a nested `<Text>`.\n- [core#53343](https://github.com/facebook/react-native/issues/53343) — open, 8 reactions: `<Text>` ignores `color: 'transparent'`.\n- [core#54217](https://github.com/facebook/react-native/issues/54217) — open: a child `<Text>` disappears after the **parent** `<View>`'s style changes.\n- [core#45938](https://github.com/facebook/react-native/issues/45938) — a `<Text>` shows no content when both `borderWidth` and `backgroundColor` are set.\n\nOur side: SkParagraph gives per-fragment `TextStyle` and shapes the whole paragraph, so [core#54434](https://github.com/facebook/react-native/issues/54434)'s cause is structurally avoided — **provided** our attributed-string construction never splits a shaping run at a fragment boundary, which nothing asserts. Fragment backgrounds are implemented; fragment borders are not modelled.\n\n## What to verify\n\n1. Shaping is performed once per paragraph: an Arabic (and a Devanagari) string split across three nested `<Text>` fragments produces glyph-for-glyph the same output as the unsplit string.\n2. Style inheritance down the fragment tree matches the reference for every inheritable property, including the case where a child sets only one of a pair (weight without style, size without family).\n3. `color: 'transparent'` on a fragment renders nothing and does not fall back to the inherited colour.\n4. Fragment `backgroundColor` covers exactly the fragment's glyph run — the extent already scoped by #43 — and does not spill to the paragraph.\n5. A style change on an ancestor `<View>` re-renders the text rather than dropping it — [core#54217](https://github.com/facebook/react-native/issues/54217).\n6. Fragment-level borders are either implemented or reported unimplemented by the #69 matrix.\n\n## Acceptance criteria\n\n- **Unit (C++):** attributed-string construction asserted to emit one shaping run across fragment boundaries; the inheritance table asserted per property. Inside the 100% gate.\n- **Golden:** an Arabic ligature fixture (split vs unsplit, compared to each other, which makes it font-version tolerant) and a fragment-background/colour matrix, with the pinned font.\n\n## Related\n\nScoped as the test layer for #43 (nested `<Text>`, fragment `backgroundColor`, `selectable`). Follows #14. Bidi base direction belongs to #72 and to the RTL layout issue in this batch."
+    },
+    {
+      "title": "test(text): font scale is a runtime input, not a boot constant",
+      "milestone": "M1",
+      "labels": [
+        "area:text",
+        "area:modules",
+        "area:testing",
+        "kind:test",
+        "kind:parity",
+        "origin:rn-core",
+        "platform-parity:ios",
+        "platform-parity:android",
+        "priority:P2"
+      ],
+      "priority": "P2",
+      "body": "**Priority P2** — accessibility text scaling is an M5 concern, but the *invalidation* path it needs is the same one theme changes need, and building it twice is the expensive outcome.\n\n## Context\n\n- [core#47499](https://github.com/facebook/react-native/issues/47499) — closed, `Impact: Regression`, `Type: New Architecture`, 28 comments: `maxFontSizeMultiplier` is not respected.\n- [core#47522](https://github.com/facebook/react-native/issues/47522) — `[newarch regression]` font scale changes are not applied until the app restarts.\n- [core#45655](https://github.com/facebook/react-native/issues/45655) — open: no hot reloading when the font scale changes.\n- [core#52642](https://github.com/facebook/react-native/issues/52642) — open, 17 reactions: incorrect font scaling with `adjustsFontSizeToFit`.\n\nThe pattern is the one `react-native-macos` showed for themes and upstream repeats for text: an OS-level setting is read once at startup, cached into resolved values throughout the tree, and never invalidated. The New Architecture made it worse by caching in more places.\n\nOur side: `docs/cpp-toolchain.md` records that `fontSize` is multiplied by `fontSizeMultiplier` and that `allowFontScaling`, `maxFontSizeMultiplier` and `adjustsFontSizeToFit` are ignored. There is no source of a system font scale on our platform yet — on Linux that is `org.gnome.desktop.interface text-scaling-factor`, `Xft.dpi`, or a compositor-specific setting, and choosing one is part of this issue.\n\n## What to verify\n\n1. A named source of the system text-scaling factor is chosen and documented; absence of that source is a defined default, not an error.\n2. A change to that factor at runtime invalidates every measured paragraph and re-lays out the tree, without a bundle reload — the [core#47522](https://github.com/facebook/react-native/issues/47522)/[core#45655](https://github.com/facebook/react-native/issues/45655) failure.\n3. `allowFontScaling: false` opts a node out; `maxFontSizeMultiplier` clamps it; both are asserted against the iOS/Android semantics.\n4. The measure cache is keyed such that a scale change cannot serve a stale entry.\n5. `PixelRatio.getFontScale()` reports the same value the renderer used, on the same frame.\n\n## Acceptance criteria\n\n- **Unit (C++/TS):** multiplier resolution and clamping over a table, plus cache invalidation on a scale change, inside the 100% gates.\n- **Golden:** one fixture at 1.0 and 1.5 scale.\n- **E2E:** the scale changed mid-session under the headless compositor, asserting a re-layout in the next frame and no reload.\n\n## Related\n\nShares the invalidation path with #52 (Appearance/`PlatformColor` — a theme change invalidates every resolved colour) and #92 (text scale and high contrast). Follows #14. Feeds #91."
+    },
+    {
+      "title": "test(text): TextInput content size, auto-grow and update ordering",
+      "milestone": "M1",
+      "labels": [
+        "area:text",
+        "area:input",
+        "area:testing",
+        "kind:test",
+        "kind:parity",
+        "origin:rn-core",
+        "platform-parity:ios",
+        "platform-parity:android",
+        "priority:P1"
+      ],
+      "priority": "P1",
+      "body": "**Priority P1** — the content-size feedback loop is the one part of `TextInput` we cannot inherit from anyone, and upstream has four open issues in it with 50+ reactions between them.\n\n## Context\n\nThe macOS study established that a text field is a state machine duplicated between a native editor and React's controlled `value`. Upstream's Fabric-era corpus adds a third participant: the **content size**, computed by the editor, fed into layout, and read by the app — with no defined ordering.\n\n- [core#54570](https://github.com/facebook/react-native/issues/54570) — open, 23 reactions: an uncontrolled multiline `TextInput` does not auto-grow.\n- [core#52854](https://github.com/facebook/react-native/issues/52854) — open, 15 reactions, 28 comments: `onContentSizeChange` never fires.\n- [core#46813](https://github.com/facebook/react-native/issues/46813) — open: content **jumps** in a multiline input because the layout update lands after the content update.\n- [core#46207](https://github.com/facebook/react-native/issues/46207) — open: multiline + `lineHeight` height is wrong when controlled.\n- [core#54304](https://github.com/facebook/react-native/issues/54304) — open: multiline with a fixed height positions text inconsistently on first render.\n- [core#33165](https://github.com/facebook/react-native/issues/33165) — open, 22 reactions, 38 comments: multiline is jumpy and flaky when pressing Enter.\n- [core#35951](https://github.com/facebook/react-native/issues/35951) — wrong height when `lineHeight` is set.\n- [core#47266](https://github.com/facebook/react-native/issues/47266) — open: `value` cannot be changed via `setNativeProps` after user input.\n\nOur side: `<TextInput>`'s descriptor, shadow node and props are ours (no `platform/cxx` upstream), the text \"lives in three places\" by documented design, and it lays out through the same `layoutParagraph` as `<Text>`. So the ordering of text-change → re-measure → commit → caret geometry is a contract we write rather than one we reconcile.\n\n## What to verify\n\n1. A stated order for one keystroke: buffer updated → paragraph re-measured → layout committed → caret geometry recomputed → `onChangeText` and `onContentSizeChange` emitted. Asserted as a trace, once per keystroke, with no intermediate frame showing new text at the old height.\n2. An auto-growing multiline input grows on the frame the text changes, not the frame after — the [core#46813](https://github.com/facebook/react-native/issues/46813) jump.\n3. `onContentSizeChange` fires when and only when the content size changes, including on the first layout.\n4. A controlled input whose `value` is rejected by the app reverts within one frame, with the caret at the position the reconciliation defines, and emits no size event.\n5. A fixed-height multiline input positions its first line identically on the first render and after a re-render — [core#54304](https://github.com/facebook/react-native/issues/54304).\n6. Height is consistent between a `<TextInput>` and a `<Text>` holding the same string with the same style.\n\n## Acceptance criteria\n\n- **Unit (C++):** the ordered trace for keystroke, paste, programmatic set, and rejection cases asserted against a committed expectation, inside the 100% gate.\n- **Golden:** first-render and post-growth frames for a multiline input.\n- **E2E:** virtual-keyboard input under the headless compositor asserting no intermediate frame with mismatched text and height, using `wp_presentation` feedback rather than sleeps.\n\n## Related\n\nExtends #53 (`TextInput` parity matrix) and #54 (key and focus interaction contract); follows #17 (closed) and #26 (IME). Shares the vertical-metrics contract with the `lineHeight` issue in this batch."
+    },
+    {
+      "title": "test(layout): measure() and onLayout report layout geometry, not paint geometry",
+      "milestone": "M1",
+      "labels": [
+        "area:core",
+        "area:testing",
+        "kind:test",
+        "kind:parity",
+        "origin:rn-core",
+        "platform-parity:ios",
+        "platform-parity:android",
+        "priority:P1"
+      ],
+      "priority": "P1",
+      "body": "**Priority P1** — a one-line contract with an open upstream bug on three platforms at once, and the same two-pipeline disease as #35 seen from the other end.\n\n## Context\n\n- [core#54988](https://github.com/facebook/react-native/issues/54988) — **open**: `measure()` returns `width`, `height`, `pageX` and `pageY` **doubled** when the parent has `transform: [{scale: 2}]`, on Android, iOS **and** web. The report quotes the documentation against the implementation: \"once you apply transforms, the layouts remain the same around the transformed component\". `react-native-web` gets it right; the two native platforms do not.\n- [core#32943](https://github.com/facebook/react-native/issues/32943) — `onLayout` width/height computed incorrectly.\n- [core#51351](https://github.com/facebook/react-native/issues/51351) — open, 5 reactions: an absolutely positioned element rendered outside its parent is reported as \"not visible to the user\" to the accessibility layer — a third consumer of geometry, disagreeing with both of the others.\n\nOur side: layout geometry is `LayoutMetrics` from Yoga on the commit thread (#11); paint geometry is composed in `RetainedScene`, which folds transforms and reduces them to a 2D affine. `measure`/`measureInWindow`/`measureLayout` arrive through the UIManager and have no implementation yet, so the contract is unwritten rather than wrong — the cheapest possible moment to write it.\n\n## What to verify\n\n1. `measure()` and `onLayout` report Yoga's `LayoutMetrics`: unaffected by any ancestor's or the node's own `transform`, `opacity`, or `zIndex`.\n2. `measureInWindow` reports the position in window coordinates **including** scroll offsets (which are layout-affecting for the content view) and **excluding** transforms — the split stated explicitly and tested both ways.\n3. `measureLayout` against an ancestor is consistent with the difference of the two `measureInWindow` results.\n4. A node inside `overflow: hidden` still reports its full frame; visibility is not a layout property.\n5. The accessibility tree reports the same rectangle as `measure()` — the third consumer stays in agreement (this is [core#51351](https://github.com/facebook/react-native/issues/51351)).\n\n## Acceptance criteria\n\n- **Unit (C++):** the three measure APIs asserted over a tree table with transforms, scrolls and clips, inside the 100% gate.\n- **E2E:** a bundle calling `measure` on nodes under scaled and scrolled ancestors, asserting against the committed expectation.\n- The contract is written into `docs/cpp-toolchain.md` beside the hit-testing note, because it is the same boundary.\n\n## Related\n\nCounterpart of #35 (hit-testing must use paint geometry; measure must use layout geometry). Follows #11. Feeds #61 and #91 (the accessibility geometry consumer)."
+    },
+    {
+      "title": "test(layout): out-of-flow boxes against a padded parent, and percentage resolution",
+      "milestone": "M1",
+      "labels": [
+        "area:core",
+        "area:testing",
+        "kind:test",
+        "kind:parity",
+        "origin:rn-core",
+        "platform-parity:ios",
+        "platform-parity:android",
+        "priority:P1"
+      ],
+      "priority": "P1",
+      "body": "**Priority P1** — we vendor the code these bugs are in, so they are conformance checks rather than implementations, and we currently have no layout conformance suite at all.\n\n## Context\n\nYoga itself is mostly right; the bugs cluster where React Native decides what to hand Yoga:\n\n- [core#46392](https://github.com/facebook/react-native/issues/46392) — open, 13 comments: with a padded parent, an absolutely positioned child's **percentage** width/height resolves against the wrong box.\n- [core#43206](https://github.com/facebook/react-native/issues/43206) — the same, stated as \"after setting padding on the parent, absolute positioning of the child is inaccurate\", 14 comments.\n- [core#54174](https://github.com/facebook/react-native/issues/54174) — open: `position: absolute` behaves **differently between the old and the new architecture** in 0.82. The same Yoga, two answers — so the divergence is in the shadow-node layer, which is the layer we vendor.\n- [core#34542](https://github.com/facebook/react-native/issues/34542) — an absolute child outside its parent's bounds (a layout question with input consequences, covered for hit-testing by another issue in this batch).\n- [core#47979](https://github.com/facebook/react-native/issues/47979) — closed, `Impact: Regression`: `flexBasis` does not reflect an updated state value — a style update not reaching Yoga at all.\n\n## What to verify\n\n1. A percentage width/height on an out-of-flow child resolves against the containing block CSS specifies (the padding box of the nearest positioned ancestor), and the same answer is produced on the commit thread as in a direct Yoga call.\n2. `top`/`left`/`right`/`bottom` percentages resolve against the same box.\n3. A child positioned outside its parent's bounds gets the frame CSS gives it; clipping is a separate, later decision.\n4. Every style property that reaches Yoga is re-read when it changes — a table-driven test that mutates one property at a time and asserts a layout change, catching the [core#47979](https://github.com/facebook/react-native/issues/47979) class in general rather than one property at a time.\n5. `padding`, `border` and `margin` on the parent each shift the child's resolved box by the amount CSS specifies, individually and combined.\n\n## Acceptance criteria\n\n- **Unit (C++):** a layout conformance suite — a table of trees with expected `LayoutMetrics` for every node — run through our commit-thread layout path, inside the 100% gate. Cases are named after the upstream issues they encode.\n- The suite is structured so that upstream's own Yoga fixtures can be added to it later without restructuring, and so that a React Native version bump re-runs it (this is the layout half of #58's drift oracle).\n- **Golden:** one visual fixture per case, so a layout regression is visible as well as numeric.\n\n## Related\n\nFollows #11 (Yoga on the commit thread). Feeds #58 (upstream-parity conformance per RN minor) and #69. Neighbours in this batch: `aspectRatio`, wrapping, RTL, and the measure-callback contract."
+    },
+    {
+      "title": "test(layout): aspectRatio against min and max constraints",
+      "milestone": "M1",
+      "labels": [
+        "area:core",
+        "area:testing",
+        "kind:test",
+        "kind:parity",
+        "origin:rn-core",
+        "platform-parity:ios",
+        "platform-parity:android",
+        "priority:P2"
+      ],
+      "priority": "P2",
+      "body": "**Priority P2** — a narrow, well-specified constraint-ordering question with a current open upstream report; cheap to encode once the layout conformance suite exists.\n\n## Context\n\n- [core#57304](https://github.com/facebook/react-native/issues/57304) — **open**, filed 2026-06: `aspectRatio` ignores a `maxWidth` constraint in dimension calculations. The question underneath is constraint *order*: is the ratio applied and then clamped by min/max, or are min/max applied and the ratio then re-satisfied? CSS specifies the latter; the report shows Yoga's consumer doing the former.\n- [core#35858](https://github.com/facebook/react-native/issues/35858) — providing `aspectRatio` conditionally caused a JS crash: the prop's absent value is not its neutral value, the same shape as the border cases in this batch.\n- [core#33862](https://github.com/facebook/react-native/issues/33862) and [core#40711](https://github.com/facebook/react-native/issues/40711) are the `<Image>` end of the same arithmetic.\n\n## What to verify\n\n1. The full constraint table: `aspectRatio` × {`width`, `height`, neither, both} × {`minWidth`, `maxWidth`, `minHeight`, `maxHeight`, combinations}, with the expected box from the CSS rule, asserted against our commit-thread layout.\n2. Contradictory constraints (a ratio that cannot satisfy both a min and a max) resolve to the stated, documented winner rather than to whatever Yoga happens to do.\n3. `aspectRatio` undefined, zero, negative and non-finite are rejected or defaulted at the boundary — the [core#35858](https://github.com/facebook/react-native/issues/35858) case and #73's rule.\n4. An `<Image>` with `aspectRatio` and a `resizeMode` composes the layout box and the content box in the stated order.\n\n## Acceptance criteria\n\n- **Unit (C++):** the constraint table asserted as part of the layout conformance suite, inside the 100% gate; non-finite inputs asserted to be rejected at the boundary, not serialized.\n- **Golden:** an `<Image>` + `aspectRatio` + `maxWidth` fixture, because that is the combination users actually write.\n\n## Related\n\nPart of the layout conformance suite introduced by the out-of-flow issue in this batch. Follows #11; shares the boundary-validation rule with #73; touches #44's resize-mode matrix."
+    },
+    {
+      "title": "test(layout): wrapping — flexWrap, alignContent and gap",
+      "milestone": "M1",
+      "labels": [
+        "area:core",
+        "area:testing",
+        "kind:test",
+        "kind:parity",
+        "origin:rn-core",
+        "platform-parity:ios",
+        "platform-parity:android",
+        "priority:P2"
+      ],
+      "priority": "P2",
+      "body": "**Priority P2** — wrapping containers are where Yoga's consumers most often disagree with CSS, and the flagship app's board and keypad are both wrapping grids.\n\n## Context\n\n- [core#48527](https://github.com/facebook/react-native/issues/48527) — open, 16 comments: `flexWrap` wraps unexpectedly with `alignItems: 'flex-end'`.\n- [core#49984](https://github.com/facebook/react-native/issues/49984) — open: `alignContent: 'stretch'` does not stretch rows in a wrapping container.\n- [core#35351](https://github.com/facebook/react-native/issues/35351) — 19 comments: `gap` + `flexWrap` + `alignContent` renders the wrong size.\n- [core#36024](https://github.com/facebook/react-native/issues/36024) — flexbox `gap` does nothing inside a `<ScrollView>`, i.e. a container whose content sizing takes a different path.\n- [core#43584](https://github.com/facebook/react-native/issues/43584) — `gap` accepted as a *prop* rather than a style, silently.\n\n## What to verify\n\n1. `flexWrap: 'wrap'` and `'wrap-reverse'` against each `alignItems` and `alignContent` value, with expected line breaks and cross-axis positions from the CSS rule.\n2. `gap`, `rowGap` and `columnGap` participate in available-space computation on both axes, including in a scrolling container's content box — [core#36024](https://github.com/facebook/react-native/issues/36024).\n3. `alignContent: 'stretch'` distributes leftover cross-axis space across lines.\n4. Percentage gaps resolve against the correct dimension.\n5. A wrapping container inside a `ScrollView` reports the same content size as the same container outside one.\n\n## Acceptance criteria\n\n- **Unit (C++):** the wrapping table added to the layout conformance suite, inside the 100% gate, with cases named after the upstream issues.\n- **Golden:** a wrapping grid fixture at two container widths, so a break-point regression is visible.\n\n## Related\n\nPart of the layout conformance suite introduced by the out-of-flow issue in this batch. Follows #11; content sizing overlaps #46 (ScrollView content size on the first frame)."
+    },
+    {
+      "title": "test(layout): RTL layout — YGDirection, logical edges and radii, scroll origin",
+      "milestone": "M1",
+      "labels": [
+        "area:core",
+        "area:renderer",
+        "area:testing",
+        "kind:test",
+        "kind:parity",
+        "origin:rn-core",
+        "platform-parity:ios",
+        "platform-parity:android",
+        "priority:P1"
+      ],
+      "priority": "P1",
+      "body": "**Priority P1** — #72 owns the text half of RTL; the layout half is unowned, and upstream shows it is where the geometry bugs actually live.\n\n## Context\n\nUpstream's RTL cluster splits into a process question (already covered by #72) and three geometry questions that never got their own issues:\n\n- [core#45661](https://github.com/facebook/react-native/issues/45661) — closed, `Resolution: Fixed`, 11 reactions, **63 comments**: RTL layout direction does not update after a reload on the new architecture. Repeated in [core#48311](https://github.com/facebook/react-native/issues/48311) (7 reactions, 29 comments), [core#47583](https://github.com/facebook/react-native/issues/47583) and [core#49451](https://github.com/facebook/react-native/issues/49451) (open).\n- [core#51193](https://github.com/facebook/react-native/issues/51193) — 7 reactions: `borderTopEndRadius`/`borderBottomEndRadius` resolve to the wrong physical corner under RTL.\n- [core#55768](https://github.com/facebook/react-native/issues/55768) — a ScrollView is offset to the left of the window under RTL; [core#34314](https://github.com/facebook/react-native/issues/34314) — wrong scroll positions under RTL.\n- [core#55433](https://github.com/facebook/react-native/issues/55433) — a `FlatList` renders faultily with `direction: 'ltr'` inside an RTL app: a subtree overriding the app direction.\n- [core#35341](https://github.com/facebook/react-native/issues/35341) — inverted list + RTL: performance collapse and crashes.\n\nOur side: `docs/cpp-toolchain.md` records that RTL is not handled — the paragraph direction is hardcoded left-to-right — and Yoga's `YGDirection` is a per-node input we currently never set. The scroll controller clamps `[0, content − viewport]` per axis with no notion of an RTL origin.\n\n## What to verify\n\n1. `YGDirection` is set from the app direction and from a node's `direction` style, and a subtree may override its ancestor — [core#55433](https://github.com/facebook/react-native/issues/55433).\n2. Logical edges (`start`/`end` for margin, padding, border, position) resolve to the correct physical edge under both directions.\n3. Logical corner radii (`borderStartStartRadius` and friends, plus the `borderTopEndRadius` family) resolve to the correct physical corner — [core#51193](https://github.com/facebook/react-native/issues/51193). The rounded box in this batch has one source of truth; this is the direction input to it.\n4. A horizontal scroll container's origin is at the right edge under RTL, its offsets are reported in the same convention as iOS/Android, and clamping is direction-aware — [core#55768](https://github.com/facebook/react-native/issues/55768), [core#34314](https://github.com/facebook/react-native/issues/34314).\n5. A direction change at runtime re-lays out without a bundle reload (the layout half of #72's requirement).\n6. Pointer hit-testing is direction-agnostic: the same painted pixel belongs to the same node in both directions.\n\n## Acceptance criteria\n\n- **Unit (C++):** logical-edge and logical-radius resolution asserted over the layout conformance table in both directions, inside the 100% gate; scroll clamping asserted for an RTL horizontal container.\n- **Golden:** one fixture rendered in both directions, plus a rounded box with logical radii.\n- **E2E:** a direction change mid-session under the headless compositor, asserting a re-layout in the following frame.\n\n## Related\n\nThe layout half of #72 (RTL text: `writingDirection`, base paragraph direction, `I18nManager` without a reload). Follows #11 and #16. Feeds the rounded-box and border issues in this batch."
+    },
+    {
+      "title": "test(layout): the measure callback contract under adversarial tree mutation",
+      "milestone": "M1",
+      "labels": [
+        "area:core",
+        "area:text",
+        "area:testing",
+        "kind:test",
+        "origin:rn-core",
+        "platform-parity:ios",
+        "platform-parity:android",
+        "priority:P1"
+      ],
+      "priority": "P1",
+      "body": "**Priority P1** — we are the only React Native platform whose Yoga measure callback is SkParagraph; upstream's assertion crashes in this exact code are open and unreproduced, and an assertion in vendored code is a crash we cannot patch quickly.\n\n## Context\n\n- [core#52349](https://github.com/facebook/react-native/issues/52349) — **open**, 19 reactions, 53 comments: `YogaLayoutableShadowNode.cpp` assertion failure `YGNodeGetOwner(childYogaNode) == &yogaNode_` during layout, appearing after an upgrade, with conditional rendering in the repro. Labelled `Needs: Repro` — nobody has reduced it.\n- [core#51870](https://github.com/facebook/react-native/issues/51870) — `[Starvation] Assertion failed: (attempts < 1024)` in `ShadowTree.cpp` commit: a commit loop that never converges.\n- [core#47979](https://github.com/facebook/react-native/issues/47979) — a style update not reaching layout at all.\n\nThis is code we link, not code we call from a distance: `YogaLayoutableShadowNode.cpp` is compiled into `rnl_window` today. The measure callback is ours (`TextLayoutManager` → `layoutParagraph`, behind a measure cache), and Yoga's contract for it is strict: for identical constraints it must return an identical size, it must not mutate the tree, and it must be re-entrant with respect to Yoga's own recursion.\n\n## What to verify\n\n1. Determinism: the measure callback returns byte-identical metrics for identical `{attributed string, constraints}` inputs, including across a cache eviction — a cache that can return a different answer than a cold measure is the bug.\n2. No mutation: the callback never mutates the shadow tree, never commits, and never enqueues work that could commit during layout.\n3. Adversarial mutation: conditional rendering that adds/removes/reparents children between commits, driven by a scripted mutation table including the reparent case [core#52349](https://github.com/facebook/react-native/issues/52349) implicates, runs without hitting a Yoga assertion.\n4. Layout under a commit whose tree is mutated concurrently from another thread is either serialized or rejected — never both applied.\n5. A measure callback that throws or returns a non-finite size is handled at the boundary, per #73, rather than reaching Yoga.\n\n## Acceptance criteria\n\n- **Unit (C++):** the mutation table run through the real commit + layout path with assertions enabled (a build with `NDEBUG` off, so upstream's own assertions are live), inside the 100% gate.\n- **TSan:** the concurrent-mutation case clean.\n- The suite runs on every React Native version bump as part of #58's drift oracle, because these assertions are upstream's and can change under us.\n\n## Related\n\nFollows #11 (Yoga on the commit thread) and #14 (the measure callback's implementation). Feeds #58 and #73. Shares the termination question with the commit-atomicity issue in this batch."
+    },
+    {
+      "title": "test(animation): the animated value and the shadow tree agree on every frame, not only at the end",
+      "milestone": "M2",
+      "labels": [
+        "area:renderer",
+        "area:core",
+        "area:testing",
+        "kind:test",
+        "kind:parity",
+        "origin:rn-core",
+        "platform-parity:ios",
+        "platform-parity:android",
+        "priority:P0"
+      ],
+      "priority": "P0",
+      "body": "**Priority P0** — this is the design decision at the centre of #19; upstream made it wrong, shipped a partial fix that only syncs at animation end, and the consequences are still open on both platforms.\n\n## Context\n\n- [core#51621](https://github.com/facebook/react-native/issues/51621) — open, 28 reactions: `onPress` does not fire while a view animates on the new architecture. The thread documents the mechanism: [PR 43374](https://github.com/facebook/react-native/pull/43374) makes a state update **on animation end** to re-sync the animated value into the shadow tree; during the animation, the shadow tree holds the pre-animation value and everything reading it is wrong.\n- [core#34665](https://github.com/facebook/react-native/issues/34665) — 9 reactions, 22 comments: `Animated.Value` **resets styles** when detached — the reverse direction, where dropping the animation reverts to a stale committed value instead of the current one.\n- [core#50496](https://github.com/facebook/react-native/issues/50496) — open, 27 comments: `Animated.event` with the native driver leaves the wrong translate when a scroll is interrupted; [core#52657](https://github.com/facebook/react-native/issues/52657) — open: `Animated.event` does not deliver the latest `contentOffset`.\n- [core#49838](https://github.com/facebook/react-native/issues/49838) — 18 comments: Animated makes some views disappear.\n\nOur configuration makes the decision unavoidable: ADR-0001 decision 6 puts React Native's shared C++ animated node graph on a **platform-owned frame thread**, and `RetainedScene` is read by the painter on the render thread while `PointerEventsProcessor` reads `LayoutMetrics` from the shadow tree. Three readers, two writers, one clock.\n\n## What to verify\n\n1. A single stated source of truth for an animated property per frame, and every consumer — painter, hit-test, `measure`, accessibility — resolves through it.\n2. Detaching an animation leaves the property at its **current** animated value until the next commit says otherwise — [core#34665](https://github.com/facebook/react-native/issues/34665).\n3. An animation interrupted mid-flight (a new animation, a stop, a gesture takeover) leaves no residue: the property equals the value the interruption defines, on the next frame — [core#50496](https://github.com/facebook/react-native/issues/50496).\n4. `Animated.event` driven from scroll delivers the offset of the frame it is reporting, not the previous one — [core#52657](https://github.com/facebook/react-native/issues/52657).\n5. No animated property update is lost when a commit lands in the same frame; the merge order of commit-versus-animation is stated and tested.\n\n## Acceptance criteria\n\n- **Unit (C++):** an injected clock steps the graph; at each tick the value seen by every consumer is asserted equal, including across commit boundaries. Inside the 100% line-and-branch gate.\n- **TSan:** the frame thread stepping the graph concurrently with mounting transactions, clean.\n- **E2E:** a bundle animating a transform while `--inject-pointer` presses at the painted position on scripted frames, with the ordered event trace compared to a committed expectation — the assertion that fails on upstream today.\n\n## Related\n\nDefinition-of-done for #19 (native-driven animations). Pairs with #74 (unmounted targets) and #75 (Animated value conformance), and with the animated hit-testing issue in this batch. Belongs to the animation programme in #95 if that plan supersedes M2 placement."
+    },
+    {
+      "title": "test(animation): the native-driver style allowlist is enforced at the boundary",
+      "milestone": "M2",
+      "labels": [
+        "area:core",
+        "area:testing",
+        "kind:test",
+        "kind:parity",
+        "origin:rn-core",
+        "platform-parity:ios",
+        "platform-parity:android",
+        "priority:P2"
+      ],
+      "priority": "P2",
+      "body": "**Priority P2** — cheap to encode, and it converts a class of runtime surprises into a startup-time error message; it is also the natural home for the interpolation edge cases upstream keeps rediscovering.\n\n## Context\n\n- [core#40973](https://github.com/facebook/react-native/issues/40973) — \"Style property `marginLeft` is not supported by the native animated module\": the allowlist exists, it is enforced at runtime, and it reaches the user as a thrown error with no guidance.\n- [core#36608](https://github.com/facebook/react-native/issues/36608) — `Animated.Value.interpolate` yields `NaN` for radian outputs: a unit-carrying output range that the interpolator does not model.\n- [core#34022](https://github.com/facebook/react-native/issues/34022) — an iOS crash when a colour interpolation runs on the native driver.\n- [core#37900](https://github.com/facebook/react-native/issues/37900) — open: `Animated` tracking with the native driver does not work as expected.\n- [core#37061](https://github.com/facebook/react-native/issues/37061) — `AnimatedInterpolation` and `AnimatedModulo` never call their listeners.\n- [core#49719](https://github.com/facebook/react-native/issues/49719) — 16 comments: listeners never fire on values built from `Animated` operators.\n\n## What to verify\n\n1. The set of properties our native driver can animate is enumerated in **one** place, is the same set the JS side advertises, and a property outside it produces a clear diagnostic naming the property and the alternative — not a crash and not silence.\n2. Interpolation output types are modelled: numbers, units (`deg`, `rad`, `%`), and colours, each with a defined behaviour for out-of-range inputs. `NaN` never leaves the interpolator — the #73 rule applied to animation.\n3. Every node type the graph supports (value, interpolation, modulo, diffClamp, addition/multiplication/division, tracking) calls its listeners and propagates to its parents — [core#37061](https://github.com/facebook/react-native/issues/37061), [core#49719](https://github.com/facebook/react-native/issues/49719).\n4. Colour interpolation runs without a platform-specific crash path — [core#34022](https://github.com/facebook/react-native/issues/34022).\n5. The allowlist is derived from the renderer's actual capability rather than hand-maintained: adding a paintable animated property updates it, and a test fails if the two drift.\n\n## Acceptance criteria\n\n- **Unit (C++/TS):** the node-type table and the interpolation table asserted, including non-finite and out-of-range inputs, inside the 100% gates.\n- The diagnostic text for a rejected property is asserted, so it stays actionable.\n- The allowlist-versus-renderer drift check runs in CI.\n\n## Related\n\nExtends #75 (Animated value conformance: units, percentages, interpolation, additive composition). Applies #73's boundary rule. Under #19 and the animation programme in #95."
+    },
+    {
+      "title": "test(animation): LayoutAnimation — decide it, then prove it or refuse it",
+      "milestone": "M2",
+      "labels": [
+        "area:renderer",
+        "area:core",
+        "kind:test",
+        "kind:parity",
+        "origin:rn-core",
+        "platform-parity:ios",
+        "platform-parity:android",
+        "priority:P2",
+        "needs:decision"
+      ],
+      "priority": "P2",
+      "body": "**Priority P2** — a legacy API that upstream's own New Architecture has been visibly failing to carry for three years; declining it is a legitimate outcome, but it has to be a decision with a diagnostic rather than an omission with a silent no-op.\n\n## Context\n\n- [core#47617](https://github.com/facebook/react-native/issues/47617) — **open**, 26 reactions: `LayoutAnimation.configureNext()` is broken in 0.76. The most-reacted animation issue in the era.\n- [core#38661](https://github.com/facebook/react-native/issues/38661) — **open since 2023**, 28 comments: \"[New Architecture] LayoutAnimation Breaking\".\n- [core#46568](https://github.com/facebook/react-native/issues/46568) — 20 comments: LayoutAnimations crash under a new iOS SDK on the new architecture.\n- [core#33740](https://github.com/facebook/react-native/issues/33740) — `LayoutAnimation.create()` completely non-functional on Android.\n- [core#48722](https://github.com/facebook/react-native/issues/48722) — a border-radius artifact (black background) during a layout animation.\n- [core#49958](https://github.com/facebook/react-native/issues/49958) — `LayoutAnimationController` leaks memory.\n- [core#50442](https://github.com/facebook/react-native/issues/50442) — closed, `Resolution: Fixed`, 18 reactions: a Modal's children render in the **top-left corner** for the first few frames. Not `LayoutAnimation`, but the same class: a node painted before its layout is known.\n\nThe API's shape is the problem: it asks the mounting layer to animate *between two committed trees*, which requires the mounting layer to hold both and interpolate — exactly what Fabric's mounting transaction is not built to do, and exactly why Reanimated 4 reimplements it.\n\n## What to verify\n\n1. Decide: implement `LayoutAnimation` over our mounting transactions, defer it to the Reanimated-layer decision in the animation programme (#95), or refuse it. Record the decision in `docs/cpp-toolchain.md` and in ADR terms if it changes ADR-0001's animation stance.\n2. If refused: `LayoutAnimation.configureNext` produces a single clear warning per call site and the layout change applies instantly — never a partially animated, never a dropped frame.\n3. If implemented: an interrupted layout animation (a second commit mid-animation) resolves to the newest tree without residue, and the controller's resources are released when the animation ends or is interrupted — [core#49958](https://github.com/facebook/react-native/issues/49958).\n4. Either way: no node is ever painted at a default position before its layout is known — the [core#50442](https://github.com/facebook/react-native/issues/50442) first-frame rule, which applies to our overlay work in #62 regardless of this decision.\n\n## Acceptance criteria\n\n- The decision is written down with this issue number before any code lands.\n- **Unit (C++):** the chosen behaviour asserted, including the interrupted case if implemented, inside the 100% gate.\n- **Golden/E2E:** the first-frame rule (point 4) proven by a frame captured at mount, since it holds under every outcome.\n\n## Related\n\nUnder #19 and the animation programme in #95. The first-frame rule is shared with #62 (Modal and overlay surfaces) and #46 (ScrollView content size on the first frame)."
+    },
+    {
+      "title": "perf(animation): a native-driver frame-cost gate",
+      "milestone": "M2",
+      "labels": [
+        "area:renderer",
+        "area:core",
+        "area:testing",
+        "kind:perf",
+        "kind:test",
+        "origin:rn-core",
+        "platform-parity:ios",
+        "platform-parity:android",
+        "priority:P1"
+      ],
+      "priority": "P1",
+      "body": "**Priority P1** — upstream shipped a 20× animation regression to a stable release and a user found it; a 120 fps demo is a stated M2 deliverable, and a demo without a gate is a screenshot.\n\n## Context\n\n- [core#50716](https://github.com/facebook/react-native/issues/50716) — closed, `Resolution: Fixed`, 20 reactions: \"Animation is **20× slower** in New Architecture\", with two branches of the same app as the repro. It shipped, and CI did not catch it.\n- [core#44514](https://github.com/facebook/react-native/issues/44514) — `useNativeDriver` performance regression in 0.74 on the new architecture, compared against list scrolling.\n- [core#47490](https://github.com/facebook/react-native/issues/47490) — closed, **60 reactions**, 134 comments: \"Performance issues with Bridgeless\" — the most-reacted new-architecture issue of the era.\n- [core#34583](https://github.com/facebook/react-native/issues/34583) — 18 reactions: an app **freezes** when animations run inside an inverted list.\n- [core#38470](https://github.com/facebook/react-native/issues/38470) — open: scrolling a list whose content is moving stutters or blocks entirely.\n\nOur side: #20 owns pacing, `wp_presentation` measurement and Tracy; #59 owns frame-source liveness. Neither states a cost budget for the animation step itself, and ADR-0001 puts that step on a thread whose deadline is the compositor's.\n\n## What to verify\n\n1. A per-frame budget for the animation step (graph evaluation + property application + damage), stated as a number, measured with `wp_presentation` feedback rather than wall clock, at 60 Hz and 120 Hz.\n2. The budget holds with N concurrent animated nodes for a stated N, and degrades predictably beyond it rather than collapsing.\n3. Animating while a list scrolls stays inside the budget — the [core#34583](https://github.com/facebook/react-native/issues/34583)/[core#38470](https://github.com/facebook/react-native/issues/38470) combination.\n4. No animation frame allocates on the frame thread — a zero-allocation assertion, since allocation is the mechanism behind most of the regressions above.\n5. The numbers are uploaded as CI artifacts and a regression beyond the stated threshold fails the build.\n\n## Acceptance criteria\n\n- **Perf/E2E:** the animation scenarios run under the headless compositor with p95 frame time asserted against the 8.33 ms budget and the animation-step budget asserted separately, per the testing gospel.\n- **Unit (C++):** the zero-allocation assertion on the frame-thread path with an injected allocator, inside the 100% gate.\n- A scenario reproducing [core#50716](https://github.com/facebook/react-native/issues/50716)'s shape (a simple continuously animating view) is in the gate permanently, because that is the one that shipped.\n\n## Related\n\nExtends #20 (pacing, VRR, Tracy) and #59 (frame-source liveness). Under #19; belongs to the animation programme in #95 if that supersedes M2 placement. Shares the allocation discipline with the mounting-ceiling issue in this batch."
+    },
+    {
+      "title": "test(core): every commit terminates, and every mounting transaction is atomic",
+      "milestone": "M1",
+      "labels": [
+        "area:core",
+        "area:renderer",
+        "area:testing",
+        "kind:test",
+        "origin:rn-core",
+        "platform-parity:ios",
+        "platform-parity:android",
+        "priority:P0"
+      ],
+      "priority": "P0",
+      "body": "**Priority P0** — these are bugs in code that is already compiled into `rnl_window`; they reach us by linkage, not by analogy, and one of them is an unbounded retry on the thread that draws.\n\n## Context\n\nUpstream's Fabric-era corpus contains a cluster of `ReactCommon` defects reported against iOS and Android only because those are the only places it runs:\n\n- [core#51870](https://github.com/facebook/react-native/issues/51870) — `[Starvation] Assertion failed: (attempts < 1024), function commit, file ShadowTree.cpp`. A commit loop that does not converge; the assertion is the only thing that stops it.\n- [core#52373](https://github.com/facebook/react-native/issues/52373) — open, 8 reactions: the intermediate state of a `useLayoutEffect` can be mounted by **a commit from a different thread**.\n- [core#44111](https://github.com/facebook/react-native/issues/44111) — closed, `Resolution: Fixed`, 14 reactions: UI updates made from a layout effect are flushed in a *separate* transaction, producing a visible intermediate frame.\n- [core#49077](https://github.com/facebook/react-native/issues/49077) — **open, 49 reactions, 85 comments**: \"Unable to find viewState for tag N. Surface stopped: false\" — a mounting instruction referencing a node whose state has gone.\n- [core#49694](https://github.com/facebook/react-native/issues/49694) — closed, 55 reactions: a C++ state update is not received when a path-cloning commit hook is used.\n- [core#47576](https://github.com/facebook/react-native/issues/47576) — native view **commands** timed incorrectly relative to mounting.\n- [core#41699](https://github.com/facebook/react-native/issues/41699) — a `ComponentDescriptor::adopt` signature change breaking every third-party component.\n\nOur configuration sharpens two of them: our commit runs on a thread we own, so [core#52373](https://github.com/facebook/react-native/issues/52373)'s cross-thread mounting is our default rather than an edge case; and `LinuxMountingManager::dispatchCommand` is empty, so [core#47576](https://github.com/facebook/react-native/issues/47576)'s ordering question is unanswered rather than answered wrongly.\n\n## What to verify\n\n1. Termination: a commit with a re-entrant state update converges within a bounded number of attempts; exceeding the bound is a diagnostic and a dropped update, never an assertion or an infinite loop.\n2. Atomicity: the tree produced by one React render pass, including layout-effect updates, is mounted in **one** transaction — no intermediate frame shows a half-updated tree ([core#44111](https://github.com/facebook/react-native/issues/44111)).\n3. Identity: every mounting instruction references a node present in the scene; a missing tag is a test failure with the tag and the transaction in the message, not a silent skip ([core#49077](https://github.com/facebook/react-native/issues/49077)).\n4. `dispatchCommand` is ordered relative to mounting: a command issued in the same render pass as a mount is delivered after that mount, and this is asserted rather than assumed ([core#47576](https://github.com/facebook/react-native/issues/47576)).\n5. A state update originating on a non-JS thread is serialized against commits; TSan-clean.\n\n## Acceptance criteria\n\n- **Unit (C++):** re-entrant-commit, layout-effect-update, missing-tag and command-ordering scenarios driven through the real `ShadowTree`/`MountingCoordinator` path with upstream assertions live (`NDEBUG` off), inside the 100% gate.\n- **TSan:** concurrent commit and mount, clean.\n- **E2E:** a frame-by-frame capture proving no intermediate frame for a layout-effect update.\n- The suite re-runs on every React Native version bump as part of #58's drift oracle, since the code under test is vendored.\n\n## Related\n\nFollows #10 (Fabric bootstrap) and #12 (retained scene). Feeds #58 (upstream-parity conformance) and #77 (cross-thread contract stress). Shares the mutation table with the measure-callback issue in this batch."
+    },
+    {
+      "title": "perf(core): per-view mounting cost, measured",
+      "milestone": "M2",
+      "labels": [
+        "area:core",
+        "area:renderer",
+        "area:testing",
+        "kind:perf",
+        "kind:test",
+        "origin:rn-core",
+        "platform-parity:android",
+        "platform-parity:ios",
+        "priority:P1"
+      ],
+      "priority": "P1",
+      "body": "**Priority P1** — upstream's mounting cost regressed to ~1 ms per view and stayed there through a stable release; the flagship app mounts a 81-cell board plus chrome in one transaction, so this number is directly on our critical path.\n\n## Context\n\n- [core#51869](https://github.com/facebook/react-native/issues/51869) — closed, `Resolution: Fixed`, **44 reactions**, 27 comments: \"[Performance] Mounting is very slow on Android (almost 1 ms per one view)\". A 200-node screen therefore costs 200 ms of mounting.\n- [core#47490](https://github.com/facebook/react-native/issues/47490) — closed, 60 reactions, 134 comments: bridgeless performance, the umbrella the above sits under.\n- [core#36296](https://github.com/facebook/react-native/issues/36296) — 46 reactions, 171 comments: very long re-rendering times after a minor bump.\n- [core#57198](https://github.com/facebook/react-native/issues/57198) — open: memory not reclaimed across repeated mount/unmount cycles.\n\nOur side: `docs/cpp-toolchain.md` records that the damage walk runs the same snapshot code over a subtree per mutation and that every snapshot copies the attributed string; #20 will provide the reporting surface, but no number exists yet for what a mounting transaction costs.\n\n## What to verify\n\n1. A stated per-view mounting cost budget and a stated total for a first mount of N nodes, measured on the commit and render threads separately.\n2. The cost is linear in the number of *mutations*, not in the size of the tree: appending one node to a 2,000-node tree costs the same as appending it to a 20-node tree.\n3. Snapshot copying is bounded: a text-heavy subtree does not re-copy attributed strings for unaffected siblings.\n4. The numbers are produced by the same instrumentation #20 uses, uploaded as CI artifacts, and a regression beyond a stated threshold fails the build.\n5. The measurement scenario includes the flagship's real shape (a grid of ~100 interactive cells) rather than a synthetic tree only.\n\n## Acceptance criteria\n\n- **Perf/E2E:** mounting scenarios under the headless compositor with per-transaction timings recorded via `wp_presentation` feedback and Tracy zones, asserted against the budget.\n- **Unit (C++):** the linearity property (point 2) asserted with mutation counts and an injected clock, inside the 100% gate.\n- Numbers are tracked over time, per the gospel's \"numbers are tracked, not vibed\" rule.\n\n## Related\n\nExtends #20 (pacing and Tracy) and #12 (damage tracking). Pairs with the allocation-ceiling issue in this batch and with #24 (flagship bring-up), which supplies the realistic scenario."
+    }
+  ]
+}
