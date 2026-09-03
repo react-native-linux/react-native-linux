@@ -18,7 +18,8 @@
 //
 // The operator definitions are deliberately **not** `inline`: exactly one translation unit may include this
 // header, and a second one is a duplicate-symbol link error rather than a silent second replacement. That
-// translation unit is `AnimationFrameCostTest.cpp`.
+// translation unit is `AllocationCostTest.cpp`, which is why both the animation frame cost of #124 and the
+// mounting cost of #106 are measured in one file: there is only one place the allocator can be watched from.
 //
 // Over-aligned allocations are not counted. `operator new(size_t, align_val_t)` is left to the library, which
 // pairs it with the library's own aligned delete, so the counts stay balanced and the uncounted path is one
