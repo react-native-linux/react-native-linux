@@ -102,6 +102,15 @@ importers:
         specifier: 'catalog:'
         version: 4.1.11(@types/node@26.4.0)(@vitest/coverage-v8@4.1.11)(vite@8.2.2(@types/node@26.4.0)(jiti@2.7.0)(terser@5.51.2)(yaml@2.9.0))
 
+  packages/reanimated:
+    dependencies:
+      '@react-native-linux/core':
+        specifier: workspace:*
+        version: link:../core
+      react-native:
+        specifier: '*'
+        version: 0.87.1(@babel/core@7.29.7(supports-color@8.1.1))(react@19.2.8)(supports-color@8.1.1)
+
 packages:
 
   '@babel/code-frame@7.29.7':
