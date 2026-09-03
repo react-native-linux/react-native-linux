@@ -1,8 +1,10 @@
 #pragma once
 
+#include "DimensionsSource.h"
 #include "HermesJSRuntimeFactory.h"
 #include "HostTimerRegistry.h"
 #include "JsErrorReporter.h"
+#include "TurboModuleRegistry.h"
 
 #include <cxxreact/JSBigString.h>
 #include <react/runtime/ReactInstance.h>
@@ -20,6 +22,9 @@ namespace react_native_linux {
  * `TimerManager` over a dispatch-thread-backed `PlatformTimerRegistry`, and the error handler that prints
  * structured JavaScript errors. Everything a host needs before Fabric exists, and nothing a host has to decide
  * about how long to keep running.
+ *
+ * It is also where the platform's TurboModules are installed, because the binding goes into the runtime through
+ * the same `initializeRuntime` call as the console binding and there is exactly one runtime per host.
  *
  * Both hosts build on this: `BundleRunner` runs to quiescence and exits, and `WindowSession` keeps the instance
  * alive for as long as the window is open.
@@ -42,6 +47,19 @@ public:
     ~ReactHost() noexcept;
 
     facebook::react::ReactInstance& reactInstance() noexcept;
+
+    /**
+     * The surface metrics `DeviceInfo` answers `Dimensions.get` from. Whoever owns the surface size configures it:
+     * `WindowSession` on every `xdg_toplevel.configure`, `BundleRunner` from the headless surface size. See
+     * *Dimensions and TurboModules* in docs/cpp-toolchain.md.
+     */
+    DimensionsSource& dimensions() noexcept;
+
+    /**
+     * Emits at most one `didUpdateDimensions` for everything configured since the last call, on the JavaScript
+     * thread. Called once per frame by the window host, and once after the resize by the headless one.
+     */
+    void publishPendingDimensions();
     void loadScript(std::unique_ptr<const facebook::react::JSBigString> script, const std::string& sourceUrl);
     void drainJavaScriptThread();
     bool runUntilQuiescent(std::chrono::milliseconds budget);
@@ -62,6 +80,7 @@ private:
     JsErrorReporter errorReporter_;
     HermesJSRuntimeFactory runtimeFactory_;
     std::unique_ptr<facebook::react::ReactInstance> reactInstance_;
+    std::unique_ptr<TurboModuleRegistry> turboModuleRegistry_;
 };
 
 } // namespace react_native_linux

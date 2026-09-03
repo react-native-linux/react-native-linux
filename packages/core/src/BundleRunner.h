@@ -47,6 +47,17 @@ struct FabricDamageRunResult {
 
 int runBundle(const std::optional<std::string>& bundlePath, BundleMode bundleMode);
 int runInjectedClick(const std::string& bundlePath, facebook::react::Point surfacePoint);
+
+/**
+ * Runs a bundle at the headless surface size, then resizes the surface to `resizedSurfaceSize` the way a
+ * compositor's `xdg_toplevel.configure` would, and lets JavaScript observe both.
+ *
+ * This is the acceptance harness for issue #50: it is the only path that reaches `didUpdateDimensions` without a
+ * compositor, so a bundle can print the constants it booted with and the change event that followed. The window
+ * rig cannot drive a resize from outside the compositor, and a `Dimensions` bug is arithmetic rather than pixels.
+ */
+int runResizedFabricBundle(const std::string& bundlePath, facebook::react::Size resizedSurfaceSize);
+
 FabricRunResult runFabricBundle(const std::optional<std::string>& bundlePath, facebook::react::Size surfaceSize);
 
 /**

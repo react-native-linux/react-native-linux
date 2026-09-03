@@ -1,5 +1,6 @@
 #include "BundleRunner.h"
 
+#include "DimensionsSource.h"
 #include "FabricHost.h"
 #include "InputPipeline.h"
 #include "ReactHost.h"
@@ -47,6 +48,15 @@ std::unique_ptr<const facebook::react::JSBigString> readScript(const std::option
     }
 
     return std::make_unique<facebook::react::JSBigStdString>(kSmokeSource);
+}
+
+/**
+ * The headless counterpart of an `xdg_toplevel.configure`: a run with no compositor still has a surface, and
+ * `Dimensions.get` has to answer with that surface's size rather than with the pre-configure default.
+ */
+void configureDimensions(ReactHost& reactHost, facebook::react::Size surfaceSize) {
+    reactHost.dimensions().configure(static_cast<double>(surfaceSize.width), static_cast<double>(surfaceSize.height),
+                                     DimensionsSource::kDefaultScale);
 }
 
 void loadAndSettle(ReactHost& reactHost, const std::optional<std::string>& bundlePath) {
@@ -135,6 +145,7 @@ std::unique_ptr<FabricHost> startFabricRun(ReactHost& reactHost, const std::stri
                                            facebook::react::Size surfaceSize) {
     std::unique_ptr<FabricHost> fabricHost = std::make_unique<FabricHost>(reactHost.reactInstance(), surfaceSize);
 
+    configureDimensions(reactHost, surfaceSize);
     reactHost.loadScript(facebook::react::JSBigFileString::fromPath(bundlePath), bundlePath);
 
     return fabricHost;
@@ -181,6 +192,31 @@ int runInjectedClick(const std::string& bundlePath, facebook::react::Point surfa
     fabricHost.reset();
 
     return hasCommitted && !reactHost.hasReportedFatalError() ? 0 : 1;
+}
+
+int runResizedFabricBundle(const std::string& bundlePath, facebook::react::Size resizedSurfaceSize) {
+    ReactHost reactHost;
+    std::unique_ptr<FabricHost> fabricHost = startFabricRun(reactHost, bundlePath, kHeadlessSurfaceSize);
+
+    if (!reactHost.runUntilQuiescent(kQuiescenceBudget)) {
+        std::cerr << "[bundle-runner] gave up waiting for pending timers" << std::endl;
+    }
+
+    // The pair a window applies on `xdg_toplevel.configure`, in the same order: new layout constraints for Fabric,
+    // the same extent for `Dimensions`, then the one change event the frame is allowed to emit.
+    fabricHost->setSurfaceSize(resizedSurfaceSize);
+    configureDimensions(reactHost, resizedSurfaceSize);
+    reactHost.publishPendingDimensions();
+
+    if (!reactHost.runUntilQuiescent(kQuiescenceBudget)) {
+        std::cerr << "[bundle-runner] gave up waiting for pending timers" << std::endl;
+    }
+
+    fabricHost->stopSurface();
+    reactHost.drainJavaScriptThread();
+    fabricHost.reset();
+
+    return reactHost.hasReportedFatalError() ? 1 : 0;
 }
 
 FabricDamageRunResult runFabricBundleAcrossCommits(const std::string& bundlePath, facebook::react::Size surfaceSize) {
@@ -293,6 +329,7 @@ FabricRunResult runFabricBundle(const std::optional<std::string>& bundlePath, fa
     ReactHost reactHost;
     std::unique_ptr<FabricHost> fabricHost = std::make_unique<FabricHost>(reactHost.reactInstance(), surfaceSize);
 
+    configureDimensions(reactHost, surfaceSize);
     loadAndSettle(reactHost, bundlePath);
 
     // One empty frame before the scene is read, because a frame is not only what the compositor sent: it is also

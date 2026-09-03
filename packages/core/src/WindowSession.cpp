@@ -1,5 +1,7 @@
 #include "WindowSession.h"
 
+#include "DimensionsSource.h"
+
 #include <cxxreact/JSBigString.h>
 #include <react/renderer/graphics/Float.h>
 #include <react/renderer/graphics/Size.h>
@@ -22,6 +24,9 @@ facebook::react::Size toSurfaceSize(WindowSize size) {
 
 WindowSession::WindowSession(const std::string& bundlePath, WindowSize size)
     : fabricHost_(std::make_unique<FabricHost>(reactHost_.reactInstance(), toSurfaceSize(size))) {
+    // Before the script, so the first `Dimensions.get` a bundle makes at module scope already answers with the
+    // window's requested size rather than with the pre-configure default.
+    configureDimensions(size);
     reactHost_.loadScript(facebook::react::JSBigFileString::fromPath(bundlePath), bundlePath);
 }
 
@@ -30,7 +35,10 @@ WindowSession::~WindowSession() noexcept {
     reactHost_.drainJavaScriptThread();
 }
 
-void WindowSession::resize(WindowSize size) { fabricHost_->setSurfaceSize(toSurfaceSize(size)); }
+void WindowSession::resize(WindowSize size) {
+    fabricHost_->setSurfaceSize(toSurfaceSize(size));
+    configureDimensions(size);
+}
 
 void WindowSession::setTextInputFocusSink(TextInputFocusSink* textInputFocusSink) {
     fabricHost_->setTextInputFocusSink(textInputFocusSink);
@@ -38,6 +46,10 @@ void WindowSession::setTextInputFocusSink(TextInputFocusSink* textInputFocusSink
 
 void WindowSession::deliverInput(const std::vector<InputEvent>& events) {
     const double frameMilliseconds = takeFrameMilliseconds();
+
+    // Once per frame, whatever the compositor sent: this is what turns any number of configures since the last
+    // frame into at most one `didUpdateDimensions`.
+    reactHost_.publishPendingDimensions();
 
     // The blink is advanced before the frame's input, because dispatching input is also what republishes the
     // caret into the scene: toggling afterwards would show every phase one frame late.
@@ -56,6 +68,11 @@ FrameClock::Tick WindowSession::recordFrameTick(FrameClock::Source source, std::
 }
 
 const FrameClock& WindowSession::frameClock() const noexcept { return frameClock_; }
+
+void WindowSession::configureDimensions(WindowSize size) {
+    reactHost_.dimensions().configure(static_cast<double>(size.width), static_cast<double>(size.height),
+                                      DimensionsSource::kDefaultScale);
+}
 
 bool WindowSession::hasPendingWork() const { return fabricHost_->hasPendingWork() || reactHost_.hasPendingTimers(); }
 

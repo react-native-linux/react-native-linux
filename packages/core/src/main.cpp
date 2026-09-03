@@ -11,6 +11,7 @@
 #include <optional>
 #include <react/renderer/graphics/Float.h>
 #include <react/renderer/graphics/Point.h>
+#include <react/renderer/graphics/Size.h>
 #include <span>
 #include <string>
 #include <string_view>
@@ -22,10 +23,12 @@ constexpr std::string_view kFabricFlag = "--fabric";
 constexpr std::string_view kGoldenFlag = "--golden";
 constexpr std::string_view kDamageGoldenFlag = "--damage-golden";
 constexpr std::string_view kInjectPointerFlag = "--inject-pointer";
+constexpr std::string_view kResizeFlag = "--resize";
 constexpr std::string_view kScrollToFlag = "--scroll-to";
 constexpr std::string_view kFocusTabFlag = "--focus-tab";
 constexpr std::string_view kTypeFlag = "--type";
 constexpr size_t kInjectPointerArgumentCount = 5;
+constexpr size_t kResizeArgumentCount = 5;
 constexpr size_t kScrollToArgumentCount = 7;
 constexpr size_t kFocusTabArgumentCount = 5;
 constexpr size_t kTypeArgumentCount = 5;
@@ -72,6 +75,28 @@ int runInjectPointerCommand(std::span<char*> arguments) {
     }
 
     return react_native_linux::runInjectedClick(std::string(arguments[2]), surfacePoint.value());
+}
+
+int runResizeCommand(std::span<char*> arguments) {
+    if (arguments.size() != kResizeArgumentCount) {
+        std::cerr << "[hello_react] " << kResizeFlag << " requires <bundle> <width> <height>" << std::endl;
+
+        return 1;
+    }
+
+    const std::optional<int> width = parsePositiveDimension(arguments[3]);
+    const std::optional<int> height = parsePositiveDimension(arguments[4]);
+
+    if (!width.has_value() || !height.has_value()) {
+        std::cerr << "[hello_react] " << kResizeFlag << " width and height must be positive integers" << std::endl;
+
+        return 1;
+    }
+
+    return react_native_linux::runResizedFabricBundle(
+        std::string(arguments[2]),
+        facebook::react::Size{.width = static_cast<facebook::react::Float>(width.value()),
+                              .height = static_cast<facebook::react::Float>(height.value())});
 }
 
 #ifdef RNL_ENABLE_GOLDEN
@@ -181,6 +206,7 @@ int main(int argc, char** argv) {
     const bool isDamageGoldenRequested = arguments.size() > 1 && kDamageGoldenFlag == arguments[1];
     const bool isFabricRequested = arguments.size() > 1 && kFabricFlag == arguments[1];
     const bool isInjectPointerRequested = arguments.size() > 1 && kInjectPointerFlag == arguments[1];
+    const bool isResizeRequested = arguments.size() > 1 && kResizeFlag == arguments[1];
     const bool isScrollToRequested = arguments.size() > 1 && kScrollToFlag == arguments[1];
     const bool isFocusTabRequested = arguments.size() > 1 && kFocusTabFlag == arguments[1];
     const bool isTypeRequested = arguments.size() > 1 && kTypeFlag == arguments[1];
@@ -213,6 +239,10 @@ int main(int argc, char** argv) {
     try {
         if (isInjectPointerRequested) {
             return runInjectPointerCommand(arguments);
+        }
+
+        if (isResizeRequested) {
+            return runResizeCommand(arguments);
         }
 
         if (isScrollToRequested) {

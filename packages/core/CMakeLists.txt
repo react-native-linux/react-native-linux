@@ -399,7 +399,7 @@ add_library(yoga ALIAS yogacore)
 # library upstream generates is called FBReactNativeSpec; the CMake target keeps the older `rncore` name because
 # GenerateModuleJniH.js does that rename, and every ReactCommon and ReactCxxPlatform CMakeLists in this graph
 # links the old name. One include root carries both spellings the sources expect:
-#   <FBReactNativeSpec/FBReactNativeSpecJSI.h>              header-only C++ TurboModule specs, for issue #50
+#   <FBReactNativeSpec/FBReactNativeSpecJSI.h>              header-only C++ TurboModule specs, for TurboModuleRegistry
 #   <react/renderer/components/FBReactNativeSpec/Props.h>   the Fabric component artifacts, compiled here
 # ReactCommon's own react/renderer/components/rncore headers are deprecation shims that include the second
 # spelling, so they resolve through this directory too.
@@ -444,8 +444,10 @@ set(RNL_REACT_COMMON_SUBDIRS
     jsitooling
     logger
     oscompat
+    react/bridging
     react/debug
     react/featureflags
+    react/nativemodule/core
     react/performance/cdpmetrics
     react/performance/timeline
     react/renderer/animationbackend
@@ -482,6 +484,14 @@ set(RNL_REACT_COMMON_SUBDIRS
     reactperflogger
     runtimeexecutor)
 
+# react/nativemodule/core calls react_native_android_selector but includes only react-native-flags.cmake, so the
+# function has to exist before that subdirectory is added rather than by the accident of an earlier one having
+# included the selector. block() keeps the selector file's CMAKE_VERBOSE_MAKEFILE out of this scope; the function
+# it defines is global either way.
+block()
+    include(${REACT_COMMON_DIR}/cmake-utils/internal/react-native-platform-selector.cmake)
+endblock()
+
 foreach(rnl_subdir IN LISTS RNL_REACT_COMMON_SUBDIRS)
     add_subdirectory(${REACT_COMMON_DIR}/${rnl_subdir} ReactCommon/${rnl_subdir})
 endforeach()
@@ -507,12 +517,14 @@ set(RNL_REACT_COMMON_TARGETS
     jsitooling
     logger
     oscompat
+    react_bridging
     react_cxx_platform_react_renderer_scheduler
     react_cxx_platform_react_renderer_uimanager
     react_cxx_platform_react_threading
     react_cxxreact
     react_debug
     react_featureflags
+    react_nativemodule_core
     react_performance_cdpmetrics
     react_performance_timeline
     react_renderer_animationbackend
@@ -749,6 +761,7 @@ endif()
 add_library(rnl_react_core STATIC
     src/Clipboard.cpp
     src/ConsoleBinding.cpp
+    src/DimensionsSource.cpp
     src/EditorModel.cpp
     src/FabricHost.cpp
     src/FocusModel.cpp
@@ -763,7 +776,8 @@ add_library(rnl_react_core STATIC
     src/ScrollController.cpp
     src/ScrollPhysics.cpp
     src/TextInputComponent.cpp
-    src/TextInputController.cpp)
+    src/TextInputController.cpp
+    src/TurboModuleRegistry.cpp)
 target_compile_options(rnl_react_core PRIVATE -Wall -Wextra)
 target_compile_options(rnl_react_core PUBLIC -fexceptions -frtti)
 target_include_directories(rnl_react_core PUBLIC src)
@@ -774,6 +788,7 @@ target_link_libraries(rnl_react_core
         rnl_jsidynamic
         folly_runtime
         rnl_textinput
+        react_codegen_rncore
         ${RNL_REACT_COMMON_TARGETS}
         atomic)
 

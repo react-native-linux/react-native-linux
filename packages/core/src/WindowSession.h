@@ -38,6 +38,11 @@ namespace react_native_linux {
  * event. The session is where the frame clock lives, because the scroll physics is the first thing in this stack
  * that needs to know how long the last frame took.
  *
+ * The same beat is what publishes `Dimensions`: `resize` records the configured extent in the host's
+ * `DimensionsSource` and `deliverInput` emits at most one `didUpdateDimensions` per frame for whatever accumulated
+ * there, so a compositor that sends a burst of configures during an interactive resize cannot re-render a
+ * `useWindowDimensions` consumer once per event. See *Dimensions and TurboModules* in docs/cpp-toolchain.md.
+ *
  * `recordFrameTick` is a second, separate clock: `FrameClock` decides whether the *paint* — `takeFrame` plus the
  * renderer's present — happens at all this iteration, which `deliverInput`'s per-input frame timing does not need
  * to know about. See *Frame clock* in docs/cpp-toolchain.md for why the two are independent.
@@ -80,6 +85,7 @@ public:
     const FrameClock& frameClock() const noexcept;
 
 private:
+    void configureDimensions(WindowSize size);
     double takeFrameMilliseconds();
     bool hasPendingWork() const;
 

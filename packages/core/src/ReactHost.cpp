@@ -2,8 +2,10 @@
 
 #include "ConsoleBinding.h"
 
+#include <jsi/jsi.h>
 #include <react/featureflags/ReactNativeFeatureFlags.h>
 #include <react/featureflags/ReactNativeFeatureFlagsOverridesOSSStable.h>
+#include <react/renderer/runtimescheduler/RuntimeSchedulerCallInvoker.h>
 
 #include <chrono>
 #include <memory>
@@ -34,7 +36,13 @@ ReactHost::ReactHost() : javaScriptThread_(std::make_shared<facebook::react::Mes
         errorReporter_.createHandler());
     timerManager_->setRuntimeExecutor(reactInstance_->getBufferedRuntimeExecutor());
 
-    reactInstance_->initializeRuntime({}, installConsoleBinding);
+    turboModuleRegistry_ = std::make_unique<TurboModuleRegistry>(
+        std::make_shared<facebook::react::RuntimeSchedulerCallInvoker>(reactInstance_->getRuntimeScheduler()));
+
+    reactInstance_->initializeRuntime({}, [registry = turboModuleRegistry_.get()](facebook::jsi::Runtime& runtime) {
+        installConsoleBinding(runtime);
+        registry->install(runtime);
+    });
 }
 
 ReactHost::~ReactHost() noexcept {
@@ -43,6 +51,10 @@ ReactHost::~ReactHost() noexcept {
 }
 
 facebook::react::ReactInstance& ReactHost::reactInstance() noexcept { return *reactInstance_; }
+
+DimensionsSource& ReactHost::dimensions() noexcept { return turboModuleRegistry_->dimensions(); }
+
+void ReactHost::publishPendingDimensions() { turboModuleRegistry_->publishPendingDimensions(); }
 
 void ReactHost::loadScript(std::unique_ptr<const facebook::react::JSBigString> script, const std::string& sourceUrl) {
     reactInstance_->loadScript(std::move(script), sourceUrl);

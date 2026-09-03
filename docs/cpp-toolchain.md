@@ -335,8 +335,9 @@ nine siblings include `<FBReactNativeSpec/FBReactNativeSpecJSI.h>`; the Fabric a
 answers both, and it is what `react_codegen_rncore` exports. That target keeps the `rncore` name because
 `GenerateModuleJniH.js` renames `FBReactNativeSpec` to it and every ReactCommon CMakeLists in this graph links
 the old name; `ReactCommon/react/renderer/components/rncore/*.h` are deprecation shims that include the
-`FBReactNativeSpec` headers, so they resolve through the same directory. Only the five `.cpp` files are
-compiled — the JSI header is header-only and nothing includes it until #50.
+`FBReactNativeSpec` headers, so they resolve through the same directory. The five `.cpp` files are compiled; the
+JSI header is header-only and its one consumer is `src/TurboModuleRegistry.cpp`, which is why `rnl_react_core`
+links the target rather than merely naming its include directory.
 
 The generator is reached through the two entry points upstream's `scripts/codegen/generate-artifacts-executor`
 reaches through `codegen-utils.js`, `FlowParser` and `RNCodegen`:
@@ -362,8 +363,101 @@ predates a React Native bump is detectable without rerunning the generator. The 
 
 Deliberately not generated yet: third-party library specs and the autolinking that would discover them, the
 `RCTThirdPartyFabricComponentsProvider` equivalent, and the JNI, Java and Objective-C++ artifact families, none
-of which a Linux target can compile. Those are follow-ups to #21 and #22. The `DeviceInfoModule` that consumes
-`FBReactNativeSpecJSI.h` is #50.
+of which a Linux target can compile. Those are follow-ups to #21 and #22.
+
+## Dimensions and TurboModules (#50)
+
+`DeviceInfo` is the first TurboModule this platform registers, and registering it is what builds the TurboModule
+path at all: before #50 nothing installed a `TurboModuleBinding`, so `nativeModuleProxy` did not exist and no
+native module was reachable from JavaScript. `ReactHost` installs one from inside the same `initializeRuntime`
+bindings installer that installs the console binding, over a provider that answers exactly one name
+(`src/TurboModuleRegistry.cpp`). Upstream's `ReactCxxPlatform` does the same thing through
+`ReactCxxTurboModuleProvider`, a chain of provider callbacks across every core module it ships; with one module
+there is nothing to chain, so the chain is not built yet.
+
+Two ReactCommon subdirectories join the build for this: `react/nativemodule/core`, which is where
+`TurboModuleBinding` and `TurboModule::emitDeviceEvent` live, and `react/bridging`, whose `LongLivedObject.cpp`
+the binding's destructor calls. `react_codegen_rncore` is linked into `rnl_react_core` for the same reason — the
+generated `NativeDeviceInfoCxxSpec`, the payload structs and their `Bridging` specialisations come from
+`<FBReactNativeSpec/FBReactNativeSpecJSI.h>` and `<react/coremodules/DeviceInfoModule.h>`.
+
+`ReactInstance` defines `RN$Bridgeless` before it calls the bindings installer, so `TurboModuleBinding::install`
+takes its bridgeless branch and the lookup global is `nativeModuleProxy`, not `__turboModuleProxy`. React
+Native's JavaScript `TurboModuleRegistry` tries the second and falls back to the first, so a bundle that reaches
+for a module by hand has to do the same.
+
+Upstream's `ReactCxxPlatform` ships a `DeviceInfoModule`, and it is not reusable here: its `getConstants` returns
+a hardcoded 1280x720 with a `TODO` to wire it to a real app size. `LinuxDeviceInfoModule` is ours, and it answers
+from `DimensionsSource` (`packages/core/src/DimensionsSource.h`) instead.
+
+### Never 0x0
+
+`Dimensions.get('window')` on react-native-macos answers from `[NSApp keyWindow]`, which is `nil` whenever no
+window has keyboard focus, and reports `{width: 0, height: 0}` for that perfectly ordinary state
+(rn-macos#2296, #2129). Wayland makes the naive port worse: there is no key window, and the only authoritative
+extent is the last `xdg_toplevel.configure`. So the extent lives in one place per surface and:
+
+- it starts at the surface's requested default — 800x600 for the headless harness, the window's requested size
+  for `rnl_window`, both applied before the bundle is loaded, so a `Dimensions.get` at module scope is already
+  right;
+- `configure` ignores any non-positive width, height or scale instead of storing it, and the last good value
+  survives;
+- there is therefore no ordering, no focus state and no compositor behaviour that can produce a zero.
+
+`DimensionsTest.cpp` asserts each of those, including the explicit "no configure sequence yields a zero" case,
+and `DimensionsSource.cpp` is in the 100% line-and-branch scope of `scripts/cpp-coverage.ts`.
+
+### screen equals window
+
+This is the `needs:decision` half of #50, and the decision is that `screen` reports the same metrics as `window`.
+A Wayland client cannot ask for a screen size. The only route to one is `wl_output`'s mode, which requires
+tracking `wl_surface.enter` to know which output the surface is even on, and which is still wrong the moment a
+window straddles two outputs or the compositor scales the output. `WaylandWindow` binds no `wl_output` today.
+Reporting the one extent that is true, twice, is better than reporting a plausible number that is not; #50 allows
+the equality explicitly. If `wl_output` is bound later, `screen` is the field that changes and `window` is not.
+
+### Scale
+
+`scale` is always 1. Neither `wp_fractional_scale_v1` nor `wl_surface.preferred_buffer_scale` is bound, so this
+client is told nothing about output scaling and 1 is the only honest answer; `fontScale` is 1 for the same
+reason, as nothing reads a desktop text-scaling setting yet. `DimensionsSource::configure` takes the scale as a
+parameter and stores whatever it is given, so binding the fractional-scale protocol is a call-site change rather
+than a redesign. Both are the output-scale follow-up #50 names as a dependency.
+
+### One change per frame, at most
+
+`useWindowDimensions` re-rendering per event is its own macOS bug (rn-macos#2083), and an interactive Wayland
+resize is a stream of configures. `WindowSession::resize` only records the extent; `WindowSession::deliverInput`,
+which the run loop calls exactly once per frame, calls `takeChangeIfAny` and emits at most one
+`didUpdateDimensions` for everything that accumulated. A configure that repeats the current metrics is not a
+change at all, so a compositor that re-sends the same size emits nothing.
+
+The event itself is `TurboModule::emitDeviceEvent`, upstream's own path: it posts through the module's
+`CallInvoker` — a `RuntimeSchedulerCallInvoker` over the instance's `RuntimeScheduler` — and calls
+`global.__rctDeviceEventEmitter.emit('didUpdateDimensions', payload)` on the JavaScript thread. That global is
+what `RCTDeviceEventEmitter` installs in a real app, and what `Dimensions` listens on. The payload is the
+generated `DimensionsPayload`: `window` and `screen`, each `{width, height, scale, fontScale}`.
+`windowPhysicalPixels` and `screenPhysicalPixels` stay absent — they are the Android half, and the generated
+bridging omits an empty `std::optional` rather than sending a null.
+
+### Proving it
+
+`packages/core/test-bundles/dimensions.js` reads the module the way `TurboModuleRegistry` does and answers the
+emitter the way `RCTDeviceEventEmitter` does, because a bare bundle has neither:
+
+```bash
+hello_react --fabric packages/core/test-bundles/dimensions.js
+hello_react --resize packages/core/test-bundles/dimensions.js 640 480
+```
+
+`--resize` runs the bundle at the headless surface size and then applies the pair a window applies on a
+configure — `FabricHost::setSurfaceSize`, then the same extent into `DimensionsSource`, then one publish — so the
+change event is reachable without a compositor. CI greps both the boot constants and the single change event.
+
+What this does not cover: an end-to-end resize under the headless compositor. The window rig drives `weston
+--backend=headless` at a fixed size and has no way to ask it to resize a client, so the compositor half of the
+resize path is still proven by reasoning about `WaylandWindow::onToplevelConfigure` rather than by a running
+compositor.
 
 ## Prerequisites
 
@@ -528,7 +622,10 @@ output path, a surface coordinate and a wheel notch count, turns the wheel over 
 settle, and writes the PNG of where it stopped; see *ScrollView*. `--focus-tab` takes the bundle path, an output
 path and a press count, presses Tab that many times and writes the PNG of where the focus ring landed, printing
 whatever the bundle prints on the way; see *Focus and keyboard*. `--inject-pointer` takes the bundle path
-and a surface coordinate, clicks there, and prints whatever the bundle prints; see *Input*. `--ime-debug` takes no
+and a surface coordinate, clicks there, and prints whatever the bundle prints; see *Input*. `--resize` takes the
+bundle path, a width and a height, runs the bundle at the headless surface size and then resizes the surface to
+them, so the bundle can print its boot constants and the `didUpdateDimensions` that follows; see *Dimensions and
+TurboModules*. `--ime-debug` takes no
 value, composes with every other `rnl_window` flag, and prints composition events; see *IME*.
 
 When `cmake` and `ninja` are not on `PATH`, wrap the two CMake steps:

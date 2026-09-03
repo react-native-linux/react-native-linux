@@ -402,6 +402,15 @@ jobs:
           grep -q "TextInput #10" /tmp/rnl-text-input.log
           ! grep -qE 'TextInput #[0-9]+ .*hunter2' /tmp/rnl-text-input.log
 
+          # The first TurboModule, and the never-0x0 rule of issue #50: the surface's own extent at boot, screen
+          # equal to window, and exactly one didUpdateDimensions for the resize that follows.
+          "$binary" --resize packages/core/test-bundles/dimensions.js 640 480 | tee /tmp/rnl-dimensions.log
+          grep -q "dimensions: constants window 800x600 scale 1 fontScale 1" /tmp/rnl-dimensions.log
+          grep -q "dimensions: constants screen 800x600 scale 1 fontScale 1" /tmp/rnl-dimensions.log
+          grep -q "dimensions: didUpdateDimensions window 640x480 scale 1 fontScale 1" /tmp/rnl-dimensions.log
+          grep -q "dimensions: didUpdateDimensions screen 640x480 scale 1 fontScale 1" /tmp/rnl-dimensions.log
+          test "$(grep -c 'dimensions: didUpdateDimensions window' /tmp/rnl-dimensions.log)" -eq 1
+
       # Only the Skia entry has a TextLayoutManager behind Yoga; with -DRNL_ENABLE_SKIA=OFF the upstream stub is
       # still compiled in and every paragraph measures as zero, so this assertion belongs to the dev entry alone.
       - name: Run the text acceptance path

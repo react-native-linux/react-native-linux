@@ -27,6 +27,7 @@ FetchContent_MakeAvailable(googletest)
 include(GoogleTest)
 
 add_executable(rnl_core_tests
+    DimensionsTest.cpp
     EditorTest.cpp
     FocusTest.cpp
     FrameClockTest.cpp
@@ -37,6 +38,7 @@ add_executable(rnl_core_tests
     SceneTest.cpp
     ScrollTest.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/Clipboard.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/DimensionsSource.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/EditorModel.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/FocusModel.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/FrameClock.cpp
