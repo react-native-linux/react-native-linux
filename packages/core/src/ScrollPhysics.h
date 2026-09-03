@@ -66,6 +66,33 @@ ScrollAxisState dragAxis(const ScrollAxisState& axis, double delta, double frame
                          double viewportLength);
 
 /**
+ * What a programmatic `scrollTo` turns into: where the content should end up, how fast it should be moving to get
+ * there, and whether there is anything to do at all.
+ *
+ * `hasWork` false is the rule [core#34327](https://github.com/facebook/react-native/issues/34327) landed as: a
+ * `scrollTo` to the offset the content is already at is **not** a scroll, so it must not emit `onScroll` and must
+ * not open a momentum bracket. A library built on that behaviour looped forever on iOS Fabric when it changed.
+ * Nothing here needs a special case for it — no work means no movement, and the cadence emits on movement.
+ *
+ * The destination is clamped **before** it is returned, which is the other half:
+ * [core#41034](https://github.com/facebook/react-native/issues/41034) is a fast scroll to the top reporting
+ * negative offsets to JavaScript because the clamp came after the event.
+ *
+ * An animated scroll reuses the deceleration curve rather than introducing a second motion model: the velocity
+ * whose curve travels exactly the remaining distance is what `velocityForTravel` already answers for a wheel
+ * notch, so an animated `scrollTo` is a flick aimed at a known destination and its bracket is the ordinary
+ * momentum bracket.
+ */
+struct ScrollDestination {
+    double offset{0.0};
+    double velocity{0.0};
+    bool hasWork{false};
+};
+
+ScrollDestination scrollToDestination(double currentOffset, double targetOffset, bool isAnimated,
+                                      double decelerationRate, double contentLength, double viewportLength);
+
+/**
  * Integrates one frame of deceleration: the exact integral of `velocity * rate^t` over the frame rather than a
  * rectangle of it, so the distance covered does not depend on how the frame time was cut up.
  *

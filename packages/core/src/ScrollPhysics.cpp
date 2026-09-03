@@ -53,6 +53,26 @@ ScrollAxisState dragAxis(const ScrollAxisState& axis, double delta, double frame
                            .velocity = hasElapsed ? (moved - axis.offset) / frameMilliseconds : 0.0};
 }
 
+ScrollDestination scrollToDestination(double currentOffset, double targetOffset, bool isAnimated,
+                                      double decelerationRate, double contentLength, double viewportLength) {
+    const double destination = clampScrollOffset(targetOffset, contentLength, viewportLength);
+
+    if (destination == currentOffset) {
+        return ScrollDestination{};
+    }
+
+    if (!isAnimated) {
+        return ScrollDestination{.offset = destination, .hasWork = true};
+    }
+
+    const double travel = destination - currentOffset;
+    const double speed = velocityForTravel(std::abs(travel), decelerationRate);
+
+    return ScrollDestination{.offset = currentOffset,
+                             .velocity = travel < 0 ? -speed : speed,
+                             .hasWork = true};
+}
+
 ScrollAxisState decelerateAxis(const ScrollAxisState& axis, double frameMilliseconds, double decelerationRate,
                                double contentLength, double viewportLength) {
     const double rate = usableDecelerationRate(decelerationRate);

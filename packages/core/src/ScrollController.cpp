@@ -88,6 +88,16 @@ std::shared_ptr<const facebook::react::ScrollViewShadowNode> deepestScrollView(
  */
 void advanceAxis(ScrollTargetAxis& axis, bool isFingerDown, double frameMilliseconds, double decelerationRate,
                  double contentLength, double viewportLength) {
+    if (axis.pendingOffset.has_value()) {
+        axis.state = ScrollAxisState{.offset = axis.pendingOffset.value()};
+        axis.pendingOffset.reset();
+    }
+
+    if (axis.pendingVelocity.has_value()) {
+        axis.state.velocity = axis.pendingVelocity.value();
+        axis.pendingVelocity.reset();
+    }
+
     if (isFingerDown) {
         axis.state = dragAxis(axis.state, axis.pendingDrag, frameMilliseconds, contentLength, viewportLength);
     } else {
@@ -101,6 +111,41 @@ void advanceAxis(ScrollTargetAxis& axis, bool isFingerDown, double frameMillisec
 
     axis.pendingDrag = 0.0;
     axis.pendingNotches = 0.0;
+}
+
+/**
+ * One positional argument of a `dispatchCommand` payload, or a default. A command whose arguments are missing or
+ * of the wrong type scrolls to the origin rather than failing: it arrives from JavaScript, and the frame thread
+ * is not where a third-party library's mistake should be fatal.
+ */
+double readNumberArgument(const folly::dynamic& args, size_t index) {
+    if (!args.isArray() || index >= args.size() || !args[index].isNumber()) {
+        return 0.0;
+    }
+
+    return args[index].asDouble();
+}
+
+bool readBooleanArgument(const folly::dynamic& args, size_t index) {
+    if (!args.isArray() || index >= args.size() || !args[index].isBool()) {
+        return false;
+    }
+
+    return args[index].asBool();
+}
+
+void applyDestination(ScrollTargetAxis& axis, const ScrollDestination& destination) {
+    if (!destination.hasWork) {
+        return;
+    }
+
+    if (destination.velocity == 0.0) {
+        axis.pendingOffset = destination.offset;
+
+        return;
+    }
+
+    axis.pendingVelocity = destination.velocity;
 }
 
 facebook::react::ScrollEvent makeScrollEvent(const ScrollViewMetrics& metrics, facebook::react::Point contentOffset) {
@@ -186,7 +231,13 @@ bool ScrollController::hasDispatchedScrollEvent() const noexcept { return hasDis
 
 bool ScrollController::isScrollActive() const noexcept {
     for (const auto& entry : targets_) {
-        if (entry.second.isFingerDown || entry.second.isMomentumRunning) {
+        const ScrollTarget& target = entry.second;
+        const bool hasPendingCommand = target.horizontal.pendingOffset.has_value() ||
+                                       target.horizontal.pendingVelocity.has_value() ||
+                                       target.vertical.pendingOffset.has_value() ||
+                                       target.vertical.pendingVelocity.has_value();
+
+        if (target.isFingerDown || target.isMomentumRunning || hasPendingCommand) {
             return true;
         }
     }
@@ -223,11 +274,59 @@ void ScrollController::route(const InputEvent& event) {
     target->isFingerDown = true;
 }
 
-ScrollController::ScrollTarget* ScrollController::acquire(facebook::react::Point surfacePoint) {
-    const std::shared_ptr<const facebook::react::ScrollViewShadowNode> scrollView =
-        scrollViewUnderPointer(surfacePoint);
+void ScrollController::dispatchCommands(const std::vector<SceneCommand>& commands) {
+    for (const SceneCommand& command : commands) {
+        routeCommand(command);
+    }
+}
 
-    if (scrollView == nullptr || !scrollView->getConcreteProps().scrollEnabled) {
+/**
+ * One `scrollTo(x, y, animated)` or `scrollToEnd(animated)`, turned into what the next frame should do.
+ *
+ * The arguments are read positionally out of the `folly::dynamic` array upstream's `ScrollViewNativeComponent`
+ * sends, and anything missing reads as zero or false rather than failing the command: a malformed command from a
+ * third-party library should scroll to the origin, not take the frame thread down.
+ */
+void ScrollController::routeCommand(const SceneCommand& command) {
+    const bool isScrollTo = command.name == "scrollTo";
+
+    if (!isScrollTo && command.name != "scrollToEnd") {
+        return;
+    }
+
+    const std::shared_ptr<const facebook::react::ScrollViewShadowNode> scrollView = scrollViewWithTag(command.tag);
+
+    if (scrollView == nullptr) {
+        return;
+    }
+
+    ScrollTarget* target = acquireNode(scrollView);
+
+    if (target == nullptr) {
+        return;
+    }
+
+    const ScrollViewMetrics metrics = readMetrics(*scrollView);
+    const bool isAnimated = isScrollTo ? readBooleanArgument(command.args, 2) : readBooleanArgument(command.args, 0);
+    const double targetX = isScrollTo ? readNumberArgument(command.args, 0)
+                                      : maximumScrollOffset(metrics.contentSize.width, metrics.viewportSize.width);
+    const double targetY = isScrollTo
+                               ? readNumberArgument(command.args, 1)
+                               : maximumScrollOffset(metrics.contentSize.height, metrics.viewportSize.height);
+
+    applyDestination(target->horizontal,
+                     scrollToDestination(target->horizontal.state.offset, targetX, isAnimated,
+                                         metrics.decelerationRate, metrics.contentSize.width,
+                                         metrics.viewportSize.width));
+    applyDestination(target->vertical,
+                     scrollToDestination(target->vertical.state.offset, targetY, isAnimated,
+                                         metrics.decelerationRate, metrics.contentSize.height,
+                                         metrics.viewportSize.height));
+}
+
+ScrollController::ScrollTarget* ScrollController::acquireNode(
+    const std::shared_ptr<const facebook::react::ScrollViewShadowNode>& scrollView) {
+    if (!scrollView->getConcreteProps().scrollEnabled) {
         return nullptr;
     }
 
@@ -246,6 +345,13 @@ ScrollController::ScrollTarget* ScrollController::acquire(facebook::react::Point
         .vertical = ScrollTargetAxis{.state = ScrollAxisState{.offset = contentOffset.y}}};
 
     return &targets_.emplace(scrollView->getTag(), target).first->second;
+}
+
+ScrollController::ScrollTarget* ScrollController::acquire(facebook::react::Point surfacePoint) {
+    const std::shared_ptr<const facebook::react::ScrollViewShadowNode> scrollView =
+        scrollViewUnderPointer(surfacePoint);
+
+    return scrollView == nullptr ? nullptr : acquireNode(scrollView);
 }
 
 bool ScrollController::advanceTarget(ScrollTarget& target, const facebook::react::ScrollViewShadowNode& scrollView,
@@ -315,13 +421,55 @@ bool ScrollController::advanceTarget(ScrollTarget& target, const facebook::react
     return target.isFingerDown || target.isMomentumRunning;
 }
 
-std::shared_ptr<const facebook::react::ScrollViewShadowNode> ScrollController::scrollViewUnderPointer(
-    facebook::react::Point surfacePoint) const {
+namespace {
+
+/**
+ * The `<ScrollView>` with this tag anywhere under `node`, or nothing. A command names a tag rather than a point,
+ * so this is the lookup `scrollViewUnderPointer` is for a press.
+ */
+std::shared_ptr<const facebook::react::ScrollViewShadowNode> findScrollViewWithTag(
+    const std::shared_ptr<const facebook::react::ShadowNode>& node, facebook::react::Tag tag) {
+    if (node->getTag() == tag) {
+        return std::dynamic_pointer_cast<const facebook::react::ScrollViewShadowNode>(node);
+    }
+
+    for (const std::shared_ptr<const facebook::react::ShadowNode>& child : node->getChildren()) {
+        const std::shared_ptr<const facebook::react::ScrollViewShadowNode> found = findScrollViewWithTag(child, tag);
+
+        if (found != nullptr) {
+            return found;
+        }
+    }
+
+    return nullptr;
+}
+
+} // namespace
+
+/**
+ * The surface's current root, which both lookups below start from: one walks it for a tag and the other hit-tests
+ * it for a point.
+ */
+std::shared_ptr<const facebook::react::ShadowNode> ScrollController::rootShadowNode() const {
     std::shared_ptr<const facebook::react::ShadowNode> rootNode;
 
     uiManager_->getShadowTreeRegistry().visit(surfaceId_, [&rootNode](const facebook::react::ShadowTree& tree) {
         rootNode = tree.getCurrentRevision().rootShadowNode;
     });
+
+    return rootNode;
+}
+
+std::shared_ptr<const facebook::react::ScrollViewShadowNode> ScrollController::scrollViewWithTag(
+    facebook::react::Tag tag) const {
+    const std::shared_ptr<const facebook::react::ShadowNode> rootNode = rootShadowNode();
+
+    return rootNode == nullptr ? nullptr : findScrollViewWithTag(rootNode, tag);
+}
+
+std::shared_ptr<const facebook::react::ScrollViewShadowNode> ScrollController::scrollViewUnderPointer(
+    facebook::react::Point surfacePoint) const {
+    const std::shared_ptr<const facebook::react::ShadowNode> rootNode = rootShadowNode();
 
     if (rootNode == nullptr) {
         return nullptr;

@@ -216,6 +216,13 @@ void FabricHost::dispatchInput(const std::vector<InputEvent>& events) {
 }
 
 bool FabricHost::advanceScroll(double frameMilliseconds) {
+    // The frame's commands first, so a `scrollTo` committed since the last frame is applied by this one rather
+    // than by the one after it. Draining here rather than beside `takeFrame` is what keeps a programmatic scroll
+    // one frame long: the queue is filled on the JavaScript thread under the mounting mutex and read here on the
+    // frame thread, which is the same pair every mounting transaction goes through. See *ScrollView* in
+    // docs/cpp-toolchain.md.
+    scrollController_->dispatchCommands(mountingManager_->takeCommands());
+
     const bool isScrolling = scrollController_->advance(frameMilliseconds);
 
     // After the offsets are written and the frame's `onScroll` is dispatched, and before the beat releases either
