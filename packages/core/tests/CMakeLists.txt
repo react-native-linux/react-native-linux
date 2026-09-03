@@ -49,6 +49,7 @@ add_executable(rnl_core_tests
     ImageTest.cpp
     ImeTest.cpp
     InputTest.cpp
+    LayoutConformanceTest.cpp
     LineBoxMetricsTest.cpp
     LinuxMountingManagerDiagnosticsTest.cpp
     LinuxMountingManagerPendingDamageTest.cpp

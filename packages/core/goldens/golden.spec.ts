@@ -102,6 +102,8 @@ const fixtures: readonly GoldenFixture[] = [
     renderFlag: "--type",
   },
   { bundleFileName: "gradient.js", goldenFileName: "gradient.png", renderArguments: [], renderFlag: "--golden" },
+  // #118: one wrapping grid at two container widths — a break-point regression is a visible difference.
+  { bundleFileName: "wrapping.js", goldenFileName: "wrapping.png", renderArguments: [], renderFlag: "--golden" },
 ];
 
 const renderFixture = (fixture: GoldenFixture, outputPath: string): void => {
