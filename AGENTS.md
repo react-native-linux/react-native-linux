@@ -88,6 +88,17 @@ Never mention AI tools, bots, generated output, co-authors, or automation servic
 
 Work is tracked as GitHub issues under milestone labels `M0`–`M5` (roadmap in ADR-0001), linked as sub-issues of the founding epic. New work gets an issue before a branch. Issues state acceptance criteria including the required test layers.
 
+## Bot Reviews
+
+Automated reviewers (CodeRabbit today, any review bot after it) review every pull request, and their findings are addressed the same way a human reviewer's are:
+
+- **Valid finding — fix it** in the PR, in the same commit series as the change it comments on.
+- **Invalid finding — answer it** in the PR with the specific, checkable reason it will not be implemented (a rule in this file, an ADR, a measured number, or the lane boundary that owns the file). "Will not be implemented" without the why is not an answer.
+
+Neither ignored nor blanket-dismissed findings count as addressed. A PR is not ready to merge while a bot finding is open without a fix or a written answer. Fixing a finding inside another lane's file still goes through the lane's owner, exactly like any other edit.
+
+Every bug and every accepted finding — from a bot, a human, or an issue report — is covered by a real-world test: a test that reproduces the scenario as the reporter hit it, through the real commit path, event pipeline or window, not a stub written to make the diff green. The fix and its reproducing test land in the same PR; a bug fix whose test only exercises the code's internals rather than the reported scenario is incomplete, and the test names the issue or report it reproduces.
+
 ## Multi-Agent Protocol
 
 Several agents work this repository at once, with different models. Two agents on one issue is worse than one

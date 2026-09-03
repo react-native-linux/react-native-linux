@@ -1,0 +1,17 @@
+# CodeRabbit configuration. The review policy for agents lives in AGENTS.md, "Bot Reviews": every finding is
+# fixed when valid or answered with a specific reason when not.
+language: "en-US"
+
+early_access: false
+
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  review_status: true
+  auto_review:
+    enabled: true
+    drafts: false
+
+chat:
+  auto_reply: true
