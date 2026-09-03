@@ -1,7 +1,9 @@
 #include "ShadowTreeTestSupport.h"
 
+#include <atomic>
 #include <folly/dynamic.h>
 #include <gtest/gtest.h>
+#include <latch>
 #include <map>
 #include <memory>
 #include <react/renderer/components/root/RootShadowNode.h>
@@ -24,33 +26,12 @@
 #include <react/renderer/mounting/MountingCoordinator.h>
 #include <react/renderer/mounting/ShadowTree.h>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
 namespace {
 
-using facebook::react::ComponentDescriptorParameters;
-using facebook::react::ContextContainer;
-using facebook::react::EventDispatcher;
-using facebook::react::LayoutableShadowNode;
-using facebook::react::LayoutConstraints;
-using facebook::react::LayoutContext;
-using facebook::react::Point;
-using facebook::react::PropsParserContext;
-using facebook::react::RawProps;
-using facebook::react::Rect;
-using facebook::react::RootShadowNode;
-using facebook::react::ScrollViewShadowNode;
-using facebook::react::ShadowNode;
-using facebook::react::ShadowNodeFamily;
-using facebook::react::ShadowNodeFragment;
-using facebook::react::ShadowTree;
-using facebook::react::ShadowTreeCommitOptions;
-using facebook::react::Size;
-using facebook::react::SurfaceId;
-using facebook::react::Tag;
-using facebook::react::ViewComponentDescriptor;
-using facebook::react::ViewShadowNode;
 using react_native_linux::PassThroughShadowTreeDelegate;
 
 constexpr SurfaceId kSurfaceId = 1;
@@ -89,6 +70,12 @@ std::vector<NodeSpec> boxes(const std::vector<Tag>& tags, double width, double h
     return items;
 }
 
+NodeSpec rowParent(Tag tag, double width, std::vector<NodeSpec> children) {
+    return NodeSpec{.tag = tag,
+                    .props = folly::dynamic::object("width", width)("height", 100)("flexDirection", "row"),
+                    .children = std::move(children)};
+}
+
 /**
  * React Native's default flex direction is `column`, not CSS's `row`, so every wrapping case states `row`
  * explicitly — the wrapping-contract questions are about horizontal line breaking.
@@ -123,8 +110,7 @@ protected:
 
         shadowTree_->commit(
             [this, &children](const RootShadowNode& oldRootShadowNode) {
-                return std::static_pointer_cast<RootShadowNode>(oldRootShadowNode.ShadowNode::clone(ShadowNodeFragment{
-                    .props = ShadowNodeFragment::propsPlaceholder(), .children = makeChildren(children)}));
+                return cloneRootWith(oldRootShadowNode, children);
             },
             commitOptions);
 
@@ -143,6 +129,11 @@ protected:
         }
 
         return *entry->second;
+    }
+
+    RootShadowNode::Unshared cloneRootWith(const RootShadowNode& oldRootShadowNode, std::vector<NodeSpec>& children) {
+        return std::static_pointer_cast<RootShadowNode>(oldRootShadowNode.ShadowNode::clone(
+            ShadowNodeFragment{.props = ShadowNodeFragment::propsPlaceholder(), .children = makeChildren(children)}));
     }
 
     static void expectFrameNear(const std::map<Tag, Rect>& frames, Tag tag, double x, double y, double width,
@@ -224,7 +215,7 @@ protected:
         return frames_;
     }
 
-private:
+protected:
     std::shared_ptr<const ChildList> withReplacedProps(const ChildList& children, Tag targetTag,
                                                        const facebook::react::Props::Shared& updatedProps) {
         auto replaced = std::make_shared<ChildList>();
@@ -933,6 +924,157 @@ TEST_F(LayoutConformanceTest, CoreIssue47979EveryStylePropertyThatReachesYogaIsR
 
         expectFrameNear(frames, layoutCase.assertedTag, layoutCase.expectedX, layoutCase.expectedY,
                         layoutCase.expectedWidth, layoutCase.expectedHeight);
+    }
+}
+
+#pragma mark - the commit contract under adversarial tree mutation (#120)
+
+/**
+ * The conditional-rendering cycle of core#52349: children added, removed, replaced and reordered between commits
+ * must keep the layout of the surviving children correct every round, with upstream's assertions live (the test
+ * preset is a Debug build). A structural change here is the same input to Yoga the differ produces when React
+ * commits a new tree.
+ */
+TEST_F(LayoutConformanceTest, CoreIssue52349ConditionalRenderingCyclesKeepTheLayoutCorrectEveryRound) {
+    const std::vector<NodeSpec> baseChildren = {NodeSpec{.tag = 11, .props = box(40, 20)},
+                                                NodeSpec{.tag = 12, .props = box(30, 20)}};
+
+    const std::vector<std::vector<NodeSpec>> rounds = {
+        baseChildren,
+        {NodeSpec{.tag = 12, .props = box(30, 20)}},
+        {NodeSpec{.tag = 12, .props = box(30, 20)}, NodeSpec{.tag = 13, .props = box(50, 20)}},
+        {NodeSpec{.tag = 13, .props = box(50, 20)}},
+        {NodeSpec{.tag = 11, .props = box(40, 20)}, NodeSpec{.tag = 13, .props = box(50, 20)}},
+        {},
+        baseChildren,
+    };
+
+    for (const std::vector<NodeSpec>& children : rounds) {
+        const std::map<Tag, Rect>& frames = commitTree(LayoutConstraints{}, {rowParent(10, 200, children)});
+
+        double expectedX = 0;
+
+        for (const NodeSpec& child : children) {
+            const Rect& frame = frames.at(child.tag);
+
+            EXPECT_NEAR(frame.origin.x, expectedX, kFrameTolerance) << "tag " << child.tag << " origin.x";
+            EXPECT_NEAR(frame.size.width, child.props["width"].asDouble(), kFrameTolerance)
+                << "tag " << child.tag << " size.width";
+
+            expectedX += frame.size.width;
+        }
+    }
+}
+
+/**
+ * Moving content between parents is supported through a fresh family: the item that lived under parent A is
+ * removed there and a same-spec item (new family) is added under parent B, which lands at B's position. What the
+ * mounting layer must never do is move one family across parents: ShadowNodeFamily::setParent asserts
+ * first-parent-wins (ShadowNodeFamily.cpp:37), which is the exact mechanism of the still-open core#52349
+ * assertion, so that shape is a documented landmine rather than a supported input.
+ */
+TEST_F(LayoutConformanceTest, CoreIssue52349ContentMovesBetweenParentsThroughAFreshFamily) {
+    const std::map<Tag, Rect>& frames =
+        commitTree(LayoutConstraints{},
+                   {rowParent(10, 300,
+                              {NodeSpec{.tag = 20,
+                                        .props = box(100, 100),
+                                        .children = std::vector<NodeSpec>{NodeSpec{.tag = 21, .props = box(40, 20)}}},
+                               NodeSpec{.tag = 22, .props = box(100, 100), .children = {}}})});
+
+    expectFrameNear(frames, 21, 0, 0, 40, 20);
+
+    const std::map<Tag, Rect>& movedFrames = commitTree(
+        LayoutConstraints{},
+        {rowParent(10, 300,
+                   {NodeSpec{.tag = 20, .props = box(100, 100), .children = {}},
+                    NodeSpec{.tag = 22,
+                             .props = box(100, 100),
+                             .children = std::vector<NodeSpec>{NodeSpec{.tag = 23, .props = box(40, 20)}}}})});
+
+    expectFrameNear(movedFrames, 23, 100, 0, 40, 20);
+}
+
+/**
+ * The determinism half of the measure-callback contract, pinned one level up: committing the identical tree
+ * repeatedly into the same ShadowTree must produce identical frames on the cold commit and on every warm one, so
+ * nothing behind the layout (a cache, a pending state update) can change an answer between rounds.
+ */
+TEST_F(LayoutConformanceTest, RepeatedIdenticalCommitsProduceIdenticalFramesColdAndWarm) {
+    for (int round = 0; round < 3; round++) {
+        const std::map<Tag, Rect>& frames = commitTree(
+            LayoutConstraints{},
+            {rowParent(10, 200,
+                       {NodeSpec{.tag = 11, .props = box(40, 20)}, NodeSpec{.tag = 12, .props = box(30, 20)}})});
+
+        expectFrameNear(frames, 11, 0, 0, 40, 20);
+        expectFrameNear(frames, 12, 40, 0, 30, 20);
+    }
+}
+
+/**
+ * The concurrent half: two threads commit competing trees into one ShadowTree, which is this platform's default
+ * shape. After both finish, the surviving revision must be exactly one of the competing trees — a child of
+ * 100x50 alone, or two children of 40x20 stacked — never a mixture of both. Run under TSan as well as plain
+ * CTest; the commits are the only thing racing, and every read happens after the join.
+ */
+TEST_F(LayoutConformanceTest, ConcurrentCompetingCommitsLandExactlyOneTree) {
+    constexpr int kRoundsPerThread = 32;
+
+    shadowTree_ = std::make_unique<ShadowTree>(kSurfaceId, LayoutConstraints{}, LayoutContext{}, shadowTreeDelegate_,
+                                               *contextContainer_);
+
+    const ShadowTreeCommitOptions commitOptions{.enableStateReconciliation = false, .mountSynchronously = true};
+
+    const auto commitShape = [this, &commitOptions](bool singleChild) {
+        std::vector<NodeSpec> children = singleChild ? std::vector<NodeSpec>{NodeSpec{.tag = 11, .props = box(100, 50)}}
+                                                     : std::vector<NodeSpec>{NodeSpec{.tag = 12, .props = box(40, 20)},
+                                                                             NodeSpec{.tag = 13, .props = box(40, 20)}};
+
+        shadowTree_->commit(
+            [&](const RootShadowNode& oldRootShadowNode) { return cloneRootWith(oldRootShadowNode, children); },
+            commitOptions);
+    };
+
+    std::latch startLatch{2};
+
+    std::thread singleChildThread([&] {
+        startLatch.arrive_and_wait();
+
+        for (int round = 0; round < kRoundsPerThread; round++) {
+            commitShape(true);
+        }
+    });
+
+    std::thread twoChildrenThread([&] {
+        startLatch.arrive_and_wait();
+
+        for (int round = 0; round < kRoundsPerThread; round++) {
+            commitShape(false);
+        }
+    });
+
+    singleChildThread.join();
+    twoChildrenThread.join();
+
+    committedRevision_ = shadowTree_->getCurrentRevision();
+
+    frames_.clear();
+    nodes_.clear();
+    scrollViewContentSizes_.clear();
+    collectFrames(committedRevision_.rootShadowNode, Point{});
+
+    const bool isSingleChildShape = frames_.count(11) == 1 && frames_.count(12) == 0;
+    const bool isTwoChildrenShape = frames_.count(11) == 0 && frames_.count(12) == 1;
+
+    ASSERT_TRUE(isSingleChildShape || isTwoChildrenShape)
+        << "the surviving revision is a mixture of the two competing trees";
+
+    if (isSingleChildShape) {
+        expectFrameNear(frames_, 11, 0, 0, 100, 50);
+    } else {
+        expectFrameNear(frames_, 12, 0, 0, 40, 20);
+        expectFrameNear(frames_, 13, 0, 20, 40, 20);
     }
 }
 
