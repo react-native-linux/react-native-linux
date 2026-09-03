@@ -4,6 +4,8 @@
 #include <ReactCommon/TurboModule.h>
 #include <ReactCommon/TurboModuleBinding.h>
 #include <react/coremodules/DeviceInfoModule.h>
+#include <react/renderer/animated/AnimatedModule.h>
+#include <react/renderer/animated/NativeAnimatedNodesManagerProvider.h>
 
 #include <memory>
 #include <optional>
@@ -50,22 +52,35 @@ private:
     std::shared_ptr<DimensionsSource> dimensionsSource_;
 };
 
-TurboModuleRegistry::TurboModuleRegistry(std::shared_ptr<facebook::react::CallInvoker> jsInvoker)
+TurboModuleRegistry::TurboModuleRegistry(
+    std::shared_ptr<facebook::react::CallInvoker> jsInvoker,
+    std::shared_ptr<facebook::react::NativeAnimatedNodesManagerProvider> animatedNodesManagerProvider)
     : dimensionsSource_(std::make_shared<DimensionsSource>()),
-      deviceInfoModule_(std::make_shared<LinuxDeviceInfoModule>(std::move(jsInvoker), dimensionsSource_)) {}
+      deviceInfoModule_(std::make_shared<LinuxDeviceInfoModule>(jsInvoker, dimensionsSource_)) {
+    moduleFactories_.emplace(LinuxDeviceInfoModule::kModuleName,
+                             [deviceInfoModule = deviceInfoModule_]() { return deviceInfoModule; });
+    moduleFactories_.emplace(
+        facebook::react::AnimatedModule::kModuleName,
+        [jsInvoker = std::move(jsInvoker),
+         animatedNodesManagerProvider = std::move(animatedNodesManagerProvider)]() {
+            return std::make_shared<facebook::react::AnimatedModule>(jsInvoker, animatedNodesManagerProvider);
+        });
+}
 
 DimensionsSource& TurboModuleRegistry::dimensions() noexcept { return *dimensionsSource_; }
 
 void TurboModuleRegistry::install(facebook::jsi::Runtime& runtime) {
     facebook::react::TurboModuleBinding::install(
         runtime,
-        [deviceInfoModule = deviceInfoModule_](facebook::jsi::Runtime& /*runtime*/, const std::string& name)
+        [moduleFactories = moduleFactories_](facebook::jsi::Runtime& /*runtime*/, const std::string& name)
             -> std::shared_ptr<facebook::react::TurboModule> {
-            if (LinuxDeviceInfoModule::kModuleName == name) {
-                return deviceInfoModule;
+            const auto moduleFactory = moduleFactories.find(name);
+
+            if (moduleFactory == moduleFactories.end()) {
+                return nullptr;
             }
 
-            return nullptr;
+            return moduleFactory->second();
         });
 }
 

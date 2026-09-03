@@ -384,6 +384,13 @@ endif()
 # SchedulerDelegateImpl. They are the only two subdirectories of that tree used here besides
 # react/threading; ReactCxxPlatform's ReactHost is not, because it pulls bridgelesshermes, the
 # HTTP and WebSocket clients, and the whole nativemodule tree.
+#
+# react/renderer/animated is the C++ Animated native driver (#128): NativeAnimatedNodesManager,
+# the sixteen node types, the animation and event drivers, and the AnimatedModule TurboModule
+# src/TurboModuleRegistry.cpp registers. Its own CMakeLists names react_codegen_rncore and seven
+# ReactCommon targets, every one of which was already in the closure of
+# react_renderer_animationbackend, which has been built here since the Fabric bootstrap. Only the
+# spec header it consumes needed anything new; see react_codegen_rncore above.
 # ---------------------------------------------------------------------------
 
 # Scoped to C++ so it does not leak into wayland-scanner's generated C, which cannot include <cstdint>.
@@ -407,6 +414,11 @@ add_library(yoga ALIAS yogacore)
 # OBJECT, like every generated codegen target upstream and every ReactCommon target here: a STATIC archive would
 # absorb the object libraries it links and duplicate them into every consumer. The link items below are resolved
 # at generate time, so naming targets the subdirectory loop has not created yet is fine.
+#
+# react_nativemodule_core is in that list for the include directory rather than for symbols: the JSI spec header
+# this target publishes includes <ReactCommon/TurboModule.h>, and every subdirectory that consumes the spec —
+# react/renderer/animated as of #128 — links only react_codegen_rncore for it, exactly as upstream's generated
+# codegen target does.
 # See docs/cpp-toolchain.md.
 # ---------------------------------------------------------------------------
 
@@ -426,6 +438,7 @@ target_link_libraries(react_codegen_rncore
     folly_runtime
     jsi
     react_debug
+    react_nativemodule_core
     react_renderer_componentregistry
     react_renderer_core
     react_renderer_debug
@@ -450,6 +463,7 @@ set(RNL_REACT_COMMON_SUBDIRS
     react/nativemodule/core
     react/performance/cdpmetrics
     react/performance/timeline
+    react/renderer/animated
     react/renderer/animationbackend
     react/renderer/attributedstring
     react/renderer/bridging
@@ -527,6 +541,7 @@ set(RNL_REACT_COMMON_TARGETS
     react_nativemodule_core
     react_performance_cdpmetrics
     react_performance_timeline
+    react_renderer_animated
     react_renderer_animationbackend
     react_renderer_attributedstring
     react_renderer_bridging

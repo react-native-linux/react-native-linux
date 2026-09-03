@@ -1,10 +1,11 @@
 #include "ReactHost.h"
 
 #include "ConsoleBinding.h"
+#include "ReactNativeFeatureFlagsOverridesLinux.h"
 
 #include <jsi/jsi.h>
 #include <react/featureflags/ReactNativeFeatureFlags.h>
-#include <react/featureflags/ReactNativeFeatureFlagsOverridesOSSStable.h>
+#include <react/renderer/animated/NativeAnimatedNodesManagerProvider.h>
 #include <react/renderer/runtimescheduler/RuntimeSchedulerCallInvoker.h>
 
 #include <chrono>
@@ -23,8 +24,7 @@ std::chrono::milliseconds remainingBudget(std::chrono::steady_clock::time_point 
 } // namespace
 
 ReactHost::ReactHost() : javaScriptThread_(std::make_shared<facebook::react::MessageQueueThreadImpl>()) {
-    facebook::react::ReactNativeFeatureFlags::override(
-        std::make_unique<facebook::react::ReactNativeFeatureFlagsOverridesOSSStable>());
+    facebook::react::ReactNativeFeatureFlags::override(std::make_unique<ReactNativeFeatureFlagsOverridesLinux>());
 
     std::unique_ptr<HostTimerRegistry> ownedTimerRegistry = std::make_unique<HostTimerRegistry>();
     timerRegistry_ = ownedTimerRegistry.get();
@@ -36,8 +36,10 @@ ReactHost::ReactHost() : javaScriptThread_(std::make_shared<facebook::react::Mes
         errorReporter_.createHandler());
     timerManager_->setRuntimeExecutor(reactInstance_->getBufferedRuntimeExecutor());
 
+    animatedNodesManagerProvider_ = std::make_shared<facebook::react::NativeAnimatedNodesManagerProvider>();
     turboModuleRegistry_ = std::make_unique<TurboModuleRegistry>(
-        std::make_shared<facebook::react::RuntimeSchedulerCallInvoker>(reactInstance_->getRuntimeScheduler()));
+        std::make_shared<facebook::react::RuntimeSchedulerCallInvoker>(reactInstance_->getRuntimeScheduler()),
+        animatedNodesManagerProvider_);
 
     reactInstance_->initializeRuntime({}, [registry = turboModuleRegistry_.get()](facebook::jsi::Runtime& runtime) {
         installConsoleBinding(runtime);
@@ -47,6 +49,8 @@ ReactHost::ReactHost() : javaScriptThread_(std::make_shared<facebook::react::Mes
 
 ReactHost::~ReactHost() noexcept {
     javaScriptThread_->quitSynchronous();
+    turboModuleRegistry_.reset();
+    animatedNodesManagerProvider_.reset();
     reactInstance_.reset();
 }
 

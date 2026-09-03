@@ -30,6 +30,7 @@ add_executable(rnl_core_tests
     DimensionsTest.cpp
     SceneReuseTest.cpp
     EditorTest.cpp
+    FeatureFlagsTest.cpp
     FocusTest.cpp
     FrameClockTest.cpp
     ImageTest.cpp

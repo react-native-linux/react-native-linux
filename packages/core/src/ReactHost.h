@@ -15,6 +15,12 @@
 #include <memory>
 #include <string>
 
+namespace facebook::react {
+
+class NativeAnimatedNodesManagerProvider;
+
+} // namespace facebook::react
+
 namespace react_native_linux {
 
 /**
@@ -24,7 +30,10 @@ namespace react_native_linux {
  * about how long to keep running.
  *
  * It is also where the platform's TurboModules are installed, because the binding goes into the runtime through
- * the same `initializeRuntime` call as the console binding and there is exactly one runtime per host.
+ * the same `initializeRuntime` call as the console binding and there is exactly one runtime per host. The
+ * `NativeAnimatedNodesManagerProvider` the C++ `AnimatedModule` is built from is owned here for the same reason
+ * upstream's `ReactCxxPlatform` host owns it: it is the one object that makes the module and the scheduler share
+ * a `NativeAnimatedNodesManager`, and there is exactly one of each per host.
  *
  * Both hosts build on this: `BundleRunner` runs to quiescence and exits, and `WindowSession` keeps the instance
  * alive for as long as the window is open.
@@ -33,9 +42,14 @@ namespace react_native_linux {
  * loop for the headless host, the platform frame thread for the window host. The JavaScript that the instance
  * runs never touches this object; it runs on the JavaScript thread this class owns.
  *
- * Shutdown contract: destruction quits the JavaScript thread synchronously and only then destroys the instance,
- * because the instance's teardown assumes no further task can be scheduled onto that thread. Anything layered on
- * top — a Fabric surface, for example — must already have been stopped and drained by its owner.
+ * Shutdown contract: destruction quits the JavaScript thread synchronously, then releases the TurboModules and
+ * the animated manager provider, and only then destroys the instance. The thread goes first because the
+ * instance's teardown assumes no further task can be scheduled onto it; the modules go before the instance
+ * because a `TurboModule` owns a `jsi::WeakObject` — its cached JavaScript representation — and a JSI pointer
+ * that outlives its runtime aborts a debug Hermes with "This PointerValue was left dangling after the Runtime was
+ * destroyed". Member destruction order alone does not give that, because the instance is reset explicitly here
+ * and members are destroyed only afterwards. Anything layered on top — a Fabric surface, for example — must
+ * already have been stopped and drained by its owner.
  */
 class ReactHost final {
 public:
@@ -80,6 +94,7 @@ private:
     JsErrorReporter errorReporter_;
     HermesJSRuntimeFactory runtimeFactory_;
     std::unique_ptr<facebook::react::ReactInstance> reactInstance_;
+    std::shared_ptr<facebook::react::NativeAnimatedNodesManagerProvider> animatedNodesManagerProvider_;
     std::unique_ptr<TurboModuleRegistry> turboModuleRegistry_;
 };
 

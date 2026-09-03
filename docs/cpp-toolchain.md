@@ -423,8 +423,9 @@ answers both, and it is what `react_codegen_rncore` exports. That target keeps t
 `GenerateModuleJniH.js` renames `FBReactNativeSpec` to it and every ReactCommon CMakeLists in this graph links
 the old name; `ReactCommon/react/renderer/components/rncore/*.h` are deprecation shims that include the
 `FBReactNativeSpec` headers, so they resolve through the same directory. The five `.cpp` files are compiled; the
-JSI header is header-only and its one consumer is `src/TurboModuleRegistry.cpp`, which is why `rnl_react_core`
-links the target rather than merely naming its include directory.
+JSI header is header-only and its consumers are `src/TurboModuleRegistry.cpp` and, since #128,
+`react/renderer/animated`, which is why `rnl_react_core` links the target rather than merely naming its include
+directory, and why the target itself links `react_nativemodule_core` — see *Animated backend* below.
 
 The generator is reached through the two entry points upstream's `scripts/codegen/generate-artifacts-executor`
 reaches through `codegen-utils.js`, `FlowParser` and `RNCodegen`:
@@ -457,10 +458,10 @@ of which a Linux target can compile. Those are follow-ups to #21 and #22.
 `DeviceInfo` is the first TurboModule this platform registers, and registering it is what builds the TurboModule
 path at all: before #50 nothing installed a `TurboModuleBinding`, so `nativeModuleProxy` did not exist and no
 native module was reachable from JavaScript. `ReactHost` installs one from inside the same `initializeRuntime`
-bindings installer that installs the console binding, over a provider that answers exactly one name
-(`src/TurboModuleRegistry.cpp`). Upstream's `ReactCxxPlatform` does the same thing through
-`ReactCxxTurboModuleProvider`, a chain of provider callbacks across every core module it ships; with one module
-there is nothing to chain, so the chain is not built yet.
+bindings installer that installs the console binding, over a provider that started out answering exactly one name
+(`src/TurboModuleRegistry.cpp`) and is a name-to-factory map since #127. Upstream's `ReactCxxPlatform` does the
+same thing through `ReactCxxTurboModuleProvider`, a chain of provider callbacks across every core module it ships;
+the chain is what a platform with a dozen modules needs, and a map is what this one needs.
 
 Two ReactCommon subdirectories join the build for this: `react/nativemodule/core`, which is where
 `TurboModuleBinding` and `TurboModule::emitDeviceEvent` live, and `react/bridging`, whose `LongLivedObject.cpp`
@@ -545,6 +546,109 @@ What this does not cover: an end-to-end resize under the headless compositor. Th
 --backend=headless` at a fixed size and has no way to ask it to resize a client, so the compositor half of the
 resize path is still proven by reasoning about `WaylandWindow::onToplevelConfigure` rather than by a running
 compositor.
+
+## Animated backend (#127, #128)
+
+React Native 0.87 ships the whole `Animated` native driver in portable C++ —
+`ReactCommon/react/renderer/animated/` is `NativeAnimatedNodesManager`, sixteen node types, four drivers, the
+event driver and `AnimatedModule`, a `NativeAnimatedModuleCxxSpec` TurboModule — so a platform integrates it
+rather than writing one. Background and citations are in `docs/research/animation-on-linux.md`, section 1.
+
+### What is built
+
+`react/renderer/animated` joins `RNL_REACT_COMMON_SUBDIRS` and `react_renderer_animated` joins
+`RNL_REACT_COMMON_TARGETS`. Its own `CMakeLists.txt` names `react_codegen_rncore` and seven ReactCommon targets,
+all of which were already in the closure of `react_renderer_animationbackend`. One thing was missing:
+`AnimatedModule.h` includes `<ReactCommon/TurboModuleWithJSIBindings.h>` and the generated
+`FBReactNativeSpecJSI.h` includes `<ReactCommon/TurboModule.h>`, and both of those directories belong to
+`react_nativemodule_core`, which nothing in the animated link list names. Upstream's generated codegen target
+carries that usage requirement; ours did not, so `react_nativemodule_core` was added to
+`target_link_libraries(react_codegen_rncore ...)` — the one place every consumer of the spec header already links.
+
+### The flags
+
+`ReactNativeFeatureFlagsDefaults` answers false to `cxxNativeAnimatedEnabled`, `useSharedAnimatedBackend` and
+`optimizedAnimatedPropUpdates`. `ReactNativeFeatureFlagsOverridesLinux`
+(`packages/core/src/ReactNativeFeatureFlagsOverridesLinux.h`) subclasses `ReactNativeFeatureFlagsOverridesOSSStable`
+and turns the first two on; `ReactHost` installs it where it used to install OSS-stable. Upstream's
+`ReactNativeFeatureFlagsOverridesOSSCanary` is the class that enables `cxxNativeAnimatedEnabled`, and it is
+`@generated` and carries four unrelated experiments, which is why this subclasses stable rather than adopting
+canary. `optimizedAnimatedPropUpdates` stays off: its documentation describes Android JNI batching and an iOS
+`cloneProps` path, neither of which is ours.
+
+**These three flags are ours to re-verify on every React Native bump.** `packages/core/tests/FeatureFlagsTest.cpp`
+reads all three back through `ReactNativeFeatureFlags` after installing the provider, plus the two OSS-stable
+overrides it inherits, so a changed upstream default is a test failure rather than a silent behaviour change. It
+uses `dangerouslyReset` around `override` because the accessor is process-global and throws once any flag has been
+read.
+
+`useSharedAnimatedBackend` reaches further than Animated. `Scheduler`'s constructor reads it and, when it is set,
+builds an `AnimationBackend` and calls `setAnimationBackend` on `SchedulerToolbox::animationChoreographer` with no
+null check — so turning the flag on makes a choreographer mandatory for every host that builds a `Scheduler`.
+`FabricHost` supplies `IdleAnimationChoreographer`, whose `resume` and `pause` are empty: it exists to satisfy
+that contract, and connecting it to a frame source is #129.
+
+### What is registered
+
+`TurboModuleRegistry` (`packages/core/src/TurboModuleRegistry.{h,cpp}`) grew from the one-name provider of #50
+into a name-to-factory map behind the same single `TurboModuleBinding`. `DeviceInfo` is still constructed eagerly,
+because the frame thread needs a handle to it; `AnimatedModule` is built per lookup as
+`std::make_shared<AnimatedModule>(jsInvoker, animatedNodesManagerProvider)`, which is exactly what
+`ReactCxxPlatform`'s `ReactCxxTurboModuleProvider` does. `ReactHost` owns the one
+`NativeAnimatedNodesManagerProvider`, for the same reason upstream's host does: it is what makes the module and
+the scheduler share a `NativeAnimatedNodesManager`.
+
+Destruction order is load-bearing and is now explicit in `~ReactHost`: quit the JavaScript thread, release the
+registry, release the manager provider, then destroy the instance. A `TurboModule` owns a `jsi::WeakObject` — the
+cached JavaScript representation `TurboModuleBinding::getModule` attaches to it — and a JSI pointer that outlives
+its runtime aborts a debug Hermes with *"This PointerValue was left dangling after the Runtime was destroyed"*.
+`DeviceInfo` is the module that made this reachable: it is held eagerly by the registry, so before this ordering
+the last reference to it was released after `reactInstance_.reset()` had already torn the runtime down, and only
+on a bundle that actually looked the module up — `--resize dimensions.js` aborted at exit in the Debug CI job
+while the Release presets did not. Members alone do not give this order, because the instance is reset explicitly
+in the destructor body and members are destroyed only after it returns. Nothing in `TurboModuleRegistry` or
+`LinuxDeviceInfoModule` caches a `jsi::Value` of its own; the representation inside the base class is the whole
+of the JSI state a module carries.
+
+Building the module per lookup is also what defers `NativeAnimatedNodesManagerProvider::getOrCreate` until
+JavaScript first reaches for the module. That call resolves the `UIManager` out of the runtime through
+`UIManagerBinding::getBinding`, so it only works under a Fabric host, and it picks its architecture there and then:
+with an `AnimationBackend` attached to the `UIManager` it takes the shared-backend path, and without one it takes
+the legacy path with `MergedValueDispatcher` and `AnimatedMountingOverrideDelegate`. The choreographer therefore
+has to be in place before the first module lookup, not merely before the first animation.
+
+### What #129 still owes
+
+Everything that turns a queued operation into a frame:
+
+- an `AnimationChoreographer` over `FrameClock` in place of `IdleAnimationChoreographer` — `resume` means the
+  backend has work and the frame loop must keep ticking, `pause` means it does not, and `onAnimationFrame` has to
+  be called once per frame with a `std::chrono::duration<double, std::milli>` timestamp;
+- `hasPendingWork` for a timer tick to include "the animation backend has an active callback", beside the
+  mounting-manager, scroll and JS-timer signals already listed under *Frame clock*;
+- `LinuxMountingManager::synchronouslyUpdateViewOnUIThread`, which `IMountingManager` leaves defaulted to a no-op.
+  Without it every animated frame takes the Fabric-commit path even when it touches no layout, which is the exact
+  cost the backend's fast path exists to avoid.
+
+Until then `NativeAnimatedNodesManager::onRender` is never called, so operations sit in the manager's UI-task
+queue and no animation runs.
+
+### Proving it
+
+`packages/core/test-bundles/animated.js` reads the module the way React Native's `TurboModuleRegistry` does and
+queues a whole batch through it:
+
+```bash
+hello_react --fabric packages/core/test-bundles/animated.js
+```
+
+It prints `animated: module present` for a non-null `NativeAnimatedModule` and `animated: batch ok` after
+`startOperationBatch`, `createAnimatedNode` twice, `connectAnimatedNodes`, `setAnimatedNodeValue`, `getValue` and
+`finishOperationBatch`; CI greps both. That proves registration, the JSI bindings install, and the full argument
+path through the generated spec. It deliberately does not assert on the `getValue` callback: the value comes back
+from `onRender`, which is #129's frame. Asserting a `createAnimatedNode`/`startAnimatingNode` trace arriving at
+the manager — the E2E acceptance criterion of #127 — belongs to the same change, because there is no frame in
+which to observe one before it.
 
 ## Prerequisites
 
