@@ -26,6 +26,11 @@ FetchContent_MakeAvailable(googletest)
 
 include(GoogleTest)
 
+# #132: upstream's own react/renderer/animated tests, run unmodified as a drift oracle. The tree
+# is already inside the packages/react-native/ReactCommon sparse path scripts/vendor.lock.json
+# lists, so no sparse-path change was needed to reach it. See docs/cpp-toolchain.md, "Upstream
+# animated tests (#132)".
+set(RNL_UPSTREAM_ANIMATED_TESTS_DIR ${REACT_COMMON_DIR}/react/renderer/animated/tests)
 
 add_executable(rnl_core_tests
     AnimatedPropsTest.cpp
@@ -45,6 +50,12 @@ add_executable(rnl_core_tests
     SceneTest.cpp
     ScrollTest.cpp
     ShadowTreeCommitTest.cpp
+    UpstreamAnimatedSuiteTest.cpp
+    ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/AnimatedNodeTests.cpp
+    ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/AnimationDriverTests.cpp
+    ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/DecayAnimationDriverTest.cpp
+    ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/EventAnimationDriverTests.cpp
+    ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/ManagedPropsMountingOverrideTests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/Clipboard.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/DimensionsSource.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/EditorModel.cpp
@@ -62,6 +73,7 @@ add_executable(rnl_core_tests
 target_compile_options(rnl_core_tests PRIVATE -Wall -Wextra -fexceptions -frtti)
 target_include_directories(rnl_core_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
 target_compile_definitions(rnl_core_tests
+    PRIVATE "RNL_ANIMATED_TESTS_DIR=\"${RNL_UPSTREAM_ANIMATED_TESTS_DIR}\"")
 target_link_libraries(rnl_core_tests
     PRIVATE
         GTest::gtest_main
