@@ -515,26 +515,25 @@ size_t EditorModel::remainingCapacity(size_t beginByte, size_t endByte) const {
  * react-native-macos#2303 is the bug filed when a paste inserted them literally.
  */
 std::string EditorModel::normalizeInsertion(const std::string& insertion) const {
-    if (isMultiline_) {
-        return insertion;
-    }
-
     std::string normalized;
 
     normalized.reserve(insertion.size());
 
     for (size_t index = 0; index < insertion.size(); ++index) {
         if (insertion[index] == '\r') {
-            normalized += ' ';
-
+            // A CRLF pair is one line ending, and a multiline field keeps line endings as bare newlines: Windows
+            // clipboard text arrives CRLF, and a buffer carrying bare carriage returns is react-native-macos#2303
+            // waiting to render.
             if (index + 1 < insertion.size() && insertion[index + 1] == '\n') {
                 ++index;
             }
 
+            normalized += isMultiline_ ? '\n' : ' ';
+
             continue;
         }
 
-        normalized += insertion[index] == '\n' ? ' ' : insertion[index];
+        normalized += insertion[index] == '\n' ? (isMultiline_ ? '\n' : ' ') : insertion[index];
     }
 
     return normalized;
