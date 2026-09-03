@@ -64,6 +64,13 @@ bool LinuxMountingManager::hasPendingDamage() const {
     return hasPendingDamage_;
 }
 
+SceneHit LinuxMountingManager::findNodeAtPoint(facebook::react::SurfaceId surfaceId,
+                                               facebook::react::Point surfacePoint) const {
+    const std::lock_guard<std::mutex> guard(sceneMutex_);
+
+    return scene_.findNodeAtPoint(surfaceId, surfacePoint);
+}
+
 SceneSnapshot LinuxMountingManager::snapshotScene() const {
     const std::lock_guard<std::mutex> guard(sceneMutex_);
 

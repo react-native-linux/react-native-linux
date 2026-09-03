@@ -83,6 +83,29 @@ bool isFocusableNode(const facebook::react::ShadowNode& shadowNode) {
     return !viewProps->accessibilityState.has_value() || !viewProps->accessibilityState.value().disabled;
 }
 
+/**
+ * The committed shadow node a scene tag names. Node identity is the Fabric tag on both sides, so this is the whole
+ * translation from "what was painted here" to "what can receive an event"; a tag the scene holds and this tree
+ * does not is a node from another surface or from a revision this thread has not seen, and the caller falls back
+ * to the shadow-tree hit test for it.
+ */
+std::shared_ptr<const facebook::react::ShadowNode> shadowNodeWithTag(
+    const std::shared_ptr<const facebook::react::ShadowNode>& shadowNode, facebook::react::Tag tag) {
+    if (shadowNode->getTag() == tag) {
+        return shadowNode;
+    }
+
+    for (const std::shared_ptr<const facebook::react::ShadowNode>& child : shadowNode->getChildren()) {
+        const std::shared_ptr<const facebook::react::ShadowNode> found = shadowNodeWithTag(child, tag);
+
+        if (found != nullptr) {
+            return found;
+        }
+    }
+
+    return nullptr;
+}
+
 void emitPointerDispatch(const facebook::react::TouchEventEmitter& emitter, const PointerDispatch& dispatch) {
     switch (dispatch.type) {
         case PointerDispatchType::Move:
@@ -156,17 +179,30 @@ std::shared_ptr<const facebook::react::ShadowNode> InputDispatcher::rootShadowNo
     return root;
 }
 
-std::shared_ptr<const facebook::react::ShadowNode> InputDispatcher::resolveTarget(const InputEvent& event) const {
+PointerTarget InputDispatcher::resolveTarget(const InputEvent& event) const {
     const std::shared_ptr<const facebook::react::ShadowNode> root = rootShadowNode();
 
-    if (root == nullptr || event.kind == InputEventKind::PointerLeave) {
-        return root;
+    if (root == nullptr) {
+        return PointerTarget{};
     }
 
-    const std::shared_ptr<const facebook::react::ShadowNode> hit =
-        uiManager_->findNodeAtPoint(root, event.surfacePoint);
+    if (event.kind != InputEventKind::PointerLeave) {
+        const SceneHit paintedHit = mountingManager_->findNodeAtPoint(surfaceId_, event.surfacePoint);
+        const std::shared_ptr<const facebook::react::ShadowNode> painted = shadowNodeWithTag(root, paintedHit.tag);
 
-    return hit == nullptr ? root : hit;
+        if (painted != nullptr) {
+            return PointerTarget{.shadowNode = painted, .origin = paintedHit.origin};
+        }
+
+        const std::shared_ptr<const facebook::react::ShadowNode> hit =
+            uiManager_->findNodeAtPoint(root, event.surfacePoint);
+
+        if (hit != nullptr) {
+            return PointerTarget{.shadowNode = hit, .origin = absoluteOrigin(*hit)};
+        }
+    }
+
+    return PointerTarget{.shadowNode = root, .origin = absoluteOrigin(*root)};
 }
 
 facebook::react::Point InputDispatcher::absoluteOrigin(const facebook::react::ShadowNode& shadowNode) const {
@@ -174,16 +210,17 @@ facebook::react::Point InputDispatcher::absoluteOrigin(const facebook::react::Sh
 }
 
 void InputDispatcher::dispatchPointerEvent(const InputEvent& event) {
-    const std::shared_ptr<const facebook::react::ShadowNode> target = resolveTarget(event);
+    const PointerTarget target = resolveTarget(event);
 
-    if (target == nullptr) {
+    if (target.shadowNode == nullptr) {
         return;
     }
 
     // A press is what moves focus, not a release: that is when a desktop control takes it, and it is what makes a
     // click on the empty background blur the focused node — react-native-macos#999.
     if (event.kind == InputEventKind::PointerButtonPress) {
-        applyFocusTransition(focusModel_.focusTag(focusableAncestorTag(*target), FocusOrigin::Pointer));
+        applyFocusTransition(
+            focusModel_.focusTag(focusableAncestorTag(*target.shadowNode), FocusOrigin::Pointer));
     }
 
     // After the focus transition, so a press that focuses a field also places its caret, and a drag that started
@@ -191,13 +228,14 @@ void InputDispatcher::dispatchPointerEvent(const InputEvent& event) {
     textInputController_.handlePointer(event);
 
     const std::shared_ptr<const facebook::react::TouchEventEmitter> emitter =
-        std::dynamic_pointer_cast<const facebook::react::TouchEventEmitter>(target->getEventEmitter());
+        std::dynamic_pointer_cast<const facebook::react::TouchEventEmitter>(target.shadowNode->getEventEmitter());
 
     if (emitter == nullptr) {
         return;
     }
 
-    for (const PointerDispatch& pointerDispatch : router_.route(event, target->getTag(), absoluteOrigin(*target))) {
+    for (const PointerDispatch& pointerDispatch :
+         router_.route(event, target.shadowNode->getTag(), target.origin)) {
         emitPointerDispatch(*emitter, pointerDispatch);
     }
 }

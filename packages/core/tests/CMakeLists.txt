@@ -33,6 +33,7 @@ include(GoogleTest)
 set(RNL_UPSTREAM_ANIMATED_TESTS_DIR ${REACT_COMMON_DIR}/react/renderer/animated/tests)
 
 add_executable(rnl_core_tests
+    AnimatedHitTestTest.cpp
     AnimatedPropsTest.cpp
     AnimationChoreographerTest.cpp
     DimensionsTest.cpp

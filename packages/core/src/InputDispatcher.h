@@ -16,14 +16,29 @@
 namespace react_native_linux {
 
 /**
+ * The node a pointer event is delivered to, and the absolute origin the offset inside it is measured from.
+ *
+ * The two travel together because one hit test produces both: an origin looked up separately would come from the
+ * shadow tree's `LayoutMetrics`, which is exactly the stale geometry the scene hit test exists to avoid.
+ */
+struct PointerTarget {
+    std::shared_ptr<const facebook::react::ShadowNode> shadowNode;
+    facebook::react::Point origin{};
+};
+
+/**
  * Turns a frame's worth of platform input into Fabric events: hit-test, translate, enqueue — and owns the one
  * focused node the keyboard talks to.
  *
- * Hit testing is upstream's, not ours. `UIManager::findNodeAtPoint` walks the committed shadow tree from the root,
- * honours `pointerEvents`, transforms and overflow, and returns the deepest node that can be a touch target — the
- * same function `NativeDOM` uses for `elementFromPoint`. The retained scene also carries absolute frames and could
- * answer the same question, but it has no shadow nodes and therefore no event emitters behind them, and a second
- * hit-test implementation would be a second chance to disagree with React about what was clicked.
+ * Hit testing reads the retained scene, not the shadow tree. `RetainedScene::findNodeAtPoint` walks the same nodes
+ * the painter walks, with the same composed matrices and the same `overflow: hidden` clips, and honours
+ * `pointerEvents` by the same rule `ConcreteViewShadowNode::canBeTouchTarget` applies. It has to: a native-driven
+ * animation writes the scene every frame and commits nothing, so `UIManager::findNodeAtPoint` would answer with
+ * where a moving node started rather than where it is — upstream's open react-native#51621, which is a bug there
+ * because the shadow tree is their only geometry and would be a bug here for the same reason. See *Hit-testing
+ * under animation* in docs/cpp-toolchain.md. The scene answers with a tag; the shadow tree is then searched for
+ * the node that tag names, because the event emitter lives there and only there. `UIManager::findNodeAtPoint`
+ * remains the fallback for a point whose painted node has no shadow node in this surface's committed tree.
  *
  * Focus is read from the same tree, for the same reason: the focusable set is the pre-order walk of the committed
  * shadow tree filtered by props, and that walk is also where the event emitters that `onFocus` and `onBlur` go
@@ -54,7 +69,9 @@ namespace react_native_linux {
  * Threading contract: `dispatch` runs on the platform frame thread. Everything it touches is documented as
  * callable from any thread — `ShadowTreeRegistry::visit` and `ShadowTree::getCurrentRevision` take a shared lock,
  * shadow nodes are immutable once committed, `EventQueue::enqueueEvent` takes its own mutex, and the mounting
- * manager's focus mark is written under the same mutex that guards the scene.
+ * manager's focus mark is written under the same mutex that guards the scene. The scene hit test takes that mutex
+ * too, which is the mutex an animation frame's synchronous prop update already writes under, so a press is
+ * answered against one frame's scene state rather than against half of two.
  */
 class InputDispatcher final {
 public:
@@ -72,7 +89,7 @@ public:
 
 private:
     std::shared_ptr<const facebook::react::ShadowNode> rootShadowNode() const;
-    std::shared_ptr<const facebook::react::ShadowNode> resolveTarget(const InputEvent& event) const;
+    PointerTarget resolveTarget(const InputEvent& event) const;
     facebook::react::Point absoluteOrigin(const facebook::react::ShadowNode& shadowNode) const;
     void dispatchPointerEvent(const InputEvent& event);
     void dispatchKeyEvent(const InputEvent& event);

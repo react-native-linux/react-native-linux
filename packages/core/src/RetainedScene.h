@@ -195,6 +195,18 @@ struct ScenePrimitive {
 using SceneSnapshot = std::vector<ScenePrimitive>;
 
 /**
+ * What a hit test found: the deepest node painted under the point, and the absolute origin it was painted at.
+ *
+ * The origin travels with the tag because it is what a pointer event's offset inside its target is measured
+ * from, and a node the animation fast path moved is painted somewhere its `LayoutMetrics` do not describe. A
+ * `tag` of zero means nothing under the point can be a pointer target, and the origin is then meaningless.
+ */
+struct SceneHit {
+    facebook::react::Tag tag{};
+    facebook::react::Point origin{};
+};
+
+/**
  * The region that has to be repainted, as axis-aligned rectangles in absolute surface coordinates.
  *
  * The list is bounded: past a small cap it collapses into its own bounding rectangle, so a large mutation batch
@@ -226,6 +238,13 @@ struct SceneNode {
      */
     facebook::react::TransformOrigin transformOrigin{};
     float opacity{1.0F};
+
+    /**
+     * Whether this node and its children can be pointer targets, as authored. It is the only prop the scene keeps
+     * that paints nothing: `findNodeAtPoint` answers with the painted geometry, so it also has to answer with the
+     * same `pointerEvents` rule `ConcreteViewShadowNode::canBeTouchTarget` applies to the shadow tree.
+     */
+    facebook::react::PointerEventsMode pointerEvents{facebook::react::PointerEventsMode::Auto};
     bool clipsChildren{false};
     std::optional<SceneTextContent> text;
     std::optional<SceneImageContent> image;
@@ -324,6 +343,22 @@ public:
      * missing-tag policy exists to remove. An unknown tag and a payload that is not an object are both no-ops.
      */
     std::vector<std::string> applyAnimatedProps(facebook::react::Tag tag, const folly::dynamic& props);
+
+    /**
+     * The deepest node painted under `surfacePoint`, searched from `rootTag` down, and the absolute origin it was
+     * painted at.
+     *
+     * This is the hit test, and it reads the same state the painter reads for the reason issue #97 exists: an
+     * animation frame writes the retained scene and commits nothing, so the shadow tree's `LayoutMetrics` describe
+     * where a moving node started rather than where it is. Children are visited last-first, which is the reverse
+     * of paint order and therefore front-to-back, and each node's frame is tested by mapping the point through the
+     * inverse of the composed matrix `snapshot` would paint it with — so one composition answers both questions.
+     *
+     * A node paints inside every `overflow: hidden` ancestor it inherited, so the clip stack is part of the test.
+     * A node that paints nothing is still a target, exactly as an empty `<View>` is on every other platform, and
+     * so is a node animated to `opacity: 0` — see *Hit-testing under animation* in docs/cpp-toolchain.md.
+     */
+    SceneHit findNodeAtPoint(facebook::react::Tag rootTag, facebook::react::Point surfacePoint) const;
     SceneSnapshot snapshot() const;
     SceneDamage takeDamage();
     std::string dump() const;
@@ -332,6 +367,8 @@ private:
     SceneNode& writeNode(const facebook::react::ShadowView& shadowView);
     std::vector<facebook::react::Tag> sortedRootTags() const;
     void appendPrimitives(SceneSnapshot& primitives, facebook::react::Tag tag, const ScenePaintState& state) const;
+    SceneHit hitTestNode(facebook::react::Tag tag, facebook::react::Point surfacePoint,
+                         const ScenePaintState& state) const;
     void appendNode(std::string& output, facebook::react::Tag tag, size_t depth) const;
     std::optional<facebook::react::Rect> subtreeExtent(facebook::react::Tag tag) const;
     void damageSubtree(facebook::react::Tag tag);

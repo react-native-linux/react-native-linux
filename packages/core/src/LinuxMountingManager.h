@@ -4,6 +4,7 @@
 
 #include <folly/dynamic.h>
 #include <react/renderer/core/ReactPrimitives.h>
+#include <react/renderer/graphics/Point.h>
 #include <react/renderer/graphics/Size.h>
 #include <react/renderer/mounting/MountingTransaction.h>
 #include <react/renderer/mounting/ShadowView.h>
@@ -126,6 +127,13 @@ public:
      * the counter is cumulative for the life of the surface.
      */
     MountDiagnostics mountDiagnostics() const;
+
+    /**
+     * The node painted under `surfacePoint` in `surfaceId`'s tree, and the origin it was painted at. Called from
+     * the frame thread by the input dispatcher, under the same mutex a synchronous animated update takes — so a
+     * press is answered against the scene state one frame paints and never against half of two.
+     */
+    SceneHit findNodeAtPoint(facebook::react::SurfaceId surfaceId, facebook::react::Point surfacePoint) const;
     SceneSnapshot snapshotScene() const;
     std::string dumpScene() const;
 

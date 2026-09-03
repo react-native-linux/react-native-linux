@@ -318,6 +318,7 @@ void readPaintProps(SceneNode& node, const facebook::react::ShadowView& shadowVi
         node.transform = {};
         node.transformOrigin = {};
         node.opacity = 1.0F;
+        node.pointerEvents = facebook::react::PointerEventsMode::Auto;
         node.clipsChildren = false;
 
         return;
@@ -335,6 +336,7 @@ void readPaintProps(SceneNode& node, const facebook::react::ShadowView& shadowVi
     node.transform = toSceneMatrix(viewProps->resolveTransform(shadowView.layoutMetrics));
     node.transformOrigin = viewProps->transformOrigin;
     node.opacity = std::clamp(static_cast<float>(viewProps->opacity), 0.0F, 1.0F);
+    node.pointerEvents = viewProps->pointerEvents;
     node.clipsChildren = viewProps->getClipsContentToBounds();
 }
 
@@ -615,6 +617,71 @@ bool hasArea(const facebook::react::Rect& rect) {
     return rect.size.width * rect.size.height > 0;
 }
 
+// A matrix whose determinant is below this maps every point onto a line or onto a point, so the rectangle it
+// paints has no area and nothing can be inside it. `scale: 0` is the transform that produces one.
+constexpr float kSingularDeterminant = 1e-6F;
+
+/**
+ * The surface point expressed in the untransformed coordinates a node's frame is written in, which is what makes
+ * a containment test against that frame mean "inside the shape that was painted".
+ */
+std::optional<facebook::react::Point> toUntransformedPoint(const SceneMatrix& matrix,
+                                                           facebook::react::Point surfacePoint) {
+    const float determinant = (matrix.scaleX * matrix.scaleY) - (matrix.skewX * matrix.skewY);
+
+    if (std::abs(determinant) < kSingularDeterminant) {
+        return std::nullopt;
+    }
+
+    const SceneMatrix inverse{
+        .scaleX = matrix.scaleY / determinant,
+        .skewX = -matrix.skewX / determinant,
+        .translateX = ((matrix.skewX * matrix.translateY) - (matrix.scaleY * matrix.translateX)) / determinant,
+        .skewY = -matrix.skewY / determinant,
+        .scaleY = matrix.scaleX / determinant,
+        .translateY = ((matrix.skewY * matrix.translateX) - (matrix.scaleX * matrix.translateY)) / determinant};
+
+    return mapPoint(inverse, surfacePoint);
+}
+
+bool coversSurfacePoint(const facebook::react::Rect& frame, const SceneMatrix& matrix,
+                        facebook::react::Point surfacePoint) {
+    const std::optional<facebook::react::Point> untransformedPoint = toUntransformedPoint(matrix, surfacePoint);
+
+    if (!untransformedPoint.has_value()) {
+        return false;
+    }
+
+    facebook::react::Rect containingFrame = frame;
+
+    return containingFrame.containsPoint(untransformedPoint.value());
+}
+
+/**
+ * Whether the point lands on this primitive as it was painted: inside its own transformed frame, and inside every
+ * `overflow: hidden` ancestor that cut it. Corner radii are not consulted, exactly as upstream's shadow-tree hit
+ * test does not consult them — a press on the corner of a rounded card still presses the card.
+ */
+bool coversPrimitive(const ScenePrimitive& primitive, facebook::react::Point surfacePoint) {
+    for (const SceneClip& clip : primitive.clips) {
+        if (!coversSurfacePoint(clip.frame, clip.matrix, surfacePoint)) {
+            return false;
+        }
+    }
+
+    return coversSurfacePoint(primitive.frame, primitive.matrix, surfacePoint);
+}
+
+bool isPointerTarget(const SceneNode& node) {
+    return node.pointerEvents == facebook::react::PointerEventsMode::Auto ||
+           node.pointerEvents == facebook::react::PointerEventsMode::BoxOnly;
+}
+
+bool arePointerChildrenTargets(const SceneNode& node) {
+    return node.pointerEvents == facebook::react::PointerEventsMode::Auto ||
+           node.pointerEvents == facebook::react::PointerEventsMode::BoxNone;
+}
+
 constexpr size_t kMaxDamageRects = 8;
 
 void addDamageRect(SceneDamage& damage, const facebook::react::Rect& rect) {
@@ -805,6 +872,10 @@ std::vector<std::string> RetainedScene::applyAnimatedProps(facebook::react::Tag 
     return rejectedProps;
 }
 
+SceneHit RetainedScene::findNodeAtPoint(facebook::react::Tag rootTag, facebook::react::Point surfacePoint) const {
+    return hitTestNode(rootTag, surfacePoint, ScenePaintState{});
+}
+
 SceneSnapshot RetainedScene::snapshot() const {
     SceneSnapshot primitives;
     const ScenePaintState rootState{};
@@ -887,6 +958,39 @@ void RetainedScene::appendPrimitives(SceneSnapshot& primitives, facebook::react:
     for (facebook::react::Tag childTag : node.childTags) {
         appendPrimitives(primitives, childTag, visit.childState);
     }
+}
+
+SceneHit RetainedScene::hitTestNode(facebook::react::Tag tag, facebook::react::Point surfacePoint,
+                                    const ScenePaintState& state) const {
+    const auto entry = nodes_.find(tag);
+
+    if (entry == nodes_.end()) {
+        return SceneHit{};
+    }
+
+    const SceneNode& node = entry->second;
+
+    // The same visit `appendPrimitives` makes, so the frame, the matrix and the clips a hit is decided against are
+    // the ones the next snapshot paints. Changing either half alone changes both answers, which is what issue #97
+    // asks a platform to guarantee.
+    const SceneVisit visit = visitNode(node, state);
+
+    if (arePointerChildrenTargets(node)) {
+        // Backwards, because child order is paint order and the last sibling painted is the one on top.
+        for (size_t position = node.childTags.size(); position > 0; --position) {
+            const SceneHit hit = hitTestNode(node.childTags[position - 1], surfacePoint, visit.childState);
+
+            if (hit.tag != 0) {
+                return hit;
+            }
+        }
+    }
+
+    if (!isPointerTarget(node) || !coversPrimitive(visit.primitive, surfacePoint)) {
+        return SceneHit{};
+    }
+
+    return SceneHit{.tag = tag, .origin = mapPoint(visit.primitive.matrix, visit.primitive.frame.origin)};
 }
 
 std::optional<facebook::react::Rect> RetainedScene::subtreeExtent(facebook::react::Tag tag) const {

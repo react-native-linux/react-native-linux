@@ -332,7 +332,9 @@ compositor reclaims the surface when the connection's file descriptor closes.
 Not drawn yet, each with an owning milestone: shadows and elevation, `boxShadow`, `filter`, `mixBlendMode`,
 `outline`, `backgroundImage` gradients, and `display: none`. Backgrounds, per-corner radii, per-side borders,
 opacity, transforms and `overflow` clipping are drawn; see *View props fidelity*. Text is drawn; see *Text*.
-Images are drawn; see *Image*. Pointer and keyboard events reach JavaScript once per frame; see *Input*.
+Images are drawn; see *Image*. Pointer and keyboard events reach JavaScript once per frame; see *Input*. The scene
+is also what a press is hit-tested against, which is what keeps the pressed node and the painted node the same
+node while an animation is running; see *Hit-testing under animation*.
 
 ### Skia acquisition
 
@@ -794,12 +796,357 @@ synchronous update is never half-visible to the frame that follows it.
 - **Golden-image.** An opacity ramp and a translate ramp at three fixed progress values, driven by the injected
   clock, are still owed; the unit equality above says the fast path computes what the commit path computes, not
   that Skia paints it identically. Both remain #130 acceptance criteria that this change does not close.
-- **E2E and perf.** The 120-frame transform animation that performs **zero** Fabric commits, asserted from the
-  event trace, and its p95 frame time under #20's harness, are also still owed: nothing in a unit test can observe
-  a commit that did not happen.
+- **E2E and perf.** The 120-frame transform animation that performs **no Fabric commit while it runs** and exactly
+  one when it settles — see *The one commit an animation does make* — asserted from the event trace, and its p95
+  frame time under #20's harness, are also still owed: a unit test can count the commits a manager asked for, but
+  only the harness can observe what the surface actually did with them.
 - **TSan.** Synchronous updates on the frame thread concurrent with commits on the JavaScript thread need the
   sanitizer job, like `ShadowTreeCommitTest`'s cross-thread case.
 - **Border colours.** Rejected and counted today; see above for why they are a re-cascade rather than a write.
+
+## Event-driven Animated (#131)
+
+`Animated.event([{nativeEvent: {contentOffset: {y}}}], {useNativeDriver: true})` is the other half of the native
+driver, and it is a different code path from a time-driven animation: an `EventAnimationDriver` per
+(view tag, event name), fed by an `EventEmitterListener`, updating a value node from a payload path. React Native
+0.86 fixed a one-frame latency in it — *"processing the animation graph synchronously on every scroll event,
+matching the Java implementation"* — and this section is where our frame-batched event delivery and that
+synchronous requirement are reconciled.
+
+### The listener came for free
+
+Nothing in `FabricHost` registers an `EventEmitterListener`, and nothing needs to.
+`NativeAnimatedNodesManagerProvider::getOrCreate` calls `uiManager->addEventListener(...)` **after** its
+if/else, so both the legacy path and the shared-backend path this platform takes get it, and the listener it
+registers forwards into the `EventEmitterListenerContainer` the manager's own listener was added to two lines
+earlier. From there the chain is entirely upstream's: `UIManager::addEventListener` →
+`Scheduler::uiManagerShouldAddEventListener` → `EventDispatcher::addListener`, and both
+`EventDispatcher::dispatchEvent` and `dispatchUniqueEvent` consult the listeners **before** they enqueue.
+
+Two consequences are ours, and they are what makes this work rather than compile:
+
+- **`ScrollViewEventEmitter::onScroll` is `dispatchUniqueEvent`**, so the driver sees every `onScroll` the
+  controller emits, on the thread that emitted it — the frame thread — synchronously inside `advanceScroll`,
+  before the event is queued and long before the JavaScript thread sees it. Coalescing is downstream of the
+  listener: a beat that collapses two frames' `onScroll` into one for JavaScript still gave the driver both.
+- **The registration is deferred to the first module lookup.** `getOrCreate` runs from
+  `AnimatedModule::installJSIBindingsWithRuntime`, which `TurboModuleRegistry` reaches when JavaScript first asks
+  for `NativeAnimatedModule` (see *Animated backend*). A bundle that never touches Animated registers no listener
+  and pays nothing.
+
+`NativeAnimatedNodesManager::handleAnimatedEvent` then rejects any event that does not arrive on the thread an
+animation frame has run on — `isOnRenderThread_` is a `thread_local` set inside `pullAnimationMutations`. The
+frame thread claims it on the first frame that ticks the choreographer after the bundle's operation batch, which
+in a window is the first drawn frame and in a headless run is one deliberate warm-up frame; see *The proof*.
+
+### The order inside a frame
+
+`FabricHost::advanceScroll` is the one call site, so the window loop and the headless runner cannot disagree
+about it. Reading `WindowSession::deliverInput` and `WindowMain`'s loop top to bottom:
+
+```text
+publishPendingDimensions
+advanceCaretBlink
+dispatchInput                    scroll routed to a ScrollView, pointer to InputDispatcher
+advanceScroll                    ── one frame of ScrollPhysics per axis, per ScrollView
+  ├─ ConcreteState::updateState      contentOffset queued for the JavaScript thread
+  ├─ ScrollViewEventEmitter          onScroll → EventDispatcher listeners, on this thread:
+  │    └─ EventAnimationDriver           the value node takes contentOffset.y
+  └─ UIManagerAnimationBackend::trigger  the graph is walked and the props applied, here, now
+induceEventBeat                  everything the frame queued is released onto the JavaScript thread
+recordFrameTick
+tickAnimations                   the choreographer's frame, for time-driven animations
+takeFrame                        the scene the compositor is shown
+```
+
+**The synchronous animation push sits after `advanceScroll`'s state write-back and its `onScroll`, and before
+`induceEventBeat`.** That is the ordering statement #131 asks for. It is inside `advanceScroll` rather than beside
+it, and it is skipped on a frame that dispatched no `onScroll`, which `ScrollController::hasDispatchedScrollEvent`
+answers without a `UIManager` lookup.
+
+`trigger()` is upstream's own entry point for exactly this — `AnimationBackend::trigger` is `onAnimationFrame` with
+a fresh `steady_clock` read, and its documentation calls it the path "for updates that need to be applied
+synchronously (e.g. gesture events)". The mutations it produces have no layout in them for a `translateY`, so they
+take the *Sync props fast path* to `RetainedScene::applyAnimatedProps` on this same thread, under the same
+`sceneMutex_` `takeFrame` takes. No Fabric commit happens, and the value is in the scene the frame paints.
+
+Upstream's `handleAnimatedEvent` already calls `pushAnimationMutations` itself, inside the listener, which is the
+0.86 fix. The platform's `trigger()` is therefore not the only mechanism — it is the one this platform can state a
+frame order about. It costs one graph walk per scrolling frame and re-applies values that are already current;
+what it buys is that the same-frame guarantee holds for the whole frame's worth of scroll events rather than for
+whichever of them got past a `thread_local` check inside a vendored file.
+
+One asymmetry is worth naming: **the animated value is never behind the scroll offset, and can be ahead of it.**
+The offset reaches the scene through `updateState` → beat → commit → mount on the JavaScript thread, while the
+animated prop reaches it on the frame thread before the beat is even induced. A busy JavaScript thread therefore
+delays the content and not the header. That is the safe direction — a parallax header that lags is the artefact
+#131 exists to prevent — but it is a property of *ScrollView*'s state write-back, not of this section.
+
+### The proof
+
+```bash
+hello_react --animated-scroll packages/core/test-bundles/animated-scroll.js 160 100 3
+```
+
+`packages/core/test-bundles/animated-scroll.js` is a 200x150 `<ScrollView>` over 470 points of content, plus a
+100x100 view **outside** it whose `translateY` is driven by the ScrollView's `contentOffset.y`. There is no React
+and no Animated JavaScript in a bare bundle, so it builds the graph `Animated.event` would have built directly
+through `nativeModuleProxy.NativeAnimatedModule`: a value node, a `transform` node reading it, a `style` node, a
+`props` node, `connectAnimatedNodeToView`, and
+`addAnimatedEventToView(scrollViewTag, 'topScroll', {nativeEventPath: ['contentOffset', 'y'], animatedValueTag})`.
+`EventEmitter::normalizeEventType` is what makes `topScroll` here and `scroll` on the emitter the same key.
+
+`connectAnimatedNodeToShadowNodeFamily` is the call the fixture would silently die without: in the shared-backend
+path `NativeAnimatedNodesManager::insertMutations` **drops** any update whose props node has no
+`ShadowNodeFamily` behind it, and `connectAnimatedNodeToView` carries only the tag. The bundle throws if the
+module does not expose it rather than printing a trace that proves nothing.
+
+`--animated-scroll` (`BundleRunner::runAnimatedScroll`) drives the glide one frame at a time in the window loop's
+order, inducing the beat **per frame** — the opposite of `--scroll-to`, which induces once at the end because it
+only cares where the content stopped. It spends one warm-up frame before the wheel, because the bundle's operation
+batch is drained by an animation frame and because that frame is what claims the frame thread as the manager's
+render thread.
+
+Each frame prints one line, from JavaScript:
+
+```text
+animated-scroll: offset 3.87 value 3.87
+...
+animated-scroll: offset 120.00 value 120.00
+```
+
+The offset is the frame's `topScroll` payload and the value is the animated node's, delivered through
+`onAnimatedValueUpdate` on `__rctDeviceEventEmitter`. The two arrive on the JavaScript thread in that order — the
+value's `invokeAsync` is scheduled from inside the event's own dispatch, the beat is induced after
+`advanceScroll` returns, and both are `ImmediatePriority` work on the `RuntimeScheduler` — which is what lets one
+line carry both numbers. A value applied a frame late prints the previous frame's number on the right of every
+line, so the CI step greps a backreference (`offset ([0-9]+\.[0-9]{2}) value \1`), asserts that **no** trace line
+fails it, and asserts the settled `offset 120.00 value 120.00` that three 40-point notches have to end on.
+
+### Tests
+
+The event driver's own unit coverage is upstream's and already runs here:
+`ReactCommon/react/renderer/animated/tests/EventAnimationDriverTests.cpp` is compiled into `rnl_core_tests` by
+#132, and it is the test that asserts a value node takes `contentOffset.y` from a synthesised `ScrollEvent`
+through `getEventEmitterListener()`, with a second driver on `zoomScale` proving the path resolution. We do not
+write the animated node graph, so we do not write its tests either — see *Upstream animated tests*.
+
+No new pure logic landed in the coverage gate. The only platform state this added is
+`ScrollController::hasDispatchedScrollEvent`, and `ScrollController.cpp` is outside `scopedSourcePaths` for the
+reason *ScrollView* gives: what is in it is a `UIManager` hit test, an ancestor walk and upstream calls that need
+a committed shadow tree. The trace above is its test, at the same level `--scroll-to` is.
+
+### Deferrals, with owners
+
+- **Detach.** `removeAnimatedEventFromView` is never called by this fixture, and nothing on this platform
+  unregisters a driver when the view it is attached to unmounts — upstream drops the drivers with the node graph
+  when JavaScript says so, which is the only path React Native ever uses. #131's *"detaching mid-scroll stops
+  delivery without touching a removed node"* is asserted by nothing here; it needs a fixture that scrolls,
+  detaches and scrolls again, and it belongs with whoever writes the first JavaScript-side `Animated` surface.
+- **Golden.** A picture of the header and the content at three scroll positions is still owed, for the same
+  reason *Sync props fast path* owes one: the trace proves the numbers agree, not that Skia paints them.
+- **E2E under a compositor.** `rnl_inject` binds `zwlr_virtual_pointer_v1` for motion and buttons only and sends
+  no `axis`, so there is no `packages/core/e2e/*.json` scroll step to write this as. The headless harness can
+  scroll and does; adding an axis command to the injector belongs with the scroll traces #16 already defers to
+  the same rig.
+
+## Hit-testing under animation (#97, #121)
+
+After #130 a native-driven `opacity`, `backgroundColor` or `transform` animation writes the retained `SceneNode`
+every frame and performs **no Fabric commit while it runs** — the one it does perform is at the end, and *The one
+commit an animation does make* below is what that is for. That is the right thing for the picture and it splits
+geometry in two: the painter reads the animated scene, and everything that reads the committed shadow tree — hit
+testing,
+`measure`, `getRelativeLayoutMetrics` — reads the value the node last mounted with. Upstream shipped exactly this
+split and [core#51621](https://github.com/facebook/react-native/issues/51621) has been open ever since: `onPress`
+does not fire while a view animates on the new architecture, because
+[PR 43374](https://github.com/facebook/react-native/pull/43374) syncs the animated value back into the shadow tree
+only when the animation **ends**. Reproducing it here by design was the default, and #97 exists to not take it.
+
+### The decision
+
+**Hit testing reads the retained scene.** `RetainedScene::findNodeAtPoint(rootTag, surfacePoint)` returns a
+`SceneHit` — the deepest painted node under the point and the absolute origin it was painted at — and
+`InputDispatcher::resolveTarget` asks it first. `UIManager::findNodeAtPoint` is kept only for a painted tag that
+the committed shadow tree does not contain.
+
+The alternative was upstream's: keep the shadow-tree hit test and fold the animated value into a mounting override
+so the tree stays consistent. It was rejected on cost. A mounting override is a commit per animated frame, with a
+Yoga relayout inside it — the exact cost *Sync props fast path* exists to avoid — and it makes correctness of the
+click depend on a commit landing before the next press, which is a race rather than a guarantee. The retained
+scene, by contrast, already holds everything a hit test needs and already holds it in the composed form the
+painter uses: absolute frames, the composed 2D affine matrix, and the inherited `overflow: hidden` clip stack.
+Reading it costs one tree walk and no commit, and it makes the answer true on **every** frame rather than after
+the last one.
+
+The objection this replaces — recorded in the old *Input* text — was that "a second hit-test implementation would
+be a second chance to disagree with React about what was clicked". That is answered by construction rather than by
+avoidance: `findNodeAtPoint` calls the same `visitNode` that `appendPrimitives` calls, so the frame, the matrix
+and the clips a press is decided against are the same objects the next snapshot paints. There is one composition,
+not two. What the scene does not have — event emitters — is not duplicated either: the scene answers with a Fabric
+tag and the shadow tree is searched for that tag, so the node React is told about is still a committed shadow node.
+
+### The algorithm
+
+`hitTestNode` is a pre-order walk carrying a `ScenePaintState`, the same struct the snapshot walk carries:
+
+1. Visit the node with `visitNode`, producing the primitive it would paint and the state its children inherit.
+2. If the node's `pointerEvents` allows children to be targets (`auto` or `box-none`), recurse into `childTags`
+   **backwards**. Child order is mount order is paint order, so the last sibling painted is the one on top, and
+   the first hit found front-to-back wins.
+3. Otherwise, or if no child was hit, the node itself is the answer when its `pointerEvents` allows it to be a
+   target (`auto` or `box-only`) and the point lands on it.
+4. "Lands on it" is the inverse of the composed matrix. The surface point is mapped back into the untransformed
+   coordinates the node's frame is written in, and the frame is tested for containment. Every inherited clip is
+   tested the same way, through its own matrix, because a node paints only inside the `overflow: hidden`
+   ancestors that cut it. A matrix whose determinant is under `1e-6` — `scale: 0` — maps the node onto a line and
+   is never hit, which is also what it paints.
+
+The inverse rather than upstream's forward-mapped bounding box is what makes a rotated node hit where it is drawn
+rather than inside the axis-aligned box around it, and it is why the vertical- and horizontal-inversion special
+cases `LayoutableShadowNode::findNodeAtPoint` carries have no equivalent here: an inverted matrix inverts.
+
+Four rules are stated rather than inherited:
+
+- **`pointerEvents` is scene state.** `SceneNode` retains it — the only prop it keeps that paints nothing —
+  because the painted-geometry answer still has to obey the same rule
+  `ConcreteViewShadowNode::canBeTouchTarget` and `canChildrenBeTouchTarget` apply to the shadow tree.
+- **A node animated to `opacity: 0` is still hittable**, exactly as a statically transparent one is. The scene
+  drops invisible nodes from the *snapshot*, never from the tree, so the hit walk still sees them. Upstream chose
+  the same, and [core#50465](https://github.com/facebook/react-native/issues/50465) is iOS choosing the opposite
+  by accident.
+- **A node that paints nothing is still a target.** An empty `<View>` contributes no primitive and is still
+  pressed, which is what a `<Pressable>` with no background needs.
+- **Corner radii are not consulted.** A press on the corner of a rounded card presses the card. Upstream's shadow
+  tree hit test does not consult them either, and the clip that would need them is a rounded rect the painter
+  applies and the hit path approximates by its box.
+
+There is no re-sync step at animation end, because nothing was ever wrong: the scene held the current value on
+every frame, so the frame after the last one changes no answer.
+
+### What stays on the UIManager path
+
+- **A painted tag with no shadow node.** `resolveTarget` falls back to `UIManager::findNodeAtPoint` when the tree
+  does not contain the tag the scene named — a node from another surface, or a revision this thread has not seen.
+- **Scroll routing.** `ScrollController` still hit-tests through `UIManager::findNodeAtPoint`, because a wheel
+  moves the deepest `<ScrollView>` under the pointer and a ScrollView's own frame is not what an animation moves.
+  Moving it is a follow-up, not a correctness bug today.
+- **Focus traversal.** The focusable set is a walk of the committed shadow tree, filtered by props, and it is not
+  a geometry question at all. See *Focus and keyboard*.
+- **Keyboard activation.** `emitActivation` measures the synthetic click at the focused node's layout origin
+  through `getRelativeLayoutMetrics`. It is not a hit test, and the coordinates of a keyboard press are not a
+  claim about where anything was painted.
+
+### What `measure()` reports
+
+**Layout geometry, unscaled and un-animated** — the same answer `measure`, `measureInWindow` and `measureLayout`
+give when nothing is animating. This is a decision that needs no code: those APIs resolve through
+`UIManager::getRelativeLayoutMetrics` on the committed shadow tree, and the fast path writes only the scene, so
+the values are already the laid-out ones. It is recorded here so it is a contract rather than a side effect.
+
+The reasons it is the right answer rather than merely the cheap one:
+
+- It is what #115 in this tracker asserts, and what
+  [core#54988](https://github.com/facebook/react-native/issues/54988) reports as a bug in the other direction:
+  `measure()` returning doubled values under a scaled parent is paint geometry leaking into a layout API.
+- `measure` is what layout code reads to place things. A value that moved 60 times a second would make every
+  consumer of it race the animation.
+- Hit testing is the one caller that must be paint-true, because it answers a question about pixels the user
+  pointed at. It no longer goes through `measure`, so the two can hold different answers honestly.
+
+The consequence to know: during a native-driven transform animation, `measure()` and the pointer's target
+disagree, on purpose. A component that measures itself and then compares the result with a pointer coordinate is
+asking two different questions.
+
+### The one commit an animation does make
+
+`measure()` is *eventually* consistent, and the thing that makes it so is upstream's end-of-animation re-sync —
+the same [PR 43374](https://github.com/facebook/react-native/pull/43374) that #97 and #121 exist to survive. It is
+kept, unchanged, because with hit testing off the shadow tree it is no longer load-bearing for input and is
+exactly right for layout.
+
+The mechanism, read from the frame that runs it: `NativeAnimatedNodesManager::onAnimationFrame` collects the value
+nodes whose drivers reported `getIsComplete()` into `finishedAnimationValueNodes` and hands them to `updateNodes`,
+whose BFS marks everything downstream of a finished value as `connectedToFinishedAnimation` and calls
+`PropsAnimatedNode::update(forceFabricCommit = true)` on the props node it reaches. Every other frame calls
+`update()` with that flag false. So the count is exactly **zero commits per frame while an animation is in flight,
+and one when it finishes**, whatever the animation's length.
+
+What that one commit does differs by configuration, and the window runs the second:
+
+- **Direct-manipulation configuration** (`schedulePropsCommit`'s non-shared branch, which is what the unit test
+  builds): `forceFabricCommit` puts the props into `updateViewProps_` **and** `updateViewPropsDirect_`, so
+  `commitProps` calls the Fabric callback and the direct one, in that order. The comment upstream leaves on the
+  second — "must call direct manipulation to set final values on components" — is the statement that the picture
+  is still the fast path's even on the settling frame.
+- **Shared-backend configuration** (`useSharedAnimatedBackend`, which *The flags* turns on): `forceFabricCommit`
+  inserts the tag into `shouldRequestAsyncFlush_`, the mutation still travels the non-layout half, and
+  `AnimationBackend::requestAsyncFlushForSurfaces` posts an **empty commit** onto the JavaScript thread so
+  `AnimationBackendCommitHook` pushes the animated props into the shadow tree React sees. Same purpose, no
+  props payload, one commit.
+
+Nothing about hit testing depends on that commit landing, which is the difference from upstream: there, the
+re-sync is what eventually makes a click work again, and here it is only what eventually makes `measure()` agree.
+The scene held the current value on every frame either way.
+
+### The proof
+
+`packages/core/tests/AnimatedHitTestTest.cpp`, inside the 100% line and branch gate that covers
+`RetainedScene.cpp` and `LinuxMountingManager.cpp`:
+
+- `ATranslationAppliedWithoutACommitMovesWhereAPressLands` is the issue. A `transform` translation is applied
+  through `LinuxMountingManager::synchronouslyUpdateViewOnUIThread` — no commit, no mutation — and the node is
+  then found at its new painted centre and **not** at the position it mounted at.
+- `ThePressedOriginIsThePaintedFrameMappedByThePaintedMatrix` is the one-computation claim: the origin the hit
+  reports is recomputed from the snapshot's own matrix and frame, so changing either half alone fails it.
+- `ANodeAnimatedToFullTransparencyPaintsNothingAndIsStillPressable` pins the `opacity: 0` rule against a snapshot
+  that is empty.
+- `AnOverflowHiddenAncestorClipsWhatCanBePressed`, the three `PointerEvents*` cases,
+  `TheSiblingPaintedLastIsTheOneThePointFinds`, `ANodeScaledToNothingCannotBePressed` and the surface-root cases
+  cover the rest of the walk.
+- `AnimatedFrameAgreementTest.EveryTickLeavesTheSceneAtTheValueTheDriverJustHandedOver` is #121. It builds a real
+  `NativeAnimatedNodesManager` — value → transform → style → props → view, a `frames` driver, an injected
+  `g_setNativeAnimatedNowTimestampFunction` clock — whose direct-manipulation callback is
+  `synchronouslyUpdateViewOnUIThread`. The graph is installed through `scheduleOnUI`, which is the batch
+  `AnimatedModule::finishOperationBatch` queues, so it is built on the render thread inside the first tick exactly
+  as it is in the window. For each of three ticks it asserts that one payload arrived (no lag, nothing a frame
+  late), that the snapshot's matrix equals the translation the driver handed over, and that the hit test finds the
+  node at that painted centre with that painted origin. It also records the Fabric commits each tick caused and
+  asserts the sequence is `{0, 0, 1}`: nothing commits while the animation is in flight, and the tick the frames
+  driver completes on carries the one re-sync *The one commit an animation does make* describes. That tick is
+  pinned by the final value being exactly `toValue` rather than by its index, and the clean `MountDiagnostics`
+  afterwards is the third consumer — the painter's read, the hit test and the diagnostics all derived from one
+  scene state.
+
+The manager in that test is built with the direct-manipulation constructor rather than the shared-backend one the
+window uses. The shared-backend path needs an `AnimationBackend`, a `UIManager` and a live `ShadowNodeFamily` per
+animated node — `insertMutations` drops a mutation whose weak family does not lock — and none of those exist in a
+Hermes-free unit binary. The payload is identical either way: `TransformAnimatedNode::collectViewUpdates` produces
+the same raw operation array that `animationbackend::packAnimatedProps` serializes, which is what the fast path
+parses.
+
+### Follow-ups
+
+- **Golden-image.** A frame captured mid-animation, so the painted position the hit test is asserted against is a
+  reviewed artifact rather than a computed one. Still a #97 acceptance criterion; this change does not close it.
+- **E2E under cage.** #97 asks for `--inject-pointer` at a scripted offset into a running animation, and #121 for
+  the same through the compositor. The rig exists — `scripts/e2e.ts` and `packages/core/e2e/*.json`, see *E2E
+  driver* — and the scenario is not written yet, because the bundle it needs does not exist. It has to combine
+  `pressable.js`'s hand-built fiber-shaped instance handles with `animated.js`'s operation batch, and in the
+  shared-backend configuration the window runs, a batch is not enough: `connectAnimatedNodeToView` records a tag
+  and no family, and `NativeAnimatedNodesManager::insertMutations` skips any mutation whose weak
+  `ShadowNodeFamily` does not lock. The bundle therefore also has to call `connectAnimatedNodeToShadowNodeFamily`
+  with the object `nativeFabricUIManager.createNode` returned. Its timing is coupled to *Animation choreographer*'s
+  pending-work rule: the animation only keeps ticking while `LinuxAnimationChoreographer::isActive` holds the
+  fallback timeout open, so the scenario's `frames` budget and its `sleep` steps have to bracket the animation
+  rather than the other way round. Owner: whoever writes the first animated fixture bundle.
+- **`ScrollController`.** Its hit test is still the shadow tree's; see above.
+- **TSan.** The scene hit test runs on the frame thread under `sceneMutex_` while the JavaScript thread commits.
+  It joins the same sanitizer gap *Sync props fast path* already names.
+- **`InputDispatcher.cpp` is outside the C++ coverage gate**, because it needs a `UIManager` and is not compiled
+  into `rnl_core_tests` — `scripts/cpp-coverage.ts`'s `scopedSourcePaths` has never listed it. The scene half of
+  this change is fully gated; the dispatcher half is proved only by `--inject-pointer` and by the e2e scenario
+  above.
 
 ## Upstream animated tests (#132)
 
@@ -956,6 +1303,7 @@ pnpm --filter @react-native-linux/core run:golden:scroll  # hello_react --scroll
 pnpm --filter @react-native-linux/core run:golden:focus   # hello_react --focus-tab focus.js /tmp/rnl-focus.png 3
 pnpm --filter @react-native-linux/core assets:test-image  # node scripts/make-test-image.ts — see *Image*
 pnpm --filter @react-native-linux/core run:input    # hello_react --inject-pointer pressable.js 200 140
+pnpm --filter @react-native-linux/core run:animated-scroll  # hello_react --animated-scroll animated-scroll.js 160 100 3
 pnpm --filter @react-native-linux/core run:window   # build/dev/bin/rnl_window
 pnpm --filter @react-native-linux/core run:window:fabric  # build/dev/bin/rnl_window --fabric <bundle>
 pnpm --filter @react-native-linux/core run:window:ime      # build/dev/bin/rnl_window --ime-debug — see *IME*
@@ -999,7 +1347,10 @@ output path, a surface coordinate and a wheel notch count, turns the wheel over 
 settle, and writes the PNG of where it stopped; see *ScrollView*. `--focus-tab` takes the bundle path, an output
 path and a press count, presses Tab that many times and writes the PNG of where the focus ring landed, printing
 whatever the bundle prints on the way; see *Focus and keyboard*. `--inject-pointer` takes the bundle path
-and a surface coordinate, clicks there, and prints whatever the bundle prints; see *Input*. `--resize` takes the
+and a surface coordinate, clicks there, and prints whatever the bundle prints; see *Input*. `--animated-scroll`
+takes the bundle path, a surface coordinate and a wheel notch count, drives the whole glide one frame at a time
+with the beat induced per frame, and prints whatever the bundle prints on each of them; see *Event-driven
+Animated*. `--resize` takes the
 bundle path, a width and a height, runs the bundle at the headless surface size and then resizes the surface to
 them, so the bundle can print its boot constants and the `didUpdateDimensions` that follows; see *Dimensions and
 TurboModules*. `--ime-debug` takes no
@@ -1763,6 +2114,8 @@ wl_pointer.axis / axis_discrete / axis_stop
   → ScrollController::advance      one frame of ScrollPhysics per axis, per ScrollView
       ├─ ConcreteState::updateState        contentOffset back into the shadow tree
       └─ ScrollViewEventEmitter            onScroll, onMomentumScrollBegin, onMomentumScrollEnd
+  → UIManagerAnimationBackend::trigger  an Animated.event value bound to contentOffset, applied in this frame
+                                        — see *Event-driven Animated (#131)*
   → FabricHost::induceEventBeat    both of those flush on the JavaScript thread together
   → commit → mount → RetainedScene::writeNode      contentOffset read back off ScrollViewState
   → SceneSnapshot                  children composed from the frame origin minus contentOffset, clipped
@@ -1817,14 +2170,17 @@ directly behind a discrete one on the same axis is dropped as the duplicate it i
 
 ### Routing, and why it is not the pointer's target
 
-`ScrollController::route` hit-tests with `UIManager::findNodeAtPoint` — the same call a click uses, so a wheel and
-a click agree about what is under the pointer — and then walks up: `ShadowNodeFamily::getAncestors` returns the
+`ScrollController::route` hit-tests with `UIManager::findNodeAtPoint` on the committed shadow tree and then walks
+up: `ShadowNodeFamily::getAncestors` returns the
 path from the root down as (parent, child index) pairs, and the first `ScrollViewShadowNode` found walking that
 path backwards is the innermost ScrollView containing the hit node. That is nested-ScrollView behaviour with no
 second rule for it, and a wheel over a node with no ScrollView above it does nothing.
 
 `FabricHost::dispatchInput` splits the frame rather than handing every event to both routers, because the two
-answer different questions about the same coordinate and a shared pass would hit-test each event twice.
+answer different questions about the same coordinate and a shared pass would hit-test each event twice. Since #97
+they also read different trees: a click reads the retained scene, so it lands where the frame painted, and a wheel
+reads the shadow tree, because the ScrollView a wheel moves is not what an animation moves. Aligning them is a
+follow-up in *Hit-testing under animation*.
 
 ### Threading, and the state write-back path
 
@@ -2032,18 +2388,25 @@ keeps a real device orders of magnitude below the cap, so reaching it means a st
 `InputQueue` needs no lock. Wayland listeners run inside `wl_display_dispatch_pending`, which the frame thread
 calls, and the frame thread is also what drains the queue.
 
-### Hit testing is upstream's
+### Hit testing reads the painted scene
 
-`UIManager::findNodeAtPoint` — the same call `NativeDOM` uses for `elementFromPoint` — walks the committed shadow
-tree from the root, honours `pointerEvents`, transforms and overflow inset, and returns the deepest node that can
-be a touch target. The retained scene also carries absolute frames and could answer the same question, but it has
-no shadow nodes behind those frames and therefore no event emitters, and a second hit-test implementation would be
-a second chance to disagree with React about what was clicked. When nothing is hit the target is the surface root,
-which is what lets the hover chain notice that the pointer left a view for the background.
+`RetainedScene::findNodeAtPoint` walks the retained tree from the surface root and returns the deepest node
+painted under the point, together with the absolute origin it was painted at. `UIManager::findNodeAtPoint` — the
+same call `NativeDOM` uses for `elementFromPoint` — is the fallback for a painted tag the committed shadow tree
+does not contain, and nothing else. The scene answers with a tag; the shadow tree is searched for the node that
+tag names, because the event emitter lives there and only there. When nothing is hit the target is the surface
+root, which is what lets the hover chain notice that the pointer left a view for the background.
+
+Until #97 this was the other way round, and the reason it changed is *Hit-testing under animation* above: an
+animation frame writes the retained scene and commits nothing, so the shadow tree's `LayoutMetrics` describe where
+a moving node started rather than where it is. That section holds the decision, the algorithm and the
+`measure()` policy.
 
 Reading the shadow tree from the frame thread is allowed rather than tolerated: `ShadowTreeRegistry::visit` and
 `ShadowTree::getCurrentRevision` both take a shared lock and are documented as callable from any thread, committed
-shadow nodes are immutable, and `EventQueue::enqueueEvent` takes its own mutex.
+shadow nodes are immutable, and `EventQueue::enqueueEvent` takes its own mutex. The scene is read under
+`LinuxMountingManager`'s `sceneMutex_`, which is the mutex an animation frame's synchronous update already writes
+under.
 
 ### What the platform decides, and what React decides
 
@@ -3259,9 +3622,10 @@ without weston: let the job fail on the missing goldens, download the artifact, 
 
 ## E2E driver (#7)
 
-Issue #7, milestone M1, first slice. A real bundle under a real compositor, driven by virtual Wayland input, asserted
-on the event trace it prints. The frame-timing probe and the perf gate the issue also asks for are the second slice
-and are named at the end of this section.
+Issue #7, milestone M1. A real bundle under a real compositor, driven by virtual Wayland input, asserted on the
+event trace it prints, on the `wp_presentation` frame times it reports and on the picture it captured. The first
+slice was the compositor rig, the injector and the trace; the second added the frame-timing probe, the perf gate
+and the screenshot comparison — see *Frame timing* and *Screenshots*. What is still missing is named at the end.
 
 ### The compositor decision, and the evidence for it
 
@@ -3322,7 +3686,8 @@ evdev keycode both protocols carry is the keymap's keycode minus the X11 offset 
 `scripts/e2e.ts` is the driver. Per scenario it creates a private `XDG_RUNTIME_DIR`, starts
 
 ```text
-cage -- rnl_window --fabric <bundle> --frames <n> --screenshot build/e2e/<scenario>/screenshot.png
+cage -- rnl_window --fabric <bundle> --frames <n> --screenshot build/e2e/<scenario>/screenshot.png \
+     --frame-log build/e2e/<scenario>/frames.jsonl
 ```
 
 with `WLR_BACKENDS=headless`, `WLR_RENDERER=pixman`, `WLR_LIBINPUT_NO_DEVICES=1`, `XKB_DEFAULT_LAYOUT=us` and the
@@ -3336,12 +3701,9 @@ through, so the trace is what the driver collects from the compositor process. E
 substrings — each has to appear on a line after the previous one — which is what makes them assertions about a
 sequence of events rather than a set.
 
-Every run writes `build/e2e/<scenario>/trace.log` and `screenshot.png`, and CI uploads that tree on failure. The
-driver captures the screenshot; it does not compare it, which is the same split *Window goldens* already makes
-between `scripts/window-golden.ts` and `golden.spec.ts`. Comparing it needs a baseline nobody has captured — cage
-sizes the surface to its own output rather than to the 800x600 the window goldens are checked in at, so the
-existing pictures are not it — and a golden of a pressed or typed-into state is a picture this slice does not
-need to make its point. It is named in the second slice below rather than half-built here.
+Every run writes `build/e2e/<scenario>/trace.log`, `screenshot.png` and `frames.jsonl`, and CI uploads that tree
+**always**, not only on failure: a passing run's frame log is the baseline the next run is read against, and it is
+where the picture a screenshot golden gets blessed from comes out.
 
 ### The scenarios
 
@@ -3354,9 +3716,12 @@ need to make its point. It is named in the second slice below rather than half-b
   "ready": "pressable: committed surface 1",
   "frames": 600,
   "steps": ["sleep 500", "move 200 140", "sleep 100", "click 200 140", "sleep 500"],
+  "screenshot": { "golden": "pressable-click.png", "maxDifferentPixels": 50 },
   "expect": ["pressable: topClick on box at 200,140"]
 }
 ```
+
+`frameBudget` and `screenshot` are both optional; a scenario without either asserts only on its trace.
 
 `pressable.json` clicks the middle of the 200x120 view `pressable.js` places at (100, 80) and expects the
 `topPointerDown`, `topPointerUp` and `topClick` lines the `--inject-pointer` proof in *Input* produces headlessly,
@@ -3365,8 +3730,101 @@ now produced by a compositor's `wl_pointer` instead. `text-input.json` presses T
 proof that the shift modifier reaches the field, since `H` is `shift+h` on the injected keymap.
 
 `scripts/e2e/scenario.ts` holds everything pure — scenario validation, the ordered-substring matcher and artifact
-naming — and `scripts/e2e/scenario.spec.ts` covers it at the repository's 100% threshold. The process side stays
-in `scripts/e2e.ts`, uncovered by Vitest for the reason `scripts/doctor.ts` is: it is spawns and sockets.
+naming — and `scripts/e2e/scenario.spec.ts` covers it at the repository's 100% threshold. `frame-log.ts` and
+`screenshot.ts` are pure in the same sense, and `grade.ts` is the file reading around them: it is the only part of
+the driver that touches the filesystem and is still covered, because a temporary directory is all its tests need.
+The process side stays in `scripts/e2e.ts`, uncovered by Vitest for the reason `scripts/doctor.ts` is: it is
+spawns and sockets.
+
+### Frame timing
+
+ADR-0001 decision 3 names three mechanisms and this is the one that **measures**. `wl_surface.frame` throttles and
+its timestamp has an undefined base; `wp_fifo_v1` and `wp_commit_timer_v1` schedule; `wp_presentation_feedback` is
+purely retrospective and reports when a content update actually turned into light. A frame time is therefore the
+delta between two consecutive `presented` timestamps, and nothing in this rig reads a wall clock.
+
+`presentation-time.xml` is stable and ships in wayland-protocols, so unlike the two virtual-input protocols it
+needs no vendoring: `packages/core/CMakeLists.txt` runs `wayland-scanner` over
+`${RNL_WAYLAND_PROTOCOLS_DIR}/stable/presentation-time/presentation-time.xml` into `rnl_presentation_time`, exactly
+as it does for `xdg-shell` and `text-input-unstable-v3`, and its absence joins `RNL_WINDOW_MISSING` rather than
+failing the configure. `WaylandWindow` binds `wp_presentation` at `min(advertised, 2)` — decision 3 wants version
+2 because Hyprland zeroes the refresh hint for version 1 clients under VRR, and a compositor stuck at 1 still
+binds. One protocol quirk is load-bearing and is the only thing a comment marks in `WaylandWindow`: the generated
+header declares a *function* named `wp_presentation_feedback`, which hides the struct of the same name in C++, so
+the type has to be spelled `struct wp_presentation_feedback` wherever it is named.
+
+`requestPresentationFeedback` sits beside `requestFrameCallback` inside `SkiaVulkanRenderer::drawFrame`, before
+the present request, because `vkQueuePresentKHR` is what commits the surface and the feedback request has to
+attach to the same pending content update. Both `presented` and `discarded` are destructor events, so each handler
+destroys its own proxy. `presented` records `{seq, presented ns, refresh ns, flags}`; `discarded` only counts.
+
+The arithmetic is `FrameTiming` (`packages/core/src/FrameTiming.{h,cpp}`), a pure class in the shape of
+`FrameClock`: no Wayland, no clock reads, every value passed in, and therefore under the 100% line-and-branch C++
+gate through `packages/core/tests/FrameTimingTest.cpp` and `scripts/cpp-coverage.ts`. Percentiles are **nearest
+rank** — the sample at `ceil(fraction * count)`, one-based, no interpolation — so every number reported is a frame
+time that actually happened. Intervals live in a ring of the last 4096 samples, because a long-running window must
+not grow a vector for the life of the process.
+
+`rnl_window --frame-log <path>` writes it as JSON Lines. One record per presented frame:
+
+```json
+{"seq":41,"presentedNs":1016000000,"refreshNs":16666666,"flags":1,"frameNs":16000000}
+```
+
+`frameNs` is the delta to the previous presented frame and is **absent on the first one**, because there is
+nothing to measure it from. The last line is the summary:
+
+```json
+{"summary":true,"frames":240,"discarded":0,"p50Ns":16000000,"p95Ns":16600000,"maxNs":31000000}
+```
+
+`frames` counts `presented` events, `discarded` counts `discarded` ones, and the three percentiles are over the
+intervals, of which there is one fewer than there are frames. A compositor that advertises no `wp_presentation`
+global at all is not an error: the window runs unchanged and the log is one summary line with `"frames":0` and
+`"unsupported":true`. cage is wlroots, and wlroots creates `wlr_presentation` — but the headless backend's
+`presented` timestamps come from its own software frame timer rather than from a vblank, so expect `flags` of 0
+and a refresh hint that is the headless output's nominal mode. **This has not been observed running**: no cage and
+no lavapipe exist on the machine this was written on, so the fallback path is reasoned about, not exercised. If it
+turns out cage advertises nothing, `findFrameBudgetFailures` in `scripts/e2e/frame-log.ts` is the one place that
+decides whether that is a failure or a skip, and today it is a failure with the reason named.
+
+The gate is `frameBudget` on a scenario: `p95Ms` is the ceiling and `minFrames` is how many frames must have been
+presented for that percentile to mean anything, so a run that presented four frames cannot pass by accident. The
+driver reports both reasons at once rather than hiding the second behind the first, and prints the whole summary
+as a note on every run, budget or not, so the numbers are tracked rather than only gated.
+
+`animated-frames.json` is the perf scenario: `animated.js` for 240 frames at `{"p95Ms": 16.7, "minFrames": 60}`.
+**16.7 ms, not the gospel's 8.33 ms, and deliberately so.** A headless lavapipe rig composited by pixman under
+cage is not going to hold a 120 Hz budget, and a gate that fails on the runner rather than on the renderer is a
+gate nobody will keep. 16.7 ms is the CI regression gate; the 8.33 ms number in the testing gospel is a **real
+hardware** budget and is measured on real hardware, not here.
+
+### Screenshots
+
+The driver now compares as well as captures, which is a deliberate departure from the split *Window goldens* makes
+between `scripts/window-golden.ts` and `golden.spec.ts`. Two constraints forced it. `pngjs` lives in
+`packages/core` and the root workspace had none, so `pngjs` and `@types/pngjs` are now root devDependencies —
+there is no way to decode a PNG from a root script without one. And oxlint's `import/no-relative-parent-imports`
+forbids a root script reaching into a package, so `compareImagesPerceptually` is **not** importable from
+`scripts/e2e`; `scripts/e2e/screenshot.ts` carries its own comparator instead.
+
+That comparator keeps the window goldens' `MAX_CHANNEL_DELTA` of 8 — a lavapipe frame's antialiasing coverage is a
+function of the Mesa version, not of the renderer — and replaces their 1%-of-the-frame budget with the absolute
+`maxDifferentPixels` the scenario declares. At cage's output size 1% is thousands of pixels, which would let a
+whole widget move; 50 is a handful of antialiased edges and nothing else.
+
+Blessing a golden:
+
+1. Add `"screenshot": {"golden": "<name>.png", "maxDifferentPixels": 50}` to the scenario. A golden that does not
+   exist yet is a **note, not a failure** — the driver prints the path it would have compared against and the path
+   of the picture to bless — so the run that produces the first artifact stays green.
+2. Take `screenshot.png` from that run's `e2e` CI artifact, which is why the upload is `if: always()`.
+3. Commit it as `packages/core/e2e/goldens/<name>.png` and review the picture in the PR diff, exactly as the
+   window goldens are reviewed.
+
+`pressable-click.png` is wired this way and **not committed**: cage sizes the surface to its own output rather
+than to the 800x600 the window goldens are checked in at, so no existing picture is it and nothing here guessed
+one. The coordinator blesses it from the next CI run's artifact.
 
 ### Running it
 
@@ -3375,32 +3833,31 @@ cmake --build build/dev --target rnl_window
 cmake --build build/dev --target rnl_inject
 pnpm e2e                        # every scenario
 pnpm e2e --scenario pressable-click
+pnpm e2e --scenario animated-frames
 ```
 
 Like the window rig, the driver exits **2** with the reason on stderr when `cage`, the lavapipe ICD or either
 binary is missing, so a checkout without a graphics stack stays green. In CI that exit is a failure, which is what
 stops an incomplete apt list from passing as a silent skip. The `window` job installs `cage`, builds `rnl_inject`
-after the window goldens step, runs `pnpm e2e`, and uploads `build/e2e` as the `e2e` artifact on failure.
+after the window goldens step, runs `pnpm e2e`, and always uploads `build/e2e` as the `e2e` artifact.
 
-### The second slice
+### What is still outstanding
 
 Named here so they are not mistaken for oversights, all of them still #7:
 
-- **`wp_presentation` frame-timing probes.** `rnl_window` does not bind `wp_presentation` at all yet, so there is
-  no presentation feedback to collect and no p95 to assert. The probe is a window-side change plus a machine-
-  readable timing report the driver reads, not a driver-side change.
-- **The perf regression gate.** The 8.33 ms budget scenarios and their threshold depend on that report existing,
-  and on a runner baseline nobody has measured. Asserting on wall-clock timings collected under lavapipe and
-  pixman before then would gate on the runner, not on the renderer.
 - **A structured event trace.** Today the trace is the fixture's `console.log` output, which means a scenario can
   only assert on what its bundle happens to print. A `--trace` flag on `rnl_window` emitting typed lines is what
   would let a scenario assert on events no fixture was written to report.
 - **Deterministic capture.** The window captures at a fixed frame number, so a scenario sizes `frames` to cover
   its own injection. Capturing on demand — a signal, or a step in the script — would remove the budget entirely.
-- **Screenshot assertions.** A `golden` field on a scenario, compared with `compareImagesPerceptually` the way
-  the window goldens are, once a first cage-sized baseline has been rendered and reviewed. The comparison belongs
-  in a spec beside `golden.spec.ts`, not in the driver, because `pngjs` is a `packages/core` dependency and the
-  root workspace deliberately has none.
+- **The first screenshot golden.** `pressable-click.png` is wired and skipped; it becomes an assertion the moment
+  a picture is blessed from a CI artifact. See *Screenshots*.
+- **One comparator, not two.** `scripts/e2e/screenshot.ts` and `packages/core/goldens/perceptual-diff.ts` now
+  carry the same per-channel tolerance for the same reason, because oxlint forbids the root script importing the
+  package one. Moving the shared half into a package both can depend on is the fix, and it is not worth a package
+  for one function yet.
+- **The 8.33 ms budget.** The CI gate is 16.7 ms because the rig is lavapipe and pixman. Measuring the gospel's
+  real number needs real hardware and a place to record the result over time; neither exists yet.
 
 ## Unit tests and coverage
 
@@ -3443,7 +3900,8 @@ traversal order and its wraps,
 the `done` batching, ordering and serial rules of `zwp_text_input_v3`, and the whole of the text buffer, its
 selection, its composition range and its `mostRecentEventCount` reconciliation — lives in those four where the
 gate sees it. What is left in
-`InputDispatcher.cpp` is a `UIManager` hit test, a shadow-tree walk and a switch over five emitter calls, what is
+`InputDispatcher.cpp` is a scene hit test, a shadow-tree lookup by tag and a switch over five emitter calls — the
+geometry it used to own now lives in `RetainedScene::findNodeAtPoint`, which the gate does see — what is
 left in `WaylandSeat.cpp` is protocol plumbing that needs a compositor, what is left in `TextInputClient.cpp`
 is requests and listeners that need one too, and what is left in `TextInputController.cpp` is a shadow-node
 lookup, a state write and four emitter calls. `--inject-pointer`, `--focus-tab`, `--ime-debug` and `--type` are
