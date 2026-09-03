@@ -4,6 +4,10 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
+#include <latch>
+#include <thread>
+
 #include <folly/dynamic.h>
 #include <react/renderer/graphics/Transform.h>
 #include <react/renderer/graphics/TransformUtils.h>
@@ -39,6 +43,7 @@ constexpr Tag kAnimatedTag = 2;
 constexpr Tag kUnknownTag = 404;
 constexpr double kHalfOpacity = 0.5;
 constexpr uint32_t kHalfBlueArgb = 0x803366CCU;
+constexpr uint32_t kHalfRedArgb = 0x80CC3333U;
 constexpr float kRotationRadians = 0.5F;
 constexpr float kPercentTranslation = 50.0F;
 constexpr float kResolvedPercentTranslation = 60.0F;
@@ -236,6 +241,138 @@ TEST(AnimatedPropsTest, AnUpdateForAnUnknownTagIsADiagnosticAndDamagesNothing) {
     EXPECT_EQ(diagnostics.firstUnknownTag, kUnknownTag);
     EXPECT_FALSE(mountingManager.hasPendingDamage());
     EXPECT_TRUE(mountingManager.takeFrame().damage.empty());
+}
+
+// Issue #74, and react-native-windows#16309: "permanent UI thread hang: unbounded ProcessDelayedPropsNodes retry
+// loop when a native-driver animation targets a view absent from the Fabric registry". The animated node graph
+// and the mounting layer have independent lifetimes, so a driver can name a tag the scene does not hold — before
+// the mount, after the unmount, or across a re-mount — and the thread that answers is the one that draws.
+//
+// There is no delayed-props queue here and therefore no retry: `synchronouslyUpdateViewOnUIThread` asks the scene
+// once, counts a diagnostic if the tag is unknown, and returns. These three tests are that answer written down,
+// because "it cannot happen here" is only true while nobody adds a queue.
+
+constexpr size_t kAnimationFrameCount = 120;
+constexpr size_t kConcurrentMountCycles = 200;
+
+void unmountAnimatedChild(LinuxMountingManager& mountingManager) {
+    const ShadowView child = animatedChild(propsWithBackground(blue()));
+    ShadowViewMutationList mutations{ShadowViewMutation::RemoveMutation(kSurfaceTag, child, 0),
+                                     ShadowViewMutation::DeleteMutation(child)};
+
+    mountingManager.executeMount(kSurfaceTag, transactionOf(std::move(mutations)));
+    mountingManager.takeFrame();
+}
+
+TEST(AnimatedPropsLifetimeTest, AnAnimationThatOutlivesItsViewCostsOneDiagnosticPerFrameAndNothingElse) {
+    LinuxMountingManager mountingManager;
+
+    mountChildAndTakeFrame(mountingManager, animatedChild(propsWithBackground(blue())));
+    unmountAnimatedChild(mountingManager);
+
+    // The driver does not know the view is gone: it keeps producing frames, as it would for the whole duration of
+    // whatever animation was running.
+    for (size_t frame = 0; frame < kAnimationFrameCount; frame++) {
+        mountingManager.synchronouslyUpdateViewOnUIThread(kAnimatedTag, animatedProp("opacity", kHalfOpacity));
+    }
+
+    const MountDiagnostics diagnostics = mountingManager.mountDiagnostics();
+
+    // One count per frame and not one more: bounded work, no queue, nothing retried. The first one is kept whole,
+    // which is what a report of this needs and what the log line already said.
+    EXPECT_EQ(diagnostics.unknownTagOperations, kAnimationFrameCount);
+    EXPECT_EQ(diagnostics.firstUnknownOperation, "SyncUpdate");
+    EXPECT_EQ(diagnostics.firstUnknownTag, kAnimatedTag);
+    EXPECT_FALSE(mountingManager.hasPendingDamage());
+    EXPECT_TRUE(mountingManager.takeFrame().damage.empty());
+}
+
+TEST(AnimatedPropsLifetimeTest, AnAnimationAttachedBeforeItsViewMountsAppliesFromTheMountOnwards) {
+    LinuxMountingManager mountingManager;
+
+    mountingManager.startSurface(kSurfaceTag, Size{.width = 800, .height = 600});
+
+    // Attached first, mounted second — the order react-native-windows#16309 is about.
+    for (size_t frame = 0; frame < kAnimationFrameCount; frame++) {
+        mountingManager.synchronouslyUpdateViewOnUIThread(kAnimatedTag, animatedProp("opacity", kHalfOpacity));
+    }
+
+    EXPECT_EQ(mountingManager.mountDiagnostics().unknownTagOperations, kAnimationFrameCount);
+
+    ShadowViewMutationList mutations{
+        ShadowViewMutation::CreateMutation(animatedChild(propsWithBackground(blue()))),
+        ShadowViewMutation::InsertMutation(kSurfaceTag, animatedChild(propsWithBackground(blue())), 0)};
+
+    mountingManager.executeMount(kSurfaceTag, transactionOf(std::move(mutations)));
+    mountingManager.takeFrame();
+    mountingManager.synchronouslyUpdateViewOnUIThread(kAnimatedTag, animatedProp("opacity", kHalfOpacity));
+
+    const SceneSnapshot snapshot = mountingManager.snapshotScene();
+
+    // The tag is not poisoned by having been unknown: the update that arrives after the mount applies.
+    ASSERT_EQ(snapshot.size(), 1U);
+    EXPECT_EQ(snapshot[0].backgroundColorArgb, kHalfBlueArgb);
+    EXPECT_EQ(mountingManager.mountDiagnostics().unknownTagOperations, kAnimationFrameCount);
+}
+
+TEST(AnimatedPropsLifetimeTest, ATagMountedAgainAfterItsUnmountAnimatesAsTheNewNode) {
+    LinuxMountingManager mountingManager;
+
+    mountChildAndTakeFrame(mountingManager, animatedChild(propsWithBackground(blue())));
+    mountingManager.synchronouslyUpdateViewOnUIThread(kAnimatedTag, animatedProp("opacity", kHalfOpacity));
+    unmountAnimatedChild(mountingManager);
+    mountChildAndTakeFrame(mountingManager, animatedChild(propsWithBackground(red())));
+
+    // The second node mounted red and is animated to half opacity: the answer is the *new* node's colour, so
+    // nothing survived the unmount that should not have.
+    mountingManager.synchronouslyUpdateViewOnUIThread(kAnimatedTag, animatedProp("opacity", kHalfOpacity));
+
+    const SceneSnapshot snapshot = mountingManager.snapshotScene();
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    EXPECT_EQ(snapshot[0].backgroundColorArgb, kHalfRedArgb);
+}
+
+// The TSan half of #74: the frame thread animating a tag while the JavaScript thread mounts and unmounts it, so
+// the interleaving that would dereference a removed node is the one this runs. Both sides take `sceneMutex_`,
+// which is the whole guarantee; ThreadSanitizer is what checks the claim rather than the assertions below, which
+// only say the run finished and stayed consistent. Run under CTest and under the TSan preset.
+TEST(AnimatedPropsLifetimeTest, AnimatingWhileTheTagIsMountedAndUnmountedOnAnotherThreadIsSerialized) {
+    LinuxMountingManager mountingManager;
+    std::latch startLatch{2};
+    std::atomic<bool> isMounting{true};
+
+    mountingManager.startSurface(kSurfaceTag, Size{.width = 800, .height = 600});
+
+    std::thread mountingThread([&] {
+        startLatch.arrive_and_wait();
+
+        for (size_t cycle = 0; cycle < kConcurrentMountCycles; cycle++) {
+            ShadowViewMutationList mounting{
+                ShadowViewMutation::CreateMutation(animatedChild(propsWithBackground(blue()))),
+                ShadowViewMutation::InsertMutation(kSurfaceTag, animatedChild(propsWithBackground(blue())), 0)};
+
+            mountingManager.executeMount(kSurfaceTag, transactionOf(std::move(mounting)));
+            unmountAnimatedChild(mountingManager);
+        }
+
+        isMounting.store(false);
+    });
+
+    startLatch.arrive_and_wait();
+
+    // The frame thread's two calls, in the order the window makes them, for as long as the other thread is
+    // mounting: an update whose tag has just been deleted is the case, and it must cost a diagnostic rather than
+    // a dereference.
+    while (isMounting.load()) {
+        mountingManager.synchronouslyUpdateViewOnUIThread(kAnimatedTag, animatedProp("opacity", kHalfOpacity));
+        mountingManager.takeFrame();
+    }
+
+    mountingThread.join();
+
+    // Whatever the interleaving was, the scene holds either the node or nothing, and never a dangling half of one.
+    EXPECT_LE(mountingManager.snapshotScene().size(), 1U);
 }
 
 TEST(AnimatedPropsTest, ANonAllowlistedPropIsCountedAndTheRestOfThePayloadStillApplies) {
