@@ -1148,6 +1148,114 @@ parses.
   this change is fully gated; the dispatcher half is proved only by `--inject-pointer` and by the e2e scenario
   above.
 
+## Animation frame cost (#124)
+
+Upstream shipped a 20× native-driver animation regression to a stable release
+([core#50716](https://github.com/facebook/react-native/issues/50716)) and CI did not catch it. Allocation is the
+mechanism behind that class of regression, so #124's unit half is a **zero-allocation assertion on the frame-thread
+animation path**: not "is it fast today" but "does a steady state frame reach the allocator, and how often". The
+number is a gate rather than a note, because a per-frame allocation that appears in a refactor is invisible in a
+p95 until the machine is loaded, and by then it is in a release.
+
+### The probe
+
+`packages/core/tests/AllocationProbe.h` replaces the global allocation operators with counting `std::malloc` and
+`std::free`. Two properties keep that safe inside a binary that also runs every other suite:
+
+- **Counting only.** No pooling, no poisoning, no bookkeeping header on the allocation. Nothing a test can observe
+  except the counters, so no other suite's behaviour changes when this header is linked in.
+- **Only inside an `AllocationScope`, only on that scope's own thread.** The counters and the arming flag are
+  `thread_local` and the flag is false everywhere outside a scope, so GoogleTest's own allocations — registering
+  tests, formatting failures, building strings for `EXPECT_*` — are never counted. That is also why every
+  assertion in the suite reads the counters inside the scope and asserts on the copies afterwards.
+
+Global operator replacement is program-wide by nature; what is scoped is the counting, not the replacement. The
+operator definitions are therefore deliberately **not** `inline`, so a second translation unit that includes the
+header is a duplicate-symbol link error rather than a silent second replacement. Today that one includer is
+`AnimationFrameCostTest.cpp`. Over-aligned allocations are left to the library's own
+`operator new(size_t, align_val_t)`, which the library pairs with its own aligned delete: the counts stay balanced
+and the uncounted path is one nothing on the animation frame path takes.
+
+The header and the test are **outside** the 100% coverage gate — `scripts/cpp-coverage.ts`'s `scopedSourcePaths`
+only ever lists `packages/core/src` files. Nothing under `src` changed for this, so every gated file keeps the
+coverage it already had.
+
+### What is measured
+
+`packages/core/tests/AnimationFrameCostTest.cpp` drives the two calls the window makes between delivering a
+frame's input and taking its scene, after two warm-up frames — the first frame through any of these paths also
+pays for the runtime's, the feature flags' and the containers' one-time initialisation, and a gate that measured
+that would be measuring startup.
+
+Every case asserts twice: `EXPECT_LE` against a stated ceiling, and `EXPECT_EQ` between two consecutive steady
+state frames. The equality is the assertion that actually catches a regression — a path that starts allocating per
+frame stops being equal to the frame before it long before it crosses any ceiling — and the ceiling is what stops
+the equality from being satisfied by a uniformly expensive frame. Each test prints the count it measured, so the
+numbers are tracked rather than only gated.
+
+| Path | Asserted | Why |
+| --- | --- | --- |
+| `LinuxAnimationChoreographer::tick` | **0 allocations, 0 deallocations** | An atomic load, a `weak_ptr::lock`, one virtual call. The test's backend records into two scalars rather than a vector, so the measurement is of the path and not of the recorder. |
+| `synchronouslyUpdateViewOnUIThread`, `opacity` | ≤ 12, equal frame to frame | Six by construction, all of them the damage bracket — see below. The ceiling is set at twice the read count so an incidental container in the subtree walk is not a build break. |
+| `synchronouslyUpdateViewOnUIThread`, `backgroundColor` | ≤ 12, equal frame to frame | Same six. `SharedColor` is an `int32_t` wrapper on this platform, so the colour itself costs nothing. |
+| `synchronouslyUpdateViewOnUIThread`, `transform` | ≤ 64, equal frame to frame | The six above **plus a `folly::dynamic` parse that inherently allocates** — see *The transform ceiling*. |
+| `RetainedScene::takeDamage` | **0 allocations** | `std::exchange(damage_, SceneDamage{})` is a move; the empty replacement never allocates. |
+| `RetainedScene::applyAnimatedProps` damage | ≤ 12, equal frame to frame | The same six, measured at the scene rather than at the manager. |
+
+The six are all damage, and none of them are the payload: `applyAnimatedProps` brackets its writes with
+`damageSubtree` before and after, each run builds one `std::vector<const SceneNode*>` of ancestors and one
+`SceneSnapshot` of the subtree's primitives, and each then appends one rectangle to `damage_`. The prop names are
+short enough for the small-string buffer, the rejected-prop list stays empty, and the node's own containers are
+empty, so nothing else on the path is a container at all.
+
+Two of the six are the damage list itself, and that is the one number that could be zero and is not: `takeDamage`
+moves the buffer out, so the next frame starts from capacity 0 and pays for the first `push_back` and then for the
+growth to two. Keeping the capacity means `takeDamage` copying into its return value instead of moving out of the
+member, which moves the allocation rather than removing it — the fix worth making is on the consumer side, where
+the frame could hand its own buffer down and get it refilled. Left as a follow-up rather than a one-liner, and
+deliberately not done here: `RetainedScene` is the shared surface of several open changes and this is not the one
+that should move its ownership model.
+
+### The transform ceiling
+
+The transform payload is the one path with a ceiling instead of a small constant, and the reason is upstream's
+parser, reached on purpose. `RetainedScene::parseAnimatedTransform` hands the raw operation array to
+`fromRawValue`, the same overload `ViewProps` parsing uses, which is what makes an animated `{"translateX": 20}`
+mean exactly what a committed one means (see *Sync props fast path*). `parseProcessedTransform` copies the payload
+three times on the way to a `Transform`: into the `RawValue`'s own `folly::dynamic`, into a
+`std::vector<RawValue>` of operations, and into a `std::unordered_map<std::string, RawValue>` per operation — each
+copy carrying that operation object's node and bucket array — before pushing the parsed `TransformOperation` onto
+`Transform::operations` and copying that vector into the result. On the smallest possible payload, a single-axis
+translation, that is on the order of twenty allocations per frame, every frame, for a value that changes only in
+its magnitude.
+
+**Follow-up, and the one worth doing:** pre-parse transforms into a POD in the animated payload. The shape of an
+animated transform is fixed for the life of the animation — the driver knows at `connectAnimatedNodeToView` time
+that it is sending a translation — so the per-frame message could carry the operation list as a fixed-size struct
+and skip `folly::dynamic` entirely. That is a change to what `animationbackend::packAnimatedProps` sends rather
+than to anything on this side, which is why the ceiling is documented here instead of the number being driven
+down: the parse is upstream's, and matching it exactly is the point of the equality tests in
+`AnimatedPropsTest.cpp`.
+
+### What the perf and e2e half still owes
+
+The `animated-frames.json` p95 gate already exists in the e2e driver — `animated.js` for 240 frames at
+`{"p95Ms": 16.7, "minFrames": 60}`, see *E2E driver* for why 16.7 ms and not the gospel's 8.33 ms. That covers
+#124's "a simple continuously animating view is in the gate permanently" criterion, which is
+[core#50716](https://github.com/facebook/react-native/issues/50716)'s shape. Still open, all of them still #124:
+
+- **N concurrent animated nodes.** #124 asks for a stated N and for predictable degradation past it. Neither the
+  scenario nor the number exists; the unit half above says the per-node cost is constant, not what N nodes cost.
+- **Animating while a list scrolls.** The
+  [core#34583](https://github.com/facebook/react-native/issues/34583)/[core#38470](https://github.com/facebook/react-native/issues/38470)
+  combination, which is the shape that freezes rather than merely stutters. Needs a fixture bundle that has both,
+  and inherits the animated-fixture problem *Hit-testing under animation* already names.
+- **The animation step's own budget, separately from the frame's.** Measured with `wp_presentation` feedback at
+  60 Hz and 120 Hz, per #20's harness. Today the driver asserts the frame, not the step inside it.
+- **CI artifact trend.** `build/e2e` is uploaded on every run, but nothing reads yesterday's numbers, so a
+  regression that stays under the ceiling is invisible. The allocation counts this suite prints have the same gap
+  and the same fix.
+
 ## Upstream animated tests (#132)
 
 We do not write the animated node graph, so we do not write its unit tests either. React Native ships them at

@@ -265,4 +265,15 @@ facebook::react::MountingTransaction transactionOf(facebook::react::ShadowViewMu
                                                 facebook::react::TransactionTelemetry{}};
 }
 
+void mountChildAndTakeFrame(react_native_linux::LinuxMountingManager& mountingManager,
+                            const facebook::react::ShadowView& child) {
+    facebook::react::ShadowViewMutationList mutations{
+        facebook::react::ShadowViewMutation::CreateMutation(child),
+        facebook::react::ShadowViewMutation::InsertMutation(kSurfaceTag, child, 0)};
+
+    mountingManager.startSurface(kSurfaceTag, facebook::react::Size{.width = 800, .height = 600});
+    mountingManager.executeMount(kSurfaceTag, transactionOf(std::move(mutations)));
+    mountingManager.takeFrame();
+}
+
 } // namespace

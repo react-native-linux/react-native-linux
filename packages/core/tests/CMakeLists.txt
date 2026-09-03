@@ -36,6 +36,7 @@ add_executable(rnl_core_tests
     AnimatedHitTestTest.cpp
     AnimatedPropsTest.cpp
     AnimationChoreographerTest.cpp
+    AnimationFrameCostTest.cpp
     DimensionsTest.cpp
     SceneReuseTest.cpp
     EditorTest.cpp

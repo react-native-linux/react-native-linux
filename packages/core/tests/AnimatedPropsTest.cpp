@@ -56,21 +56,10 @@ ShadowView animatedChild(const std::shared_ptr<ViewProps>& viewProps) {
     return makeStyledView(kAnimatedTag, animatedFrame(), viewProps);
 }
 
-// Mounts the animated node and consumes the frame that mounting it produced, so whatever damage a test observes
-// afterwards belongs to the synchronous update alone.
-void mountAnimatedChild(LinuxMountingManager& mountingManager, const ShadowView& child) {
-    ShadowViewMutationList mutations{ShadowViewMutation::CreateMutation(child),
-                                     ShadowViewMutation::InsertMutation(kSurfaceTag, child, 0)};
-
-    mountingManager.startSurface(kSurfaceTag, Size{.width = 800, .height = 600});
-    mountingManager.executeMount(kSurfaceTag, transactionOf(std::move(mutations)));
-    mountingManager.takeFrame();
-}
-
 SceneSnapshot snapshotAfterAnimating(const std::shared_ptr<ViewProps>& viewProps, const folly::dynamic& props) {
     LinuxMountingManager mountingManager;
 
-    mountAnimatedChild(mountingManager, animatedChild(viewProps));
+    mountChildAndTakeFrame(mountingManager, animatedChild(viewProps));
     mountingManager.synchronouslyUpdateViewOnUIThread(kAnimatedTag, props);
 
     return mountingManager.snapshotScene();
@@ -180,7 +169,7 @@ TEST(AnimatedPropsTest, AnOpacityUpdateFoldsIntoTheColoursTheNextFramePaints) {
 TEST(AnimatedPropsTest, AnOpacityUpdateDamagesTheNodeAndTheNextFrameCarriesIt) {
     LinuxMountingManager mountingManager;
 
-    mountAnimatedChild(mountingManager, animatedChild(propsWithBackground(blue())));
+    mountChildAndTakeFrame(mountingManager, animatedChild(propsWithBackground(blue())));
     mountingManager.synchronouslyUpdateViewOnUIThread(kAnimatedTag, animatedProp("opacity", kHalfOpacity));
 
     EXPECT_TRUE(mountingManager.hasPendingDamage());
@@ -237,7 +226,7 @@ TEST(AnimatedPropsTest, ATransformResolvesAboutTheOriginTheNodeMountedWith) {
 TEST(AnimatedPropsTest, AnUpdateForAnUnknownTagIsADiagnosticAndDamagesNothing) {
     LinuxMountingManager mountingManager;
 
-    mountAnimatedChild(mountingManager, animatedChild(propsWithBackground(blue())));
+    mountChildAndTakeFrame(mountingManager, animatedChild(propsWithBackground(blue())));
     mountingManager.synchronouslyUpdateViewOnUIThread(kUnknownTag, animatedProp("opacity", kHalfOpacity));
 
     const MountDiagnostics diagnostics = mountingManager.mountDiagnostics();
@@ -255,7 +244,7 @@ TEST(AnimatedPropsTest, ANonAllowlistedPropIsCountedAndTheRestOfThePayloadStillA
 
     props["shadowRadius"] = 4.0;
 
-    mountAnimatedChild(mountingManager, animatedChild(propsWithBackground(blue())));
+    mountChildAndTakeFrame(mountingManager, animatedChild(propsWithBackground(blue())));
     mountingManager.synchronouslyUpdateViewOnUIThread(kAnimatedTag, props);
 
     const MountDiagnostics diagnostics = mountingManager.mountDiagnostics();
@@ -269,7 +258,7 @@ TEST(AnimatedPropsTest, ANonAllowlistedPropIsCountedAndTheRestOfThePayloadStillA
 TEST(AnimatedPropsTest, EveryRejectedPropIsCountedAndOnlyTheFirstIsKept) {
     LinuxMountingManager mountingManager;
 
-    mountAnimatedChild(mountingManager, animatedChild(propsWithBackground(blue())));
+    mountChildAndTakeFrame(mountingManager, animatedChild(propsWithBackground(blue())));
     mountingManager.synchronouslyUpdateViewOnUIThread(kAnimatedTag, animatedProp("shadowRadius", 4.0));
     mountingManager.synchronouslyUpdateViewOnUIThread(kAnimatedTag, animatedProp("borderTopColor", 0));
 
