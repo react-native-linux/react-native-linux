@@ -113,6 +113,7 @@ class LayoutConformanceTest : public ::testing::Test {
 protected:
     const std::map<Tag, Rect>& commitTree(LayoutConstraints constraints, std::vector<NodeSpec> children) {
         frames_.clear();
+        nodes_.clear();
         scrollViewContentSizes_.clear();
 
         shadowTree_ = std::make_unique<ShadowTree>(kSurfaceId, constraints, LayoutContext{}, shadowTreeDelegate_,
@@ -127,9 +128,21 @@ protected:
             },
             commitOptions);
 
-        collectFrames(*shadowTree_->getCurrentRevision().rootShadowNode, Point{});
+        committedRevision_ = shadowTree_->getCurrentRevision();
+
+        collectFrames(committedRevision_.rootShadowNode, Point{});
 
         return frames_;
+    }
+
+    const ShadowNode& node(Tag tag) const {
+        const auto entry = nodes_.find(tag);
+
+        if (entry == nodes_.end()) {
+            ADD_FAILURE() << "tag " << tag << " was not committed";
+        }
+
+        return *entry->second;
     }
 
     static void expectFrameNear(const std::map<Tag, Rect>& frames, Tag tag, double x, double y, double width,
@@ -174,7 +187,67 @@ protected:
                                                          .children = std::vector<NodeSpec>{item}}});
     }
 
+    /**
+     * Re-commits the tree that is currently committed with one style property changed on the tagged node — the
+     * way a React update reaches Yoga. The new props are cloned from the committed node's props with only the
+     * delta applied, so this is the props re-read path and not a tree rebuild.
+     */
+    const std::map<Tag, Rect>& recommitWithStyle(Tag targetTag, folly::dynamic delta) {
+        const auto target = nodes_.find(targetTag);
+
+        if (target == nodes_.end()) {
+            ADD_FAILURE() << "tag " << targetTag << " was not committed";
+            return frames_;
+        }
+
+        const PropsParserContext parserContext{kSurfaceId, *contextContainer_};
+        const facebook::react::Props::Shared updatedProps = viewDescriptor_.cloneProps(
+            parserContext, target->second->getProps(), RawProps{folly::dynamic(std::move(delta))});
+
+        const ShadowTreeCommitOptions commitOptions{.enableStateReconciliation = false, .mountSynchronously = true};
+
+        shadowTree_->commit(
+            [&](const RootShadowNode& oldRootShadowNode) {
+                return std::static_pointer_cast<RootShadowNode>(oldRootShadowNode.ShadowNode::clone(ShadowNodeFragment{
+                    .props = ShadowNodeFragment::propsPlaceholder(),
+                    .children = withReplacedProps(oldRootShadowNode.getChildren(), targetTag, updatedProps)}));
+            },
+            commitOptions);
+
+        committedRevision_ = shadowTree_->getCurrentRevision();
+
+        frames_.clear();
+        nodes_.clear();
+        scrollViewContentSizes_.clear();
+        collectFrames(committedRevision_.rootShadowNode, Point{});
+
+        return frames_;
+    }
+
 private:
+    std::shared_ptr<const ChildList> withReplacedProps(const ChildList& children, Tag targetTag,
+                                                       const facebook::react::Props::Shared& updatedProps) {
+        auto replaced = std::make_shared<ChildList>();
+
+        for (const std::shared_ptr<const ShadowNode>& child : children) {
+            if (child->getTag() == targetTag) {
+                replaced->push_back(child->clone(ShadowNodeFragment{.props = updatedProps}));
+                continue;
+            }
+
+            if (child->getChildren().empty()) {
+                replaced->push_back(child);
+                continue;
+            }
+
+            replaced->push_back(child->clone(
+                ShadowNodeFragment{.props = ShadowNodeFragment::propsPlaceholder(),
+                                   .children = withReplacedProps(child->getChildren(), targetTag, updatedProps)}));
+        }
+
+        return replaced;
+    }
+
     std::shared_ptr<const ChildList> makeChildren(const std::vector<NodeSpec>& specs) {
         ChildList children;
 
@@ -220,8 +293,10 @@ private:
         return viewDescriptor_.cloneProps(parserContext, ViewShadowNode::defaultSharedProps(), std::move(rawProps));
     }
 
-    void collectFrames(const ShadowNode& node, Point parentOrigin) {
-        const auto* layoutable = dynamic_cast<const LayoutableShadowNode*>(&node);
+    void collectFrames(const std::shared_ptr<const ShadowNode>& node, Point parentOrigin) {
+        nodes_.emplace(node->getTag(), node);
+
+        const auto* layoutable = dynamic_cast<const LayoutableShadowNode*>(node.get());
 
         if (layoutable == nullptr) {
             return;
@@ -230,14 +305,14 @@ private:
         const Rect frame = layoutable->getLayoutMetrics().frame;
         const Point absolute{parentOrigin.x + frame.origin.x, parentOrigin.y + frame.origin.y};
 
-        frames_.emplace(node.getTag(), Rect{.origin = absolute, .size = frame.size});
+        frames_.emplace(node->getTag(), Rect{.origin = absolute, .size = frame.size});
 
-        if (const auto* scrollView = dynamic_cast<const ScrollViewShadowNode*>(&node)) {
-            scrollViewContentSizes_.emplace(node.getTag(), scrollView->getStateData().getContentSize());
+        if (const auto* scrollView = dynamic_cast<const ScrollViewShadowNode*>(node.get())) {
+            scrollViewContentSizes_.emplace(node->getTag(), scrollView->getStateData().getContentSize());
         }
 
-        for (const std::shared_ptr<const ShadowNode>& child : node.getChildren()) {
-            collectFrames(*child, absolute);
+        for (const std::shared_ptr<const ShadowNode>& child : node->getChildren()) {
+            collectFrames(child, absolute);
         }
     }
 
@@ -248,6 +323,8 @@ private:
     facebook::react::ScrollViewComponentDescriptor scrollViewDescriptor_{ComponentDescriptorParameters{
         .eventDispatcher = EventDispatcher::Shared{}, .contextContainer = contextContainer_, .flavor = nullptr}};
     std::unique_ptr<ShadowTree> shadowTree_;
+    facebook::react::ShadowTreeRevision committedRevision_;
+    std::map<Tag, std::shared_ptr<const ShadowNode>> nodes_;
     std::map<Tag, Rect> frames_;
     std::map<Tag, Size> scrollViewContentSizes_;
 };
@@ -625,6 +702,237 @@ TEST_F(LayoutConformanceTest, CoreIssue35858DegenerateAspectRatioValuesDefaultTo
         SCOPED_TRACE(name);
 
         expectFrameNear(frames, 11, 0, 0, 100, 0);
+    }
+}
+
+#pragma mark - out-of-flow boxes against a padded parent (#116)
+
+struct AbsolutePlacementCase {
+    const char* name;
+    folly::dynamic parentProps;
+    folly::dynamic childProps;
+    double expectedX;
+    double expectedY;
+    double expectedWidth = 40;
+    double expectedHeight = 20;
+};
+
+folly::dynamic absoluteChild(folly::dynamic extra) {
+    folly::dynamic props = folly::dynamic::object("position", "absolute")("width", 40)("height", 20);
+
+    for (const auto& entry : extra.items()) {
+        props[entry.first] = entry.second;
+    }
+
+    return props;
+}
+
+folly::dynamic paddedParent(folly::dynamic extra) {
+    folly::dynamic props = folly::dynamic::object("width", 200)("height", 100);
+
+    for (const auto& entry : extra.items()) {
+        props[entry.first] = entry.second;
+    }
+
+    return props;
+}
+
+/**
+ * The containing-block table of #46392 and #43206: where an absolutely positioned child sits and which box its
+ * percentage sizes and insets resolve against. CSS names the padding box of the parent as the containing block;
+ * the commit thread (Yoga, like every RN platform) resolves the percentage sizes and insets against the
+ * content box and offsets insets by the border width alone, so padding moves neither a zero inset nor a
+ * percentage — the one systematic deviation from the CSS rule this table pins. Half-point results land on the
+ * pixel grid through Fabric's rounding, so the cases use percentages that resolve exactly.
+ */
+TEST_F(LayoutConformanceTest, CoreIssue46392AbsoluteChildPercentageResolutionAgainstAPaddedParent) {
+    const std::vector<AbsolutePlacementCase> cases = {
+        {.name = "noInsetsSitsAtTheOrigin",
+         .parentProps = folly::dynamic::object(),
+         .childProps = folly::dynamic::object("left", 0)("top", 0),
+         .expectedX = 0,
+         .expectedY = 0},
+        {.name = "coreIssue46392PercentSizeResolvesAgainstTheContentBoxLikeYogaNotThePaddingBoxLikeCss",
+         .parentProps = folly::dynamic::object("padding", 10)("borderWidth", 5),
+         .childProps = folly::dynamic::object("left", 0)("top", 0)("width", "50%")("height", "50%"),
+         .expectedX = 5,
+         .expectedY = 5,
+         .expectedWidth = 85,
+         .expectedHeight = 35},
+        {.name = "percentInsetsOffsetByTheBorderAndResolveAgainstTheContentBox",
+         .parentProps = folly::dynamic::object("padding", 10)("borderWidth", 5),
+         .childProps = folly::dynamic::object("left", "20%")("top", "10%"),
+         .expectedX = 5 + 0.20 * 170,
+         .expectedY = 5 + 0.10 * 70},
+        {.name = "paddingAloneShiftsNothingForALeftZeroChild",
+         .parentProps = folly::dynamic::object("padding", 10),
+         .childProps = folly::dynamic::object("left", 0)("top", 0),
+         .expectedX = 0,
+         .expectedY = 0},
+        {.name = "borderShiftsALeftZeroChildToThePaddingBoxOrigin",
+         .parentProps = folly::dynamic::object("borderWidth", 5),
+         .childProps = folly::dynamic::object("left", 0)("top", 0),
+         .expectedX = 5,
+         .expectedY = 5},
+        {.name = "marginOnTheParentShiftsTheWholeContainingBlock",
+         .parentProps = folly::dynamic::object("margin", 15)("borderWidth", 5),
+         .childProps = folly::dynamic::object("left", 0)("top", 0),
+         .expectedX = 20,
+         .expectedY = 20},
+    };
+
+    for (const AbsolutePlacementCase& layoutCase : cases) {
+        const std::map<Tag, Rect>& frames =
+            commitTree(LayoutConstraints{}, {NodeSpec{.tag = 10,
+                                                      .props = paddedParent(layoutCase.parentProps),
+                                                      .children = std::vector<NodeSpec>{NodeSpec{
+                                                          .tag = 11, .props = absoluteChild(layoutCase.childProps)}}}});
+
+        SCOPED_TRACE(layoutCase.name);
+
+        expectFrameNear(frames, 11, layoutCase.expectedX, layoutCase.expectedY, layoutCase.expectedWidth,
+                        layoutCase.expectedHeight);
+    }
+}
+
+TEST_F(LayoutConformanceTest, CoreIssue43206PercentInsetsAfterAddingPaddingResolveAgainstTheContentBox) {
+    const std::map<Tag, Rect>& frames = commitTree(
+        LayoutConstraints{},
+        {NodeSpec{.tag = 10,
+                  .props = paddedParent(folly::dynamic::object("padding", 20)("paddingTop", 30)),
+                  .children = std::vector<NodeSpec>{NodeSpec{
+                      .tag = 11, .props = absoluteChild(folly::dynamic::object("left", "10%")("top", "20%"))}}}});
+
+    expectFrameNear(frames, 11, 0.10 * 160, 0.20 * 50, 40, 20);
+}
+
+TEST_F(LayoutConformanceTest, CoreIssue34542AbsoluteChildOutsideTheParentBoundsKeepsItsFullFrame) {
+    const std::map<Tag, Rect>& frames = commitTree(
+        LayoutConstraints{},
+        {NodeSpec{.tag = 10,
+                  .props = paddedParent(folly::dynamic::object()),
+                  .children = std::vector<NodeSpec>{NodeSpec{.tag = 11,
+                                                             .props = absoluteChild(folly::dynamic::object("left", 150)(
+                                                                 "top", 60)("width", 100)("height", 80))}}}});
+
+    expectFrameNear(frames, 11, 150, 60, 100, 80);
+}
+
+/**
+ * The re-read table of #47979: every style property that reaches Yoga must change the layout when it changes. Each
+ * row commits one base tree, then re-commits the same tree with a single property mutated on either the parent or
+ * the child — the clone-with-new-props path React's updates take, not a tree rebuild — and asserts the metric the
+ * mutated property is supposed to move. A property that stops reaching Yoga fails its row instead of silently
+ * laying out the stale style, which is the failure mode core#47979 reports for flexBasis.
+ */
+TEST_F(LayoutConformanceTest, CoreIssue47979EveryStylePropertyThatReachesYogaIsReReadWhenItChanges) {
+    struct StyleUpdateCase {
+        const char* name;
+        Tag targetTag;
+        folly::dynamic delta;
+        Tag assertedTag;
+        double expectedX;
+        double expectedY;
+        double expectedWidth;
+        double expectedHeight;
+    };
+
+    const std::vector<StyleUpdateCase> cases = {
+        {.name = "childWidth",
+         .targetTag = 11,
+         .delta = folly::dynamic::object("width", 80),
+         .assertedTag = 11,
+         .expectedX = 0,
+         .expectedY = 0,
+         .expectedWidth = 80,
+         .expectedHeight = 20},
+        {.name = "childHeight",
+         .targetTag = 11,
+         .delta = folly::dynamic::object("height", 60),
+         .assertedTag = 11,
+         .expectedX = 0,
+         .expectedY = 0,
+         .expectedWidth = 40,
+         .expectedHeight = 60},
+        {.name = "childRelativeLeft",
+         .targetTag = 11,
+         .delta = folly::dynamic::object("left", 25),
+         .assertedTag = 11,
+         .expectedX = 25,
+         .expectedY = 0,
+         .expectedWidth = 40,
+         .expectedHeight = 20},
+        {.name = "childMarginTop",
+         .targetTag = 11,
+         .delta = folly::dynamic::object("marginTop", 10),
+         .assertedTag = 11,
+         .expectedX = 0,
+         .expectedY = 10,
+         .expectedWidth = 40,
+         .expectedHeight = 20},
+        {.name = "childAspectRatio",
+         .targetTag = 11,
+         .delta = folly::dynamic::object("aspectRatio", 0.5),
+         .assertedTag = 11,
+         .expectedX = 0,
+         .expectedY = 0,
+         .expectedWidth = 40,
+         .expectedHeight = 80},
+        {.name = "childMinWidth",
+         .targetTag = 11,
+         .delta = folly::dynamic::object("minWidth", 90),
+         .assertedTag = 11,
+         .expectedX = 0,
+         .expectedY = 0,
+         .expectedWidth = 90,
+         .expectedHeight = 20},
+        {.name = "parentPaddingLeft",
+         .targetTag = 10,
+         .delta = folly::dynamic::object("paddingLeft", 20),
+         .assertedTag = 11,
+         .expectedX = 20,
+         .expectedY = 0,
+         .expectedWidth = 40,
+         .expectedHeight = 20},
+        {.name = "parentBorderWidth",
+         .targetTag = 10,
+         .delta = folly::dynamic::object("borderWidth", 8),
+         .assertedTag = 11,
+         .expectedX = 8,
+         .expectedY = 8,
+         .expectedWidth = 40,
+         .expectedHeight = 20},
+        {.name = "parentGap",
+         .targetTag = 10,
+         .delta = folly::dynamic::object("gap", 12),
+         .assertedTag = 12,
+         .expectedX = 52,
+         .expectedY = 0,
+         .expectedWidth = 30,
+         .expectedHeight = 20},
+        {.name = "parentFlexDirection",
+         .targetTag = 10,
+         .delta = folly::dynamic::object("flexDirection", "column"),
+         .assertedTag = 12,
+         .expectedX = 0,
+         .expectedY = 20,
+         .expectedWidth = 30,
+         .expectedHeight = 20},
+    };
+
+    for (const StyleUpdateCase& layoutCase : cases) {
+        commitTree(LayoutConstraints{},
+                   {NodeSpec{.tag = 10,
+                             .props = paddedParent(folly::dynamic::object("flexDirection", "row")),
+                             .children = std::vector<NodeSpec>{NodeSpec{.tag = 11, .props = box(40, 20)},
+                                                               NodeSpec{.tag = 12, .props = box(30, 20)}}}});
+
+        const std::map<Tag, Rect>& frames = recommitWithStyle(layoutCase.targetTag, layoutCase.delta);
+
+        SCOPED_TRACE(layoutCase.name);
+
+        expectFrameNear(frames, layoutCase.assertedTag, layoutCase.expectedX, layoutCase.expectedY,
+                        layoutCase.expectedWidth, layoutCase.expectedHeight);
     }
 }
 
