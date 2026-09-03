@@ -38,6 +38,7 @@ struct ScrollViewMetrics {
     facebook::react::Size viewportSize;
     facebook::react::Size contentSize;
     double decelerationRate{kDecelerationRateNormal};
+    double scrollEventThrottleMilliseconds{0.0};
 };
 
 facebook::react::Point toPoint(double x, double y) {
@@ -48,7 +49,8 @@ facebook::react::Point toPoint(double x, double y) {
 ScrollViewMetrics readMetrics(const facebook::react::ScrollViewShadowNode& scrollView) {
     return ScrollViewMetrics{.viewportSize = scrollView.getLayoutMetrics().frame.size,
                              .contentSize = scrollView.getStateData().getContentSize(),
-                             .decelerationRate = scrollView.getConcreteProps().decelerationRate};
+                             .decelerationRate = scrollView.getConcreteProps().decelerationRate,
+                             .scrollEventThrottleMilliseconds = scrollView.getConcreteProps().scrollEventThrottle};
 }
 
 /**
@@ -251,7 +253,6 @@ bool ScrollController::advanceTarget(ScrollTarget& target, const facebook::react
     const ScrollViewMetrics metrics = readMetrics(scrollView);
     const facebook::react::Point previousOffset =
         toPoint(target.horizontal.state.offset, target.vertical.state.offset);
-    const bool wasMomentumRunning = target.isMomentumRunning;
 
     advanceAxis(target.horizontal, target.isFingerDown, frameMilliseconds, metrics.decelerationRate,
                 metrics.contentSize.width, metrics.viewportSize.width);
@@ -279,19 +280,34 @@ bool ScrollController::advanceTarget(ScrollTarget& target, const facebook::react
     const std::shared_ptr<const facebook::react::ScrollViewEventEmitter> emitter =
         std::dynamic_pointer_cast<const facebook::react::ScrollViewEventEmitter>(scrollView.getEventEmitter());
 
+    const ScrollCadenceEvents cadenceEvents = target.cadence.advance(
+        ScrollCadenceFrame{.frameMilliseconds = frameMilliseconds,
+                           .throttleMilliseconds = metrics.scrollEventThrottleMilliseconds,
+                           .hasMoved = hasMoved,
+                           .isDragging = target.isFingerDown,
+                           .isMomentumRunning = target.isMomentumRunning});
+
     if (emitter != nullptr) {
         const facebook::react::ScrollEvent scrollEvent = makeScrollEvent(metrics, contentOffset);
 
-        if (!wasMomentumRunning && target.isMomentumRunning) {
-            emitter->onMomentumScrollBegin(scrollEvent);
+        if (cadenceEvents.beginDrag) {
+            emitter->onScrollBeginDrag(scrollEvent);
         }
 
-        if (hasMoved) {
+        if (cadenceEvents.scroll) {
             emitter->onScroll(scrollEvent);
             hasDispatchedScrollEvent_ = true;
         }
 
-        if (wasMomentumRunning && !target.isMomentumRunning) {
+        if (cadenceEvents.endDrag) {
+            emitter->onScrollEndDrag(scrollEvent);
+        }
+
+        if (cadenceEvents.momentumBegin) {
+            emitter->onMomentumScrollBegin(scrollEvent);
+        }
+
+        if (cadenceEvents.momentumEnd) {
             emitter->onMomentumScrollEnd(scrollEvent);
         }
     }

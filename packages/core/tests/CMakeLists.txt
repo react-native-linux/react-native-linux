@@ -73,6 +73,7 @@ add_executable(rnl_core_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/LinuxAnimationChoreographer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/LinuxMountingManager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/RetainedScene.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ScrollEventCadence.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ScrollPhysics.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputComponent.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputV3State.cpp)

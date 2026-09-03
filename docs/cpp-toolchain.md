@@ -2497,6 +2497,31 @@ they also read different trees: a click reads the retained scene, so it lands wh
 reads the shadow tree, because the ScrollView a wheel moves is not what an animation moves. Aligning them is a
 follow-up in *Hit-testing under animation*.
 
+### The cadence contract (#45)
+
+`VirtualizedList` windowing is written against a cadence rather than against a picture, so a renderer that gets
+the picture right and the cadence wrong makes every list in the ecosystem look broken —
+react-native-macos#1119 is twenty-four comments of that. `ScrollEventCadence` is that contract as arithmetic,
+inside the coverage gate, and `ScrollController` does nothing with the five events but emit whichever ones it
+names.
+
+The five, in the order a frame emits them: `onScrollBeginDrag`, `onScroll`, `onScrollEndDrag`,
+`onMomentumScrollBegin`, `onMomentumScrollEnd`. That order is `UIScrollView`'s on the frame that matters — the
+release, where the drag's last movement is reported, then the drag ends, then the deceleration begins.
+
+- **The throttle is a minimum interval, not a sampling rate.** `scrollEventThrottle` is milliseconds between
+  `onScroll` dispatches; a frame that moved inside the interval is *folded into* the next dispatch rather than
+  dropped, so the offset a list sees is always the newest one rather than a stale sample. Zero — which is what an
+  unset prop resolves to — means every frame that moved, which is what `RCTScrollView` does with the same value.
+- **A boundary always flushes.** The end of a drag and the end of momentum report the movement they are the end
+  of whatever the throttle says, so the offset a scroll came to rest at is never the one nobody was told about.
+- **Begin and end are paired, exactly once each**, and momentum brackets itself inside the drag bracket.
+
+One consequence to know about: the animated graph is pushed on frames that dispatched an `onScroll` (see *Sync
+props fast path*), and the driver listens to that event, so **a throttle throttles scroll-linked native-driver
+animation with it**. An app that wants a header to track the scroll should leave `scrollEventThrottle` at 0,
+which is the default and the fastest cadence this platform has.
+
 ### Threading, and the state write-back path
 
 Everything the controller does runs on the platform frame thread, between `dispatchInput` and `induceEventBeat`.
@@ -2588,9 +2613,9 @@ test for those.
 - **`pagingEnabled`, `snapToInterval`, `snapToOffsets`, `snapToAlignment`, `disableIntervalMomentum`.** All parsed,
   none implemented. Snapping is a projection of the momentum's landing point onto a grid, which needs the
   landing-point calculation the rubber band also needs.
-- **`onScrollBeginDrag` and `onScrollEndDrag`.** Only `onScroll`, `onMomentumScrollBegin` and `onMomentumScrollEnd`
-  are emitted. The drag pair carries the velocity and target offset `FlatList` and paging read, so it lands with
-  snapping rather than before it.
+- **`onScrollEndDrag`'s `velocity` and `targetContentOffset` are zero.** The pair itself is emitted — see *The
+  cadence contract* — but the two fields a paging implementation reads are the landing-point calculation the
+  rubber band and snapping also need, so they land with those.
 - **Scroll indicators.** `showsVerticalScrollIndicator`, `scrollIndicatorInsets`, `indicatorStyle` and
   `persistentScrollbar` draw nothing. A scrollbar is a painted overlay with its own fade timer and its own hit
   region, which is a component, not a prop.
@@ -2602,10 +2627,10 @@ test for those.
 - **Programmatic scrolling.** `scrollTo`, `scrollToEnd` and `scrollResponderScrollTo` arrive as `dispatchCommand`,
   which queues them in order but executes none of them; see *Commit termination and mounting atomicity*. Nothing
   animates to a position yet.
-- **`scrollEventThrottle` is ignored.** The cadence is one `onScroll` per frame, which is the fastest React Native
-  ever asks for; a throttle that fires *less* often is what `FlatList` sets, and honouring it means dropping events
-  the frame already coalesced. Whether `FlatList` windowing behaves correctly at this cadence is untested — there
-  is no `FlatList` here yet, because there is no React Native JavaScript runtime in this host.
+- **Whether `FlatList` windowing behaves correctly at this cadence is still untested**, because there is no
+  `FlatList` in this host yet: the fixtures talk to `nativeFabricUIManager` directly, and a real `VirtualizedList`
+  needs the React Native JavaScript runtime that arrives with the flagship bring-up (#24). The cadence itself is
+  asserted — see below — and the bounded mounted-row count is not.
 - **Zoom.** `zoomScale`, `minimumZoomScale`, `maximumZoomScale` and `pinchGestureEnabled` do nothing;
   `ScrollEvent::zoomScale` is always 1. A pinch needs `wl_touch` or a gesture protocol neither of which is bound.
 - **`horizontal`, `directionalLockEnabled` and RTL.** Both axes are always live and clamp independently, so a

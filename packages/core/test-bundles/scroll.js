@@ -39,6 +39,8 @@ const scrollView = createNode(3, 'ScrollView', {
   height: 150,
   backgroundColor: 0xff1e2430 | 0,
   onScroll: true,
+  onScrollBeginDrag: true,
+  onScrollEndDrag: true,
   onMomentumScrollBegin: true,
   onMomentumScrollEnd: true,
 });

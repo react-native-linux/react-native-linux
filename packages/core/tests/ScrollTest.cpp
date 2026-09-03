@@ -1,4 +1,5 @@
 #include "InputPipeline.h"
+#include "ScrollEventCadence.h"
 #include "ScrollPhysics.h"
 
 #include <gtest/gtest.h>
@@ -26,6 +27,9 @@ using react_native_linux::PointerDispatch;
 using react_native_linux::PointerRouter;
 using react_native_linux::ScrollAxisKind;
 using react_native_linux::ScrollAxisState;
+using react_native_linux::ScrollCadenceEvents;
+using react_native_linux::ScrollCadenceFrame;
+using react_native_linux::ScrollEventCadence;
 using react_native_linux::velocityForTravel;
 
 // One 60 Hz frame and one 120 Hz frame, in milliseconds.
@@ -65,6 +69,120 @@ double settledOffset(double velocity, double frameMilliseconds, double decelerat
 
 InputEvent makeScroll(InputEventKind kind, ScrollAxisKind scrollAxis, double amount) {
     return InputEvent{.kind = kind, .scrollAxis = scrollAxis, .scrollAmount = amount};
+}
+
+// Issue #45. The cadence is what `VirtualizedList` windowing is written against, so each of these is a sentence
+// from that contract: a drag is bracketed once, momentum brackets itself inside it, the throttle bounds how often
+// `onScroll` arrives without ever dropping the newest offset, and a boundary always reports where it ended.
+
+ScrollCadenceFrame movingFrame(bool isDragging, bool isMomentumRunning, double throttleMilliseconds = 0.0) {
+    return ScrollCadenceFrame{.frameMilliseconds = kFrameMilliseconds60Hz,
+                              .throttleMilliseconds = throttleMilliseconds,
+                              .hasMoved = true,
+                              .isDragging = isDragging,
+                              .isMomentumRunning = isMomentumRunning};
+}
+
+TEST(ScrollEventCadenceTest, AnUnthrottledFrameThatMovedReportsItAndOneThatDidNotDoesNot) {
+    ScrollEventCadence cadence;
+    const ScrollCadenceEvents moved = cadence.advance(movingFrame(true, false));
+
+    EXPECT_TRUE(moved.beginDrag);
+    EXPECT_TRUE(moved.scroll);
+
+    ScrollCadenceFrame still = movingFrame(true, false);
+
+    still.hasMoved = false;
+
+    const ScrollCadenceEvents settled = cadence.advance(still);
+
+    EXPECT_FALSE(settled.beginDrag);
+    EXPECT_FALSE(settled.scroll);
+}
+
+TEST(ScrollEventCadenceTest, ADragIsBracketedExactlyOnceAndTheReleaseEndsItBeforeMomentumBegins) {
+    ScrollEventCadence cadence;
+    const ScrollCadenceEvents first = cadence.advance(movingFrame(true, false));
+    const ScrollCadenceEvents second = cadence.advance(movingFrame(true, false));
+
+    EXPECT_TRUE(first.beginDrag);
+    EXPECT_FALSE(second.beginDrag);
+    EXPECT_FALSE(first.endDrag);
+
+    // The release: the finger is up and the fling has started, in one frame. Both are reported, and the struct
+    // names them in the order they are emitted — the drag ends before the momentum begins.
+    const ScrollCadenceEvents released = cadence.advance(movingFrame(false, true));
+
+    EXPECT_TRUE(released.endDrag);
+    EXPECT_TRUE(released.momentumBegin);
+    EXPECT_TRUE(released.scroll);
+
+    const ScrollCadenceEvents gliding = cadence.advance(movingFrame(false, true));
+
+    EXPECT_FALSE(gliding.endDrag);
+    EXPECT_FALSE(gliding.momentumBegin);
+
+    ScrollCadenceFrame stopped = movingFrame(false, false);
+
+    stopped.hasMoved = false;
+
+    const ScrollCadenceEvents rest = cadence.advance(stopped);
+
+    EXPECT_TRUE(rest.momentumEnd);
+    EXPECT_FALSE(rest.scroll);
+}
+
+TEST(ScrollEventCadenceTest, TheThrottleIsAMinimumIntervalRatherThanASamplingRate) {
+    constexpr double kThrottleMilliseconds = 50.0;
+    ScrollEventCadence cadence;
+
+    // 16.67 ms a frame against a 50 ms throttle: the first frame is under the interval and the third crosses it.
+    EXPECT_FALSE(cadence.advance(movingFrame(true, false, kThrottleMilliseconds)).scroll);
+    EXPECT_FALSE(cadence.advance(movingFrame(true, false, kThrottleMilliseconds)).scroll);
+    EXPECT_TRUE(cadence.advance(movingFrame(true, false, kThrottleMilliseconds)).scroll);
+
+    // And the interval starts again from the frame that reported, not from the one that moved.
+    EXPECT_FALSE(cadence.advance(movingFrame(true, false, kThrottleMilliseconds)).scroll);
+}
+
+TEST(ScrollEventCadenceTest, AFrameThatMovedInsideTheIntervalIsFoldedIntoTheNextReport) {
+    constexpr double kThrottleMilliseconds = 50.0;
+    ScrollEventCadence cadence;
+    ScrollCadenceFrame still = movingFrame(true, false, kThrottleMilliseconds);
+
+    still.hasMoved = false;
+
+    EXPECT_FALSE(cadence.advance(movingFrame(true, false, kThrottleMilliseconds)).scroll);
+
+    // Nothing moves for two frames, but the movement from the first is still unreported when the interval
+    // elapses, so it is reported then rather than lost.
+    EXPECT_FALSE(cadence.advance(still).scroll);
+    EXPECT_TRUE(cadence.advance(still).scroll);
+}
+
+TEST(ScrollEventCadenceTest, AThrottledDragReportsWhereItEndedWhateverTheIntervalSays) {
+    constexpr double kThrottleMilliseconds = 1000.0;
+    ScrollEventCadence cadence;
+
+    EXPECT_FALSE(cadence.advance(movingFrame(true, false, kThrottleMilliseconds)).scroll);
+
+    const ScrollCadenceEvents released = cadence.advance(movingFrame(false, false, kThrottleMilliseconds));
+
+    EXPECT_TRUE(released.endDrag);
+    EXPECT_TRUE(released.scroll);
+}
+
+TEST(ScrollEventCadenceTest, AThrottledFlingReportsWhereItStopped) {
+    constexpr double kThrottleMilliseconds = 1000.0;
+    ScrollEventCadence cadence;
+
+    EXPECT_TRUE(cadence.advance(movingFrame(false, true, kThrottleMilliseconds)).momentumBegin);
+    EXPECT_FALSE(cadence.advance(movingFrame(false, true, kThrottleMilliseconds)).scroll);
+
+    const ScrollCadenceEvents stopped = cadence.advance(movingFrame(false, false, kThrottleMilliseconds));
+
+    EXPECT_TRUE(stopped.momentumEnd);
+    EXPECT_TRUE(stopped.scroll);
 }
 
 TEST(ScrollPhysicsTest, ClampsBetweenZeroAndTheContentThatDoesNotFit) {

@@ -791,6 +791,7 @@ add_library(rnl_react_core STATIC
     src/ReactHost.cpp
     src/RetainedScene.cpp
     src/ScrollController.cpp
+    src/ScrollEventCadence.cpp
     src/ScrollPhysics.cpp
     src/TextInputComponent.cpp
     src/TextInputController.cpp

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "InputPipeline.h"
+#include "ScrollEventCadence.h"
 #include "ScrollPhysics.h"
 
 #include <react/renderer/components/scrollview/ScrollViewShadowNode.h>
@@ -36,7 +37,9 @@ struct ScrollTargetAxis {
  * ScrollView and never moves them; the position lives in `ScrollViewState::contentOffset`, and every platform is
  * expected to drive that number itself and to emit the scroll events from it. That is what this class is, and it
  * is deliberately shaped like `RCTScrollViewComponentView`'s sequence: move, write the state, emit `onScroll`,
- * bracket the glide with `onMomentumScrollBegin` and `onMomentumScrollEnd`.
+ * bracket the drag with `onScrollBeginDrag` and `onScrollEndDrag` and the glide with `onMomentumScrollBegin` and
+ * `onMomentumScrollEnd`. Which of those five a frame emits is `ScrollEventCadence`, which is the whole of the
+ * cadence contract of issue #45 and is arithmetic, so it lives inside the coverage gate rather than here.
  *
  * The offset the platform holds is authoritative between commits, seeded from the state the first time a
  * ScrollView is scrolled. Writing it back through `ConcreteState::updateState` rather than reading it back is what
@@ -89,6 +92,7 @@ private:
         std::shared_ptr<const facebook::react::ScrollViewShadowNode> shadowNode;
         ScrollTargetAxis horizontal;
         ScrollTargetAxis vertical;
+        ScrollEventCadence cadence;
         bool isFingerDown{false};
         bool hasReleased{false};
         bool isMomentumRunning{false};
