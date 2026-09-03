@@ -900,6 +900,9 @@ if(RNL_ENABLE_WINDOW)
     # zwp_text_input_v3 is still an unstable protocol, so it lives under unstable/ rather than stable/ and the
     # file keeps the version in its name. See *IME* in docs/cpp-toolchain.md.
     set(RNL_TEXT_INPUT_XML ${RNL_WAYLAND_PROTOCOLS_DIR}/unstable/text-input/text-input-unstable-v3.xml)
+    # wp_presentation is stable and measures rather than paces: ADR-0001 decision 3. See *Frame timing* in
+    # docs/cpp-toolchain.md.
+    set(RNL_PRESENTATION_TIME_XML ${RNL_WAYLAND_PROTOCOLS_DIR}/stable/presentation-time/presentation-time.xml)
 
     if(NOT PkgConfig_FOUND)
         list(APPEND RNL_WINDOW_MISSING "pkg-config")
@@ -925,6 +928,10 @@ if(RNL_ENABLE_WINDOW)
 
     if(NOT RNL_WAYLAND_PROTOCOLS_DIR OR NOT EXISTS "${RNL_TEXT_INPUT_XML}")
         list(APPEND RNL_WINDOW_MISSING "wayland-protocols (unstable/text-input)")
+    endif()
+
+    if(NOT RNL_WAYLAND_PROTOCOLS_DIR OR NOT EXISTS "${RNL_PRESENTATION_TIME_XML}")
+        list(APPEND RNL_WINDOW_MISSING "wayland-protocols (stable/presentation-time)")
     endif()
 
     if(NOT Vulkan_FOUND)
@@ -987,6 +994,28 @@ elseif(RNL_ENABLE_WINDOW)
     target_include_directories(rnl_text_input PUBLIC ${RNL_PROTOCOL_DIR})
     target_link_libraries(rnl_text_input PUBLIC PkgConfig::RNL_WAYLAND_CLIENT)
 
+    add_custom_command(
+        OUTPUT ${RNL_PROTOCOL_DIR}/presentation-time-client-protocol.h
+        COMMAND ${RNL_WAYLAND_SCANNER} client-header ${RNL_PRESENTATION_TIME_XML}
+                ${RNL_PROTOCOL_DIR}/presentation-time-client-protocol.h
+        DEPENDS ${RNL_PRESENTATION_TIME_XML}
+        COMMENT "wayland-scanner client-header presentation-time"
+        VERBATIM)
+
+    add_custom_command(
+        OUTPUT ${RNL_PROTOCOL_DIR}/presentation-time-protocol.c
+        COMMAND ${RNL_WAYLAND_SCANNER} private-code ${RNL_PRESENTATION_TIME_XML}
+                ${RNL_PROTOCOL_DIR}/presentation-time-protocol.c
+        DEPENDS ${RNL_PRESENTATION_TIME_XML}
+        COMMENT "wayland-scanner private-code presentation-time"
+        VERBATIM)
+
+    add_library(rnl_presentation_time STATIC
+        ${RNL_PROTOCOL_DIR}/presentation-time-protocol.c
+        ${RNL_PROTOCOL_DIR}/presentation-time-client-protocol.h)
+    target_include_directories(rnl_presentation_time PUBLIC ${RNL_PROTOCOL_DIR})
+    target_link_libraries(rnl_presentation_time PUBLIC PkgConfig::RNL_WAYLAND_CLIENT)
+
     add_executable(rnl_window
         src/SkiaVulkanRenderer.cpp
         src/TextInputClient.cpp
@@ -995,6 +1024,7 @@ elseif(RNL_ENABLE_WINDOW)
         src/WaylandWindow.cpp
         src/WindowMain.cpp
         src/FrameClock.cpp
+        src/FrameTiming.cpp
     src/WindowSession.cpp)
     target_compile_options(rnl_window PRIVATE -Wall -Wextra)
     target_include_directories(rnl_window PRIVATE src)
@@ -1006,6 +1036,7 @@ elseif(RNL_ENABLE_WINDOW)
             rnl_scene_painter
             rnl_xdg_shell
             rnl_text_input
+            rnl_presentation_time
             rnl_skia
             Vulkan::Vulkan
             PkgConfig::RNL_XKBCOMMON

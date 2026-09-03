@@ -41,6 +41,7 @@ add_executable(rnl_core_tests
     FeatureFlagsTest.cpp
     FocusTest.cpp
     FrameClockTest.cpp
+    FrameTimingTest.cpp
     ImageTest.cpp
     ImeTest.cpp
     InputTest.cpp
@@ -61,6 +62,7 @@ add_executable(rnl_core_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/EditorModel.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/FocusModel.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/FrameClock.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/FrameTiming.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ImageContent.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/InputPipeline.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/LineBoxMetrics.cpp

@@ -5,6 +5,7 @@ import { findMissingExpectations, formatInjectorScript, parseScenario, resolveAr
 import { spawn, spawnSync } from "node:child_process";
 
 import { setTimeout as delay } from "node:timers/promises";
+import { gradeArtifacts } from "./e2e/grade.ts";
 import path from "node:path";
 import { tmpdir } from "node:os";
 
@@ -34,6 +35,7 @@ const repositoryRoot = path.resolve(import.meta.dirname, "..");
 const packageDirectory = path.join(repositoryRoot, "packages", "core");
 const bundlesDirectory = path.join(packageDirectory, "test-bundles");
 const scenariosDirectory = path.join(packageDirectory, "e2e");
+const goldensDirectory = path.join(scenariosDirectory, "goldens");
 const windowBinaryPath = path.join(repositoryRoot, "build", "dev", "bin", "rnl_window");
 const injectorBinaryPath = path.join(repositoryRoot, "build", "dev", "bin", "rnl_inject");
 const artifactsRoot = path.join(repositoryRoot, "build", "e2e");
@@ -52,6 +54,7 @@ interface Rig {
 }
 
 interface Workspace {
+  readonly frameLogPath: string;
   readonly runtimeDirectory: string;
   readonly screenshotPath: string;
   readonly trace: TraceSink;
@@ -75,6 +78,7 @@ const createWorkspace = (artifacts: Artifacts): Workspace => {
   mkdirSync(artifacts.directory, { recursive: true });
 
   return {
+    frameLogPath: artifacts.frameLogPath,
     runtimeDirectory: mkdtempSync(path.join(tmpdir(), "rnl-e2e-")),
     screenshotPath: artifacts.screenshotPath,
     trace: { text: "" },
@@ -98,6 +102,8 @@ const startCompositor = (scenario: Scenario, rig: Rig, workspace: Workspace): Co
       String(scenario.frames),
       "--screenshot",
       workspace.screenshotPath,
+      "--frame-log",
+      workspace.frameLogPath,
     ],
     {
       env: buildEnvironment({
@@ -237,7 +243,16 @@ const runScenario = async (scenario: Scenario, rig: Rig): Promise<readonly strin
 
   collectArtifacts(artifacts.tracePath, workspace);
 
-  return [...runFailures, ...describeMissing(scenario, workspace.trace.text)];
+  const grade = gradeArtifacts({
+    frameLogPath: artifacts.frameLogPath,
+    goldensDirectory,
+    scenario,
+    screenshotPath: artifacts.screenshotPath,
+  });
+
+  stdout.write(grade.notes.map((note) => `e2e ${scenario.name}: ${note}\n`).join(""));
+
+  return [...runFailures, ...describeMissing(scenario, workspace.trace.text), ...grade.failures];
 };
 
 const reportScenario = (scenario: Scenario, failures: readonly string[]): void => {

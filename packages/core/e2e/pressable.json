@@ -4,6 +4,7 @@
   "ready": "pressable: committed surface 1",
   "frames": 600,
   "steps": ["sleep 500", "move 200 140", "sleep 100", "click 200 140", "sleep 500"],
+  "screenshot": { "golden": "pressable-click.png", "maxDifferentPixels": 50 },
   "expect": [
     "pressable: topPointerDown on box at 200,140",
     "pressable: topPointerUp on box at 200,140",

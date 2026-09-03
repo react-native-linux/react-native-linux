@@ -1,5 +1,6 @@
 #include "WaylandWindow.h"
 
+#include "presentation-time-client-protocol.h"
 #include "text-input-unstable-v3-client-protocol.h"
 #include "xdg-shell-client-protocol.h"
 
@@ -22,6 +23,11 @@ constexpr uint32_t kMaximumWmBaseVersion = 5;
 // language reporting, pre-edit style hints and the input-panel requests — and binding it would oblige us to
 // answer events that no `<TextInput>` exists to render yet. See *IME* in docs/cpp-toolchain.md.
 constexpr uint32_t kMaximumTextInputManagerVersion = 1;
+// ADR-0001 decision 3 binds version 2: Hyprland zeroes the refresh hint for version 1 clients while VRR is
+// active. A compositor that only advertises version 1 still binds, at its own version.
+constexpr uint32_t kMaximumPresentationVersion = 2;
+constexpr uint64_t kNanosecondsPerSecond = 1'000'000'000;
+constexpr uint32_t kHighWordShift = 32;
 
 } // namespace
 
@@ -47,6 +53,16 @@ const xdg_toplevel_listener WaylandWindow::kToplevelListener{
 
 const wl_callback_listener WaylandWindow::kFrameCallbackListener{
     .done = WaylandWindow::handleFrameDone,
+};
+
+const wp_presentation_listener WaylandWindow::kPresentationListener{
+    .clock_id = WaylandWindow::handlePresentationClockId,
+};
+
+const wp_presentation_feedback_listener WaylandWindow::kPresentationFeedbackListener{
+    .sync_output = WaylandWindow::handleFeedbackSyncOutput,
+    .presented = WaylandWindow::handleFeedbackPresented,
+    .discarded = WaylandWindow::handleFeedbackDiscarded,
 };
 
 WaylandWindow::WaylandWindow(const std::string& title, WindowSize initialSize) : size_(initialSize) {
@@ -107,6 +123,10 @@ WaylandWindow::~WaylandWindow() noexcept {
         zwp_text_input_manager_v3_destroy(textInputManager_);
     }
 
+    if (presentation_ != nullptr) {
+        wp_presentation_destroy(presentation_);
+    }
+
     if (toplevel_ != nullptr) {
         xdg_toplevel_destroy(toplevel_);
     }
@@ -155,6 +175,26 @@ void WaylandWindow::requestFrameCallback() {
     wl_callback_add_listener(frameCallback_, &kFrameCallbackListener, this);
 }
 
+void WaylandWindow::requestPresentationFeedback() {
+    if (presentation_ == nullptr) {
+        return;
+    }
+
+    struct wp_presentation_feedback* feedback = wp_presentation_feedback(presentation_, surface_);
+    wp_presentation_feedback_add_listener(feedback, &kPresentationFeedbackListener, this);
+}
+
+bool WaylandWindow::isPresentationSupported() const noexcept { return presentation_ != nullptr; }
+
+std::vector<FrameTiming::Frame> WaylandWindow::takePresentedFrames() {
+    std::vector<FrameTiming::Frame> taken;
+    taken.swap(presentedFrames_);
+
+    return taken;
+}
+
+FrameTiming::Summary WaylandWindow::frameTimingSummary() const { return frameTiming_.summarise(); }
+
 bool WaylandWindow::waitForRedraw(std::chrono::milliseconds fallbackTimeout) {
     const std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::now() + fallbackTimeout;
 
@@ -202,6 +242,11 @@ void WaylandWindow::bindGlobal(wl_registry* registry, uint32_t name, const char*
         void* bound = wl_registry_bind(registry, name, &zwp_text_input_manager_v3_interface,
                                        std::min(version, kMaximumTextInputManagerVersion));
         textInputManager_ = static_cast<zwp_text_input_manager_v3*>(bound);
+    } else if (std::strcmp(interfaceName, wp_presentation_interface.name) == 0) {
+        void* bound = wl_registry_bind(registry, name, &wp_presentation_interface,
+                                       std::min(version, kMaximumPresentationVersion));
+        presentation_ = static_cast<wp_presentation*>(bound);
+        wp_presentation_add_listener(presentation_, &kPresentationListener, this);
     }
 }
 
@@ -296,6 +341,33 @@ void WaylandWindow::handleFrameDone(void* data, wl_callback* callback, uint32_t 
     wl_callback_destroy(callback);
     window->frameCallback_ = nullptr;
     window->frameCallbackFired_ = true;
+}
+
+// The presentation clock is whatever clock_id names — CLOCK_MONOTONIC on every compositor we run under. Only the
+// differences between two presentation timestamps are ever used, so the domain does not have to be resolved.
+void WaylandWindow::handlePresentationClockId(void* /*data*/, wp_presentation* /*presentation*/, uint32_t /*clock*/) {}
+
+void WaylandWindow::handleFeedbackSyncOutput(void* /*data*/, struct wp_presentation_feedback* /*feedback*/,
+                                             wl_output* /*output*/) {}
+
+// `presented` and `discarded` are both destructor events: the compositor has already destroyed the server-side
+// object, and the client-side proxy is this handler's to free.
+void WaylandWindow::handleFeedbackPresented(void* data, struct wp_presentation_feedback* feedback, uint32_t secondsHigh,
+                                            uint32_t secondsLow, uint32_t nanoseconds, uint32_t refresh,
+                                            uint32_t sequenceHigh, uint32_t sequenceLow, uint32_t flags) {
+    WaylandWindow* window = static_cast<WaylandWindow*>(data);
+    const uint64_t seconds = (static_cast<uint64_t>(secondsHigh) << kHighWordShift) | secondsLow;
+    const uint64_t presentedNanoseconds = (seconds * kNanosecondsPerSecond) + nanoseconds;
+    const uint64_t sequence = (static_cast<uint64_t>(sequenceHigh) << kHighWordShift) | sequenceLow;
+
+    window->presentedFrames_.push_back(
+        window->frameTiming_.recordPresented(sequence, presentedNanoseconds, refresh, flags));
+    wp_presentation_feedback_destroy(feedback);
+}
+
+void WaylandWindow::handleFeedbackDiscarded(void* data, struct wp_presentation_feedback* feedback) {
+    static_cast<WaylandWindow*>(data)->frameTiming_.recordDiscarded();
+    wp_presentation_feedback_destroy(feedback);
 }
 
 } // namespace react_native_linux

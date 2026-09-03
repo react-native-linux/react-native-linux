@@ -1,5 +1,6 @@
 #pragma once
 
+#include "FrameTiming.h"
 #include "InputPipeline.h"
 #include "WaylandSeat.h"
 
@@ -14,10 +15,15 @@ struct wl_callback;
 struct wl_callback_listener;
 struct wl_compositor;
 struct wl_display;
+struct wl_output;
 struct wl_registry;
 struct wl_registry_listener;
 struct wl_seat;
 struct wl_surface;
+struct wp_presentation;
+struct wp_presentation_feedback;
+struct wp_presentation_feedback_listener;
+struct wp_presentation_listener;
 struct xdg_surface;
 struct xdg_surface_listener;
 struct xdg_toplevel;
@@ -45,6 +51,11 @@ struct WindowSize {
  * special workspaces — `waitForRedraw` also returns when its fallback timeout expires. The fallback keeps the
  * connection dispatching and the close event reachable on an occluded window; it is not a frame source for a
  * visible one.
+ *
+ * `wp_presentation` is the third mechanism of that decision and the only one that measures: one
+ * `wp_presentation_feedback` object per committed frame, reporting when that content update actually turned into
+ * light. It is bound when the compositor advertises it and skipped when it does not, so the window runs either
+ * way and `FrameTiming` simply stays empty. See *Frame timing* in docs/cpp-toolchain.md.
  *
  * Input arrives on the same connection and therefore on the same thread. `WaylandSeat` fills a queue from inside
  * the dispatch this class performs, and `takeInputEvents` empties it once per frame; the window itself makes no
@@ -76,6 +87,19 @@ public:
     bool takePendingResize() noexcept;
 
     void requestFrameCallback();
+
+    /**
+     * Asks for `wp_presentation_feedback` on the content update the next `wl_surface.commit` carries, which for
+     * this window is the commit `vkQueuePresentKHR` performs. A compositor that advertises no `wp_presentation`
+     * makes this a no-op and leaves `isPresentationSupported` false; it is never an error, because measurement is
+     * not what keeps the window running. See *Frame timing* in docs/cpp-toolchain.md.
+     */
+    void requestPresentationFeedback();
+    bool isPresentationSupported() const noexcept;
+    /** The presented frames recorded since the last call, in the order the compositor reported them. */
+    std::vector<FrameTiming::Frame> takePresentedFrames();
+    FrameTiming::Summary frameTimingSummary() const;
+
     bool waitForRedraw(std::chrono::milliseconds fallbackTimeout);
 
     /**
@@ -106,22 +130,35 @@ private:
     static void handleToplevelConfigureBounds(void* data, xdg_toplevel* toplevel, int32_t width, int32_t height);
     static void handleToplevelWmCapabilities(void* data, xdg_toplevel* toplevel, wl_array* capabilities);
     static void handleFrameDone(void* data, wl_callback* callback, uint32_t time);
+    // presentation-time's generated header declares a *function* named wp_presentation_feedback, which hides the
+    // struct of the same name in C++, so the type needs its elaborated spelling everywhere it is named.
+    static void handlePresentationClockId(void* data, wp_presentation* presentation, uint32_t clockId);
+    static void handleFeedbackSyncOutput(void* data, struct wp_presentation_feedback* feedback, wl_output* output);
+    static void handleFeedbackPresented(void* data, struct wp_presentation_feedback* feedback, uint32_t secondsHigh,
+                                        uint32_t secondsLow, uint32_t nanoseconds, uint32_t refresh,
+                                        uint32_t sequenceHigh, uint32_t sequenceLow, uint32_t flags);
+    static void handleFeedbackDiscarded(void* data, struct wp_presentation_feedback* feedback);
 
     static const wl_registry_listener kRegistryListener;
     static const xdg_wm_base_listener kWmBaseListener;
     static const xdg_surface_listener kXdgSurfaceListener;
     static const xdg_toplevel_listener kToplevelListener;
     static const wl_callback_listener kFrameCallbackListener;
+    static const wp_presentation_listener kPresentationListener;
+    static const wp_presentation_feedback_listener kPresentationFeedbackListener;
 
     wl_display* display_{nullptr};
     wl_compositor* compositor_{nullptr};
     std::unique_ptr<WaylandSeat> seat_;
     zwp_text_input_manager_v3* textInputManager_{nullptr};
+    wp_presentation* presentation_{nullptr};
     xdg_wm_base* wmBase_{nullptr};
     wl_surface* surface_{nullptr};
     xdg_surface* xdgSurface_{nullptr};
     xdg_toplevel* toplevel_{nullptr};
     wl_callback* frameCallback_{nullptr};
+    FrameTiming frameTiming_;
+    std::vector<FrameTiming::Frame> presentedFrames_;
     WindowSize size_;
     bool configured_{false};
     bool frameCallbackFired_{false};

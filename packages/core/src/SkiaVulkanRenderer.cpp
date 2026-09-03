@@ -234,6 +234,10 @@ bool SkiaVulkanRenderer::drawFrame(WaylandWindow& window, const SceneDamage& fra
     // connection, so the callback for the next frame has to be requested before the present request is issued.
     window.requestFrameCallback();
 
+    // wp_presentation.feedback attaches to the same pending content update, so it has to be requested on the same
+    // side of the present. See *Frame timing* in docs/cpp-toolchain.md.
+    window.requestPresentationFeedback();
+
     const VkPresentInfoKHR presentInfo{
         .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
         .pNext = nullptr,

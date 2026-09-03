@@ -631,8 +631,11 @@ jobs:
       - name: Run the e2e scenarios
         run: pnpm e2e
 
+      # Always, not only on failure: build/e2e carries the wp_presentation frame logs of #7, and a passing run's
+      # numbers are the baseline the next run's budget is judged against. It is also where the picture the
+      # pressable scenario's screenshot golden gets blessed from comes out.
       - name: Upload the e2e artifacts
-        if: failure()
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: e2e

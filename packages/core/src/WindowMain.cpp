@@ -1,4 +1,5 @@
 #include "FrameClock.h"
+#include "FrameTiming.h"
 #include "InputPipeline.h"
 #include "LinuxMountingManager.h"
 #include "RetainedScene.h"
@@ -18,8 +19,10 @@
 #include <chrono>
 #include <cstdint>
 #include <exception>
+#include <fstream>
 #include <iostream>
 #include <optional>
+#include <ostream>
 #include <span>
 #include <string>
 #include <string_view>
@@ -38,6 +41,7 @@ constexpr SkScalar kCardCornerRadius = 24.0F;
 constexpr std::string_view kFabricFlag = "--fabric";
 constexpr std::string_view kScreenshotFlag = "--screenshot";
 constexpr std::string_view kFramesFlag = "--frames";
+constexpr std::string_view kFrameLogFlag = "--frame-log";
 constexpr std::string_view kImeDebugFlag = "--ime-debug";
 constexpr std::string_view kImeDebugSurroundingText = "react-native-linux";
 constexpr int32_t kImeDebugCursorX = 64;
@@ -49,14 +53,25 @@ constexpr int32_t kImeDebugCursorHeight = 24;
  * `--screenshot <path>` runs the ordinary loop and reads the last presented swapchain image back into a PNG, so
  * the picture it writes came through the real Vulkan and Wayland path rather than an offscreen surface.
  * `--frames` is how long the bundle is given to mount and settle before that frame is captured.
+ *
+ * `--frame-log <path>` writes the `wp_presentation` measurements as JSON Lines: one record per presented frame
+ * and a final summary line carrying the frame count, the discarded count and the p50, p95 and maximum frame
+ * times. It is what the e2e driver's perf gate reads. See *Frame timing* in docs/cpp-toolchain.md.
  */
 struct WindowArguments {
     std::optional<std::string> bundlePath;
     std::optional<std::string> screenshotPath;
+    std::optional<std::string> frameLogPath;
     uint32_t frameCount{kDefaultScreenshotFrames};
     bool imeDebug{false};
     std::string error;
 };
+
+void writeFrameLines(std::ostream& frameLog, react_native_linux::WaylandWindow& window) {
+    for (const react_native_linux::FrameTiming::Frame& frame : window.takePresentedFrames()) {
+        frameLog << react_native_linux::FrameTiming::formatFrameLine(frame) << "\n";
+    }
+}
 
 /**
  * `--ime-debug` is what proves `zwp_text_input_v3` before there is a `<TextInput>` to prove it with: it enables
@@ -106,6 +121,10 @@ std::string describeMissingValue(std::string_view flag) {
         return "--screenshot requires an output path";
     }
 
+    if (flag == kFrameLogFlag) {
+        return "--frame-log requires an output path";
+    }
+
     return "--frames requires a positive frame count";
 }
 
@@ -132,7 +151,7 @@ WindowArguments parseArguments(std::span<char*> arguments) {
             continue;
         }
 
-        if (flag != kFabricFlag && flag != kScreenshotFlag && flag != kFramesFlag) {
+        if (flag != kFabricFlag && flag != kScreenshotFlag && flag != kFramesFlag && flag != kFrameLogFlag) {
             parsed.error = "unknown argument " + std::string(flag);
 
             return parsed;
@@ -151,6 +170,8 @@ WindowArguments parseArguments(std::span<char*> arguments) {
             parsed.bundlePath = std::string(value);
         } else if (flag == kScreenshotFlag) {
             parsed.screenshotPath = std::string(value);
+        } else if (flag == kFrameLogFlag) {
+            parsed.frameLogPath = std::string(value);
         } else {
             const std::optional<uint32_t> frameCount = parseFrameCount(value);
 
@@ -216,10 +237,21 @@ int main(int argc, char** argv) {
         }
 
         ImeDebugSink imeDebugSink;
+        std::optional<std::ofstream> frameLog;
         uint32_t presentedFrames = 0;
         bool hasCaptured = false;
 
+        if (parsedArguments.frameLogPath.has_value()) {
+            frameLog.emplace(parsedArguments.frameLogPath.value());
+        }
+
         while (!window.isClosed() && !hasCaptured) {
+            // Presentation feedback for the frames committed before this iteration arrived during the previous
+            // waitForRedraw, so the drain belongs at the top of the loop rather than beside the present.
+            if (frameLog.has_value()) {
+                writeFrameLines(frameLog.value(), window);
+            }
+
             if (window.takePendingResize()) {
                 renderer.resize(window.size());
 
@@ -296,6 +328,13 @@ int main(int argc, char** argv) {
             if (!hasCaptured && !window.waitForRedraw(kFrameCallbackFallback)) {
                 break;
             }
+        }
+
+        if (frameLog.has_value()) {
+            writeFrameLines(frameLog.value(), window);
+            frameLog.value() << react_native_linux::FrameTiming::formatSummaryLine(window.frameTimingSummary(),
+                                                                                   window.isPresentationSupported())
+                             << "\n";
         }
 
         if (parsedArguments.screenshotPath.has_value() && !hasCaptured) {

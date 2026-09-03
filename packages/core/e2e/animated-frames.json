@@ -1,0 +1,9 @@
+{
+  "name": "animated-frames",
+  "bundle": "animated.js",
+  "ready": "animated: batch ok",
+  "frames": 240,
+  "frameBudget": { "p95Ms": 16.7, "minFrames": 60 },
+  "steps": ["sleep 500"],
+  "expect": ["animated: module present", "animated: batch ok", "animated: value 0.75"]
+}

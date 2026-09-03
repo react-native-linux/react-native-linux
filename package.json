@@ -24,11 +24,13 @@
   },
   "devDependencies": {
     "@react-native/codegen": "0.87.1",
+    "@types/pngjs": "catalog:",
     "@vitest/coverage-v8": "catalog:",
     "jscpd": "catalog:",
     "knip": "catalog:",
     "oxfmt": "catalog:",
     "oxlint": "catalog:",
+    "pngjs": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },
