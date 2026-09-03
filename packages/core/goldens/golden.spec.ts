@@ -104,6 +104,13 @@ const fixtures: readonly GoldenFixture[] = [
   { bundleFileName: "gradient.js", goldenFileName: "gradient.png", renderArguments: [], renderFlag: "--golden" },
   // #118: one wrapping grid at two container widths — a break-point regression is a visible difference.
   { bundleFileName: "wrapping.js", goldenFileName: "wrapping.png", renderArguments: [], renderFlag: "--golden" },
+  // #117: the <Image> + aspectRatio + maxWidth combination, clamped and unclamped side by side.
+  {
+    bundleFileName: "aspect-ratio.js",
+    goldenFileName: "aspect-ratio.png",
+    renderArguments: [],
+    renderFlag: "--golden",
+  },
 ];
 
 const renderFixture = (fixture: GoldenFixture, outputPath: string): void => {
