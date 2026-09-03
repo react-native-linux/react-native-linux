@@ -63,6 +63,7 @@ using facebook::react::ViewProps;
 using react_native_linux::LinuxMountingManager;
 using react_native_linux::RetainedScene;
 using react_native_linux::SceneEditorState;
+using react_native_linux::ScenePrimitive;
 using react_native_linux::SceneSnapshot;
 using react_native_linux::TextInputProps;
 
