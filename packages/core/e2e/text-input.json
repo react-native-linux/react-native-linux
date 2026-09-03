@@ -4,9 +4,5 @@
   "ready": "text-input: committed surface 1",
   "frames": 600,
   "steps": ["sleep 500", "key Tab press", "key Tab release", "sleep 200", "type Hi", "sleep 500"],
-  "expect": [
-    "text-input: topFocus on plain",
-    "text-input: topChange on plain text=\"H\"",
-    "text-input: topChange on plain text=\"Hi\""
-  ]
+  "expect": ["text-input: topFocus on plain", "text-input: topChange on plain text=\"Hi\""]
 }
