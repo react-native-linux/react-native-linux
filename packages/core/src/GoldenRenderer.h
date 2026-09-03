@@ -68,4 +68,23 @@ int renderTypedGolden(const std::string& bundlePath, const std::string& outputPa
  */
 int renderDamageGolden(const std::string& bundlePath, const std::string& outputPath, int width, int height);
 
+/**
+ * Runs a bundle and proves that the node a press lands on is the node whose pixels are visible at that point.
+ *
+ * This is issue #35's acceptance criterion turned into an assertion, and the PNG is a by-product, exactly as it
+ * is for the damage proof. The fixture paints every node in a colour no other node uses, so a pixel names the
+ * node that painted it; the run sampled the live scene's hit test over a grid of the same surface; and the two
+ * answers have to be the same node at every sample where the picture is unambiguous. A sample whose pixel is a
+ * blend of two colours — the anti-aliased edge between two nodes, where "the node visible here" has no answer —
+ * is skipped, and the run fails if too few samples survived that filter for the comparison to mean anything.
+ *
+ * The failure names the point, the colour that was painted there and the tag the hit test answered, because
+ * "hit-testing disagrees with the picture" is not actionable and "at (312, 208) the picture is #61AFEF, which is
+ * tag 7, and the press lands on tag 5" is.
+ *
+ * Returns a process exit status: 0 when every sample agreed, the file was written, and the bundle reported no
+ * fatal JavaScript error.
+ */
+int renderHitPaintGolden(const std::string& bundlePath, const std::string& outputPath, int width, int height);
+
 } // namespace react_native_linux

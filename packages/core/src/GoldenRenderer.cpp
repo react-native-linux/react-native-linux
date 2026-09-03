@@ -5,6 +5,7 @@
 
 #include "include/core/SkAlphaType.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
 #include "include/core/SkColorType.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPixmap.h"
@@ -17,10 +18,15 @@
 #include <react/renderer/graphics/Size.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
+#include <iomanip>
 #include <iostream>
 #include <optional>
+#include <sstream>
 #include <string>
+#include <unordered_map>
+#include <vector>
 
 namespace react_native_linux {
 
@@ -115,6 +121,95 @@ bool areSurfacesIdentical(SkSurface& first, SkSurface& second) {
     return true;
 }
 
+// Issue #35. Every node in the fixture paints one colour that no other node paints, so a pixel names the node
+// whose pixels are visible at that point, and the hit test's answer at the same point has to be the same node.
+//
+// The sample step is four device pixels: fine enough that every edge in the fixture is crossed several times,
+// coarse enough that a run is a second rather than a minute. The floor is what stops the blend filter below from
+// turning a disagreement into a pass by skipping everything — an image where nothing is unambiguous is a broken
+// fixture, not a proof.
+constexpr int kHitSampleStep = 4;
+constexpr double kMinimumComparableFraction = 0.75;
+
+uint32_t toOpaqueRgb(SkColor color) {
+    return static_cast<uint32_t>(SkColorSetRGB(SkColorGetR(color), SkColorGetG(color), SkColorGetB(color)));
+}
+
+/**
+ * Which node painted each colour, or nothing when two nodes share one. A fixture that reuses a colour cannot
+ * prove anything, so this is a failure rather than a silently weaker comparison.
+ */
+std::optional<std::unordered_map<uint32_t, facebook::react::Tag>> colorsToTags(const SceneSnapshot& scene) {
+    std::unordered_map<uint32_t, facebook::react::Tag> tagsByColor;
+
+    for (const ScenePrimitive& primitive : scene) {
+        if (SkColorGetA(primitive.backgroundColorArgb) != SK_AlphaOPAQUE) {
+            std::cerr << "[golden] tag " << primitive.tag << " does not paint an opaque background" << std::endl;
+
+            return std::nullopt;
+        }
+
+        const uint32_t color = toOpaqueRgb(primitive.backgroundColorArgb);
+
+        if (!tagsByColor.emplace(color, primitive.tag).second) {
+            std::cerr << "[golden] tags " << tagsByColor.at(color) << " and " << primitive.tag
+                      << " paint the same colour, so a pixel does not name a node" << std::endl;
+
+            return std::nullopt;
+        }
+    }
+
+    return tagsByColor;
+}
+
+std::string toColorText(uint32_t color) {
+    std::ostringstream text;
+
+    text << "#" << std::hex << std::uppercase << std::setfill('0') << std::setw(6) << color;
+
+    return text.str();
+}
+
+bool doHitsMatchPixels(const std::vector<FabricHitSample>& hits, const SkPixmap& pixels,
+                       const std::unordered_map<uint32_t, facebook::react::Tag>& tagsByColor) {
+    size_t comparedCount = 0;
+    bool haveAgreed = true;
+
+    for (const FabricHitSample& sample : hits) {
+        const uint32_t painted = toOpaqueRgb(pixels.getColor(static_cast<int>(sample.point.x),
+                                                             static_cast<int>(sample.point.y)));
+        const auto paintedTag = tagsByColor.find(painted);
+
+        // An anti-aliased edge is a blend of two nodes' colours, and "the node visible here" has no answer there.
+        if (paintedTag == tagsByColor.end()) {
+            continue;
+        }
+
+        comparedCount++;
+
+        if (paintedTag->second != sample.tag) {
+            std::cerr << "[golden] at (" << sample.point.x << ", " << sample.point.y << ") the picture is "
+                      << toColorText(painted) << ", which is tag " << paintedTag->second
+                      << ", and the press lands on tag " << sample.tag << std::endl;
+
+            haveAgreed = false;
+        }
+    }
+
+    const double comparableFraction = hits.empty()
+                                          ? 0.0
+                                          : static_cast<double>(comparedCount) / static_cast<double>(hits.size());
+
+    if (comparableFraction < kMinimumComparableFraction) {
+        std::cerr << "[golden] only " << comparedCount << " of " << hits.size()
+                  << " samples landed on a colour a node painted, which is too few to prove anything" << std::endl;
+
+        return false;
+    }
+
+    return haveAgreed;
+}
+
 /**
  * Rasterises a settled scene and writes it, which is the half every single-frame golden shares regardless of what
  * the run did before it settled.
@@ -191,6 +286,42 @@ int renderDamageGolden(const std::string& bundlePath, const std::string& outputP
     }
 
     if (!writeSurfaceAsPng(*damagedSurface, outputPath)) {
+        return 1;
+    }
+
+    return run.hasReportedFatalError ? 1 : 0;
+}
+
+int renderHitPaintGolden(const std::string& bundlePath, const std::string& outputPath, int width, int height) {
+    const sk_sp<SkSurface> surface = makeRasterSurface(width, height);
+
+    if (surface == nullptr) {
+        return 1;
+    }
+
+    const FabricHitPaintRunResult run = runHitSampledFabricBundle(bundlePath, toSurfaceSize(width, height),
+                                                                 kHitSampleStep);
+    const std::optional<std::unordered_map<uint32_t, facebook::react::Tag>> tagsByColor = colorsToTags(run.scene);
+
+    if (!tagsByColor.has_value()) {
+        return 1;
+    }
+
+    paintScene(*surface->getCanvas(), run.scene, {});
+
+    SkPixmap pixels;
+
+    if (!surface->peekPixels(&pixels)) {
+        std::cerr << "[golden] the raster surface did not expose its pixels" << std::endl;
+
+        return 1;
+    }
+
+    if (!doHitsMatchPixels(run.hits, pixels, tagsByColor.value())) {
+        return 1;
+    }
+
+    if (!writeSurfaceAsPng(*surface, outputPath)) {
         return 1;
     }
 

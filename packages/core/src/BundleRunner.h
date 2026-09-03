@@ -73,6 +73,31 @@ int runResizedFabricBundle(const std::string& bundlePath, facebook::react::Size 
 FabricRunResult runFabricBundle(const std::optional<std::string>& bundlePath, facebook::react::Size surfaceSize);
 
 /**
+ * One sampled point and the node a press there would land on.
+ */
+struct FabricHitSample {
+    facebook::react::Point point;
+    facebook::react::Tag tag;
+};
+
+/**
+ * What the hit-versus-paint proof of issue #35 needs: the scene, and the hit test's answer at every point of a
+ * grid over the surface, taken while the host is still alive.
+ *
+ * The answers are collected here rather than recomputed from the snapshot because a snapshot is the paint side.
+ * Asking the live scene is asking the same thing the input dispatcher asks, and the caller compares those answers
+ * against the pixels the same scene rasterises to.
+ */
+struct FabricHitPaintRunResult {
+    SceneSnapshot scene;
+    std::vector<FabricHitSample> hits;
+    bool hasReportedFatalError{};
+};
+
+FabricHitPaintRunResult runHitSampledFabricBundle(const std::string& bundlePath, facebook::react::Size surfaceSize,
+                                                  int sampleStep);
+
+/**
  * Runs a bundle, turns `wheelNotches` of a mouse wheel over `surfacePoint` into a scroll, and returns the scene
  * once that scroll has come to rest.
  *

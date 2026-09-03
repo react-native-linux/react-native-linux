@@ -6,6 +6,7 @@
 
 #include <charconv>
 #include <cstddef>
+#include <cstdint>
 #include <exception>
 #include <iostream>
 #include <optional>
@@ -22,12 +23,27 @@ namespace {
 constexpr std::string_view kFabricFlag = "--fabric";
 constexpr std::string_view kGoldenFlag = "--golden";
 constexpr std::string_view kDamageGoldenFlag = "--damage-golden";
+constexpr std::string_view kHitPaintGoldenFlag = "--hit-paint-golden";
 constexpr std::string_view kInjectPointerFlag = "--inject-pointer";
 constexpr std::string_view kResizeFlag = "--resize";
 constexpr std::string_view kScrollToFlag = "--scroll-to";
 constexpr std::string_view kAnimatedScrollFlag = "--animated-scroll";
 constexpr std::string_view kFocusTabFlag = "--focus-tab";
 constexpr std::string_view kTypeFlag = "--type";
+/**
+ * Which proof `--golden`, `--damage-golden` and `--hit-paint-golden` run. All three take the same arguments and
+ * write the same kind of PNG; the last two also assert something about the scene they painted.
+ */
+enum class GoldenKind : uint8_t { Scene, Damage, HitPaint };
+
+GoldenKind toGoldenKind(bool isDamageRequested, bool isHitPaintRequested) {
+    if (isDamageRequested) {
+        return GoldenKind::Damage;
+    }
+
+    return isHitPaintRequested ? GoldenKind::HitPaint : GoldenKind::Scene;
+}
+
 constexpr size_t kInjectPointerArgumentCount = 5;
 constexpr size_t kResizeArgumentCount = 5;
 constexpr size_t kScrollToArgumentCount = 7;
@@ -162,8 +178,20 @@ int runTypeCommand(std::span<char*> arguments) {
                                                  kGoldenDefaultHeight);
 }
 
-int runGoldenCommand(std::span<char*> arguments, bool isDamageRequested) {
-    const std::string_view flag = isDamageRequested ? kDamageGoldenFlag : kGoldenFlag;
+std::string_view toGoldenFlag(GoldenKind goldenKind) {
+    if (goldenKind == GoldenKind::Damage) {
+        return kDamageGoldenFlag;
+    }
+
+    if (goldenKind == GoldenKind::HitPaint) {
+        return kHitPaintGoldenFlag;
+    }
+
+    return kGoldenFlag;
+}
+
+int runGoldenCommand(std::span<char*> arguments, GoldenKind goldenKind) {
+    const std::string_view flag = toGoldenFlag(goldenKind);
 
     if (arguments.size() != kGoldenDefaultArgumentCount && arguments.size() != kGoldenSizedArgumentCount) {
         std::cerr << "[hello_react] " << flag << " requires <bundle> <output.png> [width height]" << std::endl;
@@ -191,8 +219,12 @@ int runGoldenCommand(std::span<char*> arguments, bool isDamageRequested) {
     const std::string bundlePath(arguments[2]);
     const std::string outputPath(arguments[3]);
 
-    if (isDamageRequested) {
+    if (goldenKind == GoldenKind::Damage) {
         return react_native_linux::renderDamageGolden(bundlePath, outputPath, width, height);
+    }
+
+    if (goldenKind == GoldenKind::HitPaint) {
+        return react_native_linux::renderHitPaintGolden(bundlePath, outputPath, width, height);
     }
 
     return react_native_linux::renderGolden(bundlePath, outputPath, width, height);
@@ -201,7 +233,8 @@ int runGoldenCommand(std::span<char*> arguments, bool isDamageRequested) {
 #else
 
 int reportMissingSkia() {
-    std::cerr << "[hello_react] " << kGoldenFlag << ", " << kDamageGoldenFlag << ", " << kScrollToFlag << ", "
+    std::cerr << "[hello_react] " << kGoldenFlag << ", " << kDamageGoldenFlag << ", " << kHitPaintGoldenFlag
+              << ", " << kScrollToFlag << ", "
               << kFocusTabFlag << " and " << kTypeFlag
               << " need Skia, which this build was configured without; run node scripts/vendor-skia.ts and "
                  "reconfigure"
@@ -210,7 +243,7 @@ int reportMissingSkia() {
     return 1;
 }
 
-int runGoldenCommand(std::span<char*> /*arguments*/, bool /*isDamageRequested*/) { return reportMissingSkia(); }
+int runGoldenCommand(std::span<char*> /*arguments*/, GoldenKind /*goldenKind*/) { return reportMissingSkia(); }
 
 int runScrollToCommand(std::span<char*> /*arguments*/) { return reportMissingSkia(); }
 
@@ -226,6 +259,7 @@ int main(int argc, char** argv) {
     const std::span<char*> arguments(argv, static_cast<size_t>(argc));
     const bool isGoldenRequested = arguments.size() > 1 && kGoldenFlag == arguments[1];
     const bool isDamageGoldenRequested = arguments.size() > 1 && kDamageGoldenFlag == arguments[1];
+    const bool isHitPaintGoldenRequested = arguments.size() > 1 && kHitPaintGoldenFlag == arguments[1];
     const bool isFabricRequested = arguments.size() > 1 && kFabricFlag == arguments[1];
     const bool isInjectPointerRequested = arguments.size() > 1 && kInjectPointerFlag == arguments[1];
     const bool isResizeRequested = arguments.size() > 1 && kResizeFlag == arguments[1];
@@ -284,8 +318,8 @@ int main(int argc, char** argv) {
             return runTypeCommand(arguments);
         }
 
-        if (isGoldenRequested || isDamageGoldenRequested) {
-            return runGoldenCommand(arguments, isDamageGoldenRequested);
+        if (isGoldenRequested || isDamageGoldenRequested || isHitPaintGoldenRequested) {
+            return runGoldenCommand(arguments, toGoldenKind(isDamageGoldenRequested, isHitPaintGoldenRequested));
         }
 
         std::optional<std::string> bundlePath;

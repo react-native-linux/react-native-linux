@@ -3819,6 +3819,48 @@ The expected picture, on the same `#14161A` background, is the second frame:
 3. Nothing at (300, 200) and nothing at (600, 80): the moved view's old position and the unmounted view's
    rectangle are both damaged, cleared, and left as background.
 
+### The hit-versus-paint agreement proof (#35)
+
+`--hit-paint-golden` is the second fixture of that kind: issue #35's acceptance criterion — "the node reported as
+the pointer target at a point is the node whose pixels are visible at that point" — turned into an assertion, with
+the PNG as a by-product.
+
+The trick that makes it a proof rather than a restatement is the fixture. Every node in
+`packages/core/test-bundles/hit-paint.js` paints a colour no other node paints, so **a pixel names the node that
+painted it**; the run samples the *live* scene's `findNodeAtPoint` over a grid of the same surface, which is the
+same answer the input dispatcher would get; and the two are compared. Neither side is derived from the other: one
+is Skia's rasteriser, the other is `RetainedScene`'s tree walk.
+
+Three rules keep the comparison honest:
+
+- **Samples are taken at pixel centres.** A pixel's colour describes the area around its centre, so `(x + 0.5,
+  y + 0.5)` is the point whose hit answer that colour can be compared against. At an axis-aligned edge the
+  distinction does not show; on a rotated edge it is the whole disagreement, because the corner of a fully painted
+  pixel can sit outside the shape that painted it.
+- **A blended pixel is skipped.** An anti-aliased edge is a mixture of two nodes' colours, and "the node visible
+  here" has no answer there.
+- **Too few comparable samples fails the run.** Without that floor — three quarters of the grid — a fixture that
+  blended everything would pass by skipping everything.
+
+A mismatch names the point, the colour and both tags: `at (312, 208) the picture is #61AFEF, which is tag 7, and
+the press lands on tag 5`.
+
+The fixture is seven cases, each one a way the picture and the click come apart in the `react-native-macos`
+reports that motivated the issue: two overlapping siblings; the same pair with `zIndex` reversing them
+(rn-macos#1842); a child translated out of its slot (rn-macos#2147); the same square rotated about `center`, `top
+left` and `bottom right` (rn-macos#2361); a scaled square; a child under a rounded `overflow: hidden` parent; and
+nested transformed ancestors, which have to compose rather than last-wins. `packages/core/e2e/hit-paint.json`
+drives four of them through a compositor's `wl_pointer` and asserts the target by name.
+
+**What it found.** Two disagreements, both real and both fixed rather than tolerated:
+
+1. **Containment is half-open on the right and the bottom.** A box at x = 30 that is 150 wide paints the columns
+   30 to 179 and leaves 180 to whatever is behind it, but `Rect::containsPoint` — which upstream's hit test uses —
+   closes both intervals, so a press at 180 landed on a node that had painted nothing there.
+   `roundedBoxContainsPoint` is half-open on those two edges now.
+2. **The sampling correspondence above**, which is a property of the proof rather than of the renderer, and is
+   documented here so the next person does not rediscover it as a false positive.
+
 ## Window goldens
 
 The raster rig above proves the scene and the paint code path on the CPU. This one proves the half it cannot

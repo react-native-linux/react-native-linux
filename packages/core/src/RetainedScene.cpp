@@ -561,7 +561,8 @@ SceneVisit visitNode(const SceneNode& node, const ScenePaintState& state) {
                                       .size = node.layoutMetrics.frame.size};
     const SceneMatrix matrix = composeMatrices(state.matrix, matrixAboutCenter(node.transform, frame.getCenter()));
     const float opacity = state.opacity * node.opacity;
-    SceneVisit visit{.primitive = ScenePrimitive{.frame = frame,
+    SceneVisit visit{.primitive = ScenePrimitive{.tag = node.tag,
+                                                 .frame = frame,
                                                  .matrix = matrix,
                                                  .clips = state.clips,
                                                  .borderRadii = node.borderMetrics.borderRadii,
@@ -783,16 +784,19 @@ SceneRoundedBox roundedContentBox(const SceneRoundedBox& borderBox, const facebo
 }
 
 bool roundedBoxContainsPoint(const SceneRoundedBox& box, facebook::react::Point point) {
-    facebook::react::Rect bounds = box.bounds;
-
-    if (!bounds.containsPoint(point)) {
-        return false;
-    }
-
+    const facebook::react::Rect& bounds = box.bounds;
     const facebook::react::Float fromLeft = point.x - bounds.origin.x;
     const facebook::react::Float fromTop = point.y - bounds.origin.y;
     const facebook::react::Float fromRight = bounds.size.width - fromLeft;
     const facebook::react::Float fromBottom = bounds.size.height - fromTop;
+
+    // Half-open on the right and the bottom, which `Rect::containsPoint` is not: a box at x = 30 that is 150 wide
+    // paints the columns 30 to 179 and leaves 180 to its neighbour, so a press at 180 has to go to the neighbour
+    // too. Upstream's hit test closes both intervals and answers with a node that painted nothing at that point,
+    // which is issue #35 at the scale of one pixel.
+    if (fromLeft < 0 || fromTop < 0 || fromRight <= 0 || fromBottom <= 0) {
+        return false;
+    }
 
     return !isOutsideCorner(box.radii.topLeft, fromLeft, fromTop) &&
            !isOutsideCorner(box.radii.topRight, fromRight, fromTop) &&

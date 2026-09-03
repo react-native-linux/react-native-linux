@@ -1,0 +1,31 @@
+{
+  "name": "hit-paint-agreement",
+  "bundle": "hit-paint.js",
+  "ready": "hit-paint: committed surface 1",
+  "frames": 900,
+  "steps": [
+    "sleep 500",
+    "move 100 70",
+    "sleep 100",
+    "click 100 70",
+    "sleep 200",
+    "move 300 70",
+    "sleep 100",
+    "click 300 70",
+    "sleep 200",
+    "move 560 80",
+    "sleep 100",
+    "click 560 80",
+    "sleep 200",
+    "move 660 200",
+    "sleep 100",
+    "click 660 200",
+    "sleep 500"
+  ],
+  "expect": [
+    "hit-paint: topClick on overlap-over at 100,70",
+    "hit-paint: topClick on z-raised at 300,70",
+    "hit-paint: topClick on translate-parent at 560,80",
+    "hit-paint: topClick on surface at 660,200"
+  ]
+}

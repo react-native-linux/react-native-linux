@@ -51,6 +51,13 @@ const fixtures: readonly GoldenFixture[] = [
     renderFlag: "--golden",
   },
   { bundleFileName: "damage.js", goldenFileName: "damage.png", renderArguments: [], renderFlag: "--damage-golden" },
+  // Issue #35: this render flag is itself the assertion, and the PNG it writes is the paint side of that proof.
+  {
+    bundleFileName: "hit-paint.js",
+    goldenFileName: "hit-paint.png",
+    renderArguments: [],
+    renderFlag: "--hit-paint-golden",
+  },
   // Images are reproducible only against the asset packages/core/scripts/make-test-image.ts generates.
   { bundleFileName: "image.js", goldenFileName: "image.png", renderArguments: [], renderFlag: "--golden" },
   // Three wheel notches is 120 points of travel; a ScrollView at rest at zero would prove nothing at all.

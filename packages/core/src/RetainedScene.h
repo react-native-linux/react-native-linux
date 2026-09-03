@@ -200,6 +200,12 @@ struct SceneImageContent {
  * multiplied into the alpha channel, so the painter never composes anything.
  */
 struct ScenePrimitive {
+    /**
+     * The node this was painted for. The rest of a primitive is geometry and colour, deliberately: the painter
+     * needs no identity. This is here because a proof does — the hit-versus-paint agreement of issue #35 has to
+     * say which node painted the pixel it is looking at, and the hit test answers in tags.
+     */
+    facebook::react::Tag tag{};
     facebook::react::Rect frame;
     SceneMatrix matrix;
     std::vector<SceneClip> clips;

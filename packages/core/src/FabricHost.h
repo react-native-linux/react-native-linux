@@ -107,6 +107,14 @@ public:
     bool hasPendingWork() const;
     SceneFrame takeFrame();
     SceneSnapshot snapshotScene() const;
+
+    /**
+     * The node a press at `surfacePoint` would land on, asked directly rather than through an injected pointer.
+     *
+     * This is what the hit-versus-paint agreement proof of issue #35 samples: the same answer the input
+     * dispatcher would get, taken while the host is alive and compared against the pixels the same scene paints.
+     */
+    SceneHit findNodeAtPoint(facebook::react::Point surfacePoint) const;
     std::string dumpScene() const;
 
 private:

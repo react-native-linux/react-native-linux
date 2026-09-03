@@ -253,6 +253,10 @@ SceneSnapshot FabricHost::snapshotScene() const {
     return mountingManager_->snapshotScene();
 }
 
+SceneHit FabricHost::findNodeAtPoint(facebook::react::Point surfacePoint) const {
+    return mountingManager_->findNodeAtPoint(kSurfaceId, surfacePoint);
+}
+
 std::string FabricHost::dumpScene() const {
     return mountingManager_->dumpScene();
 }

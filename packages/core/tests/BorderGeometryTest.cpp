@@ -135,6 +135,18 @@ TEST(BorderGeometryTest, ASquareBoxContainsEveryPointInsideItsBoundsAndNothingOu
     EXPECT_FALSE(roundedBoxContainsPoint(box, pointAt(50, 51)));
 }
 
+TEST(BorderGeometryTest, TheRightAndBottomEdgesBelongToWhateverIsPaintedThereInstead) {
+    const SceneRoundedBox box = roundedBorderBox(makeRect(30, 20, 150, 100), BorderRadii{});
+
+    // A box at x = 30 that is 150 wide paints the columns 30 to 179 and leaves 180 to its neighbour, so the
+    // containment is half-open on the right and the bottom and a press at 180 goes to the neighbour too. Issue
+    // #35 at the scale of one pixel; upstream's `Rect::containsPoint` closes both intervals.
+    EXPECT_TRUE(roundedBoxContainsPoint(box, pointAt(30, 20)));
+    EXPECT_TRUE(roundedBoxContainsPoint(box, pointAt(179.5F, 119.5F)));
+    EXPECT_FALSE(roundedBoxContainsPoint(box, pointAt(180, 60)));
+    EXPECT_FALSE(roundedBoxContainsPoint(box, pointAt(100, 120)));
+}
+
 TEST(BorderGeometryTest, EachRoundedCornerExcludesThePointsItsOwnArcDoesNotCover) {
     const SceneRoundedBox box = roundedBorderBox(makeRect(0, 0, 100, 100), uniformRadii(40));
 

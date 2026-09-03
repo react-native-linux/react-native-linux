@@ -446,6 +446,43 @@ FabricRunResult runFabricBundle(const std::optional<std::string>& bundlePath, fa
     return finishFabricRun(reactHost, fabricHost);
 }
 
+FabricHitPaintRunResult runHitSampledFabricBundle(const std::string& bundlePath, facebook::react::Size surfaceSize,
+                                                  int sampleStep) {
+    ReactHost reactHost;
+    std::unique_ptr<FabricHost> fabricHost = std::make_unique<FabricHost>(reactHost.reactInstance(), surfaceSize);
+
+    configureDimensions(reactHost, surfaceSize);
+    loadAndSettle(reactHost, bundlePath);
+
+    for (size_t frame = 0; frame < kHeadlessFrameCount; ++frame) {
+        deliverInputFrame(reactHost, *fabricHost, {});
+    }
+
+    settlePendingImageDecodes();
+
+    std::vector<FabricHitSample> hits;
+
+    // At the centre of each sampled pixel, not at its corner: a pixel's colour describes the area around its
+    // centre, so that is the point whose hit answer the colour can be compared against. On a rotated edge the
+    // difference is the whole disagreement — the corner of a fully painted pixel can sit outside the shape.
+    constexpr facebook::react::Float kPixelCentre = 0.5F;
+
+    for (int y = 0; y < static_cast<int>(surfaceSize.height); y += sampleStep) {
+        for (int x = 0; x < static_cast<int>(surfaceSize.width); x += sampleStep) {
+            const facebook::react::Point point{.x = static_cast<facebook::react::Float>(x) + kPixelCentre,
+                                               .y = static_cast<facebook::react::Float>(y) + kPixelCentre};
+
+            hits.push_back(FabricHitSample{.point = point, .tag = fabricHost->findNodeAtPoint(point).tag});
+        }
+    }
+
+    const FabricRunResult run = finishFabricRun(reactHost, fabricHost);
+
+    return FabricHitPaintRunResult{.scene = run.scene,
+                                   .hits = std::move(hits),
+                                   .hasReportedFatalError = run.hasReportedFatalError};
+}
+
 int runBundle(const std::optional<std::string>& bundlePath, BundleMode bundleMode) {
     if (bundleMode == BundleMode::Fabric) {
         const FabricRunResult result = runFabricBundle(bundlePath, kHeadlessSurfaceSize);
