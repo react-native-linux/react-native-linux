@@ -5,7 +5,7 @@
 // hello_react --type packages/core/test-bundles/text-input.js /tmp/rnl-typing.png "Hello{Left}{Left}X"
 // hello_react --type packages/core/test-bundles/text-input.js /tmp/rnl-selection.png "Hello world{Ctrl+A}"
 //
-// One Tab focuses the first field, so everything typed after it goes there. The other two are never typed into:
+// One Tab focuses the first field, so everything typed after it goes there. The others are never typed into:
 // the secure one proves that the buffer is masked before it reaches a paragraph — the picture shows bullets and
 // the paragraph never contains anything else — and the multiline one proves wrapping and a caret that is not on
 // the first line.
@@ -83,6 +83,31 @@ const multiline = createNode(
   }),
 );
 
+// #53, case 4, and rn-macos#1395: a caret whose height is a constant looks right at one font size and wrong at
+// every other one. These four fields are never focused and never typed into — the picture is their text, and the
+// assertion is `--type`'s own, which asks each field's paragraph how tall the line under its caret is.
+const sized = (tag, name, left, top, width, height, textAttributes, value) =>
+  createNode(
+    tag,
+    'TextInput',
+    name,
+    Object.assign(fieldStyle(left, top, width, height), textAttributes, { text: value, mostRecentEventCount: 0 }),
+  );
+
+const twelvePoint = sized(13, 'twelve', 40, 290, 220, 40, { fontSize: 12 }, 'Twelve point');
+const twentyFourPoint = sized(14, 'twenty-four', 280, 290, 240, 56, { fontSize: 24 }, 'Twenty four');
+const fortyPoint = sized(15, 'forty', 540, 290, 220, 80, { fontSize: 40 }, 'Forty');
+const tallLine = sized(
+  16,
+  'tall-line',
+  40,
+  390,
+  720,
+  70,
+  { fontSize: 16, lineHeight: 40 },
+  'A forty point line height on a sixteen point font.',
+);
+
 // The single JavaScript entry point for every Fabric event. React's renderer installs its own dispatcher here;
 // this one reports, so the printed order is the order the C++ side produced.
 fabric.registerEventHandler((instanceHandle, type, payload) => {
@@ -115,6 +140,10 @@ fabric.registerEventHandler((instanceHandle, type, payload) => {
 fabric.appendChild(container, plain);
 fabric.appendChild(container, secure);
 fabric.appendChild(container, multiline);
+fabric.appendChild(container, twelvePoint);
+fabric.appendChild(container, twentyFourPoint);
+fabric.appendChild(container, fortyPoint);
+fabric.appendChild(container, tallLine);
 
 const rootChildren = fabric.createChildSet();
 

@@ -357,6 +357,18 @@ layoutParagraph(const facebook::react::AttributedString& attributedString,
     return paragraph;
 }
 
+EditorGeometry measureEditorGeometry(const SceneTextContent& text, const SceneEditorContent& editor) {
+    const EditorGeometryRequest request{.caretUtf16 = editor.state.caretUtf16,
+                                        .selectionBeginUtf16 = editor.state.selectionBeginUtf16,
+                                        .selectionEndUtf16 = editor.state.selectionEndUtf16,
+                                        .compositionBeginUtf16 = editor.state.compositionBeginUtf16,
+                                        .compositionEndUtf16 = editor.state.compositionEndUtf16,
+                                        .isMultiline = editor.isMultiline};
+
+    return measureEditorGeometry(text.attributedString, text.paragraphAttributes,
+                                 static_cast<float>(text.frame.size.width), request);
+}
+
 ParagraphMetrics measureParagraphMetrics(const facebook::react::AttributedString& attributedString,
                                          const facebook::react::ParagraphAttributes& paragraphAttributes,
                                          float maximumWidth) {

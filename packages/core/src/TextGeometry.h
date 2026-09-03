@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EditorModel.h"
+#include "RetainedScene.h"
 
 #include <react/renderer/attributedstring/AttributedString.h>
 #include <react/renderer/attributedstring/ParagraphAttributes.h>
@@ -63,6 +64,13 @@ struct EditorGeometry {
 EditorGeometry measureEditorGeometry(const facebook::react::AttributedString& attributedString,
                                      const facebook::react::ParagraphAttributes& paragraphAttributes,
                                      float maximumWidth, const EditorGeometryRequest& request);
+
+/**
+ * The same measurement for a field the scene is carrying: the request is the editor state it mounted with and
+ * the width is its content box. Both the painter and the `--type` proof ask for exactly this, and asking twice in
+ * two spellings is how the caret and the picture would eventually disagree.
+ */
+EditorGeometry measureEditorGeometry(const SceneTextContent& text, const SceneEditorContent& editor);
 
 /**
  * The UTF-16 index the given point in paragraph-local coordinates falls on, which is what a click or a drag

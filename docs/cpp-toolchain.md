@@ -3410,6 +3410,20 @@ which does. Call sites are guarded by `RNL_ENABLE_TEXT_GEOMETRY`, defined only w
 it a paragraph already measures as zero, so a field has no geometry to ask about and the caret still moves by
 grapheme because that half is arithmetic.
 
+**The caret height is asserted, not assumed** (#53, case 4). Every `--type` run proves, for each field in the
+scene, that the caret is as tall as the line its own midpoint lands in — the same proof the text goldens run for
+the paragraph box, extended to the field. `text-input.js` carries four fields that exist only for it: 12, 24 and
+40 point, and a 40 point `lineHeight` on a 16 point font. Their measurements are the assertion:
+
+```text
+tag 13 caret 16.34 on a 16 point line     tag 15 caret 54.48 on a 54 point line
+tag 14 caret 32.69 on a 33 point line     tag 16 caret 40    on a 40 point line
+```
+
+The tolerance is one point, because the caret is the line's exact height and the line metric is a rounded one. A
+caret that took a constant height — react-native-macos#1395 — would be wrong by tens of points at the fourth
+field and by a fraction at the first, so one font size can never carry the others.
+
 **Single-line scrolling** is the caret dragging the window: the offset moves only far enough to keep the caret
 inside the content box, clamped to the laid-out width, and the painter clips to that box and translates by it.
 A multiline field wraps instead and never scrolls horizontally; vertical scrolling is deferred below.

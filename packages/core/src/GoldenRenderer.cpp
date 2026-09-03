@@ -20,6 +20,7 @@
 #include <react/renderer/graphics/Float.h>
 #include <react/renderer/graphics/Size.h>
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -264,6 +265,42 @@ bool doesParagraphFitItsBox(const ScenePrimitive& primitive, const facebook::rea
     return doesFit;
 }
 
+// Issue #53, and rn-macos#1395: a caret whose height is a constant looks right at one font size and wrong at
+// every other. The caret has to be as tall as the line it is on, whatever that line's font size and `lineHeight`
+// work out as, so this asks the paragraph which line the caret's own midpoint lands in and compares the two.
+// One point of tolerance, because the caret is the line's exact height and the line metric is a rounded one —
+// at forty points those differ by half a point. A caret that ignored the line would be wrong by tens.
+constexpr float kCaretHeightTolerance = 1.0F;
+
+bool doesCaretMatchItsLine(const ScenePrimitive& primitive) {
+    const SceneTextContent& content = primitive.text.value();
+    const EditorGeometry geometry = measureEditorGeometry(content, primitive.editor.value());
+    const ParagraphMetrics metrics = measureParagraphMetrics(content.attributedString, content.paragraphAttributes,
+                                                             geometry.layoutWidth);
+    const float caretMiddle = static_cast<float>(geometry.caret.origin.y + (geometry.caret.size.height / 2));
+    float lineTop = 0.0F;
+
+    for (const ParagraphLineMetrics& line : metrics.lines) {
+        const float lineBottom = lineTop + line.height;
+
+        if (caretMiddle < lineBottom) {
+            if (std::abs(static_cast<float>(geometry.caret.size.height) - line.height) > kCaretHeightTolerance) {
+                std::cerr << "[golden] tag " << primitive.tag << " draws a " << geometry.caret.size.height
+                          << " point caret on a " << line.height << " point line" << std::endl;
+
+                return false;
+            }
+
+            return true;
+        }
+
+        lineTop = lineBottom;
+    }
+
+    // An empty field has no line to be as tall as, and the caret is the font's own line height there.
+    return metrics.lines.empty();
+}
+
 bool doParagraphsFitTheirBoxes(const SceneSnapshot& scene) {
     const facebook::react::TextLayoutManager layoutManager{nullptr};
     size_t paragraphCount = 0;
@@ -276,6 +313,10 @@ bool doParagraphsFitTheirBoxes(const SceneSnapshot& scene) {
 
         paragraphCount++;
         doAllFit = doesParagraphFitItsBox(primitive, layoutManager) && doAllFit;
+
+        if (primitive.editor.has_value()) {
+            doAllFit = doesCaretMatchItsLine(primitive) && doAllFit;
+        }
     }
 
     if (paragraphCount == 0) {
@@ -328,8 +369,14 @@ int renderFocusGolden(const std::string& bundlePath, const std::string& outputPa
 
 int renderTypedGolden(const std::string& bundlePath, const std::string& outputPath, const std::string& keySequence,
                       int width, int height) {
-    return paintSettledScene(runTypedFabricBundle(bundlePath, toSurfaceSize(width, height), keySequence),
-                             outputPath, width, height);
+    const FabricRunResult run = runTypedFabricBundle(bundlePath, toSurfaceSize(width, height), keySequence);
+
+    // A typed golden is a field with a caret in it, so it is also where the caret geometry of #53 is proved.
+    if (!doParagraphsFitTheirBoxes(run.scene)) {
+        return 1;
+    }
+
+    return paintSettledScene(run, outputPath, width, height);
 }
 
 int renderDamageGolden(const std::string& bundlePath, const std::string& outputPath, int width, int height) {

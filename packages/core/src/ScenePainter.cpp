@@ -211,14 +211,7 @@ facebook::react::Rect offsetRect(const facebook::react::Rect& rect, facebook::re
  */
 void paintEditor(SkCanvas& canvas, const SceneTextContent& text, const SceneEditorContent& editor) {
     const SkAutoCanvasRestore restore(&canvas, true);
-    const EditorGeometryRequest request{.caretUtf16 = editor.state.caretUtf16,
-                                        .selectionBeginUtf16 = editor.state.selectionBeginUtf16,
-                                        .selectionEndUtf16 = editor.state.selectionEndUtf16,
-                                        .compositionBeginUtf16 = editor.state.compositionBeginUtf16,
-                                        .compositionEndUtf16 = editor.state.compositionEndUtf16,
-                                        .isMultiline = editor.isMultiline};
-    const EditorGeometry geometry = measureEditorGeometry(text.attributedString, text.paragraphAttributes,
-                                                          static_cast<float>(text.frame.size.width), request);
+    const EditorGeometry geometry = measureEditorGeometry(text, editor);
 
     canvas.clipRect(toSkRect(text.frame), false);
     canvas.translate(-editor.state.scrollOffsetX, 0);
