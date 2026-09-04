@@ -1,8 +1,12 @@
 #include "LinuxMountingManager.h"
 #include "ShadowTreeTestSupport.h"
 
+#include <algorithm>
+#include <atomic>
 #include <gtest/gtest.h>
-
+#include <latch>
+#include <memory>
+#include <optional>
 #include <react/featureflags/ReactNativeFeatureFlags.h>
 #include <react/featureflags/ReactNativeFeatureFlagsDefaults.h>
 #include <react/renderer/components/root/RootShadowNode.h>
@@ -26,12 +30,6 @@
 #include <react/renderer/mounting/ShadowTreeDelegate.h>
 #include <react/renderer/mounting/ShadowViewMutation.h>
 #include <react/utils/ContextContainer.h>
-
-#include <algorithm>
-#include <atomic>
-#include <latch>
-#include <memory>
-#include <optional>
 #include <string>
 #include <thread>
 #include <utility>
@@ -39,26 +37,6 @@
 
 namespace {
 
-using facebook::react::ComponentDescriptorParameters;
-using facebook::react::ContextContainer;
-using facebook::react::EventDispatcher;
-using facebook::react::LayoutConstraints;
-using facebook::react::LayoutContext;
-using facebook::react::MountingCoordinator;
-using facebook::react::MountingTransaction;
-using facebook::react::ReactNativeFeatureFlags;
-using facebook::react::ReactNativeFeatureFlagsDefaults;
-using facebook::react::RootShadowNode;
-using facebook::react::ShadowNode;
-using facebook::react::ShadowNodeFamily;
-using facebook::react::ShadowNodeFragment;
-using facebook::react::ShadowTree;
-using facebook::react::ShadowTreeDelegate;
-using facebook::react::ShadowViewMutation;
-using facebook::react::Size;
-using facebook::react::SurfaceId;
-using facebook::react::Tag;
-using facebook::react::ViewComponentDescriptor;
 using react_native_linux::LinuxMountingManager;
 using react_native_linux::PassThroughShadowTreeDelegate;
 
@@ -78,9 +56,7 @@ constexpr int kAttemptsBeforeLocking = 3;
  */
 class ExhaustionPreventingFeatureFlags final : public ReactNativeFeatureFlagsDefaults {
 public:
-    bool preventShadowTreeCommitExhaustion() override {
-        return true;
-    }
+    bool preventShadowTreeCommitExhaustion() override { return true; }
 };
 
 /**
@@ -116,9 +92,8 @@ public:
 
 private:
     std::shared_ptr<const ContextContainer> contextContainer_{std::make_shared<ContextContainer>()};
-    ViewComponentDescriptor descriptor_{ComponentDescriptorParameters{.eventDispatcher = EventDispatcher::Shared{},
-                                                                      .contextContainer = contextContainer_,
-                                                                      .flavor = nullptr}};
+    ViewComponentDescriptor descriptor_{ComponentDescriptorParameters{
+        .eventDispatcher = EventDispatcher::Shared{}, .contextContainer = contextContainer_, .flavor = nullptr}};
     facebook::react::Props::Shared paintedProps_{paintedViewProps()};
 };
 
@@ -139,9 +114,8 @@ ShadowTree::CommitOptions commitOptions() {
  * from a layout effect: by the time the outer commit tries to publish, the revision it read is no longer current
  * and `tryCommit` has to report `Failed`.
  */
-facebook::react::ShadowTreeCommitTransaction transactionThatMovesTheBaseTree(const ShadowTree& shadowTree,
-                                                                            const ViewFactory& viewFactory,
-                                                                            int& transactionCalls) {
+facebook::react::ShadowTreeCommitTransaction
+transactionThatMovesTheBaseTree(const ShadowTree& shadowTree, const ViewFactory& viewFactory, int& transactionCalls) {
     return [&shadowTree, &viewFactory, &transactionCalls](const RootShadowNode& oldRootShadowNode) {
         transactionCalls++;
         shadowTree.commit(
@@ -169,17 +143,14 @@ protected:
         ReactNativeFeatureFlags::override(std::make_unique<ExhaustionPreventingFeatureFlags>());
     }
 
-    void TearDown() override {
-        ReactNativeFeatureFlags::dangerouslyReset();
-    }
+    void TearDown() override { ReactNativeFeatureFlags::dangerouslyReset(); }
 };
 
 TEST_F(ShadowTreeCommitTest, ATryCommitWhoseTransactionMovesTheBaseTreeReportsFailedAfterOneAttempt) {
     int transactionCalls = 0;
 
-    const ShadowTree::CommitStatus status =
-        shadowTree.tryCommit(transactionThatMovesTheBaseTree(shadowTree, viewFactory, transactionCalls),
-                             commitOptions());
+    const ShadowTree::CommitStatus status = shadowTree.tryCommit(
+        transactionThatMovesTheBaseTree(shadowTree, viewFactory, transactionCalls), commitOptions());
 
     EXPECT_EQ(status, ShadowTree::CommitStatus::Failed);
     EXPECT_EQ(transactionCalls, 1);
@@ -227,8 +198,7 @@ TEST_F(ShadowTreeCommitExhaustionTest, ACommitThatAlwaysRacesTheBaseTreeReportsF
     int transactionCalls = 0;
 
     const ShadowTree::CommitStatus status =
-        shadowTree.commit(transactionThatMovesTheBaseTree(shadowTree, viewFactory, transactionCalls),
-                          commitOptions());
+        shadowTree.commit(transactionThatMovesTheBaseTree(shadowTree, viewFactory, transactionCalls), commitOptions());
 
     EXPECT_EQ(status, ShadowTree::CommitStatus::Failed);
     EXPECT_EQ(transactionCalls, kAttemptsBeforeLocking + 1);
@@ -322,8 +292,7 @@ TEST_F(ShadowTreeCommitTest, ConcurrentPullTransactionIsSerializedAgainstCommits
     const std::string dump = mountingManager.dumpScene();
 
     EXPECT_EQ(mountingManager.mountDiagnostics().unknownTagOperations, 0U);
-    EXPECT_NE(dump.find("View #" + std::to_string(kConcurrentBaseTag + kConcurrentCommitCount - 1)),
-              std::string::npos);
+    EXPECT_NE(dump.find("View #" + std::to_string(kConcurrentBaseTag + kConcurrentCommitCount - 1)), std::string::npos);
     EXPECT_EQ(std::count(dump.begin(), dump.end(), '\n'), 2);
     EXPECT_FALSE(mountingCoordinator->pullTransaction().has_value());
 }

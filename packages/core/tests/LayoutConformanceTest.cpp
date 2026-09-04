@@ -309,8 +309,7 @@ protected:
 
     PassThroughShadowTreeDelegate shadowTreeDelegate_;
     std::shared_ptr<const ContextContainer> contextContainer_{std::make_shared<ContextContainer>()};
-    ViewComponentDescriptor viewDescriptor_{ComponentDescriptorParameters{
-        .eventDispatcher = EventDispatcher::Shared{}, .contextContainer = contextContainer_, .flavor = nullptr}};
+    ViewComponentDescriptor viewDescriptor_ = makeViewComponentDescriptor(contextContainer_);
     facebook::react::ScrollViewComponentDescriptor scrollViewDescriptor_{ComponentDescriptorParameters{
         .eventDispatcher = EventDispatcher::Shared{}, .contextContainer = contextContainer_, .flavor = nullptr}};
     std::unique_ptr<ShadowTree> shadowTree_;
