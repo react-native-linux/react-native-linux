@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+#include <filesystem>
 #include <react/featureflags/ReactNativeFeatureFlags.h>
 #include <react/featureflags/ReactNativeFeatureFlagsDefaults.h>
 #include <react/renderer/components/root/RootShadowNode.h>
@@ -24,6 +26,8 @@
 #include <react/renderer/mounting/ShadowTree.h>
 #include <react/renderer/mounting/ShadowTreeDelegate.h>
 #include <react/renderer/uimanager/UIManager.h>
+#include <string>
+#include <vector>
 
 // The using-declarations both commit-driven test files share. They live here rather than in each file because a
 // second copy of the list is a jscpd clone at threshold 0. The header is included by tests only, so the
@@ -68,6 +72,25 @@ makeViewComponentDescriptor(const std::shared_ptr<const facebook::react::Context
 }
 
 namespace react_native_linux {
+
+/**
+ * The sorted file list a vendored upstream tests directory holds, which both drift-oracle tests (#132's animated
+ * list and #211's Fabric module lists) assert against. A shared helper because the same function twice is a
+ * jscpd clone at threshold 0.
+ */
+inline std::vector<std::string> sortedUpstreamFileNames(const std::filesystem::path& directory) {
+    std::vector<std::string> fileNames;
+
+    for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+        if (entry.is_regular_file()) {
+            fileNames.push_back(entry.path().filename().string());
+        }
+    }
+
+    std::sort(fileNames.begin(), fileNames.end());
+
+    return fileNames;
+}
 
 /**
  * A UIManager whose runtime executor drops its tasks: the commit-driven fixtures never dispatch through it, and

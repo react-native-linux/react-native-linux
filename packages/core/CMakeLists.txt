@@ -470,6 +470,7 @@ set(RNL_REACT_COMMON_SUBDIRS
     react/renderer/componentregistry
     react/renderer/components/image
     react/renderer/components/legacyviewmanagerinterop
+    react/renderer/components/modal
     react/renderer/components/root
     react/renderer/components/scrollview
     react/renderer/components/text
@@ -505,6 +506,11 @@ set(RNL_REACT_COMMON_SUBDIRS
 block()
     include(${REACT_COMMON_DIR}/cmake-utils/internal/react-native-platform-selector.cmake)
 endblock()
+
+# react/renderer/element is not a dependency of anything we link, but the upstream core/mounting test suites
+# (#211) build through react/renderer/element's ComponentBuilder and react/test_utils, so the subdirectory
+# joins here for the test target alone. It is an object library upstream and links nothing of ours.
+add_subdirectory(${REACT_COMMON_DIR}/react/renderer/element ReactCommon/element)
 
 foreach(rnl_subdir IN LISTS RNL_REACT_COMMON_SUBDIRS)
     add_subdirectory(${REACT_COMMON_DIR}/${rnl_subdir} ReactCommon/${rnl_subdir})
@@ -551,6 +557,7 @@ set(RNL_REACT_COMMON_TARGETS
     react_renderer_css
     react_renderer_debug
     react_renderer_dom
+    react_renderer_element
     react_renderer_graphics
     react_renderer_imagemanager
     react_renderer_leakchecker
@@ -568,6 +575,7 @@ set(RNL_REACT_COMMON_TARGETS
     react_utils
     reactperflogger
     rrc_image
+    rrc_modal
     rrc_legacyviewmanagerinterop
     rrc_root
     rrc_scrollview
