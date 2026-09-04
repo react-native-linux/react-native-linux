@@ -75,6 +75,7 @@ add_executable(rnl_core_tests
     ScrollTest.cpp
     ShadowTreeCommitTest.cpp
     TextRasterizationPolicyTest.cpp
+    ThreadingConformanceTest.cpp
     TextInputControllerTest.cpp
     UpstreamAnimatedSuiteTest.cpp
     UpstreamFabricSuiteTest.cpp
@@ -89,6 +90,7 @@ add_executable(rnl_core_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/FocusModel.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/FrameClock.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/FrameTiming.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/HostTimerRegistry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ImageContent.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/InputPipeline.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/LineBoxMetrics.cpp
