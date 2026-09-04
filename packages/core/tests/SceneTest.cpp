@@ -3,16 +3,17 @@
 #include "SceneTestSupport.h"
 #include "TextInputComponent.h"
 
-#include <gtest/gtest.h>
-
+#include <cstdint>
 #include <folly/dynamic.h>
+#include <gtest/gtest.h>
+#include <memory>
 #include <react/renderer/attributedstring/AttributedString.h>
+#include <react/renderer/attributedstring/AttributedStringBox.h>
 #include <react/renderer/attributedstring/ParagraphAttributes.h>
 #include <react/renderer/attributedstring/TextAttributes.h>
 #include <react/renderer/components/image/ImageProps.h>
 #include <react/renderer/components/image/ImageState.h>
 #include <react/renderer/components/scrollview/ScrollViewState.h>
-#include <react/renderer/attributedstring/AttributedStringBox.h>
 #include <react/renderer/components/text/ParagraphState.h>
 #include <react/renderer/components/textinput/TextInputState.h>
 #include <react/renderer/components/view/ViewProps.h>
@@ -23,30 +24,31 @@
 #include <react/renderer/graphics/Color.h>
 #include <react/renderer/graphics/ColorStop.h>
 #include <react/renderer/graphics/LinearGradient.h>
-#include <react/renderer/imagemanager/ImageRequest.h>
-#include <react/renderer/imagemanager/ImageRequestParams.h>
-#include <react/renderer/imagemanager/primitives.h>
 #include <react/renderer/graphics/Point.h>
 #include <react/renderer/graphics/Rect.h>
 #include <react/renderer/graphics/RectangleEdges.h>
 #include <react/renderer/graphics/Size.h>
 #include <react/renderer/graphics/Transform.h>
 #include <react/renderer/graphics/ValueUnit.h>
+#include <react/renderer/imagemanager/ImageRequest.h>
+#include <react/renderer/imagemanager/ImageRequestParams.h>
+#include <react/renderer/imagemanager/primitives.h>
 #include <react/renderer/mounting/MountingTransaction.h>
 #include <react/renderer/mounting/ShadowView.h>
 #include <react/renderer/mounting/ShadowViewMutation.h>
 #include <react/renderer/telemetry/TransactionTelemetry.h>
+#include <string>
+#include <utility>
+#include <vector>
 #include <yoga/enums/Edge.h>
 #include <yoga/enums/Overflow.h>
 #include <yoga/style/StyleLength.h>
 
-#include <cstdint>
-#include <memory>
-#include <string>
-#include <utility>
-#include <vector>
-
 namespace {
+
+// A 45-degree Z rotation: its damage and clip boxes are the (w + h) / sqrt(2) rotated half-extents the skew
+// terms of its affine matrix produce.
+constexpr float kQuarterTurnRadians = 0.78539816F;
 
 namespace yoga = facebook::yoga;
 
@@ -54,9 +56,7 @@ constexpr uint32_t kHalfBlueArgb = 0x803366CCU;
 constexpr uint32_t kHalfRedArgb = 0x80CC3333U;
 constexpr uint32_t kQuarterRedArgb = 0x40CC3333U;
 
-SharedColor invisibleBlue() {
-    return facebook::react::colorFromRGBA(51, 102, 204, 0);
-}
+SharedColor invisibleBlue() { return facebook::react::colorFromRGBA(51, 102, 204, 0); }
 
 /**
  * One `experimental_backgroundImage` layer as `BaseViewProps` parses it: a corner keyword and two stops, the
@@ -66,8 +66,7 @@ facebook::react::LinearGradient blueToRedGradient() {
     return facebook::react::LinearGradient{
         .direction = facebook::react::GradientKeyword::ToBottomRight,
         .colorStops = {facebook::react::ColorStop{.color = blue(), .position = ValueUnit{}},
-                       facebook::react::ColorStop{.color = red(),
-                                                  .position = ValueUnit{100.0F, UnitType::Percent}}}};
+                       facebook::react::ColorStop{.color = red(), .position = ValueUnit{100.0F, UnitType::Percent}}}};
 }
 
 std::shared_ptr<ViewProps> propsWithGradients(std::vector<facebook::react::BackgroundImage> backgroundImage) {
@@ -109,6 +108,36 @@ void expectRect(const Rect& rect, Rect expected) {
     EXPECT_FLOAT_EQ(rect.origin.y, expected.origin.y);
     EXPECT_FLOAT_EQ(rect.size.width, expected.size.width);
     EXPECT_FLOAT_EQ(rect.size.height, expected.size.height);
+}
+
+/**
+ * Snapshot equality in content, not in mount order: the test helper inserts children at index 0, so a list
+ * built incrementally can paint its rows in the opposite order from a fresh build while holding identical
+ * geometry - and the equivalence contract of issue #47 is about the pixels, not the mount history.
+ */
+bool sameSnapshot(SceneSnapshot first, SceneSnapshot second) {
+    const auto byTag = [](const ScenePrimitive& primitive) { return primitive.tag; };
+
+    std::sort(first.begin(), first.end(),
+              [&](const ScenePrimitive& a, const ScenePrimitive& b) { return byTag(a) < byTag(b); });
+    std::sort(second.begin(), second.end(),
+              [&](const ScenePrimitive& a, const ScenePrimitive& b) { return byTag(a) < byTag(b); });
+
+    if (first.size() != second.size()) {
+        return false;
+    }
+
+    for (size_t index = 0; index < first.size(); ++index) {
+        if (first[index].tag != second[index].tag || first[index].frame.origin.x != second[index].frame.origin.x ||
+            first[index].frame.origin.y != second[index].frame.origin.y ||
+            first[index].frame.size.width != second[index].frame.size.width ||
+            first[index].frame.size.height != second[index].frame.size.height ||
+            first[index].backgroundColorArgb != second[index].backgroundColorArgb) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 Rect boundsOf(const SceneDamage& damage) {
@@ -183,10 +212,9 @@ TEST(RetainedSceneTest, DumpKeepsParentRelativeFramesAndIndentsByDepth) {
 
     addChild(scene, 2, makeView(3, makeRect(5, 7, 50, 40)));
 
-    EXPECT_EQ(scene.dump(),
-              "RootView #1 frame=(0.00, 0.00, 800.00, 600.00)\n"
-              "  View #2 frame=(10.00, 20.00, 200.00, 100.00) backgroundColor=rgba(51, 102, 204, 1)\n"
-              "    View #3 frame=(5.00, 7.00, 50.00, 40.00)\n");
+    EXPECT_EQ(scene.dump(), "RootView #1 frame=(0.00, 0.00, 800.00, 600.00)\n"
+                            "  View #2 frame=(10.00, 20.00, 200.00, 100.00) backgroundColor=rgba(51, 102, 204, 1)\n"
+                            "    View #3 frame=(5.00, 7.00, 50.00, 40.00)\n");
 }
 
 TEST(RetainedSceneTest, UpdateReplacesFrameAndBackgroundColorInPlace) {
@@ -229,9 +257,8 @@ TEST(RetainedSceneTest, RemoveDetachesTheChildAndLeavesItAsItsOwnRoot) {
 
     scene.removeChild(kSurfaceTag, makePaintedView(2, makeRect(10, 20, 200, 100), blue()));
 
-    EXPECT_EQ(scene.dump(),
-              "RootView #1 frame=(0.00, 0.00, 800.00, 600.00)\n"
-              "View #2 frame=(10.00, 20.00, 200.00, 100.00) backgroundColor=rgba(51, 102, 204, 1)\n");
+    EXPECT_EQ(scene.dump(), "RootView #1 frame=(0.00, 0.00, 800.00, 600.00)\n"
+                            "View #2 frame=(10.00, 20.00, 200.00, 100.00) backgroundColor=rgba(51, 102, 204, 1)\n");
 }
 
 TEST(RetainedSceneTest, ReparentingRecomposesTheAbsoluteOrigin) {
@@ -326,9 +353,8 @@ TEST(RetainedSceneTest, RemoveToleratesAnUnknownParentAndAnUnknownChild) {
 
     ASSERT_EQ(snapshot.size(), 1U);
     expectPrimitive(snapshot[0], makeRect(10, 20, 200, 100), kBlueArgb);
-    EXPECT_EQ(scene.dump(),
-              "RootView #1 frame=(0.00, 0.00, 800.00, 600.00)\n"
-              "View #2 frame=(10.00, 20.00, 200.00, 100.00) backgroundColor=rgba(51, 102, 204, 1)\n");
+    EXPECT_EQ(scene.dump(), "RootView #1 frame=(0.00, 0.00, 800.00, 600.00)\n"
+                            "View #2 frame=(10.00, 20.00, 200.00, 100.00) backgroundColor=rgba(51, 102, 204, 1)\n");
 }
 
 TEST(RetainedSceneTest, ANodeWithoutAComponentNameDumpsAnEmptyName) {
@@ -347,9 +373,8 @@ TEST(RetainedSceneTest, RootsAreOrderedByTagRegardlessOfCreationOrder) {
     scene.createSurfaceRoot(3, Size{.width = 30, .height = 30});
     scene.createSurfaceRoot(2, Size{.width = 20, .height = 20});
 
-    EXPECT_EQ(scene.dump(),
-              "RootView #2 frame=(0.00, 0.00, 20.00, 20.00)\n"
-              "RootView #3 frame=(0.00, 0.00, 30.00, 30.00)\n");
+    EXPECT_EQ(scene.dump(), "RootView #2 frame=(0.00, 0.00, 20.00, 20.00)\n"
+                            "RootView #3 frame=(0.00, 0.00, 30.00, 30.00)\n");
 }
 
 TEST(RetainedSceneTest, ANodeWithoutATransformCarriesTheIdentityMatrixAndNoClips) {
@@ -941,9 +966,8 @@ TEST(RetainedSceneTextTest, DumpCarriesTheParagraphText) {
     scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
     addChild(scene, kSurfaceTag, makeParagraph(2, makeRect(40, 60, 300, 48), "dumped", 0));
 
-    EXPECT_EQ(scene.dump(),
-              "RootView #1 frame=(0.00, 0.00, 800.00, 600.00)\n"
-              "  Paragraph #2 frame=(40.00, 60.00, 300.00, 48.00) text=\"dumped\"\n");
+    EXPECT_EQ(scene.dump(), "RootView #1 frame=(0.00, 0.00, 800.00, 600.00)\n"
+                            "  Paragraph #2 frame=(40.00, 60.00, 300.00, 48.00) text=\"dumped\"\n");
 }
 
 ShadowView makeTile(Tag tag, Rect frame, const std::string& uri) {
@@ -959,8 +983,7 @@ RetainedScene sceneWithTile(const ShadowView& imageView) {
     return scene;
 }
 
-react_native_linux::SceneImageResizeMode
-snapshotResizeMode(facebook::react::ImageResizeMode resizeMode) {
+react_native_linux::SceneImageResizeMode snapshotResizeMode(facebook::react::ImageResizeMode resizeMode) {
     return sceneWithTile(makeImage(2, makeRect(0, 0, 64, 48), "tile.png", resizeMode, SharedColor{}))
         .snapshot()
         .front()
@@ -1017,8 +1040,8 @@ TEST(RetainedSceneImageTest, AnUnrequestedSourcePaintsNothing) {
 TEST(RetainedSceneImageTest, OpacityMultipliesIntoTheTintAlphaAndTheImageAlpha) {
     RetainedScene scene = sceneWithTranslucentParent();
 
-    addChild(scene, 2, makeImage(3, makeRect(0, 0, 64, 48), "tile.png",
-                                 facebook::react::ImageResizeMode::Cover, red()));
+    addChild(scene, 2,
+             makeImage(3, makeRect(0, 0, 64, 48), "tile.png", facebook::react::ImageResizeMode::Cover, red()));
 
     const SceneSnapshot snapshot = scene.snapshot();
 
@@ -1058,13 +1081,9 @@ TEST(RetainedSceneImageTest, DumpCarriesTheImageSource) {
 
 // The fixture every scroll test below shares: a 200x150 viewport at (60, 60) holding 470 points of content, one
 // 200x70 row of which sits 80 points down.
-Rect scrollViewFrame() {
-    return makeRect(60, 60, 200, 150);
-}
+Rect scrollViewFrame() { return makeRect(60, 60, 200, 150); }
 
-Rect scrollContentBounds() {
-    return makeRect(0, 0, 200, 470);
-}
+Rect scrollContentBounds() { return makeRect(0, 0, 200, 470); }
 
 RetainedScene sceneWithScrollView(Point contentOffset) {
     RetainedScene scene;
@@ -1115,12 +1134,10 @@ TEST(RetainedSceneScrollTest, DumpCarriesTheContentOffset) {
     RetainedScene scene;
 
     scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
-    addChild(scene, kSurfaceTag,
-             makeScrollView(2, scrollViewFrame(), Point{.x = 0, .y = 120}, scrollContentBounds()));
+    addChild(scene, kSurfaceTag, makeScrollView(2, scrollViewFrame(), Point{.x = 0, .y = 120}, scrollContentBounds()));
 
-    EXPECT_EQ(scene.dump(),
-              "RootView #1 frame=(0.00, 0.00, 800.00, 600.00)\n"
-              "  ScrollView #2 frame=(60.00, 60.00, 200.00, 150.00) contentOffset=(0.00, 120.00)\n");
+    EXPECT_EQ(scene.dump(), "RootView #1 frame=(0.00, 0.00, 800.00, 600.00)\n"
+                            "  ScrollView #2 frame=(60.00, 60.00, 200.00, 150.00) contentOffset=(0.00, 120.00)\n");
 }
 
 ShadowView mountBlueChild(LinuxMountingManager& mountingManager) {
@@ -1363,9 +1380,7 @@ TEST(LinuxMountingManagerTest, DispatchCommandLeavesTheSceneUntouched) {
 constexpr uint32_t kDefaultCaretArgb = 0xFF599EFFU;
 constexpr uint32_t kDefaultSelectionArgb = 0x59599EFFU;
 
-Rect textInputFrame() {
-    return makeRect(10, 20, 200, 40);
-}
+Rect textInputFrame() { return makeRect(10, 20, 200, 40); }
 
 SceneSnapshot snapshotOfTextInput(const ShadowView& field) {
     RetainedScene scene;
@@ -1507,6 +1522,147 @@ TEST(RetainedSceneTextInputTest, DeletingAFieldForgetsItsEditorState) {
 
     ASSERT_EQ(snapshot.size(), 1U);
     EXPECT_FALSE(snapshot[0].editor.value().state.isCaretVisible);
+}
+
+#pragma mark - transformed rows under scroll (#47)
+
+/**
+ * Issue #47's unit criterion: a scrolled list of transformed rows produces damage equal to the union of the
+ * transformed bounding boxes at the old and the new offsets, and the scroll arrives as an ordinary frame update.
+ * The row is rotated 45 degrees, whose damage box spans (w + h) / sqrt(2) about the centre - wider than the
+ * layout frame by the skew terms a scale-only test never exercises.
+ */
+TEST(RetainedSceneDamageTest, AScrolledRotatedRowDamagesTheTransformedBoundsAtBothOffsets) {
+    RetainedScene scene;
+    const std::shared_ptr<ViewProps> rowProps = propsWithBackground(blue());
+
+    // A 45-degree Z rotation, written straight into the 4x4 the scene reduces to its affine part: the row is the
+    // standing case for the skew terms a scale-only damage test never exercises.
+    rowProps->transform = facebook::react::Transform::RotateZ(kQuarterTurnRadians);
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, makeStyledView(2, makeRect(0, 0, 400, 600), nullptr));
+    addChild(scene, 2, makeStyledView(3, makeRect(100, 250, 200, 100), rowProps));
+
+    scene.takeDamage();
+
+    // The scroll's mounting transaction moves the row down by 150: an ordinary frame update, same as the
+    // transformed rows of a scrolling list produce.
+    scene.updateNode(makeStyledView(3, makeRect(100, 400, 200, 100), rowProps));
+
+    const SceneDamage damage = scene.takeDamage();
+
+    ASSERT_FALSE(damage.empty());
+
+    // A 200x100 rect rotated 45 degrees about its centre has an axis-aligned bounding box of
+    // (200 + 100) / sqrt(2) per side, the half-extent 106.066 independent of position. Independently computed:
+    // old centre (200, 300), new centre (200, 450), so the damage union spans from the old box's top to the new
+    // box's bottom and is one rotated bounding box wide.
+    const float rotatedSide = (200.0F + 100.0F) * 0.70710678F;
+
+    expectRect(boundsOf(damage), makeRect(200.0F - rotatedSide / 2.0F, 300.0F - rotatedSide / 2.0F, rotatedSide,
+                                          (450.0F + rotatedSide / 2.0F) - (300.0F - rotatedSide / 2.0F)));
+}
+
+/**
+ * Point 3: a transformed node hanging partially outside an `overflow: hidden` container is clipped identically
+ * whether it arrived there by scrolling (a frame update) or by the initial layout (a create).
+ */
+TEST(RetainedSceneDamageTest, ATransformedRowOverhangingAClipIsCutTheSameScrolledOrLaidOut) {
+    const std::shared_ptr<ViewProps> clippingProps = std::make_shared<ViewProps>();
+
+    clippingProps->yogaStyle.setOverflow(yoga::Overflow::Hidden);
+    const std::shared_ptr<ViewProps> rowProps = propsWithBackground(blue());
+    rowProps->transform = Transform::Scale(2, 2, 1);
+
+    // Arrived by initial layout.
+    RetainedScene laidOut;
+    laidOut.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(laidOut, kSurfaceTag, makeStyledView(2, makeRect(0, 0, 200, 150), clippingProps));
+
+    laidOut.takeDamage(); // The container's creation damage is cleared; the row's own rect is what remains.
+
+    addChild(laidOut, 2, makeStyledView(3, makeRect(50, 100, 200, 100), rowProps));
+
+    const SceneSnapshot laidOutSnapshot = laidOut.snapshot();
+    const SceneDamage laidOutDamage = laidOut.takeDamage();
+
+    // Arrived by scrolling: same container, same final row frame, reached by an update from a lower position.
+    RetainedScene scrolled;
+    scrolled.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scrolled, kSurfaceTag, makeStyledView(2, makeRect(0, 0, 200, 150), clippingProps));
+
+    scrolled.takeDamage();
+
+    addChild(scrolled, 2, makeStyledView(3, makeRect(50, 300, 200, 100), rowProps));
+    scrolled.updateNode(makeStyledView(3, makeRect(50, 100, 200, 100), rowProps));
+
+    EXPECT_TRUE(sameSnapshot(scrolled.snapshot(), laidOutSnapshot));
+
+    const SceneDamage scrolledDamage = scrolled.takeDamage();
+
+    // Both scenes end with the clipped scaled row as their final rect - (0, 50, 200, 100): the scaled row's
+    // bounds cut by the container's border box. The create path also damages the row's UNCLIPPED bounds first
+    // (the parent link lags one call inside insertChild), which is conservative over-damage, and is why the
+    // assertion reads the last rect of each list rather than the first.
+    ASSERT_GE(scrolledDamage.size(), 1U);
+    ASSERT_GE(laidOutDamage.size(), 1U);
+    EXPECT_EQ(scrolledDamage.back(), laidOutDamage.back());
+    EXPECT_EQ(laidOutDamage.back(), Rect(Point{.x = 0, .y = 50}, Size{.width = 200, .height = 100}));
+}
+
+/**
+ * Point 4 at scene level: scrolling down by 150 and then back up by 150 returns a snapshot identical to the
+ * start, and the return trip damages exactly the band the outward trip did.
+ */
+TEST(RetainedSceneDamageTest, ScrollByNThenMinusNRestoresTheSnapshotAndMirrorsTheDamage) {
+    RetainedScene scene;
+    const std::shared_ptr<ViewProps> rowProps = propsWithBackground(blue());
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, makeStyledView(2, makeRect(0, 0, 400, 600), nullptr));
+    addChild(scene, 2, makeStyledView(3, makeRect(50, 200, 300, 100), rowProps));
+
+    const SceneSnapshot original = scene.snapshot();
+
+    scene.takeDamage();
+    scene.updateNode(makeStyledView(3, makeRect(50, 350, 300, 100), rowProps));
+
+    const SceneDamage outwardDamage = scene.takeDamage();
+
+    scene.updateNode(makeStyledView(3, makeRect(50, 200, 300, 100), rowProps));
+
+    const SceneDamage returnDamage = scene.takeDamage();
+
+    EXPECT_TRUE(sameSnapshot(scene.snapshot(), original));
+    EXPECT_EQ(boundsOf(returnDamage), boundsOf(outwardDamage));
+}
+
+/**
+ * Point 1 at the scene level: an incrementally scrolled transformed list ends where a freshly built scene with
+ * the same rows stands - the incremental result is the full-repaint result.
+ */
+TEST(RetainedSceneDamageTest, AnIncrementallyScrolledTransformedListMatchesAFreshBuild) {
+    const std::shared_ptr<ViewProps> rowProps = propsWithBackground(blue());
+
+    RetainedScene incremental;
+    incremental.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(incremental, kSurfaceTag, makeStyledView(2, makeRect(0, 0, 400, 600), nullptr));
+
+    incremental.takeDamage();
+
+    for (int scrolled = 0; scrolled <= 300; scrolled += 150) {
+        incremental.updateNode(makeStyledView(3, makeRect(100, 100 + scrolled, 200, 100), rowProps));
+        incremental.updateNode(makeStyledView(4, makeRect(100, 300 + scrolled, 200, 100), rowProps));
+    }
+
+    RetainedScene fresh;
+    fresh.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(fresh, kSurfaceTag, makeStyledView(2, makeRect(0, 0, 400, 600), nullptr));
+    addChild(fresh, 2, makeStyledView(3, makeRect(100, 400, 200, 100), rowProps));
+    addChild(fresh, 2, makeStyledView(4, makeRect(100, 600, 200, 100), rowProps));
+
+    EXPECT_TRUE(sameSnapshot(incremental.snapshot(), fresh.snapshot()));
 }
 
 } // namespace
