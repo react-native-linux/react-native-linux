@@ -24,10 +24,13 @@ using react_native_linux::InputQueue;
 using react_native_linux::isTextKey;
 using react_native_linux::kInputQueueCapacity;
 using react_native_linux::makeActivationDispatch;
+using react_native_linux::notchesForValue120;
 using react_native_linux::parseKeySequence;
 using react_native_linux::PointerDispatch;
 using react_native_linux::PointerDispatchType;
 using react_native_linux::PointerRouter;
+using react_native_linux::scrollAxisForPointerAxis;
+using react_native_linux::ScrollAxisKind;
 
 constexpr Tag kBoxTag = 4;
 constexpr Tag kOtherTag = 5;
@@ -505,6 +508,50 @@ TEST(MousePayloadTest, SecondaryAndMiddlePressesNeverProduceAClick) {
         EXPECT_EQ(dispatches[0].type, PointerDispatchType::Up) << "button " << button;
         EXPECT_EQ(dispatches[0].event.button, button) << "button " << button;
         EXPECT_EQ(dispatches[0].event.buttons, 0) << "button " << button;
+    }
+}
+
+#pragma mark - the wheel and touchpad source contract (#48)
+
+/**
+ * The axis-source routing table of #48, per source value. The axis is what routes: a horizontal axis is
+ * horizontal, and shift maps a vertical wheel to the horizontal axis (react-native-macos#1922 - horizontal
+ * scrolling from a mouse without a horizontal wheel). The axis_source value itself (wheel, wheel_tilt, finger,
+ * continuous, and the two this platform does not distinguish - wheel_button, finger_count) never changes the
+ * routing: the event kind that arrives is the path.
+ */
+TEST(ScrollSourceTest, TheAxisRoutingTableMapsSourcesAndShift) {
+    constexpr uint32_t kVerticalAxis = 0;   // WL_POINTER_AXIS_VERTICAL_SCROLL
+    constexpr uint32_t kHorizontalAxis = 1; // WL_POINTER_AXIS_HORIZONTAL_SCROLL
+
+    const std::vector<std::tuple<uint32_t, bool, ScrollAxisKind>> table = {
+        {kVerticalAxis, false, ScrollAxisKind::Vertical},     // wheel, no shift
+        {kVerticalAxis, true, ScrollAxisKind::Horizontal},    // wheel + shift: the #1922 row
+        {kHorizontalAxis, false, ScrollAxisKind::Horizontal}, // wheel_tilt / true horizontal
+        {kHorizontalAxis, true, ScrollAxisKind::Horizontal},  // shift on horizontal changes nothing
+    };
+
+    for (const auto& [waylandAxis, shift, expectedAxis] : table) {
+        InputModifiers modifiers;
+
+        modifiers.shift = shift;
+
+        EXPECT_EQ(scrollAxisForPointerAxis(waylandAxis, modifiers), expectedAxis)
+            << "axis " << waylandAxis << " shift " << shift;
+    }
+}
+
+/**
+ * The value120 conversion of #48's gap: 120 units are one detent, fractions are kept for the smooth
+ * high-resolution wheel, and the sign carries the direction.
+ */
+TEST(ScrollSourceTest, Value120ConvertsToFractionalNotches) {
+    const std::vector<std::pair<int32_t, double>> table = {
+        {120, 1.0}, {240, 2.0}, {-120, -1.0}, {-240, -2.0}, {30, 0.25}, {60, 0.5},
+    };
+
+    for (const auto& [value120, notches] : table) {
+        EXPECT_DOUBLE_EQ(notchesForValue120(value120), notches) << "value120 " << value120;
     }
 }
 

@@ -462,22 +462,48 @@ protected:
         shadowTree_ = addRegisteredShadowTree(*uiManager_, shadowTreeDelegate_, *contextContainer_, kSurfaceId);
     }
 
-    void commitScrollView(folly::dynamic scrollViewProps) {
+    void commitScrollView(folly::dynamic scrollViewProps, double contentHeight = 300) {
         scrollViewProps["width"] = 100;
         scrollViewProps["height"] = 100;
         const ShadowTreeCommitOptions commitOptions{.enableStateReconciliation = false, .mountSynchronously = true};
 
         shadowTree_->commit(
-            [this, &scrollViewProps](const RootShadowNode& oldRootShadowNode) {
-                return std::static_pointer_cast<RootShadowNode>(oldRootShadowNode.ShadowNode::clone(ShadowNodeFragment{
-                    .props = ShadowNodeFragment::propsPlaceholder(),
-                    .children =
-                        std::make_shared<const ChildList>(ChildList{makeScrollView(20, std::move(scrollViewProps))})}));
+            [this, &scrollViewProps, contentHeight](const RootShadowNode& oldRootShadowNode) {
+                return std::static_pointer_cast<RootShadowNode>(oldRootShadowNode.ShadowNode::clone(
+                    ShadowNodeFragment{.props = ShadowNodeFragment::propsPlaceholder(),
+                                       .children = std::make_shared<const ChildList>(
+                                           ChildList{makeScrollView(20, std::move(scrollViewProps), contentHeight)})}));
             },
             commitOptions);
     }
 
     ScrollController makeController() { return ScrollController(uiManager_, kSurfaceId); }
+
+    /**
+     * Commits a tall scrolling page and returns a controller over it, then runs one frame. The prologue every
+     * scroll-controller test shares - a helper because the same block twice is a jscpd clone at threshold 0.
+     */
+    ScrollController makeControllerOnTallList() {
+        commitScrollView(folly::dynamic::object(), 20000);
+
+        return makeController();
+    }
+
+    /**
+     * Drives 100 ms frames until the controller stops moving or the budget is spent, and returns the frame
+     * count. The settle tail of the gesture-interleave tests, shared for the same cpd reason.
+     */
+    int settleByDriving(ScrollController& controller) {
+        int frames = 0;
+
+        for (; frames < 400 && controller.isScrollActive(); frames++) {
+            controller.advance(100.0);
+        }
+
+        EXPECT_FALSE(controller.isScrollActive());
+
+        return frames;
+    }
 
     static InputEvent wheel(double notches, double x = 50.0, double y = 50.0) {
         return InputEvent{.kind = InputEventKind::PointerScrollDiscrete,
@@ -498,9 +524,9 @@ protected:
     ShadowTree* shadowTree_;
 
 private:
-    std::shared_ptr<const ShadowNode> makeScrollView(Tag tag, folly::dynamic props) {
+    std::shared_ptr<const ShadowNode> makeScrollView(Tag tag, folly::dynamic props, double contentHeight) {
         std::vector<std::shared_ptr<const ShadowNode>> children;
-        children.push_back(makeChild(21, 100, 300));
+        children.push_back(makeChild(21, 100, contentHeight));
 
         return makeConfiguredShadowNode(scrollViewDescriptor_, tag, kSurfaceId, contextContainer_, std::move(props),
                                         std::make_shared<const ChildList>(std::move(children)));
@@ -705,6 +731,112 @@ TEST_F(ScrollControllerTest, ProbeHitChain) {
     }
 
     SUCCEED();
+}
+
+/**
+ * A high-resolution wheel's fractional notches accumulate in the queue exactly like whole ones: two
+ * quarter-detent events on one axis sum to one half-detent delta, and a stop behind them still ends them.
+ */
+TEST(ScrollQueueTest, FractionalNotchesFromValue120SumLikeWholeOnes) {
+    InputQueue queue;
+
+    queue.push(makeScroll(InputEventKind::PointerScrollDiscrete, ScrollAxisKind::Vertical, 0.25));
+    queue.push(makeScroll(InputEventKind::PointerScrollDiscrete, ScrollAxisKind::Vertical, 0.25));
+    queue.push(makeScroll(InputEventKind::PointerScrollStop, ScrollAxisKind::Vertical, 0.0));
+
+    const std::vector<InputEvent> events = queue.drain();
+
+    ASSERT_EQ(events.size(), 2U);
+    EXPECT_EQ(events[0].kind, InputEventKind::PointerScrollDiscrete);
+    EXPECT_EQ(events[0].scrollAxis, ScrollAxisKind::Vertical);
+    EXPECT_DOUBLE_EQ(events[0].scrollAmount, 0.5);
+    EXPECT_EQ(events[1].kind, InputEventKind::PointerScrollStop);
+    EXPECT_EQ(events[1].scrollAxis, ScrollAxisKind::Vertical);
+}
+
+#pragma mark - the wheel-versus-touchpad contract (#48)
+
+/**
+ * #48: a wheel notch arriving mid-kinetic-gesture accelerates the glide instead of fighting it. The observable
+ * is the glide length in 100 ms frames against a control running the identical gesture without the notch - a
+ * dropped notch quantizes to the same frame count, so the difference is the assertion.
+ */
+TEST_F(ScrollControllerTest, AWheelNotchMidKineticGestureAcceleratesTheGlide) {
+    const auto framesToSettle = [this](bool withNotch) {
+        ScrollController controller = makeControllerOnTallList();
+
+        controller.dispatch({drag(3)});
+        controller.dispatch({scrollStop()});
+
+        controller.advance(kFrameMilliseconds60Hz);
+
+        EXPECT_TRUE(controller.isScrollActive());
+
+        // The notch while gliding: same one-frame cadence, and the glide keeps running rather than stopping.
+        if (withNotch) {
+            controller.dispatch({wheel(3)});
+            controller.advance(kFrameMilliseconds60Hz);
+        }
+
+        return settleByDriving(controller);
+    };
+
+    EXPECT_GT(framesToSettle(true), framesToSettle(false));
+}
+
+/**
+ * #48: a finger gesture arriving mid-momentum takes over - the tracked path applies the drag one-to-one while
+ * the finger is down, and the release starts a fresh momentum from the drag's exit velocity. The observable is
+ * the glide length against the momentum-only control: an ignored drag settles in the momentum's frames, while
+ * the taken-over drag injects its full 150 points and settles in more.
+ */
+TEST_F(ScrollControllerTest, AFingerMidMomentumTakesOverAndRunsTheTrackedPath) {
+    const auto framesToSettle = [this](bool withFinger) {
+        ScrollController controller = makeControllerOnTallList();
+
+        controller.dispatch({wheel(4)});
+
+        controller.advance(kFrameMilliseconds60Hz);
+
+        EXPECT_TRUE(controller.isScrollActive());
+
+        if (withFinger) {
+            controller.dispatch({drag(150)});
+            controller.dispatch({scrollStop()});
+        }
+
+        controller.advance(kFrameMilliseconds60Hz);
+
+        EXPECT_TRUE(controller.hasDispatchedScrollEvent());
+
+        return settleByDriving(controller);
+    };
+
+    EXPECT_GT(framesToSettle(true), framesToSettle(false));
+}
+
+/**
+ * #48: a gesture with no axis_stop still terminates - the wheel path has no stop at all, and the deceleration
+ * ends it (pinned with the settle budget the other controller tests use).
+ */
+TEST_F(ScrollControllerTest, AWheelGestureWithoutAStopStillTerminates) {
+    commitScrollView(folly::dynamic::object());
+    ScrollController controller = makeController();
+
+    controller.dispatch({wheel(2)});
+
+    bool settled = false;
+
+    for (int frame = 0; frame < 400 && !settled; frame++) {
+        settled = !controller.advance(100.0);
+    }
+
+    EXPECT_TRUE(settled);
+
+    // One idle frame: the flag describes the last advance, and the frame after settling moved nothing.
+    controller.advance(kFrameMilliseconds60Hz);
+
+    EXPECT_FALSE(controller.hasDispatchedScrollEvent());
 }
 
 } // namespace

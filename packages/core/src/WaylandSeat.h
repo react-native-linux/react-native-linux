@@ -97,6 +97,7 @@ private:
     static void handlePointerAxisSource(void* data, wl_pointer* pointer, uint32_t axisSource);
     static void handlePointerAxisStop(void* data, wl_pointer* pointer, uint32_t time, uint32_t axis);
     static void handlePointerAxisDiscrete(void* data, wl_pointer* pointer, uint32_t axis, int32_t discrete);
+    static void handlePointerAxisValue120(void* data, wl_pointer* pointer, uint32_t axis, int32_t value120);
     static void handleKeyboardKeymap(void* data, wl_keyboard* keyboard, uint32_t format, int32_t keymapDescriptor,
                                      uint32_t size);
     static void handleKeyboardEnter(void* data, wl_keyboard* keyboard, uint32_t serial, wl_surface* surface,
