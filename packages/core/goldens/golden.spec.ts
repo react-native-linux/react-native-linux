@@ -112,6 +112,13 @@ const fixtures: readonly GoldenFixture[] = [
     renderArguments: [],
     renderFlag: "--golden",
   },
+  // #71: thin glyphs over opaque and transparent regions — the rasterization policy's fringing proof.
+  {
+    bundleFileName: "glyph-raster.js",
+    goldenFileName: "glyph-raster.png",
+    renderArguments: [],
+    renderFlag: "--golden",
+  },
 ];
 
 const renderFixture = (fixture: GoldenFixture, outputPath: string): void => {

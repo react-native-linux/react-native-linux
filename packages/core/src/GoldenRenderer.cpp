@@ -3,9 +3,7 @@
 #include "BundleRunner.h"
 #include "ScenePainter.h"
 #include "TextGeometry.h"
-
-#include <react/renderer/textlayoutmanager/TextLayoutManager.h>
-
+#include "TextRasterizationPolicySkia.h"
 #include "include/core/SkAlphaType.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
@@ -15,10 +13,8 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkSurface.h"
+#include "include/core/SkSurfaceProps.h"
 #include "include/encode/SkPngEncoder.h"
-
-#include <react/renderer/graphics/Float.h>
-#include <react/renderer/graphics/Size.h>
 
 #include <cmath>
 #include <cstddef>
@@ -28,6 +24,9 @@
 #include <iostream>
 #include <limits>
 #include <optional>
+#include <react/renderer/graphics/Float.h>
+#include <react/renderer/graphics/Size.h>
+#include <react/renderer/textlayoutmanager/TextLayoutManager.h>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -48,10 +47,12 @@ facebook::react::Size toSurfaceSize(int width, int height) {
 }
 
 // kRGBA_8888 rather than kN32 so the byte order in the PNG does not depend on the host's native order, and
-// kPremul because that is what Skia rasterises into; the encoder unpremultiplies on the way out.
+// kPremul because that is what Skia rasterises into; the encoder unpremultiplies on the way out. The surface
+// props are the platform's text rasterization policy — the same call the swapchain surface makes.
 sk_sp<SkSurface> makeRasterSurface(int width, int height) {
     const SkImageInfo imageInfo = SkImageInfo::Make(width, height, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
-    sk_sp<SkSurface> surface = SkSurfaces::Raster(imageInfo);
+    const SkSurfaceProps surfaceProps = skSurfacePropsFor(textRasterizationPolicy());
+    sk_sp<SkSurface> surface = SkSurfaces::Raster(imageInfo, &surfaceProps);
 
     if (surface == nullptr) {
         std::cerr << "[golden] could not allocate a " << width << "x" << height << " raster surface" << std::endl;
@@ -181,8 +182,8 @@ bool doHitsMatchPixels(const std::vector<FabricHitSample>& hits, const SkPixmap&
     bool haveAgreed = true;
 
     for (const FabricHitSample& sample : hits) {
-        const uint32_t painted = toOpaqueRgb(pixels.getColor(static_cast<int>(sample.point.x),
-                                                             static_cast<int>(sample.point.y)));
+        const uint32_t painted =
+            toOpaqueRgb(pixels.getColor(static_cast<int>(sample.point.x), static_cast<int>(sample.point.y)));
         const auto paintedTag = tagsByColor.find(painted);
 
         // An anti-aliased edge is a blend of two nodes' colours, and "the node visible here" has no answer there.
@@ -201,9 +202,8 @@ bool doHitsMatchPixels(const std::vector<FabricHitSample>& hits, const SkPixmap&
         }
     }
 
-    const double comparableFraction = hits.empty()
-                                          ? 0.0
-                                          : static_cast<double>(comparedCount) / static_cast<double>(hits.size());
+    const double comparableFraction =
+        hits.empty() ? 0.0 : static_cast<double>(comparedCount) / static_cast<double>(hits.size());
 
     if (comparableFraction < kMinimumComparableFraction) {
         std::cerr << "[golden] only " << comparedCount << " of " << hits.size()
@@ -223,7 +223,6 @@ constexpr float kTextFitTolerance = 1.0F;
 // Wider than any fixture's text, so a measurement against it is the width the glyphs occupy or nothing at all.
 constexpr float kShrinkToFitWidth = 10000.0F;
 
-
 facebook::react::LayoutConstraints toConstraints(facebook::react::Float maximumWidth) {
     return facebook::react::LayoutConstraints{
         .maximumSize = facebook::react::Size{.width = maximumWidth,
@@ -234,8 +233,8 @@ bool doesParagraphFitItsBox(const ScenePrimitive& primitive, const facebook::rea
     const SceneTextContent& content = primitive.text.value();
     const float boxWidth = static_cast<float>(content.frame.size.width);
     const float boxHeight = static_cast<float>(content.frame.size.height);
-    const ParagraphMetrics painted = measureParagraphMetrics(content.attributedString, content.paragraphAttributes,
-                                                             boxWidth);
+    const ParagraphMetrics painted =
+        measureParagraphMetrics(content.attributedString, content.paragraphAttributes, boxWidth);
     bool doesFit = true;
 
     if (painted.height > boxHeight + kTextFitTolerance || painted.longestLineWidth > boxWidth + kTextFitTolerance) {
@@ -252,10 +251,10 @@ bool doesParagraphFitItsBox(const ScenePrimitive& primitive, const facebook::rea
         .maximumSize = facebook::react::Size{.width = content.frame.size.width,
                                              .height = std::numeric_limits<facebook::react::Float>::infinity()}};
     const facebook::react::AttributedStringBox box{content.attributedString};
-    const facebook::react::TextMeasurement first = layoutManager.measure(box, content.paragraphAttributes, {},
-                                                                        constraints);
-    const facebook::react::TextMeasurement second = layoutManager.measure(box, content.paragraphAttributes, {},
-                                                                          constraints);
+    const facebook::react::TextMeasurement first =
+        layoutManager.measure(box, content.paragraphAttributes, {}, constraints);
+    const facebook::react::TextMeasurement second =
+        layoutManager.measure(box, content.paragraphAttributes, {}, constraints);
 
     if (first.size.height != second.size.height || first.size.width != second.size.width) {
         std::cerr << "[golden] tag " << primitive.tag << " measured " << first.size.width << "x" << first.size.height
@@ -265,8 +264,8 @@ bool doesParagraphFitItsBox(const ScenePrimitive& primitive, const facebook::rea
     }
 
     if (first.size.height < painted.height) {
-        std::cerr << "[golden] tag " << primitive.tag << " measured " << first.size.height
-                  << " points tall and paints " << painted.height << std::endl;
+        std::cerr << "[golden] tag " << primitive.tag << " measured " << first.size.height << " points tall and paints "
+                  << painted.height << std::endl;
 
         doesFit = false;
     }
@@ -300,9 +299,8 @@ bool doesMeasurementDependOnItsInputs(const ScenePrimitive& primitive,
     bool isDependent = true;
 
     if (unbounded.width >= kShrinkToFitWidth) {
-        std::cerr << "[golden] tag " << primitive.tag << " measured " << unbounded.width
-                  << " wide against a " << kShrinkToFitWidth << " point constraint instead of shrinking to its text"
-                  << std::endl;
+        std::cerr << "[golden] tag " << primitive.tag << " measured " << unbounded.width << " wide against a "
+                  << kShrinkToFitWidth << " point constraint instead of shrinking to its text" << std::endl;
 
         isDependent = false;
     }
@@ -357,12 +355,11 @@ bool doesMeasurementDependOnItsInputs(const ScenePrimitive& primitive,
 // at forty points those differ by half a point. A caret that ignored the line would be wrong by tens.
 constexpr float kCaretHeightTolerance = 1.0F;
 
-
 bool doesCaretMatchItsLine(const ScenePrimitive& primitive) {
     const SceneTextContent& content = primitive.text.value();
     const EditorGeometry geometry = measureEditorGeometry(content, primitive.editor.value());
-    const ParagraphMetrics metrics = measureParagraphMetrics(content.attributedString, content.paragraphAttributes,
-                                                             geometry.layoutWidth);
+    const ParagraphMetrics metrics =
+        measureParagraphMetrics(content.attributedString, content.paragraphAttributes, geometry.layoutWidth);
     const float caretMiddle = static_cast<float>(geometry.caret.origin.y + (geometry.caret.size.height / 2));
     float lineTop = 0.0F;
 
@@ -516,8 +513,8 @@ int renderHitPaintGolden(const std::string& bundlePath, const std::string& outpu
         return 1;
     }
 
-    const FabricHitPaintRunResult run = runHitSampledFabricBundle(bundlePath, toSurfaceSize(width, height),
-                                                                 kHitSampleStep);
+    const FabricHitPaintRunResult run =
+        runHitSampledFabricBundle(bundlePath, toSurfaceSize(width, height), kHitSampleStep);
     const std::optional<std::unordered_map<uint32_t, facebook::react::Tag>> tagsByColor = colorsToTags(run.scene);
 
     if (!tagsByColor.has_value()) {

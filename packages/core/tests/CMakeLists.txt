@@ -58,6 +58,7 @@ add_executable(rnl_core_tests
     SceneTest.cpp
     ScrollTest.cpp
     ShadowTreeCommitTest.cpp
+    TextRasterizationPolicyTest.cpp
     TextInputControllerTest.cpp
     UpstreamAnimatedSuiteTest.cpp
     ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/AnimatedNodeTests.cpp
