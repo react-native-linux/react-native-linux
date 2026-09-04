@@ -55,8 +55,29 @@ const thinLightOnDark = paragraph(
 const secondLightOnDark = paragraph(
   13,
   { position: 'absolute', left: 60, top: 120, width: 360, color: white, fontSize: 12 },
-  'thin dark on light: --- === === lll 111',
+  'more light on dark: --- === === lll 111',
 );
+
+// Dark glyphs on a light card: the polarity the first pair does not cover.
+const darkCard = createNode(14, 'View', {
+  position: 'absolute',
+  left: 60,
+  top: 160,
+  width: 360,
+  height: 40,
+  backgroundColor: white,
+});
+
+const darkOnLight = createNode(15, 'Text', {
+  position: 'absolute',
+  left: 12,
+  top: 8,
+  color: black,
+  fontSize: 12,
+  text: 'thin dark on light: --- === === lll',
+});
+
+fabric.appendChild(darkCard, darkOnLight);
 
 // Nothing behind the next pair: the glyphs sit on the surface's transparent regions.
 const thinDarkOnTransparent = paragraph(
@@ -65,17 +86,25 @@ const thinDarkOnTransparent = paragraph(
   'thin dark on transparent: iii | 1 | ill',
 );
 
+const thinLightOnTransparent = paragraph(
+  16,
+  { position: 'absolute', left: 60, top: 320, width: 360, color: white, fontSize: 12 },
+  'thin light on transparent: HHH 111',
+);
+
 const thinColourOnTransparent = paragraph(
-  15,
-  { position: 'absolute', left: 60, top: 320, width: 360, color: 0xff3366cc | 0, fontSize: 12 },
+  17,
+  { position: 'absolute', left: 60, top: 380, width: 360, color: 0xff3366cc | 0, fontSize: 12 },
   'thin colour on transparent: HHH 111',
 );
 
 const container = createNode(12, 'View', { flex: 1 }, [
   opaquePanel,
+  darkCard,
   thinLightOnDark,
   secondLightOnDark,
   thinDarkOnTransparent,
+  thinLightOnTransparent,
   thinColourOnTransparent,
 ]);
 
