@@ -35,6 +35,7 @@ set(RNL_UPSTREAM_ANIMATED_TESTS_DIR ${REACT_COMMON_DIR}/react/renderer/animated/
 add_executable(rnl_core_tests
     AnimatedHitTestTest.cpp
     AnimatedPropAllowlistTest.cpp
+    AnimatedConformanceTest.cpp
     AnimatedPropsTest.cpp
     AnimationChoreographerTest.cpp
     AllocationCostTest.cpp
@@ -81,7 +82,8 @@ add_executable(rnl_core_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputComponent.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputV3State.cpp)
 target_compile_options(rnl_core_tests PRIVATE -Wall -Wextra -fexceptions -frtti)
-target_include_directories(rnl_core_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+target_include_directories(rnl_core_tests
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src ${RNL_UPSTREAM_ANIMATED_TESTS_DIR})
 target_compile_definitions(rnl_core_tests
     PRIVATE "RNL_ANIMATED_TESTS_DIR=\"${RNL_UPSTREAM_ANIMATED_TESTS_DIR}\"")
 target_link_libraries(rnl_core_tests
