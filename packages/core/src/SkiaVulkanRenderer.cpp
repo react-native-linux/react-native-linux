@@ -1,5 +1,6 @@
 #include "SkiaVulkanRenderer.h"
 
+#include "TextRasterizationPolicySkia.h"
 #include "include/core/SkAlphaType.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColorSpace.h"
@@ -7,7 +8,9 @@
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPixmap.h"
 #include "include/core/SkStream.h"
+#include "include/core/SkSurfaceProps.h"
 #include "include/encode/SkPngEncoder.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/MutableTextureState.h"
 #include "include/gpu/ganesh/GrBackendSemaphore.h"
 #include "include/gpu/ganesh/GrBackendSurface.h"
@@ -17,7 +20,6 @@
 #include "include/gpu/ganesh/vk/GrVkBackendSurface.h"
 #include "include/gpu/ganesh/vk/GrVkDirectContext.h"
 #include "include/gpu/ganesh/vk/GrVkTypes.h"
-#include "include/gpu/GpuTypes.h"
 #include "include/gpu/vk/VulkanBackendContext.h"
 #include "include/gpu/vk/VulkanMemoryAllocator.h"
 
@@ -27,7 +29,8 @@ enum class ThreadSafe : bool { kNo = false, kYes = true };
 namespace VulkanMemoryAllocators {
 sk_sp<VulkanMemoryAllocator> Make(const VulkanBackendContext& backendContext, ThreadSafe threadSafe);
 }
-}
+} // namespace skgpu
+
 #include "include/gpu/vk/VulkanMutableTextureState.h"
 
 #include <algorithm>
@@ -173,8 +176,8 @@ bool SkiaVulkanRenderer::drawFrame(WaylandWindow& window, const SceneDamage& fra
     checkVulkanResult(vkCreateSemaphore(device_, &semaphoreCreateInfo, nullptr, &acquireSemaphore),
                       "vkCreateSemaphore");
 
-    const VkResult acquireResult = vkAcquireNextImageKHR(device_, swapchain_, kAcquireTimeoutNanoseconds, acquireSemaphore,
-                                                         VK_NULL_HANDLE, &backbuffer.imageIndex);
+    const VkResult acquireResult = vkAcquireNextImageKHR(device_, swapchain_, kAcquireTimeoutNanoseconds,
+                                                         acquireSemaphore, VK_NULL_HANDLE, &backbuffer.imageIndex);
 
     if (acquireResult == VK_TIMEOUT || acquireResult == VK_NOT_READY) {
         vkDestroySemaphore(device_, acquireSemaphore, nullptr);
@@ -539,9 +542,10 @@ void SkiaVulkanRenderer::createBackbuffers(VkFormat imageFormat, VkImageUsageFla
 
         const GrBackendRenderTarget renderTarget = GrBackendRenderTargets::MakeVk(
             static_cast<int>(swapchainSize_.width), static_cast<int>(swapchainSize_.height), imageInfo);
+        const SkSurfaceProps surfaceProps = skSurfacePropsFor(textRasterizationPolicy());
         sk_sp<SkSurface> imageSurface =
             SkSurfaces::WrapBackendRenderTarget(directContext_.get(), renderTarget, kTopLeft_GrSurfaceOrigin,
-                                                colorTypeForFormat(imageFormat), nullptr, nullptr);
+                                                colorTypeForFormat(imageFormat), nullptr, &surfaceProps);
 
         if (imageSurface == nullptr) {
             throw std::runtime_error("SkSurfaces::WrapBackendRenderTarget returned no surface");
@@ -734,8 +738,7 @@ void SkiaVulkanRenderer::copyImageToPng(uint32_t imageIndex, const std::string& 
 
     checkVulkanResult(vkEndCommandBuffer(commandBuffer), "vkEndCommandBuffer");
 
-    const VkFenceCreateInfo fenceCreateInfo{
-        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, .pNext = nullptr, .flags = 0};
+    const VkFenceCreateInfo fenceCreateInfo{.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, .pNext = nullptr, .flags = 0};
     VkFence copyFence = VK_NULL_HANDLE;
     checkVulkanResult(vkCreateFence(device_, &fenceCreateInfo, nullptr, &copyFence), "vkCreateFence");
 
