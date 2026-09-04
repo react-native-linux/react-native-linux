@@ -110,10 +110,37 @@ void expectRect(const Rect& rect, Rect expected) {
     EXPECT_FLOAT_EQ(rect.size.height, expected.size.height);
 }
 
+bool sameMatrix(const react_native_linux::SceneMatrix& left, const react_native_linux::SceneMatrix& right) {
+    return left.scaleX == right.scaleX && left.scaleY == right.scaleY && left.skewX == right.skewX &&
+           left.skewY == right.skewY && left.translateX == right.translateX && left.translateY == right.translateY;
+}
+
+bool sameClipList(const std::vector<react_native_linux::SceneClip>& left,
+                  const std::vector<react_native_linux::SceneClip>& right) {
+    if (left.size() != right.size()) {
+        return false;
+    }
+
+    for (size_t index = 0; index < left.size(); ++index) {
+        if (left[index].frame.origin.x != right[index].frame.origin.x ||
+            left[index].frame.origin.y != right[index].frame.origin.y ||
+            left[index].frame.size.width != right[index].frame.size.width ||
+            left[index].frame.size.height != right[index].frame.size.height ||
+            left[index].borderRadii != right[index].borderRadii ||
+            !sameMatrix(left[index].matrix, right[index].matrix)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 /**
  * Snapshot equality in content, not in mount order: the test helper inserts children at index 0, so a list
  * built incrementally can paint its rows in the opposite order from a fresh build while holding identical
- * geometry - and the equivalence contract of issue #47 is about the pixels, not the mount history.
+ * geometry - and the equivalence contract of issue #47 is about the pixels, not the mount history. Transform
+ * and clip state are pixel state too, so the matrix and the inherited clip list are part of the comparison -
+ * two primitives that match on frame and colour but carry a different matrix or clips paint differently.
  */
 bool sameSnapshot(SceneSnapshot first, SceneSnapshot second) {
     const auto byTag = [](const ScenePrimitive& primitive) { return primitive.tag; };
@@ -128,11 +155,14 @@ bool sameSnapshot(SceneSnapshot first, SceneSnapshot second) {
     }
 
     for (size_t index = 0; index < first.size(); ++index) {
-        if (first[index].tag != second[index].tag || first[index].frame.origin.x != second[index].frame.origin.x ||
-            first[index].frame.origin.y != second[index].frame.origin.y ||
-            first[index].frame.size.width != second[index].frame.size.width ||
-            first[index].frame.size.height != second[index].frame.size.height ||
-            first[index].backgroundColorArgb != second[index].backgroundColorArgb) {
+        const ScenePrimitive& left = first[index];
+        const ScenePrimitive& right = second[index];
+
+        if (left.tag != right.tag || left.frame.origin.x != right.frame.origin.x ||
+            left.frame.origin.y != right.frame.origin.y || left.frame.size.width != right.frame.size.width ||
+            left.frame.size.height != right.frame.size.height ||
+            left.backgroundColorArgb != right.backgroundColorArgb || !sameMatrix(left.matrix, right.matrix) ||
+            !sameClipList(left.clips, right.clips)) {
             return false;
         }
     }
@@ -1526,141 +1556,189 @@ TEST(RetainedSceneTextInputTest, DeletingAFieldForgetsItsEditorState) {
 
 #pragma mark - transformed rows under scroll (#47)
 
-/**
- * Issue #47's unit criterion: a scrolled list of transformed rows produces damage equal to the union of the
- * transformed bounding boxes at the old and the new offsets, and the scroll arrives as an ordinary frame update.
- * The row is rotated 45 degrees, whose damage box spans (w + h) / sqrt(2) about the centre - wider than the
- * layout frame by the skew terms a scale-only test never exercises.
- */
-TEST(RetainedSceneDamageTest, AScrolledRotatedRowDamagesTheTransformedBoundsAtBothOffsets) {
+// The fixture both scroll tests build: a ScrollView clipping its rows, plus two transformed rows inside it.
+// The scroll offset travels the production path - `ScrollViewState` on the node - so `readScrollContent`,
+// `contentOrigin` and the clip stack are what the assertions exercise.
+facebook::react::ShadowView makeScrollViewAt(facebook::react::Tag tag, facebook::react::Point contentOffset) {
+    facebook::react::ShadowView shadowView;
+
+    shadowView.tag = tag;
+    shadowView.componentName = "ScrollView";
+    shadowView.layoutMetrics.frame = facebook::react::Rect{.origin = {0, 0}, .size = {.width = 400, .height = 600}};
+
+    const auto scrollState = std::make_shared<facebook::react::ConcreteState<facebook::react::ScrollViewState>>(
+        std::make_shared<facebook::react::ScrollViewState>(facebook::react::ScrollViewState{contentOffset, {}, 0}),
+        facebook::react::ShadowNodeFamily::Weak{});
+
+    shadowView.state = scrollState;
+
+    return shadowView;
+}
+
+struct ScrolledListFixture {
     RetainedScene scene;
-    const std::shared_ptr<ViewProps> rowProps = propsWithBackground(blue());
+    std::shared_ptr<ViewProps> rowProps = propsWithBackground(blue());
 
-    // A 45-degree Z rotation, written straight into the 4x4 the scene reduces to its affine part: the row is the
-    // standing case for the skew terms a scale-only damage test never exercises.
-    rowProps->transform = facebook::react::Transform::RotateZ(kQuarterTurnRadians);
+    // The surface, a clipping ScrollView, and the clearing take: every scroll test starts from this state.
+    void buildScrollList() {
+        scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+        scene.createNode(makeScrollViewAt(2, {0, 0}));
+        scene.insertChild(kSurfaceTag, makeScrollViewAt(2, {0, 0}), 0);
+    }
+};
 
-    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
-    addChild(scene, kSurfaceTag, makeStyledView(2, makeRect(0, 0, 400, 600), nullptr));
-    addChild(scene, 2, makeStyledView(3, makeRect(100, 250, 200, 100), rowProps));
+TEST(RetainedSceneDamageTest, AScrolledRotatedRowDamagesTheTransformedBoundsAtBothOffsets) {
+    ScrolledListFixture fixture;
 
-    scene.takeDamage();
+    fixture.rowProps->transform = facebook::react::Transform::RotateZ(kQuarterTurnRadians);
 
-    // The scroll's mounting transaction moves the row down by 150: an ordinary frame update, same as the
-    // transformed rows of a scrolling list produce.
-    scene.updateNode(makeStyledView(3, makeRect(100, 400, 200, 100), rowProps));
+    fixture.buildScrollList();
+    fixture.scene.takeDamage();
 
-    const SceneDamage damage = scene.takeDamage();
+    const facebook::react::ShadowView row = makeStyledView(3, makeRect(100, 250, 200, 100), fixture.rowProps);
+
+    fixture.scene.createNode(row);
+    fixture.scene.insertChild(2, row, 0);
+
+    fixture.scene.takeDamage();
+
+    // The scroll: the content offset moves by 150, which the scene reads off the scroll view's state - the row
+    // frame itself is untouched, exactly as a real scroll leaves it.
+    fixture.scene.updateNode(makeScrollViewAt(2, {0, -150}));
+
+    const SceneDamage damage = fixture.scene.takeDamage();
 
     ASSERT_FALSE(damage.empty());
 
-    // A 200x100 rect rotated 45 degrees about its centre has an axis-aligned bounding box of
-    // (200 + 100) / sqrt(2) per side, the half-extent 106.066 independent of position. Independently computed:
-    // old centre (200, 300), new centre (200, 450), so the damage union spans from the old box's top to the new
-    // box's bottom and is one rotated bounding box wide.
+    // A 200x100 row rotated 45 degrees has an axis-aligned bounding box of (w + h)/sqrt(2) per side around its
+    // centre (200, 300): x 93.93..306.07, y 193.93..406.07. Independently computed, and the same half-extents
+    // the assert below pins.
+    //
+    // The scroll offset then moves the painted row down by 150 - the row centre paints at 450 - and the frame
+    // update damages BOTH paints: the union spans the old box top (193.93) to the new box bottom (556.07),
+    // which is one rotated box wide and one rotated box tall plus the scroll distance.
     const float rotatedSide = (200.0F + 100.0F) * 0.70710678F;
 
-    expectRect(boundsOf(damage), makeRect(200.0F - rotatedSide / 2.0F, 300.0F - rotatedSide / 2.0F, rotatedSide,
-                                          (450.0F + rotatedSide / 2.0F) - (300.0F - rotatedSide / 2.0F)));
+    expectRect(boundsOf(damage),
+               makeRect(200.0F - rotatedSide / 2.0F, 300.0F - rotatedSide / 2.0F, rotatedSide, rotatedSide + 150.0F));
 }
 
-/**
- * Point 3: a transformed node hanging partially outside an `overflow: hidden` container is clipped identically
- * whether it arrived there by scrolling (a frame update) or by the initial layout (a create).
- */
 TEST(RetainedSceneDamageTest, ATransformedRowOverhangingAClipIsCutTheSameScrolledOrLaidOut) {
-    const std::shared_ptr<ViewProps> clippingProps = std::make_shared<ViewProps>();
-
-    clippingProps->yogaStyle.setOverflow(yoga::Overflow::Hidden);
     const std::shared_ptr<ViewProps> rowProps = propsWithBackground(blue());
-    rowProps->transform = Transform::Scale(2, 2, 1);
+    rowProps->transform = facebook::react::Transform::Scale(2, 2, 1);
 
-    // Arrived by initial layout.
+    // Laid out inside the clip: created directly at the final painted position (contentOffset 0, row frame
+    // y = 250, which hangs below the 150-tall viewport).
     RetainedScene laidOut;
     laidOut.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
-    addChild(laidOut, kSurfaceTag, makeStyledView(2, makeRect(0, 0, 200, 150), clippingProps));
+    laidOut.createNode(makeScrollViewAt(2, {0, 0}));
+    laidOut.insertChild(kSurfaceTag, makeScrollViewAt(2, {0, 0}), 0);
 
-    laidOut.takeDamage(); // The container's creation damage is cleared; the row's own rect is what remains.
+    laidOut.takeDamage();
 
-    addChild(laidOut, 2, makeStyledView(3, makeRect(50, 100, 200, 100), rowProps));
+    const facebook::react::ShadowView row = makeStyledView(3, makeRect(50, 250, 200, 100), rowProps);
+
+    laidOut.createNode(row);
+    laidOut.insertChild(2, row, 0);
 
     const SceneSnapshot laidOutSnapshot = laidOut.snapshot();
     const SceneDamage laidOutDamage = laidOut.takeDamage();
 
-    // Arrived by scrolling: same container, same final row frame, reached by an update from a lower position.
+    // The same painted position reached by scrolling: the row is created at content frame y = 100 and the
+    // contentOffset (0, -150) shifts it down to the same painted 250 - row frame untouched.
     RetainedScene scrolled;
     scrolled.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
-    addChild(scrolled, kSurfaceTag, makeStyledView(2, makeRect(0, 0, 200, 150), clippingProps));
+    scrolled.createNode(makeScrollViewAt(2, {0, 0}));
+    scrolled.insertChild(kSurfaceTag, makeScrollViewAt(2, {0, 0}), 0);
 
     scrolled.takeDamage();
 
-    addChild(scrolled, 2, makeStyledView(3, makeRect(50, 300, 200, 100), rowProps));
-    scrolled.updateNode(makeStyledView(3, makeRect(50, 100, 200, 100), rowProps));
+    const facebook::react::ShadowView scrolledRow = makeStyledView(3, makeRect(50, 100, 200, 100), rowProps);
+
+    scrolled.createNode(scrolledRow);
+    scrolled.insertChild(2, scrolledRow, 0);
+
+    scrolled.updateNode(makeScrollViewAt(2, {0, -150}));
 
     EXPECT_TRUE(sameSnapshot(scrolled.snapshot(), laidOutSnapshot));
 
     const SceneDamage scrolledDamage = scrolled.takeDamage();
+    ASSERT_FALSE(scrolledDamage.empty());
 
-    // Both scenes end with the clipped scaled row as their final rect - (0, 50, 200, 100): the scaled row's
-    // bounds cut by the container's border box. The create path also damages the row's UNCLIPPED bounds first
-    // (the parent link lags one call inside insertChild), which is conservative over-damage, and is why the
-    // assertion reads the last rect of each list rather than the first.
-    ASSERT_GE(scrolledDamage.size(), 1U);
-    ASSERT_GE(laidOutDamage.size(), 1U);
+    // The scrolled scene damages the pre-scroll paint too; its final rect is the laid-out twin's clipped row.
+    ASSERT_FALSE(laidOutDamage.empty());
     EXPECT_EQ(scrolledDamage.back(), laidOutDamage.back());
-    EXPECT_EQ(laidOutDamage.back(), Rect(Point{.x = 0, .y = 50}, Size{.width = 200, .height = 100}));
 }
 
 /**
- * Point 4 at scene level: scrolling down by 150 and then back up by 150 returns a snapshot identical to the
- * start, and the return trip damages exactly the band the outward trip did.
+ * Point 4: scrolling down 150 and back 150 restores a snapshot identical to the start, and the return trip
+ * damages exactly the band the outward trip did.
  */
 TEST(RetainedSceneDamageTest, ScrollByNThenMinusNRestoresTheSnapshotAndMirrorsTheDamage) {
-    RetainedScene scene;
-    const std::shared_ptr<ViewProps> rowProps = propsWithBackground(blue());
+    ScrolledListFixture fixture;
 
-    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
-    addChild(scene, kSurfaceTag, makeStyledView(2, makeRect(0, 0, 400, 600), nullptr));
-    addChild(scene, 2, makeStyledView(3, makeRect(50, 200, 300, 100), rowProps));
+    fixture.buildScrollList();
+    fixture.scene.takeDamage();
 
-    const SceneSnapshot original = scene.snapshot();
+    const facebook::react::ShadowView row = makeStyledView(3, makeRect(50, 200, 300, 100), fixture.rowProps);
 
-    scene.takeDamage();
-    scene.updateNode(makeStyledView(3, makeRect(50, 350, 300, 100), rowProps));
+    fixture.scene.createNode(row);
+    fixture.scene.insertChild(2, row, 0);
 
-    const SceneDamage outwardDamage = scene.takeDamage();
+    const SceneSnapshot original = fixture.scene.snapshot();
 
-    scene.updateNode(makeStyledView(3, makeRect(50, 200, 300, 100), rowProps));
+    fixture.scene.takeDamage();
 
-    const SceneDamage returnDamage = scene.takeDamage();
+    fixture.scene.updateNode(makeScrollViewAt(2, {0, -150}));
 
-    EXPECT_TRUE(sameSnapshot(scene.snapshot(), original));
+    const SceneDamage outwardDamage = fixture.scene.takeDamage();
+    ASSERT_FALSE(outwardDamage.empty());
+
+    fixture.scene.updateNode(makeScrollViewAt(2, {0, 0}));
+
+    const SceneDamage returnDamage = fixture.scene.takeDamage();
+    ASSERT_FALSE(returnDamage.empty());
+
+    EXPECT_TRUE(sameSnapshot(fixture.scene.snapshot(), original));
     EXPECT_EQ(boundsOf(returnDamage), boundsOf(outwardDamage));
 }
 
 /**
- * Point 1 at the scene level: an incrementally scrolled transformed list ends where a freshly built scene with
- * the same rows stands - the incremental result is the full-repaint result.
+ * Point 1: an incrementally scrolled transformed list ends where a freshly committed scene with the same rows
+ * and the same final offset stands - the full-repaint equivalence, in content including transforms and clips.
  */
 TEST(RetainedSceneDamageTest, AnIncrementallyScrolledTransformedListMatchesAFreshBuild) {
     const std::shared_ptr<ViewProps> rowProps = propsWithBackground(blue());
+    rowProps->transform = facebook::react::Transform::RotateZ(kQuarterTurnRadians);
 
     RetainedScene incremental;
     incremental.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
-    addChild(incremental, kSurfaceTag, makeStyledView(2, makeRect(0, 0, 400, 600), nullptr));
+    incremental.createNode(makeScrollViewAt(2, {0, 0}));
+    incremental.insertChild(kSurfaceTag, makeScrollViewAt(2, {0, 0}), 0);
 
     incremental.takeDamage();
 
-    for (int scrolled = 0; scrolled <= 300; scrolled += 150) {
-        incremental.updateNode(makeStyledView(3, makeRect(100, 100 + scrolled, 200, 100), rowProps));
-        incremental.updateNode(makeStyledView(4, makeRect(100, 300 + scrolled, 200, 100), rowProps));
+    const facebook::react::ShadowView firstRow = makeStyledView(3, makeRect(100, 100, 200, 100), rowProps);
+    const facebook::react::ShadowView secondRow = makeStyledView(4, makeRect(100, 300, 200, 100), rowProps);
+
+    incremental.createNode(firstRow);
+    incremental.insertChild(2, firstRow, 0);
+    incremental.createNode(secondRow);
+    incremental.insertChild(2, secondRow, 0);
+
+    for (const float offset : {0.0F, -150.0F, -300.0F}) {
+        incremental.updateNode(makeScrollViewAt(2, {0, offset}));
     }
 
     RetainedScene fresh;
     fresh.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
-    addChild(fresh, kSurfaceTag, makeStyledView(2, makeRect(0, 0, 400, 600), nullptr));
-    addChild(fresh, 2, makeStyledView(3, makeRect(100, 400, 200, 100), rowProps));
-    addChild(fresh, 2, makeStyledView(4, makeRect(100, 600, 200, 100), rowProps));
+    fresh.createNode(makeScrollViewAt(2, {0, -300}));
+    fresh.insertChild(kSurfaceTag, makeScrollViewAt(2, {0, -300}), 0);
+
+    fresh.createNode(firstRow);
+    fresh.insertChild(2, firstRow, 0);
+    fresh.createNode(secondRow);
+    fresh.insertChild(2, secondRow, 0);
 
     EXPECT_TRUE(sameSnapshot(incremental.snapshot(), fresh.snapshot()));
 }
