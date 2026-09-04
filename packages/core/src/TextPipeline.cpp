@@ -27,12 +27,16 @@
 #include <react/renderer/graphics/Color.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <memory>
 #include <mutex>
+#include <iostream>
 #include <optional>
 #include <string>
+#include <string_view>
+#include <unordered_set>
 #include <vector>
 
 namespace react_native_linux {
@@ -99,10 +103,63 @@ SkFontStyle toFontStyle(const facebook::react::TextAttributes& attributes) {
     return SkFontStyle{weight, SkFontStyle::kNormal_Width, toSlant(attributes)};
 }
 
-std::vector<SkString> toFontFamilies(const facebook::react::TextAttributes& attributes) {
+/**
+ * Reports a `fontFamily` that resolved to nothing, once per family name.
+ *
+ * A family nobody registered is substituted by the next one in the list, and a substitution nobody is told about
+ * is the whole of react-native-windows [#16308](https://github.com/microsoft/react-native-windows/issues/16308):
+ * an icon font that renders blank glyphs with no error anywhere. The text still draws — falling back is the right
+ * behaviour, and refusing to draw would be worse — but it says so, and it says which family, which is the one
+ * thing an author needs to find the missing asset.
+ *
+ * Once per name rather than once per paragraph, because a family that is missing is missing on every frame and a
+ * line per frame is a line nobody reads. Guarded by the pipeline's own mutex, which every layout already takes.
+ */
+void reportUnresolvedFontFamily(const std::string& family, const SkString& substitute) {
+    static std::unordered_set<std::string> reportedFamilies;
+
+    if (reportedFamilies.insert(family).second) {
+        std::cerr << "[text] fontFamily \"" << family << "\" is not registered; drawing \"" << substitute.c_str()
+                  << "\" instead" << std::endl;
+    }
+}
+
+/**
+ * Whether the family a request resolved to is the family it asked for.
+ *
+ * Asking whether a name resolved at all is not the question: the default font manager is fontconfig, and
+ * fontconfig substitutes rather than failing, so every name "resolves" and an icon font nobody installed comes
+ * back as whatever the system had. Comparing the resolved face's own family name to the requested one is what
+ * separates *found* from *substituted*, and the substitution is the thing to report.
+ *
+ * The CSS generic families are the exception, because resolving `monospace` to a real monospace face is the
+ * whole point of asking for it rather than a failure to find it.
+ */
+bool isGenericFamily(const std::string& family) {
+    static constexpr std::array<std::string_view, 5> kGenericFamilies{"serif", "sans-serif", "monospace", "cursive",
+                                                                      "fantasy"};
+
+    return std::find(kGenericFamilies.begin(), kGenericFamilies.end(), family) != kGenericFamilies.end();
+}
+
+std::vector<SkString> toFontFamilies(const facebook::react::TextAttributes& attributes,
+                                     skia::textlayout::FontCollection& fontCollection) {
     std::vector<SkString> families;
 
     if (!attributes.fontFamily.empty()) {
+        const std::vector<SkString> requested{SkString{attributes.fontFamily}};
+        const std::vector<sk_sp<SkTypeface>> resolved = fontCollection.findTypefaces(requested,
+                                                                                    toFontStyle(attributes));
+        SkString resolvedFamily;
+
+        if (!resolved.empty() && resolved.front() != nullptr) {
+            resolved.front()->getFamilyName(&resolvedFamily);
+        }
+
+        if (!isGenericFamily(attributes.fontFamily) && !resolvedFamily.equals(attributes.fontFamily.c_str())) {
+            reportUnresolvedFontFamily(attributes.fontFamily, resolvedFamily);
+        }
+
         families.emplace_back(attributes.fontFamily);
     }
 
@@ -152,11 +209,12 @@ void applyLineHeight(skia::textlayout::TextStyle& style, const facebook::react::
     style.setHalfLeading(true);
 }
 
-skia::textlayout::TextStyle toTextStyle(const facebook::react::TextAttributes& attributes) {
+skia::textlayout::TextStyle toTextStyle(const facebook::react::TextAttributes& attributes,
+                                        skia::textlayout::FontCollection& fontCollection) {
     skia::textlayout::TextStyle style;
     const float fontSize = resolvedFontSize(attributes);
 
-    style.setFontFamilies(toFontFamilies(attributes));
+    style.setFontFamilies(toFontFamilies(attributes, fontCollection));
     style.setFontStyle(toFontStyle(attributes));
     style.setFontSize(fontSize);
     style.setFontHinting(SkFontHinting::kNone);
@@ -214,11 +272,12 @@ skia::textlayout::TextAlign toTextAlign(const facebook::react::TextAttributes& a
  * Middle are accepted and drawn as Tail; Clip drops the ellipsis and lets the line limit cut the text.
  */
 skia::textlayout::ParagraphStyle toParagraphStyle(const facebook::react::AttributedString& attributedString,
-                                                  const facebook::react::ParagraphAttributes& paragraphAttributes) {
+                                                  const facebook::react::ParagraphAttributes& paragraphAttributes,
+                                                  skia::textlayout::FontCollection& fontCollection) {
     skia::textlayout::ParagraphStyle style;
     const facebook::react::TextAttributes& baseAttributes = attributedString.getBaseTextAttributes();
 
-    style.setTextStyle(toTextStyle(baseAttributes));
+    style.setTextStyle(toTextStyle(baseAttributes, fontCollection));
     style.setTextAlign(toTextAlign(baseAttributes));
     style.setTextDirection(skia::textlayout::TextDirection::kLtr);
     // kAll keeps the first line's ascent and the last line's descent inside the applied height, so every line box
@@ -336,7 +395,8 @@ layoutParagraph(const facebook::react::AttributedString& attributedString,
     TextPipelineState& state = textPipelineState();
     const std::lock_guard<std::mutex> guard(state.mutex);
     const std::unique_ptr<skia::textlayout::ParagraphBuilder> builder = skia::textlayout::ParagraphBuilder::make(
-        toParagraphStyle(attributedString, paragraphAttributes), state.fontCollection, state.unicode);
+        toParagraphStyle(attributedString, paragraphAttributes, *state.fontCollection), state.fontCollection,
+        state.unicode);
 
     for (const facebook::react::AttributedString::Fragment& fragment : attributedString.getFragments()) {
         if (fragment.isAttachment()) {
@@ -345,7 +405,7 @@ layoutParagraph(const facebook::react::AttributedString& attributedString,
             continue;
         }
 
-        builder->pushStyle(toTextStyle(fragment.textAttributes));
+        builder->pushStyle(toTextStyle(fragment.textAttributes, *state.fontCollection));
         builder->addText(fragment.string.data(), fragment.string.size());
         builder->pop();
     }

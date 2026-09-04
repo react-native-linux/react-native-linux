@@ -2121,6 +2121,34 @@ by a few degrees is a bug nobody can see until a designer notices.
 - **Ellipses** are `SkShaders::RadialGradient` of the horizontal radius with a local matrix scaling y by
   `ry / rx` about the centre — one matrix rather than a second shader type, again matching Android.
 
+### An unresolvable fontFamily says so (#70)
+
+The default font manager is **fontconfig**, and fontconfig substitutes rather than failing. So a `fontFamily`
+nobody registered does not fail to resolve — it resolves to whatever the system had, and the text draws in the
+wrong face with no error anywhere. That is react-native-windows
+[#16308](https://github.com/microsoft/react-native-windows/issues/16308) exactly: a registered icon font that
+renders blank glyphs, reported as "silent failure in the DWrite font path".
+
+Asking whether a name resolved is therefore the wrong question, because every name resolves. The right one is
+whether the face that came back **is the family that was asked for**, and `toFontFamilies` compares the resolved
+typeface's own family name to the request:
+
+```text
+[text] fontFamily "Totally Missing Icons" is not registered; drawing "Liberation Sans" instead
+```
+
+Three properties of that line, each deliberate:
+
+- **The text still draws.** Falling back is the right behaviour and refusing to draw would be worse; what was
+  missing is the sentence, not the glyphs.
+- **It names the substitute**, because "not registered" alone does not tell an author whether the asset is missing
+  or the name is misspelled, and the face that was used does.
+- **Once per family name, not once per paragraph or per frame.** A missing family is missing on every frame, and a
+  line per frame is a line nobody reads.
+
+The CSS generic families — `serif`, `sans-serif`, `monospace`, `cursive`, `fantasy` — are exempt, because
+resolving `monospace` to a real monospace face is the point of asking for it rather than a failure to find it.
+
 ### Fidelity limits
 
 - **Transition hints are not interpolated.** `linear-gradient(red, 20%, blue)` is a stop whose colour is absent,
