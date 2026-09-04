@@ -438,6 +438,20 @@ void InputQueue::push(const InputEvent& event) {
     events_.push_back(event);
 }
 
+// The `wl_pointer` axis this platform reads: the header cannot be included here because the Hermes-free test
+// binary links no Wayland, and the seat passes the raw wire value through. 1 is horizontal scroll.
+constexpr uint32_t kHorizontalScrollAxis = 1;
+
+ScrollAxisKind scrollAxisForPointerAxis(uint32_t waylandAxis, const InputModifiers& modifiers) {
+    if (waylandAxis == kHorizontalScrollAxis) {
+        return ScrollAxisKind::Horizontal;
+    }
+
+    return modifiers.shift ? ScrollAxisKind::Horizontal : ScrollAxisKind::Vertical;
+}
+
+double notchesForValue120(int32_t value120) { return static_cast<double>(value120) / 120.0; }
+
 std::vector<InputEvent> InputQueue::drain() { return std::exchange(events_, {}); }
 
 size_t InputQueue::droppedEventCount() const noexcept { return droppedEventCount_; }

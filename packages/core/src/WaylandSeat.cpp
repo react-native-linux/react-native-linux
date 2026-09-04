@@ -87,6 +87,7 @@ wl_pointer_listener WaylandSeat::makePointerListener() {
     listener.axis_source = WaylandSeat::handlePointerAxisSource;
     listener.axis_stop = WaylandSeat::handlePointerAxisStop;
     listener.axis_discrete = WaylandSeat::handlePointerAxisDiscrete;
+    listener.axis_value120 = WaylandSeat::handlePointerAxisValue120;
 
     return listener;
 }
@@ -306,8 +307,7 @@ InputEvent makeScrollEvent(InputEventKind kind, uint32_t waylandAxis, double amo
     return InputEvent{.kind = kind,
                       .surfacePoint = surfacePoint,
                       .modifiers = modifiers,
-                      .scrollAxis = waylandAxis == WL_POINTER_AXIS_HORIZONTAL_SCROLL ? ScrollAxisKind::Horizontal
-                                                                                     : ScrollAxisKind::Vertical,
+                      .scrollAxis = scrollAxisForPointerAxis(waylandAxis, modifiers),
                       .scrollAmount = amount};
 }
 
@@ -323,9 +323,24 @@ void WaylandSeat::handlePointerAxis(void* data, wl_pointer* /*pointer*/, uint32_
 
 void WaylandSeat::handlePointerFrame(void* /*data*/, wl_pointer* /*pointer*/) {}
 
-// wl_pointer.axis_source distinguishes a wheel from a finger, and nothing here needs it: axis_discrete is what a
-// wheel sends and axis_stop is what a finger sends, and those two are already the whole distinction.
+// wl_pointer.axis_source distinguishes a wheel from a finger, and routing does not read it: axis_discrete (or
+// axis_value120) is what a wheel sends and axis_stop is what a finger sends, so the event kind that arrives is
+// already the routing decision - wheel and wheel_tilt sources produce discrete events, finger and continuous
+// produce tracked ones, and the sources this platform does not distinguish (wheel_button, finger_count) route
+// exactly as the events they accompany. A wp_pointer_gestures pinch is out of scope: no handler, recorded here
+// as the decision (react-native-macos#705).
 void WaylandSeat::handlePointerAxisSource(void* /*data*/, wl_pointer* /*pointer*/, uint32_t /*axisSource*/) {}
+
+// wl_pointer.axis_value120 replaces axis_discrete for clients on wl_pointer version 8+: 120 units are one
+// detent, and the fractions are kept so a high-resolution wheel scrolls smoothly instead of stepping. A
+// compositor on the negotiated version sends value120 INSTEAD of axis_discrete, so the two handlers cannot
+// double-count one detent.
+void WaylandSeat::handlePointerAxisValue120(void* data, wl_pointer* /*pointer*/, uint32_t axis, int32_t value120) {
+    WaylandSeat* seat = static_cast<WaylandSeat*>(data);
+
+    seat->queue_.push(makeScrollEvent(InputEventKind::PointerScrollDiscrete, axis, notchesForValue120(value120),
+                                      seat->pointerPosition_, seat->modifiers_));
+}
 
 void WaylandSeat::handlePointerAxisStop(void* data, wl_pointer* /*pointer*/, uint32_t /*time*/, uint32_t axis) {
     WaylandSeat* seat = static_cast<WaylandSeat*>(data);

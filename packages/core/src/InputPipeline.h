@@ -88,6 +88,20 @@ struct InputEvent {
 bool isScrollEvent(const InputEvent& event);
 
 /**
+ * The scroll axis a `wl_pointer` axis event takes. A horizontal axis is horizontal, and a vertical axis with
+ * shift held is horizontal too - the wheel-and-shift horizontal scrolling a desktop user expects and a mouse
+ * without a horizontal wheel cannot send (react-native-macos#1922). Without shift, the axis passes through.
+ */
+ScrollAxisKind scrollAxisForPointerAxis(uint32_t waylandAxis, const InputModifiers& modifiers);
+
+/**
+ * The notch count one `wl_pointer.axis_value120` event carries: 120 units are one logical detent, so a 30 is a
+ * quarter detent and a -240 is two backward detents. The fractions are kept - the scroll integration consumes
+ * partial notches, which is what makes a high-resolution wheel smooth where `axis_discrete` steps.
+ */
+double notchesForValue120(int32_t value120);
+
+/**
  * The W3C `button` number an evdev button code maps to: 0 primary, 1 auxiliary, 2 secondary, 3 and 4 the
  * backward/forward pair the side buttons of a five-button mouse send. Returns -1 for codes the platform does not
  * name, and the seat drops the events carrying those.
