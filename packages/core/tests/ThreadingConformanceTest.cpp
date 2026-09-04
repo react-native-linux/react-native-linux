@@ -101,9 +101,9 @@ TEST_F(TimerSeamTest, QuitDropsEveryPendingTimerAndNothingFiresAfter) {
     EXPECT_TRUE(registry.waitUntilIdle(std::chrono::milliseconds(100)));
 
     // Recurring timers re-arm only from inside their own dispatch; after quit the dispatch thread is gone, so
-    // nothing can re-register and nothing can fire. waitUntilIdle through the whole window proves it without
-    // a wall-clock sleep: the condition holds for the full timeout.
-    EXPECT_TRUE(registry.waitUntilIdle(std::chrono::milliseconds(200)));
+    // nothing can re-register. waitUntilIdle cannot prove the whole window (its predicate short-circuits on
+    // empty); the deterministic re-arm-boundary proof needs a blocking hook and lands with the live-TimerManager
+    // work. What is pinned here is the shutdown contract itself: quit drops everything immediately.
     EXPECT_FALSE(registry.hasPendingTimers());
 }
 
@@ -135,7 +135,11 @@ TEST_F(TimerSeamTest, TimersCreatedFromTwoThreadsAllLandAndTheRegistrySettles) {
 
     EXPECT_TRUE(registry.hasPendingTimers());
 
+    // Both creations landed: deleting one leaves the other pending, which a lost creation cannot satisfy.
     registry.deleteTimer(1);
+
+    EXPECT_TRUE(registry.hasPendingTimers());
+
     registry.deleteTimer(2);
 
     EXPECT_TRUE(registry.waitUntilIdle(std::chrono::milliseconds(100)));
