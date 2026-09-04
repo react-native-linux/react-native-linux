@@ -9,15 +9,10 @@
 #include <gtest/gtest.h>
 #include <react/renderer/components/scrollview/ScrollViewComponentDescriptor.h>
 #include <react/renderer/components/scrollview/ScrollViewShadowNode.h>
-#include <react/renderer/components/view/ViewShadowNode.h>
 #include <react/renderer/core/LayoutConstraints.h>
 #include <react/renderer/core/LayoutContext.h>
-#include <react/renderer/core/PropsParserContext.h>
-#include <react/renderer/core/ShadowNodeFamily.h>
-#include <react/renderer/core/ShadowNodeFragment.h>
 #include <react/renderer/graphics/Point.h>
 #include <react/renderer/mounting/ShadowTree.h>
-#include <react/renderer/uimanager/UIManager.h>
 #include <vector>
 
 namespace {
@@ -34,6 +29,8 @@ using react_native_linux::isScrollEvent;
 using react_native_linux::kDecelerationRateFast;
 using react_native_linux::kDecelerationRateNormal;
 using react_native_linux::kWheelNotchDistance;
+using react_native_linux::makeConfiguredShadowNode;
+using react_native_linux::makeTaskDroppingUIManager;
 using react_native_linux::maximumScrollOffset;
 using react_native_linux::PassThroughShadowTreeDelegate;
 using react_native_linux::PointerDispatch;
@@ -461,14 +458,8 @@ TEST(ScrollRoutingTest, TheMousePointerRouterIgnoresScrollEvents) {
 class ScrollControllerTest : public ::testing::Test {
 protected:
     ScrollControllerTest() {
-        uiManager_ =
-            std::make_shared<UIManager>([](std::function<void(facebook::jsi::Runtime&)>&&) {}, contextContainer_);
-
-        auto shadowTree = std::make_unique<ShadowTree>(kSurfaceId, LayoutConstraints{}, LayoutContext{},
-                                                       shadowTreeDelegate_, *contextContainer_);
-
-        shadowTree_ = shadowTree.get();
-        uiManager_->getShadowTreeRegistry().add(std::move(shadowTree));
+        uiManager_ = makeTaskDroppingUIManager(contextContainer_);
+        shadowTree_ = addRegisteredShadowTree(*uiManager_, shadowTreeDelegate_, *contextContainer_, kSurfaceId);
     }
 
     void commitScrollView(folly::dynamic scrollViewProps) {
@@ -508,38 +499,17 @@ protected:
 
 private:
     std::shared_ptr<const ShadowNode> makeScrollView(Tag tag, folly::dynamic props) {
-        const ShadowNodeFamily::Shared family =
-            scrollViewDescriptor_.createFamily({.tag = tag, .surfaceId = kSurfaceId, .instanceHandle = nullptr});
-
-        const PropsParserContext parserContext{kSurfaceId, *contextContainer_};
-        RawProps rawProps{folly::dynamic(std::move(props))};
-
-        const facebook::react::Props::Shared scrollViewProps = scrollViewDescriptor_.cloneProps(
-            parserContext, ScrollViewShadowNode::defaultSharedProps(), std::move(rawProps));
-
         std::vector<std::shared_ptr<const ShadowNode>> children;
         children.push_back(makeChild(21, 100, 300));
 
-        const ShadowNodeFragment scrollViewFragment{
-            .props = scrollViewProps,
-            .children = std::make_shared<const ChildList>(std::move(children)),
-            .state = scrollViewDescriptor_.createInitialState(scrollViewProps, family)};
-
-        return scrollViewDescriptor_.createShadowNode(scrollViewFragment, family);
+        return makeConfiguredShadowNode(scrollViewDescriptor_, tag, kSurfaceId, contextContainer_, std::move(props),
+                                        std::make_shared<const ChildList>(std::move(children)));
     }
 
     std::shared_ptr<const ShadowNode> makeChild(Tag tag, double width, double height) {
-        const ShadowNodeFamily::Shared family =
-            viewDescriptor_.createFamily({.tag = tag, .surfaceId = kSurfaceId, .instanceHandle = nullptr});
-
-        const PropsParserContext parserContext{kSurfaceId, *contextContainer_};
-        RawProps rawProps{folly::dynamic::object("width", width)("height", height)};
-
-        const facebook::react::Props::Shared childProps =
-            viewDescriptor_.cloneProps(parserContext, ViewShadowNode::defaultSharedProps(), std::move(rawProps));
-
-        return viewDescriptor_.createShadowNode(
-            ShadowNodeFragment{.props = childProps, .children = std::make_shared<const ChildList>()}, family);
+        return makeConfiguredShadowNode(viewDescriptor_, tag, kSurfaceId, contextContainer_,
+                                        folly::dynamic::object("width", width)("height", height),
+                                        std::make_shared<const ChildList>());
     }
 
     PassThroughShadowTreeDelegate shadowTreeDelegate_;

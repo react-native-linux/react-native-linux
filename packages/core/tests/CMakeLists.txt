@@ -58,6 +58,7 @@ add_executable(rnl_core_tests
     SceneTest.cpp
     ScrollTest.cpp
     ShadowTreeCommitTest.cpp
+    TextInputControllerTest.cpp
     UpstreamAnimatedSuiteTest.cpp
     ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/AnimatedNodeTests.cpp
     ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/AnimationDriverTests.cpp
@@ -80,6 +81,7 @@ add_executable(rnl_core_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ScrollEventCadence.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ScrollPhysics.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputComponent.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputController.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputV3State.cpp)
 target_compile_options(rnl_core_tests PRIVATE -Wall -Wextra -fexceptions -frtti)
 target_include_directories(rnl_core_tests

@@ -23,6 +23,7 @@
 #include <react/renderer/mounting/MountingCoordinator.h>
 #include <react/renderer/mounting/ShadowTree.h>
 #include <react/renderer/mounting/ShadowTreeDelegate.h>
+#include <react/renderer/uimanager/UIManager.h>
 
 // The using-declarations both commit-driven test files share. They live here rather than in each file because a
 // second copy of the list is a jscpd clone at threshold 0. The header is included by tests only, so the
@@ -67,6 +68,65 @@ makeViewComponentDescriptor(const std::shared_ptr<const facebook::react::Context
 }
 
 namespace react_native_linux {
+
+/**
+ * A UIManager whose runtime executor drops its tasks: the commit-driven fixtures never dispatch through it, and
+ * the empty lambda keeps the UIManager's constructor requirement satisfied without a runtime scheduler.
+ */
+inline std::shared_ptr<facebook::react::UIManager>
+makeTaskDroppingUIManager(const std::shared_ptr<const facebook::react::ContextContainer>& contextContainer) {
+    return std::make_shared<facebook::react::UIManager>([](std::function<void(facebook::jsi::Runtime&)>&&) {},
+                                                        contextContainer);
+}
+
+/**
+ * A registered, delegate-wired `ShadowTree` for commit-driven fixtures: constructed, added to the `uiManager`'s
+ * registry, and handed back as a raw pointer the fixture commits through. The registry owns the tree;
+ * `removeShadowTree` is the fixture's teardown half, because the registry asserts when it dies non-empty.
+ */
+inline facebook::react::ShadowTree* addRegisteredShadowTree(facebook::react::UIManager& uiManager,
+                                                            facebook::react::ShadowTreeDelegate& delegate,
+                                                            const facebook::react::ContextContainer& contextContainer,
+                                                            SurfaceId surfaceId) {
+    auto shadowTree = std::make_unique<facebook::react::ShadowTree>(
+        surfaceId, facebook::react::LayoutConstraints{}, facebook::react::LayoutContext{}, delegate, contextContainer);
+
+    facebook::react::ShadowTree* rawPointer = shadowTree.get();
+
+    uiManager.getShadowTreeRegistry().add(std::move(shadowTree));
+
+    return rawPointer;
+}
+
+inline void removeShadowTree(facebook::react::UIManager& uiManager, SurfaceId surfaceId) {
+    uiManager.getShadowTreeRegistry().remove(surfaceId);
+}
+
+/**
+ * One configured shadow node from a concrete component descriptor: family, parsed props, optional initial state.
+ * The three commit-driven fixtures build their nodes through this because the same body three times is a jscpd
+ * clone at threshold 0.
+ */
+template <typename ComponentDescriptorT>
+std::shared_ptr<const facebook::react::ShadowNode> makeConfiguredShadowNode(
+    ComponentDescriptorT& descriptor, Tag tag, SurfaceId surfaceId,
+    const std::shared_ptr<const facebook::react::ContextContainer>& contextContainer, folly::dynamic props,
+    const std::shared_ptr<const std::vector<std::shared_ptr<const facebook::react::ShadowNode>>>& children) {
+    using ConcreteShadowNodeT = typename ComponentDescriptorT::ConcreteShadowNode;
+    const facebook::react::ShadowNodeFamily::Shared family =
+        descriptor.createFamily({.tag = tag, .surfaceId = surfaceId, .instanceHandle = nullptr});
+
+    const facebook::react::PropsParserContext parserContext{surfaceId, *contextContainer};
+    facebook::react::RawProps rawProps{folly::dynamic(props)};
+
+    const facebook::react::Props::Shared nodeProps =
+        descriptor.cloneProps(parserContext, ConcreteShadowNodeT::defaultSharedProps(), std::move(rawProps));
+
+    const facebook::react::ShadowNodeFragment fragment{
+        .props = nodeProps, .children = children, .state = descriptor.createInitialState(nodeProps, family)};
+
+    return descriptor.createShadowNode(fragment, family);
+}
 
 /**
  * The `ShadowTreeDelegate` upstream's own mounting tests use: it accepts every proposed tree and lets the
