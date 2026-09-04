@@ -56,6 +56,16 @@ using facebook::react::Tag;
 using facebook::react::ViewComponentDescriptor;
 using facebook::react::ViewShadowNode;
 
+// The two descriptors every commit-driven fixture builds with the same empty dispatcher. A helper rather than a
+// member initializer in each fixture because the initializer is a jscpd clone at threshold 0.
+inline facebook::react::ViewComponentDescriptor
+makeViewComponentDescriptor(const std::shared_ptr<const facebook::react::ContextContainer>& contextContainer) {
+    return facebook::react::ViewComponentDescriptor{
+        facebook::react::ComponentDescriptorParameters{.eventDispatcher = facebook::react::EventDispatcher::Shared{},
+                                                       .contextContainer = contextContainer,
+                                                       .flavor = nullptr}};
+}
+
 namespace react_native_linux {
 
 /**

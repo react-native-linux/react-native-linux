@@ -1,17 +1,29 @@
 #include "InputPipeline.h"
+#include "ScrollController.h"
 #include "ScrollEventCadence.h"
 #include "ScrollPhysics.h"
+#include "ShadowTreeTestSupport.h"
 
-#include <gtest/gtest.h>
-
-#include <react/renderer/graphics/Point.h>
-
+#include <LinuxMountingManager.h>
 #include <cstddef>
+#include <gtest/gtest.h>
+#include <react/renderer/components/scrollview/ScrollViewComponentDescriptor.h>
+#include <react/renderer/components/scrollview/ScrollViewShadowNode.h>
+#include <react/renderer/components/view/ViewShadowNode.h>
+#include <react/renderer/core/LayoutConstraints.h>
+#include <react/renderer/core/LayoutContext.h>
+#include <react/renderer/core/PropsParserContext.h>
+#include <react/renderer/core/ShadowNodeFamily.h>
+#include <react/renderer/core/ShadowNodeFragment.h>
+#include <react/renderer/graphics/Point.h>
+#include <react/renderer/mounting/ShadowTree.h>
+#include <react/renderer/uimanager/UIManager.h>
 #include <vector>
 
 namespace {
 
-using facebook::react::Point;
+using facebook::react::ScrollViewComponentDescriptor;
+using facebook::react::UIManager;
 using react_native_linux::clampScrollOffset;
 using react_native_linux::decelerateAxis;
 using react_native_linux::dragAxis;
@@ -23,16 +35,22 @@ using react_native_linux::kDecelerationRateFast;
 using react_native_linux::kDecelerationRateNormal;
 using react_native_linux::kWheelNotchDistance;
 using react_native_linux::maximumScrollOffset;
+using react_native_linux::PassThroughShadowTreeDelegate;
 using react_native_linux::PointerDispatch;
 using react_native_linux::PointerRouter;
+using react_native_linux::SceneCommand;
 using react_native_linux::ScrollAxisKind;
 using react_native_linux::ScrollAxisState;
 using react_native_linux::ScrollCadenceEvents;
 using react_native_linux::ScrollCadenceFrame;
+using react_native_linux::ScrollController;
 using react_native_linux::ScrollDestination;
 using react_native_linux::ScrollEventCadence;
 using react_native_linux::scrollToDestination;
 using react_native_linux::velocityForTravel;
+
+constexpr SurfaceId kSurfaceId = 1;
+using ChildList = std::vector<std::shared_ptr<const ShadowNode>>;
 
 // One 60 Hz frame and one 120 Hz frame, in milliseconds.
 constexpr double kFrameMilliseconds60Hz = 1000.0 / 60.0;
@@ -206,7 +224,6 @@ TEST(ScrollToDestinationTest, ATargetPastEitherEndIsClampedBeforeItIsReturned) {
     const ScrollDestination beforeTheStart = destinationFor(120.0, -500.0);
     const ScrollDestination pastTheEnd = destinationFor(120.0, 5000.0);
 
-
     EXPECT_TRUE(beforeTheStart.hasWork);
     EXPECT_DOUBLE_EQ(beforeTheStart.offset, 0.0);
     EXPECT_TRUE(pastTheEnd.hasWork);
@@ -220,8 +237,8 @@ TEST(ScrollToDestinationTest, AClampedTargetThatLandsOnTheCurrentOffsetIsStillNo
 }
 
 TEST(ScrollToDestinationTest, ContentShorterThanTheViewportSettlesAtZero) {
-    const ScrollDestination destination = scrollToDestination(0.0, 300.0, false, kDecelerationRateNormal, 100.0,
-                                                              kViewportLength);
+    const ScrollDestination destination =
+        scrollToDestination(0.0, 300.0, false, kDecelerationRateNormal, 100.0, kViewportLength);
 
     EXPECT_FALSE(destination.hasWork);
 }
@@ -253,20 +270,18 @@ TEST(ScrollPhysicsTest, ClampsBetweenZeroAndTheContentThatDoesNotFit) {
 
 TEST(ScrollPhysicsTest, DecaysVelocityByTheRateRaisedToTheFrameTime) {
     const ScrollAxisState normal =
-        decelerateAxis(ScrollAxisState{.offset = 0.0, .velocity = 1.0}, kFrameMilliseconds60Hz,
-                       kDecelerationRateNormal, kUnboundedContent, kViewportLength);
-    const ScrollAxisState fast = decelerateAxis(ScrollAxisState{.offset = 0.0, .velocity = 1.0},
-                                                kFrameMilliseconds60Hz, kDecelerationRateFast, kUnboundedContent,
-                                                kViewportLength);
+        decelerateAxis(ScrollAxisState{.offset = 0.0, .velocity = 1.0}, kFrameMilliseconds60Hz, kDecelerationRateNormal,
+                       kUnboundedContent, kViewportLength);
+    const ScrollAxisState fast = decelerateAxis(ScrollAxisState{.offset = 0.0, .velocity = 1.0}, kFrameMilliseconds60Hz,
+                                                kDecelerationRateFast, kUnboundedContent, kViewportLength);
 
     EXPECT_NEAR(normal.velocity, kNormalDecayPerFrame60Hz, kDecayTolerance);
     EXPECT_NEAR(fast.velocity, kFastDecayPerFrame60Hz, kDecayTolerance);
 }
 
 TEST(ScrollPhysicsTest, TravelsExactlyTheDistanceAWheelNotchAsksFor) {
-    const double travelled =
-        settledOffset(velocityForTravel(kWheelNotchDistance, kDecelerationRateNormal), kFrameMilliseconds60Hz,
-                      kDecelerationRateNormal);
+    const double travelled = settledOffset(velocityForTravel(kWheelNotchDistance, kDecelerationRateNormal),
+                                           kFrameMilliseconds60Hz, kDecelerationRateNormal);
 
     EXPECT_NEAR(travelled, kWheelNotchDistance, 1e-9);
 }
@@ -298,9 +313,9 @@ TEST(ScrollPhysicsTest, FoldsTheLastHalfPointIntoTheStepThatStops) {
 }
 
 TEST(ScrollPhysicsTest, ReachingTheEndOfTheContentStopsMomentumDead) {
-    const ScrollAxisState advanced = decelerateAxis(
-        ScrollAxisState{.offset = 318.0, .velocity = velocityForTravel(200.0, kDecelerationRateNormal)},
-        kFrameMilliseconds60Hz, kDecelerationRateNormal, kContentLength, kViewportLength);
+    const ScrollAxisState advanced =
+        decelerateAxis(ScrollAxisState{.offset = 318.0, .velocity = velocityForTravel(200.0, kDecelerationRateNormal)},
+                       kFrameMilliseconds60Hz, kDecelerationRateNormal, kContentLength, kViewportLength);
 
     EXPECT_DOUBLE_EQ(advanced.offset, kMaximumOffset);
     EXPECT_EQ(advanced.velocity, 0.0);
@@ -424,8 +439,7 @@ TEST(ScrollRoutingTest, IdentifiesTheEventsTheScrollPipelineOwns) {
 TEST(ScrollRoutingTest, TheMousePointerRouterIgnoresScrollEvents) {
     PointerRouter router;
     const std::vector<InputEventKind> kinds{InputEventKind::PointerScrollContinuous,
-                                            InputEventKind::PointerScrollDiscrete,
-                                            InputEventKind::PointerScrollStop};
+                                            InputEventKind::PointerScrollDiscrete, InputEventKind::PointerScrollStop};
 
     for (InputEventKind kind : kinds) {
         const std::vector<PointerDispatch> dispatches =
@@ -433,6 +447,294 @@ TEST(ScrollRoutingTest, TheMousePointerRouterIgnoresScrollEvents) {
 
         EXPECT_TRUE(dispatches.empty());
     }
+}
+
+#pragma mark - the controller wiring (#45)
+
+/**
+ * The controller-level rig: a real UIManager whose registry holds a real ShadowTree committed with one
+ * ScrollView (100x100) over a 100x300 page, so wheel input hit-tests, integrates and publishes exactly the way
+ * the window path runs it. The event dispatcher is the empty one the mounting tests use: emissions drop on the
+ * floor, which makes `hasDispatchedScrollEvent` and `isScrollActive` the two observables, together with
+ * whatever the frames settle into.
+ */
+class ScrollControllerTest : public ::testing::Test {
+protected:
+    ScrollControllerTest() {
+        uiManager_ =
+            std::make_shared<UIManager>([](std::function<void(facebook::jsi::Runtime&)>&&) {}, contextContainer_);
+
+        auto shadowTree = std::make_unique<ShadowTree>(kSurfaceId, LayoutConstraints{}, LayoutContext{},
+                                                       shadowTreeDelegate_, *contextContainer_);
+
+        shadowTree_ = shadowTree.get();
+        uiManager_->getShadowTreeRegistry().add(std::move(shadowTree));
+    }
+
+    void commitScrollView(folly::dynamic scrollViewProps) {
+        scrollViewProps["width"] = 100;
+        scrollViewProps["height"] = 100;
+        const ShadowTreeCommitOptions commitOptions{.enableStateReconciliation = false, .mountSynchronously = true};
+
+        shadowTree_->commit(
+            [this, &scrollViewProps](const RootShadowNode& oldRootShadowNode) {
+                return std::static_pointer_cast<RootShadowNode>(oldRootShadowNode.ShadowNode::clone(ShadowNodeFragment{
+                    .props = ShadowNodeFragment::propsPlaceholder(),
+                    .children =
+                        std::make_shared<const ChildList>(ChildList{makeScrollView(20, std::move(scrollViewProps))})}));
+            },
+            commitOptions);
+    }
+
+    ScrollController makeController() { return ScrollController(uiManager_, kSurfaceId); }
+
+    static InputEvent wheel(double notches, double x = 50.0, double y = 50.0) {
+        return InputEvent{.kind = InputEventKind::PointerScrollDiscrete,
+                          .surfacePoint = Point{.x = static_cast<float>(x), .y = static_cast<float>(y)},
+                          .scrollAxis = ScrollAxisKind::Vertical,
+                          .scrollAmount = notches};
+    }
+
+    static InputEvent drag(double amount, double x = 50.0, double y = 50.0) {
+        return InputEvent{.kind = InputEventKind::PointerScrollContinuous,
+                          .surfacePoint = Point{.x = static_cast<float>(x), .y = static_cast<float>(y)},
+                          .scrollAxis = ScrollAxisKind::Vertical,
+                          .scrollAmount = amount};
+    }
+
+    static InputEvent scrollStop() { return InputEvent{.kind = InputEventKind::PointerScrollStop}; }
+
+    ShadowTree* shadowTree_;
+
+private:
+    std::shared_ptr<const ShadowNode> makeScrollView(Tag tag, folly::dynamic props) {
+        const ShadowNodeFamily::Shared family =
+            scrollViewDescriptor_.createFamily({.tag = tag, .surfaceId = kSurfaceId, .instanceHandle = nullptr});
+
+        const PropsParserContext parserContext{kSurfaceId, *contextContainer_};
+        RawProps rawProps{folly::dynamic(std::move(props))};
+
+        const facebook::react::Props::Shared scrollViewProps = scrollViewDescriptor_.cloneProps(
+            parserContext, ScrollViewShadowNode::defaultSharedProps(), std::move(rawProps));
+
+        std::vector<std::shared_ptr<const ShadowNode>> children;
+        children.push_back(makeChild(21, 100, 300));
+
+        const ShadowNodeFragment scrollViewFragment{
+            .props = scrollViewProps,
+            .children = std::make_shared<const ChildList>(std::move(children)),
+            .state = scrollViewDescriptor_.createInitialState(scrollViewProps, family)};
+
+        return scrollViewDescriptor_.createShadowNode(scrollViewFragment, family);
+    }
+
+    std::shared_ptr<const ShadowNode> makeChild(Tag tag, double width, double height) {
+        const ShadowNodeFamily::Shared family =
+            viewDescriptor_.createFamily({.tag = tag, .surfaceId = kSurfaceId, .instanceHandle = nullptr});
+
+        const PropsParserContext parserContext{kSurfaceId, *contextContainer_};
+        RawProps rawProps{folly::dynamic::object("width", width)("height", height)};
+
+        const facebook::react::Props::Shared childProps =
+            viewDescriptor_.cloneProps(parserContext, ViewShadowNode::defaultSharedProps(), std::move(rawProps));
+
+        return viewDescriptor_.createShadowNode(
+            ShadowNodeFragment{.props = childProps, .children = std::make_shared<const ChildList>()}, family);
+    }
+
+    PassThroughShadowTreeDelegate shadowTreeDelegate_;
+    std::shared_ptr<const ContextContainer> contextContainer_{std::make_shared<ContextContainer>()};
+    ViewComponentDescriptor viewDescriptor_ = makeViewComponentDescriptor(contextContainer_);
+    ScrollViewComponentDescriptor scrollViewDescriptor_{ComponentDescriptorParameters{
+        .eventDispatcher = EventDispatcher::Shared{}, .contextContainer = contextContainer_, .flavor = nullptr}};
+
+protected:
+    void TearDown() override {
+        // The registry asserts on destruction while it still holds trees.
+        removedTree_ = uiManager_->getShadowTreeRegistry().remove(kSurfaceId);
+    }
+
+    std::unique_ptr<ShadowTree> removedTree_;
+    std::shared_ptr<UIManager> uiManager_;
+};
+
+TEST_F(ScrollControllerTest, AWheelFlingStaysActiveThroughMomentumAndSettles) {
+    commitScrollView(folly::dynamic::object());
+    ScrollController controller = makeController();
+
+    controller.dispatch({wheel(3)});
+
+    controller.advance(kFrameMilliseconds60Hz);
+
+    EXPECT_TRUE(controller.hasDispatchedScrollEvent());
+    EXPECT_TRUE(controller.isScrollActive());
+
+    bool settled = false;
+
+    for (int frame = 0; frame < 400; frame++) {
+        if (!controller.advance(100.0)) {
+            settled = true;
+
+            break;
+        }
+    }
+
+    EXPECT_TRUE(settled);
+    EXPECT_FALSE(controller.isScrollActive());
+
+    // One idle frame: the flag describes the last advance, and the frame after settling moved nothing.
+    controller.advance(kFrameMilliseconds60Hz);
+
+    EXPECT_FALSE(controller.hasDispatchedScrollEvent());
+}
+
+TEST_F(ScrollControllerTest, AContinuousDragIsNotMomentumUntilTheStopReleasesIt) {
+    commitScrollView(folly::dynamic::object());
+    ScrollController controller = makeController();
+
+    controller.dispatch({drag(5)});
+
+    EXPECT_TRUE(controller.isScrollActive());
+
+    controller.advance(kFrameMilliseconds60Hz);
+
+    EXPECT_TRUE(controller.hasDispatchedScrollEvent());
+
+    controller.dispatch({scrollStop()});
+    controller.advance(kFrameMilliseconds60Hz);
+
+    EXPECT_FALSE(controller.isScrollActive());
+}
+
+TEST_F(ScrollControllerTest, TheThrottleGatesEmissionThroughConsecutiveMovingFrames) {
+    commitScrollView(folly::dynamic::object("scrollEventThrottle", 16));
+    ScrollController controller = makeController();
+
+    controller.dispatch({drag(5)});
+
+    controller.advance(8.0);
+
+    EXPECT_FALSE(controller.hasDispatchedScrollEvent());
+    EXPECT_TRUE(controller.isScrollActive());
+
+    controller.advance(8.0);
+
+    EXPECT_TRUE(controller.hasDispatchedScrollEvent());
+}
+
+TEST_F(ScrollControllerTest, AScrollToCommandMovesOnceAndAScrollToWhereYouAreEmitsNothing) {
+    commitScrollView(folly::dynamic::object());
+    ScrollController controller = makeController();
+
+    controller.dispatchCommands(
+        {SceneCommand{.tag = 20, .name = "scrollTo", .args = folly::dynamic::array(0, 150, false)}});
+
+    controller.advance(kFrameMilliseconds60Hz);
+
+    EXPECT_TRUE(controller.hasDispatchedScrollEvent());
+
+    controller.advance(kFrameMilliseconds60Hz);
+
+    EXPECT_FALSE(controller.isScrollActive());
+    EXPECT_FALSE(controller.hasDispatchedScrollEvent());
+
+    controller.dispatchCommands(
+        {SceneCommand{.tag = 20, .name = "scrollTo", .args = folly::dynamic::array(0, 150, false)}});
+
+    controller.advance(kFrameMilliseconds60Hz);
+
+    EXPECT_FALSE(controller.isScrollActive());
+    EXPECT_FALSE(controller.hasDispatchedScrollEvent());
+}
+
+TEST_F(ScrollControllerTest, ProbeHitChain) {
+    commitScrollView(folly::dynamic::object());
+
+    std::shared_ptr<const ShadowNode> root;
+    uiManager_->getShadowTreeRegistry().visit(
+        kSurfaceId, [&root](const ShadowTree& tree) { root = tree.getCurrentRevision().rootShadowNode; });
+
+    GTEST_LOG_(INFO) << "PROBE root=" << (root != nullptr);
+
+    const std::shared_ptr<const ShadowNode> hit = uiManager_->findNodeAtPoint(root, Point{.x = 50, .y = 50});
+
+    GTEST_LOG_(INFO) << "PROBE hit=" << (hit != nullptr) << " tag=" << (hit ? hit->getTag() : 0);
+
+    if (hit != nullptr) {
+        const auto ancestors = hit->getFamily().getAncestors(*root);
+
+        GTEST_LOG_(INFO) << "PROBE ancestors=" << ancestors.size();
+
+        for (const auto& entry : ancestors) {
+            const ShadowNode& ancestorNode = entry.first;
+            const auto* scrollView = dynamic_cast<const ScrollViewShadowNode*>(&ancestorNode);
+
+            GTEST_LOG_(INFO) << "PROBE ancestor tag=" << ancestorNode.getTag()
+                             << " isScrollView=" << (scrollView != nullptr);
+        }
+    }
+
+    ScrollController controller = makeController();
+
+    controller.dispatch({wheel(3)});
+
+    GTEST_LOG_(INFO) << "PROBE after dispatch: active=" << controller.isScrollActive();
+
+    controller.advance(kFrameMilliseconds60Hz);
+
+    GTEST_LOG_(INFO) << "PROBE dispatched=" << controller.hasDispatchedScrollEvent()
+                     << " active=" << controller.isScrollActive();
+
+    controller.dispatch({wheel(3)});
+    controller.advance(kFrameMilliseconds60Hz);
+
+    GTEST_LOG_(INFO) << "PROBE second: dispatched=" << controller.hasDispatchedScrollEvent()
+                     << " active=" << controller.isScrollActive();
+
+    controller.dispatchCommands(
+        {SceneCommand{.tag = 20, .name = "scrollTo", .args = folly::dynamic::array(0, 150, false)}});
+
+    GTEST_LOG_(INFO) << "PROBE after scrollTo: active=" << controller.isScrollActive();
+
+    controller.advance(kFrameMilliseconds60Hz);
+
+    GTEST_LOG_(INFO) << "PROBE after scrollTo advance: dispatched=" << controller.hasDispatchedScrollEvent()
+                     << " active=" << controller.isScrollActive();
+
+    std::shared_ptr<const ShadowNode> scrollViewNode;
+    uiManager_->getShadowTreeRegistry().visit(kSurfaceId, [&root, &scrollViewNode](const ShadowTree& tree) {
+        std::shared_ptr<const ShadowNode> rootNode = tree.getCurrentRevision().rootShadowNode;
+
+        for (const std::shared_ptr<const ShadowNode>& child : rootNode->getChildren()) {
+            if (child->getTag() == 20) {
+                scrollViewNode = child;
+            }
+        }
+    });
+
+    if (scrollViewNode == nullptr) {
+        GTEST_LOG_(INFO) << "PROBE scrollview node not found";
+
+        SUCCEED();
+
+        return;
+    }
+
+    GTEST_LOG_(INFO) << "PROBE family surface=" << scrollViewNode->getFamily().getSurfaceId();
+
+    const std::shared_ptr<const ShadowNode> clone = uiManager_->getNewestCloneOfShadowNode(*scrollViewNode);
+
+    GTEST_LOG_(INFO) << "PROBE clone=" << (clone != nullptr);
+
+    const auto* scrollView = dynamic_cast<const ScrollViewShadowNode*>(scrollViewNode.get());
+
+    if (scrollView != nullptr) {
+        GTEST_LOG_(INFO) << "PROBE scrollEnabled=" << scrollView->getConcreteProps().scrollEnabled
+                         << " contentH=" << scrollView->getStateData().getContentSize().height
+                         << " emitter=" << (scrollView->getEventEmitter() != nullptr);
+    }
+
+    SUCCEED();
 }
 
 } // namespace
