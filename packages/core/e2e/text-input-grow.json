@@ -1,0 +1,26 @@
+{
+  "name": "text-input-grow",
+  "bundle": "text-input-grow.js",
+  "ready": "text-input-grow: committed surface 1",
+  "frames": 900,
+  "steps": [
+    "sleep 500",
+    "key Tab press",
+    "key Tab release",
+    "sleep 200",
+    "type one",
+    "sleep 200",
+    "key Return press",
+    "key Return release",
+    "sleep 200",
+    "type two",
+    "sleep 500"
+  ],
+  "expect": [
+    "text-input-grow: topFocus on grow",
+    "text-input-grow: topChange on grow text=\"one\"",
+    "text-input-grow: topChange on grow text=\"one\\n\"",
+    "text-input-grow: topContentSizeChange on grow height=",
+    "text-input-grow: topChange on grow text=\"one\\ntwo\""
+  ]
+}

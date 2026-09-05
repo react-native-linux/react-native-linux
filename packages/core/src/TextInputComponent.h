@@ -58,6 +58,22 @@ class TextInputShadowNode final
                                                      facebook::react::TextInputState> {
 public:
     using BaseTextInputShadowNode::BaseTextInputShadowNode;
+
+    /**
+     * The initial state carries the effective text attributes on its `reactTreeAttributedString`, with the
+     * font-size multiplier the root's default `LayoutContext` measures with, so the first platform-side edit
+     * makes the state "meaningful" to upstream's `attributedStringBoxToMeasure`.
+     *
+     * Upstream's `updateStateIfNeeded` is what normally writes those attributes, but it skips a field whose
+     * React-tree text is empty — `AttributedString::appendFragment` drops an empty fragment, so the fresh string
+     * is content-equal to the empty one the state starts with — and the multiplier then stays NaN. NaN compares
+     * unequal to everything, so the state is never consulted and the field measures its placeholder no matter
+     * what is typed: an uncontrolled multiline field never grows, which is core#54570
+     * (https://github.com/facebook/react-native/issues/54570).
+     */
+    static facebook::react::TextInputState initialStateData(const facebook::react::Props::Shared& props,
+                                                            const facebook::react::ShadowNodeFamily::Shared& family,
+                                                            const facebook::react::ComponentDescriptor& descriptor);
 };
 
 /**

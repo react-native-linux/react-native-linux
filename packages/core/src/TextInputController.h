@@ -10,6 +10,7 @@
 #include <react/renderer/core/ShadowNode.h>
 #include <react/renderer/graphics/Point.h>
 #include <react/renderer/graphics/Rect.h>
+#include <react/renderer/graphics/Size.h>
 #include <react/renderer/uimanager/UIManager.h>
 
 #include <cstdint>
@@ -135,6 +136,13 @@ private:
         float scrollOffsetX{0.0F};
         float scrollOffsetY{0.0F};
         float layoutWidth{0.0F};
+        // `contentSize` is the size the displayed text measured to this frame, at the width the field laid out
+        // with; it is what `onContentSizeChange` reports, and it is compared against the last one reported so
+        // the event fires when and only when the size changed — including the first frame a field exists.
+        // Without text geometry it is the container, which is what the metrics carried before #114.
+        facebook::react::Size contentSize{};
+        facebook::react::Size emittedContentSize{};
+        bool hasEmittedContentSize{false};
         int writtenEventCount{-1};
     };
 

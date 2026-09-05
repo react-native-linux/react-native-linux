@@ -109,6 +109,19 @@ const fixtures: readonly GoldenFixture[] = [
     renderArguments: ["{Tab}{Tab}{Ctrl+A}"],
     renderFlag: "--type",
   },
+  // Issue #114: one auto-growing field before anything is typed and after three lines, its sibling following it.
+  {
+    bundleFileName: "text-input-grow.js",
+    goldenFileName: "text-input-grow-first.png",
+    renderArguments: [""],
+    renderFlag: "--type",
+  },
+  {
+    bundleFileName: "text-input-grow.js",
+    goldenFileName: "text-input-grow-after.png",
+    renderArguments: ["one{Enter}two{Enter}three"],
+    renderFlag: "--type",
+  },
   { bundleFileName: "gradient.js", goldenFileName: "gradient.png", renderArguments: [], renderFlag: "--golden" },
   // Issue #67: outset, inset, layered, per-corner, under an ancestor clip, rotated, the legacy quartet, and spread.
   { bundleFileName: "shadow.js", goldenFileName: "shadow.png", renderArguments: [], renderFlag: "--golden" },

@@ -3809,6 +3809,42 @@ a deferral below rather than fixed by emitting a second event with the same name
 One reconciliation, one state write and one set of change events happen **per frame**, after the frame's input,
 not per event. That is the same batching the event beat already imposes on everything else.
 
+### Content size, and auto-grow (#114)
+
+A field's content size is the size its displayed text measures to at the width the field laid out with —
+`measureEditorGeometry`'s `contentWidth` and `contentHeight`, the same measurement the caret comes from — and
+`publish` records it on the field every frame. It is what `onContentSizeChange` reports, and the event fires
+when and only when that size differs from the last one reported, the first frame a field exists included, which
+is the iOS rule and the one [core#52854](https://github.com/facebook/react-native/issues/52854) says Fabric lost.
+Without text geometry the size is the container, which is what the metrics carried before.
+
+The order for one keystroke is fixed and is the whole of the contract
+[core#46813](https://github.com/facebook/react-native/issues/46813) asks for: the buffer takes the key, the
+paragraph is re-measured, the state is written so Yoga relays out, the caret is placed against the new
+measurement, and then `onChange`, `onContentSizeChange` and `onSelectionChange` are emitted in that order —
+`onContentSizeChange` between the two because it is a consequence of the text and a selection is measured
+against the size it reports. `text-input-grow.js` prints that trace, and the e2e scenario of the same name asserts
+it under a compositor.
+
+**Why an uncontrolled field never grew.** `BaseTextInputShadowNode::attributedStringBoxToMeasure` consults the
+state's string only when the state is "meaningful": a revision past the initial one *and* a font-size multiplier
+on its `reactTreeAttributedString` equal to the layout's. `updateStateIfNeeded` is what writes that multiplier,
+on the first layout — but it skips a field whose React-tree text is empty, because
+`AttributedString::appendFragment` drops an empty fragment and the fresh string is then content-equal to the
+empty one the state starts with. The multiplier stays NaN, NaN compares unequal to everything, and every layout
+after that measures the placeholder no matter what the state says. That is
+[core#54570](https://github.com/facebook/react-native/issues/54570), and it lives in the shared header, not in
+a platform. The fix here is `TextInputShadowNode::initialStateData`: the initial state carries the effective text
+attributes with the multiplier the root's default `LayoutContext` measures with, so the first platform-side
+edit — which advances the revision — is what the next layout measures. `TextInputControllerTest` asserts the
+initial state; `text-input-grow-first.png` and `text-input-grow-after.png` are the field one line tall with its
+placeholder and three lines tall after `one{Enter}two{Enter}three`, with the sibling below it standing wherever
+the field's bottom edge is.
+
+Not done here, and named: a controlled field whose `value` is rejected reverting within one frame with no size
+event (item 4 of #114), the first-line position of a fixed-height field across re-renders (item 5), and the
+height agreement between a `<TextInput>` and a `<Text>` holding the same string (item 6).
+
 ### The proof
 
 ```bash

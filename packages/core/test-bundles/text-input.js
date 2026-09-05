@@ -143,6 +143,10 @@ fabric.registerEventHandler((instanceHandle, type, payload) => {
     if (payload.eventCount !== undefined) {
       parts.push('eventCount=' + payload.eventCount);
     }
+
+    if (payload.contentSize !== undefined) {
+      parts.push('contentSize=' + payload.contentSize.width + 'x' + payload.contentSize.height);
+    }
   }
 
   const suffix = parts.length === 0 ? '' : ' ' + parts.join(' ');
