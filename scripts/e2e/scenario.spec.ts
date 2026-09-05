@@ -29,6 +29,7 @@ describe("parseScenario", () => {
   it("reads every field of a valid scenario", () => {
     expect(parseScenario({ ...validScenario, frames: EXPLICIT_FRAME_COUNT }, "fixture.json")).toEqual({
       allowErrors: false,
+      automation: null,
       bundle: "pressable.js",
       expect: ["pressable: topClick on box at 200,140"],
       expectFailure: false,

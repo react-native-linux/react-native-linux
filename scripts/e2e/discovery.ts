@@ -5,6 +5,9 @@ const SCENARIOS_DIRECTORY_NAME = "e2e";
 const GOLDENS_DIRECTORY_NAME = "goldens";
 const BUNDLES_DIRECTORY_NAME = "test-bundles";
 const SCENARIO_FILE_SUFFIX = ".json";
+const SCENARIO_FLAG = "--scenario";
+const NOT_FOUND_INDEX = -1;
+const NEXT_ARGUMENT = 1;
 
 /** Where a scenario came from, and the two directories of the package that ships it. */
 interface ScenarioSource {
@@ -65,4 +68,21 @@ const readScenarioRuns = (
     })
     .filter((run) => requestedName === null || run.scenario.name === requestedName);
 
-export { findScenarioSources, readScenarioRuns };
+/**
+ * The scenarios one `pnpm e2e` runs: every package's, or the single one `--scenario <name>` names.
+ */
+const readRequestedScenarios = (
+  packagesDirectory: string,
+  commandArguments: readonly string[],
+  environment: DiscoveryEnvironment,
+): readonly ScenarioRun[] => {
+  const flagIndex = commandArguments.indexOf(SCENARIO_FLAG);
+
+  return readScenarioRuns(
+    packagesDirectory,
+    flagIndex === NOT_FOUND_INDEX ? null : (commandArguments[flagIndex + NEXT_ARGUMENT] ?? null),
+    environment,
+  );
+};
+
+export { findScenarioSources, readRequestedScenarios, readScenarioRuns };

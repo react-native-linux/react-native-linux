@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { findScenarioSources, readScenarioRuns } from "./discovery.ts";
+import { findScenarioSources, readRequestedScenarios, readScenarioRuns } from "./discovery.ts";
 
 const LAST_SOURCE_INDEX = -1;
+const EVERY_SCENARIO_COUNT = 3;
 
 const entriesByDirectory: Readonly<Record<string, readonly string[]>> = {
   "/repo/packages": ["reanimated", "core", "cli"],
@@ -67,5 +68,29 @@ describe("readScenarioRuns", () => {
 
   it("keeps nothing when the requested scenario does not exist", () => {
     expect(readScenarioRuns("/repo/packages", "missing", environment)).toEqual([]);
+  });
+});
+
+describe("readRequestedScenarios", () => {
+  it("runs every scenario when the command line names none", () => {
+    const runs = readRequestedScenarios("/repo/packages", ["node", "e2e.ts"], environment);
+
+    expect(runs.map((run) => run.scenario.name)).toEqual(["animated-frames", "pressable-click", "reanimated-smoke"]);
+  });
+
+  it("runs only the scenario --scenario names", () => {
+    const runs = readRequestedScenarios(
+      "/repo/packages",
+      ["node", "e2e.ts", "--scenario", "pressable-click"],
+      environment,
+    );
+
+    expect(runs.map((run) => run.scenario.name)).toEqual(["pressable-click"]);
+  });
+
+  it("runs every scenario when --scenario is the last argument", () => {
+    const runs = readRequestedScenarios("/repo/packages", ["node", "e2e.ts", "--scenario"], environment);
+
+    expect(runs).toHaveLength(EVERY_SCENARIO_COUNT);
   });
 });

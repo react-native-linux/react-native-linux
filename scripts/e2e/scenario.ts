@@ -1,10 +1,18 @@
+import {
+  isRecord,
+  readCoordinate,
+  readObject,
+  readOptionalBoolean,
+  readPositiveInteger,
+  readPositiveNumber,
+  readString,
+  readStringArray,
+} from "./fields.ts";
+
 import type { Crop } from "./screenshot.ts";
 import path from "node:path";
 
 const DEFAULT_FRAME_COUNT = 600;
-const MINIMUM_FRAME_COUNT = 1;
-const MINIMUM_COORDINATE = 0;
-const MINIMUM_POSITIVE_NUMBER = 0;
 const EMPTY_LENGTH = 0;
 const NOT_FOUND_INDEX = -1;
 const FIRST_LINE_INDEX = 0;
@@ -48,9 +56,23 @@ interface ScreenshotComparison {
   readonly maxDifferentPixels: number;
 }
 
+/**
+ * What the automation channel (#214) is asked to prove about this scenario, and the flag that opens it: a
+ * scenario without an `automation` block runs a window that never listens. `listErrorsMustBeEmpty` is the
+ * `verifyNoErrorLogs` react-native-windows asserts in `afterEach`, asked of the runtime rather than grepped out
+ * of the trace; `visualTreeSnapshot` names a file under the package's `e2e/goldens` the committed tree has to
+ * match; `markTestPassed` requires the bundle to have called `globalThis.__rnlMarkTestPassed()`.
+ */
+interface ScenarioAutomation {
+  readonly listErrorsMustBeEmpty: boolean;
+  readonly markTestPassed: boolean;
+  readonly visualTreeSnapshot: string | null;
+}
+
 interface Scenario {
   /** Lets a scenario that knowingly logs an error, such as a negative control, skip the #233 error gate. */
   readonly allowErrors: boolean;
+  readonly automation: ScenarioAutomation | null;
   /** A file name under `packages/core/test-bundles`. */
   readonly bundle: string;
   /** Trace substrings the run has to produce, in this order. */
@@ -74,75 +96,6 @@ interface ArtifactPaths {
   readonly screenshotPath: string;
   readonly tracePath: string;
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
-const isStringArray = (value: unknown): value is readonly string[] =>
-  Array.isArray(value) && value.every((entry) => typeof entry === "string");
-
-const readString = (value: unknown, label: string, sourceName: string): string => {
-  if (typeof value !== "string" || value === "") {
-    throw new Error(`${sourceName}: "${label}" must be a non-empty string`);
-  }
-
-  return value;
-};
-
-const readStringArray = (value: unknown, label: string, sourceName: string): readonly string[] => {
-  if (!isStringArray(value) || value.length === EMPTY_LENGTH) {
-    throw new Error(`${sourceName}: "${label}" must be a non-empty array of strings`);
-  }
-
-  return value;
-};
-
-const readPositiveInteger = (value: unknown, label: string, sourceName: string): number => {
-  if (typeof value !== "number" || !Number.isInteger(value) || value < MINIMUM_FRAME_COUNT) {
-    throw new Error(`${sourceName}: "${label}" must be a positive integer`);
-  }
-
-  return value;
-};
-
-const readPositiveNumber = (value: unknown, label: string, sourceName: string): number => {
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= MINIMUM_POSITIVE_NUMBER) {
-    throw new Error(`${sourceName}: "${label}" must be a positive number`);
-  }
-
-  return value;
-};
-
-const readCoordinate = (value: unknown, label: string, sourceName: string): number => {
-  if (typeof value !== "number" || !Number.isInteger(value) || value < MINIMUM_COORDINATE) {
-    throw new Error(`${sourceName}: "${label}" must be a non-negative integer`);
-  }
-
-  return value;
-};
-
-const readObject = (value: unknown, label: string, sourceName: string): Record<string, unknown> => {
-  if (!isRecord(value)) {
-    throw new Error(`${sourceName}: "${label}" must be a JSON object`);
-  }
-
-  return value;
-};
-
-/** Every optional boolean field this schema has defaults to `false` when the scenario omits it. */
-const readOptionalBoolean = (record: Record<string, unknown>, label: string, sourceName: string): boolean => {
-  if (!(label in record)) {
-    return false;
-  }
-
-  const value = record[label];
-
-  if (typeof value !== "boolean") {
-    throw new TypeError(`${sourceName}: "${label}" must be a boolean`);
-  }
-
-  return value;
-};
 
 const readFrameCount = (record: Record<string, unknown>, sourceName: string): number => {
   if (!("frames" in record)) {
@@ -198,6 +151,23 @@ const readScreenshotComparison = (record: Record<string, unknown>, sourceName: s
   };
 };
 
+const readAutomation = (record: Record<string, unknown>, sourceName: string): ScenarioAutomation | null => {
+  if (!("automation" in record)) {
+    return null;
+  }
+
+  const automation = readObject(record["automation"], "automation", sourceName);
+
+  return {
+    listErrorsMustBeEmpty: readOptionalBoolean(automation, "listErrorsMustBeEmpty", sourceName),
+    markTestPassed: readOptionalBoolean(automation, "markTestPassed", sourceName),
+    visualTreeSnapshot:
+      "visualTreeSnapshot" in automation
+        ? readString(automation["visualTreeSnapshot"], "automation.visualTreeSnapshot", sourceName)
+        : null,
+  };
+};
+
 const parseScenario = (value: unknown, sourceName: string): Scenario => {
   if (!isRecord(value)) {
     throw new Error(`${sourceName}: a scenario must be a JSON object`);
@@ -205,6 +175,7 @@ const parseScenario = (value: unknown, sourceName: string): Scenario => {
 
   return {
     allowErrors: readOptionalBoolean(value, "allowErrors", sourceName),
+    automation: readAutomation(value, sourceName),
     bundle: readString(value["bundle"], "bundle", sourceName),
     expect: readStringArray(value["expect"], "expect", sourceName),
     expectFailure: readOptionalBoolean(value, "expectFailure", sourceName),
@@ -295,4 +266,4 @@ export {
   resolveArtifactPaths,
   resolveExpectedOutcome,
 };
-export type { FrameBudget, Scenario };
+export type { FrameBudget, Scenario, ScenarioAutomation };

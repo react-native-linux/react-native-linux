@@ -1,0 +1,13 @@
+{
+  "name": "automation-errors",
+  "bundle": "throws.js",
+  "ready": "react-native-linux: failing bundle evaluated",
+  "frames": 900,
+  "allowErrors": true,
+  "expectFailure": true,
+  "steps": ["sleep 300"],
+  "automation": {
+    "listErrorsMustBeEmpty": true
+  },
+  "expect": ["react-native-linux: failing bundle evaluated"]
+}

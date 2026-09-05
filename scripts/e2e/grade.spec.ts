@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { gradeArtifacts, gradeAutomationChannel } from "./grade.ts";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
 import { PNG } from "pngjs";
 
 import type { Scenario } from "./scenario.ts";
-import { gradeArtifacts } from "./grade.ts";
 import path from "node:path";
 import { tmpdir } from "node:os";
 
@@ -31,6 +31,7 @@ const GOLDEN_NAME = "pressable-click.png";
 
 const baseScenario: Scenario = {
   allowErrors: false,
+  automation: null,
   bundle: "pressable.js",
   expect: ["pressable: topClick"],
   expectFailure: false,
@@ -252,5 +253,24 @@ describe("gradeArtifacts screenshot crop", () => {
     const cropped = PNG.sync.read(readFileSync(croppedPath));
 
     expect({ height: cropped.height, width: cropped.width }).toEqual({ height: CROP.height, width: CROP.width });
+  });
+});
+
+describe("gradeAutomationChannel", () => {
+  const inputs = { artifactsDirectory: "/artifacts", goldensDirectory: "/goldens", trace: "boot\n" };
+
+  it("asks nothing of a scenario that never opened the channel", async () => {
+    expect(await gradeAutomationChannel({ ...inputs, scenario: baseScenario })).toEqual([]);
+  });
+
+  it("drives the channel for a scenario that did", async () => {
+    const scenario: Scenario = {
+      ...baseScenario,
+      automation: { listErrorsMustBeEmpty: true, markTestPassed: false, visualTreeSnapshot: null },
+    };
+
+    expect(await gradeAutomationChannel({ ...inputs, scenario })).toEqual([
+      "the window never printed the automation socket path",
+    ]);
   });
 });

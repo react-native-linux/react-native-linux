@@ -7,19 +7,17 @@ import {
   resolveExpectedOutcome,
 } from "./e2e/scenario.ts";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { gradeArtifacts, gradeAutomationChannel } from "./e2e/grade.ts";
 import { spawn, spawnSync } from "node:child_process";
 
 import { setTimeout as delay } from "node:timers/promises";
-import { gradeArtifacts } from "./e2e/grade.ts";
 import path from "node:path";
-import { readScenarioRuns } from "./e2e/discovery.ts";
+import { readRequestedScenarios } from "./e2e/discovery.ts";
 import { tmpdir } from "node:os";
 
 const FAILURE_EXIT_STATUS = 1;
 const UNAVAILABLE_EXIT_STATUS = 2;
 const SUCCESSFUL_EXIT_STATUS = 0;
-const NOT_FOUND_INDEX = -1;
-const NEXT_ARGUMENT = 1;
 const EMPTY_LENGTH = 0;
 const SOCKET_TIMEOUT_MS = 15_000;
 const READY_TIMEOUT_MS = 60_000;
@@ -34,7 +32,6 @@ const COMPOSITOR_STOP_GRACE_MS = 250;
  * `install: false` and no distribution ships. See *E2E driver (#7)* in docs/cpp-toolchain.md.
  */
 const COMPOSITOR_NAME = "cage";
-const SCENARIO_FLAG = "--scenario";
 const SOCKET_PATTERN = /^wayland-\d+$/u;
 
 const repositoryRoot = path.resolve(import.meta.dirname, "..");
@@ -43,7 +40,7 @@ const windowBinaryPath = path.join(repositoryRoot, "build", "dev", "bin", "rnl_w
 const injectorBinaryPath = path.join(repositoryRoot, "build", "dev", "bin", "rnl_inject");
 const artifactsRoot = path.join(repositoryRoot, "build", "e2e");
 
-type ScenarioRun = ReturnType<typeof readScenarioRuns>[number];
+type ScenarioRun = ReturnType<typeof readRequestedScenarios>[number];
 type Scenario = ScenarioRun["scenario"];
 type Artifacts = ReturnType<typeof resolveArtifactPaths>;
 type Compositor = ReturnType<typeof spawn>;
@@ -60,29 +57,24 @@ interface Rig {
 }
 
 interface Workspace {
+  readonly artifactsDirectory: string;
   readonly frameLogPath: string;
   readonly runtimeDirectory: string;
   readonly screenshotPath: string;
   readonly trace: TraceSink;
 }
 
-const readScenarios = (): readonly ScenarioRun[] => {
-  const flagIndex = argv.indexOf(SCENARIO_FLAG);
-
-  return readScenarioRuns(
-    packagesDirectory,
-    flagIndex === NOT_FOUND_INDEX ? null : (argv[flagIndex + NEXT_ARGUMENT] ?? null),
-    {
-      listEntries: (directory) => (existsSync(directory) ? readdirSync(directory) : []),
-      readTextFile: (filePath) => readFileSync(filePath, "utf8"),
-    },
-  );
-};
+const readScenarios = (): readonly ScenarioRun[] =>
+  readRequestedScenarios(packagesDirectory, argv, {
+    listEntries: (directory) => (existsSync(directory) ? readdirSync(directory) : []),
+    readTextFile: (filePath) => readFileSync(filePath, "utf8"),
+  });
 
 const createWorkspace = (artifacts: Artifacts): Workspace => {
   mkdirSync(artifacts.directory, { recursive: true });
 
   return {
+    artifactsDirectory: artifacts.directory,
     frameLogPath: artifacts.frameLogPath,
     runtimeDirectory: mkdtempSync(path.join(tmpdir(), "rnl-e2e-")),
     screenshotPath: artifacts.screenshotPath,
@@ -109,6 +101,7 @@ const startCompositor = (run: ScenarioRun, rig: Rig, workspace: Workspace): Comp
       workspace.screenshotPath,
       "--frame-log",
       workspace.frameLogPath,
+      ...(run.scenario.automation === null ? [] : ["--automation"]),
     ],
     {
       env: buildEnvironment({
@@ -160,9 +153,9 @@ const findSocketName = (runtimeDirectory: string): string | null =>
   readdirSync(runtimeDirectory).find((entry) => SOCKET_PATTERN.test(entry)) ?? null;
 
 const waitForSocketName = async (runtimeDirectory: string): Promise<string | null> => {
-  const created = await waitUntil(() => findSocketName(runtimeDirectory) !== null, SOCKET_TIMEOUT_MS);
+  await waitUntil(() => findSocketName(runtimeDirectory) !== null, SOCKET_TIMEOUT_MS);
 
-  return created ? findSocketName(runtimeDirectory) : null;
+  return findSocketName(runtimeDirectory);
 };
 
 const stopCompositor = async (compositor: Compositor): Promise<void> => {
@@ -190,7 +183,8 @@ const injectSteps = (scenario: Scenario, runtimeDirectory: string, socketName: s
   return `rnl_inject exited with status ${String(injection.status)}:\n${injection.stdout}${injection.stderr}`;
 };
 
-const driveScenario = async (scenario: Scenario, workspace: Workspace): Promise<readonly string[]> => {
+const driveScenario = async (run: ScenarioRun, workspace: Workspace): Promise<readonly string[]> => {
+  const { scenario } = run;
   const socketName = await waitForSocketName(workspace.runtimeDirectory);
 
   if (socketName === null) {
@@ -202,6 +196,12 @@ const driveScenario = async (scenario: Scenario, workspace: Workspace): Promise<
   }
 
   const injectionFailure = injectSteps(scenario, workspace.runtimeDirectory, socketName);
+  const automationFailures = await gradeAutomationChannel({
+    artifactsDirectory: workspace.artifactsDirectory,
+    goldensDirectory: run.source.goldensDirectory,
+    scenario,
+    trace: workspace.trace.text,
+  });
 
   /*
    * The window exits on its own once it has captured the frame its budget names. The wait is for the streams to
@@ -209,7 +209,7 @@ const driveScenario = async (scenario: Scenario, workspace: Workspace): Promise<
    */
   await waitUntil(() => workspace.trace.isClosed, RUN_TIMEOUT_MS);
 
-  return injectionFailure === null ? [] : [injectionFailure];
+  return injectionFailure === null ? automationFailures : [injectionFailure, ...automationFailures];
 };
 
 const collectArtifacts = (tracePath: string, workspace: Workspace): void => {
@@ -218,14 +218,12 @@ const collectArtifacts = (tracePath: string, workspace: Workspace): void => {
 };
 
 const driveAndStop = async (
-  scenario: Scenario,
+  run: ScenarioRun,
   compositor: Compositor,
   workspace: Workspace,
 ): Promise<readonly string[]> => {
   try {
-    const failures = await driveScenario(scenario, workspace);
-
-    return failures;
+    return await driveScenario(run, workspace);
   } finally {
     await stopCompositor(compositor);
   }
@@ -238,7 +236,7 @@ const runScenario = async (run: ScenarioRun, rig: Rig): Promise<readonly string[
 
   attachTrace(compositor, workspace.trace);
 
-  const runFailures = await driveAndStop(run.scenario, compositor, workspace);
+  const runFailures = await driveAndStop(run, compositor, workspace);
 
   collectArtifacts(artifacts.tracePath, workspace);
 
