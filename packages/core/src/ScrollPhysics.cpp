@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 namespace react_native_linux {
 
@@ -28,6 +29,76 @@ double usableDecelerationRate(double decelerationRate) {
  */
 double momentumTravel(double velocity, double decelerationRate) {
     return velocity / -std::log(decelerationRate);
+}
+
+/**
+ * The two outermost snap points of a configuration and the one nearest a given offset. Three numbers rather than
+ * a list because an interval describes infinitely many candidates and only these three are ever consulted.
+ */
+struct SnapPointRange {
+    double smallest{0.0};
+    double nearest{0.0};
+    double largest{0.0};
+    bool hasAny{false};
+};
+
+/**
+ * How far a snapped item's offset sits behind the multiple of the interval that names it, which is the whole of
+ * `snapToAlignment`: an item `interval` long inside a viewport `viewportLength` long is centred by half the
+ * difference between them and trailing-aligned by all of it.
+ */
+double alignmentShift(ScrollSnapAlignment alignment, double viewportLength, double interval) {
+    if (alignment == ScrollSnapAlignment::Center) {
+        return (viewportLength - interval) / 2.0;
+    }
+
+    if (alignment == ScrollSnapAlignment::End) {
+        return viewportLength - interval;
+    }
+
+    return 0.0;
+}
+
+SnapPointRange intervalSnapPoints(double interval, double shift, double maximumOffset, double landingOffset) {
+    const double firstIndex = std::ceil(shift / interval);
+    const double lastIndex = std::floor((maximumOffset + shift) / interval);
+
+    if (firstIndex > lastIndex) {
+        return SnapPointRange{};
+    }
+
+    const double nearestIndex = std::clamp(std::round((landingOffset + shift) / interval), firstIndex, lastIndex);
+
+    return SnapPointRange{.smallest = firstIndex * interval - shift,
+                          .nearest = nearestIndex * interval - shift,
+                          .largest = lastIndex * interval - shift,
+                          .hasAny = true};
+}
+
+SnapPointRange offsetSnapPoints(const std::vector<double>& offsets, double maximumOffset, double landingOffset) {
+    SnapPointRange range{};
+
+    for (const double candidate : offsets) {
+        if (candidate < 0.0 || candidate > maximumOffset) {
+            continue;
+        }
+
+        if (!range.hasAny) {
+            range = SnapPointRange{
+                .smallest = candidate, .nearest = candidate, .largest = candidate, .hasAny = true};
+
+            continue;
+        }
+
+        range.smallest = std::min(range.smallest, candidate);
+        range.largest = std::max(range.largest, candidate);
+
+        if (std::abs(candidate - landingOffset) < std::abs(range.nearest - landingOffset)) {
+            range.nearest = candidate;
+        }
+    }
+
+    return range;
 }
 
 } // namespace
@@ -71,6 +142,47 @@ ScrollDestination scrollToDestination(double currentOffset, double targetOffset,
     return ScrollDestination{.offset = currentOffset,
                              .velocity = travel < 0 ? -speed : speed,
                              .hasWork = true};
+}
+
+bool hasSnapPoints(const ScrollSnapConfiguration& snapping) {
+    return snapping.isPagingEnabled || snapping.interval > 0.0 || !snapping.offsets.empty();
+}
+
+double settleTargetOffset(const ScrollAxisState& axis, double decelerationRate, double contentLength,
+                          double viewportLength, const ScrollSnapConfiguration& snapping) {
+    const double rate = usableDecelerationRate(decelerationRate);
+    const double maximumOffset = maximumScrollOffset(contentLength, viewportLength);
+    const double landingOffset =
+        clampScrollOffset(axis.offset + momentumTravel(axis.velocity, rate), contentLength, viewportLength);
+    const double snapFrom = snapping.isIntervalMomentumDisabled
+                                ? clampScrollOffset(axis.offset, contentLength, viewportLength)
+                                : landingOffset;
+    const double interval = snapping.isPagingEnabled ? viewportLength : snapping.interval;
+    const ScrollSnapAlignment alignment =
+        snapping.isPagingEnabled ? ScrollSnapAlignment::Start : snapping.alignment;
+    const bool hasInterval = snapping.offsets.empty() && interval > 0.0;
+    const SnapPointRange snapPoints =
+        hasInterval ? intervalSnapPoints(interval, alignmentShift(alignment, viewportLength, interval),
+                                         maximumOffset, snapFrom)
+                    : offsetSnapPoints(snapping.offsets, maximumOffset, snapFrom);
+    const bool isBeforeEverySnapPoint = !snapping.snapToStart && snapFrom < snapPoints.smallest;
+    const bool isPastEverySnapPoint = !snapping.snapToEnd && snapFrom > snapPoints.largest;
+
+    if (!snapPoints.hasAny || isBeforeEverySnapPoint || isPastEverySnapPoint) {
+        return landingOffset;
+    }
+
+    double target = snapPoints.nearest;
+
+    if (snapping.snapToStart && std::abs(snapFrom) < std::abs(snapFrom - target)) {
+        target = 0.0;
+    }
+
+    if (snapping.snapToEnd && std::abs(snapFrom - maximumOffset) < std::abs(snapFrom - target)) {
+        target = maximumOffset;
+    }
+
+    return clampScrollOffset(target, contentLength, viewportLength);
 }
 
 ScrollAxisState decelerateAxis(const ScrollAxisState& axis, double frameMilliseconds, double decelerationRate,

@@ -25,6 +25,7 @@ using react_native_linux::dragAxis;
 using react_native_linux::InputEvent;
 using react_native_linux::InputEventKind;
 using react_native_linux::InputQueue;
+using react_native_linux::hasSnapPoints;
 using react_native_linux::isScrollEvent;
 using react_native_linux::kDecelerationRateFast;
 using react_native_linux::kDecelerationRateNormal;
@@ -43,7 +44,10 @@ using react_native_linux::ScrollCadenceFrame;
 using react_native_linux::ScrollController;
 using react_native_linux::ScrollDestination;
 using react_native_linux::ScrollEventCadence;
+using react_native_linux::ScrollSnapAlignment;
+using react_native_linux::ScrollSnapConfiguration;
 using react_native_linux::scrollToDestination;
+using react_native_linux::settleTargetOffset;
 using react_native_linux::velocityForTravel;
 
 constexpr SurfaceId kSurfaceId = 1;
@@ -377,6 +381,263 @@ TEST(ScrollPhysicsTest, ADragInsideAZeroLengthFrameImpliesNoVelocity) {
 
     EXPECT_DOUBLE_EQ(dragged.offset, 25.0);
     EXPECT_DOUBLE_EQ(dragged.velocity, 0.0);
+}
+
+#pragma mark - the settle target (#239)
+
+// The table `settleTargetOffset` is graded against. Every row is one flick: where it started, how far its
+// velocity would carry it if nothing snapped, and where it has to come to rest instead.
+//
+// `travel` rather than a velocity, because a velocity is not a distance anybody can read: `velocityForTravel`
+// turns the number in the row into the velocity whose curve covers exactly it, which is the same inversion a
+// wheel notch uses.
+
+struct SettleCase {
+    const char* what;
+    double offset;
+    double travel;
+    double contentLength;
+    double viewportLength;
+    ScrollSnapConfiguration snapping;
+    double expected;
+};
+
+double settleTargetFor(const SettleCase& settleCase) {
+    const ScrollAxisState axis{.offset = settleCase.offset,
+                               .velocity = velocityForTravel(settleCase.travel, kDecelerationRateNormal)};
+
+    return settleTargetOffset(axis, kDecelerationRateNormal, settleCase.contentLength, settleCase.viewportLength,
+                              settleCase.snapping);
+}
+
+// A five-page carousel, one page per viewport. The fractional pair is core#48393's case: a 150 point viewport
+// under wp_fractional_scale_v1 is 149.5 points wide, and the snap points are fractional with it.
+constexpr double kPagedViewport = 150.0;
+constexpr double kPagedContent = 750.0;
+constexpr double kFractionalViewport = 149.5;
+constexpr double kFractionalContent = 747.5;
+
+// A 411 physical-pixel viewport at scale 1.25 is 328.8 points, which is neither an integer nor a value any
+// rounding of the viewport reproduces.
+constexpr double kScaledViewport = 411.0 / 1.25;
+constexpr double kScaledContent = kScaledViewport * 5.0;
+
+ScrollSnapConfiguration paging() { return ScrollSnapConfiguration{.isPagingEnabled = true}; }
+
+ScrollSnapConfiguration interval(double length, ScrollSnapAlignment alignment) {
+    return ScrollSnapConfiguration{.interval = length, .alignment = alignment};
+}
+
+ScrollSnapConfiguration offsets(std::vector<double> points) {
+    return ScrollSnapConfiguration{.offsets = std::move(points)};
+}
+
+TEST(SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe) {
+    const std::vector<SettleCase> cases{
+        {.what = "no snap point at all leaves the landing point where momentum put it",
+         .offset = 0.0,
+         .travel = 120.0,
+         .contentLength = kContentLength,
+         .viewportLength = kViewportLength,
+         .snapping = ScrollSnapConfiguration{},
+         .expected = 120.0},
+        {.what = "a landing point past the end is clamped before anything is projected onto it",
+         .offset = 0.0,
+         .travel = 5000.0,
+         .contentLength = kContentLength,
+         .viewportLength = kViewportLength,
+         .snapping = ScrollSnapConfiguration{},
+         .expected = kMaximumOffset},
+        {.what = "paging lands on the page nearest where momentum stopped",
+         .offset = 0.0,
+         .travel = 160.0,
+         .contentLength = kPagedContent,
+         .viewportLength = kPagedViewport,
+         .snapping = paging(),
+         .expected = 150.0},
+        {.what = "less than half a page forward stays on the page it started on",
+         .offset = 0.0,
+         .travel = 70.0,
+         .contentLength = kPagedContent,
+         .viewportLength = kPagedViewport,
+         .snapping = paging(),
+         .expected = 0.0},
+        {.what = "more than half a page forward takes the next one",
+         .offset = 0.0,
+         .travel = 80.0,
+         .contentLength = kPagedContent,
+         .viewportLength = kPagedViewport,
+         .snapping = paging(),
+         .expected = 150.0},
+        {.what = "a backwards flick snaps the same way",
+         .offset = 300.0,
+         .travel = -160.0,
+         .contentLength = kPagedContent,
+         .viewportLength = kPagedViewport,
+         .snapping = paging(),
+         .expected = 150.0},
+        {.what = "core#48393: a fractional viewport has fractional pages and still snaps",
+         .offset = 0.0,
+         .travel = 160.0,
+         .contentLength = kFractionalContent,
+         .viewportLength = kFractionalViewport,
+         .snapping = paging(),
+         .expected = kFractionalViewport},
+        {.what = "core#48393 at a 1.25 scale: 411 physical pixels is 328.8 points and page two is at 328.8",
+         .offset = 0.0,
+         .travel = 400.0,
+         .contentLength = kScaledContent,
+         .viewportLength = kScaledViewport,
+         .snapping = paging(),
+         .expected = kScaledViewport},
+        {.what = "an interval snaps to its multiples",
+         .offset = 0.0,
+         .travel = 260.0,
+         .contentLength = kContentLength,
+         .viewportLength = kViewportLength,
+         .snapping = interval(100.0, ScrollSnapAlignment::Start),
+         .expected = 300.0},
+        {.what = "a centred interval leaves half the leftover viewport on each side of the item",
+         .offset = 0.0,
+         .travel = 260.0,
+         .contentLength = kContentLength,
+         .viewportLength = kViewportLength,
+         .snapping = interval(100.0, ScrollSnapAlignment::Center),
+         .expected = 275.0},
+        {.what = "an end-aligned interval puts the item's trailing edge on the viewport's",
+         .offset = 0.0,
+         .travel = 260.0,
+         .contentLength = kContentLength,
+         .viewportLength = kViewportLength,
+         .snapping = interval(100.0, ScrollSnapAlignment::End),
+         .expected = 250.0},
+        {.what = "an item longer than the viewport centres by a negative shift",
+         .offset = 0.0,
+         .travel = 160.0,
+         .contentLength = kContentLength,
+         .viewportLength = kViewportLength,
+         .snapping = interval(200.0, ScrollSnapAlignment::Center),
+         .expected = 225.0},
+        {.what = "the end of the content is a snap point of its own, so the last partial page is reachable",
+         .offset = 0.0,
+         .travel = 315.0,
+         .contentLength = kContentLength,
+         .viewportLength = kViewportLength,
+         .snapping = interval(100.0, ScrollSnapAlignment::Start),
+         .expected = kMaximumOffset},
+        {.what = "snapToEnd false lets the content settle past the last interval instead",
+         .offset = 0.0,
+         .travel = 315.0,
+         .contentLength = kContentLength,
+         .viewportLength = kViewportLength,
+         .snapping = ScrollSnapConfiguration{.interval = 100.0, .snapToEnd = false},
+         .expected = 315.0},
+        {.what = "snapToStart false lets it settle before the first one",
+         .offset = 0.0,
+         .travel = 30.0,
+         .contentLength = kContentLength,
+         .viewportLength = kViewportLength,
+         .snapping = ScrollSnapConfiguration{.interval = 100.0,
+                                             .alignment = ScrollSnapAlignment::Center,
+                                             .snapToStart = false},
+         .expected = 30.0},
+        {.what = "an interval with no multiple inside the scrollable range snaps to nothing",
+         .offset = 0.0,
+         .travel = 0.0,
+         .contentLength = kViewportLength,
+         .viewportLength = kViewportLength,
+         .snapping = interval(100.0, ScrollSnapAlignment::End),
+         .expected = 0.0},
+        {.what = "an explicit offset list snaps to its nearest entry",
+         .offset = 0.0,
+         .travel = 200.0,
+         .contentLength = kContentLength,
+         .viewportLength = kViewportLength,
+         .snapping = offsets({0.0, 90.0, 210.0, kMaximumOffset}),
+         .expected = 210.0},
+        {.what = "offsets outside the scrollable range are not snap points",
+         .offset = 0.0,
+         .travel = 200.0,
+         .contentLength = kContentLength,
+         .viewportLength = kViewportLength,
+         .snapping = offsets({-50.0, 90.0, 900.0}),
+         .expected = 90.0},
+        {.what = "the start of the content is a snap point beside an offset list with no entry there",
+         .offset = 0.0,
+         .travel = 30.0,
+         .contentLength = kContentLength,
+         .viewportLength = kViewportLength,
+         .snapping = offsets({90.0, 210.0}),
+         .expected = 0.0},
+        {.what = "snapToStart false frees the range between the start and the first offset",
+         .offset = 0.0,
+         .travel = 30.0,
+         .contentLength = kContentLength,
+         .viewportLength = kViewportLength,
+         .snapping = ScrollSnapConfiguration{.offsets = {90.0, 210.0}, .snapToStart = false},
+         .expected = 30.0},
+        {.what = "snapToEnd false frees the range between the last offset and the end",
+         .offset = 0.0,
+         .travel = 300.0,
+         .contentLength = kContentLength,
+         .viewportLength = kViewportLength,
+         .snapping = ScrollSnapConfiguration{.offsets = {0.0, 90.0, 210.0}, .snapToEnd = false},
+         .expected = 300.0},
+        {.what = "snapToStart false still snaps a landing point that is not before the first offset",
+         .offset = 0.0,
+         .travel = 200.0,
+         .contentLength = kContentLength,
+         .viewportLength = kViewportLength,
+         .snapping = ScrollSnapConfiguration{.offsets = {90.0, 210.0}, .snapToStart = false},
+         .expected = 210.0},
+        {.what = "snapToEnd false still snaps a landing point that is not past the last offset",
+         .offset = 0.0,
+         .travel = 200.0,
+         .contentLength = kContentLength,
+         .viewportLength = kViewportLength,
+         .snapping = ScrollSnapConfiguration{.offsets = {0.0, 90.0, 210.0}, .snapToEnd = false},
+         .expected = 210.0},
+        {.what = "an offset list wins over an interval, which is the order RCTScrollView resolves them in",
+         .offset = 0.0,
+         .travel = 200.0,
+         .contentLength = kContentLength,
+         .viewportLength = kViewportLength,
+         .snapping = ScrollSnapConfiguration{.interval = 100.0, .offsets = {0.0, 90.0, 210.0}},
+         .expected = 210.0},
+        {.what = "disableIntervalMomentum snaps from where the finger left, not from where momentum would end",
+         .offset = 20.0,
+         .travel = 400.0,
+         .contentLength = kPagedContent,
+         .viewportLength = kPagedViewport,
+         .snapping = ScrollSnapConfiguration{.isPagingEnabled = true, .isIntervalMomentumDisabled = true},
+         .expected = 0.0},
+        {.what = "the same flick with momentum left on carries three pages further",
+         .offset = 20.0,
+         .travel = 400.0,
+         .contentLength = kPagedContent,
+         .viewportLength = kPagedViewport,
+         .snapping = paging(),
+         .expected = 450.0},
+        {.what = "content shorter than its viewport has one snap point, at the origin",
+         .offset = 0.0,
+         .travel = 120.0,
+         .contentLength = 100.0,
+         .viewportLength = kPagedViewport,
+         .snapping = paging(),
+         .expected = 0.0}};
+
+    for (const SettleCase& settleCase : cases) {
+        SCOPED_TRACE(settleCase.what);
+
+        EXPECT_DOUBLE_EQ(settleTargetFor(settleCase), settleCase.expected);
+    }
+}
+
+TEST(SettleTargetTest, KnowsWhichConfigurationsDescribeASnapPointAtAll) {
+    EXPECT_FALSE(hasSnapPoints(ScrollSnapConfiguration{}));
+    EXPECT_TRUE(hasSnapPoints(paging()));
+    EXPECT_TRUE(hasSnapPoints(interval(100.0, ScrollSnapAlignment::Start)));
+    EXPECT_TRUE(hasSnapPoints(offsets({90.0})));
 }
 
 TEST(ScrollQueueTest, SumsConsecutiveDeltasOnOneAxis) {

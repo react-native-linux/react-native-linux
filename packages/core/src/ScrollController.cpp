@@ -39,7 +39,36 @@ struct ScrollViewMetrics {
     facebook::react::Size contentSize;
     double decelerationRate{kDecelerationRateNormal};
     double scrollEventThrottleMilliseconds{0.0};
+    ScrollSnapConfiguration snapping;
 };
+
+ScrollSnapAlignment toSnapAlignment(facebook::react::ScrollViewSnapToAlignment alignment) {
+    if (alignment == facebook::react::ScrollViewSnapToAlignment::Center) {
+        return ScrollSnapAlignment::Center;
+    }
+
+    if (alignment == facebook::react::ScrollViewSnapToAlignment::End) {
+        return ScrollSnapAlignment::End;
+    }
+
+    return ScrollSnapAlignment::Start;
+}
+
+/**
+ * The snap props, read for both axes rather than for the scrolling one. `horizontal` is not modelled — see
+ * *ScrollView* in docs/cpp-toolchain.md — and it does not need to be: an axis with nothing to scroll has a single
+ * snap point at zero, which is where it already is.
+ */
+ScrollSnapConfiguration readSnapping(const facebook::react::ScrollViewProps& props) {
+    return ScrollSnapConfiguration{.interval = props.snapToInterval,
+                                   .offsets = std::vector<double>(props.snapToOffsets.begin(),
+                                                                  props.snapToOffsets.end()),
+                                   .alignment = toSnapAlignment(props.snapToAlignment),
+                                   .snapToStart = props.snapToStart,
+                                   .snapToEnd = props.snapToEnd,
+                                   .isPagingEnabled = props.pagingEnabled,
+                                   .isIntervalMomentumDisabled = props.disableIntervalMomentum};
+}
 
 facebook::react::Point toPoint(double x, double y) {
     return facebook::react::Point{.x = static_cast<facebook::react::Float>(x),
@@ -50,7 +79,8 @@ ScrollViewMetrics readMetrics(const facebook::react::ScrollViewShadowNode& scrol
     return ScrollViewMetrics{.viewportSize = scrollView.getLayoutMetrics().frame.size,
                              .contentSize = scrollView.getStateData().getContentSize(),
                              .decelerationRate = scrollView.getConcreteProps().decelerationRate,
-                             .scrollEventThrottleMilliseconds = scrollView.getConcreteProps().scrollEventThrottle};
+                             .scrollEventThrottleMilliseconds = scrollView.getConcreteProps().scrollEventThrottle,
+                             .snapping = readSnapping(scrollView.getConcreteProps())};
 }
 
 /**
@@ -86,8 +116,29 @@ std::shared_ptr<const facebook::react::ScrollViewShadowNode> deepestScrollView(
  * whose curve covers exactly their distance — so turning the wheel again mid-glide accelerates, for the same
  * reason two flicks in a row do.
  */
+/**
+ * Re-aims a glide at the snap point it is going to settle on, by replacing its velocity with the one whose curve
+ * covers exactly the distance to that point — the inversion a wheel notch already uses, so snapping introduces no
+ * second motion model and keeps the ordinary momentum bracket.
+ *
+ * It runs every frame rather than once at the release because that is a fixed point rather than a repetition: the
+ * analytic landing point of a decelerating velocity does not change as the curve is walked, so every later frame
+ * re-chooses the snap point the first one aimed at.
+ */
+ScrollAxisState aimAtSnapPoint(const ScrollAxisState& axis, double decelerationRate, double contentLength,
+                               double viewportLength, const ScrollSnapConfiguration& snapping) {
+    if (axis.velocity == 0.0 || !hasSnapPoints(snapping)) {
+        return axis;
+    }
+
+    const double target = settleTargetOffset(axis, decelerationRate, contentLength, viewportLength, snapping);
+
+    return ScrollAxisState{.offset = axis.offset,
+                           .velocity = velocityForTravel(target - axis.offset, decelerationRate)};
+}
+
 void advanceAxis(ScrollTargetAxis& axis, bool isFingerDown, double frameMilliseconds, double decelerationRate,
-                 double contentLength, double viewportLength) {
+                 double contentLength, double viewportLength, const ScrollSnapConfiguration& snapping) {
     if (axis.pendingOffset.has_value()) {
         axis.state = ScrollAxisState{.offset = axis.pendingOffset.value()};
         axis.pendingOffset.reset();
@@ -106,7 +157,10 @@ void advanceAxis(ScrollTargetAxis& axis, bool isFingerDown, double frameMillisec
                                                    velocityForTravel(axis.pendingNotches * kWheelNotchDistance,
                                                                      decelerationRate)};
 
-        axis.state = decelerateAxis(impulsed, frameMilliseconds, decelerationRate, contentLength, viewportLength);
+        const ScrollAxisState aimed =
+            aimAtSnapPoint(impulsed, decelerationRate, contentLength, viewportLength, snapping);
+
+        axis.state = decelerateAxis(aimed, frameMilliseconds, decelerationRate, contentLength, viewportLength);
     }
 
     axis.pendingDrag = 0.0;
@@ -361,9 +415,9 @@ bool ScrollController::advanceTarget(ScrollTarget& target, const facebook::react
         toPoint(target.horizontal.state.offset, target.vertical.state.offset);
 
     advanceAxis(target.horizontal, target.isFingerDown, frameMilliseconds, metrics.decelerationRate,
-                metrics.contentSize.width, metrics.viewportSize.width);
+                metrics.contentSize.width, metrics.viewportSize.width, metrics.snapping);
     advanceAxis(target.vertical, target.isFingerDown, frameMilliseconds, metrics.decelerationRate,
-                metrics.contentSize.height, metrics.viewportSize.height);
+                metrics.contentSize.height, metrics.viewportSize.height, metrics.snapping);
 
     // The release is applied after the frame it arrived in has been dragged, so the velocity the last delta left
     // behind is the velocity the fling starts with.
