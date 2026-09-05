@@ -1,5 +1,6 @@
 #include "TextPipeline.h"
 
+#include "AutomationProtocol.h"
 #include "LineBoxMetrics.h"
 #include "PinnedFontFamilies.h"
 #include "TextGeometry.h"
@@ -130,8 +131,8 @@ void reportUnresolvedFontFamily(const std::string& family, const SkString& subst
     static std::unordered_set<std::string> reportedFamilies;
 
     if (reportedFamilies.insert(family).second) {
-        std::cerr << "[text] fontFamily \"" << family << "\" is not registered; drawing \"" << substitute.c_str()
-                  << "\" instead" << std::endl;
+        reportNativeError("text", "fontFamily \"" + family + "\" is not registered; drawing \"" +
+                                      std::string(substitute.c_str()) + "\" instead");
     }
 }
 

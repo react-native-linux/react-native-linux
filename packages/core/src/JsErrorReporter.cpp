@@ -1,5 +1,7 @@
 #include "JsErrorReporter.h"
 
+#include "AutomationProtocol.h"
+
 #include <iostream>
 #include <string>
 
@@ -25,6 +27,12 @@ facebook::react::JsErrorHandler::OnJsError JsErrorReporter::createHandler() cons
                facebook::jsi::Runtime& /*runtime*/,
                const facebook::react::JsErrorHandler::ProcessedError& processedError) {
         const std::string severity = processedError.isFatal ? "fatal" : "non-fatal";
+
+        // Both severities, because #233's gate greps both: the automation channel's ListErrors has to answer
+        // with exactly the set the trace pattern would have matched.
+        automationErrorLog().record("javascript",
+                                    severity + " " + processedError.name.value_or("Error") + ": " +
+                                        processedError.message);
 
         std::cerr << "[js-error] " << severity << ' ' << processedError.name.value_or("Error") << ": "
                   << processedError.message << '\n';

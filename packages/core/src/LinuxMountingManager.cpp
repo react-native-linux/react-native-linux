@@ -130,6 +130,12 @@ std::string LinuxMountingManager::dumpScene() const {
     return scene_.dump();
 }
 
+SceneNodes LinuxMountingManager::visualTreeNodes() const {
+    const std::lock_guard<std::mutex> guard(sceneMutex_);
+
+    return scene_.nodes();
+}
+
 void LinuxMountingManager::executeMount(facebook::react::SurfaceId /*surfaceId*/,
                                         facebook::react::MountingTransaction&& mountingTransaction) {
     const std::lock_guard<std::mutex> guard(sceneMutex_);

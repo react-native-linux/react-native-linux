@@ -135,6 +135,9 @@ public:
     SceneHit findNodeAtPoint(facebook::react::Point surfacePoint) const;
     std::string dumpScene() const;
 
+    /** The committed tree as the automation channel's `DumpVisualTree` reports it (#214). */
+    SceneNodes visualTreeNodes() const;
+
 private:
     std::shared_ptr<const facebook::react::ContextContainer> contextContainer_;
     std::shared_ptr<facebook::react::ComponentDescriptorProviderRegistry> componentDescriptorProviderRegistry_;

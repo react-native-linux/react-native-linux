@@ -378,6 +378,15 @@ struct SceneNode {
     facebook::react::Tag tag{};
     facebook::react::Tag parentTag{};
     std::string componentName;
+
+    /**
+     * The two identity props a react-native-windows tree snapshot asserts on, kept because the automation
+     * channel's `DumpVisualTree` is the only reader of the scene that has to name a node the way the bundle
+     * named it rather than the way Fabric numbered it. Nothing paints them. See *The automation channel* in
+     * docs/cpp-toolchain.md.
+     */
+    std::string testId;
+    std::string accessibilityLabel;
     std::vector<facebook::react::Tag> childTags;
     facebook::react::LayoutMetrics layoutMetrics{};
     std::optional<facebook::react::SharedColor> backgroundColor;
@@ -564,6 +573,9 @@ public:
     SceneSnapshot snapshot() const;
     SceneDamage takeDamage();
     std::string dump() const;
+
+    /** Every mounted node, for `describeVisualTree`. Its owner serialises access, as with everything here. */
+    const SceneNodes& nodes() const noexcept { return nodes_; }
 
 private:
     SceneNode& writeNode(const facebook::react::ShadowView& shadowView);
