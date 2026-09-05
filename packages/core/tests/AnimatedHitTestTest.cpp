@@ -101,7 +101,10 @@ std::shared_ptr<ViewProps> scaledToNothingProps() {
 // answer with the matrix it composed rather than an identity one — the case a node that is invisible for some
 // *other* reason (no background, no border, no content) cannot tell apart from a target with no transform at all.
 std::shared_ptr<ViewProps> invisibleAndRotatedProps() {
-    const std::shared_ptr<ViewProps> viewProps = std::make_shared<ViewProps>();
+    // Starts from an opaque background rather than an empty `ViewProps`, so the empty snapshot this test asserts
+    // is proof that `opacity: 0` filtered a primitive that would otherwise have painted — not proof of nothing,
+    // which an already-paintless node would also produce.
+    const std::shared_ptr<ViewProps> viewProps = propsWithBackground(blue());
 
     viewProps->opacity = 0.0F;
     viewProps->transform = Transform::RotateZ(static_cast<facebook::react::Float>(M_PI_2));
@@ -334,11 +337,19 @@ TEST(AnimatedHitTestTest, AFullyTransparentRotatedNodeStillReportsTheMatrixItPai
 
     ASSERT_EQ(hit.tag, kBoxTag);
 
-    // The rotation is about the box's own centre, which does not move under it, so a press at the centre has to
-    // report the box's own local centre once `pointerOffsetWithinTarget` inverts the matrix `hit` carries -
-    // `transformOfHit` is the exact conversion `InputDispatcher::resolveTarget` uses, exercised here directly
-    // against the matrix this fully transparent node composed rather than the identity one a transform-less
-    // invisible node would also produce.
+    // The centre of a rotation does not move, so pressing it would find the box and report the same local centre
+    // whether `hit.matrix` is the real rotation or a missing/identity one standing in for it — that probe alone
+    // cannot tell the two apart. A 90-degree rotation, unlike identity, zeroes both diagonal terms of the matrix
+    // regardless of its sign convention, so asserting them directly is what actually proves `SceneHit` carries
+    // the matrix this node composed rather than one a bug substituted for it.
+    EXPECT_NEAR(hit.matrix.scaleX, 0.0F, 1e-3F);
+    EXPECT_NEAR(hit.matrix.scaleY, 0.0F, 1e-3F);
+    EXPECT_NEAR(std::abs(hit.matrix.skewX), 1.0F, 1e-3F);
+    EXPECT_NEAR(std::abs(hit.matrix.skewY), 1.0F, 1e-3F);
+
+    // And the offset math built on top of that matrix still holds: the rotation is about the box's own centre,
+    // so a press there reports the box's own local centre once `pointerOffsetWithinTarget` inverts it -
+    // `transformOfHit` is the exact conversion `InputDispatcher::resolveTarget` uses.
     const Point offset = pointerOffsetWithinTarget(transformOfHit(hit), boxCentre());
 
     EXPECT_NEAR(offset.x, boxFrame().size.width / 2, 1e-2);
