@@ -418,6 +418,57 @@ bool doParagraphsFitTheirBoxes(const SceneSnapshot& scene) {
     return doAllFit;
 }
 
+// Issue #46. Geometry only: the frame, the composed matrix, and the clip frames the primitive was painted under.
+// Colours and pixels are left out on purpose — an image that decoded between the two snapshots is supposed to
+// appear, and a caret that blinked is supposed to blink; the layout under them is what must not move.
+bool haveSameGeometry(const ScenePrimitive& first, const ScenePrimitive& settled) {
+    if (first.tag != settled.tag || first.frame != settled.frame || first.clips.size() != settled.clips.size()) {
+        return false;
+    }
+
+    if (std::memcmp(&first.matrix, &settled.matrix, sizeof(SceneMatrix)) != 0) {
+        return false;
+    }
+
+    for (size_t clip = 0; clip < first.clips.size(); clip++) {
+        if (first.clips[clip].frame != settled.clips[clip].frame) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool doFirstAndSettledFramesAgree(const SceneSnapshot& first, const SceneSnapshot& settled) {
+    if (first.empty()) {
+        std::cerr << "[golden] the bundle committed no scene, so there is no first frame to hold to" << std::endl;
+
+        return false;
+    }
+
+    if (first.size() != settled.size()) {
+        std::cerr << "[golden] the first frame painted " << first.size() << " primitives and the settled one "
+                  << settled.size() << std::endl;
+
+        return false;
+    }
+
+    for (size_t index = 0; index < first.size(); index++) {
+        if (!haveSameGeometry(first[index], settled[index])) {
+            std::cerr << "[golden] tag " << first[index].tag << " was at (" << first[index].frame.origin.x << ", "
+                      << first[index].frame.origin.y << ") " << first[index].frame.size.width << "x"
+                      << first[index].frame.size.height << " on the first frame and at ("
+                      << settled[index].frame.origin.x << ", " << settled[index].frame.origin.y << ") "
+                      << settled[index].frame.size.width << "x" << settled[index].frame.size.height
+                      << " once settled" << std::endl;
+
+            return false;
+        }
+    }
+
+    return true;
+}
+
 /**
  * Rasterises a settled scene and writes it, which is the half every single-frame golden shares regardless of what
  * the run did before it settled.
@@ -550,6 +601,19 @@ int renderTextFitGolden(const std::string& bundlePath, const std::string& output
     }
 
     return paintSettledScene(run, outputPath, width, height);
+}
+
+int renderFirstFrameGolden(const std::string& bundlePath, const std::string& outputPath, int width, int height) {
+    const FabricFrameRunResult run = runFabricBundleAcrossFrames(bundlePath, toSurfaceSize(width, height));
+
+    if (!doFirstAndSettledFramesAgree(run.firstScene, run.settledScene)) {
+        return 1;
+    }
+
+    return paintSettledScene(FabricRunResult{.scene = run.settledScene,
+                                             .sceneDump = {},
+                                             .hasReportedFatalError = run.hasReportedFatalError},
+                             outputPath, width, height);
 }
 
 } // namespace react_native_linux

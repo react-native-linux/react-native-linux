@@ -62,6 +62,13 @@ const fixtures: readonly GoldenFixture[] = [
   },
   // Images are reproducible only against the asset packages/core/scripts/make-test-image.ts generates.
   { bundleFileName: "image.js", goldenFileName: "image.png", renderArguments: [], renderFlag: "--golden" },
+  // Issue #46: the flag asserts the first frame's geometry equals the settled frame's, which is rn-macos#2857.
+  {
+    bundleFileName: "scroll-first-frame.js",
+    goldenFileName: "scroll-first-frame.png",
+    renderArguments: [],
+    renderFlag: "--first-frame-golden",
+  },
   // Three wheel notches is 120 points of travel; a ScrollView at rest at zero would prove nothing at all.
   {
     bundleFileName: "scroll.js",

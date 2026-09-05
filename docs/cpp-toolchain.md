@@ -4129,6 +4129,40 @@ from a paragraph that re-wrapped. So it runs on the fixtures whose text boxes ar
 `--text-fit-golden` replaces `--golden` for those two rather than adding a golden of its own: the picture is the
 same picture, and it is now written only if the paragraph in it fits the box it was measured into.
 
+### The first-frame proof (#46)
+
+react-native-macos [#2857](https://github.com/microsoft/react-native-macos/issues/2857) is a large `<Text>` in a
+`ScrollView` producing "massive vertical and horizontal overflow on the first render", repaired by resizing the
+window. The shape is always a content size derived from a measurement that was not yet final and never
+recomputed, and it is the shape this stack is *more* exposed to, not less: the first frame runs before the
+fractional scale is known and before an image has decoded.
+
+Two things make it not happen here, and both are stated rather than hoped for:
+
+- **The content size is the committed layout.** Upstream's `ScrollViewShadowNode::layout` recomputes
+  `contentBoundingRect` from its children's committed frames on *every* layout and writes it into
+  `ScrollViewState` in the same commit, and `ScrollController::advance` reads it back off the newest clone every
+  frame. There is no cached content size anywhere on this side to go stale.
+- **A resting offset is re-clamped every frame.** `decelerateAxis` with zero velocity clamps the offset it already
+  has against the content it now has, so content that shrinks below the offset pulls the offset down with it in the
+  same frame and the movement emits an `onScroll`. `AnOffsetAtRestFollowsContentThatShrankBelowIt` and its two
+  neighbours in `ScrollTest.cpp` are that rule, inside the gate.
+
+`--first-frame-golden` is the bug as one assertion. `runFabricBundleAcrossFrames` snapshots the scene at the
+first commit and again once everything that settles late has settled — timers drained, image decodes finished,
+the headless frames run — and every primitive's **frame, matrix and clip frames** have to be equal between the
+two. Pixels are deliberately not compared: an image that decoded between the snapshots is supposed to appear, and
+the layout under it is what must not move. The negative control is `damage.js`, whose second commit unmounts a
+view, and it fails with `the first frame painted 3 primitives and the settled one 2`.
+
+`scroll-first-frame.js` is the fixture: one ScrollView holding a paragraph that wraps onto many lines, a column
+of images whose decodes finish after the mount, and a nested ScrollView, over a marker directly below the
+viewport that any first-frame overflow would have landed on.
+
+Not covered: the window-rig capture of frame 1 and frame 60 needs the compositor and belongs with the e2e work,
+and `maintainVisibleContentPosition` stays where the *ScrollView* deferrals already record it — parsed and
+ignored, because honouring it means comparing child frames across commits, which is a commit hook.
+
 ### The hit-versus-paint agreement proof (#35)
 
 `--hit-paint-golden` is the second fixture of that kind: issue #35's acceptance criterion — "the node reported as
