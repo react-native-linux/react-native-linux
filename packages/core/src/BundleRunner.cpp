@@ -323,6 +323,29 @@ int runResizedFabricBundle(const std::string& bundlePath, facebook::react::Size 
     return reactHost.hasReportedFatalError() ? 1 : 0;
 }
 
+FabricFrameRunResult runFabricBundleAcrossFrames(const std::string& bundlePath, facebook::react::Size surfaceSize) {
+    ReactHost reactHost;
+    std::unique_ptr<FabricHost> fabricHost = startFabricRun(reactHost, bundlePath, surfaceSize);
+    FabricFrameRunResult result{.firstScene = waitForFirstCommit(reactHost, *fabricHost)};
+
+    // The same settling every single-frame golden gets, so the second snapshot is the one the golden paints.
+    for (size_t frame = 0; frame < kHeadlessFrameCount; ++frame) {
+        deliverInputFrame(reactHost, *fabricHost, {});
+    }
+
+    settlePendingImageDecodes();
+
+    result.settledScene = fabricHost->snapshotScene();
+
+    fabricHost->stopSurface();
+    reactHost.drainJavaScriptThread();
+    fabricHost.reset();
+
+    result.hasReportedFatalError = reactHost.hasReportedFatalError();
+
+    return result;
+}
+
 FabricDamageRunResult runFabricBundleAcrossCommits(const std::string& bundlePath, facebook::react::Size surfaceSize) {
     ReactHost reactHost;
     std::unique_ptr<FabricHost> fabricHost = startFabricRun(reactHost, bundlePath, surfaceSize);

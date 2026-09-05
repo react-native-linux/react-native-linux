@@ -134,4 +134,21 @@ FabricRunResult runTypedFabricBundle(const std::string& bundlePath, facebook::re
                                      const std::string& keySequence);
 FabricDamageRunResult runFabricBundleAcrossCommits(const std::string& bundlePath, facebook::react::Size surfaceSize);
 
+/**
+ * The scene at the first commit and the scene once everything that settles late has settled — timers drained,
+ * image decodes finished, the headless frames run — with nothing required to have changed between them.
+ *
+ * This is the shape of react-native-macos#2857 turned into a pair of snapshots: a scrollable whose content size
+ * came from a measurement that was not yet final shows up as geometry that is different at the second snapshot
+ * from what it was at the first. `runFabricBundleAcrossCommits` is the same pair with the opposite expectation,
+ * that a second commit *did* change something; this one exists because "nothing moved" is an assertion too.
+ */
+struct FabricFrameRunResult {
+    SceneSnapshot firstScene;
+    SceneSnapshot settledScene;
+    bool hasReportedFatalError{};
+};
+
+FabricFrameRunResult runFabricBundleAcrossFrames(const std::string& bundlePath, facebook::react::Size surfaceSize);
+
 } // namespace react_native_linux

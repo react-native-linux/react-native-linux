@@ -25,6 +25,7 @@ constexpr std::string_view kGoldenFlag = "--golden";
 constexpr std::string_view kDamageGoldenFlag = "--damage-golden";
 constexpr std::string_view kHitPaintGoldenFlag = "--hit-paint-golden";
 constexpr std::string_view kTextFitGoldenFlag = "--text-fit-golden";
+constexpr std::string_view kFirstFrameGoldenFlag = "--first-frame-golden";
 constexpr std::string_view kInjectPointerFlag = "--inject-pointer";
 constexpr std::string_view kResizeFlag = "--resize";
 constexpr std::string_view kScrollToFlag = "--scroll-to";
@@ -35,9 +36,10 @@ constexpr std::string_view kTypeFlag = "--type";
  * Which proof `--golden`, `--damage-golden` and `--hit-paint-golden` run. All three take the same arguments and
  * write the same kind of PNG; the last two also assert something about the scene they painted.
  */
-enum class GoldenKind : uint8_t { Scene, Damage, HitPaint, TextFit };
+enum class GoldenKind : uint8_t { Scene, Damage, HitPaint, TextFit, FirstFrame };
 
-GoldenKind toGoldenKind(bool isDamageRequested, bool isHitPaintRequested, bool isTextFitRequested) {
+GoldenKind toGoldenKind(bool isDamageRequested, bool isHitPaintRequested, bool isTextFitRequested,
+                        bool isFirstFrameRequested) {
     if (isDamageRequested) {
         return GoldenKind::Damage;
     }
@@ -46,7 +48,11 @@ GoldenKind toGoldenKind(bool isDamageRequested, bool isHitPaintRequested, bool i
         return GoldenKind::HitPaint;
     }
 
-    return isTextFitRequested ? GoldenKind::TextFit : GoldenKind::Scene;
+    if (isTextFitRequested) {
+        return GoldenKind::TextFit;
+    }
+
+    return isFirstFrameRequested ? GoldenKind::FirstFrame : GoldenKind::Scene;
 }
 
 constexpr size_t kInjectPointerArgumentCount = 5;
@@ -196,6 +202,10 @@ std::string_view toGoldenFlag(GoldenKind goldenKind) {
         return kTextFitGoldenFlag;
     }
 
+    if (goldenKind == GoldenKind::FirstFrame) {
+        return kFirstFrameGoldenFlag;
+    }
+
     return kGoldenFlag;
 }
 
@@ -240,6 +250,10 @@ int runGoldenCommand(std::span<char*> arguments, GoldenKind goldenKind) {
         return react_native_linux::renderTextFitGolden(bundlePath, outputPath, width, height);
     }
 
+    if (goldenKind == GoldenKind::FirstFrame) {
+        return react_native_linux::renderFirstFrameGolden(bundlePath, outputPath, width, height);
+    }
+
     return react_native_linux::renderGolden(bundlePath, outputPath, width, height);
 }
 
@@ -247,7 +261,7 @@ int runGoldenCommand(std::span<char*> arguments, GoldenKind goldenKind) {
 
 int reportMissingSkia() {
     std::cerr << "[hello_react] " << kGoldenFlag << ", " << kDamageGoldenFlag << ", " << kHitPaintGoldenFlag
-              << ", " << kTextFitGoldenFlag << ", " << kScrollToFlag << ", "
+              << ", " << kTextFitGoldenFlag << ", " << kFirstFrameGoldenFlag << ", " << kScrollToFlag << ", "
               << kFocusTabFlag << " and " << kTypeFlag
               << " need Skia, which this build was configured without; run node scripts/vendor-skia.ts and "
                  "reconfigure"
@@ -274,6 +288,7 @@ int main(int argc, char** argv) {
     const bool isDamageGoldenRequested = arguments.size() > 1 && kDamageGoldenFlag == arguments[1];
     const bool isHitPaintGoldenRequested = arguments.size() > 1 && kHitPaintGoldenFlag == arguments[1];
     const bool isTextFitGoldenRequested = arguments.size() > 1 && kTextFitGoldenFlag == arguments[1];
+    const bool isFirstFrameGoldenRequested = arguments.size() > 1 && kFirstFrameGoldenFlag == arguments[1];
     const bool isFabricRequested = arguments.size() > 1 && kFabricFlag == arguments[1];
     const bool isInjectPointerRequested = arguments.size() > 1 && kInjectPointerFlag == arguments[1];
     const bool isResizeRequested = arguments.size() > 1 && kResizeFlag == arguments[1];
@@ -332,9 +347,10 @@ int main(int argc, char** argv) {
             return runTypeCommand(arguments);
         }
 
-        if (isGoldenRequested || isDamageGoldenRequested || isHitPaintGoldenRequested || isTextFitGoldenRequested) {
+        if (isGoldenRequested || isDamageGoldenRequested || isHitPaintGoldenRequested || isTextFitGoldenRequested ||
+            isFirstFrameGoldenRequested) {
             return runGoldenCommand(arguments, toGoldenKind(isDamageGoldenRequested, isHitPaintGoldenRequested,
-                                                           isTextFitGoldenRequested));
+                                                           isTextFitGoldenRequested, isFirstFrameGoldenRequested));
         }
 
         std::optional<std::string> bundlePath;

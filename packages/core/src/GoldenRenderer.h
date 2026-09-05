@@ -106,4 +106,19 @@ int renderHitPaintGolden(const std::string& bundlePath, const std::string& outpu
  */
 int renderTextFitGolden(const std::string& bundlePath, const std::string& outputPath, int width, int height);
 
+/**
+ * Runs a bundle and proves that the scene at its first commit has the same geometry as the scene once everything
+ * that settles late — timers, image decodes, the headless frames — has settled.
+ *
+ * react-native-macos#2857 is a large `<Text>` in a `ScrollView` producing "massive overflow on the first render"
+ * that a window resize repairs: a content size derived from a measurement that was not yet final, never
+ * recomputed. Snapshotting the first frame and the settled one and requiring every primitive's frame, matrix and
+ * clips to be equal is that bug as a single assertion — pixels are deliberately not compared, because an image
+ * that decoded between the two snapshots is supposed to appear, and what must not move is the layout under it.
+ *
+ * Returns a process exit status: 0 when the two scenes agree, the file was written, and the bundle reported no
+ * fatal JavaScript error.
+ */
+int renderFirstFrameGolden(const std::string& bundlePath, const std::string& outputPath, int width, int height);
+
 } // namespace react_native_linux

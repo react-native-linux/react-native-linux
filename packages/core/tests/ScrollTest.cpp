@@ -257,6 +257,37 @@ TEST(ScrollToDestinationTest, AnAnimatedScrollLeavesTheOffsetAloneAndFlicksTowar
     EXPECT_DOUBLE_EQ(backwards.velocity, -velocityForTravel(180.0, kDecelerationRateNormal));
 }
 
+// Issue #46. A ScrollView's content can shrink under an offset that was valid a frame ago — a list emptied, a
+// paragraph re-measured shorter, an image that turned out smaller than its placeholder — and the offset has to
+// follow it down in the same frame rather than sit past the end of the content until the next gesture. The rest
+// state is the case that matters: nothing is moving, so only the per-frame re-clamp can do it.
+
+TEST(ScrollPhysicsTest, AnOffsetAtRestFollowsContentThatShrankBelowIt) {
+    // 320 was the end of 470 points of content; the content is now 300, so the end is 150.
+    const ScrollAxisState resting{.offset = kMaximumOffset, .velocity = 0.0};
+    const ScrollAxisState followed = decelerateAxis(resting, kFrameMilliseconds60Hz, kDecelerationRateNormal,
+                                                    300.0, kViewportLength);
+
+    EXPECT_DOUBLE_EQ(followed.offset, 150.0);
+    EXPECT_DOUBLE_EQ(followed.velocity, 0.0);
+}
+
+TEST(ScrollPhysicsTest, AnOffsetAtRestStaysPutWhenTheContentGrows) {
+    const ScrollAxisState resting{.offset = 120.0, .velocity = 0.0};
+    const ScrollAxisState unchanged = decelerateAxis(resting, kFrameMilliseconds60Hz, kDecelerationRateNormal,
+                                                     kContentLength * 2, kViewportLength);
+
+    EXPECT_DOUBLE_EQ(unchanged.offset, 120.0);
+}
+
+TEST(ScrollPhysicsTest, ContentThatNoLongerFillsTheViewportSendsTheOffsetHome) {
+    const ScrollAxisState resting{.offset = 40.0, .velocity = 0.0};
+    const ScrollAxisState home = decelerateAxis(resting, kFrameMilliseconds60Hz, kDecelerationRateNormal, 100.0,
+                                                kViewportLength);
+
+    EXPECT_DOUBLE_EQ(home.offset, 0.0);
+}
+
 TEST(ScrollPhysicsTest, ClampsBetweenZeroAndTheContentThatDoesNotFit) {
     EXPECT_DOUBLE_EQ(maximumScrollOffset(kContentLength, kViewportLength), kMaximumOffset);
     EXPECT_DOUBLE_EQ(maximumScrollOffset(100.0, kViewportLength), 0.0);
