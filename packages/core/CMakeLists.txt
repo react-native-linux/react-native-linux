@@ -670,9 +670,12 @@ endif()
 # manager, because getManagerByName constructs an ImageManager when the context container carries no
 # "ImageManager" entry — so there is no registration step and no second implementation to disagree with.
 #
-# Three sources join that object library rather than rnl_scene_painter: the reference to
-# ImageManager::requestImage lives in rrc_image, and imagePlacement and the cache are reached the other way, by
-# rnl_scene_painter through rnl_react_core, which is forwards along the link line.
+# Two sources join that object library rather than rnl_scene_painter: the reference to
+# ImageManager::requestImage lives in rrc_image. ImageContent.cpp is not one of them — it links no Skia and
+# RetainedScene.cpp calls its animation schedule unconditionally, so it is compiled into rnl_react_core beside
+# the scene in every configure, Skia or not. Putting it here instead was a link error waiting for the first
+# sanitizer build: those presets configure with Skia off, compile RetainedScene.cpp all the same, and had
+# nothing to resolve isAnimatedImage against.
 #
 # With Skia off the stub stays, so the sanitizer presets and the Hermes-free test configure are unchanged and an
 # <Image> simply never paints, which is the pre-existing behaviour rather than a new failure mode.
@@ -697,7 +700,6 @@ if(TARGET rnl_skia)
 
     list(REMOVE_ITEM RNL_IMAGE_MANAGER_SOURCES ${RNL_IMAGE_MANAGER_STUB})
     list(APPEND RNL_IMAGE_MANAGER_SOURCES
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/ImageContent.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/ImageManager.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/ImagePipeline.cpp)
     set_property(TARGET react_renderer_imagemanager PROPERTY SOURCES ${RNL_IMAGE_MANAGER_SOURCES})
@@ -791,6 +793,7 @@ add_library(rnl_react_core STATIC
     src/FocusModel.cpp
     src/HermesJSRuntimeFactory.cpp
     src/HostTimerRegistry.cpp
+    src/ImageContent.cpp
     src/InputDispatcher.cpp
     src/InputPipeline.cpp
     src/JsErrorReporter.cpp
