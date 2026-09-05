@@ -246,6 +246,40 @@ TEST(PointerRouterTest, ReleaseOnADifferentTargetIsNotAClick) {
     EXPECT_EQ(released[0].type, PointerDispatchType::Up);
 }
 
+// Issue #247: the node a press started on can unmount before its release arrives, and the release is then
+// resolved against whatever the hit test finds under the pointer now — never the tag the press started on, since
+// that tag no longer names a node at all. `ReleaseOnADifferentTargetIsNotAClick` is that release on its own; this
+// is the whole rule, that the router forgets the dead tag completely rather than leaving a trace of it behind for
+// the gesture after: a fresh press-and-release on the node the release actually landed on still clicks, which it
+// could not if `pressedTag_` or `pressedButtons_` from the interrupted gesture survived.
+TEST(PointerRouterTest, TheNextGestureAfterAnUnmountInterruptedReleaseStartsClean) {
+    PointerRouter router;
+
+    router.route(makeButton(InputEventKind::PointerButtonPress, kPrimaryButton), kBoxTag, makePoint(0, 0));
+
+    const std::vector<PointerDispatch> orphanedRelease =
+        router.route(makeButton(InputEventKind::PointerButtonRelease, kPrimaryButton), kOtherTag, makePoint(0, 0));
+
+    ASSERT_EQ(orphanedRelease.size(), 1U);
+    EXPECT_EQ(orphanedRelease[0].type, PointerDispatchType::Up);
+    EXPECT_EQ(orphanedRelease[0].event.buttons, 0);
+
+    const std::vector<PointerDispatch> nextPress =
+        router.route(makeButton(InputEventKind::PointerButtonPress, kPrimaryButton), kOtherTag, makePoint(0, 0));
+
+    ASSERT_EQ(nextPress.size(), 1U);
+    EXPECT_EQ(nextPress[0].type, PointerDispatchType::Down);
+    EXPECT_EQ(nextPress[0].event.buttons, kPrimaryButtonsBit);
+
+    const std::vector<PointerDispatch> nextRelease =
+        router.route(makeButton(InputEventKind::PointerButtonRelease, kPrimaryButton), kOtherTag, makePoint(0, 0));
+
+    ASSERT_EQ(nextRelease.size(), 2U);
+    EXPECT_EQ(nextRelease[0].type, PointerDispatchType::Up);
+    EXPECT_EQ(nextRelease[0].event.buttons, 0);
+    EXPECT_EQ(nextRelease[1].type, PointerDispatchType::Click);
+}
+
 TEST(PointerRouterTest, TracksEveryMappedButtonInTheButtonsBitmask) {
     PointerRouter router;
 

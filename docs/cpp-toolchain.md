@@ -3805,6 +3805,95 @@ hello_react --inject-pointer packages/core/test-bundles/pointer-offset.js 110 14
 `opacity: 0` rotated one — under a compositor's `wl_pointer`, asserting the exact `offset=` numbers by substring
 the way `pressable.json` asserts a target by name.
 
+### A node that unmounts mid-gesture (#247)
+
+Three platforms have crashed on one shape: a gesture or a traversal holds a node the mounting layer deletes on
+another thread — core#55489 (iOS, hover), core#57951 (focus traversal), core#33021 (accessibility focus). This
+platform holds three things across a commit it did not choose the timing of — the pressed tag, the focused tag,
+and (only on the JavaScript side, see below) the hovered node — and the rule is one sentence for each.
+
+**Hover is not this platform's state to lose**, because it was never this platform's state to keep.
+*What the platform decides, and what React decides* above is the reason: `pointerOver`, `pointerOut` and the
+hover chain are upstream's `PointerEventsProcessor`, computed from the plain sequence of raw pointer calls this
+platform hands it, with no memory of its own on this side. `resolveTarget` re-hit-tests the retained scene and the
+shadow tree fresh on every event, so a node that unmounted is simply never hit again — the very next pointer
+event, motion or otherwise, re-hits whatever is under the pointer now and upstream recomputes the chain from that,
+the same as it would for a node that was still mounted but had moved out from under the pointer. Nothing here
+holds a reference across the gap for there to be a race over.
+
+**The pressed tag is the platform's state, and `PointerRouter` already forgets a dead one, by construction rather
+than by checking for unmount.** `pressedTag_` is compared, never dereferenced — `PointerRouter` carries a `Tag`,
+never a `ShadowNode`, so there is no pointer for a deleted node to dangle. A release is always resolved against
+whatever `resolveTarget` hit-tests *now*, which cannot be the unmounted node; `routeRelease` clicks only when that
+tag equals `pressedTag_`, so a press whose node is gone by the time the release arrives never clicks, and always
+clears `pressedTag_`/`pressedButtons_` for the button that came up. `InputDispatcher::dispatchPointerEvent` had one
+gap in delivering on that promise: it skipped calling `router_.route` at all when the freshly-resolved target had
+no `TouchEventEmitter` to hand the dispatch to, which left a button's press state stuck across the event that
+should have cleared it. `route` now runs for every pointer event regardless of whether today's target can receive
+it — the router's own state advances unconditionally, and only the emission is conditional on there being
+somewhere to send it.
+
+**The focused tag follows the rule #37 already implemented: a commit that drops the focused node blurs it**, and
+does not walk to a still-mounted ancestor — see *Traversal, and what the model owns* under *Focus and keyboard*
+for why (the model deliberately holds no tree to walk). `InputDispatcher::dispatch` calls `syncFocusables` before
+it looks at the frame's events, on every frame, whether or not the compositor sent anything — so a commit that
+unmounts the focused node blurs it on the very next frame, never on a frame that also has to decide what a
+pointer or key event does with a focus that is already gone.
+
+**No synthesized `pointerCancel`.** Neither `PointerEventsProcessor` nor any platform in this vendored tree emits
+one when a node unmounts — `topPointerCancel` exists in the type system and nowhere else — so inventing one here
+would be a second, disagreeing hover/press implementation for the one case upstream chose not to cover, not a fix
+for a gap upstream expects a platform to fill.
+
+`PointerRouterTest.TheNextGestureAfterAnUnmountInterruptedReleaseStartsClean` in `InputTest.cpp` is the state half,
+table-tested at 100%: a release on a tag that differs from `pressedTag_` produces `pointerUp` and no `click`, and
+the press-and-release cycle right after it, against the tag the orphaned release actually landed on, still
+produces a `click` — which it could not if the interrupted gesture had left anything behind.
+`FocusModelTest.UnmountingTheFocusedNodeBlursIt` in `FocusTest.cpp` is the focus half, and was already the
+existing rule this issue is required to keep rather than to invent.
+
+```bash
+hello_react --inject-pointer packages/core/test-bundles/unmount-mid-press.js 150 90
+```
+
+`unmount-mid-press.js` is two views stacked in normal flow, `box` over `survivor`. `box`'s own `topPointerDown`
+handler arms a `setTimeout` — from the press it just observed, not from the bundle loading — that drops `box` from
+the tree; the delay is real wall-clock time on the JavaScript thread, landing between the press and the release
+`--inject-pointer` delivers a frame apart, which is what makes this a genuine cross-thread unmount rather than a
+same-turn one that would prove nothing about the timing. `survivor` reflows up into the row `box` left. Expected
+trace, in order:
+
+```text
+unmount-mid-press: committed surface 1
+unmount-mid-press: topPointerEnter on box at 150,90 clicks=0
+unmount-mid-press: topPointerMove on box at 150,90 clicks=0
+unmount-mid-press: topFocus on box clicks=0
+unmount-mid-press: topPointerDown on box at 150,90 clicks=0
+unmount-mid-press: unmounted box after press
+unmount-mid-press: topBlur on unknown clicks=0
+unmount-mid-press: topPointerEnter on survivor at 150,90 clicks=0
+unmount-mid-press: topPointerUp on survivor at 150,90 clicks=0
+```
+
+There is no `topClick` line, and the running `clicks=` count on the last line is what proves it rather than its
+absence from a trace nobody can prove is exhaustive — the same device `press-cancelled-by-scroll.js` uses for the
+same reason. `topBlur` arrives before the release is even resolved, because `syncFocusables` runs ahead of the
+frame's events — but it arrives `on unknown` rather than `on box`, which is `UIManagerBinding::dispatchEvent`'s own
+behaviour and not a gap this fix leaves: `box`'s family is no longer part of any committed revision by the time
+the event queue flushes to JavaScript, so `getCurrentInstanceHandle`-style resolution fails, `instanceHandle` comes
+back `jsi::Value::null()`, and `UIManagerBinding` logs "instanceHandle is null, event ... will be dropped" and
+calls the registered handler with it anyway — the same thing would happen to a real `onBlur` prop on a real
+component. This is upstream's own resolution rule, shared by every platform on `UIManagerBinding`, not a place a
+platform can improve the target from underneath it; the mounting-side effects a real blur needs — the focus ring
+leaving the node, `mountingManager_->setFocus` moving on — happen from C++ state (`FocusModel`) that never needed
+the JavaScript round trip to be correct. `topPointerEnter` on `survivor` ahead of the `topPointerUp` is the hover
+chain re-resolving against the release itself rather than waiting for a further move — *any* event carrying a
+target lets `PointerEventsProcessor` notice the chain changed, not only a motion. `topPointerUp` lands on
+`survivor`, a live node that never received a `topPointerDown` of its own — the DOM's own behaviour for a button
+released over whatever is under the pointer, not a bug this fix introduces. `packages/core/e2e/unmount-mid-press.json`
+is the same sequence under a compositor's real `wl_pointer` and a real timer, asserting the same five lines in
+order.
+
 ### Deferrals, with owners
 
 - **Touch and gestures.** `TouchEventEmitter::onTouchStart` and the responder system are untouched. Nothing on a

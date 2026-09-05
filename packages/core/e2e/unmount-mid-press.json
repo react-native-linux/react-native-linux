@@ -1,0 +1,22 @@
+{
+  "name": "unmount-mid-press",
+  "bundle": "unmount-mid-press.js",
+  "ready": "unmount-mid-press: committed surface 1",
+  "frames": 600,
+  "steps": [
+    "sleep 500",
+    "move 150 90",
+    "sleep 100",
+    "button left press",
+    "sleep 300",
+    "button left release",
+    "sleep 200"
+  ],
+  "expect": [
+    "unmount-mid-press: topPointerDown on box at 150,90 clicks=0",
+    "unmount-mid-press: unmounted box after press",
+    "unmount-mid-press: topBlur on unknown clicks=0",
+    "unmount-mid-press: topPointerEnter on survivor at 150,90 clicks=0",
+    "unmount-mid-press: topPointerUp on survivor at 150,90 clicks=0"
+  ]
+}
