@@ -532,7 +532,9 @@ issue once the Skia build gains that codec.
 - **Proposed title:** `feat(renderer): animated GIF — SkCodec frame durations on the frame clock, paused when clipped out, resizeMode and blurRadius applied per frame`
 - **Acceptance:** unit (100 % gate) — frame scheduling from durations at 60 and 120 Hz produces the same
   wall-clock sequence; golden — frame 3 of a fixture GIF under `repeat` and under `blurRadius`; perf — the
-  damage region for a looping GIF equals its box (#12).
+  damage region for a looping GIF equals its box (#12); unit — advancing the frame clock while the image is
+  clipped out by an `overflow: hidden` ancestor schedules no frame and emits no damage, and the first frame
+  after it is visible again resumes from the paused frame.
 
 ### D2. The `Image` props the resizeMode matrix does not reach (#258)
 
