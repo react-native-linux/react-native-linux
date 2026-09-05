@@ -30,8 +30,10 @@ const BUDGET_P95_MS = 16.7;
 const GOLDEN_NAME = "pressable-click.png";
 
 const baseScenario: Scenario = {
+  allowErrors: false,
   bundle: "pressable.js",
   expect: ["pressable: topClick"],
+  expectFailure: false,
   frameBudget: null,
   frames: 600,
   name: "pressable-click",

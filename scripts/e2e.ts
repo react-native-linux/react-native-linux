@@ -1,7 +1,12 @@
 import { argv, stderr, stdout } from "node:process";
 import { buildEnvironment, findExecutable, findLavapipeIcd } from "./window-golden.ts";
+import {
+  describeTraceFailures,
+  formatInjectorScript,
+  resolveArtifactPaths,
+  resolveExpectedOutcome,
+} from "./e2e/scenario.ts";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { findMissingExpectations, formatInjectorScript, resolveArtifactPaths } from "./e2e/scenario.ts";
 import { spawn, spawnSync } from "node:child_process";
 
 import { setTimeout as delay } from "node:timers/promises";
@@ -206,11 +211,6 @@ const driveScenario = async (
   return injectionFailure === null ? [] : [injectionFailure];
 };
 
-const describeMissing = (scenario: Scenario, trace: string): readonly string[] =>
-  findMissingExpectations(trace.split("\n"), scenario.expect).map(
-    (expectation) => `the trace never produced "${expectation}"`,
-  );
-
 const collectArtifacts = (tracePath: string, workspace: Workspace): void => {
   writeFileSync(tracePath, workspace.trace.text);
   rmSync(workspace.runtimeDirectory, { force: true, recursive: true });
@@ -250,7 +250,9 @@ const runScenario = async (run: ScenarioRun, rig: Rig): Promise<readonly string[
 
   stdout.write(grade.notes.map((note) => `e2e ${run.scenario.name}: ${note}\n`).join(""));
 
-  return [...runFailures, ...describeMissing(run.scenario, workspace.trace.text), ...grade.failures];
+  const failures = [...runFailures, ...describeTraceFailures(run.scenario, workspace.trace.text), ...grade.failures];
+
+  return resolveExpectedOutcome(run.scenario, failures);
 };
 
 const reportScenario = (scenario: Scenario, failures: readonly string[]): void => {
