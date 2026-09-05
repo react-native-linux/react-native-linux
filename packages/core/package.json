@@ -5,6 +5,7 @@
   "type": "module",
   "main": "./index.ts",
   "scripts": {
+    "assets:test-animation": "node scripts/make-test-animation.ts",
     "assets:test-image": "node scripts/make-test-image.ts",
     "build": "cmake --build ../../build/dev",
     "configure": "cmake -S ../.. --preset dev",
@@ -15,6 +16,7 @@
     "run:golden:damage": "../../build/dev/bin/hello_react --damage-golden test-bundles/damage.js /tmp/rnl-damage.png",
     "run:golden:focus": "../../build/dev/bin/hello_react --focus-tab test-bundles/focus.js /tmp/rnl-focus.png 3",
     "run:golden:image": "../../build/dev/bin/hello_react --golden test-bundles/image.js /tmp/rnl-image.png",
+    "run:golden:image:animated": "../../build/dev/bin/hello_react --animated-image test-bundles/animated-image.js /tmp/rnl-animated-image.png 20",
     "run:golden:scroll": "../../build/dev/bin/hello_react --scroll-to test-bundles/scroll.js /tmp/rnl-scroll.png 160 100 3",
     "run:golden:text": "../../build/dev/bin/hello_react --golden test-bundles/text.js /tmp/rnl-text.png",
     "run:golden:text-input": "../../build/dev/bin/hello_react --type test-bundles/text-input.js /tmp/rnl-text-input.png \"Hello{Left}{Left}X\"",
