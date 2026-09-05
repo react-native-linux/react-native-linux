@@ -124,13 +124,15 @@ describe("enumerateComponentProps", () => {
 });
 
 describe("COMPONENT_SOURCES", () => {
-  it("names the five shipped components and a class for every source", () => {
+  it("names the shipped components and a class for every source", () => {
     expect(COMPONENT_SOURCES.map((entry) => entry.component)).toStrictEqual([
       "View",
       "Text",
       "Image",
       "ScrollView",
       "TextInput",
+      "Switch",
+      "ActivityIndicator",
     ]);
     expect(COMPONENT_SOURCES.flatMap((entry) => entry.sources).every((source) => source.className.length > NAMED)).toBe(
       true,
