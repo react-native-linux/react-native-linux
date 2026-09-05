@@ -367,6 +367,13 @@ void ScrollController::routeCommand(const SceneCommand& command) {
         return;
     }
 
+    // A command states where the content should be, so it takes the gesture's place rather than queueing behind
+    // it: a release recorded but not yet advanced, and the settle frame it would arm, would otherwise snap the
+    // offset the command just asked for straight off again.
+    target->isFingerDown = false;
+    target->hasReleased = false;
+    target->isSettlingFromRelease = false;
+
     const ScrollViewMetrics metrics = readMetrics(*scrollView);
     const bool isAnimated = isScrollTo ? readBooleanArgument(command.args, 2) : readBooleanArgument(command.args, 0);
     const double targetX = isScrollTo ? readNumberArgument(command.args, 0)

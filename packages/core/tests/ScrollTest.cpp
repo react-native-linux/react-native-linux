@@ -853,6 +853,18 @@ protected:
         return frames;
     }
 
+    /**
+     * Drags, holds the finger still for a frame so the velocity the drag left decays to nothing, then lifts it.
+     * That is the motionless release, and it is a helper for the same cpd reason `settleByDriving` is.
+     */
+    void dragAndReleaseWithoutVelocity(ScrollController& controller) {
+        controller.dispatch({drag(40)});
+        controller.advance(kFrameMilliseconds60Hz);
+        controller.advance(kFrameMilliseconds60Hz);
+        controller.dispatch({scrollStop()});
+        controller.advance(kFrameMilliseconds60Hz);
+    }
+
     static InputEvent wheel(double notches, double x = 50.0, double y = 50.0) {
         return InputEvent{.kind = InputEventKind::PointerScrollDiscrete,
                           .surfacePoint = Point{.x = static_cast<float>(x), .y = static_cast<float>(y)},
@@ -956,11 +968,7 @@ TEST_F(ScrollControllerTest, AMotionlessReleaseOnAPagedScrollViewStillHasSomethi
 
     // A finger that drags and then holds still before it lifts: the frame with no delta behind it leaves the
     // velocity at zero, so the release that follows is the motionless one UIScrollView still pages on.
-    controller.dispatch({drag(40)});
-    controller.advance(kFrameMilliseconds60Hz);
-    controller.advance(kFrameMilliseconds60Hz);
-    controller.dispatch({scrollStop()});
-    controller.advance(kFrameMilliseconds60Hz);
+    dragAndReleaseWithoutVelocity(controller);
 
     EXPECT_TRUE(controller.isScrollActive());
     EXPECT_TRUE(controller.advance(kFrameMilliseconds60Hz));
@@ -968,15 +976,33 @@ TEST_F(ScrollControllerTest, AMotionlessReleaseOnAPagedScrollViewStillHasSomethi
     settleByDriving(controller);
 }
 
+TEST_F(ScrollControllerTest, AScrollToAfterAReleaseKeepsTheOffsetItAskedFor) {
+    commitScrollView(folly::dynamic::object("pagingEnabled", true));
+    ScrollController controller = makeController();
+
+    dragAndReleaseWithoutVelocity(controller);
+
+    ASSERT_TRUE(controller.isScrollActive());
+
+    // 37 is nowhere near a 100 point page, so a settle frame that outlived the command would glide the content
+    // off the offset the command asked for.
+    controller.dispatchCommands(
+        {SceneCommand{.tag = 20, .name = "scrollTo", .args = folly::dynamic::array(0, 37, false)}});
+    controller.advance(kFrameMilliseconds60Hz);
+
+    EXPECT_TRUE(controller.hasDispatchedScrollEvent());
+    EXPECT_FALSE(controller.isScrollActive());
+
+    controller.advance(kFrameMilliseconds60Hz);
+
+    EXPECT_FALSE(controller.hasDispatchedScrollEvent());
+}
+
 TEST_F(ScrollControllerTest, AMotionlessReleaseWithNothingToSnapToIsTheEndOfTheGesture) {
     commitScrollView(folly::dynamic::object());
     ScrollController controller = makeController();
 
-    controller.dispatch({drag(40)});
-    controller.advance(kFrameMilliseconds60Hz);
-    controller.advance(kFrameMilliseconds60Hz);
-    controller.dispatch({scrollStop()});
-    controller.advance(kFrameMilliseconds60Hz);
+    dragAndReleaseWithoutVelocity(controller);
 
     EXPECT_FALSE(controller.isScrollActive());
 }

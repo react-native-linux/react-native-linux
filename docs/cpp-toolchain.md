@@ -2816,6 +2816,10 @@ the coverage gate:
   whose curve travels exactly the remaining distance is what `velocityForTravel` already answers for a wheel
   notch, so an animated `scrollTo` is a flick aimed at a known destination and its bracket is the ordinary
   momentum bracket.
+- **A command takes the gesture's place.** Accepting one clears the finger and the release recorded for that
+  ScrollView along with the settle frame the release would arm, because a `scrollTo` states where the content
+  should be: without that, an unanimated command issued between a release and the frame after it would have its
+  offset applied and then snapped straight off again by a settle that outlived the gesture it belonged to.
 - **The destination is pending until the next frame consumes it.** `advanceTarget` reads the offset it is going to
   compare against before it advances, so an offset written straight into the state would already *be* the previous
   offset and would emit no `onScroll` for a scroll that did move.
