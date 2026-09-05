@@ -3490,7 +3490,7 @@ Adding a Space press to the same fixture adds one line, `focus: topClick on epsi
 click: the same event the pointer path produces, and therefore the same `onPress` on the JavaScript side.
 
 The golden `packages/core/goldens/focus.png` is the same run's picture: the ring on `epsilon`, the fifth view.
-It is registered in `goldens/golden.spec.ts` alongside the scroll fixture and regenerates with
+It is registered in `goldens/fixtures.ts` alongside the scroll fixture and regenerates with
 `pnpm test:golden:update`.
 
 ### Tests
@@ -4097,7 +4097,7 @@ itself, `{Left}` `{Right}` `{Home}` `{End}` `{Backspace}` `{Delete}` `{Enter}` `
 events an input method would have sent — which is what lets a headless run exercise the IME path with no
 compositor and no input method installed. Every event is delivered on its own frame.
 
-Two goldens are registered in `goldens/golden.spec.ts`, both from that one fixture:
+Two goldens are registered in `goldens/fixtures.ts`, both from that one fixture:
 
 - `text-input-typing.png`, from `"Hello{Left}{Left}X"`. The first field reads `HelXlo` with the caret between
   `X` and `l`; the second shows seven bullets and no trace of its value; the third shows its value wrapped onto
