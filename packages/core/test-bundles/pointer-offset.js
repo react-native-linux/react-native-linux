@@ -78,15 +78,21 @@ const nestedAncestor = createNode(4, 'nested-ancestor', {
 
 fabric.appendChild(nestedAncestor, nestedChild);
 
-// A fully transparent box with no transform - issue #50465's `opacity: 0` case. It paints nothing at all (no
-// background alpha, no border, no content), so it is not in the painted snapshot `--hit-paint-golden` samples,
-// only in the retained scene the hit test walks; the offset math does not depend on which of those a node is in.
+// An 80x40 box at (650, 100), opaque but `opacity: 0` (issue #50465's case) and rotated 90 degrees about its own
+// centre (690, 120) (issue #299's case: invisible *and* transformed). `opacity: 0` drops it from
+// `RetainedScene::snapshot` - it is not in the painted snapshot `--hit-paint-golden` samples - but it is still in
+// the retained scene the hit test walks, and `SceneHit` still carries the matrix `hitTestNode` composed for it,
+// because that walk does not filter by visibility either. The centre does not move under a rotation about
+// itself, so pressing surface (690, 120) reports the box's own centre - local (40, 20) - proving the offset came
+// from this node's own matrix rather than the identity fallback a transform-less invisible node would also pass
+// under.
 const invisible = createNode(
   6,
   'invisible',
   Object.assign(
-    { position: 'absolute', left: 650, top: 100, width: 80, height: 40, backgroundColor: 0x00000000 | 0 },
+    { position: 'absolute', left: 650, top: 100, width: 80, height: 40, backgroundColor: 0xffffffff | 0, opacity: 0 },
     pointerProps,
+    { transform: [{ rotate: '90deg' }] },
   ),
 );
 

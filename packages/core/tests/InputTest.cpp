@@ -190,6 +190,15 @@ TEST(PointerOffsetWithinTargetTest, InvertsEveryComposedTransform) {
          PointerTargetTransform{.scaleX = 0, .translateX = 10, .scaleY = 0, .translateY = 20,
                                 .frameOrigin = makePoint(5, 5)},
          makePoint(400, 400), makePoint(0, 0)},
+        // Issue #299: the exact matrix an 80x40 box at (650, 100) rotated 90 degrees about its own centre
+        // (690, 120) composes — invisible or not, this is the matrix `SceneHit` carries for it now, and this row
+        // is the same case `AnimatedHitTestTest.cpp`'s `AFullyTransparentRotatedNodeStillReportsTheMatrixItPaintsWith`
+        // proves `hitTestNode` actually hands back for a fully transparent node. The centre does not move under a
+        // rotation about itself, so it reports the box's own centre.
+        {"a fully transparent target rotated 90 degrees, pressed at its centre",
+         PointerTargetTransform{.scaleX = 0, .skewX = -1, .translateX = 810, .skewY = 1, .scaleY = 0,
+                                .translateY = -570, .frameOrigin = makePoint(650, 100)},
+         makePoint(690, 120), makePoint(40, 20)},
     };
 
     for (const PointerOffsetCase& offsetCase : cases) {

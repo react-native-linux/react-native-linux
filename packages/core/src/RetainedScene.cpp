@@ -1286,7 +1286,10 @@ SceneHit RetainedScene::hitTestNode(facebook::react::Tag tag, facebook::react::P
         return SceneHit{};
     }
 
-    return SceneHit{.tag = tag, .origin = mapPoint(visit.primitive.matrix, visit.primitive.frame.origin)};
+    return SceneHit{.tag = tag,
+                    .origin = mapPoint(visit.primitive.matrix, visit.primitive.frame.origin),
+                    .matrix = visit.primitive.matrix,
+                    .frameOrigin = visit.primitive.frame.origin};
 }
 
 std::optional<facebook::react::Rect> RetainedScene::subtreeExtent(facebook::react::Tag tag) const {

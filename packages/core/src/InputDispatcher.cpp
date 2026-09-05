@@ -190,6 +190,16 @@ std::shared_ptr<const facebook::react::ShadowNode> deepestAncestorMatching(
     return nullptr;
 }
 
+/**
+ * The transform a tag with no matrix of its own gets: the surface root, and a `UIManager::findNodeAtPoint`
+ * fallback hit for a painted tag the committed shadow tree does not contain. Neither has a transform this reading
+ * could miss — the root never carries one, and the fallback path is a stale-geometry compromise already, not a
+ * place a rotated or scaled target is expected to be found.
+ */
+PointerTargetTransform identityTransformAt(facebook::react::Point origin) {
+    return PointerTargetTransform{.translateX = origin.x, .translateY = origin.y};
+}
+
 void emitPointerDispatch(const facebook::react::TouchEventEmitter& emitter, const PointerDispatch& dispatch) {
     switch (dispatch.type) {
         case PointerDispatchType::Move:
@@ -301,48 +311,26 @@ PointerTarget InputDispatcher::resolveTarget(const InputEvent& event) const {
 
         if (painted != nullptr) {
             return PointerTarget{.shadowNode = painted,
-                                 .offset = pointerOffsetWithinTarget(
-                                     transformForTag(paintedHit.tag, paintedHit.origin), event.surfacePoint)};
+                                 .offset = pointerOffsetWithinTarget(transformOfHit(paintedHit), event.surfacePoint)};
         }
 
         const std::shared_ptr<const facebook::react::ShadowNode> hit =
             uiManager_->findNodeAtPoint(root, event.surfacePoint);
 
         if (hit != nullptr) {
-            const facebook::react::Point origin = absoluteOrigin(*hit);
-
             return PointerTarget{.shadowNode = hit,
-                                 .offset = pointerOffsetWithinTarget(transformForTag(hit->getTag(), origin),
+                                 .offset = pointerOffsetWithinTarget(identityTransformAt(absoluteOrigin(*hit)),
                                                                      event.surfacePoint)};
         }
     }
 
-    const facebook::react::Point rootOrigin = absoluteOrigin(*root);
-
     return PointerTarget{.shadowNode = root,
-                         .offset = pointerOffsetWithinTarget(transformForTag(root->getTag(), rootOrigin),
+                         .offset = pointerOffsetWithinTarget(identityTransformAt(absoluteOrigin(*root)),
                                                              event.surfacePoint)};
 }
 
 facebook::react::Point InputDispatcher::absoluteOrigin(const facebook::react::ShadowNode& shadowNode) const {
     return uiManager_->getRelativeLayoutMetrics(shadowNode, nullptr, {.includeTransform = true}).frame.origin;
-}
-
-PointerTargetTransform InputDispatcher::transformForTag(facebook::react::Tag tag,
-                                                        facebook::react::Point fallbackOrigin) const {
-    for (const ScenePrimitive& primitive : mountingManager_->snapshotScene()) {
-        if (primitive.tag == tag) {
-            return PointerTargetTransform{.scaleX = primitive.matrix.scaleX,
-                                          .skewX = primitive.matrix.skewX,
-                                          .translateX = primitive.matrix.translateX,
-                                          .skewY = primitive.matrix.skewY,
-                                          .scaleY = primitive.matrix.scaleY,
-                                          .translateY = primitive.matrix.translateY,
-                                          .frameOrigin = primitive.frame.origin};
-        }
-    }
-
-    return PointerTargetTransform{.translateX = fallbackOrigin.x, .translateY = fallbackOrigin.y};
 }
 
 void InputDispatcher::dispatchPointerEvent(const InputEvent& event) {

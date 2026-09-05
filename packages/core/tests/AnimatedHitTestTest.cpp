@@ -1,3 +1,5 @@
+#include "InputDispatcher.h"
+#include "InputPipeline.h"
 #include "LinuxMountingManager.h"
 #include "RetainedScene.h"
 #include "SceneTestSupport.h"
@@ -13,6 +15,7 @@
 #include <yoga/enums/Overflow.h>
 
 #include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -35,7 +38,9 @@ namespace {
 
 using facebook::react::NativeAnimatedNodesManager;
 using facebook::react::PointerEventsMode;
+using react_native_linux::pointerOffsetWithinTarget;
 using react_native_linux::SceneHit;
+using react_native_linux::transformOfHit;
 
 constexpr Tag kBoxTag = 2;
 constexpr Tag kInnerTag = 3;
@@ -88,6 +93,18 @@ std::shared_ptr<ViewProps> scaledToNothingProps() {
     const std::shared_ptr<ViewProps> viewProps = std::make_shared<ViewProps>();
 
     viewProps->transform = Transform::Scale(0, 0, 1);
+
+    return viewProps;
+}
+
+// Issue #299: `opacity: 0` and a rotation together, so the fully transparent node `hitTestNode` still has to
+// answer with the matrix it composed rather than an identity one — the case a node that is invisible for some
+// *other* reason (no background, no border, no content) cannot tell apart from a target with no transform at all.
+std::shared_ptr<ViewProps> invisibleAndRotatedProps() {
+    const std::shared_ptr<ViewProps> viewProps = std::make_shared<ViewProps>();
+
+    viewProps->opacity = 0.0F;
+    viewProps->transform = Transform::RotateZ(static_cast<facebook::react::Float>(M_PI_2));
 
     return viewProps;
 }
@@ -301,6 +318,31 @@ TEST(AnimatedHitTestTest, ANodeAnimatedToFullTransparencyPaintsNothingAndIsStill
 
     EXPECT_TRUE(mountingManager.snapshotScene().empty());
     EXPECT_EQ(mountingManager.findNodeAtPoint(kSurfaceTag, boxCentre()).tag, kBoxTag);
+}
+
+// Issue #299: a node that is both invisible and transformed is not in the painted snapshot to read a matrix off,
+// so `SceneHit` has to carry the one `hitTestNode`'s own walk composed for it — the fix issue #246 needed and
+// this platform did not have until now, because `InputDispatcher` used to read the matrix back off
+// `LinuxMountingManager::snapshotScene()`, which filters exactly the primitives a fully transparent node would
+// not paint.
+TEST(AnimatedHitTestTest, AFullyTransparentRotatedNodeStillReportsTheMatrixItPaintsWith) {
+    const RetainedScene scene = sceneWithBox(invisibleAndRotatedProps());
+
+    ASSERT_TRUE(scene.snapshot().empty());
+
+    const SceneHit hit = scene.findNodeAtPoint(kSurfaceTag, boxCentre());
+
+    ASSERT_EQ(hit.tag, kBoxTag);
+
+    // The rotation is about the box's own centre, which does not move under it, so a press at the centre has to
+    // report the box's own local centre once `pointerOffsetWithinTarget` inverts the matrix `hit` carries -
+    // `transformOfHit` is the exact conversion `InputDispatcher::resolveTarget` uses, exercised here directly
+    // against the matrix this fully transparent node composed rather than the identity one a transform-less
+    // invisible node would also produce.
+    const Point offset = pointerOffsetWithinTarget(transformOfHit(hit), boxCentre());
+
+    EXPECT_NEAR(offset.x, boxFrame().size.width / 2, 1e-2);
+    EXPECT_NEAR(offset.y, boxFrame().size.height / 2, 1e-2);
 }
 
 TEST(AnimatedHitTestTest, ATranslationAppliedWithoutACommitMovesWhereAPressLands) {

@@ -30,6 +30,25 @@ struct PointerTarget {
 };
 
 /**
+ * The transform `pointerOffsetWithinTarget` inverts for a scene hit, read straight off `SceneHit` rather than a
+ * second scene lookup: `hitTestNode`'s own walk is the only place that has the matrix for the node it just
+ * matched, under the same lock and the same tree revision the tag itself came from, whether or not that node
+ * painted anything at all (issue #299). A free, header-defined function rather than a private method of
+ * `InputDispatcher` because `AnimatedHitTestTest.cpp` needs the identical conversion to assert `SceneHit` carries
+ * the matrix it should, and that test target does not link `InputDispatcher.cpp` — one function two callers
+ * share, rather than a linker dependency the test binary does not otherwise need.
+ */
+inline PointerTargetTransform transformOfHit(const SceneHit& hit) {
+    return PointerTargetTransform{.scaleX = hit.matrix.scaleX,
+                                  .skewX = hit.matrix.skewX,
+                                  .translateX = hit.matrix.translateX,
+                                  .skewY = hit.matrix.skewY,
+                                  .scaleY = hit.matrix.scaleY,
+                                  .translateY = hit.matrix.translateY,
+                                  .frameOrigin = hit.frameOrigin};
+}
+
+/**
  * Turns a frame's worth of platform input into Fabric events: hit-test, translate, enqueue — and owns the one
  * focused node the keyboard talks to.
  *
@@ -106,17 +125,6 @@ private:
     PointerTarget resolveTarget(const InputEvent& event) const;
     facebook::react::Point absoluteOrigin(const facebook::react::ShadowNode& shadowNode) const;
 
-    /**
-     * The transform a hit tag paints with, read off the live scene snapshot rather than off `SceneHit` itself —
-     * `SceneHit` only carries the forward-mapped origin `#97`'s tests already pin, not the matrix a rotated or
-     * scaled target's offset needs inverted. `fallbackOrigin` is what a tag with no snapshot primitive gets
-     * instead: an identity transform translated to it, which is exactly right for the surface root, a
-     * `UIManager::findNodeAtPoint` fallback hit, and a fully transparent target with no border and no content —
-     * none of which have a transform of their own that this lane can read without a matrix RetainedScene does not
-     * hand back. A target that is both transformed and painted nothing (`opacity: 0` with a `transform`) is the
-     * residual gap this leaves; see *Input* in docs/cpp-toolchain.md.
-     */
-    PointerTargetTransform transformForTag(facebook::react::Tag tag, facebook::react::Point fallbackOrigin) const;
     void dispatchPointerEvent(const InputEvent& event);
     void dispatchKeyEvent(const InputEvent& event);
     void emitKeyEvent(const InputEvent& event) const;

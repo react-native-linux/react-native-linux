@@ -334,15 +334,24 @@ std::optional<ScenePrimitiveDisplacement> findDisplacedPrimitive(const SceneSnap
                                                                  const SceneSnapshot& after);
 
 /**
- * What a hit test found: the deepest node painted under the point, and the absolute origin it was painted at.
+ * What a hit test found: the deepest node under the point, the absolute origin it paints at, and the composed
+ * transform and frame origin a pointer event's target-local offset is measured against.
  *
- * The origin travels with the tag because it is what a pointer event's offset inside its target is measured
- * from, and a node the animation fast path moved is painted somewhere its `LayoutMetrics` do not describe. A
- * `tag` of zero means nothing under the point can be a pointer target, and the origin is then meaningless.
+ * `matrix` and `frameOrigin` travel with the tag for the same reason `origin` does: `hitTestNode`'s own walk is
+ * the one place that has them for the node it just matched, whether or not that node painted anything at all — a
+ * fully transparent, rotated `opacity: 0` target composes a matrix nothing else can hand back, because
+ * `RetainedScene::snapshot` drops it before a caller could read it off a primitive. Reading the transform
+ * anywhere else risks pairing a hit from one scene revision with a snapshot from the next; this struct is
+ * produced by one tree walk under one lock, so the two can never disagree. `origin` remains for the callers that
+ * only need the absolute position — `mapPoint(matrix, frameOrigin)`, kept rather than derived, because #97's
+ * tests already pin it as its own value. A `tag` of zero means nothing under the point can be a pointer target,
+ * and every other field is then meaningless.
  */
 struct SceneHit {
     facebook::react::Tag tag{};
     facebook::react::Point origin{};
+    SceneMatrix matrix{};
+    facebook::react::Point frameOrigin{};
 };
 
 /**
