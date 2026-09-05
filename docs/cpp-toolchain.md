@@ -388,9 +388,11 @@ upstream and must not be used. The Hermes CMake library target is `hermesvm`, no
 Re-vendoring on a React Native bump: edit `tag` in `scripts/vendor.lock.json`, run `pnpm --filter @react-native-linux/core vendor`,
 reconfigure. The script re-clones when the pin changes and is a no-op when it has not.
 
-That reconfigure is also the bump gate for *Upstream animated tests* below: `UpstreamAnimatedSuiteTest` fails the
-build if the vendored `animated/tests/` file list moved, and `rnl_core_tests` fails if any upstream test itself
-changed behaviour — both are read before a bump PR merges, not after an app looks wrong.
+That reconfigure is also the bump gate for *Upstream animated tests* below: `UpstreamTestDriftOracleTest` (#230)
+fails the build if any of the 39 vendored `tests/` directories under `ReactCommon` and `ReactCxxPlatform` was
+added, removed, or had its file list change, whether or not that directory is linked into `rnl_core_tests` today;
+`rnl_core_tests` itself fails if any upstream test that is linked changed behaviour — both are read before a bump
+PR merges, not after an app looks wrong.
 
 ## Core codegen (#21)
 
@@ -1374,17 +1376,17 @@ a `ComponentBuilder`, or a mounted view. That is the same reason `ShadowTreeComm
 therefore compile directly into `rnl_core_tests` — the smaller change over adding subdirectories nothing in this
 suite actually calls into. All five build and pass unmodified; none is skipped.
 
-`packages/core/tests/UpstreamAnimatedSuiteTest.cpp` lists the vendored tests directory with `std::filesystem` and
-asserts it against the same six-name list above, compiled in through the `RNL_ANIMATED_TESTS_DIR` definition set in
-`packages/core/tests/CMakeLists.txt`. An upstream add or remove on the next version bump fails that test instead of
-silently changing what this suite covers.
+`packages/core/tests/UpstreamTestDriftOracleTest.cpp` lists this vendored tests directory, among the other 38
+(#230), with `std::filesystem` and asserts it against the same six-name list above, resolved from the
+`RNL_UPSTREAM_REACT_COMMON_DIR` definition set in `packages/core/tests/CMakeLists.txt`. An upstream add or remove
+on the next version bump fails that test instead of silently changing what this suite covers.
 
 None of the six sources are in `scripts/cpp-coverage.ts`'s `scopedSourcePaths` — that list only ever named our own
 `packages/core/src` files, so vendored upstream sources were already outside the 100% gate before this change and
 stay there; there is nothing to exclude because there was never anything to include. *Pins*' re-vendoring paragraph
 names this suite as a bump gate: a version bump that changes the tests directory's file list is a build-time
-`UpstreamAnimatedSuiteTest` failure, and a version bump that changes what the five suites assert is a CTest failure,
-both before either reaches an app.
+`UpstreamTestDriftOracleTest` failure, and a version bump that changes what the five suites assert is a CTest
+failure, both before either reaches an app.
 
 ## Layout conformance suite (#118)
 
@@ -1548,7 +1550,7 @@ Nothing upstream covers, and therefore nothing this platform's animation stack h
 
 Writing those tests is upstream work; the entry cost is `AnimationTestsBase`, which is already compiled into
 `rnl_core_tests`, so an interpolation suite is a new `.cpp` in the vendored tests directory and an
-`UpstreamAnimatedSuiteTest` list update, not new plumbing.
+`UpstreamTestDriftOracleTest` list update, not new plumbing.
 
 ## Prerequisites
 
