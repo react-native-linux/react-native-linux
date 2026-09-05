@@ -24,6 +24,7 @@ using react_native_linux::PendingImageDecodes;
 using react_native_linux::ResolvedImageSource;
 using react_native_linux::resolveImageSource;
 using react_native_linux::SceneImageResizeMode;
+using react_native_linux::settleImageDecodesAndJavaScript;
 
 constexpr char kAssetDirectory[] = "/assets";
 constexpr size_t kEntryByteCount = 100;
@@ -847,6 +848,51 @@ TEST(PendingImageDecodesTest, TwoDecodesBothHaveToPublish) {
     pending.notePublished();
 
     EXPECT_TRUE(pending.waitUntilSettled(registrationMutex, kUnsettledBudget));
+}
+
+// Issue #301: the shape of a fake `onLoad` handler that commits. `drainJavaScript` stands in for draining the
+// JavaScript thread and reports whether that drain produced a new commit — true the first time, as the load
+// callback's commit lands, and false once nothing is left to settle. The function has to settle the decode queue
+// again after that commit before it can call the run done, because the commit could itself have asked for another
+// decode; this fake does not, but the second `settleImageDecodes` call is what a real one would need.
+TEST(ImageJavaScriptSettleTest, ACommitTheDrainReportsIsSettledAgainBeforeReturning) {
+    int settleCount = 0;
+    int drainCount = 0;
+
+    const bool hasReachedFixedPoint = settleImageDecodesAndJavaScript(
+        [&settleCount]() { ++settleCount; },
+        [&drainCount]() {
+            ++drainCount;
+
+            return drainCount == 1;
+        });
+
+    EXPECT_TRUE(hasReachedFixedPoint);
+    EXPECT_EQ(settleCount, 2);
+    EXPECT_EQ(drainCount, 2);
+}
+
+// No handler at all: the first drain already reports no commit, so the settle runs exactly once.
+TEST(ImageJavaScriptSettleTest, NoCommitSettlesOnce) {
+    int settleCount = 0;
+
+    const bool hasReachedFixedPoint =
+        settleImageDecodesAndJavaScript([&settleCount]() { ++settleCount; }, []() { return false; });
+
+    EXPECT_TRUE(hasReachedFixedPoint);
+    EXPECT_EQ(settleCount, 1);
+}
+
+// A `drainJavaScript` that never quiets down — a handler that keeps re-arming its own commit — is a reported
+// give-up rather than a hang.
+TEST(ImageJavaScriptSettleTest, ADrainThatNeverSettlesGivesUpRatherThanHanging) {
+    int settleCount = 0;
+
+    const bool hasReachedFixedPoint =
+        settleImageDecodesAndJavaScript([&settleCount]() { ++settleCount; }, []() { return true; });
+
+    EXPECT_FALSE(hasReachedFixedPoint);
+    EXPECT_EQ(settleCount, react_native_linux::kMaximumJavaScriptSettleIterations);
 }
 
 } // namespace

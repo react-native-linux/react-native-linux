@@ -305,4 +305,17 @@ bool PendingImageDecodes::waitUntilSettled(std::mutex& registrationMutex, std::c
     return settled_.wait_for(guard, budget, [this]() { return pendingCount_ == 0; });
 }
 
+bool settleImageDecodesAndJavaScript(const std::function<void()>& settleImageDecodes,
+                                     const std::function<bool()>& drainJavaScript) {
+    for (int iteration = 0; iteration < kMaximumJavaScriptSettleIterations; ++iteration) {
+        settleImageDecodes();
+
+        if (!drainJavaScript()) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 } // namespace react_native_linux

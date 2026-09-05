@@ -9,6 +9,7 @@
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <list>
 #include <memory>
 #include <mutex>
@@ -159,5 +160,31 @@ private:
     std::condition_variable settled_;
     size_t pendingCount_{};
 };
+
+/**
+ * The bound on `settleImageDecodesAndJavaScript`'s loop, so a `drainJavaScript` that never quiets down is a
+ * reported give-up rather than a hang. Every golden runner today converges in at most two.
+ */
+constexpr int kMaximumJavaScriptSettleIterations = 8;
+
+/**
+ * What every golden runner needs after `waitForPendingImageDecodes` and before it reads the scene: a decode
+ * publish can wake JavaScript, and a handler it wakes — an `onLoad` that changes a prop — can commit. A settle
+ * that only waits on the decode queue can still return before that commit lands (issue #301), because publishing
+ * and running the handler are two different threads' work.
+ *
+ * `settleImageDecodes` is `waitForPendingImageDecodes` on every real caller; `drainJavaScript` drains the
+ * JavaScript thread and its timers and reports whether doing so produced a new commit. This calls the first, then
+ * keeps calling the second — settling again before each retry, since the commit it found could itself have
+ * requested a decode — until a drain reports none, which is "no queued task and no pending commit" reached only
+ * once the decode queue is quiet. Bounded by `kMaximumJavaScriptSettleIterations`; the return value is whether a
+ * fixed point was reached inside that bound.
+ *
+ * The two callables are what makes this testable without Hermes or Skia: a fake `drainJavaScript` stands in for a
+ * commit an `onLoad` handler makes, and this function is the whole of the contract a real `ReactHost` and
+ * `FabricHost` have to satisfy.
+ */
+bool settleImageDecodesAndJavaScript(const std::function<void()>& settleImageDecodes,
+                                     const std::function<bool()>& drainJavaScript);
 
 } // namespace react_native_linux
