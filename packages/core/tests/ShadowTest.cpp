@@ -148,14 +148,21 @@ TEST(ShadowResolutionTest, TheInheritedOpacityFoldsIntoTheShadowColourLikeEveryO
     EXPECT_EQ(snapshot[0].shadows[0].colorArgb, 0x80CC3333U);
 }
 
-Rect unionOf(const SceneDamage& damage) {
+// The box is (100, 100) 160x100 and the shadow below reaches 15 out and 10 down-right of it, so whatever the
+// scene damages has to run from (95, 95) to (285, 225) — when the shadow arrives, and again when it leaves.
+void expectDamageCoversTheShadowReach(const SceneDamage& damage) {
+    ASSERT_FALSE(damage.empty());
+
     Rect covered = damage.front();
 
     for (const Rect& rect : damage) {
         covered.unionInPlace(rect);
     }
 
-    return covered;
+    EXPECT_LE(covered.origin.x, 95);
+    EXPECT_LE(covered.origin.y, 95);
+    EXPECT_GE(covered.origin.x + covered.size.width, 285);
+    EXPECT_GE(covered.origin.y + covered.size.height, 225);
 }
 
 std::shared_ptr<ViewProps> propsWithShadow(float offsetX, float offsetY, float blur) {
@@ -183,18 +190,7 @@ TEST(ShadowDamageTest, GainingAShadowDamagesWhereTheShadowWillReach) {
 
     scene.updateNode(makeStyledView(kCardTag, cardFrame(), propsWithShadow(10, 10, 10)));
 
-    const SceneDamage damage = scene.takeDamage();
-
-    ASSERT_FALSE(damage.empty());
-
-    // The box is (100, 100) 160x100; the shadow reaches 15 out and 10 down-right of it, so the damage runs from
-    // (95, 95) to (285, 225).
-    const Rect covered = unionOf(damage);
-
-    EXPECT_LE(covered.origin.x, 95);
-    EXPECT_LE(covered.origin.y, 95);
-    EXPECT_GE(covered.origin.x + covered.size.width, 285);
-    EXPECT_GE(covered.origin.y + covered.size.height, 225);
+    expectDamageCoversTheShadowReach(scene.takeDamage());
 }
 
 TEST(ShadowDamageTest, LosingAShadowDamagesWhereTheShadowWas) {
@@ -206,18 +202,9 @@ TEST(ShadowDamageTest, LosingAShadowDamagesWhereTheShadowWas) {
 
     scene.updateNode(makeStyledView(kCardTag, cardFrame(), propsWithBackground(blue())));
 
-    const SceneDamage damage = scene.takeDamage();
-
-    ASSERT_FALSE(damage.empty());
-
     // The pixels the shadow occupied have to be repainted even though the node that owns them no longer reaches
     // there, so the vacated extent is the same rectangle the shadow damaged when it arrived.
-    const Rect covered = unionOf(damage);
-
-    EXPECT_LE(covered.origin.x, 95);
-    EXPECT_LE(covered.origin.y, 95);
-    EXPECT_GE(covered.origin.x + covered.size.width, 285);
-    EXPECT_GE(covered.origin.y + covered.size.height, 225);
+    expectDamageCoversTheShadowReach(scene.takeDamage());
 }
 
 } // namespace
