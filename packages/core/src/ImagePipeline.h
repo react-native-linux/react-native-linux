@@ -1,5 +1,7 @@
 #pragma once
 
+#include "RetainedScene.h"
+
 #include <functional>
 #include <memory>
 #include <string>
@@ -7,19 +9,19 @@
 namespace react_native_linux {
 
 /**
- * Called once with the decoded image, or with null when the source could not be decoded. Runs on the decode
+ * Called once with the decoded frames, or with null when the source could not be decoded. Runs on the decode
  * thread, or inline on the caller's thread when the source is already cached.
  */
-using ImageDecodeCompletion = std::function<void(const std::shared_ptr<void>& image)>;
+using ImageDecodeCompletion = std::function<void(const std::shared_ptr<const DecodedImageFrames>& decoded)>;
 
 /**
  * Turns an `<Image>` source into decoded pixels. This is the whole image pipeline: source resolution and the
- * bounded cache are `ImageContent.h`, decoding is Skia's own PNG and JPEG codecs inside `libskia.a`, and there is
- * no image abstraction between them.
+ * bounded cache are `ImageContent.h`, decoding is Skia's own PNG, JPEG and GIF codecs inside `libskia.a`, and
+ * there is no image abstraction between them.
  *
  * `ImageManager::requestImage` calls `requestImageDecode` during layout, on whichever thread commits; the decode
  * itself runs on one process-wide worker thread, so a frame is never blocked on a codec. Two requests for the same
- * source decode once: the second one joins the first's completion list. The scene asks `decodedImagePixels` for
+ * source decode once: the second one joins the first's completion list. The scene asks `decodedImage` for
  * a source when it mounts a node and when a decode reports, and the painter draws the pixels the node is holding
  * — a source that has not finished decoding yet draws nothing, and the completion damages the frame so the next
  * one draws it.

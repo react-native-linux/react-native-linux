@@ -109,13 +109,19 @@ public:
      * image finishes decoding, which is the one thing that changes the picture without a Fabric mutation behind
      * it.
      */
-    void damageImageSource(const std::string& uri);
+    void damageImageSource(const std::string& uri, const std::shared_ptr<const DecodedImageFrames>& decoded);
 
     /**
      * Where the scene reads decoded pixels from. Set once by the host with the image pipeline's cache, before any
      * surface starts; see `RetainedScene::setDecodedImageProvider`.
      */
     void setDecodedImageProvider(RetainedScene::DecodedImageProvider decodedImages);
+
+    /**
+     * `RetainedScene::advanceImageAnimations` under the scene mutex, flagging pending damage when a frame
+     * changed so the frame clock draws it. Called once per frame from the frame thread.
+     */
+    bool advanceImageAnimations(double frameMilliseconds);
 
     /**
      * Marks the focused node and whether it draws the focus ring. Called from the frame thread by the input

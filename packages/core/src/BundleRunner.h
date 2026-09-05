@@ -153,6 +153,18 @@ FabricRunResult runFocusCommandedFabricBundle(const std::string& bundlePath, fac
                                               facebook::react::Tag focusedTag);
 
 /**
+ * Runs a bundle and then advances its animated `<Image>` nodes by `frameCount` frames of a fixed 60 Hz step.
+ *
+ * A GIF renders nothing a static golden could not already prove until it has been advanced: which frame is on
+ * screen at a given instant is the whole feature, and this is how one gets into a checked-in PNG. The step is
+ * fixed rather than measured for the same reason the scroll physics one is — a golden must not depend on how fast
+ * this machine looped — and the frame it lands on follows from the durations in the file. See *Image* in
+ * docs/cpp-toolchain.md.
+ */
+FabricRunResult runAnimatedImageFabricBundle(const std::string& bundlePath, facebook::react::Size surfaceSize,
+                                             int frameCount);
+
+/**
  * Runs a bundle, presses Tab once to land on the first focusable — which the fixture makes the `<TextInput>` —
  * and then types `keySequence` through the same `InputQueue` and `InputDispatcher` a window uses.
  *

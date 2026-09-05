@@ -81,6 +81,14 @@ export const fixtures: readonly GoldenFixture[] = [
     renderArguments: ["14"],
     renderFlag: "--focus-command-golden",
   },
+  // Issue #257: twenty 60 Hz frames is 333 ms, which the four 100 ms frames of the fixture put on the last one.
+  // That is the frame the durations in the file select, and not the twentieth frame of the display.
+  {
+    bundleFileName: "animated-image.js",
+    goldenFileName: "animated-image.png",
+    renderArguments: ["20"],
+    renderFlag: "--animated-image",
+  },
   // A text field draws nothing new until it is typed into: a caret and a selection are both editing state.
   {
     bundleFileName: "text-input.js",

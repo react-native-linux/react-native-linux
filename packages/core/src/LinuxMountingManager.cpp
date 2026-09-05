@@ -48,10 +48,11 @@ void LinuxMountingManager::startSurface(facebook::react::SurfaceId surfaceId, fa
     scene_.createSurfaceRoot(surfaceId, size);
 }
 
-void LinuxMountingManager::damageImageSource(const std::string& uri) {
+void LinuxMountingManager::damageImageSource(const std::string& uri,
+                                             const std::shared_ptr<const DecodedImageFrames>& decoded) {
     const std::lock_guard<std::mutex> guard(sceneMutex_);
 
-    scene_.damageImageSource(uri);
+    scene_.damageImageSource(uri, decoded);
     hasPendingDamage_ = true;
 }
 
@@ -59,6 +60,15 @@ void LinuxMountingManager::setDecodedImageProvider(RetainedScene::DecodedImagePr
     const std::lock_guard<std::mutex> guard(sceneMutex_);
 
     scene_.setDecodedImageProvider(std::move(decodedImages));
+}
+
+bool LinuxMountingManager::advanceImageAnimations(double frameMilliseconds) {
+    const std::lock_guard<std::mutex> guard(sceneMutex_);
+    const bool hasAdvanced = scene_.advanceImageAnimations(frameMilliseconds);
+
+    hasPendingDamage_ = hasPendingDamage_ || hasAdvanced;
+
+    return hasAdvanced;
 }
 
 void LinuxMountingManager::setFocus(facebook::react::Tag tag, bool isFocusVisible) {

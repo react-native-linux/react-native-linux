@@ -2,12 +2,14 @@
 
 #include <cstdint>
 #include <gtest/gtest.h>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
 namespace {
 
+using react_native_linux::DecodedImageFrames;
 using react_native_linux::ImageCache;
 
 /**
@@ -28,11 +30,15 @@ struct TrackedImage {
 };
 
 /**
- * An image handed to the cache with a deleter that flips the destroyed flag instead of deleting: the test holds
- * the flag and observes the drop.
+ * A one-frame decoded source whose frame flips the destroyed flag when it goes: the test holds the flag and
+ * observes the drop.
  */
-std::shared_ptr<void> trackedImage(bool* destroyedFlag) {
-    return std::shared_ptr<void>(new TrackedImage(destroyedFlag), [](TrackedImage* image) { delete image; });
+std::shared_ptr<const DecodedImageFrames> trackedImage(bool* destroyedFlag) {
+    return std::make_shared<const DecodedImageFrames>(
+        DecodedImageFrames{.frames = {std::shared_ptr<void>(new TrackedImage(destroyedFlag),
+                                                            [](TrackedImage* image) { delete image; })},
+                           .frameDurationsMilliseconds = {},
+                           .repetitionCount = 0});
 }
 
 TEST(ImageCacheTest, AdmitsAnImageAndAccountsItsBytes) {
@@ -100,7 +106,7 @@ TEST(ImageCacheTest, ReinsertingTheSameSourceReplacesTheBytes) {
 TEST(ImageCacheTest, ReferenceDropIsByteAccountedWhenAHolderOutlivesTheCache) {
     bool destroyed = false;
 
-    std::shared_ptr<void> held;
+    std::shared_ptr<const DecodedImageFrames> held;
 
     {
         ImageCache cache{1000};

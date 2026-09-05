@@ -58,6 +58,27 @@ facebook::react::Rect imagePlacement(SceneImageResizeMode resizeMode, const face
                                      facebook::react::Size imageSize);
 
 /**
+ * Which frame of `decoded` is on screen `elapsedMilliseconds` after its first frame appeared.
+ *
+ * This is the whole animation schedule, and it is arithmetic on the durations the codec read out of the file — not
+ * a counter of display refreshes. A 120 Hz display asks twice as often as a 60 Hz one and gets the same answer at
+ * the same instant, which is react-native#33039: a GIF whose frames were paced by vsync instead of by its own
+ * durations plays at twice the speed on a 120 Hz device.
+ *
+ * A source with fewer than two frames, with no durations, or whose durations sum to nothing, is a still image and
+ * is always frame zero. `repetitionCount` is `SkCodec::getRepetitionCount`: the number of plays *after* the first,
+ * so a count of one plays the whole animation twice and then holds the last frame forever, and
+ * `kAnimatedImageRepeatsForever` never holds.
+ */
+size_t animatedImageFrameIndex(const DecodedImageFrames& decoded, double elapsedMilliseconds);
+
+/**
+ * Whether `decoded` is something `animatedImageFrameIndex` can move: more than one frame, a duration for each of
+ * them, and a total duration greater than zero.
+ */
+bool isAnimatedImage(const DecodedImageFrames& decoded);
+
+/**
  * A bounded least-recently-used cache of decoded images, keyed by source URI.
  *
  * The bound is bytes rather than entries, because the cost of a decoded image is its pixels and two sources can
@@ -65,9 +86,10 @@ facebook::react::Rect imagePlacement(SceneImageResizeMode resizeMode, const face
  * until the total fits; an entry that alone exceeds the capacity is not cached at all, so one oversized image
  * cannot flush everything else out on its way to being evicted itself.
  *
- * The value is `std::shared_ptr<void>` so this translation unit links no Skia and stays inside the coverage gate.
- * The decoder puts an `SkImage` in and casts it back out, which is the same type erasure upstream's own
- * `ImageResponse` uses for exactly this reason.
+ * The value is a `DecodedImageFrames`, whose own frames are `std::shared_ptr<void>`, so this translation unit
+ * links no Skia and stays inside the coverage gate. The decoder puts `SkImage`s in and the painter casts one back
+ * out, which is the same type erasure upstream's own `ImageResponse` uses for exactly this reason. One entry is
+ * one source, still or animated: every frame of a GIF is evicted together, because they are drawn together.
  *
  * Threading contract: this type is not synchronised. Its owner serialises access.
  */
@@ -75,14 +97,14 @@ class ImageCache final {
 public:
     explicit ImageCache(size_t byteCapacity);
 
-    std::shared_ptr<void> find(const std::string& uri);
-    void insert(const std::string& uri, std::shared_ptr<void> image, size_t byteCount);
+    std::shared_ptr<const DecodedImageFrames> find(const std::string& uri);
+    void insert(const std::string& uri, std::shared_ptr<const DecodedImageFrames> image, size_t byteCount);
     size_t byteCount() const;
     size_t entryCount() const;
 
 private:
     struct Entry {
-        std::shared_ptr<void> image;
+        std::shared_ptr<const DecodedImageFrames> image;
         size_t byteCount{};
         std::list<std::string>::iterator order;
     };

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "RetainedScene.h"
+
 #include <chrono>
 #include <functional>
 #include <memory>
@@ -8,12 +10,17 @@
 namespace react_native_linux {
 
 /**
- * Called once, on the decode thread, after a source finished decoding into the cache.
+ * Called once, on the decode thread, with the frames a source finished decoding into.
  *
  * A decode is the one thing that changes the picture without a Fabric mutation behind it, so nothing damages the
  * frame for it unless somebody listens. The mounting manager is what does; see `damageImageSource`.
+ *
+ * The frames are handed over rather than looked up again, because the cache is allowed to refuse them: a source
+ * whose frames exceed the whole capacity is never admitted, and a listener that answered by asking the cache
+ * would hand the scene nothing and paint an animation as a blank box.
  */
-using ImageDecodeListener = std::function<void(const std::string& uri)>;
+using ImageDecodeListener =
+    std::function<void(const std::string& uri, const std::shared_ptr<const DecodedImageFrames>& decoded)>;
 
 /**
  * The Skia-free half of the image pipeline's API, so the Fabric host, the scene and the headless runner can drive
@@ -23,14 +30,14 @@ using ImageDecodeListener = std::function<void(const std::string& uri)>;
 void setImageDecodeListener(ImageDecodeListener listener);
 
 /**
- * The decoded pixels for `uri`, or null when the source has not been decoded, failed, or has been evicted. Marks
+ * The decoded frames of `uri`, or null when the source has not been decoded, failed, or has been evicted. Marks
  * the entry as most recently used.
  *
- * Type-erased for the reason `ImageCache` erases its values and upstream's `ImageResponse` erases its own: this
- * is what the scene attaches to the nodes drawing the source, and the scene links no Skia. The painter casts it
- * back to `SkImage`.
+ * Type-erased frame by frame for the reason `ImageCache` erases its values and upstream's `ImageResponse` erases
+ * its own: this is what the scene attaches to the nodes drawing the source, and the scene links no Skia. The
+ * painter casts one frame back to `SkImage`.
  */
-std::shared_ptr<void> decodedImagePixels(const std::string& uri);
+std::shared_ptr<const DecodedImageFrames> decodedImage(const std::string& uri);
 
 /**
  * Blocks until nothing is queued or decoding, or until `budget` runs out; returns whether the pipeline went idle.

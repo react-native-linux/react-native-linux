@@ -4,10 +4,17 @@
 #include "ImageDecoder.h"
 
 #include "include/codec/SkCodec.h"
+#include "include/codec/SkCodecAnimation.h"
+#include "include/codec/SkGifDecoder.h"
 #include "include/codec/SkJpegDecoder.h"
 #include "include/codec/SkPngDecoder.h"
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkBitmap.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorType.h"
 #include "include/core/SkData.h"
 #include "include/core/SkImage.h"
+#include "include/core/SkImageInfo.h"
 #include "include/core/SkSpan.h"
 
 #include <array>
@@ -33,10 +40,13 @@ namespace {
 // orders of magnitude in area. See *Image* in docs/cpp-toolchain.md.
 constexpr size_t kImageCacheByteCapacity = 64UL * 1024UL * 1024UL;
 
-// Only the two formats the pinned Skia archive was built with; its release name carries `jpegd`, and libpng is
-// compiled into the archive. Passing the decoder list explicitly rather than relying on `SkCodecs::Register` keeps
-// the supported set visible here instead of depending on which objects the linker happened to pull in.
-constexpr std::array<SkCodecs::Decoder, 2> kImageDecoders{SkPngDecoder::Decoder(), SkJpegDecoder::Decoder()};
+// Only the three formats the pinned Skia archive was built with; its release name carries `jpegd`, libpng is
+// compiled into the archive, and the GIF decoder is the one Skia vendors. Passing the decoder list
+// explicitly rather than relying on `SkCodecs::Register` keeps the supported set visible here instead of
+// depending on which objects the linker happened to pull in. WebP is deliberately absent: the archive carries no
+// WebP symbols at all, so there is nothing to register. See *Image* in docs/cpp-toolchain.md.
+constexpr std::array<SkCodecs::Decoder, 3> kImageDecoders{SkPngDecoder::Decoder(), SkJpegDecoder::Decoder(),
+                                                          SkGifDecoder::Decoder()};
 
 sk_sp<SkData> readImageBytes(const ResolvedImageSource& source) {
     if (source.kind == ImageSourceKind::Data) {
@@ -46,7 +56,85 @@ sk_sp<SkData> readImageBytes(const ResolvedImageSource& source) {
     return SkData::MakeFromFileName(source.filePath.c_str());
 }
 
-sk_sp<SkImage> decodeImageSource(const std::string& uri) {
+std::shared_ptr<void> toSharedImage(sk_sp<SkImage> image) {
+    if (image == nullptr) {
+        return nullptr;
+    }
+
+    return std::shared_ptr<void>(image.release(), [](SkImage* decoded) { decoded->unref(); });
+}
+
+/**
+ * Every frame of an animated source, composed in order into `frames`.
+ *
+ * `SkCodec` decodes a GIF frame into the pixels of the frame it depends on, so the buffer is carried forward and
+ * `fPriorFrame` names it whenever the dependency is the frame immediately before — which is the common case and
+ * the one that keeps this linear rather than quadratic. When it is not, the option is left unset and the codec
+ * decodes whatever prior frames it needs itself.
+ *
+ * A frame that fails to decode ends the animation there rather than failing the source: a truncated GIF still
+ * shows the frames that were whole, which is what every browser does with one.
+ */
+std::vector<std::shared_ptr<void>> decodeAnimationFrames(SkCodec& codec,
+                                                         const std::vector<SkCodec::FrameInfo>& frameInfos) {
+    const SkImageInfo imageInfo = codec.getInfo().makeColorType(kN32_SkColorType).makeAlphaType(kPremul_SkAlphaType);
+    std::vector<std::shared_ptr<void>> frames;
+    SkBitmap bitmap;
+
+    if (!bitmap.tryAllocPixels(imageInfo)) {
+        return frames;
+    }
+
+    for (size_t index = 0; index < frameInfos.size(); ++index) {
+        SkCodec::Options options;
+
+        options.fFrameIndex = static_cast<int>(index);
+
+        if (frameInfos[index].fRequiredFrame == static_cast<int>(index) - 1 && index > 0) {
+            options.fPriorFrame = static_cast<int>(index) - 1;
+        } else {
+            bitmap.eraseColor(SK_ColorTRANSPARENT);
+        }
+
+        if (codec.getPixels(imageInfo, bitmap.getPixels(), bitmap.rowBytes(), &options) != SkCodec::kSuccess) {
+            break;
+        }
+
+        frames.push_back(toSharedImage(SkImages::RasterFromPixmapCopy(bitmap.pixmap())));
+    }
+
+    return frames;
+}
+
+std::vector<int32_t> frameDurations(const std::vector<SkCodec::FrameInfo>& frameInfos, size_t frameCount) {
+    std::vector<int32_t> durations;
+
+    durations.reserve(frameCount);
+
+    for (size_t index = 0; index < frameCount; ++index) {
+        durations.push_back(frameInfos[index].fDuration);
+    }
+
+    return durations;
+}
+
+std::shared_ptr<const DecodedImageFrames> decodeAnimatedImage(SkCodec& codec) {
+    const std::vector<SkCodec::FrameInfo> frameInfos = codec.getFrameInfo();
+    std::vector<std::shared_ptr<void>> frames = decodeAnimationFrames(codec, frameInfos);
+
+    if (frames.empty()) {
+        return nullptr;
+    }
+
+    const size_t frameCount = frames.size();
+
+    return std::make_shared<const DecodedImageFrames>(
+        DecodedImageFrames{.frames = std::move(frames),
+                           .frameDurationsMilliseconds = frameDurations(frameInfos, frameCount),
+                           .repetitionCount = codec.getRepetitionCount()});
+}
+
+std::shared_ptr<const DecodedImageFrames> decodeImageSource(const std::string& uri) {
     const ResolvedImageSource source = resolveImageSource(uri, RNL_BUNDLED_ASSET_DIR);
 
     if (source.kind == ImageSourceKind::Unsupported) {
@@ -66,9 +154,13 @@ sk_sp<SkImage> decodeImageSource(const std::string& uri) {
     const std::unique_ptr<SkCodec> codec = SkCodec::MakeFromData(bytes, kImageDecoders);
 
     if (codec == nullptr) {
-        std::cerr << "[image] no PNG or JPEG codec matched " << uri << std::endl;
+        std::cerr << "[image] no PNG, JPEG or GIF codec matched " << uri << std::endl;
 
         return nullptr;
+    }
+
+    if (codec->getFrameCount() > 1) {
+        return decodeAnimatedImage(*codec);
     }
 
     auto [image, result] = codec->getImage();
@@ -76,17 +168,24 @@ sk_sp<SkImage> decodeImageSource(const std::string& uri) {
     if (image == nullptr) {
         std::cerr << "[image] decoding " << uri << " failed with SkCodec result " << static_cast<int>(result)
                   << std::endl;
-    }
 
-    return image;
-}
-
-std::shared_ptr<void> toSharedImage(sk_sp<SkImage> image) {
-    if (image == nullptr) {
         return nullptr;
     }
 
-    return std::shared_ptr<void>(image.release(), [](SkImage* decoded) { decoded->unref(); });
+    return std::make_shared<const DecodedImageFrames>(DecodedImageFrames{.frames = {toSharedImage(image)}});
+}
+
+/**
+ * What the cache accounts a source as: the pixels of every frame it decoded into.
+ */
+size_t decodedByteCount(const DecodedImageFrames& decoded) {
+    size_t byteCount = 0;
+
+    for (const std::shared_ptr<void>& frame : decoded.frames) {
+        byteCount += static_cast<const SkImage*>(frame.get())->imageInfo().computeMinByteSize();
+    }
+
+    return byteCount;
 }
 
 /**
@@ -133,12 +232,10 @@ struct ImagePipelineState {
                 isDecoding = true;
             }
 
-            const sk_sp<SkImage> decodedSkImage = decodeImageSource(uri);
-            const size_t byteCount = decodedSkImage == nullptr ? 0
-                                                               : decodedSkImage->imageInfo().computeMinByteSize();
-            const std::shared_ptr<void> image = toSharedImage(decodedSkImage);
+            const std::shared_ptr<const DecodedImageFrames> decoded = decodeImageSource(uri);
+            const size_t byteCount = decoded == nullptr ? 0 : decodedByteCount(*decoded);
             std::vector<ImageDecodeCompletion> completions;
-            ImageDecodeListener decoded;
+            ImageDecodeListener decodeListener;
 
             {
                 const std::lock_guard<std::mutex> guard(mutex);
@@ -148,18 +245,21 @@ struct ImagePipelineState {
                 completions = std::move(completionsByUri[uri]);
                 completionsByUri.erase(uri);
 
-                if (image != nullptr) {
-                    cache.insert(uri, image, byteCount);
-                    decoded = listener;
+                if (decoded != nullptr) {
+                    // The insert may refuse these frames — one animation can be larger than the whole capacity —
+                    // and the listener runs either way. Admission decides what a *later* mount finds without
+                    // decoding again; it does not decide whether this decode reaches the screen.
+                    cache.insert(uri, decoded, byteCount);
+                    decodeListener = listener;
                 }
             }
 
             for (const ImageDecodeCompletion& completion : completions) {
-                completion(image);
+                completion(decoded);
             }
 
-            if (decoded) {
-                decoded(uri);
+            if (decodeListener) {
+                decodeListener(uri, decoded);
             }
 
             // Last, so that going idle means the pixels have been published, not merely cached: the golden rig
@@ -192,7 +292,7 @@ ImagePipelineState& imagePipelineState() {
 
 void requestImageDecode(const std::string& uri, ImageDecodeCompletion completion) {
     ImagePipelineState& state = imagePipelineState();
-    std::shared_ptr<void> cached;
+    std::shared_ptr<const DecodedImageFrames> cached;
 
     {
         const std::lock_guard<std::mutex> guard(state.mutex);
@@ -219,7 +319,7 @@ void requestImageDecode(const std::string& uri, ImageDecodeCompletion completion
     state.queued.notify_one();
 }
 
-std::shared_ptr<void> decodedImagePixels(const std::string& uri) {
+std::shared_ptr<const DecodedImageFrames> decodedImage(const std::string& uri) {
     ImagePipelineState& state = imagePipelineState();
     const std::lock_guard<std::mutex> guard(state.mutex);
 

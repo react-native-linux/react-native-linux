@@ -34,6 +34,7 @@ constexpr std::string_view kAnimatedScrollFlag = "--animated-scroll";
 constexpr std::string_view kFocusTabFlag = "--focus-tab";
 constexpr std::string_view kFocusClickFlag = "--focus-click";
 constexpr std::string_view kFocusCommandGoldenFlag = "--focus-command-golden";
+constexpr std::string_view kAnimatedImageFlag = "--animated-image";
 constexpr std::string_view kTypeFlag = "--type";
 /**
  * Which proof `--golden`, `--damage-golden` and `--hit-paint-golden` run. All three take the same arguments and
@@ -65,6 +66,7 @@ constexpr size_t kAnimatedScrollArgumentCount = 6;
 constexpr size_t kFocusTabArgumentCount = 5;
 constexpr size_t kFocusClickArgumentCount = 6;
 constexpr size_t kFocusCommandGoldenArgumentCount = 5;
+constexpr size_t kAnimatedImageArgumentCount = 5;
 constexpr size_t kTypeArgumentCount = 5;
 
 std::optional<int> parsePositiveDimension(std::string_view text) {
@@ -216,6 +218,20 @@ int runFocusCommandGoldenCommand(std::span<char*> arguments) {
         static_cast<facebook::react::Tag>(focusedTag.value()), kGoldenDefaultWidth, kGoldenDefaultHeight);
 }
 
+int runAnimatedImageCommand(std::span<char*> arguments) {
+    const std::optional<int> parsedFrames = parsePositiveDimension(arguments[4]);
+
+    if (!parsedFrames.has_value()) {
+        std::cerr << "[hello_react] " << kAnimatedImageFlag << " frames must be a positive integer" << std::endl;
+
+        return 1;
+    }
+
+    return react_native_linux::renderAnimatedImageGolden(std::string(arguments[2]), std::string(arguments[3]),
+                                                         parsedFrames.value(), kGoldenDefaultWidth,
+                                                         kGoldenDefaultHeight);
+}
+
 int runTypeCommand(std::span<char*> arguments) {
     return react_native_linux::renderTypedGolden(std::string(arguments[2]), std::string(arguments[3]),
                                                  std::string(arguments[4]), kGoldenDefaultWidth,
@@ -295,7 +311,8 @@ int runGoldenCommand(std::span<char*> arguments, GoldenKind goldenKind) {
 int reportMissingSkia() {
     std::cerr << "[hello_react] " << kGoldenFlag << ", " << kDamageGoldenFlag << ", " << kHitPaintGoldenFlag
               << ", " << kTextFitGoldenFlag << ", " << kFirstFrameGoldenFlag << ", " << kScrollToFlag << ", "
-              << kFocusTabFlag << ", " << kFocusClickFlag << ", " << kFocusCommandGoldenFlag << " and " << kTypeFlag
+              << kFocusTabFlag << ", " << kFocusClickFlag << ", " << kFocusCommandGoldenFlag
+              << ", " << kAnimatedImageFlag << " and " << kTypeFlag
               << " need Skia, which this build was configured without; run node scripts/vendor-skia.ts and "
                  "reconfigure"
               << std::endl;
@@ -312,6 +329,8 @@ int runFocusTabCommand(std::span<char*> /*arguments*/) { return reportMissingSki
 int runFocusClickCommand(std::span<char*> /*arguments*/) { return reportMissingSkia(); }
 
 int runFocusCommandGoldenCommand(std::span<char*> /*arguments*/) { return reportMissingSkia(); }
+
+int runAnimatedImageCommand(std::span<char*> /*arguments*/) { return reportMissingSkia(); }
 
 int runTypeCommand(std::span<char*> /*arguments*/) { return reportMissingSkia(); }
 
@@ -334,6 +353,7 @@ int main(int argc, char** argv) {
     const bool isFocusTabRequested = arguments.size() > 1 && kFocusTabFlag == arguments[1];
     const bool isFocusClickRequested = arguments.size() > 1 && kFocusClickFlag == arguments[1];
     const bool isFocusCommandGoldenRequested = arguments.size() > 1 && kFocusCommandGoldenFlag == arguments[1];
+    const bool isAnimatedImageRequested = arguments.size() > 1 && kAnimatedImageFlag == arguments[1];
     const bool isTypeRequested = arguments.size() > 1 && kTypeFlag == arguments[1];
 
     if (isFabricRequested && arguments.size() < 3) {
@@ -363,6 +383,13 @@ int main(int argc, char** argv) {
 
     if (isFocusCommandGoldenRequested && arguments.size() != kFocusCommandGoldenArgumentCount) {
         std::cerr << "[hello_react] " << kFocusCommandGoldenFlag << " requires <bundle> <output.png> <tag>"
+                  << std::endl;
+
+        return 1;
+    }
+
+    if (isAnimatedImageRequested && arguments.size() != kAnimatedImageArgumentCount) {
+        std::cerr << "[hello_react] " << kAnimatedImageFlag << " requires <bundle> <output.png> <frames>"
                   << std::endl;
 
         return 1;
@@ -401,6 +428,10 @@ int main(int argc, char** argv) {
 
         if (isFocusCommandGoldenRequested) {
             return runFocusCommandGoldenCommand(arguments);
+        }
+
+        if (isAnimatedImageRequested) {
+            return runAnimatedImageCommand(arguments);
         }
 
         if (isTypeRequested) {

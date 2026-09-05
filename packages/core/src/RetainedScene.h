@@ -171,22 +171,46 @@ struct SceneEditorContent {
 enum class SceneImageResizeMode : uint8_t { Cover, Contain, Stretch, Center, Repeat };
 
 /**
+ * One decoded source: its frames in order, and how long each of them is shown.
+ *
+ * Every frame is type-erased to `std::shared_ptr<void>` exactly as upstream's own `ImageResponse` erases its
+ * bitmap, because the scene links no Skia; the painter casts one back to `SkImage`. A still image is one frame
+ * and no durations. An animated one carries a duration per frame, in the milliseconds the codec read out of the
+ * file, and `repetitionCount` as `SkCodec::getRepetitionCount` reports it: how many times to play *after* the
+ * first play-through, with `kAnimatedImageRepeatsForever` for a loop that never ends.
+ *
+ * The whole animation is one cache entry and one shared pointer, so a node drawing an animated source owns every
+ * frame of it for exactly as long as it draws it — the lifetime rule of issue #108 applied to N bitmaps instead
+ * of one.
+ */
+struct DecodedImageFrames {
+    std::vector<std::shared_ptr<void>> frames;
+    std::vector<int32_t> frameDurationsMilliseconds;
+    int32_t repetitionCount{0};
+};
+
+constexpr int32_t kAnimatedImageRepeatsForever = -1;
+
+/**
  * Everything a `<Image>` needs to be drawn that does not need Skia: which source to draw, how to fit it into the
  * frame, and the colours it is drawn with.
  *
- * `pixels` is the decoded image itself, type-erased to `std::shared_ptr<void>` exactly as upstream's own
- * `ImageResponse` erases it, because the scene links no Skia; the painter casts it back to `SkImage`. It travels
- * with the node rather than being looked up by `uri` at paint time so that a decoded bitmap lives exactly as long
- * as the nodes drawing it and the cache holding it — issue #108. A node that has it cannot be blanked by an
- * eviction (react-native-macos#921), and the last node dropping it is what makes the pixels reclaimable.
+ * `frames` is the decoded source, held by the node rather than looked up by `uri` at paint time so that a decoded
+ * bitmap lives exactly as long as the nodes drawing it and the cache holding it — issue #108. A node that has it
+ * cannot be blanked by an eviction (react-native-macos#921), and the last node dropping it is what makes the
+ * pixels reclaimable. `elapsedMilliseconds` is how far into the animation this node is; it advances only while
+ * the node is on screen, which is what pauses a clipped-out animation without losing its place.
  *
- * On a retained `SceneNode` the tint is the colour as authored and `opacity` is unused. Only a snapshot resolves
- * them: the tint alpha carries the inherited opacity, exactly like every other colour a primitive emits, and
- * `opacity` carries the same value for the untinted case, where there is no colour to fold it into.
+ * On a retained `SceneNode` the tint is the colour as authored and `opacity` and `pixels` are unused. Only a
+ * snapshot resolves them: `pixels` is the one frame this snapshot draws, the tint alpha carries the inherited
+ * opacity exactly like every other colour a primitive emits, and `opacity` carries the same value for the
+ * untinted case, where there is no colour to fold it into.
  */
 struct SceneImageContent {
     std::string uri;
+    std::shared_ptr<const DecodedImageFrames> frames;
     std::shared_ptr<void> pixels;
+    double elapsedMilliseconds{0.0};
     SceneImageResizeMode resizeMode{SceneImageResizeMode::Stretch};
     uint32_t tintColorArgb{};
     float opacity{1.0F};
@@ -387,14 +411,39 @@ public:
     bool hasNode(facebook::react::Tag tag) const;
 
     /**
-     * Attaches the freshly decoded pixels to every node drawing `uri` and damages them, which is what turns a
-     * decode that finished after the last frame into a repaint. Nothing else can: a decode changes no shadow
-     * node, so Fabric emits no mutation for it.
+     * Attaches `decoded` to every node drawing `uri` and damages them, which is what turns a decode that
+     * finished after the last frame into a repaint. Nothing else can: a decode changes no shadow node, so Fabric
+     * emits no mutation for it.
+     *
+     * The frames are passed in rather than fetched from the provider, because the cache is allowed to refuse
+     * them: an animation whose frames exceed the whole capacity is never admitted, and asking the provider for it
+     * would answer null and paint a blank box. A source the cache refused is then owned by the nodes drawing it
+     * and by nothing else, which is the lifetime rule of #108 with the cache's share of it left out.
      */
-    void damageImageSource(const std::string& uri);
+    void damageImageSource(const std::string& uri, const std::shared_ptr<const DecodedImageFrames>& decoded);
 
     /**
-     * Where decoded pixels come from: the image pipeline's cache, asked by source URI. Set once by the host, and
+     * Advances every animated `<Image>` by one frame of `frameMilliseconds`, damages the ones that changed frame,
+     * and reports whether any of them did.
+     *
+     * The schedule is `animatedImageFrameIndex`: which frame is on screen is a function of the wall-clock time
+     * elapsed since the animation started and of the durations the codec read out of the file, never of how many
+     * times this has been called. A 120 Hz display therefore shows the same frame at the same instant a 60 Hz one
+     * does, which is react-native#33039 — a GIF that runs at twice the speed on a 120 Hz device — made
+     * impossible by construction rather than by a correction.
+     *
+     * A node the `overflow: hidden` of an ancestor has clipped away entirely does not advance at all: no elapsed
+     * time accumulates for it, so it schedules no frame and damages nothing while it is off screen, and the first
+     * advance after it is visible again resumes from the frame it paused on.
+     *
+     * Damage is the node's own extent, which for an `<Image>` is its box cut by the clips it inherits: a looping
+     * animation repaints its own rectangle per frame and nothing else. See *Damage tracking* in
+     * docs/cpp-toolchain.md.
+     */
+    bool advanceImageAnimations(double frameMilliseconds);
+
+    /**
+     * Where decoded frames come from: the image pipeline's cache, asked by source URI. Set once by the host, and
      * unset in every test that does not decode anything, in which case an `<Image>` node mounts with no pixels
      * and paints nothing until a decode reports one.
      *
@@ -404,7 +453,7 @@ public:
      *
      * Threading contract: called on whichever thread is writing the scene, under its owner's mutex.
      */
-    using DecodedImageProvider = std::function<std::shared_ptr<void>(const std::string& uri)>;
+    using DecodedImageProvider = std::function<std::shared_ptr<const DecodedImageFrames>(const std::string& uri)>;
 
     void setDecodedImageProvider(DecodedImageProvider decodedImages);
 

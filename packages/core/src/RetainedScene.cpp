@@ -1,5 +1,6 @@
 #include "RetainedScene.h"
 
+#include "ImageContent.h"
 #include "TextInputComponent.h"
 
 #include <react/renderer/attributedstring/AttributedString.h>
@@ -294,9 +295,23 @@ std::vector<SceneShadow> resolveShadowOpacity(const std::vector<SceneShadow>& sh
     return resolved;
 }
 
+/**
+ * The one frame `image` is showing right now. A still source is its only frame; an animated one is wherever its
+ * own elapsed time has reached, which is `animatedImageFrameIndex` and nothing else.
+ */
+std::shared_ptr<void> currentImageFrame(const SceneImageContent& image) {
+    if (image.frames == nullptr || image.frames->frames.empty()) {
+        return nullptr;
+    }
+
+    return image.frames->frames[animatedImageFrameIndex(*image.frames, image.elapsedMilliseconds)];
+}
+
 SceneImageContent resolveImage(const SceneImageContent& image, float opacity) {
     return SceneImageContent{.uri = image.uri,
-                             .pixels = image.pixels,
+                             .frames = image.frames,
+                             .pixels = currentImageFrame(image),
+                             .elapsedMilliseconds = image.elapsedMilliseconds,
                              .resizeMode = image.resizeMode,
                              .tintColorArgb = scaleArgbAlpha(image.tintColorArgb, opacity),
                              .opacity = opacity};
@@ -534,6 +549,8 @@ void readEditorContent(SceneNode& node, const facebook::react::ShadowView& shado
  */
 void readImageContent(SceneNode& node, const facebook::react::ShadowView& shadowView,
                       const RetainedScene::DecodedImageProvider& decodedImages) {
+    const std::optional<SceneImageContent> previousImage = node.image;
+
     node.image = std::nullopt;
 
     const std::shared_ptr<const facebook::react::ImageProps> imageProps =
@@ -552,8 +569,15 @@ void readImageContent(SceneNode& node, const facebook::react::ShadowView& shadow
         return;
     }
 
+    // An update that did not change the source keeps the animation where it was. `<Image>` props change for all
+    // sorts of reasons that have nothing to do with the source, and a GIF that jumped back to its first frame on
+    // every re-render is core#46810 in a different disguise.
+    const bool isSameSource = previousImage.has_value() && previousImage.value().uri == imageSource.uri;
+
     node.image = SceneImageContent{.uri = imageSource.uri,
-                                   .pixels = decodedImages ? decodedImages(imageSource.uri) : nullptr,
+                                   .frames = decodedImages ? decodedImages(imageSource.uri) : nullptr,
+                                   .elapsedMilliseconds = isSameSource ? previousImage.value().elapsedMilliseconds
+                                                                       : 0.0,
                                    .resizeMode = toSceneImageResizeMode(imageProps->resizeMode),
                                    .tintColorArgb = toArgb(imageProps->tintColor, 1.0F)};
 }
@@ -715,6 +739,26 @@ facebook::react::Rect primitiveDamageBounds(const ScenePrimitive& primitive) {
 
 bool hasArea(const facebook::react::Rect& rect) {
     return rect.size.width * rect.size.height > 0;
+}
+
+/**
+ * What this node alone paints, cut by the clips it inherits, or nothing when the clips leave none of it.
+ *
+ * A subtree extent is the wrong question for an `<Image>`: it is the union over the node *and its descendants*,
+ * so an image an `overflow: hidden` ancestor has cut away entirely still reports an extent when a child of it
+ * survives the clip, and the extent it reports covers that child. Asking only for the node's own primitive is
+ * what makes "this image is off screen" and "this image needs repainting" the same rectangle.
+ */
+std::optional<facebook::react::Rect> clippedPrimitiveBounds(const SceneNodes& nodes, facebook::react::Tag tag,
+                                                            const SceneNode& node) {
+    const facebook::react::Rect bounds =
+        primitiveDamageBounds(visitNode(node, paintStateOfAncestors(nodes, tag)).primitive);
+
+    if (!hasArea(bounds)) {
+        return std::nullopt;
+    }
+
+    return bounds;
 }
 
 // A matrix whose determinant is below this maps every point onto a line or onto a point, so the rectangle it
@@ -961,13 +1005,13 @@ bool RetainedScene::hasNode(facebook::react::Tag tag) const {
     return nodes_.contains(tag);
 }
 
-void RetainedScene::damageImageSource(const std::string& uri) {
-    const std::shared_ptr<void> pixels = decodedImages_ ? decodedImages_(uri) : nullptr;
+void RetainedScene::damageImageSource(const std::string& uri,
+                                      const std::shared_ptr<const DecodedImageFrames>& decoded) {
     std::vector<facebook::react::Tag> drawingTags;
 
     for (auto& [tag, node] : nodes_) {
         if (node.image.has_value() && node.image.value().uri == uri) {
-            node.image.value().pixels = pixels;
+            node.image.value().frames = decoded;
             drawingTags.push_back(tag);
         }
     }
@@ -975,6 +1019,40 @@ void RetainedScene::damageImageSource(const std::string& uri) {
     for (facebook::react::Tag tag : drawingTags) {
         damageSubtree(tag);
     }
+}
+
+bool RetainedScene::advanceImageAnimations(double frameMilliseconds) {
+    bool hasAdvanced = false;
+
+    for (auto& [tag, node] : nodes_) {
+        if (!node.image.has_value() || node.image.value().frames == nullptr ||
+            !isAnimatedImage(*node.image.value().frames)) {
+            continue;
+        }
+
+        // An animation nothing can see is an animation that does not run: no elapsed time accumulates while the
+        // node is clipped away, so it holds the frame it paused on and resumes from there. This is the image's
+        // own box and not its subtree's, so a child that survives the clip does not keep the animation running.
+        const std::optional<facebook::react::Rect> bounds = clippedPrimitiveBounds(nodes_, tag, node);
+
+        if (!bounds.has_value()) {
+            continue;
+        }
+
+        SceneImageContent& image = node.image.value();
+        const size_t pausedFrame = animatedImageFrameIndex(*image.frames, image.elapsedMilliseconds);
+
+        image.elapsedMilliseconds += frameMilliseconds;
+
+        if (animatedImageFrameIndex(*image.frames, image.elapsedMilliseconds) != pausedFrame) {
+            // The same rectangle the visibility test just asked about: a frame of a looping animation repaints
+            // the image and nothing else, whatever it happens to have as children.
+            addDamageRect(damage_, bounds.value());
+            hasAdvanced = true;
+        }
+    }
+
+    return hasAdvanced;
 }
 
 void RetainedScene::setDecodedImageProvider(DecodedImageProvider decodedImages) {

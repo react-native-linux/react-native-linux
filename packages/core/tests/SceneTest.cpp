@@ -1086,7 +1086,7 @@ TEST(RetainedSceneImageTest, ADecodedSourceDamagesEveryNodeDrawingIt) {
 
     addChild(scene, kSurfaceTag, makeTile(3, makeRect(400, 300, 100, 100), "other.png"));
     scene.takeDamage();
-    scene.damageImageSource("tile.png");
+    scene.damageImageSource("tile.png", nullptr);
 
     const SceneDamage damage = scene.takeDamage();
 
@@ -1098,7 +1098,7 @@ TEST(RetainedSceneImageTest, ASourceNothingDrawsDamagesNothing) {
     RetainedScene scene = sceneWithTile(makeTile(2, makeRect(40, 60, 120, 90), "tile.png"));
 
     scene.takeDamage();
-    scene.damageImageSource("missing.png");
+    scene.damageImageSource("missing.png", nullptr);
 
     EXPECT_TRUE(scene.takeDamage().empty());
 }
@@ -1460,7 +1460,7 @@ TEST(LinuxMountingManagerTest, ADecodedImageDamagesTheFrameUnderTheSceneMutex) {
     mountingManager.executeMount(kSurfaceTag, transactionOf(std::move(mutations)));
     mountingManager.takeFrame();
 
-    mountingManager.damageImageSource("tile.png");
+    mountingManager.damageImageSource("tile.png", nullptr);
 
     const SceneFrame frame = mountingManager.takeFrame();
 

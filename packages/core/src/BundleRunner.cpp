@@ -485,6 +485,32 @@ FabricRunResult runFocusCommandedFabricBundle(const std::string& bundlePath, fac
     return finishFabricRun(reactHost, fabricHost);
 }
 
+FabricRunResult runAnimatedImageFabricBundle(const std::string& bundlePath, facebook::react::Size surfaceSize,
+                                             int frameCount) {
+    ReactHost reactHost;
+    std::unique_ptr<FabricHost> fabricHost = startFabricRun(reactHost, bundlePath, surfaceSize);
+
+    if (waitForFirstCommit(reactHost, *fabricHost, true).empty()) {
+        std::cerr << "[bundle-runner] the bundle committed no scene, so there is nothing to animate" << std::endl;
+    }
+
+    // The frames and the settle that every other golden gets, before a single animation frame is advanced: an
+    // `<Image>` mounts with the `Invalid` source `ImageShadowNode::initialStateData` seeds and only reaches its
+    // real one on the commit its first layout produces, so advancing before that has nothing to advance and the
+    // picture would depend on which of the two the run happened to catch.
+    for (size_t frame = 0; frame < kHeadlessFrameCount; ++frame) {
+        deliverInputFrame(reactHost, *fabricHost, {});
+    }
+
+    settlePendingImageDecodes();
+
+    for (int frame = 0; frame < frameCount; ++frame) {
+        fabricHost->advanceImageAnimations(kInjectedFrameMilliseconds);
+    }
+
+    return finishFabricRun(reactHost, fabricHost);
+}
+
 FabricRunResult runTypedFabricBundle(const std::string& bundlePath, facebook::react::Size surfaceSize,
                                      const std::string& keySequence) {
     ReactHost reactHost;

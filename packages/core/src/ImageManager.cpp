@@ -55,21 +55,25 @@ ImageRequest ImageManager::requestImage(const ImageSource& imageSource, SurfaceI
     const std::weak_ptr<const ImageResponseObserverCoordinator> observers =
         imageRequest.getSharedObserverCoordinator();
 
-    react_native_linux::requestImageDecode(imageSource.uri, [observers](const std::shared_ptr<void>& image) {
-        const std::shared_ptr<const ImageResponseObserverCoordinator> coordinator = observers.lock();
+    react_native_linux::requestImageDecode(
+        imageSource.uri,
+        [observers](const std::shared_ptr<const react_native_linux::DecodedImageFrames>& decoded) {
+            const std::shared_ptr<const ImageResponseObserverCoordinator> coordinator = observers.lock();
 
-        if (coordinator == nullptr) {
-            return;
-        }
+            if (coordinator == nullptr) {
+                return;
+            }
 
-        if (image == nullptr) {
-            coordinator->nativeImageResponseFailed(ImageLoadError{nullptr});
+            if (decoded == nullptr) {
+                coordinator->nativeImageResponseFailed(ImageLoadError{nullptr});
 
-            return;
-        }
+                return;
+            }
 
-        coordinator->nativeImageResponseComplete(ImageResponse{image, nullptr});
-    });
+            // The first frame, because that is what "the image loaded" means to an observer: an animated source
+            // fires `onLoad` once, when it can first be drawn, not once per frame.
+            coordinator->nativeImageResponseComplete(ImageResponse{decoded->frames.front(), nullptr});
+        });
 
     return imageRequest;
 }

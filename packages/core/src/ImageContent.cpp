@@ -4,6 +4,7 @@
 #include <react/renderer/graphics/Point.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -127,6 +128,16 @@ facebook::react::Float placementScale(SceneImageResizeMode resizeMode, const fac
     return 1;
 }
 
+double totalAnimationMilliseconds(const DecodedImageFrames& decoded) {
+    double total = 0.0;
+
+    for (int32_t duration : decoded.frameDurationsMilliseconds) {
+        total += static_cast<double>(duration);
+    }
+
+    return total;
+}
+
 } // namespace
 
 ResolvedImageSource resolveImageSource(const std::string& uri, const std::string& assetDirectory) {
@@ -182,9 +193,41 @@ facebook::react::Rect imagePlacement(SceneImageResizeMode resizeMode, const face
         .size = scaledSize};
 }
 
+bool isAnimatedImage(const DecodedImageFrames& decoded) {
+    return decoded.frames.size() > 1 && decoded.frameDurationsMilliseconds.size() == decoded.frames.size() &&
+           totalAnimationMilliseconds(decoded) > 0;
+}
+
+size_t animatedImageFrameIndex(const DecodedImageFrames& decoded, double elapsedMilliseconds) {
+    if (!isAnimatedImage(decoded)) {
+        return 0;
+    }
+
+    const size_t lastFrameIndex = decoded.frames.size() - 1;
+    const double totalDuration = totalAnimationMilliseconds(decoded);
+    const double playedOut = totalDuration * (static_cast<double>(decoded.repetitionCount) + 1);
+
+    if (decoded.repetitionCount != kAnimatedImageRepeatsForever && elapsedMilliseconds >= playedOut) {
+        return lastFrameIndex;
+    }
+
+    const double phase = std::fmod(elapsedMilliseconds, totalDuration);
+    double shownUntil = 0;
+
+    for (size_t index = 0; index < lastFrameIndex; ++index) {
+        shownUntil += static_cast<double>(decoded.frameDurationsMilliseconds[index]);
+
+        if (phase < shownUntil) {
+            return index;
+        }
+    }
+
+    return lastFrameIndex;
+}
+
 ImageCache::ImageCache(size_t byteCapacity) : byteCapacity_(byteCapacity) {}
 
-std::shared_ptr<void> ImageCache::find(const std::string& uri) {
+std::shared_ptr<const DecodedImageFrames> ImageCache::find(const std::string& uri) {
     const auto entry = entries_.find(uri);
 
     if (entry == entries_.end()) {
@@ -196,7 +239,7 @@ std::shared_ptr<void> ImageCache::find(const std::string& uri) {
     return entry->second.image;
 }
 
-void ImageCache::insert(const std::string& uri, std::shared_ptr<void> image, size_t byteCount) {
+void ImageCache::insert(const std::string& uri, std::shared_ptr<const DecodedImageFrames> image, size_t byteCount) {
     eraseEntry(uri);
 
     if (byteCount > byteCapacity_) {

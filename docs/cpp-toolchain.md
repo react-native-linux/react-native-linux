@@ -1737,9 +1737,11 @@ pnpm --filter @react-native-linux/core run:golden   # hello_react --golden <bund
 pnpm --filter @react-native-linux/core run:golden:damage  # hello_react --damage-golden damage.js /tmp/rnl-damage.png
 pnpm --filter @react-native-linux/core run:golden:text    # hello_react --golden text.js /tmp/rnl-text.png
 pnpm --filter @react-native-linux/core run:golden:image   # hello_react --golden image.js /tmp/rnl-image.png
+pnpm --filter @react-native-linux/core run:golden:image:animated  # hello_react --animated-image animated-image.js ... 20
 pnpm --filter @react-native-linux/core run:golden:scroll  # hello_react --scroll-to scroll.js /tmp/rnl-scroll.png 160 100 3
 pnpm --filter @react-native-linux/core run:golden:focus   # hello_react --focus-tab focus.js /tmp/rnl-focus.png 3
 pnpm --filter @react-native-linux/core assets:test-image  # node scripts/make-test-image.ts — see *Image*
+pnpm --filter @react-native-linux/core assets:test-animation  # node scripts/make-test-animation.ts — see *Image*
 pnpm --filter @react-native-linux/core run:input    # hello_react --inject-pointer pressable.js 200 140
 pnpm --filter @react-native-linux/core run:animated-scroll  # hello_react --animated-scroll animated-scroll.js 160 100 3
 pnpm --filter @react-native-linux/core run:window   # build/dev/bin/rnl_window
@@ -2687,10 +2689,17 @@ function-local static safe to hand a thread.
 
 Every other thing that changes the picture arrives as a `ShadowViewMutation`, and *Damage tracking* accounts for
 it. A decode does not: no shadow node changed, so Fabric emits nothing. The pipeline therefore calls one listener
-with the URI it just decoded, `FabricHost` installs a listener that calls
-`LinuxMountingManager::damageImageSource`, and that damages the subtree extent of every node drawing that URI
-under the scene mutex. The next `takeFrame` hands the frame thread that damage with the scene it belongs to,
-which is the same atomic pair every other mutation goes through.
+with the URI it just decoded **and the frames it decoded into**, `FabricHost` installs a listener that calls
+`LinuxMountingManager::damageImageSource`, and that attaches those frames to every node drawing that URI and
+damages their subtree extents under the scene mutex. The next `takeFrame` hands the frame thread that damage with
+the scene it belongs to, which is the same atomic pair every other mutation goes through.
+
+The frames are handed over rather than looked up again, and that is load-bearing rather than tidy: **the cache is
+allowed to refuse them**. One animation can be larger than the whole capacity, `ImageCache::insert` drops such a
+source on the floor by design, and a listener that answered by asking the cache would hand the scene null and
+paint an oversized GIF as an empty box. Admission decides what a *later* mount finds without decoding again; it
+does not decide whether this decode reaches the screen. A source the cache refused is then owned by the nodes
+drawing it and by nothing else, which is the lifetime rule of #108 with the cache's share of it left out.
 
 The listener is process-wide and installed by `FabricHost`, under `RNL_ENABLE_IMAGES` — the definition only
 exists when the swap above happened. It is cleared in `~FabricHost` so a decode that lands after a host is gone
@@ -2709,6 +2718,11 @@ bound is bytes rather than entries because the cost of a decoded image is its pi
 three orders of magnitude in area. An insert past the capacity evicts from the least recently used end until the
 total fits, and an entry that alone exceeds the capacity is not cached at all, so one oversized image cannot flush
 everything else out on its way to being evicted itself. Both a hit and an insert make an entry most recently used.
+
+Refusing an entry is not refusing the picture. The decode listener carries its frames to the scene whether or not
+the cache took them, so a source too large for the capacity — an animation whose frames sum past it, most
+plausibly — still paints, and is simply decoded again the next time a node mounts it from cold. See *Damage,
+because a decode is not a mutation*.
 
 The value is a `std::shared_ptr<void>`, which is what keeps `ImageContent.cpp` free of Skia and therefore inside
 the coverage gate; it is the same type erasure upstream's own `ImageResponse` uses, for the same reason. An
@@ -2749,6 +2763,73 @@ and libjpeg-turbo are inside the archive, so images add no system dependency —
 `repeat` is the one mode that is not a single `drawImageRect`: the placement rectangle is the first tile, and a
 repeating shader anchored at it fills the frame.
 
+### Animated GIF (#257)
+
+An animated source is decoded whole. `SkCodec::getFrameCount` above one sends the decode down
+`decodeAnimatedImage`, which composes every frame into its own `SkImage` and reads the per-frame durations and the
+loop count off `SkCodec::getFrameInfo` and `getRepetitionCount`. GIF is the one animated format this build has —
+`SkGifDecoder` is in `libskia.a`, over the decoder Skia vendors; the archive carries no WebP symbols at all, so
+animated WebP is a separate issue once the Skia build gains that codec, and APNG is not in Skia.
+
+A source is therefore one cache entry with N frames, accounted for the bytes of all of them, and a node drawing it
+holds every frame for as long as it draws it — the lifetime rule of #108 with N bitmaps instead of one. Composing
+the frames is Skia's own recipe: a GIF frame is decoded into the pixels of the frame it depends on, so the buffer
+is carried forward and `SkCodec::Options::fPriorFrame` names it whenever the dependency is the frame immediately
+before, which is the common case and the one that keeps the decode linear. A frame that fails to decode ends the
+animation there rather than failing the source, which is what a browser does with a truncated GIF.
+
+**Which frame is on screen is a function of elapsed wall-clock time and the durations in the file, and of nothing
+else.** That is the whole schedule, and it is `animatedImageFrameIndex` in `ImageContent.cpp`, inside the coverage
+gate:
+
+```text
+elapsed ≥ total × (repetitionCount + 1), and the count is not "forever"  → the last frame, held
+otherwise                                                               → the frame whose duration
+                                                                          contains elapsed mod total
+```
+
+`repetitionCount` is Skia's: the number of plays *after* the first, so `0` plays once and `-1`
+(`kAnimatedImageRepeatsForever`) never stops. Nothing in this counts display refreshes, which is deliberate:
+core[#33039](https://github.com/facebook/react-native/issues/33039) is a GIF running at twice its speed on a
+120 Hz device because the next frame was scheduled on the next vsync rather than when its duration elapsed. Here a
+120 Hz display asks twice as often and sees the same frames go by at the same instants; `ImageTest.cpp` states
+that as the two rates producing one sequence.
+
+`RetainedScene::advanceImageAnimations` is the per-frame side. It walks the nodes once, adds the frame's
+milliseconds to each animated `<Image>`'s own elapsed time, and damages the ones whose frame index changed —
+`clippedPrimitiveBounds`, the node's **own** primitive cut by the clips it inherits, so a looping GIF repaints its
+own rectangle per frame and nothing else (#12). Deliberately not `subtreeExtent`, which every mutation uses: that
+is the union over the node *and its descendants*, so an `<Image>` with children would damage a rectangle covering
+them too, and the union would be an odd thing to repaint for a bitmap that changed inside its own box. `LinuxMountingManager::advanceImageAnimations` takes the scene mutex
+around it and flags pending damage, which is the fourth signal *Frame clock* already lists reaching
+`hasPendingWork`; `WindowSession::deliverInput` calls it once per frame beside the caret blink, and
+`BundleRunner`'s `--animated-image` mode calls it a fixed number of times at a fixed 60 Hz step so a golden of a
+GIF is reproducible.
+
+**A clipped-out animation does not run.** If `clippedPrimitiveBounds` finds nothing left of the node — an
+`overflow: hidden` ancestor has cut it away entirely — the advance skips it: no elapsed time accumulates, so no
+frame is scheduled and nothing is damaged, and the first advance after it is visible again resumes from the frame
+it paused on rather than from wherever the wall clock would have carried it. It is the same rectangle the damage
+uses, and for the same reason it is the node's own: an image scrolled off screen whose child happens to stay
+inside the clip is still an image nobody can see, and a subtree extent would have kept it decoding frames
+forever. An update that does not change the source keeps its place
+for the same reason: `<Image>` props change for reasons that have nothing to do with the source, and a GIF that
+restarted on every re-render would be core#46810 in a different disguise.
+
+`resizeMode`, `tintColor`, `borderRadius` and the rest are untouched by any of this. The frame index only chooses
+which `SkImage` `SceneImageContent::pixels` carries; every frame then goes through the same `paintImage` a still
+image does, which is what keeps core[#42132](https://github.com/facebook/react-native/issues/42132) — a GIF drawn
+wrong under `resizeMode: repeat` — from having a place to happen.
+
+The fixture is `packages/core/assets/rnl-test-animation.gif`, written by
+`packages/core/scripts/make-test-animation.ts` (`pnpm --filter @react-native-linux/core assets:test-animation`): an
+8x6 GIF89a of four frames, a hundred milliseconds each, looping forever, whose four quadrants rotate through the
+same palette the still asset uses. It is 241 bytes because its pixels are literal LZW codes separated by clear
+codes rather than compressed, which is a thirty-line encoder with no dictionary to get wrong. The golden is
+`packages/core/goldens/animated-image.png` from `test-bundles/animated-image.js`, rendered after twenty 60 Hz
+frames — 333 ms, which the four 100 ms frames put on the last of them, and the rotation makes which one that is
+readable at a glance.
+
 ### Fidelity limits
 
 Each is deliberate, and each is a thing to fix rather than a thing to argue about:
@@ -2756,8 +2837,8 @@ Each is deliberate, and each is a thing to fix rather than a thing to argue abou
 - **No `http` or `https`.** There is no networking stack in this build at all — `ReactCxxPlatform`'s HTTP client
   needs nlohmann_json and OpenSSL, and neither is linked. A remote source is not a decode that failed; it is a
   decode that was never attempted. It arrives with the Metro dev server work.
-- **No animated images.** `SkCodec` is asked for one frame. APNG, animated WebP and GIF decode to their first
-  frame at best; GIF is not in the decoder list at all.
+- **Animated GIF only.** See *Animated GIF (#257)*. Animated WebP needs a codec this Skia archive does not carry,
+  and APNG is not in Skia at all; both decode to a first frame at best.
 - **No `srcSet` or scale selection.** `ImageShadowNode` picks the best area fit among several sources and we paint
   what it picked, but nothing here reasons about `scale` or a device pixel ratio, because there is no fractional
   scale support yet either.
@@ -4596,6 +4677,19 @@ The eleventh is `packages/core/test-bundles/border-matrix.js` to `packages/core/
    ([core#58054](https://github.com/facebook/react-native/issues/58054)).
 5. **Large radius** — a clamped pill with a ring, per-side widths and per-side colours at a 40 px radius, and a
    circle, so the mitres meet on an arc rather than on a straight edge.
+
+The twelfth is `packages/core/test-bundles/animated-image.js` to `packages/core/goldens/animated-image.png`,
+issue #257's, and it is rendered by `--animated-image <bundle> <output.png> <frames>` rather than by `--golden`:
+a GIF at rest on its first frame proves nothing a still image does not. Twenty 60 Hz frames is 333 ms, which the
+four 100 ms frames of `packages/core/assets/rnl-test-animation.gif` put on the **last** one — quadrants amber, red,
+green, blue clockwise from the top left, one rotation short of where the file starts.
+
+Every tile is 130x120 on a `#1E2430` panel, and the same five `resizeMode` values run across the top row so that a
+per-frame image is seen going through the same placement a still one does. Then, left to right on the second row:
+`cover` with `borderRadius: 28`, `contain` with `tintColor` sky `#61AFEF` (a flat silhouette, so the rotation
+disappears and only the letterboxing remains), `cover` at `opacity: 0.4`, and last **an empty panel** — an
+`<Image>` laid out entirely outside its `overflow: hidden` parent. That tile is the pause: the animation behind it
+schedules no frame and damages nothing for as long as it is clipped away.
 
 ### The partial-redraw equivalence proof
 

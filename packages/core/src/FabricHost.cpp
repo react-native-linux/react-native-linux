@@ -162,9 +162,10 @@ FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::
     // A finished decode changes the picture with no Fabric mutation behind it, so this is the only path that can
     // damage the frame for one. The listener runs on the decode thread and takes the mounting manager's mutex; the
     // pipeline holds no lock of its own while it calls back.
-    mountingManager_->setDecodedImageProvider(&decodedImagePixels);
-    setImageDecodeListener([mountingManager = mountingManager_](const std::string& uri) {
-        mountingManager->damageImageSource(uri);
+    mountingManager_->setDecodedImageProvider(&decodedImage);
+    setImageDecodeListener([mountingManager = mountingManager_](
+                               const std::string& uri, const std::shared_ptr<const DecodedImageFrames>& decoded) {
+        mountingManager->damageImageSource(uri, decoded);
     });
 #endif
 
@@ -260,6 +261,10 @@ bool FabricHost::advanceScroll(double frameMilliseconds) {
 
 bool FabricHost::advanceCaretBlink(double frameMilliseconds) {
     return inputDispatcher_->advanceCaretBlink(frameMilliseconds);
+}
+
+bool FabricHost::advanceImageAnimations(double frameMilliseconds) {
+    return mountingManager_->advanceImageAnimations(frameMilliseconds);
 }
 
 void FabricHost::induceEventBeat() { eventBeatInducer_(); }
