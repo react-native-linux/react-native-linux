@@ -109,14 +109,6 @@ std::shared_ptr<const facebook::react::ScrollViewShadowNode> deepestScrollView(
 }
 
 /**
- * Advances one axis by one frame and clears what it consumed.
- *
- * A finger on a touchpad moves the content one-to-one and leaves the velocity that delta implies behind it, which
- * is what a fling starts from. Everything else decelerates, with any wheel notches folded in first as the velocity
- * whose curve covers exactly their distance — so turning the wheel again mid-glide accelerates, for the same
- * reason two flicks in a row do.
- */
-/**
  * Re-aims a glide at the snap point it is going to settle on, by replacing its velocity with the one whose curve
  * covers exactly the distance to that point — the inversion a wheel notch already uses, so snapping introduces no
  * second motion model and keeps the ordinary momentum bracket.
@@ -124,10 +116,16 @@ std::shared_ptr<const facebook::react::ScrollViewShadowNode> deepestScrollView(
  * It runs every frame rather than once at the release because that is a fixed point rather than a repetition: the
  * analytic landing point of a decelerating velocity does not change as the curve is walked, so every later frame
  * re-chooses the snap point the first one aimed at.
+ *
+ * `isSettlingFromRelease` is the one frame a motionless release owns. `UIScrollView` pages on any release, not
+ * only on a flick, so a finger that stops before it lifts still has to align — but an idle ScrollView and the
+ * offset an unanimated `scrollTo` just wrote must not be dragged off by the same rule, and neither of those is a
+ * release. A moving axis needs no flag: its velocity is already the gesture.
  */
-ScrollAxisState aimAtSnapPoint(const ScrollAxisState& axis, double decelerationRate, double contentLength,
-                               double viewportLength, const ScrollSnapConfiguration& snapping) {
-    if (axis.velocity == 0.0 || !hasSnapPoints(snapping)) {
+ScrollAxisState aimAtSnapPoint(const ScrollAxisState& axis, bool isSettlingFromRelease, double decelerationRate,
+                               double contentLength, double viewportLength,
+                               const ScrollSnapConfiguration& snapping) {
+    if ((axis.velocity == 0.0 && !isSettlingFromRelease) || !hasSnapPoints(snapping)) {
         return axis;
     }
 
@@ -137,8 +135,17 @@ ScrollAxisState aimAtSnapPoint(const ScrollAxisState& axis, double decelerationR
                            .velocity = velocityForTravel(target - axis.offset, decelerationRate)};
 }
 
-void advanceAxis(ScrollTargetAxis& axis, bool isFingerDown, double frameMilliseconds, double decelerationRate,
-                 double contentLength, double viewportLength, const ScrollSnapConfiguration& snapping) {
+/**
+ * Advances one axis by one frame and clears what it consumed.
+ *
+ * A finger on a touchpad moves the content one-to-one and leaves the velocity that delta implies behind it, which
+ * is what a fling starts from. Everything else decelerates, with any wheel notches folded in first as the velocity
+ * whose curve covers exactly their distance — so turning the wheel again mid-glide accelerates, for the same
+ * reason two flicks in a row do.
+ */
+void advanceAxis(ScrollTargetAxis& axis, bool isFingerDown, bool isSettlingFromRelease, double frameMilliseconds,
+                 double decelerationRate, double contentLength, double viewportLength,
+                 const ScrollSnapConfiguration& snapping) {
     if (axis.pendingOffset.has_value()) {
         axis.state = ScrollAxisState{.offset = axis.pendingOffset.value()};
         axis.pendingOffset.reset();
@@ -157,8 +164,8 @@ void advanceAxis(ScrollTargetAxis& axis, bool isFingerDown, double frameMillisec
                                                    velocityForTravel(axis.pendingNotches * kWheelNotchDistance,
                                                                      decelerationRate)};
 
-        const ScrollAxisState aimed =
-            aimAtSnapPoint(impulsed, decelerationRate, contentLength, viewportLength, snapping);
+        const ScrollAxisState aimed = aimAtSnapPoint(impulsed, isSettlingFromRelease, decelerationRate,
+                                                     contentLength, viewportLength, snapping);
 
         axis.state = decelerateAxis(aimed, frameMilliseconds, decelerationRate, contentLength, viewportLength);
     }
@@ -291,7 +298,7 @@ bool ScrollController::isScrollActive() const noexcept {
                                        target.vertical.pendingOffset.has_value() ||
                                        target.vertical.pendingVelocity.has_value();
 
-        if (target.isFingerDown || target.isMomentumRunning || hasPendingCommand) {
+        if (target.isFingerDown || target.isMomentumRunning || target.isSettlingFromRelease || hasPendingCommand) {
             return true;
         }
     }
@@ -414,16 +421,22 @@ bool ScrollController::advanceTarget(ScrollTarget& target, const facebook::react
     const facebook::react::Point previousOffset =
         toPoint(target.horizontal.state.offset, target.vertical.state.offset);
 
-    advanceAxis(target.horizontal, target.isFingerDown, frameMilliseconds, metrics.decelerationRate,
-                metrics.contentSize.width, metrics.viewportSize.width, metrics.snapping);
-    advanceAxis(target.vertical, target.isFingerDown, frameMilliseconds, metrics.decelerationRate,
-                metrics.contentSize.height, metrics.viewportSize.height, metrics.snapping);
+    const bool isSettlingFromRelease = target.isSettlingFromRelease;
+
+    target.isSettlingFromRelease = false;
+
+    advanceAxis(target.horizontal, target.isFingerDown, isSettlingFromRelease, frameMilliseconds,
+                metrics.decelerationRate, metrics.contentSize.width, metrics.viewportSize.width, metrics.snapping);
+    advanceAxis(target.vertical, target.isFingerDown, isSettlingFromRelease, frameMilliseconds,
+                metrics.decelerationRate, metrics.contentSize.height, metrics.viewportSize.height,
+                metrics.snapping);
 
     // The release is applied after the frame it arrived in has been dragged, so the velocity the last delta left
     // behind is the velocity the fling starts with.
     if (target.hasReleased) {
         target.isFingerDown = false;
         target.hasReleased = false;
+        target.isSettlingFromRelease = hasSnapPoints(metrics.snapping);
     }
 
     target.isMomentumRunning = !target.isFingerDown && (target.horizontal.state.velocity != 0.0 ||
@@ -472,7 +485,7 @@ bool ScrollController::advanceTarget(ScrollTarget& target, const facebook::react
         }
     }
 
-    return target.isFingerDown || target.isMomentumRunning;
+    return target.isFingerDown || target.isMomentumRunning || target.isSettlingFromRelease;
 }
 
 namespace {

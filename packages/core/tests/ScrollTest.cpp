@@ -604,13 +604,69 @@ TEST(SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe) {
          .viewportLength = kViewportLength,
          .snapping = ScrollSnapConfiguration{.interval = 100.0, .offsets = {0.0, 90.0, 210.0}},
          .expected = 210.0},
-        {.what = "disableIntervalMomentum snaps from where the finger left, not from where momentum would end",
+        {.what = "disableIntervalMomentum takes the point ahead of the release, not the one momentum would reach",
          .offset = 20.0,
          .travel = 400.0,
          .contentLength = kPagedContent,
          .viewportLength = kPagedViewport,
          .snapping = ScrollSnapConfiguration{.isPagingEnabled = true, .isIntervalMomentumDisabled = true},
+         .expected = 150.0},
+        {.what = "a release exactly on a point with disableIntervalMomentum advances rather than travelling zero",
+         .offset = 150.0,
+         .travel = 400.0,
+         .contentLength = kPagedContent,
+         .viewportLength = kPagedViewport,
+         .snapping = ScrollSnapConfiguration{.isPagingEnabled = true, .isIntervalMomentumDisabled = true},
+         .expected = 300.0},
+        {.what = "the same release backwards takes the point behind it",
+         .offset = 150.0,
+         .travel = -400.0,
+         .contentLength = kPagedContent,
+         .viewportLength = kPagedViewport,
+         .snapping = ScrollSnapConfiguration{.isPagingEnabled = true, .isIntervalMomentumDisabled = true},
          .expected = 0.0},
+        {.what = "a directional release with nothing ahead of it stays on the point it is already on",
+         .offset = 600.0,
+         .travel = 400.0,
+         .contentLength = kPagedContent,
+         .viewportLength = kPagedViewport,
+         .snapping = ScrollSnapConfiguration{.isPagingEnabled = true, .isIntervalMomentumDisabled = true},
+         .expected = 600.0},
+        {.what = "a motionless release with disableIntervalMomentum has no direction and takes the nearest",
+         .offset = 160.0,
+         .travel = 0.0,
+         .contentLength = kPagedContent,
+         .viewportLength = kPagedViewport,
+         .snapping = ScrollSnapConfiguration{.isPagingEnabled = true, .isIntervalMomentumDisabled = true},
+         .expected = 150.0},
+        {.what = "a motionless release settles onto the nearest snap point, which is what UIScrollView pages on",
+         .offset = 80.0,
+         .travel = 0.0,
+         .contentLength = kPagedContent,
+         .viewportLength = kPagedViewport,
+         .snapping = paging(),
+         .expected = 150.0},
+        {.what = "a motionless release with nothing configured stays exactly where the finger left it",
+         .offset = 80.0,
+         .travel = 0.0,
+         .contentLength = kPagedContent,
+         .viewportLength = kPagedViewport,
+         .snapping = ScrollSnapConfiguration{},
+         .expected = 80.0},
+        {.what = "a directional release takes the nearest point ahead of it however the offsets were listed",
+         .offset = 50.0,
+         .travel = 400.0,
+         .contentLength = kContentLength,
+         .viewportLength = kViewportLength,
+         .snapping = ScrollSnapConfiguration{.offsets = {0.0, 300.0, 90.0}, .isIntervalMomentumDisabled = true},
+         .expected = 90.0},
+        {.what = "snapToInterval takes precedence over pagingEnabled, which the prop is documented as replacing",
+         .offset = 0.0,
+         .travel = 160.0,
+         .contentLength = kContentLength,
+         .viewportLength = kViewportLength,
+         .snapping = ScrollSnapConfiguration{.interval = 100.0, .isPagingEnabled = true},
+         .expected = 200.0},
         {.what = "the same flick with momentum left on carries three pages further",
          .offset = 20.0,
          .travel = 400.0,
@@ -888,6 +944,37 @@ TEST_F(ScrollControllerTest, AContinuousDragIsNotMomentumUntilTheStopReleasesIt)
 
     EXPECT_TRUE(controller.hasDispatchedScrollEvent());
 
+    controller.dispatch({scrollStop()});
+    controller.advance(kFrameMilliseconds60Hz);
+
+    EXPECT_FALSE(controller.isScrollActive());
+}
+
+TEST_F(ScrollControllerTest, AMotionlessReleaseOnAPagedScrollViewStillHasSomethingLeftToDo) {
+    commitScrollView(folly::dynamic::object("pagingEnabled", true));
+    ScrollController controller = makeController();
+
+    // A finger that drags and then holds still before it lifts: the frame with no delta behind it leaves the
+    // velocity at zero, so the release that follows is the motionless one UIScrollView still pages on.
+    controller.dispatch({drag(40)});
+    controller.advance(kFrameMilliseconds60Hz);
+    controller.advance(kFrameMilliseconds60Hz);
+    controller.dispatch({scrollStop()});
+    controller.advance(kFrameMilliseconds60Hz);
+
+    EXPECT_TRUE(controller.isScrollActive());
+    EXPECT_TRUE(controller.advance(kFrameMilliseconds60Hz));
+
+    settleByDriving(controller);
+}
+
+TEST_F(ScrollControllerTest, AMotionlessReleaseWithNothingToSnapToIsTheEndOfTheGesture) {
+    commitScrollView(folly::dynamic::object());
+    ScrollController controller = makeController();
+
+    controller.dispatch({drag(40)});
+    controller.advance(kFrameMilliseconds60Hz);
+    controller.advance(kFrameMilliseconds60Hz);
     controller.dispatch({scrollStop()});
     controller.advance(kFrameMilliseconds60Hz);
 

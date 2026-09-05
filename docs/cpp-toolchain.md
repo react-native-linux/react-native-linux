@@ -2857,11 +2857,16 @@ The rules, in the order they apply:
 - **The landing point is the whole remaining travel of the velocity, clamped first.** `offset + velocity / -ln(rate)`
   is the analytic distance the curve covers, and it is clamped into `[0, maximumScrollOffset]` *before* anything is
   projected onto it, for the same reason `scrollToDestination` clamps before it returns.
-- **`disableIntervalMomentum` replaces that landing point with the current offset.** The flick then chooses the
-  snap point beside where the finger left rather than the one momentum would have carried it to, which is what
-  Android's `ReactScrollView` does with the same prop.
-- **`snapToOffsets` wins over `snapToInterval`**, the order `RCTScrollView` resolves them in. `pagingEnabled` is an
-  interval of exactly one viewport, `Start`-aligned.
+- **`disableIntervalMomentum` replaces that landing point with the current offset and makes the choice
+  directional.** The target is the nearest snap point strictly *ahead* of the release in the direction the flick is
+  going — `ReactScrollView.flingAndSnap`'s larger-offset/smaller-offset rule — so a release already sitting on a
+  snap point advances to the next one rather than travelling nowhere at all. A release with no velocity has no
+  direction and takes the nearest.
+- **`snapToOffsets` wins over `snapToInterval`, which wins over `pagingEnabled`.** That is the order
+  `RCTScrollView` resolves them in and the order the props are documented in: `snapToInterval` is *a more
+  configurable alternative to* `pagingEnabled`, not a modifier on it, so `{pagingEnabled, snapToInterval: 100}`
+  snaps by 100 and not by the viewport. `pagingEnabled` on its own is an interval of exactly one viewport,
+  `Start`-aligned.
 - **`snapToAlignment` is a shift, not a third code path.** An item `interval` long inside a `viewportLength`
   viewport is `Start`-aligned at `n × interval`, centred at `n × interval − (viewportLength − interval) / 2` and
   trailing-aligned at `n × interval − (viewportLength − interval)`. The nearest of those is
@@ -2886,8 +2891,14 @@ second motion model, keeps the ordinary momentum bracket, and ends exactly on th
 `kMinimumMomentumTravel` folds the last half point into the step that stops. It happens on **every** frame of the
 glide rather than once at the release, and that is a fixed point rather than a repetition: the analytic landing
 point of a decelerating velocity does not change as the curve is walked, so the second frame re-chooses the point
-the first one aimed at. A velocity of zero is never re-aimed, which is what keeps an unanimated `scrollTo` and a
-ScrollView sitting still out of the snap.
+the first one aimed at.
+
+**A release with no velocity still snaps.** `UIScrollView` pages on any release, not only on a flick, so a finger
+that stops before it lifts has to align too — and a stationary release is exactly the case a velocity-gated re-aim
+would miss. What distinguishes it from an idle ScrollView and from the offset an unanimated `scrollTo` just wrote
+is that it is a *release*: `ScrollTarget::isSettlingFromRelease` is the single frame after the finger lifts, set
+only when the props describe a snap point at all, and it is what `isScrollActive` reports so the frame clock
+schedules that frame. Neither an idle ScrollView nor a `scrollTo` is ever dragged off its offset by the snap.
 
 All seven props are read straight off `BaseScrollViewProps`, which the `cxx` platform's `ScrollViewProps` is a
 typedef of — none of them needed parsing added. They are read for both axes rather than for the scrolling one:

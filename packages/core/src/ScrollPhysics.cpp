@@ -32,17 +32,6 @@ double momentumTravel(double velocity, double decelerationRate) {
 }
 
 /**
- * The two outermost snap points of a configuration and the one nearest a given offset. Three numbers rather than
- * a list because an interval describes infinitely many candidates and only these three are ever consulted.
- */
-struct SnapPointRange {
-    double smallest{0.0};
-    double nearest{0.0};
-    double largest{0.0};
-    bool hasAny{false};
-};
-
-/**
  * How far a snapped item's offset sits behind the multiple of the interval that names it, which is the whole of
  * `snapToAlignment`: an item `interval` long inside a viewport `viewportLength` long is centred by half the
  * difference between them and trailing-aligned by all of it.
@@ -59,46 +48,73 @@ double alignmentShift(ScrollSnapAlignment alignment, double viewportLength, doub
     return 0.0;
 }
 
-SnapPointRange intervalSnapPoints(double interval, double shift, double maximumOffset, double landingOffset) {
+/**
+ * Every snap point a landing point could possibly be answered with: the two ends of the range and the three
+ * around the landing itself. An interval describes unboundedly many points and no more than these are ever
+ * consulted, so the list is built by arithmetic rather than enumerated — a one-point interval costs what a page
+ * costs. Repeats are left in it because a selection over the list cannot tell them apart.
+ */
+std::vector<double> intervalSnapPoints(double interval, double shift, double maximumOffset, double landingOffset) {
     const double firstIndex = std::ceil(shift / interval);
     const double lastIndex = std::floor((maximumOffset + shift) / interval);
 
     if (firstIndex > lastIndex) {
-        return SnapPointRange{};
+        return {};
     }
 
-    const double nearestIndex = std::clamp(std::round((landingOffset + shift) / interval), firstIndex, lastIndex);
+    const double landingIndex = std::clamp(std::round((landingOffset + shift) / interval), firstIndex, lastIndex);
+    std::vector<double> points;
 
-    return SnapPointRange{.smallest = firstIndex * interval - shift,
-                          .nearest = nearestIndex * interval - shift,
-                          .largest = lastIndex * interval - shift,
-                          .hasAny = true};
+    for (const double index : {firstIndex, landingIndex - 1.0, landingIndex, landingIndex + 1.0, lastIndex}) {
+        points.push_back(std::clamp(index, firstIndex, lastIndex) * interval - shift);
+    }
+
+    return points;
 }
 
-SnapPointRange offsetSnapPoints(const std::vector<double>& offsets, double maximumOffset, double landingOffset) {
-    SnapPointRange range{};
+std::vector<double> offsetSnapPoints(const std::vector<double>& offsets, double maximumOffset) {
+    std::vector<double> points;
 
     for (const double candidate : offsets) {
-        if (candidate < 0.0 || candidate > maximumOffset) {
-            continue;
-        }
-
-        if (!range.hasAny) {
-            range = SnapPointRange{
-                .smallest = candidate, .nearest = candidate, .largest = candidate, .hasAny = true};
-
-            continue;
-        }
-
-        range.smallest = std::min(range.smallest, candidate);
-        range.largest = std::max(range.largest, candidate);
-
-        if (std::abs(candidate - landingOffset) < std::abs(range.nearest - landingOffset)) {
-            range.nearest = candidate;
+        if (candidate >= 0.0 && candidate <= maximumOffset) {
+            points.push_back(candidate);
         }
     }
 
-    return range;
+    return points;
+}
+
+/**
+ * Which candidate a flick settles on.
+ *
+ * The nearest one, unless the choice is directional — `disableIntervalMomentum` — in which case it is the nearest
+ * one strictly beyond the release in the direction the flick is going. That is
+ * `ReactScrollView.flingAndSnap`'s larger-offset/smaller-offset rule, and it is what stops a release that is
+ * already sitting on a snap point from travelling nowhere at all. A release with no velocity has no direction and
+ * takes the nearest, and so does a directional choice with nothing left ahead of it.
+ */
+double chooseSnapPoint(const std::vector<double>& points, double from, double velocity, bool isDirectional) {
+    const bool isDirectionalChoice = isDirectional && velocity != 0.0;
+    double nearest = points.front();
+    double ahead = points.front();
+    bool hasAhead = false;
+
+    for (const double point : points) {
+        if (std::abs(point - from) < std::abs(nearest - from)) {
+            nearest = point;
+        }
+
+        if (!isDirectionalChoice || (velocity > 0.0 ? point <= from : point >= from)) {
+            continue;
+        }
+
+        if (!hasAhead || std::abs(point - from) < std::abs(ahead - from)) {
+            ahead = point;
+            hasAhead = true;
+        }
+    }
+
+    return hasAhead ? ahead : nearest;
 }
 
 } // namespace
@@ -157,30 +173,37 @@ double settleTargetOffset(const ScrollAxisState& axis, double decelerationRate, 
     const double snapFrom = snapping.isIntervalMomentumDisabled
                                 ? clampScrollOffset(axis.offset, contentLength, viewportLength)
                                 : landingOffset;
-    const double interval = snapping.isPagingEnabled ? viewportLength : snapping.interval;
-    const ScrollSnapAlignment alignment =
-        snapping.isPagingEnabled ? ScrollSnapAlignment::Start : snapping.alignment;
+    const bool isPaging = snapping.isPagingEnabled && snapping.interval <= 0.0;
+    const double interval = isPaging ? viewportLength : snapping.interval;
+    const ScrollSnapAlignment alignment = isPaging ? ScrollSnapAlignment::Start : snapping.alignment;
     const bool hasInterval = snapping.offsets.empty() && interval > 0.0;
-    const SnapPointRange snapPoints =
+    std::vector<double> points =
         hasInterval ? intervalSnapPoints(interval, alignmentShift(alignment, viewportLength, interval),
                                          maximumOffset, snapFrom)
-                    : offsetSnapPoints(snapping.offsets, maximumOffset, snapFrom);
-    const bool isBeforeEverySnapPoint = !snapping.snapToStart && snapFrom < snapPoints.smallest;
-    const bool isPastEverySnapPoint = !snapping.snapToEnd && snapFrom > snapPoints.largest;
+                    : offsetSnapPoints(snapping.offsets, maximumOffset);
 
-    if (!snapPoints.hasAny || isBeforeEverySnapPoint || isPastEverySnapPoint) {
+    if (points.empty()) {
         return landingOffset;
     }
 
-    double target = snapPoints.nearest;
+    const auto [smallest, largest] = std::minmax_element(points.begin(), points.end());
+    const bool isBeforeEverySnapPoint = !snapping.snapToStart && snapFrom < *smallest;
+    const bool isPastEverySnapPoint = !snapping.snapToEnd && snapFrom > *largest;
 
-    if (snapping.snapToStart && std::abs(snapFrom) < std::abs(snapFrom - target)) {
-        target = 0.0;
+    if (isBeforeEverySnapPoint || isPastEverySnapPoint) {
+        return landingOffset;
     }
 
-    if (snapping.snapToEnd && std::abs(snapFrom - maximumOffset) < std::abs(snapFrom - target)) {
-        target = maximumOffset;
+    if (snapping.snapToStart) {
+        points.push_back(0.0);
     }
+
+    if (snapping.snapToEnd) {
+        points.push_back(maximumOffset);
+    }
+
+    const double target =
+        chooseSnapPoint(points, snapFrom, axis.velocity, snapping.isIntervalMomentumDisabled);
 
     return clampScrollOffset(target, contentLength, viewportLength);
 }

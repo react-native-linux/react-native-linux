@@ -118,6 +118,12 @@ private:
         bool isFingerDown{false};
         bool hasReleased{false};
         bool isMomentumRunning{false};
+
+        /**
+         * The one frame after a finger lifts, during which a snapping ScrollView aligns whether or not the
+         * release carried any velocity. See `aimAtSnapPoint`.
+         */
+        bool isSettlingFromRelease{false};
     };
 
     void route(const InputEvent& event);

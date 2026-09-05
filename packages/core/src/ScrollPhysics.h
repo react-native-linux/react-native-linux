@@ -102,12 +102,13 @@ ScrollDestination scrollToDestination(double currentOffset, double targetOffset,
 enum class ScrollSnapAlignment { Start, Center, End };
 
 /**
- * The snap half of `<ScrollView>`'s props, for one axis. Upstream treats `snapToOffsets` and `snapToInterval` as
- * alternatives rather than as a pair and so does this: an explicit offset list wins, which is the order
- * `RCTScrollView` resolves them in.
+ * The snap half of `<ScrollView>`'s props, for one axis. Upstream treats these as alternatives rather than as a
+ * set, and so does this: `snapToOffsets` wins over `snapToInterval`, which in turn wins over `isPagingEnabled`.
+ * That is the precedence `RCTScrollView` resolves them in and the one the prop documentation states —
+ * `snapToInterval` is "a more configurable alternative to `pagingEnabled`", not something layered on top of it.
  *
- * `isPagingEnabled` is an interval of exactly one viewport, `Start`-aligned, which is what a `UIScrollView` page
- * is and what Android implements the prop as.
+ * `isPagingEnabled` alone is an interval of exactly one viewport, `Start`-aligned, which is what a `UIScrollView`
+ * page is and what Android implements the prop as.
  */
 struct ScrollSnapConfiguration {
     double interval{0.0};
@@ -139,9 +140,13 @@ bool hasSnapPoints(const ScrollSnapConfiguration& snapping);
  *
  * - The landing point is `offset` plus the whole remaining travel of `velocity`, clamped to the scrollable range
  *   before anything is projected onto it — the clamp is part of the target, not applied to the event afterwards.
- * - `isIntervalMomentumDisabled` replaces that landing point with the current offset, so the flick chooses the
- *   snap point beside where the finger left rather than the one momentum would have carried it to.
- * - Snap points are `snapping.offsets` when there are any, otherwise multiples of the interval shifted by the
+ * - `isIntervalMomentumDisabled` replaces that landing point with the current offset and makes the choice
+ *   directional: the nearest snap point strictly *ahead* of the release in the direction the flick is going,
+ *   which is `ReactScrollView.flingAndSnap`'s larger-offset/smaller-offset rule. A release already sitting on a
+ *   snap point therefore advances to the next one rather than travelling nowhere, and a release with no velocity
+ *   has no direction and takes the nearest.
+ * - Snap points are `snapping.offsets` when there are any, otherwise multiples of the interval — `snapToInterval`
+ *   if it is positive, one viewport if only `isPagingEnabled` is — shifted by the
  *   alignment: `Start` puts an item's leading edge at the viewport's, `Center` centres it, `End` aligns trailing
  *   edges. Points outside `[0, maximumScrollOffset]` are not snap points.
  * - The two ends of the content are snap points as well, but only when `snapToStart` and `snapToEnd` say so. When
