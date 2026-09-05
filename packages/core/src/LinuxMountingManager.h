@@ -2,16 +2,15 @@
 
 #include "RetainedScene.h"
 
+#include <cstdint>
 #include <folly/dynamic.h>
+#include <mutex>
 #include <react/renderer/core/ReactPrimitives.h>
 #include <react/renderer/graphics/Point.h>
 #include <react/renderer/graphics/Size.h>
 #include <react/renderer/mounting/MountingTransaction.h>
 #include <react/renderer/mounting/ShadowView.h>
 #include <react/renderer/uimanager/IMountingManager.h>
-
-#include <cstdint>
-#include <mutex>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -158,6 +157,14 @@ public:
     SceneHit findNodeAtPoint(facebook::react::SurfaceId surfaceId, facebook::react::Point surfacePoint) const;
     SceneSnapshot snapshotScene() const;
     std::string dumpScene() const;
+
+    /**
+     * Every mounted node, copied out under the scene mutex, for the automation channel's `DumpVisualTree`.
+     * Called from the frame thread while the JavaScript thread may be committing, exactly as `snapshotScene` is,
+     * so a dump describes one transaction's tree and never half of two. See *The automation channel* in
+     * docs/cpp-toolchain.md.
+     */
+    SceneNodes visualTreeNodes() const;
 
     /**
      * Whether the scene has changed since the last `takeFrame`, for the frame clock's fallback-timeout decision

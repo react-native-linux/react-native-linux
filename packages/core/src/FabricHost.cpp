@@ -6,8 +6,11 @@
 #include "ImageDecoder.h"
 #endif
 
+#include <chrono>
+#include <cstddef>
 #include <folly/dynamic.h>
 #include <jsi/jsi.h>
+#include <memory>
 #include <react/renderer/componentregistry/ComponentDescriptorProviderRegistry.h>
 #include <react/renderer/components/image/ImageComponentDescriptor.h>
 #include <react/renderer/components/root/RootComponentDescriptor.h>
@@ -22,10 +25,6 @@
 #include <react/renderer/mounting/ShadowView.h>
 #include <react/renderer/runtimescheduler/RuntimeScheduler.h>
 #include <react/renderer/scheduler/SchedulerToolbox.h>
-
-#include <chrono>
-#include <cstddef>
-#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -88,9 +87,8 @@ void installStopSurfaceBinding(facebook::jsi::Runtime& runtime) {
     facebook::jsi::Function stopSurface = facebook::jsi::Function::createFromHostFunction(
         runtime, facebook::jsi::PropNameID::forAscii(runtime, "RN$stopSurface"), 1,
         [](facebook::jsi::Runtime& /*hostRuntime*/, const facebook::jsi::Value& /*thisValue*/,
-           const facebook::jsi::Value* /*arguments*/, size_t /*argumentCount*/) {
-            return facebook::jsi::Value::undefined();
-        });
+           const facebook::jsi::Value* /*arguments*/,
+           size_t /*argumentCount*/) { return facebook::jsi::Value::undefined(); });
 
     runtime.global().setProperty(runtime, "RN$stopSurface", stopSurface);
 }
@@ -117,8 +115,7 @@ public:
 
 FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::react::Size surfaceSize)
     : contextContainer_(std::make_shared<const facebook::react::ContextContainer>()),
-      componentDescriptorProviderRegistry_(
-          std::make_shared<facebook::react::ComponentDescriptorProviderRegistry>()),
+      componentDescriptorProviderRegistry_(std::make_shared<facebook::react::ComponentDescriptorProviderRegistry>()),
       mountingManager_(std::make_shared<LinuxMountingManager>()),
       animationChoreographer_(std::make_shared<LinuxAnimationChoreographer>()) {
     const std::shared_ptr<facebook::react::RuntimeScheduler> runtimeScheduler = reactInstance.getRuntimeScheduler();
@@ -137,15 +134,15 @@ FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::
     schedulerToolbox.animationChoreographer = animationChoreographer_;
     // Scheduler calls this factory exactly once, synchronously, from the constructor below, and does not retain the
     // toolbox; the beat it produces lives inside the EventDispatcher for as long as the Scheduler does.
-    schedulerToolbox.eventBeatFactory =
-        [runtimeScheduler, this](std::shared_ptr<facebook::react::EventBeat::OwnerBox> ownerBox) {
-            std::unique_ptr<FrameEventBeat> eventBeat =
-                std::make_unique<FrameEventBeat>(std::move(ownerBox), *runtimeScheduler);
+    schedulerToolbox.eventBeatFactory = [runtimeScheduler,
+                                         this](std::shared_ptr<facebook::react::EventBeat::OwnerBox> ownerBox) {
+        std::unique_ptr<FrameEventBeat> eventBeat =
+            std::make_unique<FrameEventBeat>(std::move(ownerBox), *runtimeScheduler);
 
-            eventBeatInducer_ = [beat = eventBeat.get()]() { beat->induceFromFrameThread(); };
+        eventBeatInducer_ = [beat = eventBeat.get()]() { beat->induceFromFrameThread(); };
 
-            return eventBeat;
-        };
+        return eventBeat;
+    };
 
     schedulerDelegate_ = std::make_unique<facebook::react::SchedulerDelegateImpl>(mountingManager_);
     scheduler_ = std::make_unique<facebook::react::Scheduler>(schedulerToolbox, nullptr, schedulerDelegate_.get());
@@ -273,23 +270,19 @@ void FabricHost::tickAnimations(std::chrono::steady_clock::time_point now) { ani
 
 bool FabricHost::hasPendingWork() const {
     return mountingManager_->hasPendingDamage() || scrollController_->isScrollActive() ||
-        animationChoreographer_->isActive();
+           animationChoreographer_->isActive();
 }
 
-SceneFrame FabricHost::takeFrame() {
-    return mountingManager_->takeFrame();
-}
+SceneFrame FabricHost::takeFrame() { return mountingManager_->takeFrame(); }
 
-SceneSnapshot FabricHost::snapshotScene() const {
-    return mountingManager_->snapshotScene();
-}
+SceneSnapshot FabricHost::snapshotScene() const { return mountingManager_->snapshotScene(); }
 
 SceneHit FabricHost::findNodeAtPoint(facebook::react::Point surfacePoint) const {
     return mountingManager_->findNodeAtPoint(kSurfaceId, surfacePoint);
 }
 
-std::string FabricHost::dumpScene() const {
-    return mountingManager_->dumpScene();
-}
+std::string FabricHost::dumpScene() const { return mountingManager_->dumpScene(); }
+
+SceneNodes FabricHost::visualTreeNodes() const { return mountingManager_->visualTreeNodes(); }
 
 } // namespace react_native_linux

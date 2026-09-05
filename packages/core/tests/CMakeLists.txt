@@ -49,6 +49,7 @@ file(GLOB RNL_UPSTREAM_TIMELINE_TESTS
 # which links react_renderer_element for the whole upstream tranche.
 
 add_executable(rnl_core_tests
+    AutomationProtocolTest.cpp
     AnimatedHitTestTest.cpp
     AnimatedPropAllowlistTest.cpp
     AnimatedConformanceTest.cpp
@@ -85,6 +86,7 @@ add_executable(rnl_core_tests
     ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/DecayAnimationDriverTest.cpp
     ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/EventAnimationDriverTests.cpp
     ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/ManagedPropsMountingOverrideTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/AutomationProtocol.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/Clipboard.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/DimensionsSource.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/EditorModel.cpp

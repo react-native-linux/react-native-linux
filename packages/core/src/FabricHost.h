@@ -7,6 +7,9 @@
 #include "RetainedScene.h"
 #include "ScrollController.h"
 
+#include <chrono>
+#include <functional>
+#include <memory>
 #include <react/renderer/componentregistry/ComponentDescriptorProviderRegistry.h>
 #include <react/renderer/graphics/Size.h>
 #include <react/renderer/scheduler/Scheduler.h>
@@ -15,10 +18,6 @@
 #include <react/renderer/uimanager/UIManagerAnimationBackend.h>
 #include <react/runtime/ReactInstance.h>
 #include <react/utils/ContextContainer.h>
-
-#include <chrono>
-#include <functional>
-#include <memory>
 #include <string>
 #include <vector>
 
@@ -134,6 +133,9 @@ public:
      */
     SceneHit findNodeAtPoint(facebook::react::Point surfacePoint) const;
     std::string dumpScene() const;
+
+    /** The committed tree as the automation channel's `DumpVisualTree` reports it (#214). */
+    SceneNodes visualTreeNodes() const;
 
 private:
     std::shared_ptr<const facebook::react::ContextContainer> contextContainer_;

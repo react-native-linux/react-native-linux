@@ -1,8 +1,8 @@
 #include "ImagePipeline.h"
 
+#include "AutomationProtocol.h"
 #include "ImageContent.h"
 #include "ImageDecoder.h"
-
 #include "include/codec/SkCodec.h"
 #include "include/codec/SkCodecAnimation.h"
 #include "include/codec/SkGifDecoder.h"
@@ -22,7 +22,6 @@
 #include <condition_variable>
 #include <cstddef>
 #include <deque>
-#include <iostream>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -138,7 +137,7 @@ std::shared_ptr<const DecodedImageFrames> decodeImageSource(const std::string& u
     const ResolvedImageSource source = resolveImageSource(uri, RNL_BUNDLED_ASSET_DIR);
 
     if (source.kind == ImageSourceKind::Unsupported) {
-        std::cerr << "[image] unsupported source " << uri << std::endl;
+        reportNativeError("image", "unsupported source " + uri);
 
         return nullptr;
     }
@@ -146,7 +145,7 @@ std::shared_ptr<const DecodedImageFrames> decodeImageSource(const std::string& u
     const sk_sp<SkData> bytes = readImageBytes(source);
 
     if (bytes == nullptr) {
-        std::cerr << "[image] could not read " << uri << std::endl;
+        reportNativeError("image", "could not read " + uri);
 
         return nullptr;
     }
@@ -154,7 +153,7 @@ std::shared_ptr<const DecodedImageFrames> decodeImageSource(const std::string& u
     const std::unique_ptr<SkCodec> codec = SkCodec::MakeFromData(bytes, kImageDecoders);
 
     if (codec == nullptr) {
-        std::cerr << "[image] no PNG, JPEG or GIF codec matched " << uri << std::endl;
+        reportNativeError("image", "no PNG, JPEG or GIF codec matched " + uri);
 
         return nullptr;
     }
@@ -166,8 +165,8 @@ std::shared_ptr<const DecodedImageFrames> decodeImageSource(const std::string& u
     auto [image, result] = codec->getImage();
 
     if (image == nullptr) {
-        std::cerr << "[image] decoding " << uri << " failed with SkCodec result " << static_cast<int>(result)
-                  << std::endl;
+        reportNativeError("image", "decoding " + uri + " failed with SkCodec result " +
+                                       std::to_string(static_cast<int>(result)));
 
         return nullptr;
     }

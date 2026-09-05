@@ -5,12 +5,12 @@
 
 #include <react/renderer/attributedstring/AttributedString.h>
 #include <react/renderer/attributedstring/TextAttributes.h>
-#include <react/renderer/components/textinput/TextInputState.h>
 #include <react/renderer/components/image/ImageProps.h>
 #include <react/renderer/components/image/ImageState.h>
 #include <react/renderer/components/root/RootShadowNode.h>
 #include <react/renderer/components/scrollview/ScrollViewState.h>
 #include <react/renderer/components/text/ParagraphState.h>
+#include <react/renderer/components/textinput/TextInputState.h>
 #include <react/renderer/components/view/BaseViewProps.h>
 #include <react/renderer/components/view/ViewProps.h>
 
@@ -21,15 +21,6 @@
 #include <react/renderer/components/view/conversions.h>
 #pragma GCC diagnostic pop
 
-#include <react/renderer/imagemanager/primitives.h>
-#include <react/renderer/core/ConcreteState.h>
-#include <react/renderer/core/PropsParserContext.h>
-#include <react/renderer/core/RawValue.h>
-#include <react/renderer/graphics/Color.h>
-#include <react/renderer/graphics/Rect.h>
-#include <react/renderer/graphics/Transform.h>
-#include <react/utils/ContextContainer.h>
-
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -38,6 +29,14 @@
 #include <cstdio>
 #include <memory>
 #include <optional>
+#include <react/renderer/core/ConcreteState.h>
+#include <react/renderer/core/PropsParserContext.h>
+#include <react/renderer/core/RawValue.h>
+#include <react/renderer/graphics/Color.h>
+#include <react/renderer/graphics/Rect.h>
+#include <react/renderer/graphics/Transform.h>
+#include <react/renderer/imagemanager/primitives.h>
+#include <react/utils/ContextContainer.h>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -112,14 +111,13 @@ std::string formatPoint(facebook::react::Point point) {
  * Composes two affine transforms so that `inner` is applied first and `outer` second.
  */
 SceneMatrix composeMatrices(const SceneMatrix& outer, const SceneMatrix& inner) {
-    return SceneMatrix{.scaleX = (outer.scaleX * inner.scaleX) + (outer.skewX * inner.skewY),
-                       .skewX = (outer.scaleX * inner.skewX) + (outer.skewX * inner.scaleY),
-                       .translateX = (outer.scaleX * inner.translateX) + (outer.skewX * inner.translateY) +
-                                     outer.translateX,
-                       .skewY = (outer.skewY * inner.scaleX) + (outer.scaleY * inner.skewY),
-                       .scaleY = (outer.skewY * inner.skewX) + (outer.scaleY * inner.scaleY),
-                       .translateY = (outer.skewY * inner.translateX) + (outer.scaleY * inner.translateY) +
-                                     outer.translateY};
+    return SceneMatrix{
+        .scaleX = (outer.scaleX * inner.scaleX) + (outer.skewX * inner.skewY),
+        .skewX = (outer.scaleX * inner.skewX) + (outer.skewX * inner.scaleY),
+        .translateX = (outer.scaleX * inner.translateX) + (outer.skewX * inner.translateY) + outer.translateX,
+        .skewY = (outer.skewY * inner.scaleX) + (outer.scaleY * inner.skewY),
+        .scaleY = (outer.skewY * inner.skewX) + (outer.scaleY * inner.scaleY),
+        .translateY = (outer.skewY * inner.translateX) + (outer.scaleY * inner.translateY) + outer.translateY};
 }
 
 SceneMatrix translationMatrix(float translateX, float translateY) {
@@ -219,8 +217,8 @@ SceneTextContent resolveText(const SceneTextContent& text, const facebook::react
     SceneTextContent resolved = text;
 
     resolved.frame = facebook::react::Rect{
-        .origin = facebook::react::Point{.x = frame.origin.x + contentInsets.left,
-                                         .y = frame.origin.y + contentInsets.top},
+        .origin =
+            facebook::react::Point{.x = frame.origin.x + contentInsets.left, .y = frame.origin.y + contentInsets.top},
         .size = facebook::react::Size{.width = frame.size.width - contentInsets.left - contentInsets.right,
                                       .height = frame.size.height - contentInsets.top - contentInsets.bottom}};
 
@@ -427,6 +425,8 @@ void readPaintProps(SceneNode& node, const facebook::react::ShadowView& shadowVi
         node.opacity = 1.0F;
         node.pointerEvents = facebook::react::PointerEventsMode::Auto;
         node.clipsChildren = false;
+        node.testId.clear();
+        node.accessibilityLabel.clear();
 
         return;
     }
@@ -448,6 +448,8 @@ void readPaintProps(SceneNode& node, const facebook::react::ShadowView& shadowVi
     node.opacity = std::clamp(static_cast<float>(viewProps->opacity), 0.0F, 1.0F);
     node.pointerEvents = viewProps->pointerEvents;
     node.clipsChildren = viewProps->getClipsContentToBounds();
+    node.testId = viewProps->testId;
+    node.accessibilityLabel = viewProps->accessibilityLabel;
 }
 
 /**
@@ -499,8 +501,7 @@ void readEditorContent(SceneNode& node, const facebook::react::ShadowView& shado
         return;
     }
 
-    const facebook::react::AttributedString& value =
-        textInputState->getData().attributedStringBox.getValue();
+    const facebook::react::AttributedString& value = textInputState->getData().attributedStringBox.getValue();
     const bool isPlaceholder = value.isEmpty();
     facebook::react::AttributedString displayed = value;
 
@@ -514,19 +515,19 @@ void readEditorContent(SceneNode& node, const facebook::react::ShadowView& shado
         displayed.setBaseTextAttributes(placeholderAttributes);
 
         if (!textInputProps->placeholder.empty()) {
-            displayed.appendFragment(facebook::react::AttributedString::Fragment{
-                .string = textInputProps->placeholder, .textAttributes = placeholderAttributes,
-                .parentShadowView = {}});
+            displayed.appendFragment(
+                facebook::react::AttributedString::Fragment{.string = textInputProps->placeholder,
+                                                            .textAttributes = placeholderAttributes,
+                                                            .parentShadowView = {}});
         }
     }
 
-    node.text = SceneTextContent{.attributedString = displayed,
-                                 .paragraphAttributes = textInputProps->paragraphAttributes};
+    node.text =
+        SceneTextContent{.attributedString = displayed, .paragraphAttributes = textInputProps->paragraphAttributes};
 
     const uint32_t authoredCaretColorArgb = toArgb(textInputProps->cursorColor, 1.0F);
     const uint32_t authoredSelectionColorArgb = toArgb(textInputProps->selectionColor, 1.0F);
-    const uint32_t caretColorArgb =
-        authoredCaretColorArgb != 0 ? authoredCaretColorArgb : kDefaultCaretColorArgb;
+    const uint32_t caretColorArgb = authoredCaretColorArgb != 0 ? authoredCaretColorArgb : kDefaultCaretColorArgb;
     const uint32_t selectionColorArgb =
         authoredSelectionColorArgb != 0 ? authoredSelectionColorArgb : kDefaultSelectionColorArgb;
 
@@ -556,8 +557,7 @@ void readImageContent(SceneNode& node, const facebook::react::ShadowView& shadow
     const std::shared_ptr<const facebook::react::ImageProps> imageProps =
         std::dynamic_pointer_cast<const facebook::react::ImageProps>(shadowView.props);
     const std::shared_ptr<const facebook::react::ConcreteState<facebook::react::ImageState>> imageState =
-        std::dynamic_pointer_cast<const facebook::react::ConcreteState<facebook::react::ImageState>>(
-            shadowView.state);
+        std::dynamic_pointer_cast<const facebook::react::ConcreteState<facebook::react::ImageState>>(shadowView.state);
 
     if (imageProps == nullptr || imageState == nullptr) {
         return;
@@ -574,12 +574,12 @@ void readImageContent(SceneNode& node, const facebook::react::ShadowView& shadow
     // every re-render is core#46810 in a different disguise.
     const bool isSameSource = previousImage.has_value() && previousImage.value().uri == imageSource.uri;
 
-    node.image = SceneImageContent{.uri = imageSource.uri,
-                                   .frames = decodedImages ? decodedImages(imageSource.uri) : nullptr,
-                                   .elapsedMilliseconds = isSameSource ? previousImage.value().elapsedMilliseconds
-                                                                       : 0.0,
-                                   .resizeMode = toSceneImageResizeMode(imageProps->resizeMode),
-                                   .tintColorArgb = toArgb(imageProps->tintColor, 1.0F)};
+    node.image =
+        SceneImageContent{.uri = imageSource.uri,
+                          .frames = decodedImages ? decodedImages(imageSource.uri) : nullptr,
+                          .elapsedMilliseconds = isSameSource ? previousImage.value().elapsedMilliseconds : 0.0,
+                          .resizeMode = toSceneImageResizeMode(imageProps->resizeMode),
+                          .tintColorArgb = toArgb(imageProps->tintColor, 1.0F)};
 }
 
 /**
@@ -631,39 +631,33 @@ SceneVisit visitNode(const SceneNode& node, const ScenePaintState& state) {
                                       .size = node.layoutMetrics.frame.size};
     const SceneMatrix matrix = composeMatrices(state.matrix, matrixAboutCenter(node.transform, frame.getCenter()));
     const float opacity = state.opacity * node.opacity;
-    SceneVisit visit{.primitive = ScenePrimitive{.tag = node.tag,
-                                                 .frame = frame,
-                                                 .matrix = matrix,
-                                                 .clips = state.clips,
-                                                 .borderRadii = node.borderMetrics.borderRadii,
-                                                 .borderWidths = node.borderMetrics.borderWidths,
-                                                 .borderStyles = node.borderMetrics.borderStyles,
-                                                 .borderColorsArgb = toArgbEdges(node.borderMetrics.borderColors,
-                                                                                 opacity),
-                                                 .shadows = resolveShadowOpacity(node.shadows, opacity),
-                                                 .backgroundColorArgb =
-                                                     node.backgroundColor.has_value()
-                                                         ? toArgb(node.backgroundColor.value(), opacity)
-                                                         : 0,
-                                                 .backgroundImage = node.backgroundImage,
-                                                 .backgroundImageOpacity = opacity,
-                                                 .text = node.text.has_value()
-                                                             ? std::optional<SceneTextContent>{resolveText(
-                                                                   node.text.value(),
-                                                                   node.layoutMetrics.contentInsets, frame, opacity)}
-                                                             : std::nullopt,
-                                                 .image = node.image.has_value()
-                                                              ? std::optional<SceneImageContent>{resolveImage(
-                                                                    node.image.value(), opacity)}
-                                                              : std::nullopt,
-                                                 .editor = node.editor.has_value()
-                                                               ? std::optional<SceneEditorContent>{resolveEditor(
-                                                                     node.editor.value(), opacity)}
-                                                               : std::nullopt},
-                     .childState = ScenePaintState{.origin = contentOrigin(node, frame.origin),
-                                                   .matrix = matrix,
-                                                   .opacity = opacity,
-                                                   .clips = state.clips}};
+    SceneVisit visit{
+        .primitive =
+            ScenePrimitive{.tag = node.tag,
+                           .frame = frame,
+                           .matrix = matrix,
+                           .clips = state.clips,
+                           .borderRadii = node.borderMetrics.borderRadii,
+                           .borderWidths = node.borderMetrics.borderWidths,
+                           .borderStyles = node.borderMetrics.borderStyles,
+                           .borderColorsArgb = toArgbEdges(node.borderMetrics.borderColors, opacity),
+                           .shadows = resolveShadowOpacity(node.shadows, opacity),
+                           .backgroundColorArgb =
+                               node.backgroundColor.has_value() ? toArgb(node.backgroundColor.value(), opacity) : 0,
+                           .backgroundImage = node.backgroundImage,
+                           .backgroundImageOpacity = opacity,
+                           .text = node.text.has_value()
+                                       ? std::optional<SceneTextContent>{resolveText(
+                                             node.text.value(), node.layoutMetrics.contentInsets, frame, opacity)}
+                                       : std::nullopt,
+                           .image = node.image.has_value()
+                                        ? std::optional<SceneImageContent>{resolveImage(node.image.value(), opacity)}
+                                        : std::nullopt,
+                           .editor = node.editor.has_value() ? std::optional<SceneEditorContent>{resolveEditor(
+                                                                   node.editor.value(), opacity)}
+                                                             : std::nullopt},
+        .childState = ScenePaintState{
+            .origin = contentOrigin(node, frame.origin), .matrix = matrix, .opacity = opacity, .clips = state.clips}};
 
     if (node.clipsChildren) {
         visit.childState.clips.push_back(
@@ -737,9 +731,7 @@ facebook::react::Rect primitiveDamageBounds(const ScenePrimitive& primitive) {
     return bounds;
 }
 
-bool hasArea(const facebook::react::Rect& rect) {
-    return rect.size.width * rect.size.height > 0;
-}
+bool hasArea(const facebook::react::Rect& rect) { return rect.size.width * rect.size.height > 0; }
 
 /**
  * What this node alone paints, cut by the clips it inherits, or nothing when the clips leave none of it.
@@ -788,8 +780,7 @@ std::optional<facebook::react::Point> toUntransformedPoint(const SceneMatrix& ma
     return mapPoint(inverse, surfacePoint);
 }
 
-bool coversSurfacePoint(const SceneRoundedBox& box, const SceneMatrix& matrix,
-                        facebook::react::Point surfacePoint) {
+bool coversSurfacePoint(const SceneRoundedBox& box, const SceneMatrix& matrix, facebook::react::Point surfacePoint) {
     const std::optional<facebook::react::Point> untransformedPoint = toUntransformedPoint(matrix, surfacePoint);
 
     if (!untransformedPoint.has_value()) {
@@ -814,8 +805,7 @@ bool coversPrimitive(const ScenePrimitive& primitive, facebook::react::Point sur
         }
     }
 
-    return coversSurfacePoint(roundedBorderBox(primitive.frame, primitive.borderRadii), primitive.matrix,
-                              surfacePoint);
+    return coversSurfacePoint(roundedBorderBox(primitive.frame, primitive.borderRadii), primitive.matrix, surfacePoint);
 }
 
 bool isPointerTarget(const SceneNode& node) {
@@ -878,8 +868,8 @@ facebook::react::Rect shadowExtent(const facebook::react::Rect& bounds, const st
         bottom = std::max(bottom, reach + shadow.offsetY);
     }
 
-    return facebook::react::Rect{.origin = facebook::react::Point{.x = bounds.origin.x - left,
-                                                                  .y = bounds.origin.y - top},
+    return facebook::react::Rect{.origin =
+                                     facebook::react::Point{.x = bounds.origin.x - left, .y = bounds.origin.y - top},
                                  .size = facebook::react::Size{.width = bounds.size.width + left + right,
                                                                .height = bounds.size.height + top + bottom}};
 }
@@ -896,7 +886,7 @@ SceneRoundedBox roundedContentBox(const SceneRoundedBox& borderBox, const facebo
 
     return SceneRoundedBox{
         .bounds = facebook::react::Rect{.origin = facebook::react::Point{.x = borderBox.bounds.origin.x + left,
-                                                                        .y = borderBox.bounds.origin.y + top},
+                                                                         .y = borderBox.bounds.origin.y + top},
                                         .size = facebook::react::Size{.width = width, .height = height}},
         .radii = facebook::react::BorderRadii{
             .topLeft = contentCorner(borderBox.radii.topLeft, widths.left, widths.top),
@@ -1001,9 +991,7 @@ void RetainedScene::updateNode(const facebook::react::ShadowView& shadowView) {
     damageSubtree(shadowView.tag);
 }
 
-bool RetainedScene::hasNode(facebook::react::Tag tag) const {
-    return nodes_.contains(tag);
-}
+bool RetainedScene::hasNode(facebook::react::Tag tag) const { return nodes_.contains(tag); }
 
 void RetainedScene::damageImageSource(const std::string& uri,
                                       const std::shared_ptr<const DecodedImageFrames>& decoded) {
@@ -1126,18 +1114,19 @@ std::vector<RejectedAnimatedProp> RetainedScene::applyAnimatedProps(facebook::re
             continue;
         }
 
-        switch (*animatableProp) { // COV_EXCL: every AnimatableProp value has a case, so the implicit no-match branch cannot execute
-            case AnimatableProp::Opacity:
-                node.opacity = std::clamp(static_cast<float>(value.asDouble()), 0.0F, 1.0F);
-                break;
-            case AnimatableProp::BackgroundColor:
-                node.backgroundColor =
-                    meaningfulColor(facebook::react::SharedColor{static_cast<facebook::react::Color>(value.asInt())});
-                break;
-            case AnimatableProp::Transform:
-                node.transform = toSceneMatrix(facebook::react::BaseViewProps::resolveTransform(
-                    node.layoutMetrics.frame.size, parseAnimatedTransform(value), node.transformOrigin));
-                break;
+        switch (*animatableProp) { // COV_EXCL: every AnimatableProp value has a case, so the implicit no-match branch
+                                   // cannot execute
+        case AnimatableProp::Opacity:
+            node.opacity = std::clamp(static_cast<float>(value.asDouble()), 0.0F, 1.0F);
+            break;
+        case AnimatableProp::BackgroundColor:
+            node.backgroundColor =
+                meaningfulColor(facebook::react::SharedColor{static_cast<facebook::react::Color>(value.asInt())});
+            break;
+        case AnimatableProp::Transform:
+            node.transform = toSceneMatrix(facebook::react::BaseViewProps::resolveTransform(
+                node.layoutMetrics.frame.size, parseAnimatedTransform(value), node.transformOrigin));
+            break;
         }
     }
 
@@ -1165,8 +1154,7 @@ std::optional<ScenePrimitiveDisplacement> findDisplacedPrimitive(const SceneSnap
             continue;
         }
 
-        return ScenePrimitiveDisplacement{
-            .tag = primitive.tag, .before = primitive.frame, .after = painted->frame};
+        return ScenePrimitiveDisplacement{.tag = primitive.tag, .before = primitive.frame, .after = painted->frame};
     }
 
     return std::nullopt;
@@ -1183,9 +1171,7 @@ SceneSnapshot RetainedScene::snapshot() const {
     return primitives;
 }
 
-SceneDamage RetainedScene::takeDamage() {
-    return std::exchange(damage_, SceneDamage{});
-}
+SceneDamage RetainedScene::takeDamage() { return std::exchange(damage_, SceneDamage{}); }
 
 std::string RetainedScene::dump() const {
     std::string output;

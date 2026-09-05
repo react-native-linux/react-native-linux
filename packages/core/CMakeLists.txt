@@ -785,6 +785,7 @@ endif()
 # ---------------------------------------------------------------------------
 
 add_library(rnl_react_core STATIC
+    src/AutomationProtocol.cpp
     src/Clipboard.cpp
     src/ConsoleBinding.cpp
     src/DimensionsSource.cpp
@@ -1031,6 +1032,7 @@ elseif(RNL_ENABLE_WINDOW)
     target_link_libraries(rnl_presentation_time PUBLIC PkgConfig::RNL_WAYLAND_CLIENT)
 
     add_executable(rnl_window
+        src/AutomationServer.cpp
         src/SkiaVulkanRenderer.cpp
         src/TextInputClient.cpp
         src/TextInputV3State.cpp

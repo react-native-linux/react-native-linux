@@ -1,5 +1,7 @@
 #include "JsErrorReporter.h"
 
+#include "AutomationProtocol.h"
+
 #include <iostream>
 #include <string>
 
@@ -21,10 +23,15 @@ void printStackFrame(const facebook::react::JsErrorHandler::ProcessedError::Stac
 } // namespace
 
 facebook::react::JsErrorHandler::OnJsError JsErrorReporter::createHandler() const {
-    return [hasReportedFatalError = hasReportedFatalError_](
-               facebook::jsi::Runtime& /*runtime*/,
-               const facebook::react::JsErrorHandler::ProcessedError& processedError) {
+    return [hasReportedFatalError =
+                hasReportedFatalError_](facebook::jsi::Runtime& /*runtime*/,
+                                        const facebook::react::JsErrorHandler::ProcessedError& processedError) {
         const std::string severity = processedError.isFatal ? "fatal" : "non-fatal";
+
+        // Both severities, because #233's gate greps both: the automation channel's ListErrors has to answer
+        // with exactly the set the trace pattern would have matched.
+        automationErrorLog().record("javascript", severity + " " + processedError.name.value_or("Error") + ": " +
+                                                      processedError.message);
 
         std::cerr << "[js-error] " << severity << ' ' << processedError.name.value_or("Error") << ": "
                   << processedError.message << '\n';
@@ -41,8 +48,6 @@ facebook::react::JsErrorHandler::OnJsError JsErrorReporter::createHandler() cons
     };
 }
 
-bool JsErrorReporter::hasReportedFatalError() const {
-    return hasReportedFatalError_->load();
-}
+bool JsErrorReporter::hasReportedFatalError() const { return hasReportedFatalError_->load(); }
 
 } // namespace react_native_linux
