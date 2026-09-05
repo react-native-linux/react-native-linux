@@ -2724,6 +2724,28 @@ The no-op is deliberately last: nothing can be scheduled from its event because 
 issued from a frame's event is applied by the frame after it — and every extra frame is empty for a static
 fixture, so no golden moved.
 
+### Pressing what a scroll moved (#98)
+
+The cause behind [core#51763](https://github.com/facebook/react-native/issues/51763) and
+[core#51290](https://github.com/facebook/react-native/issues/51290) — sticky headers and nested scrollers that
+render correctly and ignore every press — is a hit path reading a frame the scroll has translated away from.
+Here the offset is applied in `visitNode`, which the painter and the hit test both walk, so there is no second
+frame to read; `RetainedSceneScrollTest` in `SceneTest.cpp` pins four consequences of that:
+
+- **A press lands on a row where it is painted, not where it was laid out.** At an offset of 120 the row laid
+  out 80 points down paints in the viewport's top band, and its unscrolled position is nothing but ScrollView.
+- **The press follows the offset the scene holds this commit.** The controller writes a new offset back every
+  frame it moves, and the same point answers differently before and after that write.
+- **A horizontal scroller inside a vertical one composes both offsets**, and the innermost cell is what a press
+  in it finds.
+- **A child painted outside its parent's bounds is pressable there** unless the parent says `overflow: hidden`,
+  in which case the clip removes it from the hit region exactly as it removes it from the paint —
+  [core#34542](https://github.com/facebook/react-native/issues/34542) is the parent's bounds used as a hit gate
+  although the child painted past them.
+
+Sticky headers are the case not covered, because there is no sticky header to press: `stickyHeaderIndices` is a
+*ScrollView* deferral, and a test of a header that cannot pin would prove nothing.
+
 ### The cadence contract (#45)
 
 `VirtualizedList` windowing is written against a cadence rather than against a picture, so a renderer that gets

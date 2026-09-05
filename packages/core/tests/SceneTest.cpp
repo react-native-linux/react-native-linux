@@ -1125,6 +1125,79 @@ RetainedScene sceneWithScrollView(Point contentOffset) {
     return scene;
 }
 
+// Issue #98. #16 owns the offset and #35 proved static hit/paint agreement; this is the intersection — a subtree
+// translated by a scroll, or laid out outside its parent — where upstream has two open twenty-reaction
+// regressions (core#51763, core#51290) and the cause is always the hit path reading the untranslated frame.
+// The scene applies `contentOffset` in `visitNode`, which both the painter and the hit test walk, so these are
+// the assertions that it stays that way.
+
+// At an offset of 120 the row laid out 80 points down the content paints from y = 20 of the viewport, clipped to
+// the viewport's own top edge at 60, so its visible band is 60..90 and its unscrolled position, 140..210, is
+// nothing but ScrollView.
+constexpr Point kScrolledRowPoint{.x = 160, .y = 75};
+constexpr Point kUnscrolledRowPoint{.x = 160, .y = 175};
+
+TEST(RetainedSceneScrollTest, APressLandsOnTheRowWhereItIsPaintedAndNotWhereItWasLaidOut) {
+    const RetainedScene scene = sceneWithScrollView(Point{.x = 0, .y = 120});
+
+    EXPECT_EQ(scene.findNodeAtPoint(kSurfaceTag, kScrolledRowPoint).tag, 3);
+    EXPECT_EQ(scene.findNodeAtPoint(kSurfaceTag, kUnscrolledRowPoint).tag, 2);
+}
+
+TEST(RetainedSceneScrollTest, ThePressFollowsTheOffsetTheSceneHoldsThisCommit) {
+    RetainedScene scene = sceneWithScrollView(Point{.x = 0, .y = 120});
+
+    ASSERT_EQ(scene.findNodeAtPoint(kSurfaceTag, kScrolledRowPoint).tag, 3);
+
+    // The controller writes a new offset back every frame it moves; the frame's hit test reads what it wrote.
+    scene.updateNode(makeScrollView(2, scrollViewFrame(), Point{.x = 0, .y = 0}, scrollContentBounds()));
+
+    EXPECT_EQ(scene.findNodeAtPoint(kSurfaceTag, kScrolledRowPoint).tag, 2);
+    EXPECT_EQ(scene.findNodeAtPoint(kSurfaceTag, kUnscrolledRowPoint).tag, 3);
+}
+
+TEST(RetainedSceneScrollTest, AHorizontalScrollerInsideAVerticalOneComposesBothOffsets) {
+    RetainedScene scene = sceneWithScrollView(Point{.x = 0, .y = 120});
+
+    // A 200x40 horizontal scroller 170 points down the content, scrolled 50 to the right, holding a 60-wide cell
+    // 100 points in. Composed: y = 60 + 170 - 120 = 110, x = 60 + 100 - 50 = 110.
+    addChild(scene, 2, makeScrollView(4, makeRect(0, 170, 200, 40), Point{.x = 50, .y = 0}, makeRect(0, 0, 400, 40)));
+    addChild(scene, 4, makePaintedView(5, makeRect(100, 0, 60, 40), red()));
+
+    EXPECT_EQ(scene.findNodeAtPoint(kSurfaceTag, Point{.x = 140, .y = 130}).tag, 5);
+    // Where the cell would be without the horizontal offset is the scroller itself.
+    EXPECT_EQ(scene.findNodeAtPoint(kSurfaceTag, Point{.x = 190, .y = 130}).tag, 4);
+}
+
+std::shared_ptr<ViewProps> overflowProps(facebook::yoga::Overflow overflow) {
+    const std::shared_ptr<ViewProps> viewProps = propsWithBackground(blue());
+
+    viewProps->yogaStyle.setOverflow(overflow);
+
+    return viewProps;
+}
+
+RetainedScene sceneWithOutOfFlowChild(facebook::yoga::Overflow parentOverflow) {
+    RetainedScene scene;
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, makeStyledView(2, makeRect(300, 300, 100, 100), overflowProps(parentOverflow)));
+    // Laid out entirely to the right of its parent's bounds: (450, 300) to (500, 350).
+    addChild(scene, 2, makePaintedView(3, makeRect(150, 0, 50, 50), red()));
+
+    return scene;
+}
+
+TEST(RetainedSceneScrollTest, AChildPaintedOutsideItsParentIsPressableThereUnlessTheParentClips) {
+    constexpr Point kOutsideTheParent{.x = 475, .y = 325};
+
+    // core#34542 and core#37181: an absolutely positioned child outside its parent's bounds receives no gestures,
+    // because the parent's bounds were used as a hit gate although the child painted past them.
+    EXPECT_EQ(sceneWithOutOfFlowChild(facebook::yoga::Overflow::Visible).findNodeAtPoint(kSurfaceTag, kOutsideTheParent).tag, 3);
+    EXPECT_EQ(sceneWithOutOfFlowChild(facebook::yoga::Overflow::Hidden).findNodeAtPoint(kSurfaceTag, kOutsideTheParent).tag,
+              kSurfaceTag);
+}
+
 TEST(RetainedSceneScrollTest, ContentOffsetTranslatesTheChildrenOnBothAxes) {
     const SceneSnapshot snapshot = sceneWithScrollView(Point{.x = 25, .y = 120}).snapshot();
 
