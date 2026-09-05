@@ -5,6 +5,8 @@
 #include "InputPipeline.h"
 #include "ReactHost.h"
 
+#include "ImageContent.h"
+
 #ifdef RNL_ENABLE_IMAGES
 #include "ImageDecoder.h"
 #endif
@@ -242,9 +244,31 @@ int finishFabricRunWithStatus(ReactHost& reactHost, StartedFabricRun& startedRun
  * Reads the scene out and tears the host down, in the one order that is safe: both readings happen before the
  * surface is stopped, because stopping it commits an empty tree, and the JavaScript thread is drained before the
  * host is destroyed so the queued unmount runs while the scheduler delegate is still alive.
+ *
+ * The settle is `settleImageDecodesAndJavaScript` rather than a bare `settlePendingImageDecodes`, because a decode
+ * publish can wake JavaScript — an `onLoad` handler that changes a prop — and that handler's commit is not
+ * guaranteed to have landed the instant the decode queue empties: publishing and running the handler are two
+ * different threads' work (issue #301). `onLoad` reaches JavaScript through the same `EventDispatcher` every other
+ * event does, and this platform's `EventBeat` is induced rather than ambient — nothing delivers a queued event
+ * until `induceEventBeat` says a frame happened, headless or not — so the drain is the same trio every input frame
+ * already runs: the beat that releases the event, `runUntilQuiescent`'s timer drain (#240) for the handler and
+ * whatever it schedules, and `takeFrame().damage` to say whether that produced a new commit to settle around
+ * again.
  */
 FabricRunResult finishFabricRun(ReactHost& reactHost, std::unique_ptr<FabricHost>& fabricHost) {
-    settlePendingImageDecodes();
+    if (!settleImageDecodesAndJavaScript(
+            settlePendingImageDecodes,
+            [&reactHost, &fabricHost]() {
+                fabricHost->induceEventBeat();
+
+                if (!reactHost.runUntilQuiescent(kQuiescenceBudget)) {
+                    std::cerr << "[bundle-runner] gave up waiting for pending timers" << std::endl;
+                }
+
+                return !fabricHost->takeFrame().damage.empty();
+            })) {
+        std::cerr << "[bundle-runner] gave up waiting for JavaScript to settle after an image decode" << std::endl;
+    }
 
     SceneSnapshot scene = fabricHost->snapshotScene();
     std::string sceneDump = fabricHost->dumpScene();
