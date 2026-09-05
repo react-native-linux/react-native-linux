@@ -2593,6 +2593,10 @@ measured result.
 | `letterSpacing` | `TextStyle::setLetterSpacing`. |
 | `textAlign` | `left`, `right`, `center`, `justify`, `start`/`end`, and `auto` as `start`. |
 | `textDecorationLine` | `underline`, `line-through` and both together; `textDecorationColor` falls back to the foreground colour. |
+| `textDecorationStyle` | `solid`, `double`, `dotted`, `dashed`, `wavy` → the matching `TextStyle::setDecorationStyle`; unset is `solid`, which is also SkParagraph's own default. |
+| `textShadowOffset`, `textShadowRadius`, `textShadowColor` | One `TextStyle::addShadow`, added only when `textShadowColor` is a colour someone actually set. `textShadowRadius` crosses with no conversion: it already is the Gaussian sigma `TextShadow::fBlurSigma` wants, the same iOS convention the `<View>` shadow quartet's `shadowRadius` follows (`RetainedScene.cpp`'s `kSigmasPerBlurRadius`). |
+| `fontVariant` | The four variants the golden matrix covers — `small-caps`, `oldstyle-nums`, `lining-nums`, `tabular-nums` — as the OpenType feature tags `smcp`/`onum`/`lnum`/`tnum` on `TextStyle::addFontFeature`. The sixteen stylistic-set bits are not mapped; see *Fidelity limits*. |
+| `textTransform` | `uppercase`/`lowercase`/`capitalize` applied to each fragment's string in `src/TextTransform.cpp` before it reaches `ParagraphBuilder::addText`, so both measurement and paint see the transformed string. Pure ASCII and Latin-1 Supplement case mapping — no ICU — so it is under the 100% gate; see *The text-style matrix (#250)*. |
 | `numberOfLines` | `ParagraphStyle::setMaxLines`. |
 | `ellipsizeMode` | Anything but `clip` sets a `…` ellipsis. |
 | Inline attachments | Added as SkParagraph placeholders sized from the attachment's own measured frame, and reported back through `getRectsForPlaceholders`. |
@@ -2659,6 +2663,47 @@ approximate with a font that would resolve through fontconfig. Nothing reports a
 there is no `measureLines` and no `onTextLayout`, per *Fidelity limits* — so `measureLineBox` is the arithmetic
 that path will report when the vendored header grows it.
 
+### The text-style matrix (#250)
+
+Five more props are shaping and paint inputs the same way `letterSpacing` is: `textTransform` changes the string
+before it is shaped, `fontVariant` asks HarfBuzz for different glyphs through OpenType features, and
+`textDecorationLine`'s two neighbours — `textDecorationStyle` and the `textShadow*` trio — are paint-time
+decoration that has to agree with what was measured for the same reason every other prop here does. Before this
+issue all five were ignored: `docs/prop-coverage.json`'s `Text` entries and the *Fidelity limits* list below both
+named them, and `textDecorationColor` was already implemented in code but still marked `not-implemented` in that
+file — a doc/code drift this issue also corrects.
+
+- **`textTransform`** — `uppercase`, `lowercase`, `capitalize` — is string arithmetic in
+  `src/TextTransform.cpp`'s `applyTextTransform`, run over each fragment's string in `layoutParagraph` before
+  `ParagraphBuilder::addText` sees it. It has to run before shaping, not after: it changes the string's *length*,
+  and a transform applied to an already-shaped run would let the measured string and the painted string disagree
+  about where a line breaks, which is issue #41's equality failing for exactly the props this matrix is about.
+  Case mapping covers ASCII and the Latin-1 Supplement letters the vendored Noto Sans carries — deliberately no
+  ICU, so the function is pure and sits under the 100% unit gate rather than behind a rasteriser. `capitalize`
+  uppercases the first letter of the string and of every run after ASCII whitespace; a hyphen is **not** a word
+  boundary, matching React Native's actual behaviour rather than CSS's (react/react-native#34117 is the two
+  disagreeing) — `multi-word-value` capitalizes to `Multi-word-value`, not `Multi-Word-Value`.
+- **`fontVariant`** is a bitmask (`FontVariant` in `primitives.h`) of every variant a fragment can ask for at
+  once. The four the matrix covers — `small-caps`, `oldstyle-nums`, `lining-nums`, `tabular-nums` — become the
+  OpenType feature tags `smcp`/`onum`/`lnum`/`tnum` on `TextStyle::addFontFeature`, which SkParagraph passes
+  straight through to HarfBuzz. The remaining sixteen stylistic-set bits are not mapped: nothing exercises them
+  yet, and the Prime Directive is to map what is proven.
+- **`textDecorationStyle`** — `solid`, `double`, `dotted`, `dashed`, `wavy` — is a direct
+  `TextStyle::setDecorationStyle` next to the existing `textDecorationLine`/`textDecorationColor` mapping; unset
+  is `solid`, SkParagraph's own default.
+- **`textShadow*`** becomes one `TextStyle::addShadow`, added only when `textShadowColor` is a colour someone
+  actually set — an offset or a radius with no colour has nothing to paint, and React Native's own default
+  `textShadowColor` is unset rather than black. `textShadowRadius` crosses to `TextShadow::fBlurSigma` with no
+  conversion, because it already **is** the Gaussian sigma, the same iOS convention the `<View>` shadow quartet's
+  `shadowRadius` follows (`RetainedScene.cpp`'s `kSigmasPerBlurRadius` comment).
+
+The picture is `test-bundles/text-style-matrix.js` and `goldens/text-style-matrix.png`: one row per property at
+two font sizes, each proven independently by `--text-fit-golden` (every paragraph still fits the box it was
+measured for) and, for `textTransform`, by `packages/core/tests/TextTransformTest.cpp` against the string
+arithmetic directly — ASCII and Latin-1 Supplement case mapping both ways, the multiplication and division signs
+that sit inside the Latin-1 letter ranges without being letters, a two-byte sequence outside that block
+(Cyrillic), three- and four-byte sequences copied through unchanged, and malformed UTF-8 that still terminates.
+
 ### Fidelity limits
 
 Each is deliberate, and each is a thing to fix rather than a thing to argue about:
@@ -2677,8 +2722,9 @@ Each is deliberate, and each is a thing to fix rather than a thing to argue abou
   Emoji is CBDT and draws; a COLRv1 face would not, because this Skia archive references no
   `FT_Get_Color_Glyph_Paint`. A `fontFamily` fallback *list* — react-native#48625 — is still one name plus the two
   vendored faces. See *Colour emoji and the fallback chain (#249)*.
-- **`adjustsFontSizeToFit`, `textTransform`, `fontVariant`, text shadows, `textAlignVertical` and
-  `textBreakStrategy` are ignored.**
+- **`adjustsFontSizeToFit`, `textAlignVertical` and `textBreakStrategy` are ignored.** `textTransform`,
+  `fontVariant`, `textDecorationStyle` and `textShadow*` are no longer on this list; see *The text-style matrix
+  (#250)*. `fontVariant`'s sixteen stylistic-set bits still are.
 - **Group opacity applies to text the same way it applies to views**: per-fragment alpha, not a composited layer.
   Overlapping translucent text blends against itself. Same deviation, same fix, as *View props fidelity*.
 - **Every paint rebuilds the paragraph, and every snapshot copies the attributed string.** The damage walk runs

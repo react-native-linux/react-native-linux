@@ -91,18 +91,12 @@
     "fontSizeMultiplier": { "state": "not-implemented", "issue": "#113" },
     "fontWeight": { "state": "implemented", "test": "text.png" },
     "fontStyle": { "state": "implemented", "test": "text.png" },
-    "fontVariant": {
-      "state": "deviating",
-      "reason": "Ignored; SkParagraph is given no OpenType feature list. See *Text*, Fidelity limits."
-    },
+    "fontVariant": { "state": "implemented", "test": "text-style-matrix.png" },
     "allowFontScaling": { "state": "not-implemented", "issue": "#113" },
     "maxFontSizeMultiplier": { "state": "not-implemented", "issue": "#113" },
     "dynamicTypeRamp": { "state": "not-implemented", "issue": "#113" },
     "letterSpacing": { "state": "implemented", "test": "text.png" },
-    "textTransform": {
-      "state": "deviating",
-      "reason": "Ignored; the string reaches SkParagraph exactly as React sent it. See *Text*, Fidelity limits."
-    },
+    "textTransform": { "state": "implemented", "test": "TextTransformTest" },
     "lineHeight": {
       "state": "implemented",
       "test": "LineBoxMetricsTest, ConvertsLineHeightPointsToAMultipleOfTheFontSize"
@@ -111,21 +105,12 @@
     "baseWritingDirection": { "state": "not-implemented", "issue": "#72" },
     "lineBreakStrategy": { "state": "not-implemented", "issue": "#69" },
     "lineBreakMode": { "state": "not-implemented", "issue": "#69" },
-    "textDecorationColor": { "state": "not-implemented", "issue": "#69" },
+    "textDecorationColor": { "state": "implemented", "test": "text-style-matrix.png" },
     "textDecorationLineType": { "state": "implemented", "test": "text.png" },
-    "textDecorationStyle": { "state": "not-implemented", "issue": "#69" },
-    "textShadowOffset": {
-      "state": "deviating",
-      "reason": "Text shadows are not drawn at all. See *Text*, Fidelity limits."
-    },
-    "textShadowRadius": {
-      "state": "deviating",
-      "reason": "Text shadows are not drawn at all. See *Text*, Fidelity limits."
-    },
-    "textShadowColor": {
-      "state": "deviating",
-      "reason": "Text shadows are not drawn at all. See *Text*, Fidelity limits."
-    },
+    "textDecorationStyle": { "state": "implemented", "test": "text-style-matrix.png" },
+    "textShadowOffset": { "state": "implemented", "test": "text-style-matrix.png" },
+    "textShadowRadius": { "state": "implemented", "test": "text-style-matrix.png" },
+    "textShadowColor": { "state": "implemented", "test": "text-style-matrix.png" },
     "isHighlighted": { "state": "not-implemented", "issue": "#43" },
     "isPressable": { "state": "not-implemented", "issue": "#43" },
     "layoutDirection": { "state": "not-implemented", "issue": "#119" },
