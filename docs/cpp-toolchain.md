@@ -4089,17 +4089,32 @@ value is a real answer to `reactTreeAttributedString`, and there is no upstream 
 first-frame proof of issue #46 covers a node's own frame, matrix and clips, and that alone is not enough for a
 `<TextInput>`: the paragraph inside a field can settle somewhere different while the field's own box holds
 still, which none of those three would show. `haveSameEditorGeometry` in `GoldenRenderer.cpp` is the addition —
-for a primitive carrying both `SceneTextContent` and `SceneEditorContent`, it compares `measureEditorGeometry`'s
-`contentWidth`/`contentHeight` and `measureParagraphMetrics`'s first-line height between the first and settled
-snapshots. The caret rectangle is deliberately not part of this: an unfocused field's caret is published through
-`TextInputController::publish`'s side channel (`SceneEditorState`), which has not run at all by the time the
-*first* snapshot is taken, so comparing it would fail every unfocused field's first frame regardless of whether
-the paragraph itself moved. `text-input-first-frame.js` is the fixture — a fixed-height multiline field four
-lines deep in a box four lines tall, with a marker below it standing wherever a first-line shift would have
-reached — and it was checked against a real regression, not only against itself: a throwaway fixture that
-commits a short value first and clones in the fixture's own long value from a `setTimeout` (`scroll-first-frame.js`'s
-own async-settle pattern) fails with `tag 10 measured 39.6x22 of content on the first frame and 339.1x66 once
-settled`, and passes once the two commits carry the same text.
+for a primitive carrying both `SceneTextContent` and `SceneEditorContent` it compares three things between the
+first and settled snapshots: `measureEditorGeometry`'s `contentWidth`/`contentHeight`, `measureParagraphMetrics`'s
+first-line height, and `restingFirstLineTop` — the same dimensions and the same line count do not rule out the
+paragraph resting at a different vertical position inside an unchanged box, which is exactly the gap between "the
+same size" and "the same place."
+
+`restingFirstLineTop` answers where a field's first line would rest, not by reading the caret rectangle
+`TextInputController::publish` writes: an unfocused field's caret and scroll offset are published through that
+side channel (`SceneEditorState`), which has not run at all by the time the *first* snapshot is taken, so reading
+it compares a real, settled position against an unpublished default of zero regardless of whether the paragraph
+itself moved. Instead it recomputes the position a fresh mount rests at — the caret at the end of the committed
+text, and `followedScrollOffset` from a resting offset of zero, exactly `TextInputField::scrollOffsetY`'s own
+default — from the attributed string, paragraph attributes and content box every snapshot already carries. Doing
+that identically on both snapshots is what makes the comparison side-channel-independent: two snapshots of the
+same committed text and box always rest at the same computed position, so a real shift can only come from the
+text or the box actually differing, which the earlier dimension checks already catch, or from a mistake in this
+calculation itself — verified by deliberately adding a constant offset to one side and confirming the run fails
+with `tag 10 rested its first line at -0 points from the content box's top on the first frame and 9001 once
+settled`, then removing the offset and confirming a clean pass.
+
+`text-input-first-frame.js` is the fixture — a fixed-height multiline field four lines deep in a box four lines
+tall, with a marker below it standing wherever a first-line shift would have reached — and it was checked against
+a real regression, not only against itself: a throwaway fixture that commits a short value first and clones in
+the fixture's own long value from a `setTimeout` (`scroll-first-frame.js`'s own async-settle pattern) fails with
+`tag 10 measured 39.6x22 of content on the first frame and 339.1x66 once settled`, and passes once the two
+commits carry the same text.
 
 **A `<TextInput>` and a `<Text>` holding the same string in the same style have the same height (item 6).**
 This does not hold against a field given an explicit height of its own — several fixtures style a field taller

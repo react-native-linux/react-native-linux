@@ -460,14 +460,43 @@ bool doParagraphsFitTheirBoxes(const SceneSnapshot& scene) {
     return doAllFit && doesEveryTextInputAgreeWithACompanionText(scene);
 }
 
+// The vertical position `measureEditorGeometry`'s own request would put the caret at for a field nobody has
+// typed into or scrolled yet: the caret at the end of the text, and the scroll a *fresh* mount would settle to
+// (`followedScrollOffset` from a resting offset of zero, exactly `TextInputField::scrollOffsetY`'s own default).
+// Reading `SceneEditorState` instead would answer the question with whatever it happened to hold on this
+// snapshot, which is nothing at all on the very first one — see `haveSameEditorGeometry` below. Recomputing from
+// the field's own committed text and content box sidesteps that: the answer is what the geometry says it must
+// be, not what a side channel had gotten around to publishing.
+float restingFirstLineTop(const SceneTextContent& text, bool isMultiline) {
+    const EditorGeometryRequest endOfTextRequest{
+        .caretUtf16 = utf16LengthOfUtf8(text.attributedString.getString(), text.attributedString.getString().size()),
+        .isMultiline = isMultiline};
+    const EditorGeometry geometry = measureEditorGeometry(text.attributedString, text.paragraphAttributes,
+                                                          static_cast<float>(text.frame.size.width), endOfTextRequest);
+
+    if (!isMultiline) {
+        return 0.0F;
+    }
+
+    const float caretTop = static_cast<float>(geometry.caret.origin.y);
+    const float restingScrollOffset = followedScrollOffset(
+        0.0F, caretTop, caretTop + static_cast<float>(geometry.caret.size.height),
+        static_cast<float>(text.frame.size.height), geometry.contentHeight);
+
+    return -restingScrollOffset;
+}
+
 // Issue #114, item 5: a `<TextInput>`'s own frame can hold still while the paragraph inside it settles somewhere
-// different, which the node's frame, matrix and clips cannot see at all. The caret rectangle is not the
-// comparator here on purpose: a field nobody has focused or typed into yet publishes its caret through
-// `TextInputController::publish`'s own side channel (see `SceneEditorState` in `RetainedScene.h`), which has not
-// run at all by the time the *first* snapshot is taken — comparing it would fail every unfocused field's first
-// frame for a reason that has nothing to do with layout. `measureParagraphMetrics` over the field's own
-// attributed string is what is left, and it is exactly the caret-versus-line proof's other half: the paragraph
-// a field's text lays out to, independent of any caret, selection or scroll state.
+// different, which the node's frame, matrix and clips cannot see at all. The caret rectangle *as published* is
+// not the comparator here: a field nobody has focused or typed into yet publishes its caret through
+// `TextInputController::publish`'s own side channel (`SceneEditorState`), which has not run at all by the time
+// the *first* snapshot is taken, so reading it would compare a real, settled position against an unpublished
+// default of zero for every unfocused field's first frame — a difference with nothing to do with layout.
+// `restingFirstLineTop` is the fix for that: the position the geometry itself says a fresh mount rests at,
+// computed the same way on both snapshots from data the commit already carries, independent of whether the
+// side channel has run. Content dimensions and line count can stay equal while this still moves — a paragraph
+// vertically centred differently, or scrolled to a different resting position for the same content — which is
+// exactly the gap between "the same size" and "the same place" this line closes.
 bool haveSameEditorGeometry(const ScenePrimitive& first, const ScenePrimitive& settled) {
     if (!first.editor.has_value() || !settled.editor.has_value() || !first.text.has_value() ||
         !settled.text.has_value()) {
@@ -499,6 +528,17 @@ bool haveSameEditorGeometry(const ScenePrimitive& first, const ScenePrimitive& s
         std::abs(firstMetrics.lines.front().height - settledMetrics.lines.front().height) > kTextFitTolerance) {
         std::cerr << "[golden] tag " << first.tag << " painted a first line " << firstMetrics.lines.front().height
                   << " points tall on the first frame and " << settledMetrics.lines.front().height
+                  << " once settled" << std::endl;
+
+        return false;
+    }
+
+    const float firstLineTop = restingFirstLineTop(first.text.value(), first.editor->isMultiline);
+    const float settledLineTop = restingFirstLineTop(settled.text.value(), settled.editor->isMultiline);
+
+    if (std::abs(firstLineTop - settledLineTop) > kTextFitTolerance) {
+        std::cerr << "[golden] tag " << first.tag << " rested its first line at " << firstLineTop
+                  << " points from the content box's top on the first frame and " << settledLineTop
                   << " once settled" << std::endl;
 
         return false;
