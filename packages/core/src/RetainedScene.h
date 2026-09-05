@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AnimatedPropAllowlist.h"
+#include "ScrollPhysics.h"
 
 #include <folly/dynamic.h>
 #include <react/renderer/attributedstring/AttributedString.h>
@@ -444,6 +445,22 @@ struct SceneAccessibility {
     facebook::react::AccessibilityValue value;
 };
 
+/**
+ * A `<ScrollView>`'s `maintainVisibleContentPosition` as the scene holds it: what the prop asks for, what the
+ * offset is clamped against on each axis, and the children the anchor was last measured in.
+ *
+ * The children are the ones `anchorChildTags` picks: React Native renders a `<ScrollView>`'s children inside one
+ * content-container `<View>` — `_contentView` on iOS, `getContentView()` on Android — but that container carries
+ * nothing except layout, so Fabric view-flattens it and the rows arrive as the ScrollView's own children.
+ */
+struct SceneMaintainedScroll {
+    MaintainVisibleContentPosition maintaining;
+    ScrollAxisBounds horizontalBounds;
+    ScrollAxisBounds verticalBounds;
+    std::vector<ScrollChildFrame> horizontalChildren;
+    std::vector<ScrollChildFrame> verticalChildren;
+};
+
 struct SceneNode {
     facebook::react::Tag tag{};
     facebook::react::Tag parentTag{};
@@ -502,9 +519,29 @@ struct SceneNode {
      * picture and the hit test agree by construction.
      */
     std::optional<facebook::react::Point> scrollContentOffset;
+
+    /**
+     * What a `<ScrollView>` asking for `maintainVisibleContentPosition` needs to hold the child the user is
+     * looking at still, and the marker that it is asking at all. Absent on every other node, and dropped the
+     * moment the prop is taken off: measuring the first re-enabled commit against a layout from before the prop
+     * was turned off would adjust the offset by everything that happened in between.
+     */
+    std::optional<SceneMaintainedScroll> maintainedScroll;
 };
 
 using SceneNodes = std::unordered_map<facebook::react::Tag, SceneNode>;
+
+/**
+ * Where a mounting transaction moved a maintaining `<ScrollView>`'s content to, for whoever owns the scroll
+ * position.
+ *
+ * The scene applies the adjustment to itself, so the picture the mount produces is already correct; this is how
+ * the platform's own copy of the offset is told about it, and it is drained the way a command queue is.
+ */
+struct MaintainedScrollOffset {
+    facebook::react::Tag tag{};
+    facebook::react::Point offset{};
+};
 
 struct ScenePaintState;
 
@@ -670,6 +707,19 @@ public:
      */
     SceneHit findNodeAtPoint(facebook::react::Tag rootTag, facebook::react::Point surfacePoint) const;
     SceneSnapshot snapshot() const;
+
+    /**
+     * Holds every maintaining `<ScrollView>`'s visible child still across the mutations just applied, and answers
+     * with the ScrollViews whose offset that moved.
+     *
+     * It runs once per mounting transaction, after the last mutation of it, because that is the first moment the
+     * children are the ones the commit produced: a prepend inserts into the content view and need not touch the
+     * ScrollView node at all, so no point inside the loop sees both the children as they were and as they are.
+     * Adjusting here rather than on the frame that follows is what keeps a displaced frame from existing to be
+     * painted — [core#58186](https://github.com/facebook/react-native/issues/58186) is that frame on Android. See
+     * *Holding the visible content still* in docs/cpp-toolchain.md.
+     */
+    std::vector<MaintainedScrollOffset> maintainScrollPositions();
     SceneDamage takeDamage();
     std::string dump() const;
 

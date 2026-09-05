@@ -108,6 +108,12 @@ std::vector<SceneCommand> LinuxMountingManager::takeCommands() {
     return std::exchange(commands_, std::vector<SceneCommand>{});
 }
 
+std::vector<MaintainedScrollOffset> LinuxMountingManager::takeMaintainedScrollOffsets() {
+    const std::lock_guard<std::mutex> guard(sceneMutex_);
+
+    return std::exchange(maintainedScrollOffsets_, std::vector<MaintainedScrollOffset>{});
+}
+
 MountDiagnostics LinuxMountingManager::mountDiagnostics() const {
     const std::lock_guard<std::mutex> guard(sceneMutex_);
 
@@ -176,6 +182,13 @@ void LinuxMountingManager::executeMount(facebook::react::SurfaceId /*surfaceId*/
                 scene_.updateNode(mutation.newChildShadowView);
                 break;
         }
+    }
+
+    // After the last mutation and before the mutex is dropped, so no frame can be taken between the children this
+    // transaction prepended and the offset that holds the visible one still. That is what makes the adjustment
+    // part of the mount rather than of the frame after it.
+    for (const MaintainedScrollOffset& maintained : scene_.maintainScrollPositions()) {
+        maintainedScrollOffsets_.push_back(maintained);
     }
 }
 
