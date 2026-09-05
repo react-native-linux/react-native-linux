@@ -1201,6 +1201,35 @@ TEST(RetainedSceneScrollTest, APressLandsOnTheRowWhereItIsPaintedAndNotWhereItWa
     EXPECT_EQ(scene.findNodeAtPoint(kSurfaceTag, kUnscrolledRowPoint).tag, 2);
 }
 
+// Issue #241, and the +14 regression core#54123 is: the offsets a `contentInset` adds are offsets like any other,
+// and the inset area has to hit-test as content rather than fall outside the hit rectangle.
+//
+// The last row of the content, 400 points down it, under 30 points of bottom inset. The inset-extended end is
+// `470 + 30 - 150 = 350`, and the content's own end is 320: at 350 the row paints at y = 110..180 with 30 points
+// of inset margin below it, and at 320 it paints at 140..210, flush with the viewport's bottom edge.
+RetainedScene sceneWithScrollViewAtTheEnd(double offset) {
+    RetainedScene scene = sceneWithScrollView(Point{.x = 0, .y = static_cast<float>(offset)});
+
+    addChild(scene, 2, makePaintedView(4, makeRect(0, 400, 200, 70), red()));
+
+    return scene;
+}
+
+constexpr Point kLastRowPoint{.x = 160, .y = 120};
+constexpr Point kInsetMarginPoint{.x = 160, .y = 195};
+
+TEST(RetainedSceneScrollTest, APressPastTheContentEndLandsOnWhatTheInsetScrolledThereAndOnTheScrollViewBelowIt) {
+    const RetainedScene atTheInsetEnd = sceneWithScrollViewAtTheEnd(350);
+    const RetainedScene atTheContentEnd = sceneWithScrollViewAtTheEnd(320);
+
+    EXPECT_EQ(atTheInsetEnd.findNodeAtPoint(kSurfaceTag, kLastRowPoint).tag, 4);
+    EXPECT_EQ(atTheInsetEnd.findNodeAtPoint(kSurfaceTag, kInsetMarginPoint).tag, 2);
+    // The same two points 30 points earlier, where the range would have ended without the inset: neither answer
+    // is a property of the coordinates alone.
+    EXPECT_EQ(atTheContentEnd.findNodeAtPoint(kSurfaceTag, kLastRowPoint).tag, 2);
+    EXPECT_EQ(atTheContentEnd.findNodeAtPoint(kSurfaceTag, kInsetMarginPoint).tag, 4);
+}
+
 TEST(RetainedSceneScrollTest, ThePressFollowsTheOffsetTheSceneHoldsThisCommit) {
     RetainedScene scene = sceneWithScrollView(Point{.x = 0, .y = 120});
 
@@ -1250,9 +1279,12 @@ TEST(RetainedSceneScrollTest, AChildPaintedOutsideItsParentIsPressableThereUnles
 
     // core#34542 and core#37181: an absolutely positioned child outside its parent's bounds receives no gestures,
     // because the parent's bounds were used as a hit gate although the child painted past them.
-    EXPECT_EQ(sceneWithOutOfFlowChild(facebook::yoga::Overflow::Visible).findNodeAtPoint(kSurfaceTag, kOutsideTheParent).tag, 3);
-    EXPECT_EQ(sceneWithOutOfFlowChild(facebook::yoga::Overflow::Hidden).findNodeAtPoint(kSurfaceTag, kOutsideTheParent).tag,
-              kSurfaceTag);
+    EXPECT_EQ(
+        sceneWithOutOfFlowChild(facebook::yoga::Overflow::Visible).findNodeAtPoint(kSurfaceTag, kOutsideTheParent).tag,
+        3);
+    EXPECT_EQ(
+        sceneWithOutOfFlowChild(facebook::yoga::Overflow::Hidden).findNodeAtPoint(kSurfaceTag, kOutsideTheParent).tag,
+        kSurfaceTag);
 }
 
 TEST(RetainedSceneScrollTest, ContentOffsetTranslatesTheChildrenOnBothAxes) {

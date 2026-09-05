@@ -44,15 +44,42 @@ struct ScrollAxisState {
 };
 
 /**
- * The largest `contentOffset` that still leaves content in the viewport, which is zero when the content fits.
+ * What one axis of one `<ScrollView>` may be scrolled over: the content, the window on it, and the `contentInset`
+ * that extends the range past both ends of that content.
+ *
+ * `leadingInset` is `contentInset.top` on the vertical axis and `contentInset.left` on the horizontal one, and
+ * `trailingInset` is `.bottom` and `.right`. They are the two edges of the axis rather than four named ones so
+ * that both axes are the same arithmetic, which is what `ScrollController` translates the `EdgeInsets` into.
+ *
+ * A zero inset is the range this file had before `contentInset` existed, so nothing that does not set one moves.
  */
-double maximumScrollOffset(double contentLength, double viewportLength);
+struct ScrollAxisBounds {
+    double contentLength{0.0};
+    double viewportLength{0.0};
+    double leadingInset{0.0};
+    double trailingInset{0.0};
+};
 
 /**
- * `offset` confined to `[0, maximumScrollOffset(...)]`. Overscroll is not modelled at all; see the rubber-band
- * deferral in *ScrollView* in docs/cpp-toolchain.md.
+ * The smallest `contentOffset` the content may rest at: `-contentInset.top`, which is the inset area scrolled into
+ * view above the content. Zero without an inset.
  */
-double clampScrollOffset(double offset, double contentLength, double viewportLength);
+double minimumScrollOffset(const ScrollAxisBounds& bounds);
+
+/**
+ * The largest `contentOffset` that still leaves content in the viewport — `contentSize + inset.bottom - viewport`,
+ * which is the "adjusted content end" `scrollToEnd` lands on and
+ * [core#57522](https://github.com/facebook/react-native/issues/57522) is the absence of. It is never below
+ * `minimumScrollOffset`, so content shorter than its viewport rests inside its own inset rather than above it,
+ * which is what `UIScrollView` clamps to.
+ */
+double maximumScrollOffset(const ScrollAxisBounds& bounds);
+
+/**
+ * `offset` confined to `[minimumScrollOffset(...), maximumScrollOffset(...)]`. Overscroll is not modelled at all —
+ * an inset is a resting place and a rubber band is not; see the deferral in *ScrollView* in docs/cpp-toolchain.md.
+ */
+double clampScrollOffset(double offset, const ScrollAxisBounds& bounds);
 
 /**
  * The velocity whose deceleration curve travels exactly `distance` before coming to rest, which is what turns a
@@ -65,8 +92,8 @@ double velocityForTravel(double distance, double decelerationRate);
  * velocity that delta implies over the frame it arrived in. That velocity is what the fling starts from when the
  * finger lifts.
  */
-ScrollAxisState dragAxis(const ScrollAxisState& axis, double delta, double frameMilliseconds, double contentLength,
-                         double viewportLength);
+ScrollAxisState dragAxis(const ScrollAxisState& axis, double delta, double frameMilliseconds,
+                         const ScrollAxisBounds& bounds);
 
 /**
  * What a programmatic `scrollTo` turns into: where the content should end up, how fast it should be moving to get
@@ -93,7 +120,7 @@ struct ScrollDestination {
 };
 
 ScrollDestination scrollToDestination(double currentOffset, double targetOffset, bool isAnimated,
-                                      double decelerationRate, double contentLength, double viewportLength);
+                                      double decelerationRate, const ScrollAxisBounds& bounds);
 
 /**
  * `snapToAlignment`'s three values as arithmetic rather than as `ScrollViewSnapToAlignment`: which edge of a
@@ -157,8 +184,8 @@ bool hasSnapPoints(const ScrollSnapConfiguration& snapping);
  * - With no snap point anywhere, the target is the landing point, so this function is also the plain answer to
  *   where an unsnapped flick stops.
  */
-double settleTargetOffset(const ScrollAxisState& axis, double decelerationRate, double contentLength,
-                          double viewportLength, const ScrollSnapConfiguration& snapping);
+double settleTargetOffset(const ScrollAxisState& axis, double decelerationRate, const ScrollAxisBounds& bounds,
+                          const ScrollSnapConfiguration& snapping);
 
 /**
  * One child of a `<ScrollView>`'s content view along one axis: which node it is, where it starts and how long it
@@ -219,8 +246,7 @@ inline constexpr double kMinimumAnchorShift = 0.5;
  */
 double maintainedScrollOffset(double offset, const std::vector<ScrollChildFrame>& previousChildren,
                               const std::vector<ScrollChildFrame>& currentChildren,
-                              const MaintainVisibleContentPosition& maintaining, double contentLength,
-                              double viewportLength);
+                              const MaintainVisibleContentPosition& maintaining, const ScrollAxisBounds& bounds);
 
 /**
  * Integrates one frame of deceleration: the exact integral of `velocity * rate^t` over the frame rather than a
@@ -229,6 +255,6 @@ double maintainedScrollOffset(double offset, const std::vector<ScrollChildFrame>
  * Reaching either end of the content stops the momentum dead. There is no rubber band and no bounce.
  */
 ScrollAxisState decelerateAxis(const ScrollAxisState& axis, double frameMilliseconds, double decelerationRate,
-                               double contentLength, double viewportLength);
+                               const ScrollAxisBounds& bounds);
 
 } // namespace react_native_linux

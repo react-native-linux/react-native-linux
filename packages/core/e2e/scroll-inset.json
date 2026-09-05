@@ -1,0 +1,23 @@
+{
+  "name": "scroll-inset",
+  "bundle": "scroll-inset.js",
+  "ready": "inset: committed surface 1",
+  "frames": 900,
+  "steps": [
+    "sleep 500",
+    "move 160 100",
+    "sleep 100",
+    "wheel down 10",
+    "sleep 1500",
+    "click 160 150",
+    "sleep 300",
+    "click 160 195",
+    "sleep 500"
+  ],
+  "expect": [
+    "inset: committed surface 1",
+    "inset: topMomentumScrollEnd at 0,350",
+    "inset: topClick on row5",
+    "inset: topClick on list"
+  ]
+}

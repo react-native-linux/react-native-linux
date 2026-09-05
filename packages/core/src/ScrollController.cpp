@@ -13,6 +13,7 @@
 #include <react/renderer/core/StateData.h>
 #include <react/renderer/graphics/Float.h>
 #include <react/renderer/graphics/Point.h>
+#include <react/renderer/graphics/RectangleEdges.h>
 #include <react/renderer/graphics/Size.h>
 #include <react/renderer/mounting/ShadowTree.h>
 #include <react/timing/primitives.h>
@@ -41,11 +42,24 @@ constexpr double kMillisecondsPerSecond = 1000.0;
 struct ScrollViewMetrics {
     facebook::react::Size viewportSize;
     facebook::react::Size contentSize;
+    facebook::react::EdgeInsets contentInset;
     double decelerationRate{kDecelerationRateNormal};
     double scrollEventThrottleMilliseconds{0.0};
     ScrollSnapConfiguration snapping;
     std::optional<MaintainVisibleContentPosition> maintaining;
 };
+
+/**
+ * One axis of what the physics may scroll over. `contentInset` is an `EdgeInsets` and an axis has two ends, so
+ * this is where the four named edges become a leading and a trailing one — `left`/`right` across, `top`/`bottom`
+ * down — and it is the only place either mapping is written.
+ */
+ScrollAxisBounds axisBounds(const ScrollViewMetrics& metrics, bool isHorizontal) {
+    return ScrollAxisBounds{.contentLength = isHorizontal ? metrics.contentSize.width : metrics.contentSize.height,
+                            .viewportLength = isHorizontal ? metrics.viewportSize.width : metrics.viewportSize.height,
+                            .leadingInset = isHorizontal ? metrics.contentInset.left : metrics.contentInset.top,
+                            .trailingInset = isHorizontal ? metrics.contentInset.right : metrics.contentInset.bottom};
+}
 
 ScrollSnapAlignment toSnapAlignment(facebook::react::ScrollViewSnapToAlignment alignment) {
     if (alignment == facebook::react::ScrollViewSnapToAlignment::Center) {
@@ -141,6 +155,7 @@ facebook::react::Point toPoint(double x, double y) {
 ScrollViewMetrics readMetrics(const facebook::react::ScrollViewShadowNode& scrollView) {
     return ScrollViewMetrics{.viewportSize = scrollView.getLayoutMetrics().frame.size,
                              .contentSize = scrollView.getStateData().getContentSize(),
+                             .contentInset = scrollView.getConcreteProps().contentInset,
                              .decelerationRate = scrollView.getConcreteProps().decelerationRate,
                              .scrollEventThrottleMilliseconds = scrollView.getConcreteProps().scrollEventThrottle,
                              .snapping = readSnapping(scrollView.getConcreteProps()),
@@ -187,13 +202,12 @@ std::shared_ptr<const facebook::react::ScrollViewShadowNode> deepestScrollView(
  * release. A moving axis needs no flag: its velocity is already the gesture.
  */
 ScrollAxisState aimAtSnapPoint(const ScrollAxisState& axis, bool isSettlingFromRelease, double decelerationRate,
-                               double contentLength, double viewportLength,
-                               const ScrollSnapConfiguration& snapping) {
+                               const ScrollAxisBounds& bounds, const ScrollSnapConfiguration& snapping) {
     if ((axis.velocity == 0.0 && !isSettlingFromRelease) || !hasSnapPoints(snapping)) {
         return axis;
     }
 
-    const double target = settleTargetOffset(axis, decelerationRate, contentLength, viewportLength, snapping);
+    const double target = settleTargetOffset(axis, decelerationRate, bounds, snapping);
 
     return ScrollAxisState{.offset = axis.offset,
                            .velocity = velocityForTravel(target - axis.offset, decelerationRate)};
@@ -208,8 +222,7 @@ ScrollAxisState aimAtSnapPoint(const ScrollAxisState& axis, bool isSettlingFromR
  * reason two flicks in a row do.
  */
 void advanceAxis(ScrollTargetAxis& axis, bool isFingerDown, bool isSettlingFromRelease, double frameMilliseconds,
-                 double decelerationRate, double contentLength, double viewportLength,
-                 const ScrollSnapConfiguration& snapping) {
+                 double decelerationRate, const ScrollAxisBounds& bounds, const ScrollSnapConfiguration& snapping) {
     if (axis.pendingOffset.has_value()) {
         axis.state = ScrollAxisState{.offset = axis.pendingOffset.value()};
         axis.pendingOffset.reset();
@@ -221,17 +234,17 @@ void advanceAxis(ScrollTargetAxis& axis, bool isFingerDown, bool isSettlingFromR
     }
 
     if (isFingerDown) {
-        axis.state = dragAxis(axis.state, axis.pendingDrag, frameMilliseconds, contentLength, viewportLength);
+        axis.state = dragAxis(axis.state, axis.pendingDrag, frameMilliseconds, bounds);
     } else {
         const ScrollAxisState impulsed{.offset = axis.state.offset,
                                        .velocity = axis.state.velocity +
                                                    velocityForTravel(axis.pendingNotches * kWheelNotchDistance,
                                                                      decelerationRate)};
 
-        const ScrollAxisState aimed = aimAtSnapPoint(impulsed, isSettlingFromRelease, decelerationRate,
-                                                     contentLength, viewportLength, snapping);
+        const ScrollAxisState aimed =
+            aimAtSnapPoint(impulsed, isSettlingFromRelease, decelerationRate, bounds, snapping);
 
-        axis.state = decelerateAxis(aimed, frameMilliseconds, decelerationRate, contentLength, viewportLength);
+        axis.state = decelerateAxis(aimed, frameMilliseconds, decelerationRate, bounds);
     }
 
     axis.pendingDrag = 0.0;
@@ -252,9 +265,8 @@ void advanceAxis(ScrollTargetAxis& axis, bool isFingerDown, bool isSettlingFromR
  * acquired compares against the children it was acquired with and adjusts nothing.
  */
 void maintainAxis(ScrollTargetAxis& axis, std::vector<ScrollChildFrame> children,
-                  const MaintainVisibleContentPosition& maintaining, double contentLength, double viewportLength) {
-    axis.state.offset = maintainedScrollOffset(axis.state.offset, axis.previousChildren, children, maintaining,
-                                               contentLength, viewportLength);
+                  const MaintainVisibleContentPosition& maintaining, const ScrollAxisBounds& bounds) {
+    axis.state.offset = maintainedScrollOffset(axis.state.offset, axis.previousChildren, children, maintaining, bounds);
     axis.previousChildren = std::move(children);
 }
 
@@ -460,20 +472,17 @@ void ScrollController::routeCommand(const SceneCommand& command) {
 
     const ScrollViewMetrics metrics = readMetrics(*scrollView);
     const bool isAnimated = isScrollTo ? readBooleanArgument(command.args, 2) : readBooleanArgument(command.args, 0);
-    const double targetX = isScrollTo ? readNumberArgument(command.args, 0)
-                                      : maximumScrollOffset(metrics.contentSize.width, metrics.viewportSize.width);
-    const double targetY = isScrollTo
-                               ? readNumberArgument(command.args, 1)
-                               : maximumScrollOffset(metrics.contentSize.height, metrics.viewportSize.height);
+    const ScrollAxisBounds horizontalBounds = axisBounds(metrics, true);
+    const ScrollAxisBounds verticalBounds = axisBounds(metrics, false);
+    // core#57522: `scrollToEnd` on an inset ScrollView has to land on the adjusted content end rather than on the
+    // content's own, which is what `maximumScrollOffset` answers once the inset is part of the bounds.
+    const double targetX = isScrollTo ? readNumberArgument(command.args, 0) : maximumScrollOffset(horizontalBounds);
+    const double targetY = isScrollTo ? readNumberArgument(command.args, 1) : maximumScrollOffset(verticalBounds);
 
-    applyDestination(target->horizontal,
-                     scrollToDestination(target->horizontal.state.offset, targetX, isAnimated,
-                                         metrics.decelerationRate, metrics.contentSize.width,
-                                         metrics.viewportSize.width));
-    applyDestination(target->vertical,
-                     scrollToDestination(target->vertical.state.offset, targetY, isAnimated,
-                                         metrics.decelerationRate, metrics.contentSize.height,
-                                         metrics.viewportSize.height));
+    applyDestination(target->horizontal, scrollToDestination(target->horizontal.state.offset, targetX, isAnimated,
+                                                             metrics.decelerationRate, horizontalBounds));
+    applyDestination(target->vertical, scrollToDestination(target->vertical.state.offset, targetY, isAnimated,
+                                                           metrics.decelerationRate, verticalBounds));
 }
 
 ScrollController::ScrollTarget* ScrollController::acquireNode(
@@ -509,6 +518,8 @@ ScrollController::ScrollTarget* ScrollController::acquire(facebook::react::Point
 bool ScrollController::advanceTarget(ScrollTarget& target, const facebook::react::ScrollViewShadowNode& scrollView,
                                      double frameMilliseconds) {
     const ScrollViewMetrics metrics = readMetrics(scrollView);
+    const ScrollAxisBounds horizontalBounds = axisBounds(metrics, true);
+    const ScrollAxisBounds verticalBounds = axisBounds(metrics, false);
     const facebook::react::Point previousOffset =
         toPoint(target.horizontal.state.offset, target.vertical.state.offset);
 
@@ -518,9 +529,8 @@ bool ScrollController::advanceTarget(ScrollTarget& target, const facebook::react
 
     if (metrics.maintaining.has_value()) {
         maintainAxis(target.horizontal, readChildFrames(scrollView, true), metrics.maintaining.value(),
-                     metrics.contentSize.width, metrics.viewportSize.width);
-        maintainAxis(target.vertical, readChildFrames(scrollView, false), metrics.maintaining.value(),
-                     metrics.contentSize.height, metrics.viewportSize.height);
+                     horizontalBounds);
+        maintainAxis(target.vertical, readChildFrames(scrollView, false), metrics.maintaining.value(), verticalBounds);
     } else {
         // Turning the prop off forgets the children it was watching. Keeping them would measure the first frame
         // after it is turned back on against a layout from before it was turned off, and adjust the offset by
@@ -530,10 +540,9 @@ bool ScrollController::advanceTarget(ScrollTarget& target, const facebook::react
     }
 
     advanceAxis(target.horizontal, target.isFingerDown, isSettlingFromRelease, frameMilliseconds,
-                metrics.decelerationRate, metrics.contentSize.width, metrics.viewportSize.width, metrics.snapping);
+                metrics.decelerationRate, horizontalBounds, metrics.snapping);
     advanceAxis(target.vertical, target.isFingerDown, isSettlingFromRelease, frameMilliseconds,
-                metrics.decelerationRate, metrics.contentSize.height, metrics.viewportSize.height,
-                metrics.snapping);
+                metrics.decelerationRate, verticalBounds, metrics.snapping);
 
     // The release is applied after the frame it arrived in has been dragged, so the velocity the last delta left
     // behind is the velocity the fling starts with.

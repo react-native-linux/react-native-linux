@@ -53,6 +53,15 @@ export const fixtures: readonly GoldenFixture[] = [
     renderArguments: ["160", "100", "3"],
     renderFlag: "--scroll-to",
   },
+  // #241: a ScrollView resting at the `contentOffset` it mounted with, which is inside its own `contentInset`.
+  // Fifty points of bare panel above the first row is the inset.
+  // Without that band the first frame read the content box as the range; at offset zero the prop never landed.
+  {
+    bundleFileName: "scroll-inset.js",
+    goldenFileName: "scroll-inset.png",
+    renderArguments: [],
+    renderFlag: "--golden",
+  },
   // #239: four notches is 160 points and page two starts at 150, so a carousel resting at 160 is a broken snap.
   {
     bundleFileName: "scroll-paging.js",
