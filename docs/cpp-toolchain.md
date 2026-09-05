@@ -2735,11 +2735,13 @@ path from the root down as (parent, child index) pairs, and the first `ScrollVie
 path backwards is the innermost ScrollView containing the hit node. That is nested-ScrollView behaviour with no
 second rule for it, and a wheel over a node with no ScrollView above it does nothing.
 
-`FabricHost::dispatchInput` splits the frame rather than handing every event to both routers, because the two
-answer different questions about the same coordinate and a shared pass would hit-test each event twice. Since #97
-they also read different trees: a click reads the retained scene, so it lands where the frame painted, and a wheel
-reads the shadow tree, because the ScrollView a wheel moves is not what an animation moves. Aligning them is a
-follow-up in *Hit-testing under animation*.
+`FabricHost::dispatchInput` hands the whole frame to both routers, and each ignores what the other owns: the
+scroll controller routes scroll events only, and the input dispatcher hit-tests everything except a scroll, which
+it gives to `PointerRouter::cancelPressForScroll` and to nothing else (#244, *A scroll cancels the press it
+started under*). Nothing is hit-tested twice, because a scroll never reaches the hit test. The two still answer
+different questions about the same coordinate, and since #97 they read different trees: a click reads the retained
+scene, so it lands where the frame painted, and a wheel reads the shadow tree, because the ScrollView a wheel
+moves is not what an animation moves. Aligning them is a follow-up in *Hit-testing under animation*.
 
 ### Programmatic scrolling (#109)
 
@@ -3106,7 +3108,10 @@ an `axis_stop` and a coalesced-to-zero delta, asserting the release is always a 
 when the scroll moved nothing. `packages/core/e2e/press-cancelled-by-scroll.json` is the same sentence under a
 compositor: the bundle's every trace line carries a running click count, so the press *after* the cancelled one
 still reading `clicks=0` is the assertion that a click did not happen — something an ordered substring match
-cannot say any other way.
+cannot say any other way. Both layers assert the pointer sequence rather than `onPressIn`/`onPressOut`/`onPress`,
+because the bundles in this repository are hand-written against `nativeFabricUIManager` with no React in them and
+therefore no `Pressability`; #24 and #22 boot React in the host, and #215 runs upstream's Pressability contracts
+against this pipeline, which is where those three names get asserted by their own names.
 
 ### The proof
 
@@ -4581,7 +4586,7 @@ The script is one command per line, `#` comments ignored:
 move <x> <y>                 # absolute, in output pixels
 click <x> <y>                # move, then a left press and release
 button left|middle|right press|release
-wheel up|down <notches>      # one axis_discrete per notch, vertical
+wheel up|down <notches>      # one vertical axis_discrete carrying the signed notch count
 key <keysym> press|release   # an xkb keysym name, for example Tab or Return
 type <text>                  # ASCII, shifted characters send the shift modifier
 sleep <milliseconds>

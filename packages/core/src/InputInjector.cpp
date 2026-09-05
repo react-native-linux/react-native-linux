@@ -414,6 +414,9 @@ bool runSleep(Injector& injector, std::string_view rest) {
 constexpr double kPointsPerWheelNotch = 10.0;
 constexpr int32_t kUpwardWheelSign = -1;
 constexpr int32_t kDownwardWheelSign = 1;
+// `wl_fixed_t` is signed 24.8, so it holds ±8388608.0 points; at ten points a notch that is this many notches,
+// and it is checked before the unsigned count is narrowed rather than after, when the sign would already be wrong.
+constexpr uint32_t kMaximumWheelNotches = 838860;
 
 bool runWheel(Injector& injector, std::string_view rest) {
     const std::string_view direction = nextToken(rest);
@@ -421,6 +424,10 @@ bool runWheel(Injector& injector, std::string_view rest) {
 
     if ((direction != "up" && direction != "down") || !parseNumber(nextToken(rest), notches)) {
         return reportError("wheel needs up or down, then a notch count");
+    }
+
+    if (notches > kMaximumWheelNotches) {
+        return reportError("wheel takes at most 838860 notches, which is what a wl_fixed_t axis value holds");
     }
 
     const int32_t steps =
