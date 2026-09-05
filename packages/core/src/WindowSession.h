@@ -82,6 +82,16 @@ public:
     bool hasReportedFatalError() const;
 
     /**
+     * The three questions the automation channel (#214) asks of a running session: the committed tree, copied
+     * out under the mounting manager's mutex exactly as `takeFrame` is; a real block of the JavaScript thread;
+     * and whether the bundle called `globalThis.__rnlMarkTestPassed()`. Called from the frame thread, between
+     * frames. See *The automation channel* in docs/cpp-toolchain.md.
+     */
+    SceneNodes visualTreeNodes() const;
+    void blockJavaScriptThread(std::chrono::milliseconds duration);
+    bool hasMarkedTestPassed() const;
+
+    /**
      * Liveness counters for the frame clock. There is no Tracy integration yet; this is a plain getter until one
      * exists.
      */
