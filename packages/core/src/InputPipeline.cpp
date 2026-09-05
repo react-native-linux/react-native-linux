@@ -17,6 +17,7 @@
 namespace react_native_linux {
 
 constexpr int kNoButton = -1;
+constexpr facebook::react::Tag kNoPressTarget = 0;
 constexpr int kNoButtonsBits = 0;
 constexpr int kPrimaryButton = 0;
 constexpr int kAuxiliaryButton = 1;
@@ -471,10 +472,18 @@ std::vector<PointerDispatch> PointerRouter::routeRelease(const InputEvent& event
     }
 
     if (event.button == kPrimaryButton) {
-        pressedTag_ = 0;
+        pressedTag_ = kNoPressTarget;
     }
 
     return dispatches;
+}
+
+void PointerRouter::cancelPressForScroll(const InputEvent& event) {
+    if (event.scrollAmount == 0.0) {
+        return;
+    }
+
+    pressedTag_ = kNoPressTarget;
 }
 
 std::vector<PointerDispatch> PointerRouter::route(const InputEvent& event, facebook::react::Tag targetTag,
@@ -500,7 +509,7 @@ std::vector<PointerDispatch> PointerRouter::route(const InputEvent& event, faceb
             return routeRelease(event, targetTag, targetOrigin);
 
         case InputEventKind::PointerLeave:
-            pressedTag_ = 0;
+            pressedTag_ = kNoPressTarget;
             pressedButtons_ = kNoButtonsBits;
 
             return {PointerDispatch{

@@ -200,19 +200,10 @@ void FabricHost::setTextInputFocusSink(TextInputFocusSink* textInputFocusSink) {
 }
 
 void FabricHost::dispatchInput(const std::vector<InputEvent>& events) {
-    std::vector<InputEvent> pointerEvents;
-
-    // Scroll and pointer routing answer different questions about the same coordinate — which ScrollView owns it
-    // versus which node was clicked — so the frame is split rather than hit-tested twice for events one of them
-    // would discard.
-    for (const InputEvent& event : events) {
-        if (!isScrollEvent(event)) {
-            pointerEvents.push_back(event);
-        }
-    }
-
+    // Both see the whole frame: the scroll controller because a scroll is its event, the input dispatcher because
+    // a scroll also ends any press it started under, and each ignores what the other owns.
     scrollController_->dispatch(events);
-    inputDispatcher_->dispatch(pointerEvents);
+    inputDispatcher_->dispatch(events);
 }
 
 bool FabricHost::advanceScroll(double frameMilliseconds) {

@@ -331,6 +331,83 @@ TEST(PointerRouterTest, BatchesAFullFrameInQueueOrder) {
     EXPECT_EQ(types, expected);
 }
 
+// Issue #244. A wheel or a touchpad scroll that starts while a button is down cancels the press, because React's
+// responder system cancels one on touch and has no wheel path to do it with.
+
+struct ScrollDuringPressCase {
+    const char* name;
+    InputEventKind kind;
+    ScrollAxisKind scrollAxis;
+    double scrollAmount;
+    bool cancelsThePress;
+};
+
+InputEvent makeScrollEvent(const ScrollDuringPressCase& scrollCase) {
+    return InputEvent{
+        .kind = scrollCase.kind, .scrollAxis = scrollCase.scrollAxis, .scrollAmount = scrollCase.scrollAmount};
+}
+
+std::vector<PointerDispatch> routePrimaryButton(PointerRouter& router, InputEventKind kind) {
+    return router.route(makeButton(kind, kPrimaryButton), kBoxTag, makePoint(0, 0));
+}
+
+TEST(PointerRouterTest, AScrollThatMovedCancelsThePressItStartedUnder) {
+    const std::vector<ScrollDuringPressCase> cases{
+        {"a wheel notch down", InputEventKind::PointerScrollDiscrete, ScrollAxisKind::Vertical, 1.0, true},
+        {"a wheel notch up", InputEventKind::PointerScrollDiscrete, ScrollAxisKind::Vertical, -1.0, true},
+        {"a touchpad delta", InputEventKind::PointerScrollContinuous, ScrollAxisKind::Vertical, -12.5, true},
+        {"a horizontal wheel notch", InputEventKind::PointerScrollDiscrete, ScrollAxisKind::Horizontal, 0.25, true},
+        {"the fingers leaving the touchpad", InputEventKind::PointerScrollStop, ScrollAxisKind::Vertical, 0.0,
+         false},
+        {"a delta that coalesced to nothing", InputEventKind::PointerScrollContinuous, ScrollAxisKind::Vertical,
+         0.0, false},
+    };
+
+    for (const ScrollDuringPressCase& scrollCase : cases) {
+        PointerRouter router;
+
+        routePrimaryButton(router, InputEventKind::PointerButtonPress);
+        router.cancelPressForScroll(makeScrollEvent(scrollCase));
+
+        const std::vector<PointerDispatch> released =
+            routePrimaryButton(router, InputEventKind::PointerButtonRelease);
+
+        // The release is a pointerUp whatever the scroll did, so Pressability reports onPressOut either way; the
+        // click is what the cancel removes, and the click is what becomes onPress.
+        ASSERT_FALSE(released.empty()) << scrollCase.name;
+        EXPECT_EQ(released[0].type, PointerDispatchType::Up) << scrollCase.name;
+        EXPECT_EQ(released[0].event.buttons, 0) << scrollCase.name;
+        EXPECT_EQ(released.size(), scrollCase.cancelsThePress ? 1U : 2U) << scrollCase.name;
+    }
+}
+
+TEST(PointerRouterTest, APressThatBeginsAfterTheScrollSettledStillClicks) {
+    PointerRouter router;
+
+    router.cancelPressForScroll(InputEvent{.kind = InputEventKind::PointerScrollDiscrete, .scrollAmount = 1.0});
+    routePrimaryButton(router, InputEventKind::PointerButtonPress);
+    router.cancelPressForScroll(InputEvent{.kind = InputEventKind::PointerScrollStop, .scrollAmount = 0.0});
+
+    const std::vector<PointerDispatch> released = routePrimaryButton(router, InputEventKind::PointerButtonRelease);
+
+    ASSERT_EQ(released.size(), 2U);
+    EXPECT_EQ(released[1].type, PointerDispatchType::Click);
+}
+
+TEST(PointerRouterTest, ACancelledPressLeavesNothingBehindForTheNextPress) {
+    PointerRouter router;
+
+    routePrimaryButton(router, InputEventKind::PointerButtonPress);
+    router.cancelPressForScroll(InputEvent{.kind = InputEventKind::PointerScrollContinuous, .scrollAmount = 8.0});
+    routePrimaryButton(router, InputEventKind::PointerButtonRelease);
+    routePrimaryButton(router, InputEventKind::PointerButtonPress);
+
+    const std::vector<PointerDispatch> clicked = routePrimaryButton(router, InputEventKind::PointerButtonRelease);
+
+    ASSERT_EQ(clicked.size(), 2U);
+    EXPECT_EQ(clicked[1].type, PointerDispatchType::Click);
+}
+
 TEST(IsTextKeyTest, TreatsASingleCodePointAsTextAndANameAsAKey) {
     EXPECT_TRUE(isTextKey("a"));
     EXPECT_TRUE(isTextKey(" "));

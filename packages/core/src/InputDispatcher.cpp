@@ -152,6 +152,14 @@ void InputDispatcher::dispatch(const std::vector<InputEvent>& events) {
             continue;
         }
 
+        // A scroll is the ScrollController's event, and reaches here only to end a press the wheel moved out from
+        // under; see *A scroll cancels the press it started under* in docs/cpp-toolchain.md.
+        if (isScrollEvent(event)) {
+            router_.cancelPressForScroll(event);
+
+            continue;
+        }
+
         dispatchPointerEvent(event);
     }
 
