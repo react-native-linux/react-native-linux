@@ -16,6 +16,7 @@
 #include "include/core/SkSurfaceProps.h"
 #include "include/encode/SkPngEncoder.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -600,6 +601,49 @@ bool doFirstAndSettledFramesAgree(const SceneSnapshot& first, const SceneSnapsho
 }
 
 /**
+ * Issue #240. Every node that was on screen before a prepend is on screen in the same place after it, which is
+ * what `maintainVisibleContentPosition` promises and what a one-frame jump breaks.
+ *
+ * `findDisplacedPrimitive` is the comparison — matched by tag because a prepend renumbers every index, a node that
+ * is gone counted as displaced, and the resized content container skipped — and this is the vacuity check around
+ * it: a second commit that prepended nothing proves nothing.
+ */
+bool doPrependedFramesAgree(const SceneSnapshot& before, const SceneSnapshot& after) {
+    if (before.empty()) {
+        std::cerr << "[golden] the bundle committed no scene before the prepend" << std::endl;
+
+        return false;
+    }
+
+    if (after.size() <= before.size()) {
+        std::cerr << "[golden] the second commit painted " << after.size() << " primitives and the first "
+                  << before.size() << ", so nothing was prepended and there is nothing to prove" << std::endl;
+
+        return false;
+    }
+
+    const std::optional<ScenePrimitiveDisplacement> displaced = findDisplacedPrimitive(before, after);
+
+    if (!displaced.has_value()) {
+        return true;
+    }
+
+    if (displaced->isMissing) {
+        std::cerr << "[golden] tag " << displaced->tag << " was on screen at (" << displaced->before.origin.x << ", "
+                  << displaced->before.origin.y << ") before the prepend and is painted nowhere after it"
+                  << std::endl;
+
+        return false;
+    }
+
+    std::cerr << "[golden] tag " << displaced->tag << " was at (" << displaced->before.origin.x << ", "
+              << displaced->before.origin.y << ") before the prepend and at (" << displaced->after.origin.x << ", "
+              << displaced->after.origin.y << ") after it" << std::endl;
+
+    return false;
+}
+
+/**
  * Rasterises a settled scene and writes it, which is the half every single-frame golden shares regardless of what
  * the run did before it settled.
  */
@@ -749,6 +793,27 @@ int renderTextFitGolden(const std::string& bundlePath, const std::string& output
     }
 
     return paintSettledScene(run, outputPath, width, height);
+}
+
+int renderMaintainPositionGolden(const std::string& bundlePath, const std::string& outputPath,
+                                 facebook::react::Point surfacePoint, int wheelNotches, int width, int height) {
+    const FabricPrependRunResult run =
+        runFabricBundleAcrossPrepend(bundlePath, toSurfaceSize(width, height), surfacePoint, wheelNotches);
+
+    if (!run.failure.empty()) {
+        std::cerr << "[golden] " << run.failure << std::endl;
+
+        return 1;
+    }
+
+    if (!doPrependedFramesAgree(run.beforeScene, run.afterScene)) {
+        return 1;
+    }
+
+    return paintSettledScene(FabricRunResult{.scene = run.afterScene,
+                                             .sceneDump = {},
+                                             .hasReportedFatalError = run.hasReportedFatalError},
+                             outputPath, width, height);
 }
 
 int renderFirstFrameGolden(const std::string& bundlePath, const std::string& outputPath, int width, int height) {

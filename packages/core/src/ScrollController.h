@@ -38,6 +38,13 @@ struct ScrollTargetAxis {
      */
     std::optional<double> pendingOffset;
     std::optional<double> pendingVelocity;
+
+    /**
+     * The content children along this axis as the last frame saw them, which is what a
+     * `maintainVisibleContentPosition` adjustment measures the anchor's move against. Filled only while the prop
+     * asks for it, so a ScrollView without it walks no children at all.
+     */
+    std::vector<ScrollChildFrame> previousChildren;
 };
 
 /**

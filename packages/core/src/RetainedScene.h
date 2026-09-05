@@ -300,6 +300,40 @@ struct ScenePrimitive {
 using SceneSnapshot = std::vector<ScenePrimitive>;
 
 /**
+ * A node one snapshot painted and another does not paint in the same place: which node, where it was, and where
+ * it is now. `isMissing` means the second snapshot does not paint it at all, and `after` is then meaningless.
+ */
+struct ScenePrimitiveDisplacement {
+    facebook::react::Tag tag{};
+    facebook::react::Rect before;
+    facebook::react::Rect after;
+    bool isMissing{false};
+};
+
+/**
+ * The first node of `before` that `after` does not paint in the same place, or nothing when every one of them is
+ * exactly where it was.
+ *
+ * Nodes are matched **by tag rather than by index**, so a snapshot that gained nodes in front of the ones it
+ * already had is still compared node for node — which is the question
+ * `maintainVisibleContentPosition` asks after a prepend, and the only way to ask it.
+ *
+ * Two rules make the answer meaningful:
+ *
+ * - **A node the second snapshot does not paint at all is a displacement**, not something to skip. Content that
+ *   was on screen and is not any more has not stayed put, and a comparison that ignored it would pass a snapshot
+ *   that replaced everything it was supposed to preserve.
+ * - **A node whose size changed is skipped**, because it is not the same box any more. A `<ScrollView>`'s content
+ *   container grows by exactly what is prepended into it, so it is the node that is *supposed* to move, and
+ *   naming it here would be a rule about one fixture rather than about the scene.
+ *
+ * What is compared is the absolute frame the node was painted at. The matrix and the clips are deliberately not:
+ * see `--first-frame-golden`, whose question is a different one.
+ */
+std::optional<ScenePrimitiveDisplacement> findDisplacedPrimitive(const SceneSnapshot& before,
+                                                                 const SceneSnapshot& after);
+
+/**
  * What a hit test found: the deepest node painted under the point, and the absolute origin it was painted at.
  *
  * The origin travels with the tag because it is what a pointer event's offset inside its target is measured

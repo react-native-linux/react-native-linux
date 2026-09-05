@@ -60,6 +60,14 @@ export const fixtures: readonly GoldenFixture[] = [
     renderArguments: ["180", "100", "4"],
     renderFlag: "--scroll-to",
   },
+  // #240: the two rows the fixture prepends above the anchor are 160 points of content.
+  // The picture after the prepend is the picture before it only if the offset moved from 120 to 280 with them.
+  {
+    bundleFileName: "scroll-maintain-position.js",
+    goldenFileName: "scroll-maintain-position.png",
+    renderArguments: ["160", "100", "3"],
+    renderFlag: "--maintain-position-golden",
+  },
   {
     bundleFileName: "focus.js",
     goldenFileName: "focus.png",

@@ -152,4 +152,20 @@ int renderTextFitGolden(const std::string& bundlePath, const std::string& output
  */
 int renderFirstFrameGolden(const std::string& bundlePath, const std::string& outputPath, int width, int height);
 
+/**
+ * The same rig, after a wheel has scrolled a `<ScrollView>` with `maintainVisibleContentPosition` and a commit has
+ * then prepended content above what the wheel left visible.
+ *
+ * The scene is snapshotted before that commit and again one frame of the window loop after it, and every node that
+ * was on screen has to be in the same place in both — which is issue #240's acceptance criterion and
+ * [core#58186](https://github.com/facebook/react-native/issues/58186)'s bug, the offset arriving a frame after the
+ * children it belongs to. The PNG is the second scene, so the checked-in picture is the list *after* the prepend
+ * and the assertion is that it looks like the one before it.
+ *
+ * Returns a process exit status: 0 when nothing on screen moved, the file was written, and the bundle reported no
+ * fatal JavaScript error.
+ */
+int renderMaintainPositionGolden(const std::string& bundlePath, const std::string& outputPath,
+                                 facebook::react::Point surfacePoint, int wheelNotches, int width, int height);
+
 } // namespace react_native_linux

@@ -1,0 +1,15 @@
+{
+  "name": "scroll-maintain-position",
+  "bundle": "scroll-maintain-position.js",
+  "ready": "maintain-position: committed surface 1",
+  "frames": 900,
+  "steps": ["sleep 500", "move 160 100", "sleep 100", "wheel down 3", "sleep 4000"],
+  "expect": [
+    "maintain-position: committed surface 1",
+    "maintain-position: topScroll at 0,120",
+    "maintain-position: topMomentumScrollEnd at 0,120",
+    "maintain-position: prepended two rows",
+    "maintain-position: topScroll at 0,280",
+    "maintain-position: settled at 0,280"
+  ]
+}

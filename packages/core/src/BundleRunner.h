@@ -196,4 +196,23 @@ struct FabricFrameRunResult {
 
 FabricFrameRunResult runFabricBundleAcrossFrames(const std::string& bundlePath, facebook::react::Size surfaceSize);
 
+/**
+ * The scene a scrolled `<ScrollView>` was showing before a commit prepended content above it, and the scene one
+ * frame of the window loop later.
+ *
+ * `failure` is empty when the run produced both. The second scene is taken after **exactly one** frame — one
+ * `advanceScroll`, one beat, one drain — because that is what "in the same commit" has to mean for a platform
+ * whose scroll offset lives outside the shadow tree: the frame that first sees the prepended children is the frame
+ * that adjusts the offset for them. A jump that took a second frame to be corrected would be in this scene.
+ */
+struct FabricPrependRunResult {
+    SceneSnapshot beforeScene;
+    SceneSnapshot afterScene;
+    std::string failure;
+    bool hasReportedFatalError{};
+};
+
+FabricPrependRunResult runFabricBundleAcrossPrepend(const std::string& bundlePath, facebook::react::Size surfaceSize,
+                                                    facebook::react::Point surfacePoint, int wheelNotches);
+
 } // namespace react_native_linux

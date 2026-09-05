@@ -30,6 +30,7 @@ constexpr std::string_view kFirstFrameGoldenFlag = "--first-frame-golden";
 constexpr std::string_view kInjectPointerFlag = "--inject-pointer";
 constexpr std::string_view kResizeFlag = "--resize";
 constexpr std::string_view kScrollToFlag = "--scroll-to";
+constexpr std::string_view kMaintainPositionGoldenFlag = "--maintain-position-golden";
 constexpr std::string_view kAnimatedScrollFlag = "--animated-scroll";
 constexpr std::string_view kFocusTabFlag = "--focus-tab";
 constexpr std::string_view kFocusClickFlag = "--focus-click";
@@ -62,6 +63,7 @@ GoldenKind toGoldenKind(bool isDamageRequested, bool isHitPaintRequested, bool i
 constexpr size_t kInjectPointerArgumentCount = 5;
 constexpr size_t kResizeArgumentCount = 5;
 constexpr size_t kScrollToArgumentCount = 7;
+constexpr size_t kMaintainPositionArgumentCount = 7;
 constexpr size_t kAnimatedScrollArgumentCount = 6;
 constexpr size_t kFocusTabArgumentCount = 5;
 constexpr size_t kFocusClickArgumentCount = 6;
@@ -162,14 +164,26 @@ constexpr size_t kGoldenSizedArgumentCount = 6;
 constexpr int kGoldenDefaultWidth = 800;
 constexpr int kGoldenDefaultHeight = 600;
 
-int runScrollToCommand(std::span<char*> arguments) {
+/**
+ * The two flags that scroll a fixture with a wheel before they write a PNG. They take the same arguments and
+ * differ only in what the run does after the glide has settled: `--scroll-to` writes where it stopped, and
+ * `--maintain-position-golden` lets a prepend land on top of it and asserts that nothing on screen moved.
+ */
+int runScrollToCommand(std::span<char*> arguments, bool isMaintainingPosition) {
+    const std::string_view flag = isMaintainingPosition ? kMaintainPositionGoldenFlag : kScrollToFlag;
     const std::optional<facebook::react::Point> surfacePoint = parseSurfacePoint(arguments[4], arguments[5]);
     const std::optional<int> parsedNotches = parsePositiveDimension(arguments[6]);
 
     if (!surfacePoint.has_value() || !parsedNotches.has_value()) {
-        std::cerr << "[hello_react] " << kScrollToFlag << " x, y and notches must be positive integers" << std::endl;
+        std::cerr << "[hello_react] " << flag << " x, y and notches must be positive integers" << std::endl;
 
         return 1;
+    }
+
+    if (isMaintainingPosition) {
+        return react_native_linux::renderMaintainPositionGolden(std::string(arguments[2]), std::string(arguments[3]),
+                                                                surfacePoint.value(), parsedNotches.value(),
+                                                                kGoldenDefaultWidth, kGoldenDefaultHeight);
     }
 
     return react_native_linux::renderScrollGolden(std::string(arguments[2]), std::string(arguments[3]),
@@ -311,8 +325,8 @@ int runGoldenCommand(std::span<char*> arguments, GoldenKind goldenKind) {
 int reportMissingSkia() {
     std::cerr << "[hello_react] " << kGoldenFlag << ", " << kDamageGoldenFlag << ", " << kHitPaintGoldenFlag
               << ", " << kTextFitGoldenFlag << ", " << kFirstFrameGoldenFlag << ", " << kScrollToFlag << ", "
-              << kFocusTabFlag << ", " << kFocusClickFlag << ", " << kFocusCommandGoldenFlag
-              << ", " << kAnimatedImageFlag << " and " << kTypeFlag
+              << kMaintainPositionGoldenFlag << ", " << kFocusTabFlag << ", " << kFocusClickFlag << ", "
+              << kFocusCommandGoldenFlag << ", " << kAnimatedImageFlag << " and " << kTypeFlag
               << " need Skia, which this build was configured without; run node scripts/vendor-skia.ts and "
                  "reconfigure"
               << std::endl;
@@ -322,7 +336,7 @@ int reportMissingSkia() {
 
 int runGoldenCommand(std::span<char*> /*arguments*/, GoldenKind /*goldenKind*/) { return reportMissingSkia(); }
 
-int runScrollToCommand(std::span<char*> /*arguments*/) { return reportMissingSkia(); }
+int runScrollToCommand(std::span<char*> /*arguments*/, bool /*isMaintainingPosition*/) { return reportMissingSkia(); }
 
 int runFocusTabCommand(std::span<char*> /*arguments*/) { return reportMissingSkia(); }
 
@@ -349,6 +363,7 @@ int main(int argc, char** argv) {
     const bool isInjectPointerRequested = arguments.size() > 1 && kInjectPointerFlag == arguments[1];
     const bool isResizeRequested = arguments.size() > 1 && kResizeFlag == arguments[1];
     const bool isScrollToRequested = arguments.size() > 1 && kScrollToFlag == arguments[1];
+    const bool isMaintainPositionRequested = arguments.size() > 1 && kMaintainPositionGoldenFlag == arguments[1];
     const bool isAnimatedScrollRequested = arguments.size() > 1 && kAnimatedScrollFlag == arguments[1];
     const bool isFocusTabRequested = arguments.size() > 1 && kFocusTabFlag == arguments[1];
     const bool isFocusClickRequested = arguments.size() > 1 && kFocusClickFlag == arguments[1];
@@ -365,6 +380,13 @@ int main(int argc, char** argv) {
     if (isScrollToRequested && arguments.size() != kScrollToArgumentCount) {
         std::cerr << "[hello_react] " << kScrollToFlag << " requires <bundle> <output.png> <x> <y> <notches>"
                   << std::endl;
+
+        return 1;
+    }
+
+    if (isMaintainPositionRequested && arguments.size() != kMaintainPositionArgumentCount) {
+        std::cerr << "[hello_react] " << kMaintainPositionGoldenFlag
+                  << " requires <bundle> <output.png> <x> <y> <notches>" << std::endl;
 
         return 1;
     }
@@ -414,8 +436,8 @@ int main(int argc, char** argv) {
             return runAnimatedScrollCommand(arguments);
         }
 
-        if (isScrollToRequested) {
-            return runScrollToCommand(arguments);
+        if (isScrollToRequested || isMaintainPositionRequested) {
+            return runScrollToCommand(arguments, isMaintainPositionRequested);
         }
 
         if (isFocusTabRequested) {
