@@ -4149,9 +4149,11 @@ Two things make it not happen here, and both are stated rather than hoped for:
   neighbours in `ScrollTest.cpp` are that rule, inside the gate.
 
 `--first-frame-golden` is the bug as one assertion. `runFabricBundleAcrossFrames` snapshots the scene at the
-first commit and again once everything that settles late has settled — timers drained, image decodes finished,
-the headless frames run — and every primitive's **frame, matrix and clip frames** have to be equal between the
-two. Pixels are deliberately not compared: an image that decoded between the snapshots is supposed to appear, and
+first commit **with image decodes still in flight** — `waitForFirstCommit` is told not to settle them, unlike the
+damage proof, which wants the first frame with its pixels attached — and again once everything that settles late
+has settled: timers drained, decodes finished, the headless frames run. Every primitive's **frame, matrix and clip
+frames** have to be equal between the two. Settling before the first snapshot would make the "first" scene the
+settled one and the comparison test nothing. Pixels are deliberately not compared: an image that decoded between the snapshots is supposed to appear, and
 the layout under it is what must not move. The negative control is `damage.js`, whose second commit unmounts a
 view, and it fails with `the first frame painted 3 primitives and the settled one 2`.
 
