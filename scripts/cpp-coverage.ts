@@ -43,6 +43,7 @@ const scopedSourcePaths: readonly string[] = [
   "packages/core/src/LineBoxMetrics.cpp",
   "packages/core/src/LinuxAnimationChoreographer.cpp",
   "packages/core/src/LinuxMountingManager.cpp",
+  "packages/core/src/PinnedFontFamilies.cpp",
   "packages/core/src/RetainedScene.cpp",
   "packages/core/src/ScrollEventCadence.cpp",
   "packages/core/src/ScrollPhysics.cpp",

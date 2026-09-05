@@ -73,6 +73,7 @@ add_executable(rnl_core_tests
     LineBoxMetricsTest.cpp
     LinuxMountingManagerDiagnosticsTest.cpp
     LinuxMountingManagerPendingDamageTest.cpp
+    PinnedFontFamiliesTest.cpp
     SceneTest.cpp
     ScrollTest.cpp
     ShadowTreeCommitTest.cpp
@@ -99,6 +100,7 @@ add_executable(rnl_core_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/LineBoxMetrics.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/LinuxAnimationChoreographer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/LinuxMountingManager.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/PinnedFontFamilies.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/RetainedScene.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ScrollController.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ScrollEventCadence.cpp

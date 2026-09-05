@@ -1,3 +1,4 @@
+import { checkFontsAreVendored, fixtures } from "./fixtures.ts";
 import { compareImages, compareImagesWithTolerance } from "./png-diff.ts";
 import { describe, expect, it } from "vitest";
 
@@ -8,7 +9,6 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { PNG } from "pngjs";
 
 import { compareImagesPerceptually } from "./perceptual-diff.ts";
-import { fixtures } from "./fixtures.ts";
 import path from "node:path";
 import { tmpdir } from "node:os";
 
@@ -20,9 +20,19 @@ const goldensDirectory = import.meta.dirname;
 const packageDirectory = path.join(goldensDirectory, "..");
 const bundlesDirectory = path.join(packageDirectory, "test-bundles");
 const binaryPath = path.join(packageDirectory, "..", "..", "build", "dev", "bin", "hello_react");
+const repositoryRoot = path.join(packageDirectory, "..", "..");
+const fontsLockFilePath = path.join(repositoryRoot, "scripts", "fonts.lock.json");
+const fontsDirectory = path.join(packageDirectory, "fonts");
 
 const isRegenerating = env["RNL_UPDATE_GOLDENS"] === "1";
 const hasBinary = existsSync(binaryPath);
+
+// A golden rendered against the wrong fonts is worse than no golden at all.
+// #307's stale `packages/core/fonts` fell through to Fontconfig's system emoji face silently, drifting hundreds of pixels with no error anywhere.
+// Checked only when there is a binary to run. A checkout that has not built yet already skips every fixture below, which is the pre-existing, correct behaviour for it.
+if (hasBinary) {
+  checkFontsAreVendored(fontsLockFilePath, fontsDirectory);
+}
 
 const renderFixture = (fixture: GoldenFixture, outputPath: string): void => {
   const bundlePath = path.join(bundlesDirectory, fixture.bundleFileName);
