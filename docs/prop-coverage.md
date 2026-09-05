@@ -57,11 +57,11 @@ assertion and not an implementation.
 | Component | Props | Implemented | Deviating | Not implemented |
 | --- | --- | --- | --- | --- |
 | View | 35 | 14 | 5 | 16 |
-| Text | 45 | 12 | 12 | 21 |
+| Text | 45 | 19 | 7 | 19 |
 | Image | 14 | 3 | 7 | 4 |
 | ScrollView | 39 | 2 | 2 | 35 |
 | TextInput | 23 | 12 | 0 | 11 |
-| **Total** | 156 | 43 | 26 | 87 |
+| **Total** | 156 | 50 | 21 | 85 |
 
 ## View
 
@@ -119,23 +119,23 @@ assertion and not an implementation.
 | `fontSizeMultiplier` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:57` | not-implemented | #113 |
 | `fontWeight` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:58` | implemented | `text.png` |
 | `fontStyle` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:59` | implemented | `text.png` |
-| `fontVariant` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:60` | deviating | Ignored; SkParagraph is given no OpenType feature list. See *Text*, Fidelity limits. |
+| `fontVariant` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:60` | implemented | `text-style-matrix.png` |
 | `allowFontScaling` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:61` | not-implemented | #113 |
 | `maxFontSizeMultiplier` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:62` | not-implemented | #113 |
 | `dynamicTypeRamp` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:63` | not-implemented | #113 |
 | `letterSpacing` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:64` | implemented | `text.png` |
-| `textTransform` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:65` | deviating | Ignored; the string reaches SkParagraph exactly as React sent it. See *Text*, Fidelity limits. |
+| `textTransform` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:65` | implemented | `TextTransformTest` |
 | `lineHeight` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:68` | implemented | `LineBoxMetricsTest, ConvertsLineHeightPointsToAMultipleOfTheFontSize` |
 | `alignment` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:69` | implemented | `text.png` |
 | `baseWritingDirection` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:70` | not-implemented | #72 |
 | `lineBreakStrategy` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:71` | not-implemented | #69 |
 | `lineBreakMode` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:72` | not-implemented | #69 |
-| `textDecorationColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:75` | not-implemented | #69 |
+| `textDecorationColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:75` | implemented | `text-style-matrix.png` |
 | `textDecorationLineType` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:76` | implemented | `text.png` |
-| `textDecorationStyle` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:77` | not-implemented | #69 |
-| `textShadowOffset` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:81` | deviating | Text shadows are not drawn at all. See *Text*, Fidelity limits. |
-| `textShadowRadius` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:82` | deviating | Text shadows are not drawn at all. See *Text*, Fidelity limits. |
-| `textShadowColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:83` | deviating | Text shadows are not drawn at all. See *Text*, Fidelity limits. |
+| `textDecorationStyle` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:77` | implemented | `text-style-matrix.png` |
+| `textShadowOffset` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:81` | implemented | `text-style-matrix.png` |
+| `textShadowRadius` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:82` | implemented | `text-style-matrix.png` |
+| `textShadowColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:83` | implemented | `text-style-matrix.png` |
 | `isHighlighted` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:86` | not-implemented | #43 |
 | `isPressable` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:87` | not-implemented | #43 |
 | `layoutDirection` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:93` | not-implemented | #119 |

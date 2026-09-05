@@ -47,6 +47,7 @@ const scopedSourcePaths: readonly string[] = [
   "packages/core/src/ScrollEventCadence.cpp",
   "packages/core/src/ScrollPhysics.cpp",
   "packages/core/src/TextInputV3State.cpp",
+  "packages/core/src/TextTransform.cpp",
   "packages/core/src/ToplevelState.cpp",
 ];
 
