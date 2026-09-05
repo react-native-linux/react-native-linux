@@ -2680,7 +2680,8 @@ Two requests for the same URI decode once: the second joins the first's completi
 the completion lists and the listener live under one mutex, and that mutex is never held while a codec runs or
 while a completion or the listener is called, so the listener may take the mounting manager's lock without
 inverting a lock order. `PendingImageDecodes` carries the only other mutex here, and the order between the two is
-one-way: the pipeline's is taken first and the counter's inside it, never the reverse.
+one-way: the pipeline's is taken first, never the reverse. `waitUntilSettled` is the one place that touches both,
+and it does so in sequence rather than nested — the pipeline's is released before the counter's is taken.
 
 `ImagePipelineState` is a function-local static exactly like the text pipeline's `FontCollection`, and its
 destructor stops and joins the worker before any member the worker touches is destroyed. That is what makes a
@@ -2722,14 +2723,21 @@ regeneration that came out different on a loaded machine:
   completion list, and only signal after publishing. A settle entering in between found its predicate already
   true and returned without blocking, so the golden was rasterised with the pixels cached but attached to no
   node, and the tile came out blank. Widening that window to 5 ms turns `aspect-ratio.png` into two further
-  distinct PNGs — one blank tile at 3966 bytes, both blank at 3312, against the correct 4752 — which is what
-  #296 saw twice on `scroll-first-frame.png` and once on `aspect-ratio.png` at natural width.
+  distinct PNG files — one blank tile at 3966 bytes, both blank at 3312, against the correct 4752 — which is
+  what #296 saw twice on `scroll-first-frame.png` and once on `aspect-ratio.png` at natural width.
 - **The request end.** Counting from the request rather than from the worker picking the URI up is what makes a
   decode asked for by a *later* commit than the one a runner waited for still hold the settle open.
+- **The registration end.** Registering a URI and counting it are two writes, and a wait that read the count
+  between them would see a zero the registration had already invalidated. `waitUntilSettled` therefore takes the
+  pipeline's own mutex — the one `requestImageDecode` registers under — and releases it again before it blocks,
+  so a request in flight when a settle begins is ordered before that settle rather than raced against it. It is
+  released first because the worker needs that same mutex to publish; the counter's own mutex is never taken
+  while it is held.
 
 `PendingImageDecodesTest` in `packages/core/tests/ImageTest.cpp` holds the contract: a decode published after the
 commit is visible the instant the settle returns, a requested decode times its budget out rather than settling,
-and a second request after a settle reopens it. With the fix, twenty consecutive `RNL_UPDATE_GOLDENS=1`
+a second request after a settle reopens it, and a request still inside its registration's critical section when a
+settle begins is counted rather than missed. With the fix, twenty consecutive `RNL_UPDATE_GOLDENS=1`
 regenerations under twenty-way CPU load produced byte-identical output for all 38 goldens, the four with images
 (`aspect-ratio.png`, `image.png`, `animated-image.png`, `scroll-first-frame.png`) included.
 

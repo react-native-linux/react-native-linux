@@ -127,21 +127,27 @@ private:
  * per-request completions and the decode listener that damages the scene — and not when the codec returned. The
  * distinction is the whole of issue #296: a golden rasterised in the window between "the codec is done" and "the
  * scene has the pixels" paints a blank tile, and how wide that window is depends on machine load, which is why
- * the same fixture regenerated to two different PNGs.
+ * the same fixture regenerated to two different PNG files.
  *
  * A decode counts from the moment it is requested rather than from the moment the worker picks it up, so one
  * requested by a later commit than the run waited for still holds the settle open.
  *
+ * `registrationMutex` is the caller's own lock, the one a request registers under: `waitUntilSettled` passes
+ * through it and releases it before it blocks. Registering a decode and counting it are two writes, and without
+ * that pass-through a wait could look at the count in between them and see a zero that the registration had
+ * already invalidated. Passing through orders the whole registration before the wait instead, and releasing it
+ * first is what keeps the worker — which needs that same lock to publish — able to run.
+ *
  * Threading contract: every function is safe to call from any thread. `noteRequested` runs on whichever thread
  * commits, `notePublished` on the decode worker, and `waitUntilSettled` on the thread driving a headless run.
- * The mutex is never held while a codec, a completion or the listener runs, because those happen between the
- * two notes rather than inside either.
+ * `mutex_` is never held while a codec, a completion or the listener runs, because those happen between the two
+ * notes rather than inside either, and it is only ever taken after `registrationMutex`, never before it.
  */
 class PendingImageDecodes final {
 public:
     void noteRequested();
     void notePublished();
-    bool waitUntilSettled(std::chrono::milliseconds budget);
+    bool waitUntilSettled(std::mutex& registrationMutex, std::chrono::milliseconds budget);
 
 private:
     std::mutex mutex_;

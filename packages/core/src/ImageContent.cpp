@@ -295,7 +295,11 @@ void PendingImageDecodes::notePublished() {
     settled_.notify_all();
 }
 
-bool PendingImageDecodes::waitUntilSettled(std::chrono::milliseconds budget) {
+bool PendingImageDecodes::waitUntilSettled(std::mutex& registrationMutex, std::chrono::milliseconds budget) {
+    {
+        const std::lock_guard<std::mutex> registrationGuard(registrationMutex);
+    }
+
     std::unique_lock<std::mutex> guard(mutex_);
 
     return settled_.wait_for(guard, budget, [this]() { return pendingCount_ == 0; });

@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -745,8 +746,9 @@ constexpr std::chrono::milliseconds kPublishDelay{50};
 
 TEST(PendingImageDecodesTest, NothingRequestedIsAlreadySettled) {
     PendingImageDecodes pending;
+    std::mutex registrationMutex;
 
-    EXPECT_TRUE(pending.waitUntilSettled(kUnsettledBudget));
+    EXPECT_TRUE(pending.waitUntilSettled(registrationMutex, kUnsettledBudget));
 }
 
 // The shape of issue #296: the decode finishes after the run has already committed, and the settle is what puts
@@ -754,6 +756,7 @@ TEST(PendingImageDecodesTest, NothingRequestedIsAlreadySettled) {
 // after the settle has to see what the worker published rather than the blank it started as.
 TEST(PendingImageDecodesTest, ADecodeThatCompletesAfterTheCommitIsPublishedBeforeTheSettleReturns) {
     PendingImageDecodes pending;
+    std::mutex registrationMutex;
     std::shared_ptr<const DecodedImageFrames> publishedFrames;
 
     pending.noteRequested();
@@ -766,7 +769,7 @@ TEST(PendingImageDecodesTest, ADecodeThatCompletesAfterTheCommitIsPublishedBefor
         pending.notePublished();
     });
 
-    EXPECT_TRUE(pending.waitUntilSettled(kSettleBudget));
+    EXPECT_TRUE(pending.waitUntilSettled(registrationMutex, kSettleBudget));
     EXPECT_NE(publishedFrames, nullptr);
 
     worker.join();
@@ -774,47 +777,76 @@ TEST(PendingImageDecodesTest, ADecodeThatCompletesAfterTheCommitIsPublishedBefor
 
 TEST(PendingImageDecodesTest, ARequestedDecodeHoldsTheSettleOpenUntilItsBudgetRunsOut) {
     PendingImageDecodes pending;
+    std::mutex registrationMutex;
 
     pending.noteRequested();
 
-    EXPECT_FALSE(pending.waitUntilSettled(kUnsettledBudget));
+    EXPECT_FALSE(pending.waitUntilSettled(registrationMutex, kUnsettledBudget));
 
     pending.notePublished();
 
-    EXPECT_TRUE(pending.waitUntilSettled(kUnsettledBudget));
+    EXPECT_TRUE(pending.waitUntilSettled(registrationMutex, kUnsettledBudget));
 }
 
 // A second commit asking for another source after the first settle already returned: the run settles again, and
 // the decode it did not know about when it waited the first time still holds the second wait open.
 TEST(PendingImageDecodesTest, ADecodeRequestedByALaterCommitReopensTheSettle) {
     PendingImageDecodes pending;
+    std::mutex registrationMutex;
 
     pending.noteRequested();
     pending.notePublished();
 
-    EXPECT_TRUE(pending.waitUntilSettled(kUnsettledBudget));
+    EXPECT_TRUE(pending.waitUntilSettled(registrationMutex, kUnsettledBudget));
 
     pending.noteRequested();
 
-    EXPECT_FALSE(pending.waitUntilSettled(kUnsettledBudget));
+    EXPECT_FALSE(pending.waitUntilSettled(registrationMutex, kUnsettledBudget));
 
     pending.notePublished();
 
-    EXPECT_TRUE(pending.waitUntilSettled(kUnsettledBudget));
+    EXPECT_TRUE(pending.waitUntilSettled(registrationMutex, kUnsettledBudget));
+}
+
+// A request that is inside its registration's critical section when the settle begins. The settle has to see it,
+// which it does by passing through the same lock: this holds that lock until after `noteRequested`, so
+// a wait that skipped the pass-through would read the count while the URI was registered but uncounted and
+// wrongly report a settled pipeline.
+TEST(PendingImageDecodesTest, ARequestInFlightWhenTheSettleBeginsIsCounted) {
+    PendingImageDecodes pending;
+    std::mutex registrationMutex;
+    std::unique_lock<std::mutex> registration(registrationMutex);
+    bool hasSettled = true;
+
+    std::thread settling([&pending, &registrationMutex, &hasSettled]() {
+        hasSettled = pending.waitUntilSettled(registrationMutex, kUnsettledBudget);
+    });
+
+    std::this_thread::sleep_for(kPublishDelay);
+    pending.noteRequested();
+    registration.unlock();
+    settling.join();
+
+    EXPECT_FALSE(hasSettled);
+
+    pending.notePublished();
+
+    EXPECT_TRUE(pending.waitUntilSettled(registrationMutex, kUnsettledBudget));
 }
 
 TEST(PendingImageDecodesTest, TwoDecodesBothHaveToPublish) {
     PendingImageDecodes pending;
+    std::mutex registrationMutex;
 
     pending.noteRequested();
     pending.noteRequested();
     pending.notePublished();
 
-    EXPECT_FALSE(pending.waitUntilSettled(kUnsettledBudget));
+    EXPECT_FALSE(pending.waitUntilSettled(registrationMutex, kUnsettledBudget));
 
     pending.notePublished();
 
-    EXPECT_TRUE(pending.waitUntilSettled(kUnsettledBudget));
+    EXPECT_TRUE(pending.waitUntilSettled(registrationMutex, kUnsettledBudget));
 }
 
 } // namespace

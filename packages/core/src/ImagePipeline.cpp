@@ -304,8 +304,10 @@ void requestImageDecode(const std::string& uri, ImageDecodeCompletion completion
                 return;
             }
 
-            // Inside the lock and before the queue push, so a decode is pending from the instant it is asked for:
-            // a settle that runs between the request and the worker picking it up must still wait for it (#296).
+            // Inside the lock and before the queue push, so a decode is pending from the instant it is asked
+            // for: a settle that runs between the request and the worker picking it up must still wait for it,
+            // and `waitUntilSettled` passes through this same mutex so it cannot read the count between the
+            // insert above and this line (#296).
             state.pendingDecodes.noteRequested();
             state.queuedUris.push_back(uri);
         }
@@ -335,7 +337,9 @@ void setImageDecodeListener(ImageDecodeListener listener) {
 }
 
 bool waitForPendingImageDecodes(std::chrono::milliseconds budget) {
-    return imagePipelineState().pendingDecodes.waitUntilSettled(budget);
+    ImagePipelineState& state = imagePipelineState();
+
+    return state.pendingDecodes.waitUntilSettled(state.mutex, budget);
 }
 
 } // namespace react_native_linux
