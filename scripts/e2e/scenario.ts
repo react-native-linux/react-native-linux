@@ -62,9 +62,11 @@ interface ScreenshotComparison {
  * scenario without an `automation` block runs a window that never listens. `listErrorsMustBeEmpty` is the
  * `verifyNoErrorLogs` react-native-windows asserts in `afterEach`, asked of the runtime rather than grepped out
  * of the trace; `visualTreeSnapshot` names a file under the package's `e2e/goldens` the committed tree has to
- * match; `markTestPassed` requires the bundle to have called `globalThis.__rnlMarkTestPassed()`.
+ * match; `accessibilityTreeSnapshot` names one under `e2e/snapshots` its accessibility projection has to match;
+ * `markTestPassed` requires the bundle to have called `globalThis.__rnlMarkTestPassed()`.
  */
 interface ScenarioAutomation {
+  readonly accessibilityTreeSnapshot: string | null;
   readonly listErrorsMustBeEmpty: boolean;
   readonly markTestPassed: boolean;
   readonly visualTreeSnapshot: string | null;
@@ -154,15 +156,18 @@ const readScreenshotComparison = (record: Record<string, unknown>, sourceName: s
 
 /**
  * A file name under the package's `e2e/goldens`, and only that: an absolute path or a `..` segment would let a
- * scenario read and report a file from anywhere on the machine.
+ * scenario read and report a file from anywhere on the machine. Both tree snapshots are read through here, so
+ * both are held to it.
  */
-const readSnapshotName = (automation: Record<string, unknown>, sourceName: string): string => {
-  const name = readString(automation["visualTreeSnapshot"], "automation.visualTreeSnapshot", sourceName);
+const readSnapshotName = (automation: Record<string, unknown>, field: string, sourceName: string): string | null => {
+  if (!(field in automation)) {
+    return null;
+  }
+
+  const name = readString(automation[field], `automation.${field}`, sourceName);
 
   if (path.isAbsolute(name) || name.split(path.sep).includes(PARENT_DIRECTORY)) {
-    throw new Error(
-      `${sourceName}: "automation.visualTreeSnapshot" must be a relative path inside the goldens directory`,
-    );
+    throw new Error(`${sourceName}: "automation.${field}" must be a relative path inside the goldens directory`);
   }
 
   return name;
@@ -176,9 +181,10 @@ const readAutomation = (record: Record<string, unknown>, sourceName: string): Sc
   const automation = readObject(record["automation"], "automation", sourceName);
 
   return {
+    accessibilityTreeSnapshot: readSnapshotName(automation, "accessibilityTreeSnapshot", sourceName),
     listErrorsMustBeEmpty: readOptionalBoolean(automation, "listErrorsMustBeEmpty", sourceName),
     markTestPassed: readOptionalBoolean(automation, "markTestPassed", sourceName),
-    visualTreeSnapshot: "visualTreeSnapshot" in automation ? readSnapshotName(automation, sourceName) : null,
+    visualTreeSnapshot: readSnapshotName(automation, "visualTreeSnapshot", sourceName),
   };
 };
 

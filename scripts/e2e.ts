@@ -200,6 +200,7 @@ const driveScenario = async (run: ScenarioRun, workspace: Workspace): Promise<re
     artifactsDirectory: workspace.artifactsDirectory,
     goldensDirectory: run.source.goldensDirectory,
     scenario,
+    snapshotsDirectory: run.source.snapshotsDirectory,
     trace: workspace.trace.text,
   });
 

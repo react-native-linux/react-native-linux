@@ -1,0 +1,24 @@
+[
+  {
+    "children": [{ "name": "Send now", "role": "text", "tag": 4 }],
+    "hint": "Sends the message",
+    "name": "Send",
+    "role": "button",
+    "state": { "disabled": true },
+    "tag": 3
+  },
+  {
+    "labelledBy": [6],
+    "role": "slider",
+    "tag": 5,
+    "value": { "max": 10, "min": 0, "now": 4, "text": "four" }
+  },
+  { "name": "Volume", "role": "text", "tag": 6 },
+  {
+    "role": "checkbox",
+    "state": { "busy": true, "checked": "mixed", "expanded": true, "selected": true },
+    "tag": 7
+  },
+  { "name": "Kept", "role": "none", "tag": 11 },
+  { "role": "none", "tag": 12 }
+]
