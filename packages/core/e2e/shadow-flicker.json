@@ -1,0 +1,31 @@
+{
+  "name": "shadow-flicker",
+  "bundle": "shadow-input.js",
+  "ready": "shadow-input: committed surface 1",
+  "frames": 900,
+  "steps": [
+    "sleep 500",
+    "key Tab press",
+    "key Tab release",
+    "sleep 200",
+    "type S",
+    "sleep 120",
+    "type h",
+    "sleep 120",
+    "type a",
+    "sleep 120",
+    "type d",
+    "sleep 120",
+    "type e",
+    "sleep 500"
+  ],
+  "screenshot": { "golden": "shadow-flicker.png", "maxDifferentPixels": 200 },
+  "expect": [
+    "shadow-input: topFocus on shadowed",
+    "shadow-input: topChange on shadowed text=\"S\"",
+    "shadow-input: topChange on shadowed text=\"Sh\"",
+    "shadow-input: topChange on shadowed text=\"Sha\"",
+    "shadow-input: topChange on shadowed text=\"Shad\"",
+    "shadow-input: topChange on shadowed text=\"Shade\""
+  ]
+}
