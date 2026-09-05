@@ -64,6 +64,7 @@ add_executable(rnl_core_tests
     FocusTest.cpp
     FrameClockTest.cpp
     FrameTimingTest.cpp
+    HitTestDifferentialTest.cpp
     ImageCacheTest.cpp
     ImageTest.cpp
     ImeTest.cpp
