@@ -250,6 +250,50 @@ uint32_t scaleArgbAlpha(uint32_t colorArgb, float opacity) {
     return (scaledAlpha << kAlphaShift) | (colorArgb & ~(0xFFU << kAlphaShift));
 }
 
+// iOS' `shadowRadius` is the Gaussian sigma; CSS' blur radius is the full blur width, which is two sigmas. The
+// quartet therefore maps onto `boxShadow` with the radius doubled, so the same design casts the same shadow
+// whichever props it wrote.
+constexpr float kSigmasPerBlurRadius = 2.0F;
+
+/**
+ * Every shadow a node casts, in paint order: the `boxShadow` list first, as authored, then the legacy quartet as
+ * one more outset shadow when it says anything at all — a colour with some opacity. A quartet with
+ * `shadowOpacity` at its default of zero casts nothing, which is what iOS does with it too.
+ */
+std::vector<SceneShadow> resolveShadows(const facebook::react::ViewProps& viewProps) {
+    std::vector<SceneShadow> shadows;
+
+    for (const facebook::react::BoxShadow& boxShadow : viewProps.boxShadow) {
+        shadows.push_back(SceneShadow{.offsetX = boxShadow.offsetX,
+                                      .offsetY = boxShadow.offsetY,
+                                      .blurRadius = boxShadow.blurRadius,
+                                      .spreadDistance = boxShadow.spreadDistance,
+                                      .colorArgb = toArgb(boxShadow.color, 1.0F),
+                                      .isInset = boxShadow.inset});
+    }
+
+    if (facebook::react::isColorMeaningful(viewProps.shadowColor) && viewProps.shadowOpacity > 0) {
+        shadows.push_back(SceneShadow{.offsetX = viewProps.shadowOffset.width,
+                                      .offsetY = viewProps.shadowOffset.height,
+                                      .blurRadius = viewProps.shadowRadius * kSigmasPerBlurRadius,
+                                      .spreadDistance = 0.0F,
+                                      .colorArgb = toArgb(viewProps.shadowColor, viewProps.shadowOpacity),
+                                      .isInset = false});
+    }
+
+    return shadows;
+}
+
+std::vector<SceneShadow> resolveShadowOpacity(const std::vector<SceneShadow>& shadows, float opacity) {
+    std::vector<SceneShadow> resolved = shadows;
+
+    for (SceneShadow& shadow : resolved) {
+        shadow.colorArgb = scaleArgbAlpha(shadow.colorArgb, opacity);
+    }
+
+    return resolved;
+}
+
 SceneImageContent resolveImage(const SceneImageContent& image, float opacity) {
     return SceneImageContent{.uri = image.uri,
                              .pixels = image.pixels,
@@ -361,6 +405,7 @@ void readPaintProps(SceneNode& node, const facebook::react::ShadowView& shadowVi
     if (viewProps == nullptr) {
         node.backgroundColor = std::nullopt;
         node.backgroundImage.clear();
+        node.shadows.clear();
         node.borderMetrics = {};
         node.transform = {};
         node.transformOrigin = {};
@@ -376,6 +421,7 @@ void readPaintProps(SceneNode& node, const facebook::react::ShadowView& shadowVi
     // Copied rather than resolved: the gradient stops cannot be turned into a ramp without the CSS gradient line,
     // which needs Skia geometry. See *Gradients* in docs/cpp-toolchain.md.
     node.backgroundImage = viewProps->backgroundImage;
+    node.shadows = resolveShadows(*viewProps);
 
     // resolveBorderMetrics is what iOS and Android call too: it cascades the per-edge and per-corner props,
     // converts percentage radii to points, and applies the CSS corner-overlap clamp.
@@ -570,6 +616,7 @@ SceneVisit visitNode(const SceneNode& node, const ScenePaintState& state) {
                                                  .borderStyles = node.borderMetrics.borderStyles,
                                                  .borderColorsArgb = toArgbEdges(node.borderMetrics.borderColors,
                                                                                  opacity),
+                                                 .shadows = resolveShadowOpacity(node.shadows, opacity),
                                                  .backgroundColorArgb =
                                                      node.backgroundColor.has_value()
                                                          ? toArgb(node.backgroundColor.value(), opacity)
@@ -657,7 +704,7 @@ facebook::react::Rect mappedBounds(const facebook::react::Rect& frame, const Sce
  * frame, so the frame is the whole extent.
  */
 facebook::react::Rect primitiveDamageBounds(const ScenePrimitive& primitive) {
-    facebook::react::Rect bounds = mappedBounds(primitive.frame, primitive.matrix);
+    facebook::react::Rect bounds = mappedBounds(shadowExtent(primitive.frame, primitive.shadows), primitive.matrix);
 
     for (const SceneClip& clip : primitive.clips) {
         bounds = facebook::react::Rect::intersect(bounds, mappedBounds(clip.frame, clip.matrix));
@@ -761,6 +808,36 @@ void mergeDamage(SceneDamage& damage, const SceneDamage& additions) {
     for (const facebook::react::Rect& rect : additions) {
         addDamageRect(damage, rect);
     }
+}
+
+// A blurred shadow paints further than its blur radius. The painter's sigma is half the radius, and Skia's blur
+// support is three sigmas — `SkBlurEngine` computes its kernel radius as `ceil(3 * sigma)` — so pixels appear up
+// to one and a half radii out, and damage that stopped at the radius would leave the outermost of them stale.
+constexpr facebook::react::Float kPaintedBlurRadii = 1.5F;
+
+facebook::react::Rect shadowExtent(const facebook::react::Rect& bounds, const std::vector<SceneShadow>& shadows) {
+    facebook::react::Float left = 0;
+    facebook::react::Float top = 0;
+    facebook::react::Float right = 0;
+    facebook::react::Float bottom = 0;
+
+    for (const SceneShadow& shadow : shadows) {
+        if (shadow.isInset) {
+            continue;
+        }
+
+        const facebook::react::Float reach = (shadow.blurRadius * kPaintedBlurRadii) + shadow.spreadDistance;
+
+        left = std::max(left, reach - shadow.offsetX);
+        top = std::max(top, reach - shadow.offsetY);
+        right = std::max(right, reach + shadow.offsetX);
+        bottom = std::max(bottom, reach + shadow.offsetY);
+    }
+
+    return facebook::react::Rect{.origin = facebook::react::Point{.x = bounds.origin.x - left,
+                                                                  .y = bounds.origin.y - top},
+                                 .size = facebook::react::Size{.width = bounds.size.width + left + right,
+                                                               .height = bounds.size.height + top + bottom}};
 }
 
 SceneRoundedBox roundedBorderBox(const facebook::react::Rect& frame, const facebook::react::BorderRadii& radii) {

@@ -110,6 +110,8 @@ const fixtures: readonly GoldenFixture[] = [
     renderFlag: "--type",
   },
   { bundleFileName: "gradient.js", goldenFileName: "gradient.png", renderArguments: [], renderFlag: "--golden" },
+  // Issue #67: outset, inset, layered, per-corner, under an ancestor clip, rotated, the legacy quartet, and spread.
+  { bundleFileName: "shadow.js", goldenFileName: "shadow.png", renderArguments: [], renderFlag: "--golden" },
   // #118: one wrapping grid at two container widths — a break-point regression is a visible difference.
   { bundleFileName: "wrapping.js", goldenFileName: "wrapping.png", renderArguments: [], renderFlag: "--golden" },
   // #117: the <Image> + aspectRatio + maxWidth combination, clamped and unclamped side by side.

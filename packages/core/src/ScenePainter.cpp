@@ -20,6 +20,9 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSamplingOptions.h"
 #include "include/core/SkShader.h"
+#include "include/core/SkBlurTypes.h"
+#include "include/core/SkMaskFilter.h"
+#include "include/core/SkPathTypes.h"
 #include "include/core/SkTileMode.h"
 #include "include/effects/SkDashPathEffect.h"
 #include "modules/skparagraph/include/Paragraph.h"
@@ -28,6 +31,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <ranges>
 
 namespace react_native_linux {
 
@@ -216,6 +220,102 @@ void paintDashedBorder(SkCanvas& canvas, const ScenePrimitive& primitive, const 
         paint.setColor(sideColors[side]);
         canvas.clipPath(wedges[side], true);
         canvas.drawRRect(centreLine, paint);
+    }
+}
+
+constexpr SkScalar kInsetShadowMargin = 256.0F;
+
+/**
+ * A Gaussian sigma from a CSS blur radius. CSS defines the blur as the full width of the transition, which is two
+ * standard deviations; Skia's mask filter wants one. Zero blur is a hard-edged shadow, and Skia draws that with
+ * no mask filter at all rather than with a zero sigma.
+ */
+constexpr SkScalar kSigmasPerBlurRadius = 2.0F;
+
+sk_sp<SkMaskFilter> toBlur(float blurRadius) {
+    if (blurRadius <= 0.0F) {
+        return nullptr;
+    }
+
+    return SkMaskFilter::MakeBlur(kNormal_SkBlurStyle, blurRadius / kSigmasPerBlurRadius);
+}
+
+SkRRect spreadAndOffset(const SkRRect& box, const SceneShadow& shadow) {
+    SkRRect spread;
+
+    // A negative spread shrinks the box and can turn it inside out; `outset` with a negative amount is the
+    // documented way to inset and clamps the radii itself.
+    box.outset(shadow.spreadDistance, shadow.spreadDistance, &spread);
+    spread.offset(shadow.offsetX, shadow.offsetY);
+
+    return spread;
+}
+
+/**
+ * The shadows a node casts outside itself, drawn before anything of the node is, last one first: CSS paints the
+ * shadow written first on top of the ones after it, so the list is drawn back to front.
+ *
+ * The node's own rounded box is clipped *out* first, which is the CSS rule: an outset shadow is never painted
+ * where the box is, so a translucent box does not darken over its own shadow. The ancestors' clips are already
+ * on the canvas, so a shadow that reaches past an `overflow: hidden` ancestor is cut where the ancestor cuts —
+ * inside the ancestor's clip and outside the node's own is issue #67's fourth requirement.
+ */
+void paintOutsetShadows(SkCanvas& canvas, const ScenePrimitive& primitive, const SkRRect& outer) {
+    const SkAutoCanvasRestore restore(&canvas, true);
+
+    canvas.clipRRect(outer, SkClipOp::kDifference, true);
+
+    for (const SceneShadow& shadow : std::ranges::reverse_view(primitive.shadows)) {
+        if (shadow.isInset || SkColorGetA(shadow.colorArgb) == 0) {
+            continue;
+        }
+
+        SkPaint paint;
+
+        paint.setAntiAlias(true);
+        paint.setColor(shadow.colorArgb);
+        paint.setMaskFilter(toBlur(shadow.blurRadius));
+        canvas.drawRRect(spreadAndOffset(outer, shadow), paint);
+    }
+}
+
+/**
+ * The shadows a node casts inside itself, back to front like the outset ones, drawn over its fill and under its
+ * content: the blurred ring between
+ * the box and the box inset by the spread and moved by the offset, clipped to the box so nothing leaks out.
+ * A rectangle far larger than the box carries the ring's outside as an even-odd fill, so the blur has something
+ * to fade from on every side.
+ */
+void paintInsetShadows(SkCanvas& canvas, const ScenePrimitive& primitive, const SkRRect& outer) {
+    const SkAutoCanvasRestore restore(&canvas, true);
+
+    canvas.clipRRect(outer, SkClipOp::kIntersect, true);
+
+    for (const SceneShadow& shadow : std::ranges::reverse_view(primitive.shadows)) {
+        if (!shadow.isInset || SkColorGetA(shadow.colorArgb) == 0) {
+            continue;
+        }
+
+        SkRRect hole;
+        const SceneShadow inwards{.offsetX = shadow.offsetX,
+                                  .offsetY = shadow.offsetY,
+                                  .blurRadius = shadow.blurRadius,
+                                  .spreadDistance = -shadow.spreadDistance,
+                                  .colorArgb = shadow.colorArgb,
+                                  .isInset = true};
+        SkPathBuilder ring;
+
+        hole = spreadAndOffset(outer, inwards);
+        ring.setFillType(SkPathFillType::kEvenOdd);
+        ring.addRect(outer.rect().makeOutset(kInsetShadowMargin, kInsetShadowMargin));
+        ring.addRRect(hole);
+
+        SkPaint paint;
+
+        paint.setAntiAlias(true);
+        paint.setColor(shadow.colorArgb);
+        paint.setMaskFilter(toBlur(shadow.blurRadius));
+        canvas.drawPath(ring.detach(), paint);
     }
 }
 
@@ -458,6 +558,8 @@ void paintPrimitive(SkCanvas& canvas, const ScenePrimitive& primitive) {
     const SceneRoundedBox borderBox = roundedBorderBox(primitive.frame, primitive.borderRadii);
     const SkRRect outer = toSkRRect(borderBox);
 
+    paintOutsetShadows(canvas, primitive, outer);
+
     if (SkColorGetA(primitive.backgroundColorArgb) != 0) {
         SkPaint paint;
 
@@ -467,6 +569,7 @@ void paintPrimitive(SkCanvas& canvas, const ScenePrimitive& primitive) {
     }
 
     paintBackgroundImages(canvas, primitive, outer);
+    paintInsetShadows(canvas, primitive, outer);
 
     // Before the border, because React Native draws borders inside the frame and therefore over the content.
     if (primitive.image.has_value()) {

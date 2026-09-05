@@ -58,6 +58,7 @@ add_executable(rnl_core_tests
     BorderGeometryTest.cpp
     DimensionsTest.cpp
     SceneReuseTest.cpp
+    ShadowTest.cpp
     EditorTest.cpp
     FeatureFlagsTest.cpp
     FocusTest.cpp
