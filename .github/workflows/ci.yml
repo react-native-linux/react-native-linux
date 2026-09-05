@@ -334,7 +334,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: packages/core/fonts
-          key: rnl-vendor-fonts-ubuntu-24.04-${{ hashFiles('scripts/fonts.lock.json', 'scripts/vendor-fonts.ts') }}
+          key: rnl-vendor-fonts-ubuntu-24.04-${{ hashFiles('scripts/fonts.lock.json', 'scripts/vendor-fonts.ts', 'scripts/vendor-fonts/**') }}
 
       - name: Vendor fonts
         if: matrix.skia == 'ON'
@@ -566,7 +566,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: packages/core/fonts
-          key: rnl-vendor-fonts-ubuntu-24.04-${{ hashFiles('scripts/fonts.lock.json', 'scripts/vendor-fonts.ts') }}
+          key: rnl-vendor-fonts-ubuntu-24.04-${{ hashFiles('scripts/fonts.lock.json', 'scripts/vendor-fonts.ts', 'scripts/vendor-fonts/**') }}
 
       - name: Vendor fonts
         run: node scripts/vendor-fonts.ts

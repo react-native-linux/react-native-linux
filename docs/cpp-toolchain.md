@@ -5257,7 +5257,7 @@ abort with `unexpected memory mapping` when the kernel hands out more ASLR entro
 | --- | --- | --- | --- |
 | Vendored React Native | `third_party/react-native` | `rnl-vendor-react-native-ubuntu-24.04-<hash of scripts/vendor.lock.json + scripts/vendor-react-native.ts>` | ~18 MB |
 | Vendored Skia | `third_party/skia` | `rnl-vendor-skia-ubuntu-24.04-<hash of scripts/skia.lock.json + scripts/vendor-skia.ts>` | ~93 MB |
-| Vendored fonts | `packages/core/fonts` | `rnl-vendor-fonts-ubuntu-24.04-<hash of scripts/fonts.lock.json + scripts/vendor-fonts.ts>` | ~13 MB |
+| Vendored fonts | `packages/core/fonts` | `rnl-vendor-fonts-ubuntu-24.04-<hash of scripts/fonts.lock.json + scripts/vendor-fonts.ts + scripts/vendor-fonts/>` | ~13 MB |
 | ccache | `.ccache` | `rnl-ccache-ubuntu-24.04-clang-18-<preset>-<hash of the CMake files and both lock files>-<run id>` | 2 GB ceiling per preset |
 | pnpm store | handled by `actions/setup-node` | `pnpm-lock.yaml` | small |
 
