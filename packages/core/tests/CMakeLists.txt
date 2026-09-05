@@ -45,8 +45,8 @@ file(GLOB RNL_UPSTREAM_GRAPHICS_TESTS
 # the binary. Upstream has no isolation hook between suites; revisit if upstream adds one.
 file(GLOB RNL_UPSTREAM_TIMELINE_TESTS
     ${REACT_COMMON_DIR}/react/performance/timeline/tests/*Test.cpp)
-# core and mounting need react/renderer/element (ComponentBuilder) and react/test_utils, both of which are
-# compiled nowhere in our tree yet; they join the next tranche with their own target additions.
+# core and mounting need react/renderer/element (ComponentBuilder); see the target_sources block below,
+# which links react_renderer_element for the whole upstream tranche.
 
 add_executable(rnl_core_tests
     AnimatedHitTestTest.cpp
@@ -110,33 +110,105 @@ add_executable(rnl_core_tests
 
 # core and mounting: the suites that need react/renderer/element's ComponentBuilder compile separately from the
 # standalone ones so the element-linked half of the tranche is explicit.
-# The Hermes-free target cannot take the core tests that include hermes/hermes.h for a runtime fixture
-# (ConcreteShadowNode, EventQueueProcessor, EventTarget, FindNodeAtPoint, LayoutableShadowNode, RawProps,
-# RawValue, ShadowNodeFamily); they join the jsi/jsinspector tranche later.
+# The Hermes-free target cannot take the core tests that construct a real Runtime for a fixture and so include
+# hermes/hermes.h (EventQueueProcessor, EventTarget, RawProps, RawValue); they join the jsi/jsinspector tranche
+# later (#228). ConcreteShadowNode, FindNodeAtPoint, LayoutableShadowNode and ShadowNodeFamily include only
+# react/renderer/element/testUtils.h and compile here (#227).
 file(GLOB RNL_UPSTREAM_CORE_TESTS_STANDALONE
     ${REACT_COMMON_DIR}/react/renderer/core/tests/*Test.cpp
     ${REACT_COMMON_DIR}/react/renderer/core/tests/*Tests.cpp)
 list(REMOVE_ITEM RNL_UPSTREAM_CORE_TESTS_STANDALONE
-    ${REACT_COMMON_DIR}/react/renderer/core/tests/ConcreteShadowNodeTest.cpp
     ${REACT_COMMON_DIR}/react/renderer/core/tests/EventQueueProcessorTest.cpp
     ${REACT_COMMON_DIR}/react/renderer/core/tests/EventTargetTests.cpp
-    ${REACT_COMMON_DIR}/react/renderer/core/tests/FindNodeAtPointTest.cpp
-    ${REACT_COMMON_DIR}/react/renderer/core/tests/LayoutableShadowNodeTest.cpp
     ${REACT_COMMON_DIR}/react/renderer/core/tests/RawPropsTest.cpp
-    ${REACT_COMMON_DIR}/react/renderer/core/tests/RawValueTest.cpp
-    ${REACT_COMMON_DIR}/react/renderer/core/tests/ShadowNodeFamilyTest.cpp)
-# mounting: StateReconciliationTest instantiates ModalHostView components (rrc_modal, not linked here), so it
-# joins the next tranche with that module. The rest of the mounting suite is standalone.
+    ${REACT_COMMON_DIR}/react/renderer/core/tests/RawValueTest.cpp)
+# mounting: StateReconciliationTest instantiates ModalHostView components, and rrc_modal is linked
+# (RNL_REACT_COMMON_TARGETS), so the whole mounting suite is standalone (#227).
 file(GLOB RNL_UPSTREAM_MOUNTING_TESTS
     ${REACT_COMMON_DIR}/react/renderer/mounting/tests/*Test.cpp)
-list(REMOVE_ITEM RNL_UPSTREAM_MOUNTING_TESTS
-    ${REACT_COMMON_DIR}/react/renderer/mounting/tests/StateReconciliationTest.cpp)
 file(GLOB RNL_UPSTREAM_VIEW_TESTS
     ${REACT_COMMON_DIR}/react/renderer/components/view/tests/*Test.cpp)
+
+# #227: the rest of the "no new code" tranche section B's first table names — every dependency is already in
+# RNL_REACT_COMMON_TARGETS or RNL_REACT_CXX_PLATFORM_SUBDIRS, so each is a source-list addition and nothing
+# else. runtimescheduler takes only SchedulerPriorityTest.cpp: RuntimeSchedulerTest.cpp in that same directory
+# includes hermes/hermes.h and stays with the jsi tranche (#228).
+file(GLOB RNL_UPSTREAM_SCROLLVIEW_TESTS
+    ${REACT_COMMON_DIR}/react/renderer/components/scrollview/tests/*Test.cpp)
+file(GLOB RNL_UPSTREAM_ROOT_TESTS
+    ${REACT_COMMON_DIR}/react/renderer/components/root/tests/*Test.cpp)
+file(GLOB RNL_UPSTREAM_TEXT_TESTS
+    ${REACT_COMMON_DIR}/react/renderer/components/text/tests/*Test.cpp)
+file(GLOB RNL_UPSTREAM_IMAGE_COMPONENT_TESTS
+    ${REACT_COMMON_DIR}/react/renderer/components/image/tests/*Test.cpp)
+file(GLOB RNL_UPSTREAM_ATTRIBUTEDSTRING_TESTS
+    ${REACT_COMMON_DIR}/react/renderer/attributedstring/tests/*Test.cpp)
+file(GLOB RNL_UPSTREAM_TEXTLAYOUTMANAGER_TESTS
+    ${REACT_COMMON_DIR}/react/renderer/textlayoutmanager/tests/*Test.cpp)
+file(GLOB RNL_UPSTREAM_IMAGEMANAGER_TESTS
+    ${REACT_COMMON_DIR}/react/renderer/imagemanager/tests/*Test.cpp)
+file(GLOB RNL_UPSTREAM_UIMANAGER_TESTS
+    ${REACT_COMMON_DIR}/react/renderer/uimanager/tests/*Test.cpp)
+# PointerEventsProcessorTest.cpp EXCLUDED: it compiles and links, but every case aborts at runtime on
+# std::__shared_ptr_deref<ContextContainer>'s null-pointer assertion — its fixture's UIManager is built
+# without the ContextContainer a Runtime-backed host would supply. FabricUIManagerTest and
+# FindShadowNodeByTagTest in the same directory pass and stay.
+list(REMOVE_ITEM RNL_UPSTREAM_UIMANAGER_TESTS
+    ${REACT_COMMON_DIR}/react/renderer/uimanager/tests/PointerEventsProcessorTest.cpp)
+file(GLOB RNL_UPSTREAM_UIMANAGER_CONSISTENCY_TESTS
+    ${REACT_COMMON_DIR}/react/renderer/uimanager/consistency/tests/*Test.cpp)
+set(RNL_UPSTREAM_SCHEDULER_PRIORITY_TEST
+    ${REACT_COMMON_DIR}/react/renderer/runtimescheduler/tests/SchedulerPriorityTest.cpp)
+file(GLOB RNL_UPSTREAM_TELEMETRY_TESTS
+    ${REACT_COMMON_DIR}/react/renderer/telemetry/tests/*Test.cpp)
+file(GLOB RNL_UPSTREAM_ELEMENT_TESTS
+    ${REACT_COMMON_DIR}/react/renderer/element/tests/*Test.cpp)
+file(GLOB RNL_UPSTREAM_MAPBUFFER_TESTS
+    ${REACT_COMMON_DIR}/react/renderer/mapbuffer/tests/*Test.cpp)
+file(GLOB RNL_UPSTREAM_RENDERER_DEBUG_TESTS
+    ${REACT_COMMON_DIR}/react/renderer/debug/tests/*Test.cpp)
+file(GLOB RNL_UPSTREAM_UTILS_TESTS
+    ${REACT_COMMON_DIR}/react/utils/tests/*Test.cpp
+    ${REACT_COMMON_DIR}/react/utils/tests/*Tests.cpp)
+# UuidTest.cpp EXCLUDED: it includes gmock/gmock.h, and BUILD_GMOCK is OFF above; the system gmock at
+# /usr/include predates the pinned googletest 1.18.0 and fails outright (StringLike renamed, MutexBase
+# retrenched). It has no other file in the directory forcing the same fate.
+list(REMOVE_ITEM RNL_UPSTREAM_UTILS_TESTS
+    ${REACT_COMMON_DIR}/react/utils/tests/UuidTest.cpp)
+file(GLOB RNL_UPSTREAM_TIMING_TESTS
+    ${REACT_COMMON_DIR}/react/timing/tests/*Test.cpp)
+file(GLOB RNL_UPSTREAM_CXXREACT_TESTS
+    ${REACT_COMMON_DIR}/cxxreact/tests/*.cpp)
+file(GLOB RNL_UPSTREAM_JSERRORHANDLER_TESTS
+    ${REACT_COMMON_DIR}/jserrorhandler/tests/*Test.cpp)
+# jsinspector-modern/tracing/tests EXCLUDED: all three files (ProfileTreeNode, RuntimeSamplingProfileTrace-
+# EventSerializer, TimeWindowedBuffer) include gmock/gmock.h unconditionally, and BUILD_GMOCK is OFF above.
+set(RNL_UPSTREAM_TASK_DISPATCH_THREAD_TESTS
+    ${REACT_CXX_PLATFORM_DIR}/react/threading/tests/TaskDispatchThreadTests.cpp)
+
 target_sources(rnl_core_tests PRIVATE
     ${RNL_UPSTREAM_CORE_TESTS_STANDALONE}
     ${RNL_UPSTREAM_MOUNTING_TESTS}
-    ${RNL_UPSTREAM_VIEW_TESTS})
+    ${RNL_UPSTREAM_VIEW_TESTS}
+    ${RNL_UPSTREAM_SCROLLVIEW_TESTS}
+    ${RNL_UPSTREAM_ROOT_TESTS}
+    ${RNL_UPSTREAM_TEXT_TESTS}
+    ${RNL_UPSTREAM_IMAGE_COMPONENT_TESTS}
+    ${RNL_UPSTREAM_ATTRIBUTEDSTRING_TESTS}
+    ${RNL_UPSTREAM_TEXTLAYOUTMANAGER_TESTS}
+    ${RNL_UPSTREAM_IMAGEMANAGER_TESTS}
+    ${RNL_UPSTREAM_UIMANAGER_TESTS}
+    ${RNL_UPSTREAM_UIMANAGER_CONSISTENCY_TESTS}
+    ${RNL_UPSTREAM_SCHEDULER_PRIORITY_TEST}
+    ${RNL_UPSTREAM_TELEMETRY_TESTS}
+    ${RNL_UPSTREAM_ELEMENT_TESTS}
+    ${RNL_UPSTREAM_MAPBUFFER_TESTS}
+    ${RNL_UPSTREAM_RENDERER_DEBUG_TESTS}
+    ${RNL_UPSTREAM_UTILS_TESTS}
+    ${RNL_UPSTREAM_TIMING_TESTS}
+    ${RNL_UPSTREAM_CXXREACT_TESTS}
+    ${RNL_UPSTREAM_JSERRORHANDLER_TESTS}
+    ${RNL_UPSTREAM_TASK_DISPATCH_THREAD_TESTS})
 target_link_libraries(rnl_core_tests PRIVATE react_renderer_element)
 target_compile_options(rnl_core_tests PRIVATE -Wall -Wextra -fexceptions -frtti)
 target_include_directories(rnl_core_tests
