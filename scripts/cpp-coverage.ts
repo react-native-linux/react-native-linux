@@ -32,6 +32,7 @@ const rawProfilePath = path.join(coverageDirectory, "rnl_core_tests.profraw");
 const mergedProfilePath = path.join(coverageDirectory, "rnl_core_tests.profdata");
 
 const scopedSourcePaths: readonly string[] = [
+  "packages/core/src/ActivityIndicatorContent.cpp",
   "packages/core/src/AnimationFrameQueue.cpp",
   "packages/core/src/Appearance.cpp",
   "packages/core/src/AutomationProtocol.cpp",
@@ -50,6 +51,7 @@ const scopedSourcePaths: readonly string[] = [
   "packages/core/src/RetainedScene.cpp",
   "packages/core/src/ScrollEventCadence.cpp",
   "packages/core/src/ScrollPhysics.cpp",
+  "packages/core/src/SwitchContent.cpp",
   "packages/core/src/TextInputV3State.cpp",
   "packages/core/src/TextTransform.cpp",
   "packages/core/src/ToplevelState.cpp",

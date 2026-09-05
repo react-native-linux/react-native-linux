@@ -50,6 +50,14 @@ int renderFocusGolden(const std::string& bundlePath, const std::string& outputPa
  * none, so this is the other half of the pair `renderFocusGolden` proves the first half of — same fixture, same
  * focused node, no ring.
  */
+/**
+ * The picture a named number of frames after a click at `surfacePoint`: the golden that pins a control
+ * mid-animation, because a `<Switch>`'s thumb only starts travelling once React has committed the value the press
+ * asked for. See `runClickedFrameFabricBundle`.
+ */
+int renderClickedFrameGolden(const std::string& bundlePath, const std::string& outputPath,
+                             facebook::react::Point surfacePoint, int frameCount, int width, int height);
+
 int renderFocusClickGolden(const std::string& bundlePath, const std::string& outputPath,
                           facebook::react::Point surfacePoint, int width, int height);
 

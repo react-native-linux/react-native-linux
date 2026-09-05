@@ -34,6 +34,7 @@ constexpr std::string_view kMaintainPositionGoldenFlag = "--maintain-position-go
 constexpr std::string_view kAnimatedScrollFlag = "--animated-scroll";
 constexpr std::string_view kFocusTabFlag = "--focus-tab";
 constexpr std::string_view kFocusClickFlag = "--focus-click";
+constexpr std::string_view kClickedFrameFlag = "--clicked-frame";
 constexpr std::string_view kFocusCommandGoldenFlag = "--focus-command-golden";
 constexpr std::string_view kAnimatedImageFlag = "--animated-image";
 constexpr std::string_view kTypeFlag = "--type";
@@ -68,6 +69,7 @@ constexpr size_t kMaintainPositionArgumentCount = 7;
 constexpr size_t kAnimatedScrollArgumentCount = 6;
 constexpr size_t kFocusTabArgumentCount = 5;
 constexpr size_t kFocusClickArgumentCount = 6;
+constexpr size_t kClickedFrameArgumentCount = 7;
 constexpr size_t kFocusCommandGoldenArgumentCount = 5;
 constexpr size_t kAnimatedImageArgumentCount = 5;
 constexpr size_t kTypeArgumentCount = 5;
@@ -234,6 +236,22 @@ int runFocusClickCommand(std::span<char*> arguments) {
                                                       kGoldenDefaultHeight);
 }
 
+int runClickedFrameCommand(std::span<char*> arguments) {
+    const std::optional<facebook::react::Point> surfacePoint = parseSurfacePoint(arguments[4], arguments[5]);
+    const std::optional<int> parsedFrames = parsePositiveDimension(arguments[6]);
+
+    if (!surfacePoint.has_value() || !parsedFrames.has_value()) {
+        std::cerr << "[hello_react] " << kClickedFrameFlag << " x, y and frames must be positive integers"
+                  << std::endl;
+
+        return 1;
+    }
+
+    return react_native_linux::renderClickedFrameGolden(std::string(arguments[2]), std::string(arguments[3]),
+                                                        surfacePoint.value(), parsedFrames.value(),
+                                                        kGoldenDefaultWidth, kGoldenDefaultHeight);
+}
+
 int runFocusCommandGoldenCommand(std::span<char*> arguments) {
     const std::optional<int> focusedTag = parsePositiveDimension(arguments[4]);
 
@@ -342,6 +360,7 @@ int reportMissingSkia() {
     std::cerr << "[hello_react] " << kGoldenFlag << ", " << kDamageGoldenFlag << ", " << kHitPaintGoldenFlag
               << ", " << kTextFitGoldenFlag << ", " << kFirstFrameGoldenFlag << ", " << kScrollToFlag << ", "
               << kMaintainPositionGoldenFlag << ", " << kFocusTabFlag << ", " << kFocusClickFlag << ", "
+              << kClickedFrameFlag << ", "
               << kFocusCommandGoldenFlag << ", " << kAnimatedImageFlag << " and " << kTypeFlag
               << " need Skia, which this build was configured without; run node scripts/vendor-skia.ts and "
                  "reconfigure"
@@ -357,6 +376,8 @@ int runScrollToCommand(std::span<char*> /*arguments*/, bool /*isMaintainingPosit
 int runFocusTabCommand(std::span<char*> /*arguments*/) { return reportMissingSkia(); }
 
 int runFocusClickCommand(std::span<char*> /*arguments*/) { return reportMissingSkia(); }
+
+int runClickedFrameCommand(std::span<char*> /*arguments*/) { return reportMissingSkia(); }
 
 int runFocusCommandGoldenCommand(std::span<char*> /*arguments*/) { return reportMissingSkia(); }
 
@@ -383,6 +404,7 @@ int main(int argc, char** argv) {
     const bool isAnimatedScrollRequested = arguments.size() > 1 && kAnimatedScrollFlag == arguments[1];
     const bool isFocusTabRequested = arguments.size() > 1 && kFocusTabFlag == arguments[1];
     const bool isFocusClickRequested = arguments.size() > 1 && kFocusClickFlag == arguments[1];
+    const bool isClickedFrameRequested = arguments.size() > 1 && kClickedFrameFlag == arguments[1];
     const bool isFocusCommandGoldenRequested = arguments.size() > 1 && kFocusCommandGoldenFlag == arguments[1];
     const bool isAnimatedImageRequested = arguments.size() > 1 && kAnimatedImageFlag == arguments[1];
     const bool isTypeRequested = arguments.size() > 1 && kTypeFlag == arguments[1];
@@ -416,6 +438,13 @@ int main(int argc, char** argv) {
 
     if (isFocusClickRequested && arguments.size() != kFocusClickArgumentCount) {
         std::cerr << "[hello_react] " << kFocusClickFlag << " requires <bundle> <output.png> <x> <y>" << std::endl;
+
+        return 1;
+    }
+
+    if (isClickedFrameRequested && arguments.size() != kClickedFrameArgumentCount) {
+        std::cerr << "[hello_react] " << kClickedFrameFlag
+                  << " requires <bundle> <output.png> <x> <y> <frames>" << std::endl;
 
         return 1;
     }
@@ -469,6 +498,10 @@ int main(int argc, char** argv) {
 
         if (isFocusClickRequested) {
             return runFocusClickCommand(arguments);
+        }
+
+        if (isClickedFrameRequested) {
+            return runClickedFrameCommand(arguments);
         }
 
         if (isFocusCommandGoldenRequested) {

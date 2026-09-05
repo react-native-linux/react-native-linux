@@ -1,5 +1,6 @@
 #include "FabricHost.h"
 
+#include "SwitchComponent.h"
 #include "TextInputComponent.h"
 
 #ifdef RNL_ENABLE_IMAGES
@@ -9,6 +10,7 @@
 #include <folly/dynamic.h>
 #include <jsi/jsi.h>
 #include <react/renderer/componentregistry/ComponentDescriptorProviderRegistry.h>
+#include <react/renderer/components/FBReactNativeSpec/ComponentDescriptors.h>
 #include <react/renderer/components/image/ImageComponentDescriptor.h>
 #include <react/renderer/components/root/RootComponentDescriptor.h>
 #include <react/renderer/components/scrollview/ScrollViewComponentDescriptor.h>
@@ -74,6 +76,15 @@ facebook::react::ComponentRegistryFactory createComponentRegistryFactory(
     providerRegistry->add(
         facebook::react::concreteComponentDescriptorProvider<facebook::react::RawTextComponentDescriptor>());
     providerRegistry->add(facebook::react::concreteComponentDescriptorProvider<TextInputComponentDescriptor>());
+
+    // `ActivityIndicatorView` is upstream's own generated descriptor, unchanged: its spec is not `interfaceOnly`,
+    // so codegen produced the props, the shadow node and the descriptor and there is nothing platform-specific
+    // about any of them. `Switch` is `interfaceOnly` and stops at the props and the emitter, which is why
+    // `src/SwitchComponent.h` supplies the rest.
+    providerRegistry->add(
+        facebook::react::concreteComponentDescriptorProvider<
+            facebook::react::ActivityIndicatorViewComponentDescriptor>());
+    providerRegistry->add(facebook::react::concreteComponentDescriptorProvider<SwitchComponentDescriptor>());
 
     return [providerRegistry](const facebook::react::EventDispatcher::Weak& eventDispatcher,
                               const std::shared_ptr<const facebook::react::ContextContainer>& contextContainer) {
@@ -265,6 +276,10 @@ bool FabricHost::advanceCaretBlink(double frameMilliseconds) {
 
 bool FabricHost::advanceImageAnimations(double frameMilliseconds) {
     return mountingManager_->advanceImageAnimations(frameMilliseconds);
+}
+
+bool FabricHost::advanceControlAnimations(double frameMilliseconds) {
+    return mountingManager_->advanceControlAnimations(frameMilliseconds);
 }
 
 void FabricHost::induceEventBeat() { eventBeatInducer_(); }

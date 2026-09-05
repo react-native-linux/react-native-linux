@@ -124,6 +124,12 @@ public:
     bool advanceImageAnimations(double frameMilliseconds);
 
     /**
+     * `RetainedScene::advanceControlAnimations` under the scene mutex, flagging pending damage when a control
+     * moved so the frame clock draws it. Called once per frame from the frame thread.
+     */
+    bool advanceControlAnimations(double frameMilliseconds);
+
+    /**
      * Marks the focused node and whether it draws the focus ring. Called from the frame thread by the input
      * dispatcher, which is the other thing besides a mutation that changes what the next frame paints.
      */

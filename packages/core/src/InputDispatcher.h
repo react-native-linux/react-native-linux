@@ -130,6 +130,7 @@ private:
     void emitKeyEvent(const InputEvent& event) const;
     void emitActivation(const InputEvent& event) const;
     void emitFocusEvent(const facebook::react::ShadowNode& shadowNode, bool isFocused) const;
+    void emitSwitchChange(const facebook::react::ShadowNode& shadowNode) const;
 
     void syncFocusables();
     void collectFocusables(const facebook::react::ShadowNode& shadowNode);

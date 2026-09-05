@@ -694,6 +694,13 @@ int renderFocusGolden(const std::string& bundlePath, const std::string& outputPa
                              outputPath, width, height);
 }
 
+int renderClickedFrameGolden(const std::string& bundlePath, const std::string& outputPath,
+                             facebook::react::Point surfacePoint, int frameCount, int width, int height) {
+    return paintSettledScene(
+        runClickedFrameFabricBundle(bundlePath, toSurfaceSize(width, height), surfacePoint, frameCount),
+        outputPath, width, height);
+}
+
 int renderFocusClickGolden(const std::string& bundlePath, const std::string& outputPath,
                           facebook::react::Point surfacePoint, int width, int height) {
     return paintSettledScene(runFocusClickedFabricBundle(bundlePath, toSurfaceSize(width, height), surfacePoint),

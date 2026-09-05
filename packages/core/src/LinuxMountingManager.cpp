@@ -71,6 +71,15 @@ bool LinuxMountingManager::advanceImageAnimations(double frameMilliseconds) {
     return hasAdvanced;
 }
 
+bool LinuxMountingManager::advanceControlAnimations(double frameMilliseconds) {
+    const std::lock_guard<std::mutex> guard(sceneMutex_);
+    const bool hasAdvanced = scene_.advanceControlAnimations(frameMilliseconds);
+
+    hasPendingDamage_ = hasPendingDamage_ || hasAdvanced;
+
+    return hasAdvanced;
+}
+
 void LinuxMountingManager::setFocus(facebook::react::Tag tag, bool isFocusVisible) {
     const std::lock_guard<std::mutex> guard(sceneMutex_);
 

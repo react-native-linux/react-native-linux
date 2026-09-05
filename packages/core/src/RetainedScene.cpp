@@ -1,6 +1,8 @@
 #include "RetainedScene.h"
 
+#include "ActivityIndicatorContent.h"
 #include "ImageContent.h"
+#include "SwitchContent.h"
 #include "TextInputComponent.h"
 
 #include <react/renderer/attributedstring/AttributedString.h>
@@ -14,6 +16,7 @@
 #include <react/renderer/components/text/ParagraphState.h>
 #include <react/renderer/components/view/BaseViewProps.h>
 #include <react/renderer/components/view/ViewProps.h>
+#include <react/renderer/components/FBReactNativeSpec/Props.h>
 
 // conversions.h names the PropsParserContext parameter in sixteen overloads that never read it, which -Wextra
 // reports once each. It is upstream's header and the only declaration of fromRawValue for a Transform.
@@ -89,6 +92,18 @@ constexpr uint32_t kGreenShift = 8U;
 // `cursorColor` and `selectionColor` override both, which is react-native-macos#1096.
 constexpr uint32_t kDefaultCaretColorArgb = 0xFF599EFFU;
 constexpr uint32_t kDefaultSelectionColorArgb = 0x59599EFFU;
+
+// The `UISwitch` colours iOS draws in its dark appearance, which is the appearance this platform's one scene
+// background is. `tintColor`, `onTintColor` and `thumbTintColor` — the props React Native's own `Switch.js`
+// derives from `trackColor.false`, `trackColor.true` and `thumbColor` — override each of them.
+constexpr uint32_t kSwitchDefaultTrackOffColorArgb = 0xFF39393DU;
+constexpr uint32_t kSwitchDefaultTrackOnColorArgb = 0xFF34C759U;
+constexpr uint32_t kSwitchDefaultThumbColorArgb = 0xFFFFFFFFU;
+
+// A disabled control is drawn at half strength rather than in a fourth set of colours, so an app that gave the
+// switch its own `trackColor` still recognises its switch when it is disabled. react-native-windows drops the
+// custom colours entirely in that state; iOS keeps them and dims, and this follows iOS.
+constexpr float kSwitchDisabledOpacity = 0.5F;
 
 std::string formatFrame(const facebook::react::Rect& frame) {
     std::array<char, kFrameBufferSize> buffer{};
@@ -327,6 +342,31 @@ SceneEditorContent resolveEditor(const SceneEditorContent& editor, float opacity
                               .isMultiline = editor.isMultiline};
 }
 
+/**
+ * A disabled switch is every colour it would otherwise draw, at half alpha. The inherited opacity multiplies that
+ * rather than replacing it, so a disabled switch inside a faded-out parent is faded twice, exactly as a disabled
+ * control on any other platform is.
+ */
+SceneSwitchContent resolveSwitch(const SceneSwitchContent& content, float opacity) {
+    const float resolvedOpacity = content.isDisabled ? opacity * kSwitchDisabledOpacity : opacity;
+
+    return SceneSwitchContent{.isOn = content.isOn,
+                              .isDisabled = content.isDisabled,
+                              .thumbProgress = content.thumbProgress,
+                              .trackOffColorArgb = scaleArgbAlpha(content.trackOffColorArgb, resolvedOpacity),
+                              .trackOnColorArgb = scaleArgbAlpha(content.trackOnColorArgb, resolvedOpacity),
+                              .thumbColorArgb = scaleArgbAlpha(content.thumbColorArgb, resolvedOpacity)};
+}
+
+SceneActivityIndicatorContent resolveActivityIndicator(const SceneActivityIndicatorContent& content,
+                                                       float opacity) {
+    return SceneActivityIndicatorContent{.isAnimating = content.isAnimating,
+                                         .hidesWhenStopped = content.hidesWhenStopped,
+                                         .isLarge = content.isLarge,
+                                         .elapsedMilliseconds = content.elapsedMilliseconds,
+                                         .colorArgb = scaleArgbAlpha(content.colorArgb, opacity)};
+}
+
 SceneImageResizeMode toSceneImageResizeMode(facebook::react::ImageResizeMode resizeMode) {
     if (resizeMode == facebook::react::ImageResizeMode::Cover) {
         return SceneImageResizeMode::Cover;
@@ -408,6 +448,7 @@ bool isEdgeVisible(facebook::react::Float width, uint32_t colorArgb) {
 
 bool isPrimitiveVisible(const ScenePrimitive& primitive) {
     return primitive.focusRing || primitive.text.has_value() || primitive.image.has_value() ||
+           primitive.switchControl.has_value() || primitive.activityIndicator.has_value() ||
            !primitive.backgroundImage.empty() || (primitive.backgroundColorArgb >> kAlphaShift) != 0U ||
            isEdgeVisible(primitive.borderWidths.left, primitive.borderColorsArgb.left) ||
            isEdgeVisible(primitive.borderWidths.top, primitive.borderColorsArgb.top) ||
@@ -634,6 +675,74 @@ void readImageContent(SceneNode& node, const facebook::react::ShadowView& shadow
 }
 
 /**
+ * The switch a `<Switch>` mounts with: its committed value, whether it is disabled, and the three colours it
+ * draws with.
+ *
+ * A node that had no switch before mounts already at the end its value names, so a screen that opens with a
+ * switch on shows it on rather than sliding it there. A node that had one keeps the position its thumb has
+ * reached, so the commit React makes in response to `onValueChange` starts the travel rather than finishing it.
+ *
+ * `thumbColor`, `trackColorForFalse` and `trackColorForTrue` are on the same generated props class and are
+ * deliberately not read: they are the names `Switch.js` sends on its Android branch, and this platform takes the
+ * other branch, which sends `thumbTintColor`, `tintColor` and `onTintColor` for the same three values. Reading
+ * both would be a second answer to one question. See *Switch (#261)* in docs/cpp-toolchain.md.
+ */
+void readSwitchContent(SceneNode& node, const facebook::react::ShadowView& shadowView) {
+    const std::optional<SceneSwitchContent> previousSwitch = node.switchControl;
+
+    node.switchControl = std::nullopt;
+
+    const std::shared_ptr<const facebook::react::SwitchProps> switchProps =
+        std::dynamic_pointer_cast<const facebook::react::SwitchProps>(shadowView.props);
+
+    if (switchProps == nullptr) {
+        return;
+    }
+
+    const uint32_t authoredTrackOffColorArgb = toArgb(switchProps->tintColor, 1.0F);
+    const uint32_t authoredTrackOnColorArgb = toArgb(switchProps->onTintColor, 1.0F);
+    const uint32_t authoredThumbColorArgb = toArgb(switchProps->thumbTintColor, 1.0F);
+
+    node.switchControl = SceneSwitchContent{
+        .isOn = switchProps->value,
+        .isDisabled = switchProps->disabled,
+        .thumbProgress = previousSwitch.has_value() ? previousSwitch.value().thumbProgress
+                                                    : (switchProps->value ? 1.0F : 0.0F),
+        .trackOffColorArgb =
+            authoredTrackOffColorArgb != 0 ? authoredTrackOffColorArgb : kSwitchDefaultTrackOffColorArgb,
+        .trackOnColorArgb =
+            authoredTrackOnColorArgb != 0 ? authoredTrackOnColorArgb : kSwitchDefaultTrackOnColorArgb,
+        .thumbColorArgb = authoredThumbColorArgb != 0 ? authoredThumbColorArgb : kSwitchDefaultThumbColorArgb};
+}
+
+/**
+ * The spinner an `<ActivityIndicator>` mounts with. Its elapsed time survives an update for the reason an
+ * animated `<Image>`'s does: `<ActivityIndicator>` re-renders for every reason its parent does, and an arc that
+ * jumped back to the top of the ring on each of them would be a spinner whose speed depended on React.
+ */
+void readActivityIndicatorContent(SceneNode& node, const facebook::react::ShadowView& shadowView) {
+    const std::optional<SceneActivityIndicatorContent> previousIndicator = node.activityIndicator;
+
+    node.activityIndicator = std::nullopt;
+
+    const std::shared_ptr<const facebook::react::ActivityIndicatorViewProps> indicatorProps =
+        std::dynamic_pointer_cast<const facebook::react::ActivityIndicatorViewProps>(shadowView.props);
+
+    if (indicatorProps == nullptr) {
+        return;
+    }
+
+    const uint32_t authoredColorArgb = toArgb(indicatorProps->color, 1.0F);
+
+    node.activityIndicator = SceneActivityIndicatorContent{
+        .isAnimating = indicatorProps->animating,
+        .hidesWhenStopped = indicatorProps->hidesWhenStopped,
+        .isLarge = indicatorProps->size == facebook::react::ActivityIndicatorViewSize::Large,
+        .elapsedMilliseconds = previousIndicator.has_value() ? previousIndicator.value().elapsedMilliseconds : 0.0,
+        .colorArgb = authoredColorArgb != 0 ? authoredColorArgb : kActivityIndicatorDefaultColorArgb};
+}
+
+/**
  * The scroll position a `<ScrollView>` mounts with, read off `ScrollViewState` for the same reason the image
  * source is read off `ImageState`: the state is what the platform writes back into when it scrolls, so it is the
  * one description of the offset that React, the hit test and the picture all share.
@@ -710,7 +819,18 @@ SceneVisit visitNode(const SceneNode& node, const ScenePaintState& state) {
                                                  .editor = node.editor.has_value()
                                                                ? std::optional<SceneEditorContent>{resolveEditor(
                                                                      node.editor.value(), opacity)}
-                                                               : std::nullopt},
+                                                               : std::nullopt,
+                                                 .switchControl =
+                                                     node.switchControl.has_value()
+                                                         ? std::optional<SceneSwitchContent>{resolveSwitch(
+                                                               node.switchControl.value(), opacity)}
+                                                         : std::nullopt,
+                                                 .activityIndicator =
+                                                     node.activityIndicator.has_value()
+                                                         ? std::optional<SceneActivityIndicatorContent>{
+                                                               resolveActivityIndicator(
+                                                                   node.activityIndicator.value(), opacity)}
+                                                         : std::nullopt},
                      .childState = ScenePaintState{.origin = contentOrigin(node, frame.origin),
                                                    .matrix = matrix,
                                                    .opacity = opacity,
@@ -1106,6 +1226,45 @@ bool RetainedScene::advanceImageAnimations(double frameMilliseconds) {
     return hasAdvanced;
 }
 
+bool RetainedScene::advanceControlAnimations(double frameMilliseconds) {
+    bool hasAdvanced = false;
+
+    for (auto& [tag, node] : nodes_) {
+        if (node.switchControl.has_value()) {
+            SceneSwitchContent& switchControl = node.switchControl.value();
+            const float advancedProgress =
+                advanceSwitchThumbProgress(switchControl.thumbProgress, switchControl.isOn, frameMilliseconds);
+
+            if (advancedProgress != switchControl.thumbProgress) {
+                switchControl.thumbProgress = advancedProgress;
+
+                // A switch an ancestor has clipped away still arrives at the end its committed value names; what
+                // it must not do is damage a rectangle nothing paints.
+                const std::optional<facebook::react::Rect> bounds = clippedPrimitiveBounds(nodes_, tag, node);
+
+                if (bounds.has_value()) {
+                    addDamageRect(damage_, bounds.value());
+                    hasAdvanced = true;
+                }
+            }
+        }
+
+        if (node.activityIndicator.has_value() && node.activityIndicator.value().isAnimating) {
+            // An indicator nobody can see does not accumulate elapsed time either, which is the pause an animated
+            // `<Image>` gets and for the same reason: a spinner off screen should schedule no frame.
+            const std::optional<facebook::react::Rect> bounds = clippedPrimitiveBounds(nodes_, tag, node);
+
+            if (bounds.has_value()) {
+                node.activityIndicator.value().elapsedMilliseconds += frameMilliseconds;
+                addDamageRect(damage_, bounds.value());
+                hasAdvanced = true;
+            }
+        }
+    }
+
+    return hasAdvanced;
+}
+
 void RetainedScene::setDecodedImageProvider(DecodedImageProvider decodedImages) {
     decodedImages_ = std::move(decodedImages);
 }
@@ -1258,6 +1417,8 @@ SceneNode& RetainedScene::writeNode(const facebook::react::ShadowView& shadowVie
     readTextContent(node, shadowView);
     readEditorContent(node, shadowView);
     readImageContent(node, shadowView, decodedImages_);
+    readSwitchContent(node, shadowView);
+    readActivityIndicatorContent(node, shadowView);
     readScrollContent(node, shadowView);
 
     return node;

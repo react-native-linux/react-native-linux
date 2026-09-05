@@ -222,6 +222,10 @@ std::vector<InputEvent> makeWheelFrame(facebook::react::Point surfacePoint, int 
 }
 
 void deliverInputFrame(ReactHost& reactHost, FabricHost& fabricHost, const std::vector<InputEvent>& events) {
+    // Before the input, exactly where the window loop advances it: a headless frame is a frame, so a switch that
+    // was toggled on the previous one travels by one frame's worth here and a spinner turns by one frame's worth.
+    // That is what makes a golden rendered after a named number of frames describe a named angle.
+    fabricHost.advanceControlAnimations(kInjectedFrameMilliseconds);
     fabricHost.dispatchInput(events);
     fabricHost.induceEventBeat();
 
@@ -572,6 +576,20 @@ FabricRunResult runFocusTabbedFabricBundle(const std::string& bundlePath, facebo
             reactHost, *fabricHost,
             {InputEvent{.kind = InputEventKind::KeyPress, .key = kTabKeyName, .code = kTabKeyCode},
              InputEvent{.kind = InputEventKind::KeyRelease, .key = kTabKeyName, .code = kTabKeyCode}});
+    }
+
+    return finishFabricRun(reactHost, fabricHost);
+}
+
+FabricRunResult runClickedFrameFabricBundle(const std::string& bundlePath, facebook::react::Size surfaceSize,
+                                            facebook::react::Point surfacePoint, int frameCount) {
+    ReactHost reactHost;
+    std::unique_ptr<FabricHost> fabricHost = startFabricRunWarningIfEmptyForFocus(reactHost, bundlePath, surfaceSize);
+
+    deliverClickFrames(reactHost, *fabricHost, surfacePoint);
+
+    for (int frame = 0; frame < frameCount; ++frame) {
+        deliverInputFrame(reactHost, *fabricHost, {});
     }
 
     return finishFabricRun(reactHost, fabricHost);

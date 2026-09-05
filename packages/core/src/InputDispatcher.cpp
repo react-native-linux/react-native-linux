@@ -3,6 +3,10 @@
 #include <folly/dynamic.h>
 #include <react/renderer/components/scrollview/ScrollViewShadowNode.h>
 #include <react/renderer/components/scrollview/ScrollViewState.h>
+#include "SwitchComponent.h"
+
+#include <react/renderer/components/FBReactNativeSpec/EventEmitters.h>
+#include <react/renderer/components/FBReactNativeSpec/Props.h>
 #include <react/renderer/components/view/TouchEventEmitter.h>
 #include <react/renderer/components/view/ViewEventEmitter.h>
 #include <react/renderer/components/view/ViewProps.h>
@@ -115,6 +119,17 @@ bool isFocusableNode(const facebook::react::ShadowNode& shadowNode) {
     if (layoutable != nullptr &&
         layoutable->getLayoutMetrics().displayType == facebook::react::DisplayType::None) {
         return false;
+    }
+
+    // A `<Switch>` is focusable because it is a control, not because the app remembered to say so: `Switch.js`
+    // sets `accessibilityRole` and never `accessible`, so the prop this function otherwise reads is false on
+    // every switch React Native itself renders. `disabled` takes it back out, which is the same rule
+    // `accessibilityState.disabled` applies to everything else here.
+    const std::shared_ptr<const facebook::react::SwitchProps> switchProps =
+        std::dynamic_pointer_cast<const facebook::react::SwitchProps>(shadowNode.getProps());
+
+    if (switchProps != nullptr) {
+        return !switchProps->disabled;
     }
 
     const std::shared_ptr<const facebook::react::ViewProps> viewProps =
@@ -361,6 +376,10 @@ void InputDispatcher::dispatchPointerEvent(const InputEvent& event) {
     for (const PointerDispatch& pointerDispatch :
          router_.route(event, target.shadowNode->getTag(), target.offset)) {
         emitPointerDispatch(*emitter, pointerDispatch);
+
+        if (pointerDispatch.type == PointerDispatchType::Click) {
+            emitSwitchChange(*target.shadowNode);
+        }
     }
 }
 
@@ -430,6 +449,39 @@ void InputDispatcher::emitActivation(const InputEvent& event) const {
     }
 
     emitPointerDispatch(*emitter, makeActivationDispatch(event, absoluteOrigin(*focusedNode_)));
+
+    // The same click a press produces, and therefore the same toggle: Space and Enter on a focused switch go
+    // through one emission rather than through a keyboard path of their own.
+    emitSwitchChange(*focusedNode_);
+}
+
+/**
+ * The `onChange` a `<Switch>` fires when it is clicked or activated, carrying the value it would move to.
+ *
+ * `!props.value` rather than a value this platform holds: the control is fully controlled, so the press is a
+ * request and the picture does not change until React commits the answer. That is what react-native-windows'
+ * `SwitchComponentView::toggle` sends and what iOS' `RCTSwitchComponentView` de-dupes against, and it is what
+ * makes an `onValueChange` handler that ignores the press leave the thumb where it was.
+ *
+ * A disabled switch emits nothing. It is not focusable either, so this is the pointer half of one rule.
+ */
+void InputDispatcher::emitSwitchChange(const facebook::react::ShadowNode& shadowNode) const {
+    const std::shared_ptr<const facebook::react::SwitchProps> switchProps =
+        std::dynamic_pointer_cast<const facebook::react::SwitchProps>(shadowNode.getProps());
+
+    if (switchProps == nullptr || switchProps->disabled) {
+        return;
+    }
+
+    const std::shared_ptr<const facebook::react::SwitchEventEmitter> emitter =
+        std::dynamic_pointer_cast<const facebook::react::SwitchEventEmitter>(shadowNode.getEventEmitter());
+
+    if (emitter == nullptr) {
+        return;
+    }
+
+    emitter->onChange(facebook::react::SwitchEventEmitter::OnChange{.value = !switchProps->value,
+                                                                    .target = shadowNode.getTag()});
 }
 
 void InputDispatcher::emitFocusEvent(const facebook::react::ShadowNode& shadowNode, bool isFocused) const {
