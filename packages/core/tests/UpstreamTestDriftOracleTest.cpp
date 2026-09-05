@@ -17,7 +17,7 @@ enum class UpstreamSuiteLinkage { Linked, Excluded };
  * `rnl_core_tests` today, and — when it does not, or does only in part — the reviewed reason, mirroring the
  * comment that states the same reason in packages/core/tests/CMakeLists.txt. `exclusionReason` is documentation
  * for a partially linked directory and a reviewed gate for a fully excluded one; the test below requires it
- * non-empty exactly when `linkage` is `Excluded`.
+ * non-empty whenever `linkage` is `Excluded`, and a `Linked` entry may carry one too.
  */
 struct UpstreamTestsDirectory {
     std::string relativePath; // relative to the vendored package root, e.g. "ReactCommon/react/renderer/css/tests"
