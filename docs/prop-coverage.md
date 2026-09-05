@@ -59,9 +59,9 @@ assertion and not an implementation.
 | View | 35 | 14 | 5 | 16 |
 | Text | 45 | 19 | 7 | 19 |
 | Image | 14 | 4 | 6 | 4 |
-| ScrollView | 39 | 3 | 2 | 34 |
+| ScrollView | 39 | 5 | 2 | 32 |
 | TextInput | 23 | 12 | 0 | 11 |
-| **Total** | 156 | 52 | 20 | 84 |
+| **Total** | 156 | 54 | 20 | 82 |
 
 ## View
 
@@ -210,8 +210,8 @@ assertion and not an implementation.
 | `snapToAlignment` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:63` | not-implemented | #69 |
 | `disableIntervalMomentum` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:64` | not-implemented | #69 |
 | `snapToOffsets` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:65` | not-implemented | #69 |
-| `snapToStart` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:66` | not-implemented | #69 |
-| `snapToEnd` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:67` | not-implemented | #69 |
+| `snapToStart` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:66` | implemented | `SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe` |
+| `snapToEnd` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:67` | implemented | `SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe` |
 | `contentInsetAdjustmentBehavior` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:68` | not-implemented | #69 |
 | `scrollToOverflowEnabled` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:69` | not-implemented | #69 |
 | `isInvertedVirtualizedList` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:70` | not-implemented | #69 |

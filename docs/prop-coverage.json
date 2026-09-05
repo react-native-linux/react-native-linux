@@ -239,8 +239,14 @@
     "snapToAlignment": { "state": "not-implemented", "issue": "#69" },
     "disableIntervalMomentum": { "state": "not-implemented", "issue": "#69" },
     "snapToOffsets": { "state": "not-implemented", "issue": "#69" },
-    "snapToStart": { "state": "not-implemented", "issue": "#69" },
-    "snapToEnd": { "state": "not-implemented", "issue": "#69" },
+    "snapToStart": {
+      "state": "implemented",
+      "test": "SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe"
+    },
+    "snapToEnd": {
+      "state": "implemented",
+      "test": "SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe"
+    },
     "contentInsetAdjustmentBehavior": { "state": "not-implemented", "issue": "#69" },
     "scrollToOverflowEnabled": { "state": "not-implemented", "issue": "#69" },
     "isInvertedVirtualizedList": { "state": "not-implemented", "issue": "#69" }

@@ -8,6 +8,15 @@
 // panel above the first row, which is the inset the content was pushed down by, and the marker below the
 // viewport untouched. Ten wheel notches are 400 points, which is exactly the whole range, so the e2e scenario
 // ends at 350 — the content's own end, 320, plus the 30 points of inset under it.
+//
+// The two bands the e2e addresses, in surface coordinates, since the viewport is 150 points tall at y = 60:
+//
+//   y  60..110  the top inset at the start of the run, where the first wheel is delivered — no child is there,
+//               and goldens/scroll-inset.png is panel #1E2430 at (160, 100) to prove it;
+//   y 180..210  the bottom inset once the run has scrolled to 350, where the last click and the last wheel are
+//               delivered — the content ends at y = 180 and the click lands on the ScrollView.
+//
+// A wheel on either band has to scroll, which is what core#54123 stopped doing.
 
 const surfaceId = 1;
 const fabric = globalThis.nativeFabricUIManager;

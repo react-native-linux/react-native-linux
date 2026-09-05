@@ -12,12 +12,15 @@
     "click 160 150",
     "sleep 300",
     "click 160 195",
-    "sleep 500"
+    "sleep 300",
+    "wheel up 1",
+    "sleep 1500"
   ],
   "expect": [
     "inset: committed surface 1",
     "inset: topMomentumScrollEnd at 0,350",
     "inset: topClick on row5",
-    "inset: topClick on list"
+    "inset: topClick on list",
+    "inset: topMomentumScrollEnd at 0,310"
   ]
 }

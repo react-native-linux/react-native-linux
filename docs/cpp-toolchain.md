@@ -3405,8 +3405,12 @@ is how a translucent header or a keyboard leaves the content reachable under it.
 range grows by the inset at each end:
 
 ```text
-offset ∈ [ -inset.top , contentSize.height + inset.bottom - viewport.height ]
+offset ∈ [ -inset.top , max(contentSize.height + inset.bottom - viewport.height, -inset.top) ]
 ```
+
+The upper bound carries that `max` because content shorter than its viewport would otherwise put the end of the
+range above its start and describe no offset at all. It is the clamp `maximumScrollOffset` applies, and the row
+of the table it makes true is the last one below.
 
 `ScrollAxisBounds` in `ScrollPhysics.h` is that range — the content, the viewport and the axis's two insets — and
 it replaced the `contentLength, viewportLength` pair every function in the file used to take, so the clamp, the
@@ -3430,7 +3434,9 @@ The rules that follow, each a row of the table in `ScrollTest.cpp`:
   the maximum is never below the minimum, which is the clamp `UIScrollView` applies to the same case.
 - **`snapToStart` names the start of the range, not the start of the content.** The inset end is the snap point on
   that side, so a flick into the top inset settles in it; with `snapToStart` off there is no snap point there at
-  all and momentum settles where it stopped.
+  all and momentum settles where it stopped. Both it and `snapToEnd` are read off the props in
+  `ScrollController::readSnapping` and reach `settleTargetOffset` through `ScrollSnapConfiguration` — the prop, not
+  an internal rule — and the coverage ledger records them against #239's table.
 - **The inset area hit-tests as content, for free.** The offset is applied once in `visitNode` — see *Pressing what
   a scroll moved* — so a negative offset translates the children exactly as a positive one does. A press on a
   child the inset scrolled into the viewport lands on that child, and a press in the inset margin, where no child
