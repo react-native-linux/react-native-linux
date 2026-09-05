@@ -1126,7 +1126,7 @@ RetainedScene sceneWithScrollView(Point contentOffset) {
 }
 
 // Issue #98. #16 owns the offset and #35 proved static hit/paint agreement; this is the intersection — a subtree
-// translated by a scroll, or laid out outside its parent — where upstream has two open twenty-reaction
+// translated by a scroll, or laid out outside its parent — where upstream has two open, heavily-upvoted
 // regressions (core#51763, core#51290) and the cause is always the hit path reading the untranslated frame.
 // The scene applies `contentOffset` in `visitNode`, which both the painter and the hit test walk, so these are
 // the assertions that it stays that way.
