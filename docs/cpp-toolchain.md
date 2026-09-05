@@ -2199,6 +2199,58 @@ is cut where the *ancestor* cuts and nowhere else — a shadow clipped by its ow
 mistake in the other direction. The rotated tile's shadow rotates with the box: the shadow is drawn in the node's
 matrix, not offset in screen space after the fact.
 
+### Shadow composition (#102)
+
+A shadow is the only View feature that paints outside its node's box, so where it sits in the composition order is
+a decision rather than something inherited. The order is one sentence, and every layer below is a way of reading
+it back:
+
+**The shadow outline is the node's resolved rounded border box — the same `SceneRoundedBox` the fill, the ring and
+the `overflow: hidden` clip come from — spread and offset and blurred in the node's own local space; then the
+ancestor transform stack and the ancestor clip stack are applied to that drawing exactly as they are applied to
+the node's own paint.**
+
+Four consequences fall out of it, and each is where an upstream bug was:
+
+- **A shadow scales and rotates with its node**, because it is drawn under the node's own matrix rather than
+  composited afterwards. `paintScene` sets the canvas matrix once per primitive and `paintPrimitive` calls
+  `paintOutsetShadows` first, so `offsetX`, `offsetY`, `blurRadius` and `spreadDistance` are all in pre-transform
+  points — which is what iOS does, and what [core#50775](https://github.com/facebook/react-native/issues/50775)
+  and [core#34320](https://github.com/facebook/react-native/issues/34320) report missing. The damage side agrees
+  by construction: `primitiveDamageBounds` grows the frame by `shadowExtent` and *then* maps it through the
+  matrix, so a node at `scale: 2` damages twice the shadow reach.
+- **An ancestor's `overflow: hidden` cuts the shadow.** The ancestor clips are already on the canvas when
+  `paintPrimitive` runs, each under its own matrix, so a shadow that reaches past a clipping ancestor is cut where
+  the ancestor cuts. `primitiveDamageBounds` intersects the mapped extent with the same clips.
+- **A node's own `overflow: hidden` does not cut its own outset shadow.** `visitNode` pushes a clipping node's box
+  onto its *children's* clip stack and never onto its own primitive's, so the clip bounds descendants and leaves
+  the node's outer shadow whole. An inset shadow is the opposite and needs nothing extra: `paintInsetShadows`
+  intersects with the node's own border box, so it is bounded by the box whether or not the node clips.
+- **A shadow is never a target.** `coversPrimitive` tests `roundedBorderBox(primitive.frame, ...)` and never
+  `shadowExtent`, so a press in the blur falls through to whatever is behind it.
+
+Three layers prove it. `shadow-composition.png`, from `shadow-composition.js`, is the matrix itself: eighteen
+tiles on an 800x700 surface, {no transform, `scale: 1.5`, `rotate: 20deg`} across the columns and {no clip, self
+clip, ancestor clip} x {outset, inset} down the rows. Each tile is a rounded card near the bottom-right corner of
+a panel, so an outset shadow reaches past the panel and a panel that clips has somewhere to cut, and each card
+holds a stripe wider than itself, so a card that is clipping says so in the picture and not only in its shadow —
+the self-clipped rows are the ones whose stripe is cut short and whose shadow still reaches past the panel. `ShadowTest.cpp` holds the arithmetic: a scaled
+node's damage is the extent grown before the matrix rather than after it, a repaint that changes only the
+background colour still damages the whole reach — which is
+[core#47920](https://github.com/facebook/react-native/issues/47920) — and a point inside the shadow extent but
+outside the box hits the surface rather than the card. `packages/core/e2e/shadow-flicker.json` types five
+characters into the shadowed `<TextInput>` of `shadow-input.js`: five damage cycles in a row, the trace asserting
+each edit arrived and the screenshot asserting the shadow is still there at the end. That screenshot golden is
+blessed from a CI artifact, because cage sizes the surface to its own output.
+
+Item 4 of issue #102 — that a layer promotion introduced for a shadow, a filter or a `mixBlendMode` never changes
+what descendants paint, [core#54612](https://github.com/facebook/react-native/issues/54612) — **is not applicable
+yet**. Nothing in this renderer promotes a layer: `paintPrimitive` issues `drawRRect` and `drawPath` straight onto
+the canvas and there is no `saveLayer` anywhere in `ScenePainter.cpp`, so there is no promotion whose paint could
+leak down the tree. The decision table that item asks for arrives with the first feature that needs a layer, which
+is `filter` and `mixBlendMode`; **#68** owns it, and it is deferred there rather than written here against a
+`saveLayer` that does not exist.
+
 ### An unresolvable fontFamily says so (#70)
 
 The default font manager is **fontconfig**, and fontconfig substitutes rather than failing. So a `fontFamily`
