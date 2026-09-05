@@ -162,7 +162,9 @@ std::string capitalize(const std::string& text) {
             appendCased(result, text, index, length, true);
             atWordStart = false;
         } else {
-            result.append(text, index, length);
+            // react/react-native#34117: React Native lowercases the rest of the word, unlike CSS, which leaves
+            // an already-uppercase remainder alone.
+            appendCased(result, text, index, length, false);
         }
 
         index += length;

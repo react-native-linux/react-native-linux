@@ -20,8 +20,9 @@ namespace react_native_linux {
  * lower, excluding the multiplication and division signs at U+00D7/U+00F7), which is what the vendored Noto Sans
  * carries alongside plain ASCII; a codepoint outside that range is copied through unchanged rather than
  * approximated. `Capitalize` uppercases the first letter of the string and of every run following ASCII
- * whitespace — a hyphen is not a word boundary, matching React Native's actual behaviour rather than CSS's
- * (react/react-native#34117 is the two disagreeing).
+ * whitespace and lowercases the rest of each word, matching React Native's actual behaviour
+ * (react/react-native#34117): "I am PSYCHED" becomes "I Am Psyched", not CSS's "I am PSYCHED" with only the
+ * first letter of each word touched. A hyphen is still not a word boundary either way.
  */
 std::string applyTextTransform(const std::string& utf8Text, facebook::react::TextTransform transform);
 

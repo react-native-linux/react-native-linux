@@ -84,6 +84,13 @@ TEST(TextTransformTest, CapitalizeDoesNotTreatAHyphenAsAWordBoundary) {
     EXPECT_EQ(applyTextTransform("multi-word-value", TextTransform::Capitalize), "Multi-word-value");
 }
 
+// react/react-native#34117: React Native lowercases the rest of each word; CSS leaves an already-uppercase
+// remainder alone. "I am PSYCHED" becomes "I Am Psyched", not "I Am PSYCHED".
+TEST(TextTransformTest, CapitalizeLowercasesTheRestOfEachWordLikeReactNative) {
+    EXPECT_EQ(applyTextTransform("i am PSYCHED", TextTransform::Capitalize), "I Am Psyched");
+    EXPECT_EQ(applyTextTransform("MULTI-WORD-VALUE", TextTransform::Capitalize), "Multi-word-value");
+}
+
 TEST(TextTransformTest, CapitalizeOnAnEmptyOrAllWhitespaceStringChangesNothing) {
     EXPECT_EQ(applyTextTransform("", TextTransform::Capitalize), "");
     EXPECT_EQ(applyTextTransform("   ", TextTransform::Capitalize), "   ");

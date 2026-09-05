@@ -123,11 +123,13 @@ addPropertyRows('letterSpacing 4', (fontSize) => [
 ]);
 
 addPropertyRows(
-  'textTransform: uppercase / lowercase / capitalize (a hyphen is not a word boundary)',
+  // react/react-native#34117: capitalize lowercases the rest of each word (mixed case proves it) and a hyphen
+  // is not a word boundary.
+  'textTransform: uppercase / lowercase / capitalize (lowers the remainder, a hyphen is not a word boundary)',
   () => [
     text({ color: amber, textTransform: 'uppercase' }, [rawText('shout ')]),
     text({ color: green, textTransform: 'lowercase' }, [rawText('QUIET ')]),
-    text({ color: sky, textTransform: 'capitalize' }, [rawText('multi-word café value')]),
+    text({ color: sky, textTransform: 'capitalize' }, [rawText('i am PSYCHED über-word café')]),
   ],
 );
 
