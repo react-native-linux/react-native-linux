@@ -2770,6 +2770,35 @@ settle begins is counted rather than missed. With the fix, twenty consecutive `R
 regenerations under twenty-way CPU load produced byte-identical output for all 38 goldens, the four with images
 (`aspect-ratio.png`, `image.png`, `animated-image.png`, `scroll-first-frame.png`) included.
 
+#### The settle also drains JavaScript (#301)
+
+Settling the decode queue is not settling the picture: `ImageManager::requestImage` attaches a minimal load
+observer — `ImageLoadEventObserver` in `RetainedScene.cpp`, the one slice of issue #15 (Image events) this fix
+needs — that fires `ImageEventEmitter::onLoad` from `didReceiveImage`, on the decode worker thread, the instant a
+source's request completes. `onLoad` reaches JavaScript through the same `EventDispatcher` every other event
+does, and this platform's `EventBeat` is induced rather than ambient (see *Frame clock*): nothing delivers a
+queued event until `induceEventBeat` says a frame happened, headless or not. A settle that only waits on
+`PendingImageDecodes` can therefore return, and a runner can read the scene, before an `onLoad` handler that
+changes a prop has even been told its image loaded, let alone before the commit that handler makes has landed.
+
+`BundleRunner`'s `finishFabricRun` closes that window with `settleImageDecodesAndJavaScript` in
+`ImageContent.h`/`.cpp`: settle the decode queue, then induce the event beat and run `runUntilQuiescent` — the
+same timer drain #240 added — and check `takeFrame().damage` for a commit that drain produced; if one landed,
+settle and drain again, since that commit could itself have requested a decode. The loop is bounded by
+`kMaximumJavaScriptSettleIterations` so a handler that never quiets down is a reported give-up rather than a
+hang. The two steps are injected as callables specifically so `ImageJavaScriptSettleTest` in
+`packages/core/tests/ImageTest.cpp` can hold the loop's contract — a fake `drainJavaScript` standing in for an
+`onLoad` handler that commits — without Hermes or Skia, inside the coverage gate; `BundleRunner.cpp` itself links
+both and is proven by the golden below instead.
+
+`image-onload.js` is the fixture: an `<Image>` whose `onLoad` clones itself with a `tintColor`, committing the
+tint the moment the handler runs. Before this fix, thirty consecutive `hello_react --golden` runs of it produced
+two distinct PNGs — the untinted first commit, on the runs where `onLoad`'s event never reached JavaScript before
+teardown drained it away, and the tinted second commit on the rest — a flake rate representative of #296's own
+history rather than a rare corner. With the fix, thirty direct runs and twenty separate
+`RNL_UPDATE_GOLDENS=1` regenerations through the golden harness all produced the same `image-onload.png` byte for
+byte.
+
 ### The cache
 
 `ImageCache` is a least-recently-used cache keyed by source URI, bounded at **64 MiB of decoded pixels**. The
@@ -2901,9 +2930,11 @@ Each is deliberate, and each is a thing to fix rather than a thing to argue abou
 - **No `srcSet` or scale selection.** `ImageShadowNode` picks the best area fit among several sources and we paint
   what it picked, but nothing here reasons about `scale` or a device pixel ratio, because there is no fractional
   scale support yet either.
-- **No `onLoad`, `onLoadStart`, `onLoadEnd`, `onError` or `onProgress`.** The `ImageResponseObserverCoordinator`
+- **`onLoad` fires; `onLoadStart`, `onLoadEnd`, `onError` and `onProgress` do not.** The `ImageResponseObserverCoordinator`
   upstream builds for every request **is** completed or failed by the decoder, so the state is truthful and these
-  events are a matter of emitting them from an observer rather than of plumbing. Nothing observes one yet.
+  events are a matter of emitting them from an observer rather than of plumbing. `onLoad` is wired — see *The
+  settle also drains JavaScript (#301)* — because the golden proof for that issue needed a real handler to race
+  against; the rest stay unobserved until issue #15 (Image events) gives them the same treatment.
 - **The image fills the border box, not the padding box.** iOS and Android inset the content by padding; here
   `padding` on an `<Image>` moves nothing.
 - **`blurRadius`, `capInsets`, `overlayColor`, `fadeDuration`, `progressiveRenderingEnabled`, `defaultSource` and
