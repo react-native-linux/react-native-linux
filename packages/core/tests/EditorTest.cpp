@@ -13,6 +13,7 @@ using react_native_linux::CaretMotion;
 using react_native_linux::clipboardText;
 using react_native_linux::EditorModel;
 using react_native_linux::EditorSelection;
+using react_native_linux::clampedScrollOffset;
 using react_native_linux::followedScrollOffset;
 using react_native_linux::segmentUtf8CodePoints;
 using react_native_linux::setClipboardText;
@@ -89,6 +90,29 @@ TEST(FollowedScrollOffsetTest, ACaretBeforeTheNearEdgeMovesTheWindowBackToIt) {
 
 TEST(FollowedScrollOffsetTest, TheWindowNeverPassesTheEndOfTheContent) {
     EXPECT_FLOAT_EQ(followedScrollOffset(0.0F, 295.0F, 305.0F, 100.0F, 300.0F), 200.0F);
+}
+
+// Issue #256. A wheel over a multiline field moves the same window without moving the caret, so there is
+// nothing to follow and the whole of the rule is the two end stops the window may not pass. `boxLength` is 100
+// and the content 300 here too, so the last offset the window can hold is 200.
+
+TEST(ClampedScrollOffsetTest, AWheelInsideTheContentMovesTheWindowByExactlyWhatItAsked) {
+    EXPECT_FLOAT_EQ(clampedScrollOffset(50.0F + 40.0F, 100.0F, 300.0F), 90.0F);
+}
+
+TEST(ClampedScrollOffsetTest, AWheelPastTheEndStopsAtIt) {
+    EXPECT_FLOAT_EQ(clampedScrollOffset(180.0F + 120.0F, 100.0F, 300.0F), 200.0F);
+    EXPECT_FLOAT_EQ(clampedScrollOffset(20.0F - 120.0F, 100.0F, 300.0F), 0.0F);
+}
+
+TEST(ClampedScrollOffsetTest, ContentThatFitsHasOnlyOneOffsetToHold) {
+    EXPECT_FLOAT_EQ(clampedScrollOffset(40.0F, 100.0F, 60.0F), 0.0F);
+}
+
+// Content that shrank under a window already past its new end — a controlled value replaced by a shorter one —
+// has to pull the window back with it, which is what makes this the clamp every frame and not only a wheel's.
+TEST(ClampedScrollOffsetTest, ContentThatShrankPullsTheWindowBackToItsNewEnd) {
+    EXPECT_FLOAT_EQ(clampedScrollOffset(200.0F, 100.0F, 160.0F), 60.0F);
 }
 
 TEST(EditorModelTest, InsertsAtTheCaretAndMovesItToTheEnd) {
