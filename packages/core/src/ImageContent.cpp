@@ -4,9 +4,11 @@
 #include <react/renderer/graphics/Point.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -275,6 +277,32 @@ void ImageCache::eraseEntry(const std::string& uri) {
     byteCount_ -= entry->second.byteCount;
     order_.erase(entry->second.order);
     entries_.erase(entry);
+}
+
+void PendingImageDecodes::noteRequested() {
+    const std::lock_guard<std::mutex> guard(mutex_);
+
+    ++pendingCount_;
+}
+
+void PendingImageDecodes::notePublished() {
+    {
+        const std::lock_guard<std::mutex> guard(mutex_);
+
+        --pendingCount_;
+    }
+
+    settled_.notify_all();
+}
+
+bool PendingImageDecodes::waitUntilSettled(std::mutex& registrationMutex, std::chrono::milliseconds budget) {
+    {
+        const std::lock_guard<std::mutex> registrationGuard(registrationMutex);
+    }
+
+    std::unique_lock<std::mutex> guard(mutex_);
+
+    return settled_.wait_for(guard, budget, [this]() { return pendingCount_ == 0; });
 }
 
 } // namespace react_native_linux

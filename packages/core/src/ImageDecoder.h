@@ -40,10 +40,15 @@ void setImageDecodeListener(ImageDecodeListener listener);
 std::shared_ptr<const DecodedImageFrames> decodedImage(const std::string& uri);
 
 /**
- * Blocks until nothing is queued or decoding, or until `budget` runs out; returns whether the pipeline went idle.
+ * Blocks until every requested decode has published its pixels, or until `budget` runs out; returns whether the
+ * pipeline settled.
  *
  * This exists for the golden-image rig, which has to rasterise a settled picture: the run loop that would
  * eventually notice the damage a decode produces is a window, and there is no window in a headless render.
+ *
+ * Settled is stronger than "the codec is done": a decode is counted out only after the completions and the
+ * listener above have run, so a snapshot taken the instant this returns cannot land in the window where the
+ * pixels are cached but no node draws them yet. See `PendingImageDecodes` and issue #296.
  */
 bool waitForPendingImageDecodes(std::chrono::milliseconds budget);
 
