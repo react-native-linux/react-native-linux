@@ -65,6 +65,15 @@ int renderFocusCommandGolden(const std::string& bundlePath, const std::string& o
                             facebook::react::Tag focusedTag, int width, int height);
 
 /**
+ * The same rig, after every animated `<Image>` has been advanced `frameCount` frames of a fixed 60 Hz step.
+ *
+ * Which frame of a GIF is on screen after a given stretch of wall-clock time is the whole of issue #257, and a
+ * picture of the frame it landed on is how that is checked in. See *Image* in docs/cpp-toolchain.md.
+ */
+int renderAnimatedImageGolden(const std::string& bundlePath, const std::string& outputPath, int frameCount,
+                              int width, int height);
+
+/**
  * The same rig, after Tab has focused the fixture's `<TextInput>` and `keySequence` has been typed into it.
  *
  * A text field renders nothing a `<Text>` could not until something has been typed: the caret, the selection

@@ -520,6 +520,12 @@ int renderFocusCommandGolden(const std::string& bundlePath, const std::string& o
                              outputPath, width, height);
 }
 
+int renderAnimatedImageGolden(const std::string& bundlePath, const std::string& outputPath, int frameCount,
+                              int width, int height) {
+    return paintSettledScene(runAnimatedImageFabricBundle(bundlePath, toSurfaceSize(width, height), frameCount),
+                             outputPath, width, height);
+}
+
 int renderTypedGolden(const std::string& bundlePath, const std::string& outputPath, const std::string& keySequence,
                       int width, int height) {
     const FabricRunResult run = runTypedFabricBundle(bundlePath, toSurfaceSize(width, height), keySequence);
