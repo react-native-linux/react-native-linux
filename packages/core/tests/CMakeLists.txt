@@ -55,6 +55,7 @@ add_executable(rnl_core_tests
     AnimatedPropsTest.cpp
     AnimationChoreographerTest.cpp
     AllocationCostTest.cpp
+    AppearanceTest.cpp
     BorderGeometryTest.cpp
     DimensionsTest.cpp
     SceneReuseTest.cpp
@@ -86,6 +87,7 @@ add_executable(rnl_core_tests
     ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/DecayAnimationDriverTest.cpp
     ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/EventAnimationDriverTests.cpp
     ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/ManagedPropsMountingOverrideTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/Appearance.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/Clipboard.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/DimensionsSource.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/EditorModel.cpp

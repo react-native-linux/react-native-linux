@@ -785,6 +785,7 @@ endif()
 # ---------------------------------------------------------------------------
 
 add_library(rnl_react_core STATIC
+    src/Appearance.cpp
     src/Clipboard.cpp
     src/ConsoleBinding.cpp
     src/DimensionsSource.cpp

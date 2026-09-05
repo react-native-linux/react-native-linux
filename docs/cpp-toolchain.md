@@ -630,6 +630,37 @@ What this does not cover: an end-to-end resize under the headless compositor. Th
 resize path is still proven by reasoning about `WaylandWindow::onToplevelConfigure` rather than by a running
 compositor.
 
+## Appearance override (#260)
+
+`Appearance.setColorScheme` from upstream's `NativeAppearance.js` is an app-level override of the colour scheme
+that wins over whatever the source of truth reports, until it is cleared with `null`. That source of truth —
+`org.freedesktop.appearance color-scheme` over `org.freedesktop.portal.Settings` — is issue #52 and is not wired
+up yet; *Focus and keyboard*'s deferral list names the same round trip as the reason the focus ring is not themed.
+What #260 builds ahead of that wiring is the precedence rule between the override and whatever the portal
+eventually reports, in `packages/core/src/Appearance.h`/`.cpp`, as three pure functions rather than a class that
+depends on D-Bus:
+
+- `resolveEffectiveColorScheme(override, portalValue)` — the override if one is set, otherwise the portal value.
+  This is `getColorScheme()`.
+- `shouldEmitOnOverrideChange(previousOverride, nextOverride)` — `setColorScheme` fires `appearanceChanged`
+  exactly once whenever the override itself changes (set, switched, or cleared), independent of whether the
+  *effective* scheme also changed. Clearing an override back to a portal value that happens to match the override
+  is still one event, because an app that reacted to the override reacts to its removal too.
+- `shouldEmitOnPortalChange(currentOverride, previousPortalValue, nextPortalValue)` — a portal signal fires only
+  when there is no override in place and the reported value actually moved. An override in effect swallows the
+  signal entirely, but `AppearanceModel` still records the new portal value, so the override's own
+  `setColorScheme(null)` resolves to it immediately rather than waiting on a second round trip.
+
+`AppearanceModel` is the small stateful wrapper #52's TurboModule and D-Bus listener plug into: `setColorScheme`
+and `onPortalColorSchemeChanged` are its two write paths, `colorScheme()` is `getColorScheme()`, and
+`setChangeListener` is where `appearanceChanged` gets its callback once a real event emitter exists. Nothing here
+is reachable from JavaScript yet — there is no `NativeAppearance` TurboModule registration and no portal D-Bus
+client, both of which are #52's scope — so `AppearanceTest.cpp` proves the precedence rule with a table test over
+the two pure functions plus a fake portal (a direct call to `onPortalColorSchemeChanged`, standing in for the
+D-Bus listener #52 has not written yet). `Appearance.cpp` is in the 100% line-and-branch scope of
+`scripts/cpp-coverage.ts`. The golden-image and TSan layers #52's acceptance criteria ask for need a running
+portal source and a JS-reachable module to race against, so they stay with #52.
+
 ## Animated backend (#127, #128)
 
 React Native 0.87 ships the whole `Animated` native driver in portable C++ —
