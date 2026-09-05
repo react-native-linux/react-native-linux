@@ -5529,14 +5529,92 @@ scenario opts out with `"allowErrors": true` when it knowingly logs one.
 What this narrow definition does **not** catch: a raw `console.error` or `console.warn` call. `ConsoleBinding`
 prints both with no prefix at all, and the trace `scripts/e2e.ts` captures is stdout and stderr merged into one
 string with no record of which stream a line came from — nothing tells such a line apart from `console.log`
-today. Closing that gap needs #214's `ListErrors` channel, which replaces this trace-substring mechanism outright
-rather than extending it; the scenario field survives that change even though its grading source does not.
+today. Closing that gap needs the `ListErrors` channel below, which replaces this trace-substring mechanism for
+the scenarios that open it; the scenario field survives that change even though its grading source does not. A
+scenario that sets `"automation": { "listErrorsMustBeEmpty": true }` is graded on what the runtime reported
+rather than on what the trace printed, and one that does not is still graded by the grep.
 
 `packages/core/e2e/throws.json` is the negative control the gate needs proof against: it runs `throws.js`, which
 `console.log`s its own readiness line and then throws during bundle evaluation, producing a `[js-error] fatal`
 line the gate is expected to catch. Because failing is the correct outcome for this scenario, it sets
 `"expectFailure": true` — `resolveExpectedOutcome` inverts the run's failures for exactly this case, so the
 scenario itself passes when grading it produces at least one failure, and fails if grading ever produces none.
+
+### The automation channel (#214)
+
+Virtual input covers *events in*; nothing covered *state out*. react-native-windows' answer is an in-app
+automation channel, and it is their dominant assertion surface: `DumpVisualTree`, `ListErrors`,
+`CreateScreenshot` and `HangForTesting` bound by the app in
+`packages/e2e-test-app-fabric/windows/RNTesterApp-Fabric/RNTesterApp-Fabric.cpp`, plus `TestModule.markTestPassed`
+for the headless logic tests in `vnext/Desktop.IntegrationTests/RNTesterHeadlessTests.cpp`. Ours is the same five
+commands and nothing else.
+
+**The protocol.** `rnl_window --automation` binds an `AF_UNIX` `SOCK_STREAM` socket at
+`$XDG_RUNTIME_DIR/rnl-automation-<pid>.sock` and prints `[rnl-automation] listening on <path>` to the trace,
+which is how the driver — which knows the compositor's process id and not the window's — finds it. One
+line-delimited JSON request per line, one response per line, in order:
+
+| Request | Response `result` |
+| --- | --- |
+| `{"command":"ListErrors"}` | `{"errors":[{"source":"javascript"\|"image"\|"text"\|"rnl-window","message":"…"}]}` |
+| `{"command":"DumpVisualTree"}` | `{"roots":[{"tag","componentName","frame","testID","accessibilityLabel","text","children"}]}` |
+| `{"command":"TakeScreenshot","path":"…"}` | `{"path":"…"}` |
+| `{"command":"HangForTesting","milliseconds":N}` | `{"milliseconds":N}`, after the block |
+| `{"command":"MarkTestPassed"}` | `{"passed":true\|false}` |
+
+A success is `{"ok":true,"command":"…","result":{…}}` and a refusal is `{"ok":false,"error":"…"}`. It is not
+JSON-RPC: react-native-windows needs the id-and-batching half because its channel is multiplexed over TCP with a
+JavaScript client library, and ours is one driver talking to one window over a socket only that pair can see, so
+a request is answered by the next line and nothing has to correlate them. The channel is off unless the flag is
+passed, so a shipped window never listens.
+
+**Where each half lives.** `packages/core/src/AutomationProtocol.{h,cpp}` is the whole format — parse a request,
+serialise a response, turn the scene into JSON — and is pure, so it is in the 100% coverage gate.
+`packages/core/src/AutomationServer.{h,cpp}` is the socket and nothing else: non-blocking accept, one client at a
+time, `MSG_NOSIGNAL` on the write so a driver that timed out and closed cannot take the window down with it. The
+dispatch is in `WindowMain.cpp`'s frame loop, because `TakeScreenshot` has to be deferred — the picture only
+exists after the next present, so the request is armed on one iteration and answered on a later one. A pending
+capture now also forces a draw, so a static scene under a compositor that withholds frame callbacks cannot leave
+the request unanswered.
+
+**`ListErrors` is structured, not grepped.** `AutomationErrorLog` is a process-wide mutex-guarded list that the
+JavaScript error handler and the native fault sites — `ImagePipeline`, `TextPipeline`, `WindowMain` — write into
+through `reportNativeError`, which also prints the `[source] message` line the trace has always carried. A global
+because those sites are reached through upstream interfaces carrying no place to hang a per-window object, and
+there is exactly one window per process.
+
+**`DumpVisualTree` reports the mounted tree**, which is what `RetainedScene` holds, copied out under the mounting
+manager's mutex exactly as a frame is. `SceneNode` gained `testId` and `accessibilityLabel` for it; they are the
+only props the scene keeps that paint nothing, and they are there because a tree snapshot has to name a node the
+way the bundle named it rather than the way Fabric numbered it. Note that view flattening applies: a subtree
+Fabric flattened arrives as siblings with composed frames, which is the tree the platform actually mounted and
+therefore the right thing to assert on.
+
+**The scenario side.** A scenario gains an optional block, and having one is what passes `--automation`:
+
+```json
+"automation": {
+  "listErrorsMustBeEmpty": true,
+  "markTestPassed": true,
+  "visualTreeSnapshot": "automation-tree.json"
+}
+```
+
+`visualTreeSnapshot` names a file under the package's `e2e/goldens`, compared key-order-independently against the
+**children of the surface root** rather than the roots themselves: the surface root's frame is the headless
+compositor's output size, a property of the rig rather than of the bundle. The observed tree is always written to
+`build/e2e/<scenario>/automation-tree.json` so a mismatch can be diffed and a missing snapshot blessed.
+`TakeScreenshot` and `HangForTesting` are exercised on every scenario that opens the channel rather than by flags
+of their own: neither asserts anything about the app, they assert that the channel reaches the renderer and that
+a wedged JavaScript thread shows up as a timeout instead of as a wrong answer — the driver asks for a 1500 ms
+hang with a 300 ms deadline and fails if an answer arrives inside it.
+
+Two scenarios prove it. `automation-channel.json` runs `automation.js`, whose nodes are all absolutely positioned
+so the snapshot is size-independent, and which calls `globalThis.__rnlMarkTestPassed()`; it asserts all three
+fields plus the two always-on commands. `automation-errors.json` is the negative control for `ListErrors`: it
+runs `throws.js` with `"allowErrors": true`, which switches the trace grep off, so the only failure the run can
+produce is `ListErrors` reporting the uncaught error — and `"expectFailure": true` inverts it, so the scenario
+passes only when the channel actually reported it.
 
 ### What is still outstanding
 
