@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <vector>
 
 namespace react_native_linux {
@@ -117,6 +118,27 @@ double chooseSnapPoint(const std::vector<double>& points, double from, double ve
     return hasAhead ? ahead : nearest;
 }
 
+/**
+ * The child the offset is measured against: the first one at or after `minimumIndexForVisible` that is even
+ * partly visible, and the last child when none of them is.
+ */
+const ScrollChildFrame* anchorChild(const std::vector<ScrollChildFrame>& children, double offset,
+                                    int minimumIndexForVisible) {
+    const size_t firstIndex = static_cast<size_t>(std::max(minimumIndexForVisible, 0));
+
+    if (firstIndex >= children.size()) {
+        return nullptr;
+    }
+
+    for (size_t index = firstIndex; index < children.size(); ++index) {
+        if (children[index].position + children[index].length > offset) {
+            return &children[index];
+        }
+    }
+
+    return &children.back();
+}
+
 } // namespace
 
 double maximumScrollOffset(double contentLength, double viewportLength) {
@@ -206,6 +228,36 @@ double settleTargetOffset(const ScrollAxisState& axis, double decelerationRate, 
         chooseSnapPoint(points, snapFrom, axis.velocity, snapping.isIntervalMomentumDisabled);
 
     return clampScrollOffset(target, contentLength, viewportLength);
+}
+
+double maintainedScrollOffset(double offset, const std::vector<ScrollChildFrame>& previousChildren,
+                              const std::vector<ScrollChildFrame>& currentChildren,
+                              const MaintainVisibleContentPosition& maintaining, double contentLength,
+                              double viewportLength) {
+    const ScrollChildFrame* anchor = anchorChild(previousChildren, offset, maintaining.minimumIndexForVisible);
+
+    if (anchor == nullptr) {
+        return offset;
+    }
+
+    const auto moved = std::find_if(currentChildren.begin(), currentChildren.end(),
+                                    [tag = anchor->tag](const ScrollChildFrame& child) { return child.tag == tag; });
+
+    if (moved == currentChildren.end()) {
+        return offset;
+    }
+
+    const double shift = moved->position - anchor->position;
+
+    if (std::abs(shift) <= kMinimumAnchorShift) {
+        return offset;
+    }
+
+    if (maintaining.autoscrollToTopThreshold.has_value() && offset <= maintaining.autoscrollToTopThreshold.value()) {
+        return 0.0;
+    }
+
+    return clampScrollOffset(offset + shift, contentLength, viewportLength);
 }
 
 ScrollAxisState decelerateAxis(const ScrollAxisState& axis, double frameMilliseconds, double decelerationRate,

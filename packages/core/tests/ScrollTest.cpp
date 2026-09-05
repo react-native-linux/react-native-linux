@@ -33,6 +33,8 @@ using react_native_linux::kDecelerationRateNormal;
 using react_native_linux::kWheelNotchDistance;
 using react_native_linux::makeConfiguredShadowNode;
 using react_native_linux::makeTaskDroppingUIManager;
+using react_native_linux::maintainedScrollOffset;
+using react_native_linux::MaintainVisibleContentPosition;
 using react_native_linux::maximumScrollOffset;
 using react_native_linux::PassThroughShadowTreeDelegate;
 using react_native_linux::PointerDispatch;
@@ -41,6 +43,7 @@ using react_native_linux::SceneCommand;
 using react_native_linux::ScrollAxisKind;
 using react_native_linux::ScrollAxisState;
 using react_native_linux::ScrollCadenceEvents;
+using react_native_linux::ScrollChildFrame;
 using react_native_linux::ScrollCadenceFrame;
 using react_native_linux::ScrollController;
 using react_native_linux::ScrollDestination;
@@ -696,6 +699,152 @@ TEST(SettleTargetTest, KnowsWhichConfigurationsDescribeASnapPointAtAll) {
     EXPECT_TRUE(hasSnapPoints(paging()));
     EXPECT_TRUE(hasSnapPoints(interval(100.0, ScrollSnapAlignment::Start)));
     EXPECT_TRUE(hasSnapPoints(offsets({90.0})));
+}
+
+#pragma mark - maintainVisibleContentPosition (#240)
+
+// The table `maintainedScrollOffset` is graded against. Every row is one commit: the children before it, the
+// children after it, where the content was, and where it has to be so that the child the user was looking at is
+// painted in the same place.
+//
+// The list is a chat log: rows 100 points tall, laid out from zero, named by tag. A prepend is the same tags with
+// new ones in front of them, which is the only thing that distinguishes it from a scroll — the indices all moved
+// and the tags did not.
+
+constexpr double kRowLength = 100.0;
+
+// Room for every row of every case below, so a case that is about the clamp says so rather than meeting it by
+// accident.
+constexpr double kLogContent = 2000.0;
+constexpr double kLogViewport = 150.0;
+
+struct MaintainCase {
+    const char* what;
+    double offset;
+    std::vector<ScrollChildFrame> previousChildren;
+    std::vector<ScrollChildFrame> currentChildren;
+    MaintainVisibleContentPosition maintaining;
+    double expected;
+    double contentLength{kLogContent};
+    double viewportLength{kLogViewport};
+};
+
+std::vector<ScrollChildFrame> rows(const std::vector<int>& tags) {
+    std::vector<ScrollChildFrame> children;
+
+    for (size_t index = 0; index < tags.size(); ++index) {
+        children.push_back(ScrollChildFrame{.tag = tags[index],
+                                            .position = static_cast<double>(index) * kRowLength,
+                                            .length = kRowLength});
+    }
+
+    return children;
+}
+
+// The log as the reader has it, and the same log with two messages prepended above everything in it.
+std::vector<ScrollChildFrame> logRows() { return rows({11, 12, 13}); }
+
+std::vector<ScrollChildFrame> prependedRows() { return rows({21, 22, 11, 12, 13}); }
+
+TEST(MaintainVisibleContentPositionTest, HoldsTheVisibleChildStillAcrossEveryCommitThatMovedIt) {
+    const std::vector<MaintainCase> cases{
+        {.what = "two rows prepended above the anchor move the offset by exactly what the anchor moved",
+         .offset = 100.0,
+         .previousChildren = logRows(),
+         .currentChildren = prependedRows(),
+         .maintaining = MaintainVisibleContentPosition{},
+         .expected = 300.0},
+        {.what = "the anchor is the first row any part of which is visible, not the first fully visible one",
+         .offset = 150.0,
+         .previousChildren = logRows(),
+         .currentChildren = prependedRows(),
+         .maintaining = MaintainVisibleContentPosition{},
+         .expected = 350.0},
+        {.what = "minIndexForVisible skips the header the list keeps pinned at the top",
+         .offset = 0.0,
+         .previousChildren = logRows(),
+         .currentChildren = rows({11, 21, 12, 13}),
+         .maintaining = MaintainVisibleContentPosition{.minimumIndexForVisible = 1},
+         .expected = 100.0},
+        {.what = "a minIndexForVisible past the last child is no anchor at all",
+         .offset = 100.0,
+         .previousChildren = logRows(),
+         .currentChildren = prependedRows(),
+         .maintaining = MaintainVisibleContentPosition{.minimumIndexForVisible = 5},
+         .expected = 100.0},
+        {.what = "a negative minIndexForVisible reads as the first child rather than as an index",
+         .offset = 0.0,
+         .previousChildren = logRows(),
+         .currentChildren = prependedRows(),
+         .maintaining = MaintainVisibleContentPosition{.minimumIndexForVisible = -1},
+         .expected = 200.0},
+        {.what = "an offset past every child anchors on the last one",
+         .offset = 500.0,
+         .previousChildren = logRows(),
+         .currentChildren = prependedRows(),
+         .maintaining = MaintainVisibleContentPosition{},
+         .expected = 700.0},
+        {.what = "rows removed from the start move the offset back by what the anchor came up",
+         .offset = 200.0,
+         .previousChildren = logRows(),
+         .currentChildren = rows({12, 13}),
+         .maintaining = MaintainVisibleContentPosition{},
+         .expected = 100.0},
+        {.what = "an anchor the commit unmounted leaves the offset where it was",
+         .offset = 100.0,
+         .previousChildren = logRows(),
+         .currentChildren = {ScrollChildFrame{.tag = 11, .position = 0.0, .length = kRowLength},
+                             ScrollChildFrame{.tag = 13, .position = kRowLength, .length = kRowLength}},
+         .maintaining = MaintainVisibleContentPosition{},
+         .expected = 100.0},
+        {.what = "an anchor that moved by less than half a point is an anchor that did not move",
+         .offset = 100.0,
+         .previousChildren = logRows(),
+         .currentChildren = {ScrollChildFrame{.tag = 11, .position = 0.0, .length = kRowLength},
+                             ScrollChildFrame{.tag = 12, .position = 100.4, .length = kRowLength},
+                             ScrollChildFrame{.tag = 13, .position = 200.4, .length = kRowLength}},
+         .maintaining = MaintainVisibleContentPosition{},
+         .expected = 100.0},
+        {.what = "a reader within autoscrollToTopThreshold of the top is taken to the new top",
+         .offset = 40.0,
+         .previousChildren = logRows(),
+         .currentChildren = prependedRows(),
+         .maintaining = MaintainVisibleContentPosition{.autoscrollToTopThreshold = 50.0},
+         .expected = 0.0},
+        {.what = "a reader past the threshold is pinned to the anchor instead",
+         .offset = 60.0,
+         .previousChildren = logRows(),
+         .currentChildren = prependedRows(),
+         .maintaining = MaintainVisibleContentPosition{.autoscrollToTopThreshold = 50.0},
+         .expected = 260.0},
+        {.what = "the threshold is not consulted by a commit that moved nothing",
+         .offset = 40.0,
+         .previousChildren = logRows(),
+         .currentChildren = logRows(),
+         .maintaining = MaintainVisibleContentPosition{.autoscrollToTopThreshold = 50.0},
+         .expected = 40.0},
+        {.what = "the first frame of a target has nothing to compare against and adjusts nothing",
+         .offset = 100.0,
+         .previousChildren = {},
+         .currentChildren = prependedRows(),
+         .maintaining = MaintainVisibleContentPosition{},
+         .expected = 100.0},
+        {.what = "the adjusted offset is clamped against the content the commit produced",
+         .offset = 300.0,
+         .previousChildren = logRows(),
+         .currentChildren = prependedRows(),
+         .maintaining = MaintainVisibleContentPosition{},
+         .expected = 450.0,
+         .contentLength = 600.0},
+    };
+
+    for (const MaintainCase& maintainCase : cases) {
+        EXPECT_DOUBLE_EQ(maintainedScrollOffset(maintainCase.offset, maintainCase.previousChildren,
+                                                maintainCase.currentChildren, maintainCase.maintaining,
+                                                maintainCase.contentLength, maintainCase.viewportLength),
+                         maintainCase.expected)
+            << maintainCase.what;
+    }
 }
 
 TEST(ScrollQueueTest, SumsConsecutiveDeltasOnOneAxis) {

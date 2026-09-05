@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <vector>
 
 namespace react_native_linux {
@@ -158,6 +159,68 @@ bool hasSnapPoints(const ScrollSnapConfiguration& snapping);
  */
 double settleTargetOffset(const ScrollAxisState& axis, double decelerationRate, double contentLength,
                           double viewportLength, const ScrollSnapConfiguration& snapping);
+
+/**
+ * One child of a `<ScrollView>`'s content view along one axis: which node it is, where it starts and how long it
+ * is. `tag` is a `facebook::react::Tag`, kept as an `int` for the same reason `ScrollSnapAlignment` is not
+ * `ScrollViewSnapToAlignment`: this header describes arithmetic and holds no React types.
+ */
+struct ScrollChildFrame {
+    int tag{0};
+    double position{0.0};
+    double length{0.0};
+};
+
+/**
+ * `maintainVisibleContentPosition`, which upstream parses onto `BaseScrollViewProps` as
+ * `ScrollViewMaintainVisibleContentPosition` and every platform then implements for itself.
+ */
+struct MaintainVisibleContentPosition {
+    int minimumIndexForVisible{0};
+    std::optional<double> autoscrollToTopThreshold{};
+};
+
+/**
+ * Half a point: the shift of an anchor below which nothing is adjusted, because a content change that moved the
+ * anchor by less than that cannot be seen and an adjustment for it would be an `onScroll` nobody asked for. It is
+ * the threshold `RCTScrollViewComponentView::_adjustForMaintainVisibleContentPosition` uses, and it is what keeps
+ * this function off a float equality.
+ */
+inline constexpr double kMinimumAnchorShift = 0.5;
+
+/**
+ * Where the content has to sit after a commit changed the children, so that the child the user is looking at
+ * stays where it was on screen. This is the whole of `maintainVisibleContentPosition`.
+ *
+ * The anchor is chosen from the children **as they were before the commit**: the first one at or after
+ * `minimumIndexForVisible` whose trailing edge is past `offset` — the first one any part of which is visible —
+ * and the last child when none of them is. That is
+ * `RCTScrollViewComponentView::_prepareForMaintainVisibleScrollPosition`'s rule, and Android's
+ * `MaintainVisibleScrollPositionHelper` picks the same child.
+ *
+ * The anchor is then found again in the children as they are *now*, **by tag rather than by index**, which is the
+ * point of the whole exercise: a prepend renumbers every index and renames nothing. What the anchor moved by is
+ * what the offset moves by, so the shift cancels and the anchor is painted exactly where it was.
+ *
+ * Two things stop it:
+ *
+ * - **An anchor that is not in the new children is not an anchor.** The child the offset was measured against was
+ *   unmounted by the same commit, so there is nothing left to hold still and the offset stays where it is rather
+ *   than being adjusted by a delta computed against a different node —
+ *   [core#42905](https://github.com/facebook/react-native/issues/42905) is that adjustment applied to a header
+ *   that was being unmounted, leaving white space behind it.
+ * - **`autoscrollToTopThreshold` overrides the adjustment entirely.** A user already within that many points of
+ *   the top is reading the top rather than a particular child, so a prepend takes them to the *new* top instead of
+ *   pinning what used to be there. The offset it tests is the one before the adjustment, which is what upstream
+ *   compares, and the threshold is only consulted once an adjustment is actually called for.
+ *
+ * The result is clamped against the content the commit produced, for the same reason `scrollToDestination` clamps
+ * before it returns: the clamp is part of the offset, not something applied to the event afterwards.
+ */
+double maintainedScrollOffset(double offset, const std::vector<ScrollChildFrame>& previousChildren,
+                              const std::vector<ScrollChildFrame>& currentChildren,
+                              const MaintainVisibleContentPosition& maintaining, double contentLength,
+                              double viewportLength);
 
 /**
  * Integrates one frame of deceleration: the exact integral of `velocity * rate^t` over the frame rather than a
