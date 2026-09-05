@@ -6,6 +6,7 @@
 #include "ImageDecoder.h"
 #endif
 
+#include <folly/dynamic.h>
 #include <jsi/jsi.h>
 #include <react/renderer/componentregistry/ComponentDescriptorProviderRegistry.h>
 #include <react/renderer/components/image/ImageComponentDescriptor.h>
@@ -18,6 +19,7 @@
 #include <react/renderer/core/EventBeat.h>
 #include <react/renderer/core/LayoutConstraints.h>
 #include <react/renderer/core/LayoutPrimitives.h>
+#include <react/renderer/mounting/ShadowView.h>
 #include <react/renderer/runtimescheduler/RuntimeScheduler.h>
 #include <react/renderer/scheduler/SchedulerToolbox.h>
 
@@ -206,13 +208,39 @@ void FabricHost::dispatchInput(const std::vector<InputEvent>& events) {
     inputDispatcher_->dispatch(events);
 }
 
+void FabricHost::injectFocusCommand(facebook::react::Tag tag) {
+    facebook::react::ShadowView syntheticFocusTarget;
+
+    syntheticFocusTarget.tag = tag;
+    mountingManager_->dispatchCommand(syntheticFocusTarget, "focus", folly::dynamic::object());
+}
+
 bool FabricHost::advanceScroll(double frameMilliseconds) {
     // The frame's commands first, so a `scrollTo` committed since the last frame is applied by this one rather
     // than by the one after it. Draining here rather than beside `takeFrame` is what keeps a programmatic scroll
     // one frame long: the queue is filled on the JavaScript thread under the mounting mutex and read here on the
     // frame thread, which is the same pair every mounting transaction goes through. See *ScrollView* in
     // docs/cpp-toolchain.md.
-    scrollController_->dispatchCommands(mountingManager_->takeCommands());
+    //
+    // The queue is handed to both consumers, exactly as a frame's input events are split between the scroll and
+    // pointer routers: a `focus` command is the input dispatcher's and a `scrollTo` or `scrollToEnd` is the
+    // scroll controller's, and each ignores what is not its own.
+    const std::vector<SceneCommand> commands = mountingManager_->takeCommands();
+
+    scrollController_->dispatchCommands(commands);
+    inputDispatcher_->dispatchCommands(commands);
+
+    // A `focus` command whose target is inside a `<ScrollView>` enqueues its own `scrollTo` — issue #248's
+    // scroll-into-view — as a side effect of the drain just above, after `scrollController_` already took its
+    // turn at the queue this frame. Draining once more, immediately, is what keeps that `scrollTo` inside the
+    // frame the `focus` command arrived in rather than the one after it: a headless run that reads the scene the
+    // moment this call returns would otherwise see the target still offscreen, having driven no frame in which
+    // `ScrollController` had the chance to see the command at all.
+    const std::vector<SceneCommand> followUpCommands = mountingManager_->takeCommands();
+
+    if (!followUpCommands.empty()) {
+        scrollController_->dispatchCommands(followUpCommands);
+    }
 
     const bool isScrolling = scrollController_->advance(frameMilliseconds);
 

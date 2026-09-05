@@ -79,6 +79,17 @@ public:
                     std::shared_ptr<LinuxMountingManager> mountingManager, facebook::react::SurfaceId surfaceId);
 
     void dispatch(const std::vector<InputEvent>& events);
+
+    /**
+     * Applies the frame's `dispatchCommand` queue. The only command this reads is `focus`, a `<View>` ref's
+     * `focus({ preventScroll, focusVisible })` — `preventScroll` true skips the scroll-into-view every other focus
+     * change gets, and `focusVisible`, when named explicitly, decides the ring instead of the ordinary
+     * keyboard-visible default a bare `focus()` gets; every other command, and one naming a tag that is not
+     * focusable, is ignored, so the caller may hand over the whole queue exactly as
+     * `ScrollController::dispatchCommands` does with the same one.
+     */
+    void dispatchCommands(const std::vector<SceneCommand>& commands);
+
     void setTextInputFocusSink(TextInputFocusSink* textInputFocusSink) noexcept;
 
     /**
@@ -99,8 +110,9 @@ private:
 
     void syncFocusables();
     void collectFocusables(const facebook::react::ShadowNode& shadowNode);
-    void applyFocusTransition(const FocusTransition& transition);
+    void applyFocusTransition(const FocusTransition& transition, bool preventScroll = false);
     void updateTextInput();
+    void scrollFocusedNodeIntoView() const;
     std::shared_ptr<const facebook::react::ShadowNode> focusableNode(facebook::react::Tag tag) const;
     facebook::react::Tag focusableAncestorTag(const facebook::react::ShadowNode& shadowNode) const;
 

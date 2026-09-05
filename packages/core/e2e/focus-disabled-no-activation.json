@@ -1,0 +1,33 @@
+{
+  "name": "focus-disabled-no-activation",
+  "bundle": "focus.js",
+  "ready": "focus: committed surface 1",
+  "frames": 600,
+  "steps": [
+    "sleep 500",
+    "key Tab press",
+    "key Tab release",
+    "sleep 100",
+    "key Tab press",
+    "key Tab release",
+    "sleep 100",
+    "key Tab press",
+    "key Tab release",
+    "sleep 100",
+    "key Return press",
+    "key Return release",
+    "key Space press",
+    "key Space release",
+    "sleep 100",
+    "key Tab press",
+    "key Tab release",
+    "sleep 100",
+    "key Return press",
+    "key Return release",
+    "key Space press",
+    "key Space release",
+    "sleep 500"
+  ],
+  "expect": ["focus: topFocus on delta"],
+  "expectFailure": true
+}

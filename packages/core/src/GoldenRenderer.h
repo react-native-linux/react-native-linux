@@ -1,5 +1,6 @@
 #pragma once
 
+#include <react/renderer/core/ReactPrimitives.h>
 #include <react/renderer/graphics/Point.h>
 
 #include <string>
@@ -41,6 +42,27 @@ int renderScrollGolden(const std::string& bundlePath, const std::string& outputP
  */
 int renderFocusGolden(const std::string& bundlePath, const std::string& outputPath, int tabPresses, int width,
                       int height);
+
+/**
+ * The same rig, after `surfacePoint` has been clicked instead of Tab being pressed.
+ *
+ * Issue #248's focus-visible rule is a picture the same way the ring itself is: the node a click focuses draws
+ * none, so this is the other half of the pair `renderFocusGolden` proves the first half of — same fixture, same
+ * focused node, no ring.
+ */
+int renderFocusClickGolden(const std::string& bundlePath, const std::string& outputPath,
+                          facebook::react::Point surfacePoint, int width, int height);
+
+/**
+ * The same rig, after a synthesised `focus` `dispatchCommand` for `focusedTag` — not a Tab press, not a click —
+ * has run for exactly the two frames `runFocusCommandedFabricBundle` allows.
+ *
+ * This is the regression proof for issue #248's scroll-into-view: the picture is only right if
+ * `FabricHost::advanceScroll` drained the `scrollTo` a `focus` command enqueues in the same `advanceScroll` call
+ * that command ran in, rather than the one after it, which this run never takes a third frame to reach.
+ */
+int renderFocusCommandGolden(const std::string& bundlePath, const std::string& outputPath,
+                            facebook::react::Tag focusedTag, int width, int height);
 
 /**
  * The same rig, after Tab has focused the fixture's `<TextInput>` and `keySequence` has been typed into it.

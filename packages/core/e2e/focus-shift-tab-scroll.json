@@ -1,0 +1,8 @@
+{
+  "name": "focus-shift-tab-scrolls-list-item-into-view",
+  "bundle": "focus-scroll-list.js",
+  "ready": "focus-scroll-list: committed surface 1",
+  "frames": 600,
+  "steps": ["sleep 500", "key Shift_L press", "key Tab press", "key Tab release", "key Shift_L release", "sleep 500"],
+  "expect": ["focus-scroll-list: topFocus on row4", "focus-scroll-list: topScroll on scrollView at 0,190"]
+}

@@ -1,0 +1,26 @@
+{
+  "name": "focus-visible-tab-vs-click",
+  "bundle": "focus.js",
+  "ready": "focus: committed surface 1",
+  "frames": 600,
+  "steps": [
+    "sleep 500",
+    "move 100 120",
+    "sleep 100",
+    "click 100 120",
+    "sleep 200",
+    "key Tab press",
+    "key Tab release",
+    "sleep 200",
+    "key Return press",
+    "key Return release",
+    "sleep 500"
+  ],
+  "expect": [
+    "focus: topFocus on alpha",
+    "focus: topClick on alpha",
+    "focus: topBlur on alpha",
+    "focus: topFocus on beta",
+    "focus: topClick on beta"
+  ]
+}
