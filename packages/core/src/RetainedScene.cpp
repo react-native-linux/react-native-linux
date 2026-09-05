@@ -6,6 +6,7 @@
 #include <react/renderer/attributedstring/AttributedString.h>
 #include <react/renderer/attributedstring/TextAttributes.h>
 #include <react/renderer/components/textinput/TextInputState.h>
+#include <react/renderer/components/image/ImageEventEmitter.h>
 #include <react/renderer/components/image/ImageProps.h>
 #include <react/renderer/components/image/ImageState.h>
 #include <react/renderer/components/root/RootShadowNode.h>
@@ -537,6 +538,37 @@ void readEditorContent(SceneNode& node, const facebook::react::ShadowView& shado
 }
 
 /**
+ * Fires `onLoad` once, the first time this source's decode reaches the coordinator upstream builds for every
+ * `ImageRequest` — completed already or completed later, `addObserver` handles either order. This is the minimal
+ * slice of issue #15 (Image events) that #301's settle proof needs: `onLoadStart`, `onLoadEnd`, `onProgress` and
+ * `onError` stay unobserved, because nothing here needs them yet.
+ *
+ * `didReceiveImage` runs on whatever thread completed the request — the decode worker thread, on this platform —
+ * which is why it goes through `ImageEventEmitter::onLoad` rather than touching the scene directly: dispatching an
+ * event is the one thing about an `EventEmitter` every other native-originated event in this codebase already
+ * calls from off the JavaScript thread (see `ScrollController` and `TextInputController`), and it is upstream's
+ * own contract for this method: "All methods must be thread-safe."
+ */
+class ImageLoadEventObserver final : public facebook::react::ImageResponseObserver {
+public:
+    ImageLoadEventObserver(std::shared_ptr<const facebook::react::ImageEventEmitter> eventEmitter,
+                           facebook::react::ImageSource imageSource)
+        : eventEmitter_(std::move(eventEmitter)), imageSource_(std::move(imageSource)) {}
+
+    void didReceiveProgress(float /*progress*/, int64_t /*loaded*/, int64_t /*total*/) const override {}
+
+    void didReceiveImage(const facebook::react::ImageResponse& /*imageResponse*/) const override {
+        eventEmitter_->onLoad(imageSource_);
+    }
+
+    void didReceiveFailure(const facebook::react::ImageLoadError& /*error*/) const override {}
+
+private:
+    std::shared_ptr<const facebook::react::ImageEventEmitter> eventEmitter_;
+    facebook::react::ImageSource imageSource_;
+};
+
+/**
  * The source an `<Image>` mounts with, read off `ImageState` rather than off `ImageProps.sources`.
  *
  * `ImageShadowNode` is what chooses between several sources and what stamps the laid-out size and scale onto the
@@ -573,6 +605,19 @@ void readImageContent(SceneNode& node, const facebook::react::ShadowView& shadow
     // sorts of reasons that have nothing to do with the source, and a GIF that jumped back to its first frame on
     // every re-render is core#46810 in a different disguise.
     const bool isSameSource = previousImage.has_value() && previousImage.value().uri == imageSource.uri;
+
+    // Attached only on a genuinely new request — the same guard `isSameSource` already computes for the animation
+    // schedule — so a re-render that leaves the source unchanged does not fire `onLoad` a second time for a
+    // decode that finished commits ago.
+    if (!isSameSource) {
+        const std::shared_ptr<const facebook::react::ImageEventEmitter> imageEventEmitter =
+            std::dynamic_pointer_cast<const facebook::react::ImageEventEmitter>(shadowView.eventEmitter);
+
+        if (imageEventEmitter != nullptr) {
+            imageState->getData().getImageRequest().getSharedObserverCoordinator()->addObserver(
+                std::make_shared<const ImageLoadEventObserver>(imageEventEmitter, imageSource));
+        }
+    }
 
     node.image = SceneImageContent{.uri = imageSource.uri,
                                    .frames = decodedImages ? decodedImages(imageSource.uri) : nullptr,

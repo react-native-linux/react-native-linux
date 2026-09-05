@@ -11,6 +11,7 @@
 #include <react/renderer/attributedstring/AttributedStringBox.h>
 #include <react/renderer/attributedstring/ParagraphAttributes.h>
 #include <react/renderer/attributedstring/TextAttributes.h>
+#include <react/renderer/components/image/ImageEventEmitter.h>
 #include <react/renderer/components/image/ImageProps.h>
 #include <react/renderer/components/image/ImageState.h>
 #include <react/renderer/components/scrollview/ScrollViewState.h>
@@ -1164,6 +1165,82 @@ TEST(RetainedSceneImageTest, DumpCarriesTheImageSource) {
     EXPECT_EQ(sceneWithTile(makeTile(2, makeRect(40, 60, 120, 90), "tile.png")).dump(),
               "RootView #1 frame=(0.00, 0.00, 800.00, 600.00)\n"
               "  Image #2 frame=(40.00, 60.00, 120.00, 90.00) image=\"tile.png\"\n");
+}
+
+/**
+ * An `<Image>` with an `eventEmitter` cast to `ImageEventEmitter`, so the mount attaches issue #301's load
+ * observer, and the request's own coordinator handed back so a test can drive it. `completeBeforeMount` chooses
+ * whether the request has already completed by the time it mounts — the coordinator's `addObserver` calls
+ * `didReceiveImage` synchronously in that case, rather than waiting for a later publish — or is left `Loading` for
+ * the test to complete, fail or progress itself. `onLoad`'s `dispatchEvent` no-ops safely against the empty
+ * `EventDispatcher::Weak` a unit test has no dispatcher to give it.
+ */
+std::pair<ShadowView, std::shared_ptr<const facebook::react::ImageResponseObserverCoordinator>>
+makeImageWithLoadObserver(Tag tag, Rect frame, const std::string& uri, bool completeBeforeMount) {
+    facebook::react::ImageSource imageSource;
+
+    imageSource.type = facebook::react::ImageSource::Type::Local;
+    imageSource.uri = uri;
+
+    facebook::react::ImageRequest imageRequest{imageSource, nullptr};
+    const std::shared_ptr<const facebook::react::ImageResponseObserverCoordinator> coordinator =
+        imageRequest.getSharedObserverCoordinator();
+
+    if (completeBeforeMount) {
+        coordinator->nativeImageResponseComplete(facebook::react::ImageResponse{nullptr, nullptr});
+    }
+
+    ShadowView shadowView = makeTile(tag, frame, uri);
+
+    shadowView.state = std::make_shared<const facebook::react::ConcreteState<facebook::react::ImageState>>(
+        std::make_shared<const facebook::react::ImageState>(imageSource, std::move(imageRequest),
+                                                             facebook::react::ImageRequestParams{}),
+        facebook::react::ShadowNodeFamily::Weak{});
+    shadowView.eventEmitter =
+        std::make_shared<facebook::react::ImageEventEmitter>(nullptr, facebook::react::EventDispatcher::Weak{});
+
+    return {shadowView, coordinator};
+}
+
+TEST(RetainedSceneImageTest, ALoadObserverAttachesAndFiresWithoutDisturbingTheMount) {
+    const SceneSnapshot snapshot =
+        sceneWithTile(makeImageWithLoadObserver(2, makeRect(40, 60, 120, 90), "tile.png", true).first).snapshot();
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    ASSERT_TRUE(snapshot[0].image.has_value());
+    EXPECT_EQ(snapshot[0].image.value().uri, "tile.png");
+}
+
+// A re-render that keeps the source does not attach a second observer: mounting the same completed request twice
+// would fire `onLoad` a second time if it did, which this proves by not crashing on the second `addObserver` a
+// double-attach would have caused issue #301's fix to skip.
+TEST(RetainedSceneImageTest, AReMountWithTheSameSourceDoesNotReattachTheLoadObserver) {
+    RetainedScene scene =
+        sceneWithTile(makeImageWithLoadObserver(2, makeRect(40, 60, 120, 90), "tile.png", true).first);
+
+    scene.updateNode(makeTile(2, makeRect(40, 60, 120, 90), "tile.png"));
+
+    const SceneSnapshot snapshot = scene.snapshot();
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    EXPECT_EQ(snapshot[0].image.value().uri, "tile.png");
+}
+
+// The other two `ImageResponseObserver` methods the load observer implements as no-ops: `onLoadStart`,
+// `onLoadEnd`, `onProgress` and `onError` are issue #15's job, not #301's, so nothing here turns a progress or a
+// failure into an event.
+TEST(RetainedSceneImageTest, ProgressAndFailureReachTheLoadObserverButProduceNoEvent) {
+    const std::pair<ShadowView, std::shared_ptr<const facebook::react::ImageResponseObserverCoordinator>> fixture =
+        makeImageWithLoadObserver(2, makeRect(40, 60, 120, 90), "tile.png", false);
+    const RetainedScene scene = sceneWithTile(fixture.first);
+
+    fixture.second->nativeImageResponseProgress(0.5F, 1, 2);
+    fixture.second->nativeImageResponseFailed(facebook::react::ImageLoadError{nullptr});
+
+    const SceneSnapshot snapshot = scene.snapshot();
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    EXPECT_EQ(snapshot[0].image.value().uri, "tile.png");
 }
 
 // The fixture every scroll test below shares: a 200x150 viewport at (60, 60) holding 470 points of content, one
