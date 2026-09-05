@@ -3840,6 +3840,44 @@ in a scrolled field.
 at its end, so the last two lines are what is drawn. The rule itself is `FollowedScrollOffsetTest` in
 `EditorTest.cpp`, inside the 100% gate.
 
+### The placeholder (#255)
+
+The placeholder is a second paragraph, not a second widget: `readEditorContent` in `RetainedScene.cpp` builds it
+by taking `getEffectiveTextAttributes` off the field's own props — the same call that resolves the value's font,
+weight, letter spacing and alignment — and substituting only `foregroundColor`, and only when `placeholderTextColor`
+is meaningful. Every other native text field gets one piece of this wrong (react/core#50137, #45853 ignore the
+custom font; #42589 ignores `letterSpacing`), and every one of them shares the same fix: stop building the
+placeholder from a second set of defaults.
+
+Two consequences fall out of building it this way rather than being asserted separately:
+
+- **The caret of an untouched field indexes the placeholder's own first glyph, because there is nothing else for
+  it to index.** `node.text` is the placeholder's `AttributedString` for the whole time the value is empty, and
+  `measureEditorGeometry` runs on `node.text` — there is no second, hypothetical "empty value" paragraph the
+  caret could be measured against instead. Caret index 0 of the placeholder's paragraph *is* the placeholder's
+  first glyph, under `textAlign: 'left'`, `'center'` and `'right'` alike, which is what fixes react/core#41105 and
+  #38528 (caret misplaced against an empty value, and wrong under `textAlign="center"`) as a consequence of the
+  representation rather than as a special case for either bug.
+- **The placeholder is a hint, not a name.** `isPlaceholder` is `value.isEmpty()`, recomputed on every commit from
+  the current `TextInputState`, so the placeholder disappears the instant the buffer holds one grapheme and
+  returns the instant the last one is deleted — nothing remembers having shown it before. `RetainedSceneTextInputTest`
+  in `SceneTest.cpp` — inside the 100% gate `RetainedScene.cpp` is scoped to — proves the font/weight/letter-spacing/
+  alignment match, the caret-indexes-the-first-glyph claim, the appear/disappear transition, and that a multiline
+  placeholder shares the field's own `ParagraphAttributes` object rather than a copy, so it wraps under the same
+  `maximumNumberOfLines` and break strategy the value would.
+
+`text-input-placeholder.js` carries the pixel proof the gate cannot: left, centre and right `textAlign`, all bold,
+italic and letter-spaced, plus a multiline field whose placeholder is long enough to wrap. `--type` always spends
+its first Tab reaching the fixture's own first field, so `text-input-placeholder-left.png` needs no explicit
+press, `text-input-placeholder-center.png` is one more and `text-input-placeholder-right.png` two more — one
+golden per alignment, each with its own field focused and its caret pictured at the placeholder's own leading
+edge. `text-input-placeholder-typed.png` is the other half of the claim: one character typed into the left field,
+the placeholder gone, and the caret that indexed the placeholder's first glyph now sitting after the glyph that
+replaced it.
+
+Not done here: whether the *AT-SPI* tree exposes the placeholder as a `placeholder-text` attribute rather than the
+accessible name is #216's e2e proof, not this one's.
+
 ### The caret blink
 
 Frame-driven, not timer-driven: `FabricHost::advanceCaretBlink` is called once per frame from the window loop,
