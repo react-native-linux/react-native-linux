@@ -32,6 +32,7 @@ const rawProfilePath = path.join(coverageDirectory, "rnl_core_tests.profraw");
 const mergedProfilePath = path.join(coverageDirectory, "rnl_core_tests.profdata");
 
 const scopedSourcePaths: readonly string[] = [
+  "packages/core/src/AnimationFrameQueue.cpp",
   "packages/core/src/Clipboard.cpp",
   "packages/core/src/DimensionsSource.cpp",
   "packages/core/src/EditorModel.cpp",

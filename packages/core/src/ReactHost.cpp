@@ -21,6 +21,57 @@ std::chrono::milliseconds remainingBudget(std::chrono::steady_clock::time_point 
     return std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
 }
 
+/**
+ * Replaces the `requestAnimationFrame` and `cancelAnimationFrame` that `TimerManager::attachGlobals` installs.
+ *
+ * `ReactInstance::initializeRuntime` runs the bindings installer after `attachGlobals`, so assigning the two
+ * properties here is what decides which implementation JavaScript sees. Upstream's is `setTimeout(callback, 0)`
+ * by its own admission, which on this platform means a `TaskDispatchThread` heap ordered by deadline alone and no
+ * relationship to a frame at all; `AnimationFrameQueue` is the frame-coupled one. Everything about *when* a
+ * callback runs lives in that queue — this function only moves values across the JSI boundary.
+ *
+ * The callback is held in a `shared_ptr` because `jsi::Function` is move-only and `std::function` is not, and the
+ * runtime is captured by reference because there is exactly one per host and the queue is emptied before it is
+ * destroyed.
+ */
+void installAnimationFrameBinding(facebook::jsi::Runtime& runtime, AnimationFrameQueue& animationFrameQueue) {
+    runtime.global().setProperty(
+        runtime, "requestAnimationFrame",
+        facebook::jsi::Function::createFromHostFunction(
+            runtime, facebook::jsi::PropNameID::forAscii(runtime, "requestAnimationFrame"), 1,
+            [&animationFrameQueue](facebook::jsi::Runtime& callRuntime, const facebook::jsi::Value& /*thisValue*/,
+                                   const facebook::jsi::Value* arguments, size_t count) {
+                if (count < 1 || !arguments[0].isObject() || !arguments[0].getObject(callRuntime).isFunction(callRuntime)) {
+                    throw facebook::jsi::JSError(
+                        callRuntime, "The first argument to requestAnimationFrame must be a function.");
+                }
+
+                const std::shared_ptr<facebook::jsi::Function> callback =
+                    std::make_shared<facebook::jsi::Function>(arguments[0].getObject(callRuntime).getFunction(callRuntime));
+                const uint64_t requestHandle =
+                    animationFrameQueue.request([&callRuntime, callback](double frameTimestampMilliseconds) {
+                        callback->call(callRuntime, frameTimestampMilliseconds);
+                    });
+
+                return facebook::jsi::Value(static_cast<double>(requestHandle));
+            }));
+
+    runtime.global().setProperty(
+        runtime, "cancelAnimationFrame",
+        facebook::jsi::Function::createFromHostFunction(
+            runtime, facebook::jsi::PropNameID::forAscii(runtime, "cancelAnimationFrame"), 1,
+            [&animationFrameQueue](facebook::jsi::Runtime& callRuntime, const facebook::jsi::Value& /*thisValue*/,
+                                   const facebook::jsi::Value* arguments, size_t count) {
+                // A negative handle is a no-op per the animation-timing specification, which is also why upstream's
+                // `TimerManager::deleteTimer` returns early on one.
+                if (count >= 1 && arguments[0].isNumber() && arguments[0].getNumber() > 0) {
+                    animationFrameQueue.cancel(static_cast<uint64_t>(arguments[0].getNumber()));
+                }
+
+                return facebook::jsi::Value::undefined();
+            }));
+}
+
 } // namespace
 
 ReactHost::ReactHost() : javaScriptThread_(std::make_shared<facebook::react::MessageQueueThreadImpl>()) {
@@ -41,14 +92,18 @@ ReactHost::ReactHost() : javaScriptThread_(std::make_shared<facebook::react::Mes
         std::make_shared<facebook::react::RuntimeSchedulerCallInvoker>(reactInstance_->getRuntimeScheduler()),
         animatedNodesManagerProvider_);
 
-    reactInstance_->initializeRuntime({}, [registry = turboModuleRegistry_.get()](facebook::jsi::Runtime& runtime) {
-        installConsoleBinding(runtime);
-        registry->install(runtime);
-    });
+    reactInstance_->initializeRuntime(
+        {}, [registry = turboModuleRegistry_.get(), &animationFrameQueue = animationFrameQueue_](
+                facebook::jsi::Runtime& runtime) {
+            installConsoleBinding(runtime);
+            installAnimationFrameBinding(runtime, animationFrameQueue);
+            registry->install(runtime);
+        });
 }
 
 ReactHost::~ReactHost() noexcept {
     javaScriptThread_->quitSynchronous();
+    animationFrameQueue_.clear();
     turboModuleRegistry_.reset();
     animatedNodesManagerProvider_.reset();
     reactInstance_.reset();
@@ -86,6 +141,23 @@ bool ReactHost::runUntilQuiescent(std::chrono::milliseconds budget) {
 
 bool ReactHost::hasReportedFatalError() const { return errorReporter_.hasReportedFatalError(); }
 
-bool ReactHost::hasPendingTimers() const { return timerRegistry_->hasPendingTimers(); }
+void ReactHost::dispatchAnimationFrames(std::chrono::steady_clock::time_point now) {
+    if (!animationFrameQueue_.hasPendingRequests()) {
+        return;
+    }
+
+    const double frameTimestampMilliseconds =
+        std::chrono::duration<double, std::milli>(now.time_since_epoch()).count();
+
+    reactInstance_->getBufferedRuntimeExecutor()(
+        [&animationFrameQueue = animationFrameQueue_,
+         frameTimestampMilliseconds](facebook::jsi::Runtime& /*runtime*/) {
+            animationFrameQueue.dispatchFrame(frameTimestampMilliseconds);
+        });
+}
+
+bool ReactHost::hasPendingTimers() const {
+    return timerRegistry_->hasPendingTimers() || animationFrameQueue_.hasPendingRequests();
+}
 
 } // namespace react_native_linux

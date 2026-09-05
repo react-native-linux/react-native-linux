@@ -47,6 +47,19 @@ struct FabricDamageRunResult {
 };
 
 int runBundle(const std::optional<std::string>& bundlePath, BundleMode bundleMode);
+
+/**
+ * Runs a bundle and then drives `frameCount` frames of `requestAnimationFrame` dispatch, draining the JavaScript
+ * thread after each, so what the bundle prints is the callback sequence in the order and the frames it happened
+ * in.
+ *
+ * This is the JavaScript-visible half of issue #263's proof, and it needs no compositor and no Fabric surface
+ * because the three rules — registration order, one dispatch per frame, cancellation from inside a callback — are
+ * about the queue rather than about pixels. The frame timestamps are a fixed 60 Hz series rather than readings of
+ * a clock, so a fixture may print them and the trace stays reproducible. See *requestAnimationFrame* in
+ * docs/cpp-toolchain.md.
+ */
+int runAnimationFrameTrace(const std::string& bundlePath, size_t frameCount);
 int runInjectedClick(const std::string& bundlePath, facebook::react::Point surfacePoint);
 
 /**

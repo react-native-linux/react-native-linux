@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AnimationFrameQueue.h"
 #include "DimensionsSource.h"
 #include "HermesJSRuntimeFactory.h"
 #include "HostTimerRegistry.h"
@@ -80,15 +81,32 @@ public:
     bool hasReportedFatalError() const;
 
     /**
-     * Whether a JS timer is outstanding, for the frame clock's fallback-timeout pending-work signal (see
-     * *Frame clock* in docs/cpp-toolchain.md). This is "any timer scheduled", not "a timer due before the next
-     * tick" — `HostTimerRegistry` tracks delay and recurrence, not an absolute deadline — so it is a conservative
-     * signal: it can hold the fallback awake slightly ahead of when a distant timer actually fires, never behind.
+     * Runs one frame's `requestAnimationFrame` callbacks, on the JavaScript thread, stamped with `now`.
+     *
+     * The dispatch is posted rather than run here for the same reason the event beat is: the caller is the frame
+     * thread and the callbacks are JavaScript. `now` is carried across rather than re-read on the other side, so
+     * every callback of one frame sees one timestamp, and it is the same instant the frame clock measured and
+     * `LinuxAnimationChoreographer::tick` hands the animation backend. See *requestAnimationFrame* in
+     * docs/cpp-toolchain.md.
+     */
+    void dispatchAnimationFrames(std::chrono::steady_clock::time_point now);
+
+    /**
+     * Whether a JS timer or a `requestAnimationFrame` callback is outstanding, for the frame clock's
+     * fallback-timeout pending-work signal (see *Frame clock* in docs/cpp-toolchain.md). Both are timers in
+     * React Native's model — upstream's `TimerManager` installs `requestAnimationFrame` as a timer source of its
+     * own — and both have the same consequence here: a window the compositor sends no `wl_surface.frame` to has
+     * to draw on the fallback timeout, or the callback never runs.
+     *
+     * For the timer half this is "any timer scheduled", not "a timer due before the next tick" —
+     * `HostTimerRegistry` tracks delay and recurrence, not an absolute deadline — so it is a conservative signal:
+     * it can hold the fallback awake slightly ahead of when a distant timer actually fires, never behind.
      */
     bool hasPendingTimers() const;
 
 private:
     std::shared_ptr<facebook::react::MessageQueueThreadImpl> javaScriptThread_;
+    AnimationFrameQueue animationFrameQueue_;
     HostTimerRegistry* timerRegistry_{nullptr};
     std::shared_ptr<facebook::react::TimerManager> timerManager_;
     JsErrorReporter errorReporter_;

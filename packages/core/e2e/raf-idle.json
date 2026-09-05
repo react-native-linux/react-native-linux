@@ -1,0 +1,15 @@
+{
+  "name": "raf-idle",
+  "bundle": "raf-idle.js",
+  "ready": "raf-idle: committed surface 1",
+  "frames": 240,
+  "frameBudget": { "p95Ms": 16.7, "minFrames": 60 },
+  "steps": ["sleep 500"],
+  "expect": [
+    "raf-idle: committed surface 1",
+    "raf-idle: tick 30",
+    "raf-idle: tick 60",
+    "raf-idle: tick 90",
+    "raf-idle: tick 120"
+  ]
+}

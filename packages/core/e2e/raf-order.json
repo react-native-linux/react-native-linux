@@ -1,0 +1,16 @@
+{
+  "name": "raf-order",
+  "bundle": "raf-order.js",
+  "ready": "raf: order start",
+  "frames": 120,
+  "steps": ["sleep 500"],
+  "expect": [
+    "raf: order start",
+    "raf: A@frame1",
+    "raf: B@frame1",
+    "raf: frame1 A@frame1,B@frame1",
+    "raf: D@frame2",
+    "raf: trace A@frame1,B@frame1,D@frame2",
+    "raf: order ok"
+  ]
+}

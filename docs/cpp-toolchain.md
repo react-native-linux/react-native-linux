@@ -279,7 +279,7 @@ them:
   mutation-tracking contract.
 - `ScrollController::isScrollActive()` — any target still being dragged or still gliding, read from the controller's
   own state rather than by calling `advance` a second time for the same frame.
-- `ReactHost::hasPendingTimers()` — any JS timer outstanding. `HostTimerRegistry` tracks a timer's delay and whether
+- `ReactHost::hasPendingTimers()` — any JS timer or `requestAnimationFrame` callback outstanding. `HostTimerRegistry` tracks a timer's delay and whether
   it recurs, not an absolute deadline, so this is "a timer exists" rather than "a timer is due before the next
   tick": a conservative signal that can hold the fallback awake a little ahead of when a distant `setTimeout`
   actually fires, never behind. A precise `hasDueTimer(now)` would need the registry to track absolute deadlines
@@ -293,6 +293,61 @@ What this does not cover: an end-to-end test under the headless compositor that 
 and asserts the window keeps animating from the fallback alone is a follow-up, not part of this change. `FrameClock`
 itself is unit-tested exhaustively (`packages/core/tests/FrameClockTest.cpp`); the withheld-callback path is
 exercised today only by reasoning about `WaylandWindow` and `SkiaVulkanRenderer`, not by a running compositor.
+
+#### requestAnimationFrame (#263)
+
+`requestAnimationFrame` is the JavaScript-visible face of the frame clock, and the one upstream does not give a
+new platform for free. `TimerManager::attachGlobals` installs it as `setTimeout(callback, 0)` — its own comment
+says as much — and on this platform that means `HostTimerRegistry` hands each registration to a
+`TaskDispatchThread` whose `std::priority_queue` orders tasks by deadline alone. Two consequences, both reported
+upstream: callbacks registered in one turn share one deadline and come back in heap order rather than registration
+order (react-native#48005), and a callback that registers another gets it back as soon as the dispatch thread pops
+it — there is no frame in the picture at all, so a `requestAnimationFrame` loop spins the dispatch thread instead
+of running at frame rate.
+
+`AnimationFrameQueue` (`packages/core/src/AnimationFrameQueue.h`) replaces that path for the two globals, which
+`ReactHost` installs after `attachGlobals` — `ReactInstance::initializeRuntime` runs the bindings installer second,
+so assigning the properties there is what decides which implementation JavaScript sees. Like `FrameClock` it is
+pure: no JSI, no clock reads, every timestamp passed in. Three rules:
+
+- **Registration order, once per frame.** `dispatchFrame(timestamp)` invokes everything registered before it, in
+  order, each exactly once, all with the same `timestamp`. One timestamp per frame is what makes "which frame did
+  this run in" answerable from JavaScript, which is how the fixtures assert it.
+- **A request made inside a callback belongs to the next frame.** The batch is swapped out of the pending list
+  before the first callback runs, so a re-registration lands in a list this dispatch will not touch. That is what
+  paces a self-perpetuating loop at frame rate.
+- **Cancellation from inside a callback is honoured.** A cancelled entry of the batch being dispatched is emptied
+  rather than erased, so cancelling the callback after the running one drops it without moving the entries behind
+  it. A handle is never zero and never reused, so a stale or negative handle cancels nothing, as on the web.
+
+Liveness is `hasPendingRequests`, which `ReactHost::hasPendingTimers` ORs into the frame clock's pending-work
+signal above. Without it a window whose compositor withholds `wl_surface.frame` — occluded, or on an inactive
+workspace, which ADR-0001 decision 3 names — would draw no frame, dispatch no callback, and the loop would stop
+until something else woke it: react-native#57592 as seen from JavaScript. It stays true *through* a dispatch as
+well as before one, so a loop that re-registers from inside its own callback is never observed idle by the frame
+thread asking mid-dispatch.
+
+Threading contract: `request`, `cancel` and `dispatchFrame` all run on the JavaScript thread — the first two from
+the host functions, the third from the task `ReactHost::dispatchAnimationFrames` posts there, which is why
+callbacks are invoked with no lock held and may re-enter the queue. `hasPendingRequests` is read by the frame
+thread, which is the only reason the state is behind a mutex. `WindowSession::tickAnimations` drives the dispatch,
+beside `LinuxAnimationChoreographer::tick` and from the same `now`, so the native and the JavaScript animation
+drivers of one frame integrate against one instant. `ReactHost`'s destructor empties the queue before it destroys
+the instance, for the same reason it releases the TurboModules first: the callbacks are `jsi::Function`s.
+
+Three test layers, per the acceptance of #263. `packages/core/tests/AnimationFrameQueueTest.cpp` is the queue,
+table-tested, at the 100 % gate — including a thousand registrations dispatched in order, the self-perpetuating
+loop advancing exactly one callback per frame across fifty frames, and each cancellation shape.
+`hello_react --raf-trace packages/core/test-bundles/raf-order.js 3` is the same three rules as a trace a bundle
+prints for itself, over synthetic 60 Hz timestamps so the trace is reproducible; the `raf-order` e2e scenario
+asserts that trace under cage. The `raf-idle` scenario is the liveness half: `raf-idle.js` commits one static view
+and then does nothing but re-register, so nothing damages, nothing scrolls and no native animation runs, and its
+tick counter advancing under a `wp_presentation` frame budget is the proof that the window kept being drawn.
+
+What this does not cover: the composition itself — that `hasPendingTimers` ORs the queue in — has no unit test,
+because it needs a live runtime; it is covered by the `raf-idle` scenario and by inspection. And as with the rest
+of this section, no test withholds `wl_surface.frame` outright; cage sends callbacks, so `raf-idle` proves "the
+loop keeps running while nothing else repaints" rather than "the loop keeps running on the fallback alone".
 
 ### Desktop lifecycle contract (#218)
 

@@ -60,7 +60,14 @@ void WindowSession::deliverInput(const std::vector<InputEvent>& events) {
     fabricHost_->induceEventBeat();
 }
 
-void WindowSession::tickAnimations(std::chrono::steady_clock::time_point now) { fabricHost_->tickAnimations(now); }
+void WindowSession::tickAnimations(std::chrono::steady_clock::time_point now) {
+    fabricHost_->tickAnimations(now);
+
+    // The JavaScript half of the same frame: the native animation backend gets `now` directly, and the frame's
+    // `requestAnimationFrame` callbacks get it through the JavaScript thread. Both are driven from here so a
+    // fallback-timeout frame — the only kind an occluded window gets — drives them too.
+    reactHost_.dispatchAnimationFrames(now);
+}
 
 FrameClock::Tick WindowSession::recordFrameTick(FrameClock::Source source, std::chrono::steady_clock::time_point now) {
     if (source == FrameClock::Source::Callback) {

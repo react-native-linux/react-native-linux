@@ -37,6 +37,7 @@ constexpr std::string_view kFocusClickFlag = "--focus-click";
 constexpr std::string_view kFocusCommandGoldenFlag = "--focus-command-golden";
 constexpr std::string_view kAnimatedImageFlag = "--animated-image";
 constexpr std::string_view kTypeFlag = "--type";
+constexpr std::string_view kAnimationFrameTraceFlag = "--raf-trace";
 /**
  * Which proof `--golden`, `--damage-golden` and `--hit-paint-golden` run. All three take the same arguments and
  * write the same kind of PNG; the last two also assert something about the scene they painted.
@@ -70,6 +71,7 @@ constexpr size_t kFocusClickArgumentCount = 6;
 constexpr size_t kFocusCommandGoldenArgumentCount = 5;
 constexpr size_t kAnimatedImageArgumentCount = 5;
 constexpr size_t kTypeArgumentCount = 5;
+constexpr size_t kAnimationFrameTraceArgumentCount = 4;
 
 std::optional<int> parsePositiveDimension(std::string_view text) {
     int value = 0;
@@ -155,6 +157,20 @@ int runResizeCommand(std::span<char*> arguments) {
         std::string(arguments[2]),
         facebook::react::Size{.width = static_cast<facebook::react::Float>(width.value()),
                               .height = static_cast<facebook::react::Float>(height.value())});
+}
+
+int runAnimationFrameTraceCommand(std::span<char*> arguments) {
+    const std::optional<int> parsedFrames = parsePositiveDimension(arguments[3]);
+
+    if (!parsedFrames.has_value()) {
+        std::cerr << "[hello_react] " << kAnimationFrameTraceFlag << " frames must be a positive integer"
+                  << std::endl;
+
+        return 1;
+    }
+
+    return react_native_linux::runAnimationFrameTrace(std::string(arguments[2]),
+                                                      static_cast<size_t>(parsedFrames.value()));
 }
 
 #ifdef RNL_ENABLE_GOLDEN
@@ -370,6 +386,7 @@ int main(int argc, char** argv) {
     const bool isFocusCommandGoldenRequested = arguments.size() > 1 && kFocusCommandGoldenFlag == arguments[1];
     const bool isAnimatedImageRequested = arguments.size() > 1 && kAnimatedImageFlag == arguments[1];
     const bool isTypeRequested = arguments.size() > 1 && kTypeFlag == arguments[1];
+    const bool isAnimationFrameTraceRequested = arguments.size() > 1 && kAnimationFrameTraceFlag == arguments[1];
 
     if (isFabricRequested && arguments.size() < 3) {
         std::cerr << "[hello_react] " << kFabricFlag << " requires a bundle path" << std::endl;
@@ -417,6 +434,12 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    if (isAnimationFrameTraceRequested && arguments.size() != kAnimationFrameTraceArgumentCount) {
+        std::cerr << "[hello_react] " << kAnimationFrameTraceFlag << " requires <bundle> <frames>" << std::endl;
+
+        return 1;
+    }
+
     if (isTypeRequested && arguments.size() != kTypeArgumentCount) {
         std::cerr << "[hello_react] " << kTypeFlag << " requires <bundle> <output.png> \"<sequence>\"" << std::endl;
 
@@ -454,6 +477,10 @@ int main(int argc, char** argv) {
 
         if (isAnimatedImageRequested) {
             return runAnimatedImageCommand(arguments);
+        }
+
+        if (isAnimationFrameTraceRequested) {
+            return runAnimationFrameTraceCommand(arguments);
         }
 
         if (isTypeRequested) {

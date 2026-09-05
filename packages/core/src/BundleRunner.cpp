@@ -40,6 +40,9 @@ constexpr facebook::react::Size kHeadlessSurfaceSize{.width = 800, .height = 600
 // Every additional frame is empty for a static fixture, so no golden moves.
 constexpr size_t kHeadlessFrameCount = 5;
 constexpr size_t kInjectedMotionCount = 17;
+// The 60 Hz step the `requestAnimationFrame` trace stamps its frames with. Synthetic rather than measured, so a
+// fixture that prints which frame a callback ran in prints the same thing on every machine.
+constexpr std::chrono::milliseconds kTraceFrameInterval{16};
 // One 60 Hz frame, in milliseconds. A headless run has no compositor to pace it, so the scroll physics is stepped
 // at a fixed rate instead of a measured one and the settled position stops depending on the machine.
 constexpr double kInjectedFrameMilliseconds = 1000.0 / 60.0;
@@ -675,6 +678,20 @@ int runBundle(const std::optional<std::string>& bundlePath, BundleMode bundleMod
     ReactHost reactHost;
 
     loadAndSettle(reactHost, bundlePath);
+
+    return reactHost.hasReportedFatalError() ? 1 : 0;
+}
+
+int runAnimationFrameTrace(const std::string& bundlePath, size_t frameCount) {
+    ReactHost reactHost;
+
+    loadAndSettle(reactHost, bundlePath);
+
+    for (size_t frame = 1; frame <= frameCount; ++frame) {
+        reactHost.dispatchAnimationFrames(
+            std::chrono::steady_clock::time_point(kTraceFrameInterval * static_cast<int64_t>(frame)));
+        reactHost.drainJavaScriptThread();
+    }
 
     return reactHost.hasReportedFatalError() ? 1 : 0;
 }
