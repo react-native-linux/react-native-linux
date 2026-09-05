@@ -208,7 +208,10 @@
     "maximumZoomScale": { "state": "not-implemented", "issue": "#69" },
     "minimumZoomScale": { "state": "not-implemented", "issue": "#69" },
     "scrollEnabled": { "state": "not-implemented", "issue": "#69" },
-    "pagingEnabled": { "state": "not-implemented", "issue": "#69" },
+    "pagingEnabled": {
+      "state": "implemented",
+      "test": "SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe"
+    },
     "pinchGestureEnabled": { "state": "not-implemented", "issue": "#69" },
     "scrollsToTop": { "state": "not-implemented", "issue": "#69" },
     "showsHorizontalScrollIndicator": { "state": "not-implemented", "issue": "#49" },
@@ -232,10 +235,22 @@
       "test": "RetainedSceneScrollTest, ContentOffsetTranslatesTheChildrenOnBothAxes"
     },
     "scrollIndicatorInsets": { "state": "not-implemented", "issue": "#49" },
-    "snapToInterval": { "state": "not-implemented", "issue": "#69" },
-    "snapToAlignment": { "state": "not-implemented", "issue": "#69" },
-    "disableIntervalMomentum": { "state": "not-implemented", "issue": "#69" },
-    "snapToOffsets": { "state": "not-implemented", "issue": "#69" },
+    "snapToInterval": {
+      "state": "implemented",
+      "test": "SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe"
+    },
+    "snapToAlignment": {
+      "state": "implemented",
+      "test": "SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe"
+    },
+    "disableIntervalMomentum": {
+      "state": "implemented",
+      "test": "SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe"
+    },
+    "snapToOffsets": {
+      "state": "implemented",
+      "test": "SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe"
+    },
     "snapToStart": {
       "state": "implemented",
       "test": "SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe"
