@@ -1,9 +1,17 @@
+import type { ToleranceBudget } from "./png-diff.ts";
+
 interface GoldenFixture {
   readonly bundleFileName: string;
   readonly goldenFileName: string;
   readonly renderFlag: string;
   /** Whatever the flag needs after the output path. Empty for the flags that need nothing. */
   readonly renderArguments: readonly string[];
+  /**
+   * Opts this fixture out of `png-diff.ts`'s zero-tolerance default. Absent for every fixture but `emoji.png` —
+   * see #307: FreeType's CBDT bitmap scaler is not byte-identical across builds, and every other fixture is our
+   * own painter over Skia's CPU raster backend, which is.
+   */
+  readonly tolerance?: ToleranceBudget;
 }
 
 export const fixtures: readonly GoldenFixture[] = [
@@ -31,11 +39,16 @@ export const fixtures: readonly GoldenFixture[] = [
   },
   // #249: the fallback chain, pictured. Every row below the Latin control needs a face Noto Sans does not have.
   // The flag asserts the emoji face's own ascent did not push the line box past the frame Yoga measured.
+  // #307: FreeType's CBDT bitmap scaler is not byte-identical across builds, so this fixture carries a tolerance.
+  // It is the only raster golden that does; every other one is our own painter over Skia's CPU raster backend.
+  // Sixteen pixels is a small multiple of the one pixel #307 measured.
+  // That is wide enough that a FreeType point release does not flap the suite, and far short of what a moved or missing glyph would touch.
   {
     bundleFileName: "emoji.js",
     goldenFileName: "emoji.png",
     renderArguments: [],
     renderFlag: "--text-fit-golden",
+    tolerance: { maxChannelDifference: 1, maxDifferentPixels: 16 },
   },
   { bundleFileName: "damage.js", goldenFileName: "damage.png", renderArguments: [], renderFlag: "--damage-golden" },
   // Issue #35: this render flag is itself the assertion, and the PNG it writes is the paint side of that proof.
