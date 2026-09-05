@@ -3955,6 +3955,24 @@ is no chaining at the end stops.** A field already at the bottom of its content 
 of handing them to its ancestor, exactly as an inner ScrollView does. Moving the pointer off the field scrolls
 the ancestor again.
 
+**`scrollEnabled` is what makes a field one of these, and it is routing only.** It is not on upstream's
+`BaseTextInputProps` — iOS carries it in `TextInputTraits` and Android on `AndroidTextInputProps`, both under a
+`platform/` directory this platform does not compile — so it is on our `TextInputProps` beside `secureTextEntry`,
+and it defaults to true. `isScrollableField` is the one predicate both routing sites ask, because
+`ScrollController` declining to claim the wheel and `TextInputController` claiming it have to agree exactly and
+the same conjunction written twice is two things that can drift. A field with `scrollEnabled={false}` is not a
+scrollable, so the walk continues past it to the `<ScrollView>` that is, and the wheel scrolls the page.
+
+The issue that asked for this proposed that `scrollEnabled={false}` should make the field **grow** instead. It
+does not, here: a field's height is `onContentSizeChange` and auto-grow, which **#114 owns**, and a field with no
+fixed height already grows whatever this prop says. Making the prop mean "grow" as well would be a second growth
+path beside #114's, disagreeing with it the first time either changed. So the prop decides who gets the wheel and
+nothing else.
+
+**`editable` is deliberately not part of the predicate.** A read-only field still scrolls, on every platform that
+has one — [core#35388](https://github.com/facebook/react-native/issues/35388) is the bug filed when `multiline`
+with `editable={false}` did not scroll at all.
+
 Two smaller decisions fall out of the field being a few lines tall rather than a page:
 
 - **A notch moves it whole, on the next frame, with no deceleration.** `kWheelNotchDistance` is shared with
@@ -3980,7 +3998,14 @@ the field clamping at both ends and the ancestor moving only once the pointer le
 
 The arithmetic half is `ClampedScrollOffsetTest` beside `FollowedScrollOffsetTest` in `EditorTest.cpp`, inside
 the 100% gate: a wheel inside the content, a wheel past either end, content that fits, and content that shrank
-under a window already past its new end.
+under a window already past its new end. The routing half is three `ScrollControllerTest` cases — the wheel over
+a field, over a field with `scrollEnabled={false}`, and beside the field — and the prop table itself is
+`ScrollEnabledDefaultsToTrueAndIsWhatMakesAFieldAWindowOnItsOwnContent` in `TextInputControllerTest.cpp`, which
+covers the default, the explicit `false`, a single-line field and the read-only one.
+
+The e2e trace asserts the **last offset that moved**, not every notch, because a clamp that does not move emits
+nothing: `onScroll` fires when and only when the offset changed, so wheeling further into an end stop is
+correctly silent and a scenario that expected a line there would be asserting the opposite of the contract.
 
 ### The placeholder (#255)
 

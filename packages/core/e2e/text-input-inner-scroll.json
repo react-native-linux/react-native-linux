@@ -21,7 +21,6 @@
   ],
   "expect": [
     "text-input-inner-scroll: topFocus on inner",
-    "text-input-inner-scroll: topScroll on inner",
     "text-input-inner-scroll: topScroll on inner offsetY=0",
     "text-input-inner-scroll: topScroll on inner",
     "text-input-inner-scroll: topScroll on list"

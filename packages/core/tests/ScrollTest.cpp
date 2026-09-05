@@ -833,15 +833,15 @@ protected:
      * A 100x100 page holding a 100x50 multiline field at its top and 300 points of plain content under it, so
      * one point of the page is over the field and another is not.
      */
-    void commitScrollViewOverMultilineField() {
+    void commitScrollViewOverMultilineField(bool scrollEnabled = true) {
         folly::dynamic props = folly::dynamic::object("width", 100)("height", 100);
         const ShadowTreeCommitOptions commitOptions{.enableStateReconciliation = false, .mountSynchronously = true};
 
         shadowTree_->commit(
-            [this, &props](const RootShadowNode& oldRootShadowNode) {
+            [this, &props, scrollEnabled](const RootShadowNode& oldRootShadowNode) {
                 std::vector<std::shared_ptr<const ShadowNode>> children;
 
-                children.push_back(makeMultilineField(21, 100, 50));
+                children.push_back(makeMultilineField(21, 100, 50, scrollEnabled));
                 children.push_back(makeChild(22, 100, 300));
 
                 return std::static_pointer_cast<RootShadowNode>(oldRootShadowNode.ShadowNode::clone(
@@ -920,10 +920,11 @@ private:
                                         std::make_shared<const ChildList>(std::move(children)));
     }
 
-    std::shared_ptr<const ShadowNode> makeMultilineField(Tag tag, double width, double height) {
+    std::shared_ptr<const ShadowNode> makeMultilineField(Tag tag, double width, double height, bool scrollEnabled) {
         return makeConfiguredShadowNode(
             textInputDescriptor_, tag, kSurfaceId, contextContainer_,
-            folly::dynamic::object("width", width)("height", height)("multiline", true),
+            folly::dynamic::object("width", width)("height", height)("multiline", true)("scrollEnabled",
+                                                                                        scrollEnabled),
             std::make_shared<const ChildList>());
     }
 
@@ -964,6 +965,19 @@ TEST_F(ScrollControllerTest, AWheelOverAMultilineFieldLeavesTheEnclosingPageAlon
 
     EXPECT_FALSE(controller.hasDispatchedScrollEvent());
     EXPECT_FALSE(controller.isScrollActive());
+}
+
+// A field that is not scrollable is not a scrollable, so the walk continues past it to the page that is. The
+// prop is routing only: it says nothing about the field's height, which is #114's.
+TEST_F(ScrollControllerTest, AWheelOverAFieldWithScrollDisabledIsTheEnclosingPagesAfterAll) {
+    commitScrollViewOverMultilineField(false);
+    ScrollController controller = makeController();
+
+    controller.dispatch({wheel(3, 50.0, 20.0)});
+    controller.advance(kFrameMilliseconds60Hz);
+
+    EXPECT_TRUE(controller.hasDispatchedScrollEvent());
+    EXPECT_TRUE(controller.isScrollActive());
 }
 
 TEST_F(ScrollControllerTest, AWheelBesideTheFieldStillScrollsTheEnclosingPage) {

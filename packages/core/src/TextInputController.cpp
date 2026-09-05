@@ -367,7 +367,7 @@ TextInputController::TextInputField* TextInputController::fieldUnderPointer(face
     const SceneHit hit = mountingManager_->findNodeAtPoint(surfaceId_, surfacePoint);
     const auto entry = fields_.find(hit.tag);
 
-    if (entry == fields_.end() || !entry->second.shadowNode->getConcreteProps().multiline) {
+    if (entry == fields_.end() || !isScrollableField(entry->second.shadowNode->getConcreteProps())) {
         return nullptr;
     }
 

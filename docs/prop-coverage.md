@@ -60,8 +60,8 @@ assertion and not an implementation.
 | Text | 45 | 12 | 12 | 21 |
 | Image | 14 | 3 | 7 | 4 |
 | ScrollView | 39 | 2 | 2 | 35 |
-| TextInput | 22 | 11 | 0 | 11 |
-| **Total** | 155 | 42 | 26 | 87 |
+| TextInput | 23 | 12 | 0 | 11 |
+| **Total** | 156 | 43 | 26 | 87 |
 
 ## View
 
@@ -239,6 +239,7 @@ assertion and not an implementation.
 | `multiline` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:78` | implemented | `EditorModelTest, AMultilineFieldKeepsPastedNewlines` |
 | `disableKeyboardShortcuts` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:80` | not-implemented | #54 |
 | `acceptDragAndDropTypes` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:82` | not-implemented | #60 |
-| `secureTextEntry` | `packages/core/src/TextInputComponent.h:40` | implemented | `EditorModelTest, SecureTextEntryMasksEveryGraphemeAndNeverTheBuffer` |
-| `caretHidden` | `packages/core/src/TextInputComponent.h:41` | implemented | `RetainedSceneTextInputTest, CaretHiddenRemovesTheCaretColourAndTheCaretWithIt` |
-| `selectTextOnFocus` | `packages/core/src/TextInputComponent.h:42` | not-implemented | #54 |
+| `secureTextEntry` | `packages/core/src/TextInputComponent.h:41` | implemented | `EditorModelTest, SecureTextEntryMasksEveryGraphemeAndNeverTheBuffer` |
+| `caretHidden` | `packages/core/src/TextInputComponent.h:42` | implemented | `RetainedSceneTextInputTest, CaretHiddenRemovesTheCaretColourAndTheCaretWithIt` |
+| `selectTextOnFocus` | `packages/core/src/TextInputComponent.h:43` | not-implemented | #54 |
+| `scrollEnabled` | `packages/core/src/TextInputComponent.h:47` | implemented | `TextInputControllerTest, ScrollEnabledDefaultsToTrueAndIsWhatMakesAFieldAWindowOnItsOwnContent` |

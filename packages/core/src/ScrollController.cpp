@@ -558,14 +558,15 @@ std::shared_ptr<const facebook::react::ScrollViewShadowNode> ScrollController::s
         return nullptr;
     }
 
-    // A multiline `<TextInput>` is a window on its own content, so it is the deepest scrollable under the
-    // pointer and the wheel is its rather than an enclosing ScrollView's — the same deepest-wins rule two
-    // nested ScrollViews follow, and the answer to the tug-of-war in react/core#49226. `TextInputController`
-    // moves it; see *Inner scrolling* in docs/cpp-toolchain.md.
+    // A multiline `<TextInput>` with `scrollEnabled` is a window on its own content, so it is the deepest
+    // scrollable under the pointer and the wheel is its rather than an enclosing ScrollView's — the same
+    // deepest-wins rule two nested ScrollViews follow, and the answer to the tug-of-war in react/core#49226.
+    // A field that is not scrollable is not a scrollable, so the walk continues past it to the ScrollView that
+    // is. `TextInputController` moves it; see *Inner scrolling* in docs/cpp-toolchain.md.
     const std::shared_ptr<const TextInputShadowNode> textInput =
         std::dynamic_pointer_cast<const TextInputShadowNode>(hitNode);
 
-    if (textInput != nullptr && textInput->getConcreteProps().multiline) {
+    if (textInput != nullptr && isScrollableField(textInput->getConcreteProps())) {
         return nullptr;
     }
 

@@ -33,6 +33,7 @@ using facebook::react::UIManager;
 using react_native_linux::InputEvent;
 using react_native_linux::InputEventKind;
 using react_native_linux::InputModifiers;
+using react_native_linux::isScrollableField;
 using react_native_linux::LinuxMountingManager;
 using react_native_linux::makeConfiguredShadowNode;
 using react_native_linux::makeTaskDroppingUIManager;
@@ -190,6 +191,33 @@ TEST_F(TextInputControllerTest, ATextKeyIsConsumedAndAnUnfocusedControllerIgnore
 
     EXPECT_EQ(unfocused.handleKey(key("a")), TextInputKeyResult::Ignored);
     EXPECT_EQ(unfocused.handleKey(key("Enter")), TextInputKeyResult::Ignored);
+}
+
+// Issue #256, and the prop that decides both routing sites. `scrollEnabled` is not on upstream's
+// `BaseTextInputProps` — iOS and Android each carry it on their own platform props — so without this row the
+// prop parses to nothing and `scrollEnabled={false}` cannot be expressed at all. `editable` is deliberately not
+// part of the predicate: a read-only field still scrolls, and react/core#35388 is the bug filed when it did not.
+TEST_F(TextInputControllerTest, ScrollEnabledDefaultsToTrueAndIsWhatMakesAFieldAWindowOnItsOwnContent) {
+    commitTextInput(folly::dynamic::object("multiline", true));
+
+    EXPECT_TRUE(mountedField_->getConcreteProps().scrollEnabled);
+    EXPECT_TRUE(isScrollableField(mountedField_->getConcreteProps()));
+
+    commitTextInput(folly::dynamic::object("multiline", true)("scrollEnabled", false));
+
+    EXPECT_FALSE(mountedField_->getConcreteProps().scrollEnabled);
+    EXPECT_FALSE(isScrollableField(mountedField_->getConcreteProps()));
+
+    // A read-only field is still a window on its own content.
+    commitTextInput(folly::dynamic::object("multiline", true)("editable", false));
+
+    EXPECT_TRUE(isScrollableField(mountedField_->getConcreteProps()));
+
+    // A single-line field wraps nothing and scrolls horizontally instead, so it is never one of these however
+    // the prop is set.
+    commitTextInput(folly::dynamic::object("scrollEnabled", true));
+
+    EXPECT_FALSE(isScrollableField(mountedField_->getConcreteProps()));
 }
 
 TEST_F(TextInputControllerTest, TheCompositionLifecycleSuppressesNothingTheModelDoesNotOwn) {
