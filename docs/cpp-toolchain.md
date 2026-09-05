@@ -2759,9 +2759,16 @@ and libjpeg-turbo are inside the archive, so images add no system dependency —
 | `tintColor` | `SkColorFilters::Blend` with `SkBlendMode::kSrcIn`, so the image becomes a silhouette in that colour. The inherited opacity is folded into the tint's own alpha. |
 | `opacity` and every `<View>` paint prop | `ImageProps` derives from `ViewProps`, so backgrounds, borders, radii, transforms and clips are exactly *View props fidelity*. The image is drawn after the background and before the border, because React Native draws borders inside the frame and therefore over the content. |
 | `borderRadius` | The image is clipped to the same rounded rectangle the background is filled with, so `cover` overflow and rounded corners are cut by one clip. |
+| `blurRadius` | `SkImageFilters::Blur` on the same paint the decoded pixels draw with, sigma `blurRadius / 2` — the CSS-to-Gaussian conversion *Shadows (#67)* already documents for `SceneShadow`, applied here to an `<Image>`'s own pixels instead of its box shadow. |
 
 `repeat` is the one mode that is not a single `drawImageRect`: the placement rectangle is the first tile, and a
 repeating shader anchored at it fills the frame.
+
+`blurRadius` blurs the decoded pixels, still or animated, and nothing else: it is an `SkImageFilter` on
+`paintImage`'s paint, so the canvas clip that already cuts the unblurred image to the node's border box cuts the
+blurred one identically — the blur never reaches past the frame, and the node damages nothing more for having one.
+`blurRadius: 0` sets no filter at all, the same `nullptr`-for-zero rule `toBlur` uses for shadows, so it is the
+plain image, byte-identical to before this prop was implemented.
 
 ### Animated GIF (#257)
 
@@ -2847,7 +2854,7 @@ Each is deliberate, and each is a thing to fix rather than a thing to argue abou
   events are a matter of emitting them from an observer rather than of plumbing. Nothing observes one yet.
 - **The image fills the border box, not the padding box.** iOS and Android inset the content by padding; here
   `padding` on an `<Image>` moves nothing.
-- **`blurRadius`, `capInsets`, `overlayColor`, `fadeDuration`, `progressiveRenderingEnabled`, `defaultSource` and
+- **`capInsets`, `overlayColor`, `fadeDuration`, `progressiveRenderingEnabled`, `defaultSource` and
   `loadingIndicatorSource` are ignored.** `capInsets` in particular means no nine-patch stretching.
 - **A failed decode is not retried and not remembered.** The next commit that changes the source requests it
   again; nothing polls.

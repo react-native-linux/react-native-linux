@@ -25,6 +25,7 @@
 #include "include/core/SkPathTypes.h"
 #include "include/core/SkTileMode.h"
 #include "include/effects/SkDashPathEffect.h"
+#include "include/effects/SkImageFilters.h"
 #include "modules/skparagraph/include/Paragraph.h"
 
 #include <array>
@@ -240,6 +241,21 @@ sk_sp<SkMaskFilter> toBlur(float blurRadius) {
     return SkMaskFilter::MakeBlur(kNormal_SkBlurStyle, blurRadius / kSigmasPerBlurRadius);
 }
 
+/**
+ * The same CSS-to-Gaussian conversion as `toBlur`, for an `<Image>`'s `blurRadius` instead of a shadow's: both are
+ * `kSigmasPerBlurRadius` because both are Skia asking for a sigma where React Native's prop is the CSS full width.
+ * `nullptr` for zero keeps `blurRadius: 0` exactly the paint calls a plain image made before this filter existed.
+ */
+sk_sp<SkImageFilter> toImageBlur(float blurRadius) {
+    if (blurRadius <= 0.0F) {
+        return nullptr;
+    }
+
+    const SkScalar sigma = blurRadius / kSigmasPerBlurRadius;
+
+    return SkImageFilters::Blur(sigma, sigma, SkTileMode::kDecal, nullptr);
+}
+
 SkRRect spreadAndOffset(const SkRRect& box, const SceneShadow& shadow) {
     SkRRect spread;
 
@@ -451,6 +467,10 @@ void paintEditor(SkCanvas& canvas, const SceneTextContent& text, const SceneEdit
  *
  * `repeat` is the one mode that is not a single `drawImageRect`: the placement rectangle is the first tile, and a
  * repeating shader anchored at it fills the frame.
+ *
+ * `blurRadius` is an image filter on the same paint, so the canvas clip above cuts its output exactly like the
+ * unblurred pixels: the blur never reaches past the node's border box, and the node damages nothing more than its
+ * frame for having one.
  */
 void paintImage(SkCanvas& canvas, const ScenePrimitive& primitive, const SceneImageContent& image,
                 const SkRRect& outer) {
@@ -471,6 +491,7 @@ void paintImage(SkCanvas& canvas, const ScenePrimitive& primitive, const SceneIm
 
     canvas.clipRRect(outer, true);
     paint.setAntiAlias(true);
+    paint.setImageFilter(toImageBlur(image.blurRadius));
 
     // A tint carries the inherited opacity in its own alpha, because `SkSrcIn` multiplies the constant colour by
     // the image's coverage; setting the paint alpha as well would apply it twice.

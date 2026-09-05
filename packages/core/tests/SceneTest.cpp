@@ -1109,6 +1109,39 @@ TEST(RetainedSceneImageTest, DumpCarriesTheImageSource) {
               "  Image #2 frame=(40.00, 60.00, 120.00, 90.00) image=\"tile.png\"\n");
 }
 
+TEST(RetainedSceneImageTest, ANodeWithoutBlurRadiusCarriesZero) {
+    EXPECT_FLOAT_EQ(sceneWithTile(makeTile(2, makeRect(0, 0, 64, 48), "tile.png"))
+                        .snapshot()
+                        .front()
+                        .image.value()
+                        .blurRadius,
+                    0.0F);
+}
+
+TEST(RetainedSceneImageTest, BlurRadiusTravelsFromPropsToTheSnapshotUnaffectedByInheritedOpacity) {
+    RetainedScene scene = sceneWithTranslucentParent();
+
+    addChild(scene, 2,
+             makeImage(3, makeRect(0, 0, 64, 48), "tile.png", facebook::react::ImageResizeMode::Cover,
+                      SharedColor{}, 8.0F));
+
+    EXPECT_FLOAT_EQ(scene.snapshot().front().image.value().blurRadius, 8.0F);
+}
+
+TEST(RetainedSceneImageTest, ABlurredImageDamagesOnlyItsOwnFrameLikeAnUnblurredOne) {
+    RetainedScene blurred =
+        sceneWithTile(makeImage(2, makeRect(40, 60, 120, 90), "tile.png",
+                                facebook::react::ImageResizeMode::Cover, SharedColor{}, 8.0F));
+
+    blurred.takeDamage();
+    blurred.damageImageSource("tile.png", nullptr);
+
+    const SceneDamage damage = blurred.takeDamage();
+
+    ASSERT_FALSE(damage.empty());
+    expectRect(boundsOf(damage), makeRect(40, 60, 120, 90));
+}
+
 // The fixture every scroll test below shares: a 200x150 viewport at (60, 60) holding 470 points of content, one
 // 200x70 row of which sits 80 points down.
 Rect scrollViewFrame() { return makeRect(60, 60, 200, 150); }

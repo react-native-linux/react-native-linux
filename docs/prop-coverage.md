@@ -58,10 +58,10 @@ assertion and not an implementation.
 | --- | --- | --- | --- | --- |
 | View | 35 | 14 | 5 | 16 |
 | Text | 45 | 12 | 12 | 21 |
-| Image | 14 | 3 | 7 | 4 |
+| Image | 14 | 4 | 6 | 4 |
 | ScrollView | 39 | 2 | 2 | 35 |
 | TextInput | 23 | 12 | 0 | 11 |
-| **Total** | 156 | 43 | 26 | 87 |
+| **Total** | 156 | 44 | 25 | 87 |
 
 ## View
 
@@ -161,7 +161,7 @@ assertion and not an implementation.
 | `defaultSource` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:29` | deviating | Ignored; a source that has not decoded yet paints nothing rather than a placeholder. See *Image*, Fidelity limits. |
 | `loadingIndicatorSource` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:30` | deviating | Ignored; there is no loading affordance. See *Image*, Fidelity limits. |
 | `resizeMode` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:31` | implemented | `RetainedSceneImageTest, EveryResizeModeMapsOntoASceneResizeMode` |
-| `blurRadius` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:32` | deviating | Ignored; no image filter is applied. See *Image*, Fidelity limits. |
+| `blurRadius` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:32` | implemented | `RetainedSceneImageTest, BlurRadiusTravelsFromPropsToTheSnapshot` |
 | `capInsets` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:33` | deviating | Ignored; there is no nine-patch stretching. See *Image*, Fidelity limits. |
 | `tintColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:34` | implemented | `RetainedSceneImageTest, OpacityMultipliesIntoTheTintAlphaAndTheImageAlpha` |
 | `internal_analyticTag` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:35` | not-implemented | #69 |

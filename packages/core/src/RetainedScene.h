@@ -205,6 +205,11 @@ constexpr int32_t kAnimatedImageRepeatsForever = -1;
  * snapshot resolves them: `pixels` is the one frame this snapshot draws, the tint alpha carries the inherited
  * opacity exactly like every other colour a primitive emits, and `opacity` carries the same value for the
  * untinted case, where there is no colour to fold it into.
+ *
+ * `blurRadius` is the CSS convention every other blur in this renderer uses — the painter halves it into the
+ * Gaussian sigma `SkImageFilters::Blur` wants, the same conversion *Shadows (#67)* documents for `SceneShadow`.
+ * It is applied to the decoded pixels and clipped to the node's own border box, so it never changes what a node
+ * damages: zero is the plain image, unchanged from before this field existed.
  */
 struct SceneImageContent {
     std::string uri;
@@ -214,6 +219,7 @@ struct SceneImageContent {
     SceneImageResizeMode resizeMode{SceneImageResizeMode::Stretch};
     uint32_t tintColorArgb{};
     float opacity{1.0F};
+    float blurRadius{0.0F};
 };
 
 /**

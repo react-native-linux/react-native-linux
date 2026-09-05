@@ -176,8 +176,8 @@
     },
     "resizeMode": { "state": "implemented", "test": "RetainedSceneImageTest, EveryResizeModeMapsOntoASceneResizeMode" },
     "blurRadius": {
-      "state": "deviating",
-      "reason": "Ignored; no image filter is applied. See *Image*, Fidelity limits."
+      "state": "implemented",
+      "test": "RetainedSceneImageTest, BlurRadiusTravelsFromPropsToTheSnapshotUnaffectedByInheritedOpacity"
     },
     "capInsets": {
       "state": "deviating",

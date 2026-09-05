@@ -163,12 +163,13 @@ facebook::react::ShadowView makeParagraph(facebook::react::Tag tag, facebook::re
  */
 facebook::react::ShadowView makeImage(facebook::react::Tag tag, facebook::react::Rect frame,
                                       const std::string& uri, facebook::react::ImageResizeMode resizeMode,
-                                      facebook::react::SharedColor tintColor) {
+                                      facebook::react::SharedColor tintColor, float blurRadius = 0.0F) {
     const std::shared_ptr<facebook::react::ImageProps> imageProps =
         std::make_shared<facebook::react::ImageProps>();
 
     imageProps->resizeMode = resizeMode;
     imageProps->tintColor = tintColor;
+    imageProps->blurRadius = blurRadius;
 
     facebook::react::ImageSource imageSource;
 

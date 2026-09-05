@@ -89,6 +89,14 @@ export const fixtures: readonly GoldenFixture[] = [
     renderArguments: ["20"],
     renderFlag: "--animated-image",
   },
+  // Issue #286: the resizeMode matrix at blurRadius: 8, a blurRadius: 0 tile proving it is the plain image.
+  // One animated tile is blurred at the same #257 frame twenty 60 Hz frames settles on.
+  {
+    bundleFileName: "image-blur.js",
+    goldenFileName: "image-blur.png",
+    renderArguments: ["20"],
+    renderFlag: "--animated-image",
+  },
   // A text field draws nothing new until it is typed into: a caret and a selection are both editing state.
   {
     bundleFileName: "text-input.js",

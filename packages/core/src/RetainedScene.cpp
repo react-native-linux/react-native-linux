@@ -314,7 +314,8 @@ SceneImageContent resolveImage(const SceneImageContent& image, float opacity) {
                              .elapsedMilliseconds = image.elapsedMilliseconds,
                              .resizeMode = image.resizeMode,
                              .tintColorArgb = scaleArgbAlpha(image.tintColorArgb, opacity),
-                             .opacity = opacity};
+                             .opacity = opacity,
+                             .blurRadius = image.blurRadius};
 }
 
 SceneEditorContent resolveEditor(const SceneEditorContent& editor, float opacity) {
@@ -579,7 +580,8 @@ void readImageContent(SceneNode& node, const facebook::react::ShadowView& shadow
                                    .elapsedMilliseconds = isSameSource ? previousImage.value().elapsedMilliseconds
                                                                        : 0.0,
                                    .resizeMode = toSceneImageResizeMode(imageProps->resizeMode),
-                                   .tintColorArgb = toArgb(imageProps->tintColor, 1.0F)};
+                                   .tintColorArgb = toArgb(imageProps->tintColor, 1.0F),
+                                   .blurRadius = imageProps->blurRadius};
 }
 
 /**
