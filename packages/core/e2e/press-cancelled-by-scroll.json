@@ -1,0 +1,27 @@
+{
+  "name": "press-cancelled-by-scroll",
+  "bundle": "press-cancelled-by-scroll.js",
+  "ready": "press-scroll: committed surface 1",
+  "frames": 600,
+  "steps": [
+    "sleep 500",
+    "move 160 100",
+    "sleep 100",
+    "button left press",
+    "sleep 100",
+    "wheel down 3",
+    "sleep 400",
+    "button left release",
+    "sleep 200",
+    "click 160 100",
+    "sleep 500"
+  ],
+  "expect": [
+    "press-scroll: topPointerDown on row clicks=0",
+    "press-scroll: topScroll on list clicks=0",
+    "press-scroll: topPointerUp on row clicks=0",
+    "press-scroll: topPointerDown on row clicks=0",
+    "press-scroll: topPointerUp on row clicks=0",
+    "press-scroll: topClick on row clicks=1"
+  ]
+}
