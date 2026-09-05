@@ -1,5 +1,6 @@
 #include "RetainedScene.h"
 
+#include "ImageContent.h"
 #include "TextInputComponent.h"
 
 #include <react/renderer/attributedstring/AttributedString.h>
@@ -294,9 +295,23 @@ std::vector<SceneShadow> resolveShadowOpacity(const std::vector<SceneShadow>& sh
     return resolved;
 }
 
+/**
+ * The one frame `image` is showing right now. A still source is its only frame; an animated one is wherever its
+ * own elapsed time has reached, which is `animatedImageFrameIndex` and nothing else.
+ */
+std::shared_ptr<void> currentImageFrame(const SceneImageContent& image) {
+    if (image.frames == nullptr || image.frames->frames.empty()) {
+        return nullptr;
+    }
+
+    return image.frames->frames[animatedImageFrameIndex(*image.frames, image.elapsedMilliseconds)];
+}
+
 SceneImageContent resolveImage(const SceneImageContent& image, float opacity) {
     return SceneImageContent{.uri = image.uri,
-                             .pixels = image.pixels,
+                             .frames = image.frames,
+                             .pixels = currentImageFrame(image),
+                             .elapsedMilliseconds = image.elapsedMilliseconds,
                              .resizeMode = image.resizeMode,
                              .tintColorArgb = scaleArgbAlpha(image.tintColorArgb, opacity),
                              .opacity = opacity};
@@ -534,6 +549,8 @@ void readEditorContent(SceneNode& node, const facebook::react::ShadowView& shado
  */
 void readImageContent(SceneNode& node, const facebook::react::ShadowView& shadowView,
                       const RetainedScene::DecodedImageProvider& decodedImages) {
+    const std::optional<SceneImageContent> previousImage = node.image;
+
     node.image = std::nullopt;
 
     const std::shared_ptr<const facebook::react::ImageProps> imageProps =
@@ -552,8 +569,15 @@ void readImageContent(SceneNode& node, const facebook::react::ShadowView& shadow
         return;
     }
 
+    // An update that did not change the source keeps the animation where it was. `<Image>` props change for all
+    // sorts of reasons that have nothing to do with the source, and a GIF that jumped back to its first frame on
+    // every re-render is core#46810 in a different disguise.
+    const bool isSameSource = previousImage.has_value() && previousImage.value().uri == imageSource.uri;
+
     node.image = SceneImageContent{.uri = imageSource.uri,
-                                   .pixels = decodedImages ? decodedImages(imageSource.uri) : nullptr,
+                                   .frames = decodedImages ? decodedImages(imageSource.uri) : nullptr,
+                                   .elapsedMilliseconds = isSameSource ? previousImage.value().elapsedMilliseconds
+                                                                       : 0.0,
                                    .resizeMode = toSceneImageResizeMode(imageProps->resizeMode),
                                    .tintColorArgb = toArgb(imageProps->tintColor, 1.0F)};
 }
@@ -962,12 +986,12 @@ bool RetainedScene::hasNode(facebook::react::Tag tag) const {
 }
 
 void RetainedScene::damageImageSource(const std::string& uri) {
-    const std::shared_ptr<void> pixels = decodedImages_ ? decodedImages_(uri) : nullptr;
+    const std::shared_ptr<const DecodedImageFrames> decoded = decodedImages_ ? decodedImages_(uri) : nullptr;
     std::vector<facebook::react::Tag> drawingTags;
 
     for (auto& [tag, node] : nodes_) {
         if (node.image.has_value() && node.image.value().uri == uri) {
-            node.image.value().pixels = pixels;
+            node.image.value().frames = decoded;
             drawingTags.push_back(tag);
         }
     }
@@ -975,6 +999,38 @@ void RetainedScene::damageImageSource(const std::string& uri) {
     for (facebook::react::Tag tag : drawingTags) {
         damageSubtree(tag);
     }
+}
+
+bool RetainedScene::advanceImageAnimations(double frameMilliseconds) {
+    std::vector<facebook::react::Tag> advancedTags;
+
+    for (auto& [tag, node] : nodes_) {
+        if (!node.image.has_value() || node.image.value().frames == nullptr ||
+            !isAnimatedImage(*node.image.value().frames)) {
+            continue;
+        }
+
+        // An animation nothing can see is an animation that does not run: no elapsed time accumulates while the
+        // node is clipped away, so it holds the frame it paused on and resumes from there.
+        if (!subtreeExtent(tag).has_value()) {
+            continue;
+        }
+
+        SceneImageContent& image = node.image.value();
+        const size_t pausedFrame = animatedImageFrameIndex(*image.frames, image.elapsedMilliseconds);
+
+        image.elapsedMilliseconds += frameMilliseconds;
+
+        if (animatedImageFrameIndex(*image.frames, image.elapsedMilliseconds) != pausedFrame) {
+            advancedTags.push_back(tag);
+        }
+    }
+
+    for (facebook::react::Tag tag : advancedTags) {
+        damageSubtree(tag);
+    }
+
+    return !advancedTags.empty();
 }
 
 void RetainedScene::setDecodedImageProvider(DecodedImageProvider decodedImages) {

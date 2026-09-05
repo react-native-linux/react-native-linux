@@ -99,6 +99,14 @@ public:
      * headless run never calls it, which is what makes a caret in a golden reproducible.
      */
     bool advanceCaretBlink(double frameMilliseconds);
+
+    /**
+     * Advances every animated `<Image>` by one frame of `frameMilliseconds`, and reports whether any of them
+     * changed frame. Called once per drawn frame, beside the caret blink, because a GIF's pace is its own
+     * durations against wall-clock time rather than a count of vsyncs — see `RetainedScene::advanceImageAnimations`
+     * and *Image* in docs/cpp-toolchain.md.
+     */
+    bool advanceImageAnimations(double frameMilliseconds);
     void induceEventBeat();
 
     /**

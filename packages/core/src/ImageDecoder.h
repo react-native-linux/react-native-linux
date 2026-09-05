@@ -1,5 +1,7 @@
 #pragma once
 
+#include "RetainedScene.h"
+
 #include <chrono>
 #include <functional>
 #include <memory>
@@ -23,14 +25,14 @@ using ImageDecodeListener = std::function<void(const std::string& uri)>;
 void setImageDecodeListener(ImageDecodeListener listener);
 
 /**
- * The decoded pixels for `uri`, or null when the source has not been decoded, failed, or has been evicted. Marks
+ * The decoded frames of `uri`, or null when the source has not been decoded, failed, or has been evicted. Marks
  * the entry as most recently used.
  *
- * Type-erased for the reason `ImageCache` erases its values and upstream's `ImageResponse` erases its own: this
- * is what the scene attaches to the nodes drawing the source, and the scene links no Skia. The painter casts it
- * back to `SkImage`.
+ * Type-erased frame by frame for the reason `ImageCache` erases its values and upstream's `ImageResponse` erases
+ * its own: this is what the scene attaches to the nodes drawing the source, and the scene links no Skia. The
+ * painter casts one frame back to `SkImage`.
  */
-std::shared_ptr<void> decodedImagePixels(const std::string& uri);
+std::shared_ptr<const DecodedImageFrames> decodedImage(const std::string& uri);
 
 /**
  * Blocks until nothing is queued or decoding, or until `budget` runs out; returns whether the pipeline went idle.

@@ -118,6 +118,12 @@ public:
     void setDecodedImageProvider(RetainedScene::DecodedImageProvider decodedImages);
 
     /**
+     * `RetainedScene::advanceImageAnimations` under the scene mutex, flagging pending damage when a frame
+     * changed so the frame clock draws it. Called once per frame from the frame thread.
+     */
+    bool advanceImageAnimations(double frameMilliseconds);
+
+    /**
      * Marks the focused node and whether it draws the focus ring. Called from the frame thread by the input
      * dispatcher, which is the other thing besides a mutation that changes what the next frame paints.
      */

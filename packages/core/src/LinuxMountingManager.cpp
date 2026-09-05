@@ -61,6 +61,15 @@ void LinuxMountingManager::setDecodedImageProvider(RetainedScene::DecodedImagePr
     scene_.setDecodedImageProvider(std::move(decodedImages));
 }
 
+bool LinuxMountingManager::advanceImageAnimations(double frameMilliseconds) {
+    const std::lock_guard<std::mutex> guard(sceneMutex_);
+    const bool hasAdvanced = scene_.advanceImageAnimations(frameMilliseconds);
+
+    hasPendingDamage_ = hasPendingDamage_ || hasAdvanced;
+
+    return hasAdvanced;
+}
+
 void LinuxMountingManager::setFocus(facebook::react::Tag tag, bool isFocusVisible) {
     const std::lock_guard<std::mutex> guard(sceneMutex_);
 
