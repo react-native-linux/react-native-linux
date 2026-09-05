@@ -105,12 +105,18 @@ void settlePendingImageDecodes() {
  * poll good enough to land between the two. A run that misses that window ends with no damage left to take, and
  * the caller reports that rather than producing a golden that proves nothing.
  */
-SceneSnapshot waitForFirstCommit(ReactHost& reactHost, FabricHost& fabricHost) {
+SceneSnapshot waitForFirstCommit(ReactHost& reactHost, FabricHost& fabricHost, bool shouldSettleImageDecodes) {
     const std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::now() + kFirstCommitBudget;
 
     while (std::chrono::steady_clock::now() < deadline) {
         reactHost.drainJavaScriptThread();
-        settlePendingImageDecodes();
+
+        // The damage proof wants the first frame with its pixels attached; the first-frame proof wants it exactly
+        // as it was committed, decodes still in flight, or the "first" scene is already the settled one and the
+        // comparison tests nothing.
+        if (shouldSettleImageDecodes) {
+            settlePendingImageDecodes();
+        }
 
         SceneFrame frame = fabricHost.takeFrame();
 
@@ -209,7 +215,7 @@ struct StartedFabricRun {
 StartedFabricRun startFabricRunAtFirstCommit(ReactHost& reactHost, const std::string& bundlePath,
                                              std::string_view subject) {
     std::unique_ptr<FabricHost> fabricHost = startFabricRun(reactHost, bundlePath, kHeadlessSurfaceSize);
-    const bool hasCommitted = !waitForFirstCommit(reactHost, *fabricHost).empty();
+    const bool hasCommitted = !waitForFirstCommit(reactHost, *fabricHost, true).empty();
 
     if (!hasCommitted) {
         std::cerr << "[bundle-runner] the bundle committed no scene, so there is nothing to " << subject
@@ -326,7 +332,7 @@ int runResizedFabricBundle(const std::string& bundlePath, facebook::react::Size 
 FabricFrameRunResult runFabricBundleAcrossFrames(const std::string& bundlePath, facebook::react::Size surfaceSize) {
     ReactHost reactHost;
     std::unique_ptr<FabricHost> fabricHost = startFabricRun(reactHost, bundlePath, surfaceSize);
-    FabricFrameRunResult result{.firstScene = waitForFirstCommit(reactHost, *fabricHost)};
+    FabricFrameRunResult result{.firstScene = waitForFirstCommit(reactHost, *fabricHost, false)};
 
     // The same settling every single-frame golden gets, so the second snapshot is the one the golden paints.
     for (size_t frame = 0; frame < kHeadlessFrameCount; ++frame) {
@@ -350,7 +356,7 @@ FabricDamageRunResult runFabricBundleAcrossCommits(const std::string& bundlePath
     ReactHost reactHost;
     std::unique_ptr<FabricHost> fabricHost = startFabricRun(reactHost, bundlePath, surfaceSize);
 
-    FabricDamageRunResult result{.firstScene = waitForFirstCommit(reactHost, *fabricHost)};
+    FabricDamageRunResult result{.firstScene = waitForFirstCommit(reactHost, *fabricHost, true)};
 
     if (!reactHost.runUntilQuiescent(kQuiescenceBudget)) {
         std::cerr << "[bundle-runner] gave up waiting for pending timers" << std::endl;
@@ -383,7 +389,7 @@ FabricRunResult runScrolledFabricBundle(const std::string& bundlePath, facebook:
     ReactHost reactHost;
     std::unique_ptr<FabricHost> fabricHost = startFabricRun(reactHost, bundlePath, surfaceSize);
 
-    if (waitForFirstCommit(reactHost, *fabricHost).empty()) {
+    if (waitForFirstCommit(reactHost, *fabricHost, true).empty()) {
         std::cerr << "[bundle-runner] the bundle committed no scene, so there is nothing to scroll" << std::endl;
     }
 
@@ -410,7 +416,7 @@ FabricRunResult runFocusTabbedFabricBundle(const std::string& bundlePath, facebo
     ReactHost reactHost;
     std::unique_ptr<FabricHost> fabricHost = startFabricRun(reactHost, bundlePath, surfaceSize);
 
-    if (waitForFirstCommit(reactHost, *fabricHost).empty()) {
+    if (waitForFirstCommit(reactHost, *fabricHost, true).empty()) {
         std::cerr << "[bundle-runner] the bundle committed no scene, so there is nothing to focus" << std::endl;
     }
 
@@ -431,7 +437,7 @@ FabricRunResult runTypedFabricBundle(const std::string& bundlePath, facebook::re
     ReactHost reactHost;
     std::unique_ptr<FabricHost> fabricHost = startFabricRun(reactHost, bundlePath, surfaceSize);
 
-    if (waitForFirstCommit(reactHost, *fabricHost).empty()) {
+    if (waitForFirstCommit(reactHost, *fabricHost, true).empty()) {
         std::cerr << "[bundle-runner] the bundle committed no scene, so there is nothing to type into"
                   << std::endl;
     }
