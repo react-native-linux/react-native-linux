@@ -21,11 +21,14 @@ namespace react_native_linux {
  * painter untouched apart from the inherited opacity folded into fragment colours, which changes no metric.
  *
  * Fonts resolve in two steps. The asset font manager is a directory manager over the fonts vendored into
- * `packages/core/fonts`, so the default family is one pinned file rather than whatever the machine happens to
- * have installed; that is what makes a text golden reproducible on both CI and a developer machine. Anything the
- * vendored family cannot supply — a font family a bundle asks for by name, or a codepoint the bundled font has no
- * glyph for — falls through to fontconfig, which is the system font manager and is not reproducible across
- * machines. Goldens must therefore stay inside the vendored font's coverage.
+ * `packages/core/fonts`, so the default family and the emoji family are both pinned files rather than whatever
+ * the machine happens to have installed; that is what makes a text golden reproducible on both CI and a developer
+ * machine. Both are named in every run's family list, because the asset manager answers `matchFamily` and not
+ * `matchFamilyStyleCharacter`, so a face reached only by codepoint fallback would come from fontconfig — see
+ * *Colour emoji and the fallback chain (#249)* in docs/cpp-toolchain.md. Anything neither vendored family can
+ * supply — a font family a bundle asks for by name, or a codepoint neither file has a glyph for — falls through
+ * to fontconfig, which is the system font manager and is not reproducible across machines. Goldens must therefore
+ * stay inside the vendored fonts' coverage.
  *
  * Threading contract: the returned `Paragraph` belongs to the caller and is never shared, but the `FontCollection`
  * behind it is a process-wide singleton carrying Skia's own paragraph cache, and neither it nor `layout` is

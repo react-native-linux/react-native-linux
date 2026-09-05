@@ -43,9 +43,16 @@ namespace react_native_linux {
 
 namespace {
 
-// The family name of the fonts scripts/vendor-fonts.ts writes into packages/core/fonts, and the family skparagraph
-// itself names as its default. Text with no `fontFamily` asks for both, in that order.
+// The family names of the fonts scripts/vendor-fonts.ts writes into packages/core/fonts, and the family
+// skparagraph itself names as its default. Every text run asks for all of them, in that order.
 constexpr char kBundledFontFamily[] = "Noto Sans";
+// Noto Sans carries no emoji, so a codepoint outside it needs a second face. Naming that face in the family list
+// rather than leaving it to `FontCollection::defaultEmojiFallback` is what makes it the *vendored* file: the
+// character-fallback path only ever reaches a font manager's `matchFamilyStyleCharacter`, and the asset manager
+// `SkFontMgr_New_Custom_Directory` builds answers nullptr to that, so an emoji resolved by fallback is resolved
+// by fontconfig from whatever the machine has installed. A named family goes through `matchFamily` instead,
+// which the asset manager does answer. See *Colour emoji and the fallback chain (#249)* in docs/cpp-toolchain.md.
+constexpr char kEmojiFontFamily[] = "Noto Color Emoji";
 constexpr char kFallbackFontFamily[] = DEFAULT_FONT_FAMILY;
 constexpr char kEllipsisUtf8[] = "\xE2\x80\xA6";
 constexpr float kDefaultFontSize = 14.0F;
@@ -164,6 +171,7 @@ std::vector<SkString> toFontFamilies(const facebook::react::TextAttributes& attr
     }
 
     families.emplace_back(kBundledFontFamily);
+    families.emplace_back(kEmojiFontFamily);
     families.emplace_back(kFallbackFontFamily);
 
     return families;

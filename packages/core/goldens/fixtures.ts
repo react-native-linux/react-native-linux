@@ -29,6 +29,14 @@ export const fixtures: readonly GoldenFixture[] = [
     renderArguments: [],
     renderFlag: "--text-fit-golden",
   },
+  // #249: the fallback chain, pictured. Every row below the Latin control needs a face Noto Sans does not have.
+  // The flag asserts the emoji face's own ascent did not push the line box past the frame Yoga measured.
+  {
+    bundleFileName: "emoji.js",
+    goldenFileName: "emoji.png",
+    renderArguments: [],
+    renderFlag: "--text-fit-golden",
+  },
   { bundleFileName: "damage.js", goldenFileName: "damage.png", renderArguments: [], renderFlag: "--damage-golden" },
   // Issue #35: this render flag is itself the assertion, and the PNG it writes is the paint side of that proof.
   {

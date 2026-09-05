@@ -325,14 +325,16 @@ jobs:
         if: matrix.skia == 'ON'
         run: node scripts/vendor-skia.ts
 
-      # The text golden is only reproducible against the pinned font files; without them the paragraph would be
+      # The text goldens are only reproducible against the pinned font files; without them the paragraph would be
       # shaped with whatever fontconfig finds on the runner, which is not what the checked-in PNG was made from.
+      # That includes the emoji golden: this runner installs no emoji font at all, so without the pinned
+      # Noto Color Emoji every emoji in it would be a tofu box. See *Colour emoji and the fallback chain (#249)*.
       - name: Cache vendored fonts
         if: matrix.skia == 'ON'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: packages/core/fonts
-          key: rnl-vendor-fonts-ubuntu-24.04-${{ hashFiles('scripts/fonts.lock.json', 'scripts/vendor-fonts.ts') }}
+          key: rnl-vendor-fonts-ubuntu-24.04-${{ hashFiles('scripts/fonts.lock.json', 'scripts/vendor-fonts.ts', 'scripts/vendor-fonts/**') }}
 
       - name: Vendor fonts
         if: matrix.skia == 'ON'
@@ -564,7 +566,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: packages/core/fonts
-          key: rnl-vendor-fonts-ubuntu-24.04-${{ hashFiles('scripts/fonts.lock.json', 'scripts/vendor-fonts.ts') }}
+          key: rnl-vendor-fonts-ubuntu-24.04-${{ hashFiles('scripts/fonts.lock.json', 'scripts/vendor-fonts.ts', 'scripts/vendor-fonts/**') }}
 
       - name: Vendor fonts
         run: node scripts/vendor-fonts.ts

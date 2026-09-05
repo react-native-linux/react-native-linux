@@ -13,6 +13,7 @@ export default defineConfig({
         "scripts/e2e/**/*.spec.ts",
         "scripts/prop-coverage/**/*.spec.ts",
         "scripts/upstream/**/*.spec.ts",
+        "scripts/vendor-fonts/**/*.spec.ts",
       ],
       include: [
         "packages/*/src/**/*.ts",
@@ -24,6 +25,7 @@ export default defineConfig({
         "scripts/e2e/**/*.ts",
         "scripts/prop-coverage/**/*.ts",
         "scripts/upstream/**/*.ts",
+        "scripts/vendor-fonts/**/*.ts",
       ],
       provider: "v8",
       reporter: ["text", "lcov"],
@@ -44,6 +46,7 @@ export default defineConfig({
       "scripts/e2e/**/*.spec.ts",
       "scripts/prop-coverage/**/*.spec.ts",
       "scripts/upstream/**/*.spec.ts",
+      "scripts/vendor-fonts/**/*.spec.ts",
     ],
   },
 });

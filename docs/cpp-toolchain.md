@@ -449,6 +449,7 @@ depend on a third party's release cadence.
 | glog (fallback only) | `v0.7.1` | `RNL_GLOG_VERSION`; used only when no system glog is found |
 | Skia | `m153` prebuilt | `scripts/skia.lock.json` |
 | Noto Sans | `notofonts.github.io@2ad4e55`, per-file sha256 | `scripts/fonts.lock.json` |
+| Noto Color Emoji | `googlefonts/noto-emoji@22e5646` (v2.047), per-file sha256 | `scripts/fonts.lock.json` |
 | xdg-shell | system `wayland-protocols` | `pkg-config --variable=pkgdatadir wayland-protocols` |
 
 The Hermes tag is derived, never hardcoded: `hermes-v${HERMES_VERSION_NAME}`. `sdks/.hermesversion` was removed
@@ -2483,16 +2484,19 @@ Skia consults the asset manager first, so the default family resolves to the ven
 remains behind it, which is what satisfies issue #14's "fonts resolved through fontconfig" for a bundle that asks
 for a family by name, and what supplies glyph fallback for codepoints the bundled font does not cover.
 
-**Goldens must stay inside the vendored font's coverage.** Anything that falls through to fontconfig — another
-family, an emoji, a script Noto Sans does not carry — is not reproducible and must not go into a checked-in PNG.
-That is the honest reason `text.js` is ASCII, and the reason issue #14's RTL and emoji goldens are deferred rather
-than approximated.
+**Goldens must stay inside the vendored fonts' coverage.** Anything that falls through to fontconfig — another
+family, a script neither vendored face carries — is not reproducible and must not go into a checked-in PNG. That
+is the honest reason `text.js` is ASCII, and the reason issue #14's RTL golden is deferred rather than
+approximated. Emoji were deferred for the same reason and are no longer: see *Colour emoji and the fallback chain
+(#249)* below.
 
-The font is **Noto Sans**, hinted static Regular, Bold and Italic, under the **SIL Open Font License 1.1**, pinned
-by commit and sha256 in `scripts/fonts.lock.json` and fetched by `scripts/vendor-fonts.ts` into
-`packages/core/fonts`, which is git-ignored exactly like `third_party`. The licence text is fetched alongside the
-faces. It is vendored rather than checked in for the same reason Skia is: the lock file is the artifact under
-review, and a re-run against an unchanged lock is a no-op.
+The fonts are **Noto Sans**, hinted static Regular, Bold and Italic, and **Noto Color Emoji**, both under the
+**SIL Open Font License 1.1**, pinned by commit and sha256 in `scripts/fonts.lock.json` and fetched by
+`scripts/vendor-fonts.ts` into `packages/core/fonts`, which is git-ignored exactly like `third_party`. Each
+source's licence text is fetched alongside its faces. They are vendored rather than checked in for the same reason
+Skia is: the lock file is the artifact under review, and a re-run against an unchanged lock is a no-op. The lock
+file is a list of `sources`, one per upstream repository, because the two faces come from two of them at two
+commits.
 
 ```bash
 pnpm --filter @react-native-linux/core vendor:fonts
@@ -2501,6 +2505,59 @@ pnpm --filter @react-native-linux/core vendor:fonts
 The directory path reaches the code as `RNL_BUNDLED_FONT_DIR`, an absolute path baked in at configure time. That
 is deliberate for now — there is no asset packaging, and inventing one before the CLI exists is the kind of
 scaffolding the Prime Directive rejects. Packaging fonts into an installable bundle belongs with M3.
+
+### Colour emoji and the fallback chain (#249)
+
+Noto Sans has no emoji, so every emoji is a codepoint the primary face lacks. What resolves it is the whole
+subject of react-native#56183, where an emoji became a `[?]` box because a fallback lookup failed.
+
+Skia offers two routes to a second face, and they are not equivalent:
+
+| Route | Managers it asks | Method | Answers for our asset manager |
+| --- | --- | --- | --- |
+| Named family | dynamic, asset, test, default | `SkFontMgr::matchFamily` | Yes |
+| Character fallback | dynamic, asset, test, default | `SkFontMgr::matchFamilyStyleCharacter` | **No** |
+
+`FontCollection::getFontManagerOrder` puts the asset manager ahead of fontconfig on both routes, but
+`SkFontMgr_New_Custom_Directory` — the class behind the asset manager — returns `nullptr` from
+`matchFamilyStyleCharacter` unconditionally. So `FontCollection::defaultFallback` and `defaultEmojiFallback`, the
+two functions `OneLineShaper` reaches for a codepoint no named family covered, can only ever be answered by
+fontconfig. An emoji resolved that way is resolved from whatever the machine has installed, and a golden
+containing one is not a golden: on a machine with no system emoji font it is a row of tofu boxes, which is what
+the `ubuntu-24.04` runner would have drawn, since it installs no emoji font.
+
+`TextPipeline.cpp` therefore names the emoji face in the family list rather than leaving it to fallback. Every
+run asks for, in order: the bundle's own `fontFamily` if it set one, `Noto Sans`, `Noto Color Emoji`, and
+skparagraph's `DEFAULT_FONT_FAMILY`. `OneLineShaper::matchResolvedFonts` walks that list before it consults
+either fallback function, so the emoji comes off the pinned file, and fontconfig still sits behind all of it for
+everything neither vendored face covers. This is the same list the `#70` diagnostic inspects, and it is
+unaffected: that check compares the *requested* family to the face it resolved to, and appending a face to the
+end of the list changes neither.
+
+**Which colour-glyph formats actually rasterize.** The pinned Skia archive is built against system FreeType, and
+its undefined symbol list is the answer: `FT_Get_Color_Glyph_Layer`, `FT_Palette_Data_Get` and `FT_Palette_Select`
+are there, `FT_Get_Color_Glyph_Paint` is not, and there is no Fontations backend.
+
+| Format | Supported | Why |
+| --- | --- | --- |
+| CBDT/CBLC, sbix (bitmap) | Yes | `FT_LOAD_COLOR` plus `FT_Render_Glyph` into a BGRA bitmap; no extra entry point |
+| COLRv0 (layers) | Yes | `SkScalerContextFTUtils::drawCOLRv0Glyph`, over `FT_Get_Color_Glyph_Layer` |
+| COLRv1 (paint graph) | **No** | needs `FT_Get_Color_Glyph_Paint`, which this build does not reference |
+
+That is why the pinned face is `NotoColorEmoji.ttf` from `googlefonts/noto-emoji` v2.047, the CBDT build, and not
+the `Noto-COLRv1.ttf` beside it — which is half the size and would draw nothing.
+
+**What the layers prove.** `test-bundles/emoji.js` is rendered as `goldens/emoji.png` under `--text-fit-golden`.
+The bundle's five rows are a Latin control and the four ways a fallback can go wrong — a lone emoji codepoint, a
+regional-indicator pair, a ZWJ sequence and a skin-tone modifier — each drawn inside the measured-frame-over-line-box
+sandwich of `text-metrics.js` at its natural line height and at `lineHeight: 24`, and again at 40 points because a
+bitmap face is scaled rather than outlined. The picture is the proof that the glyphs are in colour and that the
+sequences shaped as one glyph each; the flag is the proof of react-native#47621, that the emoji face's own ascent
+and descent did not push the line box past the frame Yoga measured. There is no unit-test layer for this: the
+resolution happens inside `FontCollection` and `OneLineShaper`, and the `test` preset is Skia-free by design.
+
+Still open, and owned elsewhere: a `fontFamily` fallback *list* rather than one name is react-native#48625 and
+belongs with #70's item 3; the last-emoji clipping of react-native#57995 needs U+1FAE8, which v2.047 predates.
 
 ### The cache
 
@@ -2616,8 +2673,10 @@ Each is deliberate, and each is a thing to fix rather than a thing to argue abou
   and an RTL base direction, and there is no golden for either.
 - **Ellipsis is always at the tail.** SkParagraph truncates nowhere else, so `head` and `middle` are accepted and
   drawn as `tail`.
-- **Emoji are whatever fontconfig finds.** Skia's COLRv1 support exists, but the vendored font carries no emoji,
-  so every emoji is a fallback lookup and therefore machine-dependent. Not goldenable as things stand.
+- **Emoji rasterize from bitmap and COLRv0 faces only, and a `fontFamily` is one name.** The pinned Noto Color
+  Emoji is CBDT and draws; a COLRv1 face would not, because this Skia archive references no
+  `FT_Get_Color_Glyph_Paint`. A `fontFamily` fallback *list* — react-native#48625 — is still one name plus the two
+  vendored faces. See *Colour emoji and the fallback chain (#249)*.
 - **`adjustsFontSizeToFit`, `textTransform`, `fontVariant`, text shadows, `textAlignVertical` and
   `textBreakStrategy` are ignored.**
 - **Group opacity applies to text the same way it applies to views**: per-fragment alpha, not a composited layer.
@@ -5763,7 +5822,7 @@ abort with `unexpected memory mapping` when the kernel hands out more ASLR entro
 | --- | --- | --- | --- |
 | Vendored React Native | `third_party/react-native` | `rnl-vendor-react-native-ubuntu-24.04-<hash of scripts/vendor.lock.json + scripts/vendor-react-native.ts>` | ~18 MB |
 | Vendored Skia | `third_party/skia` | `rnl-vendor-skia-ubuntu-24.04-<hash of scripts/skia.lock.json + scripts/vendor-skia.ts>` | ~93 MB |
-| Vendored fonts | `packages/core/fonts` | `rnl-vendor-fonts-ubuntu-24.04-<hash of scripts/fonts.lock.json + scripts/vendor-fonts.ts>` | ~2 MB |
+| Vendored fonts | `packages/core/fonts` | `rnl-vendor-fonts-ubuntu-24.04-<hash of scripts/fonts.lock.json + scripts/vendor-fonts.ts + scripts/vendor-fonts/>` | ~13 MB |
 | ccache | `.ccache` | `rnl-ccache-ubuntu-24.04-clang-18-<preset>-<hash of the CMake files and both lock files>-<run id>` | 2 GB ceiling per preset |
 | pnpm store | handled by `actions/setup-node` | `pnpm-lock.yaml` | small |
 
