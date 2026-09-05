@@ -2559,6 +2559,26 @@ resolution happens inside `FontCollection` and `OneLineShaper`, and the `test` p
 Still open, and owned elsewhere: a `fontFamily` fallback *list* rather than one name is react-native#48625 and
 belongs with #70's item 3; the last-emoji clipping of react-native#57995 needs U+1FAE8, which v2.047 predates.
 
+**The emoji golden's tolerance (#307).** `png-diff.ts`'s zero tolerance holds because this rig renders on the CPU
+through Skia's raster backend, where one Skia build given one scene produces the same bytes on every machine —
+except for `emoji.png`. Noto Color Emoji's glyphs are CBDT bitmaps at a single 109px strike, and both font sizes
+the fixture draws, 18 and 40 points, scale that strike down; the scaler is FreeType's, not Skia's, and FreeType's
+bitmap-scaling output is not byte-identical across builds. Issue #307 measured this directly: a host with a newer
+FreeType than the one that blessed `emoji.png` rendered one pixel as `rgba(59, 67, 88)` against the golden's
+`rgba(59, 67, 87)`, a one-unit difference in one channel, reproducibly on that host and nowhere else in the suite.
+
+The fix is option (a) from #307's acceptance criteria: `fixtures.ts`'s `emoji.png` entry alone carries a
+`tolerance: { maxChannelDifference: 1, maxDifferentPixels: 16 }`, and `golden.spec.ts` compares it with
+`compareImagesWithTolerance` from `png-diff.ts` instead of `compareImages`. Sixteen pixels is a small multiple of
+the one pixel #307 measured — wide enough that a FreeType point release does not flap the suite, and far short of
+what a moved, missing or recoloured glyph would touch. Option (b), rendering the fixture at Noto Color Emoji's
+native 109px strike so FreeType has nothing to scale, was rejected: the fixture's own point is that a bitmap face
+is scaled at the sizes real UI uses (see *What the layers prove* above), and 109pt text is not one of them: making
+the picture exact would make it prove nothing.
+
+Every other raster golden keeps zero tolerance; `compareImages` is unchanged, and `compareImagesWithTolerance` is
+reached only through the one fixture that opts in.
+
 ### The cache
 
 `TextLayoutManager` already owns `textMeasureCache_`, upstream's `TextMeasureCache`: a 1024-entry thread-safe LRU
