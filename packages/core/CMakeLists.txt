@@ -787,6 +787,7 @@ endif()
 # ---------------------------------------------------------------------------
 
 add_library(rnl_react_core STATIC
+    src/AnimationFrameQueue.cpp
     src/Appearance.cpp
     src/AutomationProtocol.cpp
     src/Clipboard.cpp
