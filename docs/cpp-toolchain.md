@@ -3080,6 +3080,108 @@ golden is the assertion that the settle target moved and not merely that a scrol
 four notches with `wheel down 4`, and the run's `topMomentumScrollEnd at 0,150` is the momentum bracket closing on
 the snap point rather than on 160.
 
+### Holding the visible content still (#240)
+
+`maintainVisibleContentPosition={{ minIndexForVisible, autoscrollToTopThreshold }}` is what a chat log keeps its
+place with when a message arrives above what the reader is looking at. Upstream parses it onto
+`BaseScrollViewProps` as `ScrollViewMaintainVisibleContentPosition` — `int minIndexForVisible` and
+`std::optional<int> autoscrollToTopThreshold`, so no parsing was needed here either — and then leaves every
+platform to implement it, which is why
+[rnw#13798](https://github.com/microsoft/react-native-windows/issues/13798) is still open for Fabric and why
+[core#58186](https://github.com/facebook/react-native/issues/58186) is a one-frame jump on Android.
+
+It is one number again, and the number is `maintainedScrollOffset` in `ScrollPhysics.h`, inside the coverage gate:
+
+```cpp
+double maintainedScrollOffset(double offset, const std::vector<ScrollChildFrame>& previousChildren,
+                              const std::vector<ScrollChildFrame>& currentChildren,
+                              const MaintainVisibleContentPosition& maintaining, double contentLength,
+                              double viewportLength);
+```
+
+The rules, in the order they apply:
+
+- **The anchor is chosen from the children as they were before the commit**: the first one at or after
+  `minIndexForVisible` whose trailing edge is past the offset — the first one any part of which is visible — and
+  the last child when none of them is. That is
+  `RCTScrollViewComponentView::_prepareForMaintainVisibleScrollPosition`'s rule and the one Android's
+  `MaintainVisibleScrollPositionHelper` picks. A `minIndexForVisible` past the last child is no anchor at all, and
+  a negative one reads as the first child rather than as an index.
+- **The anchor is found again by tag, never by index.** A prepend renumbers every index and renames nothing, so an
+  index-based match would compare the anchor against whatever arrived in its place. What the anchor moved by is
+  what the offset moves by, and the shift cancels: the anchor is painted exactly where it was.
+- **An anchor the commit unmounted is not an anchor.** There is nothing left to hold still, so the offset stays
+  where it is rather than moving by a delta measured against a different node —
+  [core#42905](https://github.com/facebook/react-native/issues/42905) is that adjustment applied while a list
+  header was being unmounted, leaving white space where it had been.
+- **A shift of half a point or less is not a shift.** It cannot be seen, and adjusting for it would be an
+  `onScroll` nobody asked for. Half a point is the threshold upstream uses, and it is also what keeps this off a
+  float equality — the same reason the settle target has none.
+- **`autoscrollToTopThreshold` overrides the adjustment entirely.** A reader already within that many points of the
+  top is reading the top rather than a particular row, so a prepend takes them to the *new* top instead of pinning
+  what used to be there. The offset it tests is the one from before the adjustment, which is what upstream
+  compares, and it is consulted only once an adjustment is actually called for: a commit that moved nothing does
+  not scroll a reader who was sitting forty points down to zero.
+- **The result is clamped against the content the commit produced**, before it is returned, for the same reason
+  `scrollToDestination` clamps before it returns.
+
+The same function answers a *removal* from the start, which is
+[core#52757](https://github.com/facebook/react-native/issues/52757): the anchor comes up by what was taken away and
+the offset follows it back. Nothing about the arithmetic is directional.
+
+`ScrollController` wires it in at one place, at the top of `advanceTarget` — before the frame's physics, before its
+scene is taken and before its beat, so the adjusted offset rides the same beat as the events the commit produced
+rather than the next one. The children it compares against are the children of the ScrollView's **content view**,
+which is its last child: React Native's `<ScrollView>` renders its children inside one content-container `<View>`,
+which is the node `RCTScrollViewComponentView` keeps as `_contentView` and the node Android reads through
+`getContentView()`. They are recorded per axis on every frame the prop is set and on no other frame at all, so a
+ScrollView without the prop walks no children.
+
+`packages/core/test-bundles/scroll-maintain-position.js` is the fixture: six rows in a content container, scrolled
+120 points by three wheel notches, with two more rows prepended above them by a timer the fixture arms **from its
+first `onScroll`** — so the prepend lands a known interval after the scroll was reported rather than a guessed one
+after the bundle started, and the run cannot race it.
+
+```bash
+hello_react --maintain-position-golden packages/core/test-bundles/scroll-maintain-position.js /tmp/rnl-maintain-position.png 160 100 3
+```
+
+The flag is the assertion and the PNG is the by-product, as it is for `--damage-golden` and `--hit-paint-golden`.
+`runFabricBundleAcrossPrepend` snapshots the scene once the wheel has settled and again after **exactly one** frame
+of the window loop past the prepend — one `advanceScroll`, one beat, one drain — and every node that was on screen
+has to be in the same place in both. Nodes are matched by tag, because the prepend renumbered the indices, and only
+nodes whose **size** is unchanged are compared: the content container grew by exactly what was prepended into it,
+so it is the one node that is supposed to have moved, and a rule that named it would be a rule about this fixture
+rather than about the prop. The run also fails if the second scene has no more primitives than the first, because
+then nothing was prepended and the proof is vacuous. The negative control is the same fixture with the prop taken
+off, and it fails with `tag 10 was at (60, -60) before the prepend and at (60, 100) after it`.
+
+`packages/core/goldens/scroll-maintain-position.png` is therefore the list *after* two rows arrived above it, and
+the point of it is that it looks like the list before they did: the green row still cut off at the top edge of the
+viewport, at `contentOffset = (0, 280)` rather than `(0, 120)`. The e2e scenario
+`packages/core/e2e/scroll-maintain-position.json` is the same sequence through a real compositor, and its trace is
+the ordering:
+
+```text
+maintain-position: topScroll at 0,120
+maintain-position: prepended two rows
+maintain-position: topScroll at 0,280
+maintain-position: settled at 0,280
+```
+
+The last line is printed half a second after the prepend from the newest offset the bundle was told about, so a
+controller that re-applied the delta on every frame instead of on the commit that earned it would report an offset
+that kept growing rather than that one.
+
+**What this does not prove.** The offset is written back through `ConcreteState::updateState` like every other
+scroll position, so it reaches the shadow tree on the beat the adjusting frame induces rather than inside the
+mounting transaction that prepended the children. The frame that first sees the prepend is the frame that adjusts
+for it — that is what the golden holds — but a window that painted *between* that mount and that beat would still
+show one displaced frame. Closing that gap means adjusting inside `LinuxMountingManager::executeMount`, on the
+JavaScript thread, which is a commit hook and its own issue. A ScrollView that has never been scrolled or
+commanded has no controller entry and is not adjusted at all; at offset zero the unadjusted result is what
+`autoscrollToTopThreshold` would have produced anyway.
+
 ### Pressing what a scroll moved (#98)
 
 The cause behind [core#51763](https://github.com/facebook/react-native/issues/51763) and
@@ -3224,8 +3326,10 @@ test for those.
 - **`contentInset`, `contentInsetAdjustmentBehavior`, `scrollAwayPaddingTop`, `centerContent`.** The viewport is
   the ScrollView's frame and the content is `contentBoundingRect.size`; no inset is applied and the offset range is
   `[0, content - viewport]` on each axis. `ScrollEvent::contentInset` is emitted as zero.
-- **`maintainVisibleContentPosition`.** Content growing above the viewport currently moves what is on screen. The
-  prop is parsed and ignored; honouring it means comparing child frames across commits, which is a commit hook.
+- **`maintainVisibleContentPosition` is honoured on the frame that sees the commit, not inside it.** See *Holding
+  the visible content still*: the adjustment rides that frame's beat, so a paint taken between the prepend's mount
+  and that beat would still show one displaced frame. Moving it into `LinuxMountingManager::executeMount` is a
+  commit hook and its own issue.
 - **`scrollResponderScrollTo` and the rest of the responder API.** `scrollTo` and `scrollToEnd` execute — see
   *Programmatic scrolling* — but the legacy responder methods are not bound.
 - **Whether `FlatList` windowing behaves correctly at this cadence is still untested**, because there is no
@@ -4896,9 +5000,9 @@ view, and it fails with `the first frame painted 3 primitives and the settled on
 of images whose decodes finish after the mount, and a nested ScrollView, over a marker directly below the
 viewport that any first-frame overflow would have landed on.
 
-Not covered: the window-rig capture of frame 1 and frame 60 needs the compositor and belongs with the e2e work,
-and `maintainVisibleContentPosition` stays where the *ScrollView* deferrals already record it — parsed and
-ignored, because honouring it means comparing child frames across commits, which is a commit hook.
+Not covered: the window-rig capture of frame 1 and frame 60 needs the compositor and belongs with the e2e work.
+`maintainVisibleContentPosition` is the same class of bug across a *pair of commits* rather than across a pair of
+frames, and it has its own flag for it — see *Holding the visible content still* under *ScrollView*.
 
 ### The hit-versus-paint agreement proof (#35)
 
