@@ -121,11 +121,15 @@ size_t utf16LengthOfUtf8(const std::string& text, size_t byteOffset) {
     return codeUnits;
 }
 
+float clampedScrollOffset(float offset, float boxLength, float contentLength) {
+    return std::clamp(offset, 0.0F, std::max(0.0F, contentLength - boxLength));
+}
+
 float followedScrollOffset(float currentOffset, float caretBegin, float caretEnd, float boxLength,
                            float contentLength) {
     const float followedOffset = std::max(std::min(currentOffset, caretBegin), caretEnd - boxLength);
 
-    return std::clamp(followedOffset, 0.0F, std::max(0.0F, contentLength - boxLength));
+    return clampedScrollOffset(followedOffset, boxLength, contentLength);
 }
 
 size_t utf8OffsetForUtf16Index(const std::string& text, size_t utf16Index) {

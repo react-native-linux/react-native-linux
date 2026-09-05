@@ -1,6 +1,7 @@
 #include "TextInputController.h"
 
 #include "Clipboard.h"
+#include "ScrollPhysics.h"
 
 #ifdef RNL_ENABLE_TEXT_GEOMETRY
 #include "TextGeometry.h"
@@ -99,8 +100,9 @@ TextSegmenter fieldSegmenter() {
 } // namespace
 
 TextInputController::TextInputController(std::shared_ptr<facebook::react::UIManager> uiManager,
-                                         std::shared_ptr<LinuxMountingManager> mountingManager)
-    : uiManager_(std::move(uiManager)), mountingManager_(std::move(mountingManager)) {}
+                                         std::shared_ptr<LinuxMountingManager> mountingManager,
+                                         facebook::react::SurfaceId surfaceId)
+    : uiManager_(std::move(uiManager)), mountingManager_(std::move(mountingManager)), surfaceId_(surfaceId) {}
 
 void TextInputController::setMountedFields(
     const std::vector<std::shared_ptr<const TextInputShadowNode>>& shadowNodes) {
@@ -335,6 +337,43 @@ void TextInputController::handlePointer(const InputEvent& event) {
     placeCaretAtPoint(*field, box, event.surfacePoint, isDrag);
 }
 
+void TextInputController::handleScroll(const InputEvent& event) {
+    // A multiline field wraps rather than scrolling horizontally, so the horizontal axis — a shift-wheel or a
+    // touchpad's second axis — has nothing to move and is left to the enclosing ScrollView.
+    if (event.scrollAxis != ScrollAxisKind::Vertical) {
+        return;
+    }
+
+    TextInputField* field = fieldUnderPointer(event.surfacePoint);
+
+    if (field == nullptr) {
+        return;
+    }
+
+    // A notch is the same distance a ScrollView's notch covers, so one turn of the wheel moves a field and the
+    // page it sits on by the same amount.
+    const double distance = event.kind == InputEventKind::PointerScrollDiscrete
+                                ? event.scrollAmount * kWheelNotchDistance
+                                : event.scrollAmount;
+
+    field->pendingWheelDistanceY += static_cast<float>(distance);
+}
+
+/**
+ * The multiline field the pointer is over, from the painted scene rather than from layout, because a field
+ * inside a scrolled `<ScrollView>` is drawn somewhere its layout frame never moved to.
+ */
+TextInputController::TextInputField* TextInputController::fieldUnderPointer(facebook::react::Point surfacePoint) {
+    const SceneHit hit = mountingManager_->findNodeAtPoint(surfaceId_, surfacePoint);
+    const auto entry = fields_.find(hit.tag);
+
+    if (entry == fields_.end() || !isScrollableField(entry->second.shadowNode->getConcreteProps())) {
+        return nullptr;
+    }
+
+    return &entry->second;
+}
+
 #ifdef RNL_ENABLE_TEXT_GEOMETRY
 
 void TextInputController::placeCaretAtPoint(TextInputField& field, const facebook::react::Rect& box,
@@ -504,12 +543,24 @@ void TextInputController::publish(TextInputField& field) {
     // `followedScrollOffset` is that rule and is the same on both axes. A single-line field is a window on one
     // long line, so it scrolls horizontally; a multiline field wraps instead, so it never scrolls horizontally
     // and scrolls vertically when its lines outgrow the box.
+    //
+    // The wheel moves that same window without moving the caret, so a frame whose caret did not move keeps the
+    // offset the wheel left and only clamps it. Following unconditionally would drag a wheeled field straight
+    // back to a caret nobody touched, which is the half of react/core#49226 that reads as the field refusing to
+    // scroll at all.
     if (props.multiline) {
         const float caretTop = static_cast<float>(geometry.caret.origin.y);
+        const float boxHeight = static_cast<float>(box.size.height);
+        const float wheeledOffset = field.scrollOffsetY + field.pendingWheelDistanceY;
+        const bool hasCaretMoved = editorState.caretUtf16 != field.followedCaretUtf16;
 
-        field.scrollOffsetY = followedScrollOffset(field.scrollOffsetY, caretTop,
-                                                   caretTop + static_cast<float>(geometry.caret.size.height),
-                                                   static_cast<float>(box.size.height), geometry.contentHeight);
+        field.pendingWheelDistanceY = 0.0F;
+        field.followedCaretUtf16 = editorState.caretUtf16;
+        field.scrollOffsetY =
+            hasCaretMoved ? followedScrollOffset(wheeledOffset, caretTop,
+                                                 caretTop + static_cast<float>(geometry.caret.size.height),
+                                                 boxHeight, geometry.contentHeight)
+                          : clampedScrollOffset(wheeledOffset, boxHeight, geometry.contentHeight);
         editorState.scrollOffsetY = field.scrollOffsetY;
     } else {
         const float caretLeft = static_cast<float>(geometry.caret.origin.x);
@@ -580,14 +631,16 @@ void TextInputController::emitEvents(TextInputField& field) {
         selectionBegin != field.emittedSelectionBegin || selectionEnd != field.emittedSelectionEnd;
     const bool hasContentSizeChanged =
         !field.hasEmittedContentSize || !(field.contentSize == field.emittedContentSize);
+    const bool hasScrolled = field.scrollOffsetY != field.emittedScrollOffsetY;
 
     field.emittedText = text;
     field.emittedSelectionBegin = selectionBegin;
     field.emittedSelectionEnd = selectionEnd;
     field.emittedContentSize = field.contentSize;
     field.hasEmittedContentSize = true;
+    field.emittedScrollOffsetY = field.scrollOffsetY;
 
-    if (!hasTextChanged && !hasSelectionChanged && !hasContentSizeChanged) {
+    if (!hasTextChanged && !hasSelectionChanged && !hasContentSizeChanged && !hasScrolled) {
         return;
     }
 
@@ -612,6 +665,13 @@ void TextInputController::emitEvents(TextInputField& field) {
 
     if (hasSelectionChanged) {
         emitter->onSelectionChange(metrics);
+    }
+
+    // Last, because the window is a consequence of everything above it: an edit changes the text, the size the
+    // text measures to, the caret measured against that size, and only then where the window has to sit for the
+    // caret to be inside it. `contentOffset` on the metrics is that window, so `onScroll` reports it.
+    if (hasScrolled) {
+        emitter->onScroll(metrics);
     }
 }
 

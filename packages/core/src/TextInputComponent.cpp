@@ -18,7 +18,9 @@ TextInputProps::TextInputProps(const facebook::react::PropsParserContext& contex
           facebook::react::convertRawProp(context, rawProps, "secureTextEntry", sourceProps.secureTextEntry, {false})),
       caretHidden(facebook::react::convertRawProp(context, rawProps, "caretHidden", sourceProps.caretHidden, {false})),
       selectTextOnFocus(facebook::react::convertRawProp(context, rawProps, "selectTextOnFocus",
-                                                        sourceProps.selectTextOnFocus, {false})) {}
+                                                        sourceProps.selectTextOnFocus, {false})),
+      scrollEnabled(
+          facebook::react::convertRawProp(context, rawProps, "scrollEnabled", sourceProps.scrollEnabled, {true})) {}
 
 // `LayoutContext::fontSizeMultiplier` defaults to 1 and this host never sets another; upstream compares the
 // state's multiplier against the root's, so the initial state has to carry the same value.

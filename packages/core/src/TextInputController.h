@@ -13,6 +13,7 @@
 #include <react/renderer/graphics/Size.h>
 #include <react/renderer/uimanager/UIManager.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -62,7 +63,8 @@ enum class TextInputKeyResult : uint8_t { Ignored, Consumed, ConsumedAndBlurred 
 class TextInputController final : public ImeSink {
 public:
     TextInputController(std::shared_ptr<facebook::react::UIManager> uiManager,
-                        std::shared_ptr<LinuxMountingManager> mountingManager);
+                        std::shared_ptr<LinuxMountingManager> mountingManager,
+                        facebook::react::SurfaceId surfaceId);
 
     /**
      * The `<TextInput>` nodes of the committed tree, in mount order, refreshed once per commit.
@@ -95,6 +97,21 @@ public:
      * button stays down. A press outside the field does nothing here; the focus model has already blurred it.
      */
     void handlePointer(const InputEvent& event);
+
+    /**
+     * Scrolls the multiline field under the pointer by one frame's wheel or touchpad input.
+     *
+     * A multiline field is a window on content allowed to be taller than it is, so a wheel over it moves that
+     * window and not the enclosing `<ScrollView>` — react/core#49226 is the tug-of-war when both move. Which of
+     * the two the wheel reaches is decided once, in `ScrollController::scrollViewUnderPointer`, by the same
+     * deepest-scrollable-wins rule nested ScrollViews already follow; there is no chaining at the end stops,
+     * for the same reason there is none between two nested ScrollViews.
+     *
+     * The wheel moves the window and never the caret, so nothing here follows a caret and the distance is
+     * applied whole on the next frame rather than decelerating: a field is a window a few lines tall and a
+     * fling across it would overshoot every time.
+     */
+    void handleScroll(const InputEvent& event);
 
     /**
      * Reconciles every live field with React and republishes what the scene draws. Called once per frame, after
@@ -135,6 +152,14 @@ private:
         size_t emittedSelectionEnd{0};
         float scrollOffsetX{0.0F};
         float scrollOffsetY{0.0F};
+        // What the wheel asked for since the last frame, applied whole by the next `publish` and cleared there.
+        float pendingWheelDistanceY{0.0F};
+        // The caret position the window was last dragged to. A frame where it is unchanged leaves the window
+        // where the wheel left it and only clamps it, which is what stops a wheeled field snapping back to a
+        // caret nobody moved; a frame where it changed follows the caret from wherever the wheel left the
+        // window, which is what makes typing scroll back to it.
+        size_t followedCaretUtf16{0};
+        float emittedScrollOffsetY{0.0F};
         float layoutWidth{0.0F};
         // `contentSize` is the size the displayed text measured to this frame, at the width the field laid out
         // with; it is what `onContentSizeChange` reports, and it is compared against the last one reported so
@@ -147,6 +172,7 @@ private:
     };
 
     TextInputField* focusedField();
+    TextInputField* fieldUnderPointer(facebook::react::Point surfacePoint);
     const TextInputField* focusedField() const;
     void reconcile(TextInputField& field);
     void publish(TextInputField& field);
@@ -163,6 +189,7 @@ private:
 
     std::shared_ptr<facebook::react::UIManager> uiManager_;
     std::shared_ptr<LinuxMountingManager> mountingManager_;
+    facebook::react::SurfaceId surfaceId_;
     std::unordered_map<facebook::react::Tag, TextInputField> fields_;
     TextInputFocusSink* textInputFocusSink_{nullptr};
     facebook::react::Tag focusedTag_{0};

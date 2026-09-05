@@ -1,0 +1,28 @@
+{
+  "name": "text-input-inner-scroll",
+  "bundle": "text-input-inner-scroll.js",
+  "ready": "text-input-inner-scroll: committed surface 1",
+  "frames": 900,
+  "steps": [
+    "sleep 500",
+    "key Tab press",
+    "key Tab release",
+    "sleep 300",
+    "move 400 100",
+    "sleep 100",
+    "wheel up 12",
+    "sleep 400",
+    "wheel down 20",
+    "sleep 400",
+    "move 400 400",
+    "sleep 100",
+    "wheel down 3",
+    "sleep 500"
+  ],
+  "expect": [
+    "text-input-inner-scroll: topFocus on inner",
+    "text-input-inner-scroll: topScroll on inner offsetY=0",
+    "text-input-inner-scroll: topScroll on inner",
+    "text-input-inner-scroll: topScroll on list"
+  ]
+}

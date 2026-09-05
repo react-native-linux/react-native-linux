@@ -116,6 +116,20 @@ export const fixtures: readonly GoldenFixture[] = [
     renderArguments: ["{Tab}{Tab}{Ctrl+A}"],
     renderFlag: "--type",
   },
+  // Issue #256: a five-line field holding fifteen lines, inside a ScrollView, at both ends of its own window.
+  // Ctrl+A then an arrow collapses the selection to one end of it, the caret motion the editing model has.
+  {
+    bundleFileName: "text-input-inner-scroll.js",
+    goldenFileName: "text-input-inner-scroll-bottom.png",
+    renderArguments: ["{Ctrl+A}{Right}"],
+    renderFlag: "--type",
+  },
+  {
+    bundleFileName: "text-input-inner-scroll.js",
+    goldenFileName: "text-input-inner-scroll-top.png",
+    renderArguments: ["{Ctrl+A}{Left}"],
+    renderFlag: "--type",
+  },
   // Issue #114: one auto-growing field before anything is typed and after three lines, its sibling following it.
   {
     bundleFileName: "text-input-grow.js",

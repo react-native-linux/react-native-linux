@@ -66,6 +66,16 @@ size_t utf8OffsetForUtf16Index(const std::string& text, size_t utf16Index);
 float followedScrollOffset(float currentOffset, float caretBegin, float caretEnd, float boxLength,
                            float contentLength);
 
+/**
+ * A field's window offset held inside the content it is a window on, on one axis.
+ *
+ * `[0, contentLength - boxLength]` is the whole of the rule, and content shorter than the box collapses that
+ * range to zero rather than to a negative one. It is what `followedScrollOffset` clamps with after it has
+ * followed the caret, and it is also the whole of what a wheel notch over a field is allowed to do: a wheel
+ * moves the window without moving the caret, so there is nothing to follow and only the end stops to respect.
+ */
+float clampedScrollOffset(float offset, float boxLength, float contentLength);
+
 enum class CaretMotion : uint8_t { Left, Right, WordLeft, WordRight, LineStart, LineEnd };
 
 /**

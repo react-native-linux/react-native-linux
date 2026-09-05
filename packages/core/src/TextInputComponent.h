@@ -28,8 +28,9 @@ extern const char kTextInputComponentName[];
  * `react/renderer/components/textinput` with no platform directory of its own. What upstream does **not** ship
  * there is `secureTextEntry`: iOS carries it inside `TextInputTraits` on its own `TextInputProps` and Android
  * carries it on `AndroidTextInputProps`, and both of those live under a `platform/` directory that this platform
- * has no business compiling. So this class is the platform half, and it is deliberately three booleans rather
- * than a traits struct — the second consumer that would justify one does not exist.
+ * has no business compiling. `scrollEnabled` is missing for the same reason and is here for the same one. So this
+ * class is the platform half, and it is deliberately four booleans rather than a traits struct — the second
+ * consumer that would justify one does not exist.
  */
 class TextInputProps final : public facebook::react::BaseTextInputProps {
 public:
@@ -40,7 +41,25 @@ public:
     bool secureTextEntry{false};
     bool caretHidden{false};
     bool selectTextOnFocus{false};
+    // Whether a multiline field is a window on its own content. `false` hands the wheel over it back to the
+    // enclosing `<ScrollView>`; it says nothing about the field's height, which is #114's auto-grow. Defaults to
+    // true, which is React Native's default on every platform that has the prop.
+    bool scrollEnabled{true};
 };
+
+/**
+ * Whether a field is a window on its own content, and therefore whether the wheel over it is its own.
+ *
+ * The two routing decisions this governs sit in different translation units — `ScrollController` declines to
+ * claim the wheel and `TextInputController` claims it — and they have to agree exactly, so the predicate is one
+ * function rather than the same conjunction written twice.
+ *
+ * `editable` is deliberately not part of it: a read-only field still scrolls, on every platform that has one,
+ * and react/core#35388 is the bug filed when it did not.
+ */
+inline bool isScrollableField(const TextInputProps& props) noexcept {
+    return props.multiline && props.scrollEnabled;
+}
 
 /**
  * The `<TextInput>` shadow node for this platform: upstream's `BaseTextInputShadowNode` with our props on it.

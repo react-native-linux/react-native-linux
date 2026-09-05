@@ -303,6 +303,10 @@
       "state": "implemented",
       "test": "RetainedSceneTextInputTest, CaretHiddenRemovesTheCaretColourAndTheCaretWithIt"
     },
-    "selectTextOnFocus": { "state": "not-implemented", "issue": "#54" }
+    "selectTextOnFocus": { "state": "not-implemented", "issue": "#54" },
+    "scrollEnabled": {
+      "state": "implemented",
+      "test": "TextInputControllerTest, ScrollEnabledDefaultsToTrueAndIsWhatMakesAFieldAWindowOnItsOwnContent"
+    }
   }
 }
