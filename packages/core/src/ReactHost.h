@@ -6,13 +6,13 @@
 #include "JsErrorReporter.h"
 #include "TurboModuleRegistry.h"
 
+#include <atomic>
+#include <chrono>
 #include <cxxreact/JSBigString.h>
+#include <memory>
 #include <react/runtime/ReactInstance.h>
 #include <react/runtime/TimerManager.h>
 #include <react/threading/MessageQueueThreadImpl.h>
-
-#include <chrono>
-#include <memory>
 #include <string>
 
 namespace facebook::react {
@@ -76,6 +76,22 @@ public:
     void publishPendingDimensions();
     void loadScript(std::unique_ptr<const facebook::react::JSBigString> script, const std::string& sourceUrl);
     void drainJavaScriptThread();
+
+    /**
+     * Blocks the JavaScript thread, and the caller with it, for `duration`. This is the automation channel's
+     * `HangForTesting` (#214): the driver's proof that a wedged app is observable rather than mistaken for a
+     * slow one, so the block has to be the real thing — the response only goes out once the thread is free
+     * again, which is what makes the driver's read time out. See *The automation channel* in
+     * docs/cpp-toolchain.md.
+     */
+    void blockJavaScriptThread(std::chrono::milliseconds duration);
+
+    /**
+     * Whether the bundle has called `globalThis.__rnlMarkTestPassed()`, the headless assertion protocol
+     * react-native-windows drives through `TestModule.markTestPassed` (#214, #236): a logic test asserts in
+     * JavaScript and says so, and the harness needs no screenshot to grade it.
+     */
+    bool hasMarkedTestPassed() const;
     bool runUntilQuiescent(std::chrono::milliseconds budget);
     bool hasReportedFatalError() const;
 
@@ -92,6 +108,7 @@ private:
     HostTimerRegistry* timerRegistry_{nullptr};
     std::shared_ptr<facebook::react::TimerManager> timerManager_;
     JsErrorReporter errorReporter_;
+    std::shared_ptr<std::atomic<bool>> hasMarkedTestPassed_{std::make_shared<std::atomic<bool>>(false)};
     HermesJSRuntimeFactory runtimeFactory_;
     std::unique_ptr<facebook::react::ReactInstance> reactInstance_;
     std::shared_ptr<facebook::react::NativeAnimatedNodesManagerProvider> animatedNodesManagerProvider_;

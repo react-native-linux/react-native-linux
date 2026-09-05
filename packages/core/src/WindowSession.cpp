@@ -2,12 +2,11 @@
 
 #include "DimensionsSource.h"
 
+#include <chrono>
 #include <cxxreact/JSBigString.h>
+#include <memory>
 #include <react/renderer/graphics/Float.h>
 #include <react/renderer/graphics/Size.h>
-
-#include <chrono>
-#include <memory>
 #include <string>
 #include <vector>
 
@@ -91,5 +90,13 @@ double WindowSession::takeFrameMilliseconds() {
 SceneFrame WindowSession::takeFrame() { return fabricHost_->takeFrame(); }
 
 bool WindowSession::hasReportedFatalError() const { return reactHost_.hasReportedFatalError(); }
+
+SceneNodes WindowSession::visualTreeNodes() const { return fabricHost_->visualTreeNodes(); }
+
+void WindowSession::blockJavaScriptThread(std::chrono::milliseconds duration) {
+    reactHost_.blockJavaScriptThread(duration);
+}
+
+bool WindowSession::hasMarkedTestPassed() const { return reactHost_.hasMarkedTestPassed(); }
 
 } // namespace react_native_linux
