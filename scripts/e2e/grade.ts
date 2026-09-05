@@ -30,6 +30,7 @@ interface AutomationChannelInputs {
   readonly artifactsDirectory: string;
   readonly goldensDirectory: string;
   readonly scenario: Scenario;
+  readonly snapshotsDirectory: string;
   readonly trace: string;
 }
 
@@ -171,6 +172,7 @@ const gradeAutomationChannel = (inputs: AutomationChannelInputs): Promise<readon
         artifactsDirectory: inputs.artifactsDirectory,
         automation: inputs.scenario.automation,
         goldensDirectory: inputs.goldensDirectory,
+        snapshotsDirectory: inputs.snapshotsDirectory,
         trace: inputs.trace,
       });
 

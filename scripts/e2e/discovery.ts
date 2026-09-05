@@ -3,17 +3,23 @@ import path from "node:path";
 
 const SCENARIOS_DIRECTORY_NAME = "e2e";
 const GOLDENS_DIRECTORY_NAME = "goldens";
+const SNAPSHOTS_DIRECTORY_NAME = "snapshots";
 const BUNDLES_DIRECTORY_NAME = "test-bundles";
 const SCENARIO_FILE_SUFFIX = ".json";
 const SCENARIO_FLAG = "--scenario";
 const NOT_FOUND_INDEX = -1;
 const NEXT_ARGUMENT = 1;
 
-/** Where a scenario came from, and the two directories of the package that ships it. */
+/**
+ * Where a scenario came from, and the three directories of the package that ships it. `goldens` holds pictures
+ * and `snapshots` holds serialised trees; they are apart because a picture is blessed from an artifact by
+ * copying a file a reviewer cannot read, and a tree snapshot is reviewed in the pull request diff like code.
+ */
 interface ScenarioSource {
   readonly bundlesDirectory: string;
   readonly filePath: string;
   readonly goldensDirectory: string;
+  readonly snapshotsDirectory: string;
 }
 
 interface ScenarioRun {
@@ -39,6 +45,7 @@ const findPackageScenarioSources = (
       bundlesDirectory: path.join(packageDirectory, BUNDLES_DIRECTORY_NAME),
       filePath: path.join(scenariosDirectory, fileName),
       goldensDirectory: path.join(scenariosDirectory, GOLDENS_DIRECTORY_NAME),
+      snapshotsDirectory: path.join(scenariosDirectory, SNAPSHOTS_DIRECTORY_NAME),
     }));
 };
 

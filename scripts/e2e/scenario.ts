@@ -61,9 +61,11 @@ interface ScreenshotComparison {
  * scenario without an `automation` block runs a window that never listens. `listErrorsMustBeEmpty` is the
  * `verifyNoErrorLogs` react-native-windows asserts in `afterEach`, asked of the runtime rather than grepped out
  * of the trace; `visualTreeSnapshot` names a file under the package's `e2e/goldens` the committed tree has to
- * match; `markTestPassed` requires the bundle to have called `globalThis.__rnlMarkTestPassed()`.
+ * match; `accessibilityTreeSnapshot` names one under `e2e/snapshots` its accessibility projection has to match;
+ * `markTestPassed` requires the bundle to have called `globalThis.__rnlMarkTestPassed()`.
  */
 interface ScenarioAutomation {
+  readonly accessibilityTreeSnapshot: string | null;
   readonly listErrorsMustBeEmpty: boolean;
   readonly markTestPassed: boolean;
   readonly visualTreeSnapshot: string | null;
@@ -151,6 +153,9 @@ const readScreenshotComparison = (record: Record<string, unknown>, sourceName: s
   };
 };
 
+const readSnapshotName = (automation: Record<string, unknown>, field: string, sourceName: string): string | null =>
+  field in automation ? readString(automation[field], `automation.${field}`, sourceName) : null;
+
 const readAutomation = (record: Record<string, unknown>, sourceName: string): ScenarioAutomation | null => {
   if (!("automation" in record)) {
     return null;
@@ -159,12 +164,10 @@ const readAutomation = (record: Record<string, unknown>, sourceName: string): Sc
   const automation = readObject(record["automation"], "automation", sourceName);
 
   return {
+    accessibilityTreeSnapshot: readSnapshotName(automation, "accessibilityTreeSnapshot", sourceName),
     listErrorsMustBeEmpty: readOptionalBoolean(automation, "listErrorsMustBeEmpty", sourceName),
     markTestPassed: readOptionalBoolean(automation, "markTestPassed", sourceName),
-    visualTreeSnapshot:
-      "visualTreeSnapshot" in automation
-        ? readString(automation["visualTreeSnapshot"], "automation.visualTreeSnapshot", sourceName)
-        : null,
+    visualTreeSnapshot: readSnapshotName(automation, "visualTreeSnapshot", sourceName),
   };
 };
 

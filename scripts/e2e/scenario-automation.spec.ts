@@ -10,16 +10,22 @@ const validScenario = {
 };
 
 describe("parseScenario automation", () => {
-  it("reads the three things the channel is asked to prove", () => {
+  it("reads the four things the channel is asked to prove", () => {
     const scenario = parseScenario(
       {
         ...validScenario,
-        automation: { listErrorsMustBeEmpty: true, markTestPassed: true, visualTreeSnapshot: "tree.json" },
+        automation: {
+          accessibilityTreeSnapshot: "a11y.json",
+          listErrorsMustBeEmpty: true,
+          markTestPassed: true,
+          visualTreeSnapshot: "tree.json",
+        },
       },
       "fixture.json",
     );
 
     expect(scenario.automation).toEqual({
+      accessibilityTreeSnapshot: "a11y.json",
       listErrorsMustBeEmpty: true,
       markTestPassed: true,
       visualTreeSnapshot: "tree.json",
@@ -28,6 +34,7 @@ describe("parseScenario automation", () => {
 
   it("defaults every field of an automation block that names none of them", () => {
     expect(parseScenario({ ...validScenario, automation: {} }, "fixture.json").automation).toEqual({
+      accessibilityTreeSnapshot: null,
       listErrorsMustBeEmpty: false,
       markTestPassed: false,
       visualTreeSnapshot: null,
@@ -44,5 +51,11 @@ describe("parseScenario automation", () => {
     expect(() => parseScenario({ ...validScenario, automation: { visualTreeSnapshot: "" } }, "fixture.json")).toThrow(
       'fixture.json: "automation.visualTreeSnapshot" must be a non-empty string',
     );
+  });
+
+  it("rejects an accessibilityTreeSnapshot that is not a file name", () => {
+    expect(() =>
+      parseScenario({ ...validScenario, automation: { accessibilityTreeSnapshot: 7 } }, "fixture.json"),
+    ).toThrow('fixture.json: "automation.accessibilityTreeSnapshot" must be a non-empty string');
   });
 });

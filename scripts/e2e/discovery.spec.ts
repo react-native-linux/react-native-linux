@@ -43,6 +43,7 @@ describe("findScenarioSources", () => {
       bundlesDirectory: "/repo/packages/reanimated/test-bundles",
       filePath: "/repo/packages/reanimated/e2e/smoke.json",
       goldensDirectory: "/repo/packages/reanimated/e2e/goldens",
+      snapshotsDirectory: "/repo/packages/reanimated/e2e/snapshots",
     });
   });
 

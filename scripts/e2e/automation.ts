@@ -1,7 +1,8 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-
 import type { ScenarioAutomation } from "./scenario.ts";
+import { compareSnapshot } from "./snapshot.ts";
 import { connect } from "node:net";
+import { existsSync } from "node:fs";
+import { isRecord } from "./fields.ts";
 import { once } from "node:events";
 import path from "node:path";
 
@@ -11,9 +12,9 @@ const COMMAND_TIMEOUT_MS = 10_000;
 const HANG_MS = 1500;
 const HANG_TIMEOUT_MS = 300;
 const NO_ERRORS = 0;
-const JSON_INDENT = 2;
 
 const TREE_ARTIFACT_NAME = "automation-tree.json";
+const ACCESSIBILITY_ARTIFACT_NAME = "accessibility-tree.json";
 const SCREENSHOT_ARTIFACT_NAME = "automation-screenshot.png";
 
 /**
@@ -43,11 +44,9 @@ interface AutomationInputs {
   readonly artifactsDirectory: string;
   readonly automation: ScenarioAutomation;
   readonly goldensDirectory: string;
+  readonly snapshotsDirectory: string;
   readonly trace: string;
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
 
 const findAutomationSocketPath = (trace: string): string | null =>
   SOCKET_TRACE_PATTERN.exec(trace)?.groups?.["socketPath"] ?? null;
@@ -122,34 +121,25 @@ const requestAutomation = async (
 };
 
 /**
- * Key-sorted JSON, so a snapshot compares by structure rather than by the order `folly::dynamic` happened to
- * hash its object keys into.
- */
-const canonicalJson = (value: unknown): string => {
-  if (Array.isArray(value)) {
-    return `[${value.map((entry) => canonicalJson(entry)).join(",")}]`;
-  }
-
-  if (!isRecord(value)) {
-    return JSON.stringify(value) ?? "null";
-  }
-
-  return `{${Object.keys(value)
-    .toSorted()
-    .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
-    .join(",")}}`;
-};
-
-/**
- * What a snapshot is compared against: the children of the surface root, not the roots themselves. The surface
- * root's frame is the headless compositor's output size, which is a property of the rig rather than of the
- * bundle, so a snapshot carrying it would have to be re-blessed whenever the rig changed size.
+ * What a visual-tree snapshot is compared against: the children of the surface root, not the roots themselves.
+ * The surface root's frame is the headless compositor's output size, which is a property of the rig rather than
+ * of the bundle, so a snapshot carrying it would have to be re-blessed whenever the rig changed size.
  */
 const findSurfaceChildren = (result: Record<string, unknown>): unknown => {
   const { roots } = result;
   const surfaceRoot: unknown = Array.isArray(roots) ? roots[FIRST_CHARACTER] : null;
 
   return isRecord(surfaceRoot) ? (surfaceRoot["children"] ?? []) : null;
+};
+
+/**
+ * The accessibility projection needs no such trimming: it carries no geometry at all, and the surface root is a
+ * box with no accessibility props, so the projection already skips it and answers with its exposed descendants.
+ */
+const findAccessibilityNodes = (result: Record<string, unknown>): unknown => {
+  const { nodes } = result;
+
+  return Array.isArray(nodes) ? nodes : null;
 };
 
 const describeReportedErrors = (result: Record<string, unknown>): readonly string[] => {
@@ -160,29 +150,6 @@ const describeReportedErrors = (result: Record<string, unknown>): readonly strin
   }
 
   return [`ListErrors reported ${String(errors.length)} error(s): ${JSON.stringify(errors)}`];
-};
-
-const compareVisualTree = (
-  inputs: AutomationInputs,
-  snapshot: string,
-  result: Record<string, unknown>,
-): readonly string[] => {
-  const observedPath = path.join(inputs.artifactsDirectory, TREE_ARTIFACT_NAME);
-  const observed = findSurfaceChildren(result);
-
-  writeFileSync(observedPath, `${JSON.stringify(observed, null, JSON_INDENT)}\n`);
-
-  const snapshotPath = path.join(inputs.goldensDirectory, snapshot);
-
-  if (!existsSync(snapshotPath)) {
-    return [`there is no visual-tree snapshot at ${snapshotPath}; bless ${observedPath}`];
-  }
-
-  const expected: unknown = JSON.parse(readFileSync(snapshotPath, "utf8"));
-
-  return canonicalJson(observed) === canonicalJson(expected)
-    ? []
-    : [`the visual tree does not match ${snapshot}; see ${observedPath}`];
 };
 
 const gradeListErrors = async (socketPath: string, inputs: AutomationInputs): Promise<readonly string[]> => {
@@ -204,7 +171,42 @@ const gradeVisualTree = async (socketPath: string, inputs: AutomationInputs): Pr
 
   const answer = await requestAutomation(socketPath, { command: "DumpVisualTree" }, COMMAND_TIMEOUT_MS);
 
-  return answer.result === null ? [String(answer.failure)] : compareVisualTree(inputs, snapshot, answer.result);
+  if (answer.result === null) {
+    return [String(answer.failure)];
+  }
+
+  return compareSnapshot(inputs.artifactsDirectory, {
+    artifactName: TREE_ARTIFACT_NAME,
+    directory: inputs.goldensDirectory,
+    observed: findSurfaceChildren(answer.result),
+    snapshot,
+  });
+};
+
+/**
+ * The assertion of #216: what a screen reader would be handed, compared against a file a reviewer reads in the
+ * diff. It catches what a pixel diff cannot — a role, a name, a state, or a node that silently stopped being
+ * exposed at all changes no pixel that a perceptual threshold would notice.
+ */
+const gradeAccessibilityTree = async (socketPath: string, inputs: AutomationInputs): Promise<readonly string[]> => {
+  const snapshot = inputs.automation.accessibilityTreeSnapshot;
+
+  if (snapshot === null) {
+    return [];
+  }
+
+  const answer = await requestAutomation(socketPath, { command: "DumpAccessibilityTree" }, COMMAND_TIMEOUT_MS);
+
+  if (answer.result === null) {
+    return [String(answer.failure)];
+  }
+
+  return compareSnapshot(inputs.artifactsDirectory, {
+    artifactName: ACCESSIBILITY_ARTIFACT_NAME,
+    directory: inputs.snapshotsDirectory,
+    observed: findAccessibilityNodes(answer.result),
+    snapshot,
+  });
 };
 
 const gradeMarkTestPassed = async (socketPath: string, inputs: AutomationInputs): Promise<readonly string[]> => {
@@ -267,9 +269,17 @@ const gradeAutomation = async (inputs: AutomationInputs): Promise<readonly strin
   return [
     ...(await gradeListErrors(socketPath, inputs)),
     ...(await gradeVisualTree(socketPath, inputs)),
+    ...(await gradeAccessibilityTree(socketPath, inputs)),
     ...(await gradeMarkTestPassed(socketPath, inputs)),
     ...(await gradeChannelItself(socketPath, inputs)),
   ];
 };
 
-export { canonicalJson, findAutomationSocketPath, findSurfaceChildren, gradeAutomation, readAnswer, requestAutomation };
+export {
+  findAccessibilityNodes,
+  findAutomationSocketPath,
+  findSurfaceChildren,
+  gradeAutomation,
+  readAnswer,
+  requestAutomation,
+};

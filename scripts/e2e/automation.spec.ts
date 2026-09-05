@@ -1,5 +1,5 @@
-import { canonicalJson, findAutomationSocketPath, findSurfaceChildren, readAnswer } from "./automation.ts";
 import { describe, expect, it } from "vitest";
+import { findAccessibilityNodes, findAutomationSocketPath, findSurfaceChildren, readAnswer } from "./automation.ts";
 
 const SOCKET_PATH = "/run/user/1000/rnl-automation-9.sock";
 
@@ -42,32 +42,6 @@ describe("readAnswer", () => {
   });
 });
 
-describe("canonicalJson", () => {
-  it("compares equal for objects whose keys arrived in a different order", () => {
-    // Built from pairs because the source order is the point and the linter sorts every literal it sees.
-    const inHashOrder = Object.fromEntries([
-      ["outer", "c"],
-      [
-        "inner",
-        Object.fromEntries([
-          ["second", "b"],
-          ["first", "a"],
-        ]),
-      ],
-    ]);
-
-    expect(canonicalJson(inHashOrder)).toBe(canonicalJson({ inner: { first: "a", second: "b" }, outer: "c" }));
-  });
-
-  it("keeps the order of an array, which is meaning rather than hashing", () => {
-    expect(canonicalJson(["second", "first"])).not.toBe(canonicalJson(["first", "second"]));
-  });
-
-  it("keeps a value JSON cannot represent as null", () => {
-    expect(canonicalJson(Symbol.iterator)).toBe("null");
-  });
-});
-
 describe("findSurfaceChildren", () => {
   it("takes the children of the surface root", () => {
     expect(findSurfaceChildren({ roots: [{ children: [{ testID: "box" }], componentName: "RootView" }] })).toEqual([
@@ -85,5 +59,15 @@ describe("findSurfaceChildren", () => {
 
   it("takes nothing from a dump whose roots are not a list", () => {
     expect(findSurfaceChildren({})).toBeNull();
+  });
+});
+
+describe("findAccessibilityNodes", () => {
+  it("takes the projected nodes", () => {
+    expect(findAccessibilityNodes({ nodes: [{ role: "button", tag: 3 }] })).toEqual([{ role: "button", tag: 3 }]);
+  });
+
+  it("takes nothing from an answer whose nodes are not a list", () => {
+    expect(findAccessibilityNodes({})).toBeNull();
   });
 });
