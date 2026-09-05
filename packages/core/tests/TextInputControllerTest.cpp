@@ -65,7 +65,7 @@ protected:
 
     void TearDown() override { removeShadowTree(*uiManager_, kSurfaceId); }
 
-    TextInputController makeController() { return TextInputController(uiManager_, mountingManager_); }
+    TextInputController makeController() { return TextInputController(uiManager_, mountingManager_, kSurfaceId); }
 
     void commitTextInput(folly::dynamic extraProps) {
         extraProps["width"] = 200;
@@ -83,7 +83,7 @@ protected:
 
         mountedField_ = newestFieldNode();
 
-        controller_ = std::make_unique<TextInputController>(uiManager_, mountingManager_);
+        controller_ = std::make_unique<TextInputController>(uiManager_, mountingManager_, kSurfaceId);
         controller_->setMountedFields({mountedField_});
         controller_->setFocusedNode(mountedField_);
     }

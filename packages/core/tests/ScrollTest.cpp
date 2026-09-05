@@ -3,6 +3,7 @@
 #include "ScrollEventCadence.h"
 #include "ScrollPhysics.h"
 #include "ShadowTreeTestSupport.h"
+#include "TextInputComponent.h"
 
 #include <LinuxMountingManager.h>
 #include <cstddef>
@@ -48,6 +49,7 @@ using react_native_linux::ScrollSnapAlignment;
 using react_native_linux::ScrollSnapConfiguration;
 using react_native_linux::scrollToDestination;
 using react_native_linux::settleTargetOffset;
+using react_native_linux::TextInputComponentDescriptor;
 using react_native_linux::velocityForTravel;
 
 constexpr SurfaceId kSurfaceId = 1;
@@ -828,6 +830,32 @@ protected:
     ScrollController makeController() { return ScrollController(uiManager_, kSurfaceId); }
 
     /**
+     * A 100x100 page holding a 100x50 multiline field at its top and 300 points of plain content under it, so
+     * one point of the page is over the field and another is not.
+     */
+    void commitScrollViewOverMultilineField() {
+        folly::dynamic props = folly::dynamic::object("width", 100)("height", 100);
+        const ShadowTreeCommitOptions commitOptions{.enableStateReconciliation = false, .mountSynchronously = true};
+
+        shadowTree_->commit(
+            [this, &props](const RootShadowNode& oldRootShadowNode) {
+                std::vector<std::shared_ptr<const ShadowNode>> children;
+
+                children.push_back(makeMultilineField(21, 100, 50));
+                children.push_back(makeChild(22, 100, 300));
+
+                return std::static_pointer_cast<RootShadowNode>(oldRootShadowNode.ShadowNode::clone(
+                    ShadowNodeFragment{.props = ShadowNodeFragment::propsPlaceholder(),
+                                       .children = std::make_shared<const ChildList>(ChildList{
+                                           makeConfiguredShadowNode(scrollViewDescriptor_, 20, kSurfaceId,
+                                                                    contextContainer_, std::move(props),
+                                                                    std::make_shared<const ChildList>(
+                                                                        std::move(children)))})}));
+            },
+            commitOptions);
+    }
+
+    /**
      * Commits a tall scrolling page and returns a controller over it, then runs one frame. The prologue every
      * scroll-controller test shares - a helper because the same block twice is a jscpd clone at threshold 0.
      */
@@ -892,6 +920,13 @@ private:
                                         std::make_shared<const ChildList>(std::move(children)));
     }
 
+    std::shared_ptr<const ShadowNode> makeMultilineField(Tag tag, double width, double height) {
+        return makeConfiguredShadowNode(
+            textInputDescriptor_, tag, kSurfaceId, contextContainer_,
+            folly::dynamic::object("width", width)("height", height)("multiline", true),
+            std::make_shared<const ChildList>());
+    }
+
     std::shared_ptr<const ShadowNode> makeChild(Tag tag, double width, double height) {
         return makeConfiguredShadowNode(viewDescriptor_, tag, kSurfaceId, contextContainer_,
                                         folly::dynamic::object("width", width)("height", height),
@@ -903,6 +938,8 @@ private:
     ViewComponentDescriptor viewDescriptor_ = makeViewComponentDescriptor(contextContainer_);
     ScrollViewComponentDescriptor scrollViewDescriptor_{ComponentDescriptorParameters{
         .eventDispatcher = EventDispatcher::Shared{}, .contextContainer = contextContainer_, .flavor = nullptr}};
+    TextInputComponentDescriptor textInputDescriptor_{ComponentDescriptorParameters{
+        .eventDispatcher = EventDispatcher::Shared{}, .contextContainer = contextContainer_, .flavor = nullptr}};
 
 protected:
     void TearDown() override {
@@ -913,6 +950,32 @@ protected:
     std::unique_ptr<ShadowTree> removedTree_;
     std::shared_ptr<UIManager> uiManager_;
 };
+
+// Issue #256 and react/core#49226. A multiline <TextInput> is a window on its own content, so it is the deepest
+// scrollable under the pointer and the wheel is its rather than the page's — the same deepest-wins rule two
+// nested ScrollViews follow. `TextInputController` is what then moves the field; what is asserted here is only
+// that the page did not also move, because both moving is the tug-of-war the issue is about.
+TEST_F(ScrollControllerTest, AWheelOverAMultilineFieldLeavesTheEnclosingPageAlone) {
+    commitScrollViewOverMultilineField();
+    ScrollController controller = makeController();
+
+    controller.dispatch({wheel(3, 50.0, 20.0)});
+    controller.advance(kFrameMilliseconds60Hz);
+
+    EXPECT_FALSE(controller.hasDispatchedScrollEvent());
+    EXPECT_FALSE(controller.isScrollActive());
+}
+
+TEST_F(ScrollControllerTest, AWheelBesideTheFieldStillScrollsTheEnclosingPage) {
+    commitScrollViewOverMultilineField();
+    ScrollController controller = makeController();
+
+    controller.dispatch({wheel(3, 50.0, 80.0)});
+    controller.advance(kFrameMilliseconds60Hz);
+
+    EXPECT_TRUE(controller.hasDispatchedScrollEvent());
+    EXPECT_TRUE(controller.isScrollActive());
+}
 
 TEST_F(ScrollControllerTest, AWheelFlingStaysActiveThroughMomentumAndSettles) {
     commitScrollView(folly::dynamic::object());

@@ -1,5 +1,7 @@
 #include "ScrollController.h"
 
+#include "TextInputComponent.h"
+
 #include <react/renderer/components/scrollview/ScrollEvent.h>
 #include <react/renderer/components/scrollview/ScrollViewEventEmitter.h>
 #include <react/renderer/components/scrollview/ScrollViewProps.h>
@@ -553,6 +555,17 @@ std::shared_ptr<const facebook::react::ScrollViewShadowNode> ScrollController::s
         uiManager_->findNodeAtPoint(rootNode, surfacePoint);
 
     if (hitNode == nullptr) {
+        return nullptr;
+    }
+
+    // A multiline `<TextInput>` is a window on its own content, so it is the deepest scrollable under the
+    // pointer and the wheel is its rather than an enclosing ScrollView's — the same deepest-wins rule two
+    // nested ScrollViews follow, and the answer to the tug-of-war in react/core#49226. `TextInputController`
+    // moves it; see *Inner scrolling* in docs/cpp-toolchain.md.
+    const std::shared_ptr<const TextInputShadowNode> textInput =
+        std::dynamic_pointer_cast<const TextInputShadowNode>(hitNode);
+
+    if (textInput != nullptr && textInput->getConcreteProps().multiline) {
         return nullptr;
     }
 

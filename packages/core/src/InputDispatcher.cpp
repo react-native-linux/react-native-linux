@@ -132,7 +132,7 @@ InputDispatcher::InputDispatcher(std::shared_ptr<facebook::react::UIManager> uiM
                                  std::shared_ptr<LinuxMountingManager> mountingManager,
                                  facebook::react::SurfaceId surfaceId)
     : uiManager_(std::move(uiManager)), mountingManager_(std::move(mountingManager)), surfaceId_(surfaceId),
-      textInputController_(uiManager_, mountingManager_) {}
+      textInputController_(uiManager_, mountingManager_, surfaceId) {}
 
 void InputDispatcher::dispatch(const std::vector<InputEvent>& events) {
     // Before the events rather than with them: a commit that unmounted the focused node has to blur it even on a
@@ -152,10 +152,12 @@ void InputDispatcher::dispatch(const std::vector<InputEvent>& events) {
             continue;
         }
 
-        // A scroll is the ScrollController's event, and reaches here only to end a press the wheel moved out from
-        // under; see *A scroll cancels the press it started under* in docs/cpp-toolchain.md.
+        // A scroll ends a press the wheel moved out from under — see *A scroll cancels the press it started
+        // under* — and, over a multiline `<TextInput>`, is the field's own rather than the ScrollController's;
+        // see *Inner scrolling* in docs/cpp-toolchain.md.
         if (isScrollEvent(event)) {
             router_.cancelPressForScroll(event);
+            textInputController_.handleScroll(event);
 
             continue;
         }
