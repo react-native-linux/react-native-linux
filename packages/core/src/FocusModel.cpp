@@ -50,11 +50,15 @@ FocusTransition FocusModel::move(FocusDirection direction) {
 }
 
 FocusTransition FocusModel::focusTag(facebook::react::Tag tag, FocusOrigin origin) {
+    return focusTagWithVisibility(tag, origin == FocusOrigin::Keyboard);
+}
+
+FocusTransition FocusModel::focusTagWithVisibility(facebook::react::Tag tag, bool isFocusVisible) {
     if (!isFocusable(tag)) {
         return transitionTo(kNoTag, false);
     }
 
-    return transitionTo(tag, origin == FocusOrigin::Keyboard);
+    return transitionTo(tag, isFocusVisible);
 }
 
 facebook::react::Tag FocusModel::focusedTag() const noexcept { return focusedTag_; }
@@ -112,7 +116,10 @@ std::optional<double> computeScrollIntoViewOffset(double viewportOffset, double 
     const double viewportEnd = viewportOffset + viewportExtent;
 
     if (targetEnd > viewportEnd) {
-        return targetEnd - viewportExtent;
+        // A target taller or wider than the viewport has no offset that satisfies both edges; the start is the
+        // one every browser's `scrollIntoView({block: "nearest"})` picks, because the alternative hides where the
+        // target begins reading from.
+        return targetExtent > viewportExtent ? targetOffset : targetEnd - viewportExtent;
     }
 
     return std::nullopt;

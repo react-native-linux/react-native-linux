@@ -110,6 +110,35 @@ TEST(FocusModelTest, AKeyboardFocusShowsTheRingAndAPointerFocusHidesItAgain) {
     EXPECT_FALSE(model.isFocusVisible());
 }
 
+struct FocusVisibilityCase {
+    bool requestedVisibility;
+};
+
+class FocusTagWithVisibilityTest : public ::testing::TestWithParam<FocusVisibilityCase> {};
+
+TEST_P(FocusTagWithVisibilityTest, TheRequestedVisibilityWinsRegardlessOfOrigin) {
+    FocusModel model = modelWithThreeFocusables();
+
+    const FocusTransition transition = model.focusTagWithVisibility(kBeta, GetParam().requestedVisibility);
+
+    expectTransition(transition, kNoTag, kBeta);
+    EXPECT_EQ(model.focusedTag(), kBeta);
+    EXPECT_EQ(model.isFocusVisible(), GetParam().requestedVisibility);
+}
+
+INSTANTIATE_TEST_SUITE_P(FocusCommand, FocusTagWithVisibilityTest,
+                        ::testing::Values(FocusVisibilityCase{.requestedVisibility = true},
+                                          FocusVisibilityCase{.requestedVisibility = false}));
+
+TEST(FocusModelTest, FocusTagWithVisibilityStillBlursOnATagThatIsNotFocusable) {
+    FocusModel model = modelWithThreeFocusables();
+
+    model.focusTag(kBeta, FocusOrigin::Keyboard);
+
+    expectTransition(model.focusTagWithVisibility(kUnmounted, true), kBeta, kNoTag);
+    EXPECT_FALSE(model.isFocusVisible());
+}
+
 TEST(FocusModelTest, TabAfterAClickOnTheSameNodeOnlyTurnsTheRingOn) {
     FocusModel model;
 
@@ -241,11 +270,11 @@ TEST(ScrollIntoViewTest, ATargetExactlyFlushWithBothEdgesMovesNothing) {
     EXPECT_FALSE(computeScrollIntoViewOffset(0.0, 200.0, 0.0, 200.0).has_value());
 }
 
-TEST(ScrollIntoViewTest, ATargetTallerThanTheViewportRevealsWhicheverEdgeIsOutOfView) {
+TEST(ScrollIntoViewTest, ATargetTallerThanTheViewportAlignsToItsStart) {
     const std::optional<double> offset = computeScrollIntoViewOffset(0.0, 100.0, 40.0, 300.0);
 
     ASSERT_TRUE(offset.has_value());
-    EXPECT_DOUBLE_EQ(offset.value(), 240.0);
+    EXPECT_DOUBLE_EQ(offset.value(), 40.0);
 }
 
 TEST(ScrollIntoViewTest, ATargetStartingBeforeTheViewportWinsOverItsOwnOverflowingEnd) {

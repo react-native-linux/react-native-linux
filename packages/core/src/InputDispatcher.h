@@ -82,9 +82,11 @@ public:
 
     /**
      * Applies the frame's `dispatchCommand` queue. The only command this reads is `focus`, a `<View>` ref's
-     * `focus({ preventScroll })` — `preventScroll` true skips the scroll-into-view every other focus change gets;
-     * every other command, and one naming a tag that is not focusable, is ignored, so the caller may hand over
-     * the whole queue exactly as `ScrollController::dispatchCommands` does with the same one.
+     * `focus({ preventScroll, focusVisible })` — `preventScroll` true skips the scroll-into-view every other focus
+     * change gets, and `focusVisible`, when named explicitly, decides the ring instead of the ordinary
+     * keyboard-visible default a bare `focus()` gets; every other command, and one naming a tag that is not
+     * focusable, is ignored, so the caller may hand over the whole queue exactly as
+     * `ScrollController::dispatchCommands` does with the same one.
      */
     void dispatchCommands(const std::vector<SceneCommand>& commands);
 

@@ -460,6 +460,31 @@ FabricRunResult runFocusClickedFabricBundle(const std::string& bundlePath, faceb
     return finishFabricRun(reactHost, fabricHost);
 }
 
+FabricRunResult runFocusCommandedFabricBundle(const std::string& bundlePath, facebook::react::Size surfaceSize,
+                                              facebook::react::Tag focusedTag) {
+    ReactHost reactHost;
+    std::unique_ptr<FabricHost> fabricHost = startFabricRunWarningIfEmptyForFocus(reactHost, bundlePath, surfaceSize);
+
+    // Synthesised directly, the way `--focus-click` synthesises the pointer events a real click would have
+    // produced — a bundle's own `dispatchCommand` call schedules a rendering update on the runtime scheduler
+    // rather than reaching the queue in the same script turn that called it, and this run needs to count frames
+    // from a known starting point rather than guess how many that scheduled update needs to land in.
+    fabricHost->injectFocusCommand(focusedTag);
+
+    // Two frames, and not one, because of where the event beat sits relative to `advanceScroll` rather than
+    // anything issue #248 could shrink further: `deliverInputFrame` induces the beat *before* `advanceScroll`
+    // runs, so the first frame's `advanceScroll` is what has to resolve the `focus` command and its own `scrollTo`
+    // together — the one guarantee `FabricHost::advanceScroll`'s second drain exists for — but the state write
+    // that `scrollTo` queues has no beat left to ride out on this frame, and rides the second frame's instead. A
+    // headless run that skipped the second-drain fix would need a third frame here rather than a second one: the
+    // first frame would recognise the `focus` command alone, the second would recognise the `scrollTo` it left
+    // behind, and only the third would carry the resulting state write out.
+    deliverInputFrame(reactHost, *fabricHost, {});
+    deliverInputFrame(reactHost, *fabricHost, {});
+
+    return finishFabricRun(reactHost, fabricHost);
+}
+
 FabricRunResult runTypedFabricBundle(const std::string& bundlePath, facebook::react::Size surfaceSize,
                                      const std::string& keySequence) {
     ReactHost reactHost;

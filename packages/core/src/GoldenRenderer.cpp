@@ -514,6 +514,12 @@ int renderFocusClickGolden(const std::string& bundlePath, const std::string& out
                              outputPath, width, height);
 }
 
+int renderFocusCommandGolden(const std::string& bundlePath, const std::string& outputPath,
+                            facebook::react::Tag focusedTag, int width, int height) {
+    return paintSettledScene(runFocusCommandedFabricBundle(bundlePath, toSurfaceSize(width, height), focusedTag),
+                             outputPath, width, height);
+}
+
 int renderTypedGolden(const std::string& bundlePath, const std::string& outputPath, const std::string& keySequence,
                       int width, int height) {
     const FabricRunResult run = runTypedFabricBundle(bundlePath, toSurfaceSize(width, height), keySequence);

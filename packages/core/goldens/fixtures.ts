@@ -73,6 +73,14 @@ export const fixtures: readonly GoldenFixture[] = [
     renderArguments: ["100", "120"],
     renderFlag: "--focus-click",
   },
+  // Issue #248's scroll-into-view regression proof: a programmatic focus() reveals an offscreen ScrollView child.
+  // Tag 14 is row4, the fifth and last row focus-scroll-list.js stacks below the viewport at rest.
+  {
+    bundleFileName: "focus-scroll-list.js",
+    goldenFileName: "focus-command.png",
+    renderArguments: ["14"],
+    renderFlag: "--focus-command-golden",
+  },
   // A text field draws nothing new until it is typed into: a caret and a selection are both editing state.
   {
     bundleFileName: "text-input.js",

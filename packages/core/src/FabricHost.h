@@ -71,6 +71,16 @@ public:
     void dispatchInput(const std::vector<InputEvent>& events);
 
     /**
+     * Queues a `focus` `dispatchCommand` for `tag`, the same way a `<View>` ref's `focus()` reaches
+     * `InputDispatcher::dispatchCommands` — through `LinuxMountingManager`'s command queue rather than through
+     * `dispatchInput`. `LinuxMountingManager::dispatchCommand` reads nothing off the `ShadowView` but its `tag`,
+     * so this needs no shadow node at all: it exists for a headless run to synthesise the command a real
+     * `dispatchCommand` binding would have produced, exactly as `--focus-click` synthesises the pointer events a
+     * real click would have.
+     */
+    void injectFocusCommand(facebook::react::Tag tag);
+
+    /**
      * Integrates one frame of scrolling and reports whether any `<ScrollView>` is still moving. Called between
      * `dispatchInput` and `induceEventBeat`, so the state write-back and the scroll events this produces ride the
      * same beat as everything else the frame queued.

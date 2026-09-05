@@ -3,6 +3,7 @@
 #include "LinuxMountingManager.h"
 #include "RetainedScene.h"
 
+#include <react/renderer/core/ReactPrimitives.h>
 #include <react/renderer/graphics/Point.h>
 #include <react/renderer/graphics/Size.h>
 
@@ -129,6 +130,27 @@ FabricRunResult runFocusTabbedFabricBundle(const std::string& bundlePath, facebo
  */
 FabricRunResult runFocusClickedFabricBundle(const std::string& bundlePath, facebook::react::Size surfaceSize,
                                             facebook::react::Point surfacePoint);
+
+/**
+ * Runs a bundle, then injects a `focus` `dispatchCommand` for `tag` — the ref-driven `focus()`, not a Tab press
+ * or a click — and reads the scene back after exactly two frames: the fewest a correct `FabricHost::advanceScroll`
+ * can take.
+ *
+ * `FabricHost::injectFocusCommand` reaches `LinuxMountingManager`'s queue directly rather than through a bundle's
+ * own `dispatchCommand` call, which schedules a rendering update on the runtime scheduler instead of queuing
+ * synchronously — this is `--focus-click`'s approach applied to a command instead of a pointer event, and it is
+ * what lets this run count frames precisely rather than guessing how many a scheduled update needs to land in.
+ *
+ * `InputDispatcher::dispatchCommands` runs inside `advanceScroll`, so a `focus` command that lands on a node
+ * inside a `<ScrollView>` enqueues its own `scrollTo` after that call's first drain of the command queue already
+ * ran; `advanceScroll`'s second drain is what resolves it in the same frame rather than the one after. The state
+ * write that `scrollTo` leaves behind still needs a second frame's event beat to reach the scene, since the first
+ * frame already induced its own beat before `advanceScroll` ran — but a build that lost the second drain would
+ * need a third frame here, not a second, because the `scrollTo` itself would not be recognised until then. Two
+ * frames is deliberately as few as this run allows, so the golden fails the moment that guarantee does.
+ */
+FabricRunResult runFocusCommandedFabricBundle(const std::string& bundlePath, facebook::react::Size surfaceSize,
+                                              facebook::react::Tag focusedTag);
 
 /**
  * Runs a bundle, presses Tab once to land on the first focusable — which the fixture makes the `<TextInput>` —

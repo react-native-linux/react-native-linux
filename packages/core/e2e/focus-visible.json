@@ -12,8 +12,8 @@
     "key Tab press",
     "key Tab release",
     "sleep 200",
-    "key Enter press",
-    "key Enter release",
+    "key Return press",
+    "key Return release",
     "sleep 500"
   ],
   "expect": [

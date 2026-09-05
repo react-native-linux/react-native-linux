@@ -33,6 +33,7 @@ constexpr char kKeyUpEventType[] = "keyUp";
 constexpr char kFocusCommandName[] = "focus";
 constexpr char kScrollToCommandName[] = "scrollTo";
 constexpr char kPreventScrollArgument[] = "preventScroll";
+constexpr char kFocusVisibleArgument[] = "focusVisible";
 constexpr facebook::react::Tag kNoTag = 0;
 
 /**
@@ -49,6 +50,25 @@ bool readPreventScroll(const folly::dynamic& args) {
     const folly::dynamic* preventScroll = args.get_ptr(kPreventScrollArgument);
 
     return preventScroll != nullptr && preventScroll->isBool() && preventScroll->asBool();
+}
+
+/**
+ * The `focusVisible` a `focus` command named explicitly, or nothing when it did not — missing and malformed both
+ * read as absent, the same tolerance `readPreventScroll` applies, so an absent value falls back to the ordinary
+ * keyboard-visible default rather than to a guessed boolean.
+ */
+std::optional<bool> readFocusVisible(const folly::dynamic& args) {
+    if (!args.isObject()) {
+        return std::nullopt;
+    }
+
+    const folly::dynamic* focusVisible = args.get_ptr(kFocusVisibleArgument);
+
+    if (focusVisible == nullptr || !focusVisible->isBool()) {
+        return std::nullopt;
+    }
+
+    return focusVisible->asBool();
 }
 
 /**
@@ -238,8 +258,12 @@ void InputDispatcher::dispatchCommands(const std::vector<SceneCommand>& commands
             continue;
         }
 
-        applyFocusTransition(focusModel_.focusTag(command.tag, FocusOrigin::Keyboard),
-                             readPreventScroll(command.args));
+        const std::optional<bool> focusVisible = readFocusVisible(command.args);
+        const FocusTransition transition = focusVisible.has_value()
+                                               ? focusModel_.focusTagWithVisibility(command.tag, focusVisible.value())
+                                               : focusModel_.focusTag(command.tag, FocusOrigin::Keyboard);
+
+        applyFocusTransition(transition, readPreventScroll(command.args));
     }
 }
 

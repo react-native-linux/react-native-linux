@@ -3408,32 +3408,55 @@ a node Tab or `focus()` reaches inside a `<ScrollView>` is revealed rather than 
   which is the react-native-macos#1622 behaviour this narrows rather than replaces. `InputDispatcher` reads the
   role off the focused node's `ViewProps` and passes it through; a disabled control never reaches this check at
   all, because `isFocusableNode` already removed it from the focusable set.
-- **`focus()` is no longer a deferral.** A `focus` command — the shape `<View>`'s ref exposes, `{ preventScroll }`
-  as its one argument — reaches `InputDispatcher::dispatchCommands` through the same `SceneCommand` queue
-  `ScrollController::dispatchCommands` already drains; `FabricHost::advanceScroll` hands the frame's commands to
-  both, exactly as `dispatchInput` splits one frame's events between the scroll and pointer routers. A `focus`
-  command moves focus with `FocusOrigin::Keyboard` — programmatic focus draws the ring, matching the
-  `:focus-visible` spec's own default for script-initiated focus — and `preventScroll: true` is the one thing
-  that suppresses the scroll-into-view below; `blur()` and `isFocused()` remain deferred.
+- **`focus()` is no longer a deferral.** A `focus` command — the shape `<View>`'s ref exposes,
+  `{ preventScroll, focusVisible }` as its one argument — reaches `InputDispatcher::dispatchCommands` through the
+  same `SceneCommand` queue `ScrollController::dispatchCommands` already drains; `FabricHost::advanceScroll` hands
+  the frame's commands to both, exactly as `dispatchInput` splits one frame's events between the scroll and
+  pointer routers. A `focus` call that names `focusVisible` explicitly gets exactly that ring state, through
+  `FocusModel::focusTagWithVisibility`; one that does not defaults to `FocusOrigin::Keyboard` — programmatic focus
+  draws the ring, matching the `:focus-visible` spec's own default for script-initiated focus. `preventScroll:
+  true` is the one thing that suppresses the scroll-into-view below; `blur()` and `isFocused()` remain deferred.
 - **Scroll-into-view.** Every focus change that lands on a node inside a `<ScrollView>` reveals it, unless the
   `focus()` call that caused it asked for `preventScroll`. `computeScrollIntoViewOffset` in `FocusModel.cpp` is
   the whole of the arithmetic — one axis of `Element.scrollIntoView({block: "nearest"})`, kept where the coverage
   gate can see it: a target above or left of the viewport is revealed by scrolling exactly to its start, one below
-  or right of it by scrolling exactly enough that its end lands on the viewport's far edge, and a target already
-  fully visible moves nothing. `InputDispatcher::scrollFocusedNodeIntoView` is the geometry around it — the
-  innermost `<ScrollView>` ancestor, its viewport size and `contentOffset` from `ScrollViewState`, and the
-  focused node's frame relative to it, read fresh each time because a commit may have resized either — and it
-  reveals the node by dispatching the **existing** `scrollTo` command `ScrollController::routeCommand` already
-  applies: issue #248 adds no scroll physics of its own, it only ever asks for an offset that already exists to
-  move to. The command is queued one frame after the focus change, the same "one frame long" a programmatic
-  `scrollTo` already is, because it is queued from inside the frame that is draining the command queue for this
-  one.
+  or right of it by scrolling exactly enough that its end lands on the viewport's far edge, a target already fully
+  visible moves nothing, and a target larger than the viewport in either direction aligns to its start rather than
+  its end — there is no offset that satisfies both edges, and the start is the one every browser's own
+  `scrollIntoView({block: "nearest"})` picks. `InputDispatcher::scrollFocusedNodeIntoView` is the geometry around
+  it — the innermost `<ScrollView>` ancestor, found through a `deepestAncestorMatching` helper shared with
+  `focusableAncestorTag` rather than a second copy of `ScrollController`'s own ancestor walk, its viewport size
+  and `contentOffset` from `ScrollViewState`, and the focused node's frame relative to it, read fresh each time
+  because a commit may have resized either — and it reveals the node by dispatching the **existing** `scrollTo`
+  command `ScrollController::routeCommand` already applies: issue #248 adds no scroll physics of its own, it only
+  ever asks for an offset that already exists to move to.
+
+  The command this enqueues is a side effect of `InputDispatcher::dispatchCommands`, which
+  `FabricHost::advanceScroll` calls *after* it has already drained the frame's command queue once for
+  `ScrollController`'s own turn at it — so without a second, immediate drain, that `scrollTo` would sit queued for
+  the `advanceScroll` call a frame later than the one the `focus` command arrived in. `advanceScroll` therefore
+  drains the queue a second time in the same call, immediately, specifically to catch this. A headless run that
+  synthesises a `focus` command and reads the scene back after too few frames is the regression proof for this:
+  see `runFocusCommandedFabricBundle` and the `focus-command.png` golden below.
 
 The golden pair is `packages/core/goldens/focus.png` — the ring, after Tab — and
 `packages/core/goldens/focus-click.png` — the same first box, focused by a click at its centre instead, with no
 ring at all. `hello_react --focus-click <bundle> <output.png> <x> <y>` is the second half of the rig
 `--focus-tab` is the first half of; both run `packages/core/test-bundles/focus.js` and both are registered in
-`goldens/golden.spec.ts`.
+`goldens/fixtures.ts`.
+
+`packages/core/goldens/focus-command.png` is the scroll-into-view regression proof: `hello_react
+--focus-command-golden <bundle> <output.png> <tag>` runs `packages/core/test-bundles/focus-scroll-list.js`, then
+`FabricHost::injectFocusCommand` synthesises a `focus` `dispatchCommand` for `tag` directly — the same way
+`--focus-click` synthesises the pointer events a click would have produced, rather than relying on the bundle's
+own `dispatchCommand` call, which schedules a rendering update on the runtime scheduler instead of queuing
+synchronously — and `runFocusCommandedFabricBundle` reads the scene back after exactly two frames, the fewest a
+correct `advanceScroll` can take. `packages/core/e2e/focus-shift-tab-scroll.json` is the same fixture's keyboard
+half under a real compositor: with nothing focused, Shift+Tab starts at the last focusable — the fixture's fifth
+row, offscreen at rest — so one Shift+Tab press has to both focus it and scroll it into view.
+`packages/core/e2e/focus-disabled-no-activation.json` is `focus.js`'s own disabled box, `delta`: `expectFailure`
+asserts that a full traversal of the focusable set — which always skips it — never produces a `topFocus` on it,
+so Enter and Space never reach a control that can never hold focus.
 
 ### The key payload, and where it diverges
 

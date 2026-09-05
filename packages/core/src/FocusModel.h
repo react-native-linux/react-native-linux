@@ -71,6 +71,15 @@ public:
      */
     FocusTransition focusTag(facebook::react::Tag tag, FocusOrigin origin);
 
+    /**
+     * Programmatic `focus({ focusVisible })`, for the caller that names the ring state explicitly rather than
+     * leaving it to `FocusOrigin`. `focusTag` is `focusTagWithVisibility(tag, origin == FocusOrigin::Keyboard)`;
+     * this is the other caller of the same rule, for `focus({ focusVisible: false })` on a control that still
+     * wants the ring off, or `focus({ focusVisible: true })` on one that wants it on regardless of how the call
+     * was triggered.
+     */
+    FocusTransition focusTagWithVisibility(facebook::react::Tag tag, bool isFocusVisible);
+
     facebook::react::Tag focusedTag() const noexcept;
     bool isFocusVisible() const noexcept;
 
