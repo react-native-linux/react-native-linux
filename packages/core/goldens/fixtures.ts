@@ -280,6 +280,27 @@ export const fixtures: readonly GoldenFixture[] = [
     renderArguments: [],
     renderFlag: "--text-fit-golden",
   },
+  // Issue #261: <Switch> off, on, disabled and with trackColor and thumbColor, plus the controlled toggle at rest — a press changes no pixel until React commits the value back, so this is the picture nobody has pressed.
+  {
+    bundleFileName: "switch.js",
+    goldenFileName: "switch.png",
+    renderArguments: [],
+    renderFlag: "--golden",
+  },
+  // Issue #261: the same fixture five frames after a click on its seventh tile — the thumb part-way across and the track part-way between its two colours, which is 83 ms of the 150 ms toggle and the only thing that proves the travel is animated rather than instant.
+  {
+    bundleFileName: "switch.js",
+    goldenFileName: "switch-toggle.png",
+    renderArguments: ["85", "315", "5"],
+    renderFlag: "--clicked-frame",
+  },
+  // Issue #261: <ActivityIndicator> at both sizes, with a custom colour, stopped and hidden, and stopped and held — the arc's angle is the same five frames of wall-clock time.
+  {
+    bundleFileName: "activity-indicator.js",
+    goldenFileName: "activity-indicator.png",
+    renderArguments: [],
+    renderFlag: "--golden",
+  },
 ];
 
 export { checkFontsAreVendored } from "./fonts-vendored.ts";
