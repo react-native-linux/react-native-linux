@@ -6,12 +6,14 @@
 #include <cstdint>
 #include <exception>
 #include <folly/json/json.h>
+#include <react/renderer/components/view/accessibilityPropsConversions.h>
 #include <iostream>
 #include <mutex>
 #include <optional>
 #include <ostream>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -26,7 +28,8 @@ struct CommandName {
 
 // Indexed by the enum's value, so describeAutomationCommand is total over the enum without a switch whose
 // implicit no-match branch could never be covered.
-constexpr std::array<CommandName, 5> kCommandNames{{
+constexpr std::array<CommandName, 6> kCommandNames{{
+    {.name = "DumpAccessibilityTree", .command = AutomationCommand::DumpAccessibilityTree},
     {.name = "DumpVisualTree", .command = AutomationCommand::DumpVisualTree},
     {.name = "HangForTesting", .command = AutomationCommand::HangForTesting},
     {.name = "ListErrors", .command = AutomationCommand::ListErrors},
@@ -78,10 +81,14 @@ AutomationRequestParse readHangMilliseconds(const folly::dynamic& request) {
                                   .error = {}};
 }
 
-void appendOptionalString(folly::dynamic& node, const char* key, const std::string& value) {
+void appendIfNotEmpty(folly::dynamic& node, const char* key, folly::dynamic value) {
     if (!value.empty()) {
-        node[key] = value;
+        node[key] = std::move(value);
     }
+}
+
+std::string paragraphText(const SceneNode& node) {
+    return node.text.has_value() ? node.text.value().attributedString.getString() : std::string{};
 }
 
 folly::dynamic describeFrame(const facebook::react::Rect& frame) {
@@ -100,12 +107,9 @@ folly::dynamic describeNode(const SceneNodes& nodes, facebook::react::Tag tag) {
     folly::dynamic described = folly::dynamic::object("tag", node.tag)("componentName", node.componentName)(
         "frame", describeFrame(node.layoutMetrics.frame));
 
-    appendOptionalString(described, "testID", node.testId);
-    appendOptionalString(described, "accessibilityLabel", node.accessibilityLabel);
-
-    if (node.text.has_value()) {
-        appendOptionalString(described, "text", node.text.value().attributedString.getString());
-    }
+    appendIfNotEmpty(described, "testID", node.testId);
+    appendIfNotEmpty(described, "accessibilityLabel", node.accessibilityLabel);
+    appendIfNotEmpty(described, "text", paragraphText(node));
 
     folly::dynamic children = folly::dynamic::array;
 
@@ -118,6 +122,192 @@ folly::dynamic describeNode(const SceneNodes& nodes, facebook::react::Tag tag) {
     }
 
     return described;
+}
+
+constexpr std::string_view kNoRole = "none";
+constexpr std::string_view kParagraphRole = "text";
+
+// Indexed by AccessibilityState::CheckedState, so the name of a tri-state is a lookup rather than a switch whose
+// unreachable default could never be covered.
+constexpr std::array<std::string_view, 4> kCheckedNames{"unchecked", "checked", "mixed", "none"};
+
+using NativeIdTags = std::unordered_map<std::string, facebook::react::Tag>;
+
+/**
+ * Which tag each `nativeID` names, built in tag order so that a bundle that reused one `nativeID` resolves to the
+ * same node on every run rather than to whichever one the scene's hash order happened to reach first.
+ */
+NativeIdTags collectNativeIdTags(const SceneNodes& nodes) {
+    std::vector<facebook::react::Tag> tags;
+
+    tags.reserve(nodes.size());
+
+    for (const auto& [tag, node] : nodes) {
+        tags.push_back(tag);
+    }
+
+    std::ranges::sort(tags);
+
+    NativeIdTags tagsByNativeId;
+
+    for (facebook::react::Tag tag : tags) {
+        const std::string& nativeId = nodes.at(tag).accessibility.nativeId;
+
+        if (!nativeId.empty()) {
+            tagsByNativeId.emplace(nativeId, tag);
+        }
+    }
+
+    return tagsByNativeId;
+}
+
+std::string accessibilityRoleOf(const SceneNode& node) {
+    if (!node.accessibility.accessibilityRole.empty()) {
+        return node.accessibility.accessibilityRole;
+    }
+
+    if (node.accessibility.role != facebook::react::Role::None) {
+        return facebook::react::toString(node.accessibility.role);
+    }
+
+    return std::string(paragraphText(node).empty() ? kNoRole : kParagraphRole);
+}
+
+bool isAccessibilityPruned(const SceneNode& node) {
+    return node.accessibility.elementsHidden ||
+           node.accessibility.importantForAccessibility ==
+               facebook::react::ImportantForAccessibility::NoHideDescendants;
+}
+
+bool isAccessibilityExposed(const SceneNode& node) {
+    if (node.accessibility.importantForAccessibility == facebook::react::ImportantForAccessibility::No) {
+        return false;
+    }
+
+    return node.accessibility.importantForAccessibility == facebook::react::ImportantForAccessibility::Yes ||
+           node.accessibility.accessible || !node.accessibilityLabel.empty() || accessibilityRoleOf(node) != kNoRole;
+}
+
+folly::dynamic describeAccessibilityState(const std::optional<facebook::react::AccessibilityState>& state) {
+    folly::dynamic described = folly::dynamic::object;
+
+    if (!state.has_value()) {
+        return described;
+    }
+
+    if (state.value().busy) {
+        described["busy"] = true;
+    }
+
+    if (state.value().disabled) {
+        described["disabled"] = true;
+    }
+
+    if (state.value().selected) {
+        described["selected"] = true;
+    }
+
+    if (state.value().expanded.has_value()) {
+        described["expanded"] = state.value().expanded.value();
+    }
+
+    if (state.value().checked != facebook::react::AccessibilityState::CheckedState::None) {
+        described["checked"] = std::string(kCheckedNames.at(static_cast<size_t>(state.value().checked)));
+    }
+
+    return described;
+}
+
+folly::dynamic describeAccessibilityValue(const facebook::react::AccessibilityValue& value) {
+    folly::dynamic described = folly::dynamic::object;
+
+    if (value.min.has_value()) {
+        described["min"] = value.min.value();
+    }
+
+    if (value.max.has_value()) {
+        described["max"] = value.max.value();
+    }
+
+    if (value.now.has_value()) {
+        described["now"] = value.now.value();
+    }
+
+    if (value.text.has_value()) {
+        described["text"] = value.text.value();
+    }
+
+    return described;
+}
+
+folly::dynamic describeLabelledBy(const NativeIdTags& tagsByNativeId, const std::vector<std::string>& nativeIds) {
+    folly::dynamic labelledBy = folly::dynamic::array;
+
+    for (const std::string& nativeId : nativeIds) {
+        const auto entry = tagsByNativeId.find(nativeId);
+
+        if (entry != tagsByNativeId.end()) {
+            labelledBy.push_back(entry->second);
+        }
+    }
+
+    return labelledBy;
+}
+
+folly::dynamic describeAccessibilityNode(const SceneNode& node, const NativeIdTags& tagsByNativeId,
+                                         folly::dynamic children) {
+    folly::dynamic described = folly::dynamic::object("tag", node.tag)("role", accessibilityRoleOf(node));
+
+    appendIfNotEmpty(described, "name",
+                     node.accessibilityLabel.empty() ? paragraphText(node) : node.accessibilityLabel);
+    appendIfNotEmpty(described, "hint", node.accessibility.hint);
+    appendIfNotEmpty(described, "state", describeAccessibilityState(node.accessibility.state));
+    appendIfNotEmpty(described, "value", describeAccessibilityValue(node.accessibility.value));
+    appendIfNotEmpty(described, "labelledBy", describeLabelledBy(tagsByNativeId, node.accessibility.labelledBy));
+    appendIfNotEmpty(described, "children", std::move(children));
+
+    return described;
+}
+
+void projectAccessibility(const SceneNodes& nodes, facebook::react::Tag tag, const NativeIdTags& tagsByNativeId,
+                          folly::dynamic& into);
+
+void projectAccessibilityChildren(const SceneNodes& nodes, const SceneNode& node, const NativeIdTags& tagsByNativeId,
+                                  folly::dynamic& into) {
+    for (facebook::react::Tag childTag : node.childTags) {
+        projectAccessibility(nodes, childTag, tagsByNativeId, into);
+    }
+}
+
+void projectAccessibility(const SceneNodes& nodes, facebook::react::Tag tag, const NativeIdTags& tagsByNativeId,
+                          folly::dynamic& into) {
+    const auto entry = nodes.find(tag);
+
+    // A tag the scene no longer holds contributes nothing, rather than the visual tree's {"missing":true} marker:
+    // an accessibility client would be handed no node for it, so the projection reports none.
+    if (entry == nodes.end()) {
+        return;
+    }
+
+    const SceneNode& node = entry->second;
+
+    if (isAccessibilityPruned(node)) {
+        return;
+    }
+
+    folly::dynamic children = folly::dynamic::array;
+
+    projectAccessibilityChildren(nodes, node, tagsByNativeId, children);
+
+    if (!isAccessibilityExposed(node)) {
+        for (folly::dynamic& child : children) {
+            into.push_back(std::move(child));
+        }
+
+        return;
+    }
+
+    into.push_back(describeAccessibilityNode(node, tagsByNativeId, std::move(children)));
 }
 
 std::vector<facebook::react::Tag> sortedRootTags(const SceneNodes& nodes) {
@@ -202,6 +392,17 @@ folly::dynamic describeVisualTree(const SceneNodes& nodes) {
     }
 
     return folly::dynamic::object("roots", std::move(roots));
+}
+
+folly::dynamic describeAccessibilityTree(const SceneNodes& nodes) {
+    const NativeIdTags tagsByNativeId = collectNativeIdTags(nodes);
+    folly::dynamic projected = folly::dynamic::array;
+
+    for (facebook::react::Tag tag : sortedRootTags(nodes)) {
+        projectAccessibility(nodes, tag, tagsByNativeId, projected);
+    }
+
+    return folly::dynamic::object("nodes", std::move(projected));
 }
 
 void AutomationErrorLog::record(std::string source, std::string message) {

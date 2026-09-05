@@ -427,6 +427,7 @@ void readPaintProps(SceneNode& node, const facebook::react::ShadowView& shadowVi
         node.clipsChildren = false;
         node.testId.clear();
         node.accessibilityLabel.clear();
+        node.accessibility = {};
 
         return;
     }
@@ -450,6 +451,16 @@ void readPaintProps(SceneNode& node, const facebook::react::ShadowView& shadowVi
     node.clipsChildren = viewProps->getClipsContentToBounds();
     node.testId = viewProps->testId;
     node.accessibilityLabel = viewProps->accessibilityLabel;
+    node.accessibility = SceneAccessibility{.accessible = viewProps->accessible,
+                                            .elementsHidden = viewProps->accessibilityElementsHidden,
+                                            .importantForAccessibility = viewProps->importantForAccessibility,
+                                            .role = viewProps->role,
+                                            .accessibilityRole = viewProps->accessibilityRole,
+                                            .hint = viewProps->accessibilityHint,
+                                            .nativeId = viewProps->nativeId,
+                                            .labelledBy = viewProps->accessibilityLabelledBy.value,
+                                            .state = viewProps->accessibilityState,
+                                            .value = viewProps->accessibilityValue};
 }
 
 /**

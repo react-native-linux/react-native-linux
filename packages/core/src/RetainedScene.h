@@ -10,6 +10,7 @@
 #include <optional>
 #include <react/renderer/attributedstring/AttributedString.h>
 #include <react/renderer/attributedstring/ParagraphAttributes.h>
+#include <react/renderer/components/view/AccessibilityPrimitives.h>
 #include <react/renderer/components/view/primitives.h>
 #include <react/renderer/core/LayoutMetrics.h>
 #include <react/renderer/core/ReactPrimitives.h>
@@ -358,6 +359,29 @@ using SceneDamage = std::vector<facebook::react::Rect>;
  */
 void mergeDamage(SceneDamage& damage, const SceneDamage& additions);
 
+/**
+ * The accessibility props the automation channel's `DumpAccessibilityTree` projects (#216). They are kept next to
+ * `accessibilityLabel` and for the same reason: nothing paints them, and the projection is the only reader of the
+ * scene that has to answer what a screen reader would be told rather than what the renderer drew.
+ *
+ * They are upstream's `AccessibilityProps` fields verbatim — no platform rename, which is exactly the mistake
+ * react-native-macos had to reconcile in rn-macos#266. `nativeId` lives here because the only use the projection
+ * has for it is resolving `accessibilityLabelledBy`, which names nodes by their `nativeID`.
+ */
+struct SceneAccessibility {
+    bool accessible{false};
+    bool elementsHidden{false};
+    facebook::react::ImportantForAccessibility importantForAccessibility{
+        facebook::react::ImportantForAccessibility::Auto};
+    facebook::react::Role role{facebook::react::Role::None};
+    std::string accessibilityRole;
+    std::string hint;
+    std::string nativeId;
+    std::vector<std::string> labelledBy;
+    std::optional<facebook::react::AccessibilityState> state;
+    facebook::react::AccessibilityValue value;
+};
+
 struct SceneNode {
     facebook::react::Tag tag{};
     facebook::react::Tag parentTag{};
@@ -371,6 +395,7 @@ struct SceneNode {
      */
     std::string testId;
     std::string accessibilityLabel;
+    SceneAccessibility accessibility;
     std::vector<facebook::react::Tag> childTags;
     facebook::react::LayoutMetrics layoutMetrics{};
     std::optional<facebook::react::SharedColor> backgroundColor;

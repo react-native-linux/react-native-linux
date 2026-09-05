@@ -29,11 +29,12 @@ namespace react_native_linux {
  * command does. That split is what puts the format under the coverage gate.
  */
 enum class AutomationCommand : uint8_t {
-    DumpVisualTree = 0,
-    HangForTesting = 1,
-    ListErrors = 2,
-    MarkTestPassed = 3,
-    TakeScreenshot = 4,
+    DumpAccessibilityTree = 0,
+    DumpVisualTree = 1,
+    HangForTesting = 2,
+    ListErrors = 3,
+    MarkTestPassed = 4,
+    TakeScreenshot = 5,
 };
 
 /**
@@ -80,6 +81,34 @@ folly::dynamic describeErrors(const std::vector<AutomationError>& errors);
  * scenario is about. Children are the mount order the scene holds, which is already `zIndex` order.
  */
 folly::dynamic describeVisualTree(const SceneNodes& nodes);
+
+/**
+ * `{"nodes":[node,...]}`: the accessibility projection of the same committed tree, in reading order, which is the
+ * assertion react-native-windows makes 21 times over and a pixel diff cannot make once — a role, name or state
+ * regression changes no pixel a perceptual threshold would catch.
+ *
+ * The projection is what an accessibility client would be handed, not what the scene holds, so it is smaller than
+ * the scene and shaped differently:
+ *
+ * - **Pruned** — `accessibilityElementsHidden` and `importantForAccessibility: "no-hide-descendants"` remove the
+ *   node *and its subtree*; React Native documents the two as the same thing on their respective platforms.
+ * - **Skipped** — `importantForAccessibility: "no"` removes the node alone, and its exposed descendants take its
+ *   place at its position in reading order. So does a node that is merely a box: one that is not `accessible`,
+ *   carries no label and resolves to no role. This is the flattening every accessibility API does, and it is why
+ *   the projection is not just the visual tree with extra fields.
+ * - **Exposed** — everything else, with `role` always present, and `name`, `hint`, `state`, `value`, `labelledBy`
+ *   and `children` present only when they carry something.
+ *
+ * `role` is `accessibilityRole` as the bundle authored it, else upstream's own `toString` of the ARIA `role`
+ * prop, else `"text"` for a `<Paragraph>` that laid out any text, else `"none"`. `name` is `accessibilityLabel`,
+ * falling back to that same paragraph text. `labelledBy` resolves each `nativeID` in `accessibilityLabelledBy` to
+ * the tag that carries it and drops the ones nothing carries, because a snapshot has to be diffable and a raw
+ * name that resolves to nothing is not a relation.
+ *
+ * The full `accessibilityRole` enumeration and its AT-SPI counterpart are #61's, and the bridge that would carry
+ * this over D-Bus is #27's. This is the surface both are graded against.
+ */
+folly::dynamic describeAccessibilityTree(const SceneNodes& nodes);
 
 /**
  * Where `ListErrors` reads from.
