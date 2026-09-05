@@ -77,6 +77,7 @@ add_executable(rnl_core_tests
     ScrollTest.cpp
     ShadowTreeCommitTest.cpp
     TextRasterizationPolicyTest.cpp
+    TextTransformTest.cpp
     ThreadingConformanceTest.cpp
     TextInputControllerTest.cpp
     ToplevelStateTest.cpp
@@ -105,6 +106,7 @@ add_executable(rnl_core_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputComponent.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputController.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputV3State.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextTransform.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ToplevelState.cpp
     ${RNL_UPSTREAM_CSS_TESTS}
     ${RNL_UPSTREAM_GRAPHICS_TESTS}

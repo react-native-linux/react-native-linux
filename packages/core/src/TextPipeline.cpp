@@ -2,12 +2,14 @@
 
 #include "LineBoxMetrics.h"
 #include "TextGeometry.h"
+#include "TextTransform.h"
 
 #include "include/core/SkFontTypes.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkFontMgr.h"
 #include "include/core/SkFontStyle.h"
 #include "include/core/SkPaint.h"
+#include "include/core/SkPoint.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkString.h"
@@ -197,6 +199,76 @@ skia::textlayout::TextDecoration toDecoration(const facebook::react::TextAttribu
     return skia::textlayout::TextDecoration::kNoDecoration;
 }
 
+skia::textlayout::TextDecorationStyle toDecorationStyle(const facebook::react::TextAttributes& attributes) {
+    if (!attributes.textDecorationStyle.has_value()) {
+        return skia::textlayout::TextDecorationStyle::kSolid;
+    }
+
+    switch (attributes.textDecorationStyle.value()) {
+        case facebook::react::TextDecorationStyle::Solid:
+            return skia::textlayout::TextDecorationStyle::kSolid;
+        case facebook::react::TextDecorationStyle::Double:
+            return skia::textlayout::TextDecorationStyle::kDouble;
+        case facebook::react::TextDecorationStyle::Dotted:
+            return skia::textlayout::TextDecorationStyle::kDotted;
+        case facebook::react::TextDecorationStyle::Dashed:
+            return skia::textlayout::TextDecorationStyle::kDashed;
+        case facebook::react::TextDecorationStyle::Wavy:
+            return skia::textlayout::TextDecorationStyle::kWavy;
+    }
+
+    return skia::textlayout::TextDecorationStyle::kSolid;
+}
+
+/**
+ * `textShadowRadius` follows the same iOS convention as the `<View>` quartet's `shadowRadius`
+ * (`RetainedScene.cpp`'s `kSigmasPerBlurRadius` comment): it already *is* the Gaussian sigma SkParagraph's
+ * `TextShadow::fBlurSigma` wants, so it crosses with no conversion. A shadow is added only when `textShadowColor`
+ * is a colour someone actually set — an offset or a radius with no colour has nothing to paint, and React
+ * Native's own default `textShadowColor` is unset, not black.
+ */
+void applyTextShadow(skia::textlayout::TextStyle& style, const facebook::react::TextAttributes& attributes) {
+    if (!facebook::react::isColorMeaningful(attributes.textShadowColor)) {
+        return;
+    }
+
+    const facebook::react::Size offset = attributes.textShadowOffset.value_or(facebook::react::Size{0.0F, 0.0F});
+    const float blurSigma = std::isnan(attributes.textShadowRadius) ? 0.0F : static_cast<float>(attributes.textShadowRadius);
+
+    style.addShadow(skia::textlayout::TextShadow{
+        toSkColor(attributes.textShadowColor), SkPoint::Make(offset.width, offset.height), blurSigma});
+}
+
+/**
+ * `fontVariant` is a bitmask (`FontVariant` in `primitives.h`) of every variant `<Text>` can ask for at once;
+ * each bit that is one of the four the golden matrix covers becomes the OpenType feature tag SkParagraph passes
+ * straight through to HarfBuzz. The remaining sixteen stylistic-set bits are not mapped: nothing in this
+ * codebase exercises them and the Prime Directive is to map what is proven, not what is possible.
+ */
+void applyFontVariant(skia::textlayout::TextStyle& style, const facebook::react::TextAttributes& attributes) {
+    if (!attributes.fontVariant.has_value()) {
+        return;
+    }
+
+    const int variant = static_cast<int>(attributes.fontVariant.value());
+
+    if ((variant & static_cast<int>(facebook::react::FontVariant::SmallCaps)) != 0) {
+        style.addFontFeature(SkString("smcp"), 1);
+    }
+
+    if ((variant & static_cast<int>(facebook::react::FontVariant::OldstyleNums)) != 0) {
+        style.addFontFeature(SkString("onum"), 1);
+    }
+
+    if ((variant & static_cast<int>(facebook::react::FontVariant::LiningNums)) != 0) {
+        style.addFontFeature(SkString("lnum"), 1);
+    }
+
+    if ((variant & static_cast<int>(facebook::react::FontVariant::TabularNums)) != 0) {
+        style.addFontFeature(SkString("tnum"), 1);
+    }
+}
+
 /**
  * `lineHeight` is an absolute point value in React Native and a multiple of the font size in Skia, so the ratio is
  * what crosses the boundary. Half leading splits the extra space above and below the line, which is what both
@@ -228,6 +300,7 @@ skia::textlayout::TextStyle toTextStyle(const facebook::react::TextAttributes& a
     style.setFontHinting(SkFontHinting::kNone);
     style.setColor(toSkColor(attributes.foregroundColor));
     style.setDecoration(toDecoration(attributes));
+    style.setDecorationStyle(toDecorationStyle(attributes));
 
     if (facebook::react::isColorMeaningful(attributes.textDecorationColor)) {
         style.setDecorationColor(toSkColor(attributes.textDecorationColor));
@@ -247,6 +320,8 @@ skia::textlayout::TextStyle toTextStyle(const facebook::react::TextAttributes& a
     }
 
     applyLineHeight(style, attributes, fontSize);
+    applyTextShadow(style, attributes);
+    applyFontVariant(style, attributes);
 
     return style;
 }
@@ -413,8 +488,13 @@ layoutParagraph(const facebook::react::AttributedString& attributedString,
             continue;
         }
 
+        const std::string transformedText = fragment.textAttributes.textTransform.has_value()
+                                                ? applyTextTransform(fragment.string,
+                                                                     fragment.textAttributes.textTransform.value())
+                                                : fragment.string;
+
         builder->pushStyle(toTextStyle(fragment.textAttributes, *state.fontCollection));
-        builder->addText(fragment.string.data(), fragment.string.size());
+        builder->addText(transformedText.data(), transformedText.size());
         builder->pop();
     }
 

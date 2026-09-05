@@ -644,7 +644,8 @@ if(TARGET rnl_skia)
     list(APPEND RNL_TEXT_LAYOUT_MANAGER_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/src/LineBoxMetrics.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/TextLayoutManager.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/TextPipeline.cpp)
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/TextPipeline.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/TextTransform.cpp)
     set_property(TARGET react_renderer_textlayoutmanager PROPERTY SOURCES ${RNL_TEXT_LAYOUT_MANAGER_SOURCES})
 
     # The vendored CMakeLists calls target_link_libraries without keywords, and the two signatures cannot be
