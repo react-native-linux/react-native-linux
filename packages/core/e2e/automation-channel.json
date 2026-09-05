@@ -1,0 +1,13 @@
+{
+  "name": "automation-channel",
+  "bundle": "automation.js",
+  "ready": "automation: committed surface 1",
+  "frames": 900,
+  "steps": ["sleep 300"],
+  "automation": {
+    "listErrorsMustBeEmpty": true,
+    "markTestPassed": true,
+    "visualTreeSnapshot": "automation-tree.json"
+  },
+  "expect": ["[rnl-automation] listening on", "automation: committed surface 1"]
+}

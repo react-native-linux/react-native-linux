@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findScenarioSources, readScenarioRuns } from "./discovery.ts";
+import { findScenarioSources, readRequestedScenarios, readScenarioRuns } from "./discovery.ts";
 
 const LAST_SOURCE_INDEX = -1;
 
@@ -67,5 +67,35 @@ describe("readScenarioRuns", () => {
 
   it("keeps nothing when the requested scenario does not exist", () => {
     expect(readScenarioRuns("/repo/packages", "missing", environment)).toEqual([]);
+  });
+});
+
+describe("readRequestedScenarios", () => {
+  it("runs every scenario when the command line names none", () => {
+    const runs = readRequestedScenarios("/repo/packages", ["node", "e2e.ts"], environment);
+
+    expect(runs.map((run) => run.scenario.name)).toEqual(["animated-frames", "pressable-click", "reanimated-smoke"]);
+  });
+
+  it("runs only the scenario --scenario names", () => {
+    const runs = readRequestedScenarios(
+      "/repo/packages",
+      ["node", "e2e.ts", "--scenario", "pressable-click"],
+      environment,
+    );
+
+    expect(runs.map((run) => run.scenario.name)).toEqual(["pressable-click"]);
+  });
+
+  it("refuses a trailing --scenario rather than running the whole suite", () => {
+    expect(() => readRequestedScenarios("/repo/packages", ["node", "e2e.ts", "--scenario"], environment)).toThrow(
+      "--scenario needs a scenario name",
+    );
+  });
+
+  it("refuses an empty --scenario name", () => {
+    expect(() => readRequestedScenarios("/repo/packages", ["node", "e2e.ts", "--scenario", ""], environment)).toThrow(
+      "--scenario needs a scenario name",
+    );
   });
 });

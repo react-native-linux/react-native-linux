@@ -4,6 +4,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 import { PNG } from "pngjs";
 import type { Scenario } from "./scenario.ts";
+import { gradeAutomation } from "./automation.ts";
 import path from "node:path";
 
 const NO_TEXT = "";
@@ -23,6 +24,13 @@ interface GradeInputs {
   readonly goldensDirectory: string;
   readonly scenario: Scenario;
   readonly screenshotPath: string;
+}
+
+interface AutomationChannelInputs {
+  readonly artifactsDirectory: string;
+  readonly goldensDirectory: string;
+  readonly scenario: Scenario;
+  readonly trace: string;
 }
 
 interface PixelImage {
@@ -151,4 +159,19 @@ const gradeArtifacts = (inputs: GradeInputs): Grade => {
   };
 };
 
-export { gradeArtifacts };
+/**
+ * The automation channel of #214, asked while the window is still up — which is why this is the one grader the
+ * driver calls before the run ends rather than after it. A scenario without an `automation` block never opened
+ * the socket, so there is nothing to ask.
+ */
+const gradeAutomationChannel = (inputs: AutomationChannelInputs): Promise<readonly string[]> =>
+  inputs.scenario.automation === null
+    ? Promise.resolve([])
+    : gradeAutomation({
+        artifactsDirectory: inputs.artifactsDirectory,
+        automation: inputs.scenario.automation,
+        goldensDirectory: inputs.goldensDirectory,
+        trace: inputs.trace,
+      });
+
+export { gradeArtifacts, gradeAutomationChannel };
