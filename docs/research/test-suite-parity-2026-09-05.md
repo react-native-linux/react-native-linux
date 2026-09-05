@@ -31,8 +31,8 @@ react-native-windows (the directory is `vnext/Microsoft.ReactNative.Cxx.UnitTest
 | Drift oracles | `UpstreamAnimatedSuiteTest.cpp`, `UpstreamFabricSuiteTest.cpp` | ours | 2 tests asserting the file list of 7 vendored `tests/` directories |
 | Coverage gate | `scripts/cpp-coverage.ts` over the `scopedSourcePaths` list | ours | 100 % line and branch on the nine scoped `packages/core/src` files; vendored upstream sources are outside the gate |
 | Vitest | 27 `*.spec.ts` under `packages/cli/src` (4), `packages/core/goldens` (3), `packages/core/src-linux` (1), `scripts/**` (19) | ours | 100 % thresholds |
-| Raster goldens | `packages/core/goldens/*.png` via `hello_react --golden` / `--damage-golden`, `golden.spec.ts`, `png-diff.ts` (zero tolerance) | ours | 20 raster PNGs |
-| Window goldens (#33) | `packages/core/goldens/window-*.png` via lavapipe + `weston --backend=headless`, `perceptual-diff.ts` | ours | 2 PNGs (`window-fabric-view`, `window-view-props`) |
+| Raster goldens | `packages/core/goldens/*.png` via `hello_react --golden` / `--damage-golden`, `golden.spec.ts`, `png-diff.ts` (zero tolerance) | ours | 20 raster PNG files |
+| Window goldens (#33) | `packages/core/goldens/window-*.png` via lavapipe + `weston --backend=headless`, `perceptual-diff.ts` | ours | 2 PNG files (`window-fabric-view`, `window-view-props`) |
 | E2E scenarios (#7) | `packages/core/e2e/*.json` under `cage`, `rnl_inject` virtual pointer/keyboard, `wp_presentation` timings | ours | 7 scenarios (`animated-frames`, `hit-paint`, `mouse-button`, `pressable`, `rounded-press`, `text-input`, `text-input-editing`); 1 e2e golden (`pressable-click.png`) |
 | Fixture bundles | `packages/core/test-bundles/*.js`, hand-written against `nativeFabricUIManager` | ours | 26 bundles |
 | CI | `.github/workflows/ci.yml`: `validate`, `meta`, `unit` (Hermes-free configure, ctest, coverage gate), `native` (preset matrix) and the jobs after line 366 that were not read for this survey | ours | — |
@@ -131,7 +131,7 @@ from `gh api repos/facebook/react-native/git/trees/v0.87.1`.
 `LegacyImage`, `LegacySelectableText`, `LegacyTextHitTest`, `LegacyTextInput`, `PointerButton`,
 `PointerClickEvents`, `Pressable`, `ScrollView`, `Switch`, `Text`, `TextInput`, `Touchable`, `View`, plus
 `visitAllPages.test.ts` and `snapshotPages.test.js`), helpers `Helpers.ts`, `RNTesterNavigation.ts`,
-`NativePerfHelpers.ts`, and directories `__snapshots__` (21 `.snap`), `__image_snapshots__` (6 PNGs, all from
+`NativePerfHelpers.ts`, and directories `__snapshots__` (21 `.snap`), `__image_snapshots__` (6 PNG files, all from
 `ViewComponentTest`), `__perf__`, `__native_perf__`.
 
 | Pattern | What it proves | Already planned? |
@@ -181,7 +181,7 @@ same PR is the macOS shape. Nothing macOS-specific is portable; the shared `Inte
 No test suite. `testing/` is Chromium's build tooling (`gtest/`, `xvfb.py`, `PRESUBMIT.py`). The repository's
 own checks are manual JS apps under `packages/react-native-skia/`: `MutationTest.js`,
 `components/image/ImageResizeModeTest.js`, `components/image/ShadowUnitTestApp.js` with a
-`ShadowUnitTestApp_Reference_Output/` folder of six PNGs (shadow on view, on transformed view, on PNG and
+`ShadowUnitTestApp_Reference_Output/` folder of six PNG files (shadow on view, on transformed view, on PNG and
 JPEG images, with resize mode), `components/text/ParagraphTestApp.js`, `components/transform/TransformTestCases.js`,
 `components/view/ViewStylePropsTestApp.js`, `modules/Networking/Networking-test*.js`. The reference-output
 folder is a hand-compared golden; our `packages/core/goldens` already does this with a comparator. The
@@ -197,7 +197,7 @@ board's labels.
 Context: #211 landed the first tranche (PR #219) and closed; its landing comment defers "the jsi conformance /
 jsinspector / cxxreact / bridging tranches on this same issue", which a closed issue cannot carry. Section B's
 first table lists 24 files with roughly 250 `TEST` macros whose every dependency is already in
-`RNL_REACT_COMMON_TARGETS`: the four core files the CMake comment mis-attributes to Hermes
+`RNL_REACT_COMMON_TARGETS`: the four core files the CMake comment misattributes to Hermes
 (`ConcreteShadowNode`, `FindNodeAtPoint`, `LayoutableShadowNode`, `ShadowNodeFamily` include only
 `react/renderer/element/testUtils.h`), `StateReconciliationTest` (its stated blocker `rrc_modal` is linked),
 scrollview, root, text, image, attributedstring, textlayoutmanager, imagemanager, uimanager (3), consistency,

@@ -123,7 +123,7 @@ first frame is wrong.
   `scrollToLocation` do nothing on FlatList/SectionList.
 - [core#54643](https://github.com/react/react-native/issues/54643) — closed, +1, c7: `scrollToIndex`,
   `scrollToOffset`, `scrollToItem`, `scrollToEnd` all fail.
-- [core#43587](https://github.com/react/react-native/issues/43587) — closed, +2, c7: `scrollToIndex` mis-positions
+- [core#43587](https://github.com/react/react-native/issues/43587) — closed, +2, c7: `scrollToIndex` mispositions
   an index that is in `stickyHeaderIndices`.
 - [core#33149](https://github.com/react/react-native/issues/33149) — closed, c1: `scrollToIndex` does not trigger
   `onViewableItemsChanged`.
@@ -164,7 +164,7 @@ found out through this prop. We own transforms, hit-testing and wheel input, so 
 modes at once. Chat UIs in the ecosystem use it universally.
 
 - **Epic:** #173 (M1).
-- **DEDUPE:** #45 cites rn-macos#1421 (inverted list mis-handles keyboard) for cadence only; #35/#103 cover
+- **DEDUPE:** #45 cites rn-macos#1421 (inverted list mishandles keyboard) for cadence only; #35/#103 cover
   transform hit-testing generally; #119 covers RTL scroll origin. No issue exercises `inverted` end to end.
 - **Proposed title:** `test(renderer): inverted lists — scaleY(-1) on container and cells, wheel direction, hit-testing, sticky headers and selection order`
 - **Acceptance:** golden — an inverted list with a `boxShadow` cell and a sticky header; e2e — a wheel-down on an
