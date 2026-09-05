@@ -5547,7 +5547,7 @@ automation channel, and it is their dominant assertion surface: `DumpVisualTree`
 `CreateScreenshot` and `HangForTesting` bound by the app in
 `packages/e2e-test-app-fabric/windows/RNTesterApp-Fabric/RNTesterApp-Fabric.cpp`, plus `TestModule.markTestPassed`
 for the headless logic tests in `vnext/Desktop.IntegrationTests/RNTesterHeadlessTests.cpp`. Ours is the same five
-commands and nothing else.
+commands, plus the `DumpAccessibilityTree` of the subsection below, and nothing else.
 
 **The protocol.** `rnl_window --automation` binds an `AF_UNIX` `SOCK_STREAM` socket at
 `$XDG_RUNTIME_DIR/rnl-automation-<pid>.sock` and prints `[rnl-automation] listening on <path>` to the trace,
@@ -5558,6 +5558,7 @@ line-delimited JSON request per line, one response per line, in order:
 | --- | --- |
 | `{"command":"ListErrors"}` | `{"errors":[{"source":"javascript"\|"image"\|"text"\|"rnl-window","message":"…"}]}` |
 | `{"command":"DumpVisualTree"}` | `{"roots":[{"tag","componentName","frame","testID","accessibilityLabel","text","children"}]}` |
+| `{"command":"DumpAccessibilityTree"}` | `{"nodes":[{"tag","role","name","hint","state","value","labelledBy","children"}]}` |
 | `{"command":"TakeScreenshot","path":"…"}` | `{"path":"…"}` |
 | `{"command":"HangForTesting","milliseconds":N}` | `{"milliseconds":N}`, after the block |
 | `{"command":"MarkTestPassed"}` | `{"passed":true\|false}` |
@@ -5615,6 +5616,52 @@ fields plus the two always-on commands. `automation-errors.json` is the negative
 runs `throws.js` with `"allowErrors": true`, which switches the trace grep off, so the only failure the run can
 produce is `ListErrors` reporting the uncaught error — and `"expectFailure": true` inverts it, so the scenario
 passes only when the channel actually reported it.
+
+### The accessibility tree as an assertion surface (#216)
+
+react-native-windows' e2e suite is 21 serialised tree snapshots against 6 PNG goldens, and the reason is not that
+pictures are expensive: a role, a name, a state or a node that silently stopped being exposed at all changes no
+pixel a perceptual threshold would catch. `DumpAccessibilityTree` is the same command for us, and it exists
+*before* the AT-SPI bridge (#27) rather than after it, because the surface is what makes the bridge testable.
+
+**What it answers.** `{"nodes":[...]}` — the accessibility projection of the same committed tree
+`DumpVisualTree` reports, in reading order, computed by `describeAccessibilityTree` in `AutomationProtocol.cpp`
+and therefore inside the 100% coverage gate. It carries no geometry at all, so nothing in it depends on the rig's
+output size. `SceneNode` gained a `SceneAccessibility` of upstream's own `AccessibilityProps` fields, unrenamed —
+renaming them is exactly what react-native-macos had to reconcile in rn-macos#266.
+
+The projection is not the visual tree with extra fields. Each node is pruned, skipped or exposed:
+
+| Props | Outcome |
+| --- | --- |
+| `accessibilityElementsHidden`, `importantForAccessibility: "no-hide-descendants"` | **pruned** — the node and its whole subtree are gone; React Native documents the two as the same thing |
+| `importantForAccessibility: "no"` | **skipped** — the node goes, its exposed descendants take its place in reading order |
+| not `accessible`, no label, resolving to no role | **skipped** — a plain box is not an element |
+| `accessible`, `importantForAccessibility: "yes"`, a label, or any role | **exposed** |
+
+An exposed node is `{"tag","role"}` plus `name`, `hint`, `state`, `value`, `labelledBy` and `children` when they
+carry something. `role` is `accessibilityRole` as authored, else upstream's own `toString` of the ARIA `role`
+prop, else `"text"` for a `<Paragraph>` that laid out any text, else `"none"`; `name` is `accessibilityLabel`
+falling back to that same paragraph text — which is rn-macos#428, a labelled image being present rather than
+absent. `state` reports only the members that are set, with `checked` as `"unchecked"`/`"checked"`/`"mixed"`.
+`labelledBy` resolves each `nativeID` in `accessibilityLabelledBy` to the tag carrying it, in tag order so a
+reused `nativeID` resolves the same way on every run, and drops the names nothing carries: a raw name that
+resolves to nothing is not a relation and would not be diffable. The full `accessibilityRole` enumeration against
+AT-SPI's own roles is #61's, and it is graded against this surface.
+
+**The scenario side.** `"automation": {"accessibilityTreeSnapshot": "<name>.json"}` names a file under the
+package's `e2e/snapshots`, which is a directory of its own next to `e2e/goldens`: a picture is blessed by copying
+bytes no reviewer can read, and a tree snapshot is read in the pull request diff like code. Both comparisons now
+go through one `compareSnapshot`, which writes the observed tree to `build/e2e/<scenario>/accessibility-tree.json`
+— already the exact bytes the snapshot has to become, so blessing is a copy — and reports a mismatch by the path
+to it: `the tree[0].children[1].role: "button" where the snapshot has "none"` is a finding, and two hundred lines
+of JSON is a chore.
+
+`accessibility-tree.json` proves it in CI. Its fixture has one node per rule above, and every node carries a
+`testID` or a `nativeID` for a reason worth knowing: neither `accessibilityRole` nor a label nor a value forms a
+view, so Fabric flattens a node carrying only those away before the mounting layer ever sees it. The mounted tree
+is also shallower than the fixture, because only a node that forms a *stacking context* — `accessible` and
+`importantForAccessibility` do, a background colour and a `testID` do not — keeps its children under it.
 
 ### What is still outstanding
 
