@@ -37,6 +37,15 @@ export const fixtures: readonly GoldenFixture[] = [
     renderArguments: [],
     renderFlag: "--text-fit-golden",
   },
+  // Issue #250's text-style matrix, proved at two font sizes: letterSpacing, textTransform, textDecorationLine
+  // (with textDecorationColor and textDecorationStyle), textShadow* and fontVariant. Docs/cpp-toolchain.md's
+  // *Text*, *Props implemented* table names the same rows.
+  {
+    bundleFileName: "text-style-matrix.js",
+    goldenFileName: "text-style-matrix.png",
+    renderArguments: ["960", "800"],
+    renderFlag: "--text-fit-golden",
+  },
   { bundleFileName: "damage.js", goldenFileName: "damage.png", renderArguments: [], renderFlag: "--damage-golden" },
   // Issue #35: this render flag is itself the assertion, and the PNG it writes is the paint side of that proof.
   {
