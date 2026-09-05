@@ -39,6 +39,13 @@ export const fixtures: readonly GoldenFixture[] = [
   },
   // Images are reproducible only against the asset packages/core/scripts/make-test-image.ts generates.
   { bundleFileName: "image.js", goldenFileName: "image.png", renderArguments: [], renderFlag: "--golden" },
+  // Issue #301: the post-`onLoad` tint, proving the settle waits for the handler's commit and not only the decode.
+  {
+    bundleFileName: "image-onload.js",
+    goldenFileName: "image-onload.png",
+    renderArguments: [],
+    renderFlag: "--golden",
+  },
   // Issue #46: the flag asserts the first frame's geometry equals the settled frame's, which is rn-macos#2857.
   {
     bundleFileName: "scroll-first-frame.js",
