@@ -2560,8 +2560,10 @@ Still open, and owned elsewhere: a `fontFamily` fallback *list* rather than one 
 belongs with #70's item 3; the last-emoji clipping of react-native#57995 needs U+1FAE8, which v2.047 predates.
 
 **The emoji golden's tolerance (#307, revised by #314).** `png-diff.ts`'s zero tolerance holds because this rig
-renders on the CPU through Skia's raster backend, where one Skia build given one scene produces the same bytes on
-every machine. #307 first read a one-host drift — one pixel off by one channel unit — as FreeType's CBDT bitmap
+renders on the CPU through Skia's raster backend, where one Skia build given one scene has produced the same bytes
+on every toolchain tested so far — the CI runner and this host, both with the vendored face; a FreeType build that
+rounds a scaled bitmap glyph differently would still be a real, measurable drift, and none has been measured.
+#307 first read a one-host drift — one pixel off by one channel unit — as FreeType's CBDT bitmap
 scaler not being byte-identical across builds, and #309 widened `emoji.png`'s budget to
 `{ maxChannelDifference: 1, maxDifferentPixels: 16 }` to absorb it.
 
