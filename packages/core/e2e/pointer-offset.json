@@ -1,0 +1,26 @@
+{
+  "name": "pointer-offset",
+  "bundle": "pointer-offset.js",
+  "ready": "pointer-offset: committed surface 1",
+  "frames": 600,
+  "steps": [
+    "sleep 500",
+    "move 110 140",
+    "sleep 100",
+    "click 110 140",
+    "sleep 200",
+    "move 300 100",
+    "sleep 100",
+    "click 300 100",
+    "sleep 200",
+    "move 690 120",
+    "sleep 100",
+    "click 690 120",
+    "sleep 500"
+  ],
+  "expect": [
+    "pointer-offset: topClick on rotated client=110,140 page=110,140 offset=40,40",
+    "pointer-offset: topClick on scaled client=300,100 page=300,100 offset=15,15",
+    "pointer-offset: topClick on invisible client=690,120 page=690,120 offset=40,19.999969482421875"
+  ]
+}

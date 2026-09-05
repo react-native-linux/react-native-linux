@@ -3689,6 +3689,76 @@ came out, and the sixteen that did not arrive are the acceptance criterion. The 
 `topPointerEnter` lines are the hover chain, and they are evidence the pipeline reaches
 `PointerEventsProcessor` rather than bypassing it — neither event was ever dispatched by this platform.
 
+### Pointer coordinate spaces (#246)
+
+A `PointerEvent` carries three pairs a platform fills — `clientX/Y`, `screenX/Y`, `offsetX/Y` — and only the first
+two are surface-space; upstream's own `asJSIValue` aliases `pageX/Y` to `clientX/Y`, because nothing in React
+Native scrolls the whole surface the way a browser scrolls a page. `clientX/Y` and `screenX/Y` are
+`event.surfacePoint` verbatim: this platform has one window and no independent screen space to report. `offsetX/Y`
+is the one number that is not the press point itself — it is the press point expressed in the target's own local
+box, after every transform between it and the surface, which is this platform's `locationX/Y` since nothing here
+ever builds a legacy `Touch` payload (touch is deferred, above).
+
+Filling it used to be `event.surfacePoint - targetOrigin`, where `targetOrigin` was the target's forward-mapped
+absolute origin — the same origin `SceneHit` returns and the same one #97's hit-testing tests pin. That is exactly
+correct for a pure translation, which is what a scrolled ancestor is too (`RetainedScene` composes scrolling as a
+`-contentOffset` translation), and it is what upstream's own `PointerEventsProcessor::retargetPointerEvent` does
+for the same reason, with a comment naming it a "HACK" that does not "take non-trivial transforms into account."
+It is wrong for anything else: a square rotated 90 degrees about its own centre still has to report a press on
+its centre as *its own* centre, and a plain vector subtraction from the rotated corner's new surface position
+reports a different point.
+
+`pointerOffsetWithinTarget` in `InputPipeline.h`/`.cpp` is the fix, and it is a pure function so the 100%-branch
+coverage gate can hold every case: given the composed 2D affine a target paints with (`PointerTargetTransform`,
+the same six-value shape `SceneMatrix` uses) and a frame origin, it inverts the matrix and subtracts, which is the
+same inverse `RetainedScene::coversPrimitive` applies to decide whether the press hit the target at all —
+independently reimplemented here, because `RetainedScene.cpp` is a different lane's coverage gate, not because
+the two are expected to disagree. `PointerRouter::route` and `routeRelease` no longer take a `targetOrigin` to
+subtract — they take the already-inverted `targetOffset` and hand it straight to the payload.
+
+The impure half is reading the transform, and issue #299 is why it is not a second scene lookup. The first cut of
+this fix had `InputDispatcher::transformForTag` read the matrix back off `LinuxMountingManager::snapshotScene()`
+for the hit tag — a second call into `RetainedScene` that takes `sceneMutex_` on its own, separately from the
+`findNodeAtPoint` call that resolved the tag a moment earlier. A commit landing between the two could hand this
+event's target a different revision's matrix than the one that decided it was the target at all, and
+`snapshotScene()` filters out exactly the primitives an `opacity: 0` node would not paint, so a fully transparent
+*and* transformed target always missed its own matrix and fell back to an identity one.
+
+`SceneHit` (`RetainedScene.h`/`.cpp`) carries the matrix and frame origin instead, populated inside
+`hitTestNode`'s own walk — the one place that has them for the node it just matched, under the same lock and the
+same tree revision the tag itself came from, whether or not that node painted anything at all. `origin` stays,
+because it is its own value #97's tests already pin; `matrix` and `frameOrigin` are what
+`InputDispatcher::resolveTarget` reads for `pointerOffsetWithinTarget` now, through the small `transformOfHit`
+and `identityTransformAt` helpers next to it rather than a method that reaches back into the mounting manager.
+
+`PointerTarget::offset` (`InputDispatcher.h`) is therefore what `resolveTarget` produces instead of an origin: the
+local offset, already correct for a translated, scaled, rotated or scrolled target, and now for a fully
+transparent, transformed one too. Only a tag `SceneHit` never carries a matrix for at all — the surface root, and
+a `UIManager::findNodeAtPoint` fallback hit for a painted tag the committed shadow tree does not contain — gets
+`identityTransformAt` its absolute origin instead, which is exactly right for both: neither has a transform of
+its own this reading could miss.
+
+`InputTest.cpp`'s `PointerOffsetWithinTargetTest` table-tests `pointerOffsetWithinTarget` directly against
+translated, uniformly scaled, non-uniformly scaled, rotated and singular (`scale: 0`) matrices, each one worked by
+hand rather than derived from `RetainedScene`'s own arithmetic, so a mistake in one is unlikely to be the mistake
+in the other. `AnimatedHitTestTest.cpp`'s `AFullyTransparentRotatedNodeStillReportsTheMatrixItPaintsWith` is
+issue #299 on its own: a node with `opacity: 0` and a 90-degree rotation, asserting `SceneHit` still carries the
+matrix that rotation composed by feeding it straight through `pointerOffsetWithinTarget` and checking the answer
+is the box's own centre. `packages/core/test-bundles/pointer-offset.js` is the integration proof at the level
+*The proof* above already trusts: a rotated box, a scaled box, a box under a translated ancestor with its own
+scaled child (composition, not a chain to unwind by hand), and an opaque box that is both `opacity: 0` and
+rotated, each printing `clientX/Y`, `pageX/Y` and `offsetX/Y` for a press at a surface point chosen so the correct
+offset is close to a round number and a plain-subtraction bug would not be:
+
+```bash
+hello_react --inject-pointer packages/core/test-bundles/pointer-offset.js 110 140
+# pointer-offset: topClick on rotated client=110,140 page=110,140 offset=40,40
+```
+
+`packages/core/e2e/pointer-offset.json` is the same three presses — the rotated box, the scaled box and the
+`opacity: 0` rotated one — under a compositor's `wl_pointer`, asserting the exact `offset=` numbers by substring
+the way `pressable.json` asserts a target by name.
+
 ### Deferrals, with owners
 
 - **Touch and gestures.** `TouchEventEmitter::onTouchStart` and the responder system are untouched. Nothing on a

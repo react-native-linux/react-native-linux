@@ -16,15 +16,37 @@
 namespace react_native_linux {
 
 /**
- * The node a pointer event is delivered to, and the absolute origin the offset inside it is measured from.
+ * The node a pointer event is delivered to, and where inside its own local box the event lands.
  *
- * The two travel together because one hit test produces both: an origin looked up separately would come from the
- * shadow tree's `LayoutMetrics`, which is exactly the stale geometry the scene hit test exists to avoid.
+ * `offset` is already `pointerOffsetWithinTarget`'s answer — this platform's `locationX/Y` — rather than an
+ * absolute origin a caller would have to invert a transform against later. The two travel together because one
+ * hit test produces both: an origin looked up separately would come from the shadow tree's `LayoutMetrics`, which
+ * is exactly the stale geometry the scene hit test exists to avoid, and it would carry no matrix to invert a
+ * rotated or scaled target's offset against either.
  */
 struct PointerTarget {
     std::shared_ptr<const facebook::react::ShadowNode> shadowNode;
-    facebook::react::Point origin{};
+    facebook::react::Point offset{};
 };
+
+/**
+ * The transform `pointerOffsetWithinTarget` inverts for a scene hit, read straight off `SceneHit` rather than a
+ * second scene lookup: `hitTestNode`'s own walk is the only place that has the matrix for the node it just
+ * matched, under the same lock and the same tree revision the tag itself came from, whether or not that node
+ * painted anything at all (issue #299). A free, header-defined function rather than a private method of
+ * `InputDispatcher` because `AnimatedHitTestTest.cpp` needs the identical conversion to assert `SceneHit` carries
+ * the matrix it should, and that test target does not link `InputDispatcher.cpp` — one function two callers
+ * share, rather than a linker dependency the test binary does not otherwise need.
+ */
+inline PointerTargetTransform transformOfHit(const SceneHit& hit) {
+    return PointerTargetTransform{.scaleX = hit.matrix.scaleX,
+                                  .skewX = hit.matrix.skewX,
+                                  .translateX = hit.matrix.translateX,
+                                  .skewY = hit.matrix.skewY,
+                                  .scaleY = hit.matrix.scaleY,
+                                  .translateY = hit.matrix.translateY,
+                                  .frameOrigin = hit.frameOrigin};
+}
 
 /**
  * Turns a frame's worth of platform input into Fabric events: hit-test, translate, enqueue — and owns the one
@@ -102,6 +124,7 @@ private:
     std::shared_ptr<const facebook::react::ShadowNode> rootShadowNode() const;
     PointerTarget resolveTarget(const InputEvent& event) const;
     facebook::react::Point absoluteOrigin(const facebook::react::ShadowNode& shadowNode) const;
+
     void dispatchPointerEvent(const InputEvent& event);
     void dispatchKeyEvent(const InputEvent& event);
     void emitKeyEvent(const InputEvent& event) const;
