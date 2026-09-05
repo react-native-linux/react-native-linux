@@ -200,6 +200,31 @@ struct SceneImageContent {
  * transform. Colours are packed ARGB with the cumulative opacity of this node and all its ancestors already
  * multiplied into the alpha channel, so the painter never composes anything.
  */
+/**
+ * One shadow a node casts, in the CSS `box-shadow` vocabulary React Native 0.76 adopted: an offset, a blur radius,
+ * a spread distance, a colour, and whether it is cast inside the box or outside it. The legacy iOS quartet
+ * (`shadowColor`, `shadowOffset`, `shadowOpacity`, `shadowRadius`) resolves onto the same shape, so a
+ * cross-platform app casts one drawing whichever props it wrote.
+ *
+ * `blurRadius` is the CSS one — the full width of the blur — and the painter converts it to the Gaussian sigma
+ * Skia wants; iOS' `shadowRadius` *is* the sigma, which is why the quartet maps with a factor of two.
+ */
+struct SceneShadow {
+    float offsetX{0.0F};
+    float offsetY{0.0F};
+    float blurRadius{0.0F};
+    float spreadDistance{0.0F};
+    uint32_t colorArgb{};
+    bool isInset{false};
+};
+
+/**
+ * The rectangle a node's outset shadows can reach: `bounds` grown on each side by the furthest any shadow
+ * extends past it — offset plus blur plus spread — or `bounds` unchanged when every shadow is inset or there is
+ * none. This is what a shadowed node damages, and it is arithmetic so the gate can hold it.
+ */
+facebook::react::Rect shadowExtent(const facebook::react::Rect& bounds, const std::vector<SceneShadow>& shadows);
+
 struct ScenePrimitive {
     /**
      * The node this was painted for. The rest of a primitive is geometry and colour, deliberately: the painter
@@ -214,6 +239,7 @@ struct ScenePrimitive {
     facebook::react::BorderWidths borderWidths;
     facebook::react::BorderStyles borderStyles;
     facebook::react::RectangleEdges<uint32_t> borderColorsArgb;
+    std::vector<SceneShadow> shadows;
     uint32_t backgroundColorArgb{};
 
     /**
@@ -282,6 +308,7 @@ struct SceneNode {
     facebook::react::LayoutMetrics layoutMetrics{};
     std::optional<facebook::react::SharedColor> backgroundColor;
     std::vector<facebook::react::BackgroundImage> backgroundImage;
+    std::vector<SceneShadow> shadows;
     facebook::react::BorderMetrics borderMetrics{};
     SceneMatrix transform{};
 

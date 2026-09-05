@@ -56,12 +56,12 @@ assertion and not an implementation.
 
 | Component | Props | Implemented | Deviating | Not implemented |
 | --- | --- | --- | --- | --- |
-| View | 35 | 9 | 5 | 21 |
+| View | 35 | 14 | 5 | 16 |
 | Text | 45 | 12 | 12 | 21 |
 | Image | 14 | 3 | 7 | 4 |
 | ScrollView | 39 | 2 | 2 | 35 |
 | TextInput | 22 | 11 | 0 | 11 |
-| **Total** | 155 | 37 | 26 | 92 |
+| **Total** | 155 | 42 | 26 | 87 |
 
 ## View
 
@@ -77,12 +77,12 @@ assertion and not an implementation.
 | `outlineOffset` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:57` | not-implemented | #68 |
 | `outlineStyle` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:58` | not-implemented | #68 |
 | `outlineWidth` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:59` | not-implemented | #68 |
-| `shadowColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:62` | not-implemented | #67 |
-| `shadowOffset` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:63` | not-implemented | #67 |
-| `shadowOpacity` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:64` | not-implemented | #67 |
-| `shadowRadius` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:65` | not-implemented | #67 |
+| `shadowColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:62` | implemented | `shadow.png` |
+| `shadowOffset` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:63` | implemented | `shadow.png` |
+| `shadowOpacity` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:64` | implemented | `shadow.png` |
+| `shadowRadius` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:65` | implemented | `shadow.png` |
 | `cursor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:67` | not-implemented | #40 |
-| `boxShadow` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:70` | not-implemented | #67 |
+| `boxShadow` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:70` | implemented | `shadow.png` |
 | `filter` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:73` | not-implemented | #68 |
 | `backgroundImage` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:76` | implemented | `RetainedSceneTest, ABackgroundImageGradientTravelsToThePrimitiveWithTheInheritedOpacity` |
 | `backgroundSize` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:79` | deviating | Every gradient layer fills the whole border box; CSS `background-size` is parsed and ignored. See *Gradients*, Fidelity limits. |

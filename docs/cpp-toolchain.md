@@ -329,9 +329,9 @@ destruct. `xdg_toplevel.close` and a `wl_display` error both leave the run loop 
 `Ctrl-C` does not: there is still no signal handler, so `SIGINT` terminates the process where it stands and the
 compositor reclaims the surface when the connection's file descriptor closes.
 
-Not drawn yet, each with an owning milestone: shadows and elevation, `boxShadow`, `filter`, `mixBlendMode`,
-`outline`, `backgroundImage` gradients, and `display: none`. Backgrounds, per-corner radii, per-side borders,
-opacity, transforms and `overflow` clipping are drawn; see *View props fidelity*. Text is drawn; see *Text*.
+Not drawn yet, each with an owning milestone: elevation, `filter`, `mixBlendMode`, `outline`, and
+`display: none`. Backgrounds, per-corner radii, per-side borders, opacity, transforms, `overflow` clipping,
+gradients and shadows are drawn; see *View props fidelity*. Text is drawn; see *Text*.
 Images are drawn; see *Image*. Pointer and keyboard events reach JavaScript once per frame; see *Input*. The scene
 is also what a press is hit-tested against, which is what keeps the pressed node and the painted node the same
 node while an animation is running; see *Hit-testing under animation*.
@@ -2072,10 +2072,10 @@ corner containment, the hairline promotion, and the identity between what the hi
 `border-matrix.png`; see *Golden images*. The third layer is the `rounded-press.json` e2e scenario, which presses
 a real card through a compositor's `wl_pointer` and watches the hit flip at the arc; see *The scenarios*.
 
-Not implemented at all, and owned elsewhere: `shadowColor`/elevation and `boxShadow`, `filter`, `mixBlendMode` and
-`isolation`, and `outline*`. Each needs its own issue under M1; none of them is a variation on what is here.
-`experimental_backgroundImage` gradients were the last entry on that list and are now implemented; see *Gradients*
-below.
+Not implemented at all, and owned elsewhere: `elevation`, `filter`, `mixBlendMode` and `isolation`, and
+`outline*`. Each needs its own issue under M1; none of them is a variation on what is here.
+`experimental_backgroundImage` gradients and `boxShadow` with the legacy `shadow*` quartet were on that list and
+are now implemented; see *Gradients* and *Shadows* below.
 
 ## Gradients
 
@@ -2141,6 +2141,55 @@ by a few degrees is a bug nobody can see until a designer notices.
   [css-images-3](https://www.w3.org/TR/css-images-3/#typedef-radial-size). Explicit lengths resolve directly.
 - **Ellipses** are `SkShaders::RadialGradient` of the horizontal radius with a local matrix scaling y by
   `ry / rx` about the centre — one matrix rather than a second shader type, again matching Android.
+
+### Shadows (#67)
+
+`boxShadow` and the legacy iOS quartet — `shadowColor`, `shadowOffset`, `shadowOpacity`, `shadowRadius` — are
+one drawing. `resolveShadows` in `RetainedScene.cpp` turns both into a list of `SceneShadow` in paint order: the
+`boxShadow` entries first, as authored, then the quartet as one more outset shadow when it says anything at all.
+The painter only ever sees the list.
+
+- **The quartet maps onto `boxShadow` with the radius doubled.** iOS' `shadowRadius` is the Gaussian sigma;
+  CSS' blur radius is the full blur width, two sigmas
+  ([css-backgrounds-3](https://www.w3.org/TR/css-backgrounds-3/#shadow-blur)). `kSigmasPerBlurRadius` is that
+  factor, and `shadowOpacity` is multiplied into the colour's alpha, so a design specified for iOS casts the same
+  shadow here. A quartet whose `shadowOpacity` is at its default of zero, or whose colour is not meaningful,
+  casts nothing — the same as iOS, and the reason a `<View>` with a stray `shadowColor` does not grow a halo.
+- **Sigma is half the blur radius on the way back out.** `toBlur` is `SkMaskFilter::MakeBlur(kNormal, blur / 2)`,
+  and no filter at all for a blur of zero, so a sharp shadow is a plain rounded rect rather than a blur with a
+  degenerate sigma. Android's `CSSBackgroundDrawable` and the iOS `RCTBoxShadow` layer make the same choice.
+- **Outset shadows are painted before the fill, under a difference clip.** The canvas clips out the node's own
+  rounded border box (`SkClipOp::kDifference`) and draws each shadow as the border box outset by
+  `spreadDistance` and translated by the offset (`spreadAndOffset`). The clip is what keeps a translucent shadow
+  from darkening the node's own background where the blur reaches back under it — CSS says the shadow is not
+  drawn inside the border box, and a translucent background makes the difference visible.
+- **Inset shadows are an even-odd ring drawn after the background image.** The clip is the border box; the path
+  is a rect `kInsetShadowMargin` points larger on every side with the border box, spread inwards and offset,
+  as its hole, filled even-odd so only the band between them takes the blur. The margin only has to exceed the
+  widest blur a shadow can spread into the box, so it is a constant rather than a computation. Inset shadows sit
+  above the background and below the border, which is the CSS stacking order.
+- **The shadow damages where it reaches.** `shadowExtent` grows a primitive's frame by `blurRadius +
+  spreadDistance` on every side, and by the offset on the two sides the shadow moves towards, over every outset
+  shadow it carries; inset shadows add nothing. `primitiveDamageBounds` maps that grown rect through the node's
+  matrix, so a shadowed card that moves repaints the strip its shadow vacated — the damage golden would show a
+  ghost otherwise, and `ShadowDamageTest` asserts the extent rather than the picture.
+- **`elevation`** is Android's shorthand for a material shadow, and the shared `ViewProps` does not carry it —
+  `react/renderer/components/view/ViewProps.h` has no such field; Android reads it from the raw props on its own
+  side — so there is nothing to map. It stays on the *not implemented* list above.
+
+Three layers, as everywhere. `ShadowTest.cpp` covers the resolution (paint order, the quartet's doubling and
+opacity, the two ways a quartet casts nothing, inherited opacity folding into the colour) and the extent (no
+shadow, one shadow, an offset larger than the reach never pulling the extent inside the box, several shadows
+reaching as far as the furthest on each side, inset reaching nowhere); `shadow.png` is the golden of
+`shadow.js`, one tile for each way a shadow interacts with the node: outset, inset, two in paint order,
+per-corner radii, under an `overflow: hidden` ancestor, on a rotated node, the legacy quartet, and spread with no
+blur. The e2e layer is not a separate scenario: a shadow neither receives input nor emits an event, and the
+window golden of the same fixture would only re-prove the raster one.
+
+Two things the tiles are there to catch, because both were wrong once during the work. The clipped tile's shadow
+is cut where the *ancestor* cuts and nowhere else — a shadow clipped by its own node's box is the difference-clip
+mistake in the other direction. The rotated tile's shadow rotates with the box: the shadow is drawn in the node's
+matrix, not offset in screen space after the fact.
 
 ### An unresolvable fontFamily says so (#70)
 
