@@ -109,7 +109,7 @@ public:
      * image finishes decoding, which is the one thing that changes the picture without a Fabric mutation behind
      * it.
      */
-    void damageImageSource(const std::string& uri);
+    void damageImageSource(const std::string& uri, const std::shared_ptr<const DecodedImageFrames>& decoded);
 
     /**
      * Where the scene reads decoded pixels from. Set once by the host with the image pipeline's cache, before any

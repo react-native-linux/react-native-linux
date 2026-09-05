@@ -246,6 +246,9 @@ struct ImagePipelineState {
                 completionsByUri.erase(uri);
 
                 if (decoded != nullptr) {
+                    // The insert may refuse these frames — one animation can be larger than the whole capacity —
+                    // and the listener runs either way. Admission decides what a *later* mount finds without
+                    // decoding again; it does not decide whether this decode reaches the screen.
                     cache.insert(uri, decoded, byteCount);
                     decodeListener = listener;
                 }
@@ -256,7 +259,7 @@ struct ImagePipelineState {
             }
 
             if (decodeListener) {
-                decodeListener(uri);
+                decodeListener(uri, decoded);
             }
 
             // Last, so that going idle means the pixels have been published, not merely cached: the golden rig

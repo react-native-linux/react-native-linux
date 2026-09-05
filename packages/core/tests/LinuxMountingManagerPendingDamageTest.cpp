@@ -58,7 +58,7 @@ TEST(LinuxMountingManagerPendingDamageTest, ANonEmptyTransactionSetsItUntilTheFr
 TEST(LinuxMountingManagerPendingDamageTest, AnImageDecodeSetsIt) {
     LinuxMountingManager mountingManager;
 
-    mountingManager.damageImageSource("https://example.test/image.png");
+    mountingManager.damageImageSource("https://example.test/image.png", nullptr);
 
     EXPECT_TRUE(mountingManager.hasPendingDamage());
 }

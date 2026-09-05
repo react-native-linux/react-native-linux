@@ -2689,10 +2689,17 @@ function-local static safe to hand a thread.
 
 Every other thing that changes the picture arrives as a `ShadowViewMutation`, and *Damage tracking* accounts for
 it. A decode does not: no shadow node changed, so Fabric emits nothing. The pipeline therefore calls one listener
-with the URI it just decoded, `FabricHost` installs a listener that calls
-`LinuxMountingManager::damageImageSource`, and that damages the subtree extent of every node drawing that URI
-under the scene mutex. The next `takeFrame` hands the frame thread that damage with the scene it belongs to,
-which is the same atomic pair every other mutation goes through.
+with the URI it just decoded **and the frames it decoded into**, `FabricHost` installs a listener that calls
+`LinuxMountingManager::damageImageSource`, and that attaches those frames to every node drawing that URI and
+damages their subtree extents under the scene mutex. The next `takeFrame` hands the frame thread that damage with
+the scene it belongs to, which is the same atomic pair every other mutation goes through.
+
+The frames are handed over rather than looked up again, and that is load-bearing rather than tidy: **the cache is
+allowed to refuse them**. One animation can be larger than the whole capacity, `ImageCache::insert` drops such a
+source on the floor by design, and a listener that answered by asking the cache would hand the scene null and
+paint an oversized GIF as an empty box. Admission decides what a *later* mount finds without decoding again; it
+does not decide whether this decode reaches the screen. A source the cache refused is then owned by the nodes
+drawing it and by nothing else, which is the lifetime rule of #108 with the cache's share of it left out.
 
 The listener is process-wide and installed by `FabricHost`, under `RNL_ENABLE_IMAGES` — the definition only
 exists when the swap above happened. It is cleared in `~FabricHost` so a decode that lands after a host is gone
@@ -2711,6 +2718,11 @@ bound is bytes rather than entries because the cost of a decoded image is its pi
 three orders of magnitude in area. An insert past the capacity evicts from the least recently used end until the
 total fits, and an entry that alone exceeds the capacity is not cached at all, so one oversized image cannot flush
 everything else out on its way to being evicted itself. Both a hit and an insert make an entry most recently used.
+
+Refusing an entry is not refusing the picture. The decode listener carries its frames to the scene whether or not
+the cache took them, so a source too large for the capacity — an animation whose frames sum past it, most
+plausibly — still paints, and is simply decoded again the next time a node mounts it from cold. See *Damage,
+because a decode is not a mutation*.
 
 The value is a `std::shared_ptr<void>`, which is what keeps `ImageContent.cpp` free of Skia and therefore inside
 the coverage gate; it is the same type erasure upstream's own `ImageResponse` uses, for the same reason. An
@@ -2785,17 +2797,22 @@ that as the two rates producing one sequence.
 
 `RetainedScene::advanceImageAnimations` is the per-frame side. It walks the nodes once, adds the frame's
 milliseconds to each animated `<Image>`'s own elapsed time, and damages the ones whose frame index changed —
-their own extent, which for an `<Image>` is its box cut by the clips it inherits, so a looping GIF repaints its own
-rectangle per frame and nothing else (#12). `LinuxMountingManager::advanceImageAnimations` takes the scene mutex
+`clippedPrimitiveBounds`, the node's **own** primitive cut by the clips it inherits, so a looping GIF repaints its
+own rectangle per frame and nothing else (#12). Deliberately not `subtreeExtent`, which every mutation uses: that
+is the union over the node *and its descendants*, so an `<Image>` with children would damage a rectangle covering
+them too, and the union would be an odd thing to repaint for a bitmap that changed inside its own box. `LinuxMountingManager::advanceImageAnimations` takes the scene mutex
 around it and flags pending damage, which is the fourth signal *Frame clock* already lists reaching
 `hasPendingWork`; `WindowSession::deliverInput` calls it once per frame beside the caret blink, and
 `BundleRunner`'s `--animated-image` mode calls it a fixed number of times at a fixed 60 Hz step so a golden of a
 GIF is reproducible.
 
-**A clipped-out animation does not run.** If `subtreeExtent` finds nothing left of the node — an `overflow: hidden`
-ancestor has cut it away entirely — the advance skips it: no elapsed time accumulates, so no frame is scheduled
-and nothing is damaged, and the first advance after it is visible again resumes from the frame it paused on rather
-than from wherever the wall clock would have carried it. An update that does not change the source keeps its place
+**A clipped-out animation does not run.** If `clippedPrimitiveBounds` finds nothing left of the node — an
+`overflow: hidden` ancestor has cut it away entirely — the advance skips it: no elapsed time accumulates, so no
+frame is scheduled and nothing is damaged, and the first advance after it is visible again resumes from the frame
+it paused on rather than from wherever the wall clock would have carried it. It is the same rectangle the damage
+uses, and for the same reason it is the node's own: an image scrolled off screen whose child happens to stay
+inside the clip is still an image nobody can see, and a subtree extent would have kept it decoding frames
+forever. An update that does not change the source keeps its place
 for the same reason: `<Image>` props change for reasons that have nothing to do with the source, and a GIF that
 restarted on every re-render would be core#46810 in a different disguise.
 

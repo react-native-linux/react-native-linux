@@ -224,8 +224,8 @@ TEST(ImageLifetimeTest, ANodeMountedWithNoProviderDrawsNothingUntilADecodeReport
 
     EXPECT_EQ(mountedPixels(scene), nullptr);
 
-    // The same call the decode listener makes, with nowhere to read pixels from: it damages and hands over null.
-    scene.damageImageSource("tile.png");
+    // The same call the decode listener makes, with nothing decoded: it damages and hands over null.
+    scene.damageImageSource("tile.png", nullptr);
 
     EXPECT_EQ(mountedPixels(scene), nullptr);
 }
@@ -239,7 +239,7 @@ TEST(ImageLifetimeTest, ADecodeThatFinishesAfterTheMountHandsItsPixelsToTheNodes
 
     const std::shared_ptr<const DecodedImageFrames> image = cachedImage(cache, "tile.png");
 
-    scene.damageImageSource("tile.png");
+    scene.damageImageSource("tile.png", image);
 
     EXPECT_EQ(mountedPixels(scene), firstFrame(image));
 }
@@ -442,6 +442,32 @@ bool advanceFrames(RetainedScene& scene, int frameCount) {
     return hasAdvanced;
 }
 
+void expectDamagedOnly(RetainedScene& scene, const Rect& expected) {
+    const SceneDamage damage = scene.takeDamage();
+
+    ASSERT_EQ(damage.size(), 1U);
+    EXPECT_FLOAT_EQ(damage.front().origin.x, expected.origin.x);
+    EXPECT_FLOAT_EQ(damage.front().origin.y, expected.origin.y);
+    EXPECT_FLOAT_EQ(damage.front().size.width, expected.size.width);
+    EXPECT_FLOAT_EQ(damage.front().size.height, expected.size.height);
+}
+
+// Tag 2 clips, tag 3 is the animation laid out entirely to the right of it, so nothing of the image survives.
+RetainedScene sceneWithClippedAnimation(ImageCache& cache,
+                                        const std::shared_ptr<const DecodedImageFrames>& animation) {
+    cache.insert("loop.gif", animation, kEntryByteCount);
+
+    RetainedScene scene = sceneReadingCache(cache);
+    const std::shared_ptr<ViewProps> clippingProps = std::make_shared<ViewProps>();
+
+    clippingProps->yogaStyle.setOverflow(facebook::yoga::Overflow::Hidden);
+    addChild(scene, kSurfaceTag, makeStyledView(2, makeRect(100, 100, 50, 50), clippingProps));
+    addChild(scene, 2, makeImage(3, makeRect(200, 0, 120, 90), "loop.gif", facebook::react::SharedColor{}));
+    scene.takeDamage();
+
+    return scene;
+}
+
 RetainedScene sceneShowingAnimation(ImageCache& cache, const std::shared_ptr<const DecodedImageFrames>& animation) {
     cache.insert("loop.gif", animation, kEntryByteCount);
 
@@ -493,30 +519,13 @@ TEST(AnimatedImageSceneTest, AnAdvanceThatCrossesAFrameBoundaryDamagesOnlyTheIma
     EXPECT_EQ(shownFrameIndex(scene, *animation), 1U);
 
     // #12: a looping animation repaints its own rectangle and nothing else, however long it runs.
-    const SceneDamage damage = scene.takeDamage();
-
-    ASSERT_EQ(damage.size(), 1U);
-    EXPECT_FLOAT_EQ(damage.front().origin.x, kImageFrame.origin.x);
-    EXPECT_FLOAT_EQ(damage.front().origin.y, kImageFrame.origin.y);
-    EXPECT_FLOAT_EQ(damage.front().size.width, kImageFrame.size.width);
-    EXPECT_FLOAT_EQ(damage.front().size.height, kImageFrame.size.height);
+    expectDamagedOnly(scene, kImageFrame);
 }
 
 TEST(AnimatedImageSceneTest, AClippedOutAnimationSchedulesNoFrameAndResumesFromWhereItPaused) {
     ImageCache cache{4 * kEntryByteCount};
     const std::shared_ptr<const DecodedImageFrames> animation = makeAnimation(kAnimatedImageRepeatsForever);
-    RetainedScene scene = sceneReadingCache(cache);
-    const std::shared_ptr<ViewProps> clippingProps = std::make_shared<ViewProps>();
-
-    cache.insert("loop.gif", animation, kEntryByteCount);
-    clippingProps->yogaStyle.setOverflow(facebook::yoga::Overflow::Hidden);
-
-    const ShadowView clipper = makeStyledView(2, makeRect(100, 100, 50, 50), clippingProps);
-
-    addChild(scene, kSurfaceTag, clipper);
-    // Laid out entirely to the right of its clipping parent, so nothing of it survives the clip.
-    addChild(scene, 2, makeImage(3, makeRect(200, 0, 120, 90), "loop.gif", facebook::react::SharedColor{}));
-    scene.takeDamage();
+    RetainedScene scene = sceneWithClippedAnimation(cache, animation);
 
     for (int frame = 0; frame < 4 * kFramesInsideTheThirdFixtureFrame; frame++) {
         EXPECT_FALSE(scene.advanceImageAnimations(kSixtyHertzMilliseconds));
@@ -564,6 +573,62 @@ TEST(AnimatedImageSceneTest, AnUpdateThatKeepsTheSourceKeepsThePlaceInTheAnimati
     // A different source is a different animation, and it starts at its own first frame.
     scene.updateNode(imageNode(2, "other.gif"));
     EXPECT_EQ(shownFrameIndex(scene, *animation), animation->frames.size());
+}
+
+TEST(AnimatedImageSceneTest, AnAnimationTooLargeForTheCacheStillPaints) {
+    // One frame fits; four do not. The cache refuses the source whole, which must not decide whether the decode
+    // reaches the screen — the nodes drawing it own it, and the cache's copy is only what saves a later mount a
+    // second decode.
+    ImageCache cache{2 * kEntryByteCount};
+    const std::shared_ptr<const DecodedImageFrames> animation = makeAnimation(kAnimatedImageRepeatsForever);
+    RetainedScene scene = sceneReadingCache(cache);
+
+    cache.insert("loop.gif", animation, kFixtureFrameCount * kEntryByteCount);
+    ASSERT_EQ(cache.find("loop.gif"), nullptr);
+
+    addChild(scene, kSurfaceTag, imageNode(2, "loop.gif"));
+    EXPECT_EQ(mountedPixels(scene), nullptr);
+
+    // The call the decode listener makes, with the frames the cache would not take.
+    scene.damageImageSource("loop.gif", animation);
+
+    EXPECT_EQ(mountedPixels(scene), animation->frames.front());
+
+    advanceFrames(scene, kFramesInsideTheSecondFixtureFrame);
+
+    EXPECT_EQ(mountedPixels(scene), animation->frames[1]);
+}
+
+TEST(AnimatedImageSceneTest, AClippedOutAnimationPausesEvenWhenAChildOfItIsVisible) {
+    ImageCache cache{4 * kEntryByteCount};
+    const std::shared_ptr<const DecodedImageFrames> animation = makeAnimation(kAnimatedImageRepeatsForever);
+    RetainedScene scene = sceneWithClippedAnimation(cache, animation);
+
+    // A painted child of the image, laid back inside the clip: the image's own box survives none of it while the
+    // subtree extent the other mutations use survives, which is the difference this test exists for.
+    addChild(scene, 3, makePaintedView(4, makeRect(-190, 10, 20, 20), red()));
+    scene.takeDamage();
+
+    for (int frame = 0; frame < 4 * kFramesInsideTheThirdFixtureFrame; frame++) {
+        EXPECT_FALSE(scene.advanceImageAnimations(kSixtyHertzMilliseconds));
+    }
+
+    EXPECT_TRUE(scene.takeDamage().empty());
+}
+
+TEST(AnimatedImageSceneTest, AFrameDamagesTheImagesRectangleAndNotItsChildrens) {
+    ImageCache cache{4 * kEntryByteCount};
+    const std::shared_ptr<const DecodedImageFrames> animation = makeAnimation(kAnimatedImageRepeatsForever);
+    RetainedScene scene = sceneReadingCache(cache);
+
+    cache.insert("loop.gif", animation, kEntryByteCount);
+    addChild(scene, kSurfaceTag, imageNode(2, "loop.gif"));
+    // Painted far outside the image, and unclipped, so a subtree extent would be four times the size.
+    addChild(scene, 2, makePaintedView(3, makeRect(400, 400, 60, 60), red()));
+    scene.takeDamage();
+
+    ASSERT_TRUE(advanceFrames(scene, kFramesInsideTheSecondFixtureFrame));
+    expectDamagedOnly(scene, kImageFrame);
 }
 
 TEST(AnimatedImageSceneTest, TheMountingManagerFlagsAnAdvancedFrameAsPendingDamage) {

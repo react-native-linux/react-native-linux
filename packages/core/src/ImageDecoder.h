@@ -10,12 +10,17 @@
 namespace react_native_linux {
 
 /**
- * Called once, on the decode thread, after a source finished decoding into the cache.
+ * Called once, on the decode thread, with the frames a source finished decoding into.
  *
  * A decode is the one thing that changes the picture without a Fabric mutation behind it, so nothing damages the
  * frame for it unless somebody listens. The mounting manager is what does; see `damageImageSource`.
+ *
+ * The frames are handed over rather than looked up again, because the cache is allowed to refuse them: a source
+ * whose frames exceed the whole capacity is never admitted, and a listener that answered by asking the cache
+ * would hand the scene nothing and paint an animation as a blank box.
  */
-using ImageDecodeListener = std::function<void(const std::string& uri)>;
+using ImageDecodeListener =
+    std::function<void(const std::string& uri, const std::shared_ptr<const DecodedImageFrames>& decoded)>;
 
 /**
  * The Skia-free half of the image pipeline's API, so the Fabric host, the scene and the headless runner can drive

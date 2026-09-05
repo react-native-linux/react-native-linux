@@ -741,6 +741,26 @@ bool hasArea(const facebook::react::Rect& rect) {
     return rect.size.width * rect.size.height > 0;
 }
 
+/**
+ * What this node alone paints, cut by the clips it inherits, or nothing when the clips leave none of it.
+ *
+ * A subtree extent is the wrong question for an `<Image>`: it is the union over the node *and its descendants*,
+ * so an image an `overflow: hidden` ancestor has cut away entirely still reports an extent when a child of it
+ * survives the clip, and the extent it reports covers that child. Asking only for the node's own primitive is
+ * what makes "this image is off screen" and "this image needs repainting" the same rectangle.
+ */
+std::optional<facebook::react::Rect> clippedPrimitiveBounds(const SceneNodes& nodes, facebook::react::Tag tag,
+                                                            const SceneNode& node) {
+    const facebook::react::Rect bounds =
+        primitiveDamageBounds(visitNode(node, paintStateOfAncestors(nodes, tag)).primitive);
+
+    if (!hasArea(bounds)) {
+        return std::nullopt;
+    }
+
+    return bounds;
+}
+
 // A matrix whose determinant is below this maps every point onto a line or onto a point, so the rectangle it
 // paints has no area and nothing can be inside it. `scale: 0` is the transform that produces one.
 constexpr float kSingularDeterminant = 1e-6F;
@@ -985,8 +1005,8 @@ bool RetainedScene::hasNode(facebook::react::Tag tag) const {
     return nodes_.contains(tag);
 }
 
-void RetainedScene::damageImageSource(const std::string& uri) {
-    const std::shared_ptr<const DecodedImageFrames> decoded = decodedImages_ ? decodedImages_(uri) : nullptr;
+void RetainedScene::damageImageSource(const std::string& uri,
+                                      const std::shared_ptr<const DecodedImageFrames>& decoded) {
     std::vector<facebook::react::Tag> drawingTags;
 
     for (auto& [tag, node] : nodes_) {
@@ -1002,7 +1022,7 @@ void RetainedScene::damageImageSource(const std::string& uri) {
 }
 
 bool RetainedScene::advanceImageAnimations(double frameMilliseconds) {
-    std::vector<facebook::react::Tag> advancedTags;
+    bool hasAdvanced = false;
 
     for (auto& [tag, node] : nodes_) {
         if (!node.image.has_value() || node.image.value().frames == nullptr ||
@@ -1011,8 +1031,11 @@ bool RetainedScene::advanceImageAnimations(double frameMilliseconds) {
         }
 
         // An animation nothing can see is an animation that does not run: no elapsed time accumulates while the
-        // node is clipped away, so it holds the frame it paused on and resumes from there.
-        if (!subtreeExtent(tag).has_value()) {
+        // node is clipped away, so it holds the frame it paused on and resumes from there. This is the image's
+        // own box and not its subtree's, so a child that survives the clip does not keep the animation running.
+        const std::optional<facebook::react::Rect> bounds = clippedPrimitiveBounds(nodes_, tag, node);
+
+        if (!bounds.has_value()) {
             continue;
         }
 
@@ -1022,15 +1045,14 @@ bool RetainedScene::advanceImageAnimations(double frameMilliseconds) {
         image.elapsedMilliseconds += frameMilliseconds;
 
         if (animatedImageFrameIndex(*image.frames, image.elapsedMilliseconds) != pausedFrame) {
-            advancedTags.push_back(tag);
+            // The same rectangle the visibility test just asked about: a frame of a looping animation repaints
+            // the image and nothing else, whatever it happens to have as children.
+            addDamageRect(damage_, bounds.value());
+            hasAdvanced = true;
         }
     }
 
-    for (facebook::react::Tag tag : advancedTags) {
-        damageSubtree(tag);
-    }
-
-    return !advancedTags.empty();
+    return hasAdvanced;
 }
 
 void RetainedScene::setDecodedImageProvider(DecodedImageProvider decodedImages) {

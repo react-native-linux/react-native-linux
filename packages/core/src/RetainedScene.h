@@ -411,11 +411,16 @@ public:
     bool hasNode(facebook::react::Tag tag) const;
 
     /**
-     * Attaches the freshly decoded pixels to every node drawing `uri` and damages them, which is what turns a
-     * decode that finished after the last frame into a repaint. Nothing else can: a decode changes no shadow
-     * node, so Fabric emits no mutation for it.
+     * Attaches `decoded` to every node drawing `uri` and damages them, which is what turns a decode that
+     * finished after the last frame into a repaint. Nothing else can: a decode changes no shadow node, so Fabric
+     * emits no mutation for it.
+     *
+     * The frames are passed in rather than fetched from the provider, because the cache is allowed to refuse
+     * them: an animation whose frames exceed the whole capacity is never admitted, and asking the provider for it
+     * would answer null and paint a blank box. A source the cache refused is then owned by the nodes drawing it
+     * and by nothing else, which is the lifetime rule of #108 with the cache's share of it left out.
      */
-    void damageImageSource(const std::string& uri);
+    void damageImageSource(const std::string& uri, const std::shared_ptr<const DecodedImageFrames>& decoded);
 
     /**
      * Advances every animated `<Image>` by one frame of `frameMilliseconds`, damages the ones that changed frame,
