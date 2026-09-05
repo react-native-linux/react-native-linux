@@ -512,6 +512,24 @@ TEST(EditorModelTest, AControlledValueIsIgnoredWhileAnEditIsInFlight) {
     EXPECT_EQ(model.text(), "fresh");
 }
 
+// #114, item 4: a parent that rejects an edit does not go quiet — it re-commits the text it already had,
+// echoing the event count the rejected edit carried. That count matches the buffer's own, which is exactly
+// what tells `reconcileProps` this is an answer to the edit rather than a stale render, so it adopts the old
+// text and the field reverts. Reverting is not itself an edit: the count does not move again, and the caret
+// clamps to the reconciled text's own end rather than staying where the rejected character would have put it.
+TEST(EditorModelTest, ARejectedEditWithAMatchingEventCountRevertsWithoutMovingTheCount) {
+    EditorModel model = modelWith("ready");
+
+    model.insertText("x");
+    EXPECT_EQ(model.text(), "readyx");
+    EXPECT_EQ(model.mostRecentEventCount(), 1);
+
+    EXPECT_TRUE(model.reconcileProps("ready", 1));
+    EXPECT_EQ(model.text(), "ready");
+    EXPECT_EQ(model.mostRecentEventCount(), 1);
+    EXPECT_EQ(model.selection().caretByte, 5U);
+}
+
 TEST(EditorModelTest, AnEmptyControlledValueClearsTheField) {
     EditorModel model = modelWith("abc");
 

@@ -4202,9 +4202,74 @@ initial state; `text-input-grow-first.png` and `text-input-grow-after.png` are t
 placeholder and three lines tall after `one{Enter}two{Enter}three`, with the sibling below it standing wherever
 the field's bottom edge is.
 
-Not done here, and named: a controlled field whose `value` is rejected reverting within one frame with no size
-event (item 4 of #114), the first-line position of a fixed-height field across re-renders (item 5), and the
-height agreement between a `<TextInput>` and a `<Text>` holding the same string (item 6).
+**A rejected edit reverts on the frame after the parent answers it (item 4).** `EditorModel::reconcileProps`
+already adopts a `value` exactly when its echoed event count matches the buffer's, whatever the text —
+`ARejectedEditWithAMatchingEventCountRevertsWithoutMovingTheCount` in `EditorTest.cpp` pins that down in
+isolation: the revert does not move the count again, and the caret clamps to the reconciled text's own end.
+`TextInputController::reconcile` was checked for the matching bug and turned out to already be correct: no
+production change was needed here, and one was tried and reverted — see below. `text-input-reject.js` is the
+controller-level proof, through a real committed shadow tree: a digits-only field's parent strips a keystroke it
+does not accept, and the trace shows the buffer fall back to what the parent actually approved (`"123"`, not the
+mount value `"12"` and not the rejected `"123x"`) on the very next reconciliation, with the event count held
+still across the revert — reverting is answering the edit, not making a second one.
+
+A same-text reject — a parent that declines an edit by re-committing *exactly* the value it already had, rather
+than a sanitized one — is not provable here, and not because nothing was tried. Upstream's own
+`BaseTextInputShadowNode::updateStateIfNeeded` compares the *content* of the incoming attributed string against
+what is already in state and skips the write entirely when they are equal, `mostRecentEventCount` included: a
+parent that answers with the unchanged value produces no observable change in `TextInputState` at all, by
+upstream's own design, whatever event count it echoes. A `reconcile` that reacted to the event count alone
+(tried and reverted — it treated `TextInputController::writeState`'s own write, which also advances
+`mostRecentEventCount`, as if it were a fresh answer from React one frame later, and reverted a live edit that
+was never rejected by anyone) is not a fix for this; it is a different bug wearing the shape of one. The
+sanitizing case above is the general, observable form of "the parent declines what was typed": the corrected
+value is a real answer to `reactTreeAttributedString`, and there is no upstream gate standing between it and
+`reconcile`.
+
+**A fixed-height field's first line does not move once the run settles (item 5, core#54304).** The general
+first-frame proof of issue #46 covers a node's own frame, matrix and clips, and that alone is not enough for a
+`<TextInput>`: the paragraph inside a field can settle somewhere different while the field's own box holds
+still, which none of those three would show. `haveSameEditorGeometry` in `GoldenRenderer.cpp` is the addition —
+for a primitive carrying both `SceneTextContent` and `SceneEditorContent` it compares three things between the
+first and settled snapshots: `measureEditorGeometry`'s `contentWidth`/`contentHeight`, `measureParagraphMetrics`'s
+first-line height, and `restingFirstLineTop` — the same dimensions and the same line count do not rule out the
+paragraph resting at a different vertical position inside an unchanged box, which is exactly the gap between "the
+same size" and "the same place."
+
+`restingFirstLineTop` answers where a field's first line would rest, not by reading the caret rectangle
+`TextInputController::publish` writes: an unfocused field's caret and scroll offset are published through that
+side channel (`SceneEditorState`), which has not run at all by the time the *first* snapshot is taken, so reading
+it compares a real, settled position against an unpublished default of zero regardless of whether the paragraph
+itself moved. Instead it recomputes the position a fresh mount rests at — the caret at the end of the committed
+text, and `followedScrollOffset` from a resting offset of zero, exactly `TextInputField::scrollOffsetY`'s own
+default — from the attributed string, paragraph attributes and content box every snapshot already carries. Doing
+that identically on both snapshots is what makes the comparison side-channel-independent: two snapshots of the
+same committed text and box always rest at the same computed position, so a real shift can only come from the
+text or the box actually differing, which the earlier dimension checks already catch, or from a mistake in this
+calculation itself — verified by deliberately adding a constant offset to one side and confirming the run fails
+with `tag 10 rested its first line at -0 points from the content box's top on the first frame and 9001 once
+settled`, then removing the offset and confirming a clean pass.
+
+`text-input-first-frame.js` is the fixture — a fixed-height multiline field four lines deep in a box four lines
+tall, with a marker below it standing wherever a first-line shift would have reached — and it was checked against
+a real regression, not only against itself: a throwaway fixture that commits a short value first and clones in
+the fixture's own long value from a `setTimeout` (`scroll-first-frame.js`'s own async-settle pattern) fails with
+`tag 10 measured 39.6x22 of content on the first frame and 339.1x66 once settled`, and passes once the two
+commits carry the same text.
+
+**A `<TextInput>` and a `<Text>` holding the same string in the same style have the same height (item 6).**
+This does not hold against a field given an explicit height of its own — several fixtures style a field taller
+or shorter than its text on purpose, to prove the caret and the scrolling rules — so it cannot be asserted for
+every field in every fixture. `doesEveryTextInputAgreeWithACompanionText` in `GoldenRenderer.cpp` instead scans
+the scene for a `<TextInput>`/`<Text>` pair holding the same text and compares their committed heights, matching
+on the string rather than the whole attributed string: a field and a `<Text>` build their fragments through
+different code paths with different incidental attributes (a `parentShadowView`, a text-alignment default) that
+do not bear on height, and asking for those to agree too would make the proof about the fixture rather than
+about the layout. `text-input-text-height.js` is the fixture: a `multiline` field and a `<Text>` with the same
+string, the same style and no explicit height, so each one's box height is exactly its own measurement —
+`multiline` matters because a single-line field measures unwrapped and scrolls, which is not the same question
+as a `<Text>`'s wrapped height. Every other fixture's fields have no `<Text>` with the same words, so the check
+is a silent no-op for them.
 
 ### The proof
 
