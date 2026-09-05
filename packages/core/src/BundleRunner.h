@@ -120,6 +120,17 @@ FabricRunResult runFocusTabbedFabricBundle(const std::string& bundlePath, facebo
                                            int tabPresses);
 
 /**
+ * Runs a bundle and clicks `surfacePoint`, through the same `InputQueue` and `InputDispatcher` a window uses.
+ *
+ * A click is the other half of focus-visible (issue #248): it moves focus exactly as Tab does, but the node it
+ * lands on draws no ring, because `FocusOrigin::Pointer` is not `FocusOrigin::Keyboard`. Pairing this golden with
+ * `runFocusTabbedFabricBundle`'s is the whole of the visible proof — one scene with a ring and one without it,
+ * from the same fixture and the same focused node.
+ */
+FabricRunResult runFocusClickedFabricBundle(const std::string& bundlePath, facebook::react::Size surfaceSize,
+                                            facebook::react::Point surfacePoint);
+
+/**
  * Runs a bundle, presses Tab once to land on the first focusable — which the fixture makes the `<TextInput>` —
  * and then types `keySequence` through the same `InputQueue` and `InputDispatcher` a window uses.
  *

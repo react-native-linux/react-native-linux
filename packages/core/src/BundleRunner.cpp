@@ -258,18 +258,25 @@ FabricRunResult finishFabricRun(ReactHost& reactHost, std::unique_ptr<FabricHost
                            .hasReportedFatalError = reactHost.hasReportedFatalError()};
 }
 
-} // namespace
-
-int runInjectedClick(const std::string& bundlePath, facebook::react::Point surfacePoint) {
-    ReactHost reactHost;
-    StartedFabricRun startedRun = startFabricRunAtFirstCommit(reactHost, bundlePath, "click");
-    FabricHost& fabricHost = *startedRun.fabricHost;
-
+/**
+ * A move onto `surfacePoint`, a press and a release there, one frame apiece — the click every injected-click run
+ * delivers, whether it is proving a hit test or a focus change.
+ */
+void deliverClickFrames(ReactHost& reactHost, FabricHost& fabricHost, facebook::react::Point surfacePoint) {
     deliverInputFrame(reactHost, fabricHost, makeMotionFrame(surfacePoint));
     deliverInputFrame(reactHost, fabricHost,
                       {InputEvent{.kind = InputEventKind::PointerButtonPress, .surfacePoint = surfacePoint}});
     deliverInputFrame(reactHost, fabricHost,
                       {InputEvent{.kind = InputEventKind::PointerButtonRelease, .surfacePoint = surfacePoint}});
+}
+
+} // namespace
+
+int runInjectedClick(const std::string& bundlePath, facebook::react::Point surfacePoint) {
+    ReactHost reactHost;
+    StartedFabricRun startedRun = startFabricRunAtFirstCommit(reactHost, bundlePath, "click");
+
+    deliverClickFrames(reactHost, *startedRun.fabricHost, surfacePoint);
 
     return finishFabricRunWithStatus(reactHost, startedRun);
 }
@@ -411,14 +418,25 @@ FabricRunResult runScrolledFabricBundle(const std::string& bundlePath, facebook:
     return finishFabricRun(reactHost, fabricHost);
 }
 
-FabricRunResult runFocusTabbedFabricBundle(const std::string& bundlePath, facebook::react::Size surfaceSize,
-                                           int tabPresses) {
-    ReactHost reactHost;
+/**
+ * Boots a bundle at `surfaceSize` and waits for its first commit, warning if there was none — the setup every
+ * focus proof shares, whether what follows is a Tab press or a click.
+ */
+std::unique_ptr<FabricHost> startFabricRunWarningIfEmptyForFocus(ReactHost& reactHost, const std::string& bundlePath,
+                                                                 facebook::react::Size surfaceSize) {
     std::unique_ptr<FabricHost> fabricHost = startFabricRun(reactHost, bundlePath, surfaceSize);
 
     if (waitForFirstCommit(reactHost, *fabricHost, true).empty()) {
         std::cerr << "[bundle-runner] the bundle committed no scene, so there is nothing to focus" << std::endl;
     }
+
+    return fabricHost;
+}
+
+FabricRunResult runFocusTabbedFabricBundle(const std::string& bundlePath, facebook::react::Size surfaceSize,
+                                           int tabPresses) {
+    ReactHost reactHost;
+    std::unique_ptr<FabricHost> fabricHost = startFabricRunWarningIfEmptyForFocus(reactHost, bundlePath, surfaceSize);
 
     // One press per frame, press and release together, because that is what a compositor delivers: a key held
     // across a frame boundary is a repeat, and repeats are not synthesised. See *Input* in docs/cpp-toolchain.md.
@@ -428,6 +446,16 @@ FabricRunResult runFocusTabbedFabricBundle(const std::string& bundlePath, facebo
             {InputEvent{.kind = InputEventKind::KeyPress, .key = kTabKeyName, .code = kTabKeyCode},
              InputEvent{.kind = InputEventKind::KeyRelease, .key = kTabKeyName, .code = kTabKeyCode}});
     }
+
+    return finishFabricRun(reactHost, fabricHost);
+}
+
+FabricRunResult runFocusClickedFabricBundle(const std::string& bundlePath, facebook::react::Size surfaceSize,
+                                            facebook::react::Point surfacePoint) {
+    ReactHost reactHost;
+    std::unique_ptr<FabricHost> fabricHost = startFabricRunWarningIfEmptyForFocus(reactHost, bundlePath, surfaceSize);
+
+    deliverClickFrames(reactHost, *fabricHost, surfacePoint);
 
     return finishFabricRun(reactHost, fabricHost);
 }

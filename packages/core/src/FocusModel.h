@@ -91,11 +91,30 @@ private:
 std::optional<FocusDirection> focusDirectionForKey(const std::string& key, bool isShiftDown);
 
 /**
- * Whether a key activates the focused control. Enter and Space are what react-native-macos#1622 asked for and
- * what every desktop toolkit does; the platform turns them into the same synthetic click a press and a release
- * on one target produce, so `Pressability` needs no keyboard path of its own.
+ * Whether a key activates a focused control that declares `accessibilityRole`.
+ *
+ * Enter and Space are what react-native-macos#1622 asked for and what every desktop toolkit does for a button,
+ * and the platform turns either into the same synthetic click a press and a release on one target produce, so
+ * `Pressability` needs no keyboard path of its own. `role="link"` is the one exception every browser agrees on:
+ * Enter activates a link and Space scrolls the page instead, which is web#2681 and web#2560 read as one table
+ * rather than two bugs. Every other role, including the empty string `Pressable` leaves when no `role` is given,
+ * activates on both — the react-native-macos#1622 behaviour this narrows rather than replaces.
  */
-bool isActivationKey(const std::string& key);
+bool isActivationKey(const std::string& role, const std::string& key);
+
+/**
+ * The minimal new scroll offset that brings `[targetOffset, targetOffset + targetExtent)` fully inside
+ * `[viewportOffset, viewportOffset + viewportExtent)`, or nothing if it already is.
+ *
+ * This is one axis of `Element.scrollIntoView({block: "nearest"})`: a target above or left of the viewport is
+ * revealed by scrolling exactly to its start, and one below or right of it by scrolling exactly enough that its
+ * end lands on the viewport's far edge — never further, and never when it is already visible, which is what
+ * keeps a Tab press from re-centring a list that already shows the next control. A target wider or taller than
+ * the viewport reveals its start rather than oscillating between the two rules, because there is no offset that
+ * satisfies both.
+ */
+std::optional<double> computeScrollIntoViewOffset(double viewportOffset, double viewportExtent,
+                                                  double targetOffset, double targetExtent);
 
 /**
  * Whether a focused component owns a text cursor, and therefore whether the compositor's text input is enabled

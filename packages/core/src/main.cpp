@@ -31,6 +31,7 @@ constexpr std::string_view kResizeFlag = "--resize";
 constexpr std::string_view kScrollToFlag = "--scroll-to";
 constexpr std::string_view kAnimatedScrollFlag = "--animated-scroll";
 constexpr std::string_view kFocusTabFlag = "--focus-tab";
+constexpr std::string_view kFocusClickFlag = "--focus-click";
 constexpr std::string_view kTypeFlag = "--type";
 /**
  * Which proof `--golden`, `--damage-golden` and `--hit-paint-golden` run. All three take the same arguments and
@@ -60,6 +61,7 @@ constexpr size_t kResizeArgumentCount = 5;
 constexpr size_t kScrollToArgumentCount = 7;
 constexpr size_t kAnimatedScrollArgumentCount = 6;
 constexpr size_t kFocusTabArgumentCount = 5;
+constexpr size_t kFocusClickArgumentCount = 6;
 constexpr size_t kTypeArgumentCount = 5;
 
 std::optional<int> parsePositiveDimension(std::string_view text) {
@@ -183,6 +185,20 @@ int runFocusTabCommand(std::span<char*> arguments) {
                                                  parsedPresses.value(), kGoldenDefaultWidth, kGoldenDefaultHeight);
 }
 
+int runFocusClickCommand(std::span<char*> arguments) {
+    const std::optional<facebook::react::Point> surfacePoint = parseSurfacePoint(arguments[4], arguments[5]);
+
+    if (!surfacePoint.has_value()) {
+        std::cerr << "[hello_react] " << kFocusClickFlag << " x and y must be positive integers" << std::endl;
+
+        return 1;
+    }
+
+    return react_native_linux::renderFocusClickGolden(std::string(arguments[2]), std::string(arguments[3]),
+                                                      surfacePoint.value(), kGoldenDefaultWidth,
+                                                      kGoldenDefaultHeight);
+}
+
 int runTypeCommand(std::span<char*> arguments) {
     return react_native_linux::renderTypedGolden(std::string(arguments[2]), std::string(arguments[3]),
                                                  std::string(arguments[4]), kGoldenDefaultWidth,
@@ -262,7 +278,7 @@ int runGoldenCommand(std::span<char*> arguments, GoldenKind goldenKind) {
 int reportMissingSkia() {
     std::cerr << "[hello_react] " << kGoldenFlag << ", " << kDamageGoldenFlag << ", " << kHitPaintGoldenFlag
               << ", " << kTextFitGoldenFlag << ", " << kFirstFrameGoldenFlag << ", " << kScrollToFlag << ", "
-              << kFocusTabFlag << " and " << kTypeFlag
+              << kFocusTabFlag << ", " << kFocusClickFlag << " and " << kTypeFlag
               << " need Skia, which this build was configured without; run node scripts/vendor-skia.ts and "
                  "reconfigure"
               << std::endl;
@@ -275,6 +291,8 @@ int runGoldenCommand(std::span<char*> /*arguments*/, GoldenKind /*goldenKind*/) 
 int runScrollToCommand(std::span<char*> /*arguments*/) { return reportMissingSkia(); }
 
 int runFocusTabCommand(std::span<char*> /*arguments*/) { return reportMissingSkia(); }
+
+int runFocusClickCommand(std::span<char*> /*arguments*/) { return reportMissingSkia(); }
 
 int runTypeCommand(std::span<char*> /*arguments*/) { return reportMissingSkia(); }
 
@@ -295,6 +313,7 @@ int main(int argc, char** argv) {
     const bool isScrollToRequested = arguments.size() > 1 && kScrollToFlag == arguments[1];
     const bool isAnimatedScrollRequested = arguments.size() > 1 && kAnimatedScrollFlag == arguments[1];
     const bool isFocusTabRequested = arguments.size() > 1 && kFocusTabFlag == arguments[1];
+    const bool isFocusClickRequested = arguments.size() > 1 && kFocusClickFlag == arguments[1];
     const bool isTypeRequested = arguments.size() > 1 && kTypeFlag == arguments[1];
 
     if (isFabricRequested && arguments.size() < 3) {
@@ -312,6 +331,12 @@ int main(int argc, char** argv) {
 
     if (isFocusTabRequested && arguments.size() != kFocusTabArgumentCount) {
         std::cerr << "[hello_react] " << kFocusTabFlag << " requires <bundle> <output.png> <presses>" << std::endl;
+
+        return 1;
+    }
+
+    if (isFocusClickRequested && arguments.size() != kFocusClickArgumentCount) {
+        std::cerr << "[hello_react] " << kFocusClickFlag << " requires <bundle> <output.png> <x> <y>" << std::endl;
 
         return 1;
     }
@@ -341,6 +366,10 @@ int main(int argc, char** argv) {
 
         if (isFocusTabRequested) {
             return runFocusTabCommand(arguments);
+        }
+
+        if (isFocusClickRequested) {
+            return runFocusClickCommand(arguments);
         }
 
         if (isTypeRequested) {

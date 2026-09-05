@@ -15,6 +15,7 @@ constexpr char kTabKey[] = "Tab";
 constexpr char kEnterKey[] = "Enter";
 constexpr char kSpaceKey[] = " ";
 constexpr char kTextInputComponentName[] = "TextInput";
+constexpr char kLinkRole[] = "link";
 constexpr facebook::react::Tag kNoTag = 0;
 
 } // namespace
@@ -91,8 +92,30 @@ std::optional<FocusDirection> focusDirectionForKey(const std::string& key, bool 
     return isShiftDown ? FocusDirection::Backward : FocusDirection::Forward;
 }
 
-bool isActivationKey(const std::string& key) { return key == kEnterKey || key == kSpaceKey; }
+bool isActivationKey(const std::string& role, const std::string& key) {
+    if (key != kEnterKey && key != kSpaceKey) {
+        return false;
+    }
+
+    return role != kLinkRole || key == kEnterKey;
+}
 
 bool isTextInputComponent(const std::string& componentName) { return componentName == kTextInputComponentName; }
+
+std::optional<double> computeScrollIntoViewOffset(double viewportOffset, double viewportExtent,
+                                                  double targetOffset, double targetExtent) {
+    if (targetOffset < viewportOffset) {
+        return targetOffset;
+    }
+
+    const double targetEnd = targetOffset + targetExtent;
+    const double viewportEnd = viewportOffset + viewportExtent;
+
+    if (targetEnd > viewportEnd) {
+        return targetEnd - viewportExtent;
+    }
+
+    return std::nullopt;
+}
 
 } // namespace react_native_linux

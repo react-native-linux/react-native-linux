@@ -15,6 +15,7 @@ using react_native_linux::FocusDirection;
 using react_native_linux::FocusModel;
 using react_native_linux::FocusOrigin;
 using react_native_linux::FocusTransition;
+using react_native_linux::computeScrollIntoViewOffset;
 using react_native_linux::focusDirectionForKey;
 using react_native_linux::isActivationKey;
 using react_native_linux::isTextInputComponent;
@@ -194,17 +195,64 @@ TEST(FocusKeyTest, TabAndShiftTabAreTheOnlyTraversalKeys) {
     EXPECT_FALSE(focusDirectionForKey("ArrowRight", false).has_value());
 }
 
-TEST(FocusKeyTest, EnterAndSpaceActivateAndNothingElseDoes) {
-    EXPECT_TRUE(isActivationKey("Enter"));
-    EXPECT_TRUE(isActivationKey(" "));
-    EXPECT_FALSE(isActivationKey("Tab"));
-    EXPECT_FALSE(isActivationKey("a"));
+TEST(FocusKeyTest, EnterAndSpaceActivateAButtonAndNothingElseDoes) {
+    EXPECT_TRUE(isActivationKey("button", "Enter"));
+    EXPECT_TRUE(isActivationKey("button", " "));
+    EXPECT_FALSE(isActivationKey("button", "Tab"));
+    EXPECT_FALSE(isActivationKey("button", "a"));
+}
+
+TEST(FocusKeyTest, TheEmptyRolePressableLeavesActivatesOnBoth) {
+    EXPECT_TRUE(isActivationKey("", "Enter"));
+    EXPECT_TRUE(isActivationKey("", " "));
+}
+
+TEST(FocusKeyTest, ALinkActivatesOnEnterAndNotOnSpace) {
+    EXPECT_TRUE(isActivationKey("link", "Enter"));
+    EXPECT_FALSE(isActivationKey("link", " "));
+    EXPECT_FALSE(isActivationKey("link", "Tab"));
 }
 
 TEST(FocusKeyTest, OnlyATextInputComponentAsksForTheCompositorsTextInput) {
     EXPECT_TRUE(isTextInputComponent("TextInput"));
     EXPECT_FALSE(isTextInputComponent("View"));
     EXPECT_FALSE(isTextInputComponent("Paragraph"));
+}
+
+TEST(ScrollIntoViewTest, ATargetAlreadyInsideTheViewportMovesNothing) {
+    EXPECT_FALSE(computeScrollIntoViewOffset(100.0, 200.0, 150.0, 40.0).has_value());
+}
+
+TEST(ScrollIntoViewTest, ATargetAboveTheViewportScrollsExactlyToItsStart) {
+    const std::optional<double> offset = computeScrollIntoViewOffset(100.0, 200.0, 40.0, 30.0);
+
+    ASSERT_TRUE(offset.has_value());
+    EXPECT_DOUBLE_EQ(offset.value(), 40.0);
+}
+
+TEST(ScrollIntoViewTest, ATargetBelowTheViewportScrollsExactlyEnoughToRevealItsEnd) {
+    const std::optional<double> offset = computeScrollIntoViewOffset(0.0, 200.0, 250.0, 30.0);
+
+    ASSERT_TRUE(offset.has_value());
+    EXPECT_DOUBLE_EQ(offset.value(), 80.0);
+}
+
+TEST(ScrollIntoViewTest, ATargetExactlyFlushWithBothEdgesMovesNothing) {
+    EXPECT_FALSE(computeScrollIntoViewOffset(0.0, 200.0, 0.0, 200.0).has_value());
+}
+
+TEST(ScrollIntoViewTest, ATargetTallerThanTheViewportRevealsWhicheverEdgeIsOutOfView) {
+    const std::optional<double> offset = computeScrollIntoViewOffset(0.0, 100.0, 40.0, 300.0);
+
+    ASSERT_TRUE(offset.has_value());
+    EXPECT_DOUBLE_EQ(offset.value(), 240.0);
+}
+
+TEST(ScrollIntoViewTest, ATargetStartingBeforeTheViewportWinsOverItsOwnOverflowingEnd) {
+    const std::optional<double> offset = computeScrollIntoViewOffset(100.0, 50.0, 40.0, 300.0);
+
+    ASSERT_TRUE(offset.has_value());
+    EXPECT_DOUBLE_EQ(offset.value(), 40.0);
 }
 
 } // namespace

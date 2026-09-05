@@ -1,6 +1,8 @@
 #include "InputDispatcher.h"
 
 #include <folly/dynamic.h>
+#include <react/renderer/components/scrollview/ScrollViewShadowNode.h>
+#include <react/renderer/components/scrollview/ScrollViewState.h>
 #include <react/renderer/components/view/TouchEventEmitter.h>
 #include <react/renderer/components/view/ViewEventEmitter.h>
 #include <react/renderer/components/view/ViewProps.h>
@@ -10,7 +12,10 @@
 #include <react/renderer/core/RawEvent.h>
 #include <react/renderer/core/ShadowNodeFamily.h>
 #include <react/renderer/graphics/Point.h>
+#include <react/renderer/graphics/Rect.h>
+#include <react/renderer/graphics/Size.h>
 #include <react/renderer/mounting/ShadowTree.h>
+#include <react/renderer/mounting/ShadowView.h>
 
 #include <cstddef>
 #include <memory>
@@ -25,7 +30,26 @@ namespace {
 
 constexpr char kKeyDownEventType[] = "keyDown";
 constexpr char kKeyUpEventType[] = "keyUp";
+constexpr char kFocusCommandName[] = "focus";
+constexpr char kScrollToCommandName[] = "scrollTo";
+constexpr char kPreventScrollArgument[] = "preventScroll";
 constexpr facebook::react::Tag kNoTag = 0;
+
+/**
+ * Whether a `focus` command asked to skip the scroll-into-view every other focus change gets. Missing or
+ * malformed arguments read as `false`, the same tolerance `ScrollController::routeCommand` applies to a
+ * `scrollTo` command's own arguments: a command arrives from JavaScript, and the frame thread is not where a
+ * third-party library's mistake should be fatal.
+ */
+bool readPreventScroll(const folly::dynamic& args) {
+    if (!args.isObject()) {
+        return false;
+    }
+
+    const folly::dynamic* preventScroll = args.get_ptr(kPreventScrollArgument);
+
+    return preventScroll != nullptr && preventScroll->isBool() && preventScroll->asBool();
+}
 
 /**
  * The payload shape both react-native-macos and react-native-windows already agree on, plus `code`, which only
@@ -106,6 +130,46 @@ std::shared_ptr<const facebook::react::ShadowNode> shadowNodeWithTag(
     return nullptr;
 }
 
+/**
+ * The `accessibilityRole` a focused node declares, or the empty string a `Pressable` leaves when it gives none —
+ * both of which `isActivationKey` treats as a button. Only `ViewProps` carries the prop, so a node whose props
+ * are not a `ViewProps` — none of `isFocusableNode`'s candidates are anything else — activates on both keys too.
+ */
+std::string accessibilityRoleOf(const facebook::react::ShadowNode& shadowNode) {
+    const std::shared_ptr<const facebook::react::ViewProps> viewProps =
+        std::dynamic_pointer_cast<const facebook::react::ViewProps>(shadowNode.getProps());
+
+    return viewProps == nullptr ? std::string{} : viewProps->accessibilityRole;
+}
+
+/**
+ * The nearest ancestor of `shadowNode`, deepest first, whose child `predicate` accepts — the shape both
+ * `InputDispatcher::focusableAncestorTag` and the scroll-into-view geometry below need, since a click's target
+ * and a focused node's `<ScrollView>` are both "the nearest ancestor with some property" read off the same
+ * `getAncestors` path, just with a different predicate over it.
+ *
+ * `getAncestors` hands the path back as (parent, child index) pairs ordered from the root down, so walking it
+ * backwards visits the node closest to `shadowNode` first.
+ */
+template <typename Predicate>
+std::shared_ptr<const facebook::react::ShadowNode> deepestAncestorMatching(
+    const facebook::react::ShadowNode& shadowNode, const facebook::react::ShadowNode& rootNode,
+    Predicate&& predicate) {
+    const facebook::react::ShadowNodeFamily::AncestorList ancestors = shadowNode.getFamily().getAncestors(rootNode);
+
+    for (size_t depth = ancestors.size(); depth > 0; --depth) {
+        const facebook::react::ShadowNode& parent = ancestors[depth - 1].first.get();
+        const std::shared_ptr<const facebook::react::ShadowNode>& child =
+            parent.getChildren()[static_cast<size_t>(ancestors[depth - 1].second)];
+
+        if (predicate(child)) {
+            return child;
+        }
+    }
+
+    return nullptr;
+}
+
 void emitPointerDispatch(const facebook::react::TouchEventEmitter& emitter, const PointerDispatch& dispatch) {
     switch (dispatch.type) {
         case PointerDispatchType::Move:
@@ -166,6 +230,17 @@ void InputDispatcher::dispatch(const std::vector<InputEvent>& events) {
     // After the frame's events rather than per event: one reconciliation, one state write and one set of change
     // events per frame, whatever the compositor sent inside it.
     textInputController_.synchronize();
+}
+
+void InputDispatcher::dispatchCommands(const std::vector<SceneCommand>& commands) {
+    for (const SceneCommand& command : commands) {
+        if (command.name != kFocusCommandName) {
+            continue;
+        }
+
+        applyFocusTransition(focusModel_.focusTag(command.tag, FocusOrigin::Keyboard),
+                             readPreventScroll(command.args));
+    }
 }
 
 void InputDispatcher::setTextInputFocusSink(TextInputFocusSink* textInputFocusSink) noexcept {
@@ -285,7 +360,7 @@ void InputDispatcher::dispatchKeyEvent(const InputEvent& event) {
         return;
     }
 
-    if (isActivationKey(event.key) && focusedNode_ != nullptr) {
+    if (focusedNode_ != nullptr && isActivationKey(accessibilityRoleOf(*focusedNode_), event.key)) {
         emitActivation(event);
     }
 }
@@ -392,7 +467,7 @@ void InputDispatcher::collectFocusables(const facebook::react::ShadowNode& shado
     }
 }
 
-void InputDispatcher::applyFocusTransition(const FocusTransition& transition) {
+void InputDispatcher::applyFocusTransition(const FocusTransition& transition, bool preventScroll) {
     if (!transition.hasChanged) {
         return;
     }
@@ -412,6 +487,64 @@ void InputDispatcher::applyFocusTransition(const FocusTransition& transition) {
     mountingManager_->setFocus(focusModel_.focusedTag(), focusModel_.isFocusVisible());
     textInputController_.setFocusedNode(focusedNode_);
     updateTextInput();
+
+    if (transition.focusedTag != kNoTag && !preventScroll) {
+        scrollFocusedNodeIntoView();
+    }
+}
+
+/**
+ * Reveals the focused node inside its innermost `<ScrollView>`, if it is inside one and is not already visible.
+ *
+ * `computeScrollIntoViewOffset` is the whole of the arithmetic and is a pure function `FocusModel` carries so the
+ * coverage gate can see every branch of it; this is the geometry it needs, read fresh rather than cached because
+ * a commit may have resized either the target or the viewport since the last one. The command this dispatches is
+ * the ordinary `scrollTo` `ScrollController::routeCommand` already applies — issue #248 does not touch scroll
+ * physics, it only ever asks for the offset that already exists to move to.
+ */
+void InputDispatcher::scrollFocusedNodeIntoView() const {
+    if (focusedNode_ == nullptr) {
+        return;
+    }
+
+    const std::shared_ptr<const facebook::react::ShadowNode> root = rootShadowNode();
+
+    if (root == nullptr) {
+        return;
+    }
+
+    const std::shared_ptr<const facebook::react::ShadowNode> scrollViewAncestor = deepestAncestorMatching(
+        *focusedNode_, *root,
+        [](const std::shared_ptr<const facebook::react::ShadowNode>& child) {
+            return std::dynamic_pointer_cast<const facebook::react::ScrollViewShadowNode>(child) != nullptr;
+        });
+
+    if (scrollViewAncestor == nullptr) {
+        return;
+    }
+
+    const std::shared_ptr<const facebook::react::ScrollViewShadowNode> scrollView =
+        std::static_pointer_cast<const facebook::react::ScrollViewShadowNode>(scrollViewAncestor);
+
+    const facebook::react::Size viewportSize = scrollView->getLayoutMetrics().frame.size;
+    const facebook::react::Point contentOffset = scrollView->getStateData().contentOffset;
+    const facebook::react::Rect targetFrame =
+        uiManager_->getRelativeLayoutMetrics(*focusedNode_, scrollView.get(), {.includeTransform = false}).frame;
+
+    const std::optional<double> nextX =
+        computeScrollIntoViewOffset(contentOffset.x, viewportSize.width, targetFrame.origin.x, targetFrame.size.width);
+    const std::optional<double> nextY = computeScrollIntoViewOffset(
+        contentOffset.y, viewportSize.height, targetFrame.origin.y, targetFrame.size.height);
+
+    if (!nextX.has_value() && !nextY.has_value()) {
+        return;
+    }
+
+    const folly::dynamic scrollToArguments =
+        folly::dynamic::array(nextX.value_or(contentOffset.x), nextY.value_or(contentOffset.y), false);
+
+    mountingManager_->dispatchCommand(facebook::react::ShadowView(*scrollView), kScrollToCommandName,
+                                      scrollToArguments);
 }
 
 void InputDispatcher::updateTextInput() {
@@ -452,8 +585,8 @@ std::shared_ptr<const facebook::react::ShadowNode> InputDispatcher::focusableNod
  * which is the hit node itself when it is focusable and its nearest focusable ancestor otherwise — so clicking
  * the label inside a `<Pressable>` focuses the `<Pressable>`.
  *
- * `getAncestors` hands that path back as (parent, child index) pairs ordered from the root down, exactly as the
- * scroll router uses it, so walking it backwards visits the hit node first.
+ * `deepestAncestorMatching` is the walk, shared with the scroll-into-view geometry's own nearest-`<ScrollView>`
+ * search; this call's predicate is "is a focusable tag".
  */
 facebook::react::Tag InputDispatcher::focusableAncestorTag(const facebook::react::ShadowNode& shadowNode) const {
     const std::shared_ptr<const facebook::react::ShadowNode> root = rootShadowNode();
@@ -462,19 +595,13 @@ facebook::react::Tag InputDispatcher::focusableAncestorTag(const facebook::react
         return kNoTag;
     }
 
-    const facebook::react::ShadowNodeFamily::AncestorList ancestors = shadowNode.getFamily().getAncestors(*root);
+    const std::shared_ptr<const facebook::react::ShadowNode> ancestor = deepestAncestorMatching(
+        shadowNode, *root,
+        [this](const std::shared_ptr<const facebook::react::ShadowNode>& child) {
+            return focusableNode(child->getTag()) != nullptr;
+        });
 
-    for (size_t depth = ancestors.size(); depth > 0; --depth) {
-        const facebook::react::ShadowNode& parent = ancestors[depth - 1].first.get();
-        const facebook::react::Tag tag =
-            parent.getChildren()[static_cast<size_t>(ancestors[depth - 1].second)]->getTag();
-
-        if (focusableNode(tag) != nullptr) {
-            return tag;
-        }
-    }
-
-    return kNoTag;
+    return ancestor == nullptr ? kNoTag : ancestor->getTag();
 }
 
 } // namespace react_native_linux

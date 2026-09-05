@@ -43,6 +43,16 @@ int renderFocusGolden(const std::string& bundlePath, const std::string& outputPa
                       int height);
 
 /**
+ * The same rig, after `surfacePoint` has been clicked instead of Tab being pressed.
+ *
+ * Issue #248's focus-visible rule is a picture the same way the ring itself is: the node a click focuses draws
+ * none, so this is the other half of the pair `renderFocusGolden` proves the first half of — same fixture, same
+ * focused node, no ring.
+ */
+int renderFocusClickGolden(const std::string& bundlePath, const std::string& outputPath,
+                          facebook::react::Point surfacePoint, int width, int height);
+
+/**
  * The same rig, after Tab has focused the fixture's `<TextInput>` and `keySequence` has been typed into it.
  *
  * A text field renders nothing a `<Text>` could not until something has been typed: the caret, the selection

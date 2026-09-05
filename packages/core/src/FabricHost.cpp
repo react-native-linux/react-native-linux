@@ -212,7 +212,17 @@ bool FabricHost::advanceScroll(double frameMilliseconds) {
     // one frame long: the queue is filled on the JavaScript thread under the mounting mutex and read here on the
     // frame thread, which is the same pair every mounting transaction goes through. See *ScrollView* in
     // docs/cpp-toolchain.md.
-    scrollController_->dispatchCommands(mountingManager_->takeCommands());
+    //
+    // The queue is handed to both consumers, exactly as a frame's input events are split between the scroll and
+    // pointer routers: a `focus` command is the input dispatcher's and a `scrollTo` or `scrollToEnd` is the
+    // scroll controller's, and each ignores what is not its own. A `focus` command whose target is inside a
+    // `<ScrollView>` may itself queue a `scrollTo` — issue #248's scroll-into-view — which is why this is the
+    // input dispatcher's only chance to see the frame's commands: it runs after the scroll controller's, so that
+    // `scrollTo` is queued for the frame after this one rather than lost to a queue already drained.
+    const std::vector<SceneCommand> commands = mountingManager_->takeCommands();
+
+    scrollController_->dispatchCommands(commands);
+    inputDispatcher_->dispatchCommands(commands);
 
     const bool isScrolling = scrollController_->advance(frameMilliseconds);
 
