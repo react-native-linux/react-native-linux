@@ -1,0 +1,12 @@
+{
+  "name": "scroll-paging",
+  "bundle": "scroll-paging.js",
+  "ready": "paging: committed surface 1",
+  "frames": 600,
+  "steps": ["sleep 500", "move 180 100", "sleep 100", "wheel down 4", "sleep 1500"],
+  "expect": [
+    "paging: committed surface 1",
+    "paging: topMomentumScrollBegin at 0,",
+    "paging: topMomentumScrollEnd at 0,150"
+  ]
+}

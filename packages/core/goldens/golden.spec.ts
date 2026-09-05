@@ -76,6 +76,13 @@ const fixtures: readonly GoldenFixture[] = [
     renderArguments: ["160", "100", "3"],
     renderFlag: "--scroll-to",
   },
+  // #239: four notches is 160 points and page two starts at 150, so a carousel resting at 160 is a broken snap.
+  {
+    bundleFileName: "scroll-paging.js",
+    goldenFileName: "scroll-paging.png",
+    renderArguments: ["180", "100", "4"],
+    renderFlag: "--scroll-to",
+  },
   {
     bundleFileName: "focus.js",
     goldenFileName: "focus.png",

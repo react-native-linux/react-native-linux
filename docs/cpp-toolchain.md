@@ -2816,6 +2816,10 @@ the coverage gate:
   whose curve travels exactly the remaining distance is what `velocityForTravel` already answers for a wheel
   notch, so an animated `scrollTo` is a flick aimed at a known destination and its bracket is the ordinary
   momentum bracket.
+- **A command takes the gesture's place.** Accepting one clears the finger and the release recorded for that
+  ScrollView along with the settle frame the release would arm, because a `scrollTo` states where the content
+  should be: without that, an unanimated command issued between a release and the frame after it would have its
+  offset applied and then snapped straight off again by a settle that outlived the gesture it belonged to.
 - **The destination is pending until the next frame consumes it.** `advanceTarget` reads the offset it is going to
   compare against before it advances, so an offset written straight into the state would already *be* the previous
   offset and would emit no `onScroll` for a scroll that did move.
@@ -2833,6 +2837,93 @@ The no-op is deliberately last: nothing can be scheduled from its event because 
 **the run ending in silence is the assertion**. `kHeadlessFrameCount` is five rather than three for it — a command
 issued from a frame's event is applied by the frame after it — and every extra frame is empty for a static
 fixture, so no golden moved.
+
+### Snapping, and the settle target (#239)
+
+`snapToInterval`, `snapToOffsets`, `snapToAlignment`, `snapToStart`, `snapToEnd`, `pagingEnabled` and
+`disableIntervalMomentum` are not seven behaviours. They are one number — where a flick comes to rest — and
+`settleTargetOffset` in `ScrollPhysics.h` is that number, which is why they land together and why they land inside
+the coverage gate:
+
+```cpp
+double settleTargetOffset(const ScrollAxisState& axis, double decelerationRate, double contentLength,
+                          double viewportLength, const ScrollSnapConfiguration& snapping);
+```
+
+react-native-windows has three open issues for these props — [rnw#13150](https://github.com/microsoft/react-native-windows/issues/13150),
+[rnw#13144](https://github.com/microsoft/react-native-windows/issues/13144) and
+[rnw#13793](https://github.com/microsoft/react-native-windows/issues/13793) — because the scrolling widget it
+wraps has no hook to override the landing point with. There is no widget here; the landing point is arithmetic we
+already own, so snapping is a projection of it and nothing else.
+
+The rules, in the order they apply:
+
+- **The landing point is the whole remaining travel of the velocity, clamped first.** `offset + velocity / -ln(rate)`
+  is the analytic distance the curve covers, and it is clamped into `[0, maximumScrollOffset]` *before* anything is
+  projected onto it, for the same reason `scrollToDestination` clamps before it returns.
+- **`disableIntervalMomentum` replaces that landing point with the current offset and makes the choice
+  directional.** The target is the nearest snap point strictly *ahead* of the release in the direction the flick is
+  going — `ReactScrollView.flingAndSnap`'s larger-offset/smaller-offset rule — so a release already sitting on a
+  snap point advances to the next one rather than travelling nowhere at all. A release with no velocity has no
+  direction and takes the nearest.
+- **`snapToOffsets` wins over `snapToInterval`, which wins over `pagingEnabled`.** That is the order
+  `RCTScrollView` resolves them in and the order the props are documented in: `snapToInterval` is *a more
+  configurable alternative to* `pagingEnabled`, not a modifier on it, so `{pagingEnabled, snapToInterval: 100}`
+  snaps by 100 and not by the viewport. `pagingEnabled` on its own is an interval of exactly one viewport,
+  `Start`-aligned.
+- **`snapToAlignment` is a shift, not a third code path.** An item `interval` long inside a `viewportLength`
+  viewport is `Start`-aligned at `n × interval`, centred at `n × interval − (viewportLength − interval) / 2` and
+  trailing-aligned at `n × interval − (viewportLength − interval)`. The nearest of those is
+  `round((landing + shift) / interval)` clamped to the indices whose points are inside the scrollable range —
+  arithmetic, so no candidate list is ever enumerated and a one-point interval costs what a page costs.
+- **The two ends of the content are snap points too, but only when `snapToStart` and `snapToEnd` say so.** That is
+  what makes the last partial page reachable. When one of them is false and the landing point is past the outermost
+  configured snap point on that side, **nothing snaps at all** and the content settles where momentum put it, which
+  is the documented "scroll freely between the start and the first offset".
+- **With no snap point configured anywhere, the target is the landing point**, so the same function is also the
+  plain answer to where an unsnapped flick stops.
+
+**Nothing in it compares a float for equality.** That is [core#48393](https://github.com/facebook/react-native/issues/48393)
+— `snapToInterval` and `snapToOffsets` doing nothing when the ScrollView's width is fractional — and a fractional
+width is the *normal* case under `wp_fractional_scale_v1`, not the corner one. The table in `ScrollTest.cpp` holds
+two rows for it: a 149.5-point viewport, and a 411-physical-pixel viewport at scale 1.25, which is 328.8 points and
+is not a value any rounding of the viewport reproduces.
+
+`ScrollController` wires it in at one place. A glide is **re-aimed** at its settle target by replacing its velocity
+with `velocityForTravel(target − offset)` — the inversion a wheel notch already uses, so snapping introduces no
+second motion model, keeps the ordinary momentum bracket, and ends exactly on the snap point because
+`kMinimumMomentumTravel` folds the last half point into the step that stops. It happens on **every** frame of the
+glide rather than once at the release, and that is a fixed point rather than a repetition: the analytic landing
+point of a decelerating velocity does not change as the curve is walked, so the second frame re-chooses the point
+the first one aimed at.
+
+**A release with no velocity still snaps.** `UIScrollView` pages on any release, not only on a flick, so a finger
+that stops before it lifts has to align too — and a stationary release is exactly the case a velocity-gated re-aim
+would miss. What distinguishes it from an idle ScrollView and from the offset an unanimated `scrollTo` just wrote
+is that it is a *release*: `ScrollTarget::isSettlingFromRelease` is the single frame after the finger lifts, set
+only when the props describe a snap point at all, and it is what `isScrollActive` reports so the frame clock
+schedules that frame. Neither an idle ScrollView nor a `scrollTo` is ever dragged off its offset by the snap.
+
+All seven props are read straight off `BaseScrollViewProps`, which the `cxx` platform's `ScrollViewProps` is a
+typedef of — none of them needed parsing added. They are read for both axes rather than for the scrolling one:
+`horizontal` is not modelled, and it does not need to be, because an axis with nothing to scroll has a single snap
+point at zero, which is where it already is.
+
+`packages/core/test-bundles/scroll-paging.js` is the picture and the trace: a 240x150 `<ScrollView pagingEnabled>`
+over five 150-point pages, each carrying one more white square than the page above it, so the page a flick came to
+rest on can be counted off the image.
+
+```bash
+hello_react --scroll-to packages/core/test-bundles/scroll-paging.js /tmp/rnl-paging.png 180 100 4
+```
+
+Four notches are 160 points of travel — ten points past page two. `packages/core/goldens/scroll-paging.png` is the
+carousel at `contentOffset = (0, 150)`: page two filling the viewport exactly, its two markers level with the
+markers of the pages above it. Without paging the same flick rests at 160 and page two sits ten points high, so the
+golden is the assertion that the settle target moved and not merely that a scroll happened. The e2e scenario
+`packages/core/e2e/scroll-paging.json` is the same flick through a real compositor: `rnl_inject` turns the wheel
+four notches with `wheel down 4`, and the run's `topMomentumScrollEnd at 0,150` is the momentum bracket closing on
+the snap point rather than on 160.
 
 ### Pressing what a scroll moved (#98)
 
@@ -2969,12 +3060,9 @@ test for those.
   with a logarithmic resistance curve and springs back, `bounces` and `alwaysBounce*` select it, and every one of
   those props is parsed and ignored here. It is a second curve and a second state, and it belongs with the issue
   that also gets `onScrollEndDrag`'s `targetContentOffset` right.
-- **`pagingEnabled`, `snapToInterval`, `snapToOffsets`, `snapToAlignment`, `disableIntervalMomentum`.** All parsed,
-  none implemented. Snapping is a projection of the momentum's landing point onto a grid, which needs the
-  landing-point calculation the rubber band also needs.
 - **`onScrollEndDrag`'s `velocity` and `targetContentOffset` are zero.** The pair itself is emitted — see *The
-  cadence contract* — but the two fields a paging implementation reads are the landing-point calculation the
-  rubber band and snapping also need, so they land with those.
+  cadence contract* — and `settleTargetOffset` is now the number `targetContentOffset` wants, but filling the two
+  fields in is an event-payload change that belongs with the rubber band's `onScrollEndDrag` work.
 - **Scroll indicators.** `showsVerticalScrollIndicator`, `scrollIndicatorInsets`, `indicatorStyle` and
   `persistentScrollbar` draw nothing. A scrollbar is a painted overlay with its own fade timer and its own hit
   region, which is a component, not a prop.

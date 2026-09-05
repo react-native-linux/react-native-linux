@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 namespace react_native_linux {
 
 /**
@@ -91,6 +93,71 @@ struct ScrollDestination {
 
 ScrollDestination scrollToDestination(double currentOffset, double targetOffset, bool isAnimated,
                                       double decelerationRate, double contentLength, double viewportLength);
+
+/**
+ * `snapToAlignment`'s three values as arithmetic rather than as `ScrollViewSnapToAlignment`: which edge of a
+ * snapped item the viewport lines up with. Keeping the React enum out of this header is what keeps the file free
+ * of React types; `ScrollController` translates.
+ */
+enum class ScrollSnapAlignment { Start, Center, End };
+
+/**
+ * The snap half of `<ScrollView>`'s props, for one axis. Upstream treats these as alternatives rather than as a
+ * set, and so does this: `snapToOffsets` wins over `snapToInterval`, which in turn wins over `isPagingEnabled`.
+ * That is the precedence `RCTScrollView` resolves them in and the one the prop documentation states —
+ * `snapToInterval` is "a more configurable alternative to `pagingEnabled`", not something layered on top of it.
+ *
+ * `isPagingEnabled` alone is an interval of exactly one viewport, `Start`-aligned, which is what a `UIScrollView`
+ * page is and what Android implements the prop as.
+ */
+struct ScrollSnapConfiguration {
+    double interval{0.0};
+    std::vector<double> offsets{};
+    ScrollSnapAlignment alignment{ScrollSnapAlignment::Start};
+    bool snapToStart{true};
+    bool snapToEnd{true};
+    bool isPagingEnabled{false};
+    bool isIntervalMomentumDisabled{false};
+};
+
+/**
+ * Whether this configuration describes any snap point at all, which is what decides if a glide is re-aimed or
+ * left on the curve its velocity already describes.
+ */
+bool hasSnapPoints(const ScrollSnapConfiguration& snapping);
+
+/**
+ * Where a flick comes to rest: the analytic landing point of `axis`, projected onto the nearest snap point.
+ *
+ * This is the whole of `snapToInterval`, `snapToOffsets`, `snapToAlignment`, `snapToStart`, `snapToEnd`,
+ * `pagingEnabled` and `disableIntervalMomentum`, and it is a pure function of numbers so that
+ * [core#48393](https://github.com/facebook/react-native/issues/48393) — snapping doing nothing when the viewport
+ * width is fractional — is a table row rather than a rendering bug. Nothing here compares a float for equality
+ * and no candidate list is enumerated, so a fractional viewport, a fractional interval and a fractional scale are
+ * the same arithmetic as an integral one.
+ *
+ * The rules, in the order they apply:
+ *
+ * - The landing point is `offset` plus the whole remaining travel of `velocity`, clamped to the scrollable range
+ *   before anything is projected onto it — the clamp is part of the target, not applied to the event afterwards.
+ * - `isIntervalMomentumDisabled` replaces that landing point with the current offset and makes the choice
+ *   directional: the nearest snap point strictly *ahead* of the release in the direction the flick is going,
+ *   which is `ReactScrollView.flingAndSnap`'s larger-offset/smaller-offset rule. A release already sitting on a
+ *   snap point therefore advances to the next one rather than travelling nowhere, and a release with no velocity
+ *   has no direction and takes the nearest.
+ * - Snap points are `snapping.offsets` when there are any, otherwise multiples of the interval — `snapToInterval`
+ *   if it is positive, one viewport if only `isPagingEnabled` is — shifted by the
+ *   alignment: `Start` puts an item's leading edge at the viewport's, `Center` centres it, `End` aligns trailing
+ *   edges. Points outside `[0, maximumScrollOffset]` are not snap points.
+ * - The two ends of the content are snap points as well, but only when `snapToStart` and `snapToEnd` say so. When
+ *   one of them is false and the landing point is past the outermost configured snap point on that side, nothing
+ *   snaps at all and the content settles where momentum put it — which is the "scroll freely between the start
+ *   and the first offset" the props are documented as.
+ * - With no snap point anywhere, the target is the landing point, so this function is also the plain answer to
+ *   where an unsnapped flick stops.
+ */
+double settleTargetOffset(const ScrollAxisState& axis, double decelerationRate, double contentLength,
+                          double viewportLength, const ScrollSnapConfiguration& snapping);
 
 /**
  * Integrates one frame of deceleration: the exact integral of `velocity * rate^t` over the frame rather than a
