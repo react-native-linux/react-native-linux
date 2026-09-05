@@ -229,7 +229,6 @@ struct ImagePipelineState {
 
                 uri = std::move(queuedUris.front());
                 queuedUris.pop_front();
-                isDecoding = true;
             }
 
             const std::shared_ptr<const DecodedImageFrames> decoded = decodeImageSource(uri);
@@ -241,7 +240,6 @@ struct ImagePipelineState {
                 const std::lock_guard<std::mutex> guard(mutex);
 
                 requestedUris.erase(uri);
-                isDecoding = false;
                 completions = std::move(completionsByUri[uri]);
                 completionsByUri.erase(uri);
 
@@ -262,22 +260,22 @@ struct ImagePipelineState {
                 decodeListener(uri, decoded);
             }
 
-            // Last, so that going idle means the pixels have been published, not merely cached: the golden rig
+            // Last, so that settling means the pixels have been published, not merely cached: the golden rig
             // waits on this and then snapshots the scene, and the nodes drawing this source are handed their
-            // pixels by the listener above. Notifying first is a race that draws a blank image (#108).
-            idle.notify_all();
+            // pixels by the listener above. Counting the decode out any earlier is a race that draws a blank
+            // image (#108, #296).
+            pendingDecodes.notePublished();
         }
     }
 
     std::mutex mutex;
     std::condition_variable queued;
-    std::condition_variable idle;
+    PendingImageDecodes pendingDecodes;
     ImageCache cache{kImageCacheByteCapacity};
     std::deque<std::string> queuedUris;
     std::unordered_set<std::string> requestedUris;
     std::unordered_map<std::string, std::vector<ImageDecodeCompletion>> completionsByUri;
     ImageDecodeListener listener;
-    bool isDecoding{false};
     bool isStopping{false};
     std::thread worker;
 };
@@ -306,6 +304,9 @@ void requestImageDecode(const std::string& uri, ImageDecodeCompletion completion
                 return;
             }
 
+            // Inside the lock and before the queue push, so a decode is pending from the instant it is asked for:
+            // a settle that runs between the request and the worker picking it up must still wait for it (#296).
+            state.pendingDecodes.noteRequested();
             state.queuedUris.push_back(uri);
         }
     }
@@ -334,10 +335,7 @@ void setImageDecodeListener(ImageDecodeListener listener) {
 }
 
 bool waitForPendingImageDecodes(std::chrono::milliseconds budget) {
-    ImagePipelineState& state = imagePipelineState();
-    std::unique_lock<std::mutex> guard(state.mutex);
-
-    return state.idle.wait_for(guard, budget, [&state]() { return state.queuedUris.empty() && !state.isDecoding; });
+    return imagePipelineState().pendingDecodes.waitUntilSettled(budget);
 }
 
 } // namespace react_native_linux

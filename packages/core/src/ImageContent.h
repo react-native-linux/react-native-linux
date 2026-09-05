@@ -5,10 +5,13 @@
 #include <react/renderer/graphics/Rect.h>
 #include <react/renderer/graphics/Size.h>
 
+#include <chrono>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <list>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -115,6 +118,35 @@ private:
     size_t byteCount_{};
     std::list<std::string> order_;
     std::unordered_map<std::string, Entry> entries_;
+};
+
+/**
+ * How many decodes the pipeline still owes, and the wait a headless run takes on that reaching zero.
+ *
+ * A decode stops being pending only once its pixels have been handed to everything that draws them — the
+ * per-request completions and the decode listener that damages the scene — and not when the codec returned. The
+ * distinction is the whole of issue #296: a golden rasterised in the window between "the codec is done" and "the
+ * scene has the pixels" paints a blank tile, and how wide that window is depends on machine load, which is why
+ * the same fixture regenerated to two different PNGs.
+ *
+ * A decode counts from the moment it is requested rather than from the moment the worker picks it up, so one
+ * requested by a later commit than the run waited for still holds the settle open.
+ *
+ * Threading contract: every function is safe to call from any thread. `noteRequested` runs on whichever thread
+ * commits, `notePublished` on the decode worker, and `waitUntilSettled` on the thread driving a headless run.
+ * The mutex is never held while a codec, a completion or the listener runs, because those happen between the
+ * two notes rather than inside either.
+ */
+class PendingImageDecodes final {
+public:
+    void noteRequested();
+    void notePublished();
+    bool waitUntilSettled(std::chrono::milliseconds budget);
+
+private:
+    std::mutex mutex_;
+    std::condition_variable settled_;
+    size_t pendingCount_{};
 };
 
 } // namespace react_native_linux

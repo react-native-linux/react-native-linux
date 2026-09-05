@@ -3,9 +3,11 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -17,6 +19,7 @@ using react_native_linux::imagePlacement;
 using react_native_linux::isAnimatedImage;
 using react_native_linux::kAnimatedImageRepeatsForever;
 using react_native_linux::ImageSourceKind;
+using react_native_linux::PendingImageDecodes;
 using react_native_linux::ResolvedImageSource;
 using react_native_linux::resolveImageSource;
 using react_native_linux::SceneImageResizeMode;
@@ -730,6 +733,88 @@ TEST(ImageCacheTest, AHitMakesAnEntryTheMostRecentlyUsedOne) {
 
     EXPECT_NE(cache.find("first.png"), nullptr);
     EXPECT_EQ(cache.find("second.png"), nullptr);
+}
+
+// Long enough that a settle which is genuinely waiting never times out on a loaded machine, and short enough that
+// a settle which is expected to time out does not stall the suite.
+constexpr std::chrono::milliseconds kSettleBudget{10000};
+constexpr std::chrono::milliseconds kUnsettledBudget{20};
+// Wide enough that the waiting thread is inside `waitUntilSettled` before the worker publishes, so the assertion
+// below is about the ordering rather than about which thread happened to run first.
+constexpr std::chrono::milliseconds kPublishDelay{50};
+
+TEST(PendingImageDecodesTest, NothingRequestedIsAlreadySettled) {
+    PendingImageDecodes pending;
+
+    EXPECT_TRUE(pending.waitUntilSettled(kUnsettledBudget));
+}
+
+// The shape of issue #296: the decode finishes after the run has already committed, and the settle is what puts
+// its pixels in the snapshot. `publishedFrames` stands for the scene the listener writes into, and reading it
+// after the settle has to see what the worker published rather than the blank it started as.
+TEST(PendingImageDecodesTest, ADecodeThatCompletesAfterTheCommitIsPublishedBeforeTheSettleReturns) {
+    PendingImageDecodes pending;
+    std::shared_ptr<const DecodedImageFrames> publishedFrames;
+
+    pending.noteRequested();
+
+    std::thread worker([&pending, &publishedFrames]() {
+        std::this_thread::sleep_for(kPublishDelay);
+
+        publishedFrames = makeDecodedImage();
+
+        pending.notePublished();
+    });
+
+    EXPECT_TRUE(pending.waitUntilSettled(kSettleBudget));
+    EXPECT_NE(publishedFrames, nullptr);
+
+    worker.join();
+}
+
+TEST(PendingImageDecodesTest, ARequestedDecodeHoldsTheSettleOpenUntilItsBudgetRunsOut) {
+    PendingImageDecodes pending;
+
+    pending.noteRequested();
+
+    EXPECT_FALSE(pending.waitUntilSettled(kUnsettledBudget));
+
+    pending.notePublished();
+
+    EXPECT_TRUE(pending.waitUntilSettled(kUnsettledBudget));
+}
+
+// A second commit asking for another source after the first settle already returned: the run settles again, and
+// the decode it did not know about when it waited the first time still holds the second wait open.
+TEST(PendingImageDecodesTest, ADecodeRequestedByALaterCommitReopensTheSettle) {
+    PendingImageDecodes pending;
+
+    pending.noteRequested();
+    pending.notePublished();
+
+    EXPECT_TRUE(pending.waitUntilSettled(kUnsettledBudget));
+
+    pending.noteRequested();
+
+    EXPECT_FALSE(pending.waitUntilSettled(kUnsettledBudget));
+
+    pending.notePublished();
+
+    EXPECT_TRUE(pending.waitUntilSettled(kUnsettledBudget));
+}
+
+TEST(PendingImageDecodesTest, TwoDecodesBothHaveToPublish) {
+    PendingImageDecodes pending;
+
+    pending.noteRequested();
+    pending.noteRequested();
+    pending.notePublished();
+
+    EXPECT_FALSE(pending.waitUntilSettled(kUnsettledBudget));
+
+    pending.notePublished();
+
+    EXPECT_TRUE(pending.waitUntilSettled(kUnsettledBudget));
 }
 
 } // namespace

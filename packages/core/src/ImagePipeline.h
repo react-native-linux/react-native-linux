@@ -29,7 +29,8 @@ using ImageDecodeCompletion = std::function<void(const std::shared_ptr<const Dec
  * Threading contract: every function here is safe to call from any thread. The cache, the queue, the completion
  * lists and the listener all live under one mutex, and it is never held while a codec runs or while a completion
  * or the listener is called, so a decode never blocks a commit and the listener may take the mounting manager's
- * lock without inverting anything.
+ * lock without inverting anything. `PendingImageDecodes` holds the only other mutex, always taken inside this
+ * one and never the reverse.
  */
 void requestImageDecode(const std::string& uri, ImageDecodeCompletion completion);
 
