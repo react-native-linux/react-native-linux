@@ -1,5 +1,5 @@
+import { cropImage, findScreenshotFailure } from "./screenshot.ts";
 import { describe, expect, it } from "vitest";
-import { findScreenshotFailure } from "./screenshot.ts";
 
 const CHANNELS_PER_PIXEL = 4;
 const IMAGE_WIDTH = 20;
@@ -83,6 +83,97 @@ describe("findScreenshotFailure tolerance", () => {
   it("counts the pixels a truncated render never wrote", () => {
     expect(findScreenshotFailure(truncatedRender(MISSING_PIXELS), golden, NO_BUDGET)).toBe(
       "3 pixels differ by more than 8 per channel, the budget is 1",
+    );
+  });
+});
+
+const OUTER_WIDTH = 4;
+const OUTER_HEIGHT = 4;
+const GREEN_CHANNEL_OFFSET = 1;
+const BLUE_CHANNEL_OFFSET = 2;
+const ALPHA_CHANNEL_OFFSET = 3;
+const NEXT_INDEX = 1;
+const CROP_ORIGIN = 1;
+const CROP_SIZE = 2;
+const SINGLE_PIXEL = 1;
+const LAST_INDEX = OUTER_WIDTH - NEXT_INDEX;
+const OVERSIZED_LENGTH = 5;
+const NO_OFFSET = 0;
+
+/** Every pixel's red channel is its column, green its row — enough to prove a crop kept the right rectangle. */
+const buildIndexedImage = (width: number, height: number): PixelImage => {
+  const data = new Uint8Array(width * height * CHANNELS_PER_PIXEL);
+
+  for (let row = NONE; row < height; row += NEXT_INDEX) {
+    for (let column = NONE; column < width; column += NEXT_INDEX) {
+      const offset = (row * width + column) * CHANNELS_PER_PIXEL;
+
+      data[offset] = column;
+      data[offset + GREEN_CHANNEL_OFFSET] = row;
+      data[offset + BLUE_CHANNEL_OFFSET] = NONE;
+      data[offset + ALPHA_CHANNEL_OFFSET] = NONE;
+    }
+  }
+
+  return { data, height, width };
+};
+
+/** The bytes `buildIndexedImage` wrote for the pixel at `(column, row)`: red is the column, green the row. */
+const indexedPixel = (column: number, row: number): readonly number[] => [column, row, NONE, NONE];
+
+describe("cropImage", () => {
+  const image = buildIndexedImage(OUTER_WIDTH, OUTER_HEIGHT);
+  const nextColumn = CROP_ORIGIN + NEXT_INDEX;
+  const nextRow = CROP_ORIGIN + NEXT_INDEX;
+
+  it("extracts the named rectangle", () => {
+    const cropped = cropImage(image, { height: CROP_SIZE, left: CROP_ORIGIN, top: CROP_ORIGIN, width: CROP_SIZE });
+
+    expect(cropped).toEqual({
+      data: Uint8Array.from([
+        ...indexedPixel(CROP_ORIGIN, CROP_ORIGIN),
+        ...indexedPixel(nextColumn, CROP_ORIGIN),
+        ...indexedPixel(CROP_ORIGIN, nextRow),
+        ...indexedPixel(nextColumn, nextRow),
+      ]),
+      height: CROP_SIZE,
+      width: CROP_SIZE,
+    });
+  });
+
+  it("extracts the whole image when the crop is the same size", () => {
+    expect(cropImage(image, { height: OUTER_HEIGHT, left: NO_OFFSET, top: NO_OFFSET, width: OUTER_WIDTH })).toEqual(
+      image,
+    );
+  });
+
+  it("extracts a single pixel", () => {
+    expect(cropImage(image, { height: SINGLE_PIXEL, left: LAST_INDEX, top: LAST_INDEX, width: SINGLE_PIXEL })).toEqual({
+      data: Uint8Array.from(indexedPixel(LAST_INDEX, LAST_INDEX)),
+      height: SINGLE_PIXEL,
+      width: SINGLE_PIXEL,
+    });
+  });
+});
+
+describe("cropImage out of bounds", () => {
+  const image = buildIndexedImage(OUTER_WIDTH, OUTER_HEIGHT);
+
+  it("reports a crop wider than the image", () => {
+    expect(cropImage(image, { height: SINGLE_PIXEL, left: NO_OFFSET, top: NO_OFFSET, width: OVERSIZED_LENGTH })).toBe(
+      "the crop 5x1+0+0 does not fit inside the 4x4 screenshot",
+    );
+  });
+
+  it("reports a crop taller than the image", () => {
+    expect(cropImage(image, { height: OVERSIZED_LENGTH, left: NO_OFFSET, top: NO_OFFSET, width: SINGLE_PIXEL })).toBe(
+      "the crop 1x5+0+0 does not fit inside the 4x4 screenshot",
+    );
+  });
+
+  it("reports a crop that fits in size but is offset past the edge", () => {
+    expect(cropImage(image, { height: CROP_SIZE, left: LAST_INDEX, top: LAST_INDEX, width: CROP_SIZE })).toBe(
+      "the crop 2x2+3+3 does not fit inside the 4x4 screenshot",
     );
   });
 });

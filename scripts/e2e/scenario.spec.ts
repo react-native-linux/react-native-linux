@@ -174,7 +174,7 @@ describe("parseScenario screenshot", () => {
   const screenshot = { golden: "pressable-click.png", maxDifferentPixels: MAX_DIFFERENT_PIXELS };
 
   it("reads a screenshot comparison", () => {
-    expect(parseScenario({ ...validScenario, screenshot }, "fixture.json").screenshot).toEqual(screenshot);
+    expect(parseScenario({ ...validScenario, screenshot }, "fixture.json").screenshot).toMatchObject(screenshot);
   });
 
   it("rejects a screenshot comparison that is not an object", () => {

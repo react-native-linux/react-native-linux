@@ -1,13 +1,13 @@
+import { cropImage, findScreenshotFailure } from "./screenshot.ts";
 import { describeFrameTiming, findFrameBudgetFailures, parseFrameLogSummary } from "./frame-log.ts";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 import { PNG } from "pngjs";
-
 import type { Scenario } from "./scenario.ts";
-import { findScreenshotFailure } from "./screenshot.ts";
 import path from "node:path";
 
 const NO_TEXT = "";
+const CROPPED_ARTIFACT_NAME = "screenshot-cropped.png";
 
 /**
  * What a scenario's artifacts say once the run is over, split so a note never fails a run and a failure is never
@@ -25,11 +25,27 @@ interface GradeInputs {
   readonly screenshotPath: string;
 }
 
-const readPixelImage = (imagePath: string): { data: Uint8Array; height: number; width: number } => {
+interface PixelImage {
+  readonly data: Uint8Array;
+  readonly height: number;
+  readonly width: number;
+}
+
+const readPixelImage = (imagePath: string): PixelImage => {
   const decoded = PNG.sync.read(readFileSync(imagePath));
 
   return { data: decoded.data, height: decoded.height, width: decoded.width };
 };
+
+const writePixelImage = (imagePath: string, image: PixelImage): void => {
+  const encoded = new PNG({ height: image.height, width: image.width });
+
+  encoded.data.set(image.data);
+  writeFileSync(imagePath, PNG.sync.write(encoded));
+};
+
+const resolveCroppedArtifactPath = (screenshotPath: string): string =>
+  path.join(path.dirname(screenshotPath), CROPPED_ARTIFACT_NAME);
 
 /**
  * The perf gate of #7. The numbers are `wp_presentation` feedback the window wrote as it presented, not anything
@@ -47,11 +63,65 @@ const gradeFrameTiming = (scenario: Scenario, frameLogPath: string): Grade => {
   return { failures: findFrameBudgetFailures(summary, scenario.frameBudget, frameLogPath), notes };
 };
 
+interface CapturedScreenshot {
+  readonly image: PixelImage;
+  readonly path: string;
+}
+
+/**
+ * Narrows the captured screenshot to the scenario's crop rectangle, if it names one, and writes it beside the
+ * full capture as `screenshot-cropped.png` — the picture a golden gets blessed from is then already the right
+ * size, and the full capture stays untouched for debugging the rest of the page. A crop that does not fit inside
+ * the capture is reported the same way a size or pixel mismatch is: as a failure naming the golden, not a thrown
+ * error. See *Screenshots* in docs/cpp-toolchain.md.
+ */
+const resolveCapturedScreenshot = (
+  screenshotPath: string,
+  crop: NonNullable<Scenario["screenshot"]>["crop"],
+): CapturedScreenshot | string => {
+  const captured = readPixelImage(screenshotPath);
+
+  if (crop === null) {
+    return { image: captured, path: screenshotPath };
+  }
+
+  const cropped = cropImage(captured, crop);
+
+  if (typeof cropped === "string") {
+    return cropped;
+  }
+
+  const croppedPath = resolveCroppedArtifactPath(screenshotPath);
+
+  writePixelImage(croppedPath, cropped);
+
+  return { image: cropped, path: croppedPath };
+};
+
 /**
  * A golden that does not exist yet is a note naming the picture to bless, not a failure: cage sizes the surface
  * to its own output, so the baseline has to come out of a CI artifact, and the run that produces that artifact
  * has to be green. See *Screenshots* in docs/cpp-toolchain.md.
  */
+const compareAgainstGolden = (
+  comparison: NonNullable<Scenario["screenshot"]>,
+  goldensDirectory: string,
+  captured: CapturedScreenshot,
+): Grade => {
+  const goldenPath = path.join(goldensDirectory, comparison.golden);
+
+  if (!existsSync(goldenPath)) {
+    return { failures: [], notes: [`no screenshot golden at ${goldenPath}; bless ${captured.path}`] };
+  }
+
+  const failure = findScreenshotFailure(captured.image, readPixelImage(goldenPath), comparison.maxDifferentPixels);
+
+  return {
+    failures: failure === null ? [] : [`the screenshot does not match ${comparison.golden}: ${failure}`],
+    notes: [],
+  };
+};
+
 const gradeScreenshot = (inputs: GradeInputs): Grade => {
   const comparison = inputs.scenario.screenshot;
 
@@ -59,26 +129,17 @@ const gradeScreenshot = (inputs: GradeInputs): Grade => {
     return { failures: [], notes: [] };
   }
 
-  const goldenPath = path.join(inputs.goldensDirectory, comparison.golden);
-
-  if (!existsSync(goldenPath)) {
-    return { failures: [], notes: [`no screenshot golden at ${goldenPath}; bless ${inputs.screenshotPath}`] };
-  }
-
   if (!existsSync(inputs.screenshotPath)) {
     return { failures: [`the window captured no screenshot at ${inputs.screenshotPath}`], notes: [] };
   }
 
-  const failure = findScreenshotFailure(
-    readPixelImage(inputs.screenshotPath),
-    readPixelImage(goldenPath),
-    comparison.maxDifferentPixels,
-  );
+  const captured = resolveCapturedScreenshot(inputs.screenshotPath, comparison.crop);
 
-  return {
-    failures: failure === null ? [] : [`the screenshot does not match ${comparison.golden}: ${failure}`],
-    notes: [],
-  };
+  if (typeof captured === "string") {
+    return { failures: [`the screenshot does not match ${comparison.golden}: ${captured}`], notes: [] };
+  }
+
+  return compareAgainstGolden(comparison, inputs.goldensDirectory, captured);
 };
 
 const gradeArtifacts = (inputs: GradeInputs): Grade => {

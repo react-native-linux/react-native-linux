@@ -20,6 +20,38 @@ interface PixelImage {
   readonly width: number;
 }
 
+interface Crop {
+  readonly height: number;
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+}
+
+/**
+ * Narrows a captured screenshot to the rectangle a scenario names, so an unrelated change elsewhere on the page
+ * does not invalidate a golden. The golden itself is stored already cropped to that same rectangle, so only the
+ * captured screenshot needs this before `findScreenshotFailure` compares the two.
+ */
+const cropImage = (image: PixelImage, crop: Crop): PixelImage | string => {
+  if (crop.left + crop.width > image.width || crop.top + crop.height > image.height) {
+    return (
+      `the crop ${String(crop.width)}x${String(crop.height)}+${String(crop.left)}+${String(crop.top)} does not fit ` +
+      `inside the ${String(image.width)}x${String(image.height)} screenshot`
+    );
+  }
+
+  const rowBytes = crop.width * CHANNELS_PER_PIXEL;
+  const data = new Uint8Array(rowBytes * crop.height);
+
+  for (let row = NONE; row < crop.height; row += ONE_PIXEL) {
+    const sourceStart = ((crop.top + row) * image.width + crop.left) * CHANNELS_PER_PIXEL;
+
+    data.set(image.data.subarray(sourceStart, sourceStart + rowBytes), row * rowBytes);
+  }
+
+  return { data, height: crop.height, width: crop.width };
+};
+
 /**
  * Channels missing from a truncated render count as absent colour: a picture that stopped early differs from the
  * golden everywhere it stopped, rather than matching it by running out of bytes to disagree with.
@@ -61,4 +93,5 @@ const findScreenshotFailure = (actual: PixelImage, expected: PixelImage, maxDiff
   );
 };
 
-export { findScreenshotFailure };
+export { cropImage, findScreenshotFailure };
+export type { Crop };
