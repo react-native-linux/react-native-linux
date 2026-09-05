@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
 import { PNG } from "pngjs";
 
@@ -238,5 +238,19 @@ describe("gradeArtifacts screenshot crop", () => {
     expect(gradeArtifacts(inputsFor(scenario)).failures).toEqual([
       `the screenshot does not match ${GOLDEN_NAME}: the crop 4x4+2+2 does not fit inside the 4x4 screenshot`,
     ]);
+  });
+
+  it("writes the cropped picture beside the full capture and names it in the bless note", () => {
+    writeCroppableScreenshot(FAR_APART, BACKGROUND);
+
+    const croppedPath = path.join(workspace, "screenshot-cropped.png");
+
+    expect(gradeArtifacts(inputsFor(scenario)).notes).toEqual([
+      `no screenshot golden at ${path.join(workspace, "goldens", GOLDEN_NAME)}; bless ${croppedPath}`,
+    ]);
+
+    const cropped = PNG.sync.read(readFileSync(croppedPath));
+
+    expect({ height: cropped.height, width: cropped.width }).toEqual({ height: CROP.height, width: CROP.width });
   });
 });

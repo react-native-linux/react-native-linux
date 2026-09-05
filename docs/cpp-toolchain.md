@@ -4756,7 +4756,9 @@ Blessing a golden:
 1. Add `"screenshot": {"golden": "<name>.png", "maxDifferentPixels": 50}` to the scenario. A golden that does not
    exist yet is a **note, not a failure** — the driver prints the path it would have compared against and the path
    of the picture to bless — so the run that produces the first artifact stays green.
-2. Take `screenshot.png` from that run's `e2e` CI artifact, which is why the upload is `if: always()`.
+2. Take the picture the note names from that run's `e2e` CI artifact, which is why the upload is `if: always()`:
+   `screenshot.png` for a scenario with no `screenshot.crop`, or `screenshot-cropped.png` — already the golden's
+   size — for one that has it.
 3. Commit it as `packages/core/e2e/goldens/<name>.png` and review the picture in the PR diff, exactly as the
    window goldens are reviewed.
 
@@ -4776,6 +4778,13 @@ the lookup `InputDispatcher` already does by tag would still have to be exposed 
 scope here; the scenario spells out the rectangle directly until that exists. `pressable.json` names a crop around
 its card, `{"left": 90, "top": 70, "width": 220, "height": 140}`, and `pressable-click.png` is re-blessed at that
 220x140 size, cropped from the 1280x720 picture with the same `cropImage` function rather than a second cage run.
+
+When a scenario declares a crop, `grade.ts` writes the cropped picture beside the full capture as
+`screenshot-cropped.png` in the same artifact directory, on every run, not only a failing one — the full
+`screenshot.png` is untouched, so it still exists for debugging the rest of the page. The blessing note names
+whichever file the comparison actually used, so blessing procedure step 2 above already points at the right one:
+`screenshot-cropped.png` for a cropped scenario, already at the golden's size, rather than a full-surface capture
+someone would otherwise have to crop by hand before committing it.
 
 ### Running it
 
