@@ -207,7 +207,7 @@ void expectHitTestersAgreeOverGrid(const std::shared_ptr<const ShadowNode>& root
     }
 }
 
-#pragma mark - Upstream's own FindNodeAtPointTest.cpp, ported verbatim
+// Upstream's own FindNodeAtPointTest.cpp, ported verbatim
 
 // The nested pair `WithoutTransform` and `ViewIsTranslated` both hang under their (differently transformed) root:
 // a 100x100 child at (100, 100) holding a 10x10 grandchild at (10, 10) within it.
@@ -351,7 +351,7 @@ TEST(HitTestDifferentialTest, ConsidersOverflowAreaOfTheParent) {
     expectHitTestersAgree(root, {Point{.x = 1, .y = 99}});
 }
 
-#pragma mark - pointerEvents: all four values, crossed two levels deep (#64)
+// pointerEvents: all four values, crossed two levels deep (#64)
 
 // The exact table `AnimatedHitTestTest.cpp`'s `PointerEventsComposeAcrossTwoLevelsAsTheTableSays` pins for
 // `RetainedScene` alone, reused here as a differential: `kNoHit` there is `kSurfaceTag`, the wrapping surface root
@@ -365,15 +365,28 @@ struct PointerEventsCase {
     Tag expectedInsideParentOnly;
 };
 
-std::shared_ptr<const ShadowNode> nestedPointerEventsTree(PointerEventsMode parent, PointerEventsMode child) {
-    auto builder = simpleComponentBuilder();
+/**
+ * `ComponentBuilder` owns the `ComponentDescriptorRegistry` the returned tree's `ShadowNodeFamily`s hold a
+ * reference into, so a helper that builds a tree and hands back only the `ShadowNode` leaves that reference
+ * dangling the moment the helper returns — the builder has to outlive every use of the tree, exactly like the
+ * fixture-level `builder` each `TEST` body above keeps in scope. This pairs the two so a caller cannot have one
+ * without the other.
+ */
+struct PointerEventsTree {
+    facebook::react::ComponentBuilder builder;
+    std::shared_ptr<const ShadowNode> root;
+};
+
+PointerEventsTree nestedPointerEventsTree(PointerEventsMode parent, PointerEventsMode child) {
+    facebook::react::ComponentBuilder builder = simpleComponentBuilder();
     auto element = nodeAt<ViewShadowNode>(2, rect(100, 80, 200, 120))
                        .props([parent] { return viewPropsWithPointerEvents(parent); })
                        .children({nodeAt<ViewShadowNode>(3, rect(150, 20, 200, 80)).props([child] {
                            return viewPropsWithPointerEvents(child);
                        })});
+    std::shared_ptr<const ShadowNode> root = builder.build(element);
 
-    return builder.build(element);
+    return PointerEventsTree{.builder = std::move(builder), .root = std::move(root)};
 }
 
 TEST(HitTestDifferentialTest, PointerEventsComposeAcrossTwoLevelsAsTheTableSays) {
@@ -409,7 +422,8 @@ TEST(HitTestDifferentialTest, PointerEventsComposeAcrossTwoLevelsAsTheTableSays)
     constexpr Point kInsideParentOnly{.x = 120, .y = 190};
 
     for (const PointerEventsCase& entry : table) {
-        const std::shared_ptr<const ShadowNode> root = nestedPointerEventsTree(entry.parent, entry.child);
+        const PointerEventsTree tree = nestedPointerEventsTree(entry.parent, entry.child);
+        const std::shared_ptr<const ShadowNode>& root = tree.root;
         RetainedScene scene;
 
         mountIntoScene(scene, root, 0, 0);
@@ -428,7 +442,7 @@ TEST(HitTestDifferentialTest, PointerEventsComposeAcrossTwoLevelsAsTheTableSays)
     }
 }
 
-#pragma mark - transform: translate, scale, rotate (#103)
+// transform: translate, scale, rotate (#103)
 
 TEST(HitTestDifferentialTest, ATranslatedChildIsFoundWhereItIsPaintedAndNotWhereItWasLaidOut) {
     auto builder = simpleComponentBuilder();
