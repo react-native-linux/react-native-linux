@@ -20,11 +20,11 @@ react-native-windows (the directory is `vnext/Microsoft.ReactNative.Cxx.UnitTest
 
 | Suite | Comes from | Linked / ported / ours | Count |
 | --- | --- | --- | --- |
-| `rnl_core_tests`, our own files | `packages/core/tests/*Test.cpp` (30 files) | ours | 484 `TEST`/`TEST_F` macros; `SceneTest` 101, `EditorTest` 53, `ScrollTest` 43, `InputTest` 31, `ImageTest` 31, `LayoutConformanceTest` 20, `ImeTest` 18, `FocusTest` 17, `AnimatedHitTestTest` 16, `AnimatedPropsTest` 15, the rest under 13 each |
+| `rnl_core_tests`, our own files | `packages/core/tests/*Test.cpp` (31 files) | ours | 496 `TEST`/`TEST_F`/`TEST_P` macros; `SceneTest` 101, `EditorTest` 53, `ScrollTest` 43, `InputTest` 31, `ImageTest` 31, `LayoutConformanceTest` 20, `ImeTest` 18, `FocusTest` 17, `AnimatedHitTestTest` 16, `AnimatedPropsTest` 15, the rest under 13 each |
 | Upstream animated suite (#132) | `ReactCommon/react/renderer/animated/tests` (5 `.cpp` + `AnimationTestsBase.h`) | linked unmodified | 22 macros |
 | Upstream css suite (#211) | `ReactCommon/react/renderer/css/tests` (18 files) | linked unmodified | 312 macros |
 | Upstream core suite, standalone half (#211) | `ReactCommon/react/renderer/core/tests` — 5 of 13 `.cpp` (`ComponentDescriptor`, `DynamicPropsUtilities`, `Primitives`, `PropsConcepts`, `ShadowNode`); 8 removed by `list(REMOVE_ITEM ...)` | linked unmodified | 28 of the directory's 88 macros |
-| Upstream mounting suite (#211) | `ReactCommon/react/renderer/mounting/tests` — 5 of 6 (`StateReconciliationTest` removed) | linked unmodified | 25 of 32 |
+| Upstream mounting suite (#211) | `ReactCommon/react/renderer/mounting/tests` — 5 of 6 (`StateReconciliationTest` removed) | linked unmodified | 26 of 33 |
 | Upstream components/view suite (#211) | `ReactCommon/react/renderer/components/view/tests` (4 files) | linked unmodified | 79 |
 | Upstream graphics suite (#211) | `ReactCommon/react/renderer/graphics/tests` (4 files) | linked unmodified | 20 |
 | Upstream performance/timeline suite (#211) | `ReactCommon/react/performance/timeline/tests` (4 files) | linked unmodified | 20 |
@@ -37,8 +37,11 @@ react-native-windows (the directory is `vnext/Microsoft.ReactNative.Cxx.UnitTest
 | Fixture bundles | `packages/core/test-bundles/*.js`, hand-written against `nativeFabricUIManager` | ours | 26 bundles |
 | CI | `.github/workflows/ci.yml`: `validate`, `meta`, `unit` (Hermes-free configure, ctest, coverage gate), `native` (preset matrix) and the jobs after line 366 that were not read for this survey | ours | — |
 
-Totals for the C++ binary: 484 own macros plus 506 linked upstream macros. PR #219's landing comment reports
-976 CTest cases green (parameterised tests expand under `gtest_discover_tests`).
+Totals for the C++ binary: 496 own macros plus 507 linked upstream macros — 1,003 `TEST`/`TEST_F`/`TEST_P` source
+macros. That is a source-macro count, not a case count: the `unit` job's `ctest` run on 2026-09-05 (main at
+`c87bbd9`, workflow run 33956412221) reported "100% tests passed, 0 tests failed out of 1002" — 1,002 discovered
+CTest cases, which need not equal the macro count because `gtest_discover_tests` expands each `TEST_P`
+instantiation into one case per parameter rather than one case per macro.
 
 ## B. Upstream C++ suites not yet linked
 
@@ -115,7 +118,7 @@ from `gh api repos/facebook/react-native/git/trees/v0.87.1`.
 
 | Suite | Where | Count | What it proves | Recommendation | Owner |
 | --- | --- | --- | --- | --- | --- |
-| Fantom `*-itest.js` corpus | repo-wide at `v0.87.1` | 185 files: `Libraries/` 105 (Components 21, StyleSheet 18, Utilities 17, LogBox 14, Animated 12, Image 6, ReactNative 4, Lists 3, Core 3, Text 2, Blob 2, one each of WebSocket/vendor/Pressability/Network/NativeComponent/Modal/BatchedBridge), `src/private/` 53 (webapis/dom 12, webapis/performance 7, setup 5, renderer/core 4, ...), `react-native-fantom/src/__tests__` 21, `polyfills` 2 | Mount-tree semantics against real Hermes + Fabric; `View-itest`, `ScrollView-itest`, `TextInput-itest`, `Pressable-itest`, `Switch-itest`, `Touchable*-itest`, the 18 StyleSheet `process*` tests | Run unmodified through #210; the `src/private` 53 are already on disk | #210 |
+| Fantom `*-itest.js` corpus | repo-wide at `v0.87.1` | 185 files: `Libraries/` 109 (Components 21, StyleSheet 18, Utilities 17, LogBox 14, Animated 12, Image 6, ReactNative 4, Lists 3, Core 3, Text 2, Blob 2, one each of WebSocket/vendor/Pressability/Network/NativeComponent/Modal/BatchedBridge), `src/private/` 53 (webapis/dom 12, webapis/performance 7, setup 5, renderer/core 4, ...), `react-native-fantom/src/__tests__` 21, `polyfills` 2 | Mount-tree semantics against real Hermes + Fabric; `View-itest`, `ScrollView-itest`, `TextInput-itest`, `Pressable-itest`, `Switch-itest`, `Touchable*-itest`, the 18 StyleSheet `process*` tests | Run unmodified through #210; the `src/private` 53 are already on disk | #210 |
 | Jest `*-test.js` under `Libraries/**/__tests__` | `Libraries/` | 31 non-itest test files (plus 2 PNG fixtures and snapshots); by area: LogBox 8, Blob 4, Components 4 (`AccessibilityInfo`, `DrawerAndroid`, `Keyboard`, `StatusBar`), Animated 3, Core 3, Utilities 2, one each of `Pressability`, `FabricUIManager`, `XMLHttpRequest`, `NativeModules`, `resolveAssetSource` | Pure-JS contracts with the `packages/jest-preset/jest/setup.js` mock layer | Run unmodified with a `linux` haste platform; `Pressability-test.js` (36 cases) first | #217, #215 |
 | `src/private` jest | vendored | 2 files (`featureflags/__tests__`, `animated/__tests__`) | Flag defaults; animated JS side | With #217 | #217 |
 | RNTester example pages | `packages/rn-tester/js/examples/` | 81 example directories, 241 files; `RNTesterList.android.js` registers 27 Components and 51 APIs (Accessibility, Animated, AnimationBackend, Appearance, Border, Dimensions, Filter, LinearGradient, LayoutConformance, PointerEvents, RTL, Transform, ...) | Every component and prop surface upstream considers public | Bundle for `platform=linux`; `visitAllPages` under the compositor; `snapshotPages` in-process | #213 |
@@ -196,7 +199,8 @@ board's labels.
 
 Context: #211 landed the first tranche (PR #219) and closed; its landing comment defers "the jsi conformance /
 jsinspector / cxxreact / bridging tranches on this same issue", which a closed issue cannot carry. Section B's
-first table lists 24 files with roughly 250 `TEST` macros whose every dependency is already in
+first table lists 38 files (the brace-expressions expand to one file per name) with 247 `TEST`/`TEST_F`/`TEST_P`
+macros whose every dependency is already in
 `RNL_REACT_COMMON_TARGETS`: the four core files the CMake comment misattributes to Hermes
 (`ConcreteShadowNode`, `FindNodeAtPoint`, `LayoutableShadowNode`, `ShadowNodeFamily` include only
 `react/renderer/element/testUtils.h`), `StateReconciliationTest` (its stated blocker `rrc_modal` is linked),
@@ -336,8 +340,8 @@ different mechanism).
 ## F. Order of attack
 
 1. **Zero new code, this week.** E1: extend the two `file(GLOB ...)`/`target_sources` lists in
-   `packages/core/tests/CMakeLists.txt` by the 24 files in section B's first table and fix the two wrong
-   comments. Expected yield: roughly 250 upstream `TEST` macros, including `FindNodeAtPoint`,
+   `packages/core/tests/CMakeLists.txt` by the 38 files in section B's first table and fix the two wrong
+   comments. Expected yield: 247 upstream `TEST`/`TEST_F`/`TEST_P` macros, including `FindNodeAtPoint`,
    `LayoutableShadowNode`, `PointerEventsProcessor`, `StateReconciliation` and `TaskDispatchThread`, in the
    existing `unit` job. E4 (oracle over all 39 directories) is the same PR or the next one.
 2. **One CMake decision, then more links.** E2 needs the Hermes-plus-googletest configure answered once; the
