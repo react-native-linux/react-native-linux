@@ -498,6 +498,7 @@ void TextInputController::publish(TextInputField& field) {
                               static_cast<float>(box.size.width), request);
 
     field.layoutWidth = geometry.layoutWidth;
+    field.contentSize = facebook::react::Size{.width = geometry.contentWidth, .height = geometry.contentHeight};
 
     // A field is a window onto content allowed to be longer than it is, and the caret drags that window —
     // `followedScrollOffset` is that rule and is the same on both axes. A single-line field is a window on one
@@ -528,6 +529,8 @@ void TextInputController::publish(TextInputField& field) {
             static_cast<int32_t>(box.origin.y + geometry.caret.origin.y),
             static_cast<int32_t>(geometry.caret.size.width), static_cast<int32_t>(geometry.caret.size.height));
     }
+#else
+    field.contentSize = field.shadowNode->getLayoutMetrics().frame.size;
 #endif
 
     mountingManager_->setEditorState(field.shadowNode->getTag(), editorState);
@@ -575,12 +578,16 @@ void TextInputController::emitEvents(TextInputField& field) {
     const bool hasTextChanged = text != field.emittedText;
     const bool hasSelectionChanged =
         selectionBegin != field.emittedSelectionBegin || selectionEnd != field.emittedSelectionEnd;
+    const bool hasContentSizeChanged =
+        !field.hasEmittedContentSize || !(field.contentSize == field.emittedContentSize);
 
     field.emittedText = text;
     field.emittedSelectionBegin = selectionBegin;
     field.emittedSelectionEnd = selectionEnd;
+    field.emittedContentSize = field.contentSize;
+    field.hasEmittedContentSize = true;
 
-    if (!hasTextChanged && !hasSelectionChanged) {
+    if (!hasTextChanged && !hasSelectionChanged && !hasContentSizeChanged) {
         return;
     }
 
@@ -593,9 +600,14 @@ void TextInputController::emitEvents(TextInputField& field) {
     const facebook::react::TextInputEventEmitter::Metrics metrics = makeMetrics(field);
 
     // `onChange` first, because `onChangeText` is derived from it in JavaScript and an `onSelectionChange` that
-    // arrived ahead of it would describe a string React has not been told about yet.
+    // arrived ahead of it would describe a string React has not been told about yet. `onContentSizeChange` sits
+    // between them: it is a consequence of the text, and a selection is measured against the size it reports.
     if (hasTextChanged) {
         emitter->onChange(metrics);
+    }
+
+    if (hasContentSizeChanged) {
+        emitter->onContentSizeChange(metrics);
     }
 
     if (hasSelectionChanged) {
@@ -634,8 +646,8 @@ facebook::react::TextInputEventEmitter::Metrics TextInputController::makeMetrics
         .selectionRange = facebook::react::AttributedString::Range{.location = static_cast<int>(selectionBegin),
                                                                    .length = static_cast<int>(selectionEnd -
                                                                                               selectionBegin)},
-        .contentSize = containerSize,
-        .contentOffset = facebook::react::Point{.x = field.scrollOffsetX, .y = 0},
+        .contentSize = field.contentSize,
+        .contentOffset = facebook::react::Point{.x = field.scrollOffsetX, .y = field.scrollOffsetY},
         .contentInset = {},
         .containerSize = containerSize,
         .eventCount = field.editor.mostRecentEventCount(),

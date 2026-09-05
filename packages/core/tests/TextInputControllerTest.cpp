@@ -9,6 +9,7 @@
 #include <memory>
 #include <react/renderer/core/LayoutConstraints.h>
 #include <react/renderer/core/LayoutContext.h>
+#include <react/renderer/core/State.h>
 #include <react/renderer/mounting/ShadowTree.h>
 #include <vector>
 
@@ -203,6 +204,22 @@ TEST_F(TextInputControllerTest, TheCompositionLifecycleSuppressesNothingTheModel
     controller_->onImeCommit("你");
 
     EXPECT_FALSE(controller_->isComposing());
+}
+
+// core#54570: an uncontrolled multiline field never grew. Upstream's `updateStateIfNeeded` skips a field whose
+// React-tree text is empty, so the state's font-size multiplier stayed NaN, compared unequal to the layout's, and
+// `attributedStringBoxToMeasure` measured the placeholder for the rest of the field's life. The initial state now
+// carries the multiplier the root's default `LayoutContext` measures with, so the first platform-side edit — which
+// advances the revision past the initial one — is what the next layout measures. `text-input-grow.png` is the
+// picture of that; this is the number.
+TEST_F(TextInputControllerTest, TheInitialStateCarriesTheMultiplierAPlatformEditIsMeasuredAgainst) {
+    commitTextInput(folly::dynamic::object("multiline", true));
+
+    const facebook::react::TextInputState& stateData = mountedField_->getStateData();
+
+    EXPECT_EQ(mountedField_->getState()->getRevision(), facebook::react::State::initialRevisionValue);
+    EXPECT_TRUE(stateData.attributedStringBox.getValue().isEmpty());
+    EXPECT_FLOAT_EQ(stateData.reactTreeAttributedString.getBaseTextAttributes().fontSizeMultiplier, 1.0F);
 }
 
 } // namespace
