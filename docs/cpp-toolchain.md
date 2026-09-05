@@ -2677,11 +2677,19 @@ acceptance criterion, and the painter draws whatever is in the cache at the mome
 not finished decoding draws nothing at all rather than stalling the frame.
 
 Two requests for the same URI decode once: the second joins the first's completion list. The queue, the cache,
-the completion lists and the listener live under one mutex, and that mutex is never held while a codec runs or
-while a completion or the listener is called, so the listener may take the mounting manager's lock without
-inverting a lock order. `PendingImageDecodes` carries the only other mutex here, and the order between the two is
-one-way: the pipeline's is taken first, never the reverse. `waitUntilSettled` is the one place that touches both,
-and it does so in sequence rather than nested — the pipeline's is released before the counter's is taken.
+the completion lists and the listener live under one mutex, and **nothing but bookkeeping happens under it** — a
+hash lookup, a set insert, a deque push or pop, a `std::function` move, and the cache insert whose eviction loop
+is bounded by the entries the cache is holding. Reading the file, running the codec, calling the completions and
+calling the listener are all outside it. A thread that blocks on this mutex therefore waits on microseconds of
+pointer work rather than on a decode, which is why `waitUntilSettled` can pass through it without putting its
+budget at risk. The listener may also take the mounting manager's lock without inverting a lock order.
+
+`PendingImageDecodes` carries the only other mutex here, and the order between the two is one-way:
+**whenever both are held, the pipeline's mutex is taken first and the counter's inside it**, which is
+what `requestImageDecode` does when it counts a decode inside its own critical section. `waitUntilSettled` takes
+the same two in the same order but sequentially rather than nested — it releases the pipeline's before it takes
+the counter's, because the worker needs the pipeline's to publish. The reverse, the counter's held while the
+pipeline's is taken, happens nowhere.
 
 `ImagePipelineState` is a function-local static exactly like the text pipeline's `FontCollection`, and its
 destructor stops and joins the worker before any member the worker touches is destroyed. That is what makes a
@@ -2731,8 +2739,9 @@ regeneration that came out different on a loaded machine:
   between them would see a zero the registration had already invalidated. `waitUntilSettled` therefore takes the
   pipeline's own mutex — the one `requestImageDecode` registers under — and releases it again before it blocks,
   so a request in flight when a settle begins is ordered before that settle rather than raced against it. It is
-  released first because the worker needs that same mutex to publish; the counter's own mutex is never taken
-  while it is held.
+  released first because the worker needs that same mutex to publish, which makes this the one path that holds
+  the two in sequence rather than nested; the order between them is the same one `requestImageDecode` nests them
+  in, pipeline's before counter's.
 
 `PendingImageDecodesTest` in `packages/core/tests/ImageTest.cpp` holds the contract: a decode published after the
 commit is visible the instant the settle returns, a requested decode times its budget out rather than settling,

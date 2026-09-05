@@ -141,7 +141,12 @@ private:
  * Threading contract: every function is safe to call from any thread. `noteRequested` runs on whichever thread
  * commits, `notePublished` on the decode worker, and `waitUntilSettled` on the thread driving a headless run.
  * `mutex_` is never held while a codec, a completion or the listener runs, because those happen between the two
- * notes rather than inside either, and it is only ever taken after `registrationMutex`, never before it.
+ * notes rather than inside either.
+ *
+ * On the paths that take both locks, `mutex_` always comes after `registrationMutex` and never before it. Those
+ * paths are two shapes, not one: `noteRequested` is called by a caller already holding its registration lock, so
+ * there the two are nested, and `waitUntilSettled` releases the registration lock before it takes `mutex_`, so
+ * there they are sequential. Same order either way, which is what a caller adding a third path has to keep.
  */
 class PendingImageDecodes final {
 public:
