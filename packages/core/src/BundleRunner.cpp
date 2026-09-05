@@ -259,6 +259,40 @@ FabricRunResult finishFabricRun(ReactHost& reactHost, std::unique_ptr<FabricHost
 }
 
 /**
+ * A started bundle whose wheel gesture has already been turned into a settled scroll position: the half both
+ * wheel-driven runs share, up to and including the beat that reports it.
+ *
+ * The glide is integrated at a fixed 60 Hz step rather than at whatever rate this machine loops at, and the beat is
+ * induced after it rather than inside it — a state update replaces the previous one for the same node, so only the
+ * last position could survive the flush anyway, and inducing per frame would buy a JavaScript round trip per frame
+ * and no extra assertion. Nothing here waits for pending timers: a fixture that arms a commit from its scroll event
+ * must not have it land before the caller has looked at the scene it is going to change.
+ */
+struct WheelDrivenRun {
+    std::unique_ptr<FabricHost> fabricHost;
+    bool hasCommitted{false};
+};
+
+WheelDrivenRun startWheelDrivenRun(ReactHost& reactHost, const std::string& bundlePath,
+                                   facebook::react::Size surfaceSize, facebook::react::Point surfacePoint,
+                                   int wheelNotches) {
+    WheelDrivenRun run{.fabricHost = startFabricRun(reactHost, bundlePath, surfaceSize)};
+
+    run.hasCommitted = !waitForFirstCommit(reactHost, *run.fabricHost, true).empty();
+
+    run.fabricHost->dispatchInput(makeWheelFrame(surfacePoint, wheelNotches));
+
+    for (size_t frame = 0;
+         frame < kMaximumInjectedScrollFrames && run.fabricHost->advanceScroll(kInjectedFrameMilliseconds);
+         ++frame) {
+    }
+
+    run.fabricHost->induceEventBeat();
+
+    return run;
+}
+
+/**
  * A move onto `surfacePoint`, a press and a release there, one frame apiece — the click every injected-click run
  * delivers, whether it is proving a hit test or a focus change.
  */
@@ -394,28 +428,52 @@ FabricDamageRunResult runFabricBundleAcrossCommits(const std::string& bundlePath
 FabricRunResult runScrolledFabricBundle(const std::string& bundlePath, facebook::react::Size surfaceSize,
                                         facebook::react::Point surfacePoint, int wheelNotches) {
     ReactHost reactHost;
-    std::unique_ptr<FabricHost> fabricHost = startFabricRun(reactHost, bundlePath, surfaceSize);
+    WheelDrivenRun run = startWheelDrivenRun(reactHost, bundlePath, surfaceSize, surfacePoint, wheelNotches);
 
-    if (waitForFirstCommit(reactHost, *fabricHost, true).empty()) {
+    if (!run.hasCommitted) {
         std::cerr << "[bundle-runner] the bundle committed no scene, so there is nothing to scroll" << std::endl;
     }
-
-    fabricHost->dispatchInput(makeWheelFrame(surfacePoint, wheelNotches));
-
-    // The beat is induced after the glide rather than inside it: a state update replaces the previous one for the
-    // same node, so only the last position could survive the flush anyway, and inducing per frame would buy this
-    // run a JavaScript round trip per frame and no extra assertion.
-    for (size_t frame = 0;
-         frame < kMaximumInjectedScrollFrames && fabricHost->advanceScroll(kInjectedFrameMilliseconds); ++frame) {
-    }
-
-    fabricHost->induceEventBeat();
 
     if (!reactHost.runUntilQuiescent(kQuiescenceBudget)) {
         std::cerr << "[bundle-runner] gave up waiting for pending timers" << std::endl;
     }
 
-    return finishFabricRun(reactHost, fabricHost);
+    return finishFabricRun(reactHost, run.fabricHost);
+}
+
+FabricPrependRunResult runFabricBundleAcrossPrepend(const std::string& bundlePath, facebook::react::Size surfaceSize,
+                                                    facebook::react::Point surfacePoint, int wheelNotches) {
+    ReactHost reactHost;
+    WheelDrivenRun run = startWheelDrivenRun(reactHost, bundlePath, surfaceSize, surfacePoint, wheelNotches);
+    FabricPrependRunResult result;
+
+    if (!run.hasCommitted) {
+        result.failure = "the bundle committed no scene, so there is nothing to scroll";
+    }
+
+    reactHost.drainJavaScriptThread();
+
+    result.beforeScene = run.fabricHost->snapshotScene();
+
+    // The prepend is a timer the fixture arms from the scroll event the drain above delivered, so it cannot have
+    // landed before this line and cannot fail to land after it.
+    if (!reactHost.runUntilQuiescent(kQuiescenceBudget)) {
+        std::cerr << "[bundle-runner] gave up waiting for pending timers" << std::endl;
+    }
+
+    run.fabricHost->advanceScroll(kInjectedFrameMilliseconds);
+    run.fabricHost->induceEventBeat();
+    reactHost.drainJavaScriptThread();
+
+    result.afterScene = run.fabricHost->snapshotScene();
+
+    run.fabricHost->stopSurface();
+    reactHost.drainJavaScriptThread();
+    run.fabricHost.reset();
+
+    result.hasReportedFatalError = reactHost.hasReportedFatalError();
+
+    return result;
 }
 
 /**
