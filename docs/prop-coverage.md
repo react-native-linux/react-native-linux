@@ -59,9 +59,9 @@ assertion and not an implementation.
 | View | 35 | 14 | 5 | 16 |
 | Text | 45 | 12 | 12 | 21 |
 | Image | 14 | 3 | 7 | 4 |
-| ScrollView | 39 | 2 | 2 | 35 |
+| ScrollView | 39 | 3 | 2 | 34 |
 | TextInput | 23 | 12 | 0 | 11 |
-| **Total** | 156 | 43 | 26 | 87 |
+| **Total** | 156 | 44 | 26 | 86 |
 
 ## View
 
@@ -203,7 +203,7 @@ assertion and not an implementation.
 | `horizontal` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:56` | deviating | Both axes are always live and clamp independently, so a horizontal ScrollView works because its vertical axis has nothing to scroll rather than because the prop was read. |
 | `scrollEventThrottle` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:57` | deviating | The cadence is one `onScroll` per frame, the fastest React Native ever asks for; honouring a throttle means dropping events the frame already coalesced. Issue #45 owns the cadence contract. |
 | `zoomScale` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:58` | not-implemented | #69 |
-| `contentInset` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:59` | not-implemented | #69 |
+| `contentInset` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:59` | implemented | `ScrollInsetTest, TheInsetExtendsTheRangeAtWhicheverEndsItIsSetOn` |
 | `contentOffset` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:60` | implemented | `RetainedSceneScrollTest, ContentOffsetTranslatesTheChildrenOnBothAxes` |
 | `scrollIndicatorInsets` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:61` | not-implemented | #49 |
 | `snapToInterval` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:62` | not-implemented | #69 |

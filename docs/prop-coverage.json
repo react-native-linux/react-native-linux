@@ -241,7 +241,10 @@
       "reason": "The cadence is one `onScroll` per frame, the fastest React Native ever asks for; honouring a throttle means dropping events the frame already coalesced. Issue #45 owns the cadence contract."
     },
     "zoomScale": { "state": "not-implemented", "issue": "#69" },
-    "contentInset": { "state": "not-implemented", "issue": "#69" },
+    "contentInset": {
+      "state": "implemented",
+      "test": "ScrollInsetTest, TheInsetExtendsTheRangeAtWhicheverEndsItIsSetOn"
+    },
     "contentOffset": {
       "state": "implemented",
       "test": "RetainedSceneScrollTest, ContentOffsetTranslatesTheChildrenOnBothAxes"

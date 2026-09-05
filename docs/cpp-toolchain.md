@@ -3207,6 +3207,67 @@ JavaScript thread, which is a commit hook and its own issue. A ScrollView that h
 commanded has no controller entry and is not adjusted at all; at offset zero the unadjusted result is what
 `autoscrollToTopThreshold` would have produced anyway.
 
+### The inset area is content (#241)
+
+`contentInset` is the padding a `<ScrollView>` keeps *outside* its content and *inside* its scrollable range, which
+is how a translucent header or a keyboard leaves the content reachable under it. The whole of it here is that the
+range grows by the inset at each end:
+
+```text
+offset ∈ [ -inset.top , contentSize.height + inset.bottom - viewport.height ]
+```
+
+`ScrollAxisBounds` in `ScrollPhysics.h` is that range — the content, the viewport and the axis's two insets — and
+it replaced the `contentLength, viewportLength` pair every function in the file used to take, so the clamp, the
+drag, the deceleration, the settle target and the maintained offset all read one description of the range rather
+than four copies of it. `minimumScrollOffset` and `maximumScrollOffset` are its two ends, and with a zero inset
+they are `0` and `content - viewport`, which is exactly the range that file had before the prop existed.
+
+The rules that follow, each a row of the table in `ScrollTest.cpp`:
+
+- **The inset area scrolls.** An offset between `-inset.top` and zero is a legal resting place, so a wheel notch
+  delivered while the content is at the top moves it, and momentum into either inset stops dead at the inset's
+  end rather than at the content's. [core#54123](https://github.com/facebook/react-native/issues/54123) is the
+  +14 regression this is the absence of: as of 0.81 scrolling *on the inset area* did nothing, because the
+  scrollable rectangle had become the content box.
+- **`scrollToEnd` lands on the adjusted content end**, `contentSize + inset.bottom - viewport`, because it asks
+  `maximumScrollOffset` for the number and the inset is part of that number.
+  [core#57522](https://github.com/facebook/react-native/issues/57522) is `scrollToEnd` ignoring
+  `adjustedContentInset` on Fabric iOS and [core#47959](https://github.com/facebook/react-native/issues/47959) is
+  the same arithmetic overshooting on Android.
+- **Content shorter than its viewport rests inside its own leading inset**, at `-inset.top`, rather than above it:
+  the maximum is never below the minimum, which is the clamp `UIScrollView` applies to the same case.
+- **`snapToStart` names the start of the range, not the start of the content.** The inset end is the snap point on
+  that side, so a flick into the top inset settles in it; with `snapToStart` off there is no snap point there at
+  all and momentum settles where it stopped.
+- **The inset area hit-tests as content, for free.** The offset is applied once in `visitNode` — see *Pressing what
+  a scroll moved* — so a negative offset translates the children exactly as a positive one does. A press on a
+  child the inset scrolled into the viewport lands on that child, and a press in the inset margin, where no child
+  is, lands on the ScrollView. `RetainedSceneScrollTest` asserts both against the same two coordinates at the
+  content's own end, where each answers the other way round.
+
+`contentOffset` needed no code at all: upstream's `ScrollViewShadowNode::initialStateData` seeds
+`ScrollViewState::contentOffset` from the prop, and both the scene and the controller read the offset off that
+state — the scene to paint it and `acquireNode` to seed a target with it. So the first frame is already the
+offset the prop asked for, which is what [web#1273](https://github.com/necolas/react-native-web/issues/1273) is
+still open for, and `packages/core/goldens/scroll-inset.png` is the picture of it: a ScrollView with
+`contentInset={{ top: 50, bottom: 30 }}` mounted at `contentOffset={{ x: 0, y: -50 }}`, resting at the top of its
+top inset. Fifty points of bare panel above the first row is the inset; the same fixture at offset zero, which is
+what a dropped `contentOffset` would paint, has the first row against the viewport's top edge instead.
+
+`packages/core/e2e/scroll-inset.json` drives the other end through a real compositor: ten wheel notches are 400
+points, the whole `[-50, 350]` range, so the run ends at 350 — the content's own end, 320, plus the 30 points of
+inset below it — and then clicks twice, once on the last row the inset scrolled up into the viewport and once in
+the inset margin under it, which is the ScrollView. Every number there is a property of the notch count and the
+insets rather than of the machine, and the fixture's `decelerationRate` is the fast curve for the same reason
+`scroll-maintain-position.js` uses it: 400 points on the normal curve takes longer to come to rest than the run
+lasts.
+
+**What this does not do.** `contentInsetAdjustmentBehavior` is still `Never` and nothing computes an automatic
+inset, `automaticallyAdjustContentInsets` and `automaticallyAdjustKeyboardInsets` are parsed and ignored, and
+`ScrollEvent::contentInset` is still emitted as zero — the range honours the prop, the event payload does not yet
+report it. `scrollIndicatorInsets` remains part of the scroll-indicator deferral below.
+
 ### Pressing what a scroll moved (#98)
 
 The cause behind [core#51763](https://github.com/facebook/react-native/issues/51763) and
@@ -3348,9 +3409,10 @@ test for those.
 - **Scroll indicators.** `showsVerticalScrollIndicator`, `scrollIndicatorInsets`, `indicatorStyle` and
   `persistentScrollbar` draw nothing. A scrollbar is a painted overlay with its own fade timer and its own hit
   region, which is a component, not a prop.
-- **`contentInset`, `contentInsetAdjustmentBehavior`, `scrollAwayPaddingTop`, `centerContent`.** The viewport is
-  the ScrollView's frame and the content is `contentBoundingRect.size`; no inset is applied and the offset range is
-  `[0, content - viewport]` on each axis. `ScrollEvent::contentInset` is emitted as zero.
+- **`contentInsetAdjustmentBehavior`, `automaticallyAdjustContentInsets`, `scrollAwayPaddingTop`,
+  `centerContent`.** The viewport is the ScrollView's frame and the content is `contentBoundingRect.size`;
+  `contentInset` extends the range on each axis — see *The inset area is content* — but no inset is ever computed
+  for the application, and `ScrollEvent::contentInset` is emitted as zero.
 - **`maintainVisibleContentPosition` is honoured on the frame that sees the commit, not inside it.** See *Holding
   the visible content still*: the adjustment rides that frame's beat, so a paint taken between the prepend's mount
   and that beat would still show one displaced frame. Moving it into `LinuxMountingManager::executeMount` is a
