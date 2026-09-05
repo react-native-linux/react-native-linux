@@ -122,6 +122,20 @@ const fixtures: readonly GoldenFixture[] = [
     renderArguments: ["one{Enter}two{Enter}three"],
     renderFlag: "--type",
   },
+  // Issue #255: left/centre/right `textAlign`, bold, letter-spaced and italic, and a wrapping multiline placeholder.
+  {
+    bundleFileName: "text-input-placeholder.js",
+    goldenFileName: "text-input-placeholder.png",
+    renderArguments: [""],
+    renderFlag: "--type",
+  },
+  // Issue #255's other half: one character typed, the placeholder gone, the caret after the glyph that replaced it.
+  {
+    bundleFileName: "text-input-placeholder.js",
+    goldenFileName: "text-input-placeholder-typed.png",
+    renderArguments: ["H"],
+    renderFlag: "--type",
+  },
   { bundleFileName: "gradient.js", goldenFileName: "gradient.png", renderArguments: [], renderFlag: "--golden" },
   // Issue #67: outset, inset, layered, per-corner, under an ancestor clip, rotated, the legacy quartet, and spread.
   { bundleFileName: "shadow.js", goldenFileName: "shadow.png", renderArguments: [], renderFlag: "--golden" },

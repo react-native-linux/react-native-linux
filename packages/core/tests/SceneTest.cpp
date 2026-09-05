@@ -1538,6 +1538,114 @@ TEST(RetainedSceneTextInputTest, AnEmptyFieldWithNoPlaceholderIsStillPainted) {
     EXPECT_TRUE(snapshot[0].editor.value().isPlaceholder);
 }
 
+// #255: the placeholder is a second paragraph painted with the field's own style, not a stand-in with one of its
+// own — every attribute `getEffectiveTextAttributes` resolves from the field's props reaches the placeholder
+// fragment unchanged, and `placeholderTextColor` is the one substitution `readEditorContent` makes.
+TEST(RetainedSceneTextInputTest, ThePlaceholderIsPaintedWithTheFieldsOwnFontWeightLetterSpacingAndAlignment) {
+    const std::shared_ptr<react_native_linux::TextInputProps> styled = textInputProps();
+
+    styled->textAttributes.fontFamily = "Georgia";
+    styled->textAttributes.fontWeight = facebook::react::FontWeight::Bold;
+    styled->textAttributes.letterSpacing = 2.5F;
+    styled->textAttributes.alignment = facebook::react::TextAlignment::Center;
+    styled->textAttributes.foregroundColor = blue();
+    styled->placeholder = "Type here";
+    styled->placeholderTextColor = red();
+
+    const SceneSnapshot snapshot = snapshotOfFieldWith({}, styled);
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    ASSERT_TRUE(snapshot[0].text.has_value());
+
+    const auto& fragments = snapshot[0].text.value().attributedString.getFragments();
+
+    ASSERT_EQ(fragments.size(), 1U);
+
+    const facebook::react::TextAttributes& placeholderAttributes = fragments[0].textAttributes;
+
+    EXPECT_EQ(placeholderAttributes.fontFamily, "Georgia");
+    EXPECT_EQ(placeholderAttributes.fontWeight, facebook::react::FontWeight::Bold);
+    EXPECT_FLOAT_EQ(placeholderAttributes.letterSpacing, 2.5F);
+    EXPECT_EQ(placeholderAttributes.alignment, facebook::react::TextAlignment::Center);
+
+    // The one attribute that is not the field's own: the placeholder is drawn in its hint colour, not the
+    // colour the value would be.
+    EXPECT_NE(placeholderAttributes.foregroundColor, styled->textAttributes.foregroundColor);
+    EXPECT_EQ(facebook::react::redFromColor(placeholderAttributes.foregroundColor),
+             facebook::react::redFromColor(red()));
+    EXPECT_EQ(facebook::react::greenFromColor(placeholderAttributes.foregroundColor),
+             facebook::react::greenFromColor(red()));
+    EXPECT_EQ(facebook::react::blueFromColor(placeholderAttributes.foregroundColor),
+             facebook::react::blueFromColor(red()));
+}
+
+// The alignment a wrapped placeholder would wrap with is the same `ParagraphAttributes` object the value wraps
+// with — never a copy — so a multiline field's `maximumNumberOfLines` and break strategy apply identically to
+// the hint and to whatever the user goes on to type.
+TEST(RetainedSceneTextInputTest, TheMultilinePlaceholderSharesTheFieldsParagraphAttributes) {
+    const std::shared_ptr<react_native_linux::TextInputProps> multiline = textInputProps();
+
+    multiline->multiline = true;
+    multiline->placeholder = "Wraps across several lines of a narrow field";
+    multiline->paragraphAttributes.maximumNumberOfLines = 3;
+
+    const SceneSnapshot snapshot = snapshotOfFieldWith({}, multiline);
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    ASSERT_TRUE(snapshot[0].text.has_value());
+    EXPECT_EQ(snapshot[0].text.value().paragraphAttributes.maximumNumberOfLines, 3);
+    EXPECT_TRUE(snapshot[0].editor.value().isMultiline);
+    EXPECT_TRUE(snapshot[0].editor.value().isPlaceholder);
+}
+
+// #255's caret invariant, at the level this file can prove it: the caret an untouched field reports is index 0,
+// and the paragraph it is measured against — `measureEditorGeometry` runs on `node.text`, not on a second string
+// — is the placeholder itself. Index 0 of that paragraph *is* the placeholder's first glyph by definition, so
+// the two can never disagree; `--type`'s `text-input-placeholder.png` is the pixel proof of the same fact.
+TEST(RetainedSceneTextInputTest, AnUntouchedFieldsCaretIndexesThePlaceholdersFirstGlyph) {
+    const std::shared_ptr<react_native_linux::TextInputProps> withPlaceholder = textInputProps();
+
+    withPlaceholder->placeholder = "Type here";
+
+    const SceneSnapshot snapshot = snapshotOfFieldWith({}, withPlaceholder);
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    EXPECT_EQ(snapshot[0].text.value().attributedString.getString(), "Type here");
+    EXPECT_EQ(snapshot[0].editor.value().state.caretUtf16, 0U);
+}
+
+// The placeholder is a hint, not a name: it vanishes the instant the buffer holds one grapheme and returns the
+// instant the last one is deleted, because `isPlaceholder` is a pure function of the current value and nothing
+// remembers having shown it before.
+TEST(RetainedSceneTextInputTest, ThePlaceholderDisappearsOnTheFirstCharacterAndReturnsOnTheLastDeletion) {
+    const std::shared_ptr<react_native_linux::TextInputProps> withPlaceholder = textInputProps();
+
+    withPlaceholder->placeholder = "Type here";
+
+    RetainedScene scene;
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, makeTextInput(2, textInputFrame(), {}, withPlaceholder));
+
+    ASSERT_TRUE(scene.snapshot()[0].editor.value().isPlaceholder);
+
+    scene.updateNode(makeTextInput(2, textInputFrame(), "h", withPlaceholder));
+
+    SceneSnapshot afterFirstCharacter = scene.snapshot();
+
+    ASSERT_EQ(afterFirstCharacter.size(), 1U);
+    EXPECT_FALSE(afterFirstCharacter[0].editor.value().isPlaceholder);
+    EXPECT_EQ(afterFirstCharacter[0].text.value().attributedString.getString(), "h");
+
+    scene.updateNode(makeTextInput(2, textInputFrame(), {}, withPlaceholder));
+
+    SceneSnapshot afterLastDeletion = scene.snapshot();
+
+    ASSERT_EQ(afterLastDeletion.size(), 1U);
+    EXPECT_TRUE(afterLastDeletion[0].editor.value().isPlaceholder);
+    EXPECT_EQ(afterLastDeletion[0].text.value().attributedString.getString(), "Type here");
+}
+
 TEST(RetainedSceneTextInputTest, CursorAndSelectionColoursOverrideTheAccent) {
     const std::shared_ptr<react_native_linux::TextInputProps> coloured = textInputProps();
 
