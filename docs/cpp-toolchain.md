@@ -294,6 +294,74 @@ and asserts the window keeps animating from the fallback alone is a follow-up, n
 itself is unit-tested exhaustively (`packages/core/tests/FrameClockTest.cpp`); the withheld-callback path is
 exercised today only by reasoning about `WaylandWindow` and `SkiaVulkanRenderer`, not by a running compositor.
 
+### Desktop lifecycle contract (#218)
+
+macOS's lesson, made positive: `KeyEvent.h`, `MouseEvent.h` and secure text entry shipped on react-native-macos
+with zero tests and a focus-group capability that silently disappeared between fork generations, because CI there
+only proves `build-macos` exits 0. The contract this section names — `xdg_toplevel.configure`'s
+activated/maximized/fullscreen/resizing bits, `wl_surface` enter/leave, keyboard focus enter/leave, and
+close-request teardown — is the Wayland equivalent, and every desktop-only behaviour below lands with its
+assertion in the same change that adds it, which is the rule macOS did not follow.
+
+**The decode is pure, and that is what the coverage gate scores.** `ToplevelState`
+(`packages/core/src/ToplevelState.h`) is a four-bit struct — `activated`, `maximized`, `fullscreen`, `resizing` —
+and `decodeToplevelStates` maps the raw `uint32_t` values `xdg_toplevel.configure`'s `wl_array` carries onto it.
+The function takes a pointer and a count rather than a `wl_array`, and the four numeric values it switches on
+(`MAXIMIZED = 1`, `FULLSCREEN = 2`, `RESIZING = 3`, `ACTIVATED = 4`) are xdg-shell's own frozen wire values rather
+than the generated enum, because the generated header only exists under `RNL_ENABLE_WINDOW` and this file has to
+compile under `RNL_BUILD_TESTS`, which does not probe for Wayland at all. That is what puts the decode itself —
+the part of this contract that can be arithmetically wrong — under the 100% line-and-branch gate
+(`packages/core/tests/ToplevelStateTest.cpp`) the same way `FrameClock` and `DimensionsSource` are, without
+pulling libwayland into the test configure.
+
+**`WaylandWindow` is the seam that decode feeds.** `onToplevelConfigure` decodes every `configure`'s state array
+and coalesces a burst of them into one pending change, mirroring `DimensionsSource::takeChangeIfAny`:
+`toplevelState()` reads the current bits and `takeStateChange()` reports whether they moved since the last call.
+The same class now also counts `wl_surface.enter`/`.leave` (`outputEnterCount`/`outputLeaveCount`) and forwards
+`WaylandSeat::hasKeyboardFocus`, which `wl_keyboard.enter`/`.leave` set directly.
+
+**None of the three reaches JavaScript yet, and that is a scope decision, not an oversight.** Resize already
+publishes through `DimensionsSource` and `useWindowDimensions`, because that module and that event already
+existed. Activation, maximize/fullscreen and window-level keyboard focus have no comparable landing spot: this
+platform has not implemented an `AppState`-equivalent native module, only the generated
+`FBReactNativeSpec`/`NativeAppState` TurboModule stub upstream ships, and building that module — deciding what
+`activated` maps to, wiring a TurboModule, adding the JS event — is a feature in its own right and out of #218's
+scope, which is the event *contract at the window*, not a new module. `--window-debug` on `rnl_window` prints
+every transition this section describes to stdout, which is the manual, real-compositor proof until that module
+exists; see *Window host*'s flag list above.
+
+**Window focus does not touch node focus, by construction rather than by a guard.** `FocusModel` owns which node
+is focused and has no window-level concept at all — nothing calls it from `WaylandSeat`'s keyboard enter/leave
+handlers, so a window losing and regaining keyboard focus leaves `focusedTag_` exactly where it was. That is the
+whole of how "deactivating the window must not lose the focused node's state, and reactivating must restore it"
+holds today: there is nothing to restore, because nothing was ever lost. See the docblock on `WaylandSeat` for
+the same statement next to the code it describes.
+
+**What is proven where, and why not more of it is e2e.** cage is a kiosk compositor: one window, always
+fullscreened, always focused. It cannot deactivate the window it owns (there is no second window to focus
+instead), cannot resize or maximize it (the client is fullscreened to the output, and neither the compositor nor
+`rnl_inject`'s script vocabulary exposes an output-mode change), and the e2e driver never sends
+`xdg_toplevel.close` (`scripts/e2e.ts` lets `rnl_window` exit on its own `--frames` budget). So:
+
+- **Initial `configure` → initial commit** is proven by every existing e2e scenario, structurally: `WaylandWindow`'s
+  constructor blocks on `wl_display_roundtrip` until `configured_` is true before `rnl_window` can load a bundle
+  at all, so a scenario's `ready` line printing is itself the assertion.
+- **Activate/deactivate, maximize/fullscreen, resize, `wl_surface` enter/leave** cannot be driven by cage as
+  built, so each is covered by `ToplevelStateTest.cpp`'s decode coverage plus `--window-debug`'s manual proof
+  instead of an e2e trace, per the exception this issue's brief carves out for exactly this situation.
+- **Keyboard focus enter** happens implicitly the moment `rnl_inject` attaches its virtual keyboard — wlroots
+  sends `wl_keyboard.enter` to the focused client when the resource is created (see *The injector* in *E2E driver
+  (#7)*) — so every scenario that types or presses a key, `text-input.json` included, already exercises it; there
+  is no `.leave` under cage for the same single-window reason as deactivation.
+- **Close-request teardown.** `xdg_toplevel.close` sets `WaylandWindow::closed_`, and `WindowMain`'s loop exits
+  through the same `~WaylandWindow`/`~WindowSession` path a normal exit takes — stop the surface, drain the
+  JavaScript thread, then destroy the Fabric host and the instance. Neither class is part of the Hermes-free
+  `RNL_BUILD_TESTS` configure (both need libwayland or Skia), so there is no unit test exercising that destructor
+  order under ASan/TSan today; it is proven only by the sanitizer jobs running the ordinary unit suite, which does
+  not touch this path, and is not proven under a real close event anywhere yet. That gap is named on issue #218
+  rather than closed by this change, since exercising it needs either a fake `xdg_toplevel` the window build can
+  substitute for the real one or an e2e step that sends a close request — both bigger than this issue's remit.
+
 ### The retained scene, and the threads it crosses
 
 `rnl_window --fabric <bundle>` runs the whole stack in one process: `WindowSession` constructs a `ReactHost`

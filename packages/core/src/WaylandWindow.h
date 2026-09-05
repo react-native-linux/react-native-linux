@@ -2,6 +2,7 @@
 
 #include "FrameTiming.h"
 #include "InputPipeline.h"
+#include "ToplevelState.h"
 #include "WaylandSeat.h"
 
 #include <chrono>
@@ -20,6 +21,7 @@ struct wl_registry;
 struct wl_registry_listener;
 struct wl_seat;
 struct wl_surface;
+struct wl_surface_listener;
 struct wp_presentation;
 struct wp_presentation_feedback;
 struct wp_presentation_feedback_listener;
@@ -66,6 +68,15 @@ struct WindowSize {
  * composition events join that queue; without it, `textInput` is null and typing is whatever the keyboard sends.
  * Text composition is per-seat, so the text input is created once the seat exists, not per surface.
  *
+ * The desktop lifecycle contract (#218) is four more seams beyond resize, each decoded and coalesced the same
+ * way `DimensionsSource` coalesces a burst of configures into one change: `toplevelState`/`takeStateChange` for
+ * `xdg_toplevel.configure`'s activated/maximized/fullscreen/resizing bits, decoded by the pure, unit-tested
+ * `decodeToplevelStates`; `outputEnterCount`/`outputLeaveCount` for `wl_surface.enter`/`.leave`; and
+ * `hasKeyboardFocus`, forwarded from `WaylandSeat`, for `wl_keyboard.enter`/`.leave`. None of the three feeds a
+ * JS-visible event yet — no `AppState`-equivalent module exists on this platform to carry activation there, and
+ * inventing one is out of this issue's scope — so today they are observable only at this seam and in a caller
+ * that polls it, exactly as `takePendingResize` is. See *Window host* in docs/cpp-toolchain.md.
+ *
  * Threading contract: every member runs on the thread that constructed the window, which is the thread that owns
  * the process run loop. The Wayland connection is never touched from another thread. The Vulkan WSI dispatches the
  * same connection on its own private event queue, which is why this class uses the prepare-read/read-events
@@ -85,6 +96,18 @@ public:
     WindowSize size() const noexcept;
     bool isClosed() const noexcept;
     bool takePendingResize() noexcept;
+
+    /** The activated/maximized/fullscreen/resizing bits from the most recent `xdg_toplevel.configure`. */
+    ToplevelState toplevelState() const noexcept;
+    /** Whether `toplevelState` changed since the last call. Coalesces a burst of configures into one change. */
+    bool takeStateChange() noexcept;
+
+    /** How many `wl_surface.enter`/`.leave` events this surface has received, since construction. */
+    uint32_t outputEnterCount() const noexcept;
+    uint32_t outputLeaveCount() const noexcept;
+
+    /** `wl_keyboard.enter` most recently reached this surface and no `.leave` has followed it yet. */
+    bool hasKeyboardFocus() const noexcept;
 
     void requestFrameCallback();
 
@@ -116,7 +139,7 @@ public:
 private:
     void bindGlobal(wl_registry* registry, uint32_t name, const char* interfaceName, uint32_t version);
     void dispatchWithTimeout(std::chrono::milliseconds timeout);
-    void onToplevelConfigure(int32_t width, int32_t height);
+    void onToplevelConfigure(int32_t width, int32_t height, const wl_array* states);
     void destroyFrameCallback() noexcept;
 
     static void handleRegistryGlobal(void* data, wl_registry* registry, uint32_t name, const char* interfaceName,
@@ -124,6 +147,8 @@ private:
     static void handleRegistryGlobalRemove(void* data, wl_registry* registry, uint32_t name);
     static void handleWmBasePing(void* data, xdg_wm_base* wmBase, uint32_t serial);
     static void handleSurfaceConfigure(void* data, xdg_surface* xdgSurface, uint32_t serial);
+    static void handleSurfaceEnter(void* data, wl_surface* surface, wl_output* output);
+    static void handleSurfaceLeave(void* data, wl_surface* surface, wl_output* output);
     static void handleToplevelConfigure(void* data, xdg_toplevel* toplevel, int32_t width, int32_t height,
                                         wl_array* states);
     static void handleToplevelClose(void* data, xdg_toplevel* toplevel);
@@ -140,6 +165,7 @@ private:
     static void handleFeedbackDiscarded(void* data, struct wp_presentation_feedback* feedback);
 
     static const wl_registry_listener kRegistryListener;
+    static const wl_surface_listener kSurfaceListener;
     static const xdg_wm_base_listener kWmBaseListener;
     static const xdg_surface_listener kXdgSurfaceListener;
     static const xdg_toplevel_listener kToplevelListener;
@@ -160,10 +186,14 @@ private:
     FrameTiming frameTiming_;
     std::vector<FrameTiming::Frame> presentedFrames_;
     WindowSize size_;
+    ToplevelState toplevelState_;
     bool configured_{false};
     bool frameCallbackFired_{false};
     bool pendingResize_{false};
+    bool pendingStateChange_{false};
     bool closed_{false};
+    uint32_t outputEnterCount_{0};
+    uint32_t outputLeaveCount_{0};
 };
 
 } // namespace react_native_linux

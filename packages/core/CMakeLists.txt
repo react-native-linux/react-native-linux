@@ -1031,6 +1031,7 @@ elseif(RNL_ENABLE_WINDOW)
         src/SkiaVulkanRenderer.cpp
         src/TextInputClient.cpp
         src/TextInputV3State.cpp
+        src/ToplevelState.cpp
         src/WaylandSeat.cpp
         src/WaylandWindow.cpp
         src/WindowMain.cpp

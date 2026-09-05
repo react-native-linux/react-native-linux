@@ -43,6 +43,7 @@ constexpr std::string_view kScreenshotFlag = "--screenshot";
 constexpr std::string_view kFramesFlag = "--frames";
 constexpr std::string_view kFrameLogFlag = "--frame-log";
 constexpr std::string_view kImeDebugFlag = "--ime-debug";
+constexpr std::string_view kWindowDebugFlag = "--window-debug";
 constexpr std::string_view kImeDebugSurroundingText = "react-native-linux";
 constexpr int32_t kImeDebugCursorX = 64;
 constexpr int32_t kImeDebugCursorY = 64;
@@ -57,6 +58,14 @@ constexpr int32_t kImeDebugCursorHeight = 24;
  * `--frame-log <path>` writes the `wp_presentation` measurements as JSON Lines: one record per presented frame
  * and a final summary line carrying the frame count, the discarded count and the p50, p95 and maximum frame
  * times. It is what the e2e driver's perf gate reads. See *Frame timing* in docs/cpp-toolchain.md.
+ *
+ * `--window-debug` is issue #218's manual proof, the same role `--ime-debug` plays for text composition: none of
+ * the desktop lifecycle contract's activated/maximized/fullscreen/resizing bits, `wl_surface` enter/leave, or
+ * keyboard focus reach JavaScript today — there is no `AppState`-equivalent module to carry them there, and
+ * building one is out of #218's scope — so this prints every transition `WaylandWindow`/`WaylandSeat` decode to
+ * stdout, which is how a developer under a real compositor (Hyprland, for instance, where activate/deactivate,
+ * maximize and multi-monitor `wl_surface.enter` are all reachable) confirms the decode is correct end to end. See
+ * *Window host* in docs/cpp-toolchain.md.
  */
 struct WindowArguments {
     std::optional<std::string> bundlePath;
@@ -64,6 +73,7 @@ struct WindowArguments {
     std::optional<std::string> frameLogPath;
     uint32_t frameCount{kDefaultScreenshotFrames};
     bool imeDebug{false};
+    bool windowDebug{false};
     std::string error;
 };
 
@@ -151,6 +161,12 @@ WindowArguments parseArguments(std::span<char*> arguments) {
             continue;
         }
 
+        if (flag == kWindowDebugFlag) {
+            parsed.windowDebug = true;
+
+            continue;
+        }
+
         if (flag != kFabricFlag && flag != kScreenshotFlag && flag != kFramesFlag && flag != kFrameLogFlag) {
             parsed.error = "unknown argument " + std::string(flag);
 
@@ -186,6 +202,31 @@ WindowArguments parseArguments(std::span<char*> arguments) {
     }
 
     return parsed;
+}
+
+void printWindowDebugTransitions(react_native_linux::WaylandWindow& window, bool& lastKeyboardFocus,
+                                 uint32_t& lastOutputEnterCount, uint32_t& lastOutputLeaveCount) {
+    if (window.takeStateChange()) {
+        const react_native_linux::ToplevelState state = window.toplevelState();
+        std::cout << "[rnl-window] state activated=" << state.activated << " maximized=" << state.maximized
+                  << " fullscreen=" << state.fullscreen << " resizing=" << state.resizing << std::endl;
+    }
+
+    const bool keyboardFocus = window.hasKeyboardFocus();
+
+    if (keyboardFocus != lastKeyboardFocus) {
+        std::cout << "[rnl-window] keyboard " << (keyboardFocus ? "enter" : "leave") << std::endl;
+        lastKeyboardFocus = keyboardFocus;
+    }
+
+    const uint32_t outputEnterCount = window.outputEnterCount();
+    const uint32_t outputLeaveCount = window.outputLeaveCount();
+
+    if (outputEnterCount != lastOutputEnterCount || outputLeaveCount != lastOutputLeaveCount) {
+        std::cout << "[rnl-window] surface enter=" << outputEnterCount << " leave=" << outputLeaveCount << std::endl;
+        lastOutputEnterCount = outputEnterCount;
+        lastOutputLeaveCount = outputLeaveCount;
+    }
 }
 
 void paintPlaceholderFrame(SkCanvas& canvas, react_native_linux::WindowSize size,
@@ -240,6 +281,9 @@ int main(int argc, char** argv) {
         std::optional<std::ofstream> frameLog;
         uint32_t presentedFrames = 0;
         bool hasCaptured = false;
+        bool lastKeyboardFocus = false;
+        uint32_t lastOutputEnterCount = 0;
+        uint32_t lastOutputLeaveCount = 0;
 
         if (parsedArguments.frameLogPath.has_value()) {
             frameLog.emplace(parsedArguments.frameLogPath.value());
@@ -258,6 +302,10 @@ int main(int argc, char** argv) {
                 if (session.has_value()) {
                     session->resize(window.size());
                 }
+            }
+
+            if (parsedArguments.windowDebug) {
+                printWindowDebugTransitions(window, lastKeyboardFocus, lastOutputEnterCount, lastOutputLeaveCount);
             }
 
             // The capture is armed before the frame that carries it, because the readback happens inside
@@ -291,9 +339,9 @@ int main(int argc, char** argv) {
                 // work, so an occluded window with nothing left to animate stops spinning the GPU every fallback
                 // tick instead of chasing a callback the compositor is never going to send. See *Frame clock* in
                 // docs/cpp-toolchain.md.
-                const react_native_linux::FrameClock::Source frameSource = window.hasFrameCallbackFired()
-                    ? react_native_linux::FrameClock::Source::Callback
-                    : react_native_linux::FrameClock::Source::Timer;
+                const react_native_linux::FrameClock::Source frameSource =
+                    window.hasFrameCallbackFired() ? react_native_linux::FrameClock::Source::Callback
+                                                   : react_native_linux::FrameClock::Source::Timer;
                 const std::chrono::steady_clock::time_point frameTime = std::chrono::steady_clock::now();
                 const react_native_linux::FrameClock::Tick tick = session->recordFrameTick(frameSource, frameTime);
 
@@ -309,12 +357,11 @@ int main(int argc, char** argv) {
                     // cannot satisfy.
                     const react_native_linux::SceneFrame frame = session->takeFrame();
 
-                    presented = renderer.drawFrame(
-                        window, frame.damage,
-                        [&frame](SkCanvas& canvas, react_native_linux::WindowSize /*size*/,
-                                const react_native_linux::SceneDamage& imageDamage) {
-                            react_native_linux::paintScene(canvas, frame.scene, imageDamage);
-                        });
+                    presented = renderer.drawFrame(window, frame.damage,
+                                                   [&frame](SkCanvas& canvas, react_native_linux::WindowSize /*size*/,
+                                                            const react_native_linux::SceneDamage& imageDamage) {
+                                                       react_native_linux::paintScene(canvas, frame.scene, imageDamage);
+                                                   });
                 }
             } else {
                 presented = renderer.drawFrame(window, {}, paintPlaceholderFrame);

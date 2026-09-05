@@ -36,6 +36,11 @@ const wl_registry_listener WaylandWindow::kRegistryListener{
     .global_remove = WaylandWindow::handleRegistryGlobalRemove,
 };
 
+const wl_surface_listener WaylandWindow::kSurfaceListener{
+    .enter = WaylandWindow::handleSurfaceEnter,
+    .leave = WaylandWindow::handleSurfaceLeave,
+};
+
 const xdg_wm_base_listener WaylandWindow::kWmBaseListener{
     .ping = WaylandWindow::handleWmBasePing,
 };
@@ -88,6 +93,7 @@ WaylandWindow::WaylandWindow(const std::string& title, WindowSize initialSize) :
     xdg_wm_base_add_listener(wmBase_, &kWmBaseListener, this);
 
     surface_ = wl_compositor_create_surface(compositor_);
+    wl_surface_add_listener(surface_, &kSurfaceListener, this);
     xdgSurface_ = xdg_wm_base_get_xdg_surface(wmBase_, surface_);
     xdg_surface_add_listener(xdgSurface_, &kXdgSurfaceListener, this);
 
@@ -167,6 +173,21 @@ bool WaylandWindow::takePendingResize() noexcept {
     return resized;
 }
 
+ToplevelState WaylandWindow::toplevelState() const noexcept { return toplevelState_; }
+
+bool WaylandWindow::takeStateChange() noexcept {
+    const bool changed = pendingStateChange_;
+    pendingStateChange_ = false;
+
+    return changed;
+}
+
+uint32_t WaylandWindow::outputEnterCount() const noexcept { return outputEnterCount_; }
+
+uint32_t WaylandWindow::outputLeaveCount() const noexcept { return outputLeaveCount_; }
+
+bool WaylandWindow::hasKeyboardFocus() const noexcept { return seat_ != nullptr && seat_->hasKeyboardFocus(); }
+
 void WaylandWindow::requestFrameCallback() {
     destroyFrameCallback();
 
@@ -222,9 +243,7 @@ std::vector<InputEvent> WaylandWindow::takeInputEvents() {
     return seat_->takeEvents();
 }
 
-TextInputClient* WaylandWindow::textInput() const noexcept {
-    return seat_ == nullptr ? nullptr : seat_->textInput();
-}
+TextInputClient* WaylandWindow::textInput() const noexcept { return seat_ == nullptr ? nullptr : seat_->textInput(); }
 
 void WaylandWindow::bindGlobal(wl_registry* registry, uint32_t name, const char* interfaceName, uint32_t version) {
     if (std::strcmp(interfaceName, wl_compositor_interface.name) == 0) {
@@ -284,7 +303,15 @@ void WaylandWindow::dispatchWithTimeout(std::chrono::milliseconds timeout) {
     }
 }
 
-void WaylandWindow::onToplevelConfigure(int32_t width, int32_t height) {
+void WaylandWindow::onToplevelConfigure(int32_t width, int32_t height, const wl_array* states) {
+    const ToplevelState decoded =
+        decodeToplevelStates(static_cast<const uint32_t*>(states->data), states->size / sizeof(uint32_t));
+
+    if (decoded != toplevelState_) {
+        toplevelState_ = decoded;
+        pendingStateChange_ = true;
+    }
+
     if (width <= 0 || height <= 0) {
         return;
     }
@@ -320,9 +347,17 @@ void WaylandWindow::handleSurfaceConfigure(void* data, xdg_surface* xdgSurface, 
     static_cast<WaylandWindow*>(data)->configured_ = true;
 }
 
+void WaylandWindow::handleSurfaceEnter(void* data, wl_surface* /*surface*/, wl_output* /*output*/) {
+    ++static_cast<WaylandWindow*>(data)->outputEnterCount_;
+}
+
+void WaylandWindow::handleSurfaceLeave(void* data, wl_surface* /*surface*/, wl_output* /*output*/) {
+    ++static_cast<WaylandWindow*>(data)->outputLeaveCount_;
+}
+
 void WaylandWindow::handleToplevelConfigure(void* data, xdg_toplevel* /*toplevel*/, int32_t width, int32_t height,
-                                            wl_array* /*states*/) {
-    static_cast<WaylandWindow*>(data)->onToplevelConfigure(width, height);
+                                            wl_array* states) {
+    static_cast<WaylandWindow*>(data)->onToplevelConfigure(width, height, states);
 }
 
 void WaylandWindow::handleToplevelClose(void* data, xdg_toplevel* /*toplevel*/) {
