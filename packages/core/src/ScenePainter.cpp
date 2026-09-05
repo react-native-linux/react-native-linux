@@ -407,6 +407,29 @@ void paintText(SkCanvas& canvas, const SceneTextContent& text, float layoutWidth
     paragraph->paint(&canvas, text.frame.origin.x, text.frame.origin.y);
 }
 
+/**
+ * A `<Paragraph>`, clipped to its own frame when `ellipsizeMode` is `clip`.
+ *
+ * The line limit already drops the lines that do not fit, so the clip only ever cuts one thing: a token with no
+ * break opportunity in it, which SkParagraph lays past the end of the line because there is nowhere to break it.
+ * `clip` is the mode that says to cut that mid-glyph rather than to ellipsize it, which is what a null
+ * `TextUtils.TruncateAt` does on Android. Every other mode draws unclipped, because a line box with a tall
+ * ascender legitimately overflows its frame — see *Vertical metrics (#110)* in docs/cpp-toolchain.md. The
+ * `<TextInput>` path does not come through here: `paintEditor` clips to the content box for its own reason, and
+ * it clips before it translates by the field's scroll offset.
+ */
+void paintParagraph(SkCanvas& canvas, const SceneTextContent& text) {
+    const bool clipsToFrame = text.paragraphAttributes.maximumNumberOfLines > 0 &&
+                              text.paragraphAttributes.ellipsizeMode == facebook::react::EllipsizeMode::Clip;
+    const SkAutoCanvasRestore restore(&canvas, clipsToFrame);
+
+    if (clipsToFrame) {
+        canvas.clipRect(toSkRect(text.frame), false);
+    }
+
+    paintText(canvas, text, static_cast<float>(text.frame.size.width));
+}
+
 void fillRect(SkCanvas& canvas, const facebook::react::Rect& rect, uint32_t colorArgb) {
     SkPaint paint;
 
@@ -655,7 +678,7 @@ void paintPrimitive(SkCanvas& canvas, const ScenePrimitive& primitive) {
     if (primitive.text.has_value() && primitive.editor.has_value()) {
         paintEditor(canvas, primitive.text.value(), primitive.editor.value());
     } else if (primitive.text.has_value()) {
-        paintText(canvas, primitive.text.value(), static_cast<float>(primitive.text.value().frame.size.width));
+        paintParagraph(canvas, primitive.text.value());
     }
 
     // Last, so the ring is never covered by the node's own content.

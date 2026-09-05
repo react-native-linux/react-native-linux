@@ -118,10 +118,7 @@
     "role": { "state": "not-implemented", "issue": "#61" },
     "textEffects": { "state": "not-implemented", "issue": "#69" },
     "maximumNumberOfLines": { "state": "implemented", "test": "text.png" },
-    "ellipsizeMode": {
-      "state": "deviating",
-      "reason": "Only `clip` versus not-`clip` is honoured: SkParagraph truncates at the tail only, so `head` and `middle` are drawn as `tail`."
-    },
+    "ellipsizeMode": { "state": "implemented", "test": "ellipsize.png" },
     "textBreakStrategy": {
       "state": "deviating",
       "reason": "Ignored; SkParagraph's own line breaking is used. See *Text*, Fidelity limits."

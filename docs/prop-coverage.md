@@ -58,13 +58,13 @@ assertion and not an implementation.
 | Component | Props | Implemented | Deviating | Not implemented |
 | --- | --- | --- | --- | --- |
 | View | 35 | 14 | 5 | 16 |
-| Text | 45 | 19 | 7 | 19 |
+| Text | 45 | 20 | 6 | 19 |
 | Image | 14 | 4 | 6 | 4 |
 | ScrollView | 39 | 5 | 2 | 32 |
 | TextInput | 23 | 12 | 0 | 11 |
 | Switch | 8 | 5 | 3 | 0 |
 | ActivityIndicator | 4 | 4 | 0 | 0 |
-| **Total** | 168 | 63 | 23 | 82 |
+| **Total** | 168 | 64 | 22 | 82 |
 
 ## View
 
@@ -146,7 +146,7 @@ assertion and not an implementation.
 | `role` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:95` | not-implemented | #61 |
 | `textEffects` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:98` | not-implemented | #69 |
 | `maximumNumberOfLines` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/ParagraphAttributes.h:36` | implemented | `text.png` |
-| `ellipsizeMode` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/ParagraphAttributes.h:42` | deviating | Only `clip` versus not-`clip` is honoured: SkParagraph truncates at the tail only, so `head` and `middle` are drawn as `tail`. |
+| `ellipsizeMode` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/ParagraphAttributes.h:42` | implemented | `ellipsize.png` |
 | `textBreakStrategy` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/ParagraphAttributes.h:47` | deviating | Ignored; SkParagraph's own line breaking is used. See *Text*, Fidelity limits. |
 | `adjustsFontSizeToFit` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/ParagraphAttributes.h:52` | deviating | Ignored; a paragraph is never shrunk to fit its constraints. See *Text*, Fidelity limits. |
 | `includeFontPadding` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/ParagraphAttributes.h:58` | not-implemented | #69 |

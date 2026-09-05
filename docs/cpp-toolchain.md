@@ -2502,6 +2502,73 @@ Three properties of that line, each deliberate:
 The CSS generic families — `serif`, `sans-serif`, `monospace`, `cursive`, `fantasy` — are exempt, because
 resolving `monospace` to a real monospace face is the point of asking for it rather than a failure to find it.
 
+### Truncation that is not at the tail (#251)
+
+`ellipsizeMode` has four values and SkParagraph implements one of them. `ParagraphStyle::setEllipsis` appends its
+string to the last line that fits and nowhere else, which is `tail`. iOS expresses the other two as
+`NSLineBreakByTruncatingHead` and `NSLineBreakByTruncatingMiddle` on the paragraph style, Android as
+`TextUtils.TruncateAt.START` and `MIDDLE`, and react-native-web as nothing at all — necolas/react-native-web#1336
+is `ellipsizeMode` not working on web, because CSS `text-overflow` can only say `ellipsis` at the end. Ours is
+neither a paragraph-style flag nor a giving-up: `head` and `middle` are computed, and `clip` is a clip.
+
+**The search.** When `numberOfLines` is set and the mode is `head` or `middle`, `layoutParagraph` lays the whole
+string out first and does nothing further unless SkParagraph reports `didExceedMaxLines`. If it did, the question
+is how many graphemes have to go, and the answer is bisected: for a candidate count *k*, `planEllipsize`
+(`src/EllipsizeSearch.cpp`) keeps the last *k* graphemes for `head`, or `⌈k/2⌉` at the front and `⌊k/2⌋` at the
+back for `middle` — the odd one goes to the front, as it does on both platforms — the attributed string is rebuilt
+around that cut with the ellipsis in the middle, and it is laid out with the same shaper, the same fonts and the
+same width the paragraph will be painted at. Dropping a grapheme can never turn a paragraph that fits into one
+that does not, so the predicate is monotonic in *k* and the widest fitting *k* is exact after `log2(graphemes)`
+measurements rather than one per grapheme. `EllipsizeSearchTest.cpp` asserts that count as well as the answer,
+because a linear scan would return the same string and would be the thing that made text slow.
+
+**The cuts land on graphemes.** The candidate offsets are the entries of `TextSegments::graphemeStarts` — ICU's
+own grapheme boundaries, from the `segmentText` the caret and selection already use — so no cut can split a
+cluster, a surrogate pair or even a multi-byte sequence. A byte-wise cut that filled the last few points of the
+box would; the unit table asserts it does not, on a string of four-byte emoji.
+
+**The ellipsis carries the style of what it replaces.** It is appended as a fragment of its own, taking the
+`TextAttributes` of the fragment that held the first byte the cut removed — the first fragment for `head`, the
+fragment at the front cut for `middle`. react/react-native#37926 is the same ellipsis drawn in the paragraph's
+base style instead, so a `…` standing for a run of bold amber text comes out thin and grey. The rule is asserted
+in `EllipsizeSearchTest.cpp` rather than in the golden, and today it has little to show for itself in a picture:
+a nested `<Text>` reaches this pipeline as an inline attachment rather than as a styled fragment, so the
+fragments a search can cut all carry the paragraph's own attributes.
+
+**Both ends of the pipeline truncate identically**, because the search is inside `layoutParagraph` and
+`TextLayoutManager::measure` and `ScenePainter` both go through it — the same reason `textTransform` is applied
+there. That is what keeps *The measured-paragraph proof (#41)* true for a truncated paragraph: `--text-fit-golden`
+asserts every box in `ellipsize.js` still holds the paragraph it was measured for.
+
+**`clip` is a clip.** It sets no ellipsis, so the line limit alone cuts the text, and the paint is clipped to the
+node's frame in `ScenePainter::paintParagraph`. The clip only ever cuts one thing — a token with no break
+opportunity inside it, which SkParagraph lays past the end of the line because there is nowhere to break it — and
+that is exactly what a null `TextUtils.TruncateAt` does on Android. It is deliberately not applied to any other
+mode: a line box with a tall ascender legitimately overflows its frame, per *Vertical metrics (#110)*, and a
+`<TextInput>` clips to its content box in `paintEditor` before it translates by its own scroll offset.
+
+**A paragraph carrying inline attachments is not searched.** `ParagraphShadowNode::layout` requires exactly one
+measured attachment per attachment fragment, and `TextLayoutManager`'s walk pairs them with
+`getRectsForPlaceholders` in fragment order, reporting the ones SkParagraph dropped off the end as clipped. That
+pairing is only true because a line limit drops placeholders at the tail; a head or middle cut removes them from
+the front or the middle, and every surviving placeholder would then be paired with the wrong attachment. Such a
+paragraph therefore truncates the way `clip` does — the line limit cuts it, with no ellipsis — until the pairing
+is by identity rather than by order.
+
+The picture is `test-bundles/ellipsize.js` and `goldens/ellipsize.png`: the four modes at `numberOfLines` 1 and 2,
+the two-line column also carrying `letterSpacing` — react/react-native#37511 is `middle` and letter spacing
+disagreeing about where the text ends — plus the two rows for what the search does not do: an unbreakable token
+wider than its box, which only `clip` cuts, and a paragraph with an inline attachment, which the line limit
+truncates on its own.
+
+Three things this does not do. **The search is over logical order**, so for a right-to-left run the ellipsis
+stands where the removed characters were in memory rather than where iOS puts it on screen; the paragraph
+direction is hardcoded left-to-right anyway (the *RTL is not handled* entry in *Fidelity limits*). **It costs
+`log2(graphemes)` extra layouts per measure and per paint** of a paragraph that actually overflows, absorbed by
+Skia's shaped-run cache and the measure cache but not free; it belongs with the rest of #20 if it ever shows up
+in a frame-time budget. And **`clip` still cuts on a whole pixel column of the frame**, not on the glyph's own
+advance, because the clip is a rectangle and not a re-shape.
+
 ### Fidelity limits
 
 - **Transition hints are not interpolated.** `linear-gradient(red, 20%, blue)` is a stop whose colour is absent,
@@ -2762,7 +2829,7 @@ measured result.
 | `fontVariant` | The four variants the golden matrix covers — `small-caps`, `oldstyle-nums`, `lining-nums`, `tabular-nums` — as the OpenType feature tags `smcp`/`onum`/`lnum`/`tnum` on `TextStyle::addFontFeature`. The sixteen stylistic-set bits are not mapped; see *Fidelity limits*. |
 | `textTransform` | `uppercase`/`lowercase`/`capitalize` applied to each fragment's string in `src/TextTransform.cpp` before it reaches `ParagraphBuilder::addText`, so both measurement and paint see the transformed string. Pure ASCII and Latin-1 Supplement case mapping — no ICU — so it is under the 100% gate; see *The text-style matrix (#250)*. |
 | `numberOfLines` | `ParagraphStyle::setMaxLines`. |
-| `ellipsizeMode` | Anything but `clip` sets a `…` ellipsis. |
+| `ellipsizeMode` | `tail` is `ParagraphStyle::setEllipsis`; `head` and `middle` are a searched cut in `src/EllipsizeSearch.cpp` and `layoutParagraph`, except on a paragraph with inline attachments; `clip` truncates with no ellipsis and clips the paint to the frame. See *Truncation that is not at the tail (#251)*. |
 | Inline attachments | Added as SkParagraph placeholders sized from the attachment's own measured frame, and reported back through `getRectsForPlaceholders`. |
 
 ### Vertical metrics (#110)
@@ -2880,8 +2947,6 @@ Each is deliberate, and each is a thing to fix rather than a thing to argue abou
 - **RTL is not handled.** The paragraph direction is hardcoded left-to-right. ICU is present and SkParagraph does
   the bidi work, so mixed-direction runs inside a paragraph resolve correctly; what is missing is `writingDirection`
   and an RTL base direction, and there is no golden for either.
-- **Ellipsis is always at the tail.** SkParagraph truncates nowhere else, so `head` and `middle` are accepted and
-  drawn as `tail`.
 - **Emoji rasterize from bitmap and COLRv0 faces only, and a `fontFamily` is one name.** The pinned Noto Color
   Emoji is CBDT and draws; a COLRv1 face would not, because this Skia archive references no
   `FT_Get_Color_Glyph_Paint`. A `fontFamily` fallback *list* — react-native#48625 — is still one name plus the two
