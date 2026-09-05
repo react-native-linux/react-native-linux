@@ -16,14 +16,17 @@
 namespace react_native_linux {
 
 /**
- * The node a pointer event is delivered to, and the absolute origin the offset inside it is measured from.
+ * The node a pointer event is delivered to, and where inside its own local box the event lands.
  *
- * The two travel together because one hit test produces both: an origin looked up separately would come from the
- * shadow tree's `LayoutMetrics`, which is exactly the stale geometry the scene hit test exists to avoid.
+ * `offset` is already `pointerOffsetWithinTarget`'s answer — this platform's `locationX/Y` — rather than an
+ * absolute origin a caller would have to invert a transform against later. The two travel together because one
+ * hit test produces both: an origin looked up separately would come from the shadow tree's `LayoutMetrics`, which
+ * is exactly the stale geometry the scene hit test exists to avoid, and it would carry no matrix to invert a
+ * rotated or scaled target's offset against either.
  */
 struct PointerTarget {
     std::shared_ptr<const facebook::react::ShadowNode> shadowNode;
-    facebook::react::Point origin{};
+    facebook::react::Point offset{};
 };
 
 /**
@@ -102,6 +105,18 @@ private:
     std::shared_ptr<const facebook::react::ShadowNode> rootShadowNode() const;
     PointerTarget resolveTarget(const InputEvent& event) const;
     facebook::react::Point absoluteOrigin(const facebook::react::ShadowNode& shadowNode) const;
+
+    /**
+     * The transform a hit tag paints with, read off the live scene snapshot rather than off `SceneHit` itself —
+     * `SceneHit` only carries the forward-mapped origin `#97`'s tests already pin, not the matrix a rotated or
+     * scaled target's offset needs inverted. `fallbackOrigin` is what a tag with no snapshot primitive gets
+     * instead: an identity transform translated to it, which is exactly right for the surface root, a
+     * `UIManager::findNodeAtPoint` fallback hit, and a fully transparent target with no border and no content —
+     * none of which have a transform of their own that this lane can read without a matrix RetainedScene does not
+     * hand back. A target that is both transformed and painted nothing (`opacity: 0` with a `transform`) is the
+     * residual gap this leaves; see *Input* in docs/cpp-toolchain.md.
+     */
+    PointerTargetTransform transformForTag(facebook::react::Tag tag, facebook::react::Point fallbackOrigin) const;
     void dispatchPointerEvent(const InputEvent& event);
     void dispatchKeyEvent(const InputEvent& event);
     void emitKeyEvent(const InputEvent& event) const;

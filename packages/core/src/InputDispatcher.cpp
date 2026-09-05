@@ -300,22 +300,49 @@ PointerTarget InputDispatcher::resolveTarget(const InputEvent& event) const {
         const std::shared_ptr<const facebook::react::ShadowNode> painted = shadowNodeWithTag(root, paintedHit.tag);
 
         if (painted != nullptr) {
-            return PointerTarget{.shadowNode = painted, .origin = paintedHit.origin};
+            return PointerTarget{.shadowNode = painted,
+                                 .offset = pointerOffsetWithinTarget(
+                                     transformForTag(paintedHit.tag, paintedHit.origin), event.surfacePoint)};
         }
 
         const std::shared_ptr<const facebook::react::ShadowNode> hit =
             uiManager_->findNodeAtPoint(root, event.surfacePoint);
 
         if (hit != nullptr) {
-            return PointerTarget{.shadowNode = hit, .origin = absoluteOrigin(*hit)};
+            const facebook::react::Point origin = absoluteOrigin(*hit);
+
+            return PointerTarget{.shadowNode = hit,
+                                 .offset = pointerOffsetWithinTarget(transformForTag(hit->getTag(), origin),
+                                                                     event.surfacePoint)};
         }
     }
 
-    return PointerTarget{.shadowNode = root, .origin = absoluteOrigin(*root)};
+    const facebook::react::Point rootOrigin = absoluteOrigin(*root);
+
+    return PointerTarget{.shadowNode = root,
+                         .offset = pointerOffsetWithinTarget(transformForTag(root->getTag(), rootOrigin),
+                                                             event.surfacePoint)};
 }
 
 facebook::react::Point InputDispatcher::absoluteOrigin(const facebook::react::ShadowNode& shadowNode) const {
     return uiManager_->getRelativeLayoutMetrics(shadowNode, nullptr, {.includeTransform = true}).frame.origin;
+}
+
+PointerTargetTransform InputDispatcher::transformForTag(facebook::react::Tag tag,
+                                                        facebook::react::Point fallbackOrigin) const {
+    for (const ScenePrimitive& primitive : mountingManager_->snapshotScene()) {
+        if (primitive.tag == tag) {
+            return PointerTargetTransform{.scaleX = primitive.matrix.scaleX,
+                                          .skewX = primitive.matrix.skewX,
+                                          .translateX = primitive.matrix.translateX,
+                                          .skewY = primitive.matrix.skewY,
+                                          .scaleY = primitive.matrix.scaleY,
+                                          .translateY = primitive.matrix.translateY,
+                                          .frameOrigin = primitive.frame.origin};
+        }
+    }
+
+    return PointerTargetTransform{.translateX = fallbackOrigin.x, .translateY = fallbackOrigin.y};
 }
 
 void InputDispatcher::dispatchPointerEvent(const InputEvent& event) {
@@ -344,7 +371,7 @@ void InputDispatcher::dispatchPointerEvent(const InputEvent& event) {
     }
 
     for (const PointerDispatch& pointerDispatch :
-         router_.route(event, target.shadowNode->getTag(), target.origin)) {
+         router_.route(event, target.shadowNode->getTag(), target.offset)) {
         emitPointerDispatch(*emitter, pointerDispatch);
     }
 }

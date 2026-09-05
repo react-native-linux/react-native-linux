@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <linux/input-event-codes.h>
@@ -81,7 +82,11 @@ constexpr char kMousePointerType[] = "mouse";
 
 int buttonsBitOf(int button) { return buttonsMaskOfDomButton(button); }
 
-facebook::react::PointerEvent makePointerEvent(const InputEvent& event, facebook::react::Point targetOrigin,
+// A matrix whose determinant is under this maps every point onto a line or onto a point, so nothing is inside it
+// to invert towards — the same floor `RetainedScene::toUntransformedPoint` uses for the identical reason.
+constexpr float kSingularDeterminant = 1e-6F;
+
+facebook::react::PointerEvent makePointerEvent(const InputEvent& event, facebook::react::Point targetOffset,
                                                int button, int detail, int buttons) {
     facebook::react::PointerEvent pointerEvent{};
 
@@ -90,7 +95,7 @@ facebook::react::PointerEvent makePointerEvent(const InputEvent& event, facebook
     pointerEvent.pointerType = kMousePointerType;
     pointerEvent.clientPoint = event.surfacePoint;
     pointerEvent.screenPoint = event.surfacePoint;
-    pointerEvent.offsetPoint = event.surfacePoint - targetOrigin;
+    pointerEvent.offsetPoint = targetOffset;
     pointerEvent.width = kMousePointerExtent;
     pointerEvent.height = kMousePointerExtent;
     pointerEvent.tiltX = kNoTilt;
@@ -457,18 +462,35 @@ std::vector<InputEvent> InputQueue::drain() { return std::exchange(events_, {});
 
 size_t InputQueue::droppedEventCount() const noexcept { return droppedEventCount_; }
 
+facebook::react::Point pointerOffsetWithinTarget(const PointerTargetTransform& transform,
+                                                 facebook::react::Point surfacePoint) {
+    const float determinant = (transform.scaleX * transform.scaleY) - (transform.skewX * transform.skewY);
+
+    if (std::abs(determinant) < kSingularDeterminant) {
+        return facebook::react::Point{};
+    }
+
+    const float relativeX = surfacePoint.x - transform.translateX;
+    const float relativeY = surfacePoint.y - transform.translateY;
+
+    const float localX = ((transform.scaleY * relativeX) - (transform.skewX * relativeY)) / determinant;
+    const float localY = ((transform.scaleX * relativeY) - (transform.skewY * relativeX)) / determinant;
+
+    return facebook::react::Point{.x = localX - transform.frameOrigin.x, .y = localY - transform.frameOrigin.y};
+}
+
 std::vector<PointerDispatch> PointerRouter::routeRelease(const InputEvent& event, facebook::react::Tag targetTag,
-                                                         facebook::react::Point targetOrigin) {
+                                                         facebook::react::Point targetOffset) {
     pressedButtons_ &= ~buttonsBitOf(event.button);
 
     std::vector<PointerDispatch> dispatches{PointerDispatch{
         .type = PointerDispatchType::Up,
-        .event = makePointerEvent(event, targetOrigin, event.button, kNoDetail, pressedButtons_)}};
+        .event = makePointerEvent(event, targetOffset, event.button, kNoDetail, pressedButtons_)}};
 
     if (event.button == kPrimaryButton && targetTag == pressedTag_) {
         dispatches.push_back(PointerDispatch{
             .type = PointerDispatchType::Click,
-            .event = makePointerEvent(event, targetOrigin, event.button, kClickDetail, pressedButtons_)});
+            .event = makePointerEvent(event, targetOffset, event.button, kClickDetail, pressedButtons_)});
     }
 
     if (event.button == kPrimaryButton) {
@@ -487,12 +509,12 @@ void PointerRouter::cancelPressForScroll(const InputEvent& event) {
 }
 
 std::vector<PointerDispatch> PointerRouter::route(const InputEvent& event, facebook::react::Tag targetTag,
-                                                  facebook::react::Point targetOrigin) {
+                                                  facebook::react::Point targetOffset) {
     switch (event.kind) { // COV_EXCL: every InputEventKind value has a case, so the implicit no-match branch cannot execute
         case InputEventKind::PointerMotion:
             return {PointerDispatch{
                 .type = PointerDispatchType::Move,
-                .event = makePointerEvent(event, targetOrigin, kNoButton, kNoDetail, pressedButtons_)}};
+                .event = makePointerEvent(event, targetOffset, kNoButton, kNoDetail, pressedButtons_)}};
 
         case InputEventKind::PointerButtonPress:
             if (event.button == kPrimaryButton) {
@@ -503,10 +525,10 @@ std::vector<PointerDispatch> PointerRouter::route(const InputEvent& event, faceb
 
             return {PointerDispatch{
                 .type = PointerDispatchType::Down,
-                .event = makePointerEvent(event, targetOrigin, event.button, kNoDetail, pressedButtons_)}};
+                .event = makePointerEvent(event, targetOffset, event.button, kNoDetail, pressedButtons_)}};
 
         case InputEventKind::PointerButtonRelease:
-            return routeRelease(event, targetTag, targetOrigin);
+            return routeRelease(event, targetTag, targetOffset);
 
         case InputEventKind::PointerLeave:
             pressedTag_ = kNoPressTarget;
@@ -514,7 +536,7 @@ std::vector<PointerDispatch> PointerRouter::route(const InputEvent& event, faceb
 
             return {PointerDispatch{
                 .type = PointerDispatchType::Leave,
-                .event = makePointerEvent(event, targetOrigin, kNoButton, kNoDetail, pressedButtons_)}};
+                .event = makePointerEvent(event, targetOffset, kNoButton, kNoDetail, pressedButtons_)}};
 
         case InputEventKind::KeyPress:
         case InputEventKind::KeyRelease:
@@ -563,9 +585,13 @@ PointerDispatch makeActivationDispatch(const InputEvent& event, facebook::react:
 
     activation.surfacePoint = targetOrigin;
 
+    // The offset is zero rather than derived from `targetOrigin`, because a keyboard activation has no press
+    // point of its own to place inside the target's box — it is reported at the target's own origin, which is
+    // zero offset by definition, in every coordinate space this platform's transforms can put the target in.
     return PointerDispatch{
         .type = PointerDispatchType::Click,
-        .event = makePointerEvent(activation, targetOrigin, kPrimaryButton, kClickDetail, kNoButtonsBits)};
+        .event = makePointerEvent(activation, facebook::react::Point{}, kPrimaryButton, kClickDetail,
+                                  kNoButtonsBits)};
 }
 
 bool isScrollEvent(const InputEvent& event) {

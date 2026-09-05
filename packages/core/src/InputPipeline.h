@@ -168,6 +168,47 @@ struct PointerDispatch {
 };
 
 /**
+ * The composed 2D affine a target paints with, in the six-value form `RetainedScene` composes it in: `x' = scaleX
+ * * x + skewX * y + translateX`, `y' = skewY * x + scaleY * y + translateY`. `frameOrigin` is the target's own
+ * untransformed frame origin, in the coordinates that matrix maps from.
+ *
+ * A target with no transform of its own, no scrolled ancestor and no rotated or scaled ancestor is the identity
+ * matrix translated to its absolute origin — which is what a caller with only an absolute origin and no matrix at
+ * all (the `UIManager::findNodeAtPoint` fallback, the surface root) builds, and it is why
+ * `pointerOffsetWithinTarget` needs no separate untransformed code path: an identity matrix inverts to itself.
+ */
+struct PointerTargetTransform {
+    float scaleX{1.0F};
+    float skewX{0.0F};
+    float translateX{0.0F};
+    float skewY{0.0F};
+    float scaleY{1.0F};
+    float translateY{0.0F};
+    facebook::react::Point frameOrigin{};
+};
+
+/**
+ * Where a surface-space press lands inside a target's own local box — this platform's `locationX/Y`, which is the
+ * same number as the pointer event's `offsetX/Y` because nothing here ever builds a legacy `Touch` payload (touch
+ * is deferred; see *Input* in docs/cpp-toolchain.md).
+ *
+ * It inverts `transform` rather than subtracting its translation, because a rotated or scaled target's local box
+ * is not a translated copy of its surface footprint: the centre of a square rotated 90 degrees about its own
+ * centre is still the centre once the rotation is undone, and a plain vector subtraction from the surface origin
+ * reports a different point for anything but a pure translation — issue #246's table asserts the number under a
+ * translated, scaled, rotated and scrolled target, not only the target `resolveTarget` already got right.
+ *
+ * The inverse is the same one `RetainedScene::coversPrimitive` applies to decide whether the press hit the target
+ * at all — independently reimplemented here because this file, not `RetainedScene.cpp`, is the 100%-branch-covered
+ * gate for input — so the box `locationX/Y` is reported against is provably the box the press was tested against.
+ *
+ * A transform with no inverse — `scale: 0`, the transform hit-testing itself never lands on because the target
+ * has no area — reports the target's own frame origin, offset zero, rather than dividing by zero.
+ */
+facebook::react::Point pointerOffsetWithinTarget(const PointerTargetTransform& transform,
+                                                 facebook::react::Point surfacePoint);
+
+/**
  * The mouse state machine: which buttons are down, which node the press started on, and therefore whether a
  * release is also a click.
  *
@@ -183,8 +224,12 @@ struct PointerDispatch {
  */
 class PointerRouter final {
 public:
+    /**
+     * `targetOffset` is already the answer `pointerOffsetWithinTarget` gives — the caller resolves the target and
+     * inverts its transform before calling this, so a router that only tracks button state never needs a matrix.
+     */
     std::vector<PointerDispatch> route(const InputEvent& event, facebook::react::Tag targetTag,
-                                       facebook::react::Point targetOrigin);
+                                       facebook::react::Point targetOffset);
 
     /**
      * The wheel-and-touchpad half of the press contract: a scroll that moved the content while a button is held
@@ -202,7 +247,7 @@ public:
 
 private:
     std::vector<PointerDispatch> routeRelease(const InputEvent& event, facebook::react::Tag targetTag,
-                                              facebook::react::Point targetOrigin);
+                                              facebook::react::Point targetOffset);
 
     facebook::react::Tag pressedTag_{0};
     int pressedButtons_{0};

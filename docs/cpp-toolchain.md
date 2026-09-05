@@ -3689,6 +3689,65 @@ came out, and the sixteen that did not arrive are the acceptance criterion. The 
 `topPointerEnter` lines are the hover chain, and they are evidence the pipeline reaches
 `PointerEventsProcessor` rather than bypassing it — neither event was ever dispatched by this platform.
 
+### Pointer coordinate spaces (#246)
+
+A `PointerEvent` carries three surface-space pairs a platform fills — `clientX/Y`, `screenX/Y`, `offsetX/Y` — and
+upstream's own `asJSIValue` aliases `pageX/Y` to `clientX/Y`, because nothing in React Native scrolls the whole
+surface the way a browser scrolls a page. `clientX/Y` and `screenX/Y` are `event.surfacePoint` verbatim: this
+platform has one window and no independent screen space to report. `offsetX/Y` is the one number that is not the
+press point itself — it is the press point expressed in the target's own local box, after every transform between
+it and the surface, which is this platform's `locationX/Y` since nothing here ever builds a legacy `Touch` payload
+(touch is deferred, above).
+
+Filling it used to be `event.surfacePoint - targetOrigin`, where `targetOrigin` was the target's forward-mapped
+absolute origin — the same origin `SceneHit` returns and the same one #97's hit-testing tests pin. That is exactly
+correct for a pure translation, which is what a scrolled ancestor is too (`RetainedScene` composes scrolling as a
+`-contentOffset` translation), and it is what upstream's own `PointerEventsProcessor::retargetPointerEvent` does
+for the same reason, with a comment naming it a "HACK" that does not "take non-trivial transforms into account."
+It is wrong for anything else: a square rotated 90 degrees about its own centre still has to report a press on
+its centre as *its own* centre, and a plain vector subtraction from the rotated corner's new surface position
+reports a different point.
+
+`pointerOffsetWithinTarget` in `InputPipeline.h`/`.cpp` is the fix, and it is a pure function so the 100%-branch
+coverage gate can hold every case: given the composed 2D affine a target paints with (`PointerTargetTransform`,
+the same six-value shape `SceneMatrix` uses) and a frame origin, it inverts the matrix and subtracts, which is the
+same inverse `RetainedScene::coversPrimitive` applies to decide whether the press hit the target at all —
+independently reimplemented here, because `RetainedScene.cpp` is a different lane's coverage gate, not because
+the two are expected to disagree. `InputDispatcher::transformForTag` is the impure half: it reads the composed
+matrix and frame back off `LinuxMountingManager::snapshotScene()` for the hit tag, and `PointerRouter::route` and
+`routeRelease` no longer take a `targetOrigin` to subtract — they take the already-inverted `targetOffset` and
+hand it straight to the payload.
+
+`PointerTarget::offset` (`InputDispatcher.h`) is therefore what `resolveTarget` produces now instead of an origin:
+the local offset, already correct for a translated, scaled, rotated or scrolled target. A target the live snapshot
+has no primitive for — the surface root, a `UIManager::findNodeAtPoint` fallback hit, or a target that paints
+nothing at all (no background, no border, no content: `opacity: 0` with no transform of its own) — gets an
+identity transform translated to its absolute origin instead, which is exactly right for all three, because none
+of them has a transform of its own that this reading can miss. **The one case this does not reach** is a target
+that is both invisible *and* transformed — `opacity: 0` combined with a `rotate` or `scale` — because
+`snapshotScene()` filters exactly the primitives `isPrimitiveVisible` would not paint, and the matrix a fully
+transparent, rotated node composes lives only inside `RetainedScene::hitTestNode`'s own walk, which does not
+return it. Closing that gap means `SceneHit` handing back the matrix it already computed and discards, which is
+`RetainedScene.h`'s lane, not this one; issue #246 leaves it as a named follow-up rather than crossing it.
+
+`InputTest.cpp`'s `PointerOffsetWithinTargetTest` table-tests `pointerOffsetWithinTarget` directly against
+translated, uniformly scaled, non-uniformly scaled, rotated and singular (`scale: 0`) matrices, each one worked by
+hand rather than derived from `RetainedScene`'s own arithmetic, so a mistake in one is unlikely to be the mistake
+in the other. `packages/core/test-bundles/pointer-offset.js` is the integration proof at the level *The proof*
+above already trusts: a rotated box, a scaled box, a box under a translated ancestor with its own scaled child
+(composition, not a chain to unwind by hand), and an `opacity: 0` box with no transform, each printing
+`clientX/Y`, `pageX/Y` and `offsetX/Y` for a press at a surface point chosen so the correct offset is a round
+number and a plain-subtraction bug would not be:
+
+```bash
+hello_react --inject-pointer packages/core/test-bundles/pointer-offset.js 110 140
+# pointer-offset: topClick on rotated client=110,140 page=110,140 offset=40,40
+```
+
+`packages/core/e2e/pointer-offset.json` is the same three presses — the rotated box, the scaled box and the
+invisible one — under a compositor's `wl_pointer`, asserting the exact `offset=` numbers by substring the way
+`pressable.json` asserts a target by name.
+
 ### Deferrals, with owners
 
 - **Touch and gestures.** `TouchEventEmitter::onTouchStart` and the responder system are untouched. Nothing on a
@@ -3714,6 +3773,11 @@ came out, and the sixteen that did not arrive are the acceptance criterion. The 
   with virtual Wayland input. `--inject-pointer` is the unit-level and integration-level proof; the compositor-level
   one is the first slice of #7 and is `pnpm e2e` — see *E2E driver (#7)*. Keyboard focus order under a compositor
   is still only covered by the one Tab press `text-input.json` makes.
+- **`offsetX/Y` on an invisible, transformed target.** *Pointer coordinate spaces* above fixes the offset for a
+  translated, scaled or rotated target and separately for an `opacity: 0` target, but not a target that is both,
+  because the matrix a fully transparent node composes exists only inside `RetainedScene::hitTestNode`'s own walk
+  and `SceneHit` does not carry it out. Reporting it correctly means `RetainedScene.h`'s lane hands the matrix
+  back, not this one reading around it.
 
 ## Focus and keyboard
 
