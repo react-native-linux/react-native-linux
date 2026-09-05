@@ -58,6 +58,27 @@ const encodePng = (width: number, height: number, differentPixels: number): Buff
   return PNG.sync.write(image);
 };
 
+const OUTER_SIZE = 8;
+const ONE_ROW = 1;
+const CROP = { height: IMAGE_HEIGHT, left: 2, top: 2, width: IMAGE_WIDTH };
+
+/**
+ * A screenshot the size of a full surface, with the crop rectangle in the middle a colour of its own and
+ * everything outside it another — proof that grading only ever looks at the rectangle a scenario names.
+ */
+const encodeCroppableScreenshot = (borderColor: number, cropColor: number): Buffer => {
+  const image = new PNG({ height: OUTER_SIZE, width: OUTER_SIZE });
+  image.data.fill(borderColor);
+
+  for (let row = NONE; row < CROP.height; row += ONE_ROW) {
+    const rowStart = ((CROP.top + row) * OUTER_SIZE + CROP.left) * CHANNELS_PER_PIXEL;
+
+    image.data.fill(cropColor, rowStart, rowStart + CROP.width * CHANNELS_PER_PIXEL);
+  }
+
+  return PNG.sync.write(image);
+};
+
 const inputsFor = (scenario: Scenario): GradeInputs => ({
   frameLogPath: path.join(workspace, "frames.jsonl"),
   goldensDirectory: path.join(workspace, "goldens"),
@@ -76,6 +97,10 @@ const writeGolden = (differentPixels: number, width: number): void => {
 
 const writeScreenshot = (differentPixels: number): void => {
   writeFileSync(path.join(workspace, "screenshot.png"), encodePng(IMAGE_WIDTH, IMAGE_HEIGHT, differentPixels));
+};
+
+const writeCroppableScreenshot = (borderColor: number, cropColor: number): void => {
+  writeFileSync(path.join(workspace, "screenshot.png"), encodeCroppableScreenshot(borderColor, cropColor));
 };
 
 beforeEach(() => {
@@ -120,7 +145,7 @@ describe("gradeArtifacts frame timing", () => {
 describe("gradeArtifacts screenshots", () => {
   const scenario: Scenario = {
     ...baseScenario,
-    screenshot: { golden: GOLDEN_NAME, maxDifferentPixels: GENEROUS_BUDGET },
+    screenshot: { crop: null, golden: GOLDEN_NAME, maxDifferentPixels: GENEROUS_BUDGET },
   };
 
   it("grades nothing when the scenario declares no comparison", () => {
@@ -148,7 +173,7 @@ describe("gradeArtifacts screenshots", () => {
 describe("gradeArtifacts screenshot comparison", () => {
   const scenario: Scenario = {
     ...baseScenario,
-    screenshot: { golden: GOLDEN_NAME, maxDifferentPixels: GENEROUS_BUDGET },
+    screenshot: { crop: null, golden: GOLDEN_NAME, maxDifferentPixels: GENEROUS_BUDGET },
   };
 
   it("passes a screenshot that matches its golden", () => {
@@ -162,7 +187,7 @@ describe("gradeArtifacts screenshot comparison", () => {
     writeGolden(NONE, IMAGE_WIDTH);
     writeScreenshot(DIFFERENT_PIXELS);
 
-    const strict = { ...scenario, screenshot: { golden: GOLDEN_NAME, maxDifferentPixels: NO_BUDGET } };
+    const strict = { ...scenario, screenshot: { crop: null, golden: GOLDEN_NAME, maxDifferentPixels: NO_BUDGET } };
 
     expect(gradeArtifacts(inputsFor(strict)).failures).toEqual([
       `the screenshot does not match ${GOLDEN_NAME}: 2 pixels differ by more than 8 per channel, the budget is 1`,
@@ -175,6 +200,43 @@ describe("gradeArtifacts screenshot comparison", () => {
 
     expect(gradeArtifacts(inputsFor(scenario)).failures).toEqual([
       `the screenshot does not match ${GOLDEN_NAME}: the screenshot is 4x4 and the golden is 8x4`,
+    ]);
+  });
+});
+
+describe("gradeArtifacts screenshot crop", () => {
+  const scenario: Scenario = {
+    ...baseScenario,
+    screenshot: { crop: CROP, golden: GOLDEN_NAME, maxDifferentPixels: GENEROUS_BUDGET },
+  };
+
+  it("ignores a page change outside the cropped rectangle", () => {
+    writeGolden(NONE, IMAGE_WIDTH);
+    writeCroppableScreenshot(FAR_APART, BACKGROUND);
+
+    expect(gradeArtifacts(inputsFor(scenario))).toEqual({ failures: [], notes: [] });
+  });
+
+  it("still fails when the cropped rectangle itself does not match the golden", () => {
+    writeGolden(NONE, IMAGE_WIDTH);
+    writeCroppableScreenshot(BACKGROUND, FAR_APART);
+
+    const strict = {
+      ...scenario,
+      screenshot: { crop: CROP, golden: GOLDEN_NAME, maxDifferentPixels: NO_BUDGET },
+    };
+
+    expect(gradeArtifacts(inputsFor(strict)).failures).toEqual([
+      `the screenshot does not match ${GOLDEN_NAME}: 16 pixels differ by more than 8 per channel, the budget is 1`,
+    ]);
+  });
+
+  it("fails when the crop rectangle does not fit inside the captured screenshot", () => {
+    writeGolden(NONE, IMAGE_WIDTH);
+    writeScreenshot(NONE);
+
+    expect(gradeArtifacts(inputsFor(scenario)).failures).toEqual([
+      `the screenshot does not match ${GOLDEN_NAME}: the crop 4x4+2+2 does not fit inside the 4x4 screenshot`,
     ]);
   });
 });

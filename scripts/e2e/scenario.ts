@@ -1,7 +1,9 @@
+import type { Crop } from "./screenshot.ts";
 import path from "node:path";
 
 const DEFAULT_FRAME_COUNT = 600;
 const MINIMUM_FRAME_COUNT = 1;
+const MINIMUM_COORDINATE = 0;
 const MINIMUM_POSITIVE_NUMBER = 0;
 const EMPTY_LENGTH = 0;
 const NOT_FOUND_INDEX = -1;
@@ -34,8 +36,14 @@ interface FrameBudget {
 /**
  * `golden` is a file name under `packages/core/e2e/goldens`. A golden that does not exist yet is a skip with a
  * note rather than a failure, because the picture has to be blessed from a CI artifact before it can be compared.
+ *
+ * `crop`, when set, narrows the captured screenshot to a rectangle before comparing it against the golden, so an
+ * unrelated change elsewhere on the page does not invalidate it. The golden is stored already cropped to that
+ * same rectangle — addressing the rectangle by a node's `testID` instead needs #216's tree dump and is out of
+ * scope here, so the scenario names it directly.
  */
 interface ScreenshotComparison {
+  readonly crop: Crop | null;
   readonly golden: string;
   readonly maxDifferentPixels: number;
 }
@@ -105,6 +113,14 @@ const readPositiveNumber = (value: unknown, label: string, sourceName: string): 
   return value;
 };
 
+const readCoordinate = (value: unknown, label: string, sourceName: string): number => {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < MINIMUM_COORDINATE) {
+    throw new Error(`${sourceName}: "${label}" must be a non-negative integer`);
+  }
+
+  return value;
+};
+
 const readObject = (value: unknown, label: string, sourceName: string): Record<string, unknown> => {
   if (!isRecord(value)) {
     throw new Error(`${sourceName}: "${label}" must be a JSON object`);
@@ -149,6 +165,21 @@ const readFrameBudget = (record: Record<string, unknown>, sourceName: string): F
   };
 };
 
+const readCrop = (comparison: Record<string, unknown>, sourceName: string): Crop | null => {
+  if (!("crop" in comparison)) {
+    return null;
+  }
+
+  const crop = readObject(comparison["crop"], "screenshot.crop", sourceName);
+
+  return {
+    height: readPositiveInteger(crop["height"], "screenshot.crop.height", sourceName),
+    left: readCoordinate(crop["left"], "screenshot.crop.left", sourceName),
+    top: readCoordinate(crop["top"], "screenshot.crop.top", sourceName),
+    width: readPositiveInteger(crop["width"], "screenshot.crop.width", sourceName),
+  };
+};
+
 const readScreenshotComparison = (record: Record<string, unknown>, sourceName: string): ScreenshotComparison | null => {
   if (!("screenshot" in record)) {
     return null;
@@ -157,6 +188,7 @@ const readScreenshotComparison = (record: Record<string, unknown>, sourceName: s
   const comparison = readObject(record["screenshot"], "screenshot", sourceName);
 
   return {
+    crop: readCrop(comparison, sourceName),
     golden: readString(comparison["golden"], "screenshot.golden", sourceName),
     maxDifferentPixels: readPositiveInteger(
       comparison["maxDifferentPixels"],

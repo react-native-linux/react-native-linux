@@ -1,10 +1,9 @@
+import { cropImage, findScreenshotFailure } from "./screenshot.ts";
 import { describeFrameTiming, findFrameBudgetFailures, parseFrameLogSummary } from "./frame-log.ts";
 import { existsSync, readFileSync } from "node:fs";
 
 import { PNG } from "pngjs";
-
 import type { Scenario } from "./scenario.ts";
-import { findScreenshotFailure } from "./screenshot.ts";
 import path from "node:path";
 
 const NO_TEXT = "";
@@ -48,6 +47,26 @@ const gradeFrameTiming = (scenario: Scenario, frameLogPath: string): Grade => {
 };
 
 /**
+ * Narrows the captured screenshot to the scenario's crop rectangle, if it names one, before comparing it against
+ * the already-cropped golden. A crop that does not fit inside the capture is reported the same way a size or
+ * pixel mismatch is: as a failure naming the golden, not as a thrown error.
+ */
+const compareScreenshot = (
+  screenshotPath: string,
+  goldenPath: string,
+  comparison: NonNullable<Scenario["screenshot"]>,
+): string | null => {
+  const captured = readPixelImage(screenshotPath);
+  const actual = comparison.crop === null ? captured : cropImage(captured, comparison.crop);
+
+  if (typeof actual === "string") {
+    return actual;
+  }
+
+  return findScreenshotFailure(actual, readPixelImage(goldenPath), comparison.maxDifferentPixels);
+};
+
+/**
  * A golden that does not exist yet is a note naming the picture to bless, not a failure: cage sizes the surface
  * to its own output, so the baseline has to come out of a CI artifact, and the run that produces that artifact
  * has to be green. See *Screenshots* in docs/cpp-toolchain.md.
@@ -69,11 +88,7 @@ const gradeScreenshot = (inputs: GradeInputs): Grade => {
     return { failures: [`the window captured no screenshot at ${inputs.screenshotPath}`], notes: [] };
   }
 
-  const failure = findScreenshotFailure(
-    readPixelImage(inputs.screenshotPath),
-    readPixelImage(goldenPath),
-    comparison.maxDifferentPixels,
-  );
+  const failure = compareScreenshot(inputs.screenshotPath, goldenPath, comparison);
 
   return {
     failures: failure === null ? [] : [`the screenshot does not match ${comparison.golden}: ${failure}`],

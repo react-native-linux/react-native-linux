@@ -4767,6 +4767,16 @@ from CI run 33779667104's artifact. What made it blessable rather than a flake w
 picture came out of two independent runs **byte for byte**: 0 differing pixels between 33779667104 and
 33778339030, against a tolerance of 50.
 
+**Cropping a golden to the element under test** (#234) keeps an unrelated change elsewhere on the page from
+invalidating one: `screenshot.crop` on a scenario names `{left, top, width, height}` in the captured surface's own
+pixels, `cropImage` in `scripts/e2e/screenshot.ts` narrows the capture to that rectangle before `grade.ts` compares
+it, and the golden itself is stored **already cropped** to the same rectangle rather than at cage's full output
+size. Addressing the rectangle by a node's `testID` instead of naming it in the scenario needs #216's tree dump —
+the lookup `InputDispatcher` already does by tag would still have to be exposed to the driver — and is out of
+scope here; the scenario spells out the rectangle directly until that exists. `pressable.json` names a crop around
+its card, `{"left": 90, "top": 70, "width": 220, "height": 140}`, and `pressable-click.png` is re-blessed at that
+220x140 size, cropped from the 1280x720 picture with the same `cropImage` function rather than a second cage run.
+
 ### Running it
 
 ```bash
