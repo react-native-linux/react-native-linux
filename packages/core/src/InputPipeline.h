@@ -186,6 +186,20 @@ public:
     std::vector<PointerDispatch> route(const InputEvent& event, facebook::react::Tag targetTag,
                                        facebook::react::Point targetOrigin);
 
+    /**
+     * The wheel-and-touchpad half of the press contract: a scroll that moved the content while a button is held
+     * gives up the press target, so the release that follows is a `pointerUp` with no `click` and `Pressability`
+     * reports `onPressOut` without `onPress`.
+     *
+     * React's responder system already does this on touch, by handing the responder to the scroll view the finger
+     * dragged; there is no responder hand-off for wheel input at all
+     * ([core#48488](https://github.com/facebook/react-native/issues/48488),
+     * [rnw#4614](https://github.com/microsoft/react-native-windows/issues/4614)), so the platform is what
+     * synthesizes the cancel. A scroll that moved nothing — `wl_pointer.axis_stop`, or deltas that coalesced to
+     * zero — is not a gesture and leaves the press alone.
+     */
+    void cancelPressForScroll(const InputEvent& event);
+
 private:
     std::vector<PointerDispatch> routeRelease(const InputEvent& event, facebook::react::Tag targetTag,
                                               facebook::react::Point targetOrigin);

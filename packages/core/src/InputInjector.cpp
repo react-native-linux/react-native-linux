@@ -409,15 +409,48 @@ bool runSleep(Injector& injector, std::string_view rest) {
     return true;
 }
 
+// One detent in the touchpad-coordinate units `wl_pointer.axis` measures. The value travels beside the notch
+// count so a compositor that forwards only the smooth half of the pair still moves the same distance.
+constexpr double kPointsPerWheelNotch = 10.0;
+constexpr int32_t kUpwardWheelSign = -1;
+constexpr int32_t kDownwardWheelSign = 1;
+// `wl_fixed_t` is signed 24.8, so it holds ±8388608.0 points; at ten points a notch that is this many notches,
+// and it is checked before the unsigned count is narrowed rather than after, when the sign would already be wrong.
+constexpr uint32_t kMaximumWheelNotches = 838860;
+
+bool runWheel(Injector& injector, std::string_view rest) {
+    const std::string_view direction = nextToken(rest);
+    uint32_t notches = 0;
+
+    if ((direction != "up" && direction != "down") || !parseNumber(nextToken(rest), notches)) {
+        return reportError("wheel needs up or down, then a notch count");
+    }
+
+    if (notches > kMaximumWheelNotches) {
+        return reportError("wheel takes at most 838860 notches, which is what a wl_fixed_t axis value holds");
+    }
+
+    const int32_t steps =
+        static_cast<int32_t>(notches) * (direction == "up" ? kUpwardWheelSign : kDownwardWheelSign);
+
+    zwlr_virtual_pointer_v1_axis_discrete(injector.pointer, elapsedMilliseconds(injector),
+                                          WL_POINTER_AXIS_VERTICAL_SCROLL,
+                                          wl_fixed_from_double(kPointsPerWheelNotch * steps), steps);
+    zwlr_virtual_pointer_v1_frame(injector.pointer);
+
+    return true;
+}
+
 struct Command {
     std::string_view name;
     bool (*run)(Injector&, std::string_view);
 };
 
-constexpr std::array<Command, 6> kCommands{{
+constexpr std::array<Command, 7> kCommands{{
     {.name = "move", .run = runMove},
     {.name = "click", .run = runClick},
     {.name = "button", .run = runButton},
+    {.name = "wheel", .run = runWheel},
     {.name = "key", .run = runKey},
     {.name = "type", .run = runType},
     {.name = "sleep", .run = runSleep},

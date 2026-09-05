@@ -948,10 +948,9 @@ a committed shadow tree. The trace above is its test, at the same level `--scrol
   detaches and scrolls again, and it belongs with whoever writes the first JavaScript-side `Animated` surface.
 - **Golden.** A picture of the header and the content at three scroll positions is still owed, for the same
   reason *Sync props fast path* owes one: the trace proves the numbers agree, not that Skia paints them.
-- **E2E under a compositor.** `rnl_inject` binds `zwlr_virtual_pointer_v1` for motion and buttons only and sends
-  no `axis`, so there is no `packages/core/e2e/*.json` scroll step to write this as. The headless harness can
-  scroll and does; adding an axis command to the injector belongs with the scroll traces #16 already defers to
-  the same rig.
+- **E2E under a compositor.** `rnl_inject` grew a `wheel up|down <notches>` command with #244, so a scroll step is
+  writable now; what is still owed here is the animated-header trace itself, which needs a fixture that scrolls
+  and reads the driven prop back, not a new injector capability.
 
 ## Hit-testing under animation (#97, #121)
 
@@ -2788,11 +2787,13 @@ path from the root down as (parent, child index) pairs, and the first `ScrollVie
 path backwards is the innermost ScrollView containing the hit node. That is nested-ScrollView behaviour with no
 second rule for it, and a wheel over a node with no ScrollView above it does nothing.
 
-`FabricHost::dispatchInput` splits the frame rather than handing every event to both routers, because the two
-answer different questions about the same coordinate and a shared pass would hit-test each event twice. Since #97
-they also read different trees: a click reads the retained scene, so it lands where the frame painted, and a wheel
-reads the shadow tree, because the ScrollView a wheel moves is not what an animation moves. Aligning them is a
-follow-up in *Hit-testing under animation*.
+`FabricHost::dispatchInput` hands the whole frame to both routers, and each ignores what the other owns: the
+scroll controller routes scroll events only, and the input dispatcher hit-tests everything except a scroll, which
+it gives to `PointerRouter::cancelPressForScroll` and to nothing else (#244, *A scroll cancels the press it
+started under*). Nothing is hit-tested twice, because a scroll never reaches the hit test. The two still answer
+different questions about the same coordinate, and since #97 they read different trees: a click reads the retained
+scene, so it lands where the frame painted, and a wheel reads the shadow tree, because the ScrollView a wheel
+moves is not what an animation moves. Aligning them is a follow-up in *Hit-testing under animation*.
 
 ### Programmatic scrolling (#109)
 
@@ -3122,6 +3123,47 @@ Keyboard has no cross-platform Fabric surface to target. On the `cxx` platform `
 all — `react-native-macos` adds `onKeyDown` through a platform `HostPlatformViewEventEmitter`, which is the shape
 this would eventually take if the vendored header were forked. Keys are dispatched as generic `keyDown`/`keyUp`
 events to the **focused** node; `onFocus` and `onBlur` are the emitter's own. See *Focus and keyboard* below.
+
+### A scroll cancels the press it started under (#244)
+
+The rule, one sentence: **a scroll event that moved the content while a button is held gives up the press target,
+so the release that follows is a `pointerUp` with no `click`.** `Pressability` therefore reports `onPressIn` and
+`onPressOut` and no `onPress`, and the next press starts clean.
+
+React's responder system already does this on touch — the scroll responder takes over from the touchable and the
+press terminates — and it has no wheel path at all, because on a phone there is no wheel. On a desktop the
+sequence is button down on a row, wheel or touchpad scroll, button up, and without a platform-synthesized cancel
+every list on Linux is [core#48488](https://github.com/facebook/react-native/issues/48488) (a row's `onPress`
+firing after a scroll) and [rnw#4614](https://github.com/microsoft/react-native-windows/issues/4614) (the row left
+in its pressed style).
+
+`PointerRouter::cancelPressForScroll` is the whole decision, and it is two lines: a scroll whose `scrollAmount` is
+zero — `wl_pointer.axis_stop`, or deltas that coalesced to nothing — is not a gesture and is ignored; anything
+else clears `pressedTag_`, which is the same field `pointerLeave` clears and the same field the release compares
+against before it synthesizes a `click`. `FabricHost::dispatchInput` now hands the whole frame to both the scroll
+controller and the input dispatcher rather than splitting it, and `InputDispatcher::dispatch` routes a scroll
+event to that one call and to nothing else: no hit test, no focus transition, no caret.
+
+Three consequences worth naming, because each is a choice:
+
+- **The cancel is not a dispatch of its own.** The `onPressOut` arrives with the release, not with the wheel, so
+  nothing here invents a `pointerCancel` React would have to be taught to route. An immediate cancel dispatch
+  would have to reach the *pressed* node rather than the hit-tested one, which is dispatcher work outside the
+  coverage gate for a difference only a still-held button can observe.
+- **Any scroll cancels, not only a scroll of the pressed node's own `ScrollView`.** A wheel does not move the
+  pointer, so the node under it is the node that was pressed; a subtree test would be state nobody can reach.
+- **A press that begins after the scroll settles is untouched**, because the press is what sets the target and
+  the scroll before it had nothing to clear.
+
+`InputTest.cpp` table-tests the rule over a wheel notch in both directions, a touchpad delta, a horizontal notch,
+an `axis_stop` and a coalesced-to-zero delta, asserting the release is always a `pointerUp` and is a `click` only
+when the scroll moved nothing. `packages/core/e2e/press-cancelled-by-scroll.json` is the same sentence under a
+compositor: the bundle's every trace line carries a running click count, so the press *after* the cancelled one
+still reading `clicks=0` is the assertion that a click did not happen — something an ordered substring match
+cannot say any other way. Both layers assert the pointer sequence rather than `onPressIn`/`onPressOut`/`onPress`,
+because the bundles in this repository are hand-written against `nativeFabricUIManager` with no React in them and
+therefore no `Pressability`; #24 and #22 boot React in the host, and #215 runs upstream's Pressability contracts
+against this pipeline, which is where those three names get asserted by their own names.
 
 ### The proof
 
@@ -4596,6 +4638,7 @@ The script is one command per line, `#` comments ignored:
 move <x> <y>                 # absolute, in output pixels
 click <x> <y>                # move, then a left press and release
 button left|middle|right press|release
+wheel up|down <notches>      # one vertical axis_discrete carrying the signed notch count
 key <keysym> press|release   # an xkb keysym name, for example Tab or Return
 type <text>                  # ASCII, shifted characters send the shift modifier
 sleep <milliseconds>
