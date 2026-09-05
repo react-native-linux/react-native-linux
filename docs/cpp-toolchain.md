@@ -357,8 +357,9 @@ instead), cannot resize or maximize it (the client is fullscreened to the output
   through the same `~WaylandWindow`/`~WindowSession` path a normal exit takes — stop the surface, drain the
   JavaScript thread, then destroy the Fabric host and the instance. Neither class is part of the Hermes-free
   `RNL_BUILD_TESTS` configure (both need libwayland or Skia), so there is no unit test exercising that destructor
-  order under ASan/TSan today; it is proven only by the sanitizer jobs running the ordinary unit suite, which does
-  not touch this path, and is not proven under a real close event anywhere yet. That gap is named on issue #218
+  order under ASan/TSan today: the sanitizer jobs run the ordinary unit suite, which does not touch this path,
+  so close-request teardown is not proven under a sanitizer or under a real close event anywhere yet. That gap
+  is named on issue #218
   rather than closed by this change, since exercising it needs either a fake `xdg_toplevel` the window build can
   substitute for the real one or an e2e step that sends a close request — both bigger than this issue's remit.
 
