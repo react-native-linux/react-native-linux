@@ -141,21 +141,23 @@ const ScrollChildFrame* anchorChild(const std::vector<ScrollChildFrame>& childre
 
 } // namespace
 
-double maximumScrollOffset(double contentLength, double viewportLength) {
-    return std::max(contentLength - viewportLength, 0.0);
+double minimumScrollOffset(const ScrollAxisBounds& bounds) { return -bounds.leadingInset; }
+
+double maximumScrollOffset(const ScrollAxisBounds& bounds) {
+    return std::max(bounds.contentLength + bounds.trailingInset - bounds.viewportLength, minimumScrollOffset(bounds));
 }
 
-double clampScrollOffset(double offset, double contentLength, double viewportLength) {
-    return std::clamp(offset, 0.0, maximumScrollOffset(contentLength, viewportLength));
+double clampScrollOffset(double offset, const ScrollAxisBounds& bounds) {
+    return std::clamp(offset, minimumScrollOffset(bounds), maximumScrollOffset(bounds));
 }
 
 double velocityForTravel(double distance, double decelerationRate) {
     return distance * -std::log(usableDecelerationRate(decelerationRate));
 }
 
-ScrollAxisState dragAxis(const ScrollAxisState& axis, double delta, double frameMilliseconds, double contentLength,
-                         double viewportLength) {
-    const double moved = clampScrollOffset(axis.offset + delta, contentLength, viewportLength);
+ScrollAxisState dragAxis(const ScrollAxisState& axis, double delta, double frameMilliseconds,
+                         const ScrollAxisBounds& bounds) {
+    const double moved = clampScrollOffset(axis.offset + delta, bounds);
     const bool hasElapsed = frameMilliseconds > 0.0;
 
     return ScrollAxisState{.offset = moved,
@@ -163,8 +165,8 @@ ScrollAxisState dragAxis(const ScrollAxisState& axis, double delta, double frame
 }
 
 ScrollDestination scrollToDestination(double currentOffset, double targetOffset, bool isAnimated,
-                                      double decelerationRate, double contentLength, double viewportLength) {
-    const double destination = clampScrollOffset(targetOffset, contentLength, viewportLength);
+                                      double decelerationRate, const ScrollAxisBounds& bounds) {
+    const double destination = clampScrollOffset(targetOffset, bounds);
 
     if (destination == currentOffset) {
         return ScrollDestination{};
@@ -186,21 +188,20 @@ bool hasSnapPoints(const ScrollSnapConfiguration& snapping) {
     return snapping.isPagingEnabled || snapping.interval > 0.0 || !snapping.offsets.empty();
 }
 
-double settleTargetOffset(const ScrollAxisState& axis, double decelerationRate, double contentLength,
-                          double viewportLength, const ScrollSnapConfiguration& snapping) {
+double settleTargetOffset(const ScrollAxisState& axis, double decelerationRate, const ScrollAxisBounds& bounds,
+                          const ScrollSnapConfiguration& snapping) {
     const double rate = usableDecelerationRate(decelerationRate);
-    const double maximumOffset = maximumScrollOffset(contentLength, viewportLength);
-    const double landingOffset =
-        clampScrollOffset(axis.offset + momentumTravel(axis.velocity, rate), contentLength, viewportLength);
-    const double snapFrom = snapping.isIntervalMomentumDisabled
-                                ? clampScrollOffset(axis.offset, contentLength, viewportLength)
-                                : landingOffset;
+    const double minimumOffset = minimumScrollOffset(bounds);
+    const double maximumOffset = maximumScrollOffset(bounds);
+    const double landingOffset = clampScrollOffset(axis.offset + momentumTravel(axis.velocity, rate), bounds);
+    const double snapFrom =
+        snapping.isIntervalMomentumDisabled ? clampScrollOffset(axis.offset, bounds) : landingOffset;
     const bool isPaging = snapping.isPagingEnabled && snapping.interval <= 0.0;
-    const double interval = isPaging ? viewportLength : snapping.interval;
+    const double interval = isPaging ? bounds.viewportLength : snapping.interval;
     const ScrollSnapAlignment alignment = isPaging ? ScrollSnapAlignment::Start : snapping.alignment;
     const bool hasInterval = snapping.offsets.empty() && interval > 0.0;
     std::vector<double> points =
-        hasInterval ? intervalSnapPoints(interval, alignmentShift(alignment, viewportLength, interval),
+        hasInterval ? intervalSnapPoints(interval, alignmentShift(alignment, bounds.viewportLength, interval),
                                          maximumOffset, snapFrom)
                     : offsetSnapPoints(snapping.offsets, maximumOffset);
 
@@ -217,7 +218,7 @@ double settleTargetOffset(const ScrollAxisState& axis, double decelerationRate, 
     }
 
     if (snapping.snapToStart) {
-        points.push_back(0.0);
+        points.push_back(minimumOffset);
     }
 
     if (snapping.snapToEnd) {
@@ -227,13 +228,12 @@ double settleTargetOffset(const ScrollAxisState& axis, double decelerationRate, 
     const double target =
         chooseSnapPoint(points, snapFrom, axis.velocity, snapping.isIntervalMomentumDisabled);
 
-    return clampScrollOffset(target, contentLength, viewportLength);
+    return clampScrollOffset(target, bounds);
 }
 
 double maintainedScrollOffset(double offset, const std::vector<ScrollChildFrame>& previousChildren,
                               const std::vector<ScrollChildFrame>& currentChildren,
-                              const MaintainVisibleContentPosition& maintaining, double contentLength,
-                              double viewportLength) {
+                              const MaintainVisibleContentPosition& maintaining, const ScrollAxisBounds& bounds) {
     const ScrollChildFrame* anchor = anchorChild(previousChildren, offset, maintaining.minimumIndexForVisible);
 
     if (anchor == nullptr) {
@@ -257,18 +257,18 @@ double maintainedScrollOffset(double offset, const std::vector<ScrollChildFrame>
         return 0.0;
     }
 
-    return clampScrollOffset(offset + shift, contentLength, viewportLength);
+    return clampScrollOffset(offset + shift, bounds);
 }
 
 ScrollAxisState decelerateAxis(const ScrollAxisState& axis, double frameMilliseconds, double decelerationRate,
-                               double contentLength, double viewportLength) {
+                               const ScrollAxisBounds& bounds) {
     const double rate = usableDecelerationRate(decelerationRate);
     const double remainingTravel = momentumTravel(axis.velocity, rate);
     const bool isComingToRest = std::abs(remainingTravel) < kMinimumMomentumTravel;
     const double decay = std::pow(rate, frameMilliseconds);
     const double travel = isComingToRest ? remainingTravel : axis.velocity * (decay - 1.0) / std::log(rate);
     const double target = axis.offset + travel;
-    const double moved = clampScrollOffset(target, contentLength, viewportLength);
+    const double moved = clampScrollOffset(target, bounds);
     const bool hasStopped = isComingToRest || moved != target;
 
     return ScrollAxisState{.offset = moved, .velocity = hasStopped ? 0.0 : axis.velocity * decay};
