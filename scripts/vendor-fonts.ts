@@ -15,12 +15,16 @@ interface FontFileLock {
   sha256: string;
 }
 
-interface FontsLock {
+interface FontSourceLock {
   baseUrl: string;
   commit: string;
   family: string;
   files: FontFileLock[];
   license: string;
+}
+
+interface FontsLock {
+  sources: FontSourceLock[];
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -39,29 +43,37 @@ const parseFontFile = (value: unknown, origin: string): FontFileLock => {
   return { name: value.name, path: value.path, sha256: value.sha256 };
 };
 
-const parseFontsLock = (source: string, origin: string): FontsLock => {
-  const parsed: unknown = JSON.parse(source);
-
+const parseFontSource = (value: unknown, origin: string): FontSourceLock => {
   if (
-    !isRecord(parsed) ||
-    typeof parsed.baseUrl !== "string" ||
-    typeof parsed.commit !== "string" ||
-    typeof parsed.family !== "string" ||
-    typeof parsed.license !== "string" ||
-    !Array.isArray(parsed.files)
+    !isRecord(value) ||
+    typeof value.baseUrl !== "string" ||
+    typeof value.commit !== "string" ||
+    typeof value.family !== "string" ||
+    typeof value.license !== "string" ||
+    !Array.isArray(value.files)
   ) {
     throw new Error(
-      `${origin} must contain a JSON object with string "baseUrl", "commit", "family", "license" and "files"`,
+      `${origin} must declare every "sources" entry with string "baseUrl", "commit", "family", "license" and "files"`,
     );
   }
 
   return {
-    baseUrl: parsed.baseUrl,
-    commit: parsed.commit,
-    family: parsed.family,
-    files: parsed.files.map((entry) => parseFontFile(entry, origin)),
-    license: parsed.license,
+    baseUrl: value.baseUrl,
+    commit: value.commit,
+    family: value.family,
+    files: value.files.map((entry) => parseFontFile(entry, origin)),
+    license: value.license,
   };
+};
+
+const parseFontsLock = (source: string, origin: string): FontsLock => {
+  const parsed: unknown = JSON.parse(source);
+
+  if (!isRecord(parsed) || !Array.isArray(parsed.sources)) {
+    throw new Error(`${origin} must contain a JSON object with a "sources" array`);
+  }
+
+  return { sources: parsed.sources.map((entry) => parseFontSource(entry, origin)) };
 };
 
 const report = (message: string): void => {
@@ -76,13 +88,13 @@ const readStamp = (): FontsLock | null => {
   return parseFontsLock(readFileSync(stampFilePath, "utf8"), stampFilePath);
 };
 
-const describeFiles = (lock: FontsLock): string => lock.files.map((file) => `${file.path}@${file.sha256}`).join(" ");
+const describeSource = (source: FontSourceLock): string =>
+  `${source.baseUrl}@${source.commit} ${source.files.map((file) => `${file.path}@${file.sha256}`).join(" ")}`;
+
+const describeLock = (lock: FontsLock): string => lock.sources.map(describeSource).join(" | ");
 
 const matchesStamp = (lock: FontsLock, stamp: FontsLock | null): boolean =>
-  stamp !== null &&
-  stamp.baseUrl === lock.baseUrl &&
-  stamp.commit === lock.commit &&
-  describeFiles(stamp) === describeFiles(lock);
+  stamp !== null && describeLock(stamp) === describeLock(lock);
 
 const verifyDigest = (file: FontFileLock, contents: Buffer): Buffer => {
   const digest = createHash("sha256").update(contents).digest("hex");
@@ -96,8 +108,8 @@ const verifyDigest = (file: FontFileLock, contents: Buffer): Buffer => {
   return contents;
 };
 
-const fetchVerifiedFile = async (lock: FontsLock, file: FontFileLock): Promise<Buffer> => {
-  const url = `${lock.baseUrl}/${lock.commit}/${file.path}`;
+const fetchVerifiedFile = async (source: FontSourceLock, file: FontFileLock): Promise<Buffer> => {
+  const url = `${source.baseUrl}/${source.commit}/${file.path}`;
 
   report(`Downloading ${url}`);
 
@@ -112,7 +124,9 @@ const fetchVerifiedFile = async (lock: FontsLock, file: FontFileLock): Promise<B
 
 const vendor = async (lock: FontsLock): Promise<void> => {
   const fetched = await Promise.all(
-    lock.files.map(async (file) => ({ contents: await fetchVerifiedFile(lock, file), name: file.name })),
+    lock.sources.flatMap((source) =>
+      source.files.map(async (file) => ({ contents: await fetchVerifiedFile(source, file), name: file.name })),
+    ),
   );
 
   rmSync(vendorDirectory, { force: true, recursive: true });
@@ -129,14 +143,16 @@ const main = async (): Promise<void> => {
   const lock = parseFontsLock(readFileSync(lockFilePath, "utf8"), lockFilePath);
 
   if (matchesStamp(lock, readStamp())) {
-    report(`packages/core/fonts is already vendored at ${lock.commit}; nothing to do`);
+    report("packages/core/fonts is already vendored at the pinned commits; nothing to do");
   } else {
     await vendor(lock);
   }
 
-  report(`Font family: ${lock.family}`);
-  report(`License:     ${lock.license}`);
-  report(`Pinned at:   ${lock.commit}`);
+  for (const source of lock.sources) {
+    report(`Font family: ${source.family}`);
+    report(`License:     ${source.license}`);
+    report(`Pinned at:   ${source.commit}`);
+  }
 };
 
 await main();
