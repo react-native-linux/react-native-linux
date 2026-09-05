@@ -125,6 +125,14 @@ const fixtures: readonly GoldenFixture[] = [
   { bundleFileName: "gradient.js", goldenFileName: "gradient.png", renderArguments: [], renderFlag: "--golden" },
   // Issue #67: outset, inset, layered, per-corner, under an ancestor clip, rotated, the legacy quartet, and spread.
   { bundleFileName: "shadow.js", goldenFileName: "shadow.png", renderArguments: [], renderFlag: "--golden" },
+  // Issue #102: {no transform, scale, rotate} x {no clip, self clip, ancestor clip} x {outset, inset}, tiled.
+  // 700 points tall rather than the default 600: the matrix is six rows of panels a shadow has to escape.
+  {
+    bundleFileName: "shadow-composition.js",
+    goldenFileName: "shadow-composition.png",
+    renderArguments: ["800", "700"],
+    renderFlag: "--golden",
+  },
   // #118: one wrapping grid at two container widths — a break-point regression is a visible difference.
   { bundleFileName: "wrapping.js", goldenFileName: "wrapping.png", renderArguments: [], renderFlag: "--golden" },
   // #117: the <Image> + aspectRatio + maxWidth combination, clamped and unclamped side by side.
