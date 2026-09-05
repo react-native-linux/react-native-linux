@@ -23,28 +23,30 @@ using facebook::react::UIManager;
 using react_native_linux::clampScrollOffset;
 using react_native_linux::decelerateAxis;
 using react_native_linux::dragAxis;
+using react_native_linux::hasSnapPoints;
 using react_native_linux::InputEvent;
 using react_native_linux::InputEventKind;
 using react_native_linux::InputQueue;
-using react_native_linux::hasSnapPoints;
 using react_native_linux::isScrollEvent;
 using react_native_linux::kDecelerationRateFast;
 using react_native_linux::kDecelerationRateNormal;
 using react_native_linux::kWheelNotchDistance;
-using react_native_linux::makeConfiguredShadowNode;
-using react_native_linux::makeTaskDroppingUIManager;
 using react_native_linux::maintainedScrollOffset;
 using react_native_linux::MaintainVisibleContentPosition;
+using react_native_linux::makeConfiguredShadowNode;
+using react_native_linux::makeTaskDroppingUIManager;
 using react_native_linux::maximumScrollOffset;
+using react_native_linux::minimumScrollOffset;
 using react_native_linux::PassThroughShadowTreeDelegate;
 using react_native_linux::PointerDispatch;
 using react_native_linux::PointerRouter;
 using react_native_linux::SceneCommand;
+using react_native_linux::ScrollAxisBounds;
 using react_native_linux::ScrollAxisKind;
 using react_native_linux::ScrollAxisState;
 using react_native_linux::ScrollCadenceEvents;
-using react_native_linux::ScrollChildFrame;
 using react_native_linux::ScrollCadenceFrame;
+using react_native_linux::ScrollChildFrame;
 using react_native_linux::ScrollController;
 using react_native_linux::ScrollDestination;
 using react_native_linux::ScrollEventCadence;
@@ -77,6 +79,20 @@ constexpr double kViewportLength = 150.0;
 constexpr double kContentLength = 470.0;
 constexpr double kMaximumOffset = 320.0;
 
+// Content shorter than the viewport it sits in: nothing scrolls, and the offset belongs at the start.
+constexpr ScrollAxisBounds kShortContentBounds{.contentLength = 100.0, .viewportLength = kViewportLength};
+constexpr ScrollAxisBounds kBounds{.contentLength = kContentLength, .viewportLength = kViewportLength};
+constexpr ScrollAxisBounds kUnboundedBounds{.contentLength = kUnboundedContent, .viewportLength = kViewportLength};
+
+// The inset table's geometry (#241): the same 470 points of content, 50 points of `contentInset` above it and 30
+// below, so the range is [-50, 350] rather than [0, 320].
+constexpr double kLeadingInset = 50.0;
+constexpr double kTrailingInset = 30.0;
+constexpr ScrollAxisBounds kInsetBounds{.contentLength = kContentLength,
+                                        .viewportLength = kViewportLength,
+                                        .leadingInset = kLeadingInset,
+                                        .trailingInset = kTrailingInset};
+
 // Longer than the slowest curve `decelerationRate` can ask for takes to come to rest.
 constexpr size_t kSettleFrameLimit = 20000;
 
@@ -87,7 +103,7 @@ double settledOffset(double velocity, double frameMilliseconds, double decelerat
     ScrollAxisState axis{.offset = 0.0, .velocity = velocity};
 
     for (size_t frame = 0; frame < kSettleFrameLimit && axis.velocity != 0.0; ++frame) {
-        axis = decelerateAxis(axis, frameMilliseconds, decelerationRate, kUnboundedContent, kViewportLength);
+        axis = decelerateAxis(axis, frameMilliseconds, decelerationRate, kUnboundedBounds);
     }
 
     return axis.offset;
@@ -216,8 +232,7 @@ TEST(ScrollEventCadenceTest, AThrottledFlingReportsWhereItStopped) {
 // [0, kMaximumOffset].
 
 ScrollDestination destinationFor(double currentOffset, double targetOffset, bool isAnimated = false) {
-    return scrollToDestination(currentOffset, targetOffset, isAnimated, kDecelerationRateNormal, kContentLength,
-                               kViewportLength);
+    return scrollToDestination(currentOffset, targetOffset, isAnimated, kDecelerationRateNormal, kBounds);
 }
 
 TEST(ScrollToDestinationTest, ScrollingToWhereTheContentAlreadyIsIsNoWorkAndEmitsNothing) {
@@ -244,7 +259,7 @@ TEST(ScrollToDestinationTest, AClampedTargetThatLandsOnTheCurrentOffsetIsStillNo
 
 TEST(ScrollToDestinationTest, ContentShorterThanTheViewportSettlesAtZero) {
     const ScrollDestination destination =
-        scrollToDestination(0.0, 300.0, false, kDecelerationRateNormal, 100.0, kViewportLength);
+        scrollToDestination(0.0, 300.0, false, kDecelerationRateNormal, kShortContentBounds);
 
     EXPECT_FALSE(destination.hasWork);
 }
@@ -274,8 +289,9 @@ TEST(ScrollToDestinationTest, AnAnimatedScrollLeavesTheOffsetAloneAndFlicksTowar
 TEST(ScrollPhysicsTest, AnOffsetAtRestFollowsContentThatShrankBelowIt) {
     // 320 was the end of 470 points of content; the content is now 300, so the end is 150.
     const ScrollAxisState resting{.offset = kMaximumOffset, .velocity = 0.0};
-    const ScrollAxisState followed = decelerateAxis(resting, kFrameMilliseconds60Hz, kDecelerationRateNormal,
-                                                    300.0, kViewportLength);
+    const ScrollAxisState followed =
+        decelerateAxis(resting, kFrameMilliseconds60Hz, kDecelerationRateNormal,
+                       ScrollAxisBounds{.contentLength = 300.0, .viewportLength = kViewportLength});
 
     EXPECT_DOUBLE_EQ(followed.offset, 150.0);
     EXPECT_DOUBLE_EQ(followed.velocity, 0.0);
@@ -283,34 +299,149 @@ TEST(ScrollPhysicsTest, AnOffsetAtRestFollowsContentThatShrankBelowIt) {
 
 TEST(ScrollPhysicsTest, AnOffsetAtRestStaysPutWhenTheContentGrows) {
     const ScrollAxisState resting{.offset = 120.0, .velocity = 0.0};
-    const ScrollAxisState unchanged = decelerateAxis(resting, kFrameMilliseconds60Hz, kDecelerationRateNormal,
-                                                     kContentLength * 2, kViewportLength);
+    const ScrollAxisState unchanged =
+        decelerateAxis(resting, kFrameMilliseconds60Hz, kDecelerationRateNormal,
+                       ScrollAxisBounds{.contentLength = kContentLength * 2, .viewportLength = kViewportLength});
 
     EXPECT_DOUBLE_EQ(unchanged.offset, 120.0);
 }
 
 TEST(ScrollPhysicsTest, ContentThatNoLongerFillsTheViewportSendsTheOffsetHome) {
     const ScrollAxisState resting{.offset = 40.0, .velocity = 0.0};
-    const ScrollAxisState home = decelerateAxis(resting, kFrameMilliseconds60Hz, kDecelerationRateNormal, 100.0,
-                                                kViewportLength);
+    const ScrollAxisState home =
+        decelerateAxis(resting, kFrameMilliseconds60Hz, kDecelerationRateNormal, kShortContentBounds);
 
     EXPECT_DOUBLE_EQ(home.offset, 0.0);
 }
 
+#pragma mark - contentInset (#241)
+
+// Issue #241. `contentInset` is one thing to this arithmetic and one thing only: the range grows by the inset at
+// each end, so the content may come to rest at `-inset.top` and at `contentSize + inset.bottom - viewport`. The
+// axis has a leading end and a trailing end rather than four named edges, which is what makes the vertical
+// `top`/`bottom` pair and the horizontal `left`/`right` pair the same rows of this table read twice.
+
+struct InsetRangeCase {
+    const char* what;
+    ScrollAxisBounds bounds;
+    double offset;
+    double expected;
+};
+
+TEST(ScrollInsetTest, TheInsetExtendsTheRangeAtWhicheverEndsItIsSetOn) {
+    const std::vector<InsetRangeCase> cases{
+        {.what = "the leading inset is how far past the start of the content the offset may rest",
+         .bounds = kInsetBounds,
+         .offset = -400.0,
+         .expected = -kLeadingInset},
+        {.what = "the trailing inset is added to the content before the viewport is taken off it",
+         .bounds = kInsetBounds,
+         .offset = 400.0,
+         .expected = kContentLength + kTrailingInset - kViewportLength},
+        {.what = "an offset inside the range is untouched by either inset",
+         .bounds = kInsetBounds,
+         .offset = 200.0,
+         .expected = 200.0},
+        {.what = "the start of the content is still a resting place with an inset above it",
+         .bounds = kInsetBounds,
+         .offset = 0.0,
+         .expected = 0.0},
+        {.what = "an axis with no inset keeps the range it had before contentInset existed",
+         .bounds = kBounds,
+         .offset = -30.0,
+         .expected = 0.0},
+        {.what = "a leading inset alone leaves the end of the content where it was",
+         .bounds = ScrollAxisBounds{.contentLength = kContentLength,
+                                    .viewportLength = kViewportLength,
+                                    .leadingInset = kLeadingInset},
+         .offset = 400.0,
+         .expected = kMaximumOffset},
+        {.what = "a trailing inset alone leaves the start of the content where it was",
+         .bounds = ScrollAxisBounds{.contentLength = kContentLength,
+                                    .viewportLength = kViewportLength,
+                                    .trailingInset = kTrailingInset},
+         .offset = -1.0,
+         .expected = 0.0},
+        {.what = "content shorter than its viewport rests inside its own leading inset rather than above it",
+         .bounds =
+             ScrollAxisBounds{.contentLength = 100.0, .viewportLength = kViewportLength, .leadingInset = kLeadingInset},
+         .offset = 0.0,
+         .expected = -kLeadingInset},
+    };
+
+    for (const InsetRangeCase& insetCase : cases) {
+        EXPECT_DOUBLE_EQ(clampScrollOffset(insetCase.offset, insetCase.bounds), insetCase.expected) << insetCase.what;
+    }
+}
+
+TEST(ScrollInsetTest, TheEndsOfTheRangeAreTheInsetEndsAndNotTheContentEnds) {
+    // core#57522: `scrollToEnd` reads this number, and reading the content's own end is what that issue is.
+    EXPECT_DOUBLE_EQ(minimumScrollOffset(kInsetBounds), -kLeadingInset);
+    EXPECT_DOUBLE_EQ(maximumScrollOffset(kInsetBounds), kContentLength + kTrailingInset - kViewportLength);
+    EXPECT_DOUBLE_EQ(minimumScrollOffset(kBounds), 0.0);
+    EXPECT_DOUBLE_EQ(maximumScrollOffset(kBounds), kMaximumOffset);
+}
+
+TEST(ScrollInsetTest, MomentumIntoAnInsetStopsDeadAtTheInsetEnd) {
+    const ScrollAxisState intoTheLeadingInset =
+        decelerateAxis(ScrollAxisState{.offset = -48.0, .velocity = -velocityForTravel(200.0, kDecelerationRateNormal)},
+                       kFrameMilliseconds60Hz, kDecelerationRateNormal, kInsetBounds);
+    const ScrollAxisState intoTheTrailingInset =
+        decelerateAxis(ScrollAxisState{.offset = 348.0, .velocity = velocityForTravel(200.0, kDecelerationRateNormal)},
+                       kFrameMilliseconds60Hz, kDecelerationRateNormal, kInsetBounds);
+
+    EXPECT_DOUBLE_EQ(intoTheLeadingInset.offset, -kLeadingInset);
+    EXPECT_EQ(intoTheLeadingInset.velocity, 0.0);
+    EXPECT_DOUBLE_EQ(intoTheTrailingInset.offset, kMaximumOffset + kTrailingInset);
+    EXPECT_EQ(intoTheTrailingInset.velocity, 0.0);
+}
+
+TEST(ScrollInsetTest, ADragIntoTheLeadingInsetCoversTheInsetAndNoMore) {
+    const ScrollAxisState dragged = dragAxis(ScrollAxisState{}, -80.0, 10.0, kInsetBounds);
+
+    EXPECT_DOUBLE_EQ(dragged.offset, -kLeadingInset);
+    EXPECT_DOUBLE_EQ(dragged.velocity, -kLeadingInset / 10.0);
+}
+
+TEST(ScrollInsetTest, AScrollToPastEitherEndIsClampedOntoTheInsetRatherThanOntoTheContent) {
+    const ScrollDestination beforeTheStart =
+        scrollToDestination(0.0, -500.0, false, kDecelerationRateNormal, kInsetBounds);
+    const ScrollDestination pastTheEnd = scrollToDestination(0.0, 5000.0, false, kDecelerationRateNormal, kInsetBounds);
+
+    EXPECT_DOUBLE_EQ(beforeTheStart.offset, -kLeadingInset);
+    EXPECT_DOUBLE_EQ(pastTheEnd.offset, kMaximumOffset + kTrailingInset);
+}
+
+TEST(ScrollInsetTest, TheStartSnapToStartNamesIsTheInsetStart) {
+    // `snapToStart` names the start of the *range*, which the inset moved: a flick most of the way into the top
+    // inset settles at the inset's own end rather than back at the content's first page. With `snapToStart` off
+    // there is no snap point on that side at all and the flick settles where momentum put it, which is the rule
+    // the props are documented with and the reason the inset only enters through that flag.
+    const ScrollAxisState axis{.offset = 0.0, .velocity = -velocityForTravel(45.0, kDecelerationRateNormal)};
+    const ScrollAxisBounds bounds{
+        .contentLength = kContentLength, .viewportLength = kViewportLength, .leadingInset = kLeadingInset};
+
+    EXPECT_DOUBLE_EQ(
+        settleTargetOffset(axis, kDecelerationRateNormal, bounds, ScrollSnapConfiguration{.isPagingEnabled = true}),
+        -kLeadingInset);
+    EXPECT_DOUBLE_EQ(settleTargetOffset(axis, kDecelerationRateNormal, bounds,
+                                        ScrollSnapConfiguration{.snapToStart = false, .isPagingEnabled = true}),
+                     -45.0);
+}
+
 TEST(ScrollPhysicsTest, ClampsBetweenZeroAndTheContentThatDoesNotFit) {
-    EXPECT_DOUBLE_EQ(maximumScrollOffset(kContentLength, kViewportLength), kMaximumOffset);
-    EXPECT_DOUBLE_EQ(maximumScrollOffset(100.0, kViewportLength), 0.0);
-    EXPECT_DOUBLE_EQ(clampScrollOffset(-30.0, kContentLength, kViewportLength), 0.0);
-    EXPECT_DOUBLE_EQ(clampScrollOffset(400.0, kContentLength, kViewportLength), kMaximumOffset);
-    EXPECT_DOUBLE_EQ(clampScrollOffset(200.0, kContentLength, kViewportLength), 200.0);
+    EXPECT_DOUBLE_EQ(maximumScrollOffset(kBounds), kMaximumOffset);
+    EXPECT_DOUBLE_EQ(maximumScrollOffset(kShortContentBounds), 0.0);
+    EXPECT_DOUBLE_EQ(clampScrollOffset(-30.0, kBounds), 0.0);
+    EXPECT_DOUBLE_EQ(clampScrollOffset(400.0, kBounds), kMaximumOffset);
+    EXPECT_DOUBLE_EQ(clampScrollOffset(200.0, kBounds), 200.0);
 }
 
 TEST(ScrollPhysicsTest, DecaysVelocityByTheRateRaisedToTheFrameTime) {
-    const ScrollAxisState normal =
-        decelerateAxis(ScrollAxisState{.offset = 0.0, .velocity = 1.0}, kFrameMilliseconds60Hz, kDecelerationRateNormal,
-                       kUnboundedContent, kViewportLength);
+    const ScrollAxisState normal = decelerateAxis(ScrollAxisState{.offset = 0.0, .velocity = 1.0},
+                                                  kFrameMilliseconds60Hz, kDecelerationRateNormal, kUnboundedBounds);
     const ScrollAxisState fast = decelerateAxis(ScrollAxisState{.offset = 0.0, .velocity = 1.0}, kFrameMilliseconds60Hz,
-                                                kDecelerationRateFast, kUnboundedContent, kViewportLength);
+                                                kDecelerationRateFast, kUnboundedBounds);
 
     EXPECT_NEAR(normal.velocity, kNormalDecayPerFrame60Hz, kDecayTolerance);
     EXPECT_NEAR(fast.velocity, kFastDecayPerFrame60Hz, kDecayTolerance);
@@ -338,10 +469,10 @@ TEST(ScrollPhysicsTest, AFasterRateCoversLessGroundForTheSameVelocity) {
 TEST(ScrollPhysicsTest, FoldsTheLastHalfPointIntoTheStepThatStops) {
     const ScrollAxisState stopping =
         decelerateAxis(ScrollAxisState{.offset = 0.0, .velocity = velocityForTravel(0.4, kDecelerationRateNormal)},
-                       kFrameMilliseconds60Hz, kDecelerationRateNormal, kUnboundedContent, kViewportLength);
+                       kFrameMilliseconds60Hz, kDecelerationRateNormal, kUnboundedBounds);
     const ScrollAxisState gliding =
         decelerateAxis(ScrollAxisState{.offset = 0.0, .velocity = velocityForTravel(0.6, kDecelerationRateNormal)},
-                       kFrameMilliseconds60Hz, kDecelerationRateNormal, kUnboundedContent, kViewportLength);
+                       kFrameMilliseconds60Hz, kDecelerationRateNormal, kUnboundedBounds);
 
     EXPECT_EQ(stopping.velocity, 0.0);
     EXPECT_NEAR(stopping.offset, 0.4, 1e-12);
@@ -352,7 +483,7 @@ TEST(ScrollPhysicsTest, FoldsTheLastHalfPointIntoTheStepThatStops) {
 TEST(ScrollPhysicsTest, ReachingTheEndOfTheContentStopsMomentumDead) {
     const ScrollAxisState advanced =
         decelerateAxis(ScrollAxisState{.offset = 318.0, .velocity = velocityForTravel(200.0, kDecelerationRateNormal)},
-                       kFrameMilliseconds60Hz, kDecelerationRateNormal, kContentLength, kViewportLength);
+                       kFrameMilliseconds60Hz, kDecelerationRateNormal, kBounds);
 
     EXPECT_DOUBLE_EQ(advanced.offset, kMaximumOffset);
     EXPECT_EQ(advanced.velocity, 0.0);
@@ -367,22 +498,21 @@ TEST(ScrollPhysicsTest, ConfinesDecelerationRatesTheCurveIsNotDefinedAt) {
 }
 
 TEST(ScrollPhysicsTest, ADragMovesOneToOneAndReportsTheVelocityItImplies) {
-    const ScrollAxisState dragged = dragAxis(ScrollAxisState{}, 25.0, 10.0, kContentLength, kViewportLength);
+    const ScrollAxisState dragged = dragAxis(ScrollAxisState{}, 25.0, 10.0, kBounds);
 
     EXPECT_DOUBLE_EQ(dragged.offset, 25.0);
     EXPECT_DOUBLE_EQ(dragged.velocity, 2.5);
 }
 
 TEST(ScrollPhysicsTest, ADragThatHitsTheEndReportsOnlyTheDistanceItCovered) {
-    const ScrollAxisState dragged =
-        dragAxis(ScrollAxisState{.offset = 310.0, .velocity = 0.0}, 40.0, 10.0, kContentLength, kViewportLength);
+    const ScrollAxisState dragged = dragAxis(ScrollAxisState{.offset = 310.0, .velocity = 0.0}, 40.0, 10.0, kBounds);
 
     EXPECT_DOUBLE_EQ(dragged.offset, kMaximumOffset);
     EXPECT_DOUBLE_EQ(dragged.velocity, 1.0);
 }
 
 TEST(ScrollPhysicsTest, ADragInsideAZeroLengthFrameImpliesNoVelocity) {
-    const ScrollAxisState dragged = dragAxis(ScrollAxisState{}, 25.0, 0.0, kContentLength, kViewportLength);
+    const ScrollAxisState dragged = dragAxis(ScrollAxisState{}, 25.0, 0.0, kBounds);
 
     EXPECT_DOUBLE_EQ(dragged.offset, 25.0);
     EXPECT_DOUBLE_EQ(dragged.velocity, 0.0);
@@ -411,8 +541,10 @@ double settleTargetFor(const SettleCase& settleCase) {
     const ScrollAxisState axis{.offset = settleCase.offset,
                                .velocity = velocityForTravel(settleCase.travel, kDecelerationRateNormal)};
 
-    return settleTargetOffset(axis, kDecelerationRateNormal, settleCase.contentLength, settleCase.viewportLength,
-                              settleCase.snapping);
+    return settleTargetOffset(
+        axis, kDecelerationRateNormal,
+        ScrollAxisBounds{.contentLength = settleCase.contentLength, .viewportLength = settleCase.viewportLength},
+        settleCase.snapping);
 }
 
 // A five-page carousel, one page per viewport. The fractional pair is core#48393's case: a 150 point viewport
@@ -841,7 +973,8 @@ TEST(MaintainVisibleContentPositionTest, HoldsTheVisibleChildStillAcrossEveryCom
     for (const MaintainCase& maintainCase : cases) {
         EXPECT_DOUBLE_EQ(maintainedScrollOffset(maintainCase.offset, maintainCase.previousChildren,
                                                 maintainCase.currentChildren, maintainCase.maintaining,
-                                                maintainCase.contentLength, maintainCase.viewportLength),
+                                                ScrollAxisBounds{.contentLength = maintainCase.contentLength,
+                                                                 .viewportLength = maintainCase.viewportLength}),
                          maintainCase.expected)
             << maintainCase.what;
     }
@@ -995,11 +1128,9 @@ protected:
 
                 return std::static_pointer_cast<RootShadowNode>(oldRootShadowNode.ShadowNode::clone(
                     ShadowNodeFragment{.props = ShadowNodeFragment::propsPlaceholder(),
-                                       .children = std::make_shared<const ChildList>(ChildList{
-                                           makeConfiguredShadowNode(scrollViewDescriptor_, 20, kSurfaceId,
-                                                                    contextContainer_, std::move(props),
-                                                                    std::make_shared<const ChildList>(
-                                                                        std::move(children)))})}));
+                                       .children = std::make_shared<const ChildList>(ChildList{makeConfiguredShadowNode(
+                                           scrollViewDescriptor_, 20, kSurfaceId, contextContainer_, std::move(props),
+                                           std::make_shared<const ChildList>(std::move(children)))})}));
             },
             commitOptions);
     }
@@ -1036,10 +1167,10 @@ protected:
 
         shadowTree_->commit(
             [this, &props, &rowTags](const RootShadowNode& oldRootShadowNode) {
-                return std::static_pointer_cast<RootShadowNode>(oldRootShadowNode.ShadowNode::clone(
-                    ShadowNodeFragment{.props = ShadowNodeFragment::propsPlaceholder(),
-                                       .children = std::make_shared<const ChildList>(
-                                           ChildList{rowList(oldRootShadowNode, props, rowTags)})}));
+                return std::static_pointer_cast<RootShadowNode>(oldRootShadowNode.ShadowNode::clone(ShadowNodeFragment{
+                    .props = ShadowNodeFragment::propsPlaceholder(),
+                    .children =
+                        std::make_shared<const ChildList>(ChildList{rowList(oldRootShadowNode, props, rowTags)})}));
             },
             commitOptions);
     }
@@ -1143,8 +1274,8 @@ private:
             oldContentView == nullptr
                 ? makeConfiguredShadowNode(viewDescriptor_, 21, kSurfaceId, contextContainer_,
                                            folly::dynamic::object("width", 100), contentChildren)
-                : oldContentView->clone(ShadowNodeFragment{.props = ShadowNodeFragment::propsPlaceholder(),
-                                                           .children = contentChildren});
+                : oldContentView->clone(
+                      ShadowNodeFragment{.props = ShadowNodeFragment::propsPlaceholder(), .children = contentChildren});
         const std::shared_ptr<const ChildList> scrollViewChildren =
             std::make_shared<const ChildList>(ChildList{contentView});
 
@@ -1155,11 +1286,10 @@ private:
 
         const PropsParserContext parserContext{kSurfaceId, *contextContainer_};
 
-        return oldScrollView->clone(
-            ShadowNodeFragment{.props = scrollViewDescriptor_.cloneProps(parserContext,
-                                                                        ScrollViewShadowNode::defaultSharedProps(),
-                                                                        RawProps{folly::dynamic(props)}),
-                               .children = scrollViewChildren});
+        return oldScrollView->clone(ShadowNodeFragment{
+            .props = scrollViewDescriptor_.cloneProps(parserContext, ScrollViewShadowNode::defaultSharedProps(),
+                                                      RawProps{folly::dynamic(props)}),
+            .children = scrollViewChildren});
     }
 
     /**
@@ -1372,6 +1502,52 @@ TEST_F(ScrollControllerTest, AScrollToCommandMovesOnceAndAScrollToWhereYouAreEmi
 
     EXPECT_FALSE(controller.isScrollActive());
     EXPECT_FALSE(controller.hasDispatchedScrollEvent());
+}
+
+// Issue #241, over a committed tree rather than a table: the props reach the range. The rig's ScrollView is a
+// 100-point viewport over 300 points of content, so the content's own end is 200 and the inset moves it.
+
+TEST_F(ScrollControllerTest, ScrollToEndLandsOnTheContentEndTheTrailingInsetAdjusted) {
+    commitScrollView(folly::dynamic::object("contentInset", folly::dynamic::object("bottom", 30)));
+    ScrollController controller = makeController();
+
+    controller.dispatchCommands({SceneCommand{.tag = 20, .name = "scrollToEnd", .args = folly::dynamic::array(false)}});
+    controller.advance(kFrameMilliseconds60Hz);
+
+    EXPECT_TRUE(controller.hasDispatchedScrollEvent());
+
+    // Where it landed, read through the rule that a `scrollTo` to the offset the content is already at is no
+    // work: 230 is nothing to do and the content's own end, 200, is 30 points back up.
+    controller.dispatchCommands(
+        {SceneCommand{.tag = 20, .name = "scrollTo", .args = folly::dynamic::array(0, 230, false)}});
+        controller.advance(kFrameMilliseconds60Hz);
+
+    EXPECT_FALSE(controller.hasDispatchedScrollEvent());
+
+    controller.dispatchCommands(
+        {SceneCommand{.tag = 20, .name = "scrollTo", .args = folly::dynamic::array(0, 200, false)}});
+    controller.advance(kFrameMilliseconds60Hz);
+
+    EXPECT_TRUE(controller.hasDispatchedScrollEvent());
+}
+
+TEST_F(ScrollControllerTest, AWheelIntoTheLeadingInsetScrollsAndTheSameWheelWithoutOneDoesNot) {
+    // core#54123: the inset area stopped scrolling at all, because the range it belongs to was the content box.
+    commitScrollView(folly::dynamic::object("contentInset", folly::dynamic::object("top", 40)));
+    ScrollController inset = makeController();
+
+    inset.dispatch({wheel(-1)});
+    inset.advance(kFrameMilliseconds60Hz);
+
+    EXPECT_TRUE(inset.hasDispatchedScrollEvent());
+
+    commitScrollView(folly::dynamic::object());
+    ScrollController withoutInset = makeController();
+
+    withoutInset.dispatch({wheel(-1)});
+    withoutInset.advance(kFrameMilliseconds60Hz);
+
+    EXPECT_FALSE(withoutInset.hasDispatchedScrollEvent());
 }
 
 TEST_F(ScrollControllerTest, APrependAdjustsTheOffsetOnTheCommitThatMadeIt) {
