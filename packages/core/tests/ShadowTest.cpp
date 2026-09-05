@@ -46,34 +46,34 @@ TEST(ShadowExtentTest, NoShadowsReachNoFurtherThanTheBox) {
 }
 
 TEST(ShadowExtentTest, AnOutsetShadowReachesBlurPlusSpreadPastEverySideAndItsOffsetPastTwoOfThem) {
-    // Reach is 16 + 4 = 20 on every side, and the offset of (8, 6) moves that reach: 12 on the left, 28 on the
-    // right, 14 on the top, 26 on the bottom.
+    // Reach is 16 * 1.5 + 4 = 28 on every side, and the offset of (8, 6) moves that reach: 20 on the left, 36 on
+    // the right, 22 on the top, 34 on the bottom.
     const Rect extent = shadowExtent(cardFrame(), {outsetShadow(8, 6, 16, 4)});
 
-    EXPECT_FLOAT_EQ(extent.origin.x, 88);
-    EXPECT_FLOAT_EQ(extent.origin.y, 86);
-    EXPECT_FLOAT_EQ(extent.size.width, 200);
-    EXPECT_FLOAT_EQ(extent.size.height, 140);
+    EXPECT_FLOAT_EQ(extent.origin.x, 80);
+    EXPECT_FLOAT_EQ(extent.origin.y, 78);
+    EXPECT_FLOAT_EQ(extent.size.width, 216);
+    EXPECT_FLOAT_EQ(extent.size.height, 156);
 }
 
 TEST(ShadowExtentTest, AnOffsetLargerThanTheReachNeverPullsTheExtentInsideTheBox) {
-    // Offset 30 right with a reach of 10 reaches 40 past the right edge and nothing past the left.
+    // Offset 30 right with a reach of 15 reaches 45 past the right edge and nothing past the left.
     const Rect extent = shadowExtent(cardFrame(), {outsetShadow(30, 0, 10, 0)});
 
     EXPECT_FLOAT_EQ(extent.origin.x, 100);
-    EXPECT_FLOAT_EQ(extent.size.width, 200);
+    EXPECT_FLOAT_EQ(extent.size.width, 205);
 }
 
 TEST(ShadowExtentTest, SeveralShadowsReachAsFarAsTheFurthestOfThemOnEachSide) {
-    // The first reaches 4 on every side and 24 below; the second reaches 2 on every side and 14 to the left. The
-    // top is the larger of the two tops, which is the second shadow's 2 — the first one's offset pulls its own
+    // The first reaches 6 on every side and 26 below; the second reaches 3 on every side and 15 to the left. The
+    // top is the larger of the two tops, which is the second shadow's 3 — the first one's offset pulls its own
     // reach off the top entirely.
     const Rect extent = shadowExtent(cardFrame(), {outsetShadow(0, 20, 4, 0), outsetShadow(-12, 0, 2, 0)});
 
-    EXPECT_FLOAT_EQ(extent.origin.x, 86);
-    EXPECT_FLOAT_EQ(extent.origin.y, 98);
-    EXPECT_FLOAT_EQ(extent.size.width, 178);
-    EXPECT_FLOAT_EQ(extent.size.height, 126);
+    EXPECT_FLOAT_EQ(extent.origin.x, 85);
+    EXPECT_FLOAT_EQ(extent.origin.y, 97);
+    EXPECT_FLOAT_EQ(extent.size.width, 181);
+    EXPECT_FLOAT_EQ(extent.size.height, 129);
 }
 
 TEST(ShadowExtentTest, AnInsetShadowReachesNowhereOutsideTheBox) {
@@ -148,32 +148,76 @@ TEST(ShadowResolutionTest, TheInheritedOpacityFoldsIntoTheShadowColourLikeEveryO
     EXPECT_EQ(snapshot[0].shadows[0].colorArgb, 0x80CC3333U);
 }
 
-TEST(ShadowDamageTest, AShadowedNodeDamagesWhereItsShadowReaches) {
-    const std::shared_ptr<ViewProps> viewProps = propsWithBackground(blue());
-
-    viewProps->boxShadow = {
-        BoxShadow{.offsetX = 10, .offsetY = 10, .blurRadius = 10, .spreadDistance = 0, .color = red(), .inset = false}};
-
-    RetainedScene scene;
-
-    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
-    addChild(scene, kSurfaceTag, makeStyledView(kCardTag, cardFrame(), viewProps));
-
-    const SceneDamage damage = scene.takeDamage();
-
-    // The box is (100, 100) 160x100; the shadow reaches 20 down-right of it, so the damage runs to 280 and 220.
-    ASSERT_FALSE(damage.empty());
-
+Rect unionOf(const SceneDamage& damage) {
     Rect covered = damage.front();
 
     for (const Rect& rect : damage) {
         covered.unionInPlace(rect);
     }
 
-    EXPECT_LE(covered.origin.x, 100);
-    EXPECT_LE(covered.origin.y, 100);
-    EXPECT_GE(covered.origin.x + covered.size.width, 280);
-    EXPECT_GE(covered.origin.y + covered.size.height, 220);
+    return covered;
+}
+
+std::shared_ptr<ViewProps> propsWithShadow(float offsetX, float offsetY, float blur) {
+    const std::shared_ptr<ViewProps> viewProps = propsWithBackground(blue());
+
+    viewProps->boxShadow = {BoxShadow{.offsetX = offsetX,
+                                      .offsetY = offsetY,
+                                      .blurRadius = blur,
+                                      .spreadDistance = 0,
+                                      .color = red(),
+                                      .inset = false}};
+
+    return viewProps;
+}
+
+// The mount damages the whole surface, which would cover any shadow whether or not the extent knew about one. So
+// the assertions below are about a *change*: the shadow appearing, and the shadow going away, each read from a
+// scene whose mount damage has already been taken.
+TEST(ShadowDamageTest, GainingAShadowDamagesWhereTheShadowWillReach) {
+    RetainedScene scene;
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, makeStyledView(kCardTag, cardFrame(), propsWithBackground(blue())));
+    scene.takeDamage();
+
+    scene.updateNode(makeStyledView(kCardTag, cardFrame(), propsWithShadow(10, 10, 10)));
+
+    const SceneDamage damage = scene.takeDamage();
+
+    ASSERT_FALSE(damage.empty());
+
+    // The box is (100, 100) 160x100; the shadow reaches 15 out and 10 down-right of it, so the damage runs from
+    // (95, 95) to (285, 225).
+    const Rect covered = unionOf(damage);
+
+    EXPECT_LE(covered.origin.x, 95);
+    EXPECT_LE(covered.origin.y, 95);
+    EXPECT_GE(covered.origin.x + covered.size.width, 285);
+    EXPECT_GE(covered.origin.y + covered.size.height, 225);
+}
+
+TEST(ShadowDamageTest, LosingAShadowDamagesWhereTheShadowWas) {
+    RetainedScene scene;
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, makeStyledView(kCardTag, cardFrame(), propsWithShadow(10, 10, 10)));
+    scene.takeDamage();
+
+    scene.updateNode(makeStyledView(kCardTag, cardFrame(), propsWithBackground(blue())));
+
+    const SceneDamage damage = scene.takeDamage();
+
+    ASSERT_FALSE(damage.empty());
+
+    // The pixels the shadow occupied have to be repainted even though the node that owns them no longer reaches
+    // there, so the vacated extent is the same rectangle the shadow damaged when it arrived.
+    const Rect covered = unionOf(damage);
+
+    EXPECT_LE(covered.origin.x, 95);
+    EXPECT_LE(covered.origin.y, 95);
+    EXPECT_GE(covered.origin.x + covered.size.width, 285);
+    EXPECT_GE(covered.origin.y + covered.size.height, 225);
 }
 
 } // namespace

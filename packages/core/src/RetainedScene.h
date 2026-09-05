@@ -220,8 +220,9 @@ struct SceneShadow {
 
 /**
  * The rectangle a node's outset shadows can reach: `bounds` grown on each side by the furthest any shadow
- * extends past it — offset plus blur plus spread — or `bounds` unchanged when every shadow is inset or there is
- * none. This is what a shadowed node damages, and it is arithmetic so the gate can hold it.
+ * extends past it — offset plus spread plus one and a half blur radii, which is where the painter's Gaussian
+ * stops putting pixels — or `bounds` unchanged when every shadow is inset or there is none. This is what a
+ * shadowed node damages, and it is arithmetic so the gate can hold it.
  */
 facebook::react::Rect shadowExtent(const facebook::react::Rect& bounds, const std::vector<SceneShadow>& shadows);
 

@@ -2158,6 +2158,9 @@ The painter only ever sees the list.
 - **Sigma is half the blur radius on the way back out.** `toBlur` is `SkMaskFilter::MakeBlur(kNormal, blur / 2)`,
   and no filter at all for a blur of zero, so a sharp shadow is a plain rounded rect rather than a blur with a
   degenerate sigma. Android's `CSSBackgroundDrawable` and the iOS `RCTBoxShadow` layer make the same choice.
+- **The list is drawn back to front.** CSS paints the first shadow written on top of the ones after it, so both
+  passes iterate the list in reverse — and because the legacy quartet is appended after the `boxShadow` entries,
+  it lands underneath them, which is the order a component that sets both wants.
 - **Outset shadows are painted before the fill, under a difference clip.** The canvas clips out the node's own
   rounded border box (`SkClipOp::kDifference`) and draws each shadow as the border box outset by
   `spreadDistance` and translated by the offset (`spreadAndOffset`). The clip is what keeps a translucent shadow
@@ -2168,9 +2171,12 @@ The painter only ever sees the list.
   as its hole, filled even-odd so only the band between them takes the blur. The margin only has to exceed the
   widest blur a shadow can spread into the box, so it is a constant rather than a computation. Inset shadows sit
   above the background and below the border, which is the CSS stacking order.
-- **The shadow damages where it reaches.** `shadowExtent` grows a primitive's frame by `blurRadius +
-  spreadDistance` on every side, and by the offset on the two sides the shadow moves towards, over every outset
-  shadow it carries; inset shadows add nothing. `primitiveDamageBounds` maps that grown rect through the node's
+- **The shadow damages where it reaches, which is further than its blur radius.** `shadowExtent` grows a
+  primitive's frame by `spreadDistance + 1.5 * blurRadius` on every side, and by the offset on the two sides the
+  shadow moves towards, over every outset shadow it carries; inset shadows add nothing. The one-and-a-half is the
+  painter's own arithmetic read back: sigma is half the blur radius, and Skia's blur support is three sigmas
+  (`SkBlurEngine` sizes its kernel at `ceil(3 * sigma)`), so pixels appear up to one and a half radii out and
+  damage that stopped at the radius would leave the outermost of them stale. `primitiveDamageBounds` maps that grown rect through the node's
   matrix, so a shadowed card that moves repaints the strip its shadow vacated — the damage golden would show a
   ghost otherwise, and `ShadowDamageTest` asserts the extent rather than the picture.
 - **`elevation`** is Android's shorthand for a material shadow, and the shared `ViewProps` does not carry it —
@@ -2180,7 +2186,9 @@ The painter only ever sees the list.
 Three layers, as everywhere. `ShadowTest.cpp` covers the resolution (paint order, the quartet's doubling and
 opacity, the two ways a quartet casts nothing, inherited opacity folding into the colour) and the extent (no
 shadow, one shadow, an offset larger than the reach never pulling the extent inside the box, several shadows
-reaching as far as the furthest on each side, inset reaching nowhere); `shadow.png` is the golden of
+reaching as far as the furthest on each side, inset reaching nowhere) — and the damage of a shadow *appearing*
+and *going away*, each read after the mount's own full-surface damage has been drained, because that damage
+would otherwise cover the extent whether or not `primitiveDamageBounds` knew about shadows; `shadow.png` is the golden of
 `shadow.js`, one tile for each way a shadow interacts with the node: outset, inset, two in paint order,
 per-corner radii, under an `overflow: hidden` ancestor, on a rotated node, the legacy quartet, and spread with no
 blur. The e2e layer is not a separate scenario: a shadow neither receives input nor emits an event, and the

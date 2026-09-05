@@ -810,6 +810,11 @@ void mergeDamage(SceneDamage& damage, const SceneDamage& additions) {
     }
 }
 
+// A blurred shadow paints further than its blur radius. The painter's sigma is half the radius, and Skia's blur
+// support is three sigmas — `SkBlurEngine` computes its kernel radius as `ceil(3 * sigma)` — so pixels appear up
+// to one and a half radii out, and damage that stopped at the radius would leave the outermost of them stale.
+constexpr facebook::react::Float kPaintedBlurRadii = 1.5F;
+
 facebook::react::Rect shadowExtent(const facebook::react::Rect& bounds, const std::vector<SceneShadow>& shadows) {
     facebook::react::Float left = 0;
     facebook::react::Float top = 0;
@@ -821,7 +826,7 @@ facebook::react::Rect shadowExtent(const facebook::react::Rect& bounds, const st
             continue;
         }
 
-        const facebook::react::Float reach = shadow.blurRadius + shadow.spreadDistance;
+        const facebook::react::Float reach = (shadow.blurRadius * kPaintedBlurRadii) + shadow.spreadDistance;
 
         left = std::max(left, reach - shadow.offsetX);
         top = std::max(top, reach - shadow.offsetY);

@@ -31,6 +31,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <ranges>
 
 namespace react_native_linux {
 
@@ -251,7 +252,8 @@ SkRRect spreadAndOffset(const SkRRect& box, const SceneShadow& shadow) {
 }
 
 /**
- * The shadows a node casts outside itself, drawn before anything of the node is, in the order they were written.
+ * The shadows a node casts outside itself, drawn before anything of the node is, last one first: CSS paints the
+ * shadow written first on top of the ones after it, so the list is drawn back to front.
  *
  * The node's own rounded box is clipped *out* first, which is the CSS rule: an outset shadow is never painted
  * where the box is, so a translucent box does not darken over its own shadow. The ancestors' clips are already
@@ -263,7 +265,7 @@ void paintOutsetShadows(SkCanvas& canvas, const ScenePrimitive& primitive, const
 
     canvas.clipRRect(outer, SkClipOp::kDifference, true);
 
-    for (const SceneShadow& shadow : primitive.shadows) {
+    for (const SceneShadow& shadow : std::ranges::reverse_view(primitive.shadows)) {
         if (shadow.isInset || SkColorGetA(shadow.colorArgb) == 0) {
             continue;
         }
@@ -278,7 +280,8 @@ void paintOutsetShadows(SkCanvas& canvas, const ScenePrimitive& primitive, const
 }
 
 /**
- * The shadows a node casts inside itself, drawn over its fill and under its content: the blurred ring between
+ * The shadows a node casts inside itself, back to front like the outset ones, drawn over its fill and under its
+ * content: the blurred ring between
  * the box and the box inset by the spread and moved by the offset, clipped to the box so nothing leaks out.
  * A rectangle far larger than the box carries the ring's outside as an even-odd fill, so the blur has something
  * to fade from on every side.
@@ -288,7 +291,7 @@ void paintInsetShadows(SkCanvas& canvas, const ScenePrimitive& primitive, const 
 
     canvas.clipRRect(outer, SkClipOp::kIntersect, true);
 
-    for (const SceneShadow& shadow : primitive.shadows) {
+    for (const SceneShadow& shadow : std::ranges::reverse_view(primitive.shadows)) {
         if (!shadow.isInset || SkColorGetA(shadow.colorArgb) == 0) {
             continue;
         }
