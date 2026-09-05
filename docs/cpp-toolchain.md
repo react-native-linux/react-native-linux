@@ -2559,25 +2559,40 @@ resolution happens inside `FontCollection` and `OneLineShaper`, and the `test` p
 Still open, and owned elsewhere: a `fontFamily` fallback *list* rather than one name is react-native#48625 and
 belongs with #70's item 3; the last-emoji clipping of react-native#57995 needs U+1FAE8, which v2.047 predates.
 
-**The emoji golden's tolerance (#307).** `png-diff.ts`'s zero tolerance holds because this rig renders on the CPU
-through Skia's raster backend, where one Skia build given one scene produces the same bytes on every machine —
-except for `emoji.png`. Noto Color Emoji's glyphs are CBDT bitmaps at a single 109px strike, and both font sizes
-the fixture draws, 18 and 40 points, scale that strike down; the scaler is FreeType's, not Skia's, and FreeType's
-bitmap-scaling output is not byte-identical across builds. Issue #307 measured this directly: a host with a newer
-FreeType than the one that blessed `emoji.png` rendered one pixel as `rgba(59, 67, 88)` against the golden's
-`rgba(59, 67, 87)`, a one-unit difference in one channel, reproducibly on that host and nowhere else in the suite.
+**The emoji golden's tolerance (#307, revised by #314).** `png-diff.ts`'s zero tolerance holds because this rig
+renders on the CPU through Skia's raster backend, where one Skia build given one scene produces the same bytes on
+every machine. #307 first read a one-host drift — one pixel off by one channel unit — as FreeType's CBDT bitmap
+scaler not being byte-identical across builds, and #309 widened `emoji.png`'s budget to
+`{ maxChannelDifference: 1, maxDifferentPixels: 16 }` to absorb it.
 
-The fix is option (a) from #307's acceptance criteria: `fixtures.ts`'s `emoji.png` entry alone carries a
-`tolerance: { maxChannelDifference: 1, maxDifferentPixels: 16 }`, and `golden.spec.ts` compares it with
-`compareImagesWithTolerance` from `png-diff.ts` instead of `compareImages`. Sixteen pixels is a small multiple of
-the one pixel #307 measured — wide enough that a FreeType point release does not flap the suite, and far short of
-what a moved, missing or recoloured glyph would touch. Option (b), rendering the fixture at Noto Color Emoji's
-native 109px strike so FreeType has nothing to scale, was rejected: the fixture's own point is that a bitmap face
-is scaled at the sizes real UI uses (see *What the layers prove* above), and 109pt text is not one of them: making
-the picture exact would make it prove nothing.
+A second measurement, from a different host on the same commit, did not fit that diagnosis: 2325 of 480000 pixels
+differed, 327 of them past the budget, with a worst-case channel delta of 9 spread across most of the emoji grid —
+not the thin single-glyph fringe a rasteriser rounding difference produces. The actual cause was `packages/core/fonts`
+holding a stale `.vendor-stamp.json` that predated the lock's `Noto Color Emoji` entry: with the pinned face absent,
+`SkFontMgr_New_Custom_Directory` answered nothing for that family, and the run silently fell back to fontconfig's
+*system* `NotoColorEmoji.ttf` — a different file by sha256 — which is exactly the fallback naming the family in
+`toFontFamilies` was meant to prevent (see *Colour emoji and the fallback chain* above).
 
-Every other raster golden keeps zero tolerance; `compareImages` is unchanged, and `compareImagesWithTolerance` is
-reached only through the one fixture that opts in.
+#314 closed that hole with two loud checks instead of a wider tolerance:
+
+- **C++, at text-pipeline start.** `PinnedFontFamilies.h`/`.cpp` (Skia-free, table-tested against a fake
+  resolution list) builds a fatal-diagnostic message naming every pinned family the asset font manager did not
+  resolve. `TextPipelineState`'s constructor calls `assetFontManager->matchFamily(...)` for `kBundledFontFamily`
+  and `kEmojiFontFamily` — the same two names `scripts/fonts.lock.json` pins — and aborts with that message,
+  naming `scripts/fonts.lock.json` and the vendor command, if either comes back empty.
+- **TypeScript, in the golden rig.** `packages/core/goldens/fonts-vendored.ts`'s `checkFontsAreVendored` reads
+  `scripts/fonts.lock.json`, confirms every pinned file exists under `packages/core/fonts`, and confirms
+  `.vendor-stamp.json` matches the lock. `golden.spec.ts` calls it once, before any fixture runs, whenever the
+  `hello_react` binary exists — throwing, not skipping, so a stale vendor directory fails the whole spec file
+  loudly instead of quietly comparing pixels against the wrong face.
+
+With the emoji face correctly vendored, `emoji.png` was regenerated ten times on this host and diffed against the
+checked-in golden at zero tolerance: byte-identical every time (`sha256:e0d0b4a2…`, matching the checked-in file).
+That confirms #307's original one-pixel reading was the same stale-vendor bug in miniature, not a real
+cross-build rasteriser difference — so `fixtures.ts`'s `emoji.png` entry drops its `tolerance` field and compares
+with `compareImages` like every other raster golden. The `tolerance` field, `compareImagesWithTolerance` and its
+spec in `png-diff.spec.ts` stay: a real cross-FreeType rounding difference is still a category of drift this rig
+has no other answer for, and the mechanism is proven, just unused for now.
 
 ### The cache
 

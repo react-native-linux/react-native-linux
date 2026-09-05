@@ -1,6 +1,7 @@
 #include "TextPipeline.h"
 
 #include "LineBoxMetrics.h"
+#include "PinnedFontFamilies.h"
 #include "TextGeometry.h"
 #include "TextTransform.h"
 
@@ -32,6 +33,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdlib>
 #include <memory>
 #include <mutex>
 #include <iostream>
@@ -387,10 +389,35 @@ skia::textlayout::PlaceholderStyle toPlaceholderStyle(const facebook::react::Att
                                               skia::textlayout::TextBaseline::kAlphabetic, 0.0F};
 }
 
+/**
+ * Aborts the process when a family `scripts/fonts.lock.json` pins did not resolve from the asset font manager —
+ * #314, the resolvable-but-wrong-source sibling of the #70 diagnostic. #307 measured what happens without this:
+ * a stale `packages/core/fonts` silently fell through to fontconfig's system emoji face, a different file by
+ * sha256, and the golden drifted by hundreds of pixels with no error printed anywhere. Checked once, at
+ * `TextPipelineState` construction, because every text run asks for the same two families and a directory
+ * missing one of them is missing it on every frame.
+ */
+void checkPinnedFontFamiliesResolve(SkFontMgr& assetFontManager) {
+    const std::vector<PinnedFontFamilyResolution> resolutions{
+        {kBundledFontFamily, assetFontManager.matchFamily(kBundledFontFamily)->count() > 0},
+        {kEmojiFontFamily, assetFontManager.matchFamily(kEmojiFontFamily)->count() > 0}};
+
+    const std::optional<std::string> fatalMessage = pinnedFontFamiliesFatalMessage(resolutions);
+
+    if (fatalMessage.has_value()) {
+        std::cerr << fatalMessage.value() << std::endl;
+        std::abort();
+    }
+}
+
 struct TextPipelineState {
     TextPipelineState()
         : fontCollection(sk_make_sp<skia::textlayout::FontCollection>()), unicode(SkUnicodes::ICU::Make()) {
-        fontCollection->setAssetFontManager(SkFontMgr_New_Custom_Directory(RNL_BUNDLED_FONT_DIR));
+        sk_sp<SkFontMgr> assetFontManager = SkFontMgr_New_Custom_Directory(RNL_BUNDLED_FONT_DIR);
+
+        checkPinnedFontFamiliesResolve(*assetFontManager);
+
+        fontCollection->setAssetFontManager(assetFontManager);
         fontCollection->setDefaultFontManager(SkFontMgr_New_FontConfig(nullptr, SkFontScanner_Make_FreeType()),
                                               kFallbackFontFamily);
     }

@@ -7,9 +7,11 @@ interface GoldenFixture {
   /** Whatever the flag needs after the output path. Empty for the flags that need nothing. */
   readonly renderArguments: readonly string[];
   /**
-   * Opts this fixture out of `png-diff.ts`'s zero-tolerance default. Absent for every fixture but `emoji.png` —
-   * see #307: FreeType's CBDT bitmap scaler is not byte-identical across builds, and every other fixture is our
-   * own painter over Skia's CPU raster backend, which is.
+   * Opts a fixture out of `png-diff.ts`'s zero-tolerance default. No fixture currently sets it — see #314: #307's
+   * `emoji.png` drift turned out to be a stale `packages/core/fonts` falling through to fontconfig's system
+   * emoji face, not FreeType scaler rounding, and ten renders against a correctly vendored host reproduce the
+   * checked-in golden byte-for-byte. The field, `compareImagesWithTolerance` and its spec stay — a real
+   * cross-build rasteriser difference is still a category of drift the raster rig has no other answer for.
    */
   readonly tolerance?: ToleranceBudget;
 }
@@ -39,16 +41,12 @@ export const fixtures: readonly GoldenFixture[] = [
   },
   // #249: the fallback chain, pictured. Every row below the Latin control needs a face Noto Sans does not have.
   // The flag asserts the emoji face's own ascent did not push the line box past the frame Yoga measured.
-  // #307: FreeType's CBDT bitmap scaler is not byte-identical across builds, so this fixture carries a tolerance.
-  // It is the only raster golden that does; every other one is our own painter over Skia's CPU raster backend.
-  // Sixteen pixels is a small multiple of the one pixel #307 measured.
-  // That is wide enough that a FreeType point release does not flap the suite, and far short of what a moved or missing glyph would touch.
+  // #307/#314: what looked like FreeType scaler rounding was a stale `packages/core/fonts` falling through to Fontconfig's system emoji face. Ten renders against a correctly vendored host reproduce this golden byte-for-byte, so this fixture carries zero tolerance like every other raster golden.
   {
     bundleFileName: "emoji.js",
     goldenFileName: "emoji.png",
     renderArguments: [],
     renderFlag: "--text-fit-golden",
-    tolerance: { maxChannelDifference: 1, maxDifferentPixels: 16 },
   },
   // Issue #250's text-style matrix, proved at two font sizes: letterSpacing, textTransform, textDecorationLine
   // (with textDecorationColor and textDecorationStyle), textShadow* and fontVariant. Docs/cpp-toolchain.md's
@@ -259,3 +257,5 @@ export const fixtures: readonly GoldenFixture[] = [
     renderFlag: "--text-fit-golden",
   },
 ];
+
+export { checkFontsAreVendored } from "./fonts-vendored.ts";
