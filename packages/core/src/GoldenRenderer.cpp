@@ -460,9 +460,57 @@ bool doParagraphsFitTheirBoxes(const SceneSnapshot& scene) {
     return doAllFit && doesEveryTextInputAgreeWithACompanionText(scene);
 }
 
-// Issue #46. Geometry only: the frame, the composed matrix, and the clip frames the primitive was painted under.
-// Colours and pixels are left out on purpose — an image that decoded between the two snapshots is supposed to
-// appear, and a caret that blinked is supposed to blink; the layout under them is what must not move.
+// Issue #114, item 5: a `<TextInput>`'s own frame can hold still while the paragraph inside it settles somewhere
+// different, which the node's frame, matrix and clips cannot see at all. The caret rectangle is not the
+// comparator here on purpose: a field nobody has focused or typed into yet publishes its caret through
+// `TextInputController::publish`'s own side channel (see `SceneEditorState` in `RetainedScene.h`), which has not
+// run at all by the time the *first* snapshot is taken — comparing it would fail every unfocused field's first
+// frame for a reason that has nothing to do with layout. `measureParagraphMetrics` over the field's own
+// attributed string is what is left, and it is exactly the caret-versus-line proof's other half: the paragraph
+// a field's text lays out to, independent of any caret, selection or scroll state.
+bool haveSameEditorGeometry(const ScenePrimitive& first, const ScenePrimitive& settled) {
+    if (!first.editor.has_value() || !settled.editor.has_value() || !first.text.has_value() ||
+        !settled.text.has_value()) {
+        return true;
+    }
+
+    const EditorGeometry firstGeometry = measureEditorGeometry(first.text.value(), first.editor.value());
+    const EditorGeometry settledGeometry = measureEditorGeometry(settled.text.value(), settled.editor.value());
+
+    if (std::abs(firstGeometry.contentWidth - settledGeometry.contentWidth) > kTextFitTolerance ||
+        std::abs(firstGeometry.contentHeight - settledGeometry.contentHeight) > kTextFitTolerance) {
+        std::cerr << "[golden] tag " << first.tag << " measured " << firstGeometry.contentWidth << "x"
+                  << firstGeometry.contentHeight << " of content on the first frame and " << settledGeometry.contentWidth
+                  << "x" << settledGeometry.contentHeight << " once settled" << std::endl;
+
+        return false;
+    }
+
+    const ParagraphMetrics firstMetrics = measureParagraphMetrics(
+        first.text->attributedString, first.text->paragraphAttributes, firstGeometry.layoutWidth);
+    const ParagraphMetrics settledMetrics = measureParagraphMetrics(
+        settled.text->attributedString, settled.text->paragraphAttributes, settledGeometry.layoutWidth);
+
+    if (firstMetrics.lines.empty() != settledMetrics.lines.empty()) {
+        return false;
+    }
+
+    if (!firstMetrics.lines.empty() &&
+        std::abs(firstMetrics.lines.front().height - settledMetrics.lines.front().height) > kTextFitTolerance) {
+        std::cerr << "[golden] tag " << first.tag << " painted a first line " << firstMetrics.lines.front().height
+                  << " points tall on the first frame and " << settledMetrics.lines.front().height
+                  << " once settled" << std::endl;
+
+        return false;
+    }
+
+    return true;
+}
+
+// Issue #46. Geometry only: the frame, the composed matrix, the clip frames the primitive was painted under, and
+// — for a `<TextInput>` — the text geometry the frame alone cannot show. Colours and pixels are left out on
+// purpose — an image that decoded between the two snapshots is supposed to appear, and a caret that blinked is
+// supposed to blink; the layout under them is what must not move.
 bool haveSameGeometry(const ScenePrimitive& first, const ScenePrimitive& settled) {
     if (first.tag != settled.tag || first.frame != settled.frame || first.clips.size() != settled.clips.size()) {
         return false;
@@ -478,7 +526,7 @@ bool haveSameGeometry(const ScenePrimitive& first, const ScenePrimitive& settled
         }
     }
 
-    return true;
+    return haveSameEditorGeometry(first, settled);
 }
 
 bool doFirstAndSettledFramesAgree(const SceneSnapshot& first, const SceneSnapshot& settled) {

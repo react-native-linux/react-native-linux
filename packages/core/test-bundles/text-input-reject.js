@@ -11,6 +11,15 @@
 // parent approved, so the rejected letter's answer ("12" + "3", not the field's original mount value) can only
 // be explained by the parent's commit actually reaching the buffer, not by coincidence.
 //
+// The fixture does not just log the trace, it asserts it: `assertNextEvent` checks every event against
+// `expectedEvents` in order — type, and for `topChange`/`topSelectionChange`, the text and event count too — and
+// throws on the first mismatch, which fails the run through the fatal-error gate `renderTypedGolden` already
+// checks (`JsErrorReporter`/`hasReportedFatalError`). That is what makes an unexpected extra
+// `topContentSizeChange`, or a `topChange` in the wrong place, a run failure rather than a line only a human
+// reading the trace would notice. A run that stopped short of the full sequence — the revert never arriving, say
+// — is not caught here: nothing throws when an event simply never comes. The golden image is what catches that
+// half, because a field stuck on the rejected text paints differently from one that reverted.
+//
 // hello_react --type packages/core/test-bundles/text-input-reject.js /tmp/reject.png "3x"
 
 const surfaceId = 1;
@@ -49,8 +58,34 @@ const commit = (root) => {
   fabric.completeRoot(surfaceId, children);
 };
 
-fabric.registerEventHandler((instanceHandle, type, payload) => {
-  const name = instanceHandle === null || instanceHandle === undefined ? 'unknown' : instanceHandle.name;
+// One accepted digit ("3"), one rejected letter ("x") answered by the parent's own commit of "123", named
+// exactly: type, and — where the payload carries them — the text and the event count. `topContentSizeChange`
+// and `topKeyDown`/`topKeyUp`/`topKeyPress` carry no text to check, so only their position and type are asserted.
+const expectedEvents = [
+  { type: 'topFocus' },
+  { type: 'topKeyUp' },
+  { type: 'topContentSizeChange' },
+  { type: 'topSelectionChange', text: mountedText, eventCount: 0 },
+  { type: 'topKeyDown' },
+  { type: 'topKeyPress', eventCount: 0 },
+  { type: 'topChange', text: '123', eventCount: 1 },
+  { type: 'topContentSizeChange' },
+  { type: 'topSelectionChange', text: '123', eventCount: 1 },
+  { type: 'topKeyUp' },
+  { type: 'topKeyDown' },
+  { type: 'topKeyPress', eventCount: 1 },
+  { type: 'topChange', text: '123x', eventCount: 2 },
+  { type: 'topContentSizeChange' },
+  { type: 'topSelectionChange', text: '123x', eventCount: 2 },
+  { type: 'topKeyUp' },
+  { type: 'topChange', text: '123', eventCount: 2 },
+  { type: 'topContentSizeChange' },
+  { type: 'topSelectionChange', text: '123', eventCount: 2 },
+];
+
+let eventIndex = 0;
+
+const describe = (type, payload) => {
   const text = payload && payload.text !== undefined ? ' text="' + payload.text + '"' : '';
   const eventCount = payload && payload.eventCount !== undefined ? ' eventCount=' + payload.eventCount : '';
   const contentSize =
@@ -58,7 +93,66 @@ fabric.registerEventHandler((instanceHandle, type, payload) => {
       ? ' contentSize=' + payload.contentSize.width + 'x' + payload.contentSize.height
       : '';
 
-  console.log('text-input-reject: ' + type + ' on ' + name + text + eventCount + contentSize);
+  return type + text + eventCount + contentSize;
+};
+
+const assertNextEvent = (type, payload) => {
+  const expected = expectedEvents[eventIndex];
+  const position = eventIndex;
+
+  eventIndex += 1;
+
+  if (expected === undefined) {
+    throw new Error(
+      'text-input-reject: unexpected event ' +
+        describe(type, payload) +
+        ' after the expected sequence of ' +
+        expectedEvents.length +
+        ' events already ended',
+    );
+  }
+
+  if (expected.type !== type) {
+    throw new Error(
+      'text-input-reject: expected ' + expected.type + ' at position ' + position + ' but got ' + describe(type, payload),
+    );
+  }
+
+  if (expected.text !== undefined && (payload === null || payload === undefined || payload.text !== expected.text)) {
+    throw new Error(
+      'text-input-reject: expected ' +
+        type +
+        ' with text="' +
+        expected.text +
+        '" at position ' +
+        position +
+        ' but got ' +
+        describe(type, payload),
+    );
+  }
+
+  if (
+    expected.eventCount !== undefined &&
+    (payload === null || payload === undefined || payload.eventCount !== expected.eventCount)
+  ) {
+    throw new Error(
+      'text-input-reject: expected ' +
+        type +
+        ' with eventCount=' +
+        expected.eventCount +
+        ' at position ' +
+        position +
+        ' but got ' +
+        describe(type, payload),
+    );
+  }
+};
+
+fabric.registerEventHandler((instanceHandle, type, payload) => {
+  const name = instanceHandle === null || instanceHandle === undefined ? 'unknown' : instanceHandle.name;
+
+  console.log('text-input-reject: ' + describe(type, payload) + ' on ' + name);
+  assertNextEvent(type, payload);
 
   if (type !== 'topChange') {
     return;

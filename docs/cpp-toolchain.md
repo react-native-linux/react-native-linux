@@ -4086,12 +4086,20 @@ value is a real answer to `reactTreeAttributedString`, and there is no upstream 
 `reconcile`.
 
 **A fixed-height field's first line does not move once the run settles (item 5, core#54304).** The general
-first-frame proof of issue #46 already covers this: `--first-frame-golden` snapshots the scene at the first
-commit and again once decodes and timers have settled, and asserts every primitive's frame, matrix and clip
-frames agree between the two. `text-input-first-frame.js` is that fixture aimed at a `<TextInput>` rather than a
-`<ScrollView>` — a fixed-height multiline field four lines deep in a box four lines tall, with a marker below it
-standing wherever a first-line shift would have reached. No new C++ was needed: the mechanism `scroll-first-frame.js`
-already exercises is general over any primitive with text geometry, including a field's own caret-bearing one.
+first-frame proof of issue #46 covers a node's own frame, matrix and clips, and that alone is not enough for a
+`<TextInput>`: the paragraph inside a field can settle somewhere different while the field's own box holds
+still, which none of those three would show. `haveSameEditorGeometry` in `GoldenRenderer.cpp` is the addition —
+for a primitive carrying both `SceneTextContent` and `SceneEditorContent`, it compares `measureEditorGeometry`'s
+`contentWidth`/`contentHeight` and `measureParagraphMetrics`'s first-line height between the first and settled
+snapshots. The caret rectangle is deliberately not part of this: an unfocused field's caret is published through
+`TextInputController::publish`'s side channel (`SceneEditorState`), which has not run at all by the time the
+*first* snapshot is taken, so comparing it would fail every unfocused field's first frame regardless of whether
+the paragraph itself moved. `text-input-first-frame.js` is the fixture — a fixed-height multiline field four
+lines deep in a box four lines tall, with a marker below it standing wherever a first-line shift would have
+reached — and it was checked against a real regression, not only against itself: a throwaway fixture that
+commits a short value first and clones in the fixture's own long value from a `setTimeout` (`scroll-first-frame.js`'s
+own async-settle pattern) fails with `tag 10 measured 39.6x22 of content on the first frame and 339.1x66 once
+settled`, and passes once the two commits carry the same text.
 
 **A `<TextInput>` and a `<Text>` holding the same string in the same style have the same height (item 6).**
 This does not hold against a field given an explicit height of its own — several fixtures style a field taller
