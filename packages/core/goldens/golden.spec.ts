@@ -1,3 +1,4 @@
+import { compareImages, compareImagesWithTolerance } from "./png-diff.ts";
 import { describe, expect, it } from "vitest";
 
 import { env, execPath, stdout } from "node:process";
@@ -6,7 +7,6 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 
 import { PNG } from "pngjs";
 
-import { compareImages } from "./png-diff.ts";
 import { compareImagesPerceptually } from "./perceptual-diff.ts";
 import { fixtures } from "./fixtures.ts";
 import path from "node:path";
@@ -49,7 +49,14 @@ const expectGoldenToMatch = (fixture: GoldenFixture, goldenPath: string): void =
 
     renderFixture(fixture, renderedPath);
 
-    expect(compareImages(decodePng(renderedPath), decodePng(goldenPath))).toBeNull();
+    const actual = decodePng(renderedPath);
+    const expected = decodePng(goldenPath);
+
+    const { tolerance } = fixture;
+
+    expect(
+      tolerance ? compareImagesWithTolerance(actual, expected, tolerance) : compareImages(actual, expected),
+    ).toBeNull();
   } finally {
     rmSync(scratchDirectory, { force: true, recursive: true });
   }
