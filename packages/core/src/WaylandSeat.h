@@ -47,6 +47,13 @@ constexpr uint32_t kMinimumSeatVersion = 5;
  * Coordinates arrive as `wl_fixed_t` in surface-local space, which is already the coordinate space Fabric lays
  * out in.
  *
+ * `wl_keyboard.enter`/`.leave` are the window-level half of the focus contract #218 names, tracked here as
+ * `hasKeyboardFocus` and deliberately nowhere near `FocusModel`: that class owns which *node* is focused and has
+ * no window-level state to lose, so a keyboard leave neither calls it nor clears its focused tag, and a
+ * following enter needs to do nothing to "restore" a focus that was never disturbed. That separation is the
+ * whole of how window deactivate/reactivate preserves node focus, and it is a property of what this class does
+ * not do rather than of anything it does.
+ *
  * Threading contract: every member runs on the thread that owns the Wayland connection — the frame thread. The
  * listeners here are invoked from inside that thread's `wl_display_dispatch_pending`, so the queue they fill and
  * `takeEvents` that empties it need no lock.
@@ -64,6 +71,8 @@ public:
     size_t droppedEventCount() const noexcept;
     void attachTextInput(zwp_text_input_manager_v3* manager);
     TextInputClient* textInput() const noexcept;
+    /** `wl_keyboard.enter` most recently reached this seat's surface and no `.leave` has followed it yet. */
+    bool hasKeyboardFocus() const noexcept;
 
 private:
     void updateCapabilities(uint32_t capabilities);
@@ -119,6 +128,7 @@ private:
     InputModifiers modifiers_;
     facebook::react::Point pointerPosition_{};
     std::unique_ptr<TextInputClient> textInput_;
+    bool hasKeyboardFocus_{false};
 };
 
 } // namespace react_native_linux

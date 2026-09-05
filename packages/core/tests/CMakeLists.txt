@@ -78,6 +78,7 @@ add_executable(rnl_core_tests
     TextRasterizationPolicyTest.cpp
     ThreadingConformanceTest.cpp
     TextInputControllerTest.cpp
+    ToplevelStateTest.cpp
     UpstreamTestDriftOracleTest.cpp
     ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/AnimatedNodeTests.cpp
     ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/AnimationDriverTests.cpp
@@ -103,6 +104,7 @@ add_executable(rnl_core_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputComponent.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputController.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputV3State.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ToplevelState.cpp
     ${RNL_UPSTREAM_CSS_TESTS}
     ${RNL_UPSTREAM_GRAPHICS_TESTS}
     ${RNL_UPSTREAM_TIMELINE_TESTS})

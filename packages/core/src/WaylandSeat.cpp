@@ -2,14 +2,13 @@
 
 #include "TextInputClient.h"
 
-#include <sys/mman.h>
-
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <linux/input-event-codes.h>
 #include <memory>
 #include <string>
+#include <sys/mman.h>
 #include <unistd.h>
 #include <vector>
 #include <wayland-client.h>
@@ -243,12 +242,12 @@ void WaylandSeat::pushKey(uint32_t key, uint32_t state) {
 
     // The DOM names are computed here rather than downstream because this is the only place that has an
     // xkb_state; the naming rules themselves are in InputPipeline, where the coverage gate scores them.
-    queue_.push(InputEvent{.kind = kind,
-                           .surfacePoint = pointerPosition_,
-                           .key = domKeyName(keysymName(keyboardState_, xkbKeycode),
-                                             keyText(keyboardState_, xkbKeycode)),
-                           .code = domKeyCode(key),
-                           .modifiers = modifiers_});
+    queue_.push(
+        InputEvent{.kind = kind,
+                   .surfacePoint = pointerPosition_,
+                   .key = domKeyName(keysymName(keyboardState_, xkbKeycode), keyText(keyboardState_, xkbKeycode)),
+                   .code = domKeyCode(key),
+                   .modifiers = modifiers_});
 }
 
 void WaylandSeat::releasePointer() noexcept {
@@ -263,6 +262,8 @@ void WaylandSeat::releaseKeyboard() noexcept {
         wl_keyboard_release(keyboard_);
         keyboard_ = nullptr;
     }
+
+    hasKeyboardFocus_ = false;
 }
 
 void WaylandSeat::handleSeatCapabilities(void* data, wl_seat* /*seat*/, uint32_t capabilities) {
@@ -345,15 +346,15 @@ void WaylandSeat::handlePointerAxisValue120(void* data, wl_pointer* /*pointer*/,
 void WaylandSeat::handlePointerAxisStop(void* data, wl_pointer* /*pointer*/, uint32_t /*time*/, uint32_t axis) {
     WaylandSeat* seat = static_cast<WaylandSeat*>(data);
 
-    seat->queue_.push(makeScrollEvent(InputEventKind::PointerScrollStop, axis, 0.0, seat->pointerPosition_,
-                                      seat->modifiers_));
+    seat->queue_.push(
+        makeScrollEvent(InputEventKind::PointerScrollStop, axis, 0.0, seat->pointerPosition_, seat->modifiers_));
 }
 
 void WaylandSeat::handlePointerAxisDiscrete(void* data, wl_pointer* /*pointer*/, uint32_t axis, int32_t discrete) {
     WaylandSeat* seat = static_cast<WaylandSeat*>(data);
 
-    seat->queue_.push(makeScrollEvent(InputEventKind::PointerScrollDiscrete, axis, discrete,
-                                      seat->pointerPosition_, seat->modifiers_));
+    seat->queue_.push(makeScrollEvent(InputEventKind::PointerScrollDiscrete, axis, discrete, seat->pointerPosition_,
+                                      seat->modifiers_));
 }
 
 void WaylandSeat::handleKeyboardKeymap(void* data, wl_keyboard* /*keyboard*/, uint32_t format, int32_t keymapDescriptor,
@@ -361,11 +362,15 @@ void WaylandSeat::handleKeyboardKeymap(void* data, wl_keyboard* /*keyboard*/, ui
     static_cast<WaylandSeat*>(data)->loadKeymap(format, keymapDescriptor, size);
 }
 
-void WaylandSeat::handleKeyboardEnter(void* /*data*/, wl_keyboard* /*keyboard*/, uint32_t /*serial*/,
-                                      wl_surface* /*surface*/, wl_array* /*keys*/) {}
+void WaylandSeat::handleKeyboardEnter(void* data, wl_keyboard* /*keyboard*/, uint32_t /*serial*/,
+                                      wl_surface* /*surface*/, wl_array* /*keys*/) {
+    static_cast<WaylandSeat*>(data)->hasKeyboardFocus_ = true;
+}
 
-void WaylandSeat::handleKeyboardLeave(void* /*data*/, wl_keyboard* /*keyboard*/, uint32_t /*serial*/,
-                                      wl_surface* /*surface*/) {}
+void WaylandSeat::handleKeyboardLeave(void* data, wl_keyboard* /*keyboard*/, uint32_t /*serial*/,
+                                      wl_surface* /*surface*/) {
+    static_cast<WaylandSeat*>(data)->hasKeyboardFocus_ = false;
+}
 
 void WaylandSeat::handleKeyboardKey(void* data, wl_keyboard* /*keyboard*/, uint32_t /*serial*/, uint32_t /*time*/,
                                     uint32_t key, uint32_t state) {
@@ -385,5 +390,7 @@ void WaylandSeat::attachTextInput(zwp_text_input_manager_v3* manager) {
 }
 
 TextInputClient* WaylandSeat::textInput() const noexcept { return textInput_.get(); }
+
+bool WaylandSeat::hasKeyboardFocus() const noexcept { return hasKeyboardFocus_; }
 
 } // namespace react_native_linux

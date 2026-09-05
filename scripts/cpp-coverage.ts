@@ -47,6 +47,7 @@ const scopedSourcePaths: readonly string[] = [
   "packages/core/src/ScrollEventCadence.cpp",
   "packages/core/src/ScrollPhysics.cpp",
   "packages/core/src/TextInputV3State.cpp",
+  "packages/core/src/ToplevelState.cpp",
 ];
 
 const coverageTool = env["LLVM_COV"] ?? "llvm-cov";
