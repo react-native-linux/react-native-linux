@@ -49,6 +49,8 @@ type Artifacts = ReturnType<typeof resolveArtifactPaths>;
 type Compositor = ReturnType<typeof spawn>;
 
 interface TraceSink {
+  /** Set once the compositor's stdio has closed, which is later than its exit. */
+  isClosed: boolean;
   text: string;
 }
 
@@ -84,7 +86,7 @@ const createWorkspace = (artifacts: Artifacts): Workspace => {
     frameLogPath: artifacts.frameLogPath,
     runtimeDirectory: mkdtempSync(path.join(tmpdir(), "rnl-e2e-")),
     screenshotPath: artifacts.screenshotPath,
-    trace: { text: "" },
+    trace: { isClosed: false, text: "" },
   };
 };
 
@@ -132,6 +134,9 @@ const attachTrace = (compositor: Compositor, sink: TraceSink): void => {
 
   compositor.stdout?.on("data", record);
   compositor.stderr?.on("data", record);
+  compositor.on("close", () => {
+    sink.isClosed = true;
+  });
   compositor.on("error", (error: Error) => {
     sink.text += `${error.message}\n`;
   });
@@ -185,11 +190,7 @@ const injectSteps = (scenario: Scenario, runtimeDirectory: string, socketName: s
   return `rnl_inject exited with status ${String(injection.status)}:\n${injection.stdout}${injection.stderr}`;
 };
 
-const driveScenario = async (
-  scenario: Scenario,
-  compositor: Compositor,
-  workspace: Workspace,
-): Promise<readonly string[]> => {
+const driveScenario = async (scenario: Scenario, workspace: Workspace): Promise<readonly string[]> => {
   const socketName = await waitForSocketName(workspace.runtimeDirectory);
 
   if (socketName === null) {
@@ -203,10 +204,10 @@ const driveScenario = async (
   const injectionFailure = injectSteps(scenario, workspace.runtimeDirectory, socketName);
 
   /*
-   * The window exits on its own once it has captured the frame its budget names. Reaching the timeout instead is
-   * not a failure by itself: everything the trace assertions need has been printed by then.
+   * The window exits on its own once it has captured the frame its budget names. The wait is for the streams to
+   * close, not the exit code: a process can exit with its last lines still in flight, and #233's gate needs them.
    */
-  await waitUntil(() => compositor.exitCode !== null, RUN_TIMEOUT_MS);
+  await waitUntil(() => workspace.trace.isClosed, RUN_TIMEOUT_MS);
 
   return injectionFailure === null ? [] : [injectionFailure];
 };
@@ -222,7 +223,7 @@ const driveAndStop = async (
   workspace: Workspace,
 ): Promise<readonly string[]> => {
   try {
-    const failures = await driveScenario(scenario, compositor, workspace);
+    const failures = await driveScenario(scenario, workspace);
 
     return failures;
   } finally {
