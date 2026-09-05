@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <map>
 #include <react/featureflags/ReactNativeFeatureFlags.h>
 #include <react/featureflags/ReactNativeFeatureFlagsDefaults.h>
 #include <react/renderer/components/root/RootShadowNode.h>
@@ -149,6 +150,46 @@ std::shared_ptr<const facebook::react::ShadowNode> makeConfiguredShadowNode(
         .props = nodeProps, .children = children, .state = descriptor.createInitialState(nodeProps, family)};
 
     return descriptor.createShadowNode(fragment, family);
+}
+
+/**
+ * The root clone every commit-driven fixture hands `ShadowTree::commit` as its mutation: the root's own props are
+ * untouched and only the child list changes. A helper rather than a lambda body repeated per fixture because the
+ * same clone is a jscpd clone at threshold 0.
+ */
+inline facebook::react::RootShadowNode::Unshared cloneRootWithChildren(
+    const facebook::react::RootShadowNode& oldRootShadowNode,
+    std::shared_ptr<const std::vector<std::shared_ptr<const facebook::react::ShadowNode>>> children) {
+    return std::static_pointer_cast<facebook::react::RootShadowNode>(oldRootShadowNode.ShadowNode::clone(
+        ShadowNodeFragment{.props = ShadowNodeFragment::propsPlaceholder(), .children = std::move(children)}));
+}
+
+/**
+ * The absolute-frame tree walk every commit-driven layout fixture replays: each node's own `LayoutableShadowNode`
+ * frame folded into the running parent origin, with `perNode` for whatever else a fixture wants to read off the
+ * node it is currently at (a `ScrollView`'s content size, a tag-to-node index) — called once per visited node,
+ * before the frame of that node is computed. A helper rather than a second copy because the walk itself is a
+ * jscpd clone at threshold 0.
+ */
+template <typename PerNode>
+void collectAbsoluteFrames(const std::shared_ptr<const facebook::react::ShadowNode>& node, Point parentOrigin,
+                          std::map<Tag, Rect>& frames, const PerNode& perNode) {
+    perNode(node);
+
+    const auto* layoutable = dynamic_cast<const LayoutableShadowNode*>(node.get());
+
+    if (layoutable == nullptr) {
+        return;
+    }
+
+    const Rect frame = layoutable->getLayoutMetrics().frame;
+    const Point absolute{parentOrigin.x + frame.origin.x, parentOrigin.y + frame.origin.y};
+
+    frames.emplace(node->getTag(), Rect{.origin = absolute, .size = frame.size});
+
+    for (const std::shared_ptr<const facebook::react::ShadowNode>& child : node->getChildren()) {
+        collectAbsoluteFrames(child, absolute, frames, perNode);
+    }
 }
 
 /**

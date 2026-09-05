@@ -2173,6 +2173,39 @@ Not implemented at all, and owned elsewhere: `elevation`, `filter`, `mixBlendMod
 `experimental_backgroundImage` gradients and `boxShadow` with the legacy `shadow*` quartet were on that list and
 are now implemented; see *Gradients* and *Shadows* below.
 
+### Web-prop aliases (#259)
+
+The W3C "web props" — `role`, `aria-*`, `tabIndex`, `id`, and the CSS logical-property style aliases — resolve in
+two different places, and only one of them is this repository's to test. `role` and `accessibilityRole` are both
+read by the vendored `AccessibilityProps` constructor and folded into one `accessibilityTraits` bitmask through
+the same `fromRawValue(RawValue, AccessibilityTraits&)` call regardless of which raw key produced the string, so
+setting either alone produces the same traits, and setting both resolves `role` first — upstream's own
+`precedentRoleValue` picks `role` over `accessibilityRole` when both are present. The CSS logical-property style
+aliases (`inset`, `insetInline*`, `insetBlock*`, `start`/`end`, `marginInline*`, `marginBlock*`,
+`paddingInline*`, `paddingBlock*`, `gap`) are not separate fields at all: `YogaStylableProps::setProp` writes
+each one straight into the same `yoga::Style` edge or gutter its physical name would, and Yoga's own
+`Style::computeLeftEdge`/`computeTopEdge`/`computeRightEdge`/`computeBottomEdge` resolve the edge at layout time
+with a fixed precedence — the direction-aware `start`/`end` first, then the physical edge, then the logical
+`*Inline`/`*Block` shorthand, then the four-edge shorthand — shared verbatim by margin, padding and position.
+Both are proved by `WebPropAliasTest.cpp`: the accessibility pair by parsing props through `ViewComponentDescriptor`
+with no commit, the style pairs by committing a real tree through `ShadowTree` and comparing the laid-out frame,
+including the precedence cascade with two conflicting values in the same commit.
+
+`aria-*`, `tabIndex` and `id`→`nativeID` are not tested here because they are not resolved here: that mapping is
+upstream's own `View.js`/`processAriaProps`, JavaScript this repository neither vendors nor overrides — there is
+no `Libraries/` tree under `third_party/react-native`, only the C++ `ReactCommon` renderer. A `RawProps` object
+built directly, as every fixture in this suite does, is already past that resolution; testing it here would prove
+nothing about this platform and there is no fork of it to have silently diverged. `role`/`accessibilityRole` and
+the CSS logical properties are different only because Yoga and `AccessibilityProps` do the resolving in vendored
+C++ this platform links directly.
+
+The ledger (`docs/prop-coverage.json`) gains no new rows for this issue: its enumeration
+(`scripts/prop-coverage/enumerate-props.ts`) reads only `BaseViewProps.h`, the `cxx` `HostPlatformViewProps.h` and
+`ViewProps.h` for `View`, and the alias fields above live in `AccessibilityProps.h` and `YogaStylableProps.h` —
+base classes in different headers the enumerator does not scan. Adding entries for them without also teaching the
+enumerator about those headers would be flagged as stale by `prop-coverage:check`; that enumerator lives in
+`scripts/`, outside this issue's lane.
+
 ## Gradients
 
 `experimental_backgroundImage` — CSS `linear-gradient()` and `radial-gradient()` as a `<View>` background. This is

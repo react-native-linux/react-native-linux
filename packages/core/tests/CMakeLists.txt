@@ -81,6 +81,7 @@ add_executable(rnl_core_tests
     TextInputControllerTest.cpp
     ToplevelStateTest.cpp
     UpstreamTestDriftOracleTest.cpp
+    WebPropAliasTest.cpp
     ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/AnimatedNodeTests.cpp
     ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/AnimationDriverTests.cpp
     ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/DecayAnimationDriverTest.cpp
