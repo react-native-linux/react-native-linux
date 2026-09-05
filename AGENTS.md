@@ -101,7 +101,10 @@ Neither ignored nor blanket-dismissed findings count as addressed. A PR is not r
 
 Several agents work this repository at once, with different models. Two agents on one issue is worse than one
 agent idle, and a silent collision costs more than both. This section is the whole coordination system; it is
-GitHub issues and labels and nothing else, because a second store would drift.
+GitHub issues and labels and nothing else, because a second store would drift. **There are no handoff files.**
+What a session learned goes on the issue it concerns — a `CLAIM`, `RELEASE` or `BLOCKED` comment, an amended
+acceptance criterion, a new sub-issue under the epic — and the epics (#1 and its children) are the only
+source of truth for what is done, what is next and why.
 
 ### The state of an issue is a label
 
