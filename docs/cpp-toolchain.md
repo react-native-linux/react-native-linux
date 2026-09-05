@@ -4730,6 +4730,27 @@ binary is missing, so a checkout without a graphics stack stays green. In CI tha
 stops an incomplete apt list from passing as a silent skip. The `window` job installs `cage`, builds `rnl_inject`
 after the window goldens step, runs `pnpm e2e`, and always uploads `build/e2e` as the `e2e` artifact.
 
+### The error gate (#233)
+
+RNW calls `verifyNoErrorLogs()` in `afterEach` of every e2e file; ours is `describeTraceFailures` in
+`scripts/e2e/scenario.ts`, stacked onto the ordered-substring assertions it already made. A scenario fails by
+default when its trace contains a line matching one of `ERROR_TRACE_PATTERNS` — `[js-error]` (an uncaught JS
+error's own report from `JsErrorReporter`, fatal or not) and the bracketed component tags `[bundle-runner]`,
+`[image]`, `[text]` and `[rnl-window]` that `rnl_window`'s own C++ diagnostics use when they hit a fault. A
+scenario opts out with `"allowErrors": true` when it knowingly logs one.
+
+What this narrow definition does **not** catch: a raw `console.error` or `console.warn` call. `ConsoleBinding`
+prints both with no prefix at all, and the trace `scripts/e2e.ts` captures is stdout and stderr merged into one
+string with no record of which stream a line came from — nothing tells such a line apart from `console.log`
+today. Closing that gap needs #214's `ListErrors` channel, which replaces this trace-substring mechanism outright
+rather than extending it; the scenario field survives that change even though its grading source does not.
+
+`packages/core/e2e/throws.json` is the negative control the gate needs proof against: it runs `throws.js`, which
+`console.log`s its own readiness line and then throws during bundle evaluation, producing a `[js-error] fatal`
+line the gate is expected to catch. Because failing is the correct outcome for this scenario, it sets
+`"expectFailure": true` — `resolveExpectedOutcome` inverts the run's failures for exactly this case, so the
+scenario itself passes when grading it produces at least one failure, and fails if grading ever produces none.
+
 ### What is still outstanding
 
 Named here so they are not mistaken for oversights, all of them still #7:

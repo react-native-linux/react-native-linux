@@ -13,6 +13,15 @@ const SCREENSHOT_FILE_NAME = "screenshot.png";
 const TRACE_FILE_NAME = "trace.log";
 
 /**
+ * The narrow slice of "error" the trace can prove today, per #233: an uncaught JS error's own report from
+ * `JsErrorReporter`, and the bracketed component tags `rnl_window`'s C++ diagnostics use when they hit a fault.
+ * A raw `console.error`/`console.warn` call is deliberately not in this list — `ConsoleBinding` prints it with
+ * no prefix at all, so nothing in the merged stdout/stderr trace tells it apart from `console.log` until #214's
+ * `ListErrors` channel replaces this trace-substring mechanism.
+ */
+const ERROR_TRACE_PATTERNS: readonly string[] = ["[js-error]", "[bundle-runner]", "[image]", "[text]", "[rnl-window]"];
+
+/**
  * The perf gate of #7. `p95Ms` is the ninety-fifth percentile `wp_presentation` frame time the run may not
  * exceed, and `minFrames` is how many frames have to have been presented for that percentile to mean anything —
  * a run that presented four frames can pass any budget by accident.
@@ -32,10 +41,14 @@ interface ScreenshotComparison {
 }
 
 interface Scenario {
+  /** Lets a scenario that knowingly logs an error, such as a negative control, skip the #233 error gate. */
+  readonly allowErrors: boolean;
   /** A file name under `packages/core/test-bundles`. */
   readonly bundle: string;
   /** Trace substrings the run has to produce, in this order. */
   readonly expect: readonly string[];
+  /** A negative control: the scenario passes only if grading it produces at least one failure. */
+  readonly expectFailure: boolean;
   /** How long `rnl_window` runs before it captures its screenshot and exits. */
   readonly frames: number;
   readonly frameBudget: FrameBudget | null;
@@ -100,6 +113,21 @@ const readObject = (value: unknown, label: string, sourceName: string): Record<s
   return value;
 };
 
+/** Every optional boolean field this schema has defaults to `false` when the scenario omits it. */
+const readOptionalBoolean = (record: Record<string, unknown>, label: string, sourceName: string): boolean => {
+  if (!(label in record)) {
+    return false;
+  }
+
+  const value = record[label];
+
+  if (typeof value !== "boolean") {
+    throw new TypeError(`${sourceName}: "${label}" must be a boolean`);
+  }
+
+  return value;
+};
+
 const readFrameCount = (record: Record<string, unknown>, sourceName: string): number => {
   if (!("frames" in record)) {
     return DEFAULT_FRAME_COUNT;
@@ -144,8 +172,10 @@ const parseScenario = (value: unknown, sourceName: string): Scenario => {
   }
 
   return {
+    allowErrors: readOptionalBoolean(value, "allowErrors", sourceName),
     bundle: readString(value["bundle"], "bundle", sourceName),
     expect: readStringArray(value["expect"], "expect", sourceName),
+    expectFailure: readOptionalBoolean(value, "expectFailure", sourceName),
     frameBudget: readFrameBudget(value, sourceName),
     frames: readFrameCount(value, sourceName),
     name: readString(value["name"], "name", sourceName),
@@ -179,6 +209,40 @@ const findMissingExpectations = (traceLines: readonly string[], expectations: re
   return missing;
 };
 
+/** Every trace line that matches one of `ERROR_TRACE_PATTERNS`, in the order the trace produced them. */
+const findErrorLines = (traceLines: readonly string[]): readonly string[] =>
+  traceLines.filter((line) => ERROR_TRACE_PATTERNS.some((pattern) => line.includes(pattern)));
+
+/**
+ * Every failure the trace itself proves: a missing expectation, and — unless `allowErrors` opts a scenario out —
+ * a logged error line. The #233 error gate stacks onto the pre-existing ordered-substring assertions rather than
+ * replacing them.
+ */
+const describeTraceFailures = (scenario: Scenario, trace: string): readonly string[] => {
+  const traceLines = trace.split("\n");
+  const missing = findMissingExpectations(traceLines, scenario.expect).map(
+    (expectation) => `the trace never produced "${expectation}"`,
+  );
+
+  if (scenario.allowErrors) {
+    return missing;
+  }
+
+  return [...missing, ...findErrorLines(traceLines).map((line) => `the trace logged an error: ${line}`)];
+};
+
+/**
+ * `expectFailure` inverts a run's failures for a negative control: the scenario passes only when grading it
+ * produced at least one failure, and reports one of its own when grading produced none.
+ */
+const resolveExpectedOutcome = (scenario: Scenario, failures: readonly string[]): readonly string[] => {
+  if (!scenario.expectFailure) {
+    return failures;
+  }
+
+  return failures.length === EMPTY_LENGTH ? ["expectFailure is set, but the scenario produced no failures"] : [];
+};
+
 const resolveArtifactPaths = (artifactsRoot: string, scenarioName: string): ArtifactPaths => {
   const directory = path.join(artifactsRoot, scenarioName);
 
@@ -190,5 +254,13 @@ const resolveArtifactPaths = (artifactsRoot: string, scenarioName: string): Arti
   };
 };
 
-export { findMissingExpectations, formatInjectorScript, parseScenario, resolveArtifactPaths };
+export {
+  describeTraceFailures,
+  findErrorLines,
+  findMissingExpectations,
+  formatInjectorScript,
+  parseScenario,
+  resolveArtifactPaths,
+  resolveExpectedOutcome,
+};
 export type { FrameBudget, Scenario };

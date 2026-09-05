@@ -1,0 +1,9 @@
+{
+  "name": "throws-negative-control",
+  "bundle": "throws.js",
+  "ready": "react-native-linux: failing bundle evaluated",
+  "frames": 30,
+  "expectFailure": true,
+  "steps": ["sleep 200"],
+  "expect": ["react-native-linux: failing bundle evaluated"]
+}
