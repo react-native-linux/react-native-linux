@@ -122,11 +122,26 @@ const fixtures: readonly GoldenFixture[] = [
     renderArguments: ["one{Enter}two{Enter}three"],
     renderFlag: "--type",
   },
-  // Issue #255: left/centre/right `textAlign`, bold, letter-spaced and italic, and a wrapping multiline placeholder.
+  // Issue #255: the caret-at-first-glyph rule, pictured under all three alignments, one focused field per golden.
+  // `--type` always spends its own first Tab reaching the fixture's first field, so `""` needs no extra press.
   {
     bundleFileName: "text-input-placeholder.js",
-    goldenFileName: "text-input-placeholder.png",
+    goldenFileName: "text-input-placeholder-left.png",
     renderArguments: [""],
+    renderFlag: "--type",
+  },
+  // One more Tab than the left golden above reaches the center field.
+  {
+    bundleFileName: "text-input-placeholder.js",
+    goldenFileName: "text-input-placeholder-center.png",
+    renderArguments: ["{Tab}"],
+    renderFlag: "--type",
+  },
+  // Two more Tabs than the left golden reaches the right field.
+  {
+    bundleFileName: "text-input-placeholder.js",
+    goldenFileName: "text-input-placeholder-right.png",
+    renderArguments: ["{Tab}{Tab}"],
     renderFlag: "--type",
   },
   // Issue #255's other half: one character typed, the placeholder gone, the caret after the glyph that replaced it.

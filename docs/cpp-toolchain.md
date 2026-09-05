@@ -3773,11 +3773,13 @@ Two consequences fall out of building it this way rather than being asserted sep
   `maximumNumberOfLines` and break strategy the value would.
 
 `text-input-placeholder.js` carries the pixel proof the gate cannot: left, centre and right `textAlign`, all bold,
-italic and letter-spaced, plus a multiline field whose placeholder is long enough to wrap. Nothing is typed for
-`text-input-placeholder.png` — the left field is the one the rig focuses first, and its caret sits at the
-placeholder's own leading edge under every alignment. `text-input-placeholder-typed.png` is the other half of the
-claim: one character typed into the same field, the placeholder gone, and the caret that indexed the placeholder's
-first glyph now sitting after the glyph that replaced it.
+italic and letter-spaced, plus a multiline field whose placeholder is long enough to wrap. `--type` always spends
+its first Tab reaching the fixture's own first field, so `text-input-placeholder-left.png` needs no explicit
+press, `text-input-placeholder-center.png` is one more and `text-input-placeholder-right.png` two more — one
+golden per alignment, each with its own field focused and its caret pictured at the placeholder's own leading
+edge. `text-input-placeholder-typed.png` is the other half of the claim: one character typed into the left field,
+the placeholder gone, and the caret that indexed the placeholder's first glyph now sitting after the glyph that
+replaced it.
 
 Not done here: whether the *AT-SPI* tree exposes the placeholder as a `placeholder-text` attribute rather than the
 accessible name is #216's e2e proof, not this one's.

@@ -1542,6 +1542,10 @@ TEST(RetainedSceneTextInputTest, AnEmptyFieldWithNoPlaceholderIsStillPainted) {
 // own — every attribute `getEffectiveTextAttributes` resolves from the field's props reaches the placeholder
 // fragment unchanged, and `placeholderTextColor` is the one substitution `readEditorContent` makes.
 TEST(RetainedSceneTextInputTest, ThePlaceholderIsPaintedWithTheFieldsOwnFontWeightLetterSpacingAndAlignment) {
+    // Semi-transparent, so the assertion below cannot pass by accident: `placeholderTextColor` has to replace
+    // the whole foreground colour, alpha included, not just the RGB channels a fully opaque swap would share
+    // with the default.
+    const facebook::react::SharedColor translucentRed = facebook::react::colorFromRGBA(204, 51, 51, 128);
     const std::shared_ptr<react_native_linux::TextInputProps> styled = textInputProps();
 
     styled->textAttributes.fontFamily = "Georgia";
@@ -1550,7 +1554,7 @@ TEST(RetainedSceneTextInputTest, ThePlaceholderIsPaintedWithTheFieldsOwnFontWeig
     styled->textAttributes.alignment = facebook::react::TextAlignment::Center;
     styled->textAttributes.foregroundColor = blue();
     styled->placeholder = "Type here";
-    styled->placeholderTextColor = red();
+    styled->placeholderTextColor = translucentRed;
 
     const SceneSnapshot snapshot = snapshotOfFieldWith({}, styled);
 
@@ -1569,14 +1573,17 @@ TEST(RetainedSceneTextInputTest, ThePlaceholderIsPaintedWithTheFieldsOwnFontWeig
     EXPECT_EQ(placeholderAttributes.alignment, facebook::react::TextAlignment::Center);
 
     // The one attribute that is not the field's own: the placeholder is drawn in its hint colour, not the
-    // colour the value would be.
+    // colour the value would be — RGB and alpha alike, since a swap that dropped the alpha channel would still
+    // pass an RGB-only assertion.
     EXPECT_NE(placeholderAttributes.foregroundColor, styled->textAttributes.foregroundColor);
     EXPECT_EQ(facebook::react::redFromColor(placeholderAttributes.foregroundColor),
-             facebook::react::redFromColor(red()));
+             facebook::react::redFromColor(translucentRed));
     EXPECT_EQ(facebook::react::greenFromColor(placeholderAttributes.foregroundColor),
-             facebook::react::greenFromColor(red()));
+             facebook::react::greenFromColor(translucentRed));
     EXPECT_EQ(facebook::react::blueFromColor(placeholderAttributes.foregroundColor),
-             facebook::react::blueFromColor(red()));
+             facebook::react::blueFromColor(translucentRed));
+    EXPECT_EQ(facebook::react::alphaFromColor(placeholderAttributes.foregroundColor),
+             facebook::react::alphaFromColor(translucentRed));
 }
 
 // The alignment a wrapped placeholder would wrap with is the same `ParagraphAttributes` object the value wraps
