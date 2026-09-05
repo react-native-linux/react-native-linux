@@ -604,10 +604,9 @@ bool doFirstAndSettledFramesAgree(const SceneSnapshot& first, const SceneSnapsho
  * Issue #240. Every node that was on screen before a prepend is on screen in the same place after it, which is
  * what `maintainVisibleContentPosition` promises and what a one-frame jump breaks.
  *
- * Nodes are matched by tag, because a prepend renumbers every index and renames nothing, and only nodes whose
- * **size** is unchanged are compared: the content container grew by exactly what was prepended into it, so it is
- * the one node that is supposed to have moved, and a rule that named it would be a rule about this fixture rather
- * than about the prop.
+ * `findDisplacedPrimitive` is the comparison — matched by tag because a prepend renumbers every index, a node that
+ * is gone counted as displaced, and the resized content container skipped — and this is the vacuity check around
+ * it: a second commit that prepended nothing proves nothing.
  */
 bool doPrependedFramesAgree(const SceneSnapshot& before, const SceneSnapshot& after) {
     if (before.empty()) {
@@ -623,23 +622,25 @@ bool doPrependedFramesAgree(const SceneSnapshot& before, const SceneSnapshot& af
         return false;
     }
 
-    for (const ScenePrimitive& primitive : before) {
-        const auto moved = std::find_if(after.begin(), after.end(), [&primitive](const ScenePrimitive& candidate) {
-            return candidate.tag == primitive.tag && candidate.frame.size == primitive.frame.size;
-        });
+    const std::optional<ScenePrimitiveDisplacement> displaced = findDisplacedPrimitive(before, after);
 
-        if (moved == after.end() || haveSameGeometry(primitive, *moved)) {
-            continue;
-        }
+    if (!displaced.has_value()) {
+        return true;
+    }
 
-        std::cerr << "[golden] tag " << primitive.tag << " was at (" << primitive.frame.origin.x << ", "
-                  << primitive.frame.origin.y << ") before the prepend and at (" << moved->frame.origin.x << ", "
-                  << moved->frame.origin.y << ") after it" << std::endl;
+    if (displaced->isMissing) {
+        std::cerr << "[golden] tag " << displaced->tag << " was on screen at (" << displaced->before.origin.x << ", "
+                  << displaced->before.origin.y << ") before the prepend and is painted nowhere after it"
+                  << std::endl;
 
         return false;
     }
 
-    return true;
+    std::cerr << "[golden] tag " << displaced->tag << " was at (" << displaced->before.origin.x << ", "
+              << displaced->before.origin.y << ") before the prepend and at (" << displaced->after.origin.x << ", "
+              << displaced->after.origin.y << ") after it" << std::endl;
+
+    return false;
 }
 
 /**

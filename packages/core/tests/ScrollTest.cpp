@@ -1005,6 +1005,46 @@ protected:
     }
 
     /**
+     * A controller over the committed ScrollView, scrolled to exactly 100 points by a command rather than by a
+     * gesture — so whatever a later commit does to the offset is the only thing left that can move.
+     */
+    ScrollController makeControllerScrolledToOneHundred() {
+        ScrollController controller = makeController();
+
+        controller.dispatchCommands(
+            {SceneCommand{.tag = 20, .name = "scrollTo", .args = folly::dynamic::array(0, 100, false)}});
+        controller.advance(kFrameMilliseconds60Hz);
+
+        EXPECT_TRUE(controller.hasDispatchedScrollEvent());
+
+        return controller;
+    }
+
+    /**
+     * A ScrollView whose content view holds one 100-point row per tag, with `maintainVisibleContentPosition`
+     * either set or absent. Committing it again with tags in front of the old ones is a prepend, and committing it
+     * again without the prop is an application turning the prop off.
+     */
+    void commitMaintainedScrollView(bool isMaintaining, const std::vector<Tag>& rowTags) {
+        folly::dynamic props = folly::dynamic::object("width", 100)("height", 100);
+
+        if (isMaintaining) {
+            props["maintainVisibleContentPosition"] = folly::dynamic::object("minIndexForVisible", 0);
+        }
+
+        const ShadowTreeCommitOptions commitOptions{.enableStateReconciliation = false, .mountSynchronously = true};
+
+        shadowTree_->commit(
+            [this, &props, &rowTags](const RootShadowNode& oldRootShadowNode) {
+                return std::static_pointer_cast<RootShadowNode>(oldRootShadowNode.ShadowNode::clone(
+                    ShadowNodeFragment{.props = ShadowNodeFragment::propsPlaceholder(),
+                                       .children = std::make_shared<const ChildList>(
+                                           ChildList{rowList(oldRootShadowNode, props, rowTags)})}));
+            },
+            commitOptions);
+    }
+
+    /**
      * Commits a tall scrolling page and returns a controller over it, then runs one frame. The prologue every
      * scroll-controller test shares - a helper because the same block twice is a jscpd clone at threshold 0.
      */
@@ -1075,6 +1115,66 @@ private:
             folly::dynamic::object("width", width)("height", height)("multiline", true)("scrollEnabled",
                                                                                         scrollEnabled),
             std::make_shared<const ChildList>());
+    }
+
+    /**
+     * The shape every platform that implements `maintainVisibleContentPosition` measures: a ScrollView holding one
+     * content view, whose children are the rows the anchor is chosen from.
+     *
+     * Everything already in the tree is cloned rather than rebuilt, so each node keeps its family — a controller
+     * follows a ScrollView through `getNewestCloneOfShadowNode`, and a node built again from scratch is a
+     * different ScrollView wearing the same tag — and keeps the layout Yoga gave it, which a commit that changes
+     * no children does not compute again.
+     */
+    std::shared_ptr<const ShadowNode> rowList(const RootShadowNode& oldRootShadowNode, const folly::dynamic& props,
+                                              const std::vector<Tag>& rowTags) {
+        const std::shared_ptr<const ShadowNode> oldScrollView =
+            oldRootShadowNode.getChildren().empty() ? nullptr : oldRootShadowNode.getChildren().front();
+        const std::shared_ptr<const ShadowNode> oldContentView =
+            oldScrollView == nullptr ? nullptr : oldScrollView->getChildren().front();
+        ChildList rows;
+
+        for (const Tag rowTag : rowTags) {
+            rows.push_back(rowNode(oldContentView, rowTag));
+        }
+
+        const std::shared_ptr<const ChildList> contentChildren = std::make_shared<const ChildList>(std::move(rows));
+        const std::shared_ptr<const ShadowNode> contentView =
+            oldContentView == nullptr
+                ? makeConfiguredShadowNode(viewDescriptor_, 21, kSurfaceId, contextContainer_,
+                                           folly::dynamic::object("width", 100), contentChildren)
+                : oldContentView->clone(ShadowNodeFragment{.props = ShadowNodeFragment::propsPlaceholder(),
+                                                           .children = contentChildren});
+        const std::shared_ptr<const ChildList> scrollViewChildren =
+            std::make_shared<const ChildList>(ChildList{contentView});
+
+        if (oldScrollView == nullptr) {
+            return makeConfiguredShadowNode(scrollViewDescriptor_, 20, kSurfaceId, contextContainer_,
+                                            folly::dynamic(props), scrollViewChildren);
+        }
+
+        const PropsParserContext parserContext{kSurfaceId, *contextContainer_};
+
+        return oldScrollView->clone(
+            ShadowNodeFragment{.props = scrollViewDescriptor_.cloneProps(parserContext,
+                                                                        ScrollViewShadowNode::defaultSharedProps(),
+                                                                        RawProps{folly::dynamic(props)}),
+                               .children = scrollViewChildren});
+    }
+
+    /**
+     * The row with this tag as the tree already holds it, or a new one the first time it is committed.
+     */
+    std::shared_ptr<const ShadowNode> rowNode(const std::shared_ptr<const ShadowNode>& oldContentView, Tag tag) {
+        if (oldContentView != nullptr) {
+            for (const std::shared_ptr<const ShadowNode>& child : oldContentView->getChildren()) {
+                if (child->getTag() == tag) {
+                    return child;
+                }
+            }
+        }
+
+        return makeChild(tag, 100, 100);
     }
 
     std::shared_ptr<const ShadowNode> makeChild(Tag tag, double width, double height) {
@@ -1271,6 +1371,39 @@ TEST_F(ScrollControllerTest, AScrollToCommandMovesOnceAndAScrollToWhereYouAreEmi
     controller.advance(kFrameMilliseconds60Hz);
 
     EXPECT_FALSE(controller.isScrollActive());
+    EXPECT_FALSE(controller.hasDispatchedScrollEvent());
+}
+
+TEST_F(ScrollControllerTest, APrependAdjustsTheOffsetOnTheCommitThatMadeIt) {
+    commitMaintainedScrollView(true, {31, 32, 33});
+    ScrollController controller = makeControllerScrolledToOneHundred();
+
+    commitMaintainedScrollView(true, {41, 42, 31, 32, 33});
+    controller.advance(kFrameMilliseconds60Hz);
+
+    EXPECT_TRUE(controller.hasDispatchedScrollEvent());
+
+    // On that commit and on no other frame: the next one has the children it recorded and nothing to adjust for.
+    controller.advance(kFrameMilliseconds60Hz);
+
+    EXPECT_FALSE(controller.hasDispatchedScrollEvent());
+}
+
+TEST_F(ScrollControllerTest, TurningMaintainVisibleContentPositionOffForgetsTheChildrenItWasWatching) {
+    commitMaintainedScrollView(true, {31, 32, 33});
+    ScrollController controller = makeControllerScrolledToOneHundred();
+
+    // The commit that turns the prop off is also the commit that prepends, so nothing may be adjusted for it.
+    commitMaintainedScrollView(false, {41, 42, 31, 32, 33});
+    controller.advance(kFrameMilliseconds60Hz);
+
+    EXPECT_FALSE(controller.hasDispatchedScrollEvent());
+
+    // Back on, against the children it is turned back on with. Measuring those against the ones from before it
+    // was turned off would adjust the offset by the prepend a second time.
+    commitMaintainedScrollView(true, {41, 42, 31, 32, 33});
+    controller.advance(kFrameMilliseconds60Hz);
+
     EXPECT_FALSE(controller.hasDispatchedScrollEvent());
 }
 

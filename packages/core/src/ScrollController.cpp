@@ -521,6 +521,12 @@ bool ScrollController::advanceTarget(ScrollTarget& target, const facebook::react
                      metrics.contentSize.width, metrics.viewportSize.width);
         maintainAxis(target.vertical, readChildFrames(scrollView, false), metrics.maintaining.value(),
                      metrics.contentSize.height, metrics.viewportSize.height);
+    } else {
+        // Turning the prop off forgets the children it was watching. Keeping them would measure the first frame
+        // after it is turned back on against a layout from before it was turned off, and adjust the offset by
+        // everything that happened in between.
+        target.horizontal.previousChildren.clear();
+        target.vertical.previousChildren.clear();
     }
 
     advanceAxis(target.horizontal, target.isFingerDown, isSettlingFromRelease, frameMilliseconds,

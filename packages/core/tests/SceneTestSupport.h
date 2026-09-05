@@ -70,7 +70,9 @@ using react_native_linux::RetainedScene;
 using react_native_linux::SceneDamage;
 using react_native_linux::SceneEditorState;
 using react_native_linux::SceneFrame;
+using react_native_linux::findDisplacedPrimitive;
 using react_native_linux::ScenePrimitive;
+using react_native_linux::ScenePrimitiveDisplacement;
 using react_native_linux::SceneSnapshot;
 
 constexpr facebook::react::Tag kSurfaceTag = 1;

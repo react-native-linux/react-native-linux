@@ -6,8 +6,8 @@
 // hello_react --maintain-position-golden packages/core/test-bundles/scroll-maintain-position.js /tmp/rnl-maintain-position.png 160 100 3
 //
 // Three wheel notches is 120 points, which leaves the green row cut off at the top edge of the viewport. The two
-// rows the timer prepends are 160 points of content above it, so the offset has to end up at 280 for that row to
-// still be there.
+// rows that arrive once the flick has come to rest are 160 points of content above it, so the offset has to end up
+// at 280 for that row to still be there.
 
 const surfaceId = 1;
 const fabric = globalThis.nativeFabricUIManager;
@@ -40,6 +40,9 @@ const scrollView = createNode(2, 'ScrollView', {
   height: 150,
   backgroundColor: 0xff1e2430 | 0,
   maintainVisibleContentPosition: { minIndexForVisible: 0 },
+  // "fast", which travels the same 120 points three notches always travel and takes about a fifth of the time to
+  // do it: the compositor run has to see the flick come to rest, then a prepend, then half a second of quiet.
+  decelerationRate: 0.99,
   onScroll: true,
   onMomentumScrollBegin: true,
   onMomentumScrollEnd: true,
@@ -100,21 +103,24 @@ const prepend = () => {
   fabric.appendChildToSet(secondChildren, nextContainer);
   fabric.completeRoot(surfaceId, secondChildren);
 
-  console.log('maintain-position: prepended two rows');
+  hasPrepended = true;
 
-  // Long after the adjustment, so a controller that re-applied the delta on every frame rather than on the commit
-  // that earned it would report an offset that kept growing instead of this one.
-  setTimeout(() => {
-    console.log('maintain-position: settled at ' + lastOffsetText);
-  }, 500);
+  console.log('maintain-position: prepended two rows');
 };
 
 let lastOffsetText = '?';
-
 let hasArmedPrepend = false;
+let hasPrepended = false;
+let hasArmedSettleReport = false;
 
-// Armed by the first scroll event rather than at load, so the prepend lands a known interval after the scroll has
-// been reported rather than a guessed one after the bundle started.
+// The prepend is armed by the end of the momentum rather than by the first scroll event, so it lands on content
+// that is standing still: under a compositor the event beat runs every frame, and a prepend fired mid-glide would
+// adjust an offset that is different every time the run is repeated. Once the flick has come to rest the offset
+// is 120 wherever the machine was, and the adjustment for two 80-point rows is exactly 160 more.
+//
+// The settle report is armed by the scroll event the adjustment itself produced and printed half a second later,
+// so a controller that re-applied the delta on every frame rather than on the commit that earned it would report
+// an offset that kept growing instead of this one.
 fabric.registerEventHandler((instanceHandle, type, payload) => {
   const offset = payload.contentOffset;
 
@@ -124,9 +130,16 @@ fabric.registerEventHandler((instanceHandle, type, payload) => {
 
   console.log('maintain-position: ' + type + ' at ' + lastOffsetText);
 
-  if (type === 'topScroll' && !hasArmedPrepend) {
+  if (type === 'topMomentumScrollEnd' && !hasArmedPrepend) {
     hasArmedPrepend = true;
     setTimeout(prepend, 250);
+  }
+
+  if (type === 'topScroll' && hasPrepended && !hasArmedSettleReport) {
+    hasArmedSettleReport = true;
+    setTimeout(() => {
+      console.log('maintain-position: settled at ' + lastOffsetText);
+    }, 500);
   }
 });
 

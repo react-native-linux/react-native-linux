@@ -3139,8 +3139,13 @@ ScrollView without the prop walks no children.
 
 `packages/core/test-bundles/scroll-maintain-position.js` is the fixture: six rows in a content container, scrolled
 120 points by three wheel notches, with two more rows prepended above them by a timer the fixture arms **from its
-first `onScroll`** — so the prepend lands a known interval after the scroll was reported rather than a guessed one
-after the bundle started, and the run cannot race it.
+`onMomentumScrollEnd`** — so the prepend lands a known interval after the flick has come to rest rather than a
+guessed one after the bundle started. Arming it from the first `onScroll` instead is what the first version did,
+and it is wrong for the same reason a wall clock is: under a compositor the event beat runs every frame, so the
+prepend landed mid-glide and adjusted an offset that was a different number on every run. Once the flick is at rest
+the offset is 120 wherever the machine was, and the adjustment for the two 80-point rows is exactly 160 more. The
+fixture's `decelerationRate` is `"fast"` for the same run: it travels the same 120 points and takes about a fifth
+of the time, which is what leaves the compositor run time to see the prepend and the half second of quiet after it.
 
 ```bash
 hello_react --maintain-position-golden packages/core/test-bundles/scroll-maintain-position.js /tmp/rnl-maintain-position.png 160 100 3
@@ -3149,12 +3154,23 @@ hello_react --maintain-position-golden packages/core/test-bundles/scroll-maintai
 The flag is the assertion and the PNG is the by-product, as it is for `--damage-golden` and `--hit-paint-golden`.
 `runFabricBundleAcrossPrepend` snapshots the scene once the wheel has settled and again after **exactly one** frame
 of the window loop past the prepend — one `advanceScroll`, one beat, one drain — and every node that was on screen
-has to be in the same place in both. Nodes are matched by tag, because the prepend renumbered the indices, and only
-nodes whose **size** is unchanged are compared: the content container grew by exactly what was prepended into it,
-so it is the one node that is supposed to have moved, and a rule that named it would be a rule about this fixture
-rather than about the prop. The run also fails if the second scene has no more primitives than the first, because
-then nothing was prepended and the proof is vacuous. The negative control is the same fixture with the prop taken
-off, and it fails with `tag 10 was at (60, -60) before the prepend and at (60, 100) after it`.
+has to be in the same place in both.
+
+That comparison is `findDisplacedPrimitive` in `RetainedScene.h`, which is arithmetic over two snapshots and
+therefore inside the coverage gate rather than in the golden rig:
+
+- **Nodes are matched by tag, never by index**, because the prepend renumbered every index and renamed nothing.
+- **A node the second snapshot does not paint at all is displaced**, not skipped. Content that was on screen and is
+  gone has not stayed put, and a comparison that took a missing node for a matching one would pass a commit that
+  replaced everything it was supposed to preserve while adding enough new nodes to satisfy the count.
+- **A node whose size changed is not compared**, because it is not the same box any more. The content container
+  grows by exactly what is prepended into it, so it is the one node that is supposed to move, and naming it would
+  be a rule about this fixture rather than about the scene.
+
+The four cases in `SceneTest.cpp` are those rules, including the prepend that drops a prior primitive. Around them
+the golden adds the vacuity check: a second scene with no more primitives than the first prepended nothing and
+proves nothing. The negative control is the same fixture with the prop taken off, and it fails with `tag 10 was at
+(60, -60) before the prepend and at (60, 100) after it`.
 
 `packages/core/goldens/scroll-maintain-position.png` is therefore the list *after* two rows arrived above it, and
 the point of it is that it looks like the list before they did: the green row still cut off at the top edge of the
@@ -3164,14 +3180,23 @@ the ordering:
 
 ```text
 maintain-position: topScroll at 0,120
+maintain-position: topMomentumScrollEnd at 0,120
 maintain-position: prepended two rows
 maintain-position: topScroll at 0,280
 maintain-position: settled at 0,280
 ```
 
-The last line is printed half a second after the prepend from the newest offset the bundle was told about, so a
-controller that re-applied the delta on every frame instead of on the commit that earned it would report an offset
-that kept growing rather than that one.
+Every one of those numbers is a property of the notch count rather than of the machine: three notches travel 120
+points whatever the frame times were, and two 80-point rows are 160 more. The last line is printed half a second
+after the adjustment was *reported*, from the newest offset the bundle was told about, so a controller that
+re-applied the delta on every frame instead of on the commit that earned it would report an offset that kept
+growing rather than that one.
+
+The controller half has its own two tests in `ScrollTest.cpp`, over a committed shadow tree rather than a table:
+a prepend on a maintained ScrollView dispatches one `onScroll` on the commit that made it and none on the frame
+after, and **turning the prop off forgets the children it was watching** — the recorded frames are cleared on the
+disabled path, because measuring the first re-enabled frame against a layout from before the prop was turned off
+would adjust the offset by everything that happened in between.
 
 **What this does not prove.** The offset is written back through `ConcreteState::updateState` like every other
 scroll position, so it reaches the shadow tree on the beat the adjusting frame induces rather than inside the

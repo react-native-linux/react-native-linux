@@ -209,6 +209,63 @@ RetainedScene sceneWithClippingParent(const std::shared_ptr<ViewProps>& clipping
     return scene;
 }
 
+// Issue #240's comparison: is every node this snapshot painted painted in the same place in that one. The rows
+// are a chat log, the second snapshot is the same log with messages prepended above it, and the tags are what the
+// two are matched on because the prepend renumbered every index.
+
+SceneSnapshot logSnapshot(const std::vector<std::pair<facebook::react::Tag, float>>& rows) {
+    SceneSnapshot snapshot;
+
+    for (const auto& [tag, top] : rows) {
+        snapshot.push_back(ScenePrimitive{.tag = tag, .frame = makeRect(0, top, 100, 100)});
+    }
+
+    return snapshot;
+}
+
+TEST(SceneDisplacementTest, ANodePaintedInTheSamePlaceIsNotDisplaced) {
+    const SceneSnapshot before = logSnapshot({{11, 0}, {12, 100}});
+    const SceneSnapshot after = logSnapshot({{21, -100}, {11, 0}, {12, 100}});
+
+    EXPECT_FALSE(findDisplacedPrimitive(before, after).has_value());
+}
+
+TEST(SceneDisplacementTest, ANodeThePrependPushedDownIsDisplaced) {
+    const SceneSnapshot before = logSnapshot({{11, 0}, {12, 100}});
+    const SceneSnapshot after = logSnapshot({{21, 0}, {11, 100}, {12, 200}});
+    const std::optional<ScenePrimitiveDisplacement> displaced = findDisplacedPrimitive(before, after);
+
+    ASSERT_TRUE(displaced.has_value());
+    EXPECT_EQ(displaced->tag, 11);
+    EXPECT_FALSE(displaced->isMissing);
+    EXPECT_FLOAT_EQ(displaced->before.origin.y, 0);
+    EXPECT_FLOAT_EQ(displaced->after.origin.y, 100);
+}
+
+// A prepend that drops what it was supposed to preserve: tag 12 is painted nowhere afterwards, and a comparison
+// that took a missing node for a matching one would call that scene unchanged.
+TEST(SceneDisplacementTest, ANodeTheSecondSnapshotDoesNotPaintAtAllIsDisplaced) {
+    const SceneSnapshot before = logSnapshot({{11, 0}, {12, 100}});
+    const SceneSnapshot after = logSnapshot({{21, -200}, {22, -100}, {11, 0}});
+    const std::optional<ScenePrimitiveDisplacement> displaced = findDisplacedPrimitive(before, after);
+
+    ASSERT_TRUE(displaced.has_value());
+    EXPECT_EQ(displaced->tag, 12);
+    EXPECT_TRUE(displaced->isMissing);
+    EXPECT_FLOAT_EQ(displaced->before.origin.y, 100);
+}
+
+// The content container is the node a prepend is supposed to grow, and a box of a different size is not the same
+// box, so it is not compared at all.
+TEST(SceneDisplacementTest, ANodeThatChangedSizeIsNotComparedAtAll) {
+    const SceneSnapshot before = logSnapshot({{11, 0}});
+    SceneSnapshot after = logSnapshot({{11, 40}});
+
+    after[0].frame.size.height = 300;
+
+    EXPECT_FALSE(findDisplacedPrimitive(before, after).has_value());
+}
+
 TEST(RetainedSceneTest, EmptySceneRendersAndDumpsNothing) {
     const RetainedScene scene;
 

@@ -1150,6 +1150,28 @@ SceneHit RetainedScene::findNodeAtPoint(facebook::react::Tag rootTag, facebook::
     return hitTestNode(rootTag, surfacePoint, ScenePaintState{});
 }
 
+std::optional<ScenePrimitiveDisplacement> findDisplacedPrimitive(const SceneSnapshot& before,
+                                                                 const SceneSnapshot& after) {
+    for (const ScenePrimitive& primitive : before) {
+        const auto painted = std::find_if(after.begin(), after.end(), [&primitive](const ScenePrimitive& candidate) {
+            return candidate.tag == primitive.tag;
+        });
+
+        if (painted == after.end()) {
+            return ScenePrimitiveDisplacement{.tag = primitive.tag, .before = primitive.frame, .isMissing = true};
+        }
+
+        if (painted->frame.size != primitive.frame.size || painted->frame == primitive.frame) {
+            continue;
+        }
+
+        return ScenePrimitiveDisplacement{
+            .tag = primitive.tag, .before = primitive.frame, .after = painted->frame};
+    }
+
+    return std::nullopt;
+}
+
 SceneSnapshot RetainedScene::snapshot() const {
     SceneSnapshot primitives;
     const ScenePaintState rootState{};
