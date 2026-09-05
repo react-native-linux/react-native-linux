@@ -162,4 +162,25 @@ export const fixtures: readonly GoldenFixture[] = [
     renderArguments: [],
     renderFlag: "--golden",
   },
+  // Issue #114, item 5, and core#54304: a fixed-height multiline field's first line has to land in the same place on the first commit as it does once the run has settled.
+  {
+    bundleFileName: "text-input-first-frame.js",
+    goldenFileName: "text-input-first-frame.png",
+    renderArguments: [],
+    renderFlag: "--first-frame-golden",
+  },
+  // Issue #114, item 4: a digits-only field's parent strips an invalid keystroke rather than adopting it, and the field's buffer falls back to what the parent actually approved, not to the value it typed.
+  {
+    bundleFileName: "text-input-reject.js",
+    goldenFileName: "text-input-reject.png",
+    renderArguments: ["3x"],
+    renderFlag: "--type",
+  },
+  // Issue #114, item 6: a <TextInput> and a <Text> holding the same string in the same style measure to the same height — the render flag's own parity check is the assertion, and the PNG is the paint side of it.
+  {
+    bundleFileName: "text-input-text-height.js",
+    goldenFileName: "text-input-text-height.png",
+    renderArguments: [],
+    renderFlag: "--text-fit-golden",
+  },
 ];

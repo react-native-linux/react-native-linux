@@ -384,6 +384,48 @@ bool doesCaretMatchItsLine(const ScenePrimitive& primitive) {
     return metrics.lines.empty();
 }
 
+// Issue #114, item 6: a `<TextInput>` and a `<Text>` holding the same string in the same style have the same
+// height. This does not hold against a field given an explicit height of its own — several fixtures style a
+// field taller or shorter than its text on purpose, to prove the caret and the scrolling rules — so the proof is
+// scoped to a `<TextInput>`/`<Text>` pair whose *text* matches, rather than to every field in every fixture: a
+// fixture that wants this proof holds one of each, styled identically and with a string distinctive enough that
+// a coincidental match is not a concern, and gives neither an explicit height. Matching on the string rather
+// than the whole attributed string (style included) is deliberate — a `<TextInput>` and a `<Text>` build their
+// fragments through different code paths with different incidental attributes (a `parentShadowView`, a text
+// alignment default) that do not bear on height, and asking for those to agree too would make the proof about
+// the fixture rather than about the layout. Every other fixture's fields simply have no `<Text>` with the same
+// words, so this is a silent no-op for them.
+bool doesEveryTextInputAgreeWithACompanionText(const SceneSnapshot& scene) {
+    bool doAllAgree = true;
+
+    for (const ScenePrimitive& field : scene) {
+        if (!field.text.has_value() || !field.editor.has_value()) {
+            continue;
+        }
+
+        for (const ScenePrimitive& text : scene) {
+            if (!text.text.has_value() || text.editor.has_value()) {
+                continue;
+            }
+
+            if (field.text->attributedString.getString() != text.text->attributedString.getString()) {
+                continue;
+            }
+
+            if (std::abs(static_cast<float>(field.text->frame.size.height) -
+                        static_cast<float>(text.text->frame.size.height)) > kTextFitTolerance) {
+                std::cerr << "[golden] tag " << field.tag << " is a TextInput " << field.text->frame.size.height
+                          << " points tall, but tag " << text.tag << " holds the same string in a <Text> "
+                          << text.text->frame.size.height << " points tall" << std::endl;
+
+                doAllAgree = false;
+            }
+        }
+    }
+
+    return doAllAgree;
+}
+
 bool doParagraphsFitTheirBoxes(const SceneSnapshot& scene) {
     const facebook::react::TextLayoutManager layoutManager{nullptr};
     size_t paragraphCount = 0;
@@ -415,7 +457,7 @@ bool doParagraphsFitTheirBoxes(const SceneSnapshot& scene) {
         return false;
     }
 
-    return doAllFit;
+    return doAllFit && doesEveryTextInputAgreeWithACompanionText(scene);
 }
 
 // Issue #46. Geometry only: the frame, the composed matrix, and the clip frames the primitive was painted under.
