@@ -1139,6 +1139,26 @@ Hermes-free unit binary. The payload is identical either way: `TransformAnimated
 the same raw operation array that `animationbackend::packAnimatedProps` serializes, which is what the fast path
 parses.
 
+### The differential against upstream (#235)
+
+Everything above is `RetainedScene` checked against itself. `packages/core/tests/HitTestDifferentialTest.cpp` checks
+it against the algorithm it replaced: every tree in upstream's own `react/renderer/core/tests/FindNodeAtPointTest.cpp`
+is built with the same `Element`/`testUtils.h` helpers upstream uses, mounted into a `RetainedScene` tag for tag and
+frame for frame, and `LayoutableShadowNode::findNodeAtPoint` and `RetainedScene::findNodeAtPoint` are asked the same
+grid of points — plus `pointerEvents` crossed two levels deep and `transform` trees (translate, scale, rotate) upstream's
+ten cases do not reach. All ten agree, including `considersOverflowAreaOfTheParent`: upstream needs
+`layoutMetrics.overflowInset` as an escape hatch only because its recursion is gated on the point landing inside the
+current node's own frame first, and `RetainedScene::hitTestNode` has no such gate — it recurses into every child
+unconditionally and lets each descendant's own `coversPrimitive` decide, so a zero-area parent never hides what is
+laid out past it. Translate and scale agree everywhere a grid can probe, because both stay axis-aligned. Rotation is
+the one documented, on-purpose exception: a point inside upstream's forward-mapped bounding box but outside the
+rotated rectangle the scene actually painted is a hit upstream and a miss here, by the same inverse-mapping decision
+*The algorithm* above describes — the test asserts that divergence explicitly rather than papering over it, so a
+change that made the two agree there would be the regression. The one thing both sides had to be told to ignore is
+`roundedBoxContainsPoint`'s own half-open right and bottom edge (issue #35, at pixel scale): the grid samples pixel
+centres, `x + 0.5`, `y + 0.5`, the same convention `--hit-paint-golden` uses, so a point does not land exactly on an
+edge where the two algorithms are known and intended to differ by one pixel.
+
 ### Follow-ups
 
 - **Golden-image.** A frame captured mid-animation, so the painted position the hit test is asserted against is a
