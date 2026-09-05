@@ -4,6 +4,8 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
+
 #include <folly/dynamic.h>
 #include <react/renderer/animated/NativeAnimatedNodesManager.h>
 #include <react/renderer/components/view/primitives.h>
@@ -204,6 +206,76 @@ TEST(AnimatedHitTestTest, PointerEventsBoxOnlyKeepsTheBoxAndDropsTheChildren) {
     const RetainedScene scene = sceneWithNestedBox(propsWithPointerEvents(PointerEventsMode::BoxOnly));
 
     EXPECT_EQ(scene.findNodeAtPoint(kSurfaceTag, pointAt(260, 140)).tag, kBoxTag);
+}
+
+// Issue #64. `pointerEvents` is not a boolean, and react-native-windows spent a decade finding the four values'
+// combinations one report at a time (#8496). The table below is the contract at nesting depth two: the parent's
+// value crossed with the child's, probed at a point inside the child and at a point inside the parent only.
+//
+// The inherited case is the one that matters most and is easiest to get wrong: a `none` parent makes an `auto`
+// child unreachable, because the walk never descends into it. `box-only` does the same to children and keeps
+// itself; `box-none` is the mirror. Nothing here is a special case — `isPointerTarget` and
+// `arePointerChildrenTargets` are two predicates, and the table is what the two compose to.
+
+struct PointerEventsCase {
+    PointerEventsMode parent;
+    PointerEventsMode child;
+    Tag expectedInsideChild;
+    Tag expectedInsideParentOnly;
+};
+
+RetainedScene sceneWithNestedPointerEvents(PointerEventsMode parent, PointerEventsMode child) {
+    RetainedScene scene = sceneWithBox(propsWithPointerEvents(parent));
+
+    appendChild(scene, kBoxTag, makeStyledView(kInnerTag, innerFrame(), propsWithPointerEvents(child)), 0);
+
+    return scene;
+}
+
+TEST(AnimatedHitTestTest, PointerEventsComposeAcrossTwoLevelsAsTheTableSays) {
+    constexpr PointerEventsMode kAuto = PointerEventsMode::Auto;
+    constexpr PointerEventsMode kNone = PointerEventsMode::None;
+    constexpr PointerEventsMode kBoxNone = PointerEventsMode::BoxNone;
+    constexpr PointerEventsMode kBoxOnly = PointerEventsMode::BoxOnly;
+    const std::array<PointerEventsCase, 16> table{{
+        {kAuto, kAuto, kInnerTag, kBoxTag},       {kAuto, kNone, kBoxTag, kBoxTag},
+        {kAuto, kBoxNone, kBoxTag, kBoxTag},      {kAuto, kBoxOnly, kInnerTag, kBoxTag},
+        {kNone, kAuto, kSurfaceTag, kSurfaceTag}, {kNone, kNone, kSurfaceTag, kSurfaceTag},
+        {kNone, kBoxNone, kSurfaceTag, kSurfaceTag}, {kNone, kBoxOnly, kSurfaceTag, kSurfaceTag},
+        {kBoxNone, kAuto, kInnerTag, kSurfaceTag}, {kBoxNone, kNone, kSurfaceTag, kSurfaceTag},
+        {kBoxNone, kBoxNone, kSurfaceTag, kSurfaceTag}, {kBoxNone, kBoxOnly, kInnerTag, kSurfaceTag},
+        {kBoxOnly, kAuto, kBoxTag, kBoxTag},      {kBoxOnly, kNone, kBoxTag, kBoxTag},
+        {kBoxOnly, kBoxNone, kBoxTag, kBoxTag},   {kBoxOnly, kBoxOnly, kBoxTag, kBoxTag},
+    }};
+
+    for (const PointerEventsCase& entry : table) {
+        const RetainedScene scene = sceneWithNestedPointerEvents(entry.parent, entry.child);
+        const int parentValue = static_cast<int>(entry.parent);
+        const int childValue = static_cast<int>(entry.child);
+
+        EXPECT_EQ(scene.findNodeAtPoint(kSurfaceTag, pointAt(260, 140)).tag, entry.expectedInsideChild)
+            << "inside the child, parent " << parentValue << " child " << childValue;
+        EXPECT_EQ(scene.findNodeAtPoint(kSurfaceTag, pointAt(120, 190)).tag, entry.expectedInsideParentOnly)
+            << "inside the parent only, parent " << parentValue << " child " << childValue;
+    }
+}
+
+// react-native-windows#10493: changing `pointerEvents` from `none` back to `box-none` never restored hit testing,
+// because the prop was applied once at mount and never invalidated. Here the prop is re-read on every
+// `updateNode`, so the commit that changes it is the commit that changes the answer.
+TEST(AnimatedHitTestTest, ChangingPointerEventsInALaterCommitChangesTheAnswerInThatCommit) {
+    RetainedScene scene = sceneWithNestedPointerEvents(PointerEventsMode::None, PointerEventsMode::Auto);
+
+    ASSERT_EQ(scene.findNodeAtPoint(kSurfaceTag, pointAt(260, 140)).tag, kSurfaceTag);
+
+    scene.updateNode(makeStyledView(kBoxTag, boxFrame(), propsWithPointerEvents(PointerEventsMode::BoxNone)));
+
+    EXPECT_EQ(scene.findNodeAtPoint(kSurfaceTag, pointAt(260, 140)).tag, kInnerTag);
+    EXPECT_EQ(scene.findNodeAtPoint(kSurfaceTag, pointAt(120, 190)).tag, kSurfaceTag);
+
+    scene.updateNode(makeStyledView(kBoxTag, boxFrame(), propsWithPointerEvents(PointerEventsMode::Auto)));
+
+    EXPECT_EQ(scene.findNodeAtPoint(kSurfaceTag, pointAt(120, 190)).tag, kBoxTag);
 }
 
 TEST(AnimatedHitTestTest, AnOverflowHiddenAncestorClipsWhatCanBePressed) {

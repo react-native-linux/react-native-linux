@@ -1187,6 +1187,27 @@ That is only true while nobody adds a queue, so `AnimatedPropsLifetimeTest` writ
   sides take. The assertions only say the run finished and the scene holds either the node or nothing;
   ThreadSanitizer is what checks the claim, and the CI TSan job runs this suite.
 
+## pointerEvents across two levels (#64)
+
+`pointerEvents` is two predicates in `RetainedScene` — `isPointerTarget` (is this node itself pressable) and
+`arePointerChildrenTargets` (does the walk descend into it) — and the four values are the four combinations.
+react-native-windows spent a decade finding those combinations one report at a time
+([#8496](https://github.com/microsoft/react-native-windows/issues/8496)), so
+`PointerEventsComposeAcrossTwoLevelsAsTheTableSays` in `AnimatedHitTestTest.cpp` is the whole contract at nesting
+depth two: the parent's value crossed with the child's, sixteen rows, probed inside the child and inside the parent
+only. The row that matters most is the inherited one — a `none` parent makes an `auto` child unreachable because
+the walk never descends into it — and it needs no special case, because it is what the two predicates compose to.
+
+**The prop is re-read on every commit.** `readPaintProps` runs from `writeNode`, which `updateNode` goes through,
+so a `pointerEvents` that changes from `none` to `box-none` changes the hit answer in the commit that changed it.
+That is [#10493](https://github.com/microsoft/react-native-windows/issues/10493) — the prop applied once at
+mount and never invalidated — and `ChangingPointerEventsInALaterCommitChangesTheAnswerInThatCommit` is the test.
+
+The two other halves of the issue were already proved elsewhere and are pointed at rather than re-proved: a
+rounded corner is transparent to the pointer because the hit region is `roundedBoxContainsPoint` of the same box
+the painter fills (#99), and an ancestor's `overflow: hidden` removes the clipped area from the hit region because
+`--hit-paint-golden` compares the two at every pixel (#35).
+
 ## Animation frame cost (#124)
 
 Upstream shipped a 20× native-driver animation regression to a stable release
