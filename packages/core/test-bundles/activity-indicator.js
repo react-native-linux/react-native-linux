@@ -40,7 +40,7 @@ const indicator = (left, top, size, props) =>
 
 const container = node('View', { flex: 1 });
 
-const children = [
+const tiles = [
   panel(80, 80),
   indicator(80, 80, 20, { animating: true, size: 'small' }),
   panel(260, 80),
@@ -53,10 +53,9 @@ const children = [
   indicator(260, 260, 36, { animating: false, hidesWhenStopped: false, size: 'large' }),
 ];
 
-children.forEach((child) => fabric.appendChild(container, child));
-
 const rootChildren = fabric.createChildSet();
 
+tiles.forEach((tile) => fabric.appendChild(container, tile));
 fabric.appendChildToSet(rootChildren, container);
 fabric.completeRoot(surfaceId, rootChildren);
 
