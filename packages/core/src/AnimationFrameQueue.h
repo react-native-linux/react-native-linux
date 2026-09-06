@@ -69,6 +69,13 @@ public:
     /**
      * Invokes everything registered before this call, in registration order, with `frameTimestampMilliseconds`,
      * and returns how many callbacks ran. Requests those callbacks make are left for the next call.
+     *
+     * A callback that throws does not cancel the rest of its frame — the browsers' rule, where an exception in one
+     * `requestAnimationFrame` callback is reported and the remaining ones still run. The first exception is
+     * rethrown after the frame completes, so the host's error reporting still sees it, and the queue is left in
+     * the same state a frame that threw nothing would leave: nothing retained, no dispatch in flight. Without
+     * that, a throwing callback would strand `hasPendingRequests` at true forever and leave the frame's remaining
+     * entries in place, so the next frame's registrations would run ahead of them.
      */
     size_t dispatchFrame(double frameTimestampMilliseconds);
 

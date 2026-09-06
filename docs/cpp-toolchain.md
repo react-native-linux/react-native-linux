@@ -337,17 +337,25 @@ the instance, for the same reason it releases the TurboModules first: the callba
 
 Three test layers, per the acceptance of #263. `packages/core/tests/AnimationFrameQueueTest.cpp` is the queue,
 table-tested, at the 100 % gate — including a thousand registrations dispatched in order, the self-perpetuating
-loop advancing exactly one callback per frame across fifty frames, and each cancellation shape.
-`hello_react --raf-trace packages/core/test-bundles/raf-order.js 3` is the same three rules as a trace a bundle
-prints for itself, over synthetic 60 Hz timestamps so the trace is reproducible; the `raf-order` e2e scenario
-asserts that trace under cage. The `raf-idle` scenario is the liveness half: `raf-idle.js` commits one static view
-and then does nothing but re-register, so nothing damages, nothing scrolls and no native animation runs, and its
-tick counter advancing under a `wp_presentation` frame budget is the proof that the window kept being drawn.
+loop advancing exactly one callback per frame across fifty frames, each cancellation shape, and what a throwing
+callback leaves behind. **The fallback path is proved there too**, and not by an end-to-end run: a test composes
+`AnimationFrameQueue::hasPendingRequests` with `FrameClock::onFallbackTimeout` exactly as
+`WindowSession::hasPendingWork` does, drives a hundred fallback timeouts with no `wl_surface.frame` ever arriving,
+and asserts the loop advanced once per timeout — with a negative control that the same timeout stops drawing once
+the loop stops re-registering. `hello_react --raf-trace packages/core/test-bundles/raf-order.js 3` is the three
+ordering rules as a trace a bundle prints for itself, over synthetic 60 Hz timestamps so the trace is
+reproducible; the `raf-order` e2e scenario asserts that trace under cage. The `raf-idle` scenario asserts the
+narrower end-to-end claim: `raf-idle.js` commits one static view and then does nothing but re-register, so nothing
+damages, nothing scrolls and no native animation runs, and its tick counter advancing under a `wp_presentation`
+frame budget is the proof that **the loop keeps ticking while nothing else repaints**.
 
-What this does not cover: the composition itself — that `hasPendingTimers` ORs the queue in — has no unit test,
-because it needs a live runtime; it is covered by the `raf-idle` scenario and by inspection. And as with the rest
-of this section, no test withholds `wl_surface.frame` outright; cage sends callbacks, so `raf-idle` proves "the
-loop keeps running while nothing else repaints" rather than "the loop keeps running on the fallback alone".
+What this does not cover: no e2e scenario proves fallback-only progress, because cage always delivers
+`wl_surface.frame` and no scenario step can suspend it — withholding the callback needs a compositor the harness
+does not have, which is the gap the end of this section's parent already names as a follow-up. `raf-idle` is
+therefore "keeps ticking while nothing else repaints", never "ticks on the fallback alone"; the fallback claim
+rests on the unit composition above. The one seam with no test at all is the wiring — that
+`ReactHost::hasPendingTimers` is the thing that ORs the queue into that signal — because reaching it needs a live
+runtime; it is covered by `raf-idle` and by inspection.
 
 ### Desktop lifecycle contract (#218)
 

@@ -9,6 +9,12 @@
 // clock that did not count it would let an occluded or inactive-workspace window stop drawing, which is what
 // react-native#57592 looks like from JavaScript: rAF stalls until something else wakes the loop up.
 //
+// What this fixture proves and what it does not: cage always delivers `wl_surface.frame`, and no scenario step
+// can suspend it, so this is "the loop keeps ticking while nothing else repaints" — never "the loop ticks on the
+// fallback timeout alone". The fallback claim is proved in
+// `AnimationFrameQueueTest.TheFallbackDeadlineKeepsDrawingWhenOnlyAnAnimationFrameIsPending`, which composes the
+// queue with `FrameClock` the way `WindowSession::hasPendingWork` does and never lets a frame callback arrive.
+//
 // The tick lines are the proof. They are printed every thirtieth callback so a run of a few hundred frames is a
 // handful of lines rather than a wall, and the counter is monotonic, so "kept ticking" is an ordered trace
 // assertion rather than a screenshot.

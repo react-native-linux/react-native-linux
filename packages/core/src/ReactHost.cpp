@@ -3,6 +3,7 @@
 #include "ConsoleBinding.h"
 #include "ReactNativeFeatureFlagsOverridesLinux.h"
 
+#include <cmath>
 #include <jsi/jsi.h>
 #include <react/featureflags/ReactNativeFeatureFlags.h>
 #include <react/renderer/animated/NativeAnimatedNodesManagerProvider.h>
@@ -23,6 +24,9 @@ namespace {
 std::chrono::milliseconds remainingBudget(std::chrono::steady_clock::time_point deadline) {
     return std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
 }
+
+// One past the largest `AnimationFrameQueue` handle a `double` can hold exactly enough of to convert: 2^64.
+constexpr double kHandleUpperBound = 0x1p64;
 
 // #214's MarkTestPassed, and the whole of #236's protocol: a bundle that has asserted for itself says so, and the
 // automation channel reports it. Nothing reads the flag from JavaScript, so there is no getter to install.
@@ -81,10 +85,18 @@ void installAnimationFrameBinding(facebook::jsi::Runtime& runtime, AnimationFram
             runtime, facebook::jsi::PropNameID::forAscii(runtime, "cancelAnimationFrame"), 1,
             [&animationFrameQueue](facebook::jsi::Runtime& callRuntime, const facebook::jsi::Value& /*thisValue*/,
                                    const facebook::jsi::Value* arguments, size_t count) {
-                // A negative handle is a no-op per the animation-timing specification, which is also why upstream's
-                // `TimerManager::deleteTimer` returns early on one.
-                if (count >= 1 && arguments[0].isNumber() && arguments[0].getNumber() > 0) {
-                    animationFrameQueue.cancel(static_cast<uint64_t>(arguments[0].getNumber()));
+                if (count < 1 || !arguments[0].isNumber()) {
+                    return facebook::jsi::Value::undefined();
+                }
+
+                const double requestHandle = arguments[0].getNumber();
+
+                // A negative handle is a no-op per the animation-timing specification, which is also why
+                // upstream's `TimerManager::deleteTimer` returns early on one. NaN, either infinity and anything
+                // at or above 2^64 are no-ops for a harder reason: converting them to the handle type is
+                // undefined behaviour, and JavaScript can pass any of them.
+                if (std::isfinite(requestHandle) && requestHandle > 0 && requestHandle < kHandleUpperBound) {
+                    animationFrameQueue.cancel(static_cast<uint64_t>(requestHandle));
                 }
 
                 return facebook::jsi::Value::undefined();

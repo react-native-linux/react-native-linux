@@ -1,9 +1,14 @@
 #include "AnimationFrameQueue.h"
+#include "FrameClock.h"
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -13,6 +18,32 @@ using react_native_linux::AnimationFrameQueue;
 
 constexpr double kFirstFrameTimestamp = 16.0;
 constexpr double kSecondFrameTimestamp = 32.0;
+
+std::chrono::steady_clock::time_point timeAt(int64_t milliseconds) {
+    return std::chrono::steady_clock::time_point(std::chrono::milliseconds(milliseconds));
+}
+
+/**
+ * Registers a `requestAnimationFrame` loop on `queue`: a callback that counts itself into `tickCount` and asks for
+ * the next frame from inside itself, which is the shape every animation loop in the wild has.
+ *
+ * The callback is returned rather than kept here so the caller owns it for the length of the test, and it names
+ * itself through a raw pointer to that owned copy rather than capturing the owner, which would be a cycle.
+ */
+std::shared_ptr<AnimationFrameQueue::Callback> startSelfRegisteringLoop(AnimationFrameQueue& queue,
+                                                                       size_t& tickCount) {
+    const std::shared_ptr<AnimationFrameQueue::Callback> loop =
+        std::make_shared<AnimationFrameQueue::Callback>();
+
+    *loop = [&queue, &tickCount, self = loop.get()](double /*frameTimestampMilliseconds*/) {
+        ++tickCount;
+        queue.request(*self);
+    };
+
+    queue.request(*loop);
+
+    return loop;
+}
 
 /**
  * The whole of what a `requestAnimationFrame` callback does that this queue is responsible for: it says when it
@@ -110,14 +141,7 @@ TEST(AnimationFrameQueueTest, ASelfPerpetuatingLoopRunsExactlyOnceEveryFrame) {
 
     AnimationFrameQueue queue;
     size_t tickCount = 0;
-    AnimationFrameQueue::Callback tick;
-
-    tick = [&queue, &tickCount, &tick](double /*frameTimestampMilliseconds*/) {
-        ++tickCount;
-        queue.request(tick);
-    };
-
-    queue.request(tick);
+    const std::shared_ptr<AnimationFrameQueue::Callback> loop = startSelfRegisteringLoop(queue, tickCount);
 
     for (size_t frame = 0; frame < kFrameCount; ++frame) {
         EXPECT_EQ(queue.dispatchFrame(kFirstFrameTimestamp), 1U);
@@ -198,6 +222,122 @@ TEST(AnimationFrameQueueTest, ClearingDropsEveryRegisteredCallbackWithoutRunning
     EXPECT_FALSE(queue.hasPendingRequests());
     EXPECT_EQ(queue.dispatchFrame(kFirstFrameTimestamp), 0U);
     EXPECT_TRUE(trace.entries.empty());
+}
+
+/**
+ * The browsers' rule: an exception in one callback is reported and does not cancel the rest of the frame. The
+ * exception still reaches the caller, so the host's error reporting sees it.
+ */
+TEST(AnimationFrameQueueTest, AThrowingCallbackDoesNotStopTheRestOfItsFrame) {
+    AnimationFrameQueue queue;
+    FrameTrace trace;
+
+    queue.request(trace.recorder("before"));
+    queue.request([](double /*frameTimestampMilliseconds*/) { throw std::runtime_error("callback failed"); });
+    queue.request(trace.recorder("after"));
+
+    EXPECT_THROW(queue.dispatchFrame(kFirstFrameTimestamp), std::runtime_error);
+    EXPECT_EQ(trace.entries, (std::vector<std::string>{"before@16", "after@16"}));
+}
+
+/**
+ * The failure mode this test exists for: a dispatch that unwound without cleaning up would strand
+ * `hasPendingRequests` at true forever and retain the frame's entries, so the next frame's registrations would run
+ * ahead of the stranded ones instead of in their own order.
+ */
+TEST(AnimationFrameQueueTest, AFrameThatThrewLeavesNothingPendingAndTheNextFrameStillRunsInOrder) {
+    AnimationFrameQueue queue;
+    FrameTrace trace;
+
+    queue.request([](double /*frameTimestampMilliseconds*/) { throw std::runtime_error("callback failed"); });
+
+    EXPECT_THROW(queue.dispatchFrame(kFirstFrameTimestamp), std::runtime_error);
+    EXPECT_FALSE(queue.hasPendingRequests());
+
+    queue.request(trace.recorder("first"));
+    queue.request(trace.recorder("second"));
+
+    EXPECT_EQ(queue.dispatchFrame(kSecondFrameTimestamp), 2U);
+    EXPECT_EQ(trace.entries, (std::vector<std::string>{"first@32", "second@32"}));
+}
+
+/**
+ * Only one exception can be rethrown, and it is the first, so the failure a reader is shown is the one that
+ * happened first rather than whichever callback happened to be last.
+ */
+TEST(AnimationFrameQueueTest, TheFirstExceptionOfAFrameIsTheOneThatPropagates) {
+    AnimationFrameQueue queue;
+    FrameTrace trace;
+
+    queue.request([](double /*frameTimestampMilliseconds*/) { throw std::runtime_error("first failure"); });
+    queue.request([](double /*frameTimestampMilliseconds*/) { throw std::logic_error("second failure"); });
+    queue.request(trace.recorder("still ran"));
+
+    EXPECT_THROW(
+        {
+            try {
+                queue.dispatchFrame(kFirstFrameTimestamp);
+            } catch (const std::runtime_error& failure) {
+                EXPECT_STREQ(failure.what(), "first failure");
+                throw;
+            }
+        },
+        std::runtime_error);
+    EXPECT_EQ(trace.entries, std::vector<std::string>{"still ran@16"});
+    EXPECT_FALSE(queue.hasPendingRequests());
+}
+
+/**
+ * The liveness half without a `WindowSession`: `hasPendingRequests` is the only pending-work signal a bundle that
+ * does nothing but re-register produces, and it is what makes `FrameClock` draw on a fallback timeout. A hundred
+ * timeouts and not one `wl_surface.frame` — the occluded, inactive-workspace window of ADR-0001 decision 3 — and
+ * the loop still advances once per frame. This is the composition `WindowSession::hasPendingWork` performs,
+ * exercised directly; a queue that reported idle mid-dispatch, or a clock that ignored the signal, stops here.
+ */
+TEST(AnimationFrameQueueTest, TheFallbackDeadlineKeepsDrawingWhenOnlyAnAnimationFrameIsPending) {
+    constexpr int64_t kFallbackIntervalMilliseconds = 50;
+    constexpr int64_t kTimeoutCount = 100;
+
+    AnimationFrameQueue queue;
+    react_native_linux::FrameClock clock;
+    size_t tickCount = 0;
+    const std::shared_ptr<AnimationFrameQueue::Callback> loop = startSelfRegisteringLoop(queue, tickCount);
+
+    for (int64_t timeout = 1; timeout <= kTimeoutCount; ++timeout) {
+        const std::chrono::steady_clock::time_point now =
+            std::chrono::steady_clock::time_point(std::chrono::milliseconds(timeout * kFallbackIntervalMilliseconds));
+        const react_native_linux::FrameClock::Tick frameTick =
+            clock.onFallbackTimeout(now, queue.hasPendingRequests());
+
+        ASSERT_TRUE(frameTick.shouldDraw);
+        ASSERT_EQ(frameTick.source, react_native_linux::FrameClock::Source::Timer);
+
+        queue.dispatchFrame(static_cast<double>(timeout * kFallbackIntervalMilliseconds));
+    }
+
+    EXPECT_EQ(tickCount, static_cast<size_t>(kTimeoutCount));
+    EXPECT_EQ(clock.timerTicks(), static_cast<uint64_t>(kTimeoutCount));
+    EXPECT_EQ(clock.callbackTicks(), 0U);
+    EXPECT_EQ(clock.lastCallbackAt(), std::nullopt);
+}
+
+/**
+ * The negative control for the test above: once the loop stops re-registering, the same fallback timeout stops
+ * drawing, so the pending-work signal is what was driving it rather than the timeout being unconditional.
+ */
+TEST(AnimationFrameQueueTest, TheFallbackDeadlineStopsDrawingOnceTheLoopStops) {
+    AnimationFrameQueue queue;
+    react_native_linux::FrameClock clock;
+    FrameTrace trace;
+
+    queue.request(trace.recorder("only"));
+
+    EXPECT_TRUE(clock.onFallbackTimeout(timeAt(50), queue.hasPendingRequests()).shouldDraw);
+
+    queue.dispatchFrame(50.0);
+
+    EXPECT_FALSE(clock.onFallbackTimeout(timeAt(100), queue.hasPendingRequests()).shouldDraw);
+    EXPECT_EQ(clock.timerTicks(), 1U);
 }
 
 TEST(AnimationFrameQueueTest, AnUnknownHandleCancelsNothing) {

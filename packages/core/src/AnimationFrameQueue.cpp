@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <mutex>
 #include <utility>
 #include <vector>
@@ -51,25 +52,41 @@ size_t AnimationFrameQueue::dispatchFrame(double frameTimestampMilliseconds) {
     isDispatching_ = true;
 
     size_t dispatchedCount = 0;
+    std::exception_ptr firstFailure;
 
     // The size is re-read every iteration under the lock, and a cancelled entry is emptied rather than erased, so
     // a callback that registers or cancels while this loop is unlocked can never move the entries behind it.
     for (size_t index = 0; index < dispatchingRequests_.size(); ++index) {
         const Callback callback = dispatchingRequests_[index].callback;
 
-        if (!callback) {
-            continue;
+        lock.unlock();
+
+        // A throwing callback does not cancel the rest of its frame, which is what browsers do: the exception is
+        // reported and the remaining callbacks still run. The first one is kept and rethrown once the frame is
+        // complete and the state is clean, so the host's error reporting still sees it and no later frame is left
+        // believing a dispatch is still in flight. Catching here rather than unwinding through a scope guard is
+        // also what keeps every line of this function reachable for the coverage gate.
+        try {
+            if (callback) {
+                callback(frameTimestampMilliseconds);
+                ++dispatchedCount;
+            }
+        } catch (...) {
+            if (firstFailure == nullptr) {
+                firstFailure = std::current_exception();
+            }
         }
 
-        lock.unlock();
-        callback(frameTimestampMilliseconds);
         lock.lock();
-
-        ++dispatchedCount;
     }
 
     dispatchingRequests_.clear();
     isDispatching_ = false;
+    lock.unlock();
+
+    if (firstFailure != nullptr) {
+        std::rethrow_exception(firstFailure);
+    }
 
     return dispatchedCount;
 }
