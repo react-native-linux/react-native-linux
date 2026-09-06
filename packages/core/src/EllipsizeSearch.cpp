@@ -49,6 +49,22 @@ size_t fragmentIndexAtOffset(const std::vector<std::string>& fragmentStrings, si
 
 } // namespace
 
+std::optional<EllipsizeSide> searchedEllipsizeSide(const EllipsizeCandidate& candidate) {
+    if (candidate.maximumNumberOfLines <= 0 || candidate.hasInlineAttachment || candidate.isEditorField) {
+        return std::nullopt;
+    }
+
+    if (candidate.ellipsizeMode == facebook::react::EllipsizeMode::Head) {
+        return EllipsizeSide::Head;
+    }
+
+    if (candidate.ellipsizeMode == facebook::react::EllipsizeMode::Middle) {
+        return EllipsizeSide::Middle;
+    }
+
+    return std::nullopt;
+}
+
 EllipsizePlan planEllipsize(EllipsizeSide side, const std::vector<std::string>& fragmentStrings,
                             const std::vector<size_t>& graphemeStarts, size_t keptGraphemeCount) {
     if (graphemeStarts.size() < kSmallestSearchableGraphemeStarts) {

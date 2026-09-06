@@ -2547,6 +2547,17 @@ that is exactly what a null `TextUtils.TruncateAt` does on Android. It is delibe
 mode: a line box with a tall ascender legitimately overflows its frame, per *Vertical metrics (#110)*, and a
 `<TextInput>` clips to its content box in `paintEditor` before it translates by its own scroll offset.
 
+**A `<TextInput>` is never searched either.** A field is a window onto its whole text rather than a truncated
+view of it: its caret, its selection, its composing run and its hit testing are all UTF-16 offsets into the
+string React gave us — `measureEditorGeometry` takes them, `utf16IndexAtPoint` returns them — and a searched cut
+rebuilds that string, so an offset either side of the cut would address a different character than the one drawn.
+A field that does not fit scrolls instead (`SceneEditorContent::scrollOffsetX`), which is what keeps those
+offsets meaning what they say. Every editor path — the geometry, the hit test and `paintEditor`'s own paint —
+therefore goes through `layoutEditorParagraph` rather than `layoutParagraph`, so a field measures and hit-tests
+its full text whatever its `numberOfLines` and `ellipsizeMode` say. The rule is
+`EllipsizeSearch.cpp`'s `searchedEllipsizeSide` and is asserted under the unit gate, next to the two other
+refusals it lives with.
+
 **A paragraph carrying inline attachments is not searched.** `ParagraphShadowNode::layout` requires exactly one
 measured attachment per attachment fragment, and `TextLayoutManager`'s walk pairs them with
 `getRectsForPlaceholders` in fragment order, reporting the ones SkParagraph dropped off the end as clipped. That

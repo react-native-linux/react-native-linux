@@ -556,38 +556,14 @@ buildAndLayoutParagraph(const facebook::react::AttributedString& attributedStrin
     return paragraph;
 }
 
-/**
- * Which end of the text this paragraph's `ellipsizeMode` takes away, when it is one the search answers.
- *
- * A paragraph carrying inline attachments is excluded, and upstream's contract is the reason rather than a
- * shortcut: `ParagraphShadowNode::layout` requires exactly one measured attachment per attachment fragment, and
- * `TextLayoutManager` pairs them with `getRectsForPlaceholders` in fragment order, reporting the ones SkParagraph
- * dropped off the end as clipped. That pairing holds only because a line limit drops placeholders at the tail; a
- * head or middle cut removes them from the front or the middle, and every surviving placeholder would then be
- * paired with the wrong attachment. Such a paragraph truncates the way Clip does. See *Truncation that is not at
- * the tail (#251)* in docs/cpp-toolchain.md.
- */
-std::optional<EllipsizeSide> searchedEllipsizeSide(const facebook::react::AttributedString& attributedString,
-                                                   const facebook::react::ParagraphAttributes& paragraphAttributes) {
-    if (paragraphAttributes.maximumNumberOfLines <= 0) {
-        return std::nullopt;
-    }
-
+bool hasInlineAttachment(const facebook::react::AttributedString& attributedString) {
     for (const facebook::react::AttributedString::Fragment& fragment : attributedString.getFragments()) {
         if (fragment.isAttachment()) {
-            return std::nullopt;
+            return true;
         }
     }
 
-    if (paragraphAttributes.ellipsizeMode == facebook::react::EllipsizeMode::Head) {
-        return EllipsizeSide::Head;
-    }
-
-    if (paragraphAttributes.ellipsizeMode == facebook::react::EllipsizeMode::Middle) {
-        return EllipsizeSide::Middle;
-    }
-
-    return std::nullopt;
+    return false;
 }
 
 /**
@@ -637,21 +613,25 @@ facebook::react::AttributedString ellipsizedAttributedString(
     return truncated;
 }
 
-} // namespace
-
 /**
  * `head` and `middle` are a search rather than a setting: SkParagraph only ever truncates at the tail, so the
  * text that survives is found by asking the same shaper, at the same width, how many leading — or leading and
  * trailing — graphemes have to go before what is left plus the ellipsis stops exceeding the line limit. The
- * bisection is `EllipsizeSearch.cpp`, under the unit gate; everything that touches Skia is here.
+ * bisection and the rule for which paragraphs may be rebuilt at all are `EllipsizeSearch.cpp`, under the unit
+ * gate; everything that touches Skia is here.
  *
- * The search runs inside `layoutParagraph`, so measurement and paint truncate identically for the reason every
- * other text decision is identical between them: both go through this one function.
+ * `isEditorField` is the caller saying which of the two public entry points below it is: a `<Paragraph>`, whose
+ * string nothing else addresses by offset, or a `<TextInput>`, whose every offset addresses this same string.
  */
 std::unique_ptr<skia::textlayout::Paragraph>
-layoutParagraph(const facebook::react::AttributedString& attributedString,
-                const facebook::react::ParagraphAttributes& paragraphAttributes, float maximumWidth) {
-    const std::optional<EllipsizeSide> side = searchedEllipsizeSide(attributedString, paragraphAttributes);
+layoutParagraphForField(const facebook::react::AttributedString& attributedString,
+                        const facebook::react::ParagraphAttributes& paragraphAttributes, float maximumWidth,
+                        bool isEditorField) {
+    const std::optional<EllipsizeSide> side =
+        searchedEllipsizeSide(EllipsizeCandidate{.ellipsizeMode = paragraphAttributes.ellipsizeMode,
+                                                 .maximumNumberOfLines = paragraphAttributes.maximumNumberOfLines,
+                                                 .hasInlineAttachment = hasInlineAttachment(attributedString),
+                                                 .isEditorField = isEditorField});
     std::unique_ptr<skia::textlayout::Paragraph> paragraph =
         buildAndLayoutParagraph(attributedString, paragraphAttributes, maximumWidth);
 
@@ -676,6 +656,20 @@ layoutParagraph(const facebook::react::AttributedString& attributedString,
 
     return buildAndLayoutParagraph(ellipsizedAttributedString(attributedString, transformedTexts, plan),
                                    paragraphAttributes, maximumWidth);
+}
+
+} // namespace
+
+std::unique_ptr<skia::textlayout::Paragraph>
+layoutParagraph(const facebook::react::AttributedString& attributedString,
+                const facebook::react::ParagraphAttributes& paragraphAttributes, float maximumWidth) {
+    return layoutParagraphForField(attributedString, paragraphAttributes, maximumWidth, false);
+}
+
+std::unique_ptr<skia::textlayout::Paragraph>
+layoutEditorParagraph(const facebook::react::AttributedString& attributedString,
+                      const facebook::react::ParagraphAttributes& paragraphAttributes, float maximumWidth) {
+    return layoutParagraphForField(attributedString, paragraphAttributes, maximumWidth, true);
 }
 
 EditorGeometry measureEditorGeometry(const SceneTextContent& text, const SceneEditorContent& editor) {
@@ -717,7 +711,7 @@ EditorGeometry measureEditorGeometry(const facebook::react::AttributedString& at
     // in a 1e6-point line would otherwise be drawn a long way off screen.
     const float unwrappedWidth = request.isMultiline ? maximumWidth : kUnlimitedLayoutWidth;
     const std::unique_ptr<skia::textlayout::Paragraph> paragraph =
-        layoutParagraph(attributedString, paragraphAttributes, unwrappedWidth);
+        layoutEditorParagraph(attributedString, paragraphAttributes, unwrappedWidth);
     const float contentWidth = paragraph->getLongestLine();
     float layoutWidth = unwrappedWidth;
 
@@ -746,7 +740,7 @@ size_t utf16IndexAtPoint(const facebook::react::AttributedString& attributedStri
                          const facebook::react::ParagraphAttributes& paragraphAttributes, float maximumWidth,
                          facebook::react::Point localPoint) {
     const std::unique_ptr<skia::textlayout::Paragraph> paragraph =
-        layoutParagraph(attributedString, paragraphAttributes, maximumWidth);
+        layoutEditorParagraph(attributedString, paragraphAttributes, maximumWidth);
     const skia::textlayout::PositionWithAffinity position =
         paragraph->getGlyphPositionAtCoordinate(static_cast<SkScalar>(localPoint.x),
                                                 static_cast<SkScalar>(localPoint.y));

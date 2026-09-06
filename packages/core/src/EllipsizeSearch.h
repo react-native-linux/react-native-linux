@@ -1,7 +1,10 @@
 #pragma once
 
+#include <react/renderer/attributedstring/primitives.h>
+
 #include <cstddef>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -49,6 +52,32 @@ struct EllipsizePlan {
  * ellipsis stands where the removed characters were in memory, which is not where iOS puts it on screen; the
  * paragraph direction is hardcoded left-to-right anyway (see *Fidelity limits* in docs/cpp-toolchain.md).
  */
+/**
+ * The facts about a paragraph that decide whether a `head` or `middle` cut may be searched for it at all.
+ *
+ * Two of them are refusals rather than settings. A paragraph carrying an **inline attachment** is left alone
+ * because `ParagraphShadowNode::layout` requires one measured attachment per attachment fragment and
+ * `TextLayoutManager` pairs them with `getRectsForPlaceholders` in order, a pairing that only survives drops at
+ * the tail. An **editor field** is left alone because a `<TextInput>` is a window onto its whole text, not a
+ * truncated view of it: its caret, selection, composing run and hit testing are all UTF-16 offsets into the
+ * string React gave us, and a searched cut rebuilds that string, so every one of those offsets would address a
+ * different character than the one on screen. A field scrolls its text instead, which is what makes those
+ * offsets keep meaning what they say.
+ */
+struct EllipsizeCandidate {
+    facebook::react::EllipsizeMode ellipsizeMode;
+    int maximumNumberOfLines;
+    bool hasInlineAttachment;
+    bool isEditorField;
+};
+
+/**
+ * Which end of the text this paragraph's `ellipsizeMode` takes away, or nothing at all when the mode is one
+ * SkParagraph answers itself (`tail`, `clip`), when there is no line limit, or when the paragraph is one of the
+ * two the search must not rebuild.
+ */
+std::optional<EllipsizeSide> searchedEllipsizeSide(const EllipsizeCandidate& candidate);
+
 EllipsizePlan planEllipsize(EllipsizeSide side, const std::vector<std::string>& fragmentStrings,
                             const std::vector<size_t>& graphemeStarts, size_t keptGraphemeCount);
 

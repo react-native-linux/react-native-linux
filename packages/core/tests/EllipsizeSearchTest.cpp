@@ -9,10 +9,13 @@
 
 namespace {
 
+using facebook::react::EllipsizeMode;
+using react_native_linux::EllipsizeCandidate;
 using react_native_linux::EllipsizePiece;
 using react_native_linux::EllipsizePlan;
 using react_native_linux::EllipsizeSide;
 using react_native_linux::planEllipsize;
+using react_native_linux::searchedEllipsizeSide;
 using react_native_linux::searchEllipsizePlan;
 
 constexpr char kEllipsis[] = "\xE2\x80\xA6";
@@ -80,6 +83,58 @@ std::vector<size_t> asciiGraphemeStarts(size_t length) {
     }
 
     return starts;
+}
+
+/**
+ * A paragraph the search is allowed to rebuild: one line, no attachment, not a field.
+ */
+EllipsizeCandidate truncatedParagraph(EllipsizeMode ellipsizeMode) {
+    return EllipsizeCandidate{.ellipsizeMode = ellipsizeMode,
+                              .maximumNumberOfLines = 1,
+                              .hasInlineAttachment = false,
+                              .isEditorField = false};
+}
+
+TEST(EllipsizeSearchTest, HeadAndMiddleAreTheModesTheSearchAnswers) {
+    EXPECT_EQ(searchedEllipsizeSide(truncatedParagraph(EllipsizeMode::Head)), EllipsizeSide::Head);
+    EXPECT_EQ(searchedEllipsizeSide(truncatedParagraph(EllipsizeMode::Middle)), EllipsizeSide::Middle);
+}
+
+TEST(EllipsizeSearchTest, TailAndClipAreLeftToSkParagraphAndToTheLineLimit) {
+    EXPECT_FALSE(searchedEllipsizeSide(truncatedParagraph(EllipsizeMode::Tail)).has_value());
+    EXPECT_FALSE(searchedEllipsizeSide(truncatedParagraph(EllipsizeMode::Clip)).has_value());
+}
+
+TEST(EllipsizeSearchTest, WithNoLineLimitThereIsNothingToTruncateTo) {
+    EllipsizeCandidate candidate = truncatedParagraph(EllipsizeMode::Head);
+
+    candidate.maximumNumberOfLines = 0;
+
+    EXPECT_FALSE(searchedEllipsizeSide(candidate).has_value());
+}
+
+TEST(EllipsizeSearchTest, AParagraphWithAnInlineAttachmentIsNeverRebuilt) {
+    EllipsizeCandidate candidate = truncatedParagraph(EllipsizeMode::Middle);
+
+    candidate.hasInlineAttachment = true;
+
+    EXPECT_FALSE(searchedEllipsizeSide(candidate).has_value());
+}
+
+// A <TextInput> is a window onto its whole text: its caret, selection, composing run and hit testing are UTF-16
+// offsets into the string React gave us, and a searched cut rebuilds that string, so every one of those offsets
+// would address a different character than the one on screen. A field scrolls instead of truncating, so it
+// measures and hit-tests its full text whatever `ellipsizeMode` and `numberOfLines` say.
+TEST(EllipsizeSearchTest, AnEditorFieldIsNeverTruncatedByTheSearchWhateverItsModeSays) {
+    EllipsizeCandidate field = truncatedParagraph(EllipsizeMode::Head);
+
+    field.isEditorField = true;
+
+    EXPECT_FALSE(searchedEllipsizeSide(field).has_value());
+
+    field.ellipsizeMode = EllipsizeMode::Middle;
+
+    EXPECT_FALSE(searchedEllipsizeSide(field).has_value());
 }
 
 TEST(EllipsizeSearchTest, HeadKeepsTheEndOfTheTextBehindTheEllipsis) {

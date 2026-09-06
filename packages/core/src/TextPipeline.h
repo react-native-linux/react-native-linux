@@ -39,4 +39,20 @@ std::unique_ptr<skia::textlayout::Paragraph>
 layoutParagraph(const facebook::react::AttributedString& attributedString,
                 const facebook::react::ParagraphAttributes& paragraphAttributes, float maximumWidth);
 
+/**
+ * The same layout for a `<TextInput>`, with one difference: a field's paragraph is never rebuilt by the
+ * `head`/`middle` truncation search.
+ *
+ * A field is a window onto its whole text rather than a truncated view of it. Its caret, its selection, its
+ * composing run and its hit testing are all UTF-16 offsets into the string React gave us — `measureEditorGeometry`
+ * takes them and `utf16IndexAtPoint` returns them — and a searched cut rebuilds that string, so every offset
+ * either side of it would address a different character than the one drawn. A field that does not fit scrolls
+ * (`SceneEditorContent::scrollOffsetX`), which is what keeps those offsets meaning what they say. Everything the
+ * editor lays out, measures, hit-tests and paints therefore goes through this function; see *Truncation that is
+ * not at the tail (#251)* in docs/cpp-toolchain.md.
+ */
+std::unique_ptr<skia::textlayout::Paragraph>
+layoutEditorParagraph(const facebook::react::AttributedString& attributedString,
+                      const facebook::react::ParagraphAttributes& paragraphAttributes, float maximumWidth);
+
 } // namespace react_native_linux
