@@ -37,14 +37,25 @@ using ChildList = std::vector<std::shared_ptr<const ShadowNode>>;
  * does, is already past that stage, so there is nothing for a C++ shadow-node test to exercise, and no fork of it
  * exists to regress.
  */
+/**
+ * What a mounted node's role props resolve to: the bitmask every other test suite reads
+ * (`RetainedScene`, the golden accessibility tree) and the string `InputDispatcher::accessibilityRoleOf` reads for
+ * keyboard activation. The two do not necessarily agree — see `RoleResolutionTest` below.
+ */
+struct RoleResolution final {
+    facebook::react::AccessibilityTraits traits;
+    std::string accessibilityRole;
+};
+
 class WebPropAliasTest : public ::testing::Test {
 protected:
-    facebook::react::AccessibilityTraits accessibilityTraitsFor(folly::dynamic props) {
+    RoleResolution roleResolutionFor(folly::dynamic props) {
         const std::shared_ptr<const ShadowNode> node =
             makeConfiguredShadowNode(viewDescriptor_, 1, kSurfaceId, contextContainer_, std::move(props),
                                      std::make_shared<const ChildList>());
+        const auto& viewProps = std::static_pointer_cast<const ViewShadowNode>(node)->getConcreteProps();
 
-        return std::static_pointer_cast<const ViewShadowNode>(node)->getConcreteProps().accessibilityTraits;
+        return RoleResolution{.traits = viewProps.accessibilityTraits, .accessibilityRole = viewProps.accessibilityRole};
     }
 
     Rect frameOf(Tag tag, const std::map<Tag, Rect>& frames) {
@@ -109,27 +120,57 @@ protected:
 
 #pragma mark - role / accessibilityRole
 
-TEST_F(WebPropAliasTest, RoleAloneAndAccessibilityRoleAloneResolveToTheSameAccessibilityTraits) {
-    const facebook::react::AccessibilityTraits fromRole =
-        accessibilityTraitsFor(folly::dynamic::object("role", "button"));
-    const facebook::react::AccessibilityTraits fromAccessibilityRole =
-        accessibilityTraitsFor(folly::dynamic::object("accessibilityRole", "button"));
+/**
+ * `AccessibilityProps`' constructor reads `role` and `accessibilityRole` for two different outputs, and they do
+ * not travel together: `accessibilityTraits` — the bitmask everything else in this platform reads — is built from
+ * whichever of the two is present, `role` winning when both are; the `accessibilityRole` *string* —
+ * `InputDispatcher::accessibilityRoleOf`'s only source for the activation-key behaviour — is set only from the
+ * literal `accessibilityRole` raw prop, never from `role`. A non-default role (`link`, not the `AccessibilityRole`
+ * default) is used throughout so a broken conversion cannot hide behind a value that also happens to be the
+ * type's zero state.
+ */
+TEST_F(WebPropAliasTest, RoleAloneSetsTheTraitButLeavesTheAccessibilityRoleStringUnset) {
+    const RoleResolution resolution = roleResolutionFor(folly::dynamic::object("role", "link"));
 
-    EXPECT_EQ(fromRole, facebook::react::AccessibilityTraits::Button);
-    EXPECT_EQ(fromRole, fromAccessibilityRole);
+    EXPECT_EQ(resolution.traits, facebook::react::AccessibilityTraits::Link);
+    EXPECT_EQ(resolution.accessibilityRole, "");
 }
 
-TEST_F(WebPropAliasTest, WhenBothAreGivenRoleTakesPrecedenceOverAccessibilityRole) {
-    const facebook::react::AccessibilityTraits traits =
-        accessibilityTraitsFor(folly::dynamic::object("role", "button")("accessibilityRole", "link"));
+TEST_F(WebPropAliasTest, AccessibilityRoleAloneSetsBothTheTraitAndTheAccessibilityRoleString) {
+    const RoleResolution resolution = roleResolutionFor(folly::dynamic::object("accessibilityRole", "link"));
 
-    EXPECT_EQ(traits, facebook::react::AccessibilityTraits::Button);
+    EXPECT_EQ(resolution.traits, facebook::react::AccessibilityTraits::Link);
+    EXPECT_EQ(resolution.accessibilityRole, "link");
+}
+
+TEST_F(WebPropAliasTest, WhenBothAreGivenRoleTakesPrecedenceOverAccessibilityRoleForTheTraitButNotForTheString) {
+    const RoleResolution resolution =
+        roleResolutionFor(folly::dynamic::object("role", "link")("accessibilityRole", "button"));
+
+    EXPECT_EQ(resolution.traits, facebook::react::AccessibilityTraits::Link);
+    EXPECT_EQ(resolution.accessibilityRole, "button");
 }
 
 #pragma mark - inset family (position: absolute)
 
-folly::dynamic absoluteBox(folly::dynamic extra) {
-    folly::dynamic props = folly::dynamic::object("position", "absolute")("width", 50)("height", 50);
+constexpr bool kOmitDimension = false;
+constexpr bool kFixDimension = true;
+
+/**
+ * A `position: absolute` leaf, its width and height each either fixed at 50 or left undefined so Yoga derives
+ * them from the inset edges instead. A trailing edge (`right`, `bottom`) only ever moves the origin when the
+ * matching dimension is fixed — with it undefined, Yoga stretches the box to satisfy both edges, which is the
+ * only way a test can observe whether an alias carried the trailing edge at all.
+ */
+folly::dynamic absoluteBox(folly::dynamic extra, bool fixWidth = kFixDimension, bool fixHeight = kFixDimension) {
+    folly::dynamic props = folly::dynamic::object("position", "absolute");
+
+    if (fixWidth) {
+        props["width"] = 50;
+    }
+    if (fixHeight) {
+        props["height"] = 50;
+    }
 
     for (const auto& entry : extra.items()) {
         props[entry.first] = entry.second;
@@ -139,41 +180,42 @@ folly::dynamic absoluteBox(folly::dynamic extra) {
 }
 
 TEST_F(WebPropAliasTest, InsetIsTheSameAsSettingAllFourPhysicalEdges) {
-    const Rect withAlias =
-        frameOf(11, commit(folly::dynamic::object("width", 300)("height", 300),
-                           {absoluteBox(folly::dynamic::object("inset", 20))}));
+    const Rect withAlias = frameOf(
+        11, commit(folly::dynamic::object("width", 300)("height", 300),
+                   {absoluteBox(folly::dynamic::object("inset", 20), kOmitDimension, kOmitDimension)}));
     const Rect withCanonical = frameOf(
         11, commit(folly::dynamic::object("width", 300)("height", 300),
-                   {absoluteBox(folly::dynamic::object("top", 20)("left", 20)("right", 20)("bottom", 20))}));
+                   {absoluteBox(folly::dynamic::object("top", 20)("left", 20)("right", 20)("bottom", 20),
+                               kOmitDimension, kOmitDimension)}));
 
-    EXPECT_EQ(withAlias.origin.x, withCanonical.origin.x);
-    EXPECT_EQ(withAlias.origin.y, withCanonical.origin.y);
-    EXPECT_EQ(withAlias.origin.x, 20);
-    EXPECT_EQ(withAlias.origin.y, 20);
+    EXPECT_EQ(withAlias, withCanonical);
+    EXPECT_EQ(withAlias, (Rect{.origin = {.x = 20, .y = 20}, .size = {.width = 260, .height = 260}}));
 }
 
 TEST_F(WebPropAliasTest, InsetInlineIsTheSameAsSettingLeftAndRight) {
     const Rect withAlias = frameOf(
-        11, commit(folly::dynamic::object("width", 300)("height", 300), {absoluteBox(folly::dynamic::object(
-                                                                             "insetInline", 15))}));
+        11, commit(folly::dynamic::object("width", 300)("height", 300),
+                   {absoluteBox(folly::dynamic::object("insetInline", 15), kOmitDimension, kFixDimension)}));
     const Rect withCanonical = frameOf(
         11, commit(folly::dynamic::object("width", 300)("height", 300),
-                   {absoluteBox(folly::dynamic::object("left", 15)("right", 15))}));
+                   {absoluteBox(folly::dynamic::object("left", 15)("right", 15), kOmitDimension, kFixDimension)}));
 
-    EXPECT_EQ(withAlias.origin.x, withCanonical.origin.x);
+    EXPECT_EQ(withAlias, withCanonical);
     EXPECT_EQ(withAlias.origin.x, 15);
+    EXPECT_EQ(withAlias.size.width, 270);
 }
 
 TEST_F(WebPropAliasTest, InsetBlockIsTheSameAsSettingTopAndBottom) {
     const Rect withAlias = frameOf(
-        11, commit(folly::dynamic::object("width", 300)("height", 300), {absoluteBox(folly::dynamic::object(
-                                                                             "insetBlock", 15))}));
+        11, commit(folly::dynamic::object("width", 300)("height", 300),
+                   {absoluteBox(folly::dynamic::object("insetBlock", 15), kFixDimension, kOmitDimension)}));
     const Rect withCanonical = frameOf(
         11, commit(folly::dynamic::object("width", 300)("height", 300),
-                   {absoluteBox(folly::dynamic::object("top", 15)("bottom", 15))}));
+                   {absoluteBox(folly::dynamic::object("top", 15)("bottom", 15), kFixDimension, kOmitDimension)}));
 
-    EXPECT_EQ(withAlias.origin.y, withCanonical.origin.y);
+    EXPECT_EQ(withAlias, withCanonical);
     EXPECT_EQ(withAlias.origin.y, 15);
+    EXPECT_EQ(withAlias.size.height, 270);
 }
 
 TEST_F(WebPropAliasTest, StartIsTheSameAsLeftInLeftToRightDirection) {
@@ -198,6 +240,37 @@ TEST_F(WebPropAliasTest, EndIsTheSameAsRightInLeftToRightDirection) {
 
     EXPECT_EQ(withAlias.origin.x, withCanonical.origin.x);
     EXPECT_EQ(withAlias.origin.x, 300 - 50 - 20);
+}
+
+/**
+ * `start` and `end` are direction-aware, not fixed physical aliases: Yoga's `layoutAbsoluteChild` resolves an
+ * absolutely-positioned child's logical inset edges against its *containing block's* resolved direction, not the
+ * child's own, so the container — not the child — is where `direction: "rtl"` has to be set. `computeLeftEdge`
+ * and `computeRightEdge` only read `Start`/`End` for the leading/trailing edge in `LTR`; in `RTL` they swap, so a
+ * mapping that always sent `start` to `left` and `end` to `right` would still pass every test above.
+ */
+TEST_F(WebPropAliasTest, StartIsTheSameAsRightInRightToLeftDirection) {
+    const Rect withAlias =
+        frameOf(11, commit(folly::dynamic::object("width", 300)("height", 300)("direction", "rtl"),
+                           {absoluteBox(folly::dynamic::object("start", 25))}));
+    const Rect withCanonical =
+        frameOf(11, commit(folly::dynamic::object("width", 300)("height", 300)("direction", "rtl"),
+                           {absoluteBox(folly::dynamic::object("right", 25))}));
+
+    EXPECT_EQ(withAlias.origin.x, withCanonical.origin.x);
+    EXPECT_EQ(withAlias.origin.x, 300 - 50 - 25);
+}
+
+TEST_F(WebPropAliasTest, EndIsTheSameAsLeftInRightToLeftDirection) {
+    const Rect withAlias =
+        frameOf(11, commit(folly::dynamic::object("width", 300)("height", 300)("direction", "rtl"),
+                           {absoluteBox(folly::dynamic::object("end", 20))}));
+    const Rect withCanonical =
+        frameOf(11, commit(folly::dynamic::object("width", 300)("height", 300)("direction", "rtl"),
+                           {absoluteBox(folly::dynamic::object("left", 20))}));
+
+    EXPECT_EQ(withAlias.origin.x, withCanonical.origin.x);
+    EXPECT_EQ(withAlias.origin.x, 20);
 }
 
 /**
