@@ -2409,6 +2409,11 @@ gcc remains the documented-but-untested alternative. CI builds one compiler, cla
 local development machine, Hermes' own Linux CI, and Meta's `react-native-fantom` host all use; a gcc column
 would double the wall-clock cost of the matrix to test a path nothing else exercises.
 
+`pnpm format:cpp:check` (part of `pnpm validate`) shells out to `clang-format-18` specifically, refusing to run
+under any other major version: the `validate` job installs the standalone `clang-format-18` apt package for it,
+separately from the `unit`/`native`/`window` jobs' `clang-tools-18`. Every branch that reformats `packages/core`
+against the checked-in `.clang-format` runs the same command; see `scripts/format-cpp.ts`.
+
 ## Commands
 
 ```bash
@@ -2441,6 +2446,9 @@ pnpm test:golden:window          # the same, for the window goldens: weston + la
 pnpm test:golden:window:update   # regenerate the window goldens
 pnpm test:golden:window:render   # run the rig alone, writing PNG files into build/window-goldens
 pnpm test:native          # configure/build the `test` preset, run ctest, gate on coverage — see *Unit tests and coverage*
+
+pnpm format:cpp           # clang-format -i over packages/core/src and packages/core/tests
+pnpm format:cpp:check     # the same, --dry-run --Werror; part of `pnpm validate`
 ```
 
 The same sequence without pnpm, from the repository root:
