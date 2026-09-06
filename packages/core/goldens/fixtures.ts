@@ -308,6 +308,27 @@ export const fixtures: readonly GoldenFixture[] = [
     renderArguments: [],
     renderFlag: "--golden",
   },
+  // #52: one bundle, three `PlatformColor` bands — as booted, under an override to dark, after clearing it — rendered three times. In a light portal with no override, bands one and three match.
+  {
+    bundleFileName: "appearance-color.js",
+    goldenFileName: "appearance-light.png",
+    renderArguments: ["light"],
+    renderFlag: "--appearance-golden",
+  },
+  // #52: the same bundle in a dark portal, so all three bands are dark and the picture proves the scheme reached the scene rather than only the module.
+  {
+    bundleFileName: "appearance-color.js",
+    goldenFileName: "appearance-dark.png",
+    renderArguments: ["dark"],
+    renderFlag: "--appearance-golden",
+  },
+  // #52: portal dark with `setColorScheme('light')` already in force. Band one is light because the override wins, band three is dark because clearing it falls back to what the portal said — the one band that differs from the light render, and the only picture in the triple a cached resolved colour could not produce.
+  {
+    bundleFileName: "appearance-color.js",
+    goldenFileName: "appearance-override.png",
+    renderArguments: ["dark", "light"],
+    renderFlag: "--appearance-golden",
+  },
 ];
 
 export { checkFontsAreVendored } from "./fonts-vendored.ts";

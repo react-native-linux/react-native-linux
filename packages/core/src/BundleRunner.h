@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Appearance.h"
 #include "LinuxMountingManager.h"
 #include "RetainedScene.h"
 
@@ -96,6 +97,20 @@ int runAnimatedScroll(const std::string& bundlePath, facebook::react::Point surf
 int runResizedFabricBundle(const std::string& bundlePath, facebook::react::Size resizedSurfaceSize);
 
 FabricRunResult runFabricBundle(const std::optional<std::string>& bundlePath, facebook::react::Size surfaceSize);
+
+/**
+ * The same run, with the portal reporting `portalColorScheme` and an optional app-level override already in
+ * force, both applied before the bundle loads.
+ *
+ * This is the headless stand-in for `AppearancePortal`'s initial read (#52): a golden must not depend on the
+ * colour scheme of the desktop the CI machine happens to be running, and a D-Bus round trip in a golden would be
+ * exactly that. Both are written into the same `AppearanceModel` the portal and the module write into, through
+ * the same two calls, so what the fixture reads back is what a real portal answer and a real
+ * `Appearance.setColorScheme` produce.
+ */
+FabricRunResult runAppearanceFabricBundle(const std::string& bundlePath, facebook::react::Size surfaceSize,
+                                          ColorScheme portalColorScheme,
+                                          std::optional<ColorScheme> colorSchemeOverride);
 
 /**
  * One sampled point and the node a press there would land on.

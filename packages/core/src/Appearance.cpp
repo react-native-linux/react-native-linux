@@ -4,6 +4,43 @@
 
 namespace react_native_linux {
 
+namespace {
+
+constexpr uint32_t kPortalPreferDark = 1;
+constexpr uint32_t kPortalPreferLight = 2;
+constexpr std::string_view kLightName = "light";
+constexpr std::string_view kDarkName = "dark";
+
+} // namespace
+
+std::optional<ColorScheme> colorSchemeFromPortalSetting(uint32_t portalSettingValue) {
+    if (portalSettingValue == kPortalPreferDark) {
+        return ColorScheme::Dark;
+    }
+
+    if (portalSettingValue == kPortalPreferLight) {
+        return ColorScheme::Light;
+    }
+
+    return std::nullopt;
+}
+
+std::optional<ColorScheme> colorSchemeFromName(std::string_view colorSchemeName) {
+    if (colorSchemeName == kLightName) {
+        return ColorScheme::Light;
+    }
+
+    if (colorSchemeName == kDarkName) {
+        return ColorScheme::Dark;
+    }
+
+    return std::nullopt;
+}
+
+std::string_view nameOfColorScheme(ColorScheme colorScheme) {
+    return colorScheme == ColorScheme::Dark ? kDarkName : kLightName;
+}
+
 ColorScheme resolveEffectiveColorScheme(std::optional<ColorScheme> colorSchemeOverride, ColorScheme portalColorScheme) {
     return colorSchemeOverride.value_or(portalColorScheme);
 }

@@ -72,6 +72,13 @@ public:
     DimensionsSource& dimensions() noexcept;
 
     /**
+     * The colour-scheme state `Appearance.getColorScheme()` answers from. Whoever owns the portal connection
+     * writes it: `WindowSession` through `AppearancePortal`, the headless `--appearance-golden` runner from its
+     * argument. See *Appearance and PlatformColor* in docs/cpp-toolchain.md.
+     */
+    AppearanceModel& appearance() noexcept;
+
+    /**
      * Emits at most one `didUpdateDimensions` for everything configured since the last call, on the JavaScript
      * thread. Called once per frame by the window host, and once after the resize by the headless one.
      */

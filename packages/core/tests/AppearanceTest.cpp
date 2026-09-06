@@ -1,12 +1,19 @@
 #include "Appearance.h"
+#include "PlatformColor.h"
 
+#include <cstdint>
 #include <gtest/gtest.h>
 #include <optional>
+#include <string_view>
 
 namespace {
 
 using react_native_linux::AppearanceModel;
+using react_native_linux::colorSchemeFromName;
+using react_native_linux::colorSchemeFromPortalSetting;
 using react_native_linux::ColorScheme;
+using react_native_linux::nameOfColorScheme;
+using react_native_linux::platformColor;
 using react_native_linux::resolveEffectiveColorScheme;
 using react_native_linux::shouldEmitOnOverrideChange;
 using react_native_linux::shouldEmitOnPortalChange;
@@ -179,6 +186,101 @@ TEST_F(AppearanceModelTest, WithNoChangeListenerAPortalChangeStillUpdatesTheStat
     unlistened.onPortalColorSchemeChanged(kDark);
 
     EXPECT_EQ(unlistened.colorScheme(), kDark);
+}
+
+// colorSchemeFromPortalSetting: the three values org.freedesktop.portal.Settings defines for
+// `org.freedesktop.appearance color-scheme`, and the reserved rest, which mean the same as "no preference".
+
+struct PortalSettingCase {
+    uint32_t portalSettingValue;
+    std::optional<ColorScheme> expectedColorScheme;
+};
+
+class PortalSettingTest : public ::testing::TestWithParam<PortalSettingCase> {};
+
+TEST_P(PortalSettingTest, DecodesTheSettingValue) {
+    EXPECT_EQ(colorSchemeFromPortalSetting(GetParam().portalSettingValue), GetParam().expectedColorScheme);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    AppearancePortalDecode, PortalSettingTest,
+    ::testing::Values(PortalSettingCase{.portalSettingValue = 0, .expectedColorScheme = std::nullopt},
+                      PortalSettingCase{.portalSettingValue = 1, .expectedColorScheme = kDark},
+                      PortalSettingCase{.portalSettingValue = 2, .expectedColorScheme = kLight},
+                      PortalSettingCase{.portalSettingValue = 3, .expectedColorScheme = std::nullopt},
+                      PortalSettingCase{.portalSettingValue = 4294967295U, .expectedColorScheme = std::nullopt}));
+
+// colorSchemeFromName: `ColorSchemeName` and `ColorSchemeOverride` from NativeAppearance.js. `auto` and
+// `unspecified` are the two spellings of "clear the override", and an unrecognised string clears it too rather
+// than throwing, because `setColorScheme` has no failure channel in the spec.
+
+struct ColorSchemeNameCase {
+    std::string_view colorSchemeName;
+    std::optional<ColorScheme> expectedColorScheme;
+};
+
+class ColorSchemeNameTest : public ::testing::TestWithParam<ColorSchemeNameCase> {};
+
+TEST_P(ColorSchemeNameTest, DecodesTheName) {
+    EXPECT_EQ(colorSchemeFromName(GetParam().colorSchemeName), GetParam().expectedColorScheme);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    AppearanceNameDecode, ColorSchemeNameTest,
+    ::testing::Values(ColorSchemeNameCase{.colorSchemeName = "light", .expectedColorScheme = kLight},
+                      ColorSchemeNameCase{.colorSchemeName = "dark", .expectedColorScheme = kDark},
+                      ColorSchemeNameCase{.colorSchemeName = "auto", .expectedColorScheme = std::nullopt},
+                      ColorSchemeNameCase{.colorSchemeName = "unspecified", .expectedColorScheme = std::nullopt},
+                      ColorSchemeNameCase{.colorSchemeName = "", .expectedColorScheme = std::nullopt},
+                      ColorSchemeNameCase{.colorSchemeName = "Dark", .expectedColorScheme = std::nullopt}));
+
+TEST(AppearanceNameTest, EveryColorSchemeRoundTripsThroughItsName) {
+    EXPECT_EQ(colorSchemeFromName(nameOfColorScheme(kLight)), kLight);
+    EXPECT_EQ(colorSchemeFromName(nameOfColorScheme(kDark)), kDark);
+}
+
+// platformColor: the whole token set, in both schemes, and the name that is not in it.
+
+struct PlatformColorCase {
+    std::string_view platformColorName;
+    int32_t expectedLightArgb;
+    int32_t expectedDarkArgb;
+};
+
+class PlatformColorTest : public ::testing::TestWithParam<PlatformColorCase> {};
+
+TEST_P(PlatformColorTest, ResolvesTheNameInBothSchemes) {
+    EXPECT_EQ(platformColor(GetParam().platformColorName, kLight), GetParam().expectedLightArgb);
+    EXPECT_EQ(platformColor(GetParam().platformColorName, kDark), GetParam().expectedDarkArgb);
+}
+
+INSTANTIATE_TEST_SUITE_P(AppearancePlatformColors, PlatformColorTest,
+                         ::testing::Values(PlatformColorCase{.platformColorName = "labelColor",
+                                                             .expectedLightArgb = static_cast<int32_t>(0xFF1B1F23),
+                                                             .expectedDarkArgb = static_cast<int32_t>(0xFFE6EDF3)},
+                                           PlatformColorCase{.platformColorName = "secondaryLabelColor",
+                                                             .expectedLightArgb = static_cast<int32_t>(0xFF5C6370),
+                                                             .expectedDarkArgb = static_cast<int32_t>(0xFF8B949E)},
+                                           PlatformColorCase{.platformColorName = "windowBackgroundColor",
+                                                             .expectedLightArgb = static_cast<int32_t>(0xFFF5F6F7),
+                                                             .expectedDarkArgb = static_cast<int32_t>(0xFF0D1117)},
+                                           PlatformColorCase{.platformColorName = "controlBackgroundColor",
+                                                             .expectedLightArgb = static_cast<int32_t>(0xFFFFFFFF),
+                                                             .expectedDarkArgb = static_cast<int32_t>(0xFF161B22)},
+                                           PlatformColorCase{.platformColorName = "separatorColor",
+                                                             .expectedLightArgb = static_cast<int32_t>(0xFFD0D7DE),
+                                                             .expectedDarkArgb = static_cast<int32_t>(0xFF30363D)},
+                                           PlatformColorCase{.platformColorName = "linkColor",
+                                                             .expectedLightArgb = static_cast<int32_t>(0xFF0969DA),
+                                                             .expectedDarkArgb = static_cast<int32_t>(0xFF58A6FF)}));
+
+TEST(PlatformColorUnknownNameTest, AnUnrecognisedNameResolvesToNothingInEitherScheme) {
+    EXPECT_EQ(platformColor("systemPinkColor", kLight), std::nullopt);
+    EXPECT_EQ(platformColor("systemPinkColor", kDark), std::nullopt);
+}
+
+TEST(PlatformColorUnknownNameTest, AnEmptyNameResolvesToNothing) {
+    EXPECT_EQ(platformColor("", kLight), std::nullopt);
 }
 
 } // namespace

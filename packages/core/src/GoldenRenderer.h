@@ -1,8 +1,11 @@
 #pragma once
 
+#include "Appearance.h"
+
 #include <react/renderer/core/ReactPrimitives.h>
 #include <react/renderer/graphics/Point.h>
 
+#include <optional>
 #include <string>
 
 namespace react_native_linux {
@@ -21,6 +24,20 @@ namespace react_native_linux {
  * Returns a process exit status: 0 when the file was written and the bundle reported no fatal JavaScript error.
  */
 int renderGolden(const std::string& bundlePath, const std::string& outputPath, int width, int height);
+
+/**
+ * The same rig, with the portal reporting `portalColorScheme` before the bundle loads.
+ *
+ * A colour scheme renders nothing a static golden could not already prove until the same bundle has been run in
+ * both of them: what makes light and dark a *feature* rather than two fixtures is that one bundle produced both
+ * pictures, resolving `PlatformColor` names against whatever `Appearance.getColorScheme()` answered. The scheme
+ * is an argument rather than a read of the machine's desktop for the same reason the scroll step is fixed — a
+ * golden must not depend on how the host that rendered it was themed. See *Appearance and PlatformColor* in
+ * docs/cpp-toolchain.md.
+ */
+int renderAppearanceGolden(const std::string& bundlePath, const std::string& outputPath,
+                           ColorScheme portalColorScheme, std::optional<ColorScheme> colorSchemeOverride,
+                           int width, int height);
 
 /**
  * The same rig, after a mouse wheel has been turned `wheelNotches` times over `surfacePoint`.

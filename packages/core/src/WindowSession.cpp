@@ -8,6 +8,7 @@
 
 #include <chrono>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -27,6 +28,7 @@ WindowSession::WindowSession(const std::string& bundlePath, WindowSize size)
     // Before the script, so the first `Dimensions.get` a bundle makes at module scope already answers with the
     // window's requested size rather than with the pre-configure default.
     configureDimensions(size);
+    seedColorScheme();
     reactHost_.loadScript(facebook::react::JSBigFileString::fromPath(bundlePath), bundlePath);
 }
 
@@ -50,6 +52,10 @@ void WindowSession::deliverInput(const std::vector<InputEvent>& events) {
     // Once per frame, whatever the compositor sent: this is what turns any number of configures since the last
     // frame into at most one `didUpdateDimensions`.
     reactHost_.publishPendingDimensions();
+
+#ifdef RNL_ENABLE_APPEARANCE_PORTAL
+    appearancePortal_.processPendingSignals(reactHost_.appearance());
+#endif
 
     // The blink is advanced before the frame's input, because dispatching input is also what republishes the
     // caret into the scene: toggling afterwards would show every phase one frame late.
@@ -79,6 +85,16 @@ FrameClock::Tick WindowSession::recordFrameTick(FrameClock::Source source, std::
 }
 
 const FrameClock& WindowSession::frameClock() const noexcept { return frameClock_; }
+
+void WindowSession::seedColorScheme() {
+#ifdef RNL_ENABLE_APPEARANCE_PORTAL
+    const std::optional<ColorScheme> portalColorScheme = appearancePortal_.initialColorScheme();
+
+    if (portalColorScheme.has_value()) {
+        reactHost_.appearance().onPortalColorSchemeChanged(portalColorScheme.value());
+    }
+#endif
+}
 
 void WindowSession::configureDimensions(WindowSize size) {
     reactHost_.dimensions().configure(static_cast<double>(size.width), static_cast<double>(size.height),
