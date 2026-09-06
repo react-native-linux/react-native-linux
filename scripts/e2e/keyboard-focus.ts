@@ -4,11 +4,13 @@ const EMPTY_LENGTH = 0;
 const KEYBOARD_STEP_PATTERN = /^(?:key|type) /u;
 
 /**
- * The trace line `WindowMain.cpp`'s `printWindowDebugTransitions` already prints on `wl_keyboard.enter` — see
- * *Desktop lifecycle contract (#218)* in docs/cpp-toolchain.md. `runKeyboardAwareInjection` below waits for it
- * before the first keyboard step instead of sleeping a fixed amount, which is the #304 fix.
+ * `WindowMain.cpp`'s `announceKeyboardFocusOnce` prints this unconditionally, independent of `--window-debug`,
+ * the first time `wl_keyboard.enter` reaches the surface — see *Desktop lifecycle contract (#218)* in
+ * docs/cpp-toolchain.md. `runKeyboardAwareInjection` below waits for it before the first keyboard step instead of
+ * sleeping a fixed amount, which is the #304 fix. The tag is `[rnl-focus]`, not `[rnl-window]`: `ERROR_TRACE_
+ * PATTERNS` in `scripts/e2e/scenario.ts` treats any `[rnl-window]` line as a fault, and this one is not.
  */
-const KEYBOARD_FOCUS_TRACE_LINE = "[rnl-window] keyboard enter";
+const KEYBOARD_FOCUS_TRACE_LINE = "[rnl-focus] keyboard entered";
 
 /** Whether any `rnl_inject` step in `steps` presses a key or types text. */
 const hasKeyboardSteps = (steps: readonly string[]): boolean => steps.some((step) => KEYBOARD_STEP_PATTERN.test(step));
