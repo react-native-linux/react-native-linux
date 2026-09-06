@@ -51,6 +51,7 @@ file(GLOB RNL_UPSTREAM_TIMELINE_TESTS
 add_executable(rnl_core_tests
     AutomationProtocolTest.cpp
     AnimatedHitTestTest.cpp
+    AnimationFrameQueueTest.cpp
     AnimatedPropAllowlistTest.cpp
     AnimatedConformanceTest.cpp
     AnimatedPropsTest.cpp
@@ -91,6 +92,7 @@ add_executable(rnl_core_tests
     ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/DecayAnimationDriverTest.cpp
     ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/EventAnimationDriverTests.cpp
     ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/ManagedPropsMountingOverrideTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/AnimationFrameQueue.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/Appearance.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/AutomationProtocol.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/Clipboard.cpp
