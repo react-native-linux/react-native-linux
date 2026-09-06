@@ -32,9 +32,10 @@ enum class AutomationCommand : uint8_t {
     DumpAccessibilityTree = 0,
     DumpVisualTree = 1,
     HangForTesting = 2,
-    ListErrors = 3,
-    MarkTestPassed = 4,
-    TakeScreenshot = 5,
+    ListAccessibilityChanges = 3,
+    ListErrors = 4,
+    MarkTestPassed = 5,
+    TakeScreenshot = 6,
 };
 
 /**
@@ -51,6 +52,22 @@ struct AutomationRequest {
 struct AutomationRequestParse {
     std::optional<AutomationRequest> request;
     std::string error;
+};
+
+/**
+ * One committed change to a node's `accessibilityState` or `accessibilityValue`, carried on an `Update` mutation
+ * rather than a remount — same tag, no `Remove`/`Insert` around it. `LinuxMountingManager::executeMount` records
+ * one of these per changed tag per commit by diffing the mutation's old and new props, and `takeAccessibilityChanges`
+ * drains them for `ListAccessibilityChanges` below.
+ *
+ * This is the smallest observable of "an AT-SPI `object:state-changed:<state>` or `object:property-change` event
+ * would fire here": the bridge that would actually put an event on the bus is #27's and does not exist yet, so
+ * this is graded on the projection and the channel, not on D-Bus traffic. See #264.
+ */
+struct AccessibilityChange {
+    facebook::react::Tag tag{};
+    bool stateChanged{false};
+    bool valueChanged{false};
 };
 
 /**
@@ -138,6 +155,15 @@ folly::dynamic describeVisualTree(const SceneNodes& nodes);
  * this over D-Bus is #27's. This is the surface both are graded against.
  */
 folly::dynamic describeAccessibilityTree(const SceneNodes& nodes);
+
+/**
+ * `{"changes":[{"tag","testID","state","value"},...]}`, drained in commit order: `testID` is the projection's own
+ * lookup and is omitted when the node carries none, and `state`/`value` are each omitted when that half of the
+ * change is `false` rather than written out negatively, matching `describeAccessibilityState`'s carries-something
+ * convention. A tag the scene no longer holds by the time this is asked reports no `testID`, the same way
+ * `describeVisualTree` reports a bare tag for one.
+ */
+folly::dynamic describeAccessibilityChanges(const SceneNodes& nodes, const std::vector<AccessibilityChange>& changes);
 
 /**
  * Where `ListErrors` reads from.

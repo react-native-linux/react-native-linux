@@ -25,6 +25,7 @@ describe("parseScenario automation", () => {
     );
 
     expect(scenario.automation).toEqual({
+      accessibilityChanges: null,
       accessibilityTreeSnapshot: "a11y.json",
       listErrorsMustBeEmpty: true,
       markTestPassed: true,
@@ -34,6 +35,7 @@ describe("parseScenario automation", () => {
 
   it("defaults every field of an automation block that names none of them", () => {
     expect(parseScenario({ ...validScenario, automation: {} }, "fixture.json").automation).toEqual({
+      accessibilityChanges: null,
       accessibilityTreeSnapshot: null,
       listErrorsMustBeEmpty: false,
       markTestPassed: false,
@@ -73,5 +75,54 @@ describe("parseScenario automation visualTreeSnapshot", () => {
     expect(() =>
       parseScenario({ ...validScenario, automation: { accessibilityTreeSnapshot: 7 } }, "fixture.json"),
     ).toThrow('fixture.json: "automation.accessibilityTreeSnapshot" must be a non-empty string');
+  });
+});
+
+describe("parseScenario automation accessibilityChanges", () => {
+  it("reads each entry's testID, defaulting state and value to false", () => {
+    const scenario = parseScenario(
+      { ...validScenario, automation: { accessibilityChanges: [{ testID: "toggle" }] } },
+      "fixture.json",
+    );
+
+    expect(scenario.automation?.accessibilityChanges).toEqual([{ state: false, testID: "toggle", value: false }]);
+  });
+
+  it("reads state and value when the scenario sets them", () => {
+    const scenario = parseScenario(
+      {
+        ...validScenario,
+        automation: { accessibilityChanges: [{ state: true, testID: "toggle", value: true }] },
+      },
+      "fixture.json",
+    );
+
+    expect(scenario.automation?.accessibilityChanges).toEqual([{ state: true, testID: "toggle", value: true }]);
+  });
+
+  it("defaults to null when the automation block names no accessibilityChanges", () => {
+    expect(parseScenario({ ...validScenario, automation: {} }, "fixture.json").automation?.accessibilityChanges).toBe(
+      null,
+    );
+  });
+
+  it("rejects an accessibilityChanges that is not a non-empty array", () => {
+    for (const changes of [[], "toggle", {}]) {
+      expect(() =>
+        parseScenario({ ...validScenario, automation: { accessibilityChanges: changes } }, "f.json"),
+      ).toThrow('f.json: "automation.accessibilityChanges" must be a non-empty array');
+    }
+  });
+
+  it("rejects an entry that is not an object", () => {
+    expect(() =>
+      parseScenario({ ...validScenario, automation: { accessibilityChanges: ["toggle"] } }, "fixture.json"),
+    ).toThrow('fixture.json: "automation.accessibilityChanges[0]" must be a JSON object');
+  });
+
+  it("rejects an entry without a testID", () => {
+    expect(() =>
+      parseScenario({ ...validScenario, automation: { accessibilityChanges: [{}] } }, "fixture.json"),
+    ).toThrow('fixture.json: "automation.accessibilityChanges[0].testID" must be a non-empty string');
   });
 });

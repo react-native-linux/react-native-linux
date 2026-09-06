@@ -102,6 +102,10 @@ bool WindowSession::hasReportedFatalError() const { return reactHost_.hasReporte
 
 SceneNodes WindowSession::visualTreeNodes() const { return fabricHost_->visualTreeNodes(); }
 
+std::vector<AccessibilityChange> WindowSession::takeAccessibilityChanges() {
+    return fabricHost_->takeAccessibilityChanges();
+}
+
 void WindowSession::blockJavaScriptThread(std::chrono::milliseconds duration) {
     reactHost_.blockJavaScriptThread(duration);
 }

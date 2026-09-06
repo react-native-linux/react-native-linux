@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AutomationProtocol.h"
 #include "RetainedScene.h"
 
 #include <folly/dynamic.h>
@@ -192,6 +193,14 @@ public:
     SceneNodes visualTreeNodes() const;
 
     /**
+     * Every `AccessibilityChange` committed since the last call, in commit order, and empties the queue — the
+     * same drain contract `takeCommands` has. Called from the frame thread while the automation channel answers
+     * `ListAccessibilityChanges` (#264). See *The accessibility tree as an assertion surface* in
+     * docs/cpp-toolchain.md.
+     */
+    std::vector<AccessibilityChange> takeAccessibilityChanges();
+
+    /**
      * Whether the scene has changed since the last `takeFrame`, for the frame clock's fallback-timeout decision
      * (see *Frame clock* in docs/cpp-toolchain.md): a caller pacing redraw off a withheld `wl_surface.frame` needs
      * to know there is a mounted change to paint before it spends a fallback tick drawing one. A mutation batch,
@@ -220,11 +229,13 @@ public:
 private:
     bool verifyTagIsKnown(std::string_view operation, facebook::react::Tag tag);
     void reportRejectedAnimatedProp(const RejectedAnimatedProp& rejectedProp);
+    void recordAccessibilityChangeIfAny(const facebook::react::ShadowView& next);
 
     mutable std::mutex sceneMutex_;
     RetainedScene scene_;
     std::vector<SceneCommand> commands_;
     std::vector<MaintainedScrollOffset> maintainedScrollOffsets_;
+    std::vector<AccessibilityChange> accessibilityChanges_;
     MountDiagnostics diagnostics_;
     facebook::react::MountingTransaction::Number lastTransactionNumber_{0};
     bool hasPendingDamage_{false};

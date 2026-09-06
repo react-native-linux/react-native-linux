@@ -88,6 +88,9 @@ public:
      * frames. See *The automation channel* in docs/cpp-toolchain.md.
      */
     SceneNodes visualTreeNodes() const;
+
+    /** `FabricHost::takeAccessibilityChanges`, for `ListAccessibilityChanges` (#264). */
+    std::vector<AccessibilityChange> takeAccessibilityChanges();
     void blockJavaScriptThread(std::chrono::milliseconds duration);
     bool hasMarkedTestPassed() const;
 

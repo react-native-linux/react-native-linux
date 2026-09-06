@@ -325,4 +325,8 @@ SceneNodes FabricHost::visualTreeNodes() const {
     return mountingManager_->visualTreeNodes();
 }
 
+std::vector<AccessibilityChange> FabricHost::takeAccessibilityChanges() {
+    return mountingManager_->takeAccessibilityChanges();
+}
+
 } // namespace react_native_linux

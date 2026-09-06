@@ -11,6 +11,7 @@ import {
 
 import type { Crop } from "./screenshot.ts";
 import path from "node:path";
+import { readAccessibilityChanges } from "./accessibility-changes.ts";
 
 const DEFAULT_FRAME_COUNT = 600;
 const EMPTY_LENGTH = 0;
@@ -63,9 +64,13 @@ interface ScreenshotComparison {
  * `verifyNoErrorLogs` react-native-windows asserts in `afterEach`, asked of the runtime rather than grepped out
  * of the trace; `visualTreeSnapshot` names a file under the package's `e2e/goldens` the committed tree has to
  * match; `accessibilityTreeSnapshot` names one under `e2e/snapshots` its accessibility projection has to match;
- * `markTestPassed` requires the bundle to have called `globalThis.__rnlMarkTestPassed()`.
+ * `markTestPassed` requires the bundle to have called `globalThis.__rnlMarkTestPassed()`; `accessibilityChanges`
+ * names the `accessibilityState`/`accessibilityValue` changes (#264) `ListAccessibilityChanges` has to have
+ * recorded by the time the channel is asked — a bundle mounts the node, then a `setTimeout` toggles it, which is
+ * what turns the mount's own `Create` into the `Update` the channel counts.
  */
 interface ScenarioAutomation {
+  readonly accessibilityChanges: ReturnType<typeof readAccessibilityChanges>;
   readonly accessibilityTreeSnapshot: string | null;
   readonly listErrorsMustBeEmpty: boolean;
   readonly markTestPassed: boolean;
@@ -181,6 +186,7 @@ const readAutomation = (record: Record<string, unknown>, sourceName: string): Sc
   const automation = readObject(record["automation"], "automation", sourceName);
 
   return {
+    accessibilityChanges: readAccessibilityChanges(automation, sourceName),
     accessibilityTreeSnapshot: readSnapshotName(automation, "accessibilityTreeSnapshot", sourceName),
     listErrorsMustBeEmpty: readOptionalBoolean(automation, "listErrorsMustBeEmpty", sourceName),
     markTestPassed: readOptionalBoolean(automation, "markTestPassed", sourceName),

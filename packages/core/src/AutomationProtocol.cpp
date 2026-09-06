@@ -30,10 +30,11 @@ struct CommandName {
 
 // Indexed by the enum's value, so describeAutomationCommand is total over the enum without a switch whose
 // implicit no-match branch could never be covered.
-constexpr std::array<CommandName, 6> kCommandNames{{
+constexpr std::array<CommandName, 7> kCommandNames{{
     {.name = "DumpAccessibilityTree", .command = AutomationCommand::DumpAccessibilityTree},
     {.name = "DumpVisualTree", .command = AutomationCommand::DumpVisualTree},
     {.name = "HangForTesting", .command = AutomationCommand::HangForTesting},
+    {.name = "ListAccessibilityChanges", .command = AutomationCommand::ListAccessibilityChanges},
     {.name = "ListErrors", .command = AutomationCommand::ListErrors},
     {.name = "MarkTestPassed", .command = AutomationCommand::MarkTestPassed},
     {.name = "TakeScreenshot", .command = AutomationCommand::TakeScreenshot},
@@ -433,6 +434,31 @@ folly::dynamic describeAccessibilityTree(const SceneNodes& nodes) {
     }
 
     return folly::dynamic::object("nodes", std::move(projected));
+}
+
+folly::dynamic describeAccessibilityChanges(const SceneNodes& nodes, const std::vector<AccessibilityChange>& changes) {
+    folly::dynamic described = folly::dynamic::array;
+
+    for (const AccessibilityChange& change : changes) {
+        folly::dynamic entry = folly::dynamic::object("tag", change.tag);
+        const auto entryNode = nodes.find(change.tag);
+
+        if (entryNode != nodes.end()) {
+            appendIfNotEmpty(entry, "testID", entryNode->second.testId);
+        }
+
+        if (change.stateChanged) {
+            entry["state"] = true;
+        }
+
+        if (change.valueChanged) {
+            entry["value"] = true;
+        }
+
+        described.push_back(std::move(entry));
+    }
+
+    return folly::dynamic::object("changes", std::move(described));
 }
 
 void AutomationErrorLog::record(std::string source, std::string message) {

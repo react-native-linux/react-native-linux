@@ -1,0 +1,17 @@
+{
+  "name": "accessibility-state-update",
+  "bundle": "accessibility-state-update.js",
+  "ready": "accessibility-state-update: committed surface 1",
+  "frames": 900,
+  "steps": ["sleep 500"],
+  "automation": {
+    "listErrorsMustBeEmpty": true,
+    "markTestPassed": true,
+    "accessibilityChanges": [{ "testID": "toggle", "state": true }]
+  },
+  "expect": [
+    "[rnl-automation] listening on",
+    "accessibility-state-update: committed surface 1",
+    "accessibility-state-update: toggled checked state"
+  ]
+}

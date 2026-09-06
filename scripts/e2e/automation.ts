@@ -3,6 +3,7 @@ import { existsSync, rmSync } from "node:fs";
 import type { ScenarioAutomation } from "./scenario.ts";
 import { compareSnapshot } from "./snapshot.ts";
 import { connect } from "node:net";
+import { gradeAccessibilityChanges } from "./accessibility-changes.ts";
 import { isRecord } from "./fields.ts";
 import { once } from "node:events";
 import path from "node:path";
@@ -281,6 +282,7 @@ const gradeAutomation = async (inputs: AutomationInputs): Promise<readonly strin
     ...(await gradeListErrors(socketPath, inputs)),
     ...(await gradeVisualTree(socketPath, inputs)),
     ...(await gradeAccessibilityTree(socketPath, inputs)),
+    ...(await gradeAccessibilityChanges(requestAutomation, socketPath, inputs.automation.accessibilityChanges)),
     ...(await gradeMarkTestPassed(socketPath, inputs)),
     ...(await gradeChannelItself(socketPath, inputs)),
   ];

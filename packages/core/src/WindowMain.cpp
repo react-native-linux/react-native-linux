@@ -281,6 +281,11 @@ folly::dynamic answerSessionCommand(react_native_linux::AutomationCommand comman
         return react_native_linux::describeAccessibilityTree(session.visualTreeNodes());
     }
 
+    if (command == react_native_linux::AutomationCommand::ListAccessibilityChanges) {
+        return react_native_linux::describeAccessibilityChanges(session.visualTreeNodes(),
+                                                                 session.takeAccessibilityChanges());
+    }
+
     if (command == react_native_linux::AutomationCommand::HangForTesting) {
         session.blockJavaScriptThread(std::chrono::milliseconds(request.hangMilliseconds));
 

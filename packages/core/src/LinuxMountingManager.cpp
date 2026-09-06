@@ -1,9 +1,12 @@
 #include "LinuxMountingManager.h"
 
 #include <glog/logging.h>
+#include <react/renderer/components/view/ViewProps.h>
 #include <react/renderer/mounting/ShadowViewMutation.h>
 
+#include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -120,6 +123,12 @@ std::vector<MaintainedScrollOffset> LinuxMountingManager::takeMaintainedScrollOf
     return std::exchange(maintainedScrollOffsets_, std::vector<MaintainedScrollOffset>{});
 }
 
+std::vector<AccessibilityChange> LinuxMountingManager::takeAccessibilityChanges() {
+    const std::lock_guard<std::mutex> guard(sceneMutex_);
+
+    return std::exchange(accessibilityChanges_, std::vector<AccessibilityChange>{});
+}
+
 MountDiagnostics LinuxMountingManager::mountDiagnostics() const {
     const std::lock_guard<std::mutex> guard(sceneMutex_);
 
@@ -157,6 +166,32 @@ SceneNodes LinuxMountingManager::visualTreeNodes() const {
     return scene_.nodes();
 }
 
+void LinuxMountingManager::recordAccessibilityChangeIfAny(const facebook::react::ShadowView& next) {
+    const auto previous = scene_.nodes().find(next.tag);
+
+    if (previous == scene_.nodes().end()) {
+        return;
+    }
+
+    const std::shared_ptr<const facebook::react::ViewProps> nextProps =
+        std::dynamic_pointer_cast<const facebook::react::ViewProps>(next.props);
+
+    if (nextProps == nullptr) {
+        return;
+    }
+
+    const SceneAccessibility& previousAccessibility = previous->second.accessibility;
+    const bool stateChanged = previousAccessibility.state != nextProps->accessibilityState;
+    const bool valueChanged = !(previousAccessibility.value == nextProps->accessibilityValue);
+
+    if (!stateChanged && !valueChanged) {
+        return;
+    }
+
+    accessibilityChanges_.push_back(
+        AccessibilityChange{.tag = next.tag, .stateChanged = stateChanged, .valueChanged = valueChanged});
+}
+
 void LinuxMountingManager::executeMount(facebook::react::SurfaceId /*surfaceId*/,
                                         facebook::react::MountingTransaction&& mountingTransaction) {
     const std::lock_guard<std::mutex> guard(sceneMutex_);
@@ -185,6 +220,7 @@ void LinuxMountingManager::executeMount(facebook::react::SurfaceId /*surfaceId*/
                 break;
             case facebook::react::ShadowViewMutation::Update:
                 verifyTagIsKnown("Update", mutation.newChildShadowView.tag);
+                recordAccessibilityChangeIfAny(mutation.newChildShadowView);
                 scene_.updateNode(mutation.newChildShadowView);
                 break;
         }
