@@ -1,6 +1,7 @@
 #pragma once
 
 #include "RetainedScene.h"
+#include "VulkanResultPolicy.h"
 #include "WaylandWindow.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSurface.h"
@@ -55,6 +56,11 @@ namespace react_native_linux {
  * of the per-image damage rule above: an acquired image either owes a repaint, which it has just been given, or
  * owes nothing, which means it already holds the current scene.
  *
+ * No `VkResult` on the acquire/present path is handled ad hoc. Both call sites ask `vulkanRecoveryFor` what the
+ * result means and `applyRecovery` carries it out, which is what keeps the answer for a result the renderer has
+ * never seen in production — a lost surface on an output hotplug, a lost device on resume — a reviewed table
+ * entry rather than a missing `if`. See *VkResult policy* in docs/cpp-toolchain.md.
+ *
  * Threading contract: every member runs on the thread that owns the process run loop, the same thread the Wayland
  * connection is dispatched on. Nothing here is safe to call concurrently.
  */
@@ -68,6 +74,7 @@ public:
     ~SkiaVulkanRenderer() noexcept;
 
     void resize(WindowSize size);
+    void injectSwapchainLossOnNextFrame() noexcept;
     void captureNextFrame(std::string outputPath);
     bool hasPendingCapture() const noexcept;
     bool drawFrame(WaylandWindow& window, const SceneDamage& frameDamage,
@@ -80,8 +87,10 @@ private:
         uint32_t imageIndex{0};
     };
 
+    void applyRecovery(VulkanRecovery recovery, VkResult result, const char* operation);
+    void recreateSurface();
     void createInstance();
-    void createWaylandSurface(wl_display* waylandDisplay, wl_surface* waylandSurface);
+    void createWaylandSurface();
     void selectPhysicalDevice();
     void createDevice();
     void createDirectContext();
@@ -92,6 +101,8 @@ private:
     uint32_t findHostVisibleMemoryType(uint32_t acceptedMemoryTypes) const;
     void copyImageToPng(uint32_t imageIndex, const std::string& outputPath);
 
+    wl_display* waylandDisplay_{nullptr};
+    wl_surface* waylandSurface_{nullptr};
     VkInstance instance_{VK_NULL_HANDLE};
     VkSurfaceKHR vulkanSurface_{VK_NULL_HANDLE};
     VkPhysicalDevice physicalDevice_{VK_NULL_HANDLE};
@@ -112,6 +123,7 @@ private:
     std::vector<SceneDamage> imageDamage_;
     std::vector<Backbuffer> backbuffers_;
     size_t currentBackbufferIndex_{0};
+    bool debugSwapchainLossPending_{false};
 };
 
 } // namespace react_native_linux
