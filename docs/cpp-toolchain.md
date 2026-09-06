@@ -2935,7 +2935,7 @@ both and is proven by the golden below instead.
 
 `image-onload.js` is the fixture: an `<Image>` whose `onLoad` clones itself with a `tintColor`, committing the
 tint the moment the handler runs. Before this fix, thirty consecutive `hello_react --golden` runs of it produced
-two distinct PNGs — the untinted first commit, on the runs where `onLoad`'s event never reached JavaScript before
+two distinct PNG files — the untinted first commit, on the runs where `onLoad`'s event never reached JavaScript before
 teardown drained it away, and the tinted second commit on the rest — a flake rate representative of #296's own
 history rather than a rare corner. With the fix, thirty direct runs and twenty separate
 `RNL_UPDATE_GOLDENS=1` regenerations through the golden harness all produced the same `image-onload.png` byte for
