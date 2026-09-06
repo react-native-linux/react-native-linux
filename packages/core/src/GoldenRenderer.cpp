@@ -740,6 +740,13 @@ int renderDamageGolden(const std::string& bundlePath, const std::string& outputP
         return 1;
     }
 
+    if (!run.hasSettled) {
+        std::cerr << "[golden] gave up waiting for JavaScript to settle; refusing to write " << outputPath
+                  << std::endl;
+
+        return 1;
+    }
+
     // Both surfaces start as the same first frame, painted in full. The second frame is then drawn twice: once as
     // a full repaint, and once as the partial repaint a window would do, on top of the first frame's pixels. The
     // two have to be byte-identical, which is issue #12's acceptance criterion and the only thing that proves the
@@ -832,7 +839,8 @@ int renderMaintainPositionGolden(const std::string& bundlePath, const std::strin
 
     return paintSettledScene(FabricRunResult{.scene = run.afterScene,
                                              .sceneDump = {},
-                                             .hasReportedFatalError = run.hasReportedFatalError},
+                                             .hasReportedFatalError = run.hasReportedFatalError,
+                                             .hasSettled = run.hasSettled},
                              outputPath, width, height);
 }
 
@@ -845,7 +853,8 @@ int renderFirstFrameGolden(const std::string& bundlePath, const std::string& out
 
     return paintSettledScene(FabricRunResult{.scene = run.settledScene,
                                              .sceneDump = {},
-                                             .hasReportedFatalError = run.hasReportedFatalError},
+                                             .hasReportedFatalError = run.hasReportedFatalError,
+                                             .hasSettled = run.hasSettled},
                              outputPath, width, height);
 }
 
