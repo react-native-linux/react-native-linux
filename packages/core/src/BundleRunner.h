@@ -153,6 +153,19 @@ FabricRunResult runFocusTabbedFabricBundle(const std::string& bundlePath, facebo
  * `runFocusTabbedFabricBundle`'s is the whole of the visible proof — one scene with a ring and one without it,
  * from the same fixture and the same focused node.
  */
+/**
+ * A click at `surfacePoint`, and then `frameCount` empty frames of the frame clock.
+ *
+ * The frames are what `--focus-click` has no need of and a control animation cannot do without: a `<Switch>`
+ * answers a press by firing `onChange`, React answers that by committing the new `value`, and the thumb then
+ * travels on the frame clock for as long as anyone keeps drawing. Rendering the picture a named number of frames
+ * after the press is therefore the only way to pin a control mid-animation, and it is a named number rather than
+ * a wall-clock wait for the reason every other headless run counts frames: the same count is the same picture on
+ * any machine.
+ */
+FabricRunResult runClickedFrameFabricBundle(const std::string& bundlePath, facebook::react::Size surfaceSize,
+                                            facebook::react::Point surfacePoint, int frameCount);
+
 FabricRunResult runFocusClickedFabricBundle(const std::string& bundlePath, facebook::react::Size surfaceSize,
                                             facebook::react::Point surfacePoint);
 

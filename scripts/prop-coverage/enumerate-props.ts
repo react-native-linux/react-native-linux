@@ -4,6 +4,14 @@ const RENDERER_ROOT = "third_party/react-native/packages/react-native/ReactCommo
 const COMPONENTS_ROOT = `${RENDERER_ROOT}/components`;
 
 /**
+ * The codegen output `pnpm codegen` checks in. `Switch` and `ActivityIndicatorView` have no props class under
+ * `third_party/react-native` at all — their specs are JavaScript, and upstream's C++ for them is generated
+ * per-platform — so this file is where their declared props live, exactly as `TextInputComponent.h` is where this
+ * platform's own `<TextInput>` props live.
+ */
+const GENERATED_PROPS = "packages/core/generated/react/renderer/components/FBReactNativeSpec/Props.h";
+
+/**
  * The name of one member declaration of a props class: an indented type, the name, an optional brace or `=`
  * initialiser, a semicolon and an optional trailing line comment. A method declaration cannot match because
  * neither the type nor the name may contain a parenthesis, and `operator==` cannot match because the `=`
@@ -67,6 +75,14 @@ const COMPONENT_SOURCES: readonly ComponentSources[] = [
       { className: "BaseTextInputProps", path: `${COMPONENTS_ROOT}/textinput/BaseTextInputProps.h` },
       { className: "TextInputProps", path: "packages/core/src/TextInputComponent.h" },
     ],
+  },
+  {
+    component: "Switch",
+    sources: [{ className: "SwitchProps", path: GENERATED_PROPS }],
+  },
+  {
+    component: "ActivityIndicator",
+    sources: [{ className: "ActivityIndicatorViewProps", path: GENERATED_PROPS }],
   },
 ];
 

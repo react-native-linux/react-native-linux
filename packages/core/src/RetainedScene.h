@@ -166,6 +166,50 @@ struct SceneEditorContent {
 };
 
 /**
+ * Everything a `<Switch>` draws: which end it is at, which end it is heading for, and the three colours the app
+ * chose or the platform defaulted.
+ *
+ * `thumbProgress` is the whole of the animation — zero at the off end, one at the on end, and a value between
+ * them for a switch that is still travelling. It is state the retained node holds across commits rather than
+ * something the props carry, because React commits a boolean and a control that jumped between the two would be
+ * a toggle with no motion at all.
+ *
+ * The control is deliberately not stateful in any other way: `isOn` is `props.value` and nothing else, so a press
+ * emits `onChange` and changes no pixel until React commits the new value back. That is upstream's own rule on
+ * both platforms that implement this component in Fabric — iOS de-dupes against `props.value` and
+ * react-native-windows makes its `setValue` command an explicit no-op — and it is what makes a `<Switch>` whose
+ * `onValueChange` ignores the press stay where it was.
+ *
+ * On a retained `SceneNode` the colours are as authored. Only a snapshot resolves them, folding the inherited
+ * opacity into each alpha channel exactly like every other colour a primitive carries.
+ */
+struct SceneSwitchContent {
+    bool isOn{false};
+    bool isDisabled{false};
+    float thumbProgress{0.0F};
+    uint32_t trackOffColorArgb{};
+    uint32_t trackOnColorArgb{};
+    uint32_t thumbColorArgb{};
+};
+
+/**
+ * Everything an `<ActivityIndicator>` draws: whether it is spinning, how far into its revolution it is, which of
+ * the two sizes picks its stroke width, and the colour of the arc.
+ *
+ * `elapsedMilliseconds` advances only while the indicator is animating and only while it is on screen, which is
+ * the same rule an animated `<Image>` follows and for the same reason: a spinner nobody can see should not be
+ * asking for a frame. A stopped indicator keeps its elapsed time, so `animating` going false and true again
+ * resumes the arc where it stopped rather than snapping it back to the top.
+ */
+struct SceneActivityIndicatorContent {
+    bool isAnimating{true};
+    bool hidesWhenStopped{true};
+    bool isLarge{false};
+    double elapsedMilliseconds{0.0};
+    uint32_t colorArgb{};
+};
+
+/**
  * How a decoded image is fitted into the node's frame. These are React Native's own `resizeMode` values, minus
  * `none`, which maps onto `Center` because both draw the image at its natural size.
  */
@@ -294,6 +338,8 @@ struct ScenePrimitive {
     std::optional<SceneTextContent> text;
     std::optional<SceneImageContent> image;
     std::optional<SceneEditorContent> editor;
+    std::optional<SceneSwitchContent> switchControl;
+    std::optional<SceneActivityIndicatorContent> activityIndicator;
 
     /**
      * Whether this node draws the focus ring, which is the focused node and only while focus arrived from the
@@ -440,6 +486,14 @@ struct SceneNode {
     std::optional<SceneEditorContent> editor;
 
     /**
+     * The two controls' state as authored, plus the animation position each of them holds across commits. A
+     * snapshot resolves the colours and copies the position; nothing else on this node survives a mutation the
+     * way these two do.
+     */
+    std::optional<SceneSwitchContent> switchControl;
+    std::optional<SceneActivityIndicatorContent> activityIndicator;
+
+    /**
      * The `contentOffset` a `<ScrollView>` mounted with, and the marker that this node is one at all.
      *
      * Fabric lays a ScrollView's children out relative to the ScrollView itself and never moves them, so scrolling
@@ -524,6 +578,26 @@ public:
      * docs/cpp-toolchain.md.
      */
     bool advanceImageAnimations(double frameMilliseconds);
+
+    /**
+     * Advances every `<Switch>` thumb that is not yet at the end its `value` names and every `<ActivityIndicator>`
+     * that is animating by one frame of `frameMilliseconds`, damages the ones that moved, and reports whether any
+     * of them did.
+     *
+     * One call for both controls rather than two, because they are one question — what does a frame of wall-clock
+     * time do to the scene's own animations — asked once per frame at one call site. Neither is an `Animated`
+     * driver: React commits a boolean and a `bool animating`, and the motion between those commits is the
+     * platform's, exactly as a caret blink and a GIF's frame schedule are.
+     *
+     * A control the `overflow: hidden` of an ancestor has clipped away entirely damages nothing. An indicator
+     * does not accumulate elapsed time either, so a spinner scrolled out of a list stops asking for frames and
+     * resumes at the angle it paused on; a switch keeps travelling, because its target is a committed prop and a
+     * thumb that had to catch up on the frame it was revealed would jump.
+     *
+     * Damage is the control's own extent cut by the clips it inherits — one rectangle per moving control, not its
+     * subtree's. See *Damage tracking* in docs/cpp-toolchain.md.
+     */
+    bool advanceControlAnimations(double frameMilliseconds);
 
     /**
      * Where decoded frames come from: the image pipeline's cache, asked by source URI. Set once by the host, and

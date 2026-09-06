@@ -34,6 +34,7 @@ constexpr std::string_view kMaintainPositionGoldenFlag = "--maintain-position-go
 constexpr std::string_view kAnimatedScrollFlag = "--animated-scroll";
 constexpr std::string_view kFocusTabFlag = "--focus-tab";
 constexpr std::string_view kFocusClickFlag = "--focus-click";
+constexpr std::string_view kClickedFrameFlag = "--clicked-frame";
 constexpr std::string_view kFocusCommandGoldenFlag = "--focus-command-golden";
 constexpr std::string_view kAnimatedImageFlag = "--animated-image";
 constexpr std::string_view kTypeFlag = "--type";
@@ -68,6 +69,7 @@ constexpr size_t kMaintainPositionArgumentCount = 7;
 constexpr size_t kAnimatedScrollArgumentCount = 6;
 constexpr size_t kFocusTabArgumentCount = 5;
 constexpr size_t kFocusClickArgumentCount = 6;
+constexpr size_t kClickedFrameArgumentCount = 7;
 constexpr size_t kFocusCommandGoldenArgumentCount = 5;
 constexpr size_t kAnimatedImageArgumentCount = 5;
 constexpr size_t kTypeArgumentCount = 5;
@@ -85,11 +87,29 @@ std::optional<int> parsePositiveDimension(std::string_view text) {
 }
 
 /**
- * A surface coordinate parsed off two arguments, or nothing when either of them is not a positive integer.
+ * A surface coordinate: any whole number of points from the surface's origin, zero included.
+ *
+ * Zero is a coordinate and not an absent value — the top-left corner of the surface is where a control anchored
+ * at `left: 0` is pressed — which is why this is not `parsePositiveDimension`. That one answers a different
+ * question: a width, a frame count or a wheel notch of zero describes nothing to render, and it stays strict.
+ */
+std::optional<int> parseSurfaceCoordinate(std::string_view text) {
+    int value = 0;
+    const std::from_chars_result parsed = std::from_chars(text.data(), text.data() + text.size(), value);
+
+    if (parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size() || value < 0) {
+        return std::nullopt;
+    }
+
+    return value;
+}
+
+/**
+ * A surface point parsed off two arguments, or nothing when either of them is not a non-negative integer.
  */
 std::optional<facebook::react::Point> parseSurfacePoint(std::string_view x, std::string_view y) {
-    const std::optional<int> parsedX = parsePositiveDimension(x);
-    const std::optional<int> parsedY = parsePositiveDimension(y);
+    const std::optional<int> parsedX = parseSurfaceCoordinate(x);
+    const std::optional<int> parsedY = parseSurfaceCoordinate(y);
 
     if (!parsedX.has_value() || !parsedY.has_value()) {
         return std::nullopt;
@@ -109,7 +129,8 @@ int runInjectPointerCommand(std::span<char*> arguments) {
     const std::optional<facebook::react::Point> surfacePoint = parseSurfacePoint(arguments[3], arguments[4]);
 
     if (!surfacePoint.has_value()) {
-        std::cerr << "[hello_react] " << kInjectPointerFlag << " x and y must be positive integers" << std::endl;
+        std::cerr << "[hello_react] " << kInjectPointerFlag << " x and y must be non-negative integers"
+                  << std::endl;
 
         return 1;
     }
@@ -128,7 +149,8 @@ int runAnimatedScrollCommand(std::span<char*> arguments) {
     const std::optional<int> notches = parsePositiveDimension(arguments[5]);
 
     if (!surfacePoint.has_value() || !notches.has_value()) {
-        std::cerr << "[hello_react] " << kAnimatedScrollFlag << " x, y and notches must be positive integers"
+        std::cerr << "[hello_react] " << kAnimatedScrollFlag
+                  << " x and y must be non-negative integers and notches a positive one"
                   << std::endl;
 
         return 1;
@@ -191,7 +213,8 @@ int runScrollToCommand(std::span<char*> arguments, bool isMaintainingPosition) {
     const std::optional<int> parsedNotches = parsePositiveDimension(arguments[6]);
 
     if (!surfacePoint.has_value() || !parsedNotches.has_value()) {
-        std::cerr << "[hello_react] " << flag << " x, y and notches must be positive integers" << std::endl;
+        std::cerr << "[hello_react] " << flag
+                  << " x and y must be non-negative integers and notches a positive one" << std::endl;
 
         return 1;
     }
@@ -224,7 +247,7 @@ int runFocusClickCommand(std::span<char*> arguments) {
     const std::optional<facebook::react::Point> surfacePoint = parseSurfacePoint(arguments[4], arguments[5]);
 
     if (!surfacePoint.has_value()) {
-        std::cerr << "[hello_react] " << kFocusClickFlag << " x and y must be positive integers" << std::endl;
+        std::cerr << "[hello_react] " << kFocusClickFlag << " x and y must be non-negative integers" << std::endl;
 
         return 1;
     }
@@ -232,6 +255,23 @@ int runFocusClickCommand(std::span<char*> arguments) {
     return react_native_linux::renderFocusClickGolden(std::string(arguments[2]), std::string(arguments[3]),
                                                       surfacePoint.value(), kGoldenDefaultWidth,
                                                       kGoldenDefaultHeight);
+}
+
+int runClickedFrameCommand(std::span<char*> arguments) {
+    const std::optional<facebook::react::Point> surfacePoint = parseSurfacePoint(arguments[4], arguments[5]);
+    const std::optional<int> parsedFrames = parsePositiveDimension(arguments[6]);
+
+    if (!surfacePoint.has_value() || !parsedFrames.has_value()) {
+        std::cerr << "[hello_react] " << kClickedFrameFlag
+                  << " x and y must be non-negative integers and frames a positive one"
+                  << std::endl;
+
+        return 1;
+    }
+
+    return react_native_linux::renderClickedFrameGolden(std::string(arguments[2]), std::string(arguments[3]),
+                                                        surfacePoint.value(), parsedFrames.value(),
+                                                        kGoldenDefaultWidth, kGoldenDefaultHeight);
 }
 
 int runFocusCommandGoldenCommand(std::span<char*> arguments) {
@@ -342,6 +382,7 @@ int reportMissingSkia() {
     std::cerr << "[hello_react] " << kGoldenFlag << ", " << kDamageGoldenFlag << ", " << kHitPaintGoldenFlag
               << ", " << kTextFitGoldenFlag << ", " << kFirstFrameGoldenFlag << ", " << kScrollToFlag << ", "
               << kMaintainPositionGoldenFlag << ", " << kFocusTabFlag << ", " << kFocusClickFlag << ", "
+              << kClickedFrameFlag << ", "
               << kFocusCommandGoldenFlag << ", " << kAnimatedImageFlag << " and " << kTypeFlag
               << " need Skia, which this build was configured without; run node scripts/vendor-skia.ts and "
                  "reconfigure"
@@ -357,6 +398,8 @@ int runScrollToCommand(std::span<char*> /*arguments*/, bool /*isMaintainingPosit
 int runFocusTabCommand(std::span<char*> /*arguments*/) { return reportMissingSkia(); }
 
 int runFocusClickCommand(std::span<char*> /*arguments*/) { return reportMissingSkia(); }
+
+int runClickedFrameCommand(std::span<char*> /*arguments*/) { return reportMissingSkia(); }
 
 int runFocusCommandGoldenCommand(std::span<char*> /*arguments*/) { return reportMissingSkia(); }
 
@@ -383,6 +426,7 @@ int main(int argc, char** argv) {
     const bool isAnimatedScrollRequested = arguments.size() > 1 && kAnimatedScrollFlag == arguments[1];
     const bool isFocusTabRequested = arguments.size() > 1 && kFocusTabFlag == arguments[1];
     const bool isFocusClickRequested = arguments.size() > 1 && kFocusClickFlag == arguments[1];
+    const bool isClickedFrameRequested = arguments.size() > 1 && kClickedFrameFlag == arguments[1];
     const bool isFocusCommandGoldenRequested = arguments.size() > 1 && kFocusCommandGoldenFlag == arguments[1];
     const bool isAnimatedImageRequested = arguments.size() > 1 && kAnimatedImageFlag == arguments[1];
     const bool isTypeRequested = arguments.size() > 1 && kTypeFlag == arguments[1];
@@ -416,6 +460,13 @@ int main(int argc, char** argv) {
 
     if (isFocusClickRequested && arguments.size() != kFocusClickArgumentCount) {
         std::cerr << "[hello_react] " << kFocusClickFlag << " requires <bundle> <output.png> <x> <y>" << std::endl;
+
+        return 1;
+    }
+
+    if (isClickedFrameRequested && arguments.size() != kClickedFrameArgumentCount) {
+        std::cerr << "[hello_react] " << kClickedFrameFlag
+                  << " requires <bundle> <output.png> <x> <y> <frames>" << std::endl;
 
         return 1;
     }
@@ -469,6 +520,10 @@ int main(int argc, char** argv) {
 
         if (isFocusClickRequested) {
             return runFocusClickCommand(arguments);
+        }
+
+        if (isClickedFrameRequested) {
+            return runClickedFrameCommand(arguments);
         }
 
         if (isFocusCommandGoldenRequested) {

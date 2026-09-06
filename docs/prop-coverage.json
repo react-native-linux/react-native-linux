@@ -302,5 +302,30 @@
       "state": "implemented",
       "test": "TextInputControllerTest, ScrollEnabledDefaultsToTrueAndIsWhatMakesAFieldAWindowOnItsOwnContent"
     }
+  },
+  "Switch": {
+    "value": { "state": "implemented", "test": "switch.png" },
+    "disabled": { "state": "implemented", "test": "switch.png" },
+    "tintColor": { "state": "implemented", "test": "switch.png" },
+    "onTintColor": { "state": "implemented", "test": "switch.png" },
+    "thumbTintColor": { "state": "implemented", "test": "switch.png" },
+    "thumbColor": {
+      "state": "deviating",
+      "reason": "the Android spec's name for the same value: React Native's own Switch.js sends thumbTintColor, tintColor and onTintColor on every platform that is not Android, and these three only on the branch that is, so a platform reading both would have two answers to one question"
+    },
+    "trackColorForFalse": {
+      "state": "deviating",
+      "reason": "the Android spec's name for the same value: React Native's own Switch.js sends thumbTintColor, tintColor and onTintColor on every platform that is not Android, and these three only on the branch that is, so a platform reading both would have two answers to one question"
+    },
+    "trackColorForTrue": {
+      "state": "deviating",
+      "reason": "the Android spec's name for the same value: React Native's own Switch.js sends thumbTintColor, tintColor and onTintColor on every platform that is not Android, and these three only on the branch that is, so a platform reading both would have two answers to one question"
+    }
+  },
+  "ActivityIndicator": {
+    "animating": { "state": "implemented", "test": "activity-indicator.png" },
+    "hidesWhenStopped": { "state": "implemented", "test": "activity-indicator.png" },
+    "color": { "state": "implemented", "test": "activity-indicator.png" },
+    "size": { "state": "implemented", "test": "activity-indicator.png" }
   }
 }

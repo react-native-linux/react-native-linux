@@ -1,7 +1,9 @@
 #include "ScenePainter.h"
 
+#include "ActivityIndicatorContent.h"
 #include "GradientShader.h"
 #include "ImageContent.h"
+#include "SwitchContent.h"
 #include "TextGeometry.h"
 #include "TextPipeline.h"
 
@@ -513,6 +515,49 @@ void paintImage(SkCanvas& canvas, const ScenePrimitive& primitive, const SceneIm
 }
 
 /**
+ * The track and the thumb of a `<Switch>`, in that order.
+ *
+ * Every number here comes from `switchGeometry` and `switchTrackColorArgb`, which live in a translation unit that
+ * links no Skia and is inside the coverage gate: this function turns two shapes and two colours into three Skia
+ * calls and computes nothing. The thumb is drawn over the track without a clip, because the geometry already
+ * keeps it a whole inset inside the pill at both ends.
+ */
+void paintSwitch(SkCanvas& canvas, const ScenePrimitive& primitive, const SceneSwitchContent& content) {
+    const SwitchGeometry geometry = switchGeometry(primitive.frame, content.thumbProgress);
+    SkPaint paint;
+
+    paint.setAntiAlias(true);
+    paint.setColor(switchTrackColorArgb(content));
+    canvas.drawRRect(toSkRRect(geometry.track), paint);
+    paint.setColor(content.thumbColorArgb);
+    canvas.drawCircle(geometry.thumbCenter.x, geometry.thumbCenter.y, geometry.thumbRadius, paint);
+}
+
+/**
+ * The arc of an `<ActivityIndicator>`, at the angle its own elapsed time has reached.
+ *
+ * A stopped indicator with `hidesWhenStopped` draws nothing at all rather than drawing at zero alpha, so the
+ * pixels behind it are the ones the previous frame left there.
+ */
+void paintActivityIndicator(SkCanvas& canvas, const ScenePrimitive& primitive,
+                            const SceneActivityIndicatorContent& content) {
+    if (!isActivityIndicatorVisible(content)) {
+        return;
+    }
+
+    const ActivityIndicatorGeometry geometry = activityIndicatorGeometry(primitive.frame, content);
+    SkPaint paint;
+
+    paint.setAntiAlias(true);
+    paint.setStyle(SkPaint::kStroke_Style);
+    paint.setStrokeCap(SkPaint::kRound_Cap);
+    paint.setStrokeWidth(geometry.strokeWidth);
+    paint.setColor(content.colorArgb);
+    canvas.drawArc(toSkRect(geometry.bounds), geometry.startAngleDegrees, geometry.sweepAngleDegrees, false,
+                   paint);
+}
+
+/**
  * The focus ring, stroked on the inside edge of the node's own rounded border box.
  *
  * Inside rather than around it, which is the one place this departs from the macOS ring: an outset ring would
@@ -595,6 +640,14 @@ void paintPrimitive(SkCanvas& canvas, const ScenePrimitive& primitive) {
     // Before the border, because React Native draws borders inside the frame and therefore over the content.
     if (primitive.image.has_value()) {
         paintImage(canvas, primitive, primitive.image.value(), outer);
+    }
+
+    if (primitive.switchControl.has_value()) {
+        paintSwitch(canvas, primitive, primitive.switchControl.value());
+    }
+
+    if (primitive.activityIndicator.has_value()) {
+        paintActivityIndicator(canvas, primitive, primitive.activityIndicator.value());
     }
 
     paintBorder(canvas, primitive, borderBox, outer);

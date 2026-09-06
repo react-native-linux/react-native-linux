@@ -107,6 +107,13 @@ public:
      * and *Image* in docs/cpp-toolchain.md.
      */
     bool advanceImageAnimations(double frameMilliseconds);
+
+    /**
+     * The control half of the same tick: `RetainedScene::advanceControlAnimations`, forwarded through the
+     * mounting manager's mutex. It sits beside the blink and the image schedule because all three are motion the
+     * platform owns between commits, and the frame loop calls all three in one place for that reason.
+     */
+    bool advanceControlAnimations(double frameMilliseconds);
     void induceEventBeat();
 
     /**

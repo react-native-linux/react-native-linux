@@ -40,6 +40,12 @@
       "rules": {
         "import/no-relative-parent-imports": "off"
       }
+    },
+    {
+      "files": ["packages/core/goldens/fixtures.ts"],
+      "rules": {
+        "eslint/max-lines": "off"
+      }
     }
   ],
   "ignorePatterns": ["**/test-bundles", "build", "coverage", "packages/*/upstream", "third_party"]

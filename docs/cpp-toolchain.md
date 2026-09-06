@@ -5155,6 +5155,133 @@ what is left in them needs a `UIManager` and a committed tree, and `--type` is t
   bullets rather than by its value. That is the correct trade — the alternative is the value reaching a
   paragraph — and it is only visible for a field with no explicit width.
 
+## Switch (#261)
+
+`<Switch>` is drawn from the scene: a pill filling the node's frame, and a circular thumb inset from it by
+`kSwitchThumbInset` on every side. `packages/core/src/SwitchContent.h` holds both — `switchGeometry` returns the
+track as a `SceneRoundedBox` built by `roundedBorderBox`, so the pill goes through the one corner clamp of issue
+#99 rather than around it, and returns the thumb as a centre and a radius. `ScenePainter` calls it and draws two
+shapes; it computes nothing, which is what keeps the geometry inside the coverage gate.
+
+The component is ours only in part. `SwitchNativeComponent.js` is declared `interfaceOnly`, so codegen stops at
+`SwitchProps` and `SwitchEventEmitter` and every platform writes the shadow node itself — `AppleSwitchShadowNode`
+is the same seven lines with `RCTSwitchSize()` where `src/SwitchComponent.h` has `kSwitchSize`. It is a
+`LeafYogaNode` and a `MeasurableYogaNode` measuring 51x31, which is `UISwitch`'s own size and the box
+react-native-windows reports too. It has to measure: `Switch.js` gives the control `alignSelf: flex-start` and no
+width of its own, and a switch that measures at nothing renders as nothing, which is react-native-macos#1699.
+
+### The props, and which names this platform takes
+
+`Switch.js` branches on `Platform.OS === 'android'`. This platform is not Android, so it takes the other branch,
+which sends `value`, `disabled`, `tintColor` (`trackColor.false`), `onTintColor` (`trackColor.true`) and
+`thumbTintColor` (`thumbColor`). The same generated props class also carries `thumbColor`, `trackColorForFalse`
+and `trackColorForTrue` — the Android branch's names for the same three values — and the scene deliberately does
+not read them: two names for one value is two answers to one question. They are `deviating` in
+`docs/prop-coverage.json` for that reason.
+
+`ios_backgroundColor` is not a native prop at all. `Switch.js` folds it into `style.backgroundColor` with
+`borderRadius: 16`, so it arrives as the ordinary view background every node already paints, underneath a track
+that covers the whole frame and hides it. Nothing platform-specific implements it and nothing needs to; it is not
+in the ledger because it is not a prop any props class declares.
+
+The colours a switch falls back to are iOS' dark-appearance `UISwitch`: `#39393D` off, `#34C759` on, a white
+thumb. A `disabled` switch draws all three at half alpha, multiplied by whatever opacity it inherited — iOS dims
+and keeps the app's colours, react-native-windows drops them for a fourth palette, and dimming is the one that
+still lets an app recognise its own switch.
+
+### The toggle, and why nothing moves until React says so
+
+A press emits `onChange` carrying `!props.value` and the node's tag, and changes no pixel. The control is fully
+controlled: react-native-windows' `SwitchComponentView::toggle` sends exactly this and makes its `setValue`
+command an explicit no-op, and iOS de-dupes against `props.value`. So a `<Switch>` whose `onValueChange` ignores
+the press stays where it was, by construction rather than by a correction.
+
+`InputDispatcher::emitSwitchChange` is the one emission, and both the pointer path and the activation path call
+it, so Space and Enter on a focused switch are the same toggle a click is rather than a keyboard path of their
+own. A `<Switch>` is focusable because it is a control: `Switch.js` sets `accessibilityRole` and never
+`accessible`, so the prop `isFocusableNode` otherwise reads is false on every switch React Native renders, and
+`disabled` takes focusability back out — the same rule `accessibilityState.disabled` applies to everything else.
+The ring is the ordinary focus ring, drawn inside the border box.
+
+### The travel
+
+`SceneSwitchContent::thumbProgress` is zero at the off end and one at the on end, and it is scene state rather
+than a prop, because React commits a boolean. A node mounting for the first time starts at the end its value
+names — a screen that opens with a switch on shows it on — and an update keeps the position its thumb has
+reached, so the commit React makes in reply to `onValueChange` starts the travel rather than finishing it.
+
+`RetainedScene::advanceControlAnimations` moves it by `frameMilliseconds / kSwitchToggleMilliseconds` per frame,
+which is 150 ms end to end: react-native-windows animates its thumb for 167 ms and Android's `SwitchCompat` for
+250 ms, and this sits between them. It is elapsed time rather than a step per frame, so a 120 Hz display and a
+60 Hz one move the thumb the same distance in the same interval — the rule `animatedImageFrameIndex` already
+sets for a GIF. The track colour is mixed between the off and the on colour in the same proportion, so one
+gesture is one animation rather than a slide and a separate colour switch.
+
+Damage is the switch's own extent cut by the clips it inherits, so a toggle repaints one control. A switch an
+ancestor's `overflow: hidden` has clipped away keeps travelling and damages nothing: its target is a committed
+prop, and a thumb that had to catch up on the frame it was revealed would jump.
+
+### The proof
+
+- `packages/core/tests/SwitchTest.cpp` — the geometry, the travel and the scene content, all inside the 100 %
+  gate: the pill, the thumb at both ends and halfway, a frame too narrow to hold the thumb its height would give
+  it, a frame too small to hold an inset thumb at all, the wall-clock schedule, the colour mix, the
+  mount-at-the-end rule, the dimming, the damage rectangle and the clipped-away case.
+- `switch.png` — off, on, disabled off, disabled on, `trackColor`/`thumbColor` at both ends, and the controlled
+  toggle at rest.
+- `switch-mid-toggle.png` — the same fixture five frames after a click on that seventh tile, which is 83 ms of
+  the 150 ms travel and the only picture that proves the travel is animated rather than instant.
+- `switch-toggled.png` — twelve frames after the same click, which is 200 ms and therefore past the end of it.
+
+  `--clicked-frame <bundle> <out> <x> <y> <frames>` is the flag both go through: a click and then a named number
+  of frames, because the thumb only starts moving once React has committed the value the press asked for, and no
+  existing flag draws a frame after that commit. It runs the click through `deliverClickFrames` and exits through
+  `finishFabricRun`, so it settles and reports `hasSettled` exactly as every other golden runner does.
+- `packages/core/e2e/switch.json` — a real click under the compositor, asserting the `topChange` payload, the
+  reply the bundle commits, and a screenshot crop of the toggled switch.
+
+  Its crop is compared against `switch-toggled.png` and not against the mid-animation one, because the scenario
+  screenshots half a second after its click and the thumb has arrived by then. Two goldens of one control at two
+  instants is the point; naming them a letter apart, or pointing the compositor's picture at the raster proof of
+  a different instant, is how a blessed screenshot silently pins the wrong frame.
+
+## ActivityIndicator (#261)
+
+`<ActivityIndicator>` is a stroked arc: three quarters of a circle with round caps, rotating once per second.
+`packages/core/src/ActivityIndicatorContent.h` holds the arithmetic — `activityIndicatorPhase` turns elapsed
+milliseconds into a fraction of a revolution and `activityIndicatorGeometry` turns that plus the frame into the
+box, the stroke and the two angles Skia's `drawArc` wants.
+
+Nothing here is ours except the drawing. `ActivityIndicatorViewNativeComponent.js` is not `interfaceOnly`, so
+codegen produced the props, the shadow node and the descriptor, and `FabricHost` registers upstream's
+`ActivityIndicatorViewComponentDescriptor` unchanged. There is no measurement either: `ActivityIndicator.js`
+turns `size` into a 20-point or 36-point style box before the props ever reach C++.
+
+`size` therefore picks the stroke width and not the box — 2 points for `small`, 3 for `large`, which is close to
+what react-native-windows' scaled Lottie art works out to (1.875 and 3.375). A frame-proportional stroke would be
+the prop applied twice and would thin to nothing on a box an app sized itself; `UIActivityIndicatorView` keeps a
+line width per style for the same reason. `color` defaults to `#999999`, which is the one default
+`ActivityIndicator.js` actually writes down — it applies it on iOS and leaves the prop null everywhere else, and
+this platform has no theme service to ask, the same deferral the focus ring's colour carries.
+
+`animating` is what stops the clock. A stopped indicator accumulates no elapsed time, asks for no frame and
+damages nothing, and keeps the angle it stopped at, so `animating` going false and true again resumes the arc
+rather than snapping it to the top. `hidesWhenStopped` then decides whether the frozen arc is drawn at all.
+react-native-windows hides the ring but leaves it spinning in that state; stopping the clock is both cheaper and
+what the prop says. An indicator an ancestor has clipped away is stopped by the same rule an animated `<Image>`
+is, and its elapsed time is likewise where it paused.
+
+Damage is the indicator's own box, so a spinner in a corner of a screen repaints that corner and nothing else —
+which is the whole point of a partial-redraw renderer having a spinner at all.
+
+### The proof
+
+- `packages/core/tests/ActivityIndicatorTest.cpp` — the phase, the wrap, the centring, both stroke widths, a
+  frame with no room for a stroked circle, the visibility rule, the props, the advance, the stop-and-resume and
+  the clipped-away case.
+- `activity-indicator.png` — `small` and `large` animating, a custom colour, stopped and hidden, and stopped and
+  held, each over a panel so an invisible tile is still visibly a tile.
+
 ## Golden images
 
 The rig has two halves. `hello_react --golden` produces a PNG; a Vitest spec compares it against a checked-in one.

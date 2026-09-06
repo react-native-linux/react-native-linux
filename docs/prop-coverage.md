@@ -1,14 +1,15 @@
 # Prop coverage
 
-Every prop the five shipped components declare is in exactly one of three states — `implemented`, `deviating`
+Every prop the shipped components declare is in exactly one of three states — `implemented`, `deviating`
 or `not-implemented` — and a prop in none of them fails `pnpm prop-coverage:check`, which the `validate` job
 runs. This file is generated: edit `docs/prop-coverage.json` and run `pnpm prop-coverage:report`.
 
 ## How the list is derived
 
 `scripts/prop-coverage.ts` parses the props classes React Native declares in the vendored headers under
-`third_party/react-native`, plus the one props class this platform declares itself
-(`packages/core/src/TextInputComponent.h`). Nothing below is hand-maintained: a prop is listed because a header
+`third_party/react-native`, the props class this platform declares itself
+(`packages/core/src/TextInputComponent.h`) and the codegen output checked in under `packages/core/generated`.
+Nothing below is hand-maintained: a prop is listed because a header
 declares it, so an upstream bump that adds a prop fails the check rather than reaching a user.
 
 A prop is the name matched by
@@ -61,7 +62,9 @@ assertion and not an implementation.
 | Image | 14 | 4 | 6 | 4 |
 | ScrollView | 39 | 5 | 2 | 32 |
 | TextInput | 23 | 12 | 0 | 11 |
-| **Total** | 156 | 54 | 20 | 82 |
+| Switch | 8 | 5 | 3 | 0 |
+| ActivityIndicator | 4 | 4 | 0 | 0 |
+| **Total** | 168 | 63 | 23 | 82 |
 
 ## View
 
@@ -243,3 +246,25 @@ assertion and not an implementation.
 | `caretHidden` | `packages/core/src/TextInputComponent.h:42` | implemented | `RetainedSceneTextInputTest, CaretHiddenRemovesTheCaretColourAndTheCaretWithIt` |
 | `selectTextOnFocus` | `packages/core/src/TextInputComponent.h:43` | not-implemented | #54 |
 | `scrollEnabled` | `packages/core/src/TextInputComponent.h:47` | implemented | `TextInputControllerTest, ScrollEnabledDefaultsToTrueAndIsWhatMakesAFieldAWindowOnItsOwnContent` |
+
+## Switch
+
+| Prop | Declared at | State | Proof, reason or owner |
+| --- | --- | --- | --- |
+| `disabled` | `packages/core/generated/react/renderer/components/FBReactNativeSpec/Props.h:522` | implemented | `switch.png` |
+| `value` | `packages/core/generated/react/renderer/components/FBReactNativeSpec/Props.h:523` | implemented | `switch.png` |
+| `tintColor` | `packages/core/generated/react/renderer/components/FBReactNativeSpec/Props.h:524` | implemented | `switch.png` |
+| `onTintColor` | `packages/core/generated/react/renderer/components/FBReactNativeSpec/Props.h:525` | implemented | `switch.png` |
+| `thumbTintColor` | `packages/core/generated/react/renderer/components/FBReactNativeSpec/Props.h:526` | implemented | `switch.png` |
+| `thumbColor` | `packages/core/generated/react/renderer/components/FBReactNativeSpec/Props.h:527` | deviating | the Android spec's name for the same value: React Native's own Switch.js sends thumbTintColor, tintColor and onTintColor on every platform that is not Android, and these three only on the branch that is, so a platform reading both would have two answers to one question |
+| `trackColorForFalse` | `packages/core/generated/react/renderer/components/FBReactNativeSpec/Props.h:528` | deviating | the Android spec's name for the same value: React Native's own Switch.js sends thumbTintColor, tintColor and onTintColor on every platform that is not Android, and these three only on the branch that is, so a platform reading both would have two answers to one question |
+| `trackColorForTrue` | `packages/core/generated/react/renderer/components/FBReactNativeSpec/Props.h:529` | deviating | the Android spec's name for the same value: React Native's own Switch.js sends thumbTintColor, tintColor and onTintColor on every platform that is not Android, and these three only on the branch that is, so a platform reading both would have two answers to one question |
+
+## ActivityIndicator
+
+| Prop | Declared at | State | Proof, reason or owner |
+| --- | --- | --- | --- |
+| `hidesWhenStopped` | `packages/core/generated/react/renderer/components/FBReactNativeSpec/Props.h:52` | implemented | `activity-indicator.png` |
+| `animating` | `packages/core/generated/react/renderer/components/FBReactNativeSpec/Props.h:53` | implemented | `activity-indicator.png` |
+| `color` | `packages/core/generated/react/renderer/components/FBReactNativeSpec/Props.h:54` | implemented | `activity-indicator.png` |
+| `size` | `packages/core/generated/react/renderer/components/FBReactNativeSpec/Props.h:55` | implemented | `activity-indicator.png` |

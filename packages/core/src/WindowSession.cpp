@@ -55,6 +55,7 @@ void WindowSession::deliverInput(const std::vector<InputEvent>& events) {
     // caret into the scene: toggling afterwards would show every phase one frame late.
     fabricHost_->advanceCaretBlink(frameMilliseconds);
     fabricHost_->advanceImageAnimations(frameMilliseconds);
+    fabricHost_->advanceControlAnimations(frameMilliseconds);
     fabricHost_->dispatchInput(events);
     fabricHost_->advanceScroll(frameMilliseconds);
     fabricHost_->induceEventBeat();
