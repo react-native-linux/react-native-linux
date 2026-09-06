@@ -658,8 +658,8 @@ is reachable from JavaScript yet — there is no `NativeAppearance` TurboModule 
 client, both of which are #52's scope — so `AppearanceTest.cpp` proves the precedence rule with a table test over
 the two pure functions plus a fake portal (a direct call to `onPortalColorSchemeChanged`, standing in for the
 D-Bus listener #52 has not written yet). `Appearance.cpp` is in the 100% line-and-branch scope of
-`scripts/cpp-coverage.ts`. The golden-image and TSan layers #52's acceptance criteria ask for need a running
-portal source and a JS-reachable module to race against, so they stay with #52.
+`scripts/cpp-coverage.ts`. The golden-image and TSan layers that #52's acceptance criteria ask for need a
+running portal source and a JavaScript-reachable module to race against, so they stay with #52.
 
 ## Animated backend (#127, #128)
 
