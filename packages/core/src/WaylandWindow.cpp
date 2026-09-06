@@ -245,6 +245,8 @@ std::vector<InputEvent> WaylandWindow::takeInputEvents() {
 
 TextInputClient* WaylandWindow::textInput() const noexcept { return seat_ == nullptr ? nullptr : seat_->textInput(); }
 
+const WaylandSerialLedger& WaylandWindow::serialLedger() const noexcept { return serialLedger_; }
+
 void WaylandWindow::bindGlobal(wl_registry* registry, uint32_t name, const char* interfaceName, uint32_t version) {
     if (std::strcmp(interfaceName, wl_compositor_interface.name) == 0) {
         void* bound =
@@ -256,7 +258,7 @@ void WaylandWindow::bindGlobal(wl_registry* registry, uint32_t name, const char*
         wmBase_ = static_cast<xdg_wm_base*>(bound);
     } else if (std::strcmp(interfaceName, wl_seat_interface.name) == 0 && version >= kMinimumSeatVersion) {
         void* bound = wl_registry_bind(registry, name, &wl_seat_interface, kMinimumSeatVersion);
-        seat_ = std::make_unique<WaylandSeat>(static_cast<wl_seat*>(bound));
+        seat_ = std::make_unique<WaylandSeat>(static_cast<wl_seat*>(bound), serialLedger_);
     } else if (std::strcmp(interfaceName, zwp_text_input_manager_v3_interface.name) == 0) {
         void* bound = wl_registry_bind(registry, name, &zwp_text_input_manager_v3_interface,
                                        std::min(version, kMaximumTextInputManagerVersion));
@@ -343,8 +345,14 @@ void WaylandWindow::handleWmBasePing(void* /*data*/, xdg_wm_base* wmBase, uint32
 }
 
 void WaylandWindow::handleSurfaceConfigure(void* data, xdg_surface* xdgSurface, uint32_t serial) {
-    xdg_surface_ack_configure(xdgSurface, serial);
-    static_cast<WaylandWindow*>(data)->configured_ = true;
+    WaylandWindow* window = static_cast<WaylandWindow*>(data);
+
+    window->serialLedger_.recordConfigure(serial);
+    // Recorded and then read back from the ledger it was just written to, rather than acked from the argument
+    // directly: this is the whole of what #330 asks of ack_configure, and it is what keeps this the one
+    // ack_configure call site a future one could get wrong by reading a different event's serial.
+    xdg_surface_ack_configure(xdgSurface, window->serialLedger_.serial(WaylandSerialKind::Configure));
+    window->configured_ = true;
 }
 
 void WaylandWindow::handleSurfaceEnter(void* data, wl_surface* /*surface*/, wl_output* /*output*/) {

@@ -110,7 +110,8 @@ const wl_pointer_listener WaylandSeat::kPointerListener = WaylandSeat::makePoint
 
 const wl_keyboard_listener WaylandSeat::kKeyboardListener = WaylandSeat::makeKeyboardListener();
 
-WaylandSeat::WaylandSeat(wl_seat* seat) : seat_(seat), xkbContext_(xkb_context_new(XKB_CONTEXT_NO_FLAGS)) {
+WaylandSeat::WaylandSeat(wl_seat* seat, WaylandSerialLedger& serialLedger)
+    : seat_(seat), xkbContext_(xkb_context_new(XKB_CONTEXT_NO_FLAGS)), serialLedger_(serialLedger) {
     wl_seat_add_listener(seat_, &kSeatListener, this);
 }
 
@@ -212,7 +213,9 @@ void WaylandSeat::pushPointerPosition(InputEventKind kind, int32_t surfaceX, int
     queue_.push(InputEvent{.kind = kind, .surfacePoint = pointerPosition_, .modifiers = modifiers_});
 }
 
-void WaylandSeat::pushPointerButton(uint32_t button, uint32_t state) {
+void WaylandSeat::pushPointerButton(uint32_t serial, uint32_t button, uint32_t state) {
+    serialLedger_.recordPointerButton(serial, state == WL_POINTER_BUTTON_STATE_PRESSED);
+
     const int domButton = domButtonOfEvdevCode(button);
 
     if (domButton == kUnmappedButton) {
@@ -231,7 +234,9 @@ void WaylandSeat::pushPointerLeave() {
         InputEvent{.kind = InputEventKind::PointerLeave, .surfacePoint = pointerPosition_, .modifiers = modifiers_});
 }
 
-void WaylandSeat::pushKey(uint32_t key, uint32_t state) {
+void WaylandSeat::pushKey(uint32_t serial, uint32_t key, uint32_t state) {
+    serialLedger_.recordKeyboardKey(serial, state == WL_KEYBOARD_KEY_STATE_PRESSED);
+
     if (keyboardState_ == nullptr) {
         return;
     }
@@ -272,9 +277,12 @@ void WaylandSeat::handleSeatCapabilities(void* data, wl_seat* /*seat*/, uint32_t
 
 void WaylandSeat::handleSeatName(void* /*data*/, wl_seat* /*seat*/, const char* /*name*/) {}
 
-void WaylandSeat::handlePointerEnter(void* data, wl_pointer* /*pointer*/, uint32_t /*serial*/, wl_surface* /*surface*/,
+void WaylandSeat::handlePointerEnter(void* data, wl_pointer* /*pointer*/, uint32_t serial, wl_surface* /*surface*/,
                                      int32_t surfaceX, int32_t surfaceY) {
-    static_cast<WaylandSeat*>(data)->pushPointerPosition(InputEventKind::PointerMotion, surfaceX, surfaceY);
+    WaylandSeat* seat = static_cast<WaylandSeat*>(data);
+
+    seat->serialLedger_.recordPointerEnter(serial);
+    seat->pushPointerPosition(InputEventKind::PointerMotion, surfaceX, surfaceY);
 }
 
 void WaylandSeat::handlePointerLeave(void* data, wl_pointer* /*pointer*/, uint32_t /*serial*/,
@@ -287,9 +295,9 @@ void WaylandSeat::handlePointerMotion(void* data, wl_pointer* /*pointer*/, uint3
     static_cast<WaylandSeat*>(data)->pushPointerPosition(InputEventKind::PointerMotion, surfaceX, surfaceY);
 }
 
-void WaylandSeat::handlePointerButton(void* data, wl_pointer* /*pointer*/, uint32_t /*serial*/, uint32_t /*time*/,
+void WaylandSeat::handlePointerButton(void* data, wl_pointer* /*pointer*/, uint32_t serial, uint32_t /*time*/,
                                       uint32_t button, uint32_t state) {
-    static_cast<WaylandSeat*>(data)->pushPointerButton(button, state);
+    static_cast<WaylandSeat*>(data)->pushPointerButton(serial, button, state);
 }
 
 namespace {
@@ -362,9 +370,12 @@ void WaylandSeat::handleKeyboardKeymap(void* data, wl_keyboard* /*keyboard*/, ui
     static_cast<WaylandSeat*>(data)->loadKeymap(format, keymapDescriptor, size);
 }
 
-void WaylandSeat::handleKeyboardEnter(void* data, wl_keyboard* /*keyboard*/, uint32_t /*serial*/,
+void WaylandSeat::handleKeyboardEnter(void* data, wl_keyboard* /*keyboard*/, uint32_t serial,
                                       wl_surface* /*surface*/, wl_array* /*keys*/) {
-    static_cast<WaylandSeat*>(data)->hasKeyboardFocus_ = true;
+    WaylandSeat* seat = static_cast<WaylandSeat*>(data);
+
+    seat->serialLedger_.recordKeyboardEnter(serial);
+    seat->hasKeyboardFocus_ = true;
 }
 
 void WaylandSeat::handleKeyboardLeave(void* data, wl_keyboard* /*keyboard*/, uint32_t /*serial*/,
@@ -372,9 +383,9 @@ void WaylandSeat::handleKeyboardLeave(void* data, wl_keyboard* /*keyboard*/, uin
     static_cast<WaylandSeat*>(data)->hasKeyboardFocus_ = false;
 }
 
-void WaylandSeat::handleKeyboardKey(void* data, wl_keyboard* /*keyboard*/, uint32_t /*serial*/, uint32_t /*time*/,
+void WaylandSeat::handleKeyboardKey(void* data, wl_keyboard* /*keyboard*/, uint32_t serial, uint32_t /*time*/,
                                     uint32_t key, uint32_t state) {
-    static_cast<WaylandSeat*>(data)->pushKey(key, state);
+    static_cast<WaylandSeat*>(data)->pushKey(serial, key, state);
 }
 
 void WaylandSeat::handleKeyboardModifiers(void* data, wl_keyboard* /*keyboard*/, uint32_t /*serial*/,

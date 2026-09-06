@@ -94,6 +94,7 @@ add_executable(rnl_core_tests
     ToplevelStateTest.cpp
     UpstreamTestDriftOracleTest.cpp
     VulkanResultPolicyTest.cpp
+    WaylandSerialLedgerTest.cpp
     WebPropAliasTest.cpp
     ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/AnimatedNodeTests.cpp
     ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/AnimationDriverTests.cpp
@@ -132,6 +133,7 @@ add_executable(rnl_core_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextTransform.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ToplevelState.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/VulkanResultPolicy.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/WaylandSerialLedger.cpp
     ${RNL_UPSTREAM_CSS_TESTS}
     ${RNL_UPSTREAM_GRAPHICS_TESTS}
     ${RNL_UPSTREAM_TIMELINE_TESTS})

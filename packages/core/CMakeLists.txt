@@ -1049,6 +1049,7 @@ elseif(RNL_ENABLE_WINDOW)
         src/ToplevelState.cpp
         src/VulkanResultPolicy.cpp
         src/WaylandSeat.cpp
+        src/WaylandSerialLedger.cpp
         src/WaylandWindow.cpp
         src/WindowMain.cpp
         src/FrameClock.cpp

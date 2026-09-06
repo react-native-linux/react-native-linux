@@ -4,6 +4,7 @@
 #include "InputPipeline.h"
 #include "ToplevelState.h"
 #include "WaylandSeat.h"
+#include "WaylandSerialLedger.h"
 
 #include <chrono>
 #include <cstdint>
@@ -135,6 +136,9 @@ public:
     bool hasFrameCallbackFired() const noexcept;
     std::vector<InputEvent> takeInputEvents();
     TextInputClient* textInput() const noexcept;
+    /** The serial ledger every request that needs one — set_selection, an interactive move, ack_configure — reads
+     * from. See #330 and *The serial ledger* in docs/cpp-toolchain.md. */
+    const WaylandSerialLedger& serialLedger() const noexcept;
 
 private:
     void bindGlobal(wl_registry* registry, uint32_t name, const char* interfaceName, uint32_t version);
@@ -175,6 +179,7 @@ private:
 
     wl_display* display_{nullptr};
     wl_compositor* compositor_{nullptr};
+    WaylandSerialLedger serialLedger_;
     std::unique_ptr<WaylandSeat> seat_;
     zwp_text_input_manager_v3* textInputManager_{nullptr};
     wp_presentation* presentation_{nullptr};

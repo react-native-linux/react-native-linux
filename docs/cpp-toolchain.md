@@ -486,6 +486,54 @@ instead), cannot resize or maximize it (the client is fullscreened to the output
   rather than closed by this change, since exercising it needs either a fake `xdg_toplevel` the window build can
   substitute for the real one or an e2e step that sends a close request — both bigger than this issue's remit.
 
+### The serial ledger (#330)
+
+Five upcoming pieces of work each need a Wayland serial — `wl_data_device.set_selection`/`start_drag` for #60,
+`xdg_popup.grab` for #62, `xdg_toplevel.move`/`resize` for the decoration work, `wl_pointer.set_cursor` for #40,
+and `xdg_activation_v1.get_activation_token` — and each is silently declined by the compositor when given the
+wrong one. zed#52170 is the canonical shape of the bug: "Copy Path" worked from the keyboard and failed from a
+mouse click, because `set_selection` was built from whichever serial happened to still be in scope rather than
+the one the click itself carried.
+
+**`WaylandSerialLedger` (`packages/core/src/WaylandSerialLedger.h`) is the one place a serial is written down.**
+It is libwayland-free — every argument is a `uint32_t` a listener has already unwrapped — which is what puts it,
+like `ToplevelState`, under the 100% line-and-branch gate without pulling libwayland into the test configure
+(`packages/core/tests/WaylandSerialLedgerTest.cpp`). Two rules, both GPUI's (`crates/gpui_linux/src/linux/wayland/
+serial.rs`):
+
+- **Only a press updates its kind.** `wl_pointer.button` and `wl_keyboard.key` fire on release too, and a
+  request built from a release serial is declined, so `recordPointerButton`/`recordKeyboardKey` take the
+  pressed/released state and the release branch is a no-op.
+- **The merged kinds track arrival order, not numeric magnitude.** `InteractiveMove` (the latest pointer button
+  or touch press, for `xdg_toplevel.move`/`resize`/`show_window_menu`) and `Selection` (the latest press of any
+  kind, for `set_selection`/`start_drag`) are each updated by an unconditional overwrite inside every qualifying
+  `record*` call. `uint32_t` wraps, so comparing "the larger serial" against "the more recent" one breaks the
+  instant it does; never comparing at all, and relying on the event loop delivering events in the order they
+  arrived, is what survives the rollover.
+
+`PointerEnter` and `KeyboardEnter` are their own kinds, separate from a press: `wl_pointer.set_cursor` (#40)
+needs the *enter* serial specifically, and sending it a press serial is exactly the "serial from the wrong seat
+event" failure this ledger exists to rule out. `Configure` is independent of every input kind, because
+`xdg_surface.ack_configure` needs exactly the serial its own `configure` carried and nothing else. A kind that
+has never recorded a qualifying event reads as zero from `serial()`; `requestSerial()` is the version an actual
+request should call, and it returns `std::nullopt` with a `[wayland-serial-ledger]` log line instead — a request
+built from zero fails exactly as silently as one built from a stale serial, so a caller with no qualifying event
+yet must not send the request at all.
+
+**`WaylandWindow` owns the one ledger; `WaylandSeat` is given a reference to it.** `WaylandSeat`'s pointer and
+keyboard listeners feed `PointerEnter`, `PointerButtonPress`, `KeyboardEnter` and `KeyboardKeyPress` from inside
+the same dispatch that fills its `InputEvent` queue. `WaylandWindow::handleSurfaceConfigure` records `Configure`
+and then acks the serial it just read back out of the ledger rather than the raw listener argument a second
+time, which is what keeps this the one `ack_configure` call site a future edit could otherwise point at the
+wrong event's serial. `wl_touch` is not bound (`WaylandSeat`'s scope is pointer, keyboard and text composition
+only, per *Window host* above), so `recordTouchDown` has no call site yet; the ledger still carries the kind
+because the unit suite proves it independently of any binding, and it is what #60's drag-and-drop scope picks up
+without adding a second ledger.
+
+**Nothing calls `requestSerial` outside the unit suite yet.** #60, #62, #63 and #40 are each still open, and
+`WaylandWindow::serialLedger()` is the seam each of them reads from when it lands — this issue is the
+prerequisite the acceptance criteria of all four name, not the clipboard or window-decoration change itself.
+
 ### The retained scene, and the threads it crosses
 
 `rnl_window --fabric <bundle>` runs the whole stack in one process: `WindowSession` constructs a `ReactHost`
