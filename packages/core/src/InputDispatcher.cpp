@@ -366,6 +366,16 @@ void InputDispatcher::dispatchPointerEvent(const InputEvent& event) {
     // inside it keeps extending the selection wherever the pointer goes.
     textInputController_.handlePointer(event);
 
+    // The router advances its press/button state for every button event regardless of whether today's target can
+    // receive it — issue #247. The node a press started on can unmount before its release arrives, and the
+    // release is then resolved against whatever is under the pointer now, which is never that node again: a
+    // `route` call gated on the *new* target's emitter would skip updating `pressedTag_`/`pressedButtons_` for a
+    // frame whose new target happens to carry no `TouchEventEmitter`, and the state a real button-up already
+    // cleared on every other target would be left set for the gesture after it. `route` itself already forgets a
+    // press whose release lands on a different tag — this only makes sure it is always asked to.
+    const std::vector<PointerDispatch> dispatches =
+        router_.route(event, target.shadowNode->getTag(), target.offset);
+
     const std::shared_ptr<const facebook::react::TouchEventEmitter> emitter =
         std::dynamic_pointer_cast<const facebook::react::TouchEventEmitter>(target.shadowNode->getEventEmitter());
 
@@ -373,8 +383,7 @@ void InputDispatcher::dispatchPointerEvent(const InputEvent& event) {
         return;
     }
 
-    for (const PointerDispatch& pointerDispatch :
-         router_.route(event, target.shadowNode->getTag(), target.offset)) {
+    for (const PointerDispatch& pointerDispatch : dispatches) {
         emitPointerDispatch(*emitter, pointerDispatch);
 
         if (pointerDispatch.type == PointerDispatchType::Click) {
