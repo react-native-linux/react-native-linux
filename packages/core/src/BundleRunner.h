@@ -19,15 +19,23 @@ enum class BundleMode {
 
 /**
  * What a headless Fabric run leaves behind once the JavaScript thread has gone quiet and the surface has been
- * stopped: the scene as a flat list of absolute rectangles, the same scene as the human-readable dump, and whether
- * the run reported a fatal JavaScript error.
+ * stopped: the scene as a flat list of absolute rectangles, the same scene as the human-readable dump, whether the
+ * run reported a fatal JavaScript error, and whether the settle behind it reached a fixed point.
  *
- * Both are captured before teardown because stopping the surface commits an empty tree.
+ * The scene and the dump are captured before teardown because stopping the surface commits an empty tree.
+ * `hasSettled` is false only when `settleImageDecodesAndJavaScript` gave up after
+ * `kMaximumJavaScriptSettleIterations` — a decode-woken handler that never stops committing (issue #301) — in
+ * which case `scene` is whatever the run had, not what it would have painted, and a caller that trusted it would be
+ * proving something about a scene nobody asked to see. There is no default: every producer of this struct —
+ * `finishFabricRun` directly, or a caller assembling one from a `FabricFrameRunResult` or a `FabricPrependRunResult`
+ * — sets it from the settle it actually ran, because a defaulted `true` is exactly the bug issue #321's review
+ * found twice.
  */
 struct FabricRunResult {
     SceneSnapshot scene;
     std::string sceneDump;
     bool hasReportedFatalError{};
+    bool hasSettled{};
 };
 
 /**
@@ -36,7 +44,9 @@ struct FabricRunResult {
  * everything an equivalence proof needs to compare it against a full one.
  *
  * `failure` is empty when the run produced all three. A bundle that never commits, or that commits only once,
- * fills it instead of leaving a caller to guess why the damage is empty.
+ * fills it instead of leaving a caller to guess why the damage is empty. `hasSettled` is the same fixed-point
+ * settle every other result type carries, threaded from the one place it is computed rather than left at its
+ * default.
  */
 struct FabricDamageRunResult {
     SceneSnapshot firstScene;
@@ -44,6 +54,7 @@ struct FabricDamageRunResult {
     SceneDamage damage;
     std::string failure;
     bool hasReportedFatalError{};
+    bool hasSettled{};
 };
 
 int runBundle(const std::optional<std::string>& bundlePath, BundleMode bundleMode);
@@ -93,6 +104,7 @@ struct FabricHitPaintRunResult {
     SceneSnapshot scene;
     std::vector<FabricHitSample> hits;
     bool hasReportedFatalError{};
+    bool hasSettled{};
 };
 
 FabricHitPaintRunResult runHitSampledFabricBundle(const std::string& bundlePath, facebook::react::Size surfaceSize,
@@ -192,6 +204,7 @@ struct FabricFrameRunResult {
     SceneSnapshot firstScene;
     SceneSnapshot settledScene;
     bool hasReportedFatalError{};
+    bool hasSettled{};
 };
 
 FabricFrameRunResult runFabricBundleAcrossFrames(const std::string& bundlePath, facebook::react::Size surfaceSize);
@@ -210,6 +223,7 @@ struct FabricPrependRunResult {
     SceneSnapshot afterScene;
     std::string failure;
     bool hasReportedFatalError{};
+    bool hasSettled{};
 };
 
 FabricPrependRunResult runFabricBundleAcrossPrepend(const std::string& bundlePath, facebook::react::Size surfaceSize,

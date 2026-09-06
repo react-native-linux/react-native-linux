@@ -5,6 +5,8 @@
 #include "InputPipeline.h"
 #include "ReactHost.h"
 
+#include "ImageContent.h"
+
 #ifdef RNL_ENABLE_IMAGES
 #include "ImageDecoder.h"
 #endif
@@ -95,6 +97,55 @@ void settlePendingImageDecodes() {
         std::cerr << "[bundle-runner] gave up waiting for image decoding" << std::endl;
     }
 #endif
+}
+
+/**
+ * The scene a fixed-point settle produced, the damage every iteration of it accumulated, and whether it actually
+ * reached a fixed point. This is the one place `hasSettled` is computed; every result struct a runner returns
+ * threads it through from here rather than defaulting it (issue #321) — a golden that read a scene before an
+ * `onLoad` handler's commit had landed is exactly the bug this settle closes, and a caller that skipped it, or
+ * that built its result without asking it what happened, would still have the bug.
+ */
+struct SettledFrame {
+    SceneSnapshot scene;
+    SceneDamage damage;
+    bool hasSettled;
+};
+
+/**
+ * Settles decodes and JavaScript to a fixed point — the same loop `finishFabricRun` runs — and hands back the
+ * scene as it stands, the union of every iteration's damage, and whether the loop gave up.
+ *
+ * Damage is accumulated across iterations rather than taken once at the end, because `takeFrame` clears what it
+ * returns: a caller that needs the damage a settle-triggered commit produced (`runFabricBundleAcrossCommits`)
+ * would see none if the loop's own polling had already drained it and reported only a bool.
+ */
+SettledFrame settleFabricRun(ReactHost& reactHost, FabricHost& fabricHost) {
+    SceneDamage accumulatedDamage;
+
+    const bool hasSettled = settleImageDecodesAndJavaScript(
+        settlePendingImageDecodes,
+        [&reactHost, &fabricHost, &accumulatedDamage]() {
+            fabricHost.induceEventBeat();
+
+            if (!reactHost.runUntilQuiescent(kQuiescenceBudget)) {
+                std::cerr << "[bundle-runner] gave up waiting for pending timers" << std::endl;
+            }
+
+            SceneDamage damage = fabricHost.takeFrame().damage;
+            const bool hasNewDamage = !damage.empty();
+
+            mergeDamage(accumulatedDamage, damage);
+
+            return hasNewDamage;
+        });
+
+    if (!hasSettled) {
+        std::cerr << "[bundle-runner] gave up waiting for JavaScript to settle after an image decode" << std::endl;
+    }
+
+    return SettledFrame{
+        .scene = fabricHost.snapshotScene(), .damage = std::move(accumulatedDamage), .hasSettled = hasSettled};
 }
 
 /**
@@ -242,20 +293,29 @@ int finishFabricRunWithStatus(ReactHost& reactHost, StartedFabricRun& startedRun
  * Reads the scene out and tears the host down, in the one order that is safe: both readings happen before the
  * surface is stopped, because stopping it commits an empty tree, and the JavaScript thread is drained before the
  * host is destroyed so the queued unmount runs while the scheduler delegate is still alive.
+ *
+ * The settle is `settleImageDecodesAndJavaScript` rather than a bare `settlePendingImageDecodes`, because a decode
+ * publish can wake JavaScript — an `onLoad` handler that changes a prop — and that handler's commit is not
+ * guaranteed to have landed the instant the decode queue empties: publishing and running the handler are two
+ * different threads' work (issue #301). `onLoad` reaches JavaScript through the same `EventDispatcher` every other
+ * event does, and this platform's `EventBeat` is induced rather than ambient — nothing delivers a queued event
+ * until `induceEventBeat` says a frame happened, headless or not — so the drain is the same trio every input frame
+ * already runs: the beat that releases the event, `runUntilQuiescent`'s timer drain (#240) for the handler and
+ * whatever it schedules, and `takeFrame().damage` to say whether that produced a new commit to settle around
+ * again.
  */
 FabricRunResult finishFabricRun(ReactHost& reactHost, std::unique_ptr<FabricHost>& fabricHost) {
-    settlePendingImageDecodes();
-
-    SceneSnapshot scene = fabricHost->snapshotScene();
+    SettledFrame settled = settleFabricRun(reactHost, *fabricHost);
     std::string sceneDump = fabricHost->dumpScene();
 
     fabricHost->stopSurface();
     reactHost.drainJavaScriptThread();
     fabricHost.reset();
 
-    return FabricRunResult{.scene = std::move(scene),
+    return FabricRunResult{.scene = std::move(settled.scene),
                            .sceneDump = std::move(sceneDump),
-                           .hasReportedFatalError = reactHost.hasReportedFatalError()};
+                           .hasReportedFatalError = reactHost.hasReportedFatalError(),
+                           .hasSettled = settled.hasSettled};
 }
 
 /**
@@ -380,9 +440,10 @@ FabricFrameRunResult runFabricBundleAcrossFrames(const std::string& bundlePath, 
         deliverInputFrame(reactHost, *fabricHost, {});
     }
 
-    settlePendingImageDecodes();
+    SettledFrame settled = settleFabricRun(reactHost, *fabricHost);
 
-    result.settledScene = fabricHost->snapshotScene();
+    result.settledScene = std::move(settled.scene);
+    result.hasSettled = settled.hasSettled;
 
     fabricHost->stopSurface();
     reactHost.drainJavaScriptThread();
@@ -399,16 +460,11 @@ FabricDamageRunResult runFabricBundleAcrossCommits(const std::string& bundlePath
 
     FabricDamageRunResult result{.firstScene = waitForFirstCommit(reactHost, *fabricHost, true)};
 
-    if (!reactHost.runUntilQuiescent(kQuiescenceBudget)) {
-        std::cerr << "[bundle-runner] gave up waiting for pending timers" << std::endl;
-    }
+    SettledFrame settled = settleFabricRun(reactHost, *fabricHost);
 
-    settlePendingImageDecodes();
-
-    SceneFrame secondFrame = fabricHost->takeFrame();
-
-    result.secondScene = std::move(secondFrame.scene);
-    result.damage = std::move(secondFrame.damage);
+    result.secondScene = std::move(settled.scene);
+    result.damage = std::move(settled.damage);
+    result.hasSettled = settled.hasSettled;
 
     if (result.firstScene.empty()) {
         result.failure = "the bundle committed no scene before its second commit";
@@ -456,8 +512,12 @@ FabricPrependRunResult runFabricBundleAcrossPrepend(const std::string& bundlePat
     result.beforeScene = run.fabricHost->snapshotScene();
 
     // The prepend is a timer the fixture arms from the scroll event the drain above delivered, so it cannot have
-    // landed before this line and cannot fail to land after it.
-    if (!reactHost.runUntilQuiescent(kQuiescenceBudget)) {
+    // landed before this line and cannot fail to land after it. This is the wait `afterScene` is trusted against,
+    // so its result is what `hasSettled` reports — the second wait below only protects teardown and answers for
+    // nothing this function returns.
+    result.hasSettled = reactHost.runUntilQuiescent(kQuiescenceBudget);
+
+    if (!result.hasSettled) {
         std::cerr << "[bundle-runner] gave up waiting for pending timers" << std::endl;
     }
 
@@ -638,7 +698,10 @@ FabricHitPaintRunResult runHitSampledFabricBundle(const std::string& bundlePath,
         deliverInputFrame(reactHost, *fabricHost, {});
     }
 
-    settlePendingImageDecodes();
+    // Settled before a single point is sampled, not after: an `onLoad` commit that changes layout or hit ordering
+    // would otherwise land between the samples below and a settle run afterward, leaving `hits` describing a scene
+    // that `scene` and the painted PNG no longer agree with (issue #321).
+    SettledFrame settled = settleFabricRun(reactHost, *fabricHost);
 
     std::vector<FabricHitSample> hits;
 
@@ -656,16 +719,26 @@ FabricHitPaintRunResult runHitSampledFabricBundle(const std::string& bundlePath,
         }
     }
 
-    const FabricRunResult run = finishFabricRun(reactHost, fabricHost);
+    fabricHost->stopSurface();
+    reactHost.drainJavaScriptThread();
+    fabricHost.reset();
 
-    return FabricHitPaintRunResult{.scene = run.scene,
+    return FabricHitPaintRunResult{.scene = std::move(settled.scene),
                                    .hits = std::move(hits),
-                                   .hasReportedFatalError = run.hasReportedFatalError};
+                                   .hasReportedFatalError = reactHost.hasReportedFatalError(),
+                                   .hasSettled = settled.hasSettled};
 }
 
 int runBundle(const std::optional<std::string>& bundlePath, BundleMode bundleMode) {
     if (bundleMode == BundleMode::Fabric) {
         const FabricRunResult result = runFabricBundle(bundlePath, kHeadlessSurfaceSize);
+
+        if (!result.hasSettled) {
+            std::cerr << "[bundle-runner] gave up waiting for JavaScript to settle; refusing to print a scene dump"
+                      << std::endl;
+
+            return 1;
+        }
 
         std::cout << result.sceneDump << std::flush;
 

@@ -646,8 +646,20 @@ bool doPrependedFramesAgree(const SceneSnapshot& before, const SceneSnapshot& af
 /**
  * Rasterises a settled scene and writes it, which is the half every single-frame golden shares regardless of what
  * the run did before it settled.
+ *
+ * `run.hasSettled` is checked before any of that: a scene `finishFabricRun` gave up settling is not the scene the
+ * bundle would have painted, and a golden written from it would be proving something about a picture nobody asked
+ * to see (issue #301). Failing loudly here is what makes that a build failure instead of a checked-in PNG nobody
+ * can explain.
  */
 int paintSettledScene(const FabricRunResult& run, const std::string& outputPath, int width, int height) {
+    if (!run.hasSettled) {
+        std::cerr << "[golden] gave up waiting for JavaScript to settle; refusing to write " << outputPath
+                  << std::endl;
+
+        return 1;
+    }
+
     const sk_sp<SkSurface> surface = makeRasterSurface(width, height);
 
     if (surface == nullptr) {
@@ -728,6 +740,13 @@ int renderDamageGolden(const std::string& bundlePath, const std::string& outputP
         return 1;
     }
 
+    if (!run.hasSettled) {
+        std::cerr << "[golden] gave up waiting for JavaScript to settle; refusing to write " << outputPath
+                  << std::endl;
+
+        return 1;
+    }
+
     // Both surfaces start as the same first frame, painted in full. The second frame is then drawn twice: once as
     // a full repaint, and once as the partial repaint a window would do, on top of the first frame's pixels. The
     // two have to be byte-identical, which is issue #12's acceptance criterion and the only thing that proves the
@@ -758,6 +777,14 @@ int renderHitPaintGolden(const std::string& bundlePath, const std::string& outpu
 
     const FabricHitPaintRunResult run =
         runHitSampledFabricBundle(bundlePath, toSurfaceSize(width, height), kHitSampleStep);
+
+    if (!run.hasSettled) {
+        std::cerr << "[golden] gave up waiting for JavaScript to settle; refusing to write " << outputPath
+                  << std::endl;
+
+        return 1;
+    }
+
     const std::optional<std::unordered_map<uint32_t, facebook::react::Tag>> tagsByColor = colorsToTags(run.scene);
 
     if (!tagsByColor.has_value()) {
@@ -812,7 +839,8 @@ int renderMaintainPositionGolden(const std::string& bundlePath, const std::strin
 
     return paintSettledScene(FabricRunResult{.scene = run.afterScene,
                                              .sceneDump = {},
-                                             .hasReportedFatalError = run.hasReportedFatalError},
+                                             .hasReportedFatalError = run.hasReportedFatalError,
+                                             .hasSettled = run.hasSettled},
                              outputPath, width, height);
 }
 
@@ -825,7 +853,8 @@ int renderFirstFrameGolden(const std::string& bundlePath, const std::string& out
 
     return paintSettledScene(FabricRunResult{.scene = run.settledScene,
                                              .sceneDump = {},
-                                             .hasReportedFatalError = run.hasReportedFatalError},
+                                             .hasReportedFatalError = run.hasReportedFatalError,
+                                             .hasSettled = run.hasSettled},
                              outputPath, width, height);
 }
 
