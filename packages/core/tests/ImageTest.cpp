@@ -884,7 +884,9 @@ TEST(ImageJavaScriptSettleTest, NoCommitSettlesOnce) {
 }
 
 // A `drainJavaScript` that never quiets down — a handler that keeps re-arming its own commit — is a reported
-// give-up rather than a hang.
+// give-up rather than a hang. This `false` is exactly what `finishFabricRun` in `BundleRunner.cpp` forwards into
+// `FabricRunResult::hasSettled`, and what `GoldenRenderer.cpp` refuses to paint a golden from: the fake here is a
+// handler that never settles, and the return value is the whole of the contract a caller downstream reads.
 TEST(ImageJavaScriptSettleTest, ADrainThatNeverSettlesGivesUpRatherThanHanging) {
     int settleCount = 0;
 

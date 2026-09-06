@@ -256,17 +256,19 @@ int finishFabricRunWithStatus(ReactHost& reactHost, StartedFabricRun& startedRun
  * again.
  */
 FabricRunResult finishFabricRun(ReactHost& reactHost, std::unique_ptr<FabricHost>& fabricHost) {
-    if (!settleImageDecodesAndJavaScript(
-            settlePendingImageDecodes,
-            [&reactHost, &fabricHost]() {
-                fabricHost->induceEventBeat();
+    const bool hasSettled = settleImageDecodesAndJavaScript(
+        settlePendingImageDecodes,
+        [&reactHost, &fabricHost]() {
+            fabricHost->induceEventBeat();
 
-                if (!reactHost.runUntilQuiescent(kQuiescenceBudget)) {
-                    std::cerr << "[bundle-runner] gave up waiting for pending timers" << std::endl;
-                }
+            if (!reactHost.runUntilQuiescent(kQuiescenceBudget)) {
+                std::cerr << "[bundle-runner] gave up waiting for pending timers" << std::endl;
+            }
 
-                return !fabricHost->takeFrame().damage.empty();
-            })) {
+            return !fabricHost->takeFrame().damage.empty();
+        });
+
+    if (!hasSettled) {
         std::cerr << "[bundle-runner] gave up waiting for JavaScript to settle after an image decode" << std::endl;
     }
 
@@ -279,7 +281,8 @@ FabricRunResult finishFabricRun(ReactHost& reactHost, std::unique_ptr<FabricHost
 
     return FabricRunResult{.scene = std::move(scene),
                            .sceneDump = std::move(sceneDump),
-                           .hasReportedFatalError = reactHost.hasReportedFatalError()};
+                           .hasReportedFatalError = reactHost.hasReportedFatalError(),
+                           .hasSettled = hasSettled};
 }
 
 /**
@@ -684,12 +687,20 @@ FabricHitPaintRunResult runHitSampledFabricBundle(const std::string& bundlePath,
 
     return FabricHitPaintRunResult{.scene = run.scene,
                                    .hits = std::move(hits),
-                                   .hasReportedFatalError = run.hasReportedFatalError};
+                                   .hasReportedFatalError = run.hasReportedFatalError,
+                                   .hasSettled = run.hasSettled};
 }
 
 int runBundle(const std::optional<std::string>& bundlePath, BundleMode bundleMode) {
     if (bundleMode == BundleMode::Fabric) {
         const FabricRunResult result = runFabricBundle(bundlePath, kHeadlessSurfaceSize);
+
+        if (!result.hasSettled) {
+            std::cerr << "[bundle-runner] gave up waiting for JavaScript to settle; refusing to print a scene dump"
+                      << std::endl;
+
+            return 1;
+        }
 
         std::cout << result.sceneDump << std::flush;
 

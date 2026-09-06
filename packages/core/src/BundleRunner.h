@@ -19,15 +19,21 @@ enum class BundleMode {
 
 /**
  * What a headless Fabric run leaves behind once the JavaScript thread has gone quiet and the surface has been
- * stopped: the scene as a flat list of absolute rectangles, the same scene as the human-readable dump, and whether
- * the run reported a fatal JavaScript error.
+ * stopped: the scene as a flat list of absolute rectangles, the same scene as the human-readable dump, whether the
+ * run reported a fatal JavaScript error, and whether `finishFabricRun`'s settle reached a fixed point.
  *
- * Both are captured before teardown because stopping the surface commits an empty tree.
+ * The scene and the dump are captured before teardown because stopping the surface commits an empty tree.
+ * `hasSettled` is false only when `settleImageDecodesAndJavaScript` gave up after
+ * `kMaximumJavaScriptSettleIterations` — a decode-woken handler that never stops committing (issue #301) — in
+ * which case `scene` is whatever the run had, not what it would have painted, and a caller that trusted it would be
+ * proving something about a scene nobody asked to see. It defaults to `true` for the results nothing but
+ * `finishFabricRun` produces.
  */
 struct FabricRunResult {
     SceneSnapshot scene;
     std::string sceneDump;
     bool hasReportedFatalError{};
+    bool hasSettled{true};
 };
 
 /**
@@ -93,6 +99,7 @@ struct FabricHitPaintRunResult {
     SceneSnapshot scene;
     std::vector<FabricHitSample> hits;
     bool hasReportedFatalError{};
+    bool hasSettled{true};
 };
 
 FabricHitPaintRunResult runHitSampledFabricBundle(const std::string& bundlePath, facebook::react::Size surfaceSize,

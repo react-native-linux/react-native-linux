@@ -646,8 +646,20 @@ bool doPrependedFramesAgree(const SceneSnapshot& before, const SceneSnapshot& af
 /**
  * Rasterises a settled scene and writes it, which is the half every single-frame golden shares regardless of what
  * the run did before it settled.
+ *
+ * `run.hasSettled` is checked before any of that: a scene `finishFabricRun` gave up settling is not the scene the
+ * bundle would have painted, and a golden written from it would be proving something about a picture nobody asked
+ * to see (issue #301). Failing loudly here is what makes that a build failure instead of a checked-in PNG nobody
+ * can explain.
  */
 int paintSettledScene(const FabricRunResult& run, const std::string& outputPath, int width, int height) {
+    if (!run.hasSettled) {
+        std::cerr << "[golden] gave up waiting for JavaScript to settle; refusing to write " << outputPath
+                  << std::endl;
+
+        return 1;
+    }
+
     const sk_sp<SkSurface> surface = makeRasterSurface(width, height);
 
     if (surface == nullptr) {
@@ -758,6 +770,14 @@ int renderHitPaintGolden(const std::string& bundlePath, const std::string& outpu
 
     const FabricHitPaintRunResult run =
         runHitSampledFabricBundle(bundlePath, toSurfaceSize(width, height), kHitSampleStep);
+
+    if (!run.hasSettled) {
+        std::cerr << "[golden] gave up waiting for JavaScript to settle; refusing to write " << outputPath
+                  << std::endl;
+
+        return 1;
+    }
+
     const std::optional<std::unordered_map<uint32_t, facebook::react::Tag>> tagsByColor = colorsToTags(run.scene);
 
     if (!tagsByColor.has_value()) {
