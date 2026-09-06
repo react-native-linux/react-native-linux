@@ -1,9 +1,11 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 
 import { isRecord } from "./fields.ts";
 import path from "node:path";
 
 const JSON_INDENT = 2;
+const PARENT_DIRECTORY = "..";
+const SAME_DIRECTORY = "";
 const NOT_FOUND_INDEX = -1;
 const ROOT_LOCATION = "the tree";
 
@@ -82,11 +84,27 @@ const describeDifference = (observed: unknown, expected: unknown, location: stri
     : describeDifference(divergence.observed, divergence.expected, divergence.location);
 };
 
+/**
+ * Whether the snapshot is still inside the directory once symbolic links are followed. It runs only after the
+ * file exists, because `realpathSync` needs something to resolve, and it is not what `resolveSnapshotPath`
+ * already did: that check is lexical, so a symlink checked in under `e2e/snapshots` and pointing at a file
+ * anywhere on the machine passes it, and the file would then be read and quoted into the failure message.
+ */
+const isInsideDirectory = (directory: string, snapshotPath: string): boolean => {
+  const relative = path.relative(realpathSync(directory), realpathSync(snapshotPath));
+
+  return relative !== SAME_DIRECTORY && !relative.split(path.sep).includes(PARENT_DIRECTORY);
+};
+
 const describeSnapshotMismatch = (
   comparison: SnapshotComparison,
   snapshotPath: string,
   observedPath: string,
 ): readonly string[] => {
+  if (!isInsideDirectory(comparison.directory, snapshotPath)) {
+    return [`the snapshot ${comparison.snapshot} resolves outside ${comparison.directory}`];
+  }
+
   const expected: unknown = JSON.parse(readFileSync(snapshotPath, "utf8"));
 
   if (canonicalJson(comparison.observed) === canonicalJson(expected)) {

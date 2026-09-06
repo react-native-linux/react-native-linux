@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { canonicalJson, compareSnapshot, describeDifference } from "./snapshot.ts";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 
 import path from "node:path";
 import { tmpdir } from "node:os";
@@ -85,8 +85,32 @@ describe("compareSnapshot containment", () => {
   const compare = (snapshot: string): readonly string[] =>
     compareSnapshot(directory, { artifactName: "observed.json", directory, observed: [], snapshot });
 
+  /** `tree.json` inside a nested `snapshots`, which is where the symlink cases put the link. */
+  const compareLink = (): readonly string[] =>
+    compareSnapshot(directory, {
+      artifactName: "observed.json",
+      directory: path.join(directory, "snapshots"),
+      observed: [],
+      snapshot: "tree.json",
+    });
+
   it("refuses a name that resolves outside the goldens directory", () => {
     expect(compare("nested/../../escaped.json")[FIRST_FAILURE]).toContain("resolves outside");
+  });
+
+  it("refuses a name inside it that is a symlink to a file outside it", () => {
+    writeFileSync(path.join(directory, "escaped.json"), "[]");
+    mkdirSync(path.join(directory, "snapshots"));
+    symlinkSync(path.join(directory, "escaped.json"), path.join(directory, "snapshots", "tree.json"));
+
+    expect(compareLink()[FIRST_FAILURE]).toContain("resolves outside");
+  });
+
+  it("refuses a name inside it that is a symlink to the directory itself", () => {
+    mkdirSync(path.join(directory, "snapshots"));
+    symlinkSync(path.join(directory, "snapshots"), path.join(directory, "snapshots", "tree.json"));
+
+    expect(compareLink()[FIRST_FAILURE]).toContain("resolves outside");
   });
 
   it("reads a name that stays inside it", () => {
