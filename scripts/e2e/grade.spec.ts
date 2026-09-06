@@ -257,7 +257,12 @@ describe("gradeArtifacts screenshot crop", () => {
 });
 
 describe("gradeAutomationChannel", () => {
-  const inputs = { artifactsDirectory: "/artifacts", goldensDirectory: "/goldens", trace: "boot\n" };
+  const inputs = {
+    artifactsDirectory: "/artifacts",
+    goldensDirectory: "/goldens",
+    snapshotsDirectory: "/snapshots",
+    trace: "boot\n",
+  };
 
   it("asks nothing of a scenario that never opened the channel", async () => {
     expect(await gradeAutomationChannel({ ...inputs, scenario: baseScenario })).toEqual([]);
@@ -266,7 +271,12 @@ describe("gradeAutomationChannel", () => {
   it("drives the channel for a scenario that did", async () => {
     const scenario: Scenario = {
       ...baseScenario,
-      automation: { listErrorsMustBeEmpty: true, markTestPassed: false, visualTreeSnapshot: null },
+      automation: {
+        accessibilityTreeSnapshot: null,
+        listErrorsMustBeEmpty: true,
+        markTestPassed: false,
+        visualTreeSnapshot: null,
+      },
     };
 
     expect(await gradeAutomationChannel({ ...inputs, scenario })).toEqual([

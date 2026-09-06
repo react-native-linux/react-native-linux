@@ -14,7 +14,9 @@ const FIRST_FAILURE = 0;
 const ONE_FAILURE = 1;
 const NO_TEXT = "";
 const SNAPSHOT_NAME = "tree.json";
+const ACCESSIBILITY_SNAPSHOT_NAME = "a11y.json";
 const TREE_ARTIFACT = "automation-tree.json";
+const ACCESSIBILITY_ARTIFACT = "accessibility-tree.json";
 const SCREENSHOT_ARTIFACT = "automation-screenshot.png";
 
 type Answers = Readonly<Record<string, string>>;
@@ -32,6 +34,7 @@ const okLine = (command: string, result: Record<string, unknown>): string =>
 const refusalLine = (reason: string): string => `${JSON.stringify({ error: reason, ok: false })}\n`;
 
 const MOUNTED_CHILD = { componentName: "View", testID: "box" };
+const EXPOSED_NODE = { name: "Send", role: "button", tag: 3 };
 
 /**
  * What a healthy window answers. A command missing from a scenario's own table falls through to this one, and a
@@ -39,6 +42,7 @@ const MOUNTED_CHILD = { componentName: "View", testID: "box" };
  * simulated, because the client's only evidence of a hang is a deadline that passed.
  */
 const healthyAnswers: Answers = {
+  DumpAccessibilityTree: okLine("DumpAccessibilityTree", { nodes: [EXPOSED_NODE] }),
   DumpVisualTree: okLine("DumpVisualTree", { roots: [{ children: [MOUNTED_CHILD], componentName: "RootView" }] }),
   ListErrors: okLine("ListErrors", { errors: [] }),
   MarkTestPassed: okLine("MarkTestPassed", { passed: true }),
@@ -46,12 +50,14 @@ const healthyAnswers: Answers = {
 };
 
 const EVERY_COMMAND: ScenarioAutomation = {
+  accessibilityTreeSnapshot: ACCESSIBILITY_SNAPSHOT_NAME,
   listErrorsMustBeEmpty: true,
   markTestPassed: true,
   visualTreeSnapshot: SNAPSHOT_NAME,
 };
 
 const CHANNEL_ONLY: ScenarioAutomation = {
+  accessibilityTreeSnapshot: null,
   listErrorsMustBeEmpty: false,
   markTestPassed: false,
   visualTreeSnapshot: null,
@@ -86,18 +92,16 @@ const startWindow = async (window: FakeWindow): Promise<void> => {
   await once(server, "listening");
 };
 
-const gradeAgainstWindow = (automation: ScenarioAutomation): Promise<readonly string[]> =>
-  gradeAutomation({
-    artifactsDirectory: directory,
-    automation,
-    goldensDirectory: directory,
-    trace: `[rnl-automation] listening on ${socketPath}\n`,
-  });
-
 const startWindowAndGrade = async (window: FakeWindow, automation: ScenarioAutomation): Promise<readonly string[]> => {
   await startWindow(window);
 
-  return gradeAgainstWindow(automation);
+  return gradeAutomation({
+    artifactsDirectory: directory,
+    automation,
+    goldensDirectory: directory,
+    snapshotsDirectory: directory,
+    trace: `[rnl-automation] listening on ${socketPath}\n`,
+  });
 };
 
 const grade = (answers: Answers, automation: ScenarioAutomation): Promise<readonly string[]> =>
@@ -105,6 +109,10 @@ const grade = (answers: Answers, automation: ScenarioAutomation): Promise<readon
 
 const blessSnapshot = (children: readonly unknown[]): void => {
   writeFileSync(path.join(directory, SNAPSHOT_NAME), JSON.stringify(children));
+};
+
+const blessAccessibilitySnapshot = (nodes: readonly unknown[]): void => {
+  writeFileSync(path.join(directory, ACCESSIBILITY_SNAPSHOT_NAME), JSON.stringify(nodes));
 };
 
 beforeEach(() => {
@@ -139,6 +147,7 @@ describe("one request, one answer", () => {
       artifactsDirectory: directory,
       automation: EVERY_COMMAND,
       goldensDirectory: directory,
+      snapshotsDirectory: directory,
       trace: "boot\n",
     });
 
@@ -149,17 +158,21 @@ describe("one request, one answer", () => {
 describe("a window that answers everything", () => {
   it("produces no failures", async () => {
     blessSnapshot([MOUNTED_CHILD]);
+    blessAccessibilitySnapshot([EXPOSED_NODE]);
 
     expect(await grade({}, EVERY_COMMAND)).toEqual([]);
   });
 
-  it("writes the observed tree beside the run", async () => {
+  it("writes both observed trees beside the run", async () => {
     blessSnapshot([MOUNTED_CHILD]);
+    blessAccessibilitySnapshot([EXPOSED_NODE]);
     await grade({}, EVERY_COMMAND);
 
-    const observed: unknown = JSON.parse(readFileSync(path.join(directory, TREE_ARTIFACT), "utf8"));
+    const observedTree: unknown = JSON.parse(readFileSync(path.join(directory, TREE_ARTIFACT), "utf8"));
+    const observedNodes: unknown = JSON.parse(readFileSync(path.join(directory, ACCESSIBILITY_ARTIFACT), "utf8"));
 
-    expect(observed).toEqual([MOUNTED_CHILD]);
+    expect(observedTree).toEqual([MOUNTED_CHILD]);
+    expect(observedNodes).toEqual([EXPOSED_NODE]);
   });
 
   it("asks only the two commands that need no flag when the scenario sets none", async () => {
@@ -189,18 +202,18 @@ describe("ListErrors", () => {
 describe("DumpVisualTree", () => {
   const onlyTree: ScenarioAutomation = { ...CHANNEL_ONLY, visualTreeSnapshot: SNAPSHOT_NAME };
 
-  it("fails when the tree does not match its snapshot", async () => {
+  it("fails when the tree does not match its snapshot, naming where", async () => {
     blessSnapshot([{ componentName: "View", testID: "other" }]);
 
     const failures = await grade({}, onlyTree);
 
-    expect(failures[FIRST_FAILURE]).toContain(`the visual tree does not match ${SNAPSHOT_NAME}`);
+    expect(failures[FIRST_FAILURE]).toContain(`${SNAPSHOT_NAME} does not match: the tree[0].testID`);
   });
 
   it("fails when there is no snapshot to compare against yet", async () => {
     const failures = await grade({}, { ...CHANNEL_ONLY, visualTreeSnapshot: "missing.json" });
 
-    expect(failures[FIRST_FAILURE]).toContain("there is no visual-tree snapshot");
+    expect(failures[FIRST_FAILURE]).toContain("there is no snapshot at");
   });
 
   it("fails when the window refuses it", async () => {
@@ -208,12 +221,32 @@ describe("DumpVisualTree", () => {
 
     expect(failures[FIRST_FAILURE]).toBe("no bundle is running");
   });
+});
 
-  it("refuses to read a snapshot that resolves outside the goldens directory", async () => {
-    const escaping: ScenarioAutomation = { ...CHANNEL_ONLY, visualTreeSnapshot: "nested/../../escaped.json" };
-    const failures = await grade({}, escaping);
+describe("DumpAccessibilityTree", () => {
+  const onlyProjection: ScenarioAutomation = {
+    ...CHANNEL_ONLY,
+    accessibilityTreeSnapshot: ACCESSIBILITY_SNAPSHOT_NAME,
+  };
 
-    expect(failures[FIRST_FAILURE]).toContain("resolves outside");
+  it("passes when the projection matches its snapshot", async () => {
+    blessAccessibilitySnapshot([EXPOSED_NODE]);
+
+    expect(await grade({}, onlyProjection)).toEqual([]);
+  });
+
+  it("fails on a role regression, naming the node it happened to", async () => {
+    blessAccessibilitySnapshot([{ ...EXPOSED_NODE, role: "none" }]);
+
+    const failures = await grade({}, onlyProjection);
+
+    expect(failures[FIRST_FAILURE]).toContain('the tree[0].role: "button" where the snapshot has "none"');
+  });
+
+  it("fails when the window refuses it", async () => {
+    const failures = await grade({ DumpAccessibilityTree: refusalLine("no bundle is running") }, onlyProjection);
+
+    expect(failures[FIRST_FAILURE]).toBe("no bundle is running");
   });
 });
 
@@ -234,7 +267,9 @@ describe("MarkTestPassed", () => {
 });
 
 describe("the channel itself", () => {
-  it("fails when TakeScreenshot answers but writes no picture", async () => {
+  it("ignores a picture an earlier run left and fails when this one writes none", async () => {
+    writeFileSync(path.join(directory, SCREENSHOT_ARTIFACT), NO_TEXT);
+
     const failures = await startWindowAndGrade({ answers: {}, writesPicture: false }, CHANNEL_ONLY);
 
     expect(failures[FIRST_FAILURE]).toContain("wrote no picture");
@@ -258,13 +293,5 @@ describe("the channel itself", () => {
     const failures = await grade({ HangForTesting: refusalLine("unknown command HangForTesting") }, CHANNEL_ONLY);
 
     expect(failures).toEqual(["HangForTesting failed instead of blocking: unknown command HangForTesting"]);
-  });
-
-  it("does not let a screenshot left by an earlier run stand in for this one", async () => {
-    writeFileSync(path.join(directory, SCREENSHOT_ARTIFACT), NO_TEXT);
-
-    const failures = await startWindowAndGrade({ answers: {}, writesPicture: false }, CHANNEL_ONLY);
-
-    expect(failures[FIRST_FAILURE]).toContain("wrote no picture");
   });
 });

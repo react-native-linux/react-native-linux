@@ -1,0 +1,13 @@
+{
+  "name": "accessibility-tree",
+  "bundle": "accessibility.js",
+  "ready": "accessibility: committed surface 1",
+  "frames": 900,
+  "steps": ["sleep 300"],
+  "automation": {
+    "accessibilityTreeSnapshot": "accessibility-tree.json",
+    "listErrorsMustBeEmpty": true,
+    "markTestPassed": true
+  },
+  "expect": ["[rnl-automation] listening on", "accessibility: committed surface 1"]
+}
