@@ -368,6 +368,12 @@ jobs:
       - name: Build hello_react
         run: cmake --build "build/$RNL_PRESET" --target hello_react
 
+      # The upstream suites that construct a real Hermes runtime; they exist only in this configure, so this
+      # matrix is the only place they run, and running them in all three entries is what puts them under
+      # ASan/UBSan and TSan. See *Unit tests and coverage* in docs/cpp-toolchain.md.
+      - name: Build rnl_core_hermes_tests
+        run: cmake --build "build/$RNL_PRESET" --target rnl_core_hermes_tests
+
       - name: Report ccache and disk usage
         if: always()
         run: |
@@ -382,6 +388,9 @@ jobs:
         with:
           path: .ccache
           key: rnl-ccache-ubuntu-24.04-clang-18-${{ matrix.preset }}-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'packages/core/CMakeLists.txt', 'scripts/vendor.lock.json', 'scripts/skia.lock.json') }}-${{ github.run_id }}
+
+      - name: Run rnl_core_hermes_tests under ctest
+        run: ctest --preset "$RNL_PRESET"
 
       - name: Run hello_react acceptance paths
         run: |

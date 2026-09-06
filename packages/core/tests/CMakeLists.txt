@@ -120,9 +120,10 @@ add_executable(rnl_core_tests
 # core and mounting: the suites that need react/renderer/element's ComponentBuilder compile separately from the
 # standalone ones so the element-linked half of the tranche is explicit.
 # The Hermes-free target cannot take the core tests that construct a real Runtime for a fixture and so include
-# hermes/hermes.h (EventQueueProcessor, EventTarget, RawProps, RawValue); they join the jsi/jsinspector tranche
-# later (#228). ConcreteShadowNode, FindNodeAtPoint, LayoutableShadowNode and ShadowNodeFamily include only
-# react/renderer/element/testUtils.h and compile here (#227).
+# hermes/hermes.h (EventQueueProcessor, EventTarget, RawProps, RawValue); those four are linked in
+# rnl_core_hermes_tests instead (#228, packages/core/tests/hermes/CMakeLists.txt). ConcreteShadowNode,
+# FindNodeAtPoint, LayoutableShadowNode and ShadowNodeFamily include only react/renderer/element/testUtils.h
+# and compile here (#227).
 file(GLOB RNL_UPSTREAM_CORE_TESTS_STANDALONE
     ${REACT_COMMON_DIR}/react/renderer/core/tests/*Test.cpp
     ${REACT_COMMON_DIR}/react/renderer/core/tests/*Tests.cpp)
@@ -141,7 +142,7 @@ file(GLOB RNL_UPSTREAM_VIEW_TESTS
 # #227: the rest of the "no new code" tranche section B's first table names — every dependency is already in
 # RNL_REACT_COMMON_TARGETS or RNL_REACT_CXX_PLATFORM_SUBDIRS, so each is a source-list addition and nothing
 # else. runtimescheduler takes only SchedulerPriorityTest.cpp: RuntimeSchedulerTest.cpp in that same directory
-# includes hermes/hermes.h and stays with the jsi tranche (#228).
+# includes hermes/hermes.h and is linked in rnl_core_hermes_tests instead (#228).
 file(GLOB RNL_UPSTREAM_SCROLLVIEW_TESTS
     ${REACT_COMMON_DIR}/react/renderer/components/scrollview/tests/*Test.cpp)
 file(GLOB RNL_UPSTREAM_ROOT_TESTS

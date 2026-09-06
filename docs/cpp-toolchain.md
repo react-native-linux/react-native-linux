@@ -6141,6 +6141,66 @@ pnpm test:native
 per-test pass/fail reporting through CTest, the latter to produce the coverage-instrumented run the gate grades.
 Both runs are deterministic and side-effect-free, so running the suite twice costs time, not correctness.
 
+### The Hermes-linked binary (#228)
+
+`rnl_core_tests` is Hermes-free by construction, so the upstream suites that construct a real
+`facebook::jsi::Runtime` cannot be in it. `packages/core/tests/hermes` is the second binary,
+`rnl_core_hermes_tests`, and it lives in the default configure — the one that has Hermes — instead. It exists
+in the `dev`, `asan` and `tsan` presets, which share that configure, so the three `native` matrix entries build
+it and run it through `ctest --preset "$RNL_PRESET"`, and the sanitizer entries are what put upstream's own JSI
+and runtime suites under ASan+UBSan and TSan. There is no coverage gate on it: every source in it but one is
+upstream's, and grading upstream's line coverage would measure upstream, not us.
+
+```bash
+cmake --preset dev
+cmake --build build/dev --target rnl_core_hermes_tests
+ctest --preset dev
+```
+
+GoogleTest reaches that configure by not being a subdirectory of it. Hermes' bundled llvh owns the `gtest` and
+`gtest_main` target names (hazard 3 below), and llvh's copy is not a substitute for the pinned one either: it
+predates `MOCK_METHOD`'s variadic form and `INSTANTIATE_TEST_SUITE_P`, which `ReactInstanceTest` and
+`RuntimeSchedulerTest` respectively use, so linking it would mean editing the upstream files, which is the one
+thing these suites exist to avoid. The same pinned googletest commit `rnl_core_tests` fetches is therefore
+fetched again with `SOURCE_SUBDIR` naming a directory googletest does not have — CMake's documented way to
+populate a tree without calling `add_subdirectory()` on it — and `gtest-all.cc` and `gmock-all.cc` are compiled
+into `rnl_hermes_googletest`, a target name nothing else owns. gmock is built here and not in `rnl_core_tests`
+because `ReactInstanceTest` and `RuntimeExecutorShutdownTest` are the first suites that need it.
+
+The one source of ours in the binary is `HermesRuntimeFactory.cpp`: it defines the
+`facebook::jsi::runtimeGenerators()` that `jsi/jsi/test/testlib.h` declares and does not define, returning one
+factory that makes a Hermes runtime. That is the same shape as react-native-windows'
+`vnext/ReactCommon.UnitTests/JsiRuntimeGenerators.cpp`, the only other place upstream's JSI conformance suite
+has been run against Hermes outside Meta. Everything else compiles unmodified from its upstream path — link,
+don't copy — so a version bump re-runs it at the new SHA:
+
+| File, under `ReactCommon/` | Cases |
+| --- | --- |
+| `jsi/jsi/test/testlib.cpp` | 50 |
+| `react/bridging/tests/{Bridging,Class}Test.cpp` | 32 |
+| `react/renderer/core/tests/{EventQueueProcessor,EventTarget,RawProps,RawValue}Test*.cpp` | 24 |
+| `react/renderer/runtimescheduler/tests/RuntimeSchedulerTest.cpp` | 68 |
+| `react/renderer/scheduler/tests/SchedulerDelegateInvalidationTest.cpp` | 7 |
+| `react/runtime/tests/cxx/{ReactInstance,RuntimeExecutorShutdown}Test.cpp` | 30 |
+
+211 cases, all of section B's E2 list, none skipped or excluded. `ReactInstanceTest` skips one of its own,
+`testRegistersRuntimeSchedulerAsEventLoopControl`, on a feature flag upstream ships off.
+
+Two arrangements the file lists do not show. `BridgingTest.h` includes `<ReactCommon/TestCallInvoker.h>`, a
+fixture upstream keeps in `callinvoker/ReactCommon/tests/`, which no include root can spell that way; a
+configure-time symlink in the build tree gives the directory the name the header expects, so the header stays
+unedited and follows upstream on a bump. And the binary links `rnl_react_core` rather than
+`RNL_REACT_COMMON_TARGETS` alone, because the TextLayoutManager and ImageManager swaps put our
+`TextPipeline.cpp` and `ImagePipeline.cpp` inside two of those upstream object libraries and the rest of what
+they call lives in `rnl_react_core`.
+
+`ctest`, not the binary, is the gate, and for one suite that is load-bearing:
+`SchedulerDelegateInvalidationTest.Sanity_LambdaRunsOnNextTickWhenDelegateAlive` overrides a feature flag, so it
+throws `Feature flags were accessed before being overridden` in a single-process run of the whole binary once an
+earlier suite has read that flag, and passes in the one-process-per-case run `gtest_discover_tests` registers.
+That is the same upstream limitation the `react/featureflags` exclusion names above, and running the binary
+directly is a debugging convenience rather than a supported invocation.
+
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on every pull request and on every push to `main`, under
@@ -6152,9 +6212,9 @@ with the version in a trailing comment; Renovate keeps those SHAs fresh through 
 | `validate` | `ubuntu-24.04` | 15 min | `pnpm validate`: format, types, lint, deadcode, duplication, Vitest with its 100% coverage thresholds, meta files. |
 | `meta` | `ubuntu-24.04` | 10 min | actionlint, typos, shellcheck, shfmt, gitleaks. |
 | `unit` | `ubuntu-24.04` | 30 min | `rnl_core_tests`, the Hermes-free GoogleTest suite for `RetainedScene` and `LinuxMountingManager`, run under `ctest` and gated at 100% line and branch coverage by `scripts/cpp-coverage.ts`. Needs neither Hermes nor Skia. |
-| `native (dev)` | `ubuntu-24.04` | 120 min | The whole C++ toolchain: vendor, configure, build, the four `hello_react` acceptance paths, and the golden-image comparison. |
-| `native (asan)` | `ubuntu-24.04` | 120 min | The same build and the same four paths under ASan + UBSan. |
-| `native (tsan)` | `ubuntu-24.04` | 120 min | The same build and the same four paths under TSan. |
+| `native (dev)` | `ubuntu-24.04` | 120 min | The whole C++ toolchain: vendor, configure, build, `rnl_core_hermes_tests` under `ctest`, the four `hello_react` acceptance paths, and the golden-image comparison. |
+| `native (asan)` | `ubuntu-24.04` | 120 min | The same build, the same suite and the same four paths under ASan + UBSan. |
+| `native (tsan)` | `ubuntu-24.04` | 120 min | The same build, the same suite and the same four paths under TSan. |
 | `window` | `ubuntu-24.04` | 120 min | `rnl_window` built and run under `weston --backend=headless` with lavapipe, and the window goldens compared. The only job that reaches the Vulkan swapchain. See *Window goldens*. |
 
 The three `native` entries are one matrix job with `fail-fast: false`, so a sanitizer failure never hides the
@@ -6176,9 +6236,9 @@ noise and no coverage.
 to print `rnl_window is disabled, missing: ...` and continue; CI is where that graceful-degradation path is proved,
 so turning the option off explicitly would delete the test.
 
-Only `--target hello_react` is built. Building `all` would additionally build Hermes' CLI tool suite — `hermes`,
-`hvm`, `hbcdump` and the rest — none of which anything here runs. `hermesc` is still built, because
-`InternalBytecode` depends on it.
+Only `--target hello_react` and `--target rnl_core_hermes_tests` are built. Building `all` would additionally
+build Hermes' CLI tool suite — `hermes`, `hvm`, `hbcdump` and the rest — none of which anything here runs.
+`hermesc` is still built, because `InternalBytecode` depends on it.
 
 The acceptance step is the documented checklist turned into assertions, and it runs identically in all three
 entries:
@@ -6294,10 +6354,14 @@ and libstdc++: `FOLLY_USE_LIBCPP` (folly would include libc++'s `<__config>`) an
    defines the `gtest` and `gtest_main` target names. `HERMES_ENABLE_TEST_SUITE=OFF` does not prevent that — the
    option gates Hermes' own test suite, not llvh's unconditional `add_subdirectory` — so an upstream googletest
    `FetchContent` in the same configure as Hermes fails with "target gtest already defined" at Hermes'
-   `add_subdirectory`, regardless of fetch order. The resolution is the Hermes-free `test` CMake preset:
-   `RNL_BUILD_TESTS` builds ReactCommon's `jsi` directly instead of taking the Hermes branch, so Hermes and its
-   vendored llvh are never added to that configure and GoogleTest owns the `gtest` name. See *Unit tests and
-   coverage*.
+   `add_subdirectory`, regardless of fetch order. It still bites, and there are two resolutions because there
+   are two test binaries. For the Hermes-free one, the `test` CMake preset: `RNL_BUILD_TESTS` builds
+   ReactCommon's `jsi` directly instead of taking the Hermes branch, so Hermes and its vendored llvh are never
+   added to that configure and GoogleTest owns the `gtest` name. For `rnl_core_hermes_tests`, which has to be in
+   a Hermes configure, googletest is populated with `SOURCE_SUBDIR` naming a directory it does not have, so its
+   `CMakeLists.txt` is never added and its sources are compiled under target names of ours. llvh's own `gtest`
+   stands in for neither: it predates `MOCK_METHOD`'s variadic form and `INSTANTIATE_TEST_SUITE_P`, both of
+   which the upstream suites use. See *Unit tests and coverage*.
 4. **`jsi` is defined twice upstream.** Hermes builds a `jsi` target and so does ReactCommon. `JSI_DIR` points
    Hermes at React Native's `ReactCommon/jsi`, so exactly one `jsi` target exists; the build then appends
    `JSIDynamic.cpp` and `jsilib-posix.cpp`, which Hermes' own CMakeLists does not compile but ReactCommon needs.

@@ -1117,3 +1117,8 @@ elseif(RNL_ENABLE_WINDOW)
     target_link_libraries(rnl_inject PRIVATE rnl_virtual_input PkgConfig::RNL_XKBCOMMON)
     set_target_properties(rnl_inject PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 endif()
+
+# The upstream suites that construct a real Hermes runtime live in their own binary in this configure, because
+# they cannot live in the Hermes-free one. See packages/core/tests/hermes/CMakeLists.txt and
+# docs/cpp-toolchain.md.
+add_subdirectory(tests/hermes)
