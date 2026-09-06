@@ -132,8 +132,7 @@ protected:
     }
 
     RootShadowNode::Unshared cloneRootWith(const RootShadowNode& oldRootShadowNode, std::vector<NodeSpec>& children) {
-        return std::static_pointer_cast<RootShadowNode>(oldRootShadowNode.ShadowNode::clone(
-            ShadowNodeFragment{.props = ShadowNodeFragment::propsPlaceholder(), .children = makeChildren(children)}));
+        return react_native_linux::cloneRootWithChildren(oldRootShadowNode, makeChildren(children));
     }
 
     static void expectFrameNear(const std::map<Tag, Rect>& frames, Tag tag, double x, double y, double width,
@@ -199,9 +198,8 @@ protected:
 
         shadowTree_->commit(
             [&](const RootShadowNode& oldRootShadowNode) {
-                return std::static_pointer_cast<RootShadowNode>(oldRootShadowNode.ShadowNode::clone(ShadowNodeFragment{
-                    .props = ShadowNodeFragment::propsPlaceholder(),
-                    .children = withReplacedProps(oldRootShadowNode.getChildren(), targetTag, updatedProps)}));
+                return react_native_linux::cloneRootWithChildren(
+                    oldRootShadowNode, withReplacedProps(oldRootShadowNode.getChildren(), targetTag, updatedProps));
             },
             commitOptions);
 
@@ -285,26 +283,14 @@ protected:
     }
 
     void collectFrames(const std::shared_ptr<const ShadowNode>& node, Point parentOrigin) {
-        nodes_.emplace(node->getTag(), node);
+        react_native_linux::collectAbsoluteFrames(
+            node, parentOrigin, frames_, [this](const std::shared_ptr<const ShadowNode>& visited) {
+                nodes_.emplace(visited->getTag(), visited);
 
-        const auto* layoutable = dynamic_cast<const LayoutableShadowNode*>(node.get());
-
-        if (layoutable == nullptr) {
-            return;
-        }
-
-        const Rect frame = layoutable->getLayoutMetrics().frame;
-        const Point absolute{parentOrigin.x + frame.origin.x, parentOrigin.y + frame.origin.y};
-
-        frames_.emplace(node->getTag(), Rect{.origin = absolute, .size = frame.size});
-
-        if (const auto* scrollView = dynamic_cast<const ScrollViewShadowNode*>(node.get())) {
-            scrollViewContentSizes_.emplace(node->getTag(), scrollView->getStateData().getContentSize());
-        }
-
-        for (const std::shared_ptr<const ShadowNode>& child : node->getChildren()) {
-            collectFrames(child, absolute);
-        }
+                if (const auto* scrollView = dynamic_cast<const ScrollViewShadowNode*>(visited.get())) {
+                    scrollViewContentSizes_.emplace(visited->getTag(), scrollView->getStateData().getContentSize());
+                }
+            });
     }
 
     PassThroughShadowTreeDelegate shadowTreeDelegate_;
