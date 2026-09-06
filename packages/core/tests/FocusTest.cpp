@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <react/renderer/components/view/AccessibilityPrimitives.h>
 #include <react/renderer/core/ReactPrimitives.h>
 
 #include <optional>
@@ -10,12 +11,14 @@
 
 namespace {
 
+using facebook::react::Role;
 using facebook::react::Tag;
 using react_native_linux::FocusDirection;
 using react_native_linux::FocusModel;
 using react_native_linux::FocusOrigin;
 using react_native_linux::FocusTransition;
 using react_native_linux::computeScrollIntoViewOffset;
+using react_native_linux::effectiveAccessibilityRole;
 using react_native_linux::focusDirectionForKey;
 using react_native_linux::isActivationKey;
 using react_native_linux::isTextInputComponent;
@@ -240,6 +243,23 @@ TEST(FocusKeyTest, ALinkActivatesOnEnterAndNotOnSpace) {
     EXPECT_TRUE(isActivationKey("link", "Enter"));
     EXPECT_FALSE(isActivationKey("link", " "));
     EXPECT_FALSE(isActivationKey("link", "Tab"));
+}
+
+TEST(FocusKeyTest, EffectiveRolePrefersTheAccessibilityRoleStringOverTheEnum) {
+    EXPECT_EQ(effectiveAccessibilityRole("button", Role::Link), "button");
+}
+
+TEST(FocusKeyTest, EffectiveRoleFallsBackToTheRoleEnumWhenTheStringIsEmpty) {
+    EXPECT_EQ(effectiveAccessibilityRole("", Role::Link), "link");
+}
+
+TEST(FocusKeyTest, EffectiveRoleIsEmptyWhenNeitherPropIsSet) {
+    EXPECT_EQ(effectiveAccessibilityRole("", Role::None), "");
+}
+
+TEST(FocusKeyTest, RoleLinkAloneActivatesLikeAccessibilityRoleLinkDoes) {
+    EXPECT_TRUE(isActivationKey(effectiveAccessibilityRole("", Role::Link), "Enter"));
+    EXPECT_FALSE(isActivationKey(effectiveAccessibilityRole("", Role::Link), " "));
 }
 
 TEST(FocusKeyTest, OnlyATextInputComponentAsksForTheCompositorsTextInput) {

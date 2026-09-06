@@ -151,15 +151,19 @@ std::shared_ptr<const facebook::react::ShadowNode> shadowNodeWithTag(
 }
 
 /**
- * The `accessibilityRole` a focused node declares, or the empty string a `Pressable` leaves when it gives none —
- * both of which `isActivationKey` treats as a button. Only `ViewProps` carries the prop, so a node whose props
- * are not a `ViewProps` — none of `isFocusableNode`'s candidates are anything else — activates on both keys too.
+ * The role a focused node declares, resolved through `effectiveAccessibilityRole` so `role="link"` and
+ * `accessibilityRole="link"` reach `isActivationKey` the same way (#320) — `AccessibilityProps`' constructor
+ * only ever populates the `accessibilityRole` string from the literal `accessibilityRole` raw prop (#259), so
+ * `role` alone would otherwise reach here as the empty string `isActivationKey` treats as a button. Only
+ * `ViewProps` carries either prop, so a node whose props are not a `ViewProps` — none of `isFocusableNode`'s
+ * candidates are anything else — activates on both keys too.
  */
 std::string accessibilityRoleOf(const facebook::react::ShadowNode& shadowNode) {
     const std::shared_ptr<const facebook::react::ViewProps> viewProps =
         std::dynamic_pointer_cast<const facebook::react::ViewProps>(shadowNode.getProps());
 
-    return viewProps == nullptr ? std::string{} : viewProps->accessibilityRole;
+    return viewProps == nullptr ? std::string{}
+                                : effectiveAccessibilityRole(viewProps->accessibilityRole, viewProps->role);
 }
 
 /**

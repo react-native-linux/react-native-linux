@@ -33,7 +33,7 @@ const createNode = (tag, name, props) => {
 
 const container = createNode(2, 'container', { flex: 1 });
 
-const box = (tag, name, left, backgroundColor, accessible, disabled) => {
+const box = (tag, name, left, backgroundColor, accessible, disabled, role) => {
   const props = {
     position: 'absolute',
     left: left,
@@ -55,6 +55,10 @@ const box = (tag, name, left, backgroundColor, accessible, disabled) => {
     props.accessibilityState = { disabled: true };
   }
 
+  if (role !== undefined) {
+    props.role = role;
+  }
+
   return createNode(tag, name, props);
 };
 
@@ -63,6 +67,9 @@ const beta = box(11, 'beta', 200, 0xff33cc66 | 0, true, false);
 const gamma = box(12, 'gamma', 360, 0xff555b66 | 0, false, false);
 const delta = box(13, 'delta', 520, 0xff995544 | 0, true, true);
 const epsilon = box(14, 'epsilon', 640, 0xff9955cc | 0, true, false);
+// role="link" with no accessibilityRole (#320): the web-prop alias has to reach the activation rule the same
+// way the literal accessibilityRole would, so Enter activates zeta and Space does not.
+const zeta = box(15, 'zeta', 800, 0xff669999 | 0, true, false, 'link');
 
 // The single JavaScript entry point for every Fabric event. React's renderer installs its own dispatcher here;
 // this one just reports, so the C++ side of the pipeline is what the output describes.
@@ -79,6 +86,7 @@ fabric.appendChild(container, beta);
 fabric.appendChild(container, gamma);
 fabric.appendChild(container, delta);
 fabric.appendChild(container, epsilon);
+fabric.appendChild(container, zeta);
 
 const rootChildren = fabric.createChildSet();
 

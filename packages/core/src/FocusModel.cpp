@@ -1,5 +1,7 @@
 #include "FocusModel.h"
 
+#include <react/renderer/components/view/accessibilityPropsConversions.h>
+
 #include <algorithm>
 #include <cstddef>
 #include <optional>
@@ -102,6 +104,14 @@ bool isActivationKey(const std::string& role, const std::string& key) {
     }
 
     return role != kLinkRole || key == kEnterKey;
+}
+
+std::string effectiveAccessibilityRole(const std::string& accessibilityRole, facebook::react::Role role) {
+    if (!accessibilityRole.empty()) {
+        return accessibilityRole;
+    }
+
+    return role == facebook::react::Role::None ? std::string{} : facebook::react::toString(role);
 }
 
 bool isTextInputComponent(const std::string& componentName) { return componentName == kTextInputComponentName; }

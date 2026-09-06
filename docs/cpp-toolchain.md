@@ -4066,8 +4066,12 @@ a node Tab or `focus()` reaches inside a `<ScrollView>` is revealed rather than 
   page for a link in every browser, which is web#2560 and web#2681 read as one table rather than two bugs — and
   every other role, including the empty string a `Pressable` leaves when it declares none, activates on both,
   which is the react-native-macos#1622 behaviour this narrows rather than replaces. `InputDispatcher` reads the
-  role off the focused node's `ViewProps` and passes it through; a disabled control never reaches this check at
-  all, because `isFocusableNode` already removed it from the focusable set.
+  role off the focused node's `ViewProps` and passes it through `FocusModel::effectiveAccessibilityRole`, which
+  falls back to `toString(role)` for the `role` enum when the `accessibilityRole` string is empty — #259's
+  `AccessibilityProps` constructor only ever populates that string from the literal `accessibilityRole` raw prop,
+  so `role="link"` alone reached this check as the empty string until #320 closed the gap, and the two spellings
+  now activate identically. A disabled control never reaches this check at all, because `isFocusableNode` already
+  removed it from the focusable set.
 - **`focus()` is no longer a deferral.** A `focus` command — the shape `<View>`'s ref exposes,
   `{ preventScroll, focusVisible }` as its one argument — reaches `InputDispatcher::dispatchCommands` through the
   same `SceneCommand` queue `ScrollController::dispatchCommands` already drains; `FabricHost::advanceScroll` hands

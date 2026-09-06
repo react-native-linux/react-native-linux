@@ -1,5 +1,6 @@
 #pragma once
 
+#include <react/renderer/components/view/AccessibilityPrimitives.h>
 #include <react/renderer/core/ReactPrimitives.h>
 
 #include <cstdint>
@@ -110,6 +111,16 @@ std::optional<FocusDirection> focusDirectionForKey(const std::string& key, bool 
  * activates on both — the react-native-macos#1622 behaviour this narrows rather than replaces.
  */
 bool isActivationKey(const std::string& role, const std::string& key);
+
+/**
+ * The role `isActivationKey` reads, resolved the way #259 leaves it split across two props: the
+ * `accessibilityRole` string when a node sets one, otherwise `toString(role)` for a non-default `role` enum —
+ * `role="link"` alone reaches here with the string empty and only the enum set, since only the literal
+ * `accessibilityRole` raw prop ever populates the string (`AccessibilityProps`' constructor). A node with
+ * neither, or with `role="none"`, resolves to the empty string `isActivationKey` already treats as "every key
+ * activates".
+ */
+std::string effectiveAccessibilityRole(const std::string& accessibilityRole, facebook::react::Role role);
 
 /**
  * The minimal new scroll offset that brings `[targetOffset, targetOffset + targetExtent)` fully inside
