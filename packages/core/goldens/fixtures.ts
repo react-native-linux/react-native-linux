@@ -287,11 +287,18 @@ export const fixtures: readonly GoldenFixture[] = [
     renderArguments: [],
     renderFlag: "--golden",
   },
-  // Issue #261: the same fixture five frames after a click on its seventh tile — the thumb part-way across and the track part-way between its two colours, which is 83 ms of the 150 ms toggle and the only thing that proves the travel is animated rather than instant.
+  // Issue #261: the same fixture five frames after a click on its seventh tile — the thumb part-way across and the track part-way between its two colours, which is 83 ms of the 150 ms travel, and the only thing that proves the travel is animated rather than instant.
   {
     bundleFileName: "switch.js",
-    goldenFileName: "switch-toggle.png",
+    goldenFileName: "switch-mid-toggle.png",
     renderArguments: ["85", "315", "5"],
+    renderFlag: "--clicked-frame",
+  },
+  // Issue #261: twelve frames after the same click, which is 200 ms and therefore past the end of the 150 ms travel — the state the e2e scenario screenshots half a second after its own click, so the two describe one picture rather than two.
+  {
+    bundleFileName: "switch.js",
+    goldenFileName: "switch-toggled.png",
+    renderArguments: ["85", "315", "12"],
     renderFlag: "--clicked-frame",
   },
   // Issue #261: <ActivityIndicator> at both sizes, with a custom colour, stopped and hidden, and stopped and held — the arc's angle is the same five frames of wall-clock time.

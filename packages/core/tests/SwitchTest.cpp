@@ -127,6 +127,17 @@ TEST(SwitchGeometryTest, AFrameTooSmallToHoldAnInsetThumbCollapsesRatherThanInve
     EXPECT_FLOAT_EQ(narrow.thumbCenter.x, switchGeometry(makeRect(0, 0, 6, 31), 0.0F).thumbCenter.x);
 }
 
+// A switch narrower than it is tall — a `width` an app set, or a `scaleX` mid-animation — sizes its thumb off
+// the shorter side, so the circle stays inside the pill instead of spilling out of both ends of the box the node
+// damages.
+TEST(SwitchGeometryTest, ANarrowFrameSizesTheThumbOffItsWidthRatherThanItsHeight) {
+    const SwitchGeometry narrow = switchGeometry(makeRect(0, 0, 12, 31), 1.0F);
+
+    EXPECT_FLOAT_EQ(narrow.thumbRadius, (12.0F / 2) - kSwitchThumbInset);
+    EXPECT_GE(narrow.thumbCenter.x - narrow.thumbRadius, kSwitchThumbInset);
+    EXPECT_LE(narrow.thumbCenter.x + narrow.thumbRadius, 12.0F - kSwitchThumbInset);
+}
+
 TEST(SwitchThumbProgressTest, TheThumbCrossesTheTrackInTheToggleDurationWhicheverWayItIsGoing) {
     const int frameCount = static_cast<int>(kSwitchToggleMilliseconds / kSixtyHertzMilliseconds);
     float progress = 0.0F;
@@ -249,7 +260,7 @@ TEST(SwitchSceneTest, AnUpdateThatFlipsTheValueLeavesTheThumbWhereItIsSoTheFrame
     EXPECT_LT(switchOf(scene.snapshot(), 2).thumbProgress, 1.0F);
 }
 
-TEST(SwitchSceneTest, AThumbThatMovedDamagesTheSwitchsOwnBoxAndNothingElse) {
+TEST(SwitchSceneTest, AThumbThatMovedDamagesTheSwitchesOwnBoxAndNothingElse) {
     RetainedScene scene = sceneWithSwitch(false, false);
 
     scene.updateNode(makeSwitch(2, kSwitchFrame, true, false));

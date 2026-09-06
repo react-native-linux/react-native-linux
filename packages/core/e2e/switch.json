@@ -5,7 +5,7 @@
   "frames": 600,
   "steps": ["sleep 500", "move 85 315", "sleep 100", "click 85 315", "sleep 500"],
   "screenshot": {
-    "golden": "switch-toggle.png",
+    "golden": "switch-toggled.png",
     "maxDifferentPixels": 50,
     "crop": { "left": 50, "top": 290, "width": 71, "height": 51 }
   },

@@ -5224,17 +5224,26 @@ prop, and a thumb that had to catch up on the frame it was revealed would jump.
 ### The proof
 
 - `packages/core/tests/SwitchTest.cpp` — the geometry, the travel and the scene content, all inside the 100 %
-  gate: the pill, the thumb at both ends and halfway, a frame too small to hold an inset thumb, the wall-clock
-  schedule, the colour mix, the mount-at-the-end rule, the dimming, the damage rectangle and the clipped-away
-  case.
+  gate: the pill, the thumb at both ends and halfway, a frame too narrow to hold the thumb its height would give
+  it, a frame too small to hold an inset thumb at all, the wall-clock schedule, the colour mix, the
+  mount-at-the-end rule, the dimming, the damage rectangle and the clipped-away case.
 - `switch.png` — off, on, disabled off, disabled on, `trackColor`/`thumbColor` at both ends, and the controlled
   toggle at rest.
-- `switch-toggle.png` — the same fixture five frames after a click on that seventh tile, which is 83 ms of the
-  150 ms travel. `--clicked-frame <bundle> <out> <x> <y> <frames>` is the flag: a click and then a named number
+- `switch-mid-toggle.png` — the same fixture five frames after a click on that seventh tile, which is 83 ms of
+  the 150 ms travel and the only picture that proves the travel is animated rather than instant.
+- `switch-toggled.png` — twelve frames after the same click, which is 200 ms and therefore past the end of it.
+
+  `--clicked-frame <bundle> <out> <x> <y> <frames>` is the flag both go through: a click and then a named number
   of frames, because the thumb only starts moving once React has committed the value the press asked for, and no
-  existing flag draws a frame after that commit.
+  existing flag draws a frame after that commit. It runs the click through `deliverClickFrames` and exits through
+  `finishFabricRun`, so it settles and reports `hasSettled` exactly as every other golden runner does.
 - `packages/core/e2e/switch.json` — a real click under the compositor, asserting the `topChange` payload, the
   reply the bundle commits, and a screenshot crop of the toggled switch.
+
+  Its crop is compared against `switch-toggled.png` and not against the mid-animation one, because the scenario
+  screenshots half a second after its click and the thumb has arrived by then. Two goldens of one control at two
+  instants is the point; naming them a letter apart, or pointing the compositor's picture at the raster proof of
+  a different instant, is how a blessed screenshot silently pins the wrong frame.
 
 ## ActivityIndicator (#261)
 

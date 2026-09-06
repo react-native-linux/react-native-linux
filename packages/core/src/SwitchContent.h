@@ -55,7 +55,11 @@ struct SwitchGeometry {
  *
  * The travel is the track's width less the thumb's diameter and the inset on both sides, so progress zero puts
  * the thumb's left edge one inset inside the track and progress one puts its right edge one inset inside the
- * other end. A frame too small to hold an inset thumb collapses the radius to zero rather than inverting it,
+ * other end.
+ *
+ * The thumb is sized off the **shorter** side of the frame, not off its height: a track narrower than it is tall
+ * would otherwise hold a thumb wider than the pill, and the circle would spill out of both ends of the box the
+ * node damages. A frame too small to hold an inset thumb collapses the radius to zero rather than inverting it,
  * which is what keeps a switch inside a `scaleY: 0.01` animation from drawing a circle turned inside out.
  */
 SwitchGeometry switchGeometry(const facebook::react::Rect& frame, float thumbProgress);

@@ -87,11 +87,29 @@ std::optional<int> parsePositiveDimension(std::string_view text) {
 }
 
 /**
- * A surface coordinate parsed off two arguments, or nothing when either of them is not a positive integer.
+ * A surface coordinate: any whole number of points from the surface's origin, zero included.
+ *
+ * Zero is a coordinate and not an absent value — the top-left corner of the surface is where a control anchored
+ * at `left: 0` is pressed — which is why this is not `parsePositiveDimension`. That one answers a different
+ * question: a width, a frame count or a wheel notch of zero describes nothing to render, and it stays strict.
+ */
+std::optional<int> parseSurfaceCoordinate(std::string_view text) {
+    int value = 0;
+    const std::from_chars_result parsed = std::from_chars(text.data(), text.data() + text.size(), value);
+
+    if (parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size() || value < 0) {
+        return std::nullopt;
+    }
+
+    return value;
+}
+
+/**
+ * A surface point parsed off two arguments, or nothing when either of them is not a non-negative integer.
  */
 std::optional<facebook::react::Point> parseSurfacePoint(std::string_view x, std::string_view y) {
-    const std::optional<int> parsedX = parsePositiveDimension(x);
-    const std::optional<int> parsedY = parsePositiveDimension(y);
+    const std::optional<int> parsedX = parseSurfaceCoordinate(x);
+    const std::optional<int> parsedY = parseSurfaceCoordinate(y);
 
     if (!parsedX.has_value() || !parsedY.has_value()) {
         return std::nullopt;
@@ -111,7 +129,8 @@ int runInjectPointerCommand(std::span<char*> arguments) {
     const std::optional<facebook::react::Point> surfacePoint = parseSurfacePoint(arguments[3], arguments[4]);
 
     if (!surfacePoint.has_value()) {
-        std::cerr << "[hello_react] " << kInjectPointerFlag << " x and y must be positive integers" << std::endl;
+        std::cerr << "[hello_react] " << kInjectPointerFlag << " x and y must be non-negative integers"
+                  << std::endl;
 
         return 1;
     }
@@ -130,7 +149,8 @@ int runAnimatedScrollCommand(std::span<char*> arguments) {
     const std::optional<int> notches = parsePositiveDimension(arguments[5]);
 
     if (!surfacePoint.has_value() || !notches.has_value()) {
-        std::cerr << "[hello_react] " << kAnimatedScrollFlag << " x, y and notches must be positive integers"
+        std::cerr << "[hello_react] " << kAnimatedScrollFlag
+                  << " x and y must be non-negative integers and notches a positive one"
                   << std::endl;
 
         return 1;
@@ -193,7 +213,8 @@ int runScrollToCommand(std::span<char*> arguments, bool isMaintainingPosition) {
     const std::optional<int> parsedNotches = parsePositiveDimension(arguments[6]);
 
     if (!surfacePoint.has_value() || !parsedNotches.has_value()) {
-        std::cerr << "[hello_react] " << flag << " x, y and notches must be positive integers" << std::endl;
+        std::cerr << "[hello_react] " << flag
+                  << " x and y must be non-negative integers and notches a positive one" << std::endl;
 
         return 1;
     }
@@ -226,7 +247,7 @@ int runFocusClickCommand(std::span<char*> arguments) {
     const std::optional<facebook::react::Point> surfacePoint = parseSurfacePoint(arguments[4], arguments[5]);
 
     if (!surfacePoint.has_value()) {
-        std::cerr << "[hello_react] " << kFocusClickFlag << " x and y must be positive integers" << std::endl;
+        std::cerr << "[hello_react] " << kFocusClickFlag << " x and y must be non-negative integers" << std::endl;
 
         return 1;
     }
@@ -241,7 +262,8 @@ int runClickedFrameCommand(std::span<char*> arguments) {
     const std::optional<int> parsedFrames = parsePositiveDimension(arguments[6]);
 
     if (!surfacePoint.has_value() || !parsedFrames.has_value()) {
-        std::cerr << "[hello_react] " << kClickedFrameFlag << " x, y and frames must be positive integers"
+        std::cerr << "[hello_react] " << kClickedFrameFlag
+                  << " x and y must be non-negative integers and frames a positive one"
                   << std::endl;
 
         return 1;

@@ -32,7 +32,10 @@ facebook::react::BorderRadii pillRadii(const facebook::react::Rect& frame) {
 
 SwitchGeometry switchGeometry(const facebook::react::Rect& frame, float thumbProgress) {
     const float clampedProgress = std::clamp(thumbProgress, 0.0F, 1.0F);
-    const float thumbRadius = std::max(static_cast<float>(frame.size.height / 2) - kSwitchThumbInset, 0.0F);
+    // The shorter side, not the height: a track narrower than it is tall would otherwise put a thumb wider than
+    // the pill inside it, and the circle would spill out of both ends of the box the node damages.
+    const float thumbDiameter = static_cast<float>(std::min(frame.size.width, frame.size.height));
+    const float thumbRadius = std::max((thumbDiameter / 2) - kSwitchThumbInset, 0.0F);
     const float travelStart = static_cast<float>(frame.origin.x) + kSwitchThumbInset + thumbRadius;
     const float travelEnd =
         static_cast<float>(frame.origin.x + frame.size.width) - kSwitchThumbInset - thumbRadius;
