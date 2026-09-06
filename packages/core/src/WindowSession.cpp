@@ -92,4 +92,12 @@ SceneFrame WindowSession::takeFrame() { return fabricHost_->takeFrame(); }
 
 bool WindowSession::hasReportedFatalError() const { return reactHost_.hasReportedFatalError(); }
 
+SceneNodes WindowSession::visualTreeNodes() const { return fabricHost_->visualTreeNodes(); }
+
+void WindowSession::blockJavaScriptThread(std::chrono::milliseconds duration) {
+    reactHost_.blockJavaScriptThread(duration);
+}
+
+bool WindowSession::hasMarkedTestPassed() const { return reactHost_.hasMarkedTestPassed(); }
+
 } // namespace react_native_linux

@@ -1,3 +1,5 @@
+#include "AutomationProtocol.h"
+#include "AutomationServer.h"
 #include "FrameClock.h"
 #include "FrameTiming.h"
 #include "InputPipeline.h"
@@ -19,6 +21,7 @@
 #include <chrono>
 #include <cstdint>
 #include <exception>
+#include <folly/json/dynamic.h>
 #include <fstream>
 #include <iostream>
 #include <optional>
@@ -44,6 +47,8 @@ constexpr std::string_view kFramesFlag = "--frames";
 constexpr std::string_view kFrameLogFlag = "--frame-log";
 constexpr std::string_view kImeDebugFlag = "--ime-debug";
 constexpr std::string_view kWindowDebugFlag = "--window-debug";
+constexpr std::string_view kAutomationFlag = "--automation";
+constexpr std::string_view kWindowErrorSource = "rnl-window";
 constexpr std::string_view kImeDebugSurroundingText = "react-native-linux";
 constexpr int32_t kImeDebugCursorX = 64;
 constexpr int32_t kImeDebugCursorY = 64;
@@ -72,9 +77,25 @@ struct WindowArguments {
     std::optional<std::string> screenshotPath;
     std::optional<std::string> frameLogPath;
     uint32_t frameCount{kDefaultScreenshotFrames};
+    bool automation{false};
     bool imeDebug{false};
     bool windowDebug{false};
     std::string error;
+};
+
+/**
+ * `--automation` opens the channel of issue #214: a line-delimited JSON socket under `XDG_RUNTIME_DIR` whose
+ * path the window prints to the trace, so the e2e driver can ask what a screenshot cannot tell it — the errors
+ * the runtime reported, the committed tree, and whether the bundle marked itself passed. Off unless the flag is
+ * passed, so a shipped window never listens. See *The automation channel (#214)* in docs/cpp-toolchain.md.
+ *
+ * `pendingScreenshotPath` is why the dispatch lives in the frame loop rather than in the server: the picture
+ * `TakeScreenshot` names only exists after the next present, so the request is armed on one iteration and
+ * answered on a later one.
+ */
+struct AutomationChannel {
+    std::optional<react_native_linux::AutomationServer> server;
+    std::optional<std::string> pendingScreenshotPath;
 };
 
 void writeFrameLines(std::ostream& frameLog, react_native_linux::WaylandWindow& window) {
@@ -167,6 +188,12 @@ WindowArguments parseArguments(std::span<char*> arguments) {
             continue;
         }
 
+        if (flag == kAutomationFlag) {
+            parsed.automation = true;
+
+            continue;
+        }
+
         if (flag != kFabricFlag && flag != kScreenshotFlag && flag != kFramesFlag && flag != kFrameLogFlag) {
             parsed.error = "unknown argument " + std::string(flag);
 
@@ -229,6 +256,85 @@ void printWindowDebugTransitions(react_native_linux::WaylandWindow& window, bool
     }
 }
 
+folly::dynamic answerSessionCommand(react_native_linux::AutomationCommand command,
+                                    const react_native_linux::AutomationRequest& request,
+                                    react_native_linux::WindowSession& session) {
+    if (command == react_native_linux::AutomationCommand::DumpVisualTree) {
+        return react_native_linux::describeVisualTree(session.visualTreeNodes());
+    }
+
+    if (command == react_native_linux::AutomationCommand::HangForTesting) {
+        session.blockJavaScriptThread(std::chrono::milliseconds(request.hangMilliseconds));
+
+        return folly::dynamic::object("milliseconds", request.hangMilliseconds);
+    }
+
+    return folly::dynamic::object("passed", session.hasMarkedTestPassed());
+}
+
+void answerAutomationRequest(AutomationChannel& automation, const react_native_linux::AutomationRequest& request,
+                             react_native_linux::SkiaVulkanRenderer& renderer,
+                             react_native_linux::WindowSession* session) {
+    if (request.command == react_native_linux::AutomationCommand::ListErrors) {
+        automation.server->sendResponse(react_native_linux::formatAutomationResponse(
+            request.command, react_native_linux::describeErrors(react_native_linux::automationErrorLog().list())));
+
+        return;
+    }
+
+    if (request.command == react_native_linux::AutomationCommand::TakeScreenshot) {
+        renderer.captureNextFrame(request.screenshotPath);
+        automation.pendingScreenshotPath = request.screenshotPath;
+
+        return;
+    }
+
+    if (session == nullptr) {
+        automation.server->sendResponse(react_native_linux::formatAutomationFailure("no bundle is running"));
+
+        return;
+    }
+
+    automation.server->sendResponse(react_native_linux::formatAutomationResponse(
+        request.command, answerSessionCommand(request.command, request, *session)));
+}
+
+/**
+ * One request per frame, at most: the channel is an assertion surface rather than a data path, and answering one
+ * line per iteration keeps a driver that floods it from starving the frame loop it is measuring.
+ */
+void serveAutomation(AutomationChannel& automation, react_native_linux::SkiaVulkanRenderer& renderer,
+                     react_native_linux::WindowSession* session) {
+    if (automation.pendingScreenshotPath.has_value()) {
+        if (renderer.hasPendingCapture()) {
+            return;
+        }
+
+        automation.server->sendResponse(react_native_linux::formatAutomationResponse(
+            react_native_linux::AutomationCommand::TakeScreenshot,
+            folly::dynamic::object("path", automation.pendingScreenshotPath.value())));
+        automation.pendingScreenshotPath.reset();
+
+        return;
+    }
+
+    const std::optional<std::string> line = automation.server->takeRequestLine();
+
+    if (!line.has_value()) {
+        return;
+    }
+
+    const react_native_linux::AutomationRequestParse parsed = react_native_linux::parseAutomationRequest(line.value());
+
+    if (!parsed.request.has_value()) {
+        automation.server->sendResponse(react_native_linux::formatAutomationFailure(parsed.error));
+
+        return;
+    }
+
+    answerAutomationRequest(automation, parsed.request.value(), renderer, session);
+}
+
 void paintPlaceholderFrame(SkCanvas& canvas, react_native_linux::WindowSize size,
                            const react_native_linux::SceneDamage& /*damage*/) {
     canvas.clear(react_native_linux::kSceneBackgroundColor);
@@ -274,7 +380,17 @@ int main(int argc, char** argv) {
         }
 
         if (parsedArguments.imeDebug && window.textInput() == nullptr) {
-            std::cerr << "[rnl-window] the compositor does not advertise zwp_text_input_manager_v3" << std::endl;
+            react_native_linux::reportNativeError(kWindowErrorSource,
+                                                  "the compositor does not advertise zwp_text_input_manager_v3");
+        }
+
+        AutomationChannel automation;
+
+        if (parsedArguments.automation) {
+            automation.server.emplace(react_native_linux::defaultAutomationSocketPath());
+
+            // The trace, because that is the only channel the driver is already reading when the window starts.
+            std::cout << "[rnl-automation] listening on " << automation.server->socketPath() << std::endl;
         }
 
         ImeDebugSink imeDebugSink;
@@ -311,8 +427,15 @@ int main(int argc, char** argv) {
             // The capture is armed before the frame that carries it, because the readback happens inside
             // drawFrame while the image is still owned by this process. A frame that rebuilds the swapchain
             // instead of painting leaves the request pending, so the next one takes it.
-            const bool isCaptureFrame =
-                parsedArguments.screenshotPath.has_value() && presentedFrames + 1 >= parsedArguments.frameCount;
+            if (automation.server.has_value()) {
+                serveAutomation(automation, renderer, session.has_value() ? &session.value() : nullptr);
+            }
+
+            // Never while an automation capture is armed: the two would name the same pending path and one
+            // picture would be written to the other's file.
+            const bool isCaptureFrame = parsedArguments.screenshotPath.has_value() &&
+                                        !automation.pendingScreenshotPath.has_value() &&
+                                        presentedFrames + 1 >= parsedArguments.frameCount;
 
             if (isCaptureFrame) {
                 renderer.captureNextFrame(parsedArguments.screenshotPath.value());
@@ -345,7 +468,10 @@ int main(int argc, char** argv) {
                 const std::chrono::steady_clock::time_point frameTime = std::chrono::steady_clock::now();
                 const react_native_linux::FrameClock::Tick tick = session->recordFrameTick(frameSource, frameTime);
 
-                if (tick.shouldDraw) {
+                // A pending capture is work in its own right: --screenshot and the automation channel's
+                // TakeScreenshot both read back a presented frame, and a static scene under a compositor that
+                // withholds frame callbacks would otherwise never present one and never answer.
+                if (tick.shouldDraw || renderer.hasPendingCapture()) {
                     // The animation backend is driven by the same instant the frame clock measured, and before
                     // the scene is taken, so a mutation this frame produces is in the snapshot it paints. A
                     // running animation is also pending work, so a fallback timeout keeps drawing it when the
@@ -385,15 +511,16 @@ int main(int argc, char** argv) {
         }
 
         if (parsedArguments.screenshotPath.has_value() && !hasCaptured) {
-            std::cerr << "[rnl-window] the window closed before frame " << parsedArguments.frameCount
-                      << " could be captured" << std::endl;
+            react_native_linux::reportNativeError(kWindowErrorSource, "the window closed before frame " +
+                                                                          std::to_string(parsedArguments.frameCount) +
+                                                                          " could be captured");
 
             return 1;
         }
 
         return session.has_value() && session->hasReportedFatalError() ? 1 : 0;
     } catch (const std::exception& error) {
-        std::cerr << "[rnl-window] " << error.what() << std::endl;
+        react_native_linux::reportNativeError(kWindowErrorSource, error.what());
 
         return 1;
     }

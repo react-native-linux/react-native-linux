@@ -428,6 +428,8 @@ void readPaintProps(SceneNode& node, const facebook::react::ShadowView& shadowVi
         node.opacity = 1.0F;
         node.pointerEvents = facebook::react::PointerEventsMode::Auto;
         node.clipsChildren = false;
+        node.testId.clear();
+        node.accessibilityLabel.clear();
 
         return;
     }
@@ -449,6 +451,8 @@ void readPaintProps(SceneNode& node, const facebook::react::ShadowView& shadowVi
     node.opacity = std::clamp(static_cast<float>(viewProps->opacity), 0.0F, 1.0F);
     node.pointerEvents = viewProps->pointerEvents;
     node.clipsChildren = viewProps->getClipsContentToBounds();
+    node.testId = viewProps->testId;
+    node.accessibilityLabel = viewProps->accessibilityLabel;
 }
 
 /**

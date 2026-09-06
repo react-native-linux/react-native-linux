@@ -292,4 +292,8 @@ std::string FabricHost::dumpScene() const {
     return mountingManager_->dumpScene();
 }
 
+SceneNodes FabricHost::visualTreeNodes() const {
+    return mountingManager_->visualTreeNodes();
+}
+
 } // namespace react_native_linux

@@ -1,0 +1,21 @@
+[
+  {
+    "accessibilityLabel": "Automation panel",
+    "componentName": "View",
+    "frame": { "height": 120, "width": 240, "x": 40, "y": 40 },
+    "tag": 2,
+    "testID": "panel"
+  },
+  {
+    "componentName": "View",
+    "frame": { "height": 40, "width": 80, "x": 56, "y": 56 },
+    "tag": 3,
+    "testID": "box"
+  },
+  {
+    "componentName": "Paragraph",
+    "frame": { "height": 24, "width": 200, "x": 56, "y": 112 },
+    "tag": 4,
+    "text": "Automation"
+  }
+]

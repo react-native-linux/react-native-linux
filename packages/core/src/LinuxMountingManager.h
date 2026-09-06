@@ -160,6 +160,14 @@ public:
     std::string dumpScene() const;
 
     /**
+     * Every mounted node, copied out under the scene mutex, for the automation channel's `DumpVisualTree`.
+     * Called from the frame thread while the JavaScript thread may be committing, exactly as `snapshotScene` is,
+     * so a dump describes one transaction's tree and never half of two. See *The automation channel* in
+     * docs/cpp-toolchain.md.
+     */
+    SceneNodes visualTreeNodes() const;
+
+    /**
      * Whether the scene has changed since the last `takeFrame`, for the frame clock's fallback-timeout decision
      * (see *Frame clock* in docs/cpp-toolchain.md): a caller pacing redraw off a withheld `wl_surface.frame` needs
      * to know there is a mounted change to paint before it spends a fallback tick drawing one. A mutation batch,

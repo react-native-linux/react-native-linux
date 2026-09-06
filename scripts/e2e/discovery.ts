@@ -5,6 +5,9 @@ const SCENARIOS_DIRECTORY_NAME = "e2e";
 const GOLDENS_DIRECTORY_NAME = "goldens";
 const BUNDLES_DIRECTORY_NAME = "test-bundles";
 const SCENARIO_FILE_SUFFIX = ".json";
+const SCENARIO_FLAG = "--scenario";
+const NOT_FOUND_INDEX = -1;
+const NEXT_ARGUMENT = 1;
 
 /** Where a scenario came from, and the two directories of the package that ships it. */
 interface ScenarioSource {
@@ -65,4 +68,29 @@ const readScenarioRuns = (
     })
     .filter((run) => requestedName === null || run.scenario.name === requestedName);
 
-export { findScenarioSources, readScenarioRuns };
+/**
+ * The scenarios one `pnpm e2e` runs: every package's, or the single one `--scenario <name>` names. A trailing
+ * `--scenario` with nothing after it is an argument error rather than "all of them", because the whole suite is
+ * the most expensive thing a mistyped targeted run could do.
+ */
+const readRequestedScenarios = (
+  packagesDirectory: string,
+  commandArguments: readonly string[],
+  environment: DiscoveryEnvironment,
+): readonly ScenarioRun[] => {
+  const flagIndex = commandArguments.indexOf(SCENARIO_FLAG);
+
+  if (flagIndex === NOT_FOUND_INDEX) {
+    return readScenarioRuns(packagesDirectory, null, environment);
+  }
+
+  const requestedName = commandArguments[flagIndex + NEXT_ARGUMENT] ?? "";
+
+  if (requestedName === "") {
+    throw new Error(`${SCENARIO_FLAG} needs a scenario name`);
+  }
+
+  return readScenarioRuns(packagesDirectory, requestedName, environment);
+};
+
+export { findScenarioSources, readRequestedScenarios, readScenarioRuns };
