@@ -5921,9 +5921,9 @@ compositor's output size, a property of the rig rather than of the bundle. The o
 `TakeScreenshot` and `HangForTesting` are exercised on every scenario that opens the channel rather than by flags
 of their own: neither asserts anything about the app, they assert that the channel reaches the renderer and that
 a wedged JavaScript thread shows up as a timeout instead of as a wrong answer — the driver asks for a 1500 ms
-hang with a 300 ms deadline and passes only if that deadline is what ended the request. A refusal, a malformed
-line or a dead socket all produce no result either, and none of them is a hang, so the client reports deadline
-expiry as its own flag rather than letting "no answer" stand for it.
+hang with a 300 ms deadline and passes only if that deadline is what ended the request. A refusal
+(`{"ok":false,"error":…}`), a malformed line or a dead socket are each an explicit failure with `timedOut: false`;
+only an aborted deadline sets the timeout flag, so "no answer" never stands in for a hang.
 
 The socket file is `chmod`ed to `0600` between `bind` and `listen`, so it cannot be reached by another account
 in the window before it starts accepting. `XDG_RUNTIME_DIR` is already 0700 and makes that redundant; the `/tmp`
