@@ -14,7 +14,9 @@
 namespace {
 
 using react_native_linux::animatedImageFrameIndex;
+using react_native_linux::capInsetsCenter;
 using react_native_linux::DecodedImageFrames;
+using react_native_linux::hasCapInsets;
 using react_native_linux::ImageCache;
 using react_native_linux::imagePlacement;
 using react_native_linux::isAnimatedImage;
@@ -165,6 +167,47 @@ TEST(ImagePlacementTest, RepeatAnchorsItsFirstTileAtTheFrameOrigin) {
 TEST(ImagePlacementTest, AnImageWithNoAreaPlacesNothing) {
     expectPlacement(SceneImageResizeMode::Cover, Size{.width = 0, .height = 48}, 100, 200, 0, 0);
     expectPlacement(SceneImageResizeMode::Cover, Size{.width = 64, .height = 0}, 100, 200, 0, 0);
+}
+
+// Issue #258. Nine-slice geometry: `capInsets` cut from each edge of the decoded image is the region
+// `SkCanvas::drawImageNine` never scales; everything else is arithmetic on two structs, kept here so it stays
+// inside the coverage gate rather than inside `ScenePainter.cpp`.
+
+TEST(CapInsetsTest, AllZeroDoesNotEngageNineSlice) {
+    EXPECT_FALSE(hasCapInsets(facebook::react::EdgeInsets{}));
+}
+
+TEST(CapInsetsTest, AnySingleNonZeroEdgeEngagesNineSlice) {
+    EXPECT_TRUE(hasCapInsets(facebook::react::EdgeInsets{.left = 2}));
+    EXPECT_TRUE(hasCapInsets(facebook::react::EdgeInsets{.top = 2}));
+    EXPECT_TRUE(hasCapInsets(facebook::react::EdgeInsets{.right = 2}));
+    EXPECT_TRUE(hasCapInsets(facebook::react::EdgeInsets{.bottom = 2}));
+}
+
+TEST(CapInsetsTest, TheCentreIsTheImageWithEveryEdgeCutAway) {
+    const Rect center = capInsetsCenter(kImageSize, facebook::react::EdgeInsets{.left = 2, .top = 3, .right = 4, .bottom = 5});
+
+    EXPECT_FLOAT_EQ(center.origin.x, 2);
+    EXPECT_FLOAT_EQ(center.origin.y, 3);
+    EXPECT_FLOAT_EQ(center.size.width, 64 - 2 - 4);
+    EXPECT_FLOAT_EQ(center.size.height, 48 - 3 - 5);
+}
+
+TEST(CapInsetsTest, OpposingInsetsThatOverrunTheImageClampToAZeroWidthCentre) {
+    // 100 claims more than the whole 64-wide image; `right` has nothing left to clamp to but zero.
+    const Rect center = capInsetsCenter(kImageSize, facebook::react::EdgeInsets{.left = 100, .right = 100});
+
+    EXPECT_FLOAT_EQ(center.origin.x, 64);
+    EXPECT_FLOAT_EQ(center.size.width, 0);
+}
+
+TEST(CapInsetsTest, ANegativeInsetClampsToZero) {
+    const Rect center = capInsetsCenter(kImageSize, facebook::react::EdgeInsets{.left = -10, .top = -10});
+
+    EXPECT_FLOAT_EQ(center.origin.x, 0);
+    EXPECT_FLOAT_EQ(center.origin.y, 0);
+    EXPECT_FLOAT_EQ(center.size.width, 64);
+    EXPECT_FLOAT_EQ(center.size.height, 48);
 }
 
 // Issue #108. The decoded bitmap is owned by the nodes drawing it and by the cache, and by nothing else, so its
@@ -335,6 +378,187 @@ TEST(ImageLifetimeTest, TheMountingManagerHandsTheProviderToItsScene) {
     ASSERT_EQ(snapshot.size(), 1U);
     ASSERT_TRUE(snapshot[0].image.has_value());
     EXPECT_EQ(snapshot[0].image.value().pixels, firstFrame(image));
+}
+
+// Issue #258. `defaultSource` and `loadingIndicatorSource` are one slot on this platform: whichever is set draws
+// in place of the real source for exactly as long as it has not decoded, and `defaultSource` wins when both are.
+
+facebook::react::ImageSource sourceWithUri(const std::string& uri) {
+    facebook::react::ImageSource source;
+
+    source.type = facebook::react::ImageSource::Type::Local;
+    source.uri = uri;
+
+    return source;
+}
+
+ShadowView imageNodeWithPlaceholder(Tag tag, const std::string& uri, const std::string& defaultSourceUri,
+                                    const std::string& loadingIndicatorSourceUri = "") {
+    return makeImage(tag, kImageFrame, uri, facebook::react::ImageResizeMode::Cover, facebook::react::SharedColor{},
+                     0.0F, facebook::react::EdgeInsets{}, sourceWithUri(defaultSourceUri),
+                     sourceWithUri(loadingIndicatorSourceUri));
+}
+
+TEST(ImagePlaceholderTest, TheDefaultSourceDrawsUntilTheRealSourceDecodes) {
+    ImageCache cache{2 * kEntryByteCount};
+    RetainedScene scene = sceneReadingCache(cache);
+    const std::shared_ptr<const DecodedImageFrames> placeholder = cachedImage(cache, "placeholder.png");
+
+    addChild(scene, kSurfaceTag, imageNodeWithPlaceholder(2, "real.png", "placeholder.png"));
+
+    EXPECT_EQ(mountedPixels(scene), firstFrame(placeholder));
+
+    const std::shared_ptr<const DecodedImageFrames> real = cachedImage(cache, "real.png");
+
+    scene.damageImageSource("real.png", real);
+
+    EXPECT_EQ(mountedPixels(scene), firstFrame(real));
+}
+
+TEST(ImagePlaceholderTest, APlaceholderThatDecodesAfterTheMountDamagesTheNodeAndDrawsUntilTheRealSourceDoes) {
+    ImageCache cache{2 * kEntryByteCount};
+    RetainedScene scene = sceneReadingCache(cache);
+
+    addChild(scene, kSurfaceTag, imageNodeWithPlaceholder(2, "real.png", "placeholder.png"));
+    EXPECT_EQ(mountedPixels(scene), nullptr);
+
+    const std::shared_ptr<const DecodedImageFrames> placeholder = cachedImage(cache, "placeholder.png");
+
+    scene.takeDamage();
+    scene.damageImageSource("placeholder.png", placeholder);
+
+    EXPECT_EQ(mountedPixels(scene), firstFrame(placeholder));
+    EXPECT_FALSE(scene.takeDamage().empty());
+
+    const std::shared_ptr<const DecodedImageFrames> real = cachedImage(cache, "real.png");
+
+    scene.damageImageSource("real.png", real);
+
+    EXPECT_EQ(mountedPixels(scene), firstFrame(real));
+}
+
+// A scene set up for the tests below that never reach the cache at all: `provider` stands in for
+// `setDecodedImageProvider`, and an empty one — the default — is "no provider configured", exactly what a test
+// leaves `decodedImages_` at by never calling the setter.
+RetainedScene sceneForPlaceholderTests(RetainedScene::DecodedImageProvider provider = {}) {
+    RetainedScene scene;
+
+    scene.setDecodedImageProvider(std::move(provider));
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+
+    return scene;
+}
+
+TEST(ImagePlaceholderTest, APlaceholderDecodedWithNoFramesAtAllDrawsNothing) {
+    RetainedScene scene =
+        sceneForPlaceholderTests([](const std::string& uri) -> std::shared_ptr<const DecodedImageFrames> {
+            if (uri != "placeholder.png") {
+                return nullptr;
+            }
+
+            return std::make_shared<const DecodedImageFrames>(
+                DecodedImageFrames{.frames = {}, .frameDurationsMilliseconds = {}, .repetitionCount = 0});
+        });
+
+    addChild(scene, kSurfaceTag, imageNodeWithPlaceholder(2, "real.png", "placeholder.png"));
+
+    EXPECT_EQ(mountedPixels(scene), nullptr);
+}
+
+TEST(ImagePlaceholderTest, APlaceholderWithNoProviderAtAllStillRequestsADecode) {
+    RetainedScene scene = sceneForPlaceholderTests();
+    std::vector<std::string> requestedUris;
+
+    scene.setPlaceholderImageDecodeRequester(
+        [&requestedUris](const std::string& uri) { requestedUris.push_back(uri); });
+    addChild(scene, kSurfaceTag, imageNodeWithPlaceholder(2, "real.png", "placeholder.png"));
+
+    EXPECT_EQ(mountedPixels(scene), nullptr);
+    EXPECT_EQ(requestedUris, (std::vector<std::string>{"placeholder.png", "placeholder.png"}));
+}
+
+TEST(ImagePlaceholderTest, APlaceholderWithNoRequesterConfiguredIsSimplyNotRequested) {
+    RetainedScene scene = sceneForPlaceholderTests([](const std::string& /*uri*/) { return nullptr; });
+
+    addChild(scene, kSurfaceTag, imageNodeWithPlaceholder(2, "real.png", "placeholder.png"));
+
+    EXPECT_EQ(mountedPixels(scene), nullptr);
+}
+
+TEST(ImagePlaceholderTest, LoadingIndicatorSourceIsUsedWhenThereIsNoDefaultSource) {
+    ImageCache cache{2 * kEntryByteCount};
+    RetainedScene scene = sceneReadingCache(cache);
+    const std::shared_ptr<const DecodedImageFrames> loading = cachedImage(cache, "loading.png");
+
+    addChild(scene, kSurfaceTag, imageNodeWithPlaceholder(2, "real.png", "", "loading.png"));
+
+    EXPECT_EQ(mountedPixels(scene), firstFrame(loading));
+}
+
+TEST(ImagePlaceholderTest, DefaultSourceWinsOverLoadingIndicatorSourceWhenBothAreSet) {
+    ImageCache cache{3 * kEntryByteCount};
+    RetainedScene scene = sceneReadingCache(cache);
+    const std::shared_ptr<const DecodedImageFrames> defaultImage = cachedImage(cache, "default.png");
+
+    cachedImage(cache, "loading.png");
+    addChild(scene, kSurfaceTag, imageNodeWithPlaceholder(2, "real.png", "default.png", "loading.png"));
+
+    EXPECT_EQ(mountedPixels(scene), firstFrame(defaultImage));
+}
+
+// Records every URI the scene asks a placeholder decode for, into `requestedUris`, on a scene reading `cache` the
+// way `sceneReadingCache` does for the real source.
+RetainedScene sceneRecordingPlaceholderRequests(ImageCache& cache, std::vector<std::string>& requestedUris) {
+    RetainedScene scene = sceneReadingCache(cache);
+
+    scene.setPlaceholderImageDecodeRequester(
+        [&requestedUris](const std::string& uri) { requestedUris.push_back(uri); });
+
+    return scene;
+}
+
+TEST(ImagePlaceholderTest, APlaceholderNotYetDecodedRequestsItsOwnDecode) {
+    ImageCache cache{kEntryByteCount};
+    std::vector<std::string> requestedUris;
+    RetainedScene scene = sceneRecordingPlaceholderRequests(cache, requestedUris);
+
+    addChild(scene, kSurfaceTag, imageNodeWithPlaceholder(2, "real.png", "placeholder.png"));
+
+    // Only the placeholder is asked for here: the real source's decode is `ImageManager::requestImage`'s job,
+    // not this function's, because `ImageState` — which is what this test's scene reads pixels from — is never
+    // where a placeholder comes from. Twice rather than once, because `addChild` is `createNode` followed by
+    // `insertChild`, and each calls `writeNode` on the same `ShadowView` — exactly the `CreateMutation` then
+    // `InsertMutation` pair a real Fabric commit sends for every newly mounted node. In production
+    // `requestImageDecode`'s own in-flight guard collapses the two into one queued decode; this test's recording
+    // lambda has no such guard, so it sees both calls the way `readImageContent` actually makes them.
+    EXPECT_EQ(requestedUris, (std::vector<std::string>{"placeholder.png", "placeholder.png"}));
+}
+
+TEST(ImagePlaceholderTest, ARequesterIsNeverAskedOnceThePlaceholderIsCached) {
+    ImageCache cache{kEntryByteCount};
+    std::vector<std::string> requestedUris;
+    RetainedScene scene = sceneRecordingPlaceholderRequests(cache, requestedUris);
+
+    cachedImage(cache, "placeholder.png");
+
+    addChild(scene, kSurfaceTag, imageNodeWithPlaceholder(2, "real.png", "placeholder.png"));
+
+    EXPECT_TRUE(requestedUris.empty());
+}
+
+TEST(ImageLifetimeTest, TheMountingManagerHandsThePlaceholderRequesterToItsScene) {
+    LinuxMountingManager mountingManager;
+    std::vector<std::string> requestedUris;
+
+    mountingManager.setDecodedImageProvider([](const std::string& /*uri*/) { return nullptr; });
+    mountingManager.setPlaceholderImageDecodeRequester(
+        [&requestedUris](const std::string& uri) { requestedUris.push_back(uri); });
+    mountChildAndTakeFrame(mountingManager, imageNodeWithPlaceholder(2, "real.png", "placeholder.png"));
+
+    // A real Fabric commit for a newly mounted node is a `CreateMutation` and an `InsertMutation`, both carrying
+    // the full `ShadowView`, so `writeNode` runs twice and asks twice — see the comment on
+    // `APlaceholderNotYetDecodedRequestsItsOwnDecode`.
+    EXPECT_EQ(requestedUris, (std::vector<std::string>{"placeholder.png", "placeholder.png"}));
 }
 
 // Issue #257. Which frame of an animated source is on screen is arithmetic on the durations the codec read out of

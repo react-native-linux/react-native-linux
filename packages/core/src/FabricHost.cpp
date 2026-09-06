@@ -5,6 +5,7 @@
 
 #ifdef RNL_ENABLE_IMAGES
 #include "ImageDecoder.h"
+#include "ImagePipeline.h"
 #endif
 
 #include <folly/dynamic.h>
@@ -174,6 +175,13 @@ FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::
     // damage the frame for one. The listener runs on the decode thread and takes the mounting manager's mutex; the
     // pipeline holds no lock of its own while it calls back.
     mountingManager_->setDecodedImageProvider(&decodedImage);
+    // `defaultSource`/`loadingIndicatorSource` never go through `ImageManager::requestImage` — `ImageState` only
+    // ever carries the source `ImageShadowNode` chose from `source` — so `readImageContent` asks here instead,
+    // through the one function on this side of the Skia boundary that can queue a decode. The completion is a
+    // no-op: the pixels reach the scene through the listener below, exactly like every other decode.
+    mountingManager_->setPlaceholderImageDecodeRequester([](const std::string& uri) {
+        requestImageDecode(uri, [](const std::shared_ptr<const DecodedImageFrames>& /*decoded*/) {});
+    });
     setImageDecodeListener([mountingManager = mountingManager_](
                                const std::string& uri, const std::shared_ptr<const DecodedImageFrames>& decoded) {
         mountingManager->damageImageSource(uri, decoded);

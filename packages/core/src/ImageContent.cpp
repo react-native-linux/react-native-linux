@@ -195,6 +195,22 @@ facebook::react::Rect imagePlacement(SceneImageResizeMode resizeMode, const face
         .size = scaledSize};
 }
 
+bool hasCapInsets(const facebook::react::EdgeInsets& capInsets) {
+    return capInsets.left > 0 || capInsets.top > 0 || capInsets.right > 0 || capInsets.bottom > 0;
+}
+
+facebook::react::Rect capInsetsCenter(facebook::react::Size imageSize,
+                                      const facebook::react::EdgeInsets& capInsets) {
+    const facebook::react::Float left = std::clamp(capInsets.left, 0.0F, imageSize.width);
+    const facebook::react::Float right = std::clamp(capInsets.right, 0.0F, imageSize.width - left);
+    const facebook::react::Float top = std::clamp(capInsets.top, 0.0F, imageSize.height);
+    const facebook::react::Float bottom = std::clamp(capInsets.bottom, 0.0F, imageSize.height - top);
+
+    return facebook::react::Rect{.origin = {.x = left, .y = top},
+                                 .size = {.width = imageSize.width - left - right,
+                                          .height = imageSize.height - top - bottom}};
+}
+
 bool isAnimatedImage(const DecodedImageFrames& decoded) {
     return decoded.frames.size() > 1 && decoded.frameDurationsMilliseconds.size() == decoded.frames.size() &&
            totalAnimationMilliseconds(decoded) > 0;

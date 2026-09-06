@@ -162,16 +162,26 @@ facebook::react::ShadowView makeParagraph(facebook::react::Tag tag, facebook::re
 /**
  * An `<Image>` as it reaches the mounting layer: the fit and the tint stay on `ImageProps`, and the source is on
  * `ImageState`, because `ImageShadowNode` is what chooses it and what hands it to `ImageManager::requestImage`.
+ *
+ * `capInsets`, `defaultSource` and `loadingIndicatorSource` default to their upstream defaults — no nine-slice,
+ * no placeholder — so every existing caller is unaffected; the trailing three parameters exist for the cases
+ * that set one of them.
  */
 facebook::react::ShadowView makeImage(facebook::react::Tag tag, facebook::react::Rect frame,
                                       const std::string& uri, facebook::react::ImageResizeMode resizeMode,
-                                      facebook::react::SharedColor tintColor, float blurRadius = 0.0F) {
+                                      facebook::react::SharedColor tintColor, float blurRadius = 0.0F,
+                                      facebook::react::EdgeInsets capInsets = {},
+                                      facebook::react::ImageSource defaultSource = {},
+                                      facebook::react::ImageSource loadingIndicatorSource = {}) {
     const std::shared_ptr<facebook::react::ImageProps> imageProps =
         std::make_shared<facebook::react::ImageProps>();
 
     imageProps->resizeMode = resizeMode;
     imageProps->tintColor = tintColor;
     imageProps->blurRadius = blurRadius;
+    imageProps->capInsets = capInsets;
+    imageProps->defaultSource = std::move(defaultSource);
+    imageProps->loadingIndicatorSource = std::move(loadingIndicatorSource);
 
     facebook::react::ImageSource imageSource;
 

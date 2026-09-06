@@ -3195,6 +3195,8 @@ and libjpeg-turbo are inside the archive, so images add no system dependency —
 | `opacity` and every `<View>` paint prop | `ImageProps` derives from `ViewProps`, so backgrounds, borders, radii, transforms and clips are exactly *View props fidelity*. The image is drawn after the background and before the border, because React Native draws borders inside the frame and therefore over the content. |
 | `borderRadius` | The image is clipped to the same rounded rectangle the background is filled with, so `cover` overflow and rounded corners are cut by one clip. |
 | `blurRadius` | `SkImageFilters::Blur` on the same paint the decoded pixels draw with, sigma `blurRadius / 2` — the CSS-to-Gaussian conversion *Shadows (#67)* already documents for `SceneShadow`, applied here to an `<Image>`'s own pixels instead of its box shadow. |
+| `capInsets` | `SkCanvas::drawImageNine` — nine-slice. See *`capInsets`: nine-slice* below. |
+| `defaultSource`, `loadingIndicatorSource` | One slot, drawn until the real source decodes. See *`defaultSource` and `loadingIndicatorSource`* below. |
 
 `repeat` is the one mode that is not a single `drawImageRect`: the placement rectangle is the first tile, and a
 repeating shader anchored at it fills the frame.
@@ -3204,6 +3206,45 @@ repeating shader anchored at it fills the frame.
 blurred one identically — the blur never reaches past the frame, and the node damages nothing more for having one.
 `blurRadius: 0` sets no filter at all, the same `nullptr`-for-zero rule `toBlur` uses for shadows, so it is the
 plain image, byte-identical to before this prop was implemented.
+
+### `capInsets`: nine-slice (#258)
+
+`capInsets` is React Native's nine-patch: four edges cut from the decoded image that are never scaled, and a
+centre region between them that alone stretches to fill whatever the frame does not fill. `hasCapInsets` and
+`capInsetsCenter` in `ImageContent.cpp` are the whole of the geometry, deliberately kept Skia-free so they stay
+inside the coverage gate: `capInsetsCenter` takes the decoded image's own size and the `capInsets` edge insets and
+returns the centre rectangle in the image's own pixel space, clamping each pair of opposing insets so neither can
+claim more than the image has on its axis — a `capInsets` larger than the image shrinks the centre to zero rather
+than going negative. `ScenePainter.cpp`'s `paintImage` rounds that rectangle to an `SkIRect` and calls
+`SkCanvas::drawImageNine`, which does the actual stretching.
+
+Nine-slice takes priority over `resizeMode` whenever `capInsets` is non-zero on any edge — the same precedence
+iOS' `resizableImage` gives a capped image — because `resizeMode` has nothing left to place once the four edges
+and the centre are each stretched to fill their own share of the frame. `tintColor`, `blurRadius` and the
+inherited opacity apply to a nine-sliced image exactly as they do to a placed one: they are the same `SkPaint`,
+only the draw call changes.
+
+### `defaultSource` and `loadingIndicatorSource` (#258)
+
+The two are one slot on this platform: whichever is configured is resolved and decoded exactly like the real
+source, and drawn in its place for as long as the real source has not decoded — `defaultSource` wins when both
+are set, because it is the one of the two most apps configure as an always-there placeholder rather than as a
+loading affordance specifically. Neither has its own affordance (a spinner, a fade): the placeholder is simply a
+second decoded source a node can draw, keyed by its own URI on the same cache and the same pipeline the real
+source uses.
+
+`ImageState` only ever carries the source `ImageShadowNode` chose from `source`, so `ImageManager::requestImage`
+never sees a placeholder and never requests its decode. `RetainedScene::readImageContent` does instead, through
+`RetainedScene::setPlaceholderImageDecodeRequester` — a second injected function beside
+`setDecodedImageProvider`, wired by `FabricHost` to `requestImageDecode` directly because `FabricHost.cpp` is
+already on the Skia side of the boundary `ImageDecoder.h`'s split exists for. A placeholder already in the cache
+needs no request; one that is not gets asked for on every mount or update where the real source still has not
+decoded, and `requestImageDecode`'s own in-flight guard is what keeps that from queuing the same decode twice.
+
+`RetainedScene::damageImageSource` matches a decode's URI against a node's real source and its placeholder
+independently, because the two decode on their own schedules: the real source completing after the placeholder
+replaces `frames` and stops the placeholder being drawn without either decode having to know about the other, and
+the reverse — the placeholder decoding while the real source is still pending — only touches `placeholderFrames`.
 
 ### Animated GIF (#257)
 
@@ -3278,12 +3319,22 @@ Each is deliberate, and each is a thing to fix rather than a thing to argue abou
 
 - **No `http` or `https`.** There is no networking stack in this build at all — `ReactCxxPlatform`'s HTTP client
   needs nlohmann_json and OpenSSL, and neither is linked. A remote source is not a decode that failed; it is a
-  decode that was never attempted. It arrives with the Metro dev server work.
+  decode that was never attempted. It arrives with the Metro dev server work. `source.headers` is one instance of
+  this rather than a separate gap: upstream's own `fromRawValue<ImageSource>` already parses it onto
+  `ImageSource::headers`, but nothing here has a fetch to pass it to, so it is read and never used. Owned by the
+  same networking work as the rest of this bullet, not tracked as its own deviation.
 - **Animated GIF only.** See *Animated GIF (#257)*. Animated WebP needs a codec this Skia archive does not carry,
   and APNG is not in Skia at all; both decode to a first frame at best.
 - **No `srcSet` or scale selection.** `ImageShadowNode` picks the best area fit among several sources and we paint
   what it picked, but nothing here reasons about `scale` or a device pixel ratio, because there is no fractional
   scale support yet either.
+- **No `objectFit`.** It is a style-only TypeScript type in this React Native pin with no runtime prop behind it
+  on any platform — `ImageProps.cpp` parses no `objectFit` key, so there is nothing upstream to alias. Reading it
+  would need a raw-prop channel `ImageProps` does not expose short of forking the non-stub `ImageProps.cpp`/`.h` —
+  a materially bigger and differently-reviewed change than the source-swap convention this file uses for actual
+  stubs like `ImageManager.cpp` — or building the whole tree with `RN_SERIALIZABLE_STATE`, which would put
+  `folly::dynamic` serialization on every `Props` object on every commit for the sake of one alias prop. Filed as
+  #69 rather than decided here, so a props-plumbing change gets its own review.
 - **`onLoad` fires; `onLoadStart`, `onLoadEnd`, `onError` and `onProgress` do not.** The `ImageResponseObserverCoordinator`
   upstream builds for every request **is** completed or failed by the decoder, so the state is truthful and these
   events are a matter of emitting them from an observer rather than of plumbing. `onLoad` is wired — see *The
@@ -3291,10 +3342,12 @@ Each is deliberate, and each is a thing to fix rather than a thing to argue abou
   against; the rest stay unobserved until issue #15 (Image events) gives them the same treatment.
 - **The image fills the border box, not the padding box.** iOS and Android inset the content by padding; here
   `padding` on an `<Image>` moves nothing.
-- **`capInsets`, `overlayColor`, `fadeDuration`, `progressiveRenderingEnabled`, `defaultSource` and
-  `loadingIndicatorSource` are ignored.** `capInsets` in particular means no nine-patch stretching.
+- **`overlayColor`, `fadeDuration` and `progressiveRenderingEnabled` are ignored.** `capInsets`, `defaultSource`
+  and `loadingIndicatorSource` are implemented; see *`capInsets`: nine-slice (#258)* and *`defaultSource` and
+  `loadingIndicatorSource` (#258)*.
 - **A failed decode is not retried and not remembered.** The next commit that changes the source requests it
-  again; nothing polls.
+  again; nothing polls. A `defaultSource` or `loadingIndicatorSource` therefore stays on screen for a source that
+  keeps failing, which is the correct picture rather than a stale one: nothing else was ever going to replace it.
 - **The cache has no hit-rate probe**, for the same reason the text measure cache has none: there is nowhere to
   report a number to until #20.
 

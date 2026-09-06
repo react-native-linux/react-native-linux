@@ -23,9 +23,10 @@ using ImageDecodeListener =
     std::function<void(const std::string& uri, const std::shared_ptr<const DecodedImageFrames>& decoded)>;
 
 /**
- * The Skia-free half of the image pipeline's API, so the Fabric host, the scene and the headless runner can drive
- * it without putting Skia on their include path. Requesting a decode is on the other side, in `ImagePipeline.h`,
- * because only `ImageManager` asks for one.
+ * The Skia-free half of the image pipeline's API, so the scene and the headless runner can drive it without
+ * putting Skia on their include path. Requesting a decode is on the other side, in `ImagePipeline.h`, which is
+ * Skia-linked; `ImageManager` calls it for a real source and `FabricHost` calls it for a `defaultSource` or
+ * `loadingIndicatorSource` placeholder, both from translation units already on that side of the boundary.
  */
 void setImageDecodeListener(ImageDecodeListener listener);
 

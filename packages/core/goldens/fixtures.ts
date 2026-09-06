@@ -158,6 +158,14 @@ export const fixtures: readonly GoldenFixture[] = [
     renderArguments: ["20"],
     renderFlag: "--animated-image",
   },
+  // Issue #258: capInsets nine-slice at two sizes against a plain resize of the same asset.
+  // Each of defaultSource and loadingIndicatorSource draws in place of a source that never decodes.
+  {
+    bundleFileName: "image-props.js",
+    goldenFileName: "image-props.png",
+    renderArguments: [],
+    renderFlag: "--golden",
+  },
   // A text field draws nothing new until it is typed into: a caret and a selection are both editing state.
   {
     bundleFileName: "text-input.js",

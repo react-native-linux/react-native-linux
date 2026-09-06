@@ -31,6 +31,7 @@
 #include "modules/skparagraph/include/Paragraph.h"
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -523,6 +524,21 @@ void paintImage(SkCanvas& canvas, const ScenePrimitive& primitive, const SceneIm
         paint.setColorFilter(SkColorFilters::Blend(image.tintColorArgb, SkBlendMode::kSrcIn));
     } else {
         paint.setAlphaf(image.opacity);
+    }
+
+    // Nine-slice takes priority over `resizeMode`, exactly as iOS' `resizableImage` does: a capped image is
+    // always "resizable", and `resizeMode` has nothing left to place once the four edges and the centre are each
+    // stretched to fit their own share of the frame.
+    if (hasCapInsets(image.capInsets)) {
+        const facebook::react::Rect center = capInsetsCenter(imageSize, image.capInsets);
+        const SkIRect centerPixels = SkIRect::MakeXYWH(static_cast<int32_t>(std::lround(center.origin.x)),
+                                                        static_cast<int32_t>(std::lround(center.origin.y)),
+                                                        static_cast<int32_t>(std::lround(center.size.width)),
+                                                        static_cast<int32_t>(std::lround(center.size.height)));
+
+        canvas.drawImageNine(decoded, centerPixels, toSkRect(primitive.frame), SkFilterMode::kLinear, &paint);
+
+        return;
     }
 
     if (image.resizeMode == SceneImageResizeMode::Repeat) {
