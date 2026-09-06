@@ -19,8 +19,14 @@
 #include <react/renderer/components/textinput/TextInputState.h>
 #include <react/renderer/components/view/ViewProps.h>
 #include <react/renderer/core/ConcreteState.h>
+#include <react/renderer/core/EventBeat.h>
+#include <react/renderer/core/EventDispatcher.h>
+#include <react/renderer/core/EventListener.h>
+#include <react/renderer/core/EventQueueProcessor.h>
+#include <react/renderer/core/RawEvent.h>
 #include <react/renderer/core/ReactPrimitives.h>
 #include <react/renderer/core/ShadowNodeFamily.h>
+#include <react/renderer/runtimescheduler/RuntimeScheduler.h>
 #include <react/renderer/graphics/BackgroundImage.h>
 #include <react/renderer/graphics/Color.h>
 #include <react/renderer/graphics/ColorStop.h>
@@ -1201,15 +1207,75 @@ TEST(RetainedSceneImageTest, ABlurredImageDamagesOnlyItsOwnFrameLikeAnUnblurredO
 }
 
 /**
- * An `<Image>` with an `eventEmitter` cast to `ImageEventEmitter`, so the mount attaches issue #301's load
+ * A `RuntimeScheduler` that never runs anything: `EventBeat`'s constructor needs a live one by reference, but
+ * nothing in these tests ever calls `request` or `requestSynchronous` — the load observer's `didReceiveImage`
+ * reaches `EventDispatcher::dispatchEvent`, and that is answered by the *listener* list below, synchronously,
+ * before a beat is ever asked for. One instance is shared by every test in this file for the same reason
+ * `ImagePipelineState` is a function-local static: it only has to outlive the dispatcher, never do anything.
+ */
+facebook::react::RuntimeScheduler& sharedNoopRuntimeScheduler() {
+    static facebook::react::RuntimeScheduler runtimeScheduler{
+        [](const std::function<void(facebook::jsi::Runtime&)>& /*callback*/) {}};
+
+    return runtimeScheduler;
+}
+
+/**
+ * What `dispatchEvent` did, recorded rather than delivered: an `EventListener` sees a `RawEvent` synchronously,
+ * inside `EventDispatcher::dispatchEvent`, before the (never-answered) beat this test's `EventDispatcher` would
+ * otherwise need to actually reach a runtime. Recording the type here is what lets a test distinguish "the
+ * observer fired `onLoad`" from "the observer was never attached at all" — a `nullptr` dispatcher, the shape
+ * every other emitter test in this file used before issue #321's review, cannot tell those apart.
+ */
+struct DispatchRecorder {
+    std::vector<std::string> types;
+
+    // `ImageEventEmitter` keeps only a `Weak` reference to its dispatcher — every real one is kept alive by the
+    // `Scheduler` that owns it — so the recorder is what keeps this test's dispatcher alive instead. Without it
+    // the dispatcher a test constructed would be destroyed the moment `makeRecordingImageEventEmitter` returns,
+    // and `dispatchEvent`'s `eventDispatcher_.lock()` would see nothing and record nothing.
+    std::shared_ptr<const facebook::react::EventDispatcher> dispatcher;
+};
+
+std::pair<std::shared_ptr<facebook::react::ImageEventEmitter>, std::shared_ptr<DispatchRecorder>>
+makeRecordingImageEventEmitter() {
+    const std::shared_ptr<DispatchRecorder> recorder = std::make_shared<DispatchRecorder>();
+
+    facebook::react::EventQueueProcessor eventQueueProcessor{
+        [](facebook::jsi::Runtime& /*runtime*/, facebook::react::EventTarget* /*eventTarget*/,
+           const std::string& /*type*/, facebook::react::ReactEventPriority /*priority*/,
+           const facebook::react::EventPayload& /*payload*/, facebook::react::HighResTimeStamp /*eventTimestamp*/) {},
+        [](facebook::jsi::Runtime& /*runtime*/) {}, [](const facebook::react::StateUpdate& /*stateUpdate*/) {},
+        std::weak_ptr<facebook::react::EventLogger>{}};
+    std::unique_ptr<facebook::react::EventBeat> eventBeat = std::make_unique<facebook::react::EventBeat>(
+        std::make_shared<facebook::react::EventBeat::OwnerBox>(), sharedNoopRuntimeScheduler());
+    const std::shared_ptr<const facebook::react::EventDispatcher> eventDispatcher =
+        std::make_shared<const facebook::react::EventDispatcher>(
+            eventQueueProcessor, std::move(eventBeat), [](const facebook::react::StateUpdate& /*stateUpdate*/) {},
+            std::weak_ptr<facebook::react::EventLogger>{});
+
+    eventDispatcher->addListener(
+        std::make_shared<const facebook::react::EventListener>([recorder](const facebook::react::RawEvent& event) {
+            recorder->types.push_back(event.type);
+
+            return false;
+        }));
+
+    recorder->dispatcher = eventDispatcher;
+
+    return {std::make_shared<facebook::react::ImageEventEmitter>(nullptr, eventDispatcher), recorder};
+}
+
+/**
+ * An `<Image>` with `eventEmitter` set to the recording emitter above, so the mount attaches issue #301's load
  * observer, and the request's own coordinator handed back so a test can drive it. `completeBeforeMount` chooses
  * whether the request has already completed by the time it mounts — the coordinator's `addObserver` calls
  * `didReceiveImage` synchronously in that case, rather than waiting for a later publish — or is left `Loading` for
- * the test to complete, fail or progress itself. `onLoad`'s `dispatchEvent` no-ops safely against the empty
- * `EventDispatcher::Weak` a unit test has no dispatcher to give it.
+ * the test to complete, fail or progress itself.
  */
 std::pair<ShadowView, std::shared_ptr<const facebook::react::ImageResponseObserverCoordinator>>
-makeImageWithLoadObserver(Tag tag, Rect frame, const std::string& uri, bool completeBeforeMount) {
+makeImageWithLoadObserver(Tag tag, Rect frame, const std::string& uri, bool completeBeforeMount,
+                          const std::shared_ptr<facebook::react::ImageEventEmitter>& eventEmitter) {
     facebook::react::ImageSource imageSource;
 
     imageSource.type = facebook::react::ImageSource::Type::Local;
@@ -1229,42 +1295,53 @@ makeImageWithLoadObserver(Tag tag, Rect frame, const std::string& uri, bool comp
         std::make_shared<const facebook::react::ImageState>(imageSource, std::move(imageRequest),
                                                              facebook::react::ImageRequestParams{}),
         facebook::react::ShadowNodeFamily::Weak{});
-    shadowView.eventEmitter =
-        std::make_shared<facebook::react::ImageEventEmitter>(nullptr, facebook::react::EventDispatcher::Weak{});
+    shadowView.eventEmitter = eventEmitter;
 
     return {shadowView, coordinator};
 }
 
+// The mount itself is already `ImageStateBecomesTheImageOnTheNode`'s proof; this adds only the one thing that
+// test cannot see — that a completed request's observer actually reached JavaScript.
 TEST(RetainedSceneImageTest, ALoadObserverAttachesAndFiresWithoutDisturbingTheMount) {
+    const std::pair<std::shared_ptr<facebook::react::ImageEventEmitter>, std::shared_ptr<DispatchRecorder>>
+        recording = makeRecordingImageEventEmitter();
     const SceneSnapshot snapshot =
-        sceneWithTile(makeImageWithLoadObserver(2, makeRect(40, 60, 120, 90), "tile.png", true).first).snapshot();
+        sceneWithTile(makeImageWithLoadObserver(2, makeRect(40, 60, 120, 90), "tile.png", true, recording.first).first)
+            .snapshot();
 
-    ASSERT_EQ(snapshot.size(), 1U);
-    ASSERT_TRUE(snapshot[0].image.has_value());
-    EXPECT_EQ(snapshot[0].image.value().uri, "tile.png");
+    EXPECT_EQ(recording.second->types, std::vector<std::string>{"topLoad"});
+    ASSERT_FALSE(snapshot.empty());
+    EXPECT_TRUE(snapshot[0].image.has_value());
 }
 
-// A re-render that keeps the source does not attach a second observer: mounting the same completed request twice
-// would fire `onLoad` a second time if it did, which this proves by not crashing on the second `addObserver` a
-// double-attach would have caused issue #301's fix to skip.
+// A re-render that keeps the source does not attach a second observer: this mounts the same completed request
+// twice on the same recording emitter, and asserts the recorder still shows the one `onLoad` the first mount
+// produced rather than two — the double-attach issue #301's `isSameSource` guard exists to skip.
 TEST(RetainedSceneImageTest, AReMountWithTheSameSourceDoesNotReattachTheLoadObserver) {
+    const std::pair<std::shared_ptr<facebook::react::ImageEventEmitter>, std::shared_ptr<DispatchRecorder>>
+        recording = makeRecordingImageEventEmitter();
     RetainedScene scene =
-        sceneWithTile(makeImageWithLoadObserver(2, makeRect(40, 60, 120, 90), "tile.png", true).first);
+        sceneWithTile(makeImageWithLoadObserver(2, makeRect(40, 60, 120, 90), "tile.png", true, recording.first).first);
 
-    scene.updateNode(makeTile(2, makeRect(40, 60, 120, 90), "tile.png"));
+    scene.updateNode(
+        makeImageWithLoadObserver(2, makeRect(40, 60, 120, 90), "tile.png", true, recording.first).first);
 
     const SceneSnapshot snapshot = scene.snapshot();
 
     ASSERT_EQ(snapshot.size(), 1U);
     EXPECT_EQ(snapshot[0].image.value().uri, "tile.png");
+    EXPECT_EQ(recording.second->types, std::vector<std::string>{"topLoad"});
 }
 
 // The other two `ImageResponseObserver` methods the load observer implements as no-ops: `onLoadStart`,
 // `onLoadEnd`, `onProgress` and `onError` are issue #15's job, not #301's, so nothing here turns a progress or a
-// failure into an event.
+// failure into an event — asserted against the recorder rather than by absence of a crash, so a future observer
+// that wired one of them in by accident would fail this rather than pass it silently.
 TEST(RetainedSceneImageTest, ProgressAndFailureReachTheLoadObserverButProduceNoEvent) {
+    const std::pair<std::shared_ptr<facebook::react::ImageEventEmitter>, std::shared_ptr<DispatchRecorder>>
+        recording = makeRecordingImageEventEmitter();
     const std::pair<ShadowView, std::shared_ptr<const facebook::react::ImageResponseObserverCoordinator>> fixture =
-        makeImageWithLoadObserver(2, makeRect(40, 60, 120, 90), "tile.png", false);
+        makeImageWithLoadObserver(2, makeRect(40, 60, 120, 90), "tile.png", false, recording.first);
     const RetainedScene scene = sceneWithTile(fixture.first);
 
     fixture.second->nativeImageResponseProgress(0.5F, 1, 2);
@@ -1274,6 +1351,7 @@ TEST(RetainedSceneImageTest, ProgressAndFailureReachTheLoadObserverButProduceNoE
 
     ASSERT_EQ(snapshot.size(), 1U);
     EXPECT_EQ(snapshot[0].image.value().uri, "tile.png");
+    EXPECT_TRUE(recording.second->types.empty());
 }
 
 // The fixture every scroll test below shares: a 200x150 viewport at (60, 60) holding 470 points of content, one
