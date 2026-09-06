@@ -19,8 +19,16 @@
     "sleep 100",
     "key space press",
     "key space release",
+    "sleep 100",
+    "key Return press",
+    "key Return release",
     "sleep 500"
   ],
-  "expect": ["focus: topFocus on zeta", "focus: topClick on zeta"],
-  "expectFailure": true
+  "expect": [
+    "focus: topFocus on zeta",
+    "focus: topKeyPress on zeta key=  code=Space clicks=0",
+    "focus: topKeyUp on zeta key=  code=Space clicks=0",
+    "focus: topKeyPress on zeta key=Enter code=Enter clicks=0",
+    "focus: topClick on zeta clicks=1"
+  ]
 }

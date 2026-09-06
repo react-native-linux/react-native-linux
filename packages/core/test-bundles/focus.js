@@ -73,12 +73,21 @@ const zeta = box(15, 'zeta', 800, 0xff669999 | 0, true, false, 'link');
 
 // The single JavaScript entry point for every Fabric event. React's renderer installs its own dispatcher here;
 // this one just reports, so the C++ side of the pipeline is what the output describes.
+// The running click count (#244's pattern) is what makes a trace assertion about a click that did not happen: a
+// `topKeyPress` line read before the count moved proves nothing activated the control before it, and #320's own
+// proof is that Space never moves it while Enter always does.
+let clickCount = 0;
+
 fabric.registerEventHandler((instanceHandle, type, payload) => {
+  if (type === 'topClick') {
+    clickCount += 1;
+  }
+
   const name = instanceHandle === null || instanceHandle === undefined ? 'unknown' : instanceHandle.name;
   const hasKey = payload !== null && payload !== undefined && payload.key !== undefined;
   const suffix = hasKey ? ' key=' + payload.key + ' code=' + payload.code : '';
 
-  console.log('focus: ' + type + ' on ' + name + suffix);
+  console.log('focus: ' + type + ' on ' + name + suffix + ' clicks=' + clickCount);
 });
 
 fabric.appendChild(container, alpha);
