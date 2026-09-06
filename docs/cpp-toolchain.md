@@ -6180,8 +6180,19 @@ cage -- rnl_window --fabric <bundle> --frames <n> --screenshot build/e2e/<scenar
 
 with `WLR_BACKENDS=headless`, `WLR_RENDERER=pixman`, `WLR_LIBINPUT_NO_DEVICES=1`, `XKB_DEFAULT_LAYOUT=us` and the
 lavapipe ICD pinned by the same discovery `scripts/window-golden.ts` exports, waits for the wayland socket to
-appear in that directory, waits for the scenario's `ready` line on the window's stdout, runs `rnl_inject` with the
-scenario's steps on stdin, and then waits for the window to exit on its own frame budget.
+appear in that directory, waits for the scenario's `ready` line on the window's stdout, and then injects.
+
+**Keyboard-focus wait (#304).** A scenario's steps are split at the first `key`/`type` step:
+`scripts/e2e/keyboard-focus.ts`'s `runKeyboardAwareInjection` runs everything before that step through one
+`rnl_inject` invocation, then waits — bounded, the same style as the `ready` wait — for `[rnl-window] keyboard
+enter`, the trace line `WindowMain.cpp` already prints on `wl_keyboard.enter` (see *Desktop lifecycle contract
+(#218)*), before running the rest through a second invocation. A scenario with no keyboard step waits for
+nothing. This replaces the fixed sleep that used to precede the first keystroke, which could race the
+compositor's `wl_keyboard.enter` and lose the race under load (#304's `shadow-flicker` flake). Every scenario
+with a keyboard step repeats `RNL_E2E_REPEAT` times (default 1, unchanged); run `RNL_E2E_REPEAT=10 pnpm e2e` to
+reproduce the ten-green-runs acceptance locally or in an ad hoc CI job.
+
+The window then runs until it exits on its own frame budget.
 
 The event trace is the bundle's own `console.log` output: `rnl_window` has no trace format, and every fixture
 bundle already prints one line per Fabric event through `registerEventHandler`. cage passes its child's stdout

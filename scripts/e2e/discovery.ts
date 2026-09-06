@@ -1,3 +1,4 @@
+import { hasKeyboardSteps } from "./keyboard-focus.ts";
 import { parseScenario } from "./scenario.ts";
 import path from "node:path";
 
@@ -9,6 +10,10 @@ const SCENARIO_FILE_SUFFIX = ".json";
 const SCENARIO_FLAG = "--scenario";
 const NOT_FOUND_INDEX = -1;
 const NEXT_ARGUMENT = 1;
+const REPEAT_ENV_NAME = "RNL_E2E_REPEAT";
+const DEFAULT_REPEAT_COUNT = 1;
+const MINIMUM_REPEAT_COUNT = 1;
+const FIRST_ATTEMPT = 1;
 
 /**
  * Where a scenario came from, and the three directories of the package that ships it. `goldens` holds pictures
@@ -100,4 +105,74 @@ const readRequestedScenarios = (
   return readScenarioRuns(packagesDirectory, requestedName, environment);
 };
 
-export { findScenarioSources, readRequestedScenarios, readScenarioRuns };
+/**
+ * How many times a keyboard scenario's acceptance run repeats, per the "ten green runs" acceptance of #304:
+ * `RNL_E2E_REPEAT` unset or absent is one run, unchanged from today's CI. A scenario with no keyboard step never
+ * repeats regardless of this value, because repeating it proves nothing about the keyboard-focus wait.
+ */
+const resolveRepeatCount = (environmentVariables: Readonly<Record<string, string | undefined>>): number => {
+  if (!(REPEAT_ENV_NAME in environmentVariables)) {
+    return DEFAULT_REPEAT_COUNT;
+  }
+
+  const raw = environmentVariables[REPEAT_ENV_NAME] ?? "";
+  const parsed = Number(raw);
+
+  if (!Number.isInteger(parsed) || parsed < MINIMUM_REPEAT_COUNT) {
+    throw new Error(`${REPEAT_ENV_NAME} must be a positive integer, got "${raw}"`);
+  }
+
+  return parsed;
+};
+
+const describeRepeatLabel = (scenarioName: string, attempt: number, repeatCount: number): string =>
+  repeatCount === DEFAULT_REPEAT_COUNT
+    ? scenarioName
+    : `${scenarioName} (run ${String(attempt)}/${String(repeatCount)})`;
+
+/**
+ * The report label for each of a scenario's runs — the "ten green runs" acceptance of #304. `needsRepeat` is
+ * false for a scenario with no keyboard step, which never repeats regardless of `repeatCount`: repeating it
+ * proves nothing about the keyboard-focus wait this issue adds. `repeatCount` of one reports the bare name.
+ */
+const planScenarioLabels = (scenarioName: string, needsRepeat: boolean, repeatCount: number): readonly string[] => {
+  const iterations = needsRepeat ? repeatCount : DEFAULT_REPEAT_COUNT;
+
+  return Array.from({ length: iterations }, (_unused, index) =>
+    describeRepeatLabel(scenarioName, index + FIRST_ATTEMPT, iterations),
+  );
+};
+
+interface PlannedRun {
+  readonly label: string;
+  readonly run: ScenarioRun;
+}
+
+/**
+ * Every run `scripts/e2e.ts` drives, each labelled for its report line — the "ten green runs" plan of #304.
+ * `environmentVariables` is read here, rather than by the caller, so `resolveRepeatCount` stays this file's
+ * concern alone.
+ */
+const planRuns = (
+  runs: readonly ScenarioRun[],
+  environmentVariables: Readonly<Record<string, string | undefined>>,
+): readonly PlannedRun[] => {
+  const repeatCount = resolveRepeatCount(environmentVariables);
+
+  return runs.flatMap((run) =>
+    planScenarioLabels(run.scenario.name, hasKeyboardSteps(run.scenario.steps), repeatCount).map((label) => ({
+      label,
+      run,
+    })),
+  );
+};
+
+export { isKeyboardFocused, runKeyboardAwareInjection } from "./keyboard-focus.ts";
+export {
+  findScenarioSources,
+  planRuns,
+  planScenarioLabels,
+  readRequestedScenarios,
+  readScenarioRuns,
+  resolveRepeatCount,
+};
