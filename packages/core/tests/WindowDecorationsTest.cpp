@@ -1,5 +1,6 @@
 #include "WindowDecorations.h"
 
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <gtest/gtest.h>
@@ -287,21 +288,27 @@ struct ScaleGridCase {
     double scale;
     uint32_t surfaceExtent;
     bool isOnGrid;
+    uint32_t expectedRoundTrippedExtent;
 };
 
-// `surfaceToLogical`/`logicalToSurface` round-trip exactly only when the surface extent divides evenly by the
-// scale's numerator in lowest terms (3 at 1.5, 5 at 1.25, 2 at 2 — see the docblock), and are bounded to at most
-// one surface pixel of error everywhere else. Server-side decorations keep `barRows` at zero so this isolates the
-// scale arithmetic from the bar term the other round-trip test already covers.
-TEST(WindowDecorationsTest, TheConversionPairIsExactOnTheScaleGridAndBoundedByOnePixelOffIt) {
+// `surfaceToLogical`/`logicalToSurface` are guaranteed to round-trip exactly when the surface extent divides
+// evenly by the scale's numerator in lowest terms (3 at 1.5, 5 at 1.25, 4 at 4 — see the docblock); that grid is
+// sufficient but not necessary; off-grid extents can still land back exactly by coincidence (scale 1.5, extent 2)
+// or can drift, bounded by `ceil(scale / 2)` surface pixels rather than a fixed one (scale 4, extent 2, drifts by
+// exactly 2 — the two-roundings-of-half-a-unit-each bound the docblock states, not the one-pixel bound an earlier
+// version claimed). Server-side decorations keep `barRows` at zero so this isolates the scale arithmetic from the
+// bar term the other round-trip test already covers.
+TEST(WindowDecorationsTest, TheConversionPairIsExactOnTheScaleGridAndBoundedByCeilScaleOverTwoOffIt) {
     const std::vector<ScaleGridCase> cases{
-        {"scale 1, always on its own grid", 1.0, 801, true},
-        {"scale 1.25, on grid (multiple of 5)", 1.25, 800, true},
-        {"scale 1.25, off grid", 1.25, 802, false},
-        {"scale 1.5, on grid (multiple of 3)", 1.5, 999, true},
-        {"scale 1.5, off grid (the finding's own example)", 1.5, 1000, false},
-        {"scale 2, on grid (multiple of 2)", 2.0, 800, true},
-        {"scale 2, off grid", 2.0, 801, false},
+        {"scale 1, always on its own grid", 1.0, 801, true, 801},
+        {"scale 1.25, on grid (multiple of 5)", 1.25, 800, true, 800},
+        {"scale 1.25, off grid", 1.25, 802, false, 803},
+        {"scale 1.5, on grid (multiple of 3)", 1.5, 999, true, 999},
+        {"scale 1.5, off grid (the finding's own example)", 1.5, 1000, false, 1001},
+        {"scale 1.5, off grid but exact by coincidence", 1.5, 2, false, 2},
+        {"scale 2, on grid (multiple of 2)", 2.0, 800, true, 800},
+        {"scale 2, off grid", 2.0, 801, false, 802},
+        {"scale 4, off grid, drifts by ceil(4 / 2) = 2 rather than 1", 4.0, 2, false, 4},
     };
 
     for (const ScaleGridCase& gridCase : cases) {
@@ -310,16 +317,21 @@ TEST(WindowDecorationsTest, TheConversionPairIsExactOnTheScaleGridAndBoundedByOn
                                                        gridCase.scale, surface);
         const WindowExtent roundTripped =
             logicalToSurface(DecorationMode::Server, /*isFullscreen=*/false, kMetrics, gridCase.scale, logical);
+        const WindowExtent expectedRoundTripped{gridCase.expectedRoundTrippedExtent,
+                                                gridCase.expectedRoundTrippedExtent};
+        const int64_t maximumDrift = static_cast<int64_t>(std::ceil(gridCase.scale / 2.0));
+
+        EXPECT_EQ(roundTripped, expectedRoundTripped) << gridCase.name;
 
         if (gridCase.isOnGrid) {
             EXPECT_EQ(roundTripped, surface) << gridCase.name;
-        } else {
-            EXPECT_NE(roundTripped, surface) << gridCase.name << ": expected this case to demonstrate rounding drift";
         }
 
-        EXPECT_LE(std::abs(static_cast<int64_t>(roundTripped.width) - static_cast<int64_t>(surface.width)), 1)
+        EXPECT_LE(std::abs(static_cast<int64_t>(roundTripped.width) - static_cast<int64_t>(surface.width)),
+                  maximumDrift)
             << gridCase.name;
-        EXPECT_LE(std::abs(static_cast<int64_t>(roundTripped.height) - static_cast<int64_t>(surface.height)), 1)
+        EXPECT_LE(std::abs(static_cast<int64_t>(roundTripped.height) - static_cast<int64_t>(surface.height)),
+                  maximumDrift)
             << gridCase.name;
     }
 }
