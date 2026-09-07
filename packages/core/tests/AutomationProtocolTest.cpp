@@ -11,12 +11,14 @@
 
 namespace {
 
+using react_native_linux::AccessibilityChange;
 using react_native_linux::AutomationCommand;
 using react_native_linux::AutomationError;
 using react_native_linux::AutomationErrorLog;
 using react_native_linux::automationErrorLog;
 using react_native_linux::AutomationLineBuffer;
 using react_native_linux::AutomationRequestParse;
+using react_native_linux::describeAccessibilityChanges;
 using react_native_linux::describeAccessibilityTree;
 using react_native_linux::describeErrors;
 using react_native_linux::describeVisualTree;
@@ -168,8 +170,8 @@ TEST(AutomationProtocol, FormatsOneResponsePerLine) {
 }
 
 TEST(AutomationProtocol, NamesEveryCommandInItsResponse) {
-    for (const std::string& name : {"DumpAccessibilityTree", "DumpVisualTree", "HangForTesting", "ListErrors",
-                                    "MarkTestPassed", "TakeScreenshot"}) {
+    for (const std::string& name : {"DumpAccessibilityTree", "DumpVisualTree", "HangForTesting",
+                                    "ListAccessibilityChanges", "ListErrors", "MarkTestPassed", "TakeScreenshot"}) {
         const AutomationCommand command =
             parseAutomationRequest(R"({"command":")" + name + R"(","path":"p","milliseconds":0})")
                 .request.value()
@@ -531,6 +533,88 @@ TEST(AutomationProtocol, ReadsTheAccessibilityPropsOffTheMountedShadowView) {
     scene.updateNode(makeView(2, makeRect(0, 0, 10, 10)));
 
     EXPECT_TRUE(describeAccessibilityTree(scene.nodes())["nodes"].empty());
+}
+
+// #264: an `accessibilityState`/`accessibilityValue` change has to arrive as an `Update` on the same tag — no
+// `Remove`/`Insert` around it — with the projection showing the new state and nothing else about the node's
+// identity disturbed. `RetainedScene::updateNode` is what `LinuxMountingManager::executeMount`'s `Update` case
+// calls, so driving it directly here is the same path a real commit takes.
+TEST(AutomationProtocol, AnAccessibilityStateUpdateArrivesOnTheSameTagWithTheProjectionReflectingIt) {
+    const std::shared_ptr<ViewProps> initialProps = std::make_shared<ViewProps>();
+
+    initialProps->accessible = true;
+    initialProps->testId = "toggle";
+    initialProps->accessibilityRole = "checkbox";
+    initialProps->accessibilityState = AccessibilityState{.checked = AccessibilityState::CheckedState::Unchecked};
+
+    RetainedScene scene;
+
+    scene.createNode(makeStyledView(2, makeRect(0, 0, 10, 10), initialProps));
+
+    const folly::dynamic before = describeAccessibilityTree(scene.nodes())["nodes"][0];
+
+    EXPECT_EQ(before["tag"].asInt(), 2);
+    EXPECT_EQ(before["state"]["checked"].asString(), "unchecked");
+
+    const std::shared_ptr<ViewProps> toggledProps = std::make_shared<ViewProps>();
+
+    toggledProps->accessible = true;
+    toggledProps->testId = "toggle";
+    toggledProps->accessibilityRole = "checkbox";
+    toggledProps->accessibilityState = AccessibilityState{.checked = AccessibilityState::CheckedState::Checked};
+
+    scene.updateNode(makeStyledView(2, makeRect(0, 0, 10, 10), toggledProps));
+
+    ASSERT_EQ(scene.nodes().size(), 1U);
+
+    const folly::dynamic after = describeAccessibilityTree(scene.nodes())["nodes"][0];
+
+    EXPECT_EQ(after["tag"].asInt(), 2);
+    EXPECT_EQ(after["role"].asString(), "checkbox");
+    EXPECT_EQ(after["state"]["checked"].asString(), "checked");
+}
+
+TEST(AutomationProtocol, DescribesAnAccessibilityChangeWithTheTagAndTestIdItHappenedOn) {
+    const folly::dynamic described = describeAccessibilityChanges(
+        {AccessibilityChange{.tag = 2, .stateChanged = true, .valueChanged = false, .testId = "toggle"}});
+
+    ASSERT_EQ(described["changes"].size(), 1U);
+    EXPECT_EQ(described["changes"][0]["tag"].asInt(), 2);
+    EXPECT_EQ(described["changes"][0]["testID"].asString(), "toggle");
+    EXPECT_TRUE(described["changes"][0]["state"].asBool());
+    EXPECT_EQ(described["changes"][0].count("value"), 0U);
+}
+
+TEST(AutomationProtocol, DescribesAValueChangeAndBothHalvesWhenBothChanged) {
+    const folly::dynamic valueOnly =
+        describeAccessibilityChanges({AccessibilityChange{.tag = 5, .stateChanged = false, .valueChanged = true}});
+
+    EXPECT_EQ(valueOnly["changes"][0].count("state"), 0U);
+    EXPECT_TRUE(valueOnly["changes"][0]["value"].asBool());
+
+    const folly::dynamic both =
+        describeAccessibilityChanges({AccessibilityChange{.tag = 5, .stateChanged = true, .valueChanged = true}});
+
+    EXPECT_TRUE(both["changes"][0]["state"].asBool());
+    EXPECT_TRUE(both["changes"][0]["value"].asBool());
+}
+
+TEST(AutomationProtocol, OmitsTheTestIdOfAChangeThatCarriedNone) {
+    const folly::dynamic described =
+        describeAccessibilityChanges({AccessibilityChange{.tag = 9, .stateChanged = true, .valueChanged = false}});
+
+    EXPECT_EQ(described["changes"][0].count("testID"), 0U);
+}
+
+TEST(AutomationProtocol, AChangeRecordedBeforeARemovalStillReportsItsOriginalTestId) {
+    const folly::dynamic described = describeAccessibilityChanges(
+        {AccessibilityChange{.tag = 9, .stateChanged = true, .valueChanged = false, .testId = "removed-later"}});
+
+    EXPECT_EQ(described["changes"][0]["testID"].asString(), "removed-later");
+}
+
+TEST(AutomationProtocol, DescribesNoAccessibilityChangesAsAnEmptyList) {
+    EXPECT_TRUE(describeAccessibilityChanges({})["changes"].empty());
 }
 
 TEST(AutomationProtocol, KeepsTheOrderTheErrorsWereReportedIn) {

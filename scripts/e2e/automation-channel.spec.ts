@@ -44,12 +44,14 @@ const EXPOSED_NODE = { name: "Send", role: "button", tag: 3 };
 const healthyAnswers: Answers = {
   DumpAccessibilityTree: okLine("DumpAccessibilityTree", { nodes: [EXPOSED_NODE] }),
   DumpVisualTree: okLine("DumpVisualTree", { roots: [{ children: [MOUNTED_CHILD], componentName: "RootView" }] }),
+  ListAccessibilityChanges: okLine("ListAccessibilityChanges", { changes: [{ state: true, testID: "toggle" }] }),
   ListErrors: okLine("ListErrors", { errors: [] }),
   MarkTestPassed: okLine("MarkTestPassed", { passed: true }),
   TakeScreenshot: okLine("TakeScreenshot", { path: "shot.png" }),
 };
 
 const EVERY_COMMAND: ScenarioAutomation = {
+  accessibilityChanges: [{ state: true, testID: "toggle", value: false }],
   accessibilityTreeSnapshot: ACCESSIBILITY_SNAPSHOT_NAME,
   listErrorsMustBeEmpty: true,
   markTestPassed: true,
@@ -57,6 +59,7 @@ const EVERY_COMMAND: ScenarioAutomation = {
 };
 
 const CHANNEL_ONLY: ScenarioAutomation = {
+  accessibilityChanges: null,
   accessibilityTreeSnapshot: null,
   listErrorsMustBeEmpty: false,
   markTestPassed: false,

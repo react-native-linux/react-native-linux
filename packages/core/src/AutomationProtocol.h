@@ -32,9 +32,10 @@ enum class AutomationCommand : uint8_t {
     DumpAccessibilityTree = 0,
     DumpVisualTree = 1,
     HangForTesting = 2,
-    ListErrors = 3,
-    MarkTestPassed = 4,
-    TakeScreenshot = 5,
+    ListAccessibilityChanges = 3,
+    ListErrors = 4,
+    MarkTestPassed = 5,
+    TakeScreenshot = 6,
 };
 
 /**
@@ -51,6 +52,30 @@ struct AutomationRequest {
 struct AutomationRequestParse {
     std::optional<AutomationRequest> request;
     std::string error;
+};
+
+/**
+ * One committed change to a node's `accessibilityState` or `accessibilityValue`, carried on an `Update` mutation
+ * rather than a remount — same tag, no `Remove`/`Insert` around it. `LinuxMountingManager::executeMount` records
+ * one of these per changed tag per commit by diffing the mutation's old and new props, and `takeAccessibilityChanges`
+ * drains them for `ListAccessibilityChanges` below.
+ *
+ * This is the smallest observable of "an AT-SPI `object:state-changed:<state>` or `object:property-change` event
+ * would fire here": the bridge that would actually put an event on the bus is #27's and does not exist yet, so
+ * this is graded on the projection and the channel, not on D-Bus traffic. See #264.
+ */
+struct AccessibilityChange {
+    facebook::react::Tag tag{};
+    bool stateChanged{false};
+    bool valueChanged{false};
+
+    /**
+     * The mutation's own `testID`, captured at record time rather than looked up later from the visual tree:
+     * `ListAccessibilityChanges` takes its tree snapshot after `takeAccessibilityChanges` drains the queue, so a
+     * commit between the two (in particular a removal) would otherwise leave `describeAccessibilityChanges`
+     * resolving a stale or missing testID for a tag that no longer names the node it changed.
+     */
+    std::string testId;
 };
 
 /**
@@ -138,6 +163,16 @@ folly::dynamic describeVisualTree(const SceneNodes& nodes);
  * this over D-Bus is #27's. This is the surface both are graded against.
  */
 folly::dynamic describeAccessibilityTree(const SceneNodes& nodes);
+
+/**
+ * `{"changes":[{"tag","testID","state","value"},...]}`, drained in commit order: `testID` is the one
+ * `AccessibilityChange` captured from the mutation's own props when the change was recorded, not looked up from a
+ * later tree snapshot, so a commit — including a removal — between `takeAccessibilityChanges` and this call never
+ * turns a real testID stale or blank. `testID` is omitted when the change carried none, and `state`/`value` are
+ * each omitted when that half of the change is `false` rather than written out negatively, matching
+ * `describeAccessibilityState`'s carries-something convention.
+ */
+folly::dynamic describeAccessibilityChanges(const std::vector<AccessibilityChange>& changes);
 
 /**
  * Where `ListErrors` reads from.

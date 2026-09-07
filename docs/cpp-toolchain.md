@@ -6643,6 +6643,46 @@ view, so Fabric flattens a node carrying only those away before the mounting lay
 is also shallower than the fixture, because only a node that forms a *stacking context* — `accessible` and
 `importantForAccessibility` do, a background colour and a `testID` do not — keeps its children under it.
 
+### Accessibility state and value updates (#264)
+
+#61 mapped `accessibilityState`/`accessibilityValue` onto the projection at mount. The upstream bugs #264 is
+filed against — core#56296, core#45300, core#45096 — are all about the *update*: a prop change has to reach a
+screen reader as `object:state-changed:<state>` or `object:property-change:accessible-value` on the bus, with
+the node's identity unchanged, or a toggle never announces. The AT-SPI bridge that would put an event on the bus
+is #27's and does not exist yet, so this is graded on two things that exist before it and that the bridge will
+sit on top of: the projection reflecting the new state on the same tag, and a channel command exposing which
+tags changed.
+
+**The projection already proves the first half.** `RetainedScene::updateNode` overwrites `SceneNode::accessibility`
+from the `Update` mutation's `ShadowView` in place — same map key, same tag — exactly as it overwrites every
+other paint prop; nothing about accessibility state is special-cased. `describeAccessibilityTree` run before and
+after an `Update` shows the old and new state on the identical `"tag"`, with no `Remove`/`Insert` in between,
+because Fabric only emits `Remove`/`Insert`/`Delete`/`Create` around a node when its position or identity
+actually changes.
+
+**`LinuxMountingManager` records the second half.** Its `executeMount`'s `Update` case now diffs the mutation's
+old and new `AccessibilityState`/`AccessibilityValue` — both carry `operator==` upstream — before calling
+`RetainedScene::updateNode`, which is when the old value is still there to compare against. A real difference in
+either half appends one `AccessibilityChange{tag, stateChanged, valueChanged}` to a per-surface queue;
+`takeAccessibilityChanges` drains it, the same exchange-and-clear contract `takeCommands` has. A `Create`, a
+`Delete`, or an `Update` that only touches layout or paint records nothing — the table `LinuxMountingManagerAccessibilityChangesTest.cpp`
+holds is changed-state, changed-value, changed-both, unchanged, no-`ViewProps`, unknown-tag, and a
+`Delete`-then-`Create` remount proven *not* to be mistaken for a same-node update.
+
+**`ListAccessibilityChanges` is the channel side.** `{"changes":[{"tag","testID","state","value"}]}`, computed by
+`describeAccessibilityChanges` in `AutomationProtocol.cpp` and so inside the 100% coverage gate: `testID` is
+resolved off the current scene the same way `DumpVisualTree` names a node, and `state`/`value` are each omitted
+when that half did not change, matching `describeAccessibilityState`'s carries-something convention rather than
+writing `false` out. Drained per call, like `ListErrors`' log is read but never like it is cleared elsewhere —
+nothing but this command consumes the queue.
+
+**The scenario side.** `"automation": {"accessibilityChanges": [{"testID": "toggle", "state": true}]}` names the
+changes a scenario expects to have accumulated by the time the channel is asked, matched against
+`ListAccessibilityChanges`' answer by `testID` rather than by tag, because a bundle author writes the former and
+Fabric numbers the latter. `packages/core/test-bundles`' fixture for this mounts a switch and flips its
+`accessibilityState.checked` off a `setTimeout`, which is what turns the mount's own `Create` into the `Update`
+the channel counts — grading happens after the timer has had time to fire.
+
 ### What is still outstanding
 
 Named here so they are not mistaken for oversights, all of them still #7:

@@ -145,6 +145,9 @@ public:
     /** The committed tree as the automation channel's `DumpVisualTree` reports it (#214). */
     SceneNodes visualTreeNodes() const;
 
+    /** `LinuxMountingManager::takeAccessibilityChanges`, for `ListAccessibilityChanges` (#264). */
+    std::vector<AccessibilityChange> takeAccessibilityChanges();
+
 private:
     std::shared_ptr<const facebook::react::ContextContainer> contextContainer_;
     std::shared_ptr<facebook::react::ComponentDescriptorProviderRegistry> componentDescriptorProviderRegistry_;

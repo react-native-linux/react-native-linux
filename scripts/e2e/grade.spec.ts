@@ -272,6 +272,7 @@ describe("gradeAutomationChannel", () => {
     const scenario: Scenario = {
       ...baseScenario,
       automation: {
+        accessibilityChanges: null,
         accessibilityTreeSnapshot: null,
         listErrorsMustBeEmpty: true,
         markTestPassed: false,

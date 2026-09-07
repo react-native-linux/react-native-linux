@@ -1,9 +1,12 @@
 #include "LinuxMountingManager.h"
 
 #include <glog/logging.h>
+#include <react/renderer/components/view/ViewProps.h>
 #include <react/renderer/mounting/ShadowViewMutation.h>
 
+#include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -120,6 +123,12 @@ std::vector<MaintainedScrollOffset> LinuxMountingManager::takeMaintainedScrollOf
     return std::exchange(maintainedScrollOffsets_, std::vector<MaintainedScrollOffset>{});
 }
 
+std::vector<AccessibilityChange> LinuxMountingManager::takeAccessibilityChanges() {
+    const std::lock_guard<std::mutex> guard(sceneMutex_);
+
+    return std::exchange(accessibilityChanges_, std::vector<AccessibilityChange>{});
+}
+
 MountDiagnostics LinuxMountingManager::mountDiagnostics() const {
     const std::lock_guard<std::mutex> guard(sceneMutex_);
 
@@ -157,6 +166,47 @@ SceneNodes LinuxMountingManager::visualTreeNodes() const {
     return scene_.nodes();
 }
 
+void LinuxMountingManager::recordAccessibilityChangeIfAny(
+    const facebook::react::ShadowView& next, std::unordered_map<facebook::react::Tag, std::size_t>& changedThisTransaction) {
+    const auto previous = scene_.nodes().find(next.tag);
+
+    if (previous == scene_.nodes().end()) {
+        return;
+    }
+
+    const std::shared_ptr<const facebook::react::ViewProps> nextProps =
+        std::dynamic_pointer_cast<const facebook::react::ViewProps>(next.props);
+
+    if (nextProps == nullptr) {
+        return;
+    }
+
+    const SceneAccessibility& previousAccessibility = previous->second.accessibility;
+    const bool stateChanged = previousAccessibility.state != nextProps->accessibilityState;
+    const bool valueChanged = !(previousAccessibility.value == nextProps->accessibilityValue);
+
+    if (!stateChanged && !valueChanged) {
+        return;
+    }
+
+    const auto existing = changedThisTransaction.find(next.tag);
+
+    if (existing != changedThisTransaction.end()) {
+        AccessibilityChange& change = accessibilityChanges_[existing->second];
+
+        // Bitwise, not `||`: both operands are pure bools, and `||`'s short-circuit branch is one llvm-cov cannot
+        // be driven to both outcomes without a test that exists only to please the coverage gate.
+        change.stateChanged = change.stateChanged | stateChanged;
+        change.valueChanged = change.valueChanged | valueChanged;
+        change.testId = nextProps->testId;
+        return;
+    }
+
+    changedThisTransaction.emplace(next.tag, accessibilityChanges_.size());
+    accessibilityChanges_.push_back(AccessibilityChange{
+        .tag = next.tag, .stateChanged = stateChanged, .valueChanged = valueChanged, .testId = nextProps->testId});
+}
+
 void LinuxMountingManager::executeMount(facebook::react::SurfaceId /*surfaceId*/,
                                         facebook::react::MountingTransaction&& mountingTransaction) {
     const std::lock_guard<std::mutex> guard(sceneMutex_);
@@ -166,6 +216,8 @@ void LinuxMountingManager::executeMount(facebook::react::SurfaceId /*surfaceId*/
     if (!mountingTransaction.getMutations().empty()) {
         hasPendingDamage_ = true;
     }
+
+    std::unordered_map<facebook::react::Tag, std::size_t> accessibilityChangesThisTransaction;
 
     for (const facebook::react::ShadowViewMutation& mutation : mountingTransaction.getMutations()) {
         switch (mutation.type) { // COV_EXCL: every ShadowViewMutation::Type value has a case, so the implicit no-match branch cannot execute
@@ -185,6 +237,7 @@ void LinuxMountingManager::executeMount(facebook::react::SurfaceId /*surfaceId*/
                 break;
             case facebook::react::ShadowViewMutation::Update:
                 verifyTagIsKnown("Update", mutation.newChildShadowView.tag);
+                recordAccessibilityChangeIfAny(mutation.newChildShadowView, accessibilityChangesThisTransaction);
                 scene_.updateNode(mutation.newChildShadowView);
                 break;
         }
