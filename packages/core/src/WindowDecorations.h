@@ -53,6 +53,21 @@ DecorationMode decideDecorationMode(bool hasDecorationManager, bool forceClientD
                                     std::optional<uint32_t> configuredMode) noexcept;
 
 /**
+ * Whether there is a drawn bar to paint or to route pointer events into, right now.
+ *
+ * `contentExtentOf` already zeroes the bar's inset in fullscreen — the content should fill the surface, bar or
+ * not — but painting and input routing used to key off `mode` alone, so a `Client`-decorated window that went
+ * fullscreen kept drawing the bar at `topOffset` zero, over the content, and kept stealing the pointer events
+ * landing in that band. `isChromeActive` is the one predicate both `paintDecoratedFrame` and
+ * `routeDecorationInput` read instead, so the fullscreen exception cannot drift between the two the way the
+ * inset itself is not allowed to (#374): only `Client` and not fullscreen draws or routes anything; `Server` and
+ * `Bare` never do, fullscreen or not, because there is no bar in either to begin with.
+ */
+constexpr bool isChromeActive(DecorationMode mode, bool isFullscreen) noexcept {
+    return mode == DecorationMode::Client && !isFullscreen;
+}
+
+/**
  * The four numbers the drawn chrome is made of, in surface points.
  *
  * There is no shadow gutter, and that is a decision rather than an omission: zed#44528 is what a gutter costs —

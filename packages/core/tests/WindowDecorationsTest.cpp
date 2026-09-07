@@ -18,6 +18,7 @@ using react_native_linux::DecorationMode;
 using react_native_linux::DecorationRect;
 using react_native_linux::DoubleClickDetector;
 using react_native_linux::hitTestDecorations;
+using react_native_linux::isChromeActive;
 using react_native_linux::kDecorationModeClientSide;
 using react_native_linux::kDecorationModeServerSide;
 using react_native_linux::kDoubleClickIntervalMilliseconds;
@@ -194,6 +195,32 @@ TEST(WindowDecorationsTest, AWindowShorterThanItsOwnBarKeepsOneRowOfContent) {
         EXPECT_EQ(contentExtentOf(DecorationMode::Client, /*isFullscreen=*/false, kMetrics, kWindowWidth, windowHeight)
                       .height,
                   1U);
+    }
+}
+
+struct ChromeActiveCase {
+    std::string name;
+    DecorationMode mode;
+    bool isFullscreen;
+    bool expectedIsActive;
+};
+
+// `paintDecoratedFrame` and `routeDecorationInput` both bypass the bar off this one predicate instead of testing
+// `mode` alone, so a `Client`-decorated window going fullscreen stops painting a bar over content at `topOffset`
+// zero and stops stealing the pointer events that band used to intercept (#374's fullscreen follow-up).
+TEST(WindowDecorationsTest, ChromeIsActiveOnlyForFloatingClientDecorations) {
+    const std::vector<ChromeActiveCase> cases{
+        {"client, windowed", DecorationMode::Client, false, true},
+        {"client, fullscreen", DecorationMode::Client, true, false},
+        {"server, windowed", DecorationMode::Server, false, false},
+        {"server, fullscreen", DecorationMode::Server, true, false},
+        {"bare, windowed", DecorationMode::Bare, false, false},
+        {"bare, fullscreen", DecorationMode::Bare, true, false},
+    };
+
+    for (const ChromeActiveCase& activeCase : cases) {
+        EXPECT_EQ(isChromeActive(activeCase.mode, activeCase.isFullscreen), activeCase.expectedIsActive)
+            << activeCase.name;
     }
 }
 

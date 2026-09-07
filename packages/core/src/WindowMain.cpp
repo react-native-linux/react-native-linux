@@ -496,6 +496,7 @@ struct WindowChrome {
     react_native_linux::DecorationMode mode{react_native_linux::DecorationMode::Server};
     react_native_linux::ContentExtent content{};
     bool wasActive{false};
+    bool isFullscreen{false};
     bool isRepaintNeeded{true};
 };
 
@@ -514,13 +515,14 @@ void refreshChrome(WindowChrome& chrome, react_native_linux::WaylandWindow& wind
     chrome.isRepaintNeeded = chrome.isRepaintNeeded || mode != chrome.mode || isActive != chrome.wasActive ||
                              content.width != chrome.content.width || content.height != chrome.content.height;
 
-    if (mode != chrome.mode) {
+    if (mode != chrome.mode || state.fullscreen != chrome.isFullscreen) {
         chrome.pointerCapture.release();
     }
 
     chrome.mode = mode;
     chrome.content = content;
     chrome.wasActive = isActive;
+    chrome.isFullscreen = state.fullscreen;
 }
 
 uint64_t steadyMilliseconds() {
@@ -588,7 +590,7 @@ void activateDecoration(react_native_linux::WaylandWindow& window, WindowChrome&
 std::vector<react_native_linux::InputEvent>
 routeDecorationInput(react_native_linux::WaylandWindow& window, WindowChrome& chrome,
                      const std::vector<react_native_linux::InputEvent>& events) {
-    if (chrome.mode != react_native_linux::DecorationMode::Client) {
+    if (!react_native_linux::isChromeActive(chrome.mode, chrome.isFullscreen)) {
         return events;
     }
 
@@ -649,7 +651,7 @@ void paintDecoratedFrame(SkCanvas& canvas, const WindowChrome& chrome, const std
     paint(canvas, contentDamage);
     canvas.restore();
 
-    if (chrome.mode != react_native_linux::DecorationMode::Client) {
+    if (!react_native_linux::isChromeActive(chrome.mode, chrome.isFullscreen)) {
         return;
     }
 
