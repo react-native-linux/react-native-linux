@@ -1,4 +1,4 @@
-import { argv, stderr, stdout } from "node:process";
+import { argv, env, stderr, stdout } from "node:process";
 import { buildEnvironment, findExecutable, findLavapipeIcd } from "./window-golden.ts";
 import {
   describeTraceFailures,
@@ -8,11 +8,11 @@ import {
 } from "./e2e/scenario.ts";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { gradeArtifacts, gradeAutomationChannel } from "./e2e/grade.ts";
+import { isKeyboardFocused, planRuns, readRequestedScenarios, runKeyboardAwareInjection } from "./e2e/discovery.ts";
 import { spawn, spawnSync } from "node:child_process";
 
 import { setTimeout as delay } from "node:timers/promises";
 import path from "node:path";
-import { readRequestedScenarios } from "./e2e/discovery.ts";
 import { tmpdir } from "node:os";
 
 const FAILURE_EXIT_STATUS = 1;
@@ -41,7 +41,6 @@ const injectorBinaryPath = path.join(repositoryRoot, "build", "dev", "bin", "rnl
 const artifactsRoot = path.join(repositoryRoot, "build", "e2e");
 
 type ScenarioRun = ReturnType<typeof readRequestedScenarios>[number];
-type Scenario = ScenarioRun["scenario"];
 type Artifacts = ReturnType<typeof resolveArtifactPaths>;
 type Compositor = ReturnType<typeof spawn>;
 
@@ -164,7 +163,7 @@ const stopCompositor = async (compositor: Compositor): Promise<void> => {
   compositor.kill("SIGKILL");
 };
 
-const injectSteps = (scenario: Scenario, runtimeDirectory: string, socketName: string): string | null => {
+const injectSteps = (steps: readonly string[], runtimeDirectory: string, socketName: string): string | null => {
   const injection = spawnSync(injectorBinaryPath, [], {
     encoding: "utf8",
     env: buildEnvironment({
@@ -172,7 +171,7 @@ const injectSteps = (scenario: Scenario, runtimeDirectory: string, socketName: s
       XDG_RUNTIME_DIR: runtimeDirectory,
       XKB_DEFAULT_LAYOUT: "us",
     }),
-    input: formatInjectorScript(scenario.steps),
+    input: formatInjectorScript(steps),
     timeout: INJECT_TIMEOUT_MS,
   });
 
@@ -186,16 +185,18 @@ const injectSteps = (scenario: Scenario, runtimeDirectory: string, socketName: s
 const driveScenario = async (run: ScenarioRun, workspace: Workspace): Promise<readonly string[]> => {
   const { scenario } = run;
   const socketName = await waitForSocketName(workspace.runtimeDirectory);
-
   if (socketName === null) {
     return [`${COMPOSITOR_NAME} never created a wayland socket in ${workspace.runtimeDirectory}`];
   }
-
   if (!(await waitUntil(() => workspace.trace.text.includes(scenario.ready), READY_TIMEOUT_MS))) {
     return [`the bundle never printed "${scenario.ready}"`];
   }
 
-  const injectionFailure = injectSteps(scenario, workspace.runtimeDirectory, socketName);
+  const injectionFailure = await runKeyboardAwareInjection(
+    scenario.steps,
+    (steps) => injectSteps(steps, workspace.runtimeDirectory, socketName),
+    () => waitUntil(() => isKeyboardFocused(workspace.trace.text), READY_TIMEOUT_MS),
+  );
   const automationFailures = await gradeAutomationChannel({
     artifactsDirectory: workspace.artifactsDirectory,
     goldensDirectory: run.source.goldensDirectory,
@@ -230,8 +231,8 @@ const driveAndStop = async (
   }
 };
 
-const runScenario = async (run: ScenarioRun, rig: Rig): Promise<readonly string[]> => {
-  const artifacts = resolveArtifactPaths(artifactsRoot, run.scenario.name);
+const runScenario = async (run: ScenarioRun, rig: Rig, attemptKey: string): Promise<readonly string[]> => {
+  const artifacts = resolveArtifactPaths(artifactsRoot, attemptKey);
   const workspace = createWorkspace(artifacts);
   const compositor = startCompositor(run, rig, workspace);
 
@@ -248,23 +249,23 @@ const runScenario = async (run: ScenarioRun, rig: Rig): Promise<readonly string[
     screenshotPath: artifacts.screenshotPath,
   });
 
-  stdout.write(grade.notes.map((note) => `e2e ${run.scenario.name}: ${note}\n`).join(""));
+  stdout.write(grade.notes.map((note) => `e2e ${attemptKey}: ${note}\n`).join(""));
 
   const failures = [...runFailures, ...describeTraceFailures(run.scenario, workspace.trace.text), ...grade.failures];
 
   return resolveExpectedOutcome(run.scenario, failures);
 };
 
-const reportScenario = (scenario: Scenario, failures: readonly string[]): void => {
+const reportScenario = (failures: readonly string[], attemptKey: string): void => {
   if (failures.length === EMPTY_LENGTH) {
-    stdout.write(`e2e ${scenario.name}: passed\n`);
+    stdout.write(`e2e ${attemptKey}: passed\n`);
 
     return;
   }
 
-  const artifacts = resolveArtifactPaths(artifactsRoot, scenario.name);
+  const artifacts = resolveArtifactPaths(artifactsRoot, attemptKey);
 
-  stderr.write(`e2e ${scenario.name}: failed\n${failures.join("\n")}\nartifacts: ${artifacts.directory}\n`);
+  stderr.write(`e2e ${attemptKey}: failed\n${failures.join("\n")}\nartifacts: ${artifacts.directory}\n`);
   process.exitCode = FAILURE_EXIT_STATUS;
 };
 
@@ -293,7 +294,7 @@ if (compositorPath === null || lavapipeIcdPath === null || unavailableReasons.le
 } else {
   mkdirSync(artifactsRoot, { recursive: true });
 
-  for (const run of readScenarios()) {
-    reportScenario(run.scenario, await runScenario(run, { compositorPath, lavapipeIcdPath }));
+  for (const { attemptKey, run } of planRuns(readScenarios(), env)) {
+    reportScenario(await runScenario(run, { compositorPath, lavapipeIcdPath }, attemptKey), attemptKey);
   }
 }

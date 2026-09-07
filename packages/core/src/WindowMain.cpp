@@ -231,6 +231,20 @@ WindowArguments parseArguments(std::span<char*> arguments) {
     return parsed;
 }
 
+/**
+ * Unconditional and independent of `--window-debug`: the e2e driver (#304) waits for this line before the first
+ * keyboard step, so it has to survive whether or not a developer asked for the full debug trace. The tag is
+ * `[rnl-focus]`, not `[rnl-window]`, because `ERROR_TRACE_PATTERNS` in `scripts/e2e/scenario.ts` treats any
+ * `[rnl-window]` line as a fault — this one fires on the ordinary, expected first `wl_keyboard.enter` and must
+ * not trip that gate. It prints once, because the driver only ever waits for focus to arrive, never to leave.
+ */
+void announceKeyboardFocusOnce(react_native_linux::WaylandWindow& window, bool& keyboardFocusAnnounced) {
+    if (!keyboardFocusAnnounced && window.hasKeyboardFocus()) {
+        keyboardFocusAnnounced = true;
+        std::cout << "[rnl-focus] keyboard entered" << std::endl;
+    }
+}
+
 void printWindowDebugTransitions(react_native_linux::WaylandWindow& window, bool& lastKeyboardFocus,
                                  uint32_t& lastOutputEnterCount, uint32_t& lastOutputLeaveCount) {
     if (window.takeStateChange()) {
@@ -402,6 +416,7 @@ int main(int argc, char** argv) {
         uint32_t presentedFrames = 0;
         bool hasCaptured = false;
         bool lastKeyboardFocus = false;
+        bool keyboardFocusAnnounced = false;
         uint32_t lastOutputEnterCount = 0;
         uint32_t lastOutputLeaveCount = 0;
 
@@ -423,6 +438,8 @@ int main(int argc, char** argv) {
                     session->resize(window.size());
                 }
             }
+
+            announceKeyboardFocusOnce(window, keyboardFocusAnnounced);
 
             if (parsedArguments.windowDebug) {
                 printWindowDebugTransitions(window, lastKeyboardFocus, lastOutputEnterCount, lastOutputLeaveCount);

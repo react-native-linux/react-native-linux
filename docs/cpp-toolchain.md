@@ -6180,8 +6180,29 @@ cage -- rnl_window --fabric <bundle> --frames <n> --screenshot build/e2e/<scenar
 
 with `WLR_BACKENDS=headless`, `WLR_RENDERER=pixman`, `WLR_LIBINPUT_NO_DEVICES=1`, `XKB_DEFAULT_LAYOUT=us` and the
 lavapipe ICD pinned by the same discovery `scripts/window-golden.ts` exports, waits for the wayland socket to
-appear in that directory, waits for the scenario's `ready` line on the window's stdout, runs `rnl_inject` with the
-scenario's steps on stdin, and then waits for the window to exit on its own frame budget.
+appear in that directory, waits for the scenario's `ready` line on the window's stdout, and then injects.
+
+**Keyboard-focus wait (#304).** A scenario's steps are split at the first `key`/`type` step:
+`scripts/e2e/keyboard-focus.ts`'s `runKeyboardAwareInjection` runs everything before that step through one
+`rnl_inject` invocation, then waits — bounded, the same style as the `ready` wait — for `[rnl-focus] keyboard
+entered` before running the rest through a second invocation. A scenario with no keyboard step waits for nothing.
+This replaces the fixed sleep that used to precede the first keystroke, which could race the compositor's
+`wl_keyboard.enter` and lose the race under load (#304's `shadow-flicker` flake).
+
+`WindowMain.cpp`'s `announceKeyboardFocusOnce` prints that line the first time `window.hasKeyboardFocus()` goes
+true, **unconditionally** — deliberately not the `[rnl-window] keyboard enter`/`leave` toggle
+`printWindowDebugTransitions` already prints, which stays gated behind `--window-debug` (#218's manual proof) and
+would never fire in a scenario run. It also has to be a different tag than `[rnl-window]`: `ERROR_TRACE_PATTERNS`
+in `scripts/e2e/scenario.ts` treats any `[rnl-window]` line as a fault, and an expected, successful focus arrival
+is not one — reusing that tag here would fail the error gate on every keyboard scenario, not just this one.
+
+Every scenario with a keyboard step repeats `RNL_E2E_REPEAT` times (default 1, unchanged); run
+`RNL_E2E_REPEAT=10 pnpm e2e` to reproduce the ten-green-runs acceptance locally or in an ad hoc CI job. Each
+repeat gets its own **attempt key** — `<name>` for the first, `<name>#2`, `<name>#3`... after, from
+`scripts/e2e/discovery.ts`'s `planAttemptKeys` — used for both the report line and the artifact directory under
+`build/e2e/`, so a later attempt's pass can never silently overwrite an earlier attempt's failing trace.
+
+The window then runs until it exits on its own frame budget.
 
 The event trace is the bundle's own `console.log` output: `rnl_window` has no trace format, and every fixture
 bundle already prints one line per Fabric event through `registerEventHandler`. cage passes its child's stdout
