@@ -1,3 +1,4 @@
+#include "FocusModel.h"
 #include "ShadowTreeTestSupport.h"
 
 #include <folly/dynamic.h>
@@ -16,6 +17,8 @@
 
 namespace {
 
+using react_native_linux::effectiveAccessibilityRole;
+using react_native_linux::isActivationKey;
 using react_native_linux::makeConfiguredShadowNode;
 using react_native_linux::PassThroughShadowTreeDelegate;
 
@@ -45,6 +48,7 @@ using ChildList = std::vector<std::shared_ptr<const ShadowNode>>;
 struct RoleResolution final {
     facebook::react::AccessibilityTraits traits;
     std::string accessibilityRole;
+    facebook::react::Role role;
 };
 
 class WebPropAliasTest : public ::testing::Test {
@@ -55,7 +59,9 @@ protected:
                                      std::make_shared<const ChildList>());
         const auto& viewProps = std::static_pointer_cast<const ViewShadowNode>(node)->getConcreteProps();
 
-        return RoleResolution{.traits = viewProps.accessibilityTraits, .accessibilityRole = viewProps.accessibilityRole};
+        return RoleResolution{.traits = viewProps.accessibilityTraits,
+                             .accessibilityRole = viewProps.accessibilityRole,
+                             .role = viewProps.role};
     }
 
     Rect frameOf(Tag tag, const std::map<Tag, Rect>& frames) {
@@ -149,6 +155,38 @@ TEST_F(WebPropAliasTest, WhenBothAreGivenRoleTakesPrecedenceOverAccessibilityRol
 
     EXPECT_EQ(resolution.traits, facebook::react::AccessibilityTraits::Link);
     EXPECT_EQ(resolution.accessibilityRole, "button");
+}
+
+/**
+ * The activation-key rule (#248, #320): `InputDispatcher::accessibilityRoleOf` feeds `isActivationKey` through
+ * `effectiveAccessibilityRole` rather than the raw `accessibilityRole` string, so `role="link"` behaves exactly
+ * like `accessibilityRole="link"` — Enter activates, Space does not — even though only the second spelling ever
+ * populates the string this suite's earlier tests read directly.
+ */
+TEST_F(WebPropAliasTest, RoleLinkAloneActivatesOnEnterAndNotOnSpaceLikeAccessibilityRoleLinkDoes) {
+    const RoleResolution roleAlone = roleResolutionFor(folly::dynamic::object("role", "link"));
+    const RoleResolution accessibilityRoleAlone =
+        roleResolutionFor(folly::dynamic::object("accessibilityRole", "link"));
+
+    const std::string roleAloneEffective = effectiveAccessibilityRole(roleAlone.accessibilityRole, roleAlone.role);
+    const std::string accessibilityRoleAloneEffective =
+        effectiveAccessibilityRole(accessibilityRoleAlone.accessibilityRole, accessibilityRoleAlone.role);
+
+    EXPECT_EQ(roleAloneEffective, accessibilityRoleAloneEffective);
+    EXPECT_TRUE(isActivationKey(roleAloneEffective, "Enter"));
+    EXPECT_FALSE(isActivationKey(roleAloneEffective, " "));
+    EXPECT_TRUE(isActivationKey(accessibilityRoleAloneEffective, "Enter"));
+    EXPECT_FALSE(isActivationKey(accessibilityRoleAloneEffective, " "));
+}
+
+TEST_F(WebPropAliasTest, WhenBothAreGivenTheStringWinsForActivationJustAsItDoesForTheAccessibilityRoleField) {
+    const RoleResolution resolution =
+        roleResolutionFor(folly::dynamic::object("role", "link")("accessibilityRole", "button"));
+    const std::string effective = effectiveAccessibilityRole(resolution.accessibilityRole, resolution.role);
+
+    EXPECT_EQ(effective, "button");
+    EXPECT_TRUE(isActivationKey(effective, "Enter"));
+    EXPECT_TRUE(isActivationKey(effective, " "));
 }
 
 #pragma mark - inset family (position: absolute)

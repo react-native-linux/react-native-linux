@@ -1,0 +1,34 @@
+{
+  "name": "focus-role-alias-link-no-space-activation",
+  "bundle": "focus.js",
+  "ready": "focus: committed surface 1",
+  "frames": 600,
+  "steps": [
+    "sleep 500",
+    "key Tab press",
+    "key Tab release",
+    "sleep 100",
+    "key Tab press",
+    "key Tab release",
+    "sleep 100",
+    "key Tab press",
+    "key Tab release",
+    "sleep 100",
+    "key Tab press",
+    "key Tab release",
+    "sleep 100",
+    "key space press",
+    "key space release",
+    "sleep 100",
+    "key Return press",
+    "key Return release",
+    "sleep 500"
+  ],
+  "expect": [
+    "focus: topFocus on zeta",
+    "focus: topKeyDown on zeta key=  code=Space clicks=0",
+    "focus: topKeyUp on zeta key=  code=Space clicks=0",
+    "focus: topKeyDown on zeta key=Enter code=Enter clicks=0",
+    "focus: topClick on zeta clicks=1"
+  ]
+}
