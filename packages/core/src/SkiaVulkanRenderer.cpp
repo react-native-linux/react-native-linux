@@ -1,6 +1,7 @@
 #include "SkiaVulkanRenderer.h"
 
 #include "TextRasterizationPolicySkia.h"
+#include "VulkanResultPolicy.h"
 #include "include/core/SkAlphaType.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColorSpace.h"
@@ -37,9 +38,11 @@ sk_sp<VulkanMemoryAllocator> Make(const VulkanBackendContext& backendContext, Th
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <iostream>
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 #include <vulkan/vulkan_wayland.h>
@@ -71,9 +74,29 @@ constexpr VkImageSubresourceRange kColorSubresourceRange{
     .layerCount = 1,
 };
 
+// The policy table states the VkResult values it maps as its own constants so it can be compiled, and covered,
+// without the Vulkan headers. This is where the two are bound together: a drift is a build error here.
+static_assert(kVulkanSuccess == VK_SUCCESS);
+static_assert(kVulkanNotReady == VK_NOT_READY);
+static_assert(kVulkanTimeout == VK_TIMEOUT);
+static_assert(kVulkanErrorOutOfHostMemory == VK_ERROR_OUT_OF_HOST_MEMORY);
+static_assert(kVulkanErrorOutOfDeviceMemory == VK_ERROR_OUT_OF_DEVICE_MEMORY);
+static_assert(kVulkanErrorDeviceLost == VK_ERROR_DEVICE_LOST);
+static_assert(kVulkanErrorSurfaceLost == VK_ERROR_SURFACE_LOST_KHR);
+static_assert(kVulkanSuboptimal == VK_SUBOPTIMAL_KHR);
+static_assert(kVulkanErrorOutOfDate == VK_ERROR_OUT_OF_DATE_KHR);
+static_assert(kVulkanErrorFullScreenExclusiveModeLost == VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT);
+
+std::string describeFailure(VkResult result, const char* operation) {
+    const std::string_view name = describeVulkanResult(result);
+    const std::string spelling = name.empty() ? std::to_string(result) : std::string(name);
+
+    return std::string(operation) + " failed with VkResult " + spelling;
+}
+
 void checkVulkanResult(VkResult result, const char* operation) {
     if (result != VK_SUCCESS) {
-        throw std::runtime_error(std::string(operation) + " failed with VkResult " + std::to_string(result));
+        throw std::runtime_error(describeFailure(result, operation));
     }
 }
 
@@ -100,9 +123,10 @@ PFN_vkVoidFunction resolveVulkanProc(const char* procedureName, VkInstance insta
 } // namespace
 
 SkiaVulkanRenderer::SkiaVulkanRenderer(wl_display* waylandDisplay, wl_surface* waylandSurface, WindowSize initialSize)
-    : requestedSize_(initialSize), swapchainSize_(initialSize) {
+    : waylandDisplay_(waylandDisplay), waylandSurface_(waylandSurface), requestedSize_(initialSize),
+      swapchainSize_(initialSize) {
     createInstance();
-    createWaylandSurface(waylandDisplay, waylandSurface);
+    createWaylandSurface();
     selectPhysicalDevice();
     createDevice();
     createDirectContext();
@@ -176,25 +200,30 @@ bool SkiaVulkanRenderer::drawFrame(WaylandWindow& window, const SceneDamage& fra
     checkVulkanResult(vkCreateSemaphore(device_, &semaphoreCreateInfo, nullptr, &acquireSemaphore),
                       "vkCreateSemaphore");
 
-    const VkResult acquireResult = vkAcquireNextImageKHR(device_, swapchain_, kAcquireTimeoutNanoseconds,
-                                                         acquireSemaphore, VK_NULL_HANDLE, &backbuffer.imageIndex);
+    // The injected result replaces the call rather than its return value: a successful acquire leaves a pending
+    // signal on the semaphore, and destroying a semaphore in that state is undefined.
+    const bool injectSwapchainLoss = std::exchange(debugSwapchainLossPending_, false);
+    const VkResult acquireResult =
+        injectSwapchainLoss ? VK_ERROR_OUT_OF_DATE_KHR
+                            : vkAcquireNextImageKHR(device_, swapchain_, kAcquireTimeoutNanoseconds, acquireSemaphore,
+                                                    VK_NULL_HANDLE, &backbuffer.imageIndex);
 
-    if (acquireResult == VK_TIMEOUT || acquireResult == VK_NOT_READY) {
+    // An image that is not presentable cannot be drawn into, so every recovery other than "carry on" abandons the
+    // frame here. `PresentThenRecreateSwapchain` is the exception: VK_SUBOPTIMAL_KHR still hands back a usable
+    // image, and dropping it would cost a frame the compositor could have shown.
+    const VulkanRecovery acquireRecovery = vulkanRecoveryFor(acquireResult);
+
+    if (acquireRecovery != VulkanRecovery::Proceed && acquireRecovery != VulkanRecovery::PresentThenRecreateSwapchain) {
         vkDestroySemaphore(device_, acquireSemaphore, nullptr);
+        applyRecovery(acquireRecovery, acquireResult, "vkAcquireNextImageKHR");
+
+        if (injectSwapchainLoss) {
+            std::cout << "[rnl-window] injected " << describeVulkanResult(acquireResult)
+                      << " at vkAcquireNextImageKHR; the swapchain was rebuilt at " << swapchainSize_.width << "x"
+                      << swapchainSize_.height << std::endl;
+        }
 
         return false;
-    }
-
-    if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR) {
-        vkDestroySemaphore(device_, acquireSemaphore, nullptr);
-        createSwapchain();
-
-        return false;
-    }
-
-    if (acquireResult != VK_SUCCESS && acquireResult != VK_SUBOPTIMAL_KHR) {
-        vkDestroySemaphore(device_, acquireSemaphore, nullptr);
-        checkVulkanResult(acquireResult, "vkAcquireNextImageKHR");
     }
 
     SceneDamage& imageDamage = imageDamage_[backbuffer.imageIndex];
@@ -254,13 +283,71 @@ bool SkiaVulkanRenderer::drawFrame(WaylandWindow& window, const SceneDamage& fra
 
     const VkResult presentResult = vkQueuePresentKHR(queue_, &presentInfo);
 
-    if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR) {
-        createSwapchain();
+    const VulkanRecovery presentRecovery = vulkanRecoveryFor(presentResult);
+
+    // A suboptimal acquire drew and presented anyway, so the rebuild it still owes is issued here — unless the
+    // present asked for a recovery of its own, which supersedes it.
+    if (presentRecovery == VulkanRecovery::Proceed) {
+        applyRecovery(acquireRecovery, acquireResult, "vkAcquireNextImageKHR");
     } else {
-        checkVulkanResult(presentResult, "vkQueuePresentKHR");
+        applyRecovery(presentRecovery, presentResult, "vkQueuePresentKHR");
     }
 
     return true;
+}
+
+void SkiaVulkanRenderer::injectSwapchainLossOnNextFrame() noexcept { debugSwapchainLossPending_ = true; }
+
+void SkiaVulkanRenderer::applyRecovery(VulkanRecovery recovery, VkResult result, const char* operation) {
+    switch (recovery) {
+    case VulkanRecovery::Proceed:
+    case VulkanRecovery::RetryNextFrame:
+        return;
+    case VulkanRecovery::PresentThenRecreateSwapchain:
+    case VulkanRecovery::RecreateSwapchain:
+        createSwapchain();
+
+        return;
+    case VulkanRecovery::RecreateSurface:
+        recreateSurface();
+
+        return;
+    case VulkanRecovery::FatalWithDiagnostic:
+        throw std::runtime_error(describeFailure(result, operation));
+    }
+}
+
+// An output hotplug or a compositor restart invalidates the VkSurfaceKHR without invalidating the device, so the
+// device, the queue and the GrDirectContext all survive and only the surface and what is built on it are rebuilt.
+// The swapchain has to be destroyed and forgotten before the surface it was created from is, because otherwise
+// createSwapchain would pass a swapchain of a destroyed surface as its oldSwapchain.
+void SkiaVulkanRenderer::recreateSurface() {
+    vkDeviceWaitIdle(device_);
+    destroyBackbuffers();
+
+    if (swapchain_ != VK_NULL_HANDLE) {
+        vkDestroySwapchainKHR(device_, swapchain_, nullptr);
+        swapchain_ = VK_NULL_HANDLE;
+    }
+
+    vkDestroySurfaceKHR(instance_, vulkanSurface_, nullptr);
+    vulkanSurface_ = VK_NULL_HANDLE;
+    createWaylandSurface();
+
+    // The spec requires re-querying presentation support per VkSurfaceKHR: the retained queue family presented to
+    // the surface that was just destroyed, not to this one.
+    VkBool32 presentSupported = VK_FALSE;
+    checkVulkanResult(
+        vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice_, queueFamilyIndex_, vulkanSurface_, &presentSupported),
+        "vkGetPhysicalDeviceSurfaceSupportKHR");
+
+    if (presentSupported == VK_FALSE) {
+        throw std::runtime_error("vkGetPhysicalDeviceSurfaceSupportKHR failed: queue family " +
+                                  std::to_string(queueFamilyIndex_) +
+                                  " does not support presenting to the recreated surface");
+    }
+
+    createSwapchain();
 }
 
 void SkiaVulkanRenderer::createInstance() {
@@ -287,13 +374,13 @@ void SkiaVulkanRenderer::createInstance() {
     checkVulkanResult(vkCreateInstance(&instanceCreateInfo, nullptr, &instance_), "vkCreateInstance");
 }
 
-void SkiaVulkanRenderer::createWaylandSurface(wl_display* waylandDisplay, wl_surface* waylandSurface) {
+void SkiaVulkanRenderer::createWaylandSurface() {
     const VkWaylandSurfaceCreateInfoKHR surfaceCreateInfo{
         .sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR,
         .pNext = nullptr,
         .flags = 0,
-        .display = waylandDisplay,
-        .surface = waylandSurface,
+        .display = waylandDisplay_,
+        .surface = waylandSurface_,
     };
 
     checkVulkanResult(vkCreateWaylandSurfaceKHR(instance_, &surfaceCreateInfo, nullptr, &vulkanSurface_),

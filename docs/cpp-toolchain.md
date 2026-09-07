@@ -217,7 +217,67 @@ are swapchain images, so a command buffer retires before its semaphore is reused
 Skia's reference implementation rather than invented.
 
 `VK_ERROR_OUT_OF_DATE_KHR` from either acquire or present rebuilds the swapchain; `xdg_toplevel.configure` rebuilds
-it too, so a resize is handled from whichever side notices first.
+it too, so a resize is handled from whichever side notices first. What every *other* result does is the next
+subsection.
+
+### VkResult policy (#327)
+
+`vkAcquireNextImageKHR` and `vkQueuePresentKHR` are the only two calls on the frame path whose failure is a normal
+desktop event rather than a bug. A lid close, a suspend and resume, an output hotplug, a compositor restart and a
+GPU reset all arrive as a `VkResult`, and an application that throws on all but one of them is not shippable — the
+failure mode Zed carries in [zed#23288](https://github.com/zed-industries/zed/issues/23288),
+[zed#14225](https://github.com/zed-industries/zed/issues/14225) and
+[zed#43851](https://github.com/zed-industries/zed/issues/43851).
+
+`VulkanResultPolicy` is the answer, as a table rather than a chain of `if`s at two call sites:
+
+| `VkResult` | Recovery | Why |
+| --- | --- | --- |
+| `VK_SUCCESS` | proceed | — |
+| `VK_SUBOPTIMAL_KHR` | present anyway, then recreate the swapchain | The image is valid and already drawn; dropping it would cost a frame the compositor could have shown. The swapchain merely no longer matches the surface. |
+| `VK_ERROR_OUT_OF_DATE_KHR` | recreate the swapchain now | The image is not presentable at all, so there is nothing to salvage. This is the lid-close and the resize. |
+| `VK_ERROR_SURFACE_LOST_KHR` | recreate the surface, then the swapchain | An output hotplug or a compositor restart invalidates the `VkSurfaceKHR` without invalidating the device, so the device, the queue and the `GrDirectContext` all survive. |
+| `VK_TIMEOUT`, `VK_NOT_READY` | retry on the next frame | No image was free within the acquire timeout. A pacing outcome, not a fault. |
+| `VK_ERROR_DEVICE_LOST` | fatal with a named diagnostic | See below. |
+| `VK_ERROR_OUT_OF_HOST_MEMORY`, `VK_ERROR_OUT_OF_DEVICE_MEMORY` | fatal with a named diagnostic | No recovery exists that does not first free the allocation that failed. |
+| `VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT`, everything else | fatal with a named diagnostic | An unrecognised result is a driver contract this code has never been read against; guessing a recovery would hide the bug rather than fix it. |
+
+Device loss is deliberately fatal *for now*, and that is the honest half-answer rather than the finished one.
+Recovering from it means invalidating every cached GPU handle in the process — the retained scene's, the text
+pipeline's — before the next paint, which is a contract across those classes and not a swapchain rebuild.
+Until that contract exists, dying with `VK_ERROR_DEVICE_LOST` named in the message beats replaying stale handles
+into a fresh device, which is the crash
+[zed#62998](https://github.com/zed-industries/zed/issues/62998) reports and the garbling
+[zed#58382](https://github.com/zed-industries/zed/issues/58382) reports. #327 stays open for it.
+
+There is no fence wait to police on this path: the acquire signals a semaphore and passes `VK_NULL_HANDLE` for its
+fence, and every submission fence belongs to Ganesh, which does its own device-lost reporting. The swapchain
+*creation* calls keep `checkVulkanResult` rather than the table, because a surface lost while rebuilding for a
+lost surface has no recovery left to try.
+
+Recreating the surface also re-queries `vkGetPhysicalDeviceSurfaceSupportKHR` for the retained queue family, since
+the spec ties presentation support to a specific `VkSurfaceKHR` rather than to the physical device, and fails fatally
+with the queue family and surface named if the new one does not support it, without rebuilding the device.
+
+The table lives in `VulkanResultPolicy.{h,cpp}`, which include neither Vulkan nor Skia: it states the ten result
+values as its own constants, exactly as `ToplevelState` states xdg-shell's four, which is what puts it inside the
+`rnl_core_tests` coverage gate at 100 % of lines and branches. `SkiaVulkanRenderer.cpp` compiles a
+`static_assert` per constant against `vulkan_core.h`, so a drift between the two is a build error rather than a
+silently wrong policy.
+
+**Proving the recreation.** The lavapipe-under-weston window job never returns any of these results: the rig does
+not resize the toplevel, never hotplugs an output and never restarts the compositor, so the recreation path is
+unreachable from CI as it stands. `--window-debug` therefore arms one injected `VK_ERROR_OUT_OF_DATE_KHR` at the
+first acquire, which is a fault injection and not a mock — the renderer takes the real recovery, rebuilds a real
+swapchain against the real surface, and the frame after it is a full repaint because a fresh swapchain seeds
+every image's damage list with the whole surface. It prints the result it injected and the size it rebuilt at, so
+the recovery is visible in the trace rather than inferred.
+
+Under Hyprland, `--window-debug --screenshot` and a plain `--screenshot` of the same fixture produce a
+byte-identical image, which is the assertion that the rebuilt swapchain renders the same frame the original one
+would have: the recovery is complete, not merely survived. The table itself is proved by
+`VulkanResultPolicyTest`. An e2e step that restarts the compositor mid-scenario, which is issue #327's third
+acceptance criterion, is not built.
 
 ### Pacing
 

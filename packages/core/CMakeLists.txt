@@ -1047,6 +1047,7 @@ elseif(RNL_ENABLE_WINDOW)
         src/TextInputClient.cpp
         src/TextInputV3State.cpp
         src/ToplevelState.cpp
+        src/VulkanResultPolicy.cpp
         src/WaylandSeat.cpp
         src/WaylandWindow.cpp
         src/WindowMain.cpp

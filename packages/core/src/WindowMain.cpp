@@ -71,6 +71,9 @@ constexpr int32_t kImeDebugCursorHeight = 24;
  * stdout, which is how a developer under a real compositor (Hyprland, for instance, where activate/deactivate,
  * maximize and multi-monitor `wl_surface.enter` are all reachable) confirms the decode is correct end to end. See
  * *Window host* in docs/cpp-toolchain.md.
+ * It also arms one injected `VK_ERROR_OUT_OF_DATE_KHR` at the first acquire, so the swapchain recreation the
+ * `VkResult` policy prescribes is exercised on every run of the flag rather than only when a compositor happens
+ * to invalidate the swapchain.
  */
 struct WindowArguments {
     std::optional<std::string> bundlePath;
@@ -404,6 +407,15 @@ int main(int argc, char** argv) {
         if (parsedArguments.imeDebug && window.textInput() == nullptr) {
             react_native_linux::reportNativeError(kWindowErrorSource,
                                                   "the compositor does not advertise zwp_text_input_manager_v3");
+        }
+
+        // The recreation path of the VkResult policy has no other trigger a developer can pull: a headless
+        // compositor never resizes the window and never loses the surface, so without this the swapchain rebuild
+        // is only ever reached on a real desktop by closing a lid. One injected VK_ERROR_OUT_OF_DATE_KHR at the
+        // first acquire makes the frame after it a rebuilt swapchain and a full repaint. See *VkResult policy*
+        // in docs/cpp-toolchain.md.
+        if (parsedArguments.windowDebug) {
+            renderer.injectSwapchainLossOnNextFrame();
         }
 
         AutomationChannel automation;
