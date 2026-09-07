@@ -1,0 +1,23 @@
+{
+  "name": "decoration-content-point",
+  "bundle": "pointer-offset.js",
+  "ready": "pointer-offset: committed surface 1",
+  "frames": 600,
+  "windowFlags": ["--force-client-decorations"],
+  "steps": [
+    "sleep 500",
+    "move 110 172",
+    "sleep 100",
+    "click 110 172",
+    "sleep 200",
+    "move 300 132",
+    "sleep 100",
+    "click 300 132",
+    "sleep 500"
+  ],
+  "expect": [
+    "[rnl-decorations] mode=client",
+    "pointer-offset: topClick on rotated client=110,140 page=110,140 offset=40,40",
+    "pointer-offset: topClick on scaled client=300,100 page=300,100 offset=15,15"
+  ]
+}

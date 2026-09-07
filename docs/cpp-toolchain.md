@@ -694,9 +694,9 @@ this is ours by construction.
 (`packages/core/src/WindowDecorations.h`) is libwayland-free and Skia-free for the reason `ToplevelState` and
 `WaylandSerialLedger` are — the generated headers only exist under `RNL_ENABLE_WINDOW`, and this has to compile
 under `RNL_BUILD_TESTS`, which probes for neither — so the part of the chrome that can be arithmetically wrong is
-under the 100% line-and-branch gate (`packages/core/tests/WindowDecorationsTest.cpp`). It holds five things and
+under the 100% line-and-branch gate (`packages/core/tests/WindowDecorationsTest.cpp`). It holds six things and
 nothing else: `decideDecorationMode`, `layoutTitleBar`, `hitTestDecorations`, `resizeEdgeOfHit`/`contentExtentOf`,
-and `DoubleClickDetector`.
+the `surfaceToLogical`/`logicalToSurface` conversion pair (#374, below), and `DoubleClickDetector`.
 
 The mode table is one sentence — **we draw only when we are told to, or when there is no one to ask** — with a
 third mode, `bare`, for a rig that wants neither: no server-side request, no drawn bar, zero inset.
@@ -781,6 +781,58 @@ here: the inactive-bar golden, because both CI compositors run one window and ca
 single-window limit *Desktop lifecycle contract (#218)* records), and an e2e assertion that a gutter drag issues
 `xdg_toplevel.resize` with the right edge, because neither the trace nor the automation channel can observe a
 request the client sent.
+
+**The inset is applied exactly once (#374).** Five things read a window's size — Yoga's root node, `Dimensions`,
+`useWindowDimensions`, the swapchain extent and hit-testing — and `contentExtentOf` was already the one function
+all of them went through for the paint-and-hit-test direction; what #374 fixes is the two gaps that let it drift:
+a fullscreen client-decorated window kept reporting the bar's inset to every one of those five consumers for a bar
+`TitleBarPainter` had stopped drawing, and there was no inverse of the conversion at all, which is what a size
+constraint (`xdg_toplevel.set_min_size`/`set_max_size`) would need before this platform binds one. Electron's three
+open bugs (electron#50017, electron#51679, electron#45916) are three call sites that had each grown their own
+answer to "how big is the inset" instead of one function all three read; `ElectronDesktopWindowTreeHostLinux::
+GetMinimumSizeForWindow`/`GetMaximumSizeForWindow` inflate a logical constraint by `GetRestoredFrameBorderInsets()`
+to avoid double subtraction against a widget-bounds path that already expects the inset included, and a maximum of
+`0` is deliberately left uninflated because zero is xdg-shell's and Chromium's shared spelling of "no constraint".
+
+`contentExtentOf` now takes `isFullscreen` as well as `mode`: the bar term is zero whenever `mode` is `Server`
+*or* `isFullscreen` is true, because a fullscreen window draws no chrome under either decoration mode.
+`surfaceToLogical`/`logicalToSurface` (`packages/core/src/WindowDecorations.h`) are the general, invertible form
+of the same rule, with a `scale` parameter alongside `mode` and `isFullscreen`: `surfaceToLogical` removes the bar
+and then divides by scale, `logicalToSurface` multiplies by scale and then adds the bar back, and a zero
+component of the *logical* side is left at zero in the surface direction rather than inflated by the bar or the
+scale, mirroring `GetMaximumSizeForWindow`'s own rule so it cannot drift between the two directions the way it
+did across Electron's three bugs. `scale` is `1.0` at every call site today, the same way
+`DimensionsSource::configure`'s `scale` parameter is — neither `wp_fractional_scale_v1` nor
+`wl_surface.preferred_buffer_scale` is bound yet — so this pair is not wired into a production call site beyond
+`contentExtentOf` itself; it exists, fully tested including the round trip at scale 1, 1.25 and 1.5, so the day a
+size constraint or fractional scale lands is a call-site change here rather than a second design of this
+arithmetic.
+
+**The tiled predicate.** `ToplevelState` now decodes xdg-shell's four tiled-edge states (`TILED_LEFT` = 5 through
+`TILED_BOTTOM` = 8, added in the protocol's version 2) individually, and `isEffectivelyTiled` is the one
+expression anything downstream may trust: any edge tiled, and not maximized. Electron's own
+`OnWindowTiledStateChanged` collapses the same four booleans into the same one expression for the same reason —
+"GNOME on Ubuntu reports all edges as tiled even if the window is only half-tiled, so do not trust individual edge
+values" — and a maximized window's edges are reported tiled too, so maximized wins outright rather than combining
+with the tiled reading. This platform draws no shadow gutter under any state (the decision two sections above), so
+tiling changes no extent at all; the one real consumer is `hitTestDecorations`, which now takes
+`isEffectivelyTiled` and drops all four resize-edge hits together — not per edge, for the same don't-trust-a-
+single-edge reason — because there is nothing to grab on the side the compositor placed against the screen's own
+border. The bar's buttons and drag region are untouched, so a tiled window still moves and closes the way a
+floating one does.
+
+**What is proven where.** The conversion pair's round trip over no decorations, server-side, client-side,
+maximised, fullscreen and tiled, plus the zero-maximum rule, is `WindowDecorationsTest.
+TheConversionPairRoundTripsOverEveryDecorationScenario` and `...AZeroLogicalMaximumIsNotInflatedByTheBarOrTheScale`
+in the unit gate; the tiled predicate's own table, including the GNOME all-edges case, is
+`ToplevelStateTest.TheTiledPredicateIsAnyEdgeTiledAndNotMaximized`; the resize-edge suppression is
+`WindowDecorationsTest.ATiledWindowHasNoResizeEdgesButKeepsItsButtonsAndDragRegion`. The e2e scenario
+`decoration-content-point.json` reuses the `pointer-offset` fixture under `--force-client-decorations`, clicking
+32 surface points below each of that fixture's original content points, and asserts the same content-relative
+`clientX`/`clientY` the un-decorated scenario asserts — proving the bar's inset reaches the pointer pipeline
+exactly once rather than zero or twice. A golden for the drawn gutter appearing and disappearing with tiling is
+not part of this fix: there is no drawn gutter to diff, per the decision above, so nothing about tiling changes a
+pixel this platform paints.
 
 ### The retained scene, and the threads it crosses
 
