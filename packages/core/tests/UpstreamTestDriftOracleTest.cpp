@@ -14,8 +14,9 @@ enum class UpstreamSuiteLinkage { Linked, Excluded };
 
 /**
  * One vendored `tests/` directory: its expected file list at v0.87.1, whether any file from it compiles into
- * `rnl_core_tests` today, and — when it does not, or does only in part — the reviewed reason, mirroring the
- * comment that states the same reason in packages/core/tests/CMakeLists.txt. `exclusionReason` is documentation
+ * `rnl_core_tests` or `rnl_core_hermes_tests` today, and — when it does not, or does only in part — the
+ * reviewed reason, mirroring the comment that states the same reason in packages/core/tests/CMakeLists.txt or
+ * packages/core/tests/hermes/CMakeLists.txt. `exclusionReason` is documentation
  * for a partially linked directory and a reviewed gate for a fully excluded one; the test below requires it
  * non-empty whenever `linkage` is `Excluded`, and a `Linked` entry may carry one too.
  */
@@ -32,8 +33,9 @@ namespace {
 
 /**
  * The drift oracle for every vendored `tests/` directory (#230, generalizing #132 and #211): `ReactCommon` holds
- * 36 and `ReactCxxPlatform` holds 3, and every one of the 39 is named here — the 26 whose files already compile
- * into `rnl_core_tests` (#132, #211, #227) and the 13 this table is what makes reviewed rather than invisible.
+ * 36 and `ReactCxxPlatform` holds 3, and every one of the 39 is named here — the 28 whose files already compile
+ * into `rnl_core_tests` (#132, #211, #227) or `rnl_core_hermes_tests` (#228) and the 11 this table is what
+ * makes reviewed rather than invisible.
  * An upstream add or remove of a directory or a file in one fails this test, and #58's bump ritual reads this
  * file, not a memory of which directories exist. Upstream v0.87.1.
  */
@@ -46,7 +48,8 @@ TEST(UpstreamTestDriftOracleTest, VendoredTestsDirectoriesMatchTheV0871FileLists
         {"ReactCommon/callinvoker/ReactCommon/tests",
          {"TestCallInvoker.h"},
          UpstreamSuiteLinkage::Excluded,
-         "a fixture header, not a test suite; consumed by the bridging and io tests E2 would host"},
+         "a fixture header, not a test suite; consumed by the bridging tests linked in rnl_core_hermes_tests, "
+         "and by the io tests the Metro dev server work (#79) would add"},
         {"ReactCommon/cxxreact/tests",
          {"RecoverableErrorTest.cpp", "jsarg_helpers.cpp", "jsbigstring.cpp", "methodcall.cpp"},
          UpstreamSuiteLinkage::Linked,
@@ -74,8 +77,9 @@ TEST(UpstreamTestDriftOracleTest, VendoredTestsDirectoriesMatchTheV0871FileLists
          "all three files include gmock/gmock.h unconditionally, and BUILD_GMOCK is OFF"},
         {"ReactCommon/react/bridging/tests",
          {"BridgingTest.cpp", "BridgingTest.h", "ClassTest.cpp"},
-         UpstreamSuiteLinkage::Excluded,
-         "BridgingTest.h includes hermes/hermes.h; joins the Hermes-linked binary E2 would add"},
+         UpstreamSuiteLinkage::Linked,
+         "Linked in rnl_core_hermes_tests: BridgingTest.h includes hermes/hermes.h, so BridgingTest.cpp and "
+         "ClassTest.cpp cannot be in the Hermes-free binary. BridgingTest.h is their shared fixture"},
         {"ReactCommon/react/debug/redbox/tests",
          {"AnsiParserTest.cpp", "JscSafeUrlTest.cpp", "RedBoxErrorParserTest.cpp"},
          UpstreamSuiteLinkage::Excluded,
@@ -90,7 +94,7 @@ TEST(UpstreamTestDriftOracleTest, VendoredTestsDirectoriesMatchTheV0871FileLists
         {"ReactCommon/react/nativemodule/core/tests",
          {"TurboModuleTestFixture.h"},
          UpstreamSuiteLinkage::Excluded,
-         "a fixture header, not a test suite; consumed by the TurboModule tests E2 would host"},
+         "a fixture header, not a test suite; no suite in either binary consumes it yet"},
         {"ReactCommon/react/performance/timeline/tests",
          {"CircularBufferTest.cpp", "PerformanceEntryReporterTest.cpp", "PerformanceEntryTest.cpp",
           "PerformanceObserverTest.cpp"},
@@ -136,9 +140,9 @@ TEST(UpstreamTestDriftOracleTest, VendoredTestsDirectoriesMatchTheV0871FileLists
           "LayoutableShadowNodeTest.cpp", "PrimitivesTest.cpp", "PropsConceptsTest.cpp", "RawPropsTest.cpp",
           "RawValueTest.cpp", "ShadowNodeFamilyTest.cpp", "ShadowNodeTest.cpp", "TestComponent.h"},
          UpstreamSuiteLinkage::Linked,
-         "10 of 14 files compile; EventQueueProcessorTest.cpp, EventTargetTests.cpp, RawPropsTest.cpp and "
-         "RawValueTest.cpp construct a real Runtime and include hermes/hermes.h, joining E2. TestComponent.h is a "
-         "shared header, not a compiled suite"},
+         "10 of 14 files compile here; EventQueueProcessorTest.cpp, EventTargetTests.cpp, RawPropsTest.cpp and "
+         "RawValueTest.cpp construct a real Runtime and include hermes/hermes.h, and are linked in "
+         "rnl_core_hermes_tests. TestComponent.h is a shared header, not a compiled suite"},
         {"ReactCommon/react/renderer/css/tests",
          {"CSSAngleTest.cpp", "CSSBackgroundImageTest.cpp", "CSSColorTest.cpp", "CSSFilterTest.cpp",
           "CSSFontVariantTest.cpp", "CSSKeywordTest.cpp", "CSSLengthPercentageTest.cpp", "CSSLengthTest.cpp",
@@ -176,14 +180,16 @@ TEST(UpstreamTestDriftOracleTest, VendoredTestsDirectoriesMatchTheV0871FileLists
          {"RuntimeSchedulerTest.cpp", "SchedulerPriorityTest.cpp", "StubClock.h", "StubErrorUtils.h",
           "StubQueue.h"},
          UpstreamSuiteLinkage::Linked,
-         "only SchedulerPriorityTest.cpp compiles; RuntimeSchedulerTest.cpp needs Hermes for its real "
-         "std::thread cross-thread scheduling and joins E2. StubClock.h, StubErrorUtils.h and StubQueue.h are its "
-         "fixtures"},
+         "only SchedulerPriorityTest.cpp compiles here; RuntimeSchedulerTest.cpp needs Hermes for its real "
+         "std::thread cross-thread scheduling and is linked in rnl_core_hermes_tests. StubClock.h, "
+         "StubErrorUtils.h and StubQueue.h are its fixtures"},
         {"ReactCommon/react/renderer/scheduler/tests",
          {"SchedulerDelegateInvalidationTest.cpp"},
-         UpstreamSuiteLinkage::Excluded,
-         "needs Hermes for its real std::thread cross-thread scheduling against a StubClock; joins E2, the #212 "
-         "pattern"},
+         UpstreamSuiteLinkage::Linked,
+         "Linked in rnl_core_hermes_tests: it needs Hermes for its real std::thread cross-thread scheduling "
+         "against a StubClock. Its Sanity_LambdaRunsOnNextTickWhenDelegateAlive case overrides a feature flag, "
+         "so it passes under ctest, which runs every case in its own process, and fails in a single-process run "
+         "of the whole binary after an earlier suite has read that flag"},
         {"ReactCommon/react/renderer/telemetry/tests",
          {"TransactionTelemetryTest.cpp"},
          UpstreamSuiteLinkage::Linked,
@@ -207,7 +213,7 @@ TEST(UpstreamTestDriftOracleTest, VendoredTestsDirectoriesMatchTheV0871FileLists
          {},
          UpstreamSuiteLinkage::Excluded,
          "no direct files; the two Hermes-linked ReactInstanceTest and RuntimeExecutorShutdownTest suites live "
-         "under runtime/tests/cxx/, which needs a Hermes-linked binary (E2)"},
+         "under runtime/tests/cxx/ and are linked in rnl_core_hermes_tests"},
         {"ReactCommon/react/timing/tests",
          {"PrimitivesTest.cpp"},
          UpstreamSuiteLinkage::Linked,
