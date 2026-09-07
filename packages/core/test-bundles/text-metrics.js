@@ -33,7 +33,8 @@ const createNode = (componentName, props, children = []) => {
 
 const component = (componentName) => (props, children = []) => createNode(componentName, props, children);
 const rawText = (value) => createNode('RawText', { text: value });
-const [text, paragraph, view] = ['Text', 'Paragraph', 'View'].map(component);
+// 'RCTVirtualText', not 'Text': componentNameByReactViewName rewrites 'Text' to 'Paragraph' (#312).
+const [text, paragraph, view] = ['RCTVirtualText', 'Paragraph', 'View'].map(component);
 
 const white = 0xfff2f4f8 | 0;
 const muted = 0xff9aa4b2 | 0;

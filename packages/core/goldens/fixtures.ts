@@ -63,7 +63,7 @@ const fixtures: readonly GoldenFixture[] = [
   {
     bundleFileName: "ellipsize.js",
     goldenFileName: "ellipsize.png",
-    renderArguments: ["880", "620"],
+    renderArguments: ["880", "840"],
     renderFlag: "--text-fit-golden",
   },
   // #372: what an unset fontFamily, "sans-serif" and "system-ui" resolve to — the vendored Noto Sans, asked for directly rather than through fontconfig, so a host's own sans-serif alias cannot answer it.
