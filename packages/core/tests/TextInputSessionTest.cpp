@@ -284,6 +284,11 @@ TEST(TextInputSessionTest, AStaleSerialHoldsTheStateBackAndAMatchingOneReleasesI
     EXPECT_EQ(released.surroundingText->text, kSurroundingText);
     ASSERT_TRUE(released.cursorRectangle.has_value());
     EXPECT_EQ(released.cursorRectangle.value(), kMovedCaret);
+
+    // `applyDone` itself carries no batch and asks for no commit — only `takeBatch` does, and the dispatcher
+    // calls it exactly once per frame. A second `takeBatch` in the same frame, which is what a `done`-triggered
+    // flush racing the end-of-frame flush would have produced (issue #397), finds nothing left to send.
+    EXPECT_TRUE(isEmpty(session.takeBatch()));
 }
 
 TEST(TextInputSessionTest, ACompositorThatNeverAnswersLeavesTheStateHeldBackRatherThanResent) {

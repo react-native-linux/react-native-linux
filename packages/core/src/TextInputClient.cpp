@@ -139,8 +139,13 @@ void TextInputClient::pushEvents(const std::vector<InputEvent>& events) {
 void TextInputClient::onLeave() { pushEvents(session_.leave()); }
 
 void TextInputClient::onDone(uint32_t serial) {
+    // No flush here: `applyDone` can release pending surrounding-text or cursor-rectangle state that
+    // `InputDispatcher::dispatch()` has not reconciled yet this frame, and flushing on the spot would commit that
+    // release before the frame's own end-of-frame flush commits everything else it produced — two `commit`
+    // requests for one frame's worth of state. `dispatch()` calls `flushTextInput()` exactly once, after
+    // `TextInputController::synchronize()` and `updateTextInput()` have both run, so the released state reaches
+    // the compositor in that one batch instead.
     pushEvents(session_.applyDone(serial));
-    flushTextInput();
 }
 
 void TextInputClient::handleEnter(void* data, zwp_text_input_v3* /*textInput*/, wl_surface* /*surface*/) {
