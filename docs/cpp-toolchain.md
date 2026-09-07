@@ -4966,10 +4966,10 @@ react-native-macos#1622 was missing.
 `TextInputFocusSink` in `InputPipeline.h` is the second half of the `ImeSink` seam. `ImeSink` is where a
 composition lands; this is what decides whether a composition can start at all, and `zwp_text_input_v3` needs
 both because `enable` is a request the client makes rather than a state the compositor infers. `TextInputClient`
-implements it with the four methods it already had — `enable`, `disable`, `setSurroundingText` and
-`setCursorRectangle` — and `InputDispatcher` calls the first two when focus enters or leaves a component named
-`TextInput`, which `src/TextInputComponent.h` registers. The other two follow the caret and are the field's to
-supply; see *TextInput*.
+implements it — `focusField`, `blurField`, `setSurroundingText`, `setCursorRectangle` and `flushTextInput` — and
+`InputDispatcher` calls the first two with the content purpose of whatever field holds the caret, re-evaluated at
+the end of every frame. The two setters follow the caret and are the field's to supply, and the flush is the one
+place a frame's requests reach the wire; see *The session, and the two focuses that drive it* under *IME*.
 
 `rnl_window --ime-debug` is unchanged and deliberately does **not** register the sink: it drives the same two
 calls by hand, and both driving them would be two owners racing over one protocol object.
@@ -5124,10 +5124,11 @@ Neither is sent until there is something real to say.
 
 The compositor counts our `commit` requests and sends that count back as the serial on `done`. A serial that is
 not our own count means the compositor answered a state we have already replaced: the composition still applies —
-the user's keystrokes are not negotiable — but our own state requests wait for a `done` whose serial matches
-before they are sent again. That is `needsStateResend`, and `TextInputClient` re-sends the cached state on the
-first matching `done`. `enable` and `enter` clear the gate, because the `commit` that carries an `enable` cannot
-wait for a serial that only another `commit` would produce.
+the user's keystrokes are not negotiable — but the surrounding text and the cursor rectangle we sent are treated
+as never having landed, and they go out again on the first `done` whose serial matches. `enable` clears the gate,
+because the `commit` that carries an `enable` cannot wait for a serial that only another `commit` would produce.
+A compositor that never sends a matching `done` therefore sends no more state and keeps composing, which is the
+right way round: state is an optimisation for the input method, composition is the user's text.
 
 ### Focus, and what enabling costs
 
@@ -5139,6 +5140,49 @@ half-composed word behind.
 
 `enable` is refused while the text input has no focus, because the protocol says the compositor ignores every
 request from a text input that has not been sent `enter`.
+
+### The session, and the two focuses that drive it (#340)
+
+`TextInputSession` is that policy as one state machine, and `TextInputClient` is reduced to executing what it
+hands back. It is a separate class because it is the part that can be wrong in a way a picture never shows: the
+session is a sequence of requests over time, and every bug in the list issue #340 is built from is a sequence,
+not a frame.
+
+**Enablement is re-evaluated, never latched.** The session is enabled when the surface has the compositor's
+keyboard focus **and** a `<TextInput>` holds the platform's focus, and it is disabled the moment either stops
+being true. `InputDispatcher` asks `TextInputController::focusedContentPurpose` at the end of every frame rather
+than only when focus moves, because the answer changes without focus moving — a "show password" toggle flips
+`secureTextEntry` on the field that already has the caret. A focusable node that is not a field disables the
+session rather than leaving it enabled, which is the candidate window that otherwise appears over ordinary
+interface elements.
+
+**The protocol has no reset request, so a field swap is `disable` then `enable`.** Each half carries its own
+`commit`, because they are two transactions: the first says everything you were told belongs to a field that no
+longer has the caret, the second builds the new one. Skipping it is how one field's surrounding text ends up
+describing another's. The teardown also clears whatever composition was on screen, so an alt-tab or a click
+elsewhere mid-composition leaves no half-composed word behind.
+
+**A `leave` is not a blur.** The compositor taking keyboard focus away ends the session without a request — a
+request from a text input that has not been sent `enter` is ignored — and leaves the field, its buffer and its
+cached state exactly where they were. The first `enter` after it enables again and re-sends the surrounding text
+and the cursor rectangle, which is the round trip an input method that "stops working after switching window"
+never gets.
+
+**One `commit` per frame.** Nothing reaches the wire until `flushTextInput`, which the dispatcher calls once per
+frame after the frame's reconciliation, so a frame that changed the field, its text and its caret is one batch.
+The surrounding text and the cursor rectangle are each compared against what was last sent — the rectangle in the
+integer surface coordinates the protocol carries — so a caret that jitters below a pixel and a field that
+re-measured to the same numbers generate no traffic at all.
+
+**`set_content_type` comes from the field's props.** `secureTextEntry` is the password purpose plus the
+`hidden_text` and `sensitive_data` hints, which is what keeps a password out of an input method's history;
+`keyboardType` maps to the closest purpose the protocol names — `email-address` to `email`, `url` to `url`,
+`phone-pad` and `name-phone-pad` to `phone`, `number-pad` to `digits`, `numeric` and `decimal-pad` to `number`,
+and everything else to `normal`. `keyboardType` is a `TextInputProps` string on this platform for that one reason:
+a desktop has no on-screen keyboard whose layout it could change.
+
+Not in it: suppressing the cursor rectangle while an xkb compose sequence is in flight, which needs the
+`xkb_compose_state` the *Deferrals* list still owns under #39. There is no compose state to ask.
 
 ### Keys during composition
 
@@ -5234,12 +5278,31 @@ sends — it is the same protocol either way — which is the argument for havin
 
 ### Tests
 
-`TextInputV3State` is a pure class for exactly one reason: it is the part that can be arithmetically wrong, so it
-belongs where the coverage gate can see it. `packages/core/tests/ImeTest.cpp` covers the batching order, the
-last-preedit-wins rule, the cursor-pair change, the composition-ending empty pre-edit, focus invalidation and the
-serial mismatch, and `TextInputV3State.cpp` is in `scopedSourcePaths` at 100% line and branch. `TextInputClient.cpp`
-is outside that scope for the same reason `WaylandSeat.cpp` is: what is left in it is protocol plumbing that needs
-a compositor, and `--ime-debug` is the test for it.
+`TextInputV3State` and `TextInputSession` are pure classes for exactly one reason: they are the parts that can be
+arithmetically wrong, so they belong where the coverage gate can see them. Both are in `scopedSourcePaths` at
+100% line and branch.
+
+`packages/core/tests/ImeTest.cpp` covers the composition buffer — the batching order, the last-preedit-wins rule,
+the cursor-pair change, the composition-ending empty pre-edit and the reset that takes a half-composed word off
+the screen. `packages/core/tests/TextInputSessionTest.cpp` covers the session over the interleavings the reports
+in #340 describe: neither focus alone enables it, both together do with the field's content type, a field focused
+and then the window losing keyboard focus, a `leave` mid-composition and the `enter` that rebuilds the session
+without the field losing its buffer, a compositor that sends `leave` before the app blurs, two fields swapped in
+one frame, a content type toggled under the caret, state that did not change not being sent again, the two empty
+values the protocol reads as "never", a stale serial and a compositor that never answers with a matching one. The
+`keyboardType`-to-purpose table is checked case by case in the same file, against the function in
+`InputPipeline.cpp`.
+
+`TextInputClient.cpp` is outside that scope for the same reason `WaylandSeat.cpp` is: what is left in it is
+protocol plumbing that needs a compositor, and `--ime-debug` is the test for it.
+
+The session's transitions are observable without a compositor, because `InputDispatcher` writes one trace line
+per change — `[rnl-ime] field focused purpose=email`, `[rnl-ime] field blurred`. `hello_react --type
+packages/core/test-bundles/text-input-session.js /tmp/rnl-session.png "{Tab}{Tab}{Tab}"` prints them for a
+fixture of one field and one focusable node that is not a field, and the `text-input-session` e2e scenario asserts
+the same three lines across a Tab into the field, a click on the button and a Tab back. What that scenario cannot
+prove is composition itself: cage runs no input method, so the e2e proves the enable and disable sequence and the
+unit gate proves what each of them carries.
 
 The e2e layer issue #26 asks for — a virtual input method injecting composition under the headless compositor —
 is not built. It needs the harness to speak the compositor side, `input-method-v2`, which is a second protocol
@@ -5257,8 +5320,9 @@ implementation and the *Deferrals* below explain why it is not this issue's.
 - **`text-input-unstable-v1` and XIM.** Neither is implemented and neither is planned. v1 is the GTK-era protocol
   that v3 replaced, and XIM is X11's, which reaches this platform only through XWayland — which this platform
   does not use. ADR-0001's Wayland-only decision is what makes that a closed question rather than an open one.
-- **Content hints and purpose.** `set_content_type` maps to `<TextInput>`'s `keyboardType`, `autoCapitalize`,
-  `secureTextEntry` and `autoComplete` props, so it lands with the props, in #17.
+- **Content hints beyond the two.** `set_content_type` carries `keyboardType` and `secureTextEntry` since #340;
+  `autoCapitalize` and `autoComplete` would add hints rather than a purpose and land with the props that need
+  them.
 - **`set_text_change_cause`.** The client must tell the input method when the text changed for a reason other
   than composition. That needs a text buffer that can change for another reason, which is #17.
 - **Compose sequences and dead keys.** `xkb_compose_state` turns `dead_acute` + `e` into `é` without any input

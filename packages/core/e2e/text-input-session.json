@@ -1,0 +1,26 @@
+{
+  "name": "text-input-session",
+  "bundle": "text-input-session.js",
+  "ready": "text-input-session: committed surface 1",
+  "frames": 600,
+  "steps": [
+    "sleep 500",
+    "key Tab press",
+    "key Tab release",
+    "sleep 200",
+    "move 520 64",
+    "sleep 100",
+    "click 520 64",
+    "sleep 200",
+    "key Tab press",
+    "key Tab release",
+    "sleep 500"
+  ],
+  "expect": [
+    "[rnl-ime] field focused purpose=email",
+    "text-input-session: topFocus on address",
+    "[rnl-ime] field blurred",
+    "text-input-session: topFocus on button",
+    "[rnl-ime] field focused purpose=email"
+  ]
+}
