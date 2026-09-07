@@ -124,7 +124,7 @@ const SUCCESSFUL_EXIT_STATUS = 0;
 
 const windowRigPath = path.join(packageDirectory, "..", "..", "scripts", "window-golden.ts");
 const windowRenderDirectory = path.join(packageDirectory, "..", "..", "build", "window-goldens");
-const windowGoldenFileNames = ["window-fabric-view.png", "window-view-props.png"];
+const windowGoldenFileNames = ["window-fabric-view.png", "window-view-props.png", "window-first-frame.png"];
 
 /**
  * One rig process renders every window fixture, because starting a compositor per image would cost more than the
