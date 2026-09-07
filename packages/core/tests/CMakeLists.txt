@@ -98,6 +98,7 @@ add_executable(rnl_core_tests
     VulkanResultPolicyTest.cpp
     WaylandSerialLedgerTest.cpp
     WebPropAliasTest.cpp
+    WindowDecorationsTest.cpp
     ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/AnimatedNodeTests.cpp
     ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/AnimationDriverTests.cpp
     ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/DecayAnimationDriverTest.cpp
@@ -138,6 +139,7 @@ add_executable(rnl_core_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/SurfaceCommitGate.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/VulkanResultPolicy.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/WaylandSerialLedger.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/WindowDecorations.cpp
     ${RNL_UPSTREAM_CSS_TESTS}
     ${RNL_UPSTREAM_GRAPHICS_TESTS}
     ${RNL_UPSTREAM_TIMELINE_TESTS})
