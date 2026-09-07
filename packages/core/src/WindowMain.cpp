@@ -1,6 +1,7 @@
 #include "AutomationProtocol.h"
 #include "AutomationServer.h"
 #include "FrameClock.h"
+#include "FrameJournal.h"
 #include "FrameTiming.h"
 #include "InputPipeline.h"
 #include "LinuxMountingManager.h"
@@ -87,6 +88,11 @@ constexpr int32_t kImeDebugCursorHeight = 24;
  * and a final summary line carrying the frame count, the discarded count and the p50, p95 and maximum frame
  * times. It is what the e2e driver's perf gate reads. See *Frame timing* in docs/cpp-toolchain.md.
  *
+ * When a bundle is running, each presented frame's line is followed by the frame journal's own line for the same
+ * event (#345) — the dirty-to-present latency and paint span, when the frame closed an open interval — and the
+ * run ends with the journal's own summary line, beside `FrameTiming`'s. See *Frame journal* in
+ * docs/cpp-toolchain.md.
+ *
  * `--window-debug` is issue #218's manual proof, the same role `--ime-debug` plays for text composition: none of
  * the desktop lifecycle contract's activated/maximized/fullscreen/resizing bits, `wl_surface` enter/leave, or
  * keyboard focus reach JavaScript today — there is no `AppState`-equivalent module to carry them there, and
@@ -135,9 +141,44 @@ struct AutomationChannel {
     std::optional<std::string> pendingScreenshotPath;
 };
 
-void writeFrameLines(std::ostream& frameLog, react_native_linux::WaylandWindow& window) {
+/**
+ * Drains the presented frames `WaylandWindow` recorded since the last call, writes `FrameTiming`'s line for each,
+ * and — when a session is running the frame journal — closes the matching journal interval and writes its line
+ * too.
+ *
+ * `FrameTiming`'s own API reports discarded content updates as a cumulative count rather than as an interleaved
+ * stream with the presented ones, so the two cannot be read back in the order the compositor produced them: this
+ * charges every discarded event since the last call as a journal discontinuity *before* draining the presented
+ * frames, which can occasionally abandon an interval a discarded frame did not itself own. Discarded content
+ * updates are rare enough in practice — a resize preempting an in-flight commit is the only reason `WaylandWindow`
+ * documents for one — that this is a stated approximation rather than a precision behaviour. See *Frame journal*
+ * in docs/cpp-toolchain.md.
+ */
+void writeFrameLines(std::ostream& frameLog, react_native_linux::WaylandWindow& window,
+                     react_native_linux::WindowSession* session, uint32_t& previousDiscardedFrames) {
+    if (session != nullptr) {
+        const uint32_t discardedFrames = window.frameTimingSummary().discarded;
+
+        for (uint32_t discarded = previousDiscardedFrames; discarded < discardedFrames; ++discarded) {
+            session->reportJournalDiscontinuity();
+        }
+
+        previousDiscardedFrames = discardedFrames;
+    }
+
     for (const react_native_linux::FrameTiming::Frame& frame : window.takePresentedFrames()) {
         frameLog << react_native_linux::FrameTiming::formatFrameLine(frame) << "\n";
+
+        if (session == nullptr) {
+            continue;
+        }
+
+        const std::optional<react_native_linux::FrameJournal::ClosedFrame> closed =
+            session->closeJournalFrame(frame.presentedNanoseconds);
+
+        if (closed.has_value()) {
+            frameLog << react_native_linux::FrameJournal::formatClosedFrameLine(closed.value()) << "\n";
+        }
     }
 }
 
@@ -897,6 +938,7 @@ int main(int argc, char** argv) {
 
         ImeDebugSink imeDebugSink;
         std::optional<std::ofstream> frameLog;
+        uint32_t previousDiscardedFrames = 0;
         bool lastKeyboardFocus = false;
         bool keyboardFocusAnnounced = false;
         uint32_t lastOutputEnterCount = 0;
@@ -911,7 +953,8 @@ int main(int argc, char** argv) {
             // Presentation feedback for the frames committed before this iteration arrived during the previous
             // waitForRedraw, so the drain belongs at the top of the loop rather than beside the present.
             if (frameLog.has_value()) {
-                writeFrameLines(frameLog.value(), window);
+                writeFrameLines(frameLog.value(), window, session.has_value() ? &session.value() : nullptr,
+                                previousDiscardedFrames);
             }
 
             const bool hasResized = window.takePendingResize();
@@ -1021,16 +1064,21 @@ int main(int argc, char** argv) {
                         }
                     }
 
+                    // The paint span the frame journal (#345) times is exactly the Skia work between them: not
+                    // `drawFrame`'s swapchain bookkeeping, and not the present call after it, because neither is
+                    // the work `paintScene` is answering the frame's damage with.
                     presented = renderer.drawFrame(
                         window, surfaceDamage,
-                        [&frame, &chrome, &window](SkCanvas& canvas, react_native_linux::WindowSize /*size*/,
+                        [&frame, &chrome, &window, &session](SkCanvas& canvas, react_native_linux::WindowSize /*size*/,
                                                    const react_native_linux::SceneDamage& imageDamage) {
+                            session->recordPaintStart(std::chrono::steady_clock::now());
                             paintDecoratedFrame(canvas, chrome, window.title(), imageDamage,
                                                 [&frame](SkCanvas& contentCanvas,
                                                          const react_native_linux::SceneDamage& contentDamage) {
                                                     react_native_linux::paintScene(contentCanvas, frame.scene,
                                                                                    contentDamage);
                                                 });
+                            session->recordPaintEnd(std::chrono::steady_clock::now());
                         });
                 }
             } else {
@@ -1055,10 +1103,18 @@ int main(int argc, char** argv) {
         }
 
         if (frameLog.has_value()) {
-            writeFrameLines(frameLog.value(), window);
+            react_native_linux::WindowSession* sessionPointer = session.has_value() ? &session.value() : nullptr;
+
+            writeFrameLines(frameLog.value(), window, sessionPointer, previousDiscardedFrames);
             frameLog.value() << react_native_linux::FrameTiming::formatSummaryLine(window.frameTimingSummary(),
                                                                                    window.isPresentationSupported())
                              << "\n";
+
+            if (sessionPointer != nullptr) {
+                frameLog.value() << react_native_linux::FrameJournal::formatSummaryLine(
+                                        sessionPointer->frameJournalSummary())
+                                 << "\n";
+            }
         }
 
         if (parsedArguments.screenshotPath.has_value() && !hasCaptured) {
