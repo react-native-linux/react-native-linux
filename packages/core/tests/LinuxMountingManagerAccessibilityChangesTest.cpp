@@ -141,6 +141,44 @@ TEST(LinuxMountingManagerAccessibilityChangesTest, AStateAndValueChangeInOneComm
     EXPECT_TRUE(changes[0].valueChanged);
 }
 
+// Props carrying `testID`, `checked`, and `accessibilityValue.now` all at once — every field one of the two
+// merging `Update`s in the coalescing test below changes on its own.
+std::shared_ptr<ViewProps> identifiedCheckedProps(const std::string& testId, AccessibilityState::CheckedState checked,
+                                                  int value) {
+    const std::shared_ptr<ViewProps> props = propsWithState(checked);
+
+    props->testId = testId;
+    props->accessibilityValue = AccessibilityValue{.now = value};
+
+    return props;
+}
+
+TEST(LinuxMountingManagerAccessibilityChangesTest, TwoUpdatesForOneTagInOneTransactionCoalesceIntoOneChange) {
+    const std::shared_ptr<ViewProps> initialProps =
+        identifiedCheckedProps("first", AccessibilityState::CheckedState::Unchecked, 1);
+
+    LinuxMountingManager mountingManager;
+    mountWithAccessibilityProps(mountingManager, initialProps);
+
+    const ShadowView initial = makeStyledView(kMountedTag, makeRect(0, 0, 10, 10), initialProps);
+    const ShadowView stateOnly = makeStyledView(
+        kMountedTag, makeRect(0, 0, 10, 10), identifiedCheckedProps("second", AccessibilityState::CheckedState::Checked, 1));
+    const ShadowView valueOnly = makeStyledView(
+        kMountedTag, makeRect(0, 0, 10, 10), identifiedCheckedProps("third", AccessibilityState::CheckedState::Checked, 2));
+
+    mountingManager.executeMount(
+        kSurfaceTag, transactionOf({ShadowViewMutation::UpdateMutation(initial, stateOnly, kSurfaceTag),
+                                    ShadowViewMutation::UpdateMutation(stateOnly, valueOnly, kSurfaceTag)}));
+
+    const std::vector<AccessibilityChange> coalesced = mountingManager.takeAccessibilityChanges();
+
+    ASSERT_EQ(coalesced.size(), 1U);
+    EXPECT_EQ(coalesced[0].tag, kMountedTag);
+    EXPECT_TRUE(coalesced[0].stateChanged);
+    EXPECT_TRUE(coalesced[0].valueChanged);
+    EXPECT_EQ(coalesced[0].testId, "third");
+}
+
 TEST(LinuxMountingManagerAccessibilityChangesTest, AnUpdateThatLeavesStateAndValueAloneRecordsNothing) {
     LinuxMountingManager mountingManager;
     const ShadowView previous = mountCheckedView(mountingManager);

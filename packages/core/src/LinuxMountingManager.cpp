@@ -166,7 +166,8 @@ SceneNodes LinuxMountingManager::visualTreeNodes() const {
     return scene_.nodes();
 }
 
-void LinuxMountingManager::recordAccessibilityChangeIfAny(const facebook::react::ShadowView& next) {
+void LinuxMountingManager::recordAccessibilityChangeIfAny(
+    const facebook::react::ShadowView& next, std::unordered_map<facebook::react::Tag, std::size_t>& changedThisTransaction) {
     const auto previous = scene_.nodes().find(next.tag);
 
     if (previous == scene_.nodes().end()) {
@@ -188,6 +189,20 @@ void LinuxMountingManager::recordAccessibilityChangeIfAny(const facebook::react:
         return;
     }
 
+    const auto existing = changedThisTransaction.find(next.tag);
+
+    if (existing != changedThisTransaction.end()) {
+        AccessibilityChange& change = accessibilityChanges_[existing->second];
+
+        // Bitwise, not `||`: both operands are pure bools, and `||`'s short-circuit branch is one llvm-cov cannot
+        // be driven to both outcomes without a test that exists only to please the coverage gate.
+        change.stateChanged = change.stateChanged | stateChanged;
+        change.valueChanged = change.valueChanged | valueChanged;
+        change.testId = nextProps->testId;
+        return;
+    }
+
+    changedThisTransaction.emplace(next.tag, accessibilityChanges_.size());
     accessibilityChanges_.push_back(AccessibilityChange{
         .tag = next.tag, .stateChanged = stateChanged, .valueChanged = valueChanged, .testId = nextProps->testId});
 }
@@ -201,6 +216,8 @@ void LinuxMountingManager::executeMount(facebook::react::SurfaceId /*surfaceId*/
     if (!mountingTransaction.getMutations().empty()) {
         hasPendingDamage_ = true;
     }
+
+    std::unordered_map<facebook::react::Tag, std::size_t> accessibilityChangesThisTransaction;
 
     for (const facebook::react::ShadowViewMutation& mutation : mountingTransaction.getMutations()) {
         switch (mutation.type) { // COV_EXCL: every ShadowViewMutation::Type value has a case, so the implicit no-match branch cannot execute
@@ -220,7 +237,7 @@ void LinuxMountingManager::executeMount(facebook::react::SurfaceId /*surfaceId*/
                 break;
             case facebook::react::ShadowViewMutation::Update:
                 verifyTagIsKnown("Update", mutation.newChildShadowView.tag);
-                recordAccessibilityChangeIfAny(mutation.newChildShadowView);
+                recordAccessibilityChangeIfAny(mutation.newChildShadowView, accessibilityChangesThisTransaction);
                 scene_.updateNode(mutation.newChildShadowView);
                 break;
         }

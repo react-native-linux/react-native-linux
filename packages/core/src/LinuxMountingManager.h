@@ -15,6 +15,7 @@
 #include <mutex>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace react_native_linux {
@@ -229,7 +230,15 @@ public:
 private:
     bool verifyTagIsKnown(std::string_view operation, facebook::react::Tag tag);
     void reportRejectedAnimatedProp(const RejectedAnimatedProp& rejectedProp);
-    void recordAccessibilityChangeIfAny(const facebook::react::ShadowView& next);
+    /**
+     * `changedThisTransaction` maps a tag already recorded in this transaction to its position in
+     * `accessibilityChanges_`, so a second `Update` on the same tag in one transaction ORs its
+     * `stateChanged`/`valueChanged` into the existing record and refreshes `testId`, rather than appending a
+     * duplicate `ListAccessibilityChanges` would report as two changes for one commit. Reset to empty at the
+     * start of every `executeMount` call.
+     */
+    void recordAccessibilityChangeIfAny(const facebook::react::ShadowView& next,
+                                        std::unordered_map<facebook::react::Tag, std::size_t>& changedThisTransaction);
 
     mutable std::mutex sceneMutex_;
     RetainedScene scene_;
