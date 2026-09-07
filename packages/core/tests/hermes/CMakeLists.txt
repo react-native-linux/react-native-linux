@@ -93,9 +93,13 @@ set_target_properties(rnl_core_hermes_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY 
 #   #393 highResTimeStampTest: round-trips HighResTimeStamp::now() through a double of milliseconds, which
 #        holds nanoseconds exactly only below 2^53 ns, about two and a half hours of host uptime; on a runner
 #        that has been up longer the equality fails on every preset.
+#   #395 immediateTaskYieldsToSynchronousAccess: starts a real thread that requests synchronous access and
+#        lines it up with the scheduler's yield check by sleeping, so on a loaded runner whichever side wins
+#        decides what the stub queue holds at the assertion.
 #
-# All three are vendored and none is reachable from anything this platform calls.
-set(RNL_HERMES_TESTS_FILTER "-BridgingTest.highResTimeStampTest")
+# All four are vendored and none is reachable from anything this platform calls.
+set(RNL_HERMES_TESTS_FILTER
+    "-BridgingTest.highResTimeStampTest:UseModernRuntimeScheduler/RuntimeSchedulerTest.immediateTaskYieldsToSynchronousAccess/*")
 
 if(CMAKE_CXX_FLAGS MATCHES "-fsanitize=thread")
     string(APPEND RNL_HERMES_TESTS_FILTER

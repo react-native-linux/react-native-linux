@@ -7091,13 +7091,19 @@ don't copy — so a version bump re-runs it at the new SHA:
 
 211 cases are in the sources, all of section B's E2 list, and no upstream file is left out of the source list.
 Three qualifications on what that number means when the suite runs. The `TEST_FILTER` in
-`packages/core/tests/hermes/CMakeLists.txt` keeps one case out of every configure, so `dev` and `asan` discover
-210. One case reports itself skipped at runtime: `ReactInstanceTest.testRegistersRuntimeSchedulerAsEventLoopControl`
-is guarded by a feature flag upstream ships off, so `ctest` counts it as not run rather than as passed, and 209
-execute. And the TSan configure keeps two more cases out, so it discovers 208 and executes 207.
+`packages/core/tests/hermes/CMakeLists.txt` keeps three cases out of every configure (the parameterised
+scheduler case counts twice), so `dev` and `asan` discover 208. One case reports itself skipped at runtime:
+`ReactInstanceTest.testRegistersRuntimeSchedulerAsEventLoopControl` is guarded by a feature flag upstream ships
+off, so `ctest` counts it as not run rather than as passed, and 207 execute. And the TSan configure keeps two
+more cases out, so it discovers 206 and executes 205.
 
-The three are vendored failures, none reachable from anything this platform calls, and per AGENTS.md a filter
+The four are vendored failures, none reachable from anything this platform calls, and per AGENTS.md a filter
 naming a case is not a suppression file; there is none in this repository.
+
+- `UseModernRuntimeScheduler/RuntimeSchedulerTest.immediateTaskYieldsToSynchronousAccess` (#395) — starts a real
+  thread that requests synchronous access and lines it up with the scheduler's yield check by sleeping, so on a
+  loaded runner whichever side wins decides what the stub queue holds at the assertion; it surfaced on the run
+  that added the #393 filter, after passing every other run that day.
 
 - `BridgingTest.highResTimeStampTest` (#393) — round-trips `HighResTimeStamp::now()` through `toJs`, a double of
   milliseconds, and back. A double holds 2^53 exact integers, so nanosecond precision survives only while the
