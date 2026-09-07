@@ -1,9 +1,11 @@
 #include "TextInputController.h"
 
+#include "RecordingEventDispatcher.h"
 #include "ShadowTreeTestSupport.h"
 #include "TextInputComponent.h"
 
 #include <LinuxMountingManager.h>
+#include <algorithm>
 #include <folly/dynamic.h>
 #include <gtest/gtest.h>
 #include <memory>
@@ -17,7 +19,6 @@ namespace {
 
 using facebook::react::ComponentDescriptorParameters;
 using facebook::react::ContextContainer;
-using facebook::react::EventDispatcher;
 using facebook::react::LayoutConstraints;
 using facebook::react::LayoutContext;
 using facebook::react::PropsParserContext;
@@ -36,6 +37,7 @@ using react_native_linux::InputModifiers;
 using react_native_linux::isScrollableField;
 using react_native_linux::LinuxMountingManager;
 using react_native_linux::makeConfiguredShadowNode;
+using react_native_linux::makeRecordingEventDispatcher;
 using react_native_linux::makeTaskDroppingUIManager;
 using react_native_linux::PassThroughShadowTreeDelegate;
 using react_native_linux::removeShadowTree;
@@ -47,6 +49,9 @@ using react_native_linux::TextInputShadowNode;
 
 constexpr SurfaceId kSurfaceId = 1;
 constexpr Tag kFieldTag = 20;
+constexpr facebook::react::Point kPointInsideField{.x = 20, .y = 20};
+constexpr char kSelectionChangeEvent[] = "topSelectionChange";
+constexpr char kChangeEvent[] = "topChange";
 
 using ChildList = std::vector<std::shared_ptr<const ShadowNode>>;
 
@@ -110,8 +115,28 @@ protected:
         return InputEvent{.kind = InputEventKind::KeyPress, .key = key, .modifiers = modifiers};
     }
 
+    static InputEvent pointer(InputEventKind kind, facebook::react::Point surfacePoint) {
+        return InputEvent{.kind = kind, .surfacePoint = surfacePoint};
+    }
+
+    void clickInsideField() {
+        controller_->handlePointer(pointer(InputEventKind::PointerButtonPress, kPointInsideField));
+        controller_->handlePointer(pointer(InputEventKind::PointerButtonRelease, kPointInsideField));
+    }
+
+    void type(const std::string& text) {
+        for (const char character : text) {
+            controller_->handleKey(key(std::string(1, character)));
+        }
+    }
+
+    size_t countRecorded(const std::string& type) const {
+        return static_cast<size_t>(std::count(recordedEventTypes_->begin(), recordedEventTypes_->end(), type));
+    }
+
     std::unique_ptr<TextInputController> controller_;
     std::shared_ptr<const TextInputShadowNode> mountedField_;
+    std::shared_ptr<std::vector<std::string>> recordedEventTypes_{std::make_shared<std::vector<std::string>>()};
 
 private:
     std::shared_ptr<const ShadowNode> makeField(folly::dynamic props) {
@@ -121,8 +146,10 @@ private:
 
     PassThroughShadowTreeDelegate shadowTreeDelegate_;
     std::shared_ptr<const ContextContainer> contextContainer_{std::make_shared<ContextContainer>()};
+    std::shared_ptr<const facebook::react::EventDispatcher> eventDispatcher_{
+        makeRecordingEventDispatcher(recordedEventTypes_)};
     TextInputComponentDescriptor fieldDescriptor_{ComponentDescriptorParameters{
-        .eventDispatcher = EventDispatcher::Shared{}, .contextContainer = contextContainer_, .flavor = nullptr}};
+        .eventDispatcher = eventDispatcher_, .contextContainer = contextContainer_, .flavor = nullptr}};
     std::shared_ptr<UIManager> uiManager_;
     std::shared_ptr<LinuxMountingManager> mountingManager_;
     ShadowTree* shadowTree_;
@@ -181,6 +208,69 @@ TEST_F(TextInputControllerTest, TheShortcutKeysReachTheEditorAndCtrlZIsDeliberat
 
     // No undo stack yet: Ctrl+Z is left for the application rather than swallowed into a no-op.
     EXPECT_EQ(controller_->handleKey(key("z", control)), TextInputKeyResult::Ignored);
+}
+
+/**
+ * Issue #330's `text-input-clipboard-click` e2e, at unit scale and Skia-free: the field is reached by a pointer
+ * press and release rather than by Tab, and Ctrl+A after that click still selects the whole value — the
+ * `topSelectionChange` the scenario waits for is emitted, so pointer focus is not what the scenario was failing
+ * on. `isSelectingByPointer_` is left false by the release, which is the state a following shortcut needs.
+ */
+TEST_F(TextInputControllerTest, SelectAllAfterPointerFocusEmitsASelectionChangeJustAsAfterTabFocus) {
+    commitTextInput(folly::dynamic::object());
+    clickInsideField();
+    type("SerialLedger");
+    controller_->synchronize();
+    recordedEventTypes_->clear();
+
+    InputModifiers control;
+    control.control = true;
+
+    EXPECT_EQ(controller_->handleKey(key("a", control)), TextInputKeyResult::Consumed);
+    controller_->synchronize();
+
+    EXPECT_EQ(countRecorded(kSelectionChangeEvent), 1U);
+}
+
+/**
+ * Why that scenario failed in CI anyway, and the contract behind it: emissions are differences against the last
+ * frame, computed in `synchronize`, so a selection that both appears and disappears between two frames is never a
+ * difference and is never emitted. Ctrl+A followed by Ctrl+X inside one frame is exactly that — the cut collapses
+ * the select-all's range before any frame has seen it — and only the collapsed selection reaches JavaScript.
+ *
+ * The sibling `text-input-editing` scenario passes the same idiom because its Ctrl+C does not move the selection,
+ * so the select-all survives to the next frame. Coalescing is deliberate (twelve keystrokes are one `topChange`,
+ * not twelve), so the scenario spaces the two shortcuts instead; this row is what stops that spacing from being
+ * read as superstition later.
+ */
+TEST_F(TextInputControllerTest, ASelectionMadeAndCollapsedInsideOneFrameIsCoalescedAwayAndOnlyEmittedWhenAFrameSeesIt) {
+    commitTextInput(folly::dynamic::object());
+    clickInsideField();
+    type("SerialLedger");
+    controller_->synchronize();
+    recordedEventTypes_->clear();
+
+    InputModifiers control;
+    control.control = true;
+
+    controller_->handleKey(key("a", control));
+    controller_->handleKey(key("x", control));
+    controller_->synchronize();
+
+    // One, for the collapsed caret the cut left: the full range never existed at a frame boundary.
+    EXPECT_EQ(countRecorded(kSelectionChangeEvent), 1U);
+    EXPECT_EQ(countRecorded(kChangeEvent), 1U);
+
+    recordedEventTypes_->clear();
+    controller_->handleKey(key("v", control));
+    controller_->synchronize();
+    controller_->handleKey(key("a", control));
+    controller_->synchronize();
+
+    // Two, with a frame sitting between the paste and the select-all: the caret the paste left, then the full
+    // range. That frame is what the scenario's added sleep buys, and what makes its `selection=0..12` reachable.
+    EXPECT_EQ(countRecorded(kSelectionChangeEvent), 2U);
+    EXPECT_EQ(countRecorded(kChangeEvent), 1U);
 }
 
 TEST_F(TextInputControllerTest, ATextKeyIsConsumedAndAnUnfocusedControllerIgnoresEverything) {

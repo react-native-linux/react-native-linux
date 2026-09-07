@@ -1,6 +1,7 @@
 #pragma once
 
 #include "InputPipeline.h"
+#include "WaylandSerialLedger.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -47,6 +48,11 @@ constexpr uint32_t kMinimumSeatVersion = 5;
  * Coordinates arrive as `wl_fixed_t` in surface-local space, which is already the coordinate space Fabric lays
  * out in.
  *
+ * `wl_pointer.enter`/`.button` and `wl_keyboard.enter`/`.key` presses are also this seat's other half of the
+ * serial ledger contract (#330): every one of them is fed to the `WaylandSerialLedger` the constructor is given,
+ * which is the only place a later request — `set_selection`, an interactive move, `set_cursor` — reads a serial
+ * back from. See *The serial ledger* in docs/cpp-toolchain.md.
+ *
  * `wl_keyboard.enter`/`.leave` are the window-level half of the focus contract #218 names, tracked here as
  * `hasKeyboardFocus` and deliberately nowhere near `FocusModel`: that class owns which *node* is focused and has
  * no window-level state to lose, so a keyboard leave neither calls it nor clears its focused tag, and a
@@ -60,7 +66,7 @@ constexpr uint32_t kMinimumSeatVersion = 5;
  */
 class WaylandSeat final {
 public:
-    explicit WaylandSeat(wl_seat* seat);
+    WaylandSeat(wl_seat* seat, WaylandSerialLedger& serialLedger);
     WaylandSeat(const WaylandSeat&) = delete;
     WaylandSeat(WaylandSeat&&) = delete;
     WaylandSeat& operator=(const WaylandSeat&) = delete;
@@ -79,9 +85,9 @@ private:
     void loadKeymap(uint32_t format, int32_t keymapDescriptor, uint32_t size);
     void updateModifiers(uint32_t depressed, uint32_t latched, uint32_t locked, uint32_t group);
     void pushPointerPosition(InputEventKind kind, int32_t surfaceX, int32_t surfaceY);
-    void pushPointerButton(uint32_t button, uint32_t state);
+    void pushPointerButton(uint32_t serial, uint32_t button, uint32_t state);
     void pushPointerLeave();
-    void pushKey(uint32_t key, uint32_t state);
+    void pushKey(uint32_t serial, uint32_t key, uint32_t state);
     void releasePointer() noexcept;
     void releaseKeyboard() noexcept;
 
@@ -124,6 +130,7 @@ private:
     xkb_context* xkbContext_{nullptr};
     xkb_keymap* keymap_{nullptr};
     xkb_state* keyboardState_{nullptr};
+    WaylandSerialLedger& serialLedger_;
     InputQueue queue_;
     InputModifiers modifiers_;
     facebook::react::Point pointerPosition_{};
