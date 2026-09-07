@@ -254,6 +254,12 @@ bool FabricHost::advanceScroll(double frameMilliseconds) {
         scrollController_->dispatchCommands(followUpCommands);
     }
 
+    // The offsets the mounting transactions since the last frame already applied to the scene. Adopting them
+    // before the physics run is what makes this frame's `onScroll` the one the commit earned, and taking them
+    // from the mount rather than computing them here is what keeps a displaced frame from existing at all. See
+    // *Holding the visible content still* in docs/cpp-toolchain.md.
+    scrollController_->applyMaintainedScrollOffsets(mountingManager_->takeMaintainedScrollOffsets());
+
     const bool isScrolling = scrollController_->advance(frameMilliseconds);
 
     // After the offsets are written and the frame's `onScroll` is dispatched, and before the beat releases either

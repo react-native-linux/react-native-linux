@@ -236,13 +236,14 @@ struct FabricFrameRunResult {
 FabricFrameRunResult runFabricBundleAcrossFrames(const std::string& bundlePath, facebook::react::Size surfaceSize);
 
 /**
- * The scene a scrolled `<ScrollView>` was showing before a commit prepended content above it, and the scene one
- * frame of the window loop later.
+ * The scene a scrolled `<ScrollView>` was showing before a commit prepended content above it, and the scene that
+ * commit's mounting transaction produced.
  *
- * `failure` is empty when the run produced both. The second scene is taken after **exactly one** frame — one
- * `advanceScroll`, one beat, one drain — because that is what "in the same commit" has to mean for a platform
- * whose scroll offset lives outside the shadow tree: the frame that first sees the prepended children is the frame
- * that adjusts the offset for them. A jump that took a second frame to be corrected would be in this scene.
+ * `failure` is empty when the run produced both. The second scene is taken with **no** frame of the window loop
+ * between it and the prepend — no `advanceScroll`, no beat, no drain — because that is what "in the same commit"
+ * has to mean for a platform whose scroll offset lives outside the shadow tree: a window that painted between the
+ * mount and the next frame beat has to have nothing displaced to paint. A jump that the following frame corrected
+ * would be in this scene.
  */
 struct FabricPrependRunResult {
     SceneSnapshot beforeScene;

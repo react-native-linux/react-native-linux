@@ -77,6 +77,7 @@ add_executable(rnl_core_tests
     LayoutConformanceTest.cpp
     LineBoxMetricsTest.cpp
     LinuxMountingManagerDiagnosticsTest.cpp
+    LinuxMountingManagerMaintainPositionTest.cpp
     LinuxMountingManagerPendingDamageTest.cpp
     PinnedFontFamiliesTest.cpp
     SceneTest.cpp

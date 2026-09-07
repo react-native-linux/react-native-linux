@@ -151,6 +151,18 @@ public:
     std::vector<SceneCommand> takeCommands();
 
     /**
+     * Hands over every offset a mounting transaction moved a maintaining `<ScrollView>` to since the last call,
+     * and empties the queue.
+     *
+     * The scene it produced already carries these offsets — that is the point of computing them here rather than
+     * on the frame that follows — so this is the frame thread being told what the mount decided, not being asked
+     * to decide it. The frame consumer drains it before it advances the scroll physics, so the platform's copy of
+     * the offset agrees with the picture already mounted. See *Holding the visible content still* in
+     * docs/cpp-toolchain.md.
+     */
+    std::vector<MaintainedScrollOffset> takeMaintainedScrollOffsets();
+
+    /**
      * What the mounting layer could not explain, for whoever is debugging a commit. Reading it never clears it:
      * the counter is cumulative for the life of the surface.
      */
@@ -206,6 +218,7 @@ private:
     mutable std::mutex sceneMutex_;
     RetainedScene scene_;
     std::vector<SceneCommand> commands_;
+    std::vector<MaintainedScrollOffset> maintainedScrollOffsets_;
     MountDiagnostics diagnostics_;
     facebook::react::MountingTransaction::Number lastTransactionNumber_{0};
     bool hasPendingDamage_{false};

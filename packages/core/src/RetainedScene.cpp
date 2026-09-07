@@ -12,6 +12,7 @@
 #include <react/renderer/components/image/ImageProps.h>
 #include <react/renderer/components/image/ImageState.h>
 #include <react/renderer/components/root/RootShadowNode.h>
+#include <react/renderer/components/scrollview/ScrollViewProps.h>
 #include <react/renderer/components/scrollview/ScrollViewState.h>
 #include <react/renderer/components/text/ParagraphState.h>
 #include <react/renderer/components/view/BaseViewProps.h>
@@ -762,6 +763,88 @@ void readActivityIndicatorContent(SceneNode& node, const facebook::react::Shadow
  * reaching the props. Setting it here rather than in `readPaintProps` is what makes it survive that function's
  * reset, and the two are called in that order.
  */
+/**
+ * `maintainVisibleContentPosition`, which upstream parses onto `BaseScrollViewProps` for every platform and no
+ * platform then shares an implementation of. Absent when the prop is unset, which is what keeps the child walk in
+ * `maintainScrollPositions` off every other ScrollView.
+ */
+std::optional<MaintainVisibleContentPosition> readMaintaining(const facebook::react::ScrollViewProps& props) {
+    if (!props.maintainVisibleContentPosition.has_value()) {
+        return std::nullopt;
+    }
+
+    const facebook::react::ScrollViewMaintainVisibleContentPosition& parsed =
+        props.maintainVisibleContentPosition.value();
+    std::optional<double> autoscrollToTopThreshold;
+
+    if (parsed.autoscrollToTopThreshold.has_value()) {
+        autoscrollToTopThreshold = static_cast<double>(parsed.autoscrollToTopThreshold.value());
+    }
+
+    return MaintainVisibleContentPosition{.minimumIndexForVisible = parsed.minIndexForVisible,
+                                          .autoscrollToTopThreshold = autoscrollToTopThreshold};
+}
+
+/**
+ * One axis of what the adjustment may clamp against. `contentInset` is an `EdgeInsets` and an axis has two ends,
+ * so this is where the four named edges become a leading and a trailing one.
+ */
+ScrollAxisBounds readAxisBounds(const SceneNode& node, const facebook::react::ScrollViewProps& props,
+                                facebook::react::Size contentSize, bool isHorizontal) {
+    return ScrollAxisBounds{.contentLength = isHorizontal ? contentSize.width : contentSize.height,
+                            .viewportLength = isHorizontal ? node.layoutMetrics.frame.size.width
+                                                           : node.layoutMetrics.frame.size.height,
+                            .leadingInset = isHorizontal ? props.contentInset.left : props.contentInset.top,
+                            .trailingInset = isHorizontal ? props.contentInset.right : props.contentInset.bottom};
+}
+
+void readMaintainedScroll(SceneNode& node, const facebook::react::ShadowView& shadowView,
+                          const facebook::react::ScrollViewState& scrollState) {
+    const auto* props = dynamic_cast<const facebook::react::ScrollViewProps*>(shadowView.props.get());
+    const std::optional<MaintainVisibleContentPosition> maintaining =
+        props == nullptr ? std::nullopt : readMaintaining(*props);
+
+    if (!maintaining.has_value()) {
+        node.maintainedScroll = std::nullopt;
+
+        return;
+    }
+
+    // Emplaced rather than assigned, so a commit that updates the ScrollView *and* changes its children keeps the
+    // children the anchor was last measured in. Rebuilding the whole record here would compare the new children
+    // against an empty list and adjust for nothing.
+    if (!node.maintainedScroll.has_value()) {
+        node.maintainedScroll.emplace();
+    }
+
+    const facebook::react::Size contentSize = scrollState.getContentSize();
+
+    node.maintainedScroll.value().maintaining = maintaining.value();
+    node.maintainedScroll.value().horizontalBounds = readAxisBounds(node, *props, contentSize, true);
+    node.maintainedScroll.value().verticalBounds = readAxisBounds(node, *props, contentSize, false);
+}
+
+/**
+ * Keeps the offset the last mount decided until `ScrollViewState` carries it back.
+ *
+ * The state reaching a `ShadowView` is the last one JavaScript was told about, and the write-back that will tell
+ * it about this one is still in flight, so an offset that disagrees with what this scene already adopted is behind
+ * it rather than ahead of it. When it agrees, the write-back has landed and there is nothing left to outrank.
+ */
+void preferAdoptedOffset(SceneNode& node) {
+    if (!node.maintainedScroll.has_value() || !node.maintainedScroll.value().adoptedOffset.has_value()) {
+        return;
+    }
+
+    if (node.maintainedScroll.value().adoptedOffset.value() == node.scrollContentOffset.value()) {
+        node.maintainedScroll.value().adoptedOffset.reset();
+
+        return;
+    }
+
+    node.scrollContentOffset = node.maintainedScroll.value().adoptedOffset.value();
+}
+
 void readScrollContent(SceneNode& node, const facebook::react::ShadowView& shadowView) {
     node.scrollContentOffset = std::nullopt;
 
@@ -770,11 +853,62 @@ void readScrollContent(SceneNode& node, const facebook::react::ShadowView& shado
             shadowView.state);
 
     if (scrollState == nullptr) {
+        node.maintainedScroll = std::nullopt;
+
         return;
     }
 
     node.scrollContentOffset = scrollState->getData().contentOffset;
     node.clipsChildren = true;
+
+    readMaintainedScroll(node, shadowView, scrollState->getData());
+    preferAdoptedOffset(node);
+}
+
+/**
+ * The children the anchor is chosen from, along one axis: the children of the ScrollView's **content view**, which
+ * is its last child.
+ *
+ * React Native's `<ScrollView>` renders its children inside one content-container `<View>` and renders it with
+ * `collapsable={false}` — see `Libraries/Components/ScrollView/ScrollView.js` — precisely so that Fabric's view
+ * flattening cannot drop a container that carries nothing but layout. So the container is always in the mounting
+ * tree, and this is the same node `RCTScrollViewComponentView` keeps as `_contentView` and Android reads through
+ * `getContentView()`. A tree that flattened it away is not one `<ScrollView>` produces, and it maintains nothing
+ * rather than anchoring on the wrong nodes.
+ *
+ * A tag the scene no longer holds is skipped rather than guessed at, for the same reason `appendPrimitives` skips
+ * one: a `Delete` that arrived without its `Remove` leaves the tag in its parent's child list, and that is the
+ * missing-tag case the mounting layer counts rather than a shape this walk should invent a frame for.
+ */
+std::vector<ScrollChildFrame> contentChildFrames(const SceneNodes& nodes, const SceneNode& scrollView,
+                                                 bool isHorizontal) {
+    std::vector<ScrollChildFrame> frames;
+
+    if (scrollView.childTags.empty()) {
+        return frames;
+    }
+
+    const auto contentView = nodes.find(scrollView.childTags.back());
+
+    if (contentView == nodes.end()) {
+        return frames;
+    }
+
+    for (facebook::react::Tag childTag : contentView->second.childTags) {
+        const auto child = nodes.find(childTag);
+
+        if (child == nodes.end()) {
+            continue;
+        }
+
+        const facebook::react::Rect frame = child->second.layoutMetrics.frame;
+
+        frames.push_back(ScrollChildFrame{.tag = childTag,
+                                          .position = isHorizontal ? frame.origin.x : frame.origin.y,
+                                          .length = isHorizontal ? frame.size.width : frame.size.height});
+    }
+
+    return frames;
 }
 
 std::string readComponentName(const facebook::react::ShadowView& shadowView) {
@@ -1181,6 +1315,46 @@ void RetainedScene::updateNode(const facebook::react::ShadowView& shadowView) {
     damageSubtree(shadowView.tag);
     writeNode(shadowView);
     damageSubtree(shadowView.tag);
+}
+
+std::vector<MaintainedScrollOffset> RetainedScene::maintainScrollPositions() {
+    std::vector<MaintainedScrollOffset> adjustments;
+
+    for (auto& [tag, node] : nodes_) {
+        if (!node.maintainedScroll.has_value()) {
+            continue;
+        }
+
+        SceneMaintainedScroll& maintained = node.maintainedScroll.value();
+        std::vector<ScrollChildFrame> horizontalChildren = contentChildFrames(nodes_, node, true);
+        std::vector<ScrollChildFrame> verticalChildren = contentChildFrames(nodes_, node, false);
+        const facebook::react::Point offset = node.scrollContentOffset.value();
+        const facebook::react::Point adjusted{
+            .x = static_cast<facebook::react::Float>(
+                maintainedScrollOffset(offset.x, maintained.horizontalChildren, horizontalChildren,
+                                       maintained.maintaining, maintained.horizontalBounds)),
+            .y = static_cast<facebook::react::Float>(
+                maintainedScrollOffset(offset.y, maintained.verticalChildren, verticalChildren,
+                                       maintained.maintaining, maintained.verticalBounds))};
+
+        maintained.horizontalChildren = std::move(horizontalChildren);
+        maintained.verticalChildren = std::move(verticalChildren);
+
+        if (adjusted == offset) {
+            continue;
+        }
+
+        // Damaged on both sides of the write, exactly as `updateNode` does it: every child is composed from the
+        // frame origin minus this number, so moving it moves the whole subtree.
+        damageSubtree(tag);
+        node.scrollContentOffset = adjusted;
+        maintained.adoptedOffset = adjusted;
+        damageSubtree(tag);
+
+        adjustments.push_back(MaintainedScrollOffset{.tag = tag, .offset = adjusted});
+    }
+
+    return adjustments;
 }
 
 bool RetainedScene::hasNode(facebook::react::Tag tag) const {

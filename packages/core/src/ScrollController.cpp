@@ -46,7 +46,6 @@ struct ScrollViewMetrics {
     double decelerationRate{kDecelerationRateNormal};
     double scrollEventThrottleMilliseconds{0.0};
     ScrollSnapConfiguration snapping;
-    std::optional<MaintainVisibleContentPosition> maintaining;
 };
 
 /**
@@ -89,64 +88,6 @@ ScrollSnapConfiguration readSnapping(const facebook::react::ScrollViewProps& pro
                                    .isIntervalMomentumDisabled = props.disableIntervalMomentum};
 }
 
-/**
- * `maintainVisibleContentPosition`, which upstream parses onto `BaseScrollViewProps` for every platform and no
- * platform then shares an implementation of. Absent when the prop is unset, which is what keeps the child walk in
- * `readChildFrames` off every other ScrollView.
- */
-std::optional<MaintainVisibleContentPosition> readMaintaining(const facebook::react::ScrollViewProps& props) {
-    if (!props.maintainVisibleContentPosition.has_value()) {
-        return std::nullopt;
-    }
-
-    const facebook::react::ScrollViewMaintainVisibleContentPosition& parsed =
-        props.maintainVisibleContentPosition.value();
-    std::optional<double> autoscrollToTopThreshold;
-
-    if (parsed.autoscrollToTopThreshold.has_value()) {
-        autoscrollToTopThreshold = static_cast<double>(parsed.autoscrollToTopThreshold.value());
-    }
-
-    return MaintainVisibleContentPosition{.minimumIndexForVisible = parsed.minIndexForVisible,
-                                          .autoscrollToTopThreshold = autoscrollToTopThreshold};
-}
-
-/**
- * The children the anchor is chosen from, along one axis.
- *
- * They are the children of the ScrollView's **content view**, which is its last child: React Native's
- * `<ScrollView>` renders its children inside one content-container `<View>`, so the ScrollView's own child list is
- * that container and nothing else. `RCTScrollViewComponentView` keeps the same node as `_contentView` and Android's
- * `MaintainVisibleScrollPositionHelper` reads `mScrollView.getContentView()`, so this is the child list all three
- * platforms measure.
- */
-std::vector<ScrollChildFrame> readChildFrames(const facebook::react::ScrollViewShadowNode& scrollView,
-                                              bool isHorizontal) {
-    std::vector<ScrollChildFrame> frames;
-
-    if (scrollView.getChildren().empty()) {
-        return frames;
-    }
-
-    for (const std::shared_ptr<const facebook::react::ShadowNode>& child :
-         scrollView.getChildren().back()->getChildren()) {
-        const auto* layoutable = dynamic_cast<const facebook::react::LayoutableShadowNode*>(child.get());
-
-        if (layoutable == nullptr) {
-            continue;
-        }
-
-        const facebook::react::Rect frame = layoutable->getLayoutMetrics().frame;
-
-        frames.push_back(ScrollChildFrame{
-            .tag = child->getTag(),
-            .position = isHorizontal ? frame.origin.x : frame.origin.y,
-            .length = isHorizontal ? frame.size.width : frame.size.height});
-    }
-
-    return frames;
-}
-
 facebook::react::Point toPoint(double x, double y) {
     return facebook::react::Point{.x = static_cast<facebook::react::Float>(x),
                                   .y = static_cast<facebook::react::Float>(y)};
@@ -158,8 +99,7 @@ ScrollViewMetrics readMetrics(const facebook::react::ScrollViewShadowNode& scrol
                              .contentInset = scrollView.getConcreteProps().contentInset,
                              .decelerationRate = scrollView.getConcreteProps().decelerationRate,
                              .scrollEventThrottleMilliseconds = scrollView.getConcreteProps().scrollEventThrottle,
-                             .snapping = readSnapping(scrollView.getConcreteProps()),
-                             .maintaining = readMaintaining(scrollView.getConcreteProps())};
+                             .snapping = readSnapping(scrollView.getConcreteProps())};
 }
 
 /**
@@ -252,22 +192,21 @@ void advanceAxis(ScrollTargetAxis& axis, bool isFingerDown, bool isSettlingFromR
 }
 
 /**
- * Holds the child the user is looking at still across a commit that changed the children, which is the whole of
- * `maintainVisibleContentPosition` on this side: `maintainedScrollOffset` decides the number and this decides when
- * it is asked for.
+ * Adopts the mounting transaction's `maintainVisibleContentPosition` adjustment for one axis, if it made one.
  *
- * It runs at the top of the frame that first sees the commit — before the frame's physics, before its scene is
- * taken and before its beat — so the adjusted offset rides the same beat as the events that commit produced rather
- * than the next one. The offset arriving a frame after the children it belongs to is
- * [core#58186](https://github.com/facebook/react-native/issues/58186), the one-frame jump.
- *
- * The children are recorded on every frame the prop is set, including the first, so a target that has just been
- * acquired compares against the children it was acquired with and adjusts nothing.
+ * It is taken here, after the frame has read the offset it compares against and before the physics run, for the
+ * same reason the adjustment used to be computed here: the commit that changed the children is the commit that
+ * has to emit the `onScroll` for the move, and the offset has to be the frame's own new position rather than its
+ * previous one. What changed with #292 is only who decided the number — the mount did, and the scene it produced
+ * already carries it, so there is no frame between the two that could paint a displaced one.
  */
-void maintainAxis(ScrollTargetAxis& axis, std::vector<ScrollChildFrame> children,
-                  const MaintainVisibleContentPosition& maintaining, const ScrollAxisBounds& bounds) {
-    axis.state.offset = maintainedScrollOffset(axis.state.offset, axis.previousChildren, children, maintaining, bounds);
-    axis.previousChildren = std::move(children);
+void adoptMaintainedOffset(ScrollTargetAxis& axis) {
+    if (!axis.pendingMaintainedOffset.has_value()) {
+        return;
+    }
+
+    axis.state.offset = axis.pendingMaintainedOffset.value();
+    axis.pendingMaintainedOffset.reset();
 }
 
 /**
@@ -437,6 +376,22 @@ void ScrollController::dispatchCommands(const std::vector<SceneCommand>& command
     }
 }
 
+void ScrollController::applyMaintainedScrollOffsets(const std::vector<MaintainedScrollOffset>& maintainedOffsets) {
+    for (const MaintainedScrollOffset& maintained : maintainedOffsets) {
+        const std::shared_ptr<const facebook::react::ScrollViewShadowNode> scrollView =
+            scrollViewWithTag(maintained.tag);
+
+        if (scrollView == nullptr) {
+            continue;
+        }
+
+        ScrollTarget& target = acquireMaintainedNode(scrollView);
+
+        target.horizontal.pendingMaintainedOffset = maintained.offset.x;
+        target.vertical.pendingMaintainedOffset = maintained.offset.y;
+    }
+}
+
 /**
  * One `scrollTo(x, y, animated)` or `scrollToEnd(animated)`, turned into what the next frame should do.
  *
@@ -485,16 +440,12 @@ void ScrollController::routeCommand(const SceneCommand& command) {
                                                            metrics.decelerationRate, verticalBounds));
 }
 
-ScrollController::ScrollTarget* ScrollController::acquireNode(
+ScrollController::ScrollTarget& ScrollController::acquireMaintainedNode(
     const std::shared_ptr<const facebook::react::ScrollViewShadowNode>& scrollView) {
-    if (!scrollView->getConcreteProps().scrollEnabled) {
-        return nullptr;
-    }
-
     const auto existing = targets_.find(scrollView->getTag());
 
     if (existing != targets_.end()) {
-        return &existing->second;
+        return existing->second;
     }
 
     // Seeded from the state, so a ScrollView that JavaScript mounted at a non-zero `contentOffset` keeps it, and
@@ -505,7 +456,19 @@ ScrollController::ScrollTarget* ScrollController::acquireNode(
         .horizontal = ScrollTargetAxis{.state = ScrollAxisState{.offset = contentOffset.x}},
         .vertical = ScrollTargetAxis{.state = ScrollAxisState{.offset = contentOffset.y}}};
 
-    return &targets_.emplace(scrollView->getTag(), target).first->second;
+    return targets_.emplace(scrollView->getTag(), target).first->second;
+}
+
+ScrollController::ScrollTarget* ScrollController::acquireNode(
+    const std::shared_ptr<const facebook::react::ScrollViewShadowNode>& scrollView) {
+    // The interactive gate, and only the interactive gate. `scrollEnabled={false}` refuses a wheel, a drag and a
+    // `scrollTo`; it does not refuse the content moving under a reader, which is why the maintained path acquires
+    // through `acquireMaintainedNode` instead of here.
+    if (!scrollView->getConcreteProps().scrollEnabled) {
+        return nullptr;
+    }
+
+    return &acquireMaintainedNode(scrollView);
 }
 
 ScrollController::ScrollTarget* ScrollController::acquire(facebook::react::Point surfacePoint) {
@@ -527,17 +490,8 @@ bool ScrollController::advanceTarget(ScrollTarget& target, const facebook::react
 
     target.isSettlingFromRelease = false;
 
-    if (metrics.maintaining.has_value()) {
-        maintainAxis(target.horizontal, readChildFrames(scrollView, true), metrics.maintaining.value(),
-                     horizontalBounds);
-        maintainAxis(target.vertical, readChildFrames(scrollView, false), metrics.maintaining.value(), verticalBounds);
-    } else {
-        // Turning the prop off forgets the children it was watching. Keeping them would measure the first frame
-        // after it is turned back on against a layout from before it was turned off, and adjust the offset by
-        // everything that happened in between.
-        target.horizontal.previousChildren.clear();
-        target.vertical.previousChildren.clear();
-    }
+    adoptMaintainedOffset(target.horizontal);
+    adoptMaintainedOffset(target.vertical);
 
     advanceAxis(target.horizontal, target.isFingerDown, isSettlingFromRelease, frameMilliseconds,
                 metrics.decelerationRate, horizontalBounds, metrics.snapping);

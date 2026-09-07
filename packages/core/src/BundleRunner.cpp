@@ -528,11 +528,13 @@ FabricPrependRunResult runFabricBundleAcrossPrepend(const std::string& bundlePat
         std::cerr << "[bundle-runner] gave up waiting for pending timers" << std::endl;
     }
 
+    // The scene the mounting transaction produced, with no frame of the window loop between the prepend and this
+    // line: the adjustment is part of the mount rather than of the frame that follows it.
+    result.afterScene = run.fabricHost->snapshotScene();
+
     run.fabricHost->advanceScroll(kInjectedFrameMilliseconds);
     run.fabricHost->induceEventBeat();
     reactHost.drainJavaScriptThread();
-
-    result.afterScene = run.fabricHost->snapshotScene();
 
     // The fixture arms one last timer from the event the frame above produced, and a timer still outstanding at
     // teardown holds a JavaScript callback into a runtime that is about to be destroyed, which Hermes aborts on.

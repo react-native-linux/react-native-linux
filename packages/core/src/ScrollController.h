@@ -40,11 +40,14 @@ struct ScrollTargetAxis {
     std::optional<double> pendingVelocity;
 
     /**
-     * The content children along this axis as the last frame saw them, which is what a
-     * `maintainVisibleContentPosition` adjustment measures the anchor's move against. Filled only while the prop
-     * asks for it, so a ScrollView without it walks no children at all.
+     * Where the last mounting transaction's `maintainVisibleContentPosition` adjustment put this axis, waiting to
+     * be adopted.
+     *
+     * It is pending for the same reason `pendingOffset` is: `advanceTarget` reads the offset it compares against
+     * before it advances, so an offset written straight into the state would already be the previous one by the
+     * time the frame looked, and the commit that earned the adjustment would emit no `onScroll` for it.
      */
-    std::vector<ScrollChildFrame> previousChildren;
+    std::optional<double> pendingMaintainedOffset;
 };
 
 /**
@@ -95,6 +98,18 @@ public:
     void dispatchCommands(const std::vector<SceneCommand>& commands);
 
     /**
+     * Adopts the offsets a mounting transaction moved maintaining `<ScrollView>`s to, so the position this class
+     * owns agrees with the scene that transaction already produced.
+     *
+     * The number is not recomputed here. `RetainedScene::maintainScrollPositions` decided it while the mounting
+     * mutex was held, which is the only place both the children as they were and as they are exist at once, and
+     * the only place early enough that no frame can be painted from a displaced offset. A ScrollView that has
+     * never been scrolled has no entry yet and gets one, because "never scrolled" is not "never moved": a prepend
+     * above a list resting at the top moves it exactly as far as one resting anywhere else.
+     */
+    void applyMaintainedScrollOffsets(const std::vector<MaintainedScrollOffset>& maintainedOffsets);
+
+    /**
      * Integrates one frame and returns whether anything is still moving, which is what lets a headless run know
      * when a fling has settled. `frameMilliseconds` is confined to a plausible range, so a stalled frame slows the
      * scroll down instead of teleporting it.
@@ -137,6 +152,14 @@ private:
     void routeCommand(const SceneCommand& command);
     ScrollTarget* acquire(facebook::react::Point surfacePoint);
     ScrollTarget* acquireNode(const std::shared_ptr<const facebook::react::ScrollViewShadowNode>& scrollView);
+
+    /**
+     * The same find-or-seed without the `scrollEnabled` gate, for the one caller that is not an interaction: a
+     * mounting transaction that moved the content. Never null, so no caller has to handle a refusal that cannot
+     * happen.
+     */
+    ScrollTarget& acquireMaintainedNode(
+        const std::shared_ptr<const facebook::react::ScrollViewShadowNode>& scrollView);
     std::shared_ptr<const facebook::react::ScrollViewShadowNode> scrollViewWithTag(facebook::react::Tag tag) const;
     std::shared_ptr<const facebook::react::ShadowNode> rootShadowNode() const;
     bool advanceTarget(ScrollTarget& target, const facebook::react::ScrollViewShadowNode& scrollView,
