@@ -101,6 +101,12 @@ bool SharedMemoryRasterRenderer::drawFrame(
     }
 
     if (free == nullptr) {
+        // Both buffers are still held by the compositor. Re-arming the frame callback resets
+        // frameCallbackFired_, so WaylandWindow::waitForRedraw actually dispatches the connection instead of
+        // returning immediately on a callback that already fired for a frame whose buffer has not been released
+        // yet — otherwise the pending wl_buffer.release event is never read and this call spins forever.
+        window.requestFrameCallback();
+
         return false;
     }
 
