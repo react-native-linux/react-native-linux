@@ -1,6 +1,7 @@
 #include "TextPipeline.h"
 
 #include "AutomationProtocol.h"
+#include "DefaultFontFamily.h"
 #include "EllipsizeSearch.h"
 #include "LineBoxMetrics.h"
 #include "PinnedFontFamilies.h"
@@ -32,7 +33,6 @@
 #include <react/renderer/graphics/Color.h>
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdlib>
@@ -41,7 +41,6 @@
 #include <iostream>
 #include <optional>
 #include <string>
-#include <string_view>
 #include <unordered_set>
 #include <vector>
 
@@ -60,6 +59,10 @@ constexpr char kBundledFontFamily[] = "Noto Sans";
 // which the asset manager does answer. See *Colour emoji and the fallback chain (#249)* in docs/cpp-toolchain.md.
 constexpr char kEmojiFontFamily[] = "Noto Color Emoji";
 constexpr char kFallbackFontFamily[] = DEFAULT_FONT_FAMILY;
+// The file `scripts/fonts.lock.json` pins for `kBundledFontFamily`'s regular weight — the face
+// `FontFamilyRequestKind::VendoredDefault` resolves to, and what the automation channel of #214 reports as its
+// path (see `reportResolvedDefaultFontFamily`).
+constexpr char kDefaultFontFamilyFileName[] = "NotoSans-Regular.ttf";
 constexpr char kEllipsisUtf8[] = "\xE2\x80\xA6";
 constexpr float kDefaultFontSize = 14.0F;
 constexpr float kUnlimitedLayoutWidth = 1.0e6F;
@@ -138,42 +141,89 @@ void reportUnresolvedFontFamily(const std::string& family, const SkString& subst
 }
 
 /**
- * Whether the family a request resolved to is the family it asked for.
+ * Names what a CSS generic family (`serif`, `monospace`, `cursive`, `fantasy`) resolved to, once per name.
  *
- * Asking whether a name resolved at all is not the question: the default font manager is fontconfig, and
- * fontconfig substitutes rather than failing, so every name "resolves" and an icon font nobody installed comes
- * back as whatever the system had. Comparing the resolved face's own family name to the requested one is what
- * separates *found* from *substituted*, and the substitution is the thing to report.
- *
- * The CSS generic families are the exception, because resolving `monospace` to a real monospace face is the
- * whole point of asking for it rather than a failure to find it.
+ * These are the `FontFamilyRequestKind::FontconfigGeneric` families: there is no vendored face to prefer over
+ * the host's own answer, so the resolution is correct rather than a substitution, and is logged rather than
+ * reported through the #70 diagnostic. Logging it once is what makes a broken host alias — resolving `monospace`
+ * to a proportional face, say — visible without treating a legitimate answer as a failure.
  */
-bool isGenericFamily(const std::string& family) {
-    static constexpr std::array<std::string_view, 5> kGenericFamilies{"serif", "sans-serif", "monospace", "cursive",
-                                                                      "fantasy"};
+void reportGenericFontFamilyResolution(const std::string& family, const SkString& resolved) {
+    static std::unordered_set<std::string> reportedFamilies;
 
-    return std::find(kGenericFamilies.begin(), kGenericFamilies.end(), family) != kGenericFamilies.end();
+    if (reportedFamilies.insert(family).second) {
+        reportNativeError("text",
+                          "fontFamily \"" + family + "\" resolved to \"" + std::string(resolved.c_str()) +
+                              "\" via fontconfig");
+    }
 }
 
+/**
+ * What `fontCollection` resolves `attributes.fontFamily` to, or an empty `SkString` if nothing did — shared by
+ * `FontconfigGeneric` and `Named` requests, which differ only in what they do with the answer.
+ */
+SkString resolveRequestedFamilyName(const facebook::react::TextAttributes& attributes,
+                                    skia::textlayout::FontCollection& fontCollection) {
+    const std::vector<SkString> requested{SkString{attributes.fontFamily}};
+    const std::vector<sk_sp<SkTypeface>> resolved = fontCollection.findTypefaces(requested, toFontStyle(attributes));
+    SkString resolvedFamily;
+
+    if (!resolved.empty() && resolved.front() != nullptr) {
+        resolved.front()->getFamilyName(&resolvedFamily);
+    }
+
+    return resolvedFamily;
+}
+
+std::vector<SkString> resolveGenericFamily(const facebook::react::TextAttributes& attributes,
+                                           skia::textlayout::FontCollection& fontCollection) {
+    const SkString resolvedFamily = resolveRequestedFamilyName(attributes, fontCollection);
+
+    if (!resolvedFamily.isEmpty()) {
+        reportGenericFontFamilyResolution(attributes.fontFamily, resolvedFamily);
+    }
+
+    return {SkString{attributes.fontFamily}};
+}
+
+std::vector<SkString> resolveNamedFamily(const facebook::react::TextAttributes& attributes,
+                                         skia::textlayout::FontCollection& fontCollection) {
+    const SkString resolvedFamily = resolveRequestedFamilyName(attributes, fontCollection);
+
+    if (!resolvedFamily.equals(attributes.fontFamily.c_str())) {
+        reportUnresolvedFontFamily(attributes.fontFamily, resolvedFamily);
+    }
+
+    return {SkString{attributes.fontFamily}};
+}
+
+/**
+ * The family list every text run asks for, in order — #372's answer to "what does `fontFamily` mean when it is
+ * unset, a CSS generic, or a name nobody registered":
+ *
+ * 1. The requested family, resolved per `classifyFontFamilyRequest`: nothing, for the vendored default (see
+ *    below); fontconfig's own answer, logged once, for a CSS generic other than the default; or the name itself,
+ *    diagnosed by #70 if it substitutes, for anything else.
+ * 2. `kBundledFontFamily` (the vendored Noto Sans) and `kEmojiFontFamily` (the vendored Noto Color Emoji).
+ * 3. `kFallbackFontFamily`, skparagraph's own default.
+ *
+ * An unset `fontFamily`, `sans-serif` and `system-ui` add nothing at step 1, so the vendored Noto Sans at step 2
+ * is what resolves — never fontconfig's `sans-serif` alias, which is how electron/electron#53499's KDE Wayland
+ * interface ended up entirely in monospace. See `DefaultFontFamily.h`.
+ */
 std::vector<SkString> toFontFamilies(const facebook::react::TextAttributes& attributes,
                                      skia::textlayout::FontCollection& fontCollection) {
     std::vector<SkString> families;
 
-    if (!attributes.fontFamily.empty()) {
-        const std::vector<SkString> requested{SkString{attributes.fontFamily}};
-        const std::vector<sk_sp<SkTypeface>> resolved = fontCollection.findTypefaces(requested,
-                                                                                    toFontStyle(attributes));
-        SkString resolvedFamily;
-
-        if (!resolved.empty() && resolved.front() != nullptr) {
-            resolved.front()->getFamilyName(&resolvedFamily);
-        }
-
-        if (!isGenericFamily(attributes.fontFamily) && !resolvedFamily.equals(attributes.fontFamily.c_str())) {
-            reportUnresolvedFontFamily(attributes.fontFamily, resolvedFamily);
-        }
-
-        families.emplace_back(attributes.fontFamily);
+    switch (classifyFontFamilyRequest(attributes.fontFamily)) {
+        case FontFamilyRequestKind::VendoredDefault:
+            break;
+        case FontFamilyRequestKind::FontconfigGeneric:
+            families = resolveGenericFamily(attributes, fontCollection);
+            break;
+        case FontFamilyRequestKind::Named:
+            families = resolveNamedFamily(attributes, fontCollection);
+            break;
     }
 
     families.emplace_back(kBundledFontFamily);
@@ -414,12 +464,26 @@ void checkPinnedFontFamiliesResolve(SkFontMgr& assetFontManager) {
     }
 }
 
+/**
+ * Reports the family and file `FontFamilyRequestKind::VendoredDefault` resolves to, for the automation channel
+ * of #214: an out-of-process driver has no other way to ask what an unset, `sans-serif` or `system-ui`
+ * `fontFamily` actually drew, and #372's whole point is that the answer must not depend on the host. Called once,
+ * at `TextPipelineState` construction, since the answer is the same vendored file for the process's whole
+ * lifetime — `scripts/fonts.lock.json` pins the file name alongside the family `checkPinnedFontFamiliesResolve`
+ * already confirmed resolves.
+ */
+void reportResolvedDefaultFontFamily() {
+    reportNativeError("text", "default fontFamily resolved to \"" + std::string(kBundledFontFamily) + "\" (" +
+                                  std::string(RNL_BUNDLED_FONT_DIR) + "/" + kDefaultFontFamilyFileName + ")");
+}
+
 struct TextPipelineState {
     TextPipelineState()
         : fontCollection(sk_make_sp<skia::textlayout::FontCollection>()), unicode(SkUnicodes::ICU::Make()) {
         sk_sp<SkFontMgr> assetFontManager = SkFontMgr_New_Custom_Directory(RNL_BUNDLED_FONT_DIR);
 
         checkPinnedFontFamiliesResolve(*assetFontManager);
+        reportResolvedDefaultFontFamily();
 
         fontCollection->setAssetFontManager(assetFontManager);
         fontCollection->setDefaultFontManager(SkFontMgr_New_FontConfig(nullptr, SkFontScanner_Make_FreeType()),

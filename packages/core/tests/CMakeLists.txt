@@ -60,6 +60,7 @@ add_executable(rnl_core_tests
     AllocationCostTest.cpp
     AppearanceTest.cpp
     BorderGeometryTest.cpp
+    DefaultFontFamilyTest.cpp
     DimensionsTest.cpp
     SceneReuseTest.cpp
     ShadowTest.cpp
@@ -101,6 +102,7 @@ add_executable(rnl_core_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/Appearance.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/AutomationProtocol.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/Clipboard.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/DefaultFontFamily.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/DimensionsSource.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/EditorModel.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/EllipsizeSearch.cpp
