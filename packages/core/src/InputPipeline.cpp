@@ -1,21 +1,48 @@
 #include "InputPipeline.h"
 
-#include <react/renderer/components/view/PointerEvent.h>
-#include <react/renderer/graphics/Float.h>
-#include <react/timing/primitives.h>
-
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <linux/input-event-codes.h>
+#include <react/renderer/components/view/PointerEvent.h>
+#include <react/renderer/graphics/Float.h>
+#include <react/timing/primitives.h>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
 namespace react_native_linux {
+
+TextInputContentPurpose textInputContentPurpose(bool secureTextEntry, std::string_view keyboardType) {
+    if (secureTextEntry) {
+        return TextInputContentPurpose::Password;
+    }
+
+    if (keyboardType == "email-address") {
+        return TextInputContentPurpose::Email;
+    }
+
+    if (keyboardType == "url") {
+        return TextInputContentPurpose::Url;
+    }
+
+    if (keyboardType == "phone-pad" || keyboardType == "name-phone-pad") {
+        return TextInputContentPurpose::Phone;
+    }
+
+    if (keyboardType == "number-pad") {
+        return TextInputContentPurpose::Digits;
+    }
+
+    if (keyboardType == "numeric" || keyboardType == "decimal-pad") {
+        return TextInputContentPurpose::Number;
+    }
+
+    return TextInputContentPurpose::Normal;
+}
 
 constexpr int kNoButton = -1;
 constexpr facebook::react::Tag kNoPressTarget = 0;
@@ -33,37 +60,37 @@ constexpr int kForwardButtonsBit = 16;
 
 int domButtonOfEvdevCode(uint32_t evdevCode) {
     switch (evdevCode) {
-        case BTN_LEFT:
-            return kPrimaryButton;
-        case BTN_MIDDLE:
-            return kAuxiliaryButton;
-        case BTN_RIGHT:
-            return kSecondaryButton;
-        case BTN_SIDE:
-        case BTN_BACK:
-            return kBackwardButton;
-        case BTN_EXTRA:
-        case BTN_FORWARD:
-            return kForwardButton;
-        default:
-            return kNoButton;
+    case BTN_LEFT:
+        return kPrimaryButton;
+    case BTN_MIDDLE:
+        return kAuxiliaryButton;
+    case BTN_RIGHT:
+        return kSecondaryButton;
+    case BTN_SIDE:
+    case BTN_BACK:
+        return kBackwardButton;
+    case BTN_EXTRA:
+    case BTN_FORWARD:
+        return kForwardButton;
+    default:
+        return kNoButton;
     }
 }
 
 int buttonsMaskOfDomButton(int domButton) {
     switch (domButton) {
-        case kPrimaryButton:
-            return kPrimaryButtonsBit;
-        case kSecondaryButton:
-            return kSecondaryButtonsBit;
-        case kAuxiliaryButton:
-            return kAuxiliaryButtonsBit;
-        case kBackwardButton:
-            return kBackwardButtonsBit;
-        case kForwardButton:
-            return kForwardButtonsBit;
-        default:
-            return kNoButtonsBits;
+    case kPrimaryButton:
+        return kPrimaryButtonsBit;
+    case kSecondaryButton:
+        return kSecondaryButtonsBit;
+    case kAuxiliaryButton:
+        return kAuxiliaryButtonsBit;
+    case kBackwardButton:
+        return kBackwardButtonsBit;
+    case kForwardButton:
+        return kForwardButtonsBit;
+    default:
+        return kNoButtonsBits;
     }
 }
 
@@ -86,8 +113,8 @@ int buttonsBitOf(int button) { return buttonsMaskOfDomButton(button); }
 // to invert towards — the same floor `RetainedScene::toUntransformedPoint` uses for the identical reason.
 constexpr float kSingularDeterminant = 1e-6F;
 
-facebook::react::PointerEvent makePointerEvent(const InputEvent& event, facebook::react::Point targetOffset,
-                                               int button, int detail, int buttons) {
+facebook::react::PointerEvent makePointerEvent(const InputEvent& event, facebook::react::Point targetOffset, int button,
+                                               int detail, int buttons) {
     facebook::react::PointerEvent pointerEvent{};
 
     pointerEvent.pointerId = kMousePointerId;
@@ -276,8 +303,7 @@ bool isPrintableText(const std::string& keyText) {
 }
 
 bool isScrollDelta(const InputEvent& event) {
-    return event.kind == InputEventKind::PointerScrollContinuous ||
-           event.kind == InputEventKind::PointerScrollDiscrete;
+    return event.kind == InputEventKind::PointerScrollContinuous || event.kind == InputEventKind::PointerScrollDiscrete;
 }
 
 constexpr char kTokenOpen = '{';
@@ -325,16 +351,16 @@ size_t codePointLength(const std::string& text, size_t index) {
  */
 std::string tokenKeyName(const std::string& name) {
     constexpr std::array<NamedKey, 11> kTokenKeys{{{"Left", "ArrowLeft"},
-                                                      {"Right", "ArrowRight"},
-                                                      {"Up", "ArrowUp"},
-                                                      {"Down", "ArrowDown"},
-                                                      {"Home", "Home"},
-                                                      {"End", "End"},
-                                                      {"Backspace", "Backspace"},
-                                                      {"Delete", "Delete"},
-                                                      {"Enter", "Enter"},
-                                                      {"Escape", "Escape"},
-                                                      {"Tab", "Tab"}}};
+                                                   {"Right", "ArrowRight"},
+                                                   {"Up", "ArrowUp"},
+                                                   {"Down", "ArrowDown"},
+                                                   {"Home", "Home"},
+                                                   {"End", "End"},
+                                                   {"Backspace", "Backspace"},
+                                                   {"Delete", "Delete"},
+                                                   {"Enter", "Enter"},
+                                                   {"Escape", "Escape"},
+                                                   {"Tab", "Tab"}}};
 
     for (const NamedKey& tokenKey : kTokenKeys) {
         if (tokenKey.keysymName == name) {
@@ -483,9 +509,9 @@ std::vector<PointerDispatch> PointerRouter::routeRelease(const InputEvent& event
                                                          facebook::react::Point targetOffset) {
     pressedButtons_ &= ~buttonsBitOf(event.button);
 
-    std::vector<PointerDispatch> dispatches{PointerDispatch{
-        .type = PointerDispatchType::Up,
-        .event = makePointerEvent(event, targetOffset, event.button, kNoDetail, pressedButtons_)}};
+    std::vector<PointerDispatch> dispatches{
+        PointerDispatch{.type = PointerDispatchType::Up,
+                        .event = makePointerEvent(event, targetOffset, event.button, kNoDetail, pressedButtons_)}};
 
     if (event.button == kPrimaryButton && targetTag == pressedTag_) {
         dispatches.push_back(PointerDispatch{
@@ -510,43 +536,42 @@ void PointerRouter::cancelPressForScroll(const InputEvent& event) {
 
 std::vector<PointerDispatch> PointerRouter::route(const InputEvent& event, facebook::react::Tag targetTag,
                                                   facebook::react::Point targetOffset) {
-    switch (event.kind) { // COV_EXCL: every InputEventKind value has a case, so the implicit no-match branch cannot execute
-        case InputEventKind::PointerMotion:
-            return {PointerDispatch{
-                .type = PointerDispatchType::Move,
-                .event = makePointerEvent(event, targetOffset, kNoButton, kNoDetail, pressedButtons_)}};
+    switch (
+        event.kind) { // COV_EXCL: every InputEventKind value has a case, so the implicit no-match branch cannot execute
+    case InputEventKind::PointerMotion:
+        return {PointerDispatch{.type = PointerDispatchType::Move,
+                                .event = makePointerEvent(event, targetOffset, kNoButton, kNoDetail, pressedButtons_)}};
 
-        case InputEventKind::PointerButtonPress:
-            if (event.button == kPrimaryButton) {
-                pressedTag_ = targetTag;
-            }
+    case InputEventKind::PointerButtonPress:
+        if (event.button == kPrimaryButton) {
+            pressedTag_ = targetTag;
+        }
 
-            pressedButtons_ |= buttonsBitOf(event.button);
+        pressedButtons_ |= buttonsBitOf(event.button);
 
-            return {PointerDispatch{
-                .type = PointerDispatchType::Down,
-                .event = makePointerEvent(event, targetOffset, event.button, kNoDetail, pressedButtons_)}};
+        return {
+            PointerDispatch{.type = PointerDispatchType::Down,
+                            .event = makePointerEvent(event, targetOffset, event.button, kNoDetail, pressedButtons_)}};
 
-        case InputEventKind::PointerButtonRelease:
-            return routeRelease(event, targetTag, targetOffset);
+    case InputEventKind::PointerButtonRelease:
+        return routeRelease(event, targetTag, targetOffset);
 
-        case InputEventKind::PointerLeave:
-            pressedTag_ = kNoPressTarget;
-            pressedButtons_ = kNoButtonsBits;
+    case InputEventKind::PointerLeave:
+        pressedTag_ = kNoPressTarget;
+        pressedButtons_ = kNoButtonsBits;
 
-            return {PointerDispatch{
-                .type = PointerDispatchType::Leave,
-                .event = makePointerEvent(event, targetOffset, kNoButton, kNoDetail, pressedButtons_)}};
+        return {PointerDispatch{.type = PointerDispatchType::Leave,
+                                .event = makePointerEvent(event, targetOffset, kNoButton, kNoDetail, pressedButtons_)}};
 
-        case InputEventKind::KeyPress:
-        case InputEventKind::KeyRelease:
-        case InputEventKind::ImePreedit:
-        case InputEventKind::ImeCommit:
-        case InputEventKind::ImeDeleteSurrounding:
-        case InputEventKind::PointerScrollContinuous:
-        case InputEventKind::PointerScrollDiscrete:
-        case InputEventKind::PointerScrollStop:
-            break;
+    case InputEventKind::KeyPress:
+    case InputEventKind::KeyRelease:
+    case InputEventKind::ImePreedit:
+    case InputEventKind::ImeCommit:
+    case InputEventKind::ImeDeleteSurrounding:
+    case InputEventKind::PointerScrollContinuous:
+    case InputEventKind::PointerScrollDiscrete:
+    case InputEventKind::PointerScrollStop:
+        break;
     }
 
     return {};
@@ -590,8 +615,7 @@ PointerDispatch makeActivationDispatch(const InputEvent& event, facebook::react:
     // zero offset by definition, in every coordinate space this platform's transforms can put the target in.
     return PointerDispatch{
         .type = PointerDispatchType::Click,
-        .event = makePointerEvent(activation, facebook::react::Point{}, kPrimaryButton, kClickDetail,
-                                  kNoButtonsBits)};
+        .event = makePointerEvent(activation, facebook::react::Point{}, kPrimaryButton, kClickDetail, kNoButtonsBits)};
 }
 
 bool isScrollEvent(const InputEvent& event) {
@@ -635,20 +659,20 @@ std::vector<InputEvent> parseKeySequence(const std::string& sequence) {
 
 void deliverImeEvent(const InputEvent& event, ImeSink& sink) {
     switch (event.kind) {
-        case InputEventKind::ImePreedit:
-            sink.onImePreedit(event.text, event.preeditCursorBegin, event.preeditCursorEnd);
-            break;
+    case InputEventKind::ImePreedit:
+        sink.onImePreedit(event.text, event.preeditCursorBegin, event.preeditCursorEnd);
+        break;
 
-        case InputEventKind::ImeCommit:
-            sink.onImeCommit(event.text);
-            break;
+    case InputEventKind::ImeCommit:
+        sink.onImeCommit(event.text);
+        break;
 
-        case InputEventKind::ImeDeleteSurrounding:
-            sink.onImeDeleteSurrounding(event.deleteBeforeLength, event.deleteAfterLength);
-            break;
+    case InputEventKind::ImeDeleteSurrounding:
+        sink.onImeDeleteSurrounding(event.deleteBeforeLength, event.deleteAfterLength);
+        break;
 
-        default:
-            break;
+    default:
+        break;
     }
 }
 

@@ -7,6 +7,11 @@
 #include "TextGeometry.h"
 #endif
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <optional>
 #include <react/renderer/attributedstring/AttributedString.h>
 #include <react/renderer/attributedstring/AttributedStringBox.h>
 #include <react/renderer/attributedstring/TextAttributes.h>
@@ -18,11 +23,6 @@
 #include <react/renderer/core/StateData.h>
 #include <react/renderer/graphics/Float.h>
 #include <react/renderer/graphics/Size.h>
-
-#include <algorithm>
-#include <cstddef>
-#include <cstdint>
-#include <memory>
 #include <string>
 #include <utility>
 
@@ -104,8 +104,7 @@ TextInputController::TextInputController(std::shared_ptr<facebook::react::UIMana
                                          facebook::react::SurfaceId surfaceId)
     : uiManager_(std::move(uiManager)), mountingManager_(std::move(mountingManager)), surfaceId_(surfaceId) {}
 
-void TextInputController::setMountedFields(
-    const std::vector<std::shared_ptr<const TextInputShadowNode>>& shadowNodes) {
+void TextInputController::setMountedFields(const std::vector<std::shared_ptr<const TextInputShadowNode>>& shadowNodes) {
     std::unordered_map<facebook::react::Tag, TextInputField> mounted;
 
     mounted.reserve(shadowNodes.size());
@@ -171,8 +170,7 @@ TextInputKeyResult TextInputController::handleKey(const InputEvent& event) {
     blinkMilliseconds_ = 0.0;
 
     // Ctrl and an arrow key is word motion rather than a shortcut, so it goes to the motion rules below.
-    if (event.modifiers.control && !props.disableKeyboardShortcuts && event.key != kLeftKey &&
-        event.key != kRightKey) {
+    if (event.modifiers.control && !props.disableKeyboardShortcuts && event.key != kLeftKey && event.key != kRightKey) {
         return handleShortcut(event, *field, isEditable);
     }
 
@@ -302,7 +300,7 @@ TextInputKeyResult TextInputController::handleNamedKey(const InputEvent& event, 
     emitSubmit(field);
 
     return submitBehavior == facebook::react::SubmitBehavior::BlurAndSubmit ? TextInputKeyResult::ConsumedAndBlurred
-                                                                           : TextInputKeyResult::Consumed;
+                                                                            : TextInputKeyResult::Consumed;
 }
 
 void TextInputController::handlePointer(const InputEvent& event) {
@@ -385,10 +383,9 @@ void TextInputController::placeCaretAtPoint(TextInputField& field, const faceboo
     // The width the last frame measured this field against, so a click lands on the glyph that was drawn rather
     // than on the one a differently wrapped layout would have put there. A field that has never been published
     // has no such width yet, and its content box is the closest thing to one.
-    const float layoutWidth =
-        field.layoutWidth > 0.0F ? field.layoutWidth : static_cast<float>(box.size.width);
-    const size_t utf16Index = utf16IndexAtPoint(makeAttributedString(props, displayed), props.paragraphAttributes,
-                                                layoutWidth, localPoint);
+    const float layoutWidth = field.layoutWidth > 0.0F ? field.layoutWidth : static_cast<float>(box.size.width);
+    const size_t utf16Index =
+        utf16IndexAtPoint(makeAttributedString(props, displayed), props.paragraphAttributes, layoutWidth, localPoint);
     const size_t byteOffset = field.editor.byteForDisplayOffset(utf8OffsetForUtf16Index(displayed, utf16Index));
 
     field.editor.setSelectionRange(isExtending ? field.editor.selection().anchorByte : byteOffset, byteOffset);
@@ -438,6 +435,18 @@ bool TextInputController::advanceCaretBlink(double frameMilliseconds) {
 
 void TextInputController::setTextInputFocusSink(TextInputFocusSink* textInputFocusSink) noexcept {
     textInputFocusSink_ = textInputFocusSink;
+}
+
+std::optional<TextInputContentPurpose> TextInputController::focusedContentPurpose() const {
+    const TextInputField* field = focusedField();
+
+    if (field == nullptr) {
+        return std::nullopt;
+    }
+
+    const TextInputProps& props = field->shadowNode->getConcreteProps();
+
+    return textInputContentPurpose(props.secureTextEntry, props.keyboardType);
 }
 
 void TextInputController::onImePreedit(const std::string& text, int32_t cursorBegin, int32_t cursorEnd) {
@@ -532,9 +541,8 @@ void TextInputController::publish(TextInputField& field) {
                                         .compositionBeginUtf16 = editorState.compositionBeginUtf16,
                                         .compositionEndUtf16 = editorState.compositionEndUtf16,
                                         .isMultiline = props.multiline};
-    const EditorGeometry geometry =
-        measureEditorGeometry(makeAttributedString(props, displayed), props.paragraphAttributes,
-                              static_cast<float>(box.size.width), request);
+    const EditorGeometry geometry = measureEditorGeometry(
+        makeAttributedString(props, displayed), props.paragraphAttributes, static_cast<float>(box.size.width), request);
 
     field.layoutWidth = geometry.layoutWidth;
     field.contentSize = facebook::react::Size{.width = geometry.contentWidth, .height = geometry.contentHeight};
@@ -556,11 +564,11 @@ void TextInputController::publish(TextInputField& field) {
 
         field.pendingWheelDistanceY = 0.0F;
         field.followedCaretUtf16 = editorState.caretUtf16;
-        field.scrollOffsetY =
-            hasCaretMoved ? followedScrollOffset(wheeledOffset, caretTop,
-                                                 caretTop + static_cast<float>(geometry.caret.size.height),
-                                                 boxHeight, geometry.contentHeight)
-                          : clampedScrollOffset(wheeledOffset, boxHeight, geometry.contentHeight);
+        field.scrollOffsetY = hasCaretMoved
+                                  ? followedScrollOffset(wheeledOffset, caretTop,
+                                                         caretTop + static_cast<float>(geometry.caret.size.height),
+                                                         boxHeight, geometry.contentHeight)
+                                  : clampedScrollOffset(wheeledOffset, boxHeight, geometry.contentHeight);
         editorState.scrollOffsetY = field.scrollOffsetY;
     } else {
         const float caretLeft = static_cast<float>(geometry.caret.origin.x);
@@ -611,8 +619,8 @@ void TextInputController::writeState(const TextInputField& field) {
         makeAttributedString(field.shadowNode->getConcreteProps(), field.editor.displayText())};
     const int64_t eventCount = field.editor.mostRecentEventCount();
 
-    state->updateState([displayedBox, eventCount](const facebook::react::TextInputState& previousData)
-                           -> facebook::react::StateData::Shared {
+    state->updateState([displayedBox, eventCount](
+                           const facebook::react::TextInputState& previousData) -> facebook::react::StateData::Shared {
         facebook::react::TextInputState data = previousData;
 
         data.attributedStringBox = displayedBox;
@@ -629,8 +637,7 @@ void TextInputController::emitEvents(TextInputField& field) {
     const bool hasTextChanged = text != field.emittedText;
     const bool hasSelectionChanged =
         selectionBegin != field.emittedSelectionBegin || selectionEnd != field.emittedSelectionEnd;
-    const bool hasContentSizeChanged =
-        !field.hasEmittedContentSize || !(field.contentSize == field.emittedContentSize);
+    const bool hasContentSizeChanged = !field.hasEmittedContentSize || !(field.contentSize == field.emittedContentSize);
     const bool hasScrolled = field.scrollOffsetY != field.emittedScrollOffsetY;
 
     field.emittedText = text;
@@ -703,9 +710,9 @@ facebook::react::TextInputEventEmitter::Metrics TextInputController::makeMetrics
 
     return facebook::react::TextInputEventEmitter::Metrics{
         .text = text,
-        .selectionRange = facebook::react::AttributedString::Range{.location = static_cast<int>(selectionBegin),
-                                                                   .length = static_cast<int>(selectionEnd -
-                                                                                              selectionBegin)},
+        .selectionRange =
+            facebook::react::AttributedString::Range{.location = static_cast<int>(selectionBegin),
+                                                     .length = static_cast<int>(selectionEnd - selectionBegin)},
         .contentSize = field.contentSize,
         .contentOffset = facebook::react::Point{.x = field.scrollOffsetX, .y = field.scrollOffsetY},
         .contentInset = {},

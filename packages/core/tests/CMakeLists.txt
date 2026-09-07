@@ -74,6 +74,7 @@ add_executable(rnl_core_tests
     ImageCacheTest.cpp
     ImageTest.cpp
     ImeTest.cpp
+    InputDispatcherTest.cpp
     InputTest.cpp
     LayoutConformanceTest.cpp
     LineBoxMetricsTest.cpp
@@ -92,6 +93,7 @@ add_executable(rnl_core_tests
     TextTransformTest.cpp
     ThreadingConformanceTest.cpp
     TextInputControllerTest.cpp
+    TextInputSessionTest.cpp
     ToplevelStateTest.cpp
     UpstreamTestDriftOracleTest.cpp
     SurfaceCommitGateTest.cpp
@@ -117,6 +119,7 @@ add_executable(rnl_core_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/FrameTiming.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/HostTimerRegistry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ImageContent.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/InputDispatcher.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/InputPipeline.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/LineBoxMetrics.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/LinuxAnimationChoreographer.cpp
@@ -132,6 +135,7 @@ add_executable(rnl_core_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/SwitchContent.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputComponent.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputController.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputSession.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputV3State.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextTransform.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ToplevelState.cpp

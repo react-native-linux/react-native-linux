@@ -1048,6 +1048,7 @@ elseif(RNL_ENABLE_WINDOW)
         src/SkiaVulkanRenderer.cpp
         src/SurfaceCommitGate.cpp
         src/TextInputClient.cpp
+        src/TextInputSession.cpp
         src/TextInputV3State.cpp
         src/ToplevelState.cpp
         src/VulkanResultPolicy.cpp

@@ -5,6 +5,10 @@
 #include "LinuxMountingManager.h"
 #include "TextInputComponent.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <optional>
 #include <react/renderer/components/textinput/TextInputEventEmitter.h>
 #include <react/renderer/core/ReactPrimitives.h>
 #include <react/renderer/core/ShadowNode.h>
@@ -12,10 +16,6 @@
 #include <react/renderer/graphics/Rect.h>
 #include <react/renderer/graphics/Size.h>
 #include <react/renderer/uimanager/UIManager.h>
-
-#include <cstddef>
-#include <cstdint>
-#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -63,8 +63,7 @@ enum class TextInputKeyResult : uint8_t { Ignored, Consumed, ConsumedAndBlurred 
 class TextInputController final : public ImeSink {
 public:
     TextInputController(std::shared_ptr<facebook::react::UIManager> uiManager,
-                        std::shared_ptr<LinuxMountingManager> mountingManager,
-                        facebook::react::SurfaceId surfaceId);
+                        std::shared_ptr<LinuxMountingManager> mountingManager, facebook::react::SurfaceId surfaceId);
 
     /**
      * The `<TextInput>` nodes of the committed tree, in mount order, refreshed once per commit.
@@ -134,6 +133,15 @@ public:
      */
     void setTextInputFocusSink(TextInputFocusSink* textInputFocusSink) noexcept;
 
+    /**
+     * The content purpose of the focused field, or nothing at all when no field holds the caret.
+     *
+     * This is the app half of the text-input session's enable policy, and it is a question rather than a
+     * notification because the answer changes without focus moving: a "show password" toggle flips
+     * `secureTextEntry` on the field that already has the caret, and the compositor has to be told.
+     */
+    std::optional<TextInputContentPurpose> focusedContentPurpose() const;
+
     void onImePreedit(const std::string& text, int32_t cursorBegin, int32_t cursorEnd) override;
     void onImeCommit(const std::string& text) override;
     void onImeDeleteSurrounding(uint32_t beforeLength, uint32_t afterLength) override;
@@ -180,8 +188,8 @@ private:
     void emitEvents(TextInputField& field);
     void emitKeyPress(const TextInputField& field, const std::string& text);
     void emitSubmit(const TextInputField& field);
-    void placeCaretAtPoint(TextInputField& field, const facebook::react::Rect& box,
-                           facebook::react::Point surfacePoint, bool isExtending);
+    void placeCaretAtPoint(TextInputField& field, const facebook::react::Rect& box, facebook::react::Point surfacePoint,
+                           bool isExtending);
     facebook::react::TextInputEventEmitter::Metrics makeMetrics(const TextInputField& field) const;
     facebook::react::Rect contentBox(const TextInputShadowNode& shadowNode) const;
     TextInputKeyResult handleShortcut(const InputEvent& event, TextInputField& field, bool isEditable);

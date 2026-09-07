@@ -1,53 +1,32 @@
 #include "TextInputController.h"
 
-#include "RecordingEventDispatcher.h"
 #include "ShadowTreeTestSupport.h"
-#include "TextInputComponent.h"
 
-#include <LinuxMountingManager.h>
 #include <algorithm>
 #include <folly/dynamic.h>
 #include <gtest/gtest.h>
 #include <memory>
-#include <react/renderer/core/LayoutConstraints.h>
-#include <react/renderer/core/LayoutContext.h>
 #include <react/renderer/core/State.h>
-#include <react/renderer/mounting/ShadowTree.h>
 #include <vector>
 
 namespace {
 
-using facebook::react::ComponentDescriptorParameters;
-using facebook::react::ContextContainer;
-using facebook::react::LayoutConstraints;
-using facebook::react::LayoutContext;
-using facebook::react::PropsParserContext;
 using facebook::react::RootShadowNode;
 using facebook::react::ShadowNode;
-using facebook::react::ShadowNodeFamily;
 using facebook::react::ShadowNodeFragment;
 using facebook::react::ShadowTree;
 using facebook::react::ShadowTreeCommitOptions;
-using facebook::react::SurfaceId;
 using facebook::react::Tag;
-using facebook::react::UIManager;
 using react_native_linux::InputEvent;
 using react_native_linux::InputEventKind;
 using react_native_linux::InputModifiers;
 using react_native_linux::isScrollableField;
-using react_native_linux::LinuxMountingManager;
-using react_native_linux::makeConfiguredShadowNode;
-using react_native_linux::makeRecordingEventDispatcher;
-using react_native_linux::makeTaskDroppingUIManager;
-using react_native_linux::PassThroughShadowTreeDelegate;
-using react_native_linux::removeShadowTree;
-using react_native_linux::TextInputComponentDescriptor;
 using react_native_linux::TextInputController;
+using react_native_linux::TextInputFieldFixture;
 using react_native_linux::TextInputKeyResult;
 using react_native_linux::TextInputProps;
 using react_native_linux::TextInputShadowNode;
 
-constexpr SurfaceId kSurfaceId = 1;
 constexpr Tag kFieldTag = 20;
 constexpr facebook::react::Point kPointInsideField{.x = 20, .y = 20};
 constexpr char kSelectionChangeEvent[] = "topSelectionChange";
@@ -62,16 +41,8 @@ using ChildList = std::vector<std::shared_ptr<const ShadowNode>>;
  * `Consumed`, `ConsumedAndBlurred`, `Ignored` - which is the contract: who gets the key, and whether the field
  * blurs with it.
  */
-class TextInputControllerTest : public ::testing::Test {
+class TextInputControllerTest : public TextInputFieldFixture {
 protected:
-    void SetUp() override {
-        uiManager_ = makeTaskDroppingUIManager(contextContainer_);
-        mountingManager_ = std::make_shared<LinuxMountingManager>();
-        shadowTree_ = addRegisteredShadowTree(*uiManager_, shadowTreeDelegate_, *contextContainer_, kSurfaceId);
-    }
-
-    void TearDown() override { removeShadowTree(*uiManager_, kSurfaceId); }
-
     TextInputController makeController() { return TextInputController(uiManager_, mountingManager_, kSurfaceId); }
 
     void commitTextInput(folly::dynamic extraProps) {
@@ -84,7 +55,8 @@ protected:
             [this, extraProps](const RootShadowNode& oldRootShadowNode) {
                 return std::static_pointer_cast<RootShadowNode>(oldRootShadowNode.ShadowNode::clone(ShadowNodeFragment{
                     .props = ShadowNodeFragment::propsPlaceholder(),
-                    .children = std::make_shared<const ChildList>(ChildList{makeField(std::move(extraProps))})}));
+                    .children = std::make_shared<const ChildList>(
+                        ChildList{makeField(kFieldTag, std::move(extraProps))})}));
             },
             commitOptions);
 
@@ -136,23 +108,6 @@ protected:
 
     std::unique_ptr<TextInputController> controller_;
     std::shared_ptr<const TextInputShadowNode> mountedField_;
-    std::shared_ptr<std::vector<std::string>> recordedEventTypes_{std::make_shared<std::vector<std::string>>()};
-
-private:
-    std::shared_ptr<const ShadowNode> makeField(folly::dynamic props) {
-        return makeConfiguredShadowNode(fieldDescriptor_, kFieldTag, kSurfaceId, contextContainer_, std::move(props),
-                                        std::make_shared<const ChildList>());
-    }
-
-    PassThroughShadowTreeDelegate shadowTreeDelegate_;
-    std::shared_ptr<const ContextContainer> contextContainer_{std::make_shared<ContextContainer>()};
-    std::shared_ptr<const facebook::react::EventDispatcher> eventDispatcher_{
-        makeRecordingEventDispatcher(recordedEventTypes_)};
-    TextInputComponentDescriptor fieldDescriptor_{ComponentDescriptorParameters{
-        .eventDispatcher = eventDispatcher_, .contextContainer = contextContainer_, .flavor = nullptr}};
-    std::shared_ptr<UIManager> uiManager_;
-    std::shared_ptr<LinuxMountingManager> mountingManager_;
-    ShadowTree* shadowTree_;
 };
 
 TEST_F(TextInputControllerTest, EnterOnADefaultSingleLineFieldSubmitsAndBlurs) {

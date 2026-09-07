@@ -1,12 +1,12 @@
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <react/renderer/components/view/PointerEvent.h>
 #include <react/renderer/core/ReactPrimitives.h>
 #include <react/renderer/graphics/Point.h>
-
-#include <cstddef>
-#include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace react_native_linux {
@@ -318,6 +318,18 @@ public:
 void deliverImeEvent(const InputEvent& event, ImeSink& sink);
 
 /**
+ * What kind of text a field wants, as `zwp_text_input_v3.set_content_type`'s purpose spells it.
+ *
+ * The protocol's own enumeration is longer; this is the part React Native can express, because `keyboardType`
+ * and `secureTextEntry` are all a `<TextInput>` says about its content. A purpose the compositor does not
+ * recognise is a purpose the input method ignores, so the mapping is deliberately conservative.
+ */
+enum class TextInputContentPurpose : uint8_t { Normal, Digits, Number, Phone, Url, Email, Password };
+
+/** The `keyboardType` and `secureTextEntry` props of a field, as the purpose the compositor is told. */
+TextInputContentPurpose textInputContentPurpose(bool secureTextEntry, std::string_view keyboardType);
+
+/**
  * The compositor's text input, as the focus model and the focused field drive it: enabled while the focused node
  * owns a text cursor, disabled the moment focus leaves it, and told where that cursor is while it is there.
  *
@@ -325,7 +337,11 @@ void deliverImeEvent(const InputEvent& event, ImeSink& sink);
  * whether a composition can start at all and where the input method may not put its candidate window, and
  * `zwp_text_input_v3` needs all of it because `enable`, `set_surrounding_text` and `set_cursor_rectangle` are
  * requests the client makes rather than state the compositor infers. `TextInputClient` is the only
- * implementation, and it already had all four methods.
+ * implementation.
+ *
+ * Nothing here reaches the wire until `flushTextInput`, which the dispatcher calls once per frame: the protocol
+ * buffers every request until a `commit`, so a frame that changed the field, its text and its caret is one
+ * batch and one commit rather than three.
  *
  * The sink is borrowed, never owned, and must outlive the dispatcher it was given to.
  */
@@ -338,10 +354,11 @@ public:
     TextInputFocusSink& operator=(TextInputFocusSink&&) = delete;
     virtual ~TextInputFocusSink() = default;
 
-    virtual void enable() = 0;
-    virtual void disable() = 0;
+    virtual void focusField(int32_t fieldIdentifier, TextInputContentPurpose contentPurpose) = 0;
+    virtual void blurField() = 0;
     virtual void setSurroundingText(std::string text, int32_t cursor, int32_t anchor) = 0;
     virtual void setCursorRectangle(int32_t x, int32_t y, int32_t width, int32_t height) = 0;
+    virtual void flushTextInput() = 0;
 };
 
 /**

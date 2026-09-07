@@ -7,38 +7,19 @@
 
 namespace react_native_linux {
 
-void TextInputV3State::enter() {
-    focused_ = true;
-    enabled_ = false;
-    needsStateResend_ = false;
-    resetComposition();
-}
-
-std::vector<InputEvent> TextInputV3State::leave() {
+std::vector<InputEvent> TextInputV3State::reset() {
     std::vector<InputEvent> events;
 
     if (!preeditText_.empty()) {
         events.push_back(InputEvent{.kind = InputEventKind::ImePreedit});
     }
 
-    focused_ = false;
-    enabled_ = false;
-    needsStateResend_ = false;
-    resetComposition();
+    preeditText_.clear();
+    preeditCursorBegin_ = 0;
+    preeditCursorEnd_ = 0;
+    resetPending();
 
     return events;
-}
-
-void TextInputV3State::enable() {
-    enabled_ = true;
-    needsStateResend_ = false;
-    resetComposition();
-}
-
-void TextInputV3State::disable() {
-    enabled_ = false;
-    needsStateResend_ = false;
-    resetComposition();
 }
 
 void TextInputV3State::recordPreeditString(std::string text, int32_t cursorBegin, int32_t cursorEnd) {
@@ -54,9 +35,7 @@ void TextInputV3State::recordDeleteSurroundingText(uint32_t beforeLength, uint32
     pendingDeleteAfterLength_ = afterLength;
 }
 
-void TextInputV3State::recordCommitRequest() noexcept { ++commitRequestCount_; }
-
-std::vector<InputEvent> TextInputV3State::applyDone(uint32_t serial) {
+std::vector<InputEvent> TextInputV3State::applyDone() {
     std::vector<InputEvent> events;
 
     if (pendingDeleteBeforeLength_ != 0 || pendingDeleteAfterLength_ != 0) {
@@ -83,17 +62,10 @@ std::vector<InputEvent> TextInputV3State::applyDone(uint32_t serial) {
     preeditText_ = pendingPreeditText_;
     preeditCursorBegin_ = pendingPreeditCursorBegin_;
     preeditCursorEnd_ = pendingPreeditCursorEnd_;
-    needsStateResend_ = serial != commitRequestCount_;
     resetPending();
 
     return events;
 }
-
-bool TextInputV3State::isFocused() const noexcept { return focused_; }
-
-bool TextInputV3State::isEnabled() const noexcept { return enabled_; }
-
-bool TextInputV3State::needsStateResend() const noexcept { return needsStateResend_; }
 
 void TextInputV3State::resetPending() {
     pendingPreeditText_.clear();
@@ -102,13 +74,6 @@ void TextInputV3State::resetPending() {
     pendingPreeditCursorEnd_ = 0;
     pendingDeleteBeforeLength_ = 0;
     pendingDeleteAfterLength_ = 0;
-}
-
-void TextInputV3State::resetComposition() {
-    preeditText_.clear();
-    preeditCursorBegin_ = 0;
-    preeditCursorEnd_ = 0;
-    resetPending();
 }
 
 } // namespace react_native_linux

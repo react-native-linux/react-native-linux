@@ -1,11 +1,11 @@
 #include "TextInputComponent.h"
 
+#include <memory>
 #include <react/renderer/attributedstring/AttributedString.h>
 #include <react/renderer/attributedstring/AttributedStringBox.h>
 #include <react/renderer/core/ComponentDescriptor.h>
 #include <react/renderer/core/propsConversions.h>
-
-#include <memory>
+#include <string>
 
 namespace react_native_linux {
 
@@ -14,6 +14,7 @@ const char kTextInputComponentName[] = "TextInput";
 TextInputProps::TextInputProps(const facebook::react::PropsParserContext& context, const TextInputProps& sourceProps,
                                const facebook::react::RawProps& rawProps)
     : facebook::react::BaseTextInputProps(context, sourceProps, rawProps),
+      keyboardType(facebook::react::convertRawProp(context, rawProps, "keyboardType", sourceProps.keyboardType, {})),
       secureTextEntry(
           facebook::react::convertRawProp(context, rawProps, "secureTextEntry", sourceProps.secureTextEntry, {false})),
       caretHidden(facebook::react::convertRawProp(context, rawProps, "caretHidden", sourceProps.caretHidden, {false})),
@@ -32,9 +33,10 @@ TextInputProps::TextInputProps(const facebook::react::PropsParserContext& contex
 // state's multiplier against the root's, so the initial state has to carry the same value.
 constexpr facebook::react::Float kDefaultFontSizeMultiplier = 1.0F;
 
-facebook::react::TextInputState TextInputShadowNode::initialStateData(
-    const facebook::react::Props::Shared& props, const facebook::react::ShadowNodeFamily::Shared& /*family*/,
-    const facebook::react::ComponentDescriptor& /*descriptor*/) {
+facebook::react::TextInputState
+TextInputShadowNode::initialStateData(const facebook::react::Props::Shared& props,
+                                      const facebook::react::ShadowNodeFamily::Shared& /*family*/,
+                                      const facebook::react::ComponentDescriptor& /*descriptor*/) {
     const auto& textInputProps = static_cast<const TextInputProps&>(*props);
     facebook::react::AttributedString reactTreeAttributedString;
 

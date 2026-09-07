@@ -56,6 +56,8 @@ constexpr std::string_view kScreenshotFlag = "--screenshot";
 constexpr std::string_view kFramesFlag = "--frames";
 constexpr std::string_view kFrameLogFlag = "--frame-log";
 constexpr std::string_view kImeDebugFlag = "--ime-debug";
+// --ime-debug has no shadow tree and therefore no tag; one identifier for the one field it pretends to have.
+constexpr int32_t kImeDebugFieldIdentifier = 1;
 constexpr std::string_view kWindowDebugFlag = "--window-debug";
 constexpr std::string_view kAutomationFlag = "--automation";
 constexpr std::string_view kRendererFlag = "--renderer";
@@ -155,11 +157,12 @@ void enableImeDebug(react_native_linux::TextInputClient* textInput) {
     const std::string surroundingText(kImeDebugSurroundingText);
     const int32_t cursor = static_cast<int32_t>(surroundingText.size());
 
-    // State first: a request issued before the text input is enabled is cached rather than sent, so enabling is
-    // what puts all of it on the wire in one commit.
+    // Every request is cached until the flush, which is what puts the field, its content type, its text and its
+    // caret on the wire as one batch.
+    textInput->focusField(kImeDebugFieldIdentifier, react_native_linux::TextInputContentPurpose::Normal);
     textInput->setSurroundingText(surroundingText, cursor, cursor);
     textInput->setCursorRectangle(kImeDebugCursorX, kImeDebugCursorY, kImeDebugCursorWidth, kImeDebugCursorHeight);
-    textInput->enable();
+    textInput->flushTextInput();
 
     std::cout << "[rnl-ime] enabled on the focused surface" << std::endl;
 }

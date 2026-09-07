@@ -305,6 +305,10 @@
       "state": "implemented",
       "test": "EditorModelTest, SecureTextEntryMasksEveryGraphemeAndNeverTheBuffer"
     },
+    "keyboardType": {
+      "state": "implemented",
+      "test": "TextInputSessionTest, TheContentPurposeIsTheClosestOneTheFieldsPropsName"
+    },
     "caretHidden": {
       "state": "implemented",
       "test": "RetainedSceneTextInputTest, CaretHiddenRemovesTheCaretColourAndTheCaretWithIt"

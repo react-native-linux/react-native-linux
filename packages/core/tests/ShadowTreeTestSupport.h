@@ -1,7 +1,13 @@
 #pragma once
 
+#include "LinuxMountingManager.h"
+#include "RecordingEventDispatcher.h"
+#include "TextInputComponent.h"
+
 #include <algorithm>
 #include <filesystem>
+#include <folly/dynamic.h>
+#include <gtest/gtest.h>
 #include <map>
 #include <react/featureflags/ReactNativeFeatureFlags.h>
 #include <react/featureflags/ReactNativeFeatureFlagsDefaults.h>
@@ -214,6 +220,45 @@ public:
     void shadowTreeDidFinishReactCommit(const facebook::react::ShadowTree& /*shadowTree*/) const override {}
 
     void shadowTreeDidPromoteReactRevision(const facebook::react::ShadowTree& /*shadowTree*/) const override {}
+};
+
+/**
+ * The `<TextInput>` fixture bones `TextInputControllerTest` and `InputDispatcherTest` both build a committed field
+ * through: a task-dropping `UIManager`, a `ShadowTree` registered on one fixed surface, and a
+ * `TextInputComponentDescriptor` wired to a `RecordingEventDispatcher` — a live dispatcher rather than a null one,
+ * so `onFocus`/`onBlur` and every field event actually reach `recordedEventTypes_`, which is what
+ * `TextInputControllerTest`'s emission assertions read. A second copy of this per test file was a jscpd clone at
+ * threshold 0 — the same reason the free functions above live here instead of in each file.
+ */
+class TextInputFieldFixture : public ::testing::Test {
+protected:
+    static constexpr facebook::react::SurfaceId kSurfaceId = 1;
+
+    void SetUp() override {
+        uiManager_ = makeTaskDroppingUIManager(contextContainer_);
+        mountingManager_ = std::make_shared<LinuxMountingManager>();
+        shadowTree_ = addRegisteredShadowTree(*uiManager_, shadowTreeDelegate_, *contextContainer_, kSurfaceId);
+    }
+
+    void TearDown() override { removeShadowTree(*uiManager_, kSurfaceId); }
+
+    std::shared_ptr<const facebook::react::ShadowNode> makeField(facebook::react::Tag tag, folly::dynamic props) {
+        return makeConfiguredShadowNode(
+            fieldDescriptor_, tag, kSurfaceId, contextContainer_, std::move(props),
+            std::make_shared<const std::vector<std::shared_ptr<const facebook::react::ShadowNode>>>());
+    }
+
+    std::shared_ptr<std::vector<std::string>> recordedEventTypes_{std::make_shared<std::vector<std::string>>()};
+    PassThroughShadowTreeDelegate shadowTreeDelegate_;
+    std::shared_ptr<const facebook::react::ContextContainer> contextContainer_{
+        std::make_shared<facebook::react::ContextContainer>()};
+    std::shared_ptr<const facebook::react::EventDispatcher> eventDispatcher_{
+        makeRecordingEventDispatcher(recordedEventTypes_)};
+    TextInputComponentDescriptor fieldDescriptor_{facebook::react::ComponentDescriptorParameters{
+        .eventDispatcher = eventDispatcher_, .contextContainer = contextContainer_, .flavor = nullptr}};
+    std::shared_ptr<facebook::react::UIManager> uiManager_;
+    std::shared_ptr<LinuxMountingManager> mountingManager_;
+    facebook::react::ShadowTree* shadowTree_{nullptr};
 };
 
 } // namespace react_native_linux

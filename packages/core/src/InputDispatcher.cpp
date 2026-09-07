@@ -1,12 +1,16 @@
 #include "InputDispatcher.h"
 
-#include <folly/dynamic.h>
-#include <react/renderer/components/scrollview/ScrollViewShadowNode.h>
-#include <react/renderer/components/scrollview/ScrollViewState.h>
 #include "SwitchComponent.h"
 
+#include <cstddef>
+#include <folly/dynamic.h>
+#include <iostream>
+#include <memory>
+#include <optional>
 #include <react/renderer/components/FBReactNativeSpec/EventEmitters.h>
 #include <react/renderer/components/FBReactNativeSpec/Props.h>
+#include <react/renderer/components/scrollview/ScrollViewShadowNode.h>
+#include <react/renderer/components/scrollview/ScrollViewState.h>
 #include <react/renderer/components/view/TouchEventEmitter.h>
 #include <react/renderer/components/view/ViewEventEmitter.h>
 #include <react/renderer/components/view/ViewProps.h>
@@ -20,17 +24,35 @@
 #include <react/renderer/graphics/Size.h>
 #include <react/renderer/mounting/ShadowTree.h>
 #include <react/renderer/mounting/ShadowView.h>
-
-#include <cstddef>
-#include <memory>
-#include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
 namespace react_native_linux {
 
 namespace {
+/** The content purpose as the `[rnl-ime]` trace spells it, which is what an e2e scenario asserts on. */
+std::string_view describeContentPurpose(TextInputContentPurpose contentPurpose) {
+    switch (contentPurpose) {
+    case TextInputContentPurpose::Digits:
+        return "digits";
+    case TextInputContentPurpose::Number:
+        return "number";
+    case TextInputContentPurpose::Phone:
+        return "phone";
+    case TextInputContentPurpose::Url:
+        return "url";
+    case TextInputContentPurpose::Email:
+        return "email";
+    case TextInputContentPurpose::Password:
+        return "password";
+    case TextInputContentPurpose::Normal:
+        break;
+    }
+
+    return "normal";
+}
 
 constexpr char kKeyDownEventType[] = "keyDown";
 constexpr char kKeyUpEventType[] = "keyUp";
@@ -116,8 +138,7 @@ bool isFocusableNode(const facebook::react::ShadowNode& shadowNode) {
     const facebook::react::LayoutableShadowNode* layoutable =
         dynamic_cast<const facebook::react::LayoutableShadowNode*>(&shadowNode);
 
-    if (layoutable != nullptr &&
-        layoutable->getLayoutMetrics().displayType == facebook::react::DisplayType::None) {
+    if (layoutable != nullptr && layoutable->getLayoutMetrics().displayType == facebook::react::DisplayType::None) {
         return false;
     }
 
@@ -148,8 +169,8 @@ bool isFocusableNode(const facebook::react::ShadowNode& shadowNode) {
  * does not is a node from another surface or from a revision this thread has not seen, and the caller falls back
  * to the shadow-tree hit test for it.
  */
-std::shared_ptr<const facebook::react::ShadowNode> shadowNodeWithTag(
-    const std::shared_ptr<const facebook::react::ShadowNode>& shadowNode, facebook::react::Tag tag) {
+std::shared_ptr<const facebook::react::ShadowNode>
+shadowNodeWithTag(const std::shared_ptr<const facebook::react::ShadowNode>& shadowNode, facebook::react::Tag tag) {
     if (shadowNode->getTag() == tag) {
         return shadowNode;
     }
@@ -191,9 +212,9 @@ std::string accessibilityRoleOf(const facebook::react::ShadowNode& shadowNode) {
  * backwards visits the node closest to `shadowNode` first.
  */
 template <typename Predicate>
-std::shared_ptr<const facebook::react::ShadowNode> deepestAncestorMatching(
-    const facebook::react::ShadowNode& shadowNode, const facebook::react::ShadowNode& rootNode,
-    Predicate&& predicate) {
+std::shared_ptr<const facebook::react::ShadowNode>
+deepestAncestorMatching(const facebook::react::ShadowNode& shadowNode, const facebook::react::ShadowNode& rootNode,
+                        Predicate&& predicate) {
     const facebook::react::ShadowNodeFamily::AncestorList ancestors = shadowNode.getFamily().getAncestors(rootNode);
 
     for (size_t depth = ancestors.size(); depth > 0; --depth) {
@@ -221,21 +242,21 @@ PointerTargetTransform identityTransformAt(facebook::react::Point origin) {
 
 void emitPointerDispatch(const facebook::react::TouchEventEmitter& emitter, const PointerDispatch& dispatch) {
     switch (dispatch.type) {
-        case PointerDispatchType::Move:
-            emitter.onPointerMove(dispatch.event);
-            break;
-        case PointerDispatchType::Down:
-            emitter.onPointerDown(dispatch.event);
-            break;
-        case PointerDispatchType::Up:
-            emitter.onPointerUp(dispatch.event);
-            break;
-        case PointerDispatchType::Leave:
-            emitter.onPointerLeave(dispatch.event);
-            break;
-        case PointerDispatchType::Click:
-            emitter.onClick(dispatch.event);
-            break;
+    case PointerDispatchType::Move:
+        emitter.onPointerMove(dispatch.event);
+        break;
+    case PointerDispatchType::Down:
+        emitter.onPointerDown(dispatch.event);
+        break;
+    case PointerDispatchType::Up:
+        emitter.onPointerUp(dispatch.event);
+        break;
+    case PointerDispatchType::Leave:
+        emitter.onPointerLeave(dispatch.event);
+        break;
+    case PointerDispatchType::Click:
+        emitter.onClick(dispatch.event);
+        break;
     }
 }
 
@@ -281,6 +302,15 @@ void InputDispatcher::dispatch(const std::vector<InputEvent>& events) {
     // After the frame's events rather than per event: one reconciliation, one state write and one set of change
     // events per frame, whatever the compositor sent inside it.
     textInputController_.synchronize();
+
+    // And after that, because the reconciliation is what moved the caret and rewrote the surrounding text this
+    // frame: the session is re-evaluated against what the frame ended with, and everything it owes the
+    // compositor leaves in one batch.
+    updateTextInput();
+
+    if (textInputFocusSink_ != nullptr) {
+        textInputFocusSink_->flushTextInput();
+    }
 }
 
 void InputDispatcher::dispatchCommands(const std::vector<SceneCommand>& commands) {
@@ -301,6 +331,12 @@ void InputDispatcher::dispatchCommands(const std::vector<SceneCommand>& commands
 void InputDispatcher::setTextInputFocusSink(TextInputFocusSink* textInputFocusSink) noexcept {
     textInputFocusSink_ = textInputFocusSink;
     textInputController_.setTextInputFocusSink(textInputFocusSink);
+
+    // Forget what was last reported: a field could have been focused (and cached into reportedTextInputField_)
+    // while no sink was installed, and swapping in a sink now must still replay that field's focusField() rather
+    // than finding the cached value unchanged and staying silent — the next updateTextInput() has to be told
+    // there is nothing to compare against.
+    reportedTextInputField_.reset();
 }
 
 bool InputDispatcher::advanceCaretBlink(double frameMilliseconds) {
@@ -337,15 +373,15 @@ PointerTarget InputDispatcher::resolveTarget(const InputEvent& event) const {
             uiManager_->findNodeAtPoint(root, event.surfacePoint);
 
         if (hit != nullptr) {
-            return PointerTarget{.shadowNode = hit,
-                                 .offset = pointerOffsetWithinTarget(identityTransformAt(absoluteOrigin(*hit)),
-                                                                     event.surfacePoint)};
+            return PointerTarget{
+                .shadowNode = hit,
+                .offset = pointerOffsetWithinTarget(identityTransformAt(absoluteOrigin(*hit)), event.surfacePoint)};
         }
     }
 
     return PointerTarget{.shadowNode = root,
-                         .offset = pointerOffsetWithinTarget(identityTransformAt(absoluteOrigin(*root)),
-                                                             event.surfacePoint)};
+                         .offset =
+                             pointerOffsetWithinTarget(identityTransformAt(absoluteOrigin(*root)), event.surfacePoint)};
 }
 
 facebook::react::Point InputDispatcher::absoluteOrigin(const facebook::react::ShadowNode& shadowNode) const {
@@ -362,8 +398,7 @@ void InputDispatcher::dispatchPointerEvent(const InputEvent& event) {
     // A press is what moves focus, not a release: that is when a desktop control takes it, and it is what makes a
     // click on the empty background blur the focused node — react-native-macos#999.
     if (event.kind == InputEventKind::PointerButtonPress) {
-        applyFocusTransition(
-            focusModel_.focusTag(focusableAncestorTag(*target.shadowNode), FocusOrigin::Pointer));
+        applyFocusTransition(focusModel_.focusTag(focusableAncestorTag(*target.shadowNode), FocusOrigin::Pointer));
     }
 
     // After the focus transition, so a press that focuses a field also places its caret, and a drag that started
@@ -377,8 +412,7 @@ void InputDispatcher::dispatchPointerEvent(const InputEvent& event) {
     // frame whose new target happens to carry no `TouchEventEmitter`, and the state a real button-up already
     // cleared on every other target would be left set for the gesture after it. `route` itself already forgets a
     // press whose release lands on a different tag — this only makes sure it is always asked to.
-    const std::vector<PointerDispatch> dispatches =
-        router_.route(event, target.shadowNode->getTag(), target.offset);
+    const std::vector<PointerDispatch> dispatches = router_.route(event, target.shadowNode->getTag(), target.offset);
 
     const std::shared_ptr<const facebook::react::TouchEventEmitter> emitter =
         std::dynamic_pointer_cast<const facebook::react::TouchEventEmitter>(target.shadowNode->getEventEmitter());
@@ -493,8 +527,8 @@ void InputDispatcher::emitSwitchChange(const facebook::react::ShadowNode& shadow
         return;
     }
 
-    emitter->onChange(facebook::react::SwitchEventEmitter::OnChange{.value = !switchProps->value,
-                                                                    .target = shadowNode.getTag()});
+    emitter->onChange(
+        facebook::react::SwitchEventEmitter::OnChange{.value = !switchProps->value, .target = shadowNode.getTag()});
 }
 
 void InputDispatcher::emitFocusEvent(const facebook::react::ShadowNode& shadowNode, bool isFocused) const {
@@ -620,8 +654,7 @@ void InputDispatcher::scrollFocusedNodeIntoView() const {
     }
 
     const std::shared_ptr<const facebook::react::ShadowNode> scrollViewAncestor = deepestAncestorMatching(
-        *focusedNode_, *root,
-        [](const std::shared_ptr<const facebook::react::ShadowNode>& child) {
+        *focusedNode_, *root, [](const std::shared_ptr<const facebook::react::ShadowNode>& child) {
             return std::dynamic_pointer_cast<const facebook::react::ScrollViewShadowNode>(child) != nullptr;
         });
 
@@ -639,8 +672,8 @@ void InputDispatcher::scrollFocusedNodeIntoView() const {
 
     const std::optional<double> nextX =
         computeScrollIntoViewOffset(contentOffset.x, viewportSize.width, targetFrame.origin.x, targetFrame.size.width);
-    const std::optional<double> nextY = computeScrollIntoViewOffset(
-        contentOffset.y, viewportSize.height, targetFrame.origin.y, targetFrame.size.height);
+    const std::optional<double> nextY = computeScrollIntoViewOffset(contentOffset.y, viewportSize.height,
+                                                                    targetFrame.origin.y, targetFrame.size.height);
 
     if (!nextX.has_value() && !nextY.has_value()) {
         return;
@@ -653,27 +686,49 @@ void InputDispatcher::scrollFocusedNodeIntoView() const {
                                       scrollToArguments);
 }
 
+/**
+ * The app half of the text-input session, re-evaluated rather than latched.
+ *
+ * The compositor is told which field holds the caret and what kind of text it wants; `TextInputSession` is what
+ * turns that, together with the seat's keyboard focus, into an `enable` or a `disable`. A focusable node that is
+ * not a field blurs the session rather than leaving it enabled over an ordinary control, and a field whose
+ * content type changed under the caret is a new field as far as the protocol is concerned, because there is no
+ * request that changes a content type in place.
+ *
+ * The trace line is written on change and only on change: it is what the `text-input-session` e2e scenario reads,
+ * and a per-frame line would drown the trace it is read from.
+ */
 void InputDispatcher::updateTextInput() {
+    const std::optional<TextInputContentPurpose> contentPurpose = textInputController_.focusedContentPurpose();
+    const std::optional<ReportedTextInputField> currentField =
+        contentPurpose.has_value() && focusedNode_ != nullptr
+            ? std::optional{ReportedTextInputField{.tag = focusedNode_->getTag(), .contentPurpose = contentPurpose.value()}}
+            : std::nullopt;
+
+    if (currentField == reportedTextInputField_) {
+        return;
+    }
+
+    reportedTextInputField_ = currentField;
+
+    if (currentField.has_value()) {
+        std::cout << "[rnl-ime] field focused purpose=" << describeContentPurpose(currentField->contentPurpose)
+                  << std::endl;
+    } else {
+        std::cout << "[rnl-ime] field blurred" << std::endl;
+    }
+
     if (textInputFocusSink_ == nullptr) {
         return;
     }
 
-    const bool wantsTextInput =
-        focusedNode_ != nullptr && isTextInputComponent(focusedNode_->getComponentName());
-
-    if (wantsTextInput == isTextInputEnabled_) {
-        return;
-    }
-
-    isTextInputEnabled_ = wantsTextInput;
-
-    if (wantsTextInput) {
-        textInputFocusSink_->enable();
+    if (currentField.has_value()) {
+        textInputFocusSink_->focusField(currentField->tag, currentField->contentPurpose);
 
         return;
     }
 
-    textInputFocusSink_->disable();
+    textInputFocusSink_->blurField();
 }
 
 std::shared_ptr<const facebook::react::ShadowNode> InputDispatcher::focusableNode(facebook::react::Tag tag) const {
@@ -702,8 +757,7 @@ facebook::react::Tag InputDispatcher::focusableAncestorTag(const facebook::react
     }
 
     const std::shared_ptr<const facebook::react::ShadowNode> ancestor = deepestAncestorMatching(
-        shadowNode, *root,
-        [this](const std::shared_ptr<const facebook::react::ShadowNode>& child) {
+        shadowNode, *root, [this](const std::shared_ptr<const facebook::react::ShadowNode>& child) {
             return focusableNode(child->getTag()) != nullptr;
         });
 
