@@ -93,6 +93,7 @@ add_executable(rnl_core_tests
     TextInputControllerTest.cpp
     ToplevelStateTest.cpp
     UpstreamTestDriftOracleTest.cpp
+    SurfaceCommitGateTest.cpp
     VulkanResultPolicyTest.cpp
     WebPropAliasTest.cpp
     ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/AnimatedNodeTests.cpp
@@ -131,6 +132,7 @@ add_executable(rnl_core_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputV3State.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextTransform.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ToplevelState.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/SurfaceCommitGate.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/VulkanResultPolicy.cpp
     ${RNL_UPSTREAM_CSS_TESTS}
     ${RNL_UPSTREAM_GRAPHICS_TESTS}
