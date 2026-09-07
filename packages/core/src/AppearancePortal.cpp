@@ -44,11 +44,13 @@ int AppearancePortal::onSettingChanged(sd_bus_message* message, void* userData, 
         return 0;
     }
 
-    const std::optional<ColorScheme> signalled = readColorSchemeVariant(message);
+    uint32_t portalSettingValue = 0;
 
-    if (signalled.has_value()) {
-        static_cast<AppearancePortal*>(userData)->signalledColorScheme_ = signalled;
+    if (sd_bus_message_read(message, "v", "u", &portalSettingValue) < 0) {
+        return 0;
     }
+
+    static_cast<AppearancePortal*>(userData)->signalledColorScheme_ = resolvePortalSettingOrFallback(portalSettingValue);
 
     return 0;
 }

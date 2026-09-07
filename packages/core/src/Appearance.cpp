@@ -25,6 +25,10 @@ std::optional<ColorScheme> colorSchemeFromPortalSetting(uint32_t portalSettingVa
     return std::nullopt;
 }
 
+ColorScheme resolvePortalSettingOrFallback(uint32_t portalSettingValue) {
+    return colorSchemeFromPortalSetting(portalSettingValue).value_or(kFallbackColorScheme);
+}
+
 std::optional<ColorScheme> colorSchemeFromName(std::string_view colorSchemeName) {
     if (colorSchemeName == kLightName) {
         return ColorScheme::Light;
@@ -57,29 +61,57 @@ bool shouldEmitOnPortalChange(std::optional<ColorScheme> currentOverride, ColorS
 AppearanceModel::AppearanceModel(ColorScheme initialPortalColorScheme) : portalColorScheme_(initialPortalColorScheme) {}
 
 ColorScheme AppearanceModel::colorScheme() const {
+    const std::lock_guard<std::mutex> lock(mutex_);
+
     return resolveEffectiveColorScheme(colorSchemeOverride_, portalColorScheme_);
 }
 
 void AppearanceModel::setColorScheme(std::optional<ColorScheme> colorSchemeOverride) {
-    const bool shouldEmit = shouldEmitOnOverrideChange(colorSchemeOverride_, colorSchemeOverride);
+    std::function<void(ColorScheme)> listenerToInvoke;
+    ColorScheme resolvedColorScheme = kFallbackColorScheme;
 
-    colorSchemeOverride_ = colorSchemeOverride;
+    {
+        const std::lock_guard<std::mutex> lock(mutex_);
+        const bool shouldEmit = shouldEmitOnOverrideChange(colorSchemeOverride_, colorSchemeOverride);
 
-    if (shouldEmit && changeListener_) {
-        changeListener_(colorScheme());
+        colorSchemeOverride_ = colorSchemeOverride;
+
+        if (shouldEmit) {
+            resolvedColorScheme = resolveEffectiveColorScheme(colorSchemeOverride_, portalColorScheme_);
+            listenerToInvoke = changeListener_;
+        }
+    }
+
+    if (listenerToInvoke) {
+        listenerToInvoke(resolvedColorScheme);
     }
 }
 
 void AppearanceModel::onPortalColorSchemeChanged(ColorScheme portalColorScheme) {
-    const bool shouldEmit = shouldEmitOnPortalChange(colorSchemeOverride_, portalColorScheme_, portalColorScheme);
+    std::function<void(ColorScheme)> listenerToInvoke;
+    ColorScheme resolvedColorScheme = kFallbackColorScheme;
 
-    portalColorScheme_ = portalColorScheme;
+    {
+        const std::lock_guard<std::mutex> lock(mutex_);
+        const bool shouldEmit = shouldEmitOnPortalChange(colorSchemeOverride_, portalColorScheme_, portalColorScheme);
 
-    if (shouldEmit && changeListener_) {
-        changeListener_(colorScheme());
+        portalColorScheme_ = portalColorScheme;
+
+        if (shouldEmit) {
+            resolvedColorScheme = resolveEffectiveColorScheme(colorSchemeOverride_, portalColorScheme_);
+            listenerToInvoke = changeListener_;
+        }
+    }
+
+    if (listenerToInvoke) {
+        listenerToInvoke(resolvedColorScheme);
     }
 }
 
-void AppearanceModel::setChangeListener(std::function<void(ColorScheme)> listener) { changeListener_ = std::move(listener); }
+void AppearanceModel::setChangeListener(std::function<void(ColorScheme)> listener) {
+    const std::lock_guard<std::mutex> lock(mutex_);
+
+    changeListener_ = std::move(listener);
+}
 
 } // namespace react_native_linux

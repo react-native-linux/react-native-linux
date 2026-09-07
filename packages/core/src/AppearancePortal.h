@@ -20,12 +20,15 @@ namespace react_native_linux {
  * only one of the four whose event loop can be *pumped* rather than *owned* — which is what lets the whole
  * connection live on the frame thread.
  *
- * That is the threading contract, and it is why there is no dispatch thread and no mutex here.
- * `processPendingSignals` calls `sd_bus_process` until the connection has nothing left, from
- * `WindowSession::deliverInput` — the same once-per-frame place `publishPendingDimensions` is called from. The
- * match callback therefore runs on the frame thread, and `AppearanceModel`, which is unsynchronised frame-thread
- * state, is only ever written from there. A portal signal reaches JavaScript exactly as a compositor configure
- * does: recorded on the frame thread, published to the JavaScript thread through the module's `CallInvoker`.
+ * That is the threading contract, and it is why there is no dispatch thread here. `processPendingSignals` calls
+ * `sd_bus_process` until the connection has nothing left, from `WindowSession::deliverInput` — the same
+ * once-per-frame place `publishPendingDimensions` is called from. The match callback therefore runs on the
+ * frame thread and calls into `AppearanceModel` from there; `AppearanceModel` also has a JavaScript-thread
+ * writer (`setColorScheme`) and JavaScript-thread readers, so it guards its own fields with a mutex — see its
+ * docblock in `Appearance.h`. This class carries no lock of its own: `signalledColorScheme_` and
+ * `initialColorScheme_` are read and written only from the frame thread that owns `AppearancePortal`. A portal
+ * signal reaches JavaScript exactly as a compositor configure does: recorded on the frame thread, published to
+ * the JavaScript thread through the module's `CallInvoker`.
  *
  * When there is no session bus, no `org.freedesktop.portal.Desktop` on it, or a portal too old for
  * `ReadOne` — added in xdg-desktop-portal 1.15 — construction leaves `initialColorScheme` empty and every

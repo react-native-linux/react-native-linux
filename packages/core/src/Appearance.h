@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <mutex>
 #include <optional>
 #include <string_view>
 
@@ -35,11 +36,15 @@ constexpr ColorScheme kFallbackColorScheme = ColorScheme::Light;
  *   place and the reported value actually changed. An override in effect swallows the signal; the portal value
  *   is still recorded, so the next `setColorScheme(null)` resolves to it without a second round trip.
  *
- * Threading contract: like `Clipboard`, this is frame-thread state with no synchronisation of its own. Every
- * write comes from the frame thread — `AppearancePortal::processPendingSignals` is pumped from
- * `WindowSession::deliverInput`, the same place `publishPendingDimensions` is called from — and every read that
- * JavaScript makes goes through the module's `CallInvoker`. Nothing here is touched off the frame thread, which
- * is why there is no mutex and no dispatch thread: the bus is polled where the frame already is.
+ * Threading contract: `AppearanceModel` has two writers on two different threads. `onPortalColorSchemeChanged`
+ * is called from the frame thread, through `AppearancePortal::processPendingSignals` pumped from
+ * `WindowSession::deliverInput`. `setColorScheme` is called from the JavaScript thread, by
+ * `LinuxAppearanceModule::setColorScheme`; `colorScheme()` is read from the JavaScript thread by
+ * `getColorScheme` and by `__rnlPlatformColor` on every call. That pair — a frame-thread writer and a
+ * JS-thread reader-and-writer — is exactly what `DimensionsSource` guards with a mutex, and `AppearanceModel`
+ * guards its fields with one the same way: every accessor takes the lock for the duration of its read or
+ * write, and the change listener is invoked after the lock is released, so a listener that calls back into
+ * the model cannot deadlock on it.
  */
 /**
  * `org.freedesktop.appearance color-scheme`, decoded. The XDG desktop portal settings interface defines exactly
@@ -49,6 +54,14 @@ constexpr ColorScheme kFallbackColorScheme = ColorScheme::Light;
  * https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.Settings.html
  */
 std::optional<ColorScheme> colorSchemeFromPortalSetting(uint32_t portalSettingValue);
+
+/**
+ * `colorSchemeFromPortalSetting`, with the fallback applied. A `SettingChanged` signal that decodes to "no
+ * preference" or a reserved value is not "the portal said nothing" — it is the portal saying nothing counts as a
+ * preference — so it must resolve to `kFallbackColorScheme` rather than be discarded the way a message the bus
+ * could not even parse is discarded.
+ */
+ColorScheme resolvePortalSettingOrFallback(uint32_t portalSettingValue);
 
 /**
  * `ColorSchemeName` and `ColorSchemeOverride` from `NativeAppearance.js`, decoded. `light` and `dark` name a
@@ -80,6 +93,7 @@ public:
     void setChangeListener(std::function<void(ColorScheme)> listener);
 
 private:
+    mutable std::mutex mutex_;
     std::optional<ColorScheme> colorSchemeOverride_;
     ColorScheme portalColorScheme_;
     std::function<void(ColorScheme)> changeListener_;

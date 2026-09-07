@@ -3,8 +3,10 @@
 
 #include <cstdint>
 #include <gtest/gtest.h>
+#include <latch>
 #include <optional>
 #include <string_view>
+#include <thread>
 
 namespace {
 
@@ -12,9 +14,11 @@ using react_native_linux::AppearanceModel;
 using react_native_linux::colorSchemeFromName;
 using react_native_linux::colorSchemeFromPortalSetting;
 using react_native_linux::ColorScheme;
+using react_native_linux::kFallbackColorScheme;
 using react_native_linux::nameOfColorScheme;
 using react_native_linux::platformColor;
 using react_native_linux::resolveEffectiveColorScheme;
+using react_native_linux::resolvePortalSettingOrFallback;
 using react_native_linux::shouldEmitOnOverrideChange;
 using react_native_linux::shouldEmitOnPortalChange;
 
@@ -155,6 +159,21 @@ TEST_F(AppearanceModelTest, APortalChangeSwallowedByAnOverrideIsReResolvedWhenTh
     EXPECT_EQ(lastEmitted, kDark);
 }
 
+TEST_F(AppearanceModelTest, APortalNoPreferenceSignalAfterDarkReturnsToTheFallback) {
+    model.onPortalColorSchemeChanged(kDark);
+    emitCount = 0;
+    lastEmitted.reset();
+
+    // 0 "no preference" decodes to nothing in `colorSchemeFromPortalSetting`, but that is not a message the bus
+    // failed to parse: `onSettingChanged` must resolve it to the fallback, not discard it and leave the model
+    // stuck on the last real signal.
+    model.onPortalColorSchemeChanged(resolvePortalSettingOrFallback(0));
+
+    EXPECT_EQ(model.colorScheme(), kFallbackColorScheme);
+    EXPECT_EQ(emitCount, 1);
+    EXPECT_EQ(lastEmitted, kFallbackColorScheme);
+}
+
 TEST_F(AppearanceModelTest, APortalChangeWithNoOverrideEmits) {
     model.onPortalColorSchemeChanged(kDark);
 
@@ -209,6 +228,29 @@ INSTANTIATE_TEST_SUITE_P(
                       PortalSettingCase{.portalSettingValue = 2, .expectedColorScheme = kLight},
                       PortalSettingCase{.portalSettingValue = 3, .expectedColorScheme = std::nullopt},
                       PortalSettingCase{.portalSettingValue = 4294967295U, .expectedColorScheme = std::nullopt}));
+
+// resolvePortalSettingOrFallback: the same table, with the fallback applied for "no preference" and reserved
+// values instead of leaving them undecoded.
+
+struct PortalSettingFallbackCase {
+    uint32_t portalSettingValue;
+    ColorScheme expectedColorScheme;
+};
+
+class PortalSettingFallbackTest : public ::testing::TestWithParam<PortalSettingFallbackCase> {};
+
+TEST_P(PortalSettingFallbackTest, ResolvesTheSettingValueOrTheFallback) {
+    EXPECT_EQ(resolvePortalSettingOrFallback(GetParam().portalSettingValue), GetParam().expectedColorScheme);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    AppearancePortalDecodeOrFallback, PortalSettingFallbackTest,
+    ::testing::Values(PortalSettingFallbackCase{.portalSettingValue = 0, .expectedColorScheme = kFallbackColorScheme},
+                      PortalSettingFallbackCase{.portalSettingValue = 1, .expectedColorScheme = kDark},
+                      PortalSettingFallbackCase{.portalSettingValue = 2, .expectedColorScheme = kLight},
+                      PortalSettingFallbackCase{.portalSettingValue = 3, .expectedColorScheme = kFallbackColorScheme},
+                      PortalSettingFallbackCase{.portalSettingValue = 4294967295U,
+                                                .expectedColorScheme = kFallbackColorScheme}));
 
 // colorSchemeFromName: `ColorSchemeName` and `ColorSchemeOverride` from NativeAppearance.js. `auto` and
 // `unspecified` are the two spellings of "clear the override", and an unrecognised string clears it too rather
@@ -281,6 +323,44 @@ TEST(PlatformColorUnknownNameTest, AnUnrecognisedNameResolvesToNothingInEitherSc
 
 TEST(PlatformColorUnknownNameTest, AnEmptyNameResolvesToNothing) {
     EXPECT_EQ(platformColor("", kLight), std::nullopt);
+}
+
+// The TSan half of the mutex fix: `AppearanceModel` has a frame-thread writer (the portal, faked here by a
+// second thread calling `onPortalColorSchemeChanged`) and a JavaScript-thread reader-and-writer (`getColorScheme`
+// and `setColorScheme`, faked by the main thread resolving a `PlatformColor` and toggling the override). Both
+// sides take `mutex_`, which is the whole guarantee; ThreadSanitizer is what checks the claim, not the
+// assertions below, which only say the run finished and landed on a defined scheme. Run under CTest and under
+// the TSan preset.
+TEST(AppearanceModelThreadSafetyTest, PortalSignalsAndJavaScriptAccessAreSerialized) {
+    constexpr int kConcurrentIterations = 2000;
+
+    AppearanceModel model{kLight};
+    std::latch startLatch{2};
+
+    std::thread portalThread([&] {
+        startLatch.arrive_and_wait();
+
+        for (int iteration = 0; iteration < kConcurrentIterations; ++iteration) {
+            model.onPortalColorSchemeChanged(iteration % 2 == 0 ? kDark : kLight);
+        }
+    });
+
+    startLatch.arrive_and_wait();
+
+    for (int iteration = 0; iteration < kConcurrentIterations; ++iteration) {
+        const ColorScheme scheme = model.colorScheme();
+        const std::optional<int32_t> resolved = platformColor("labelColor", scheme);
+
+        EXPECT_TRUE(resolved.has_value());
+
+        model.setColorScheme(iteration % 2 == 0 ? std::optional<ColorScheme>(kDark) : std::nullopt);
+    }
+
+    portalThread.join();
+
+    const ColorScheme finalScheme = model.colorScheme();
+
+    EXPECT_TRUE(finalScheme == kLight || finalScheme == kDark);
 }
 
 } // namespace
