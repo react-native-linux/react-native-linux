@@ -1,4 +1,4 @@
-import { checkFontsAreVendored, fixtures } from "./fixtures.ts";
+import { checkFontsAreVendored, fixtures, proofOnlyFixtures } from "./fixtures.ts";
 import { compareImages, compareImagesWithTolerance } from "./png-diff.ts";
 import { describe, expect, it } from "vitest";
 
@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 const RENDER_TIMEOUT_MS = 120_000;
 
 type GoldenFixture = (typeof fixtures)[number];
+type RenderableFixture = Pick<GoldenFixture, "bundleFileName" | "renderArguments" | "renderFlag">;
 
 const goldensDirectory = import.meta.dirname;
 const packageDirectory = path.join(goldensDirectory, "..");
@@ -34,7 +35,7 @@ if (hasBinary) {
   checkFontsAreVendored(fontsLockFilePath, fontsDirectory);
 }
 
-const renderFixture = (fixture: GoldenFixture, outputPath: string): void => {
+const renderFixture = (fixture: RenderableFixture, outputPath: string): void => {
   const bundlePath = path.join(bundlesDirectory, fixture.bundleFileName);
 
   execFileSync(binaryPath, [fixture.renderFlag, bundlePath, outputPath, ...fixture.renderArguments], {
@@ -93,6 +94,27 @@ describe.skipIf(!hasBinary)("golden images", () => {
 
       expect(existsSync(goldenPath), buildMissingGoldenMessage(goldenPath)).toBe(true);
       expectGoldenToMatch(fixture, goldenPath);
+    });
+  }
+});
+
+// #372's `serif` and `monospace` resolve through fontconfig, so their pixels are whatever the host has installed and cannot be a checked-in golden — see `proofOnlyFixtures`.
+// The render still has to succeed: `renderFixture` throws if `hello_react` exits non-zero, and `--text-fit-golden` itself asserts every box still holds the paragraph it was measured for.
+// A passing test here is therefore proof the resolution path runs end to end, without asserting what the substituted face looks like.
+describe.skipIf(!hasBinary)("proof-only golden images", () => {
+  for (const fixture of proofOnlyFixtures) {
+    it(`renders ${fixture.bundleFileName} without checking pixels`, { timeout: RENDER_TIMEOUT_MS }, () => {
+      const scratchDirectory = mkdtempSync(path.join(tmpdir(), "rnl-golden-proof-"));
+
+      try {
+        const renderedPath = path.join(scratchDirectory, "proof.png");
+
+        renderFixture(fixture, renderedPath);
+
+        expect(existsSync(renderedPath)).toBe(true);
+      } finally {
+        rmSync(scratchDirectory, { force: true, recursive: true });
+      }
     });
   }
 });

@@ -29,4 +29,18 @@ struct PinnedFontFamilyResolution {
 std::optional<std::string> pinnedFontFamiliesFatalMessage(
     const std::vector<PinnedFontFamilyResolution>& resolutions);
 
+/**
+ * Whether a resolved face's style is exactly the upright, normal-weight, normal-width style
+ * `FontFamilyRequestKind::VendoredDefault` requests and `scripts/fonts.lock.json` pins `NotoSans-Regular.ttf`
+ * for — Skia's own `SkFontStyle()` default encoding (`weight`/`width`/`slant` mirror
+ * `SkFontStyle::weight()`/`width()`/`slant()`; normal is 400/5/0). `matchFamily(...)->count() > 0` alone passes
+ * as long as *any* style resolves, and `SkFontMgr::matchFamilyStyle`'s nearest-match fallback does not enforce
+ * an exact style either: with `NotoSans-Regular.ttf` missing and only `NotoSans-Bold.ttf`/`NotoSans-Italic.ttf`
+ * left, it silently returns the italic face — weight 400, but slant 1, not upright — and a family-only or
+ * weight-only check would still call that resolved while every plain-weight, upright text run drew italic.
+ * Kept pure and Skia-free so the wrong-face regression (#372/CodeRabbit) is a table test against fake style
+ * data, not a live `SkFontMgr`.
+ */
+bool resolvedStyleIsPinnedDefault(int weight, int width, int slant);
+
 }  // namespace react_native_linux

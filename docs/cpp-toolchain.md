@@ -2795,6 +2795,50 @@ The directory path reaches the code as `RNL_BUNDLED_FONT_DIR`, an absolute path 
 is deliberate for now — there is no asset packaging, and inventing one before the CLI exists is the kind of
 scaffolding the Prime Directive rejects. Packaging fonts into an installable bundle belongs with M3.
 
+### The default fontFamily (#372)
+
+React Native's default `fontFamily` is unspecified — San Francisco on iOS, Roboto on Android, nothing in the API
+for Linux — and every `<Text>` without an explicit family goes through it, so it is simultaneously the
+most-used path in the text stack and the least specified. The wrong answer is visible on every screen:
+electron/electron#53499 is an entire KDE Wayland interface rendered in monospace, because the generic family the
+engine asked for resolved to the wrong face at the fontconfig layer.
+
+`classifyFontFamilyRequest` (`DefaultFontFamily.h`/`.cpp`, pure and Skia-free, table-tested under the 100% gate)
+sorts a requested `fontFamily` into one of three sources, and `toFontFamilies` in `TextPipeline.cpp` resolves each
+one differently:
+
+| Request | Source | Why |
+| --- | --- | --- |
+| Unset, `sans-serif`, `system-ui` | The vendored Noto Sans (`kBundledFontFamily`), asked for directly | These are React Native's own unspecified default and the two CSS spellings of "the platform's interface font." Asking fontconfig for `sans-serif` is exactly the query electron/electron#53499 got wrong, so this rule never asks it: the name is not put in `toFontFamilies`' request list at all, and the vendored face — already first in that list for `kEmojiFontFamily`'s sake, see *Colour emoji and the fallback chain* below — is what resolves. A golden built against it is reproducible on any host. |
+| `serif`, `monospace`, `cursive`, `fantasy` | Fontconfig's own answer | There is no vendored serif or monospace face, and resolving a generic to a real face of that kind is the point of asking for one — the same exemption `classifyFontFamilyRequest` keeps from the #70 diagnostic. The resolved family is logged once per name, the same log-once discipline #70 uses, so a broken host answer (this repository's own `dev` container resolves both `serif` and `monospace` to `Noto Naskh Arabic` — the only face installed) is visible without being treated as a failure. |
+| Anything else | The name itself, then the #70 diagnostic if it substitutes | Covered by *An unresolvable fontFamily says so (#70)* already: the text still draws, substituted by the vendored Noto Sans or fontconfig's fallback, and the substitution is reported once per name — including for a family nobody registered at all, which stays loud under this rule exactly as it was before it. |
+
+The order every text run asks in is therefore: the requested family resolved per the table above (nothing, for
+the vendored-default row), `kBundledFontFamily`, `kEmojiFontFamily`, then skparagraph's own `DEFAULT_FONT_FAMILY`.
+
+**Unit.** `DefaultFontFamilyTest.cpp` is a table test over `classifyFontFamilyRequest`: unset, `sans-serif` and
+`system-ui` classify as the vendored default; `serif`, `monospace`, `cursive` and `fantasy` as a fontconfig
+generic; a real name (`Helvetica Neue`), a made-up one (`Totally Missing Icons`) and the same keywords with their
+case changed (`Sans-Serif`, `Monospace` — CSS generics are not normalised) all classify as named, so the #70
+diagnostic still fires for a made-up family exactly as it did before this rule existed.
+
+**Golden.** `test-bundles/font-generics.js` draws six rows — unset, `sans-serif` and `system-ui`, each at
+`fontSize` 16 and 40 — against `goldens/font-generics.png`. It stays inside the vendored fonts' coverage, per
+*Font strategy, and why goldens need it* above, because none of the three rows can reach fontconfig. `serif` and
+`monospace` are deliberately not in that picture: fontconfig's answer for them is whatever the host has
+installed — this repository's own dev container answers both with `Noto Naskh Arabic`, not a serif or a
+monospace face at all, which is itself a live instance of the bug this issue is about — so a checked-in golden of
+either would not be reproducible across hosts, the same reason RTL and Devanagari goldens are deferred rather than
+approximated. They are proved instead by `test-bundles/font-generics-fontconfig.js`, rendered proof-only by
+`golden.spec.ts`'s `proofOnlyFixtures`: the render must still succeed and `--text-fit-golden` still asserts every
+box holds the paragraph it was measured for, but there is no checked-in PNG for its pixels to match, because there
+is no host-independent answer to match them against.
+
+**E2E.** `TextPipelineState`'s constructor logs the resolved default family and the vendored file it came from —
+`reportResolvedDefaultFontFamily` in `TextPipeline.cpp` — once, through the same `reportNativeError`/
+`AutomationErrorLog` path #70's diagnostic uses, so the automation channel of #214's `ListErrors` command reports
+it to an out-of-process driver without a new command.
+
 ### Colour emoji and the fallback chain (#249)
 
 Noto Sans has no emoji, so every emoji is a codepoint the primary face lacks. What resolves it is the whole

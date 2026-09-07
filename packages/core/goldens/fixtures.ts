@@ -16,7 +16,7 @@ interface GoldenFixture {
   readonly tolerance?: ToleranceBudget;
 }
 
-export const fixtures: readonly GoldenFixture[] = [
+const fixtures: readonly GoldenFixture[] = [
   { bundleFileName: "fabric-view.js", goldenFileName: "fabric-view.png", renderArguments: [], renderFlag: "--golden" },
   { bundleFileName: "view-props.js", goldenFileName: "view-props.png", renderArguments: [], renderFlag: "--golden" },
   // #99: the fill, the gradient, the ring, the content clip and the child clip all cut by one rounded box.
@@ -64,6 +64,15 @@ export const fixtures: readonly GoldenFixture[] = [
     bundleFileName: "ellipsize.js",
     goldenFileName: "ellipsize.png",
     renderArguments: ["880", "620"],
+    renderFlag: "--text-fit-golden",
+  },
+  // #372: what an unset fontFamily, "sans-serif" and "system-ui" resolve to — the vendored Noto Sans, asked for directly rather than through fontconfig, so a host's own sans-serif alias cannot answer it.
+  // "serif" and "monospace" are fontconfig's own answer and are not reproducible across hosts.
+  // They are proved instead by the proof-only `font-generics-fontconfig.js` fixture below, which carries no checked-in golden.
+  {
+    bundleFileName: "font-generics.js",
+    goldenFileName: "font-generics.png",
+    renderArguments: [],
     renderFlag: "--text-fit-golden",
   },
   { bundleFileName: "damage.js", goldenFileName: "damage.png", renderArguments: [], renderFlag: "--damage-golden" },
@@ -348,4 +357,27 @@ export const fixtures: readonly GoldenFixture[] = [
   },
 ];
 
+interface ProofOnlyFixture {
+  readonly bundleFileName: string;
+  readonly renderFlag: string;
+  readonly renderArguments: readonly string[];
+}
+
+/**
+ * #372's `serif` and `monospace`: fontconfig's own answer for a CSS generic, which is the point of asking for one
+ * rather than a failure to find it, and therefore whatever the host has installed rather than a vendored asset.
+ * A golden PNG of that answer would not be reproducible across hosts — the same reason the RTL and Devanagari
+ * goldens are deferred rather than approximated (docs/cpp-toolchain.md, *Font strategy, and why goldens need it*)
+ * — so `golden.spec.ts` renders these proof-only: the render must succeed, and there is nothing checked in for
+ * its pixels to match.
+ */
+const proofOnlyFixtures: readonly ProofOnlyFixture[] = [
+  {
+    bundleFileName: "font-generics-fontconfig.js",
+    renderArguments: [],
+    renderFlag: "--text-fit-golden",
+  },
+];
+
+export { fixtures, proofOnlyFixtures };
 export { checkFontsAreVendored } from "./fonts-vendored.ts";

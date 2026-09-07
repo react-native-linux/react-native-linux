@@ -37,6 +37,7 @@ const scopedSourcePaths: readonly string[] = [
   "packages/core/src/Appearance.cpp",
   "packages/core/src/AutomationProtocol.cpp",
   "packages/core/src/Clipboard.cpp",
+  "packages/core/src/DefaultFontFamily.cpp",
   "packages/core/src/DimensionsSource.cpp",
   "packages/core/src/EditorModel.cpp",
   "packages/core/src/EllipsizeSearch.cpp",
