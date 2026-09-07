@@ -26,6 +26,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace react_native_linux {
@@ -622,6 +623,9 @@ public:
      * decode on their own schedules: a `defaultSource` that finishes before the real source updates only
      * `placeholderFrames`, and the real source finishing later replaces `frames` and stops the placeholder being
      * drawn without either decode having to know about the other.
+     *
+     * Also clears `uri` from `pendingPlaceholderDecodeRequests_` unconditionally, because this is the one call
+     * every decode this listener hears about reaches, success or failure alike — see `ImageDecodeRequester`.
      */
     void damageImageSource(const std::string& uri, const std::shared_ptr<const DecodedImageFrames>& decoded);
 
@@ -684,9 +688,17 @@ public:
      * Queues a decode for a `defaultSource`/`loadingIndicatorSource` placeholder, the same way `ImageManager`
      * queues one for the real source — except a placeholder has no `ImageManager` request behind it, because
      * `ImageState` only ever carries the source `ImageShadowNode` chose from `source`. `readImageContent` calls
-     * this instead, once per mount or update where the real source has not decoded yet and a placeholder is
-     * configured; the pipeline itself de-duplicates a URI already in flight, so re-asking on every such commit
-     * costs a hash lookup and nothing more.
+     * this instead, the first time a mount or update finds the real source undecoded and a placeholder configured
+     * for a URI nothing has already asked for.
+     *
+     * `pendingPlaceholderDecodeRequests_` is what makes "the first time" true rather than aspirational: the
+     * pipeline's own `requestedUris` guard (see `ImagePipeline.h`) suppresses a second *decode* of a URI already
+     * in flight, but it does not suppress a second *completion* — `FabricHost`'s requester builds a fresh one on
+     * every call and `requestImageDecode` appends it to `completionsByUri[uri]` regardless, so ten updates before
+     * one decode publishes would queue ten no-op completions rather than one. Tracking the URI here instead means
+     * `readImageContent` never calls this a second time while the first call is still outstanding, and
+     * `damageImageSource` erases the URI on the decode that follows — success or failure alike, since the pipeline
+     * calls its listener either way — so a source that fails to decode can still be asked for again later.
      *
      * Set once by the host beside `setDecodedImageProvider`, and unset in every test that does not decode
      * anything, in which case a placeholder is never requested and an `<Image>` mounts with no pixels at all
@@ -791,6 +803,11 @@ private:
     bool isFocusVisible_{false};
     DecodedImageProvider decodedImages_;
     ImageDecodeRequester requestPlaceholderImageDecode_;
+
+    // The placeholder URIs `requestPlaceholderImageDecode_` has been asked for and has not yet answered, either
+    // way. See `ImageDecodeRequester`'s docblock for why this exists instead of trusting the pipeline's own
+    // in-flight guard.
+    std::unordered_set<std::string> pendingPlaceholderDecodeRequests_;
 };
 
 } // namespace react_native_linux

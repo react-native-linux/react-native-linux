@@ -474,7 +474,7 @@ TEST(ImagePlaceholderTest, APlaceholderWithNoProviderAtAllStillRequestsADecode) 
     addChild(scene, kSurfaceTag, imageNodeWithPlaceholder(2, "real.png", "placeholder.png"));
 
     EXPECT_EQ(mountedPixels(scene), nullptr);
-    EXPECT_EQ(requestedUris, (std::vector<std::string>{"placeholder.png", "placeholder.png"}));
+    EXPECT_EQ(requestedUris, (std::vector<std::string>{"placeholder.png"}));
 }
 
 TEST(ImagePlaceholderTest, APlaceholderWithNoRequesterConfiguredIsSimplyNotRequested) {
@@ -526,11 +526,76 @@ TEST(ImagePlaceholderTest, APlaceholderNotYetDecodedRequestsItsOwnDecode) {
 
     // Only the placeholder is asked for here: the real source's decode is `ImageManager::requestImage`'s job,
     // not this function's, because `ImageState` — which is what this test's scene reads pixels from — is never
-    // where a placeholder comes from. Twice rather than once, because `addChild` is `createNode` followed by
-    // `insertChild`, and each calls `writeNode` on the same `ShadowView` — exactly the `CreateMutation` then
-    // `InsertMutation` pair a real Fabric commit sends for every newly mounted node. In production
-    // `requestImageDecode`'s own in-flight guard collapses the two into one queued decode; this test's recording
-    // lambda has no such guard, so it sees both calls the way `readImageContent` actually makes them.
+    // where a placeholder comes from. Once rather than twice, even though `addChild` is `createNode` followed by
+    // `insertChild` and each calls `writeNode` on the same `ShadowView` — the `CreateMutation` then
+    // `InsertMutation` pair a real Fabric commit sends for every newly mounted node: `RetainedScene` tracks the
+    // URI as pending across both calls, the same way it would across any number of updates before one decode
+    // publishes. See `TenUpdatesBeforeOneDecodePublishesProduceOneRequest`.
+    EXPECT_EQ(requestedUris, (std::vector<std::string>{"placeholder.png"}));
+}
+
+TEST(ImagePlaceholderTest, TenUpdatesBeforeOneDecodePublishesProduceOneRequest) {
+    ImageCache cache{kEntryByteCount};
+    std::vector<std::string> requestedUris;
+    RetainedScene scene = sceneRecordingPlaceholderRequests(cache, requestedUris);
+    const ShadowView node = imageNodeWithPlaceholder(2, "real.png", "placeholder.png");
+
+    addChild(scene, kSurfaceTag, node);
+
+    constexpr int kUpdateCount = 10;
+
+    for (int update = 0; update < kUpdateCount; ++update) {
+        scene.updateNode(node);
+    }
+
+    // Without tracking which placeholder URIs are already in flight, each of these eleven calls to
+    // `readImageContent` — the mount and ten updates — would have asked `requestPlaceholderDecode` again:
+    // `requestImageDecode`'s own `requestedUris` guard only stops a second decode of the same URI, not a second
+    // completion queued on top of the first. Eleven no-op completions cost little on their own, but nothing
+    // bounds how many a busy screen could queue before its placeholder decodes.
+    EXPECT_EQ(requestedUris, (std::vector<std::string>{"placeholder.png"}));
+}
+
+// A scene with a placeholder-only node already mounted and its one request already recorded, for the two tests
+// below: what clears the pending flag is the listener call itself, not what it carries.
+RetainedScene mountedPlaceholderNodeRecordingRequests(std::vector<std::string>& requestedUris,
+                                                      ShadowView& node) {
+    RetainedScene scene = sceneForPlaceholderTests();
+
+    scene.setPlaceholderImageDecodeRequester(
+        [&requestedUris](const std::string& uri) { requestedUris.push_back(uri); });
+
+    node = imageNodeWithPlaceholder(2, "real.png", "placeholder.png");
+    addChild(scene, kSurfaceTag, node);
+    EXPECT_EQ(requestedUris, (std::vector<std::string>{"placeholder.png"}));
+
+    return scene;
+}
+
+TEST(ImagePlaceholderTest, AFailedPlaceholderDecodeClearsThePendingRequestSoALaterUpdateAsksAgain) {
+    std::vector<std::string> requestedUris;
+    ShadowView node;
+    RetainedScene scene = mountedPlaceholderNodeRecordingRequests(requestedUris, node);
+
+    // The same call the decode listener makes on a failure: null, and nothing cached to show for it. The pending
+    // flag has to come down here, not only on success, or a source that fails once is never asked for again.
+    scene.damageImageSource("placeholder.png", nullptr);
+    scene.updateNode(node);
+
+    EXPECT_EQ(requestedUris, (std::vector<std::string>{"placeholder.png", "placeholder.png"}));
+}
+
+TEST(ImagePlaceholderTest, ASuccessfulPlaceholderDecodeClearsThePendingRequestSoALaterUpdateCanAskAgain) {
+    std::vector<std::string> requestedUris;
+    ShadowView node;
+    RetainedScene scene = mountedPlaceholderNodeRecordingRequests(requestedUris, node);
+
+    // A real decode, published the way the listener publishes one — but the scene's own provider (there is none
+    // here) never learns of it, so the next `readImageContent` still finds no frames and, because the pending
+    // flag came down on this call exactly as it would on a failure, asks again.
+    scene.damageImageSource("placeholder.png", makeDecodedImage());
+    scene.updateNode(node);
+
     EXPECT_EQ(requestedUris, (std::vector<std::string>{"placeholder.png", "placeholder.png"}));
 }
 
@@ -556,9 +621,9 @@ TEST(ImageLifetimeTest, TheMountingManagerHandsThePlaceholderRequesterToItsScene
     mountChildAndTakeFrame(mountingManager, imageNodeWithPlaceholder(2, "real.png", "placeholder.png"));
 
     // A real Fabric commit for a newly mounted node is a `CreateMutation` and an `InsertMutation`, both carrying
-    // the full `ShadowView`, so `writeNode` runs twice and asks twice — see the comment on
-    // `APlaceholderNotYetDecodedRequestsItsOwnDecode`.
-    EXPECT_EQ(requestedUris, (std::vector<std::string>{"placeholder.png", "placeholder.png"}));
+    // the full `ShadowView`, so `writeNode` runs twice — and the scene's own pending-request tracking is what
+    // keeps that from asking twice. See the comment on `APlaceholderNotYetDecodedRequestsItsOwnDecode`.
+    EXPECT_EQ(requestedUris, (std::vector<std::string>{"placeholder.png"}));
 }
 
 // Issue #257. Which frame of an animated source is on screen is arithmetic on the durations the codec read out of

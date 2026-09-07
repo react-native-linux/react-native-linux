@@ -661,7 +661,8 @@ std::string choosePlaceholderSourceUri(const facebook::react::ImageProps& imageP
 
 void readImageContent(SceneNode& node, const facebook::react::ShadowView& shadowView,
                       const RetainedScene::DecodedImageProvider& decodedImages,
-                      const RetainedScene::ImageDecodeRequester& requestPlaceholderDecode) {
+                      const RetainedScene::ImageDecodeRequester& requestPlaceholderDecode,
+                      std::unordered_set<std::string>& pendingPlaceholderDecodeRequests) {
     const std::optional<SceneImageContent> previousImage = node.image;
 
     node.image = std::nullopt;
@@ -698,7 +699,12 @@ void readImageContent(SceneNode& node, const facebook::react::ShadowView& shadow
         if (!placeholderUri.empty()) {
             placeholderFrames = decodedImages ? decodedImages(placeholderUri) : nullptr;
 
-            if (placeholderFrames == nullptr && requestPlaceholderDecode) {
+            // `insert` both tests and marks in one step: a URI already pending answers false and is left alone,
+            // and a URI that was not is inserted and, only then, actually asked for. This is what keeps ten
+            // updates before one decode publishes from queuing ten completions instead of one — see
+            // `ImageDecodeRequester`'s docblock.
+            if (placeholderFrames == nullptr && requestPlaceholderDecode &&
+                pendingPlaceholderDecodeRequests.insert(placeholderUri).second) {
                 requestPlaceholderDecode(placeholderUri);
             }
         }
@@ -1406,6 +1412,12 @@ bool RetainedScene::hasNode(facebook::react::Tag tag) const {
 
 void RetainedScene::damageImageSource(const std::string& uri,
                                       const std::shared_ptr<const DecodedImageFrames>& decoded) {
+    // Whether this was a placeholder request or not, and whether it succeeded or failed, `uri` is no longer in
+    // flight: the pipeline's listener runs exactly once per decode either way. A URI this was never tracking
+    // erases nothing, which is what makes this safe to call unconditionally for every decode, not only a
+    // placeholder's.
+    pendingPlaceholderDecodeRequests_.erase(uri);
+
     std::vector<facebook::react::Tag> drawingTags;
 
     for (auto& [tag, node] : nodes_) {
@@ -1664,7 +1676,8 @@ SceneNode& RetainedScene::writeNode(const facebook::react::ShadowView& shadowVie
     readPaintProps(node, shadowView);
     readTextContent(node, shadowView);
     readEditorContent(node, shadowView);
-    readImageContent(node, shadowView, decodedImages_, requestPlaceholderImageDecode_);
+    readImageContent(node, shadowView, decodedImages_, requestPlaceholderImageDecode_,
+                     pendingPlaceholderDecodeRequests_);
     readSwitchContent(node, shadowView);
     readActivityIndicatorContent(node, shadowView);
     readScrollContent(node, shadowView);
