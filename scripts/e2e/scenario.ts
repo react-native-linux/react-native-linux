@@ -34,12 +34,8 @@ const PARENT_DIRECTORY = "..";
 const ERROR_TRACE_PATTERNS: readonly string[] = ["[js-error]", "[bundle-runner]", "[image]", "[text]", "[rnl-window]"];
 
 /**
- * The perf gate of #7. `p95Ms` is the ninety-fifth percentile `wp_presentation` frame time the run may not
- * exceed, and `minFrames` is how many frames have to have been presented for that percentile to mean anything —
- * a run that presented four frames can pass any budget by accident. `maxHangs` is the frame-journal gate of
- * #345: presented frames past the hang thresholds before the run fails. `null` opts a scenario out; `0` is a
- * deliberate "zero hangs" from a number CI measured, not an inherited default. See *Frame journal* in
- * docs/cpp-toolchain.md.
+ * The perf gate of #7: `p95Ms`/`minFrames` bound the p95 `wp_presentation` frame time and the frames needed for
+ * it to mean anything. `maxHangs` (#345) caps hang-thresholded frames; `null` opts out, `0` is a measured zero.
  */
 interface FrameBudget {
   readonly maxHangs: number | null;
