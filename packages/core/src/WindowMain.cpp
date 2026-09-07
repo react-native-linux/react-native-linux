@@ -4,12 +4,15 @@
 #include "FrameTiming.h"
 #include "InputPipeline.h"
 #include "LinuxMountingManager.h"
+#include "RendererLadder.h"
 #include "RetainedScene.h"
 #include "ScenePainter.h"
+#include "SharedMemoryRasterRenderer.h"
 #include "SkiaVulkanRenderer.h"
 #include "SurfaceCommitGate.h"
 #include "TextInputClient.h"
 #include "WaylandWindow.h"
+#include "WindowRenderer.h"
 #include "WindowSession.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
@@ -22,16 +25,21 @@
 #include <charconv>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <exception>
+#include <filesystem>
 #include <folly/json/dynamic.h>
 #include <fstream>
 #include <iostream>
+#include <iterator>
+#include <memory>
 #include <optional>
 #include <ostream>
 #include <span>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -50,6 +58,7 @@ constexpr std::string_view kFrameLogFlag = "--frame-log";
 constexpr std::string_view kImeDebugFlag = "--ime-debug";
 constexpr std::string_view kWindowDebugFlag = "--window-debug";
 constexpr std::string_view kAutomationFlag = "--automation";
+constexpr std::string_view kRendererFlag = "--renderer";
 constexpr std::string_view kWindowErrorSource = "rnl-window";
 constexpr std::string_view kImeDebugSurroundingText = "react-native-linux";
 constexpr int32_t kImeDebugCursorX = 64;
@@ -85,6 +94,7 @@ constexpr int32_t kImeDebugCursorHeight = 24;
  */
 struct WindowArguments {
     std::optional<std::string> bundlePath;
+    std::optional<react_native_linux::RendererRung> forcedRung;
     std::optional<std::string> screenshotPath;
     std::optional<std::string> frameLogPath;
     uint32_t frameCount{kDefaultScreenshotFrames};
@@ -167,6 +177,10 @@ std::string describeMissingValue(std::string_view flag) {
         return "--frame-log requires an output path";
     }
 
+    if (flag == kRendererFlag) {
+        return "--renderer requires one of preferred-vulkan, alternate-vulkan, software-vulkan, raster";
+    }
+
     return "--frames requires a positive frame count";
 }
 
@@ -205,7 +219,8 @@ WindowArguments parseArguments(std::span<char*> arguments) {
             continue;
         }
 
-        if (flag != kFabricFlag && flag != kScreenshotFlag && flag != kFramesFlag && flag != kFrameLogFlag) {
+        if (flag != kFabricFlag && flag != kScreenshotFlag && flag != kFramesFlag && flag != kFrameLogFlag &&
+            flag != kRendererFlag) {
             parsed.error = "unknown argument " + std::string(flag);
 
             return parsed;
@@ -226,6 +241,14 @@ WindowArguments parseArguments(std::span<char*> arguments) {
             parsed.screenshotPath = std::string(value);
         } else if (flag == kFrameLogFlag) {
             parsed.frameLogPath = std::string(value);
+        } else if (flag == kRendererFlag) {
+            parsed.forcedRung = react_native_linux::parseRendererRung(value);
+
+            if (!parsed.forcedRung.has_value()) {
+                parsed.error = describeMissingValue(kRendererFlag);
+
+                return parsed;
+            }
         } else {
             const std::optional<uint32_t> frameCount = parseFrameCount(value);
 
@@ -345,8 +368,7 @@ folly::dynamic answerSessionCommand(react_native_linux::AutomationCommand comman
 }
 
 void answerAutomationRequest(AutomationChannel& automation, const react_native_linux::AutomationRequest& request,
-                             react_native_linux::SkiaVulkanRenderer& renderer,
-                             react_native_linux::WindowSession* session) {
+                             react_native_linux::WindowRenderer& renderer, react_native_linux::WindowSession* session) {
     if (request.command == react_native_linux::AutomationCommand::ListErrors) {
         automation.server->sendResponse(react_native_linux::formatAutomationResponse(
             request.command, react_native_linux::describeErrors(react_native_linux::automationErrorLog().list())));
@@ -375,7 +397,7 @@ void answerAutomationRequest(AutomationChannel& automation, const react_native_l
  * One request per frame, at most: the channel is an assertion surface rather than a data path, and answering one
  * line per iteration keeps a driver that floods it from starving the frame loop it is measuring.
  */
-void serveAutomation(AutomationChannel& automation, react_native_linux::SkiaVulkanRenderer& renderer,
+void serveAutomation(AutomationChannel& automation, react_native_linux::WindowRenderer& renderer,
                      react_native_linux::WindowSession* session) {
     if (automation.pendingScreenshotPath.has_value()) {
         if (renderer.hasPendingCapture()) {
@@ -421,6 +443,136 @@ void paintPlaceholderFrame(SkCanvas& canvas, react_native_linux::WindowSize size
     canvas.drawRRect(SkRRect::MakeRectXY(cardBounds, kCardCornerRadius, kCardCornerRadius), cardPaint);
 }
 
+/**
+ * The ladder of #368, applied at bring-up: the rung the policy chose, then every rung below it, until one comes
+ * up. A rung that throws is a rung this machine cannot use — no second device, no lavapipe installed, a driver
+ * that refuses to create a context — and moving past it in the same process is what turns that into the next
+ * rung instead of an exit. The persisted record is written before each attempt and cleared by the first
+ * presented frame, which is how a rung that does not throw but *crashes* is caught by the next launch instead.
+ * See *The renderer ladder (#368)* in docs/cpp-toolchain.md.
+ */
+struct RendererBringUp {
+    std::unique_ptr<react_native_linux::WindowRenderer> renderer;
+    react_native_linux::SkiaVulkanRenderer* vulkanRenderer{nullptr};
+    react_native_linux::RendererLadderRecord record;
+};
+
+std::optional<std::string> ladderStatePath() {
+    const char* stateHome = std::getenv("XDG_STATE_HOME");
+    const char* home = std::getenv("HOME");
+
+    return react_native_linux::rendererLadderStatePath(stateHome == nullptr ? "" : stateHome,
+                                                       home == nullptr ? "" : home);
+}
+
+std::optional<react_native_linux::RendererLadderRecord> readLadderRecord(const std::optional<std::string>& path) {
+    if (!path.has_value()) {
+        return std::nullopt;
+    }
+
+    std::ifstream stored(path.value());
+
+    if (!stored.is_open()) {
+        return std::nullopt;
+    }
+
+    const std::string contents((std::istreambuf_iterator<char>(stored)), std::istreambuf_iterator<char>());
+
+    return react_native_linux::parseRendererLadderRecord(contents);
+}
+
+void writeLadderRecord(const std::optional<std::string>& path, const react_native_linux::RendererLadderRecord& record) {
+    if (!path.has_value()) {
+        return;
+    }
+
+    std::error_code directoryError;
+    std::filesystem::create_directories(std::filesystem::path(path.value()).parent_path(), directoryError);
+
+    if (directoryError) {
+        return;
+    }
+
+    std::ofstream stored(path.value(), std::ios::trunc);
+
+    stored << react_native_linux::formatRendererLadderRecord(record);
+}
+
+// The first presented frame is what says this rung works, and clearing the crash count is the only thing that
+// stops the next launch from stepping past it. See #373 for the signal itself. Called after the startup draw and
+// again inside the loop, because `--screenshot --frames 1` can present and consume its capture on the startup
+// draw alone, skipping the loop entirely.
+void announceFirstPresentedFrameOnce(bool presented, bool& hasRecordedFirstPresentedFrame,
+                                     const std::optional<std::string>& ladderPath,
+                                     const react_native_linux::RendererLadderRecord& record) {
+    if (presented && !hasRecordedFirstPresentedFrame) {
+        hasRecordedFirstPresentedFrame = true;
+        writeLadderRecord(ladderPath, react_native_linux::recordFirstPresentedFrame(record));
+    }
+}
+
+RendererBringUp createRenderer(react_native_linux::WaylandWindow& window, react_native_linux::RendererRung rung) {
+    if (rung == react_native_linux::RendererRung::SharedMemoryRaster) {
+        return RendererBringUp{.renderer = std::make_unique<react_native_linux::SharedMemoryRasterRenderer>(
+                                   window.sharedMemory(), window.surface(), window.size())};
+    }
+
+    std::unique_ptr<react_native_linux::SkiaVulkanRenderer> vulkanRenderer =
+        std::make_unique<react_native_linux::SkiaVulkanRenderer>(window.display(), window.surface(), window.size(),
+                                                                 rung);
+    react_native_linux::SkiaVulkanRenderer* borrowed = vulkanRenderer.get();
+
+    return RendererBringUp{.renderer = std::move(vulkanRenderer), .vulkanRenderer = borrowed};
+}
+
+RendererBringUp bringUpRenderer(react_native_linux::WaylandWindow& window, const WindowArguments& parsedArguments,
+                                const std::optional<std::string>& statePath, std::string_view driverIdentity) {
+    const std::optional<react_native_linux::RendererLadderRecord> persisted = readLadderRecord(statePath);
+    const react_native_linux::RendererStart start =
+        react_native_linux::rendererStartRung(persisted, parsedArguments.forcedRung, driverIdentity);
+    std::optional<react_native_linux::RendererRung> rung = start.rung;
+    std::string lastFailure;
+
+    if (parsedArguments.windowDebug) {
+        std::cout << "[rnl-window] renderer ladder starts at " << react_native_linux::describeRendererRung(start.rung)
+                  << ": " << react_native_linux::describeRendererStartReason(start.reason) << std::endl;
+    }
+
+    while (rung.has_value()) {
+        const react_native_linux::RendererLadderRecord attempt =
+            react_native_linux::recordRendererAttempt(persisted, rung.value(), driverIdentity);
+
+        writeLadderRecord(statePath, attempt);
+
+        try {
+            RendererBringUp broughtUp = createRenderer(window, rung.value());
+
+            broughtUp.record = attempt;
+
+            if (parsedArguments.windowDebug) {
+                std::cout << "[rnl-window] renderer rung " << react_native_linux::describeRendererRung(rung.value())
+                          << " came up on "
+                          << (broughtUp.vulkanRenderer == nullptr ? std::string("wl_shm")
+                                                                  : broughtUp.vulkanRenderer->driverIdentity())
+                          << std::endl;
+            }
+
+            return broughtUp;
+        } catch (const std::exception& error) {
+            lastFailure = error.what();
+
+            if (parsedArguments.windowDebug) {
+                std::cout << "[rnl-window] renderer rung " << react_native_linux::describeRendererRung(rung.value())
+                          << " failed to come up: " << lastFailure << std::endl;
+            }
+        }
+
+        rung = react_native_linux::nextRendererRung(rung.value());
+    }
+
+    throw std::runtime_error("every renderer rung failed to come up; the last said: " + lastFailure);
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -436,7 +588,11 @@ int main(int argc, char** argv) {
     try {
         react_native_linux::WaylandWindow window("react-native-linux",
                                                  react_native_linux::WindowSize{kInitialWidth, kInitialHeight});
-        react_native_linux::SkiaVulkanRenderer renderer(window.display(), window.surface(), window.size());
+        const std::optional<std::string> ladderPath = ladderStatePath();
+        const std::string driverIdentity = react_native_linux::probeVulkanDriverIdentity();
+        RendererBringUp broughtUp = bringUpRenderer(window, parsedArguments, ladderPath, driverIdentity);
+        react_native_linux::WindowRenderer& renderer = *broughtUp.renderer;
+        bool hasRecordedFirstPresentedFrame = false;
         std::optional<react_native_linux::WindowSession> session;
 
         // This is the first buffer the compositor can ever show, so `--frames 1` has to name this present rather
@@ -451,9 +607,14 @@ int main(int argc, char** argv) {
             renderer.captureNextFrame(parsedArguments.screenshotPath.value());
         }
 
-        if (renderer.drawFrame(window, {}, paintPlaceholderFrame)) {
+        const bool startupFramePresented = renderer.drawFrame(window, {}, paintPlaceholderFrame);
+
+        if (startupFramePresented) {
             ++presentedFrames;
         }
+
+        announceFirstPresentedFrameOnce(startupFramePresented, hasRecordedFirstPresentedFrame, ladderPath,
+                                        broughtUp.record);
 
         bool hasCaptured = isStartupCaptureFrame && !renderer.hasPendingCapture();
 
@@ -477,8 +638,9 @@ int main(int argc, char** argv) {
         // is only ever reached on a real desktop by closing a lid. One injected VK_ERROR_OUT_OF_DATE_KHR at the
         // first acquire makes the frame after it a rebuilt swapchain and a full repaint. See *VkResult policy*
         // in docs/cpp-toolchain.md.
-        if (parsedArguments.windowDebug) {
-            renderer.injectSwapchainLossOnNextFrame();
+        // Vulkan-only: the raster rung has no swapchain to lose and no surface-commit state machine to fault.
+        if (parsedArguments.windowDebug && broughtUp.vulkanRenderer != nullptr) {
+            broughtUp.vulkanRenderer->injectSwapchainLossOnNextFrame();
         }
 
         AutomationChannel automation;
@@ -521,7 +683,10 @@ int main(int argc, char** argv) {
 
             if (parsedArguments.windowDebug) {
                 printWindowDebugTransitions(window, lastKeyboardFocus, lastOutputEnterCount, lastOutputLeaveCount);
-                injectNextSurfaceCommitFault(renderer, injectedFaultCount);
+
+                if (broughtUp.vulkanRenderer != nullptr) {
+                    injectNextSurfaceCommitFault(*broughtUp.vulkanRenderer, injectedFaultCount);
+                }
             }
 
             // The capture is armed before the frame that carries it, because the readback happens inside
@@ -596,9 +761,11 @@ int main(int argc, char** argv) {
                 presented = renderer.drawFrame(window, {}, paintPlaceholderFrame);
             }
 
-            if (parsedArguments.windowDebug) {
-                printSurfaceCommitOutcome(renderer, presented);
+            if (parsedArguments.windowDebug && broughtUp.vulkanRenderer != nullptr) {
+                printSurfaceCommitOutcome(*broughtUp.vulkanRenderer, presented);
             }
+
+            announceFirstPresentedFrameOnce(presented, hasRecordedFirstPresentedFrame, ladderPath, broughtUp.record);
 
             if (presented) {
                 ++presentedFrames;

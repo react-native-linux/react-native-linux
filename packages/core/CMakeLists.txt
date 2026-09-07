@@ -1043,6 +1043,8 @@ elseif(RNL_ENABLE_WINDOW)
 
     add_executable(rnl_window
         src/AutomationServer.cpp
+        src/RendererLadder.cpp
+        src/SharedMemoryRasterRenderer.cpp
         src/SkiaVulkanRenderer.cpp
         src/SurfaceCommitGate.cpp
         src/TextInputClient.cpp

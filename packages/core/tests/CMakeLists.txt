@@ -83,6 +83,7 @@ add_executable(rnl_core_tests
     LinuxMountingManagerPendingDamageTest.cpp
     NestedTextFragmentTest.cpp
     PinnedFontFamiliesTest.cpp
+    RendererLadderTest.cpp
     SceneTest.cpp
     ScrollTest.cpp
     SwitchTest.cpp
@@ -122,6 +123,7 @@ add_executable(rnl_core_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/LinuxMountingManager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/PinnedFontFamilies.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/PlatformColor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/RendererLadder.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/RetainedScene.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ScrollController.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ScrollEventCadence.cpp
