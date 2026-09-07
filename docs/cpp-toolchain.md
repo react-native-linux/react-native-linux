@@ -7106,9 +7106,10 @@ naming a case is not a suppression file; there is none in this repository.
   that added the #393 filter, after passing every other run that day.
 
 - `BridgingTest.highResTimeStampTest` (#393) — round-trips `HighResTimeStamp::now()` through `toJs`, a double of
-  milliseconds, and back. A double holds 2^53 exact integers, so nanosecond precision survives only while the
-  steady clock is below about 9e15 ns, roughly two and a half hours of host uptime; on a runner that has been up
-  longer the equality fails on every preset, which is how it first surfaced on a run that had passed all day.
+  milliseconds, and back through `fromDOMHighResTimeStamp`, which converts with `static_cast<int64_t>(units * 1e6)`
+  and therefore truncates. Whenever `(ns / 1e6) * 1e6` lands a hair below the integer it started from, the last
+  nanosecond is lost: the run that surfaced it had a 268 s uptime, and about one timestamp in five fails at that
+  magnitude. A `std::llround` upstream would fix it; until then the case is a coin toss on every preset.
 
 - `Runtimes/JSITest.SetRuntimeData` (#383) — a lock-order inversion, `M0 => M1 => M0`, between the
   process-global JSI runtime-data mutex in `ReactCommon/jsi/jsi/jsi.cpp`, which `Runtime::setRuntimeDataImpl`
