@@ -79,7 +79,10 @@ const wp_presentation_feedback_listener WaylandWindow::kPresentationFeedbackList
 };
 
 WaylandWindow::WaylandWindow(const WindowIdentity& identity, WindowSize initialSize)
-    : size_(initialSize), title_(identity.title), forceClientDecorations_(identity.forceClientDecorations) {
+    : size_(initialSize),
+      title_(identity.title),
+      forceClientDecorations_(identity.forceClientDecorations),
+      noDecorations_(identity.noDecorations) {
     display_ = wl_display_connect(nullptr);
 
     if (display_ == nullptr) {
@@ -211,7 +214,8 @@ bool WaylandWindow::takeContentUpdateDiscarded() noexcept {
 bool WaylandWindow::hasContentUpdateDiscarded() const noexcept { return contentUpdateDiscarded_; }
 
 DecorationMode WaylandWindow::decorationMode() const noexcept {
-    return decideDecorationMode(decorationManager_ != nullptr, forceClientDecorations_, configuredDecorationMode_);
+    return decideDecorationMode(decorationManager_ != nullptr, forceClientDecorations_, noDecorations_,
+                                configuredDecorationMode_);
 }
 
 const std::string& WaylandWindow::title() const noexcept { return title_; }
@@ -412,10 +416,10 @@ void WaylandWindow::onToplevelConfigure(int32_t width, int32_t height, const wl_
 
 // Asking for server-side decorations is the whole negotiation: the compositor answers with a `configure` naming
 // the mode it actually chose, and `decideDecorationMode` turns that answer — or its absence, which is GNOME —
-// into who draws. Under --force-client-decorations no decoration object is created at all, which is exactly what
-// a client that means to decorate itself does.
+// into who draws. Under --force-client-decorations or --no-decorations no decoration object is created at all:
+// the first draws its own bar instead, the second asks for nothing and draws nothing.
 void WaylandWindow::negotiateDecorations() {
-    if (decorationManager_ == nullptr || forceClientDecorations_) {
+    if (decorationManager_ == nullptr || forceClientDecorations_ || noDecorations_) {
         return;
     }
 

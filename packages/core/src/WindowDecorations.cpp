@@ -54,10 +54,14 @@ DecorationHit resizeHitOfEdges(bool nearLeft, bool nearRight, bool nearTop, bool
 
 } // namespace
 
-DecorationMode decideDecorationMode(bool hasDecorationManager, bool forceClientDecorations,
+DecorationMode decideDecorationMode(bool hasDecorationManager, bool forceClientDecorations, bool noDecorations,
                                     std::optional<uint32_t> configuredMode) noexcept {
     if (forceClientDecorations) {
         return DecorationMode::Client;
+    }
+
+    if (noDecorations) {
+        return DecorationMode::Bare;
     }
 
     if (!hasDecorationManager) {

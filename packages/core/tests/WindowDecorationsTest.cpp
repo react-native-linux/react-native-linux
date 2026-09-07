@@ -34,24 +34,32 @@ struct ModeCase {
     std::string name;
     bool hasDecorationManager;
     bool forceClientDecorations;
+    bool noDecorations;
     std::optional<uint32_t> configuredMode;
     DecorationMode expected;
 };
 
 TEST(WindowDecorationsTest, TheModeTableIsTheWholeNegotiation) {
     const std::vector<ModeCase> cases{
-        {"no manager, nobody to ask", false, false, std::nullopt, DecorationMode::Client},
-        {"no manager, and the flag agrees", false, true, std::nullopt, DecorationMode::Client},
-        {"the flag overrides a server-side answer", true, true, kDecorationModeServerSide, DecorationMode::Client},
-        {"the compositor answered client-side", true, false, kDecorationModeClientSide, DecorationMode::Client},
-        {"the compositor answered server-side", true, false, kDecorationModeServerSide, DecorationMode::Server},
-        {"the manager exists and has not answered", true, false, std::nullopt, DecorationMode::Server},
-        {"an unrecognised answer stays server-side", true, false, kUnknownDecorationMode, DecorationMode::Server},
+        {"no manager, nobody to ask", false, false, false, std::nullopt, DecorationMode::Client},
+        {"no manager, and the flag agrees", false, true, false, std::nullopt, DecorationMode::Client},
+        {"the flag overrides a server-side answer", true, true, false, kDecorationModeServerSide,
+         DecorationMode::Client},
+        {"the compositor answered client-side", true, false, false, kDecorationModeClientSide, DecorationMode::Client},
+        {"the compositor answered server-side", true, false, false, kDecorationModeServerSide, DecorationMode::Server},
+        {"the manager exists and has not answered", true, false, false, std::nullopt, DecorationMode::Server},
+        {"an unrecognised answer stays server-side", true, false, false, kUnknownDecorationMode,
+         DecorationMode::Server},
+        {"no manager, and the rig asks for bare", false, false, true, std::nullopt, DecorationMode::Bare},
+        {"a manager exists, but the rig asks for bare", true, false, true, std::nullopt, DecorationMode::Bare},
+        {"the compositor answered server-side, but the rig asks for bare", true, false, true, kDecorationModeServerSide,
+         DecorationMode::Bare},
+        {"forced client wins over bare", true, true, true, std::nullopt, DecorationMode::Client},
     };
 
     for (const ModeCase& modeCase : cases) {
         EXPECT_EQ(decideDecorationMode(modeCase.hasDecorationManager, modeCase.forceClientDecorations,
-                                       modeCase.configuredMode),
+                                       modeCase.noDecorations, modeCase.configuredMode),
                   modeCase.expected)
             << modeCase.name;
     }
@@ -141,6 +149,14 @@ TEST(WindowDecorationsTest, ClientSideDecorationsPushTheContentBelowTheBar) {
     EXPECT_EQ(extent.width, kWindowWidth);
     EXPECT_EQ(extent.height, kWindowHeight - 32U);
     EXPECT_EQ(extent.topOffset, 32.0F);
+}
+
+TEST(WindowDecorationsTest, BareDecorationsLeaveTheContentAtTheSurfaceOriginLikeServerSide) {
+    const ContentExtent extent = contentExtentOf(DecorationMode::Bare, kMetrics, kWindowWidth, kWindowHeight);
+
+    EXPECT_EQ(extent.width, kWindowWidth);
+    EXPECT_EQ(extent.height, kWindowHeight);
+    EXPECT_EQ(extent.topOffset, 0.0F);
 }
 
 TEST(WindowDecorationsTest, AWindowShorterThanItsOwnBarKeepsOneRowOfContent) {

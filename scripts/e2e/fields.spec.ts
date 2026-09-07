@@ -4,8 +4,8 @@ import { readOptionalStringArray } from "./fields.ts";
 const NON_STRING_ENTRY = 1;
 
 describe("readOptionalStringArray", () => {
-  it("defaults to an empty array when the field is omitted", () => {
-    expect(readOptionalStringArray({}, "windowFlags", "fixture.json")).toEqual([]);
+  it("returns undefined, distinct from an explicit empty array, when the field is omitted", () => {
+    expect(readOptionalStringArray({}, "windowFlags", "fixture.json")).toBeUndefined();
   });
 
   it("keeps an explicit empty array rather than treating it as omitted", () => {

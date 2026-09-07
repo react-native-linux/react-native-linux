@@ -94,12 +94,8 @@ interface Scenario {
   readonly screenshot: ScreenshotComparison | null;
   /** `rnl_inject` script lines. */
   readonly steps: readonly string[];
-  /**
-   * Extra `rnl_window` flags, for a scenario whose subject is the window rather than the bundle. #329's
-   * `--force-client-decorations` is the first: cage implements `zxdg_decoration_manager_v1` and would otherwise
-   * decorate the window itself, leaving nothing of ours to click.
-   */
-  readonly windowFlags: readonly string[];
+  /** Extra `rnl_window` flags. `resolveWindowFlags` turns omission, `[]` and an explicit list into three cases. */
+  readonly windowFlags: readonly string[] | undefined;
 }
 
 interface ArtifactPaths {
@@ -221,6 +217,9 @@ const parseScenario = (value: unknown, sourceName: string): Scenario => {
 
 const formatInjectorScript = (steps: readonly string[]): string => `${steps.join("\n")}\n`;
 
+/** Omission becomes `--no-decorations`, since cage and weston have no decoration manager; `[]` or a list stands. */
+const resolveWindowFlags = (windowFlags?: readonly string[]): readonly string[] => windowFlags ?? ["--no-decorations"];
+
 /**
  * Ordered substring matching: every expectation has to appear on a later line than the one before it, which is
  * what makes a trace assertion about a sequence of events rather than a set of them.
@@ -296,5 +295,6 @@ export {
   parseScenario,
   resolveArtifactPaths,
   resolveExpectedOutcome,
+  resolveWindowFlags,
 };
 export type { FrameBudget, Scenario, ScenarioAutomation };

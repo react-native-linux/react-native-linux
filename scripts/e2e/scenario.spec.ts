@@ -7,6 +7,7 @@ import {
   parseScenario,
   resolveArtifactPaths,
   resolveExpectedOutcome,
+  resolveWindowFlags,
 } from "./scenario.ts";
 
 const DEFAULT_FRAME_COUNT = 600;
@@ -39,29 +40,27 @@ describe("parseScenario", () => {
       ready: "pressable: committed surface 1",
       screenshot: null,
       steps: ["sleep 500", "click 200 140"],
-      windowFlags: [],
     });
   });
 
-  it("defaults the frame budget", () => {
-    expect(parseScenario(validScenario, "fixture.json").frames).toBe(DEFAULT_FRAME_COUNT);
-  });
+  it("defaults the frame budget", () =>
+    expect(parseScenario(validScenario, "fixture.json").frames).toBe(DEFAULT_FRAME_COUNT));
 
   it("reads an explicit allowErrors, expectFailure and windowFlags", () => {
     const overrides = { allowErrors: true, expectFailure: true, windowFlags: ["--force-client-decorations"] };
 
     expect(parseScenario({ ...validScenario, ...overrides }, "fixture.json")).toMatchObject(overrides);
   });
+
+  it("keeps an explicit empty windowFlags rather than treating it as omitted", () =>
+    expect(parseScenario({ ...validScenario, windowFlags: [] }, "fixture.json")).toMatchObject({ windowFlags: [] }));
 });
 
 describe("parseScenario boolean rejections", () => {
-  it("rejects an allowErrors that is not a boolean", () => {
+  it("rejects allowErrors and expectFailure fields that are not booleans", () => {
     expect(() => parseScenario({ ...validScenario, allowErrors: "yes" }, "fixture.json")).toThrow(
       'fixture.json: "allowErrors" must be a boolean',
     );
-  });
-
-  it("rejects an expectFailure that is not a boolean", () => {
     expect(() => parseScenario({ ...validScenario, expectFailure: "yes" }, "fixture.json")).toThrow(
       'fixture.json: "expectFailure" must be a boolean',
     );
@@ -73,13 +72,11 @@ describe("parseScenario shape rejections", () => {
     expect(() => parseScenario("pressable", "fixture.json")).toThrow("fixture.json: a scenario must be a JSON object");
   });
 
-  it("rejects null", () => {
-    expect(() => parseScenario(null, "fixture.json")).toThrow("a scenario must be a JSON object");
-  });
+  it("rejects null", () =>
+    expect(() => parseScenario(null, "fixture.json")).toThrow("a scenario must be a JSON object"));
 
-  it("rejects an array", () => {
-    expect(() => parseScenario([], "fixture.json")).toThrow("a scenario must be a JSON object");
-  });
+  it("rejects an array", () =>
+    expect(() => parseScenario([], "fixture.json")).toThrow("a scenario must be a JSON object"));
 });
 
 describe("parseScenario field rejections", () => {
@@ -115,22 +112,14 @@ describe("parseScenario field rejections", () => {
 });
 
 describe("parseScenario frame budget rejections", () => {
-  it("rejects a frame budget that is not a number", () => {
-    expect(() => parseScenario({ ...validScenario, frames: "600" }, "fixture.json")).toThrow(
-      'fixture.json: "frames" must be a positive integer',
-    );
-  });
+  it("rejects a frames value that is not a positive integer: not a number, fractional, or below one", () => {
+    const invalidFrameCounts = ["600", FRACTIONAL_FRAME_COUNT, NO_FRAMES];
 
-  it("rejects a fractional frame budget", () => {
-    expect(() => parseScenario({ ...validScenario, frames: FRACTIONAL_FRAME_COUNT }, "fixture.json")).toThrow(
-      'fixture.json: "frames" must be a positive integer',
-    );
-  });
-
-  it("rejects a frame budget below one", () => {
-    expect(() => parseScenario({ ...validScenario, frames: NO_FRAMES }, "fixture.json")).toThrow(
-      'fixture.json: "frames" must be a positive integer',
-    );
+    for (const frames of invalidFrameCounts) {
+      expect(() => parseScenario({ ...validScenario, frames }, "fixture.json")).toThrow(
+        'fixture.json: "frames" must be a positive integer',
+      );
+    }
   });
 });
 
@@ -297,4 +286,13 @@ describe("resolveArtifactPaths", () => {
       tracePath: "build/e2e/pressable-click/trace.log",
     });
   });
+});
+
+describe("resolveWindowFlags", () => {
+  it("defaults an omitted field to --no-decorations", () => expect(resolveWindowFlags()).toEqual(["--no-decorations"]));
+
+  it("keeps an explicit empty array as the compositor default", () => expect(resolveWindowFlags([])).toEqual([]));
+
+  it("uses an explicit list exactly as written", () =>
+    expect(resolveWindowFlags(["--force-client-decorations"])).toEqual(["--force-client-decorations"]));
 });

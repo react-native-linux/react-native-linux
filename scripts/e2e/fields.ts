@@ -78,17 +78,18 @@ const readOptionalBoolean = (record: Record<string, unknown>, label: string, sou
 };
 
 /**
- * An optional string array field defaults to `[]` when the scenario omits it, but an explicit `[]` is not the
- * same as omission and must survive: `readStringArray` rejects both alike, which is wrong for a field like
- * `windowFlags` where "no flags" is a legitimate scenario to write down.
+ * An optional string array field is `undefined` when the scenario omits it, rather than `[]`: an explicit `[]`
+ * is not the same as omission and must survive as its own value, which is why this returns `undefined` instead
+ * of collapsing the two — a field like `windowFlags` gives omission and an explicit empty array different
+ * meanings, and only the caller that knows what "omitted" means for that field can supply the right default.
  */
 const readOptionalStringArray = (
   record: Record<string, unknown>,
   label: string,
   sourceName: string,
-): readonly string[] => {
+): readonly string[] | undefined => {
   if (!(label in record)) {
-    return [];
+    return;
   }
 
   const value = record[label];

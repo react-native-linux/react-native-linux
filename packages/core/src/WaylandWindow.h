@@ -59,12 +59,16 @@ struct WindowSize {
  *
  * `forceClientDecorations` is the test seam: it makes `decorationMode` answer `Client` whatever the compositor
  * says, so the drawn title bar can be proven under a compositor that does implement
- * `zxdg_decoration_manager_v1`. See *Decorations and app_id (#329)* in docs/cpp-toolchain.md.
+ * `zxdg_decoration_manager_v1`. `noDecorations` is its mirror: it makes `decorationMode` answer `Bare` — no
+ * request, no drawn bar, zero inset — so the test rigs' scripted coordinates stay content-relative under
+ * compositors that offer no `zxdg_decoration_manager_v1` at all. `forceClientDecorations` wins when both are set.
+ * See *Decorations and app_id (#329)* in docs/cpp-toolchain.md.
  */
 struct WindowIdentity {
     std::string title;
     std::string applicationIdentifier;
     bool forceClientDecorations{false};
+    bool noDecorations{false};
 };
 
 /**
@@ -154,7 +158,7 @@ public:
 
     /**
      * Who draws this window's chrome, as `decideDecorationMode` decides it from the manager's presence, the
-     * `--force-client-decorations` flag and the compositor's most recent
+     * `--force-client-decorations` and `--no-decorations` flags, and the compositor's most recent
      * `zxdg_toplevel_decoration_v1.configure`. Answered live rather than cached, because a compositor may
      * reconfigure the mode at any time.
      */
@@ -275,6 +279,7 @@ private:
     WindowSize size_;
     std::string title_;
     bool forceClientDecorations_{false};
+    bool noDecorations_{false};
     std::optional<uint32_t> configuredDecorationMode_;
     ToplevelState toplevelState_;
     bool configured_{false};

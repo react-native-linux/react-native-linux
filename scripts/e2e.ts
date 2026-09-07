@@ -5,6 +5,7 @@ import {
   formatInjectorScript,
   resolveArtifactPaths,
   resolveExpectedOutcome,
+  resolveWindowFlags,
 } from "./e2e/scenario.ts";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { gradeArtifacts, gradeAutomationChannel } from "./e2e/grade.ts";
@@ -101,7 +102,7 @@ const startCompositor = (run: ScenarioRun, rig: Rig, workspace: Workspace): Comp
       "--frame-log",
       workspace.frameLogPath,
       ...(run.scenario.automation === null ? [] : ["--automation"]),
-      ...run.scenario.windowFlags,
+      ...resolveWindowFlags(run.scenario.windowFlags),
     ],
     {
       env: buildEnvironment({

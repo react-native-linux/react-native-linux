@@ -21,6 +21,7 @@ namespace react_native_linux {
 enum class DecorationMode : uint8_t {
     Server,
     Client,
+    Bare,
 };
 
 /**
@@ -33,14 +34,22 @@ constexpr uint32_t kDecorationModeClientSide = 1;
 constexpr uint32_t kDecorationModeServerSide = 2;
 
 /**
- * We draw only when we are told to, or when there is no one to ask.
+ * We draw only when we are told to, or when there is no one to ask — unless `--no-decorations` says to draw
+ * nothing at all.
  *
  * `configuredMode` is the mode the compositor's most recent `zxdg_toplevel_decoration_v1.configure` named, or
  * `std::nullopt` when it has not answered yet. An answer this platform does not recognise — a mode a later
  * protocol version adds — leaves the window server-decorated, because `WaylandWindow` asked for server-side and
  * drawing a second title bar over one the compositor is already drawing is the worse of the two failures.
+ *
+ * `noDecorations` is the test rig's seam, the mirror image of `forceClientDecorations`: both cage (e2e) and
+ * weston (window goldens) offer no `zxdg_decoration_manager_v1`, which used to fall through to the drawn bar and
+ * put every scripted coordinate `titleBarHeight` points off content. `Bare` is that seam's answer — no request,
+ * no drawn bar, zero inset — and it is checked ahead of the no-manager fallback so it wins there, but still loses
+ * to `forceClientDecorations`: forcing the bar is how the bar itself gets proven under these same compositors, so
+ * asking for both at once has to keep drawing it.
  */
-DecorationMode decideDecorationMode(bool hasDecorationManager, bool forceClientDecorations,
+DecorationMode decideDecorationMode(bool hasDecorationManager, bool forceClientDecorations, bool noDecorations,
                                     std::optional<uint32_t> configuredMode) noexcept;
 
 /**

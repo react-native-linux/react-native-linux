@@ -65,6 +65,7 @@ constexpr std::string_view kRendererFlag = "--renderer";
 constexpr std::string_view kAppIdFlag = "--app-id";
 constexpr std::string_view kTitleFlag = "--title";
 constexpr std::string_view kForceClientDecorationsFlag = "--force-client-decorations";
+constexpr std::string_view kNoDecorationsFlag = "--no-decorations";
 constexpr std::string_view kDefaultTitle = "react-native-linux";
 constexpr std::string_view kDefaultApplicationIdentifier = "react-native-linux";
 constexpr int kPrimaryPointerButton = 0;
@@ -111,6 +112,7 @@ struct WindowArguments {
     uint32_t frameCount{kDefaultScreenshotFrames};
     bool automation{false};
     bool forceClientDecorations{false};
+    bool noDecorations{false};
     bool imeDebug{false};
     bool windowDebug{false};
     std::string error;
@@ -241,6 +243,12 @@ WindowArguments parseArguments(std::span<char*> arguments) {
 
         if (flag == kForceClientDecorationsFlag) {
             parsed.forceClientDecorations = true;
+
+            continue;
+        }
+
+        if (flag == kNoDecorationsFlag) {
+            parsed.noDecorations = true;
 
             continue;
         }
@@ -457,6 +465,17 @@ void serveAutomation(AutomationChannel& automation, react_native_linux::WindowRe
     }
 
     answerAutomationRequest(automation, parsed.request.value(), renderer, session);
+}
+
+std::string_view decorationModeName(react_native_linux::DecorationMode mode) {
+    switch (mode) {
+    case react_native_linux::DecorationMode::Client:
+        return "client";
+    case react_native_linux::DecorationMode::Bare:
+        return "bare";
+    default:
+        return "server";
+    }
 }
 
 /**
@@ -782,7 +801,8 @@ int main(int argc, char** argv) {
         react_native_linux::WaylandWindow window(
             react_native_linux::WindowIdentity{.title = parsedArguments.title,
                                                .applicationIdentifier = parsedArguments.applicationIdentifier,
-                                               .forceClientDecorations = parsedArguments.forceClientDecorations},
+                                               .forceClientDecorations = parsedArguments.forceClientDecorations,
+                                               .noDecorations = parsedArguments.noDecorations},
             react_native_linux::WindowSize{kInitialWidth, kInitialHeight});
         const std::optional<std::string> ladderPath = ladderStatePath();
         const std::string driverIdentity = react_native_linux::probeVulkanDriverIdentity();
@@ -794,7 +814,7 @@ int main(int argc, char** argv) {
 
         refreshChrome(chrome, window);
         std::cout << "[rnl-decorations] mode="
-                  << (chrome.mode == react_native_linux::DecorationMode::Client ? "client" : "server")
+                  << decorationModeName(chrome.mode)
                   << " app-id=" << parsedArguments.applicationIdentifier << " content=" << chrome.content.width << "x"
                   << chrome.content.height << std::endl;
 

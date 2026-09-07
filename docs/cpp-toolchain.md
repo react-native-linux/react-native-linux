@@ -698,22 +698,31 @@ under the 100% line-and-branch gate (`packages/core/tests/WindowDecorationsTest.
 nothing else: `decideDecorationMode`, `layoutTitleBar`, `hitTestDecorations`, `resizeEdgeOfHit`/`contentExtentOf`,
 and `DoubleClickDetector`.
 
-The mode table is one sentence — **we draw only when we are told to, or when there is no one to ask**:
+The mode table is one sentence — **we draw only when we are told to, or when there is no one to ask** — with a
+third mode, `bare`, for a rig that wants neither: no server-side request, no drawn bar, zero inset.
 
-| `--force-client-decorations` | manager | `zxdg_toplevel_decoration_v1.configure` | mode |
-| --- | --- | --- | --- |
-| yes | either | any | client |
-| no | absent | — | client |
-| no | present | `client_side` (1) | client |
-| no | present | `server_side` (2) | server |
-| no | present | none yet | server |
-| no | present | an unrecognised value | server |
+| `--force-client-decorations` | `--no-decorations` | manager | `zxdg_toplevel_decoration_v1.configure` | mode |
+| --- | --- | --- | --- | --- |
+| yes | either | either | any | client |
+| no | yes | either | any | bare |
+| no | no | absent | — | client |
+| no | no | present | `client_side` (1) | client |
+| no | no | present | `server_side` (2) | server |
+| no | no | present | none yet | server |
+| no | no | present | an unrecognised value | server |
 
-The last two rows are the same rule as the first three, not an exception to them: `WaylandWindow` asked for
+The last two rows are the same rule as the ones above them, not an exception to them: `WaylandWindow` asked for
 `server_side`, and drawing a second title bar over one the compositor is already drawing is the worse of the two
 failures. `--force-client-decorations` creates no decoration object at all, which is exactly what a client that
 means to decorate itself does; it exists because both CI compositors implement the manager and there would
-otherwise be nothing of ours to screenshot or click.
+otherwise be nothing of ours to screenshot or click. `--force-client-decorations` still wins when both flags are
+given, because forcing the bar is how the bar itself gets proven under these same compositors.
+
+**Both CI compositors — cage for e2e, weston for the window goldens — implement no `zxdg_decoration_manager_v1`
+at all**, so without `--no-decorations` every window under them fell through to the drawn-bar fallback and every
+scripted coordinate landed `titleBarHeight` points off content. The e2e driver and `window-golden.ts` now run
+`--no-decorations` by default so scripted coordinates stay content-relative; the one fixture that pins the drawn
+bar (`window-decorations.png`) keeps `--force-client-decorations` instead.
 
 **The geometry, in surface points.** A 32-point bar across the top; 8-point resize edges on all four sides; three
 40-point buttons — minimize, maximize, close, in that order — flush against the right edge, with what is left of
