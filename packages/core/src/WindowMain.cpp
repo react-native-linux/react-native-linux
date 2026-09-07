@@ -498,6 +498,19 @@ void writeLadderRecord(const std::optional<std::string>& path, const react_nativ
     stored << react_native_linux::formatRendererLadderRecord(record);
 }
 
+// The first presented frame is what says this rung works, and clearing the crash count is the only thing that
+// stops the next launch from stepping past it. See #373 for the signal itself. Called after the startup draw and
+// again inside the loop, because `--screenshot --frames 1` can present and consume its capture on the startup
+// draw alone, skipping the loop entirely.
+void announceFirstPresentedFrameOnce(bool presented, bool& hasRecordedFirstPresentedFrame,
+                                     const std::optional<std::string>& ladderPath,
+                                     const react_native_linux::RendererLadderRecord& record) {
+    if (presented && !hasRecordedFirstPresentedFrame) {
+        hasRecordedFirstPresentedFrame = true;
+        writeLadderRecord(ladderPath, react_native_linux::recordFirstPresentedFrame(record));
+    }
+}
+
 RendererBringUp createRenderer(react_native_linux::WaylandWindow& window, react_native_linux::RendererRung rung) {
     if (rung == react_native_linux::RendererRung::SharedMemoryRaster) {
         return RendererBringUp{.renderer = std::make_unique<react_native_linux::SharedMemoryRasterRenderer>(
@@ -594,9 +607,14 @@ int main(int argc, char** argv) {
             renderer.captureNextFrame(parsedArguments.screenshotPath.value());
         }
 
-        if (renderer.drawFrame(window, {}, paintPlaceholderFrame)) {
+        const bool startupFramePresented = renderer.drawFrame(window, {}, paintPlaceholderFrame);
+
+        if (startupFramePresented) {
             ++presentedFrames;
         }
+
+        announceFirstPresentedFrameOnce(startupFramePresented, hasRecordedFirstPresentedFrame, ladderPath,
+                                        broughtUp.record);
 
         bool hasCaptured = isStartupCaptureFrame && !renderer.hasPendingCapture();
 
@@ -747,12 +765,7 @@ int main(int argc, char** argv) {
                 printSurfaceCommitOutcome(*broughtUp.vulkanRenderer, presented);
             }
 
-            // The first presented frame is what says this rung works, and clearing the crash count is the only
-            // thing that stops the next launch from stepping past it. See #373 for the signal itself.
-            if (presented && !hasRecordedFirstPresentedFrame) {
-                hasRecordedFirstPresentedFrame = true;
-                writeLadderRecord(ladderPath, react_native_linux::recordFirstPresentedFrame(broughtUp.record));
-            }
+            announceFirstPresentedFrameOnce(presented, hasRecordedFirstPresentedFrame, ladderPath, broughtUp.record);
 
             if (presented) {
                 ++presentedFrames;
