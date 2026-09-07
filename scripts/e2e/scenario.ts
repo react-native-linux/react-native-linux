@@ -3,12 +3,12 @@ import {
   readCoordinate,
   readObject,
   readOptionalBoolean,
+  readOptionalStringArray,
   readPositiveInteger,
   readPositiveNumber,
   readString,
   readStringArray,
 } from "./fields.ts";
-
 import type { Crop } from "./screenshot.ts";
 import path from "node:path";
 import { readAccessibilityChanges } from "./accessibility-changes.ts";
@@ -27,16 +27,14 @@ const PARENT_DIRECTORY = "..";
 /**
  * The narrow slice of "error" the trace can prove today, per #233: an uncaught JS error's own report from
  * `JsErrorReporter`, and the bracketed component tags `rnl_window`'s C++ diagnostics use when they hit a fault.
- * A raw `console.error`/`console.warn` call is deliberately not in this list — `ConsoleBinding` prints it with
- * no prefix at all, so nothing in the merged stdout/stderr trace tells it apart from `console.log` until #214's
- * `ListErrors` channel replaces this trace-substring mechanism.
+ * A raw `console.error`/`console.warn` call is deliberately not in this list — `ConsoleBinding` prints it with no
+ * prefix, indistinguishable from `console.log`, until #214's `ListErrors` channel replaces this mechanism.
  */
 const ERROR_TRACE_PATTERNS: readonly string[] = ["[js-error]", "[bundle-runner]", "[image]", "[text]", "[rnl-window]"];
 
 /**
- * The perf gate of #7. `p95Ms` is the ninety-fifth percentile `wp_presentation` frame time the run may not
- * exceed, and `minFrames` is how many frames have to have been presented for that percentile to mean anything —
- * a run that presented four frames can pass any budget by accident.
+ * The perf gate of #7. `p95Ms` is the ninety-fifth percentile `wp_presentation` frame time the run may not exceed;
+ * `minFrames` is how many frames must have presented for that percentile to mean anything, not pass by accident.
  */
 interface FrameBudget {
   readonly minFrames: number;
@@ -87,6 +85,8 @@ interface Scenario {
   readonly expect: readonly string[];
   /** A negative control: the scenario passes only if grading it produces at least one failure. */
   readonly expectFailure: boolean;
+  /** `rnl_inject`'s exit status 1 is accepted once the trace also carries the window's own "closed before frame". */
+  readonly expectsWindowClose: boolean;
   /** How long `rnl_window` runs before it captures its screenshot and exits. */
   readonly frames: number;
   readonly frameBudget: FrameBudget | null;
@@ -96,6 +96,8 @@ interface Scenario {
   readonly screenshot: ScreenshotComparison | null;
   /** `rnl_inject` script lines. */
   readonly steps: readonly string[];
+  /** Extra `rnl_window` flags. `resolveWindowFlags` in grade.ts turns omission, `[]` and a list into three cases. */
+  readonly windowFlags: readonly string[] | undefined;
 }
 
 interface ArtifactPaths {
@@ -205,12 +207,14 @@ const parseScenario = (value: unknown, sourceName: string): Scenario => {
     bundle: readString(value["bundle"], "bundle", sourceName),
     expect: readStringArray(value["expect"], "expect", sourceName),
     expectFailure: readOptionalBoolean(value, "expectFailure", sourceName),
+    expectsWindowClose: readOptionalBoolean(value, "expectsWindowClose", sourceName),
     frameBudget: readFrameBudget(value, sourceName),
     frames: readFrameCount(value, sourceName),
     name: readString(value["name"], "name", sourceName),
     ready: readString(value["ready"], "ready", sourceName),
     screenshot: readScreenshotComparison(value, sourceName),
     steps: readStringArray(value["steps"], "steps", sourceName),
+    windowFlags: readOptionalStringArray(value, "windowFlags", sourceName),
   };
 };
 

@@ -33,6 +33,7 @@ describe("parseScenario", () => {
       bundle: "pressable.js",
       expect: ["pressable: topClick on box at 200,140"],
       expectFailure: false,
+      expectsWindowClose: false,
       frameBudget: null,
       frames: EXPLICIT_FRAME_COUNT,
       name: "pressable-click",
@@ -42,25 +43,29 @@ describe("parseScenario", () => {
     });
   });
 
-  it("defaults the frame budget", () => {
-    expect(parseScenario(validScenario, "fixture.json").frames).toBe(DEFAULT_FRAME_COUNT);
+  it("defaults the frame budget", () =>
+    expect(parseScenario(validScenario, "fixture.json").frames).toBe(DEFAULT_FRAME_COUNT));
+
+  it("reads an explicit allowErrors, expectFailure, expectsWindowClose and windowFlags", () => {
+    const overrides = {
+      allowErrors: true,
+      expectFailure: true,
+      expectsWindowClose: true,
+      windowFlags: ["--force-client-decorations"],
+    };
+
+    expect(parseScenario({ ...validScenario, ...overrides }, "fixture.json")).toMatchObject(overrides);
   });
 
-  it("reads an explicit allowErrors and expectFailure", () => {
-    const scenario = parseScenario({ ...validScenario, allowErrors: true, expectFailure: true }, "fixture.json");
-
-    expect(scenario).toMatchObject({ allowErrors: true, expectFailure: true });
-  });
+  it("keeps an explicit empty windowFlags rather than treating it as omitted", () =>
+    expect(parseScenario({ ...validScenario, windowFlags: [] }, "fixture.json")).toMatchObject({ windowFlags: [] }));
 });
 
 describe("parseScenario boolean rejections", () => {
-  it("rejects an allowErrors that is not a boolean", () => {
+  it("rejects allowErrors and expectFailure fields that are not booleans", () => {
     expect(() => parseScenario({ ...validScenario, allowErrors: "yes" }, "fixture.json")).toThrow(
       'fixture.json: "allowErrors" must be a boolean',
     );
-  });
-
-  it("rejects an expectFailure that is not a boolean", () => {
     expect(() => parseScenario({ ...validScenario, expectFailure: "yes" }, "fixture.json")).toThrow(
       'fixture.json: "expectFailure" must be a boolean',
     );
@@ -72,13 +77,11 @@ describe("parseScenario shape rejections", () => {
     expect(() => parseScenario("pressable", "fixture.json")).toThrow("fixture.json: a scenario must be a JSON object");
   });
 
-  it("rejects null", () => {
-    expect(() => parseScenario(null, "fixture.json")).toThrow("a scenario must be a JSON object");
-  });
+  it("rejects null", () =>
+    expect(() => parseScenario(null, "fixture.json")).toThrow("a scenario must be a JSON object"));
 
-  it("rejects an array", () => {
-    expect(() => parseScenario([], "fixture.json")).toThrow("a scenario must be a JSON object");
-  });
+  it("rejects an array", () =>
+    expect(() => parseScenario([], "fixture.json")).toThrow("a scenario must be a JSON object"));
 });
 
 describe("parseScenario field rejections", () => {
@@ -114,22 +117,14 @@ describe("parseScenario field rejections", () => {
 });
 
 describe("parseScenario frame budget rejections", () => {
-  it("rejects a frame budget that is not a number", () => {
-    expect(() => parseScenario({ ...validScenario, frames: "600" }, "fixture.json")).toThrow(
-      'fixture.json: "frames" must be a positive integer',
-    );
-  });
+  it("rejects a frames value that is not a positive integer: not a number, fractional, or below one", () => {
+    const invalidFrameCounts = ["600", FRACTIONAL_FRAME_COUNT, NO_FRAMES];
 
-  it("rejects a fractional frame budget", () => {
-    expect(() => parseScenario({ ...validScenario, frames: FRACTIONAL_FRAME_COUNT }, "fixture.json")).toThrow(
-      'fixture.json: "frames" must be a positive integer',
-    );
-  });
-
-  it("rejects a frame budget below one", () => {
-    expect(() => parseScenario({ ...validScenario, frames: NO_FRAMES }, "fixture.json")).toThrow(
-      'fixture.json: "frames" must be a positive integer',
-    );
+    for (const frames of invalidFrameCounts) {
+      expect(() => parseScenario({ ...validScenario, frames }, "fixture.json")).toThrow(
+        'fixture.json: "frames" must be a positive integer',
+      );
+    }
   });
 });
 

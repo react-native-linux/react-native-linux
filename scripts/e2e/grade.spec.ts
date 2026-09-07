@@ -35,12 +35,14 @@ const baseScenario: Scenario = {
   bundle: "pressable.js",
   expect: ["pressable: topClick"],
   expectFailure: false,
+  expectsWindowClose: false,
   frameBudget: null,
   frames: 600,
   name: "pressable-click",
   ready: "pressable: committed surface 1",
   screenshot: null,
   steps: ["sleep 500"],
+  windowFlags: [],
 };
 
 const healthyFrameLog = [

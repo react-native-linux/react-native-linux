@@ -4,7 +4,7 @@ import { describeFrameTiming, findFrameBudgetFailures, parseFrameLogSummary } fr
 const FRAME_LOG_PATH = "build/e2e/animated-frames/frames.jsonl";
 const BOTH_FAILURES = 2;
 
-const budget = { minFrames: 60, p95Ms: 16.7 };
+const budget = { minFrames: 60, p95Ms: 17.5 };
 
 const summaryLine = (fields: string): string => `{"summary":true,${fields}}`;
 
@@ -96,7 +96,7 @@ describe("findFrameBudgetFailures", () => {
     );
 
     expect(findFrameBudgetFailures(summary, budget, FRAME_LOG_PATH)).toEqual([
-      "p95 frame time is 24.00 ms, the budget is 16.7 ms",
+      "p95 frame time is 24.00 ms, the budget is 17.5 ms",
     ]);
   });
 

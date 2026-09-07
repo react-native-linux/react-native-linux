@@ -2,6 +2,7 @@
 
 #include "presentation-time-client-protocol.h"
 #include "text-input-unstable-v3-client-protocol.h"
+#include "xdg-decoration-unstable-v1-client-protocol.h"
 #include "xdg-shell-client-protocol.h"
 
 #include <algorithm>
@@ -26,6 +27,9 @@ constexpr uint32_t kMaximumTextInputManagerVersion = 1;
 // ADR-0001 decision 3 binds version 2: Hyprland zeroes the refresh hint for version 1 clients while VRR is
 // active. A compositor that only advertises version 1 still binds, at its own version.
 constexpr uint32_t kMaximumPresentationVersion = 2;
+// Version 1 is the whole of xdg-decoration: one manager request, one `set_mode`, one `configure` event. There is
+// no version 2.
+constexpr uint32_t kMaximumDecorationManagerVersion = 1;
 constexpr uint64_t kNanosecondsPerSecond = 1'000'000'000;
 constexpr uint32_t kHighWordShift = 32;
 
@@ -56,6 +60,10 @@ const xdg_toplevel_listener WaylandWindow::kToplevelListener{
     .wm_capabilities = WaylandWindow::handleToplevelWmCapabilities,
 };
 
+const zxdg_toplevel_decoration_v1_listener WaylandWindow::kDecorationListener{
+    .configure = WaylandWindow::handleDecorationConfigure,
+};
+
 const wl_callback_listener WaylandWindow::kFrameCallbackListener{
     .done = WaylandWindow::handleFrameDone,
 };
@@ -70,7 +78,11 @@ const wp_presentation_feedback_listener WaylandWindow::kPresentationFeedbackList
     .discarded = WaylandWindow::handleFeedbackDiscarded,
 };
 
-WaylandWindow::WaylandWindow(const std::string& title, WindowSize initialSize) : size_(initialSize) {
+WaylandWindow::WaylandWindow(const WindowIdentity& identity, WindowSize initialSize)
+    : size_(initialSize),
+      title_(identity.title),
+      forceClientDecorations_(identity.forceClientDecorations),
+      noDecorations_(identity.noDecorations) {
     display_ = wl_display_connect(nullptr);
 
     if (display_ == nullptr) {
@@ -99,8 +111,11 @@ WaylandWindow::WaylandWindow(const std::string& title, WindowSize initialSize) :
 
     toplevel_ = xdg_surface_get_toplevel(xdgSurface_);
     xdg_toplevel_add_listener(toplevel_, &kToplevelListener, this);
-    xdg_toplevel_set_title(toplevel_, title.c_str());
-    xdg_toplevel_set_app_id(toplevel_, title.c_str());
+    xdg_toplevel_set_title(toplevel_, title_.c_str());
+    // Not the title: the compositor keys window rules, the switcher and the taskbar icon on this string alone,
+    // and it has to equal the installed desktop file's name. See zed#53962 and zed#33897.
+    xdg_toplevel_set_app_id(toplevel_, identity.applicationIdentifier.c_str());
+    negotiateDecorations();
 
     wl_surface_commit(surface_);
 
@@ -124,6 +139,14 @@ WaylandWindow::~WaylandWindow() noexcept {
     // Before the connection goes away: releasing the pointer, the keyboard and the seat are all requests on it.
     // The seat also owns the text input, which is destroyed before the manager that created it.
     seat_.reset();
+
+    if (toplevelDecoration_ != nullptr) {
+        zxdg_toplevel_decoration_v1_destroy(toplevelDecoration_);
+    }
+
+    if (decorationManager_ != nullptr) {
+        zxdg_decoration_manager_v1_destroy(decorationManager_);
+    }
 
     if (textInputManager_ != nullptr) {
         zwp_text_input_manager_v3_destroy(textInputManager_);
@@ -189,6 +212,47 @@ bool WaylandWindow::takeContentUpdateDiscarded() noexcept {
 }
 
 bool WaylandWindow::hasContentUpdateDiscarded() const noexcept { return contentUpdateDiscarded_; }
+
+DecorationMode WaylandWindow::decorationMode() const noexcept {
+    return decideDecorationMode(decorationManager_ != nullptr, forceClientDecorations_, noDecorations_,
+                                configuredDecorationMode_);
+}
+
+const std::string& WaylandWindow::title() const noexcept { return title_; }
+
+void WaylandWindow::startInteractiveMove() {
+    const std::optional<uint32_t> serial = serialLedger_.requestSerial(WaylandSerialKind::InteractiveMove);
+
+    if (seat_ == nullptr || !serial.has_value()) {
+        return;
+    }
+
+    xdg_toplevel_move(toplevel_, seat_->seat(), serial.value());
+}
+
+void WaylandWindow::startInteractiveResize(uint32_t edge) {
+    const std::optional<uint32_t> serial = serialLedger_.requestSerial(WaylandSerialKind::InteractiveMove);
+
+    if (seat_ == nullptr || !serial.has_value()) {
+        return;
+    }
+
+    xdg_toplevel_resize(toplevel_, seat_->seat(), serial.value(), edge);
+}
+
+void WaylandWindow::toggleMaximized() {
+    if (toplevelState_.maximized) {
+        xdg_toplevel_unset_maximized(toplevel_);
+
+        return;
+    }
+
+    xdg_toplevel_set_maximized(toplevel_);
+}
+
+void WaylandWindow::minimize() { xdg_toplevel_set_minimized(toplevel_); }
+
+void WaylandWindow::requestClose() noexcept { closed_ = true; }
 
 ToplevelState WaylandWindow::toplevelState() const noexcept { return toplevelState_; }
 
@@ -283,6 +347,10 @@ void WaylandWindow::bindGlobal(wl_registry* registry, uint32_t name, const char*
         void* bound = wl_registry_bind(registry, name, &zwp_text_input_manager_v3_interface,
                                        std::min(version, kMaximumTextInputManagerVersion));
         textInputManager_ = static_cast<zwp_text_input_manager_v3*>(bound);
+    } else if (std::strcmp(interfaceName, zxdg_decoration_manager_v1_interface.name) == 0) {
+        void* bound = wl_registry_bind(registry, name, &zxdg_decoration_manager_v1_interface,
+                                       std::min(version, kMaximumDecorationManagerVersion));
+        decorationManager_ = static_cast<zxdg_decoration_manager_v1*>(bound);
     } else if (std::strcmp(interfaceName, wp_presentation_interface.name) == 0) {
         void* bound = wl_registry_bind(registry, name, &wp_presentation_interface,
                                        std::min(version, kMaximumPresentationVersion));
@@ -346,6 +414,20 @@ void WaylandWindow::onToplevelConfigure(int32_t width, int32_t height, const wl_
     }
 }
 
+// Asking for server-side decorations is the whole negotiation: the compositor answers with a `configure` naming
+// the mode it actually chose, and `decideDecorationMode` turns that answer — or its absence, which is GNOME —
+// into who draws. Under --force-client-decorations or --no-decorations no decoration object is created at all:
+// the first draws its own bar instead, the second asks for nothing and draws nothing.
+void WaylandWindow::negotiateDecorations() {
+    if (decorationManager_ == nullptr || forceClientDecorations_ || noDecorations_) {
+        return;
+    }
+
+    toplevelDecoration_ = zxdg_decoration_manager_v1_get_toplevel_decoration(decorationManager_, toplevel_);
+    zxdg_toplevel_decoration_v1_add_listener(toplevelDecoration_, &kDecorationListener, this);
+    zxdg_toplevel_decoration_v1_set_mode(toplevelDecoration_, ZXDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+}
+
 void WaylandWindow::destroyFrameCallback() noexcept {
     if (frameCallback_ != nullptr) {
         wl_callback_destroy(frameCallback_);
@@ -397,6 +479,10 @@ void WaylandWindow::handleToplevelConfigureBounds(void* /*data*/, xdg_toplevel* 
 
 void WaylandWindow::handleToplevelWmCapabilities(void* /*data*/, xdg_toplevel* /*toplevel*/,
                                                  wl_array* /*capabilities*/) {}
+
+void WaylandWindow::handleDecorationConfigure(void* data, zxdg_toplevel_decoration_v1* /*decoration*/, uint32_t mode) {
+    static_cast<WaylandWindow*>(data)->configuredDecorationMode_ = mode;
+}
 
 void WaylandWindow::handleFrameDone(void* data, wl_callback* callback, uint32_t /*time*/) {
     WaylandWindow* window = static_cast<WaylandWindow*>(data);

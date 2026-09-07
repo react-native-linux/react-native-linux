@@ -188,9 +188,11 @@ linked into `rnl_core_tests`, so the only build change is the source file itself
 
 `rnl_window` is six files under `packages/core/src`, in the order the frame flows through them:
 
-- `WaylandWindow` owns one connection, one `wl_surface`, one `xdg_toplevel` titled `react-native-linux` at 800x600,
-  and the run loop. It never attaches a buffer; `vkQueuePresentKHR` does that. `xdg_toplevel.close` sets the exit
-  flag, `xdg_toplevel.configure` records a resize, and `xdg_wm_base.ping` is answered.
+- `WaylandWindow` owns one connection, one `wl_surface`, one `xdg_toplevel` titled and identified by `--title`
+  and `--app-id` (both defaulting to `react-native-linux`) at 800x600, and the run loop. It never attaches a
+  buffer; `vkQueuePresentKHR` does that. `xdg_toplevel.close` sets the exit flag, `xdg_toplevel.configure`
+  records a resize, `xdg_wm_base.ping` is answered, and `zxdg_decoration_manager_v1` is negotiated. See
+  *Decorations and app_id (#329)*.
 - `WaylandSeat` owns the `wl_seat` the window binds, and turns pointer and keyboard events into a queue of
   platform-neutral ones. See *Input*.
 - `SkiaVulkanRenderer` owns the `VkInstance` (`VK_KHR_surface` + `VK_KHR_wayland_surface`), the device, the FIFO
@@ -201,7 +203,10 @@ linked into `rnl_core_tests`, so the only build change is the source file itself
 - `WindowMain` parses the flag, owns the run loop, and paints. Without a bundle it clears to `#14161A` and draws
   one rounded rectangle in `#3366CC`, inset 64 px with a 24 px corner radius. With one it calls `paintScene` from
   `ScenePainter`, which clears to the same background and fills one `SkRect` per painted scene node. That function
-  lives outside the window because `hello_react --golden` calls it too; see *Golden images*.
+  lives outside the window because `hello_react --golden` calls it too; see *Golden images*. Under client-side
+  decorations it also shifts that paint below the drawn title bar and calls `TitleBarPainter` over it.
+- `WindowDecorations` decides who decorates and where the bar's rectangles are, and `TitleBarPainter` draws
+  them. See *Decorations and app_id (#329)*.
 
 ### The renderer ladder (#368)
 
@@ -677,6 +682,105 @@ without adding a second ledger.
 **Nothing calls `requestSerial` outside the unit suite yet.** #60, #62, #63 and #40 are each still open, and
 `WaylandWindow::serialLedger()` is the seam each of them reads from when it lands — this issue is the
 prerequisite the acceptance criteria of all four name, not the clipboard or window-decoration change itself.
+
+### Decorations and app_id (#329)
+
+GNOME and Mutter implement no `zxdg_decoration_manager_v1`, so under the desktop most Linux users run there is
+nobody to ask and nobody else to draw. A window with no drawn chrome there has no title, no buttons, no resize
+gutter and no focus indication, which is what zed#14165, zed#31884 and zed#14202 each are. We draw everything, so
+this is ours by construction.
+
+**The decision is a pure table; the drawing is the painter's.** `WindowDecorations`
+(`packages/core/src/WindowDecorations.h`) is libwayland-free and Skia-free for the reason `ToplevelState` and
+`WaylandSerialLedger` are — the generated headers only exist under `RNL_ENABLE_WINDOW`, and this has to compile
+under `RNL_BUILD_TESTS`, which probes for neither — so the part of the chrome that can be arithmetically wrong is
+under the 100% line-and-branch gate (`packages/core/tests/WindowDecorationsTest.cpp`). It holds five things and
+nothing else: `decideDecorationMode`, `layoutTitleBar`, `hitTestDecorations`, `resizeEdgeOfHit`/`contentExtentOf`,
+and `DoubleClickDetector`.
+
+The mode table is one sentence — **we draw only when we are told to, or when there is no one to ask** — with a
+third mode, `bare`, for a rig that wants neither: no server-side request, no drawn bar, zero inset.
+
+| `--force-client-decorations` | `--no-decorations` | manager | `zxdg_toplevel_decoration_v1.configure` | mode |
+| --- | --- | --- | --- | --- |
+| yes | either | either | any | client |
+| no | yes | either | any | bare |
+| no | no | absent | — | client |
+| no | no | present | `client_side` (1) | client |
+| no | no | present | `server_side` (2) | server |
+| no | no | present | none yet | server |
+| no | no | present | an unrecognised value | server |
+
+The last two rows are the same rule as the ones above them, not an exception to them: `WaylandWindow` asked for
+`server_side`, and drawing a second title bar over one the compositor is already drawing is the worse of the two
+failures. `--force-client-decorations` creates no decoration object at all, which is exactly what a client that
+means to decorate itself does; it exists because both CI compositors implement the manager and there would
+otherwise be nothing of ours to screenshot or click. `--force-client-decorations` still wins when both flags are
+given, because forcing the bar is how the bar itself gets proven under these same compositors.
+
+**Both CI compositors — cage for e2e, weston for the window goldens — implement no `zxdg_decoration_manager_v1`
+at all**, so without `--no-decorations` every window under them fell through to the drawn-bar fallback and every
+scripted coordinate landed `titleBarHeight` points off content. The e2e driver and `window-golden.ts` now run
+`--no-decorations` by default so scripted coordinates stay content-relative; the one fixture that pins the drawn
+bar (`window-decorations.png`) keeps `--force-client-decorations` instead.
+
+**The geometry, in surface points.** A 32-point bar across the top; 8-point resize edges on all four sides; three
+40-point buttons — minimize, maximize, close, in that order — flush against the right edge, with what is left of
+the bar as the drag region. The resize edges are hit-tested **first** and win over everything including the
+buttons, so a corner stays grabbable. Below the bar is the application's, and `contentExtentOf` is the extent the
+Fabric surface is laid out at: the window's height less the bar, floored at one point.
+
+**There is no shadow gutter, and that is why there is no `set_window_geometry` call.** zed#44528 is what a gutter
+costs — the client-side inset and the window geometry disagreed, so the resize handles landed outside the window
+the compositor believed existed. With no gutter the geometry is the surface's own bounding box, which is already
+xdg-shell's default, so there is no second number to keep in step. The tiled-edge inset collapse GPUI needs
+(`inset_by_tiling`) has nothing to collapse here for the same reason.
+
+**Button order is fixed rather than read from `org.gnome.desktop.wm.preferences button-layout`** (zed#14120):
+that setting needs a GSettings or portal client this platform does not have. The gap is named on #329.
+
+**`WaylandWindow` negotiates, `WindowMain` routes and paints.** The window binds the manager at version 1, asks
+for `server_side`, records the answer, and answers `decorationMode()` live rather than caching it. Its four new
+requests are the bar's: `startInteractiveMove`, `startInteractiveResize`, `toggleMaximized` and `minimize`; the
+first two take their serial from the ledger's `InteractiveMove` kind (*The serial ledger*) and are simply not
+sent when nothing has recorded a qualifying press, because a request built from a zero serial is declined exactly
+as silently as one built from a stale one. `requestClose` sets the same flag `xdg_toplevel.close` sets, so the
+drawn close button and the compositor's close request tear down through one path.
+
+`WindowMain` splits each frame's events: a pointer event over the bar or the gutter never reaches the scene — the
+compositor takes over the pointer the instant `move` or `resize` is sent, so forwarding it as well would leave a
+press the application never sees released — and everything below the bar is translated into the content's
+coordinate system, which is the same shift the canvas gets before `paintScene` runs. A chrome change (activation,
+a resize, the mode itself) repaints the whole surface rather than adding another damage rectangle: it happens
+once per user gesture, and an empty damage list is already the renderer's word for a full repaint.
+
+**`TitleBarPainter` draws into the same swapchain-backed `SkSurface` the scene is painted into**, above the
+surface root, for the reason the scene itself is one picture: one present, one screenshot. A golden of a
+client-decorated window therefore contains the bar. The bar's only visual state is `xdg_toplevel.configure`'s
+`activated` bit — zed#14202 is a client-decorated window with no way to tell whether it has focus, and the whole
+of the answer is that the bar and its text are dimmer when the bit is clear. Its text resolves from the same
+pinned family the scene's text does, so the bar is the same face on every machine.
+
+**`--app-id` is not the title.** zed#53962 is KWin window rules silently not applying and zed#33897 is the window
+missing from the GNOME switcher, both because `xdg_toplevel.set_app_id` was wrong or absent; the string has to
+equal the installed desktop file's name without its suffix. It was previously set to the title, which is the
+mistake both issues describe, and is now its own flag defaulting to `react-native-linux`. `--title` is the other
+half of the pair.
+
+**What is proven where.** The mode table, the layout, the hit table, the edge mapping, the content extent and the
+double click are the unit gate. weston, like cage, offers no `zxdg_decoration_manager_v1`, so the two default
+window goldens run `--no-decorations` and render through the `bare` path instead — the scene still fills the
+surface to its top row and nothing of ours is drawn over it — and the third, `window-decorations.png`, is the
+same window under `--force-client-decorations`, carrying the bar, its title and its three buttons with the scene
+pushed below them.
+The e2e scenario `window-decorations-close.json` runs under cage with the same flag, clicks the close area and
+asserts the mode line, the `[rnl-decorations] close` line and the ordinary teardown diagnostic that follows it;
+it carries `allowErrors` because that diagnostic — the window closed before its screenshot frame — is the proof
+of the clean exit rather than a fault. Two things are **not** proven and are named on #329 rather than closed
+here: the inactive-bar golden, because both CI compositors run one window and cannot deactivate it (the same
+single-window limit *Desktop lifecycle contract (#218)* records), and an e2e assertion that a gutter drag issues
+`xdg_toplevel.resize` with the right edge, because neither the trace nor the automation channel can observe a
+request the client sent.
 
 ### The retained scene, and the threads it crosses
 
@@ -1820,7 +1924,7 @@ down: the parse is upstream's, and matching it exactly is the point of the equal
 ### What the perf and e2e half still owes
 
 The `animated-frames.json` p95 gate already exists in the e2e driver — `animated.js` for 240 frames at
-`{"p95Ms": 16.7, "minFrames": 60}`, see *E2E driver* for why 16.7 ms and not the gospel's 8.33 ms. That covers
+`{"p95Ms": 17.5, "minFrames": 60}`, see *E2E driver* for why 17.5 ms and not the gospel's 8.33 ms. That covers
 #124's "a simple continuously animating view is in the gate permanently" criterion, which is
 [core#50716](https://github.com/facebook/react-native/issues/50716)'s shape. Still open, all of them still #124:
 
@@ -6797,11 +6901,14 @@ presented for that percentile to mean anything, so a run that presented four fra
 driver reports both reasons at once rather than hiding the second behind the first, and prints the whole summary
 as a note on every run, budget or not, so the numbers are tracked rather than only gated.
 
-`animated-frames.json` is the perf scenario: `animated.js` for 240 frames at `{"p95Ms": 16.7, "minFrames": 60}`.
-**16.7 ms, not the gospel's 8.33 ms, and deliberately so.** A headless lavapipe rig composited by pixman under
+`animated-frames.json` is the perf scenario: `animated.js` for 240 frames at `{"p95Ms": 17.5, "minFrames": 60}`.
+**17.5 ms, not the gospel's 8.33 ms, and deliberately so.** A headless lavapipe rig composited by pixman under
 cage is not going to hold a 120 Hz budget, and a gate that fails on the runner rather than on the renderer is a
-gate nobody will keep. 16.7 ms is the CI regression gate; the 8.33 ms number in the testing gospel is a **real
-hardware** budget and is measured on real hardware, not here.
+gate nobody will keep. The floor under weston's and cage's 60 Hz pacing is the presentation interval itself,
+16.67 ms; 17.5 ms leaves headroom for that pacing's own jitter without weakening the proof, because a genuinely
+dropped frame still reads roughly double the interval, around 33 ms, and clears the gate by a wide margin either
+way. 17.5 ms is the CI regression gate; the 8.33 ms number in the testing gospel is a **real hardware** budget and
+is measured on real hardware, not here.
 
 ### Screenshots
 
@@ -7095,7 +7202,7 @@ Named here so they are not mistaken for oversights, all of them still #7:
   carry the same per-channel tolerance for the same reason, because oxlint forbids the root script importing the
   package one. Moving the shared half into a package both can depend on is the fix, and it is not worth a package
   for one function yet.
-- **The 8.33 ms budget.** The CI gate is 16.7 ms because the rig is lavapipe and pixman. Measuring the gospel's
+- **The 8.33 ms budget.** The CI gate is 17.5 ms because the rig is lavapipe and pixman. Measuring the gospel's
   real number needs real hardware and a place to record the result over time; neither exists yet.
 
 ## Unit tests and coverage

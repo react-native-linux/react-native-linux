@@ -63,6 +63,7 @@ const scopedSourcePaths: readonly string[] = [
   "packages/core/src/ToplevelState.cpp",
   "packages/core/src/VulkanResultPolicy.cpp",
   "packages/core/src/WaylandSerialLedger.cpp",
+  "packages/core/src/WindowDecorations.cpp",
 ];
 
 const coverageTool = env["LLVM_COV"] ?? "llvm-cov";

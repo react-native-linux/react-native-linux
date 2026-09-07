@@ -138,6 +138,8 @@ WaylandSeat::~WaylandSeat() noexcept {
     }
 }
 
+wl_seat* WaylandSeat::seat() const noexcept { return seat_; }
+
 std::vector<InputEvent> WaylandSeat::takeEvents() { return queue_.drain(); }
 
 size_t WaylandSeat::droppedEventCount() const noexcept { return queue_.droppedEventCount(); }

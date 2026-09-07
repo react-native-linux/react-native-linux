@@ -187,5 +187,5 @@ const planRuns = (
   return planned;
 };
 
-export { isKeyboardFocused, runKeyboardAwareInjection } from "./keyboard-focus.ts";
+export { isKeyboardFocused } from "./keyboard-focus.ts";
 export { findScenarioSources, planAttemptKeys, planRuns, readRequestedScenarios, readScenarioRuns, resolveRepeatCount };

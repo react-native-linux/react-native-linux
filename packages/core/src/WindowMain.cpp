@@ -11,7 +11,9 @@
 #include "SkiaVulkanRenderer.h"
 #include "SurfaceCommitGate.h"
 #include "TextInputClient.h"
+#include "TitleBarPainter.h"
 #include "WaylandWindow.h"
+#include "WindowDecorations.h"
 #include "WindowRenderer.h"
 #include "WindowSession.h"
 #include "include/core/SkCanvas.h"
@@ -30,6 +32,7 @@
 #include <filesystem>
 #include <folly/json/dynamic.h>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <iterator>
 #include <memory>
@@ -61,6 +64,13 @@ constexpr int32_t kImeDebugFieldIdentifier = 1;
 constexpr std::string_view kWindowDebugFlag = "--window-debug";
 constexpr std::string_view kAutomationFlag = "--automation";
 constexpr std::string_view kRendererFlag = "--renderer";
+constexpr std::string_view kAppIdFlag = "--app-id";
+constexpr std::string_view kTitleFlag = "--title";
+constexpr std::string_view kForceClientDecorationsFlag = "--force-client-decorations";
+constexpr std::string_view kNoDecorationsFlag = "--no-decorations";
+constexpr std::string_view kDefaultTitle = "react-native-linux";
+constexpr std::string_view kDefaultApplicationIdentifier = "react-native-linux";
+constexpr int kPrimaryPointerButton = 0;
 constexpr std::string_view kWindowErrorSource = "rnl-window";
 constexpr std::string_view kImeDebugSurroundingText = "react-native-linux";
 constexpr int32_t kImeDebugCursorX = 64;
@@ -99,8 +109,12 @@ struct WindowArguments {
     std::optional<react_native_linux::RendererRung> forcedRung;
     std::optional<std::string> screenshotPath;
     std::optional<std::string> frameLogPath;
+    std::string title{kDefaultTitle};
+    std::string applicationIdentifier{kDefaultApplicationIdentifier};
     uint32_t frameCount{kDefaultScreenshotFrames};
     bool automation{false};
+    bool forceClientDecorations{false};
+    bool noDecorations{false};
     bool imeDebug{false};
     bool windowDebug{false};
     std::string error;
@@ -184,6 +198,14 @@ std::string describeMissingValue(std::string_view flag) {
         return "--renderer requires one of preferred-vulkan, alternate-vulkan, software-vulkan, raster";
     }
 
+    if (flag == kAppIdFlag) {
+        return "--app-id requires an application identifier";
+    }
+
+    if (flag == kTitleFlag) {
+        return "--title requires a window title";
+    }
+
     return "--frames requires a positive frame count";
 }
 
@@ -222,8 +244,20 @@ WindowArguments parseArguments(std::span<char*> arguments) {
             continue;
         }
 
+        if (flag == kForceClientDecorationsFlag) {
+            parsed.forceClientDecorations = true;
+
+            continue;
+        }
+
+        if (flag == kNoDecorationsFlag) {
+            parsed.noDecorations = true;
+
+            continue;
+        }
+
         if (flag != kFabricFlag && flag != kScreenshotFlag && flag != kFramesFlag && flag != kFrameLogFlag &&
-            flag != kRendererFlag) {
+            flag != kRendererFlag && flag != kAppIdFlag && flag != kTitleFlag) {
             parsed.error = "unknown argument " + std::string(flag);
 
             return parsed;
@@ -252,6 +286,10 @@ WindowArguments parseArguments(std::span<char*> arguments) {
 
                 return parsed;
             }
+        } else if (flag == kAppIdFlag) {
+            parsed.applicationIdentifier = std::string(value);
+        } else if (flag == kTitleFlag) {
+            parsed.title = std::string(value);
         } else {
             const std::optional<uint32_t> frameCount = parseFrameCount(value);
 
@@ -432,6 +470,185 @@ void serveAutomation(AutomationChannel& automation, react_native_linux::WindowRe
     answerAutomationRequest(automation, parsed.request.value(), renderer, session);
 }
 
+std::string_view decorationModeName(react_native_linux::DecorationMode mode) {
+    switch (mode) {
+    case react_native_linux::DecorationMode::Client:
+        return "client";
+    case react_native_linux::DecorationMode::Bare:
+        return "bare";
+    default:
+        return "server";
+    }
+}
+
+/**
+ * Everything the drawn title bar needs that is not in `WindowDecorations`: where the content starts, whether the
+ * bar has changed since it was last painted, and the two-press memory the double-click-to-maximize rule keeps.
+ * Under server-side decorations `mode` stays `Server`, `content.topOffset` stays zero and none of the routing or
+ * painting below does anything at all — one code path, with the bar's height as its only variable.
+ */
+struct WindowChrome {
+    react_native_linux::DecorationMetrics metrics;
+    react_native_linux::DoubleClickDetector doubleClick;
+    react_native_linux::PointerCapture pointerCapture;
+    react_native_linux::DecorationMode mode{react_native_linux::DecorationMode::Server};
+    react_native_linux::ContentExtent content{};
+    bool wasActive{false};
+    bool isRepaintNeeded{true};
+};
+
+void refreshChrome(WindowChrome& chrome, react_native_linux::WaylandWindow& window) {
+    const react_native_linux::DecorationMode mode = window.decorationMode();
+    const react_native_linux::WindowSize size = window.size();
+    const react_native_linux::ContentExtent content =
+        react_native_linux::contentExtentOf(mode, chrome.metrics, size.width, size.height);
+    const bool isActive = window.toplevelState().activated;
+
+    chrome.isRepaintNeeded = chrome.isRepaintNeeded || mode != chrome.mode || isActive != chrome.wasActive ||
+                             content.width != chrome.content.width;
+
+    if (mode != chrome.mode) {
+        chrome.pointerCapture.release();
+    }
+
+    chrome.mode = mode;
+    chrome.content = content;
+    chrome.wasActive = isActive;
+}
+
+uint64_t steadyMilliseconds() {
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+            .count());
+}
+
+bool carriesSurfacePoint(react_native_linux::InputEventKind kind) {
+    return kind == react_native_linux::InputEventKind::PointerMotion ||
+           kind == react_native_linux::InputEventKind::PointerButtonPress ||
+           kind == react_native_linux::InputEventKind::PointerButtonRelease ||
+           kind == react_native_linux::InputEventKind::PointerScrollContinuous ||
+           kind == react_native_linux::InputEventKind::PointerScrollDiscrete ||
+           kind == react_native_linux::InputEventKind::PointerScrollStop;
+}
+
+void activateDecoration(react_native_linux::WaylandWindow& window, WindowChrome& chrome,
+                        react_native_linux::DecorationHit hit) {
+    if (hit == react_native_linux::DecorationHit::Close) {
+        std::cout << "[rnl-decorations] close" << std::endl;
+        window.requestClose();
+
+        return;
+    }
+
+    if (hit == react_native_linux::DecorationHit::Minimize) {
+        window.minimize();
+
+        return;
+    }
+
+    if (hit == react_native_linux::DecorationHit::Maximize) {
+        window.toggleMaximized();
+
+        return;
+    }
+
+    if (hit == react_native_linux::DecorationHit::Drag) {
+        if (chrome.doubleClick.recordPress(steadyMilliseconds())) {
+            window.toggleMaximized();
+
+            return;
+        }
+
+        window.startInteractiveMove();
+
+        return;
+    }
+
+    window.startInteractiveResize(react_native_linux::resizeEdgeOfHit(hit));
+}
+
+/**
+ * Splits one frame's events into the chrome's and the application's. A pointer event over the bar or the resize
+ * gutter never reaches the scene — the compositor takes over the pointer the instant `xdg_toplevel.move` or
+ * `.resize` is sent, so forwarding it as well would leave a press the application never sees released — and
+ * everything below the bar is translated into the content's coordinate system, which is the same shift the paint
+ * applies to the canvas.
+ *
+ * The hit test alone only says where an event landed, not which side owns the gesture: `chrome.pointerCapture`
+ * is what makes a press that starts in the content keep reaching the content through a drag that ends on the
+ * bar, and symmetrically for a press that starts on the bar, per #399.
+ */
+std::vector<react_native_linux::InputEvent>
+routeDecorationInput(react_native_linux::WaylandWindow& window, WindowChrome& chrome,
+                     const std::vector<react_native_linux::InputEvent>& events) {
+    if (chrome.mode != react_native_linux::DecorationMode::Client) {
+        return events;
+    }
+
+    const react_native_linux::WindowSize size = window.size();
+    std::vector<react_native_linux::InputEvent> contentEvents;
+
+    for (const react_native_linux::InputEvent& event : events) {
+        if (!carriesSurfacePoint(event.kind)) {
+            contentEvents.push_back(event);
+
+            continue;
+        }
+
+        const react_native_linux::DecorationHit hit = react_native_linux::hitTestDecorations(
+            chrome.metrics, size.width, size.height, static_cast<float>(event.surfacePoint.x),
+            static_cast<float>(event.surfacePoint.y));
+
+        const bool isPrimaryPress = event.kind == react_native_linux::InputEventKind::PointerButtonPress &&
+                                    event.button == kPrimaryPointerButton;
+        const bool isPrimaryRelease = event.kind == react_native_linux::InputEventKind::PointerButtonRelease &&
+                                      event.button == kPrimaryPointerButton;
+        const bool routedToContent = chrome.pointerCapture.routeToContent(hit, isPrimaryPress, isPrimaryRelease);
+
+        if (!routedToContent) {
+            if (isPrimaryPress) {
+                activateDecoration(window, chrome, hit);
+            }
+
+            continue;
+        }
+
+        react_native_linux::InputEvent contentEvent = event;
+        contentEvent.surfacePoint.y -= chrome.content.topOffset;
+        contentEvents.push_back(contentEvent);
+    }
+
+    return contentEvents;
+}
+
+/**
+ * Runs `paint` with the canvas shifted below the bar, then draws the bar over it. The damage the scene produced
+ * is in content coordinates and the damage the renderer accumulates is in surface ones, so it is shifted back by
+ * the same offset on the way in — the one place, besides the canvas translate, where the two coordinate systems
+ * meet.
+ */
+void paintDecoratedFrame(SkCanvas& canvas, const WindowChrome& chrome, const std::string& title,
+                         const react_native_linux::SceneDamage& surfaceDamage,
+                         const std::function<void(SkCanvas&, const react_native_linux::SceneDamage&)>& paint) {
+    react_native_linux::SceneDamage contentDamage = surfaceDamage;
+
+    for (facebook::react::Rect& rectangle : contentDamage) {
+        rectangle.origin.y -= chrome.content.topOffset;
+    }
+
+    canvas.save();
+    canvas.translate(0.0F, chrome.content.topOffset);
+    paint(canvas, contentDamage);
+    canvas.restore();
+
+    if (chrome.mode != react_native_linux::DecorationMode::Client) {
+        return;
+    }
+
+    react_native_linux::paintTitleBar(canvas, react_native_linux::layoutTitleBar(chrome.content.width, chrome.metrics),
+                                      title, chrome.wasActive);
+}
+
 void paintPlaceholderFrame(SkCanvas& canvas, react_native_linux::WindowSize size,
                            const react_native_linux::SceneDamage& /*damage*/) {
     canvas.clear(react_native_linux::kSceneBackgroundColor);
@@ -589,14 +806,36 @@ int main(int argc, char** argv) {
     }
 
     try {
-        react_native_linux::WaylandWindow window("react-native-linux",
-                                                 react_native_linux::WindowSize{kInitialWidth, kInitialHeight});
+        react_native_linux::WaylandWindow window(
+            react_native_linux::WindowIdentity{.title = parsedArguments.title,
+                                               .applicationIdentifier = parsedArguments.applicationIdentifier,
+                                               .forceClientDecorations = parsedArguments.forceClientDecorations,
+                                               .noDecorations = parsedArguments.noDecorations},
+            react_native_linux::WindowSize{kInitialWidth, kInitialHeight});
         const std::optional<std::string> ladderPath = ladderStatePath();
         const std::string driverIdentity = react_native_linux::probeVulkanDriverIdentity();
         RendererBringUp broughtUp = bringUpRenderer(window, parsedArguments, ladderPath, driverIdentity);
         react_native_linux::WindowRenderer& renderer = *broughtUp.renderer;
         bool hasRecordedFirstPresentedFrame = false;
         std::optional<react_native_linux::WindowSession> session;
+        WindowChrome chrome;
+
+        refreshChrome(chrome, window);
+        std::cout << "[rnl-decorations] mode="
+                  << decorationModeName(chrome.mode)
+                  << " app-id=" << parsedArguments.applicationIdentifier << " content=" << chrome.content.width << "x"
+                  << chrome.content.height << std::endl;
+
+        const auto drawPlaceholder = [&chrome, &window](SkCanvas& canvas, react_native_linux::WindowSize /*size*/,
+                                                        const react_native_linux::SceneDamage& surfaceDamage) {
+            paintDecoratedFrame(
+                canvas, chrome, window.title(), surfaceDamage,
+                [&chrome](SkCanvas& contentCanvas, const react_native_linux::SceneDamage& contentDamage) {
+                    paintPlaceholderFrame(contentCanvas,
+                                          react_native_linux::WindowSize{chrome.content.width, chrome.content.height},
+                                          contentDamage);
+                });
+        };
 
         // This is the first buffer the compositor can ever show, so `--frames 1` has to name this present rather
         // than the loop's next one: the capture is armed beforehand, exactly as the loop arms it for every later
@@ -610,7 +849,7 @@ int main(int argc, char** argv) {
             renderer.captureNextFrame(parsedArguments.screenshotPath.value());
         }
 
-        const bool startupFramePresented = renderer.drawFrame(window, {}, paintPlaceholderFrame);
+        const bool startupFramePresented = renderer.drawFrame(window, {}, drawPlaceholder);
 
         if (startupFramePresented) {
             ++presentedFrames;
@@ -622,7 +861,8 @@ int main(int argc, char** argv) {
         bool hasCaptured = isStartupCaptureFrame && !renderer.hasPendingCapture();
 
         if (parsedArguments.bundlePath.has_value()) {
-            session.emplace(parsedArguments.bundlePath.value(), window.size());
+            session.emplace(parsedArguments.bundlePath.value(),
+                            react_native_linux::WindowSize{chrome.content.width, chrome.content.height});
 
             // --ime-debug owns the text input by hand, so focus must not also drive it: the two would race to
             // enable and disable the same object. Without that flag, focus is the only thing that touches it.
@@ -674,12 +914,25 @@ int main(int argc, char** argv) {
                 writeFrameLines(frameLog.value(), window);
             }
 
-            if (window.takePendingResize()) {
-                renderer.resize(window.size());
+            const bool hasResized = window.takePendingResize();
+            const react_native_linux::ContentExtent previousChromeContent = chrome.content;
 
-                if (session.has_value()) {
-                    session->resize(window.size());
-                }
+            // The chrome first, and unconditionally: the content extent a resize hands the session is measured
+            // below the bar, and the bar's own active state can change without any resize at all.
+            refreshChrome(chrome, window);
+
+            // A `zxdg_toplevel_decoration_v1.configure` can switch decoration modes with no window resize at
+            // all, which moves the content extent by the bar's height without `hasResized` ever being true —
+            // the session has to see that too, or its viewport stays sized for the mode it no longer has.
+            const bool hasContentExtentChanged = chrome.content.width != previousChromeContent.width ||
+                                                 chrome.content.height != previousChromeContent.height;
+
+            if (hasResized) {
+                renderer.resize(window.size());
+            }
+
+            if ((hasResized || hasContentExtentChanged) && session.has_value()) {
+                session->resize(react_native_linux::WindowSize{chrome.content.width, chrome.content.height});
             }
 
             announceKeyboardFocusOnce(window, keyboardFocusAnnounced);
@@ -709,7 +962,8 @@ int main(int argc, char** argv) {
                 renderer.captureNextFrame(parsedArguments.screenshotPath.value());
             }
 
-            const std::vector<react_native_linux::InputEvent> frameEvents = window.takeInputEvents();
+            const std::vector<react_native_linux::InputEvent> frameEvents =
+                routeDecorationInput(window, chrome, window.takeInputEvents());
 
             if (parsedArguments.imeDebug) {
                 enableImeDebug(window.textInput());
@@ -754,14 +1008,33 @@ int main(int argc, char** argv) {
                     // cannot satisfy.
                     const react_native_linux::SceneFrame frame = session->takeFrame();
 
-                    presented = renderer.drawFrame(window, frame.damage,
-                                                   [&frame](SkCanvas& canvas, react_native_linux::WindowSize /*size*/,
-                                                            const react_native_linux::SceneDamage& imageDamage) {
-                                                       react_native_linux::paintScene(canvas, frame.scene, imageDamage);
-                                                   });
+                    // A chrome change — activation, a resize, the mode itself — repaints everything rather than
+                    // being expressed as another damage rectangle: it happens once per user gesture, and an
+                    // empty damage list is already this renderer's word for a full repaint.
+                    react_native_linux::SceneDamage surfaceDamage;
+
+                    if (!chrome.isRepaintNeeded) {
+                        surfaceDamage = frame.damage;
+
+                        for (facebook::react::Rect& rectangle : surfaceDamage) {
+                            rectangle.origin.y += chrome.content.topOffset;
+                        }
+                    }
+
+                    presented = renderer.drawFrame(
+                        window, surfaceDamage,
+                        [&frame, &chrome, &window](SkCanvas& canvas, react_native_linux::WindowSize /*size*/,
+                                                   const react_native_linux::SceneDamage& imageDamage) {
+                            paintDecoratedFrame(canvas, chrome, window.title(), imageDamage,
+                                                [&frame](SkCanvas& contentCanvas,
+                                                         const react_native_linux::SceneDamage& contentDamage) {
+                                                    react_native_linux::paintScene(contentCanvas, frame.scene,
+                                                                                   contentDamage);
+                                                });
+                        });
                 }
             } else {
-                presented = renderer.drawFrame(window, {}, paintPlaceholderFrame);
+                presented = renderer.drawFrame(window, {}, drawPlaceholder);
             }
 
             if (parsedArguments.windowDebug && broughtUp.vulkanRenderer != nullptr) {
@@ -772,6 +1045,7 @@ int main(int argc, char** argv) {
 
             if (presented) {
                 ++presentedFrames;
+                chrome.isRepaintNeeded = false;
             }
             hasCaptured = isCaptureFrame && !renderer.hasPendingCapture();
 

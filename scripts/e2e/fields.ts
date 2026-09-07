@@ -77,11 +77,36 @@ const readOptionalBoolean = (record: Record<string, unknown>, label: string, sou
   return value;
 };
 
+/**
+ * An optional string array field is `undefined` when the scenario omits it, rather than `[]`: an explicit `[]`
+ * is not the same as omission and must survive as its own value, which is why this returns `undefined` instead
+ * of collapsing the two — a field like `windowFlags` gives omission and an explicit empty array different
+ * meanings, and only the caller that knows what "omitted" means for that field can supply the right default.
+ */
+const readOptionalStringArray = (
+  record: Record<string, unknown>,
+  label: string,
+  sourceName: string,
+): readonly string[] | undefined => {
+  if (!(label in record)) {
+    return;
+  }
+
+  const value = record[label];
+
+  if (!isStringArray(value)) {
+    throw new Error(`${sourceName}: "${label}" must be an array of strings`);
+  }
+
+  return value;
+};
+
 export {
   isRecord,
   readCoordinate,
   readObject,
   readOptionalBoolean,
+  readOptionalStringArray,
   readPositiveInteger,
   readPositiveNumber,
   readString,
