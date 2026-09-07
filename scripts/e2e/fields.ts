@@ -77,11 +77,35 @@ const readOptionalBoolean = (record: Record<string, unknown>, label: string, sou
   return value;
 };
 
+/**
+ * An optional string array field defaults to `[]` when the scenario omits it, but an explicit `[]` is not the
+ * same as omission and must survive: `readStringArray` rejects both alike, which is wrong for a field like
+ * `windowFlags` where "no flags" is a legitimate scenario to write down.
+ */
+const readOptionalStringArray = (
+  record: Record<string, unknown>,
+  label: string,
+  sourceName: string,
+): readonly string[] => {
+  if (!(label in record)) {
+    return [];
+  }
+
+  const value = record[label];
+
+  if (!isStringArray(value)) {
+    throw new Error(`${sourceName}: "${label}" must be an array of strings`);
+  }
+
+  return value;
+};
+
 export {
   isRecord,
   readCoordinate,
   readObject,
   readOptionalBoolean,
+  readOptionalStringArray,
   readPositiveInteger,
   readPositiveNumber,
   readString,

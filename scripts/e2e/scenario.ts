@@ -3,12 +3,12 @@ import {
   readCoordinate,
   readObject,
   readOptionalBoolean,
+  readOptionalStringArray,
   readPositiveInteger,
   readPositiveNumber,
   readString,
   readStringArray,
 } from "./fields.ts";
-
 import type { Crop } from "./screenshot.ts";
 import path from "node:path";
 import { readAccessibilityChanges } from "./accessibility-changes.ts";
@@ -215,7 +215,7 @@ const parseScenario = (value: unknown, sourceName: string): Scenario => {
     ready: readString(value["ready"], "ready", sourceName),
     screenshot: readScreenshotComparison(value, sourceName),
     steps: readStringArray(value["steps"], "steps", sourceName),
-    windowFlags: "windowFlags" in value ? readStringArray(value["windowFlags"], "windowFlags", sourceName) : [],
+    windowFlags: readOptionalStringArray(value, "windowFlags", sourceName),
   };
 };
 
