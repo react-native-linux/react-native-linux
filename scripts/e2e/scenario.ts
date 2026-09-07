@@ -34,12 +34,12 @@ const PARENT_DIRECTORY = "..";
 const ERROR_TRACE_PATTERNS: readonly string[] = ["[js-error]", "[bundle-runner]", "[image]", "[text]", "[rnl-window]"];
 
 /**
- * The perf gate of #7. `p95Ms` is the ninety-fifth percentile `wp_presentation` frame time the run may not exceed;
- * `minFrames` is how many frames must have presented for that percentile to mean anything, not pass by accident.
- *
- * `maxHangs` is the frame-journal gate of #345: how many presented frames may cross the hang thresholds before
- * the run fails. `null` means the scenario does not gate on it yet — different from `0`, which is a deliberate
- * "zero hangs allowed" from a number CI actually measured. See *Frame journal* in docs/cpp-toolchain.md.
+ * The perf gate of #7. `p95Ms` is the ninety-fifth percentile `wp_presentation` frame time the run may not
+ * exceed, and `minFrames` is how many frames have to have been presented for that percentile to mean anything —
+ * a run that presented four frames can pass any budget by accident. `maxHangs` is the frame-journal gate of
+ * #345: presented frames past the hang thresholds before the run fails. `null` opts a scenario out; `0` is a
+ * deliberate "zero hangs" from a number CI measured, not an inherited default. See *Frame journal* in
+ * docs/cpp-toolchain.md.
  */
 interface FrameBudget {
   readonly maxHangs: number | null;
@@ -228,10 +228,7 @@ const parseScenario = (value: unknown, sourceName: string): Scenario => {
 
 const formatInjectorScript = (steps: readonly string[]): string => `${steps.join("\n")}\n`;
 
-/**
- * Ordered substring matching: every expectation has to appear on a later line than the one before it, which is
- * what makes a trace assertion about a sequence of events rather than a set of them.
- */
+/** Ordered substring matching: every expectation must appear on a later line than the one before it. */
 const findMissingExpectations = (traceLines: readonly string[], expectations: readonly string[]): readonly string[] => {
   const missing: string[] = [];
   let searchIndex = FIRST_LINE_INDEX;
