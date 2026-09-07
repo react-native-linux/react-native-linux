@@ -182,10 +182,19 @@ struct WindowExtent {
  *
  * `surfaceToLogical` removes exactly what `contentExtentOf` removes — the bar, when `mode` is `Client` and
  * `isFullscreen` is false — and then converts the result from surface points to logical ones by `scale`.
- * `logicalToSurface` is its exact inverse, in the same order reversed: scale first, then add the bar back. Under
- * server-side decorations, the frameless case, or fullscreen, the bar term is zero and the pair degenerates to a
- * pure scale conversion — "one arithmetic path covers server-side decorations and the frameless case", in the
- * words of the Electron comment this fixes.
+ * `logicalToSurface` reverses that order: scale first, then add the bar back. Under server-side decorations, the
+ * frameless case, or fullscreen, the bar term is zero and the pair degenerates to a pure scale conversion — "one
+ * arithmetic path covers server-side decorations and the frameless case", in the words of the Electron comment
+ * this fixes.
+ *
+ * The two are round-trip inverses, not bit-exact ones: both directions round independently, with one rule
+ * (`roundedRatio`'s `std::llround`, i.e. round half away from zero), so `logicalToSurface(surfaceToLogical(x))`
+ * lands back on `x` exactly only when `x` divides evenly by `scale`'s numerator in lowest terms — every 3 px at
+ * scale 1.5 (`= 3/2`), every 5 px at 1.25 (`= 5/4`), every 2 px at 2 (`= 2/1`). Off that grid the round trip is
+ * bounded, not exact: at most one surface pixel of error, because each direction's rounding can move the value by
+ * at most half a pixel of its own unit. A surface extent of `{1000, 632}` at scale 1.5, for example, round-trips
+ * through `{667, 400}` to `{1001, 632}` — one pixel wider than it started, and the bound this contract promises
+ * rather than the exact inverse an earlier version of this comment claimed.
  *
  * `scale` is always `1.0` at every call site today, the same way `DimensionsSource::configure`'s `scale`
  * parameter is: neither `wp_fractional_scale_v1` nor `wl_surface.preferred_buffer_scale` is bound yet. The
