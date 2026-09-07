@@ -468,6 +468,7 @@ void serveAutomation(AutomationChannel& automation, react_native_linux::WindowRe
 struct WindowChrome {
     react_native_linux::DecorationMetrics metrics;
     react_native_linux::DoubleClickDetector doubleClick;
+    react_native_linux::PointerCapture pointerCapture;
     react_native_linux::DecorationMode mode{react_native_linux::DecorationMode::Server};
     react_native_linux::ContentExtent content{};
     bool wasActive{false};
@@ -545,6 +546,10 @@ void activateDecoration(react_native_linux::WaylandWindow& window, WindowChrome&
  * `.resize` is sent, so forwarding it as well would leave a press the application never sees released — and
  * everything below the bar is translated into the content's coordinate system, which is the same shift the paint
  * applies to the canvas.
+ *
+ * The hit test alone only says where an event landed, not which side owns the gesture: `chrome.pointerCapture`
+ * is what makes a press that starts in the content keep reaching the content through a drag that ends on the
+ * bar, and symmetrically for a press that starts on the bar, per #399.
  */
 std::vector<react_native_linux::InputEvent>
 routeDecorationInput(react_native_linux::WaylandWindow& window, WindowChrome& chrome,
@@ -567,9 +572,14 @@ routeDecorationInput(react_native_linux::WaylandWindow& window, WindowChrome& ch
             chrome.metrics, size.width, size.height, static_cast<float>(event.surfacePoint.x),
             static_cast<float>(event.surfacePoint.y));
 
-        if (hit != react_native_linux::DecorationHit::Content) {
-            if (event.kind == react_native_linux::InputEventKind::PointerButtonPress &&
-                event.button == kPrimaryPointerButton) {
+        const bool isPrimaryPress = event.kind == react_native_linux::InputEventKind::PointerButtonPress &&
+                                    event.button == kPrimaryPointerButton;
+        const bool isPrimaryRelease = event.kind == react_native_linux::InputEventKind::PointerButtonRelease &&
+                                      event.button == kPrimaryPointerButton;
+        const bool routedToContent = chrome.pointerCapture.routeToContent(hit, isPrimaryPress, isPrimaryRelease);
+
+        if (!routedToContent) {
+            if (isPrimaryPress) {
                 activateDecoration(window, chrome, hit);
             }
 
@@ -877,17 +887,24 @@ int main(int argc, char** argv) {
             }
 
             const bool hasResized = window.takePendingResize();
+            const react_native_linux::ContentExtent previousChromeContent = chrome.content;
 
             // The chrome first, and unconditionally: the content extent a resize hands the session is measured
             // below the bar, and the bar's own active state can change without any resize at all.
             refreshChrome(chrome, window);
 
+            // A `zxdg_toplevel_decoration_v1.configure` can switch decoration modes with no window resize at
+            // all, which moves the content extent by the bar's height without `hasResized` ever being true —
+            // the session has to see that too, or its viewport stays sized for the mode it no longer has.
+            const bool hasContentExtentChanged = chrome.content.width != previousChromeContent.width ||
+                                                 chrome.content.height != previousChromeContent.height;
+
             if (hasResized) {
                 renderer.resize(window.size());
+            }
 
-                if (session.has_value()) {
-                    session->resize(react_native_linux::WindowSize{chrome.content.width, chrome.content.height});
-                }
+            if ((hasResized || hasContentExtentChanged) && session.has_value()) {
+                session->resize(react_native_linux::WindowSize{chrome.content.width, chrome.content.height});
             }
 
             announceKeyboardFocusOnce(window, keyboardFocusAnnounced);
