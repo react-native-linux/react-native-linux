@@ -116,10 +116,7 @@ const startCompositor = (run: ScenarioRun, rig: Rig, workspace: Workspace): Comp
     },
   );
 
-/**
- * The event trace is the bundle's own `console.log` output, which the C++ console binding writes to the window's
- * stdout and cage passes through. The window has no trace format of its own; the fixtures are the format.
- */
+/** The event trace is the bundle's own `console.log` output, passed through by cage; the fixtures are the format. */
 const attachTrace = (compositor: Compositor, sink: TraceSink): void => {
   const record = (chunk: Buffer): void => {
     sink.text += chunk.toString();

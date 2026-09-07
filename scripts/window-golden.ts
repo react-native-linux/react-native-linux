@@ -31,10 +31,7 @@ const lavapipeLibraryName = "libvulkan_lvp.so";
 const lavapipeOverrideName = "RNL_LAVAPIPE_ICD";
 const generatedManifestName = "rnl-lvp_icd.generated.json";
 
-/**
- * Every variable that could point the client at the developer's own session or driver. The rig owns all four, so
- * they are dropped from the inherited environment rather than overwritten, and a stale one cannot survive.
- */
+/** Every variable that could point the client at the developer's own session or driver; dropped, not overwritten. */
 const overriddenEnvironmentNames = new Set(["DISPLAY", "WAYLAND_DISPLAY", "VK_DRIVER_FILES", "VK_ICD_FILENAMES"]);
 
 interface WindowFixture {
@@ -53,39 +50,20 @@ const defaultOutputDirectory = path.join(repositoryRoot, "build", "window-golden
 const clientDecorations = ["--app-id", "org.reactnative.linux.golden", "--force-client-decorations"];
 
 /**
- * The first-frame fixture takes no bundle and exactly one frame, which is what makes it the assertion the other
- * fixtures cannot make. A bundle mounts on the JavaScript thread, so its first frame is legitimately empty and says
- * nothing; the placeholder is painted synchronously by `WindowMain`, so the very first content update this client
- * commits already carries the whole picture. Capturing that one frame is therefore the check that the first buffer
- * attached is the one the compositor shows — the invisible window of #328 fails it and a settled capture 60 frames
- * later does not. See *Surface commit ordering* in docs/cpp-toolchain.md.
- *
- * The decorations fixture is #329's drawn bar; the negotiated server-side path is the fabric-view/view-props
- * fixtures rendering unchanged.
+ * The first-frame fixture takes no bundle and one frame: the placeholder paints synchronously, so this is the
+ * first-buffer check the invisible-window bug (#328) fails and a 60-frame settle does not. See *Surface commit
+ * ordering* in docs/cpp-toolchain.md. The decorations fixture is #329's drawn bar.
  */
+const defaultFixture = { extraArguments: [] as readonly string[], frameCount: SCREENSHOT_FRAME_COUNT };
+
 const fixtures: readonly WindowFixture[] = [
+  { ...defaultFixture, bundleFileName: "fabric-view.js", goldenFileName: "window-fabric-view.png" },
+  { ...defaultFixture, bundleFileName: "view-props.js", goldenFileName: "window-view-props.png" },
+  { ...defaultFixture, bundleFileName: null, frameCount: FIRST_FRAME_COUNT, goldenFileName: "window-first-frame.png" },
   {
-    bundleFileName: "fabric-view.js",
-    extraArguments: [],
-    frameCount: SCREENSHOT_FRAME_COUNT,
-    goldenFileName: "window-fabric-view.png",
-  },
-  {
-    bundleFileName: "view-props.js",
-    extraArguments: [],
-    frameCount: SCREENSHOT_FRAME_COUNT,
-    goldenFileName: "window-view-props.png",
-  },
-  {
-    bundleFileName: null,
-    extraArguments: [],
-    frameCount: FIRST_FRAME_COUNT,
-    goldenFileName: "window-first-frame.png",
-  },
-  {
+    ...defaultFixture,
     bundleFileName: "fabric-view.js",
     extraArguments: clientDecorations,
-    frameCount: SCREENSHOT_FRAME_COUNT,
     goldenFileName: "window-decorations.png",
   },
 ];
@@ -178,11 +156,7 @@ const readOutputDirectory = (): string => {
 
 let compositorLog = "";
 
-/**
- * The headless backend needs no DRM device, no seat and no display, which is what lets it run unattended on a CI
- * runner. Which renderer it uses never matters here: the golden's pixels come out of the swapchain image, so the
- * compositor only has to accept and release buffers. `--no-config` keeps a developer's `weston.ini` out of the rig.
- */
+/** No DRM device, seat or display needed, so this runs unattended in CI; `--no-config` ignores a developer's `weston.ini`. */
 const startCompositor = (
   compositorPath: string,
   runtimeDirectory: string,
