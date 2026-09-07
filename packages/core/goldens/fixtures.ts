@@ -57,6 +57,15 @@ export const fixtures: readonly GoldenFixture[] = [
     renderArguments: ["960", "800"],
     renderFlag: "--text-fit-golden",
   },
+  // Issue #251: head, middle, tail and clip, each at numberOfLines 1 and 2.
+  // The bold amber fragment sits where the cut falls, and the last row is one token wider than its box.
+  // `--text-fit-golden` asserts every truncated paragraph still fits the frame it was measured for.
+  {
+    bundleFileName: "ellipsize.js",
+    goldenFileName: "ellipsize.png",
+    renderArguments: ["880", "620"],
+    renderFlag: "--text-fit-golden",
+  },
   { bundleFileName: "damage.js", goldenFileName: "damage.png", renderArguments: [], renderFlag: "--damage-golden" },
   // Issue #35: this render flag is itself the assertion, and the PNG it writes is the paint side of that proof.
   {

@@ -20,7 +20,13 @@ TextInputProps::TextInputProps(const facebook::react::PropsParserContext& contex
       selectTextOnFocus(facebook::react::convertRawProp(context, rawProps, "selectTextOnFocus",
                                                         sourceProps.selectTextOnFocus, {false})),
       scrollEnabled(
-          facebook::react::convertRawProp(context, rawProps, "scrollEnabled", sourceProps.scrollEnabled, {true})) {}
+          facebook::react::convertRawProp(context, rawProps, "scrollEnabled", sourceProps.scrollEnabled, {true})) {
+    // A field is a window onto its whole text and is never truncated (#251): `numberOfLines` and `ellipsizeMode`
+    // are `<Text>` props that React Native's own `TextInput` forwards through the shared parser. Clearing them
+    // here is what makes Yoga's measure, the state's attributes and the scene agree on every line.
+    paragraphAttributes.maximumNumberOfLines = 0;
+    paragraphAttributes.ellipsizeMode = facebook::react::EllipsizeMode::Clip;
+}
 
 // `LayoutContext::fontSizeMultiplier` defaults to 1 and this host never sets another; upstream compares the
 // state's multiplier against the root's, so the initial state has to carry the same value.

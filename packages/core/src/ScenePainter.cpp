@@ -394,15 +394,31 @@ void paintBorder(SkCanvas& canvas, const ScenePrimitive& primitive, const SceneR
 }
 
 /**
- * Draws the paragraph in the content box the scene resolved, laid out against that box's width.
+ * A `<Paragraph>` in the content box the scene resolved, laid out against that box's width.
  *
  * That width is the one Yoga laid the node out with, and the paragraph is rebuilt from the same
  * `AttributedString` through the same `layoutParagraph` the measurement used, so the lines drawn here are the
- * lines that were measured.
+ * lines that were measured — including the truncation, which is inside that function.
+ *
+ * The box is clipped when `ellipsizeMode` is `clip`. The line limit already drops the lines that do not fit, so
+ * the clip only ever cuts one thing: a token with no break opportunity in it, which SkParagraph lays past the end
+ * of the line because there is nowhere to break it. `clip` is the mode that says to cut that mid-glyph rather
+ * than to ellipsize it, which is what a null `TextUtils.TruncateAt` does on Android. Every other mode draws
+ * unclipped, because a line box with a tall ascender legitimately overflows its frame — see *Vertical metrics
+ * (#110)* in docs/cpp-toolchain.md.
  */
-void paintText(SkCanvas& canvas, const SceneTextContent& text, float layoutWidth) {
+void paintParagraph(SkCanvas& canvas, const SceneTextContent& text) {
+    const bool clipsToFrame = text.paragraphAttributes.maximumNumberOfLines > 0 &&
+                              text.paragraphAttributes.ellipsizeMode == facebook::react::EllipsizeMode::Clip;
+    const SkAutoCanvasRestore restore(&canvas, clipsToFrame);
+
+    if (clipsToFrame) {
+        canvas.clipRect(toSkRect(text.frame), false);
+    }
+
     const std::unique_ptr<skia::textlayout::Paragraph> paragraph =
-        layoutParagraph(text.attributedString, text.paragraphAttributes, layoutWidth);
+        layoutParagraph(text.attributedString, text.paragraphAttributes,
+                        static_cast<float>(text.frame.size.width));
 
     paragraph->paint(&canvas, text.frame.origin.x, text.frame.origin.y);
 }
@@ -426,10 +442,13 @@ facebook::react::Rect offsetRect(const facebook::react::Rect& rect, facebook::re
  * whole of horizontal scrolling for a single-line field — a caret that walked past the right edge moves the
  * paragraph left instead of drawing outside the box. react-native-macos#2905 is the same feature missing.
  *
- * The geometry is measured through `measureEditorGeometry`, which lays the paragraph out exactly as
- * `paintText` does two lines later. That is two layouts of one string per frame, and it is deliberate for now:
- * the alternative is a second paragraph type crossing the Skia-free header boundary, and SkParagraph's own
- * shaped-run cache absorbs the repeat. It belongs with the rest of the frame-time work in issue #20.
+ * The geometry is measured through `measureEditorGeometry`, which lays the paragraph out exactly as the paint
+ * below does. That is two layouts of one string per frame, and it is deliberate for now: the alternative is a
+ * second paragraph type crossing the Skia-free header boundary, and SkParagraph's own shaped-run cache absorbs
+ * the repeat. It belongs with the rest of the frame-time work in issue #20.
+ *
+ * Both layouts go through `layoutEditorParagraph`, which never truncates by search, so the caret and selection
+ * offsets the geometry was measured with address the very characters painted here (#251).
  */
 void paintEditor(SkCanvas& canvas, const SceneTextContent& text, const SceneEditorContent& editor) {
     const SkAutoCanvasRestore restore(&canvas, true);
@@ -442,7 +461,10 @@ void paintEditor(SkCanvas& canvas, const SceneTextContent& text, const SceneEdit
         fillRect(canvas, offsetRect(selection, text.frame.origin), editor.selectionColorArgb);
     }
 
-    paintText(canvas, text, geometry.layoutWidth);
+    const std::unique_ptr<skia::textlayout::Paragraph> paragraph =
+        layoutEditorParagraph(text.attributedString, text.paragraphAttributes, geometry.layoutWidth);
+
+    paragraph->paint(&canvas, text.frame.origin.x, text.frame.origin.y);
 
     for (const facebook::react::Rect& composition : geometry.composition) {
         const facebook::react::Rect underline{
@@ -655,7 +677,7 @@ void paintPrimitive(SkCanvas& canvas, const ScenePrimitive& primitive) {
     if (primitive.text.has_value() && primitive.editor.has_value()) {
         paintEditor(canvas, primitive.text.value(), primitive.editor.value());
     } else if (primitive.text.has_value()) {
-        paintText(canvas, primitive.text.value(), static_cast<float>(primitive.text.value().frame.size.width));
+        paintParagraph(canvas, primitive.text.value());
     }
 
     // Last, so the ring is never covered by the node's own content.

@@ -1,6 +1,7 @@
 #include "TextPipeline.h"
 
 #include "AutomationProtocol.h"
+#include "EllipsizeSearch.h"
 #include "LineBoxMetrics.h"
 #include "PinnedFontFamilies.h"
 #include "TextGeometry.h"
@@ -354,8 +355,10 @@ skia::textlayout::TextAlign toTextAlign(const facebook::react::TextAttributes& a
 }
 
 /**
- * SkParagraph truncates at the tail and nowhere else, so `ellipsizeMode` collapses to "ellipsis or not". Head and
- * Middle are accepted and drawn as Tail; Clip drops the ellipsis and lets the line limit cut the text.
+ * SkParagraph's own ellipsis is a tail ellipsis and nothing else, so only Tail sets it here. Head and Middle are
+ * truncated by `layoutParagraph` instead, which rebuilds the string around a searched cut and inserts the
+ * ellipsis as a fragment of its own; setting Skia's ellipsis as well would put a second one at the end of every
+ * candidate it measures. Clip truncates with no ellipsis at all and lets the line limit cut the text.
  */
 skia::textlayout::ParagraphStyle toParagraphStyle(const facebook::react::AttributedString& attributedString,
                                                   const facebook::react::ParagraphAttributes& paragraphAttributes,
@@ -374,7 +377,7 @@ skia::textlayout::ParagraphStyle toParagraphStyle(const facebook::react::Attribu
     if (paragraphAttributes.maximumNumberOfLines > 0) {
         style.setMaxLines(static_cast<size_t>(paragraphAttributes.maximumNumberOfLines));
 
-        if (paragraphAttributes.ellipsizeMode != facebook::react::EllipsizeMode::Clip) {
+        if (paragraphAttributes.ellipsizeMode == facebook::react::EllipsizeMode::Tail) {
             style.setEllipsis(SkString(kEllipsisUtf8));
         }
     }
@@ -498,11 +501,34 @@ facebook::react::Rect caretRectangle(skia::textlayout::Paragraph& paragraph, siz
                                  .size = facebook::react::Size{.width = kCaretWidth, .height = emptyHeight}};
 }
 
-} // namespace
+/**
+ * The string a fragment contributes to the shaped text: its own, with `textTransform` already applied, because
+ * that is what changes the string's length and so where the lines break. An attachment contributes the
+ * object-replacement character it already is.
+ */
+std::string transformedFragmentText(const facebook::react::AttributedString::Fragment& fragment) {
+    if (fragment.isAttachment() || !fragment.textAttributes.textTransform.has_value()) {
+        return fragment.string;
+    }
+
+    return applyTextTransform(fragment.string, fragment.textAttributes.textTransform.value());
+}
+
+std::vector<std::string> transformedFragmentTexts(const facebook::react::AttributedString& attributedString) {
+    std::vector<std::string> texts;
+
+    texts.reserve(attributedString.getFragments().size());
+
+    for (const facebook::react::AttributedString::Fragment& fragment : attributedString.getFragments()) {
+        texts.push_back(transformedFragmentText(fragment));
+    }
+
+    return texts;
+}
 
 std::unique_ptr<skia::textlayout::Paragraph>
-layoutParagraph(const facebook::react::AttributedString& attributedString,
-                const facebook::react::ParagraphAttributes& paragraphAttributes, float maximumWidth) {
+buildAndLayoutParagraph(const facebook::react::AttributedString& attributedString,
+                        const facebook::react::ParagraphAttributes& paragraphAttributes, float maximumWidth) {
     TextPipelineState& state = textPipelineState();
     const std::lock_guard<std::mutex> guard(state.mutex);
     const std::unique_ptr<skia::textlayout::ParagraphBuilder> builder = skia::textlayout::ParagraphBuilder::make(
@@ -516,10 +542,7 @@ layoutParagraph(const facebook::react::AttributedString& attributedString,
             continue;
         }
 
-        const std::string transformedText = fragment.textAttributes.textTransform.has_value()
-                                                ? applyTextTransform(fragment.string,
-                                                                     fragment.textAttributes.textTransform.value())
-                                                : fragment.string;
+        const std::string transformedText = transformedFragmentText(fragment);
 
         builder->pushStyle(toTextStyle(fragment.textAttributes, *state.fontCollection));
         builder->addText(transformedText.data(), transformedText.size());
@@ -531,6 +554,129 @@ layoutParagraph(const facebook::react::AttributedString& attributedString,
     paragraph->layout(toLayoutWidth(maximumWidth));
 
     return paragraph;
+}
+
+bool hasInlineAttachment(const facebook::react::AttributedString& attributedString) {
+    for (const facebook::react::AttributedString::Fragment& fragment : attributedString.getFragments()) {
+        if (fragment.isAttachment()) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * One kept piece as a fragment of its own. Its text is already transformed, so the copy carries `None` rather
+ * than transforming a second time.
+ */
+facebook::react::AttributedString::Fragment slicedFragment(const facebook::react::AttributedString::Fragment& source,
+                                                           const std::string& transformedText,
+                                                           const EllipsizePiece& piece) {
+    facebook::react::AttributedString::Fragment fragment = source;
+
+    fragment.string = transformedText.substr(piece.beginUtf8, piece.endUtf8 - piece.beginUtf8);
+    fragment.textAttributes.textTransform = facebook::react::TextTransform::None;
+
+    return fragment;
+}
+
+/**
+ * The string an `EllipsizePlan` describes: the kept pieces in order with the ellipsis between them, each piece
+ * keeping the style of the fragment it was cut from and the ellipsis taking the style of the fragment whose text
+ * it stands for (react/react-native#37926).
+ */
+facebook::react::AttributedString ellipsizedAttributedString(
+    const facebook::react::AttributedString& attributedString, const std::vector<std::string>& transformedTexts,
+    const EllipsizePlan& plan) {
+    const facebook::react::AttributedString::Fragments& fragments = attributedString.getFragments();
+    facebook::react::AttributedString truncated;
+
+    truncated.setBaseTextAttributes(attributedString.getBaseTextAttributes());
+
+    for (const EllipsizePiece& piece : plan.leadingPieces) {
+        truncated.appendFragment(slicedFragment(fragments[piece.fragmentIndex],
+                                                transformedTexts[piece.fragmentIndex], piece));
+    }
+
+    facebook::react::AttributedString::Fragment ellipsis = fragments[plan.ellipsisFragmentIndex];
+
+    ellipsis.string = kEllipsisUtf8;
+    ellipsis.textAttributes.textTransform = facebook::react::TextTransform::None;
+    truncated.appendFragment(std::move(ellipsis));
+
+    for (const EllipsizePiece& piece : plan.trailingPieces) {
+        truncated.appendFragment(slicedFragment(fragments[piece.fragmentIndex],
+                                                transformedTexts[piece.fragmentIndex], piece));
+    }
+
+    return truncated;
+}
+
+/**
+ * `head` and `middle` are a search rather than a setting: SkParagraph only ever truncates at the tail, so the
+ * text that survives is found by asking the same shaper, at the same width, how many leading — or leading and
+ * trailing — graphemes have to go before what is left plus the ellipsis stops exceeding the line limit. The
+ * bisection and the rule for which paragraphs may be rebuilt at all are `EllipsizeSearch.cpp`, under the unit
+ * gate; everything that touches Skia is here.
+ *
+ * `isEditorField` is the caller saying which of the two public entry points below it is: a `<Paragraph>`, whose
+ * string nothing else addresses by offset, or a `<TextInput>`, whose every offset addresses this same string.
+ */
+std::unique_ptr<skia::textlayout::Paragraph>
+layoutParagraphForField(const facebook::react::AttributedString& attributedString,
+                        const facebook::react::ParagraphAttributes& paragraphAttributes, float maximumWidth,
+                        bool isEditorField) {
+    const std::optional<EllipsizeSide> side =
+        searchedEllipsizeSide(EllipsizeCandidate{.ellipsizeMode = paragraphAttributes.ellipsizeMode,
+                                                 .maximumNumberOfLines = paragraphAttributes.maximumNumberOfLines,
+                                                 .hasInlineAttachment = hasInlineAttachment(attributedString),
+                                                 .isEditorField = isEditorField});
+    std::unique_ptr<skia::textlayout::Paragraph> paragraph =
+        buildAndLayoutParagraph(attributedString, paragraphAttributes, maximumWidth);
+
+    if (!side.has_value() || !paragraph->didExceedMaxLines()) {
+        return paragraph;
+    }
+
+    const std::vector<std::string> transformedTexts = transformedFragmentTexts(attributedString);
+    std::string wholeText;
+
+    for (const std::string& fragmentText : transformedTexts) {
+        wholeText += fragmentText;
+    }
+
+    const EllipsizePlan plan = searchEllipsizePlan(
+        side.value(), transformedTexts, segmentText(wholeText).graphemeStarts,
+        [&](const EllipsizePlan& candidate) {
+            return !buildAndLayoutParagraph(ellipsizedAttributedString(attributedString, transformedTexts, candidate),
+                                            paragraphAttributes, maximumWidth)
+                        ->didExceedMaxLines();
+        });
+
+    return buildAndLayoutParagraph(ellipsizedAttributedString(attributedString, transformedTexts, plan),
+                                   paragraphAttributes, maximumWidth);
+}
+
+} // namespace
+
+std::unique_ptr<skia::textlayout::Paragraph>
+layoutParagraph(const facebook::react::AttributedString& attributedString,
+                const facebook::react::ParagraphAttributes& paragraphAttributes, float maximumWidth) {
+    return layoutParagraphForField(attributedString, paragraphAttributes, maximumWidth, false);
+}
+
+std::unique_ptr<skia::textlayout::Paragraph>
+layoutEditorParagraph(const facebook::react::AttributedString& attributedString,
+                      const facebook::react::ParagraphAttributes& paragraphAttributes, float maximumWidth) {
+    // A field lays out every line of its text and never draws an ellipsis: a line limit or a `tail` mode that
+    // reached it through `ParagraphAttributes` would truncate the string every offset addresses.
+    facebook::react::ParagraphAttributes untruncated = paragraphAttributes;
+
+    untruncated.maximumNumberOfLines = 0;
+    untruncated.ellipsizeMode = facebook::react::EllipsizeMode::Clip;
+
+    return layoutParagraphForField(attributedString, untruncated, maximumWidth, true);
 }
 
 EditorGeometry measureEditorGeometry(const SceneTextContent& text, const SceneEditorContent& editor) {
@@ -572,7 +718,7 @@ EditorGeometry measureEditorGeometry(const facebook::react::AttributedString& at
     // in a 1e6-point line would otherwise be drawn a long way off screen.
     const float unwrappedWidth = request.isMultiline ? maximumWidth : kUnlimitedLayoutWidth;
     const std::unique_ptr<skia::textlayout::Paragraph> paragraph =
-        layoutParagraph(attributedString, paragraphAttributes, unwrappedWidth);
+        layoutEditorParagraph(attributedString, paragraphAttributes, unwrappedWidth);
     const float contentWidth = paragraph->getLongestLine();
     float layoutWidth = unwrappedWidth;
 
@@ -601,7 +747,7 @@ size_t utf16IndexAtPoint(const facebook::react::AttributedString& attributedStri
                          const facebook::react::ParagraphAttributes& paragraphAttributes, float maximumWidth,
                          facebook::react::Point localPoint) {
     const std::unique_ptr<skia::textlayout::Paragraph> paragraph =
-        layoutParagraph(attributedString, paragraphAttributes, maximumWidth);
+        layoutEditorParagraph(attributedString, paragraphAttributes, maximumWidth);
     const skia::textlayout::PositionWithAffinity position =
         paragraph->getGlyphPositionAtCoordinate(static_cast<SkScalar>(localPoint.x),
                                                 static_cast<SkScalar>(localPoint.y));

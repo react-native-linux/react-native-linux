@@ -382,7 +382,14 @@ bool doesCaretMatchItsLine(const ScenePrimitive& primitive) {
     }
 
     // An empty field has no line to be as tall as, and the caret is the font's own line height there.
-    return metrics.lines.empty();
+    if (metrics.lines.empty()) {
+        return true;
+    }
+
+    std::cerr << "[golden] tag " << primitive.tag << " puts its caret " << caretMiddle
+              << " points down, below every line the field laid out" << std::endl;
+
+    return false;
 }
 
 // Issue #114, item 6: a `<TextInput>` and a `<Text>` holding the same string in the same style have the same
