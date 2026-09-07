@@ -10,9 +10,13 @@ namespace react_native_linux {
  * `enum xdg_toplevel_state` values the protocol sends.
  *
  * Only the states this platform's contract names (#218) are kept: `activated`, `maximized` and `fullscreen`.
- * `resizing` is tracked alongside them because it shares the same array and costs nothing extra to decode; the
- * tiled and suspended states xdg-shell also defines are not, because nothing here has a use for them yet and this
- * struct is not a general mirror of the protocol.
+ * `resizing` is tracked alongside them because it shares the same array and costs nothing extra to decode. The
+ * four tiled edges (#374) are kept too, individually, even though nothing here trusts an individual one — GNOME
+ * on Ubuntu reports all four as tiled the instant any one of them is, so the only sound predicate is
+ * `isEffectivelyTiled`, below, and keeping the raw edges is what lets that predicate — and a future one that
+ * needs a single edge, such as which side to draw a square corner on — both be expressed as pure functions of
+ * this struct instead of a second decode. The suspended state xdg-shell also defines is not kept, because
+ * nothing here has a use for it yet and this struct is not a general mirror of the protocol.
  *
  * A default-constructed `ToplevelState` is every flag false, which is also what the compositor's very first
  * `configure` — before any state has ever been reported — decodes as.
@@ -22,9 +26,24 @@ struct ToplevelState {
     bool maximized{false};
     bool fullscreen{false};
     bool resizing{false};
+    bool tiledLeft{false};
+    bool tiledRight{false};
+    bool tiledTop{false};
+    bool tiledBottom{false};
 
     bool operator==(const ToplevelState&) const = default;
 };
+
+/**
+ * The one tiled predicate anything downstream may trust, per the GNOME-over-reports-every-edge rule `ToplevelState`
+ * documents: any edge tiled, and not maximized — because a maximized window's edges are also reported tiled and
+ * maximized already has its own, unambiguous chrome. Electron's `OnWindowTiledStateChanged` collapses the same
+ * four booleans into the same one expression for the same reason (`electron/shell/browser/ui/electron_desktop_
+ * window_tree_host_linux.cc:151-165`).
+ */
+constexpr bool isEffectivelyTiled(const ToplevelState& state) noexcept {
+    return (state.tiledLeft || state.tiledRight || state.tiledTop || state.tiledBottom) && !state.maximized;
+}
 
 /**
  * Decodes a `configure` event's state array. `states` points at `count` raw `uint32_t` values, each one an

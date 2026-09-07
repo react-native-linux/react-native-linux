@@ -12,6 +12,7 @@
 #include "SurfaceCommitGate.h"
 #include "TextInputClient.h"
 #include "TitleBarPainter.h"
+#include "ToplevelState.h"
 #include "WaylandWindow.h"
 #include "WindowDecorations.h"
 #include "WindowRenderer.h"
@@ -325,7 +326,8 @@ void printWindowDebugTransitions(react_native_linux::WaylandWindow& window, bool
     if (window.takeStateChange()) {
         const react_native_linux::ToplevelState state = window.toplevelState();
         std::cout << "[rnl-window] state activated=" << state.activated << " maximized=" << state.maximized
-                  << " fullscreen=" << state.fullscreen << " resizing=" << state.resizing << std::endl;
+                  << " fullscreen=" << state.fullscreen << " resizing=" << state.resizing
+                  << " tiled=" << react_native_linux::isEffectivelyTiled(state) << std::endl;
     }
 
     const bool keyboardFocus = window.hasKeyboardFocus();
@@ -494,26 +496,33 @@ struct WindowChrome {
     react_native_linux::DecorationMode mode{react_native_linux::DecorationMode::Server};
     react_native_linux::ContentExtent content{};
     bool wasActive{false};
+    bool isFullscreen{false};
     bool isRepaintNeeded{true};
 };
 
 void refreshChrome(WindowChrome& chrome, react_native_linux::WaylandWindow& window) {
     const react_native_linux::DecorationMode mode = window.decorationMode();
     const react_native_linux::WindowSize size = window.size();
+    const react_native_linux::ToplevelState state = window.toplevelState();
     const react_native_linux::ContentExtent content =
-        react_native_linux::contentExtentOf(mode, chrome.metrics, size.width, size.height);
-    const bool isActive = window.toplevelState().activated;
+        react_native_linux::contentExtentOf(mode, state.fullscreen, chrome.metrics, size.width, size.height);
+    const bool isActive = state.activated;
 
+    // `content.height` joins `content.width` here for the same reason fullscreen took a parameter of its own on
+    // `contentExtentOf` (#374): entering or leaving fullscreen can drop or restore the bar's inset without the
+    // window's own width or height changing, and a stale `topOffset` would shift the paint and the pointer
+    // mapping out of step with what the Fabric root was actually laid out at.
     chrome.isRepaintNeeded = chrome.isRepaintNeeded || mode != chrome.mode || isActive != chrome.wasActive ||
-                             content.width != chrome.content.width;
+                             content.width != chrome.content.width || content.height != chrome.content.height;
 
-    if (mode != chrome.mode) {
+    if (mode != chrome.mode || state.fullscreen != chrome.isFullscreen) {
         chrome.pointerCapture.release();
     }
 
     chrome.mode = mode;
     chrome.content = content;
     chrome.wasActive = isActive;
+    chrome.isFullscreen = state.fullscreen;
 }
 
 uint64_t steadyMilliseconds() {
@@ -581,11 +590,12 @@ void activateDecoration(react_native_linux::WaylandWindow& window, WindowChrome&
 std::vector<react_native_linux::InputEvent>
 routeDecorationInput(react_native_linux::WaylandWindow& window, WindowChrome& chrome,
                      const std::vector<react_native_linux::InputEvent>& events) {
-    if (chrome.mode != react_native_linux::DecorationMode::Client) {
+    if (!react_native_linux::isChromeActive(chrome.mode, chrome.isFullscreen)) {
         return events;
     }
 
     const react_native_linux::WindowSize size = window.size();
+    const bool isTiled = react_native_linux::isEffectivelyTiled(window.toplevelState());
     std::vector<react_native_linux::InputEvent> contentEvents;
 
     for (const react_native_linux::InputEvent& event : events) {
@@ -596,7 +606,7 @@ routeDecorationInput(react_native_linux::WaylandWindow& window, WindowChrome& ch
         }
 
         const react_native_linux::DecorationHit hit = react_native_linux::hitTestDecorations(
-            chrome.metrics, size.width, size.height, static_cast<float>(event.surfacePoint.x),
+            chrome.metrics, size.width, size.height, isTiled, static_cast<float>(event.surfacePoint.x),
             static_cast<float>(event.surfacePoint.y));
 
         const bool isPrimaryPress = event.kind == react_native_linux::InputEventKind::PointerButtonPress &&
@@ -641,7 +651,7 @@ void paintDecoratedFrame(SkCanvas& canvas, const WindowChrome& chrome, const std
     paint(canvas, contentDamage);
     canvas.restore();
 
-    if (chrome.mode != react_native_linux::DecorationMode::Client) {
+    if (!react_native_linux::isChromeActive(chrome.mode, chrome.isFullscreen)) {
         return;
     }
 

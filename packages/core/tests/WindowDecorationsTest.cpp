@@ -1,6 +1,8 @@
 #include "WindowDecorations.h"
 
+#include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <gtest/gtest.h>
 #include <optional>
 #include <string>
@@ -17,13 +19,17 @@ using react_native_linux::DecorationMode;
 using react_native_linux::DecorationRect;
 using react_native_linux::DoubleClickDetector;
 using react_native_linux::hitTestDecorations;
+using react_native_linux::isChromeActive;
 using react_native_linux::kDecorationModeClientSide;
 using react_native_linux::kDecorationModeServerSide;
 using react_native_linux::kDoubleClickIntervalMilliseconds;
 using react_native_linux::layoutTitleBar;
+using react_native_linux::logicalToSurface;
 using react_native_linux::PointerCapture;
 using react_native_linux::resizeEdgeOfHit;
+using react_native_linux::surfaceToLogical;
 using react_native_linux::TitleBarLayout;
+using react_native_linux::WindowExtent;
 
 constexpr uint32_t kWindowWidth = 800;
 constexpr uint32_t kWindowHeight = 600;
@@ -79,8 +85,8 @@ TEST(WindowDecorationsTest, ANarrowWindowHasNoDragRegionRatherThanOneUnderTheBut
     const TitleBarLayout layout = layoutTitleBar(100, kMetrics);
 
     EXPECT_LT(layout.drag.right, layout.drag.left);
-    EXPECT_EQ(hitTestDecorations(kMetrics, 100, kWindowHeight, 50.0F, 16.0F), DecorationHit::Maximize);
-    EXPECT_EQ(hitTestDecorations(kMetrics, 100, kWindowHeight, 10.0F, 16.0F), DecorationHit::Minimize);
+    EXPECT_EQ(hitTestDecorations(kMetrics, 100, kWindowHeight, false, 50.0F, 16.0F), DecorationHit::Maximize);
+    EXPECT_EQ(hitTestDecorations(kMetrics, 100, kWindowHeight, false, 10.0F, 16.0F), DecorationHit::Minimize);
 }
 
 struct HitCase {
@@ -109,14 +115,34 @@ TEST(WindowDecorationsTest, TheHitTableCoversEveryEdgeCornerAndButton) {
     };
 
     for (const HitCase& hitCase : cases) {
-        EXPECT_EQ(hitTestDecorations(kMetrics, kWindowWidth, kWindowHeight, hitCase.x, hitCase.y), hitCase.expected)
+        EXPECT_EQ(hitTestDecorations(kMetrics, kWindowWidth, kWindowHeight, false, hitCase.x, hitCase.y),
+                  hitCase.expected)
             << hitCase.name;
     }
 }
 
 TEST(WindowDecorationsTest, AResizeCornerWinsOverTheCloseButtonBeneathIt) {
-    EXPECT_EQ(hitTestDecorations(kMetrics, kWindowWidth, kWindowHeight, 799.0F, 1.0F), DecorationHit::ResizeTopRight);
-    EXPECT_EQ(hitTestDecorations(kMetrics, kWindowWidth, kWindowHeight, 780.0F, 9.0F), DecorationHit::Close);
+    EXPECT_EQ(hitTestDecorations(kMetrics, kWindowWidth, kWindowHeight, false, 799.0F, 1.0F),
+              DecorationHit::ResizeTopRight);
+    EXPECT_EQ(hitTestDecorations(kMetrics, kWindowWidth, kWindowHeight, false, 780.0F, 9.0F), DecorationHit::Close);
+}
+
+TEST(WindowDecorationsTest, ATiledWindowHasNoResizeEdgesButKeepsItsButtonsAndDragRegion) {
+    for (const HitCase& hitCase : std::vector<HitCase>{
+             // With the resize edges out of the way, a point that used to win as a corner handle falls through to
+             // whatever is actually there: the bar's own drag region or button at the top, and plain content at
+             // the bottom, where there is no bar to fall into.
+             {"a one-time top left corner is drag, not a handle", 2.0F, 2.0F, DecorationHit::Drag},
+             {"a one-time top right corner is close, not a handle", 797.0F, 2.0F, DecorationHit::Close},
+             {"a one-time bottom right corner falls back to content", 797.0F, 597.0F, DecorationHit::Content},
+             {"a one-time bottom left corner falls back to content", 2.0F, 597.0F, DecorationHit::Content},
+             {"close still hits", 780.0F, 20.0F, DecorationHit::Close},
+             {"the drag region still hits", 400.0F, 20.0F, DecorationHit::Drag},
+         }) {
+        EXPECT_EQ(hitTestDecorations(kMetrics, kWindowWidth, kWindowHeight, true, hitCase.x, hitCase.y),
+                  hitCase.expected)
+            << hitCase.name;
+    }
 }
 
 TEST(WindowDecorationsTest, EveryHitMapsToItsXdgShellResizeEdge) {
@@ -135,34 +161,207 @@ TEST(WindowDecorationsTest, EveryHitMapsToItsXdgShellResizeEdge) {
     }
 }
 
-TEST(WindowDecorationsTest, ServerSideDecorationsLeaveTheContentAtTheSurfaceOrigin) {
-    const ContentExtent extent = contentExtentOf(DecorationMode::Server, kMetrics, kWindowWidth, kWindowHeight);
+struct ContentExtentCase {
+    std::string name;
+    DecorationMode mode;
+    bool isFullscreen;
+    uint32_t expectedHeight;
+    float expectedTopOffset;
+};
 
-    EXPECT_EQ(extent.width, kWindowWidth);
-    EXPECT_EQ(extent.height, kWindowHeight);
-    EXPECT_EQ(extent.topOffset, 0.0F);
-}
+// Every row shares the same shape — a bar term that is either zero or the metrics' own `titleBarHeight` — so one
+// table covers "which modes draw a bar" and "fullscreen zeroes it under every mode" together, rather than
+// letting the near-identical `ContentExtent` assertions drift into jscpd-flagged copies of each other.
+TEST(WindowDecorationsTest, ContentExtentDropsTheBarOutsideFloatingClientDecorations) {
+    const std::vector<ContentExtentCase> cases{
+        {"server-side decorations", DecorationMode::Server, false, kWindowHeight, 0.0F},
+        {"client-side decorations", DecorationMode::Client, false, kWindowHeight - 32U, 32.0F},
+        {"bare decorations", DecorationMode::Bare, false, kWindowHeight, 0.0F},
+        {"client-side decorations, fullscreen", DecorationMode::Client, true, kWindowHeight, 0.0F},
+        {"bare decorations, fullscreen", DecorationMode::Bare, true, kWindowHeight, 0.0F},
+    };
 
-TEST(WindowDecorationsTest, ClientSideDecorationsPushTheContentBelowTheBar) {
-    const ContentExtent extent = contentExtentOf(DecorationMode::Client, kMetrics, kWindowWidth, kWindowHeight);
+    for (const ContentExtentCase& extentCase : cases) {
+        const ContentExtent extent =
+            contentExtentOf(extentCase.mode, extentCase.isFullscreen, kMetrics, kWindowWidth, kWindowHeight);
 
-    EXPECT_EQ(extent.width, kWindowWidth);
-    EXPECT_EQ(extent.height, kWindowHeight - 32U);
-    EXPECT_EQ(extent.topOffset, 32.0F);
-}
-
-TEST(WindowDecorationsTest, BareDecorationsLeaveTheContentAtTheSurfaceOriginLikeServerSide) {
-    const ContentExtent extent = contentExtentOf(DecorationMode::Bare, kMetrics, kWindowWidth, kWindowHeight);
-
-    EXPECT_EQ(extent.width, kWindowWidth);
-    EXPECT_EQ(extent.height, kWindowHeight);
-    EXPECT_EQ(extent.topOffset, 0.0F);
+        EXPECT_EQ(extent.width, kWindowWidth) << extentCase.name;
+        EXPECT_EQ(extent.height, extentCase.expectedHeight) << extentCase.name;
+        EXPECT_EQ(extent.topOffset, extentCase.expectedTopOffset) << extentCase.name;
+    }
 }
 
 TEST(WindowDecorationsTest, AWindowShorterThanItsOwnBarKeepsOneRowOfContent) {
     for (const uint32_t windowHeight : {1U, 32U}) {
-        EXPECT_EQ(contentExtentOf(DecorationMode::Client, kMetrics, kWindowWidth, windowHeight).height, 1U);
+        EXPECT_EQ(contentExtentOf(DecorationMode::Client, /*isFullscreen=*/false, kMetrics, kWindowWidth, windowHeight)
+                      .height,
+                  1U);
     }
+}
+
+struct ChromeActiveCase {
+    std::string name;
+    DecorationMode mode;
+    bool isFullscreen;
+    bool expectedIsActive;
+};
+
+// `paintDecoratedFrame` and `routeDecorationInput` both bypass the bar off this one predicate instead of testing
+// `mode` alone, so a `Client`-decorated window going fullscreen stops painting a bar over content at `topOffset`
+// zero and stops stealing the pointer events that band used to intercept (#374's fullscreen follow-up).
+TEST(WindowDecorationsTest, ChromeIsActiveOnlyForFloatingClientDecorations) {
+    const std::vector<ChromeActiveCase> cases{
+        {"client, windowed", DecorationMode::Client, false, true},
+        {"client, fullscreen", DecorationMode::Client, true, false},
+        {"server, windowed", DecorationMode::Server, false, false},
+        {"server, fullscreen", DecorationMode::Server, true, false},
+        {"bare, windowed", DecorationMode::Bare, false, false},
+        {"bare, fullscreen", DecorationMode::Bare, true, false},
+    };
+
+    for (const ChromeActiveCase& activeCase : cases) {
+        EXPECT_EQ(isChromeActive(activeCase.mode, activeCase.isFullscreen), activeCase.expectedIsActive)
+            << activeCase.name;
+    }
+}
+
+struct LogicalConversionCase {
+    std::string name;
+    DecorationMode mode;
+    bool isFullscreen;
+    double scale;
+    WindowExtent surface;
+    WindowExtent logical;
+};
+
+// Every row round-trips: `surfaceToLogical(surface) == logical` and `logicalToSurface(logical) == surface`, over
+// every scenario the acceptance names — no decorations and server-side decorations both collapse to the same
+// zero-inset arithmetic path, exactly as the Electron comment this fixes says they should; maximised keeps the
+// bar (this platform does not remove it, unlike fullscreen); tiled leaves the conversion untouched, because
+// nothing about the inset changes when the compositor tiles a window, only what `hitTestDecorations` grants; and
+// fullscreen drops the bar under either decoration mode.
+TEST(WindowDecorationsTest, TheConversionPairRoundTripsOverEveryDecorationScenario) {
+    const std::vector<LogicalConversionCase> cases{
+        {"no decorations", DecorationMode::Server, false, 1.0, {800, 600}, {800, 600}},
+        {"server-side decorations", DecorationMode::Server, false, 1.0, {800, 600}, {800, 600}},
+        {"client-side decorations, floating", DecorationMode::Client, false, 1.0, {800, 632}, {800, 600}},
+        {"client-side decorations, maximised (the bar stays)",
+         DecorationMode::Client,
+         false,
+         1.0,
+         {800, 632},
+         {800, 600}},
+        {"client-side decorations, tiled (the inset is unaffected)",
+         DecorationMode::Client,
+         false,
+         1.0,
+         {800, 632},
+         {800, 600}},
+        {"client-side decorations, fullscreen (the bar is gone)",
+         DecorationMode::Client,
+         true,
+         1.0,
+         {800, 600},
+         {800, 600}},
+        {"server-side decorations, fullscreen", DecorationMode::Server, true, 1.0, {800, 600}, {800, 600}},
+        {"bare decorations (no bar to begin with)", DecorationMode::Bare, false, 1.0, {800, 600}, {800, 600}},
+        {"bare decorations, fullscreen", DecorationMode::Bare, true, 1.0, {800, 600}, {800, 600}},
+        {"client-side decorations at scale 1.25", DecorationMode::Client, false, 1.25, {800, 632}, {640, 480}},
+        {"client-side decorations at scale 1.5", DecorationMode::Client, false, 1.5, {600, 482}, {400, 300}},
+        {"server-side decorations at scale 1.25", DecorationMode::Server, false, 1.25, {1000, 750}, {800, 600}},
+    };
+
+    for (const LogicalConversionCase& conversionCase : cases) {
+        EXPECT_EQ(surfaceToLogical(conversionCase.mode, conversionCase.isFullscreen, kMetrics, conversionCase.scale,
+                                   conversionCase.surface),
+                  conversionCase.logical)
+            << conversionCase.name;
+        EXPECT_EQ(logicalToSurface(conversionCase.mode, conversionCase.isFullscreen, kMetrics, conversionCase.scale,
+                                   conversionCase.logical),
+                  conversionCase.surface)
+            << conversionCase.name;
+    }
+}
+
+struct ScaleGridCase {
+    std::string name;
+    double scale;
+    uint32_t surfaceExtent;
+    bool isOnGrid;
+    uint32_t expectedRoundTrippedExtent;
+};
+
+// `surfaceToLogical`/`logicalToSurface` are guaranteed to round-trip exactly when the surface extent divides
+// evenly by the scale's numerator in lowest terms (3 at 1.5, 5 at 1.25, 4 at 4 — see the docblock); that grid is
+// sufficient but not necessary; off-grid extents can still land back exactly by coincidence (scale 1.5, extent 2)
+// or can drift, bounded by `ceil(scale / 2)` surface pixels rather than a fixed one (scale 4, extent 2, drifts by
+// exactly 2 — the two-roundings-of-half-a-unit-each bound the docblock states, not the one-pixel bound an earlier
+// version claimed). Server-side decorations keep `barRows` at zero so this isolates the scale arithmetic from the
+// bar term the other round-trip test already covers.
+TEST(WindowDecorationsTest, TheConversionPairIsExactOnTheScaleGridAndBoundedByCeilScaleOverTwoOffIt) {
+    const std::vector<ScaleGridCase> cases{
+        {"scale 1, always on its own grid", 1.0, 801, true, 801},
+        {"scale 1.25, on grid (multiple of 5)", 1.25, 800, true, 800},
+        {"scale 1.25, off grid", 1.25, 802, false, 803},
+        {"scale 1.5, on grid (multiple of 3)", 1.5, 999, true, 999},
+        {"scale 1.5, off grid (the finding's own example)", 1.5, 1000, false, 1001},
+        {"scale 1.5, off grid but exact by coincidence", 1.5, 2, false, 2},
+        {"scale 2, on grid (multiple of 2)", 2.0, 800, true, 800},
+        {"scale 2, off grid", 2.0, 801, false, 802},
+        {"scale 4, off grid, drifts by ceil(4 / 2) = 2 rather than 1", 4.0, 2, false, 4},
+    };
+
+    for (const ScaleGridCase& gridCase : cases) {
+        const WindowExtent surface{gridCase.surfaceExtent, gridCase.surfaceExtent};
+        const WindowExtent logical = surfaceToLogical(DecorationMode::Server, /*isFullscreen=*/false, kMetrics,
+                                                       gridCase.scale, surface);
+        const WindowExtent roundTripped =
+            logicalToSurface(DecorationMode::Server, /*isFullscreen=*/false, kMetrics, gridCase.scale, logical);
+        const WindowExtent expectedRoundTripped{gridCase.expectedRoundTrippedExtent,
+                                                gridCase.expectedRoundTrippedExtent};
+        const int64_t maximumDrift = static_cast<int64_t>(std::ceil(gridCase.scale / 2.0));
+
+        EXPECT_EQ(roundTripped, expectedRoundTripped) << gridCase.name;
+
+        if (gridCase.isOnGrid) {
+            EXPECT_EQ(roundTripped, surface) << gridCase.name;
+        }
+
+        EXPECT_LE(std::abs(static_cast<int64_t>(roundTripped.width) - static_cast<int64_t>(surface.width)),
+                  maximumDrift)
+            << gridCase.name;
+        EXPECT_LE(std::abs(static_cast<int64_t>(roundTripped.height) - static_cast<int64_t>(surface.height)),
+                  maximumDrift)
+            << gridCase.name;
+    }
+}
+
+TEST(WindowDecorationsTest, ASurfaceShorterThanItsOwnBarKeepsOneLogicalRowOfContentToo) {
+    for (const uint32_t surfaceHeight : {1U, 32U}) {
+        EXPECT_EQ(surfaceToLogical(DecorationMode::Client, /*isFullscreen=*/false, kMetrics, 1.0,
+                                   WindowExtent{kWindowWidth, surfaceHeight})
+                      .height,
+                  1U);
+    }
+}
+
+TEST(WindowDecorationsTest, AZeroLogicalMaximumIsNotInflatedByTheBarOrTheScale) {
+    for (const DecorationMode mode : {DecorationMode::Server, DecorationMode::Client, DecorationMode::Bare}) {
+        EXPECT_EQ(logicalToSurface(mode, /*isFullscreen=*/false, kMetrics, 1.25, WindowExtent{0, 0}),
+                  (WindowExtent{0, 0}))
+            << "both components zero";
+        EXPECT_EQ(logicalToSurface(mode, /*isFullscreen=*/false, kMetrics, 1.0, WindowExtent{800, 0}),
+                  (WindowExtent{800, 0}))
+            << "zero height leaves width inflated alone and adds no bar";
+    }
+
+    // A zero width with a real height still inflates the height by whatever the bar is under that mode: the
+    // "leave it at zero" rule is per-component, not "the whole size is a sentinel", because a real
+    // `set_max_size` can legitimately constrain only one axis.
+    EXPECT_EQ(logicalToSurface(DecorationMode::Server, /*isFullscreen=*/false, kMetrics, 1.0, WindowExtent{0, 600}),
+              (WindowExtent{0, 600}));
+    EXPECT_EQ(logicalToSurface(DecorationMode::Client, /*isFullscreen=*/false, kMetrics, 1.0, WindowExtent{0, 600}),
+              (WindowExtent{0, 632}));
 }
 
 TEST(WindowDecorationsTest, TwoPressesInsideTheIntervalAreOneDoubleClick) {

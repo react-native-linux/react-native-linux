@@ -1,5 +1,7 @@
 #include "WindowDecorations.h"
 
+#include <cmath>
+
 namespace react_native_linux {
 
 namespace {
@@ -52,6 +54,30 @@ DecorationHit resizeHitOfEdges(bool nearLeft, bool nearRight, bool nearTop, bool
     return DecorationHit::Content;
 }
 
+// The one place `contentExtentOf` and `surfaceToLogical` share the "how tall is the bar, right now" answer, so
+// the fullscreen and decoration-mode rule cannot drift between the two the way the inset drifted across
+// Electron's three call sites.
+uint32_t barRowsFor(DecorationMode mode, bool isFullscreen, const DecorationMetrics& metrics) noexcept {
+    if (mode != DecorationMode::Client || isFullscreen) {
+        return 0;
+    }
+
+    return static_cast<uint32_t>(metrics.titleBarHeight);
+}
+
+uint32_t roundedRatio(uint32_t value, double scale, bool multiply) noexcept {
+    const double factor = multiply ? scale : 1.0 / scale;
+
+    return static_cast<uint32_t>(std::llround(static_cast<double>(value) * factor));
+}
+
+// Shared by `contentExtentOf` and `surfaceToLogical`, both of which remove `barRows` from a total and floor the
+// remainder at one row, so the "shorter than its own bar" clamp cannot drift between the two the same way the
+// inset itself is not allowed to.
+uint32_t contentRows(uint32_t totalRows, uint32_t barRows) noexcept {
+    return totalRows > barRows ? totalRows - barRows : kMinimumContentHeight;
+}
+
 } // namespace
 
 DecorationMode decideDecorationMode(bool hasDecorationManager, bool forceClientDecorations, bool noDecorations,
@@ -91,12 +117,14 @@ TitleBarLayout layoutTitleBar(uint32_t windowWidth, const DecorationMetrics& met
     };
 }
 
-DecorationHit hitTestDecorations(const DecorationMetrics& metrics, uint32_t windowWidth, uint32_t windowHeight, float x,
-                                 float y) noexcept {
+DecorationHit hitTestDecorations(const DecorationMetrics& metrics, uint32_t windowWidth, uint32_t windowHeight,
+                                 bool isEffectivelyTiled, float x, float y) noexcept {
     const float width = static_cast<float>(windowWidth);
     const float height = static_cast<float>(windowHeight);
-    const DecorationHit edgeHit = resizeHitOfEdges(x < metrics.resizeEdgeWidth, x >= width - metrics.resizeEdgeWidth,
-                                                   y < metrics.resizeEdgeWidth, y >= height - metrics.resizeEdgeWidth);
+    const DecorationHit edgeHit =
+        isEffectivelyTiled ? DecorationHit::Content
+                           : resizeHitOfEdges(x < metrics.resizeEdgeWidth, x >= width - metrics.resizeEdgeWidth,
+                                              y < metrics.resizeEdgeWidth, y >= height - metrics.resizeEdgeWidth);
 
     if (edgeHit != DecorationHit::Content) {
         return edgeHit;
@@ -148,16 +176,38 @@ uint32_t resizeEdgeOfHit(DecorationHit hit) noexcept {
     }
 }
 
-ContentExtent contentExtentOf(DecorationMode mode, const DecorationMetrics& metrics, uint32_t windowWidth,
-                              uint32_t windowHeight) noexcept {
-    const float topOffset = mode == DecorationMode::Client ? metrics.titleBarHeight : 0.0F;
-    const uint32_t barRows = static_cast<uint32_t>(topOffset);
+ContentExtent contentExtentOf(DecorationMode mode, bool isFullscreen, const DecorationMetrics& metrics,
+                              uint32_t windowWidth, uint32_t windowHeight) noexcept {
+    const uint32_t barRows = barRowsFor(mode, isFullscreen, metrics);
 
     return ContentExtent{
         .width = windowWidth,
-        .height = windowHeight > barRows ? windowHeight - barRows : kMinimumContentHeight,
-        .topOffset = topOffset,
+        .height = contentRows(windowHeight, barRows),
+        .topOffset = static_cast<float>(barRows),
     };
+}
+
+WindowExtent surfaceToLogical(DecorationMode mode, bool isFullscreen, const DecorationMetrics& metrics, double scale,
+                              WindowExtent surfaceExtent) noexcept {
+    const uint32_t barRows = barRowsFor(mode, isFullscreen, metrics);
+    const uint32_t surfaceContentHeight = contentRows(surfaceExtent.height, barRows);
+
+    return WindowExtent{
+        .width = roundedRatio(surfaceExtent.width, scale, /*multiply=*/false),
+        .height = roundedRatio(surfaceContentHeight, scale, /*multiply=*/false),
+    };
+}
+
+WindowExtent logicalToSurface(DecorationMode mode, bool isFullscreen, const DecorationMetrics& metrics, double scale,
+                              WindowExtent logicalExtent) noexcept {
+    const uint32_t barRows = barRowsFor(mode, isFullscreen, metrics);
+    const uint32_t surfaceWidth =
+        logicalExtent.width == 0 ? 0 : roundedRatio(logicalExtent.width, scale, /*multiply=*/true);
+    const uint32_t surfaceContentHeight =
+        logicalExtent.height == 0 ? 0 : roundedRatio(logicalExtent.height, scale, /*multiply=*/true);
+    const uint32_t surfaceHeight = surfaceContentHeight == 0 ? 0 : surfaceContentHeight + barRows;
+
+    return WindowExtent{.width = surfaceWidth, .height = surfaceHeight};
 }
 
 bool DoubleClickDetector::recordPress(uint64_t milliseconds) noexcept {
