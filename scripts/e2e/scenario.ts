@@ -1,6 +1,7 @@
 import {
   isRecord,
   readCoordinate,
+  readNonNegativeInteger,
   readObject,
   readOptionalBoolean,
   readOptionalStringArray,
@@ -35,8 +36,13 @@ const ERROR_TRACE_PATTERNS: readonly string[] = ["[js-error]", "[bundle-runner]"
 /**
  * The perf gate of #7. `p95Ms` is the ninety-fifth percentile `wp_presentation` frame time the run may not exceed;
  * `minFrames` is how many frames must have presented for that percentile to mean anything, not pass by accident.
+ *
+ * `maxHangs` is the frame-journal gate of #345: how many presented frames may cross the hang thresholds before
+ * the run fails. `null` means the scenario does not gate on it yet — different from `0`, which is a deliberate
+ * "zero hangs allowed" from a number CI actually measured. See *Frame journal* in docs/cpp-toolchain.md.
  */
 interface FrameBudget {
+  readonly maxHangs: number | null;
   readonly minFrames: number;
   readonly p95Ms: number;
 }
@@ -123,6 +129,8 @@ const readFrameBudget = (record: Record<string, unknown>, sourceName: string): F
   const budget = readObject(record["frameBudget"], "frameBudget", sourceName);
 
   return {
+    maxHangs:
+      "maxHangs" in budget ? readNonNegativeInteger(budget["maxHangs"], "frameBudget.maxHangs", sourceName) : null,
     minFrames: readPositiveInteger(budget["minFrames"], "frameBudget.minFrames", sourceName),
     p95Ms: readPositiveNumber(budget["p95Ms"], "frameBudget.p95Ms", sourceName),
   };

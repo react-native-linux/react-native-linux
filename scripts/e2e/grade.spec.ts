@@ -131,13 +131,19 @@ describe("gradeArtifacts frame timing", () => {
   it("passes a run that met its budget", () => {
     writeFrameLog(healthyFrameLog);
 
-    const scenario = { ...baseScenario, frameBudget: { minFrames: MINIMUM_FRAMES, p95Ms: BUDGET_P95_MS } };
+    const scenario = {
+      ...baseScenario,
+      frameBudget: { maxHangs: null, minFrames: MINIMUM_FRAMES, p95Ms: BUDGET_P95_MS },
+    };
 
     expect(gradeArtifacts(inputsFor(scenario)).failures).toEqual([]);
   });
 
   it("fails a run whose frame log never appeared", () => {
-    const scenario = { ...baseScenario, frameBudget: { minFrames: MINIMUM_FRAMES, p95Ms: BUDGET_P95_MS } };
+    const scenario = {
+      ...baseScenario,
+      frameBudget: { maxHangs: null, minFrames: MINIMUM_FRAMES, p95Ms: BUDGET_P95_MS },
+    };
 
     expect(gradeArtifacts(inputsFor(scenario)).failures).toEqual([
       `the window wrote no frame-timing summary to ${path.join(workspace, "frames.jsonl")}`,

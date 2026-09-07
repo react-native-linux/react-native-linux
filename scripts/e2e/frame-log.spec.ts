@@ -1,14 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { describeFrameTiming, findFrameBudgetFailures, parseFrameLogSummary } from "./frame-log.ts";
+import {
+  describeFrameJournal,
+  describeFrameTiming,
+  findFrameBudgetFailures,
+  parseFrameJournalSummary,
+  parseFrameLogSummary,
+} from "./frame-log.ts";
+
+import type { FrameBudget } from "./scenario.ts";
 
 const FRAME_LOG_PATH = "build/e2e/animated-frames/frames.jsonl";
 const BOTH_FAILURES = 2;
 
-const budget = { minFrames: 60, p95Ms: 17.5 };
+const budget: FrameBudget = { maxHangs: null, minFrames: 60, p95Ms: 17.5 };
 
 const summaryLine = (fields: string): string => `{"summary":true,${fields}}`;
+const journalSummaryLine = (fields: string): string => `{"journalSummary":true,${fields}}`;
 
 const healthySummary = summaryLine('"frames":240,"discarded":2,"p50Ns":16000000,"p95Ns":16600000,"maxNs":31000000');
+const healthyJournalSummary = journalSummaryLine(
+  '"frames":238,"hangs":0,"p50Ns":11000000,"p95Ns":15000000,"maxNs":20000000',
+);
 
 describe("parseFrameLogSummary", () => {
   it("reads the summary line out of a log of frame records", () => {
@@ -59,13 +71,73 @@ describe("parseFrameLogSummary", () => {
   });
 });
 
+describe("parseFrameJournalSummary", () => {
+  it("reads the journal summary line out of a log carrying both kinds of line", () => {
+    const frameLog = [
+      '{"seq":1,"presentedNs":1000000000,"refreshNs":16666666,"flags":1}',
+      '{"journal":true,"dirtyToPresentNs":11000000,"paintNs":3000000,"hang":false}',
+      healthySummary,
+      healthyJournalSummary,
+      "",
+    ].join("\n");
+
+    expect(parseFrameJournalSummary(frameLog)).toEqual({
+      frames: 238,
+      hangs: 0,
+      maximumNanoseconds: 20_000_000,
+      medianNanoseconds: 11_000_000,
+      percentile95Nanoseconds: 15_000_000,
+    });
+  });
+
+  it("returns null for a log that has no journal summary line", () => {
+    expect(parseFrameJournalSummary(`${healthySummary}\n`)).toBeNull();
+  });
+
+  it("returns null for an empty log", () => {
+    expect(parseFrameJournalSummary("")).toBeNull();
+  });
+
+  it("returns null when the journal summary line is not a JSON object", () => {
+    expect(parseFrameJournalSummary('[{"journalSummary":true,"frames":0}]')).toBeNull();
+  });
+
+  it("reads a missing field as zero rather than failing the parse", () => {
+    expect(parseFrameJournalSummary(journalSummaryLine('"frames":10'))).toEqual({
+      frames: 10,
+      hangs: 0,
+      maximumNanoseconds: 0,
+      medianNanoseconds: 0,
+      percentile95Nanoseconds: 0,
+    });
+  });
+});
+
+/** Every field `findFrameBudgetFailures` takes, defaulted to a run that met every half of the budget. */
+const budgetInputs = (overrides: {
+  readonly budget?: FrameBudget;
+  readonly journalSummary?: ReturnType<typeof parseFrameJournalSummary>;
+  readonly summary?: ReturnType<typeof parseFrameLogSummary>;
+}): {
+  readonly budget: FrameBudget;
+  readonly frameLogPath: string;
+  readonly journalSummary: ReturnType<typeof parseFrameJournalSummary>;
+  readonly summary: ReturnType<typeof parseFrameLogSummary>;
+} => ({
+  budget: overrides.budget ?? budget,
+  frameLogPath: FRAME_LOG_PATH,
+  journalSummary:
+    "journalSummary" in overrides ? overrides.journalSummary : parseFrameJournalSummary(healthyJournalSummary),
+  summary: "summary" in overrides ? overrides.summary : parseFrameLogSummary(healthySummary),
+});
+
 describe("findFrameBudgetFailures", () => {
   it("reports nothing when the run met both halves of the budget", () => {
-    expect(findFrameBudgetFailures(parseFrameLogSummary(healthySummary), budget, FRAME_LOG_PATH)).toEqual([]);
+    expect(findFrameBudgetFailures(budgetInputs({}))).toEqual([]);
   });
 
   it("reports a log the window never summarised", () => {
-    expect(findFrameBudgetFailures(null, budget, FRAME_LOG_PATH)).toEqual([
+    expect(findFrameBudgetFailures(budgetInputs({ journalSummary: null, summary: null }))).toEqual([
       `the window wrote no frame-timing summary to ${FRAME_LOG_PATH}`,
     ]);
   });
@@ -75,7 +147,7 @@ describe("findFrameBudgetFailures", () => {
       summaryLine('"frames":0,"discarded":0,"p50Ns":0,"p95Ns":0,"maxNs":0,"unsupported":true'),
     );
 
-    expect(findFrameBudgetFailures(summary, budget, FRAME_LOG_PATH)).toEqual([
+    expect(findFrameBudgetFailures(budgetInputs({ journalSummary: null, summary }))).toEqual([
       `the compositor advertised no wp_presentation, so ${FRAME_LOG_PATH} carries no frame timings`,
     ]);
   });
@@ -85,7 +157,7 @@ describe("findFrameBudgetFailures", () => {
       summaryLine('"frames":12,"discarded":0,"p50Ns":16000000,"p95Ns":16000000,"maxNs":16000000'),
     );
 
-    expect(findFrameBudgetFailures(summary, budget, FRAME_LOG_PATH)).toEqual([
+    expect(findFrameBudgetFailures(budgetInputs({ journalSummary: null, summary }))).toEqual([
       "only 12 frames were presented, the budget needs at least 60",
     ]);
   });
@@ -95,7 +167,7 @@ describe("findFrameBudgetFailures", () => {
       summaryLine('"frames":240,"discarded":0,"p50Ns":16000000,"p95Ns":24000000,"maxNs":40000000'),
     );
 
-    expect(findFrameBudgetFailures(summary, budget, FRAME_LOG_PATH)).toEqual([
+    expect(findFrameBudgetFailures(budgetInputs({ journalSummary: null, summary }))).toEqual([
       "p95 frame time is 24.00 ms, the budget is 17.5 ms",
     ]);
   });
@@ -105,7 +177,39 @@ describe("findFrameBudgetFailures", () => {
       summaryLine('"frames":12,"discarded":0,"p50Ns":16000000,"p95Ns":24000000,"maxNs":40000000'),
     );
 
-    expect(findFrameBudgetFailures(summary, budget, FRAME_LOG_PATH)).toHaveLength(BOTH_FAILURES);
+    expect(findFrameBudgetFailures(budgetInputs({ journalSummary: null, summary }))).toHaveLength(BOTH_FAILURES);
+  });
+});
+
+describe("findFrameBudgetFailures hang budget", () => {
+  const hangBudget = { ...budget, maxHangs: 0 };
+
+  it("does not gate on hangs when the scenario sets no maxHangs", () => {
+    const journalSummary = parseFrameJournalSummary(
+      journalSummaryLine('"frames":238,"hangs":5,"p50Ns":11000000,"p95Ns":15000000,"maxNs":20000000'),
+    );
+
+    expect(findFrameBudgetFailures(budgetInputs({ journalSummary }))).toEqual([]);
+  });
+
+  it("reports a run with no journal summary when the scenario gates on hangs", () => {
+    expect(findFrameBudgetFailures(budgetInputs({ budget: hangBudget, journalSummary: null }))).toEqual([
+      `the window wrote no frame-journal summary to ${FRAME_LOG_PATH}`,
+    ]);
+  });
+
+  it("reports nothing when hangs are within the budget", () => {
+    expect(findFrameBudgetFailures(budgetInputs({ budget: hangBudget }))).toEqual([]);
+  });
+
+  it("reports hangs over the budget", () => {
+    const journalSummary = parseFrameJournalSummary(
+      journalSummaryLine('"frames":238,"hangs":3,"p50Ns":11000000,"p95Ns":15000000,"maxNs":20000000'),
+    );
+
+    expect(findFrameBudgetFailures(budgetInputs({ budget: hangBudget, journalSummary }))).toEqual([
+      "3 frames hung past the frame journal's thresholds, the budget allows at most 0",
+    ]);
   });
 });
 
@@ -115,6 +219,16 @@ describe("describeFrameTiming", () => {
 
     expect(summary === null ? "" : describeFrameTiming(summary)).toBe(
       "240 frames, 2 discarded, p50 16.00 ms, p95 16.60 ms, max 31.00 ms",
+    );
+  });
+});
+
+describe("describeFrameJournal", () => {
+  it("names every number the journal summary carries", () => {
+    const summary = parseFrameJournalSummary(healthyJournalSummary);
+
+    expect(summary === null ? "" : describeFrameJournal(summary)).toBe(
+      "238 journalled frames, 0 hangs, dirty-to-present p50 11.00 ms, p95 15.00 ms, max 20.00 ms",
     );
   });
 });

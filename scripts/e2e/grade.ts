@@ -1,5 +1,11 @@
 import { cropImage, findScreenshotFailure } from "./screenshot.ts";
-import { describeFrameTiming, findFrameBudgetFailures, parseFrameLogSummary } from "./frame-log.ts";
+import {
+  describeFrameJournal,
+  describeFrameTiming,
+  findFrameBudgetFailures,
+  parseFrameJournalSummary,
+  parseFrameLogSummary,
+} from "./frame-log.ts";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 import { PNG } from "pngjs";
@@ -64,13 +70,20 @@ const resolveCroppedArtifactPath = (screenshotPath: string): string =>
 const gradeFrameTiming = (scenario: Scenario, frameLogPath: string): Grade => {
   const frameLogText = existsSync(frameLogPath) ? readFileSync(frameLogPath, "utf8") : NO_TEXT;
   const summary = parseFrameLogSummary(frameLogText);
-  const notes = summary === null ? [] : [describeFrameTiming(summary)];
+  const journalSummary = parseFrameJournalSummary(frameLogText);
+  const notes = [
+    ...(summary === null ? [] : [describeFrameTiming(summary)]),
+    ...(journalSummary === null ? [] : [describeFrameJournal(journalSummary)]),
+  ];
 
   if (scenario.frameBudget === null) {
     return { failures: [], notes };
   }
 
-  return { failures: findFrameBudgetFailures(summary, scenario.frameBudget, frameLogPath), notes };
+  return {
+    failures: findFrameBudgetFailures({ budget: scenario.frameBudget, frameLogPath, journalSummary, summary }),
+    notes,
+  };
 };
 
 interface CapturedScreenshot {
