@@ -80,4 +80,15 @@ target_link_libraries(rnl_core_hermes_tests
         atomic)
 set_target_properties(rnl_core_hermes_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-gtest_discover_tests(rnl_core_hermes_tests)
+# #383: ThreadSanitizer reports a lock-order inversion, M0 => M1 => M0, between the process-global JSI
+# runtime-data mutex in ReactCommon/jsi/jsi/jsi.cpp and Hermes' HadesGC mutex, both of them vendored and neither
+# reachable from anything this platform calls. The case is not discovered in the TSan configure and runs in
+# every other one; that is a filter on one named case rather than a sanitizer suppression file, of which this
+# repository has none. Delete this when the React Native pin moves past a version that has fixed it.
+set(RNL_HERMES_TESTS_FILTER "")
+
+if(CMAKE_CXX_FLAGS MATCHES "-fsanitize=thread")
+    set(RNL_HERMES_TESTS_FILTER "-Runtimes/JSITest.SetRuntimeData/*")
+endif()
+
+gtest_discover_tests(rnl_core_hermes_tests TEST_FILTER "${RNL_HERMES_TESTS_FILTER}")

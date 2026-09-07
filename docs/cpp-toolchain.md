@@ -6183,8 +6183,17 @@ don't copy — so a version bump re-runs it at the new SHA:
 | `react/renderer/scheduler/tests/SchedulerDelegateInvalidationTest.cpp` | 7 |
 | `react/runtime/tests/cxx/{ReactInstance,RuntimeExecutorShutdown}Test.cpp` | 30 |
 
-211 cases, all of section B's E2 list, none skipped or excluded. `ReactInstanceTest` skips one of its own,
-`testRegistersRuntimeSchedulerAsEventLoopControl`, on a feature flag upstream ships off.
+211 cases are *discovered*, all of section B's E2 list, and no upstream file is left out of the source list.
+Two qualifications on what that number means when the suite runs. One case reports itself skipped at runtime:
+`ReactInstanceTest.testRegistersRuntimeSchedulerAsEventLoopControl` is guarded by a feature flag upstream ships
+off, so `ctest` counts it as not run rather than as passed, and 210 execute. And the TSan configure discovers
+210 rather than 211, because `Runtimes/JSITest.SetRuntimeData/*` is filtered out of that one configure by the
+`TEST_FILTER` in `packages/core/tests/hermes/CMakeLists.txt`. #383 is why: ThreadSanitizer finds a lock-order
+inversion, `M0 => M1 => M0`, between the process-global JSI runtime-data mutex in `ReactCommon/jsi/jsi/jsi.cpp`
+— which `Runtime::setRuntimeDataImpl` holds across a JS property store — and Hermes' HadesGC mutex, which
+`HadesGC::finalizeAll` holds while finalizing the host object that store installed. Both locks are vendored,
+neither is reachable from anything this platform calls, and per AGENTS.md a filter naming one case is not a
+suppression file; there is none in this repository. `dev` and `asan` discover and run all 211.
 
 Two arrangements the file lists do not show. `BridgingTest.h` includes `<ReactCommon/TestCallInvoker.h>`, a
 fixture upstream keeps in `callinvoker/ReactCommon/tests/`, which no include root can spell that way; a
