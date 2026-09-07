@@ -575,15 +575,8 @@ TEST(AutomationProtocol, AnAccessibilityStateUpdateArrivesOnTheSameTagWithThePro
 }
 
 TEST(AutomationProtocol, DescribesAnAccessibilityChangeWithTheTagAndTestIdItHappenedOn) {
-    SceneNodes nodes;
-    SceneNode node;
-
-    node.tag = 2;
-    node.testId = "toggle";
-    nodes.emplace(2, node);
-
     const folly::dynamic described = describeAccessibilityChanges(
-        nodes, {AccessibilityChange{.tag = 2, .stateChanged = true, .valueChanged = false}});
+        {AccessibilityChange{.tag = 2, .stateChanged = true, .valueChanged = false, .testId = "toggle"}});
 
     ASSERT_EQ(described["changes"].size(), 1U);
     EXPECT_EQ(described["changes"][0]["tag"].asInt(), 2);
@@ -593,28 +586,35 @@ TEST(AutomationProtocol, DescribesAnAccessibilityChangeWithTheTagAndTestIdItHapp
 }
 
 TEST(AutomationProtocol, DescribesAValueChangeAndBothHalvesWhenBothChanged) {
-    const folly::dynamic valueOnly = describeAccessibilityChanges(
-        {}, {AccessibilityChange{.tag = 5, .stateChanged = false, .valueChanged = true}});
+    const folly::dynamic valueOnly =
+        describeAccessibilityChanges({AccessibilityChange{.tag = 5, .stateChanged = false, .valueChanged = true}});
 
     EXPECT_EQ(valueOnly["changes"][0].count("state"), 0U);
     EXPECT_TRUE(valueOnly["changes"][0]["value"].asBool());
 
-    const folly::dynamic both = describeAccessibilityChanges(
-        {}, {AccessibilityChange{.tag = 5, .stateChanged = true, .valueChanged = true}});
+    const folly::dynamic both =
+        describeAccessibilityChanges({AccessibilityChange{.tag = 5, .stateChanged = true, .valueChanged = true}});
 
     EXPECT_TRUE(both["changes"][0]["state"].asBool());
     EXPECT_TRUE(both["changes"][0]["value"].asBool());
 }
 
-TEST(AutomationProtocol, OmitsTheTestIdOfAChangeOnATagTheSceneNoLongerHolds) {
-    const folly::dynamic described = describeAccessibilityChanges(
-        {}, {AccessibilityChange{.tag = 9, .stateChanged = true, .valueChanged = false}});
+TEST(AutomationProtocol, OmitsTheTestIdOfAChangeThatCarriedNone) {
+    const folly::dynamic described =
+        describeAccessibilityChanges({AccessibilityChange{.tag = 9, .stateChanged = true, .valueChanged = false}});
 
     EXPECT_EQ(described["changes"][0].count("testID"), 0U);
 }
 
+TEST(AutomationProtocol, AChangeRecordedBeforeARemovalStillReportsItsOriginalTestId) {
+    const folly::dynamic described = describeAccessibilityChanges(
+        {AccessibilityChange{.tag = 9, .stateChanged = true, .valueChanged = false, .testId = "removed-later"}});
+
+    EXPECT_EQ(described["changes"][0]["testID"].asString(), "removed-later");
+}
+
 TEST(AutomationProtocol, DescribesNoAccessibilityChangesAsAnEmptyList) {
-    EXPECT_TRUE(describeAccessibilityChanges({}, {})["changes"].empty());
+    EXPECT_TRUE(describeAccessibilityChanges({})["changes"].empty());
 }
 
 TEST(AutomationProtocol, KeepsTheOrderTheErrorsWereReportedIn) {

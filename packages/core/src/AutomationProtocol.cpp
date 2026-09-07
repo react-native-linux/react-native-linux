@@ -436,16 +436,12 @@ folly::dynamic describeAccessibilityTree(const SceneNodes& nodes) {
     return folly::dynamic::object("nodes", std::move(projected));
 }
 
-folly::dynamic describeAccessibilityChanges(const SceneNodes& nodes, const std::vector<AccessibilityChange>& changes) {
+folly::dynamic describeAccessibilityChanges(const std::vector<AccessibilityChange>& changes) {
     folly::dynamic described = folly::dynamic::array;
 
     for (const AccessibilityChange& change : changes) {
         folly::dynamic entry = folly::dynamic::object("tag", change.tag);
-        const auto entryNode = nodes.find(change.tag);
-
-        if (entryNode != nodes.end()) {
-            appendIfNotEmpty(entry, "testID", entryNode->second.testId);
-        }
+        appendIfNotEmpty(entry, "testID", change.testId);
 
         if (change.stateChanged) {
             entry["state"] = true;

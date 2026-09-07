@@ -188,8 +188,8 @@ void LinuxMountingManager::recordAccessibilityChangeIfAny(const facebook::react:
         return;
     }
 
-    accessibilityChanges_.push_back(
-        AccessibilityChange{.tag = next.tag, .stateChanged = stateChanged, .valueChanged = valueChanged});
+    accessibilityChanges_.push_back(AccessibilityChange{
+        .tag = next.tag, .stateChanged = stateChanged, .valueChanged = valueChanged, .testId = nextProps->testId});
 }
 
 void LinuxMountingManager::executeMount(facebook::react::SurfaceId /*surfaceId*/,

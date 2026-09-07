@@ -194,6 +194,53 @@ TEST(LinuxMountingManagerAccessibilityChangesTest, ARemountIsNotMistakenForAStat
     EXPECT_TRUE(mountingManager.takeAccessibilityChanges().empty());
 }
 
+// Mounts unchecked with `testID: "toggle"`, toggles to checked in its own commit, and hands back the checked
+// `ShadowView` an owning test can later remove — the shared starting point for the testID-capture cases below.
+ShadowView mountAndToggleCheckedWithTestId(LinuxMountingManager& mountingManager) {
+    const std::shared_ptr<ViewProps> initialProps = propsWithState(AccessibilityState::CheckedState::Unchecked);
+
+    initialProps->testId = "toggle";
+    mountWithAccessibilityProps(mountingManager, initialProps);
+
+    const std::shared_ptr<ViewProps> checkedProps = propsWithState(AccessibilityState::CheckedState::Checked);
+
+    checkedProps->testId = "toggle";
+
+    const ShadowView checked = makeStyledView(kMountedTag, makeRect(0, 0, 10, 10), checkedProps);
+
+    mountingManager.executeMount(
+        kSurfaceTag, transactionOf({ShadowViewMutation::UpdateMutation(
+                        makeStyledView(kMountedTag, makeRect(0, 0, 10, 10), initialProps), checked, kSurfaceTag)}));
+
+    return checked;
+}
+
+TEST(LinuxMountingManagerAccessibilityChangesTest, ACheckedStateChangeCapturesTheMutationsTestId) {
+    LinuxMountingManager mountingManager;
+
+    mountAndToggleCheckedWithTestId(mountingManager);
+
+    const std::vector<AccessibilityChange> changes = mountingManager.takeAccessibilityChanges();
+
+    ASSERT_EQ(changes.size(), 1U);
+    EXPECT_EQ(changes[0].testId, "toggle");
+}
+
+TEST(LinuxMountingManagerAccessibilityChangesTest, AChangeRecordedBeforeARemovalStillReportsTheOriginalTestId) {
+    LinuxMountingManager mountingManager;
+    const ShadowView removed = mountAndToggleCheckedWithTestId(mountingManager);
+    const std::vector<AccessibilityChange> changes = mountingManager.takeAccessibilityChanges();
+
+    ASSERT_EQ(changes.size(), 1U);
+
+    // The node is removed after the change was recorded — the scene no longer has a "toggle" tag to look up by
+    // the time this change is described, but the change already captured its own testID at record time.
+    mountingManager.executeMount(kSurfaceTag, transactionOf({ShadowViewMutation::RemoveMutation(kSurfaceTag, removed, 0),
+                                                             ShadowViewMutation::DeleteMutation(removed)}));
+
+    EXPECT_EQ(changes[0].testId, "toggle");
+}
+
 TEST(LinuxMountingManagerAccessibilityChangesTest, DrainingEmptiesTheQueue) {
     LinuxMountingManager mountingManager;
 
