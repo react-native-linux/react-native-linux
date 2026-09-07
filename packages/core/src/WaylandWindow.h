@@ -97,6 +97,28 @@ public:
     bool isClosed() const noexcept;
     bool takePendingResize() noexcept;
 
+    /**
+     * Whether an `xdg_surface.configure` has been acknowledged, which is the condition xdg-shell puts on
+     * attaching the first buffer. Construction blocks until it holds, so it is true for the whole life of a
+     * window that finished constructing; `SurfaceCommitGate` reads it anyway, because a rule that is only ever
+     * satisfied is still the rule, and `--window-debug` forces it false to prove the gate holds the buffer back.
+     */
+    bool isConfigureAcknowledged() const noexcept;
+
+    /**
+     * Whether the compositor `discarded` the most recent content update it reported on, cleared by the read. A
+     * discarded update never turned into light and is owed no frame callback, so this is what tells the renderer
+     * to present again rather than wait. A compositor that advertises no `wp_presentation` reports no discards
+     * either, so this stays false there. See *Surface commit ordering* in docs/cpp-toolchain.md.
+     */
+    bool takeContentUpdateDiscarded() noexcept;
+
+    /**
+     * The same fact without consuming it, for the run loop: a discard is a reason to draw a frame the frame clock
+     * would otherwise skip, and the frame that draws is the one that consumes it.
+     */
+    bool hasContentUpdateDiscarded() const noexcept;
+
     /** The activated/maximized/fullscreen/resizing bits from the most recent `xdg_toplevel.configure`. */
     ToplevelState toplevelState() const noexcept;
     /** Whether `toplevelState` changed since the last call. Coalesces a burst of configures into one change. */
@@ -190,6 +212,7 @@ private:
     bool configured_{false};
     bool frameCallbackFired_{false};
     bool pendingResize_{false};
+    bool contentUpdateDiscarded_{false};
     bool pendingStateChange_{false};
     bool closed_{false};
     uint32_t outputEnterCount_{0};

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "RetainedScene.h"
+#include "SurfaceCommitGate.h"
 #include "VulkanResultPolicy.h"
 #include "WaylandWindow.h"
 #include "include/core/SkRefCnt.h"
@@ -56,6 +57,13 @@ namespace react_native_linux {
  * of the per-image damage rule above: an acquired image either owes a repaint, which it has just been given, or
  * owes nothing, which means it already holds the current scene.
  *
+ * No frame attaches a buffer on its own authority either. Every frame opens by asking `surfaceCommitActionFor`
+ * whether it may, from the configure the window has acknowledged, whether the swapchain's extent still agrees
+ * with it, how many acquires have starved in a row, and whether the compositor discarded the last content update.
+ * That is the whole of what keeps this window from being mapped and never shown, in one table rather than in four
+ * guards; the recoveries it prescribes — rebuild at the configured extent, rebuild with one more image, repaint
+ * and present again — are carried out here. See *Surface commit ordering* in docs/cpp-toolchain.md.
+ *
  * No `VkResult` on the acquire/present path is handled ad hoc. Both call sites ask `vulkanRecoveryFor` what the
  * result means and `applyRecovery` carries it out, which is what keeps the answer for a result the renderer has
  * never seen in production — a lost surface on an output hotplug, a lost device on resume — a reviewed table
@@ -75,6 +83,12 @@ public:
 
     void resize(WindowSize size);
     void injectSwapchainLossOnNextFrame() noexcept;
+
+    /** Forces one `SurfaceCommitState` field on the next frame only, so `--window-debug` reaches each action. */
+    void injectSurfaceCommitFaultOnNextFrame(SurfaceCommitFault fault) noexcept;
+
+    /** What `surfaceCommitActionFor` returned on the most recent `drawFrame`, for the `--window-debug` trace. */
+    SurfaceCommitAction lastSurfaceCommitAction() const noexcept;
     void captureNextFrame(std::string outputPath);
     bool hasPendingCapture() const noexcept;
     bool drawFrame(WaylandWindow& window, const SceneDamage& frameDamage,
@@ -87,6 +101,8 @@ private:
         uint32_t imageIndex{0};
     };
 
+    bool applySurfaceCommitAction(SurfaceCommitAction action, const WaylandWindow& window);
+    facebook::react::Rect fullSurfaceRect() const noexcept;
     void applyRecovery(VulkanRecovery recovery, VkResult result, const char* operation);
     void recreateSurface();
     void createInstance();
@@ -123,6 +139,10 @@ private:
     std::vector<SceneDamage> imageDamage_;
     std::vector<Backbuffer> backbuffers_;
     size_t currentBackbufferIndex_{0};
+    uint32_t extraSwapchainImages_{0};
+    uint32_t consecutiveAcquireStarvations_{0};
+    SurfaceCommitFault pendingSurfaceCommitFault_{SurfaceCommitFault::None};
+    SurfaceCommitAction lastSurfaceCommitAction_{SurfaceCommitAction::AttachBuffer};
     bool debugSwapchainLossPending_{false};
 };
 

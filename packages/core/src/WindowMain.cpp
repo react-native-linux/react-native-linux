@@ -7,6 +7,7 @@
 #include "RetainedScene.h"
 #include "ScenePainter.h"
 #include "SkiaVulkanRenderer.h"
+#include "SurfaceCommitGate.h"
 #include "TextInputClient.h"
 #include "WaylandWindow.h"
 #include "WindowSession.h"
@@ -17,6 +18,7 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkScalar.h"
 
+#include <array>
 #include <charconv>
 #include <chrono>
 #include <cstdint>
@@ -74,6 +76,12 @@ constexpr int32_t kImeDebugCursorHeight = 24;
  * It also arms one injected `VK_ERROR_OUT_OF_DATE_KHR` at the first acquire, so the swapchain recreation the
  * `VkResult` policy prescribes is exercised on every run of the flag rather than only when a compositor happens
  * to invalidate the swapchain.
+ * On top of that it walks the four `SurfaceCommitFault` states, one per frame, printing the action
+ * `SurfaceCommitGate` chose and the frame that presented afterwards. Each of them is a way a Wayland client ends
+ * up mapped and never shown, and none has a trigger a developer can otherwise pull: no compositor withholds the
+ * initial configure on request, and no driver starves an acquire to order. The proof the flag gives is that the
+ * window comes back — a present after every injected state — rather than going blank. See *Surface commit
+ * ordering* in docs/cpp-toolchain.md.
  */
 struct WindowArguments {
     std::optional<std::string> bundlePath;
@@ -273,6 +281,45 @@ void printWindowDebugTransitions(react_native_linux::WaylandWindow& window, bool
     }
 }
 
+constexpr std::array<react_native_linux::SurfaceCommitFault, 4> kInjectedSurfaceCommitFaults{
+    react_native_linux::SurfaceCommitFault::CommitBeforeConfigure,
+    react_native_linux::SurfaceCommitFault::BufferExtentMismatch,
+    react_native_linux::SurfaceCommitFault::AcquireStarvation,
+    react_native_linux::SurfaceCommitFault::ContentUpdateDiscarded,
+};
+
+/**
+ * One fault every other frame, so the frame between two of them is an ordinary one and its present is the proof
+ * the window recovered rather than a present the fault itself happened to allow.
+ */
+constexpr uint32_t kFramesPerInjectedFault = 2;
+
+void injectNextSurfaceCommitFault(react_native_linux::SkiaVulkanRenderer& renderer, uint32_t& injectedFaultCount) {
+    if (injectedFaultCount >= kInjectedSurfaceCommitFaults.size() * kFramesPerInjectedFault) {
+        return;
+    }
+
+    const uint32_t step = injectedFaultCount;
+
+    ++injectedFaultCount;
+
+    if (step % kFramesPerInjectedFault != 0) {
+        return;
+    }
+
+    const react_native_linux::SurfaceCommitFault fault = kInjectedSurfaceCommitFaults[step / kFramesPerInjectedFault];
+
+    renderer.injectSurfaceCommitFaultOnNextFrame(fault);
+    std::cout << "[rnl-window] injecting surface-commit fault " << react_native_linux::describeSurfaceCommitFault(fault)
+              << std::endl;
+}
+
+void printSurfaceCommitOutcome(const react_native_linux::SkiaVulkanRenderer& renderer, bool presented) {
+    std::cout << "[rnl-window] surface-commit "
+              << react_native_linux::describeSurfaceCommitAction(renderer.lastSurfaceCommitAction())
+              << (presented ? " presented" : " attached nothing") << std::endl;
+}
+
 folly::dynamic answerSessionCommand(react_native_linux::AutomationCommand command,
                                     const react_native_linux::AutomationRequest& request,
                                     react_native_linux::WindowSession& session) {
@@ -435,6 +482,7 @@ int main(int argc, char** argv) {
         bool keyboardFocusAnnounced = false;
         uint32_t lastOutputEnterCount = 0;
         uint32_t lastOutputLeaveCount = 0;
+        uint32_t injectedFaultCount = 0;
 
         if (parsedArguments.frameLogPath.has_value()) {
             frameLog.emplace(parsedArguments.frameLogPath.value());
@@ -459,6 +507,7 @@ int main(int argc, char** argv) {
 
             if (parsedArguments.windowDebug) {
                 printWindowDebugTransitions(window, lastKeyboardFocus, lastOutputEnterCount, lastOutputLeaveCount);
+                injectNextSurfaceCommitFault(renderer, injectedFaultCount);
             }
 
             // The capture is armed before the frame that carries it, because the readback happens inside
@@ -508,7 +557,10 @@ int main(int argc, char** argv) {
                 // A pending capture is work in its own right: --screenshot and the automation channel's
                 // TakeScreenshot both read back a presented frame, and a static scene under a compositor that
                 // withholds frame callbacks would otherwise never present one and never answer.
-                if (tick.shouldDraw || renderer.hasPendingCapture()) {
+                // A discarded content update is the third reason to draw regardless of the clock: it never turned
+                // into light and is owed no frame callback, so nothing else would ever wake this window to
+                // replace it. See *Surface commit ordering* in docs/cpp-toolchain.md.
+                if (tick.shouldDraw || renderer.hasPendingCapture() || window.hasContentUpdateDiscarded()) {
                     // The animation backend is driven by the same instant the frame clock measured, and before
                     // the scene is taken, so a mutation this frame produces is in the snapshot it paints. A
                     // running animation is also pending work, so a fallback timeout keeps drawing it when the
@@ -528,6 +580,10 @@ int main(int argc, char** argv) {
                 }
             } else {
                 presented = renderer.drawFrame(window, {}, paintPlaceholderFrame);
+            }
+
+            if (parsedArguments.windowDebug) {
+                printSurfaceCommitOutcome(renderer, presented);
             }
 
             if (presented) {
