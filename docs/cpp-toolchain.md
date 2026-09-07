@@ -2547,8 +2547,10 @@ that is exactly what a null `TextUtils.TruncateAt` does on Android. It is delibe
 mode: a line box with a tall ascender legitimately overflows its frame, per *Vertical metrics (#110)*, and a
 `<TextInput>` clips to its content box in `paintEditor` before it translates by its own scroll offset.
 
-**A `<TextInput>` is never searched either.** A field is a window onto its whole text rather than a truncated
-view of it: its caret, its selection, its composing run and its hit testing are all UTF-16 offsets into the
+**A `<TextInput>` is never truncated at all.** `layoutEditorParagraph` clears `numberOfLines` and the `tail`
+ellipsis as well as skipping the search, so a field lays out every line of its text; the multiline field in
+`text-input.js` carries both props and its goldens show every line. A field is a window onto its whole text
+rather than a truncated view of it: its caret, its selection, its composing run and its hit testing are all UTF-16 offsets into the
 string React gave us — `measureEditorGeometry` takes them, `utf16IndexAtPoint` returns them — and a searched cut
 rebuilds that string, so an offset either side of the cut would address a different character than the one drawn.
 A field that does not fit scrolls instead (`SceneEditorContent::scrollOffsetX`), which is what keeps those

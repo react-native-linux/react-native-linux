@@ -78,6 +78,10 @@ const multiline = createNode(
   Object.assign(fieldStyle(40, 120, 720, 140), {
     multiline: true,
     fontSize: 16,
+    // #251: a field is never truncated. These two props would cut a <Paragraph> to one line with an ellipsis; on
+    // a field they are ignored, and the picture shows every line.
+    numberOfLines: 1,
+    ellipsizeMode: 'tail',
     text: 'A multiline field wraps its value onto as many lines as it needs, and the caret follows the line it is on.',
     mostRecentEventCount: 0,
   }),

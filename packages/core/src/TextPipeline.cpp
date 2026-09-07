@@ -669,7 +669,14 @@ layoutParagraph(const facebook::react::AttributedString& attributedString,
 std::unique_ptr<skia::textlayout::Paragraph>
 layoutEditorParagraph(const facebook::react::AttributedString& attributedString,
                       const facebook::react::ParagraphAttributes& paragraphAttributes, float maximumWidth) {
-    return layoutParagraphForField(attributedString, paragraphAttributes, maximumWidth, true);
+    // A field lays out every line of its text and never draws an ellipsis: a line limit or a `tail` mode that
+    // reached it through `ParagraphAttributes` would truncate the string every offset addresses.
+    facebook::react::ParagraphAttributes untruncated = paragraphAttributes;
+
+    untruncated.maximumNumberOfLines = 0;
+    untruncated.ellipsizeMode = facebook::react::EllipsizeMode::Clip;
+
+    return layoutParagraphForField(attributedString, untruncated, maximumWidth, true);
 }
 
 EditorGeometry measureEditorGeometry(const SceneTextContent& text, const SceneEditorContent& editor) {

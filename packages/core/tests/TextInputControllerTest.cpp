@@ -42,6 +42,7 @@ using react_native_linux::removeShadowTree;
 using react_native_linux::TextInputComponentDescriptor;
 using react_native_linux::TextInputController;
 using react_native_linux::TextInputKeyResult;
+using react_native_linux::TextInputProps;
 using react_native_linux::TextInputShadowNode;
 
 constexpr SurfaceId kSurfaceId = 1;
@@ -248,6 +249,17 @@ TEST_F(TextInputControllerTest, TheInitialStateCarriesTheMultiplierAPlatformEdit
     EXPECT_EQ(mountedField_->getState()->getRevision(), facebook::react::State::initialRevisionValue);
     EXPECT_TRUE(stateData.attributedStringBox.getValue().isEmpty());
     EXPECT_FLOAT_EQ(stateData.reactTreeAttributedString.getBaseTextAttributes().fontSizeMultiplier, 1.0F);
+}
+
+// #251: `numberOfLines` and `ellipsizeMode` reach a field through the shared parser, and a field is never
+// truncated, so the props it commits with carry neither — which is what makes Yoga's measure and the paint agree.
+TEST_F(TextInputControllerTest, AFieldCommitsWithNoLineLimitAndNoEllipsisWhateverItWasGiven) {
+    commitTextInput(folly::dynamic::object("multiline", true)("numberOfLines", 1)("ellipsizeMode", "tail"));
+
+    const TextInputProps& props = mountedField_->getConcreteProps();
+
+    EXPECT_EQ(props.paragraphAttributes.maximumNumberOfLines, 0);
+    EXPECT_EQ(props.paragraphAttributes.ellipsizeMode, facebook::react::EllipsizeMode::Clip);
 }
 
 } // namespace
