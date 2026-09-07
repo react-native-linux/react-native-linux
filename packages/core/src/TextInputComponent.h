@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <react/renderer/components/textinput/BaseTextInputProps.h>
 #include <react/renderer/components/textinput/BaseTextInputShadowNode.h>
 #include <react/renderer/components/textinput/TextInputEventEmitter.h>
@@ -9,8 +10,7 @@
 #include <react/renderer/core/RawProps.h>
 #include <react/renderer/core/ShadowNode.h>
 #include <react/renderer/textlayoutmanager/TextLayoutManager.h>
-
-#include <memory>
+#include <string>
 
 namespace react_native_linux {
 
@@ -38,6 +38,11 @@ public:
     TextInputProps(const facebook::react::PropsParserContext& context, const TextInputProps& sourceProps,
                    const facebook::react::RawProps& rawProps);
 
+    // The `zwp_text_input_v3` content purpose is the only thing this platform does with `keyboardType`: there is
+    // no on-screen keyboard on a desktop to change the layout of, and the compositor's input method is what the
+    // hint is for. It is a string rather than an enum because that is how it arrives from JavaScript and
+    // `textInputContentPurpose` is the only reader.
+    std::string keyboardType;
     bool secureTextEntry{false};
     bool caretHidden{false};
     bool selectTextOnFocus{false};
@@ -57,9 +62,7 @@ public:
  * `editable` is deliberately not part of it: a read-only field still scrolls, on every platform that has one,
  * and react/core#35388 is the bug filed when it did not.
  */
-inline bool isScrollableField(const TextInputProps& props) noexcept {
-    return props.multiline && props.scrollEnabled;
-}
+inline bool isScrollableField(const TextInputProps& props) noexcept { return props.multiline && props.scrollEnabled; }
 
 /**
  * The `<TextInput>` shadow node for this platform: upstream's `BaseTextInputShadowNode` with our props on it.
@@ -73,8 +76,8 @@ inline bool isScrollableField(const TextInputProps& props) noexcept {
  */
 class TextInputShadowNode final
     : public facebook::react::BaseTextInputShadowNode<kTextInputComponentName, TextInputProps,
-                                                     facebook::react::TextInputEventEmitter,
-                                                     facebook::react::TextInputState> {
+                                                      facebook::react::TextInputEventEmitter,
+                                                      facebook::react::TextInputState> {
 public:
     using BaseTextInputShadowNode::BaseTextInputShadowNode;
 

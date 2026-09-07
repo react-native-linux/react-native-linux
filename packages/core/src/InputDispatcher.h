@@ -5,12 +5,12 @@
 #include "LinuxMountingManager.h"
 #include "TextInputController.h"
 
+#include <memory>
+#include <optional>
 #include <react/renderer/core/ReactPrimitives.h>
 #include <react/renderer/core/ShadowNode.h>
 #include <react/renderer/graphics/Point.h>
 #include <react/renderer/uimanager/UIManager.h>
-
-#include <memory>
 #include <vector>
 
 namespace react_native_linux {
@@ -78,8 +78,10 @@ inline PointerTargetTransform transformOfHit(const SceneHit& hit) {
  * Composition is the one input that is not routed at all. `zwp_text_input_v3` follows the compositor's keyboard
  * focus, so the target of a pre-edit or a commit is whatever holds the text cursor: the `TextInputController`
  * this class owns is the `ImeSink`, and it drops a composition that arrives with no field focused. The
- * `TextInputFocusSink` is enabled and disabled as focus enters and leaves a text component, and is handed to the
- * controller so the caret rectangle reaches the input method. See *IME*, *Focus and keyboard* and *TextInput* in
+ * `TextInputFocusSink` is told which field holds the caret and what kind of text it wants, re-evaluated at the
+ * end of every frame rather than only when focus moves — a field whose `secureTextEntry` was just toggled is a
+ * different content type on the same tag — and is handed to the controller so the caret rectangle reaches the
+ * input method. See *IME*, *Focus and keyboard* and *TextInput* in
  * docs/cpp-toolchain.md.
  *
  * A key the focused field consumes stops here: it reaches React as a `keyDown` and then goes no further, so
@@ -150,7 +152,9 @@ private:
     std::shared_ptr<const facebook::react::ShadowNode> focusedNode_;
     std::shared_ptr<const facebook::react::ShadowNode> syncedRoot_;
     TextInputController textInputController_;
-    bool isTextInputEnabled_{false};
+    // What the last frame told the compositor's text input, so a trace line is written when it changes and not
+    // once per frame. `std::nullopt` is "no field holds the caret".
+    std::optional<TextInputContentPurpose> reportedContentPurpose_;
     TextInputFocusSink* textInputFocusSink_{nullptr};
 };
 

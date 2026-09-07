@@ -92,6 +92,7 @@ add_executable(rnl_core_tests
     TextTransformTest.cpp
     ThreadingConformanceTest.cpp
     TextInputControllerTest.cpp
+    TextInputSessionTest.cpp
     ToplevelStateTest.cpp
     UpstreamTestDriftOracleTest.cpp
     SurfaceCommitGateTest.cpp
@@ -132,6 +133,7 @@ add_executable(rnl_core_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/SwitchContent.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputComponent.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputController.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputSession.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputV3State.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextTransform.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ToplevelState.cpp
