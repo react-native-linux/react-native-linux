@@ -1,9 +1,11 @@
 #pragma once
 
+#include "RendererLadder.h"
 #include "RetainedScene.h"
 #include "SurfaceCommitGate.h"
 #include "VulkanResultPolicy.h"
 #include "WaylandWindow.h"
+#include "WindowRenderer.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSurface.h"
 #include "include/gpu/ganesh/GrDirectContext.h"
@@ -72,27 +74,34 @@ namespace react_native_linux {
  * Threading contract: every member runs on the thread that owns the process run loop, the same thread the Wayland
  * connection is dispatched on. Nothing here is safe to call concurrently.
  */
-class SkiaVulkanRenderer final {
+class SkiaVulkanRenderer final : public WindowRenderer {
 public:
-    SkiaVulkanRenderer(wl_display* waylandDisplay, wl_surface* waylandSurface, WindowSize initialSize);
+    SkiaVulkanRenderer(wl_display* waylandDisplay, wl_surface* waylandSurface, WindowSize initialSize,
+                       RendererRung rung);
     SkiaVulkanRenderer(const SkiaVulkanRenderer&) = delete;
     SkiaVulkanRenderer(SkiaVulkanRenderer&&) = delete;
     SkiaVulkanRenderer& operator=(const SkiaVulkanRenderer&) = delete;
     SkiaVulkanRenderer& operator=(SkiaVulkanRenderer&&) = delete;
-    ~SkiaVulkanRenderer() noexcept;
+    ~SkiaVulkanRenderer() noexcept override;
 
-    void resize(WindowSize size);
+    void resize(WindowSize size) override;
     void injectSwapchainLossOnNextFrame() noexcept;
+
+    /**
+     * The device this renderer came up on, as `RendererLadder.h`'s driver identity: the record persisted for the
+     * next launch carries it, and a change to it is what puts that launch back on the top rung.
+     */
+    const std::string& driverIdentity() const noexcept;
 
     /** Forces one `SurfaceCommitState` field on the next frame only, so `--window-debug` reaches each action. */
     void injectSurfaceCommitFaultOnNextFrame(SurfaceCommitFault fault) noexcept;
 
     /** What `surfaceCommitActionFor` returned on the most recent `drawFrame`, for the `--window-debug` trace. */
     SurfaceCommitAction lastSurfaceCommitAction() const noexcept;
-    void captureNextFrame(std::string outputPath);
-    bool hasPendingCapture() const noexcept;
+    void captureNextFrame(std::string outputPath) override;
+    [[nodiscard]] bool hasPendingCapture() const noexcept override;
     bool drawFrame(WaylandWindow& window, const SceneDamage& frameDamage,
-                   const std::function<void(SkCanvas&, WindowSize, const SceneDamage&)>& paint);
+                   const std::function<void(SkCanvas&, WindowSize, const SceneDamage&)>& paint) override;
 
 private:
     struct Backbuffer {
@@ -117,6 +126,8 @@ private:
     uint32_t findHostVisibleMemoryType(uint32_t acceptedMemoryTypes) const;
     void copyImageToPng(uint32_t imageIndex, const std::string& outputPath);
 
+    RendererRung rung_{kTopRendererRung};
+    std::string driverIdentity_;
     wl_display* waylandDisplay_{nullptr};
     wl_surface* waylandSurface_{nullptr};
     VkInstance instance_{VK_NULL_HANDLE};
@@ -145,5 +156,16 @@ private:
     SurfaceCommitAction lastSurfaceCommitAction_{SurfaceCommitAction::AttachBuffer};
     bool debugSwapchainLossPending_{false};
 };
+
+/**
+ * The driver identity of the machine, read before any renderer is brought up: a throwaway `VkInstance`, the
+ * physical devices it enumerates, and each one's name and driver version. It creates no `VkDevice` and touches no
+ * surface, which is what makes it cheap enough to run before the ladder decides where to start — and the ladder
+ * needs it there, because the record it reads is only meaningful while the driver behind it has not changed.
+ *
+ * Empty when there is no Vulkan at all, which is itself a stable identity: a machine with no loader and a machine
+ * whose loader was removed both answer the same thing and both keep their persisted decision.
+ */
+std::string probeVulkanDriverIdentity() noexcept;
 
 } // namespace react_native_linux

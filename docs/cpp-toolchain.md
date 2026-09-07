@@ -186,7 +186,7 @@ linked into `rnl_core_tests`, so the only build change is the source file itself
 
 ## Window host
 
-`rnl_window` is five files under `packages/core/src`, in the order the frame flows through them:
+`rnl_window` is six files under `packages/core/src`, in the order the frame flows through them:
 
 - `WaylandWindow` owns one connection, one `wl_surface`, one `xdg_toplevel` titled `react-native-linux` at 800x600,
   and the run loop. It never attaches a buffer; `vkQueuePresentKHR` does that. `xdg_toplevel.close` sets the exit
@@ -194,13 +194,67 @@ linked into `rnl_core_tests`, so the only build change is the source file itself
 - `WaylandSeat` owns the `wl_seat` the window binds, and turns pointer and keyboard events into a queue of
   platform-neutral ones. See *Input*.
 - `SkiaVulkanRenderer` owns the `VkInstance` (`VK_KHR_surface` + `VK_KHR_wayland_surface`), the device, the FIFO
-  swapchain, and the `GrDirectContext`.
+  swapchain, and the `GrDirectContext`. It is the top three rungs of the ladder below; `SharedMemoryRasterRenderer`
+  is the fourth, and `WindowRenderer` is the four calls the frame loop makes of whichever came up.
 - `WindowSession` is the React half, and only exists with `--fabric`: it owns a `ReactHost` and a `FabricHost`
   sized by the window, loads the bundle, and hands the frame thread a scene snapshot per frame.
 - `WindowMain` parses the flag, owns the run loop, and paints. Without a bundle it clears to `#14161A` and draws
   one rounded rectangle in `#3366CC`, inset 64 px with a 24 px corner radius. With one it calls `paintScene` from
   `ScenePainter`, which clears to the same background and fills one `SkRect` per painted scene node. That function
   lives outside the window because `hello_react --golden` calls it too; see *Golden images*.
+
+### The renderer ladder (#368)
+
+ADR-0001 accepts Vulkan driver defects "for which we have no workaround" as a risk and stops there, which leaves
+the third consecutive failed initialisation with no answer but `exit`. On Linux that is not an honest answer: the
+users of [electron#32317](https://github.com/electron/electron/issues/32317) are describing installations that
+never show a window again after a GPU fault, and cannot tell that from a crash. So the window has a ladder, and
+its bottom rung needs no driver at all.
+
+Four rungs, best first, in `RendererLadder.h`:
+
+| Rung | `--renderer` | What it is |
+| --- | --- | --- |
+| `PreferredVulkanDevice` | `preferred-vulkan` | The first presentable device in preference order: discrete before everything else, ties in enumeration order. |
+| `AlternateVulkanDevice` | `alternate-vulkan` | The *second* in that order, so a second attempt can never land on the device the first one crashed. |
+| `SoftwareVulkanDevice` | `software-vulkan` | The first `VK_PHYSICAL_DEVICE_TYPE_CPU` device, which is lavapipe where it is installed. |
+| `SharedMemoryRaster` | `raster` | `SharedMemoryRasterRenderer`: Skia's CPU backend into a `wl_shm` buffer. No `VkInstance`, no driver, no GPU. |
+
+Two mechanisms, because there are two ways a rung fails. A rung that *throws* at bring-up — no second device, no
+lavapipe installed, a driver that refuses a context — is walked past in the same process, by `bringUpRenderer` in
+`WindowMain.cpp`, until one comes up. A rung that *crashes* cannot be recorded after the fact, because a driver
+fault is a fatal signal on the render thread rather than a `VkResult` (that is the whole of #369), so it is
+recorded before the fact: the attempt is persisted to
+`$XDG_STATE_HOME/react-native-linux/renderer-ladder` immediately before bring-up with its crash count
+incremented, and the first presented frame — #373's signal — rewrites the file with the count cleared. A process
+that never came back therefore leaves a number behind, and the next launch reads it.
+
+`rendererStartRung` is the whole start policy, as one pure function with no Vulkan, no Wayland and no file
+handles in it, and it is table-tested at the 100 % gate:
+
+- `--renderer` wins outright, including over a record that says the rung it names crashed. It is the one
+  documented escape hatch, and a user who types it is answering a question this table got wrong.
+- A changed driver identity — the device names and driver versions `probeVulkanDriverIdentity` reads from a
+  throwaway `VkInstance` before anything is brought up — invalidates the record entirely. That is what a driver
+  update, a new GPU or a changed adapter set gets the top rung back with.
+- A record with no outstanding crash resumes its rung; a record with one advances past it, and the failed rung is
+  never selected again on that record. This is Chromium's rule, from
+  `content/browser/gpu/gpu_data_manager_impl_private.cc`, where modes the GPU process reported unsupported are
+  erased from `fallback_modes_` rather than merely deprioritised.
+- After `kRasterSessionsBeforeRetryingTopRung` consecutive sessions that presented a frame on raster, the ladder
+  starts at the top again. Without that cap one crash on a machine whose driver is later fixed would degrade that
+  installation forever, which is the state electron#32317's reporters are actually complaining about.
+
+`--window-debug` prints the rung the policy chose and the reason in its own words, each rung that failed to come
+up and what it said, and the device the rung that succeeded is running on. The Vulkan-only parts of that flag —
+the injected swapchain loss and the four `SurfaceCommitFault` states — are skipped on the raster rung, which has
+neither a swapchain to lose nor a surface-commit state machine to fault.
+
+The raster rung is deliberately the least clever code in the renderer. Two buffers alternate in one
+`wl_shm_pool`; `wl_buffer.release` says which is free and a frame that finds neither presents nothing rather than
+painting over pixels the compositor is reading; every frame repaints the whole surface, because with two buffers
+the untouched one is an unknown number of frames stale and the buffer-age bookkeeping that would fix that is not
+worth carrying on the rung whose only job is to work at all.
 
 ### Swapchain to SkSurface
 

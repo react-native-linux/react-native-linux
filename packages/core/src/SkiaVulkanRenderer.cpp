@@ -1,5 +1,6 @@
 #include "SkiaVulkanRenderer.h"
 
+#include "RendererLadder.h"
 #include "TextRasterizationPolicySkia.h"
 #include "VulkanResultPolicy.h"
 #include "include/core/SkAlphaType.h"
@@ -40,6 +41,7 @@ sk_sp<VulkanMemoryAllocator> Make(const VulkanBackendContext& backendContext, Th
 #include <cstdint>
 #include <iostream>
 #include <limits>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -112,6 +114,41 @@ SkColorType colorTypeForFormat(VkFormat format) {
     return kUnknown_SkColorType;
 }
 
+static_assert(kVulkanDeviceTypeOther == static_cast<uint32_t>(VK_PHYSICAL_DEVICE_TYPE_OTHER));
+static_assert(kVulkanDeviceTypeIntegratedGpu == static_cast<uint32_t>(VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU));
+static_assert(kVulkanDeviceTypeDiscreteGpu == static_cast<uint32_t>(VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU));
+static_assert(kVulkanDeviceTypeVirtualGpu == static_cast<uint32_t>(VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU));
+static_assert(kVulkanDeviceTypeCpu == static_cast<uint32_t>(VK_PHYSICAL_DEVICE_TYPE_CPU));
+
+std::string describePhysicalDevice(const VkPhysicalDeviceProperties& properties) {
+    return std::string(static_cast<const char*>(properties.deviceName)) + " " +
+           std::to_string(properties.driverVersion);
+}
+
+VkResult createVulkanInstance(std::span<const char* const> extensions, VkInstance& instance) {
+    const VkApplicationInfo applicationInfo{
+        .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+        .pNext = nullptr,
+        .pApplicationName = "react-native-linux",
+        .applicationVersion = 0,
+        .pEngineName = "react-native-linux",
+        .engineVersion = 0,
+        .apiVersion = VK_API_VERSION_1_1,
+    };
+    const VkInstanceCreateInfo instanceCreateInfo{
+        .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .pApplicationInfo = &applicationInfo,
+        .enabledLayerCount = 0,
+        .ppEnabledLayerNames = nullptr,
+        .enabledExtensionCount = static_cast<uint32_t>(extensions.size()),
+        .ppEnabledExtensionNames = extensions.data(),
+    };
+
+    return vkCreateInstance(&instanceCreateInfo, nullptr, &instance);
+}
+
 PFN_vkVoidFunction resolveVulkanProc(const char* procedureName, VkInstance instance, VkDevice device) {
     if (device != VK_NULL_HANDLE) {
         return vkGetDeviceProcAddr(device, procedureName);
@@ -122,8 +159,9 @@ PFN_vkVoidFunction resolveVulkanProc(const char* procedureName, VkInstance insta
 
 } // namespace
 
-SkiaVulkanRenderer::SkiaVulkanRenderer(wl_display* waylandDisplay, wl_surface* waylandSurface, WindowSize initialSize)
-    : waylandDisplay_(waylandDisplay), waylandSurface_(waylandSurface), requestedSize_(initialSize),
+SkiaVulkanRenderer::SkiaVulkanRenderer(wl_display* waylandDisplay, wl_surface* waylandSurface, WindowSize initialSize,
+                                       RendererRung rung)
+    : rung_(rung), waylandDisplay_(waylandDisplay), waylandSurface_(waylandSurface), requestedSize_(initialSize),
       swapchainSize_(initialSize) {
     createInstance();
     createWaylandSurface();
@@ -166,6 +204,8 @@ void SkiaVulkanRenderer::resize(WindowSize size) {
     requestedSize_ = size;
     createSwapchain();
 }
+
+const std::string& SkiaVulkanRenderer::driverIdentity() const noexcept { return driverIdentity_; }
 
 void SkiaVulkanRenderer::captureNextFrame(std::string outputPath) { pendingCapturePath_ = std::move(outputPath); }
 
@@ -424,27 +464,7 @@ void SkiaVulkanRenderer::recreateSurface() {
 }
 
 void SkiaVulkanRenderer::createInstance() {
-    const VkApplicationInfo applicationInfo{
-        .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-        .pNext = nullptr,
-        .pApplicationName = "react-native-linux",
-        .applicationVersion = 0,
-        .pEngineName = "react-native-linux",
-        .engineVersion = 0,
-        .apiVersion = VK_API_VERSION_1_1,
-    };
-    const VkInstanceCreateInfo instanceCreateInfo{
-        .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .pApplicationInfo = &applicationInfo,
-        .enabledLayerCount = 0,
-        .ppEnabledLayerNames = nullptr,
-        .enabledExtensionCount = static_cast<uint32_t>(kInstanceExtensions.size()),
-        .ppEnabledExtensionNames = kInstanceExtensions.data(),
-    };
-
-    checkVulkanResult(vkCreateInstance(&instanceCreateInfo, nullptr, &instance_), "vkCreateInstance");
+    checkVulkanResult(createVulkanInstance(kInstanceExtensions, instance_), "vkCreateInstance");
 }
 
 void SkiaVulkanRenderer::createWaylandSurface() {
@@ -469,7 +489,10 @@ void SkiaVulkanRenderer::selectPhysicalDevice() {
     checkVulkanResult(vkEnumeratePhysicalDevices(instance_, &physicalDeviceCount, physicalDevices.data()),
                       "vkEnumeratePhysicalDevices");
 
-    bool selectedIsDiscrete = false;
+    std::vector<VkPhysicalDevice> presentableDevices;
+    std::vector<uint32_t> presentableFamilies;
+    std::vector<uint32_t> presentableDeviceTypes;
+    std::vector<std::string> presentableIdentities;
 
     for (VkPhysicalDevice candidate : physicalDevices) {
         VkPhysicalDeviceProperties properties{};
@@ -497,21 +520,25 @@ void SkiaVulkanRenderer::selectPhysicalDevice() {
                 continue;
             }
 
-            const bool candidateIsDiscrete = properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
-
-            if (physicalDevice_ == VK_NULL_HANDLE || (candidateIsDiscrete && !selectedIsDiscrete)) {
-                physicalDevice_ = candidate;
-                queueFamilyIndex_ = familyIndex;
-                selectedIsDiscrete = candidateIsDiscrete;
-            }
+            presentableDevices.push_back(candidate);
+            presentableFamilies.push_back(familyIndex);
+            presentableDeviceTypes.push_back(static_cast<uint32_t>(properties.deviceType));
+            presentableIdentities.push_back(describePhysicalDevice(properties));
 
             break;
         }
     }
 
-    if (physicalDevice_ == VK_NULL_HANDLE) {
-        throw std::runtime_error("no Vulkan 1.1 device presents to this Wayland surface");
+    const std::optional<size_t> selected = selectVulkanDeviceForRung(presentableDeviceTypes, rung_);
+
+    if (!selected.has_value()) {
+        throw std::runtime_error("no Vulkan 1.1 device presents to this Wayland surface on the " +
+                                 std::string(describeRendererRung(rung_)) + " rung");
     }
+
+    physicalDevice_ = presentableDevices[*selected];
+    queueFamilyIndex_ = presentableFamilies[*selected];
+    driverIdentity_ = presentableIdentities[*selected];
 }
 
 void SkiaVulkanRenderer::createDevice() {
@@ -939,6 +966,38 @@ void SkiaVulkanRenderer::copyImageToPng(uint32_t imageIndex, const std::string& 
     if (!isWritten) {
         throw std::runtime_error("could not write the screenshot to " + outputPath);
     }
+}
+
+std::string probeVulkanDriverIdentity() noexcept {
+    VkInstance instance = VK_NULL_HANDLE;
+
+    if (createVulkanInstance({}, instance) != VK_SUCCESS) {
+        return {};
+    }
+
+    uint32_t physicalDeviceCount = 0;
+    std::string identity;
+
+    if (vkEnumeratePhysicalDevices(instance, &physicalDeviceCount, nullptr) == VK_SUCCESS) {
+        std::vector<VkPhysicalDevice> physicalDevices(physicalDeviceCount);
+
+        if (vkEnumeratePhysicalDevices(instance, &physicalDeviceCount, physicalDevices.data()) == VK_SUCCESS) {
+            for (VkPhysicalDevice physicalDevice : physicalDevices) {
+                VkPhysicalDeviceProperties properties{};
+                vkGetPhysicalDeviceProperties(physicalDevice, &properties);
+
+                if (!identity.empty()) {
+                    identity.append("; ");
+                }
+
+                identity.append(describePhysicalDevice(properties));
+            }
+        }
+    }
+
+    vkDestroyInstance(instance, nullptr);
+
+    return identity;
 }
 
 } // namespace react_native_linux
