@@ -152,6 +152,14 @@ private:
     void routeCommand(const SceneCommand& command);
     ScrollTarget* acquire(facebook::react::Point surfacePoint);
     ScrollTarget* acquireNode(const std::shared_ptr<const facebook::react::ScrollViewShadowNode>& scrollView);
+
+    /**
+     * The same find-or-seed without the `scrollEnabled` gate, for the one caller that is not an interaction: a
+     * mounting transaction that moved the content. Never null, so no caller has to handle a refusal that cannot
+     * happen.
+     */
+    ScrollTarget& acquireMaintainedNode(
+        const std::shared_ptr<const facebook::react::ScrollViewShadowNode>& scrollView);
     std::shared_ptr<const facebook::react::ScrollViewShadowNode> scrollViewWithTag(facebook::react::Tag tag) const;
     std::shared_ptr<const facebook::react::ShadowNode> rootShadowNode() const;
     bool advanceTarget(ScrollTarget& target, const facebook::react::ScrollViewShadowNode& scrollView,

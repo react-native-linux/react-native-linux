@@ -50,7 +50,12 @@ const scrollView = createNode(2, 'ScrollView', {
 
 // The content container React Native's <ScrollView> always renders around its children, and the node whose
 // children the anchor is chosen from on every platform that implements this prop.
-const content = createNode(3, 'View', { width: 200 });
+//
+// `collapsable: false` is not decoration: ScrollView.js renders this node with it (Libraries/Components/ScrollView
+// /ScrollView.js), because a container carrying nothing but layout is one Fabric view-flattens away, and a
+// flattened container never reaches the mounting tree at all. Leaving it off here made this fixture mount a shape
+// no real <ScrollView> mounts.
+const content = createNode(3, 'View', { width: 200, collapsable: false });
 
 const rows = [0xffe06c75, 0xff98c379, 0xff61afef, 0xffe5c07b, 0xffc678dd, 0xff56b6c2].map((backgroundColor, index) =>
   createNode(10 + index, 'View', rowProps(backgroundColor | 0)),

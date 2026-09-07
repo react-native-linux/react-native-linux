@@ -3506,23 +3506,33 @@ content view and need not touch the ScrollView node at all — and the previous 
 own `SceneNode`, so the record is per node rather than per scroll target and survives a ScrollView nobody has
 scrolled.
 
-Which children? Upstream reads the **content view** — `_contentView` on iOS, `getContentView()` on Android — and
-React Native's `<ScrollView>` does always render its children inside one content-container `<View>`. That container
-carries nothing but layout, so **Fabric view-flattens it and it never reaches the mounting tree**: the rows arrive
-as the ScrollView's own children. `anchorChildTags` is that one fact — a ScrollView with more than one child has
-had its container flattened and its children *are* the rows; a ScrollView with exactly one child is one whose
-container survived, and the rows are one level further down. The shadow tree, which is what the controller used to
-walk, has the container either way, which is why moving the walk into the scene needed this and the golden caught
-it on the first run.
+Which children? Upstream's — the **content view**'s, `_contentView` on iOS and `getContentView()` on Android — and
+in the mounting tree that is the ScrollView's last child, with no shape-guessing required. `<ScrollView>` renders
+its content container with **`collapsable={false}`** (`Libraries/Components/ScrollView/ScrollView.js`) precisely
+because a container carrying nothing but layout is one Fabric's view flattening would drop, so the container is
+always mounted and the walk is one level, always. The first version of this fixture left `collapsable` off its
+hand-built container, mounted a shape no real `<ScrollView>` mounts, and sent the walk hunting for the rows a level
+up; the rule that came out of that was a child-count heuristic that anchored a one-row list on the row's own
+children and therefore on nothing. The fixture now mounts what React Native mounts, and the heuristic is gone.
 
-`ScrollController` no longer computes any of it. It drains
-`LinuxMountingManager::takeMaintainedScrollOffsets` through `FabricHost::advanceScroll`, parks each offset as
-`pendingMaintainedOffset`, and adopts it in `advanceTarget` at exactly the point the old computation stood: after
-the frame has read the offset it compares against, before the physics. That placement is still load-bearing —
-writing the offset straight into the state would make it the frame's *previous* position, and the commit that
-earned the adjustment would emit no `onScroll` for it. A ScrollView with no target yet gets one, because "never
-scrolled" is not "never moved": a prepend above a list resting at the top moves it exactly as far as one resting
-anywhere else.
+**The offset the scene holds outranks the one the state carries, until the state catches up.** The adjustment is
+written back through `ConcreteState::updateState` like every other scroll position, so `ScrollViewState` lags the
+scene by at least a commit — and a `ShadowView` arriving in that window carries a `contentOffset` that is *older*
+than what the scene already decided, not newer. `SceneMaintainedScroll::adoptedOffset` is that decision, and
+`readScrollContent` prefers it over the state's until the state agrees, which is the acknowledgement that retires
+it. Without it two prepends landing before the write-back both measure from the same stale number: 120 becomes 280
+twice instead of 440, and the second one puts the reader back where the first had already moved them from.
+
+`ScrollController` computes none of it. It drains `LinuxMountingManager::takeMaintainedScrollOffsets` through
+`FabricHost::advanceScroll`, parks each offset as `pendingMaintainedOffset`, and adopts it in `advanceTarget` at
+exactly the point the old computation stood: after the frame has read the offset it compares against, before the
+physics. That placement is still load-bearing — writing the offset straight into the state would make it the
+frame's *previous* position, and the commit that earned the adjustment would emit no `onScroll` for it. It acquires
+through `acquireMaintainedNode` rather than `acquireNode`, which is the whole of the difference between an
+interaction and a commit: `scrollEnabled={false}` refuses a wheel, a drag and a `scrollTo`, and refuses none of
+them by returning null to a caller that is moving the content out from under a reader. A ScrollView with no target
+yet gets one, because "never scrolled" is not "never moved": a prepend above a list resting at the top moves it
+exactly as far as one resting anywhere else.
 
 `packages/core/test-bundles/scroll-maintain-position.js` is the fixture: six rows in a content container, scrolled
 120 points by three wheel notches, with two more rows prepended above them by a timer the fixture arms **from its
@@ -3587,18 +3597,15 @@ still in its place (`findDisplacedPrimitive` again, with no frame in between) an
 a ScrollView nobody has scrolled is adjusted the same way; `autoscrollToTopThreshold` takes the new top instead;
 the prop absent adjusts nothing; **turning the prop off forgets the children it was watching**, because measuring
 the first re-enabled commit against a layout from before the prop was turned off would adjust the offset by
-everything that happened in between; the flattened container is its own case, as are a `Delete` that arrived
-without its `Remove` and a ScrollView with no children yet. The controller half is three tests in `ScrollTest.cpp`:
-the mount's offset is adopted on the frame it arrives in and on no other, a ScrollView with no target yet gets one,
-and an offset naming a node that is not a ScrollView is ignored.
+everything that happened in between; **two prepends before the state catches up compound**, 120 to 300 to 500
+rather than to 300 twice, and the state catching up retires the adopted offset so a later commit that moves the
+offset for its own reasons is believed again; **a list of one row is anchored on that row**; and a `Delete` that
+arrived without its `Remove` and a ScrollView with no children yet adjust nothing. The controller half is four
+tests in `ScrollTest.cpp`: the mount's offset is adopted on the frame it arrives in and on no other, a ScrollView
+with no target yet gets one, a `scrollEnabled={false}` ScrollView adopts it too and is still refused a wheel
+afterwards, and an offset naming a node that is not a ScrollView is ignored.
 
-**What this does not prove.** The adopted offset is still written back through `ConcreteState::updateState` like
-every other scroll position, so the *shadow tree* learns it on the beat the adopting frame induces. Nothing paints
-from the shadow tree, so no frame is displaced by that — but a second mounting transaction landing in that window
-and carrying an `Update` for the same ScrollView would re-read the pre-adjustment offset out of the state and put
-the scene back for a frame. The commit that carries the write-back is normally the very next one, and closing the
-window properly means a scene-side offset that outranks the state until the state catches up, which is more
-machinery than the case has yet earned. TSan was not run locally.
+**What this does not prove.** TSan was not run locally.
 
 ### The inset area is content (#241)
 

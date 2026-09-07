@@ -459,6 +459,17 @@ struct SceneMaintainedScroll {
     ScrollAxisBounds verticalBounds;
     std::vector<ScrollChildFrame> horizontalChildren;
     std::vector<ScrollChildFrame> verticalChildren;
+
+    /**
+     * The offset the last mount moved this ScrollView to, held until `ScrollViewState` carries it back.
+     *
+     * The platform's copy of the offset is written back through `ConcreteState::updateState`, so the state lags
+     * the scene by at least a commit — and until it catches up, the `contentOffset` arriving on a `ShadowView` is
+     * a *stale* number rather than a newer one. Preferring this over it is what makes two prepends in a row
+     * compound: without it the second is measured from the offset the first already superseded, and 120 becomes
+     * 280 twice instead of 440. It is cleared the moment the state agrees, which is the acknowledgement.
+     */
+    std::optional<facebook::react::Point> adoptedOffset;
 };
 
 struct SceneNode {

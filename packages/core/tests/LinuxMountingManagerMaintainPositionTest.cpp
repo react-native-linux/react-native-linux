@@ -30,6 +30,7 @@ constexpr facebook::react::Tag kScrollViewTag = 2;
 constexpr facebook::react::Tag kContentViewTag = 3;
 constexpr facebook::react::Tag kFirstRowTag = 10;
 constexpr facebook::react::Tag kFirstPrependedRowTag = 20;
+constexpr facebook::react::Tag kSecondPrependedRowTag = 30;
 constexpr float kRowHeight = 100.0F;
 constexpr float kViewportHeight = 150.0F;
 constexpr float kViewportWidth = 200.0F;
@@ -87,10 +88,11 @@ void appendRows(ShadowViewMutationList& mutations, facebook::react::Tag parentTa
     }
 }
 
-void appendPrependedRows(ShadowViewMutationList& mutations, facebook::react::Tag parentTag) {
+void appendPrependedRows(ShadowViewMutationList& mutations, facebook::react::Tag parentTag,
+                         facebook::react::Tag firstTag) {
     for (int position = 0; position < kPrependedRowCount; position++) {
         appendCreateAndInsert(mutations, parentTag,
-                              makePaintedView(kFirstPrependedRowTag + position, rowFrame(position), red()), position);
+                              makePaintedView(firstTag + position, rowFrame(position), red()), position);
     }
 }
 
@@ -136,7 +138,7 @@ ShadowViewMutationList prependMutations(Point contentOffset, bool maintaining,
                                         std::optional<int> autoscrollToTopThreshold = std::nullopt) {
     ShadowViewMutationList mutations;
 
-    appendPrependedRows(mutations, kContentViewTag);
+    appendPrependedRows(mutations, kContentViewTag, kFirstPrependedRowTag);
     mutations.push_back(ShadowViewMutation::UpdateMutation(
         makeView(kContentViewTag, contentBounds(kRowCount)),
         makeView(kContentViewTag, contentBounds(kRowCount + kPrependedRowCount)), kScrollViewTag));
@@ -229,30 +231,111 @@ TEST(LinuxMountingManagerMaintainPositionTest, TurningThePropOffForgetsTheChildr
     EXPECT_TRUE(mountingManager.takeMaintainedScrollOffsets().empty());
 }
 
-TEST(LinuxMountingManagerMaintainPositionTest, TheFlattenedContentContainerLeavesTheRowsAsTheScrollViewsOwnChildren) {
+TEST(LinuxMountingManagerMaintainPositionTest, TwoPrependsBeforeTheStateCatchesUpCompound) {
+    LinuxMountingManager mountingManager;
+
+    mountRows(mountingManager, Point{.x = 0, .y = 100}, true);
+
+    // The offset is written back through `updateState`, so the `ScrollViewState` the *second* prepend arrives with
+    // still says 100: the write-back for the first is a commit that has not landed. Measuring the second from that
+    // stale number would adjust 100 to 300 twice instead of reaching 500, and the reader would be moved back to
+    // where the first prepend already left them.
+    const std::vector<MaintainedScrollOffset> first = prepend(mountingManager, Point{.x = 0, .y = 100}, true);
+
+    ASSERT_EQ(first.size(), 1U);
+    EXPECT_EQ(first.front().offset, (Point{.x = 0, .y = 300}));
+
+    const SceneSnapshot beforeSecond = mountingManager.snapshotScene();
+    ShadowViewMutationList mutations;
+    const int rowCount = kRowCount + kPrependedRowCount;
+
+    appendPrependedRows(mutations, kContentViewTag, kSecondPrependedRowTag);
+    mutations.push_back(ShadowViewMutation::UpdateMutation(
+        makeView(kContentViewTag, contentBounds(rowCount)),
+        makeView(kContentViewTag, contentBounds(rowCount + kPrependedRowCount)), kScrollViewTag));
+
+    for (int position = 0; position < rowCount; position++) {
+        const facebook::react::Tag movedTag = position < kPrependedRowCount
+                                                  ? kFirstPrependedRowTag + position
+                                                  : kFirstRowTag + position - kPrependedRowCount;
+
+        mutations.push_back(ShadowViewMutation::UpdateMutation(
+            makePaintedView(movedTag, rowFrame(position), blue()),
+            makePaintedView(movedTag, rowFrame(position + kPrependedRowCount), blue()), kContentViewTag));
+    }
+
+    mutations.push_back(ShadowViewMutation::UpdateMutation(
+        scrollView(Point{.x = 0, .y = 100}, rowCount, true),
+        scrollView(Point{.x = 0, .y = 100}, rowCount + kPrependedRowCount, true), kSurfaceTag));
+    mountingManager.executeMount(kSurfaceTag, transactionOf(std::move(mutations)));
+
+    const std::vector<MaintainedScrollOffset> second = mountingManager.takeMaintainedScrollOffsets();
+
+    ASSERT_EQ(second.size(), 1U);
+    EXPECT_EQ(second.front().offset, (Point{.x = 0, .y = 500}));
+    EXPECT_FALSE(
+        react_native_linux::findDisplacedPrimitive(beforeSecond, mountingManager.snapshotScene()).has_value());
+}
+
+TEST(LinuxMountingManagerMaintainPositionTest, TheStateCatchingUpRetiresTheAdoptedOffset) {
+    LinuxMountingManager mountingManager;
+
+    mountRows(mountingManager, Point{.x = 0, .y = 100}, true);
+    prepend(mountingManager, Point{.x = 0, .y = 100}, true);
+
+    // The write-back lands: the state now carries the offset the mount decided, so the scene has nothing left to
+    // outrank and a later commit that moves the offset for its own reasons is believed again.
+    const int rowCount = kRowCount + kPrependedRowCount;
+    ShadowViewMutationList acknowledged;
+
+    acknowledged.push_back(ShadowViewMutation::UpdateMutation(scrollView(Point{.x = 0, .y = 100}, rowCount, true),
+                                                              scrollView(Point{.x = 0, .y = 300}, rowCount, true),
+                                                              kSurfaceTag));
+    mountingManager.executeMount(kSurfaceTag, transactionOf(std::move(acknowledged)));
+
+    ShadowViewMutationList scrolledByJavaScript;
+
+    scrolledByJavaScript.push_back(ShadowViewMutation::UpdateMutation(
+        scrollView(Point{.x = 0, .y = 300}, rowCount, true), scrollView(Point{.x = 0, .y = 40}, rowCount, true),
+        kSurfaceTag));
+    mountingManager.executeMount(kSurfaceTag, transactionOf(std::move(scrolledByJavaScript)));
+
+    EXPECT_EQ(mountingManager.dumpScene().find("contentOffset=(0.00, 40.00)") != std::string::npos, true);
+}
+
+TEST(LinuxMountingManagerMaintainPositionTest, AListOfOneRowIsAnchoredOnThatRow) {
     LinuxMountingManager mountingManager;
     ShadowViewMutationList mutations;
 
-    // The shape a real bundle mounts. The content container carries nothing but layout, so Fabric flattens it away
-    // and the rows arrive directly under the ScrollView — which is why the anchor cannot simply be looked for one
-    // level down from it.
-    appendCreateAndInsert(mutations, kSurfaceTag, scrollView(Point{.x = 0, .y = 100}, kRowCount, true), 0);
-    appendRows(mutations, kScrollViewTag);
+    // The content container is always in the mounting tree, so one row is one anchor rather than a node to look
+    // inside of. Descending into it would find no children and maintain nothing.
+    appendCreateAndInsert(mutations, kSurfaceTag, scrollView(Point{}, 1, true), 0);
+    appendCreateAndInsert(mutations, kScrollViewTag, makeView(kContentViewTag, contentBounds(1)), 0);
+    appendCreateAndInsert(mutations, kContentViewTag, makePaintedView(kFirstRowTag, rowFrame(0), blue()), 0);
     mountingManager.startSurface(kSurfaceTag, facebook::react::Size{.width = kViewportWidth, .height = 600});
     mountingManager.executeMount(kSurfaceTag, transactionOf(std::move(mutations)));
     mountingManager.takeMaintainedScrollOffsets();
 
     ShadowViewMutationList prepended;
 
-    appendPrependedRows(prepended, kScrollViewTag);
-    appendPushedDownRows(prepended, kScrollViewTag);
-    appendGrownScrollView(prepended, Point{.x = 0, .y = 100}, true);
+    appendPrependedRows(prepended, kContentViewTag, kFirstPrependedRowTag);
+    prepended.push_back(ShadowViewMutation::UpdateMutation(
+        makeView(kContentViewTag, contentBounds(1)),
+        makeView(kContentViewTag, contentBounds(1 + kPrependedRowCount)), kScrollViewTag));
+    prepended.push_back(ShadowViewMutation::UpdateMutation(
+        makePaintedView(kFirstRowTag, rowFrame(0), blue()),
+        makePaintedView(kFirstRowTag, rowFrame(kPrependedRowCount), blue()), kContentViewTag));
+    prepended.push_back(ShadowViewMutation::UpdateMutation(
+        scrollView(Point{}, 1, true), scrollView(Point{}, 1 + kPrependedRowCount, true), kSurfaceTag));
     mountingManager.executeMount(kSurfaceTag, transactionOf(std::move(prepended)));
 
     const std::vector<MaintainedScrollOffset> maintained = mountingManager.takeMaintainedScrollOffsets();
 
+    // The row moved 200 points down and the offset follows it, then clamps: three rows of content under a
+    // 150-point viewport cannot scroll past 150, so the row is held as still as the new content allows. Reporting
+    // nothing at all is what an implementation that looked *inside* the single child would do.
     ASSERT_EQ(maintained.size(), 1U);
-    EXPECT_EQ(maintained.front().offset, (Point{.x = 0, .y = 300}));
+    EXPECT_EQ(maintained.front().offset, (Point{.x = 0, .y = 150}));
 }
 
 TEST(LinuxMountingManagerMaintainPositionTest, AMaintainingScrollViewWithNoChildrenYetAdjustsNothing) {

@@ -824,6 +824,27 @@ void readMaintainedScroll(SceneNode& node, const facebook::react::ShadowView& sh
     node.maintainedScroll.value().verticalBounds = readAxisBounds(node, *props, contentSize, false);
 }
 
+/**
+ * Keeps the offset the last mount decided until `ScrollViewState` carries it back.
+ *
+ * The state reaching a `ShadowView` is the last one JavaScript was told about, and the write-back that will tell
+ * it about this one is still in flight, so an offset that disagrees with what this scene already adopted is behind
+ * it rather than ahead of it. When it agrees, the write-back has landed and there is nothing left to outrank.
+ */
+void preferAdoptedOffset(SceneNode& node) {
+    if (!node.maintainedScroll.has_value() || !node.maintainedScroll.value().adoptedOffset.has_value()) {
+        return;
+    }
+
+    if (node.maintainedScroll.value().adoptedOffset.value() == node.scrollContentOffset.value()) {
+        node.maintainedScroll.value().adoptedOffset.reset();
+
+        return;
+    }
+
+    node.scrollContentOffset = node.maintainedScroll.value().adoptedOffset.value();
+}
+
 void readScrollContent(SceneNode& node, const facebook::react::ShadowView& shadowView) {
     node.scrollContentOffset = std::nullopt;
 
@@ -841,29 +862,19 @@ void readScrollContent(SceneNode& node, const facebook::react::ShadowView& shado
     node.clipsChildren = true;
 
     readMaintainedScroll(node, shadowView, scrollState->getData());
+    preferAdoptedOffset(node);
 }
 
 /**
- * The tags the anchor is chosen from.
+ * The children the anchor is chosen from, along one axis: the children of the ScrollView's **content view**, which
+ * is its last child.
  *
- * `RCTScrollViewComponentView` measures `_contentView`'s children and Android's
- * `MaintainVisibleScrollPositionHelper` measures `getContentView()`'s, and React Native's `<ScrollView>` does
- * always render its children inside one content-container `<View>` — but that container carries nothing except
- * layout, so Fabric view-flattens it and it never reaches the mounting tree. The rows arrive as the ScrollView's
- * own children, and a ScrollView with exactly one child is one whose container survived flattening.
- */
-const std::vector<facebook::react::Tag>& anchorChildTags(const SceneNodes& nodes, const SceneNode& scrollView) {
-    if (scrollView.childTags.size() != 1) {
-        return scrollView.childTags;
-    }
-
-    const auto contentView = nodes.find(scrollView.childTags.front());
-
-    return contentView == nodes.end() ? scrollView.childTags : contentView->second.childTags;
-}
-
-/**
- * The children the anchor is chosen from, along one axis.
+ * React Native's `<ScrollView>` renders its children inside one content-container `<View>` and renders it with
+ * `collapsable={false}` — see `Libraries/Components/ScrollView/ScrollView.js` — precisely so that Fabric's view
+ * flattening cannot drop a container that carries nothing but layout. So the container is always in the mounting
+ * tree, and this is the same node `RCTScrollViewComponentView` keeps as `_contentView` and Android reads through
+ * `getContentView()`. A tree that flattened it away is not one `<ScrollView>` produces, and it maintains nothing
+ * rather than anchoring on the wrong nodes.
  *
  * A tag the scene no longer holds is skipped rather than guessed at, for the same reason `appendPrimitives` skips
  * one: a `Delete` that arrived without its `Remove` leaves the tag in its parent's child list, and that is the
@@ -873,7 +884,17 @@ std::vector<ScrollChildFrame> contentChildFrames(const SceneNodes& nodes, const 
                                                  bool isHorizontal) {
     std::vector<ScrollChildFrame> frames;
 
-    for (facebook::react::Tag childTag : anchorChildTags(nodes, scrollView)) {
+    if (scrollView.childTags.empty()) {
+        return frames;
+    }
+
+    const auto contentView = nodes.find(scrollView.childTags.back());
+
+    if (contentView == nodes.end()) {
+        return frames;
+    }
+
+    for (facebook::react::Tag childTag : contentView->second.childTags) {
         const auto child = nodes.find(childTag);
 
         if (child == nodes.end()) {
@@ -1327,6 +1348,7 @@ std::vector<MaintainedScrollOffset> RetainedScene::maintainScrollPositions() {
         // frame origin minus this number, so moving it moves the whole subtree.
         damageSubtree(tag);
         node.scrollContentOffset = adjusted;
+        maintained.adoptedOffset = adjusted;
         damageSubtree(tag);
 
         adjustments.push_back(MaintainedScrollOffset{.tag = tag, .offset = adjusted});

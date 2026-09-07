@@ -385,10 +385,10 @@ void ScrollController::applyMaintainedScrollOffsets(const std::vector<Maintained
             continue;
         }
 
-        ScrollTarget* target = acquireNode(scrollView);
+        ScrollTarget& target = acquireMaintainedNode(scrollView);
 
-        target->horizontal.pendingMaintainedOffset = maintained.offset.x;
-        target->vertical.pendingMaintainedOffset = maintained.offset.y;
+        target.horizontal.pendingMaintainedOffset = maintained.offset.x;
+        target.vertical.pendingMaintainedOffset = maintained.offset.y;
     }
 }
 
@@ -440,16 +440,12 @@ void ScrollController::routeCommand(const SceneCommand& command) {
                                                            metrics.decelerationRate, verticalBounds));
 }
 
-ScrollController::ScrollTarget* ScrollController::acquireNode(
+ScrollController::ScrollTarget& ScrollController::acquireMaintainedNode(
     const std::shared_ptr<const facebook::react::ScrollViewShadowNode>& scrollView) {
-    if (!scrollView->getConcreteProps().scrollEnabled) {
-        return nullptr;
-    }
-
     const auto existing = targets_.find(scrollView->getTag());
 
     if (existing != targets_.end()) {
-        return &existing->second;
+        return existing->second;
     }
 
     // Seeded from the state, so a ScrollView that JavaScript mounted at a non-zero `contentOffset` keeps it, and
@@ -460,7 +456,19 @@ ScrollController::ScrollTarget* ScrollController::acquireNode(
         .horizontal = ScrollTargetAxis{.state = ScrollAxisState{.offset = contentOffset.x}},
         .vertical = ScrollTargetAxis{.state = ScrollAxisState{.offset = contentOffset.y}}};
 
-    return &targets_.emplace(scrollView->getTag(), target).first->second;
+    return targets_.emplace(scrollView->getTag(), target).first->second;
+}
+
+ScrollController::ScrollTarget* ScrollController::acquireNode(
+    const std::shared_ptr<const facebook::react::ScrollViewShadowNode>& scrollView) {
+    // The interactive gate, and only the interactive gate. `scrollEnabled={false}` refuses a wheel, a drag and a
+    // `scrollTo`; it does not refuse the content moving under a reader, which is why the maintained path acquires
+    // through `acquireMaintainedNode` instead of here.
+    if (!scrollView->getConcreteProps().scrollEnabled) {
+        return nullptr;
+    }
+
+    return &acquireMaintainedNode(scrollView);
 }
 
 ScrollController::ScrollTarget* ScrollController::acquire(facebook::react::Point surfacePoint) {

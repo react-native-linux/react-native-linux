@@ -1499,6 +1499,25 @@ TEST_F(ScrollControllerTest, AScrollViewThatHasNeverBeenScrolledAdoptsTheMountsM
     EXPECT_TRUE(controller.hasDispatchedScrollEvent());
 }
 
+TEST_F(ScrollControllerTest, ADisabledScrollViewStillAdoptsTheMountsMaintainedOffset) {
+    commitScrollView(folly::dynamic::object("scrollEnabled", false), 20000);
+    ScrollController controller = makeController();
+
+    // `scrollEnabled={false}` refuses a wheel, a drag and a `scrollTo`. It does not refuse the content moving under
+    // the reader, and acquiring through the interactive gate here would have been a null dereference on the frame
+    // a prepend landed in.
+    controller.applyMaintainedScrollOffsets({MaintainedScrollOffset{.tag = 20, .offset = Point{.x = 0, .y = 160}}});
+    controller.advance(kFrameMilliseconds60Hz);
+
+    EXPECT_TRUE(controller.hasDispatchedScrollEvent());
+
+    // Still not interactive: the wheel over it is refused exactly as it was before the mount gave it a target.
+    controller.dispatch({wheel(-1)});
+    controller.advance(kFrameMilliseconds60Hz);
+
+    EXPECT_FALSE(controller.hasDispatchedScrollEvent());
+}
+
 TEST_F(ScrollControllerTest, AMaintainedOffsetNamingANodeThatIsNotAScrollViewIsIgnored) {
     commitScrollView(folly::dynamic::object(), 20000);
     ScrollController controller = makeController();
