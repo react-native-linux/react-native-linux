@@ -8,7 +8,13 @@ import {
 } from "./e2e/scenario.ts";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { gradeArtifacts, gradeAutomationChannel, injectAndResolveFailure, resolveWindowFlags } from "./e2e/grade.ts";
-import { isKeyboardFocused, planRuns, readRequestedScenarios } from "./e2e/discovery.ts";
+import {
+  isKeyboardFocused,
+  planRuns,
+  readRequestedScenarios,
+  waitForWindowReadyFailures,
+  waitUntil,
+} from "./e2e/discovery.ts";
 import { spawn, spawnSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import path from "node:path";
@@ -22,7 +28,6 @@ const SOCKET_TIMEOUT_MS = 15_000;
 const READY_TIMEOUT_MS = 60_000;
 const RUN_TIMEOUT_MS = 120_000;
 const INJECT_TIMEOUT_MS = 60_000;
-const POLL_INTERVAL_MS = 50;
 const COMPOSITOR_STOP_GRACE_MS = 250;
 
 /** Cage: weston only offers weston-test, shipped nowhere. See *E2E driver (#7)* in docs/cpp-toolchain.md. */
@@ -128,20 +133,6 @@ const attachTrace = (compositor: Compositor, sink: TraceSink): void => {
   });
 };
 
-const waitUntil = async (isReady: () => boolean, timeoutMilliseconds: number): Promise<boolean> => {
-  const deadline = Date.now() + timeoutMilliseconds;
-
-  while (!isReady()) {
-    if (Date.now() > deadline) {
-      return false;
-    }
-
-    await delay(POLL_INTERVAL_MS);
-  }
-
-  return true;
-};
-
 const findSocketName = (runtimeDirectory: string): string | null =>
   readdirSync(runtimeDirectory).find((entry) => SOCKET_PATTERN.test(entry)) ?? null;
 
@@ -183,11 +174,16 @@ const injectSteps = (
 const driveScenario = async (run: ScenarioRun, workspace: Workspace): Promise<readonly string[]> => {
   const { scenario } = run;
   const socketName = await waitForSocketName(workspace.runtimeDirectory);
-  if (socketName === null) {
-    return [`${COMPOSITOR_NAME} never created a wayland socket in ${workspace.runtimeDirectory}`];
-  }
-  if (!(await waitUntil(() => workspace.trace.text.includes(scenario.ready), READY_TIMEOUT_MS))) {
-    return [`the bundle never printed "${scenario.ready}"`];
+  // A missing socket short-circuits the ready wait; both bail-outs share the check below (#373).
+  const readyFailures =
+    socketName === null
+      ? [`${COMPOSITOR_NAME} never created a wayland socket in ${workspace.runtimeDirectory}`]
+      : await waitForWindowReadyFailures(scenario.ready, workspace.trace, (isReady) =>
+          waitUntil(isReady, READY_TIMEOUT_MS),
+        );
+
+  if (socketName === null || readyFailures.length !== EMPTY_LENGTH) {
+    return readyFailures;
   }
 
   const injectionFailure = await injectAndResolveFailure({

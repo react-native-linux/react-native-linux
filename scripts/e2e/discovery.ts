@@ -188,4 +188,6 @@ const planRuns = (
 };
 
 export { isKeyboardFocused } from "./keyboard-focus.ts";
+export { waitForWindowReadyFailures } from "./window-readiness.ts";
+export { waitUntil } from "./wait-until.ts";
 export { findScenarioSources, planAttemptKeys, planRuns, readRequestedScenarios, readScenarioRuns, resolveRepeatCount };

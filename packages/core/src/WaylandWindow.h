@@ -88,7 +88,8 @@ struct WindowIdentity {
  * `wp_presentation` is the third mechanism of that decision and the only one that measures: one
  * `wp_presentation_feedback` object per committed frame, reporting when that content update actually turned into
  * light. It is bound when the compositor advertises it and skipped when it does not, so the window runs either
- * way and `FrameTiming` simply stays empty. See *Frame timing* in docs/cpp-toolchain.md.
+ * way and `FrameTiming` simply stays empty. See *Frame timing* in docs/cpp-toolchain.md. The first `presented`
+ * feedback is also issue #373's readiness signal, exposed as `hasPresentedFirstFrame`; see that method.
  *
  * Input arrives on the same connection and therefore on the same thread. `WaylandSeat` fills a queue from inside
  * the dispatch this class performs, and `takeInputEvents` empties it once per frame; the window itself makes no
@@ -221,6 +222,17 @@ public:
      */
     std::optional<uint32_t> presentationClockId() const noexcept;
 
+    /**
+     * The readiness signal of issue #373: true from the first `wp_presentation_feedback.presented` this window has
+     * ever received, or, when the compositor advertises no `wp_presentation`, from the first `wl_surface.frame`
+     * callback. Both mechanisms only ever fire for a commit that already carried an attached buffer — every
+     * `requestFrameCallback`/`requestPresentationFeedback` pair is armed immediately before the present that
+     * performs that attach — so this can only turn true after a real frame reached the compositor. It never turns
+     * false again: a discarded or failed presentation simply leaves it as it was, because #373 asks for "the
+     * window is up", not "the window is up right now".
+     */
+    bool hasPresentedFirstFrame() const noexcept;
+
     bool waitForRedraw(std::chrono::milliseconds fallbackTimeout);
 
     /**
@@ -333,6 +345,7 @@ private:
     ToplevelState toplevelState_;
     bool configured_{false};
     bool frameCallbackFired_{false};
+    bool presentedFirstFrame_{false};
     bool pendingResize_{false};
     bool contentUpdateDiscarded_{false};
     bool pendingStateChange_{false};
