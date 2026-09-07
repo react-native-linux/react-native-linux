@@ -51,6 +51,7 @@ const scopedSourcePaths: readonly string[] = [
   "packages/core/src/LinuxMountingManager.cpp",
   "packages/core/src/PinnedFontFamilies.cpp",
   "packages/core/src/PlatformColor.cpp",
+  "packages/core/src/RendererLadder.cpp",
   "packages/core/src/RetainedScene.cpp",
   "packages/core/src/ScrollEventCadence.cpp",
   "packages/core/src/ScrollPhysics.cpp",
