@@ -10,7 +10,6 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { gradeArtifacts, gradeAutomationChannel, injectAndResolveFailure, resolveWindowFlags } from "./e2e/grade.ts";
 import { isKeyboardFocused, planRuns, readRequestedScenarios } from "./e2e/discovery.ts";
 import { spawn, spawnSync } from "node:child_process";
-
 import { setTimeout as delay } from "node:timers/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
@@ -99,6 +98,7 @@ const startCompositor = (run: ScenarioRun, rig: Rig, workspace: Workspace): Comp
       workspace.frameLogPath,
       ...(run.scenario.automation === null ? [] : ["--automation"]),
       ...resolveWindowFlags(run.scenario.windowFlags),
+      ...(run.scenario.injectProtocolError ? ["--inject-protocol-error"] : []),
     ],
     {
       env: buildEnvironment({

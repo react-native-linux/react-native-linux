@@ -38,6 +38,7 @@ const baseScenario: Scenario = {
   expectsWindowClose: false,
   frameBudget: null,
   frames: 600,
+  injectProtocolError: false,
   name: "pressable-click",
   ready: "pressable: committed surface 1",
   screenshot: null,

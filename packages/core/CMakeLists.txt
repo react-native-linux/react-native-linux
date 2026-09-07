@@ -1084,6 +1084,7 @@ elseif(RNL_ENABLE_WINDOW)
         src/TitleBarPainter.cpp
         src/ToplevelState.cpp
         src/VulkanResultPolicy.cpp
+        src/WaylandDispatchDiagnostics.cpp
         src/WaylandSeat.cpp
         src/WaylandSerialLedger.cpp
         src/WaylandWindow.cpp

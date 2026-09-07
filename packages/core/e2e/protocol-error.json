@@ -1,0 +1,11 @@
+{
+  "name": "protocol-error",
+  "bundle": "hello.js",
+  "ready": "react-native-linux: bundle evaluated",
+  "frames": 900,
+  "injectProtocolError": true,
+  "allowErrors": true,
+  "expectFailure": true,
+  "steps": ["sleep 500"],
+  "expect": ["[rnl-window] wayland protocol error: xdg_surface#"]
+}

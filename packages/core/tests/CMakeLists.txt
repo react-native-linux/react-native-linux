@@ -99,6 +99,7 @@ add_executable(rnl_core_tests
     UpstreamTestDriftOracleTest.cpp
     SurfaceCommitGateTest.cpp
     VulkanResultPolicyTest.cpp
+    WaylandDispatchDiagnosticsTest.cpp
     WaylandSerialLedgerTest.cpp
     WebPropAliasTest.cpp
     WindowDecorationsTest.cpp
@@ -144,6 +145,7 @@ add_executable(rnl_core_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ToplevelState.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/SurfaceCommitGate.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/VulkanResultPolicy.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/WaylandDispatchDiagnostics.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/WaylandSerialLedger.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/WindowDecorations.cpp
     ${RNL_UPSTREAM_CSS_TESTS}

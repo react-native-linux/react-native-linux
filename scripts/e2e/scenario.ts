@@ -44,13 +44,12 @@ interface FrameBudget {
 }
 
 /**
- * `golden` is a file name under `packages/core/e2e/goldens`. A golden that does not exist yet is a skip with a
- * note rather than a failure, because the picture has to be blessed from a CI artifact before it can be compared.
- *
- * `crop`, when set, narrows the captured screenshot to a rectangle before comparing it against the golden, so an
- * unrelated change elsewhere on the page does not invalidate it. The golden is stored already cropped to that
- * same rectangle — addressing the rectangle by a node's `testID` instead needs #216's tree dump and is out of
- * scope here, so the scenario names it directly.
+ * `golden` is a file name under `packages/core/e2e/goldens`. A golden that does not exist yet is a skip with a note
+ * rather than a failure, because the picture has to be blessed from a CI artifact before it can be compared. `crop`,
+ * when set, narrows the captured screenshot to a rectangle before comparing it against the golden, so an unrelated
+ * change elsewhere on the page does not invalidate it. The golden is stored already cropped to that same rectangle —
+ * addressing the rectangle by a node's `testID` instead needs #216's tree dump and is out of scope here, so the
+ * scenario names it directly.
  */
 interface ScreenshotComparison {
   readonly crop: Crop | null;
@@ -59,15 +58,13 @@ interface ScreenshotComparison {
 }
 
 /**
- * What the automation channel (#214) is asked to prove about this scenario, and the flag that opens it: a
- * scenario without an `automation` block runs a window that never listens. `listErrorsMustBeEmpty` is the
- * `verifyNoErrorLogs` react-native-windows asserts in `afterEach`, asked of the runtime rather than grepped out
- * of the trace; `visualTreeSnapshot` names a file under the package's `e2e/goldens` the committed tree has to
- * match; `accessibilityTreeSnapshot` names one under `e2e/snapshots` its accessibility projection has to match;
- * `markTestPassed` requires the bundle to have called `globalThis.__rnlMarkTestPassed()`; `accessibilityChanges`
- * names the `accessibilityState`/`accessibilityValue` changes (#264) `ListAccessibilityChanges` has to have
- * recorded by the time the channel is asked — a bundle mounts the node, then a `setTimeout` toggles it, which is
- * what turns the mount's own `Create` into the `Update` the channel counts.
+ * What the automation channel (#214) proves about a scenario, and the flag that opens it: a scenario without an
+ * `automation` block runs a window that never listens. `listErrorsMustBeEmpty` is `verifyNoErrorLogs`, asked of the
+ * runtime instead of grepped from the trace. `visualTreeSnapshot` and `accessibilityTreeSnapshot` name files under the
+ * package's `e2e/goldens`/`e2e/snapshots` the committed and accessibility trees must match. `markTestPassed` requires
+ * the bundle to have called `globalThis.__rnlMarkTestPassed()`. `accessibilityChanges` names the
+ * `accessibilityState`/`accessibilityValue` changes (#264) `ListAccessibilityChanges` must have recorded by the time
+ * the channel is asked.
  */
 interface ScenarioAutomation {
   readonly accessibilityChanges: ReturnType<typeof readAccessibilityChanges>;
@@ -92,6 +89,8 @@ interface Scenario {
   /** How long `rnl_window` runs before it captures its screenshot and exits. */
   readonly frames: number;
   readonly frameBudget: FrameBudget | null;
+  /** Passes `--inject-protocol-error` (#331): proves a real dispatch failure is reported structured, not grepped. */
+  readonly injectProtocolError: boolean;
   readonly name: string;
   /** The trace line that means the bundle has committed and input can start. */
   readonly ready: string;
@@ -214,6 +213,7 @@ const parseScenario = (value: unknown, sourceName: string): Scenario => {
     expectsWindowClose: readOptionalBoolean(value, "expectsWindowClose", sourceName),
     frameBudget: readFrameBudget(value, sourceName),
     frames: readFrameCount(value, sourceName),
+    injectProtocolError: readOptionalBoolean(value, "injectProtocolError", sourceName),
     name: readString(value["name"], "name", sourceName),
     ready: readString(value["ready"], "ready", sourceName),
     screenshot: readScreenshotComparison(value, sourceName),

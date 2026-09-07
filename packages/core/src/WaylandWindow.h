@@ -236,9 +236,25 @@ public:
      * from. See #330 and *The serial ledger* in docs/cpp-toolchain.md. */
     const WaylandSerialLedger& serialLedger() const noexcept;
 
+    /**
+     * `--inject-protocol-error`'s hook (#331): acknowledges the initial `xdg_surface.configure` a second time with
+     * a serial no `configure` ever sent, which xdg-shell requires the compositor to reject with
+     * `XDG_SURFACE_ERROR_INVALID_SERIAL` on the `xdg_surface` object. It exists to prove, under a real compositor,
+     * that the next dispatch reports that rejection through `reportNativeError` instead of a bare "broken pipe".
+     * See *Window host* in docs/cpp-toolchain.md.
+     */
+    void injectInvalidAckConfigureForTesting();
+
 private:
     void bindGlobal(wl_registry* registry, uint32_t name, const char* interfaceName, uint32_t version);
     void dispatchWithTimeout(std::chrono::milliseconds timeout);
+    /**
+     * Classifies one dispatch/flush/read-events return value through `classifyWaylandDispatchResult`
+     * (`WaylandDispatchDiagnostics.h`) and reports a protocol or display error through `reportNativeError` when it
+     * is one. Returns whether the connection is now unusable — `EAGAIN` and success both return false, because
+     * neither closes the window. See *Window host* in docs/cpp-toolchain.md.
+     */
+    bool reportDispatchFailure(int result);
     void onToplevelConfigure(int32_t width, int32_t height, const wl_array* states);
     void negotiateDecorations();
     void destroyFrameCallback() noexcept;

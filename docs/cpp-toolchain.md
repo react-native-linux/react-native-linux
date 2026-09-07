@@ -261,6 +261,35 @@ painting over pixels the compositor is reading; every frame repaints the whole s
 the untouched one is an unknown number of frames stale and the buffer-age bookkeeping that would fix that is not
 worth carrying on the rung whose only job is to work at all.
 
+### Wayland dispatch errors (#331)
+
+`wl_display_dispatch_pending`, `wl_display_flush` and `wl_display_read_events` returning negative all used to mean
+the same thing to `WaylandWindow::dispatchWithTimeout`: `closed_ = true`, no diagnostic. That collapsed three
+different failures into one, and the process exited with libwayland's own `Broken pipe (os error 32)` on stderr
+regardless of which one actually happened — indistinguishable from the user closing the window.
+
+`WaylandDispatchDiagnostics.h` is the fix, kept dependency-free (no `<wayland-client.h>`) the same way
+`ToplevelState.h`'s `decodeToplevelStates` is, so it sits in the unit-test coverage gate rather than needing a
+live compositor to exercise. `classifyWaylandDispatchResult(result, displayErrno)` turns a return value and
+`wl_display_get_error`'s errno into one of four outcomes: `Continue` for success — which is also the "clean close"
+case, since `xdg_toplevel.close` sets the exit flag from inside a dispatch that itself succeeded — `Retry` for
+`EAGAIN`, `ProtocolError` for `EPROTO`, and `DisplayError` for everything else. `WaylandWindow::reportDispatchFailure`
+calls it after every dispatch/flush/read, reads `wl_display_get_protocol_error` for the interface, object id and
+code on a `ProtocolError`, and reports either message through `reportNativeError` (#214), which is what puts it
+on `ListErrors` as well as the trace:
+
+```
+[rnl-window] wayland protocol error: <interface>#<id> code <n> (<errno text>)
+[rnl-window] wayland display error: <errno text>
+```
+
+`--inject-protocol-error` is the fault-injection hook this needed to prove end to end: right after the window
+comes up, it acknowledges the initial `xdg_surface.configure` a second time with a serial no `configure` ever
+sent, which xdg-shell requires the compositor to reject with `XDG_SURFACE_ERROR_INVALID_SERIAL`. The
+`protocol-error` e2e scenario runs it and asserts the structured line appears in the trace instead of a bare
+"broken pipe". `EAGAIN`'s busy-spin and the `xdg_wm_base.ping` responsiveness contract are #331's other half and
+remain open; this change is the diagnostic, not the event-loop rework.
+
 ### Swapchain to SkSurface
 
 Each swapchain `VkImage` is wrapped directly as an `SkSurface` through `GrBackendRenderTargets::MakeVk` plus

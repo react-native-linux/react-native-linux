@@ -74,6 +74,7 @@ constexpr std::string_view kNoDecorationsFlag = "--no-decorations";
 constexpr std::string_view kDefaultTitle = "react-native-linux";
 constexpr std::string_view kDefaultApplicationIdentifier = "react-native-linux";
 constexpr int kPrimaryPointerButton = 0;
+constexpr std::string_view kInjectProtocolErrorFlag = "--inject-protocol-error";
 constexpr std::string_view kWindowErrorSource = "rnl-window";
 constexpr std::string_view kImeDebugSurroundingText = "react-native-linux";
 constexpr int32_t kImeDebugCursorX = 64;
@@ -112,6 +113,12 @@ constexpr uint64_t kNanosecondsPerSecond = 1'000'000'000;
  * initial configure on request, and no driver starves an acquire to order. The proof the flag gives is that the
  * window comes back — a present after every injected state — rather than going blank. See *Surface commit
  * ordering* in docs/cpp-toolchain.md.
+ *
+ * `--inject-protocol-error` is #331's fault-injection hook: right after the window is up, it acknowledges the
+ * initial configure a second time with a serial the compositor never sent, which xdg-shell requires it to reject.
+ * It exists to prove under a real compositor that the next dispatch reports that rejection through
+ * `reportNativeError` — `[rnl-window] wayland protocol error: xdg_surface#<id> code <n> (<errno text>)` — instead
+ * of the bare "broken pipe" the process used to exit with. See *Window host* in docs/cpp-toolchain.md.
  */
 struct WindowArguments {
     std::optional<std::string> bundlePath;
@@ -126,6 +133,7 @@ struct WindowArguments {
     bool noDecorations{false};
     bool imeDebug{false};
     bool windowDebug{false};
+    bool injectProtocolError{false};
     std::string error;
 };
 
@@ -315,6 +323,12 @@ WindowArguments parseArguments(std::span<char*> arguments) {
 
         if (flag == kForceClientDecorationsFlag) {
             parsed.forceClientDecorations = true;
+
+            continue;
+        }
+
+        if (flag == kInjectProtocolErrorFlag) {
+            parsed.injectProtocolError = true;
 
             continue;
         }
@@ -914,6 +928,10 @@ int main(int argc, char** argv) {
                                           contentDamage);
                 });
         };
+
+        if (parsedArguments.injectProtocolError) {
+            window.injectInvalidAckConfigureForTesting();
+        }
 
         // This is the first buffer the compositor can ever show, so `--frames 1` has to name this present rather
         // than the loop's next one: the capture is armed beforehand, exactly as the loop arms it for every later

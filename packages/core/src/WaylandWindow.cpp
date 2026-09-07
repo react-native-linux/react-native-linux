@@ -1,17 +1,19 @@
 #include "WaylandWindow.h"
 
+#include "AutomationProtocol.h"
+#include "WaylandDispatchDiagnostics.h"
 #include "presentation-time-client-protocol.h"
 #include "text-input-unstable-v3-client-protocol.h"
 #include "xdg-decoration-unstable-v1-client-protocol.h"
 #include "xdg-shell-client-protocol.h"
 
 #include <algorithm>
-#include <cerrno>
 #include <cstring>
 #include <memory>
 #include <optional>
 #include <poll.h>
 #include <stdexcept>
+#include <string_view>
 #include <vector>
 #include <wayland-client.h>
 
@@ -33,6 +35,10 @@ constexpr uint32_t kMaximumPresentationVersion = 2;
 constexpr uint32_t kMaximumDecorationManagerVersion = 1;
 constexpr uint64_t kNanosecondsPerSecond = 1'000'000'000;
 constexpr uint32_t kHighWordShift = 32;
+constexpr std::string_view kWaylandErrorSource = "rnl-window";
+// No `xdg_surface.configure` this window sends ever carries this serial, so the compositor is guaranteed to
+// reject it rather than coincidentally accept it as a stale-but-valid one.
+constexpr uint32_t kInvalidAckConfigureSerial = 0xFFFFFFFF;
 
 } // namespace
 
@@ -331,6 +337,11 @@ TextInputClient* WaylandWindow::textInput() const noexcept { return seat_ == nul
 
 const WaylandSerialLedger& WaylandWindow::serialLedger() const noexcept { return serialLedger_; }
 
+void WaylandWindow::injectInvalidAckConfigureForTesting() {
+    xdg_surface_ack_configure(xdgSurface_, kInvalidAckConfigureSerial);
+    wl_display_flush(display_);
+}
+
 void WaylandWindow::bindGlobal(wl_registry* registry, uint32_t name, const char* interfaceName, uint32_t version) {
     if (std::strcmp(interfaceName, wl_compositor_interface.name) == 0) {
         void* bound =
@@ -362,18 +373,43 @@ void WaylandWindow::bindGlobal(wl_registry* registry, uint32_t name, const char*
     }
 }
 
+bool WaylandWindow::reportDispatchFailure(int result) {
+    const int displayErrno = result < 0 ? wl_display_get_error(display_) : 0;
+    const WaylandDispatchOutcome outcome = classifyWaylandDispatchResult(result, displayErrno);
+
+    if (outcome == WaylandDispatchOutcome::Continue || outcome == WaylandDispatchOutcome::Retry) {
+        return false;
+    }
+
+    if (outcome == WaylandDispatchOutcome::ProtocolError) {
+        const wl_interface* interface = nullptr;
+        uint32_t objectId = 0;
+        const uint32_t errorCode = wl_display_get_protocol_error(display_, &interface, &objectId);
+        const WaylandProtocolErrorDetail detail{
+            .interfaceName = interface != nullptr ? interface->name : "unknown",
+            .objectId = objectId,
+            .errorCode = errorCode,
+        };
+
+        reportNativeError(kWaylandErrorSource, formatWaylandProtocolError(detail, std::strerror(displayErrno)));
+    } else {
+        reportNativeError(kWaylandErrorSource, formatWaylandDisplayError(std::strerror(displayErrno)));
+    }
+
+    closed_ = true;
+
+    return true;
+}
+
 void WaylandWindow::dispatchWithTimeout(std::chrono::milliseconds timeout) {
     while (wl_display_prepare_read(display_) != 0) {
-        if (wl_display_dispatch_pending(display_) < 0) {
-            closed_ = true;
-
+        if (reportDispatchFailure(wl_display_dispatch_pending(display_))) {
             return;
         }
     }
 
-    if (wl_display_flush(display_) < 0 && errno != EAGAIN) {
+    if (reportDispatchFailure(wl_display_flush(display_))) {
         wl_display_cancel_read(display_);
-        closed_ = true;
 
         return;
     }
@@ -382,18 +418,14 @@ void WaylandWindow::dispatchWithTimeout(std::chrono::milliseconds timeout) {
     const int readyDescriptors = poll(&pollDescriptor, 1, static_cast<int>(timeout.count()));
 
     if (readyDescriptors > 0 && (pollDescriptor.revents & POLLIN) != 0) {
-        if (wl_display_read_events(display_) < 0) {
-            closed_ = true;
-
+        if (reportDispatchFailure(wl_display_read_events(display_))) {
             return;
         }
     } else {
         wl_display_cancel_read(display_);
     }
 
-    if (wl_display_dispatch_pending(display_) < 0) {
-        closed_ = true;
-    }
+    reportDispatchFailure(wl_display_dispatch_pending(display_));
 }
 
 void WaylandWindow::onToplevelConfigure(int32_t width, int32_t height, const wl_array* states) {

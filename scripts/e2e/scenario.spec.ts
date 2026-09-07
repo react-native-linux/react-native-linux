@@ -36,6 +36,7 @@ describe("parseScenario", () => {
       expectsWindowClose: false,
       frameBudget: null,
       frames: EXPLICIT_FRAME_COUNT,
+      injectProtocolError: false,
       name: "pressable-click",
       ready: "pressable: committed surface 1",
       screenshot: null,
@@ -59,6 +60,11 @@ describe("parseScenario", () => {
 
   it("keeps an explicit empty windowFlags rather than treating it as omitted", () =>
     expect(parseScenario({ ...validScenario, windowFlags: [] }, "fixture.json")).toMatchObject({ windowFlags: [] }));
+
+  it("reads an explicit allowErrors, expectFailure and injectProtocolError", () => {
+    const overrides = { allowErrors: true, expectFailure: true, injectProtocolError: true };
+    expect(parseScenario({ ...validScenario, ...overrides }, "fixture.json")).toMatchObject(overrides);
+  });
 });
 
 describe("parseScenario boolean rejections", () => {
