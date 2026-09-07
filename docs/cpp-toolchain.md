@@ -279,6 +279,96 @@ would have: the recovery is complete, not merely survived. The table itself is p
 `VulkanResultPolicyTest`. An e2e step that restarts the compositor mid-scenario, which is issue #327's third
 acceptance criterion, is not built.
 
+### Surface commit ordering (#328)
+
+A Wayland client that is mapped but never shown is this platform's *default* failure rather than an exotic one,
+and Zed carries the whole class: [zed#16428](https://github.com/zed-industries/zed/issues/16428) is the tracking
+issue with forty comments, [zed#37918](https://github.com/zed-industries/zed/issues/37918) is a toplevel that was
+never mapped because a buffer was committed before the configure was acked,
+[zed#16414](https://github.com/zed-industries/zed/issues/16414) is an empty window under llvmpipe, and
+[zed#52062](https://github.com/zed-industries/zed/issues/52062) is a frame the compositor never showed. Our CI
+*is* lavapipe under headless weston, which is the configuration all of them are least reliable in, so the failure
+mode our entire golden suite depends on is a silently blank window.
+
+There are four reachable causes and they share one symptom, no error and no log line anywhere:
+
+1. A buffer attached before the initial `xdg_surface.configure` was acknowledged. xdg-shell forbids it; a
+   compositor either raises a protocol error or never maps the toplevel.
+2. A buffer whose extent disagrees with the configured one, which is a content update the compositor did not ask
+   for.
+3. An acquire that keeps returning no image, which a software driver given `minImageCount` images does under load.
+   Retrying it forever *is* the blank window.
+4. A content update the compositor `discarded`. It never turned into light and it is owed no `wl_surface.frame`
+   callback, so a client that only draws on one stops there and shows whatever was last accepted — after the first
+   frame, nothing.
+
+All four are one question asked once per frame — may this frame attach a buffer, and if not, what has to happen
+instead — so `SurfaceCommitGate.{h,cpp}` is one table rather than four guards spread through the renderer. Like
+`VulkanResultPolicy` and `ToplevelState` it includes neither Vulkan nor Wayland, which is what puts it inside the
+`rnl_core_tests` coverage gate at 100 % of lines and branches. `SkiaVulkanRenderer::drawFrame` gathers the state
+and carries the action out; it decides nothing.
+
+The rule is in precedence order, because more than one cause can hold at once and only the earliest is actionable:
+
+| Precedence | Condition | Action | Why |
+| --- | --- | --- | --- |
+| 1 | No acknowledged configure | `WaitForConfigure` | Nothing may be attached, and the configured extent does not exist yet, so nothing below can even be assessed. |
+| 2 | The swapchain extent disagrees with the configure | `RecreateSwapchainAtConfiguredExtent` | The frame attaches nothing and the next one is at the extent the compositor asked for. |
+| 3 | `kAcquireStarvationLimit` (3) starved acquires in a row, and the swapchain has grown fewer than `kMaxExtraSwapchainImages` (2) times | `RecreateSwapchainWithMoreImages` | One starved acquire is the pacing outcome `VulkanResultPolicy` already answers with `RetryNextFrame`; a run of them is evidence the swapchain is too small under this driver. |
+| 4 | The last content update was discarded | `RepresentDiscardedFrame` | Draw and present again rather than waiting for a callback that is not owed. The re-present is a **full repaint**, not an idle present, so what the compositor gets this time is a complete frame. |
+| 5 | Otherwise | `AttachBuffer` | The ordinary frame. |
+
+The ceiling in row 3 is the part that running it under a real compositor taught. A compositor is allowed to hold
+every buffer of a surface it is not showing — Hyprland does, for a window on an inactive workspace — so an
+occluded window starves *every* acquire, forever, with nothing wrong. Without the ceiling the shortage recovery
+fires every fourth frame and allocates a swapchain each time. Two extra images relieve a real shortage; past
+that, retrying is the correct behaviour and the rule says so.
+
+A discard also has to reach the run loop, not only the renderer, because the frame clock would otherwise never
+schedule the frame that replaces it: `WaylandWindow::hasContentUpdateDiscarded` joins `shouldDraw` and a pending
+capture as the third reason `WindowMain` draws regardless of the clock, and the frame that draws is the one that
+consumes it through `takeContentUpdateDiscarded`.
+
+#### Forcing each state
+
+None of the four has a trigger a developer can otherwise pull: no compositor withholds the initial configure on
+request and no driver starves an acquire to order. `--window-debug` therefore walks all four, one fault every
+other frame, through `injectSurfaceCommitFaultOnNextFrame`. A fault is applied to the state the frame actually
+observed and changes exactly the one field it names, so the action it provokes and the recovery that follows are
+the real ones rather than a fabricated path. The frame between two faults is an ordinary one, which is what makes
+its present the proof of recovery rather than a present the fault happened to allow. Under Hyprland the trace
+reads:
+
+```text
+[rnl-window] injecting surface-commit fault commit-before-configure
+[rnl-window] surface-commit wait-for-configure attached nothing
+[rnl-window] injecting surface-commit fault buffer-extent-mismatch
+[rnl-window] surface-commit recreate-swapchain-at-configured-extent attached nothing
+[rnl-window] surface-commit attach-buffer presented
+[rnl-window] injecting surface-commit fault acquire-starvation
+[rnl-window] surface-commit recreate-swapchain-with-more-images attached nothing
+[rnl-window] surface-commit attach-buffer presented
+[rnl-window] injecting surface-commit fault content-update-discarded
+[rnl-window] surface-commit represent-discarded-frame presented
+```
+
+Every injected state is followed by a present. The window recovers rather than going blank, which is the whole
+claim.
+
+#### The first-frame golden
+
+`window-first-frame.png` is a third window fixture and it asserts what the other two cannot. It takes no bundle
+and exactly one frame. A bundle mounts on the JavaScript thread, so its first frame is legitimately empty and
+proves nothing; `WindowMain`'s placeholder is painted synchronously, so the very first content update this client
+commits already carries the whole picture. Capturing that one frame is therefore the assertion that the *first*
+buffer attached is the one the compositor shows — an invisible window fails it, and a settled capture sixty frames
+later does not. See *Window goldens*.
+
+What is deliberately not here: the composite-alpha and premultiplication half of #328 — the surface-format
+selection table, the half-transparent fixture over a compositor-supplied backdrop, and the e2e assertion that the
+compositor's own screenshot is not uniformly transparent. That is a separate seam from the ordering rule and #328
+stays open for it.
+
 ### Pacing
 
 ADR-0001 decision 3 is implemented literally. `wl_surface.frame` is what throttles: `requestFrameCallback` runs
@@ -6292,6 +6382,11 @@ zero tolerance on the same two bundles. This rig's job is that the same scene su
 goldens on purpose: the pictures describe the same scene but not the same bytes, and a shared file would force one
 of the two rigs to accept the other's rasteriser. `text.js` is not a window fixture yet — the GPU glyph atlas is a
 third rasterisation path and deserves its own thresholds rather than a share of these.
+
+A third fixture takes no bundle at all: `window-first-frame.png` is the placeholder frame captured at
+`--frames 1`, which is the assertion that the first buffer this client attaches is the one the compositor shows.
+See *Surface commit ordering (#328)* for why it has to be the placeholder rather than a bundle, and why one frame
+rather than sixty.
 
 The comparison lives in `golden.spec.ts`, which runs the rig once at collection time — one compositor for all
 fixtures, because starting one per image would cost more than the renders do — and skips the whole block with the
