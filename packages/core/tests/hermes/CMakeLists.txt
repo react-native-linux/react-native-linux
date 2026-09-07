@@ -90,13 +90,21 @@ set_target_properties(rnl_core_hermes_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY 
 #        native stack grows with the JS one; under TSan the frames are large enough that the real stack blows
 #        before Hermes' native-stack guard fires, and the process wedges on ThreadSanitizer's own
 #        stack-overflow DEADLYSIGNAL instead of exiting. It hangs until the timeout rather than failing.
+#   #393 highResTimeStampTest: round-trips HighResTimeStamp::now() through a double of milliseconds and
+#        back through static_cast<int64_t>(units * 1e6), which truncates; whenever the product lands a hair
+#        below the integer it started from, the nanosecond is lost, which is about one timestamp in five at
+#        any uptime.
+#   #395 immediateTaskYieldsToSynchronousAccess: starts a real thread that requests synchronous access and
+#        lines it up with the scheduler's yield check by sleeping, so on a loaded runner whichever side wins
+#        decides what the stub queue holds at the assertion.
 #
-# Both are vendored and neither is reachable from anything this platform calls.
-set(RNL_HERMES_TESTS_FILTER "")
+# All four are vendored and none is reachable from anything this platform calls.
+set(RNL_HERMES_TESTS_FILTER
+    "-BridgingTest.highResTimeStampTest:UseModernRuntimeScheduler/RuntimeSchedulerTest.immediateTaskYieldsToSynchronousAccess/*")
 
 if(CMAKE_CXX_FLAGS MATCHES "-fsanitize=thread")
-    set(RNL_HERMES_TESTS_FILTER
-        "-Runtimes/JSITest.SetRuntimeData/*:Runtimes/JSITest.JSErrorStackOverflowHandling/*")
+    string(APPEND RNL_HERMES_TESTS_FILTER
+        ":Runtimes/JSITest.SetRuntimeData/*:Runtimes/JSITest.JSErrorStackOverflowHandling/*")
 endif()
 
 gtest_discover_tests(rnl_core_hermes_tests TEST_FILTER "${RNL_HERMES_TESTS_FILTER}")

@@ -7137,15 +7137,27 @@ don't copy — so a version bump re-runs it at the new SHA:
 | `react/renderer/scheduler/tests/SchedulerDelegateInvalidationTest.cpp` | 7 |
 | `react/runtime/tests/cxx/{ReactInstance,RuntimeExecutorShutdown}Test.cpp` | 30 |
 
-211 cases are *discovered*, all of section B's E2 list, and no upstream file is left out of the source list.
-Two qualifications on what that number means when the suite runs. One case reports itself skipped at runtime:
+211 cases are in the sources, all of section B's E2 list, and no upstream file is left out of the source list.
+Three qualifications on what that number means when the suite runs. The `TEST_FILTER` in
+`packages/core/tests/hermes/CMakeLists.txt` keeps three cases out of every configure (the parameterised
+scheduler case counts twice), so `dev` and `asan` discover 208. One case reports itself skipped at runtime:
 `ReactInstanceTest.testRegistersRuntimeSchedulerAsEventLoopControl` is guarded by a feature flag upstream ships
-off, so `ctest` counts it as not run rather than as passed, and 210 execute. And the TSan configure discovers
-209 rather than 211, because the `TEST_FILTER` in `packages/core/tests/hermes/CMakeLists.txt` keeps two cases
-out of that one configure, so 208 execute there. `dev` and `asan` discover 211 and run 210.
+off, so `ctest` counts it as not run rather than as passed, and 207 execute. And the TSan configure keeps two
+more cases out, so it discovers 206 and executes 205.
 
-The two are vendored failures, neither reachable from anything this platform calls, and per AGENTS.md a filter
+The four are vendored failures, none reachable from anything this platform calls, and per AGENTS.md a filter
 naming a case is not a suppression file; there is none in this repository.
+
+- `UseModernRuntimeScheduler/RuntimeSchedulerTest.immediateTaskYieldsToSynchronousAccess` (#395) — starts a real
+  thread that requests synchronous access and lines it up with the scheduler's yield check by sleeping, so on a
+  loaded runner whichever side wins decides what the stub queue holds at the assertion; it surfaced on the run
+  that added the #393 filter, after passing every other run that day.
+
+- `BridgingTest.highResTimeStampTest` (#393) — round-trips `HighResTimeStamp::now()` through `toJs`, a double of
+  milliseconds, and back through `fromDOMHighResTimeStamp`, which converts with `static_cast<int64_t>(units * 1e6)`
+  and therefore truncates. Whenever `(ns / 1e6) * 1e6` lands a hair below the integer it started from, the last
+  nanosecond is lost: the run that surfaced it had a 268 s uptime, and about one timestamp in five fails at that
+  magnitude. A `std::llround` upstream would fix it; until then the case is a coin toss on every preset.
 
 - `Runtimes/JSITest.SetRuntimeData` (#383) — a lock-order inversion, `M0 => M1 => M0`, between the
   process-global JSI runtime-data mutex in `ReactCommon/jsi/jsi/jsi.cpp`, which `Runtime::setRuntimeDataImpl`
