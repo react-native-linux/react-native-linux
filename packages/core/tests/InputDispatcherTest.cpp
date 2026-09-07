@@ -92,6 +92,13 @@ protected:
 
     void focus(Tag tag) { dispatcher_->dispatchCommands({{.tag = tag, .name = kFocusCommandName, .args = folly::dynamic::object()}}); }
 
+    /** The one shape every `focusField` call in these tests takes: a Normal-purpose field, named by its tag. */
+    static void expectFocusFieldCall(const RecordedFocusCall& call, Tag fieldTag) {
+        EXPECT_TRUE(call.isFocus);
+        EXPECT_EQ(call.fieldIdentifier, fieldTag);
+        EXPECT_EQ(call.contentPurpose, TextInputContentPurpose::Normal);
+    }
+
     std::unique_ptr<InputDispatcher> dispatcher_;
     RecordingTextInputFocusSink sink_;
 
@@ -109,18 +116,14 @@ TEST_F(InputDispatcherTest, FocusMovingBetweenTwoFieldsOfTheSamePurposeStillCall
     focus(kFieldAlphaTag);
 
     ASSERT_EQ(sink_.calls.size(), 1U);
-    EXPECT_TRUE(sink_.calls[0].isFocus);
-    EXPECT_EQ(sink_.calls[0].fieldIdentifier, kFieldAlphaTag);
-    EXPECT_EQ(sink_.calls[0].contentPurpose, TextInputContentPurpose::Normal);
+    expectFocusFieldCall(sink_.calls[0], kFieldAlphaTag);
 
     focus(kFieldBetaTag);
 
     // The bug: comparing only the content purpose left this second focus indistinguishable from "nothing
     // happened", because both fields are `Normal` — this second `focusField` call never reached the sink at all.
     ASSERT_EQ(sink_.calls.size(), 2U);
-    EXPECT_TRUE(sink_.calls[1].isFocus);
-    EXPECT_EQ(sink_.calls[1].fieldIdentifier, kFieldBetaTag);
-    EXPECT_EQ(sink_.calls[1].contentPurpose, TextInputContentPurpose::Normal);
+    expectFocusFieldCall(sink_.calls[1], kFieldBetaTag);
 }
 
 TEST_F(InputDispatcherTest, FocusingTheSameFieldAgainProducesNoSecondCall) {
@@ -131,6 +134,27 @@ TEST_F(InputDispatcherTest, FocusingTheSameFieldAgainProducesNoSecondCall) {
     focus(kFieldAlphaTag);
 
     EXPECT_EQ(sink_.calls.size(), 1U);
+}
+
+/**
+ * A second regression on the same cache: a field focused while no sink is installed still writes
+ * `reportedTextInputField_`, because `updateTextInput()` runs every frame regardless of whether there is anyone to
+ * tell. Installing a sink afterward must not find that cached value unchanged and stay silent — the session would
+ * never turn on until focus happened to move again. `setTextInputFocusSink()` now forgets the cached field, so the
+ * very next `dispatch()` replays `focusField()` for whatever is focused.
+ */
+TEST_F(InputDispatcherTest, InstallingASinkAfterAFieldWasFocusedWithoutOneReplaysFocusField) {
+    dispatcher_->setTextInputFocusSink(nullptr);
+
+    focus(kFieldAlphaTag);
+
+    ASSERT_TRUE(sink_.calls.empty());
+
+    dispatcher_->setTextInputFocusSink(&sink_);
+    dispatcher_->dispatch({});
+
+    ASSERT_EQ(sink_.calls.size(), 1U);
+    expectFocusFieldCall(sink_.calls[0], kFieldAlphaTag);
 }
 
 } // namespace

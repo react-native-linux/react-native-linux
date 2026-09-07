@@ -331,6 +331,12 @@ void InputDispatcher::dispatchCommands(const std::vector<SceneCommand>& commands
 void InputDispatcher::setTextInputFocusSink(TextInputFocusSink* textInputFocusSink) noexcept {
     textInputFocusSink_ = textInputFocusSink;
     textInputController_.setTextInputFocusSink(textInputFocusSink);
+
+    // Forget what was last reported: a field could have been focused (and cached into reportedTextInputField_)
+    // while no sink was installed, and swapping in a sink now must still replay that field's focusField() rather
+    // than finding the cached value unchanged and staying silent — the next updateTextInput() has to be told
+    // there is nothing to compare against.
+    reportedTextInputField_.reset();
 }
 
 bool InputDispatcher::advanceCaretBlink(double frameMilliseconds) {
