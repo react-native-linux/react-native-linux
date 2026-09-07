@@ -6157,6 +6157,11 @@ cmake --build build/dev --target rnl_core_hermes_tests
 ctest --preset dev
 ```
 
+The `dev`, `asan` and `tsan` test presets set `execution.timeout` to 300 seconds, which is a diagnosis tool
+rather than a budget: every case in either binary finishes in under two seconds in every configure, so a test
+that reaches five minutes has hung, and the point of the timeout is that `ctest` then names it and fails in five
+minutes instead of the job dying at its two-hour limit with nothing to read. #384 is why the number is there.
+
 GoogleTest reaches that configure by not being a subdirectory of it. Hermes' bundled llvh owns the `gtest` and
 `gtest_main` target names (hazard 3 below), and llvh's copy is not a substitute for the pinned one either: it
 predates `MOCK_METHOD`'s variadic form and `INSTANTIATE_TEST_SUITE_P`, which `ReactInstanceTest` and
