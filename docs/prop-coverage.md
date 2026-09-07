@@ -60,11 +60,11 @@ assertion and not an implementation.
 | View | 35 | 14 | 5 | 16 |
 | Text | 45 | 20 | 6 | 19 |
 | Image | 14 | 4 | 6 | 4 |
-| ScrollView | 39 | 5 | 2 | 32 |
+| ScrollView | 39 | 10 | 2 | 27 |
 | TextInput | 23 | 12 | 0 | 11 |
 | Switch | 8 | 5 | 3 | 0 |
 | ActivityIndicator | 4 | 4 | 0 | 0 |
-| **Total** | 168 | 64 | 22 | 82 |
+| **Total** | 168 | 69 | 22 | 77 |
 
 ## View
 
@@ -197,7 +197,7 @@ assertion and not an implementation.
 | `maximumZoomScale` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:47` | not-implemented | #69 |
 | `minimumZoomScale` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:48` | not-implemented | #69 |
 | `scrollEnabled` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:49` | not-implemented | #69 |
-| `pagingEnabled` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:50` | not-implemented | #69 |
+| `pagingEnabled` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:50` | implemented | `SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe` |
 | `pinchGestureEnabled` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:51` | not-implemented | #69 |
 | `scrollsToTop` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:52` | not-implemented | #69 |
 | `showsHorizontalScrollIndicator` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:53` | not-implemented | #49 |
@@ -209,10 +209,10 @@ assertion and not an implementation.
 | `contentInset` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:59` | implemented | `ScrollInsetTest, TheInsetExtendsTheRangeAtWhicheverEndsItIsSetOn` |
 | `contentOffset` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:60` | implemented | `RetainedSceneScrollTest, ContentOffsetTranslatesTheChildrenOnBothAxes` |
 | `scrollIndicatorInsets` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:61` | not-implemented | #49 |
-| `snapToInterval` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:62` | not-implemented | #69 |
-| `snapToAlignment` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:63` | not-implemented | #69 |
-| `disableIntervalMomentum` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:64` | not-implemented | #69 |
-| `snapToOffsets` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:65` | not-implemented | #69 |
+| `snapToInterval` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:62` | implemented | `SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe` |
+| `snapToAlignment` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:63` | implemented | `SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe` |
+| `disableIntervalMomentum` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:64` | implemented | `SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe` |
+| `snapToOffsets` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:65` | implemented | `SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe` |
 | `snapToStart` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:66` | implemented | `SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe` |
 | `snapToEnd` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:67` | implemented | `SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe` |
 | `contentInsetAdjustmentBehavior` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:68` | not-implemented | #69 |
