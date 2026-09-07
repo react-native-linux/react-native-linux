@@ -101,6 +101,7 @@ const startCompositor = (run: ScenarioRun, rig: Rig, workspace: Workspace): Comp
       "--frame-log",
       workspace.frameLogPath,
       ...(run.scenario.automation === null ? [] : ["--automation"]),
+      ...run.scenario.windowFlags,
     ],
     {
       env: buildEnvironment({

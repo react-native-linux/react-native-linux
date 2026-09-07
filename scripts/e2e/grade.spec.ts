@@ -41,6 +41,7 @@ const baseScenario: Scenario = {
   ready: "pressable: committed surface 1",
   screenshot: null,
   steps: ["sleep 500"],
+  windowFlags: [],
 };
 
 const healthyFrameLog = [

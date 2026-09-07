@@ -39,6 +39,7 @@ describe("parseScenario", () => {
       ready: "pressable: committed surface 1",
       screenshot: null,
       steps: ["sleep 500", "click 200 140"],
+      windowFlags: [],
     });
   });
 
@@ -46,10 +47,10 @@ describe("parseScenario", () => {
     expect(parseScenario(validScenario, "fixture.json").frames).toBe(DEFAULT_FRAME_COUNT);
   });
 
-  it("reads an explicit allowErrors and expectFailure", () => {
-    const scenario = parseScenario({ ...validScenario, allowErrors: true, expectFailure: true }, "fixture.json");
+  it("reads an explicit allowErrors, expectFailure and windowFlags", () => {
+    const overrides = { allowErrors: true, expectFailure: true, windowFlags: ["--force-client-decorations"] };
 
-    expect(scenario).toMatchObject({ allowErrors: true, expectFailure: true });
+    expect(parseScenario({ ...validScenario, ...overrides }, "fixture.json")).toMatchObject(overrides);
   });
 });
 

@@ -39,6 +39,7 @@ const overriddenEnvironmentNames = new Set(["DISPLAY", "WAYLAND_DISPLAY", "VK_DR
 
 interface WindowFixture {
   readonly bundleFileName: string | null;
+  readonly extraArguments: readonly string[];
   readonly goldenFileName: string;
   readonly frameCount: string;
 }
@@ -49,18 +50,44 @@ const bundlesDirectory = path.join(packageDirectory, "test-bundles");
 const binaryPath = path.join(repositoryRoot, "build", "dev", "bin", "rnl_window");
 const defaultOutputDirectory = path.join(repositoryRoot, "build", "window-goldens");
 
+const clientDecorations = ["--app-id", "org.reactnative.linux.golden", "--force-client-decorations"];
+
 /**
  * The first-frame fixture takes no bundle and exactly one frame, which is what makes it the assertion the other
- * two cannot make. A bundle mounts on the JavaScript thread, so its first frame is legitimately empty and says
+ * fixtures cannot make. A bundle mounts on the JavaScript thread, so its first frame is legitimately empty and says
  * nothing; the placeholder is painted synchronously by `WindowMain`, so the very first content update this client
  * commits already carries the whole picture. Capturing that one frame is therefore the check that the first buffer
  * attached is the one the compositor shows — the invisible window of #328 fails it and a settled capture 60 frames
  * later does not. See *Surface commit ordering* in docs/cpp-toolchain.md.
+ *
+ * The decorations fixture is #329's drawn bar; the negotiated server-side path is the fabric-view/view-props
+ * fixtures rendering unchanged.
  */
 const fixtures: readonly WindowFixture[] = [
-  { bundleFileName: "fabric-view.js", frameCount: SCREENSHOT_FRAME_COUNT, goldenFileName: "window-fabric-view.png" },
-  { bundleFileName: "view-props.js", frameCount: SCREENSHOT_FRAME_COUNT, goldenFileName: "window-view-props.png" },
-  { bundleFileName: null, frameCount: FIRST_FRAME_COUNT, goldenFileName: "window-first-frame.png" },
+  {
+    bundleFileName: "fabric-view.js",
+    extraArguments: [],
+    frameCount: SCREENSHOT_FRAME_COUNT,
+    goldenFileName: "window-fabric-view.png",
+  },
+  {
+    bundleFileName: "view-props.js",
+    extraArguments: [],
+    frameCount: SCREENSHOT_FRAME_COUNT,
+    goldenFileName: "window-view-props.png",
+  },
+  {
+    bundleFileName: null,
+    extraArguments: [],
+    frameCount: FIRST_FRAME_COUNT,
+    goldenFileName: "window-first-frame.png",
+  },
+  {
+    bundleFileName: "fabric-view.js",
+    extraArguments: clientDecorations,
+    frameCount: SCREENSHOT_FRAME_COUNT,
+    goldenFileName: "window-decorations.png",
+  },
 ];
 
 const findExecutable = (executableName: string): string | null => {
@@ -215,7 +242,7 @@ const renderFixture = (
     fixture.bundleFileName === null ? [] : ["--fabric", path.join(bundlesDirectory, fixture.bundleFileName)];
   const render = spawnSync(
     binaryPath,
-    [...bundleArguments, "--screenshot", outputPath, "--frames", fixture.frameCount],
+    [...bundleArguments, "--screenshot", outputPath, "--frames", fixture.frameCount, ...fixture.extraArguments],
     { encoding: "utf8", env: clientEnvironment, timeout: RENDER_TIMEOUT_MS },
   );
 

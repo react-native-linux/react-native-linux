@@ -96,6 +96,12 @@ interface Scenario {
   readonly screenshot: ScreenshotComparison | null;
   /** `rnl_inject` script lines. */
   readonly steps: readonly string[];
+  /**
+   * Extra `rnl_window` flags, for a scenario whose subject is the window rather than the bundle. #329's
+   * `--force-client-decorations` is the first: cage implements `zxdg_decoration_manager_v1` and would otherwise
+   * decorate the window itself, leaving nothing of ours to click.
+   */
+  readonly windowFlags: readonly string[];
 }
 
 interface ArtifactPaths {
@@ -211,6 +217,7 @@ const parseScenario = (value: unknown, sourceName: string): Scenario => {
     ready: readString(value["ready"], "ready", sourceName),
     screenshot: readScreenshotComparison(value, sourceName),
     steps: readStringArray(value["steps"], "steps", sourceName),
+    windowFlags: "windowFlags" in value ? readStringArray(value["windowFlags"], "windowFlags", sourceName) : [],
   };
 };
 
