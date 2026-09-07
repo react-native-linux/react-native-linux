@@ -4,9 +4,11 @@
 #include <cstdint>
 #include <gtest/gtest.h>
 #include <latch>
+#include <mutex>
 #include <optional>
 #include <string_view>
 #include <thread>
+#include <vector>
 
 namespace {
 
@@ -325,6 +327,20 @@ TEST(PlatformColorUnknownNameTest, AnEmptyNameResolvesToNothing) {
     EXPECT_EQ(platformColor("", kLight), std::nullopt);
 }
 
+constexpr int kConcurrentIterations = 2000;
+
+// The frame-thread half of both TSan tests below: a portal alternating "prefer dark" and "prefer light" as fast
+// as it can, released to run once the caller's latch drops.
+std::thread spawnPortalSignalThread(AppearanceModel& model, std::latch& startLatch) {
+    return std::thread([&model, &startLatch] {
+        startLatch.arrive_and_wait();
+
+        for (int iteration = 0; iteration < kConcurrentIterations; ++iteration) {
+            model.onPortalColorSchemeChanged(iteration % 2 == 0 ? kDark : kLight);
+        }
+    });
+}
+
 // The TSan half of the mutex fix: `AppearanceModel` has a frame-thread writer (the portal, faked here by a
 // second thread calling `onPortalColorSchemeChanged`) and a JavaScript-thread reader-and-writer (`getColorScheme`
 // and `setColorScheme`, faked by the main thread resolving a `PlatformColor` and toggling the override). Both
@@ -332,18 +348,9 @@ TEST(PlatformColorUnknownNameTest, AnEmptyNameResolvesToNothing) {
 // assertions below, which only say the run finished and landed on a defined scheme. Run under CTest and under
 // the TSan preset.
 TEST(AppearanceModelThreadSafetyTest, PortalSignalsAndJavaScriptAccessAreSerialized) {
-    constexpr int kConcurrentIterations = 2000;
-
     AppearanceModel model{kLight};
     std::latch startLatch{2};
-
-    std::thread portalThread([&] {
-        startLatch.arrive_and_wait();
-
-        for (int iteration = 0; iteration < kConcurrentIterations; ++iteration) {
-            model.onPortalColorSchemeChanged(iteration % 2 == 0 ? kDark : kLight);
-        }
-    });
+    std::thread portalThread = spawnPortalSignalThread(model, startLatch);
 
     startLatch.arrive_and_wait();
 
@@ -361,6 +368,42 @@ TEST(AppearanceModelThreadSafetyTest, PortalSignalsAndJavaScriptAccessAreSeriali
     const ColorScheme finalScheme = model.colorScheme();
 
     EXPECT_TRUE(finalScheme == kLight || finalScheme == kDark);
+}
+
+// The TSan half of the second mutex: releasing `mutex_` before invoking the listener leaves a window where a
+// second writer's whole read-mutate-notify sequence can run between the first writer's release and its own
+// delivery, so the two `appearanceChanged` events would reach JavaScript out of the order the state actually
+// transitioned in — the last one delivered would not be what `colorScheme()` currently answers.
+// `notificationMutex_`, held for a writer's entire read-mutate-notify sequence and acquired before `mutex_`,
+// is what rules that out: whichever writer's sequence starts first finishes — state mutation and delivery —
+// before the other's can begin, so the last scheme this listener records is always the one the model still
+// holds once both threads are done. Deterministic by construction; no barrier between the last write and the
+// assertion is needed. Run under CTest and under the TSan preset.
+TEST(AppearanceModelThreadSafetyTest, DeliveryOrderMatchesTheFinalState) {
+    AppearanceModel model{kLight};
+    std::mutex deliveredMutex;
+    std::vector<ColorScheme> delivered;
+
+    model.setChangeListener([&](ColorScheme scheme) {
+        const std::lock_guard<std::mutex> lock(deliveredMutex);
+        delivered.push_back(scheme);
+    });
+
+    std::latch startLatch{2};
+    std::thread portalThread = spawnPortalSignalThread(model, startLatch);
+
+    startLatch.arrive_and_wait();
+
+    for (int iteration = 0; iteration < kConcurrentIterations; ++iteration) {
+        model.setColorScheme(iteration % 2 == 0 ? std::optional<ColorScheme>(kDark) : std::nullopt);
+    }
+
+    portalThread.join();
+
+    const std::lock_guard<std::mutex> lock(deliveredMutex);
+
+    ASSERT_FALSE(delivered.empty());
+    EXPECT_EQ(delivered.back(), model.colorScheme());
 }
 
 } // namespace

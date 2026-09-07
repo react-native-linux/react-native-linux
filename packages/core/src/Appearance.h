@@ -42,9 +42,19 @@ constexpr ColorScheme kFallbackColorScheme = ColorScheme::Light;
  * `LinuxAppearanceModule::setColorScheme`; `colorScheme()` is read from the JavaScript thread by
  * `getColorScheme` and by `__rnlPlatformColor` on every call. That pair — a frame-thread writer and a
  * JS-thread reader-and-writer — is exactly what `DimensionsSource` guards with a mutex, and `AppearanceModel`
- * guards its fields with one the same way: every accessor takes the lock for the duration of its read or
- * write, and the change listener is invoked after the lock is released, so a listener that calls back into
- * the model cannot deadlock on it.
+ * guards its fields with one the same way: every accessor takes `mutex_` for the duration of its read or
+ * write.
+ *
+ * `mutex_` alone is not enough for the two writers, though: releasing it before invoking the change listener
+ * — necessary so a listener calling back into the model cannot deadlock on it — opens a window where a second
+ * writer's whole read-mutate-notify sequence can run between the first writer's release and its own delivery,
+ * so the two `appearanceChanged` events reach JavaScript out of the order the state actually transitioned in.
+ * `setColorScheme` and `onPortalColorSchemeChanged` therefore also take `notificationMutex_`, a second mutex
+ * held for the writer's entire read-mutate-notify sequence, acquired **before** `mutex_` and released only
+ * after the listener call returns. The lock order is always `notificationMutex_` then `mutex_`, in both
+ * writers, which is what makes it safe: one writer's whole sequence — state mutation and delivery — completes
+ * before the next writer's can begin, so the events JavaScript sees land in the same order the state did.
+ * `colorScheme()` needs no part of this; it never emits, so it only ever takes `mutex_`.
  */
 /**
  * `org.freedesktop.appearance color-scheme`, decoded. The XDG desktop portal settings interface defines exactly
@@ -93,6 +103,15 @@ public:
     void setChangeListener(std::function<void(ColorScheme)> listener);
 
 private:
+    /**
+     * The shared shape of `setColorScheme` and `onPortalColorSchemeChanged`: take `notificationMutex_`, mutate
+     * state under `mutex_` via `mutateUnderStateLock` (which returns whether the change should emit), then
+     * invoke the listener after `mutex_` is released but before `notificationMutex_` is. Both callers differ
+     * only in what they mutate and which precedence rule decides `shouldEmit`.
+     */
+    void mutateAndNotify(const std::function<bool()>& mutateUnderStateLock);
+
+    mutable std::mutex notificationMutex_;
     mutable std::mutex mutex_;
     std::optional<ColorScheme> colorSchemeOverride_;
     ColorScheme portalColorScheme_;

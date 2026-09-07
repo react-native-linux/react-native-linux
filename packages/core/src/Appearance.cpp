@@ -66,15 +66,14 @@ ColorScheme AppearanceModel::colorScheme() const {
     return resolveEffectiveColorScheme(colorSchemeOverride_, portalColorScheme_);
 }
 
-void AppearanceModel::setColorScheme(std::optional<ColorScheme> colorSchemeOverride) {
+void AppearanceModel::mutateAndNotify(const std::function<bool()>& mutateUnderStateLock) {
+    const std::lock_guard<std::mutex> notificationLock(notificationMutex_);
     std::function<void(ColorScheme)> listenerToInvoke;
     ColorScheme resolvedColorScheme = kFallbackColorScheme;
 
     {
         const std::lock_guard<std::mutex> lock(mutex_);
-        const bool shouldEmit = shouldEmitOnOverrideChange(colorSchemeOverride_, colorSchemeOverride);
-
-        colorSchemeOverride_ = colorSchemeOverride;
+        const bool shouldEmit = mutateUnderStateLock();
 
         if (shouldEmit) {
             resolvedColorScheme = resolveEffectiveColorScheme(colorSchemeOverride_, portalColorScheme_);
@@ -87,25 +86,24 @@ void AppearanceModel::setColorScheme(std::optional<ColorScheme> colorSchemeOverr
     }
 }
 
-void AppearanceModel::onPortalColorSchemeChanged(ColorScheme portalColorScheme) {
-    std::function<void(ColorScheme)> listenerToInvoke;
-    ColorScheme resolvedColorScheme = kFallbackColorScheme;
+void AppearanceModel::setColorScheme(std::optional<ColorScheme> colorSchemeOverride) {
+    mutateAndNotify([this, colorSchemeOverride] {
+        const bool shouldEmit = shouldEmitOnOverrideChange(colorSchemeOverride_, colorSchemeOverride);
 
-    {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        colorSchemeOverride_ = colorSchemeOverride;
+
+        return shouldEmit;
+    });
+}
+
+void AppearanceModel::onPortalColorSchemeChanged(ColorScheme portalColorScheme) {
+    mutateAndNotify([this, portalColorScheme] {
         const bool shouldEmit = shouldEmitOnPortalChange(colorSchemeOverride_, portalColorScheme_, portalColorScheme);
 
         portalColorScheme_ = portalColorScheme;
 
-        if (shouldEmit) {
-            resolvedColorScheme = resolveEffectiveColorScheme(colorSchemeOverride_, portalColorScheme_);
-            listenerToInvoke = changeListener_;
-        }
-    }
-
-    if (listenerToInvoke) {
-        listenerToInvoke(resolvedColorScheme);
-    }
+        return shouldEmit;
+    });
 }
 
 void AppearanceModel::setChangeListener(std::function<void(ColorScheme)> listener) {
