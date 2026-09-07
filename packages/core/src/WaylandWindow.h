@@ -21,6 +21,7 @@ struct wl_output;
 struct wl_registry;
 struct wl_registry_listener;
 struct wl_seat;
+struct wl_shm;
 struct wl_surface;
 struct wl_surface_listener;
 struct wp_presentation;
@@ -94,6 +95,13 @@ public:
 
     wl_display* display() const noexcept;
     wl_surface* surface() const noexcept;
+
+    /**
+     * The `wl_shm` the compositor advertises, which the ladder's raster rung attaches its buffers through. Null
+     * on a compositor that advertises none, which the Wayland core protocol requires it to and no compositor in
+     * practice omits; the rung reports that as its own bring-up failure rather than this constructor doing so.
+     */
+    wl_shm* sharedMemory() const noexcept;
     WindowSize size() const noexcept;
     bool isClosed() const noexcept;
     bool takePendingResize() noexcept;
@@ -202,6 +210,7 @@ private:
     wl_display* display_{nullptr};
     wl_compositor* compositor_{nullptr};
     WaylandSerialLedger serialLedger_;
+    wl_shm* sharedMemory_{nullptr};
     std::unique_ptr<WaylandSeat> seat_;
     zwp_text_input_manager_v3* textInputManager_{nullptr};
     wp_presentation* presentation_{nullptr};

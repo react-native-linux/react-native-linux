@@ -149,6 +149,10 @@ WaylandWindow::~WaylandWindow() noexcept {
         xdg_wm_base_destroy(wmBase_);
     }
 
+    if (sharedMemory_ != nullptr) {
+        wl_shm_destroy(sharedMemory_);
+    }
+
     if (compositor_ != nullptr) {
         wl_compositor_destroy(compositor_);
     }
@@ -161,6 +165,8 @@ WaylandWindow::~WaylandWindow() noexcept {
 wl_display* WaylandWindow::display() const noexcept { return display_; }
 
 wl_surface* WaylandWindow::surface() const noexcept { return surface_; }
+
+wl_shm* WaylandWindow::sharedMemory() const noexcept { return sharedMemory_; }
 
 WindowSize WaylandWindow::size() const noexcept { return size_; }
 
@@ -267,6 +273,9 @@ void WaylandWindow::bindGlobal(wl_registry* registry, uint32_t name, const char*
         void* bound =
             wl_registry_bind(registry, name, &xdg_wm_base_interface, std::min(version, kMaximumWmBaseVersion));
         wmBase_ = static_cast<xdg_wm_base*>(bound);
+    } else if (std::strcmp(interfaceName, wl_shm_interface.name) == 0) {
+        void* bound = wl_registry_bind(registry, name, &wl_shm_interface, 1);
+        sharedMemory_ = static_cast<wl_shm*>(bound);
     } else if (std::strcmp(interfaceName, wl_seat_interface.name) == 0 && version >= kMinimumSeatVersion) {
         void* bound = wl_registry_bind(registry, name, &wl_seat_interface, kMinimumSeatVersion);
         seat_ = std::make_unique<WaylandSeat>(static_cast<wl_seat*>(bound), serialLedger_);
