@@ -21,6 +21,7 @@ using react_native_linux::kDecorationModeClientSide;
 using react_native_linux::kDecorationModeServerSide;
 using react_native_linux::kDoubleClickIntervalMilliseconds;
 using react_native_linux::layoutTitleBar;
+using react_native_linux::PointerCapture;
 using react_native_linux::resizeEdgeOfHit;
 using react_native_linux::TitleBarLayout;
 
@@ -170,6 +171,35 @@ TEST(WindowDecorationsTest, AThirdPressIsNotASecondDoubleClick) {
     EXPECT_TRUE(detector.recordPress(1100));
     EXPECT_FALSE(detector.recordPress(1200));
     EXPECT_TRUE(detector.recordPress(1300));
+}
+
+TEST(WindowDecorationsTest, APressInContentKeepsRoutingToContentThroughAReleaseOnTheBar) {
+    PointerCapture capture;
+
+    EXPECT_TRUE(capture.routeToContent(DecorationHit::Content, /*isPrimaryPress=*/true, /*isPrimaryRelease=*/false));
+    EXPECT_TRUE(capture.routeToContent(DecorationHit::Drag, /*isPrimaryPress=*/false, /*isPrimaryRelease=*/false));
+    EXPECT_TRUE(capture.routeToContent(DecorationHit::Drag, /*isPrimaryPress=*/false, /*isPrimaryRelease=*/true));
+
+    // The release ended the capture, so the next press is free to land on the bar again.
+    EXPECT_FALSE(capture.routeToContent(DecorationHit::Drag, /*isPrimaryPress=*/true, /*isPrimaryRelease=*/false));
+}
+
+TEST(WindowDecorationsTest, APressOnTheBarKeepsRoutingToChromeThroughAReleaseInContent) {
+    PointerCapture capture;
+
+    EXPECT_FALSE(capture.routeToContent(DecorationHit::Drag, /*isPrimaryPress=*/true, /*isPrimaryRelease=*/false));
+    EXPECT_FALSE(capture.routeToContent(DecorationHit::Content, /*isPrimaryPress=*/false, /*isPrimaryRelease=*/false));
+    EXPECT_FALSE(capture.routeToContent(DecorationHit::Content, /*isPrimaryPress=*/false, /*isPrimaryRelease=*/true));
+
+    // The release ended the capture, so the next event is routed by its own hit test again.
+    EXPECT_TRUE(capture.routeToContent(DecorationHit::Content, /*isPrimaryPress=*/false, /*isPrimaryRelease=*/false));
+}
+
+TEST(WindowDecorationsTest, WithNoCaptureInProgressEveryEventRoutesByItsOwnHitTest) {
+    PointerCapture capture;
+
+    EXPECT_TRUE(capture.routeToContent(DecorationHit::Content, /*isPrimaryPress=*/false, /*isPrimaryRelease=*/false));
+    EXPECT_FALSE(capture.routeToContent(DecorationHit::Close, /*isPrimaryPress=*/false, /*isPrimaryRelease=*/false));
 }
 
 } // namespace

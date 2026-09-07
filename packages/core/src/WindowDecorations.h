@@ -156,4 +156,29 @@ private:
     std::optional<uint64_t> previousPress_;
 };
 
+/**
+ * Pointer capture across a primary-button press/release pair.
+ *
+ * A hit test alone routes each pointer event by where it currently lands, which drops the release half of a
+ * drag that crosses the bar boundary: a press that starts in the content and whose release lands on the bar (or
+ * the reverse) never reaches the side that got the press, per #399. The fix is the one pointer-capture rule
+ * every toolkit applies — once a primary press picks a side, every event that follows, wherever it hit-tests,
+ * stays on that side until the matching primary release, which also ends the capture.
+ *
+ * Threading contract: not synchronised, and driven only from the frame thread that owns the Wayland connection,
+ * the same as `DoubleClickDetector`.
+ */
+class PointerCapture final {
+public:
+    /**
+     * Whether the event with this hit test result belongs to the content rather than the chrome. `isPrimaryPress`
+     * and `isPrimaryRelease` name whether this event is the primary button's press or release; every other event
+     * (motion, other buttons, scroll) passes both as `false` and only reads the capture already in progress.
+     */
+    bool routeToContent(DecorationHit hit, bool isPrimaryPress, bool isPrimaryRelease) noexcept;
+
+private:
+    std::optional<bool> capturedToContent_;
+};
+
 } // namespace react_native_linux

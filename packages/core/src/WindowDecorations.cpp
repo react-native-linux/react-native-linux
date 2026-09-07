@@ -165,4 +165,24 @@ bool DoubleClickDetector::recordPress(uint64_t milliseconds) noexcept {
     return isDoubleClick;
 }
 
+bool PointerCapture::routeToContent(DecorationHit hit, bool isPrimaryPress, bool isPrimaryRelease) noexcept {
+    if (capturedToContent_.has_value()) {
+        const bool routedToContent = capturedToContent_.value();
+
+        if (isPrimaryRelease) {
+            capturedToContent_.reset();
+        }
+
+        return routedToContent;
+    }
+
+    const bool isContent = hit == DecorationHit::Content;
+
+    if (isPrimaryPress) {
+        capturedToContent_ = isContent;
+    }
+
+    return isContent;
+}
+
 } // namespace react_native_linux
