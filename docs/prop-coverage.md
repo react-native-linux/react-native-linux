@@ -61,10 +61,10 @@ assertion and not an implementation.
 | Text | 45 | 20 | 6 | 19 |
 | Image | 14 | 7 | 3 | 4 |
 | ScrollView | 39 | 10 | 2 | 27 |
-| TextInput | 23 | 12 | 0 | 11 |
+| TextInput | 24 | 13 | 0 | 11 |
 | Switch | 8 | 5 | 3 | 0 |
 | ActivityIndicator | 4 | 4 | 0 | 0 |
-| **Total** | 168 | 72 | 19 | 77 |
+| **Total** | 169 | 73 | 19 | 77 |
 
 ## View
 
@@ -242,10 +242,11 @@ assertion and not an implementation.
 | `multiline` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:78` | implemented | `EditorModelTest, AMultilineFieldKeepsPastedNewlines` |
 | `disableKeyboardShortcuts` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:80` | not-implemented | #54 |
 | `acceptDragAndDropTypes` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:82` | not-implemented | #60 |
-| `secureTextEntry` | `packages/core/src/TextInputComponent.h:41` | implemented | `EditorModelTest, SecureTextEntryMasksEveryGraphemeAndNeverTheBuffer` |
-| `caretHidden` | `packages/core/src/TextInputComponent.h:42` | implemented | `RetainedSceneTextInputTest, CaretHiddenRemovesTheCaretColourAndTheCaretWithIt` |
-| `selectTextOnFocus` | `packages/core/src/TextInputComponent.h:43` | not-implemented | #54 |
-| `scrollEnabled` | `packages/core/src/TextInputComponent.h:47` | implemented | `TextInputControllerTest, ScrollEnabledDefaultsToTrueAndIsWhatMakesAFieldAWindowOnItsOwnContent` |
+| `keyboardType` | `packages/core/src/TextInputComponent.h:45` | implemented | `TextInputSessionTest, TheContentPurposeIsTheClosestOneTheFieldsPropsName` |
+| `secureTextEntry` | `packages/core/src/TextInputComponent.h:46` | implemented | `EditorModelTest, SecureTextEntryMasksEveryGraphemeAndNeverTheBuffer` |
+| `caretHidden` | `packages/core/src/TextInputComponent.h:47` | implemented | `RetainedSceneTextInputTest, CaretHiddenRemovesTheCaretColourAndTheCaretWithIt` |
+| `selectTextOnFocus` | `packages/core/src/TextInputComponent.h:48` | not-implemented | #54 |
+| `scrollEnabled` | `packages/core/src/TextInputComponent.h:52` | implemented | `TextInputControllerTest, ScrollEnabledDefaultsToTrueAndIsWhatMakesAFieldAWindowOnItsOwnContent` |
 
 ## Switch
 
