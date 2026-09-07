@@ -163,13 +163,28 @@ const planRuns = (
   environmentVariables: Readonly<Record<string, string | undefined>>,
 ): readonly PlannedRun[] => {
   const repeatCount = resolveRepeatCount(environmentVariables);
-
-  return runs.flatMap((run) =>
+  const planned = runs.flatMap((run) =>
     planAttemptKeys(run.scenario.name, hasKeyboardSteps(run.scenario.steps), repeatCount).map((attemptKey) => ({
       attemptKey,
       run,
     })),
   );
+  const seen = new Set<string>();
+
+  /*
+   * A scenario is free to be named "shadow-flicker#2", and then its first attempt would share a key — and an
+   * artifact directory — with the second attempt of "shadow-flicker". Two runs writing one directory is the
+   * overwrite the keys exist to prevent, so a collision is refused before anything runs.
+   */
+  for (const { attemptKey } of planned) {
+    if (seen.has(attemptKey)) {
+      throw new Error(`two planned runs share the attempt key "${attemptKey}"; rename one scenario`);
+    }
+
+    seen.add(attemptKey);
+  }
+
+  return planned;
 };
 
 export { isKeyboardFocused, runKeyboardAwareInjection } from "./keyboard-focus.ts";

@@ -205,6 +205,12 @@ describe("planRuns", () => {
     expect(planRuns(runs, {}).map((planned) => planned.attemptKey)).toEqual(["pressable-click", "shadow-flicker"]);
   });
 
+  it("refuses two planned runs that would share an attempt key and therefore an artifact directory", () => {
+    const runs = [scenarioRun("shadow-flicker", ["key Tab press"]), scenarioRun("shadow-flicker#2", ["click 1 1"])];
+
+    expect(() => planRuns(runs, { RNL_E2E_REPEAT: "2" })).toThrow('share the attempt key "shadow-flicker#2"');
+  });
+
   it("repeats only the keyboard scenarios, and keeps the run each attempt key points at", () => {
     const pressable = scenarioRun("pressable-click", ["click 1 1"]);
     const shadowFlicker = scenarioRun("shadow-flicker", ["key Tab press"]);
