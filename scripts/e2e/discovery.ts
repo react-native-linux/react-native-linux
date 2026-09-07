@@ -125,33 +125,38 @@ const resolveRepeatCount = (environmentVariables: Readonly<Record<string, string
   return parsed;
 };
 
-const describeRepeatLabel = (scenarioName: string, attempt: number, repeatCount: number): string =>
-  repeatCount === DEFAULT_REPEAT_COUNT
-    ? scenarioName
-    : `${scenarioName} (run ${String(attempt)}/${String(repeatCount)})`;
+/**
+ * `<name>` for the first attempt, `<name>#2`, `<name>#3`... after — a bug filed against #304 itself found that
+ * `RNL_E2E_REPEAT`'s attempts all shared one artifact directory, so a later pass silently overwrote a failing
+ * attempt's trace. This key is both the artifact directory name and the report line, so the two can never drift
+ * apart again: whichever attempt fails, its own trace, screenshot and frame log survive under its own key.
+ */
+const describeAttemptKey = (scenarioName: string, attempt: number): string =>
+  attempt === FIRST_ATTEMPT ? scenarioName : `${scenarioName}#${String(attempt)}`;
 
 /**
- * The report label for each of a scenario's runs — the "ten green runs" acceptance of #304. `needsRepeat` is
- * false for a scenario with no keyboard step, which never repeats regardless of `repeatCount`: repeating it
- * proves nothing about the keyboard-focus wait this issue adds. `repeatCount` of one reports the bare name.
+ * The attempt keys for one scenario's runs — the "ten green runs" acceptance of #304. `needsRepeat` is false for
+ * a scenario with no keyboard step, which never repeats regardless of `repeatCount`: repeating it proves nothing
+ * about the keyboard-focus wait this issue adds. `repeatCount` of one produces the bare name, unchanged from
+ * before #304.
  */
-const planScenarioLabels = (scenarioName: string, needsRepeat: boolean, repeatCount: number): readonly string[] => {
+const planAttemptKeys = (scenarioName: string, needsRepeat: boolean, repeatCount: number): readonly string[] => {
   const iterations = needsRepeat ? repeatCount : DEFAULT_REPEAT_COUNT;
 
   return Array.from({ length: iterations }, (_unused, index) =>
-    describeRepeatLabel(scenarioName, index + FIRST_ATTEMPT, iterations),
+    describeAttemptKey(scenarioName, index + FIRST_ATTEMPT),
   );
 };
 
 interface PlannedRun {
-  readonly label: string;
+  readonly attemptKey: string;
   readonly run: ScenarioRun;
 }
 
 /**
- * Every run `scripts/e2e.ts` drives, each labelled for its report line — the "ten green runs" plan of #304.
- * `environmentVariables` is read here, rather than by the caller, so `resolveRepeatCount` stays this file's
- * concern alone.
+ * Every run `scripts/e2e.ts` drives, each keyed for its own artifact directory and report line — the "ten green
+ * runs" plan of #304. `environmentVariables` is read here, rather than by the caller, so `resolveRepeatCount`
+ * stays this file's concern alone.
  */
 const planRuns = (
   runs: readonly ScenarioRun[],
@@ -160,19 +165,12 @@ const planRuns = (
   const repeatCount = resolveRepeatCount(environmentVariables);
 
   return runs.flatMap((run) =>
-    planScenarioLabels(run.scenario.name, hasKeyboardSteps(run.scenario.steps), repeatCount).map((label) => ({
-      label,
+    planAttemptKeys(run.scenario.name, hasKeyboardSteps(run.scenario.steps), repeatCount).map((attemptKey) => ({
+      attemptKey,
       run,
     })),
   );
 };
 
 export { isKeyboardFocused, runKeyboardAwareInjection } from "./keyboard-focus.ts";
-export {
-  findScenarioSources,
-  planRuns,
-  planScenarioLabels,
-  readRequestedScenarios,
-  readScenarioRuns,
-  resolveRepeatCount,
-};
+export { findScenarioSources, planAttemptKeys, planRuns, readRequestedScenarios, readScenarioRuns, resolveRepeatCount };

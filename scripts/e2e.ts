@@ -41,7 +41,6 @@ const injectorBinaryPath = path.join(repositoryRoot, "build", "dev", "bin", "rnl
 const artifactsRoot = path.join(repositoryRoot, "build", "e2e");
 
 type ScenarioRun = ReturnType<typeof readRequestedScenarios>[number];
-type Scenario = ScenarioRun["scenario"];
 type Artifacts = ReturnType<typeof resolveArtifactPaths>;
 type Compositor = ReturnType<typeof spawn>;
 
@@ -232,8 +231,8 @@ const driveAndStop = async (
   }
 };
 
-const runScenario = async (run: ScenarioRun, rig: Rig): Promise<readonly string[]> => {
-  const artifacts = resolveArtifactPaths(artifactsRoot, run.scenario.name);
+const runScenario = async (run: ScenarioRun, rig: Rig, attemptKey: string): Promise<readonly string[]> => {
+  const artifacts = resolveArtifactPaths(artifactsRoot, attemptKey);
   const workspace = createWorkspace(artifacts);
   const compositor = startCompositor(run, rig, workspace);
 
@@ -250,23 +249,23 @@ const runScenario = async (run: ScenarioRun, rig: Rig): Promise<readonly string[
     screenshotPath: artifacts.screenshotPath,
   });
 
-  stdout.write(grade.notes.map((note) => `e2e ${run.scenario.name}: ${note}\n`).join(""));
+  stdout.write(grade.notes.map((note) => `e2e ${attemptKey}: ${note}\n`).join(""));
 
   const failures = [...runFailures, ...describeTraceFailures(run.scenario, workspace.trace.text), ...grade.failures];
 
   return resolveExpectedOutcome(run.scenario, failures);
 };
 
-const reportScenario = (scenario: Scenario, failures: readonly string[], label: string): void => {
+const reportScenario = (failures: readonly string[], attemptKey: string): void => {
   if (failures.length === EMPTY_LENGTH) {
-    stdout.write(`e2e ${label}: passed\n`);
+    stdout.write(`e2e ${attemptKey}: passed\n`);
 
     return;
   }
 
-  const artifacts = resolveArtifactPaths(artifactsRoot, scenario.name);
+  const artifacts = resolveArtifactPaths(artifactsRoot, attemptKey);
 
-  stderr.write(`e2e ${label}: failed\n${failures.join("\n")}\nartifacts: ${artifacts.directory}\n`);
+  stderr.write(`e2e ${attemptKey}: failed\n${failures.join("\n")}\nartifacts: ${artifacts.directory}\n`);
   process.exitCode = FAILURE_EXIT_STATUS;
 };
 
@@ -295,7 +294,7 @@ if (compositorPath === null || lavapipeIcdPath === null || unavailableReasons.le
 } else {
   mkdirSync(artifactsRoot, { recursive: true });
 
-  for (const { label, run } of planRuns(readScenarios(), env)) {
-    reportScenario(run.scenario, await runScenario(run, { compositorPath, lavapipeIcdPath }), label);
+  for (const { attemptKey, run } of planRuns(readScenarios(), env)) {
+    reportScenario(await runScenario(run, { compositorPath, lavapipeIcdPath }, attemptKey), attemptKey);
   }
 }

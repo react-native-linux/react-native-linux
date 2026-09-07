@@ -6197,7 +6197,10 @@ in `scripts/e2e/scenario.ts` treats any `[rnl-window]` line as a fault, and an e
 is not one — reusing that tag here would fail the error gate on every keyboard scenario, not just this one.
 
 Every scenario with a keyboard step repeats `RNL_E2E_REPEAT` times (default 1, unchanged); run
-`RNL_E2E_REPEAT=10 pnpm e2e` to reproduce the ten-green-runs acceptance locally or in an ad hoc CI job.
+`RNL_E2E_REPEAT=10 pnpm e2e` to reproduce the ten-green-runs acceptance locally or in an ad hoc CI job. Each
+repeat gets its own **attempt key** — `<name>` for the first, `<name>#2`, `<name>#3`... after, from
+`scripts/e2e/discovery.ts`'s `planAttemptKeys` — used for both the report line and the artifact directory under
+`build/e2e/`, so a later attempt's pass can never silently overwrite an earlier attempt's failing trace.
 
 The window then runs until it exits on its own frame budget.
 
