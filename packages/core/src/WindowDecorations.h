@@ -186,6 +186,15 @@ public:
      */
     bool routeToContent(DecorationHit hit, bool isPrimaryPress, bool isPrimaryRelease) noexcept;
 
+    /**
+     * Drops a capture in progress without waiting for the primary release that would normally end it.
+     *
+     * A decoration mode change mid-drag is the case this exists for: `Client` routes through `routeToContent`
+     * and `Server`/`Bare` never call it at all, so a capture taken under `Client` would otherwise survive a
+     * switch away and back, routing the first press after the switch by a hit test the pointer never made.
+     */
+    void release() noexcept;
+
 private:
     std::optional<bool> capturedToContent_;
 };

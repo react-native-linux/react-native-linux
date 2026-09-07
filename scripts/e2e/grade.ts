@@ -176,4 +176,25 @@ const gradeAutomationChannel = (inputs: AutomationChannelInputs): Promise<readon
         trace: inputs.trace,
       });
 
-export { gradeArtifacts, gradeAutomationChannel };
+/** Omission becomes `--no-decorations`, since cage and weston have no decoration manager; `[]` or a list stands. */
+const resolveWindowFlags = (windowFlags?: readonly string[]): readonly string[] => windowFlags ?? ["--no-decorations"];
+
+/**
+ * `expectsWindowClose` scenarios (window-decorations-close) drive a click that closes the window mid-run, so
+ * `rnl_inject` loses its socket and exits nonzero. `waitForExpectedClose` is asked only then — the caller's own
+ * `waitUntil` over the trace — and accepting the failure needs it to resolve `true`; a real injector crash still
+ * fails the scenario.
+ */
+const resolveInjectionFailure = async (
+  failure: string | null,
+  expectsWindowClose: boolean,
+  waitForExpectedClose: () => Promise<boolean>,
+): Promise<string | null> => {
+  if (failure === null || !expectsWindowClose) {
+    return failure;
+  }
+
+  return (await waitForExpectedClose()) ? null : failure;
+};
+
+export { gradeArtifacts, gradeAutomationChannel, resolveInjectionFailure, resolveWindowFlags };

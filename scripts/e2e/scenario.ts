@@ -85,6 +85,8 @@ interface Scenario {
   readonly expect: readonly string[];
   /** A negative control: the scenario passes only if grading it produces at least one failure. */
   readonly expectFailure: boolean;
+  /** `rnl_inject`'s exit status 1 is accepted once the trace also carries the window's own "closed before frame". */
+  readonly expectsWindowClose: boolean;
   /** How long `rnl_window` runs before it captures its screenshot and exits. */
   readonly frames: number;
   readonly frameBudget: FrameBudget | null;
@@ -94,7 +96,7 @@ interface Scenario {
   readonly screenshot: ScreenshotComparison | null;
   /** `rnl_inject` script lines. */
   readonly steps: readonly string[];
-  /** Extra `rnl_window` flags. `resolveWindowFlags` turns omission, `[]` and an explicit list into three cases. */
+  /** Extra `rnl_window` flags. `resolveWindowFlags` in grade.ts turns omission, `[]` and a list into three cases. */
   readonly windowFlags: readonly string[] | undefined;
 }
 
@@ -205,6 +207,7 @@ const parseScenario = (value: unknown, sourceName: string): Scenario => {
     bundle: readString(value["bundle"], "bundle", sourceName),
     expect: readStringArray(value["expect"], "expect", sourceName),
     expectFailure: readOptionalBoolean(value, "expectFailure", sourceName),
+    expectsWindowClose: readOptionalBoolean(value, "expectsWindowClose", sourceName),
     frameBudget: readFrameBudget(value, sourceName),
     frames: readFrameCount(value, sourceName),
     name: readString(value["name"], "name", sourceName),
@@ -216,9 +219,6 @@ const parseScenario = (value: unknown, sourceName: string): Scenario => {
 };
 
 const formatInjectorScript = (steps: readonly string[]): string => `${steps.join("\n")}\n`;
-
-/** Omission becomes `--no-decorations`, since cage and weston have no decoration manager; `[]` or a list stands. */
-const resolveWindowFlags = (windowFlags?: readonly string[]): readonly string[] => windowFlags ?? ["--no-decorations"];
 
 /**
  * Ordered substring matching: every expectation has to appear on a later line than the one before it, which is
@@ -295,6 +295,5 @@ export {
   parseScenario,
   resolveArtifactPaths,
   resolveExpectedOutcome,
-  resolveWindowFlags,
 };
 export type { FrameBudget, Scenario, ScenarioAutomation };

@@ -5,6 +5,7 @@
   "frames": 600,
   "windowFlags": ["--force-client-decorations", "--app-id", "org.reactnative.linux.e2e"],
   "allowErrors": true,
+  "expectsWindowClose": true,
   "steps": ["sleep 500", "click 1250 16", "sleep 500"],
   "expect": [
     "[rnl-decorations] mode=client app-id=org.reactnative.linux.e2e",

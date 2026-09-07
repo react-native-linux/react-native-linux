@@ -768,11 +768,11 @@ mistake both issues describe, and is now its own flag defaulting to `react-nativ
 half of the pair.
 
 **What is proven where.** The mode table, the layout, the hit table, the edge mapping, the content extent and the
-double click are the unit gate. weston *does* implement the manager and answers `server_side`, so the
-request-and-honour path is the two existing window goldens rendering unchanged through the negotiating code path
-— the scene still fills the surface to its top row and nothing of ours is drawn over it — and the third,
-`window-decorations.png`, is the same window under `--force-client-decorations`, carrying the bar, its title and
-its three buttons with the scene pushed below them.
+double click are the unit gate. weston, like cage, offers no `zxdg_decoration_manager_v1`, so the two default
+window goldens run `--no-decorations` and render through the `bare` path instead — the scene still fills the
+surface to its top row and nothing of ours is drawn over it — and the third, `window-decorations.png`, is the
+same window under `--force-client-decorations`, carrying the bar, its title and its three buttons with the scene
+pushed below them.
 The e2e scenario `window-decorations-close.json` runs under cage with the same flag, clicks the close area and
 asserts the mode line, the `[rnl-decorations] close` line and the ordinary teardown diagnostic that follows it;
 it carries `allowErrors` because that diagnostic — the window closed before its screenshot frame — is the proof

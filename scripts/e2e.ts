@@ -5,10 +5,9 @@ import {
   formatInjectorScript,
   resolveArtifactPaths,
   resolveExpectedOutcome,
-  resolveWindowFlags,
 } from "./e2e/scenario.ts";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { gradeArtifacts, gradeAutomationChannel } from "./e2e/grade.ts";
+import { gradeArtifacts, gradeAutomationChannel, resolveInjectionFailure, resolveWindowFlags } from "./e2e/grade.ts";
 import { isKeyboardFocused, planRuns, readRequestedScenarios, runKeyboardAwareInjection } from "./e2e/discovery.ts";
 import { spawn, spawnSync } from "node:child_process";
 
@@ -26,12 +25,9 @@ const RUN_TIMEOUT_MS = 120_000;
 const INJECT_TIMEOUT_MS = 60_000;
 const POLL_INTERVAL_MS = 50;
 const COMPOSITOR_STOP_GRACE_MS = 250;
+const CLOSE_TRACE_LINE = "[rnl-window] the window closed before frame";
 
-/**
- * The compositor is cage rather than the weston the window goldens use, because weston implements no virtual-input
- * protocol at all: its only injection surface is the `weston-test` plugin, which upstream builds with
- * `install: false` and no distribution ships. See *E2E driver (#7)* in docs/cpp-toolchain.md.
- */
+/** Cage: weston only offers weston-test, shipped nowhere. See *E2E driver (#7)* in docs/cpp-toolchain.md. */
 const COMPOSITOR_NAME = "cage";
 const SOCKET_PATTERN = /^wayland-\d+$/u;
 
@@ -191,10 +187,14 @@ const driveScenario = async (run: ScenarioRun, workspace: Workspace): Promise<re
     return [`the bundle never printed "${scenario.ready}"`];
   }
 
-  const injectionFailure = await runKeyboardAwareInjection(
-    scenario.steps,
-    (steps) => injectSteps(steps, workspace.runtimeDirectory, socketName),
-    () => waitUntil(() => isKeyboardFocused(workspace.trace.text), READY_TIMEOUT_MS),
+  const injectionFailure = await resolveInjectionFailure(
+    await runKeyboardAwareInjection(
+      scenario.steps,
+      (steps) => injectSteps(steps, workspace.runtimeDirectory, socketName),
+      () => waitUntil(() => isKeyboardFocused(workspace.trace.text), READY_TIMEOUT_MS),
+    ),
+    scenario.expectsWindowClose,
+    () => waitUntil(() => workspace.trace.text.includes(CLOSE_TRACE_LINE), READY_TIMEOUT_MS),
   );
   const automationFailures = await gradeAutomationChannel({
     artifactsDirectory: workspace.artifactsDirectory,

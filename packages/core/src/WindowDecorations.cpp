@@ -189,4 +189,6 @@ bool PointerCapture::routeToContent(DecorationHit hit, bool isPrimaryPress, bool
     return isContent;
 }
 
+void PointerCapture::release() noexcept { capturedToContent_.reset(); }
+
 } // namespace react_native_linux

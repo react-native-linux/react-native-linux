@@ -218,4 +218,38 @@ TEST(WindowDecorationsTest, WithNoCaptureInProgressEveryEventRoutesByItsOwnHitTe
     EXPECT_FALSE(capture.routeToContent(DecorationHit::Close, /*isPrimaryPress=*/false, /*isPrimaryRelease=*/false));
 }
 
+struct ReleaseAcrossModeChangeCase {
+    std::string name;
+    DecorationHit capturingHit;
+};
+
+/**
+ * `refreshChrome` calls `release()` exactly when `decorationMode()` disagrees with the chrome's own last-seen
+ * mode — Client, then Server, per #399's follow-up — because a capture `routeToContent` took under `Client` is
+ * otherwise still there when the compositor hands decorating back, and the first press after the switch would be
+ * routed by a hit test the pointer never made rather than its own.
+ */
+TEST(WindowDecorationsTest, ReleaseDropsTheCaptureABareOrServerModeWouldOtherwiseInherit) {
+    const std::vector<ReleaseAcrossModeChangeCase> cases{
+        {"a capture that had landed in content", DecorationHit::Content},
+        {"a capture that had landed on the chrome", DecorationHit::Drag},
+    };
+
+    for (const ReleaseAcrossModeChangeCase& releaseCase : cases) {
+        PointerCapture capture;
+
+        // Client: a primary press starts a capture.
+        capture.routeToContent(releaseCase.capturingHit, /*isPrimaryPress=*/true, /*isPrimaryRelease=*/false);
+
+        // Server: refreshChrome sees decorationMode() disagree with the chrome's mode and releases the capture.
+        capture.release();
+
+        // Client: the dropped capture no longer overrides the next event's own hit test, in either direction.
+        EXPECT_TRUE(capture.routeToContent(DecorationHit::Content, /*isPrimaryPress=*/false, /*isPrimaryRelease=*/false))
+            << releaseCase.name;
+        EXPECT_FALSE(capture.routeToContent(DecorationHit::Close, /*isPrimaryPress=*/false, /*isPrimaryRelease=*/false))
+            << releaseCase.name;
+    }
+}
+
 } // namespace

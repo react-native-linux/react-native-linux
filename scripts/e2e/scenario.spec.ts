@@ -7,7 +7,6 @@ import {
   parseScenario,
   resolveArtifactPaths,
   resolveExpectedOutcome,
-  resolveWindowFlags,
 } from "./scenario.ts";
 
 const DEFAULT_FRAME_COUNT = 600;
@@ -34,6 +33,7 @@ describe("parseScenario", () => {
       bundle: "pressable.js",
       expect: ["pressable: topClick on box at 200,140"],
       expectFailure: false,
+      expectsWindowClose: false,
       frameBudget: null,
       frames: EXPLICIT_FRAME_COUNT,
       name: "pressable-click",
@@ -46,8 +46,13 @@ describe("parseScenario", () => {
   it("defaults the frame budget", () =>
     expect(parseScenario(validScenario, "fixture.json").frames).toBe(DEFAULT_FRAME_COUNT));
 
-  it("reads an explicit allowErrors, expectFailure and windowFlags", () => {
-    const overrides = { allowErrors: true, expectFailure: true, windowFlags: ["--force-client-decorations"] };
+  it("reads an explicit allowErrors, expectFailure, expectsWindowClose and windowFlags", () => {
+    const overrides = {
+      allowErrors: true,
+      expectFailure: true,
+      expectsWindowClose: true,
+      windowFlags: ["--force-client-decorations"],
+    };
 
     expect(parseScenario({ ...validScenario, ...overrides }, "fixture.json")).toMatchObject(overrides);
   });
@@ -286,13 +291,4 @@ describe("resolveArtifactPaths", () => {
       tracePath: "build/e2e/pressable-click/trace.log",
     });
   });
-});
-
-describe("resolveWindowFlags", () => {
-  it("defaults an omitted field to --no-decorations", () => expect(resolveWindowFlags()).toEqual(["--no-decorations"]));
-
-  it("keeps an explicit empty array as the compositor default", () => expect(resolveWindowFlags([])).toEqual([]));
-
-  it("uses an explicit list exactly as written", () =>
-    expect(resolveWindowFlags(["--force-client-decorations"])).toEqual(["--force-client-decorations"]));
 });

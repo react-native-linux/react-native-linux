@@ -503,6 +503,11 @@ void refreshChrome(WindowChrome& chrome, react_native_linux::WaylandWindow& wind
 
     chrome.isRepaintNeeded = chrome.isRepaintNeeded || mode != chrome.mode || isActive != chrome.wasActive ||
                              content.width != chrome.content.width;
+
+    if (mode != chrome.mode) {
+        chrome.pointerCapture.release();
+    }
+
     chrome.mode = mode;
     chrome.content = content;
     chrome.wasActive = isActive;
