@@ -439,7 +439,23 @@ int main(int argc, char** argv) {
         react_native_linux::SkiaVulkanRenderer renderer(window.display(), window.surface(), window.size());
         std::optional<react_native_linux::WindowSession> session;
 
-        renderer.drawFrame(window, {}, paintPlaceholderFrame);
+        // This is the first buffer the compositor can ever show, so `--frames 1` has to name this present rather
+        // than the loop's next one: the capture is armed beforehand, exactly as the loop arms it for every later
+        // frame, so a first-buffer failure that recovers on the next frame cannot pass a fixture that means to
+        // check the first one. See *Surface commit ordering* in docs/cpp-toolchain.md.
+        uint32_t presentedFrames = 0;
+        const bool isStartupCaptureFrame =
+            parsedArguments.screenshotPath.has_value() && presentedFrames + 1 >= parsedArguments.frameCount;
+
+        if (isStartupCaptureFrame) {
+            renderer.captureNextFrame(parsedArguments.screenshotPath.value());
+        }
+
+        if (renderer.drawFrame(window, {}, paintPlaceholderFrame)) {
+            ++presentedFrames;
+        }
+
+        bool hasCaptured = isStartupCaptureFrame && !renderer.hasPendingCapture();
 
         if (parsedArguments.bundlePath.has_value()) {
             session.emplace(parsedArguments.bundlePath.value(), window.size());
@@ -476,8 +492,6 @@ int main(int argc, char** argv) {
 
         ImeDebugSink imeDebugSink;
         std::optional<std::ofstream> frameLog;
-        uint32_t presentedFrames = 0;
-        bool hasCaptured = false;
         bool lastKeyboardFocus = false;
         bool keyboardFocusAnnounced = false;
         uint32_t lastOutputEnterCount = 0;
