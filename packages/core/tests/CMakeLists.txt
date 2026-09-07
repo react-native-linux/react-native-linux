@@ -69,6 +69,7 @@ add_executable(rnl_core_tests
     FeatureFlagsTest.cpp
     FocusTest.cpp
     FrameClockTest.cpp
+    FrameJournalTest.cpp
     FrameTimingTest.cpp
     HitTestDifferentialTest.cpp
     ImageCacheTest.cpp
@@ -117,6 +118,7 @@ add_executable(rnl_core_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/EllipsizeSearch.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/FocusModel.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/FrameClock.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/FrameJournal.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/FrameTiming.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/HostTimerRegistry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ImageContent.cpp
