@@ -186,9 +186,8 @@ RendererLadderRecord recordRendererAttempt(const std::optional<RendererLadderRec
                                  .driverIdentity = std::string(driverIdentity)};
 
     if (persisted.has_value() && persisted->driverIdentity == driverIdentity) {
-        attempt.successfulRasterSessions = persisted->successfulRasterSessions;
-
         if (persisted->rung == attemptedRung) {
+            attempt.successfulRasterSessions = persisted->successfulRasterSessions;
             attempt.consecutiveCrashes = persisted->consecutiveCrashes;
         }
     }

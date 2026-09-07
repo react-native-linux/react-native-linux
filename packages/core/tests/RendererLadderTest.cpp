@@ -188,7 +188,7 @@ TEST(RendererLadderTest, MovingDownTheLadderStartsTheCrashCountAgain) {
     const RendererLadderRecord attempt = recordRendererAttempt(persisted, RendererRung::AlternateVulkanDevice, kDriver);
 
     EXPECT_EQ(attempt.consecutiveCrashes, 1U);
-    EXPECT_EQ(attempt.successfulRasterSessions, 7U);
+    EXPECT_EQ(attempt.successfulRasterSessions, 0U);
 }
 
 TEST(RendererLadderTest, ANewDriverDropsTheRasterSessionCountToo) {
