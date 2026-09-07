@@ -694,15 +694,20 @@ void InputDispatcher::scrollFocusedNodeIntoView() const {
  */
 void InputDispatcher::updateTextInput() {
     const std::optional<TextInputContentPurpose> contentPurpose = textInputController_.focusedContentPurpose();
+    const std::optional<ReportedTextInputField> currentField =
+        contentPurpose.has_value() && focusedNode_ != nullptr
+            ? std::optional{ReportedTextInputField{.tag = focusedNode_->getTag(), .contentPurpose = contentPurpose.value()}}
+            : std::nullopt;
 
-    if (contentPurpose == reportedContentPurpose_) {
+    if (currentField == reportedTextInputField_) {
         return;
     }
 
-    reportedContentPurpose_ = contentPurpose;
+    reportedTextInputField_ = currentField;
 
-    if (contentPurpose.has_value()) {
-        std::cout << "[rnl-ime] field focused purpose=" << describeContentPurpose(contentPurpose.value()) << std::endl;
+    if (currentField.has_value()) {
+        std::cout << "[rnl-ime] field focused purpose=" << describeContentPurpose(currentField->contentPurpose)
+                  << std::endl;
     } else {
         std::cout << "[rnl-ime] field blurred" << std::endl;
     }
@@ -711,8 +716,8 @@ void InputDispatcher::updateTextInput() {
         return;
     }
 
-    if (contentPurpose.has_value() && focusedNode_ != nullptr) {
-        textInputFocusSink_->focusField(focusedNode_->getTag(), contentPurpose.value());
+    if (currentField.has_value()) {
+        textInputFocusSink_->focusField(currentField->tag, currentField->contentPurpose);
 
         return;
     }

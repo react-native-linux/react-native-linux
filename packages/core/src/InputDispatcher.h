@@ -152,9 +152,21 @@ private:
     std::shared_ptr<const facebook::react::ShadowNode> focusedNode_;
     std::shared_ptr<const facebook::react::ShadowNode> syncedRoot_;
     TextInputController textInputController_;
-    // What the last frame told the compositor's text input, so a trace line is written when it changes and not
-    // once per frame. `std::nullopt` is "no field holds the caret".
-    std::optional<TextInputContentPurpose> reportedContentPurpose_;
+    /**
+     * The field tag and content purpose the last frame told the compositor's text input, so a trace line is
+     * written when either changes and not once per frame. The tag has to travel with the purpose: two fields of
+     * the same purpose (two default `Normal` fields, say) are indistinguishable by purpose alone, and comparing
+     * purpose only left a focus change between them mistaken for "nothing changed" — the session was never torn
+     * down and rebuilt for the new field. `std::nullopt` is "no field holds the caret".
+     */
+    struct ReportedTextInputField {
+        facebook::react::Tag tag;
+        TextInputContentPurpose contentPurpose;
+
+        bool operator==(const ReportedTextInputField&) const = default;
+    };
+
+    std::optional<ReportedTextInputField> reportedTextInputField_;
     TextInputFocusSink* textInputFocusSink_{nullptr};
 };
 
