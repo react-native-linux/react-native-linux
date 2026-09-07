@@ -35,7 +35,8 @@ const createNode = (componentName, props, children = []) => {
 
 const rawText = (text) => createNode('RawText', { text });
 
-const text = (props, children) => createNode('Text', props, children);
+// 'RCTVirtualText', not 'Text': componentNameByReactViewName rewrites 'Text' to 'Paragraph' (#312).
+const text = (props, children) => createNode('RCTVirtualText', props, children);
 
 const paragraph = (props, children) => createNode('Paragraph', props, children);
 

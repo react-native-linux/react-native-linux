@@ -44,8 +44,9 @@ function rawText(value) {
   return createNode('RawText', { text: value }, undefined);
 }
 
+// 'RCTVirtualText', not 'Text': componentNameByReactViewName rewrites 'Text' to 'Paragraph' (#312).
 function text(props, children) {
-  return createNode('Text', props, children);
+  return createNode('RCTVirtualText', props, children);
 }
 
 function paragraph(props, children) {

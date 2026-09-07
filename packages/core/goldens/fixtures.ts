@@ -63,7 +63,7 @@ export const fixtures: readonly GoldenFixture[] = [
   {
     bundleFileName: "ellipsize.js",
     goldenFileName: "ellipsize.png",
-    renderArguments: ["880", "620"],
+    renderArguments: ["880", "840"],
     renderFlag: "--text-fit-golden",
   },
   { bundleFileName: "damage.js", goldenFileName: "damage.png", renderArguments: [], renderFlag: "--damage-golden" },

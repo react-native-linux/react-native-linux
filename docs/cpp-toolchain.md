@@ -2531,9 +2531,10 @@ box would; the unit table asserts it does not, on a string of four-byte emoji.
 `TextAttributes` of the fragment that held the first byte the cut removed — the first fragment for `head`, the
 fragment at the front cut for `middle`. react/react-native#37926 is the same ellipsis drawn in the paragraph's
 base style instead, so a `…` standing for a run of bold amber text comes out thin and grey. The rule is asserted
-in `EllipsizeSearchTest.cpp` rather than in the golden, and today it has little to show for itself in a picture:
-a nested `<Text>` reaches this pipeline as an inline attachment rather than as a styled fragment, so the
-fragments a search can cut all carry the paragraph's own attributes.
+in `EllipsizeSearchTest.cpp`, and the last two rows of `ellipsize.png` are the picture of it: a nested `<Text>`
+is a styled fragment of the same paragraph — see *A nested `<Text>` is a fragment, not an attachment (#312)* —
+so the fragments a search cuts carry their own attributes and the ellipsis takes the style of the run it stands
+for.
 
 **Both ends of the pipeline truncate identically**, because the search is inside `layoutParagraph` and
 `TextLayoutManager::measure` and `ScenePainter` both go through it — the same reason `textTransform` is applied
@@ -2572,7 +2573,38 @@ The picture is `test-bundles/ellipsize.js` and `goldens/ellipsize.png`: the four
 the two-line column also carrying `letterSpacing` — react/react-native#37511 is `middle` and letter spacing
 disagreeing about where the text ends — plus the two rows for what the search does not do: an unbreakable token
 wider than its box, which only `clip` cuts, and a paragraph with an inline attachment, which the line limit
-truncates on its own.
+truncates on its own. The last two rows are the same four modes over a paragraph whose middle run is a nested
+`<Text>`, which truncates exactly as the unnested rows do.
+
+### A nested `<Text>` is a fragment, not an attachment (#312)
+
+Every component this platform registers answers to its unified C++ name — `Paragraph`, `RawText`, `View`,
+`Image`, `ScrollView` — except one. `ComponentDescriptorRegistry::at` passes every name it is given through
+`componentNameByReactViewName` before it looks the descriptor up, and that function rewrites `"Text"` to
+`"Paragraph"`, because on the JavaScript side `RCTText` is what a `<Text>` with no `<Text>` around it mounts as.
+The unified name `Text` is therefore unreachable by that name: the name a nested `<Text>` has to be created with
+is the React view name `RCTVirtualText`, which the same function rewrites the other way.
+
+A bundle that says `Text` gets a `ParagraphShadowNode` instead, and `BaseTextShadowNode::buildAttributedString`
+has no branch for one: it is neither a `RawTextShadowNode` nor a `TextShadowNode`, so it takes the *any other
+kind of `ShadowNode`* branch and becomes an inline attachment. The picture barely changed — the nested paragraph
+measured and painted its own text at the placeholder's rect, in its own style — which is why this survived #111
+and #250 unnoticed; what did not survive is everything that reads the fragments. `numberOfLines` and the
+`ellipsizeMode` search apply to the paragraph they are on, so the outer paragraph truncated a single attachment
+character it could not cut, and the *A paragraph carrying inline attachments is not searched* refusal above fired
+on text that carried no attachment at all.
+
+Every text golden was regenerated with the fix, not just `ellipsize.png`: `text.js`, `emoji.js`,
+`text-metrics.js` and `text-style-matrix.js` all build a nested `<Text>`, so all four were drawing a nested
+paragraph at a placeholder's rect. The differences are small — a run that sat on the attachment's box now sits on
+the paragraph's own line box, and wrapping is decided once for the whole string — which is exactly why the
+pictures were not what caught this.
+
+`packages/core/tests/NestedTextFragmentTest.cpp` is the gate: it builds nodes by component name through a
+descriptor registry, exactly as `nativeFabricUIManager.createNode` does, and asserts both halves — that
+`RCTVirtualText` flattens into styled fragments with zero attachments and each run keeping its own `fontSize` and
+`fontWeight`, and that `Text` resolves to `Paragraph` and becomes one attachment. The second assertion is the
+regression pin: it is the bug itself, kept executable so a bundle cannot walk back into it.
 
 Three things this does not do. **The search is over logical order**, so for a right-to-left run the ellipsis
 stands where the removed characters were in memory rather than where iOS puts it on screen; the paragraph

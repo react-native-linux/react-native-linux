@@ -79,6 +79,7 @@ add_executable(rnl_core_tests
     LinuxMountingManagerDiagnosticsTest.cpp
     LinuxMountingManagerMaintainPositionTest.cpp
     LinuxMountingManagerPendingDamageTest.cpp
+    NestedTextFragmentTest.cpp
     PinnedFontFamiliesTest.cpp
     SceneTest.cpp
     ScrollTest.cpp

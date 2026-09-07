@@ -4,9 +4,11 @@
 //
 // `head` and `middle` are the searched ones: the text that survives is found by measuring candidates with the
 // same shaper the paragraph is drawn with, so the cut lands on a grapheme boundary and the box still holds what
-// was measured for it. The last two rows are the two things the search does not do: a token with no break
-// opportunity inside it, which only `clip` cuts, and a paragraph carrying an inline attachment, which is left to
-// the line limit.
+// was measured for it. The fifth row is the two things the search does not do: a token with no break opportunity
+// inside it, which only `clip` cuts, and a paragraph carrying an inline attachment, which is left to the line
+// limit. The last two rows are issue #312: one row per mode over a paragraph whose middle run is a nested
+// `<Text>`, which truncates exactly as the unnested rows do because it is a styled fragment of the same
+// paragraph rather than something embedded in it.
 //
 // Every string is ASCII, for the reason text.js is: anything outside the vendored Noto Sans resolves through
 // fontconfig and stops being reproducible. The `letterSpacing` column is react/react-native#37511, where
@@ -39,7 +41,8 @@ const node = (componentName, props, children = []) => {
 };
 
 const rawText = (value) => node('RawText', { text: value });
-const text = (props, children) => node('Text', props, children);
+// 'RCTVirtualText', not 'Text': componentNameByReactViewName rewrites 'Text' to 'Paragraph' (#312).
+const text = (props, children) => node('RCTVirtualText', props, children);
 const paragraph = (props, children) => node('Paragraph', props, children);
 const view = (props, children) => node('View', props, children);
 
@@ -58,6 +61,16 @@ function sentence() {
       'One line of prose that starts here, runs through the middle of the box, and then carries on for long ' +
         'enough that nothing on this surface can hold all of it at once.',
     ),
+  ];
+}
+
+// The same prose with a nested <Text> in the middle of it: after #312 that run is a styled fragment of the one
+// paragraph, so the line limit and the searched cuts apply across it exactly as they do to the prose around it.
+function nestedSentence() {
+  return [
+    rawText('Prose with '),
+    text({ color: amber, fontWeight: 'bold' }, [rawText('a nested Text run that keeps its own style')]),
+    rawText(' and then plain prose that carries on well past the end of the box it was given.'),
   ];
 }
 
@@ -118,9 +131,9 @@ const unbreakable = labelled(
   [rawText('Unbreakableantidisestablishmentarianismsupercalifragilistic')],
 );
 
-// A nested <Text> arrives as an inline attachment, and a paragraph carrying one is not searched: the line limit
-// truncates it with no ellipsis, because a head or middle cut would drop placeholders from the front and every
-// surviving one would then be paired with the wrong attachment.
+// A view-forming node inside a paragraph — here a nested <Paragraph> — is an inline attachment, and a paragraph
+// carrying one is not searched: the line limit truncates it with no ellipsis, because a head or middle cut would
+// drop placeholders from the front and every surviving one would then be paired with the wrong attachment.
 const withAttachment = labelled(
   secondColumnLeft,
   520,
@@ -128,17 +141,34 @@ const withAttachment = labelled(
   { color: white, fontSize: 16, numberOfLines: 1, ellipsizeMode: 'head' },
   [
     rawText('Prose with '),
-    text({ color: amber, fontWeight: 'bold' }, [rawText('an inline attachment')]),
+    paragraph({ color: amber, fontWeight: 'bold' }, [rawText('an inline attachment')]),
     rawText(' inside it that runs well past the end of the box it was given.'),
   ],
 );
+
+// One row per mode over a paragraph whose middle run is a nested <Text>: the searched cuts and the line limit
+// have to land the same way they do on the unnested rows above, which is what #312 is.
+const nestedRowTops = [620, 730];
+const nestedRows = [];
+
+for (let index = 0; index < modes.length; index += 1) {
+  nestedRows.push(
+    ...labelled(
+      index % 2 === 0 ? panelLeft : secondColumnLeft,
+      nestedRowTops[Math.floor(index / 2)],
+      'ellipsizeMode: ' + modes[index] + ', numberOfLines: 1, nested Text',
+      { color: white, fontSize: 16, numberOfLines: 1, ellipsizeMode: modes[index] },
+      nestedSentence(),
+    ),
+  );
+}
 
 const heading = paragraph(
   { position: 'absolute', left: panelLeft, top: 32, width: 760, color: white, fontSize: 24, fontWeight: 'bold' },
   [rawText('ellipsizeMode: head, middle, tail and clip')],
 );
 
-const root = view({ flex: 1 }, [heading, ...rows, ...unbreakable, ...withAttachment]);
+const root = view({ flex: 1 }, [heading, ...rows, ...unbreakable, ...withAttachment, ...nestedRows]);
 const rootChildren = fabric.createChildSet();
 
 fabric.appendChildToSet(rootChildren, root);
