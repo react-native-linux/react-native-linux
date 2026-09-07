@@ -26,6 +26,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace react_native_linux {
@@ -256,16 +257,29 @@ constexpr int32_t kAnimatedImageRepeatsForever = -1;
  * Gaussian sigma `SkImageFilters::Blur` wants, the same conversion *Shadows (#67)* documents for `SceneShadow`.
  * It is applied to the decoded pixels and clipped to the node's own border box, so it never changes what a node
  * damages: zero is the plain image, unchanged from before this field existed.
+ *
+ * `capInsets` is React Native's nine-slice: `left`/`top`/`right`/`bottom` cut from the decoded image and never
+ * scaled, the region between them stretched to whatever the frame does not fill. All-zero — the default — means
+ * no nine-slice at all, and the painter draws the plain placed image exactly as it did before this field existed.
+ *
+ * `placeholderUri` and `placeholderFrames` are `defaultSource` and `loadingIndicatorSource` collapsed onto one
+ * slot: whichever of the two is set, resolved and decoded the same way `uri`/`frames` are, and drawn in their
+ * place for exactly as long as `frames` is null. `uri`/`frames` keep naming the *real* source throughout, which
+ * is what lets `damageImageSource` keep matching a node by the source it is ultimately loading rather than by
+ * whichever one is on screen this frame.
  */
 struct SceneImageContent {
     std::string uri;
     std::shared_ptr<const DecodedImageFrames> frames;
+    std::string placeholderUri;
+    std::shared_ptr<const DecodedImageFrames> placeholderFrames;
     std::shared_ptr<void> pixels;
     double elapsedMilliseconds{0.0};
     SceneImageResizeMode resizeMode{SceneImageResizeMode::Stretch};
     uint32_t tintColorArgb{};
     float opacity{1.0F};
     float blurRadius{0.0F};
+    facebook::react::EdgeInsets capInsets{};
 };
 
 /**
@@ -604,6 +618,14 @@ public:
      * them: an animation whose frames exceed the whole capacity is never admitted, and asking the provider for it
      * would answer null and paint a blank box. A source the cache refused is then owned by the nodes drawing it
      * and by nothing else, which is the lifetime rule of #108 with the cache's share of it left out.
+     *
+     * `uri` is matched against a node's own source and against its placeholder independently, because the two
+     * decode on their own schedules: a `defaultSource` that finishes before the real source updates only
+     * `placeholderFrames`, and the real source finishing later replaces `frames` and stops the placeholder being
+     * drawn without either decode having to know about the other.
+     *
+     * Also clears `uri` from `pendingPlaceholderDecodeRequests_` unconditionally, because this is the one call
+     * every decode this listener hears about reaches, success or failure alike — see `ImageDecodeRequester`.
      */
     void damageImageSource(const std::string& uri, const std::shared_ptr<const DecodedImageFrames>& decoded);
 
@@ -661,6 +683,33 @@ public:
     using DecodedImageProvider = std::function<std::shared_ptr<const DecodedImageFrames>(const std::string& uri)>;
 
     void setDecodedImageProvider(DecodedImageProvider decodedImages);
+
+    /**
+     * Queues a decode for a `defaultSource`/`loadingIndicatorSource` placeholder, the same way `ImageManager`
+     * queues one for the real source — except a placeholder has no `ImageManager` request behind it, because
+     * `ImageState` only ever carries the source `ImageShadowNode` chose from `source`. `readImageContent` calls
+     * this instead, the first time a mount or update finds the real source undecoded and a placeholder configured
+     * for a URI nothing has already asked for.
+     *
+     * `pendingPlaceholderDecodeRequests_` is what makes "the first time" true rather than aspirational: the
+     * pipeline's own `requestedUris` guard (see `ImagePipeline.h`) suppresses a second *decode* of a URI already
+     * in flight, but it does not suppress a second *completion* — `FabricHost`'s requester builds a fresh one on
+     * every call and `requestImageDecode` appends it to `completionsByUri[uri]` regardless, so ten updates before
+     * one decode publishes would queue ten no-op completions rather than one. Tracking the URI here instead means
+     * `readImageContent` never calls this a second time while the first call is still outstanding, and
+     * `damageImageSource` erases the URI on the decode that follows — success or failure alike, since the pipeline
+     * calls its listener either way — so a source that fails to decode can still be asked for again later.
+     *
+     * Set once by the host beside `setDecodedImageProvider`, and unset in every test that does not decode
+     * anything, in which case a placeholder is never requested and an `<Image>` mounts with no pixels at all
+     * until its real source decodes — the pre-existing behaviour.
+     *
+     * Threading contract: called on whichever thread is writing the scene, under its owner's mutex, exactly like
+     * `DecodedImageProvider`.
+     */
+    using ImageDecodeRequester = std::function<void(const std::string& uri)>;
+
+    void setPlaceholderImageDecodeRequester(ImageDecodeRequester requester);
 
     /**
      * Marks which node draws the focus ring, and damages the node that stops drawing it and the node that starts.
@@ -753,6 +802,12 @@ private:
     facebook::react::Tag focusedTag_{0};
     bool isFocusVisible_{false};
     DecodedImageProvider decodedImages_;
+    ImageDecodeRequester requestPlaceholderImageDecode_;
+
+    // The placeholder URIs `requestPlaceholderImageDecode_` has been asked for and has not yet answered, either
+    // way. See `ImageDecodeRequester`'s docblock for why this exists instead of trusting the pipeline's own
+    // in-flight guard.
+    std::unordered_set<std::string> pendingPlaceholderDecodeRequests_;
 };
 
 } // namespace react_native_linux

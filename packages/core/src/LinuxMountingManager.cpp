@@ -62,6 +62,12 @@ void LinuxMountingManager::setDecodedImageProvider(RetainedScene::DecodedImagePr
     scene_.setDecodedImageProvider(std::move(decodedImages));
 }
 
+void LinuxMountingManager::setPlaceholderImageDecodeRequester(RetainedScene::ImageDecodeRequester requester) {
+    const std::lock_guard<std::mutex> guard(sceneMutex_);
+
+    scene_.setPlaceholderImageDecodeRequester(std::move(requester));
+}
+
 bool LinuxMountingManager::advanceImageAnimations(double frameMilliseconds) {
     const std::lock_guard<std::mutex> guard(sceneMutex_);
     const bool hasAdvanced = scene_.advanceImageAnimations(frameMilliseconds);

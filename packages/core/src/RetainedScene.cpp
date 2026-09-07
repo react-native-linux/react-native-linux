@@ -313,15 +313,22 @@ std::vector<SceneShadow> resolveShadowOpacity(const std::vector<SceneShadow>& sh
 }
 
 /**
- * The one frame `image` is showing right now. A still source is its only frame; an animated one is wherever its
- * own elapsed time has reached, which is `animatedImageFrameIndex` and nothing else.
+ * The one frame `image` is showing right now. The real source wins the instant it has a frame; until then, a
+ * configured placeholder draws instead, at its own frame zero — a `defaultSource` or `loadingIndicatorSource` is
+ * a still image on every platform that implements either, so there is no elapsed time to schedule it against. An
+ * animated real source is wherever its own elapsed time has reached, which is `animatedImageFrameIndex` and
+ * nothing else.
  */
 std::shared_ptr<void> currentImageFrame(const SceneImageContent& image) {
-    if (image.frames == nullptr || image.frames->frames.empty()) {
-        return nullptr;
+    if (image.frames != nullptr && !image.frames->frames.empty()) {
+        return image.frames->frames[animatedImageFrameIndex(*image.frames, image.elapsedMilliseconds)];
     }
 
-    return image.frames->frames[animatedImageFrameIndex(*image.frames, image.elapsedMilliseconds)];
+    if (image.placeholderFrames != nullptr && !image.placeholderFrames->frames.empty()) {
+        return image.placeholderFrames->frames.front();
+    }
+
+    return nullptr;
 }
 
 SceneImageContent resolveImage(const SceneImageContent& image, float opacity) {
@@ -332,7 +339,8 @@ SceneImageContent resolveImage(const SceneImageContent& image, float opacity) {
                              .resizeMode = image.resizeMode,
                              .tintColorArgb = scaleArgbAlpha(image.tintColorArgb, opacity),
                              .opacity = opacity,
-                             .blurRadius = image.blurRadius};
+                             .blurRadius = image.blurRadius,
+                             .capInsets = image.capInsets};
 }
 
 SceneEditorContent resolveEditor(const SceneEditorContent& editor, float opacity) {
@@ -636,9 +644,25 @@ private:
  *
  * A node whose state still holds the `Invalid` source `ImageShadowNode::initialStateData` seeds — which is every
  * `<Image>` before its first layout — has an empty uri and paints nothing.
+ *
+ * `defaultSource` and `loadingIndicatorSource` are one slot on this platform: `defaultSource` wins when both are
+ * set, because it is the one of the two most apps configure as an always-there placeholder rather than as a
+ * loading affordance specifically. Whichever is chosen is resolved and decoded exactly like the real source, and
+ * `requestPlaceholderDecode` is what asks for that decode — `ImageState` never carries a placeholder, so nothing
+ * upstream of this function ever requests one.
  */
+std::string choosePlaceholderSourceUri(const facebook::react::ImageProps& imageProps) {
+    if (!imageProps.defaultSource.uri.empty()) {
+        return imageProps.defaultSource.uri;
+    }
+
+    return imageProps.loadingIndicatorSource.uri;
+}
+
 void readImageContent(SceneNode& node, const facebook::react::ShadowView& shadowView,
-                      const RetainedScene::DecodedImageProvider& decodedImages) {
+                      const RetainedScene::DecodedImageProvider& decodedImages,
+                      const RetainedScene::ImageDecodeRequester& requestPlaceholderDecode,
+                      std::unordered_set<std::string>& pendingPlaceholderDecodeRequests) {
     const std::optional<SceneImageContent> previousImage = node.image;
 
     node.image = std::nullopt;
@@ -663,6 +687,28 @@ void readImageContent(SceneNode& node, const facebook::react::ShadowView& shadow
     // sorts of reasons that have nothing to do with the source, and a GIF that jumped back to its first frame on
     // every re-render is core#46810 in a different disguise.
     const bool isSameSource = previousImage.has_value() && previousImage.value().uri == imageSource.uri;
+    const std::shared_ptr<const DecodedImageFrames> frames =
+        decodedImages ? decodedImages(imageSource.uri) : nullptr;
+
+    std::string placeholderUri;
+    std::shared_ptr<const DecodedImageFrames> placeholderFrames;
+
+    if (frames == nullptr) {
+        placeholderUri = choosePlaceholderSourceUri(*imageProps);
+
+        if (!placeholderUri.empty()) {
+            placeholderFrames = decodedImages ? decodedImages(placeholderUri) : nullptr;
+
+            // `insert` both tests and marks in one step: a URI already pending answers false and is left alone,
+            // and a URI that was not is inserted and, only then, actually asked for. This is what keeps ten
+            // updates before one decode publishes from queuing ten completions instead of one — see
+            // `ImageDecodeRequester`'s docblock.
+            if (placeholderFrames == nullptr && requestPlaceholderDecode &&
+                pendingPlaceholderDecodeRequests.insert(placeholderUri).second) {
+                requestPlaceholderDecode(placeholderUri);
+            }
+        }
+    }
 
     // Attached only on a genuinely new request — the same guard `isSameSource` already computes for the animation
     // schedule — so a re-render that leaves the source unchanged does not fire `onLoad` a second time for a
@@ -678,12 +724,15 @@ void readImageContent(SceneNode& node, const facebook::react::ShadowView& shadow
     }
 
     node.image = SceneImageContent{.uri = imageSource.uri,
-                                   .frames = decodedImages ? decodedImages(imageSource.uri) : nullptr,
+                                   .frames = frames,
+                                   .placeholderUri = placeholderUri,
+                                   .placeholderFrames = placeholderFrames,
                                    .elapsedMilliseconds = isSameSource ? previousImage.value().elapsedMilliseconds
                                                                        : 0.0,
                                    .resizeMode = toSceneImageResizeMode(imageProps->resizeMode),
                                    .tintColorArgb = toArgb(imageProps->tintColor, 1.0F),
-                                   .blurRadius = imageProps->blurRadius};
+                                   .blurRadius = imageProps->blurRadius,
+                                   .capInsets = imageProps->capInsets};
 }
 
 /**
@@ -1363,11 +1412,33 @@ bool RetainedScene::hasNode(facebook::react::Tag tag) const {
 
 void RetainedScene::damageImageSource(const std::string& uri,
                                       const std::shared_ptr<const DecodedImageFrames>& decoded) {
+    // Whether this was a placeholder request or not, and whether it succeeded or failed, `uri` is no longer in
+    // flight: the pipeline's listener runs exactly once per decode either way. A URI this was never tracking
+    // erases nothing, which is what makes this safe to call unconditionally for every decode, not only a
+    // placeholder's.
+    pendingPlaceholderDecodeRequests_.erase(uri);
+
     std::vector<facebook::react::Tag> drawingTags;
 
     for (auto& [tag, node] : nodes_) {
-        if (node.image.has_value() && node.image.value().uri == uri) {
-            node.image.value().frames = decoded;
+        if (!node.image.has_value()) {
+            continue;
+        }
+
+        SceneImageContent& image = node.image.value();
+        bool isDrawingThisSource = false;
+
+        if (image.uri == uri) {
+            image.frames = decoded;
+            isDrawingThisSource = true;
+        }
+
+        if (image.placeholderUri == uri) {
+            image.placeholderFrames = decoded;
+            isDrawingThisSource = true;
+        }
+
+        if (isDrawingThisSource) {
             drawingTags.push_back(tag);
         }
     }
@@ -1452,6 +1523,10 @@ bool RetainedScene::advanceControlAnimations(double frameMilliseconds) {
 
 void RetainedScene::setDecodedImageProvider(DecodedImageProvider decodedImages) {
     decodedImages_ = std::move(decodedImages);
+}
+
+void RetainedScene::setPlaceholderImageDecodeRequester(ImageDecodeRequester requester) {
+    requestPlaceholderImageDecode_ = std::move(requester);
 }
 
 void RetainedScene::setFocus(facebook::react::Tag tag, bool isFocusVisible) {
@@ -1601,7 +1676,8 @@ SceneNode& RetainedScene::writeNode(const facebook::react::ShadowView& shadowVie
     readPaintProps(node, shadowView);
     readTextContent(node, shadowView);
     readEditorContent(node, shadowView);
-    readImageContent(node, shadowView, decodedImages_);
+    readImageContent(node, shadowView, decodedImages_, requestPlaceholderImageDecode_,
+                     pendingPlaceholderDecodeRequests_);
     readSwitchContent(node, shadowView);
     readActivityIndicatorContent(node, shadowView);
     readScrollContent(node, shadowView);

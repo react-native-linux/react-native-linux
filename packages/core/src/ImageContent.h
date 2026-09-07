@@ -3,6 +3,7 @@
 #include "RetainedScene.h"
 
 #include <react/renderer/graphics/Rect.h>
+#include <react/renderer/graphics/RectangleEdges.h>
 #include <react/renderer/graphics/Size.h>
 
 #include <chrono>
@@ -60,6 +61,28 @@ ResolvedImageSource resolveImageSource(const std::string& uri, const std::string
  */
 facebook::react::Rect imagePlacement(SceneImageResizeMode resizeMode, const facebook::react::Rect& frame,
                                      facebook::react::Size imageSize);
+
+/**
+ * Whether `capInsets` engages nine-slice drawing at all. All-zero is React Native's default and this platform's
+ * "not set", so an `<Image>` nobody gave `capInsets` to draws exactly as it did before this prop existed.
+ */
+bool hasCapInsets(const facebook::react::EdgeInsets& capInsets);
+
+/**
+ * The centre region `SkCanvas::drawImageNine` stretches, in the decoded image's own pixel space: `capInsets` cut
+ * from each edge of `imageSize`.
+ *
+ * This is the whole of nine-slice geometry and it is arithmetic on two structs, deliberately kept out of
+ * `ScenePainter.cpp` so it stays inside the coverage gate — `drawImageNine` itself does the actual stretching,
+ * once the painter has this rectangle and the frame to stretch it into.
+ *
+ * Each pair of opposing insets is clamped so it cannot cross the other: `left` and `right` never claim more than
+ * `imageSize.width` between them, nor `top` and `bottom` more than `imageSize.height`, so the centre region this
+ * returns never has a negative dimension no matter what a caller passes. A negative inset clamps to zero the same
+ * way, because a nine-slice inset that pulls the centre *outside* the image is not a smaller inset — it is not a
+ * nine-slice at all.
+ */
+facebook::react::Rect capInsetsCenter(facebook::react::Size imageSize, const facebook::react::EdgeInsets& capInsets);
 
 /**
  * Which frame of `decoded` is on screen `elapsedMilliseconds` after its first frame appeared.

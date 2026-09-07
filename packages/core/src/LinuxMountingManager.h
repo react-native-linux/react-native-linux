@@ -118,6 +118,12 @@ public:
     void setDecodedImageProvider(RetainedScene::DecodedImageProvider decodedImages);
 
     /**
+     * Where a `defaultSource`/`loadingIndicatorSource` placeholder's decode gets queued. Set once by the host
+     * beside `setDecodedImageProvider`; see `RetainedScene::setPlaceholderImageDecodeRequester`.
+     */
+    void setPlaceholderImageDecodeRequester(RetainedScene::ImageDecodeRequester requester);
+
+    /**
      * `RetainedScene::advanceImageAnimations` under the scene mutex, flagging pending damage when a frame
      * changed so the frame clock draws it. Called once per frame from the frame thread.
      */

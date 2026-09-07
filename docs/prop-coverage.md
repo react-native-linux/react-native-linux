@@ -59,12 +59,12 @@ assertion and not an implementation.
 | --- | --- | --- | --- | --- |
 | View | 35 | 14 | 5 | 16 |
 | Text | 45 | 20 | 6 | 19 |
-| Image | 14 | 4 | 6 | 4 |
+| Image | 14 | 7 | 3 | 4 |
 | ScrollView | 39 | 10 | 2 | 27 |
 | TextInput | 23 | 12 | 0 | 11 |
 | Switch | 8 | 5 | 3 | 0 |
 | ActivityIndicator | 4 | 4 | 0 | 0 |
-| **Total** | 168 | 69 | 22 | 77 |
+| **Total** | 168 | 72 | 19 | 77 |
 
 ## View
 
@@ -161,11 +161,11 @@ assertion and not an implementation.
 | Prop | Declared at | State | Proof, reason or owner |
 | --- | --- | --- | --- |
 | `sources` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:28` | implemented | `RetainedSceneImageTest, ImageStateBecomesTheImageOnTheNode` |
-| `defaultSource` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:29` | deviating | Ignored; a source that has not decoded yet paints nothing rather than a placeholder. See *Image*, Fidelity limits. |
-| `loadingIndicatorSource` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:30` | deviating | Ignored; there is no loading affordance. See *Image*, Fidelity limits. |
+| `defaultSource` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:29` | implemented | `ImagePlaceholderTest, TheDefaultSourceDrawsUntilTheRealSourceDecodes` |
+| `loadingIndicatorSource` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:30` | implemented | `ImagePlaceholderTest, LoadingIndicatorSourceIsUsedWhenThereIsNoDefaultSource` |
 | `resizeMode` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:31` | implemented | `RetainedSceneImageTest, EveryResizeModeMapsOntoASceneResizeMode` |
 | `blurRadius` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:32` | implemented | `RetainedSceneImageTest, BlurRadiusTravelsFromPropsToTheSnapshotUnaffectedByInheritedOpacity` |
-| `capInsets` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:33` | deviating | Ignored; there is no nine-patch stretching. See *Image*, Fidelity limits. |
+| `capInsets` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:33` | implemented | `RetainedSceneImageTest, CapInsetsTravelFromPropsToTheSnapshot` |
 | `tintColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:34` | implemented | `RetainedSceneImageTest, OpacityMultipliesIntoTheTintAlphaAndTheImageAlpha` |
 | `internal_analyticTag` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:35` | not-implemented | #69 |
 | `resizeMethod` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:36` | not-implemented | #44 |

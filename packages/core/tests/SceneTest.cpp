@@ -1,3 +1,4 @@
+#include "ImageContent.h"
 #include "LinuxMountingManager.h"
 #include "RetainedScene.h"
 #include "SceneTestSupport.h"
@@ -1190,6 +1191,22 @@ TEST(RetainedSceneImageTest, BlurRadiusTravelsFromPropsToTheSnapshotUnaffectedBy
                       SharedColor{}, 8.0F));
 
     EXPECT_FLOAT_EQ(scene.snapshot().front().image.value().blurRadius, 8.0F);
+}
+
+TEST(RetainedSceneImageTest, ANodeWithoutCapInsetsCarriesTheZeroEdgeInsetsThatMeanNoNineSlice) {
+    EXPECT_FALSE(react_native_linux::hasCapInsets(
+        sceneWithTile(makeTile(2, makeRect(0, 0, 64, 48), "tile.png")).snapshot().front().image.value().capInsets));
+}
+
+TEST(RetainedSceneImageTest, CapInsetsTravelFromPropsToTheSnapshot) {
+    RetainedScene scene = sceneWithTranslucentParent();
+    const facebook::react::EdgeInsets capInsets{.left = 2, .top = 3, .right = 4, .bottom = 5};
+
+    addChild(scene, 2,
+             makeImage(3, makeRect(0, 0, 64, 48), "tile.png", facebook::react::ImageResizeMode::Cover,
+                      SharedColor{}, 0.0F, capInsets));
+
+    EXPECT_EQ(scene.snapshot().front().image.value().capInsets, capInsets);
 }
 
 TEST(RetainedSceneImageTest, ABlurredImageDamagesOnlyItsOwnFrameLikeAnUnblurredOne) {

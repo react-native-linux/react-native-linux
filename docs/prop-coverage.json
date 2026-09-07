@@ -149,12 +149,12 @@
   "Image": {
     "sources": { "state": "implemented", "test": "RetainedSceneImageTest, ImageStateBecomesTheImageOnTheNode" },
     "defaultSource": {
-      "state": "deviating",
-      "reason": "Ignored; a source that has not decoded yet paints nothing rather than a placeholder. See *Image*, Fidelity limits."
+      "state": "implemented",
+      "test": "ImagePlaceholderTest, TheDefaultSourceDrawsUntilTheRealSourceDecodes"
     },
     "loadingIndicatorSource": {
-      "state": "deviating",
-      "reason": "Ignored; there is no loading affordance. See *Image*, Fidelity limits."
+      "state": "implemented",
+      "test": "ImagePlaceholderTest, LoadingIndicatorSourceIsUsedWhenThereIsNoDefaultSource"
     },
     "resizeMode": { "state": "implemented", "test": "RetainedSceneImageTest, EveryResizeModeMapsOntoASceneResizeMode" },
     "blurRadius": {
@@ -162,8 +162,8 @@
       "test": "RetainedSceneImageTest, BlurRadiusTravelsFromPropsToTheSnapshotUnaffectedByInheritedOpacity"
     },
     "capInsets": {
-      "state": "deviating",
-      "reason": "Ignored; there is no nine-patch stretching. See *Image*, Fidelity limits."
+      "state": "implemented",
+      "test": "RetainedSceneImageTest, CapInsetsTravelFromPropsToTheSnapshot"
     },
     "tintColor": {
       "state": "implemented",
