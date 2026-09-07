@@ -12,6 +12,7 @@
     "key Control_L press",
     "key a press",
     "key a release",
+    "sleep 200",
     "key x press",
     "key x release",
     "key Control_L release",
