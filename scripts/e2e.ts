@@ -7,8 +7,8 @@ import {
   resolveExpectedOutcome,
 } from "./e2e/scenario.ts";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { gradeArtifacts, gradeAutomationChannel, resolveInjectionFailure, resolveWindowFlags } from "./e2e/grade.ts";
-import { isKeyboardFocused, planRuns, readRequestedScenarios, runKeyboardAwareInjection } from "./e2e/discovery.ts";
+import { gradeArtifacts, gradeAutomationChannel, injectAndResolveFailure, resolveWindowFlags } from "./e2e/grade.ts";
+import { isKeyboardFocused, planRuns, readRequestedScenarios } from "./e2e/discovery.ts";
 import { spawn, spawnSync } from "node:child_process";
 
 import { setTimeout as delay } from "node:timers/promises";
@@ -158,7 +158,11 @@ const stopCompositor = async (compositor: Compositor): Promise<void> => {
   compositor.kill("SIGKILL");
 };
 
-const injectSteps = (steps: readonly string[], runtimeDirectory: string, socketName: string): string | null => {
+const injectSteps = (
+  steps: readonly string[],
+  runtimeDirectory: string,
+  socketName: string,
+): { failure: string | null; status: number | null } => {
   const injection = spawnSync(injectorBinaryPath, [], {
     encoding: "utf8",
     env: buildEnvironment({
@@ -170,11 +174,11 @@ const injectSteps = (steps: readonly string[], runtimeDirectory: string, socketN
     timeout: INJECT_TIMEOUT_MS,
   });
 
-  if (injection.status === SUCCESSFUL_EXIT_STATUS) {
-    return null;
-  }
-
-  return `rnl_inject exited with status ${String(injection.status)}:\n${injection.stdout}${injection.stderr}`;
+  const failure =
+    injection.status === SUCCESSFUL_EXIT_STATUS
+      ? null
+      : `rnl_inject exited with status ${String(injection.status)}:\n${injection.stdout}${injection.stderr}`;
+  return { failure, status: injection.status };
 };
 
 const driveScenario = async (run: ScenarioRun, workspace: Workspace): Promise<readonly string[]> => {
@@ -187,15 +191,12 @@ const driveScenario = async (run: ScenarioRun, workspace: Workspace): Promise<re
     return [`the bundle never printed "${scenario.ready}"`];
   }
 
-  const injectionFailure = await resolveInjectionFailure(
-    await runKeyboardAwareInjection(
-      scenario.steps,
-      (steps) => injectSteps(steps, workspace.runtimeDirectory, socketName),
-      () => waitUntil(() => isKeyboardFocused(workspace.trace.text), READY_TIMEOUT_MS),
-    ),
-    scenario.expectsWindowClose,
-    () => waitUntil(() => workspace.trace.text.includes(CLOSE_TRACE_LINE), READY_TIMEOUT_MS),
-  );
+  const injectionFailure = await injectAndResolveFailure({
+    inject: (steps) => injectSteps(steps, workspace.runtimeDirectory, socketName),
+    scenario,
+    waitForExpectedClose: () => waitUntil(() => workspace.trace.text.includes(CLOSE_TRACE_LINE), READY_TIMEOUT_MS),
+    waitForKeyboardFocus: () => waitUntil(() => isKeyboardFocused(workspace.trace.text), READY_TIMEOUT_MS),
+  });
   const automationFailures = await gradeAutomationChannel({
     artifactsDirectory: workspace.artifactsDirectory,
     goldensDirectory: run.source.goldensDirectory,

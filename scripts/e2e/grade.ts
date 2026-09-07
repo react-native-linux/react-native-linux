@@ -6,6 +6,7 @@ import { PNG } from "pngjs";
 import type { Scenario } from "./scenario.ts";
 import { gradeAutomation } from "./automation.ts";
 import path from "node:path";
+import { runKeyboardAwareInjection } from "./keyboard-focus.ts";
 
 const NO_TEXT = "";
 const CROPPED_ARTIFACT_NAME = "screenshot-cropped.png";
@@ -179,22 +180,55 @@ const gradeAutomationChannel = (inputs: AutomationChannelInputs): Promise<readon
 /** Omission becomes `--no-decorations`, since cage and weston have no decoration manager; `[]` or a list stands. */
 const resolveWindowFlags = (windowFlags?: readonly string[]): readonly string[] => windowFlags ?? ["--no-decorations"];
 
+/** `rnl_inject`'s own exit status for a clean run cut short by the socket disappearing under it. */
+const EXPECTED_CLOSE_STATUS = 1;
+
+interface InjectionOutcome {
+  readonly failure: string | null;
+  readonly status: number | null;
+}
+
 /**
  * `expectsWindowClose` scenarios (window-decorations-close) drive a click that closes the window mid-run, so
- * `rnl_inject` loses its socket and exits nonzero. `waitForExpectedClose` is asked only then — the caller's own
- * `waitUntil` over the trace — and accepting the failure needs it to resolve `true`; a real injector crash still
- * fails the scenario.
+ * `rnl_inject` loses its socket and exits with status 1. Only that exact status is eligible: 2 is `rnl_inject`'s
+ * own usage/argument error and `null` is a signal (the #233 `INJECT_TIMEOUT_MS` kill, among others) — neither is
+ * the socket disappearing, so both keep failing the scenario regardless of the trace. `waitForExpectedClose` is
+ * asked only once status agrees, and accepting the failure still needs it to resolve `true`.
  */
 const resolveInjectionFailure = async (
-  failure: string | null,
+  outcome: InjectionOutcome,
   expectsWindowClose: boolean,
   waitForExpectedClose: () => Promise<boolean>,
 ): Promise<string | null> => {
-  if (failure === null || !expectsWindowClose) {
-    return failure;
+  if (outcome.failure === null || !expectsWindowClose || outcome.status !== EXPECTED_CLOSE_STATUS) {
+    return outcome.failure;
   }
 
-  return (await waitForExpectedClose()) ? null : failure;
+  return (await waitForExpectedClose()) ? null : outcome.failure;
 };
 
-export { gradeArtifacts, gradeAutomationChannel, resolveInjectionFailure, resolveWindowFlags };
+interface InjectionRun {
+  readonly scenario: Scenario;
+  readonly inject: (subset: readonly string[]) => InjectionOutcome;
+  readonly waitForKeyboardFocus: () => Promise<boolean>;
+  readonly waitForExpectedClose: () => Promise<boolean>;
+}
+
+/** Runs `run.scenario.steps` through `run.inject`, threading its exit status to `resolveInjectionFailure` above. */
+const injectAndResolveFailure = async (run: InjectionRun): Promise<string | null> => {
+  let status: number | null = null;
+  const failure = await runKeyboardAwareInjection(
+    run.scenario.steps,
+    (steps) => {
+      const outcome = run.inject(steps);
+      ({ status } = outcome);
+
+      return outcome.failure;
+    },
+    run.waitForKeyboardFocus,
+  );
+
+  return resolveInjectionFailure({ failure, status }, run.scenario.expectsWindowClose, run.waitForExpectedClose);
+};
+
+export { gradeArtifacts, gradeAutomationChannel, injectAndResolveFailure, resolveInjectionFailure, resolveWindowFlags };

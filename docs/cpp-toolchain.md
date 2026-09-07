@@ -1924,7 +1924,7 @@ down: the parse is upstream's, and matching it exactly is the point of the equal
 ### What the perf and e2e half still owes
 
 The `animated-frames.json` p95 gate already exists in the e2e driver — `animated.js` for 240 frames at
-`{"p95Ms": 16.7, "minFrames": 60}`, see *E2E driver* for why 16.7 ms and not the gospel's 8.33 ms. That covers
+`{"p95Ms": 17.5, "minFrames": 60}`, see *E2E driver* for why 17.5 ms and not the gospel's 8.33 ms. That covers
 #124's "a simple continuously animating view is in the gate permanently" criterion, which is
 [core#50716](https://github.com/facebook/react-native/issues/50716)'s shape. Still open, all of them still #124:
 
@@ -6837,11 +6837,14 @@ presented for that percentile to mean anything, so a run that presented four fra
 driver reports both reasons at once rather than hiding the second behind the first, and prints the whole summary
 as a note on every run, budget or not, so the numbers are tracked rather than only gated.
 
-`animated-frames.json` is the perf scenario: `animated.js` for 240 frames at `{"p95Ms": 16.7, "minFrames": 60}`.
-**16.7 ms, not the gospel's 8.33 ms, and deliberately so.** A headless lavapipe rig composited by pixman under
+`animated-frames.json` is the perf scenario: `animated.js` for 240 frames at `{"p95Ms": 17.5, "minFrames": 60}`.
+**17.5 ms, not the gospel's 8.33 ms, and deliberately so.** A headless lavapipe rig composited by pixman under
 cage is not going to hold a 120 Hz budget, and a gate that fails on the runner rather than on the renderer is a
-gate nobody will keep. 16.7 ms is the CI regression gate; the 8.33 ms number in the testing gospel is a **real
-hardware** budget and is measured on real hardware, not here.
+gate nobody will keep. The floor under weston's and cage's 60 Hz pacing is the presentation interval itself,
+16.67 ms; 17.5 ms leaves headroom for that pacing's own jitter without weakening the proof, because a genuinely
+dropped frame still reads roughly double the interval, around 33 ms, and clears the gate by a wide margin either
+way. 17.5 ms is the CI regression gate; the 8.33 ms number in the testing gospel is a **real hardware** budget and
+is measured on real hardware, not here.
 
 ### Screenshots
 
@@ -7135,7 +7138,7 @@ Named here so they are not mistaken for oversights, all of them still #7:
   carry the same per-channel tolerance for the same reason, because oxlint forbids the root script importing the
   package one. Moving the shared half into a package both can depend on is the fix, and it is not worth a package
   for one function yet.
-- **The 8.33 ms budget.** The CI gate is 16.7 ms because the rig is lavapipe and pixman. Measuring the gospel's
+- **The 8.33 ms budget.** The CI gate is 17.5 ms because the rig is lavapipe and pixman. Measuring the gospel's
   real number needs real hardware and a place to record the result over time; neither exists yet.
 
 ## Unit tests and coverage
