@@ -1044,6 +1044,7 @@ elseif(RNL_ENABLE_WINDOW)
     add_executable(rnl_window
         src/AutomationServer.cpp
         src/SkiaVulkanRenderer.cpp
+        src/SurfaceCommitGate.cpp
         src/TextInputClient.cpp
         src/TextInputV3State.cpp
         src/ToplevelState.cpp

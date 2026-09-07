@@ -17,6 +17,7 @@ const SOCKET_POLL_INTERVAL_MS = 50;
 const COMPOSITOR_STOP_GRACE_MS = 250;
 const RENDER_TIMEOUT_MS = 120_000;
 const SCREENSHOT_FRAME_COUNT = "60";
+const FIRST_FRAME_COUNT = "1";
 const WINDOW_WIDTH = "800";
 const WINDOW_HEIGHT = "600";
 
@@ -37,8 +38,9 @@ const generatedManifestName = "rnl-lvp_icd.generated.json";
 const overriddenEnvironmentNames = new Set(["DISPLAY", "WAYLAND_DISPLAY", "VK_DRIVER_FILES", "VK_ICD_FILENAMES"]);
 
 interface WindowFixture {
-  readonly bundleFileName: string;
+  readonly bundleFileName: string | null;
   readonly goldenFileName: string;
+  readonly frameCount: string;
 }
 
 const repositoryRoot = path.resolve(import.meta.dirname, "..");
@@ -47,9 +49,18 @@ const bundlesDirectory = path.join(packageDirectory, "test-bundles");
 const binaryPath = path.join(repositoryRoot, "build", "dev", "bin", "rnl_window");
 const defaultOutputDirectory = path.join(repositoryRoot, "build", "window-goldens");
 
+/**
+ * The first-frame fixture takes no bundle and exactly one frame, which is what makes it the assertion the other
+ * two cannot make. A bundle mounts on the JavaScript thread, so its first frame is legitimately empty and says
+ * nothing; the placeholder is painted synchronously by `WindowMain`, so the very first content update this client
+ * commits already carries the whole picture. Capturing that one frame is therefore the check that the first buffer
+ * attached is the one the compositor shows — the invisible window of #328 fails it and a settled capture 60 frames
+ * later does not. See *Surface commit ordering* in docs/cpp-toolchain.md.
+ */
 const fixtures: readonly WindowFixture[] = [
-  { bundleFileName: "fabric-view.js", goldenFileName: "window-fabric-view.png" },
-  { bundleFileName: "view-props.js", goldenFileName: "window-view-props.png" },
+  { bundleFileName: "fabric-view.js", frameCount: SCREENSHOT_FRAME_COUNT, goldenFileName: "window-fabric-view.png" },
+  { bundleFileName: "view-props.js", frameCount: SCREENSHOT_FRAME_COUNT, goldenFileName: "window-view-props.png" },
+  { bundleFileName: null, frameCount: FIRST_FRAME_COUNT, goldenFileName: "window-first-frame.png" },
 ];
 
 const findExecutable = (executableName: string): string | null => {
@@ -200,22 +211,17 @@ const renderFixture = (
   outputPath: string,
   clientEnvironment: Record<string, string | undefined>,
 ): void => {
+  const bundleArguments =
+    fixture.bundleFileName === null ? [] : ["--fabric", path.join(bundlesDirectory, fixture.bundleFileName)];
   const render = spawnSync(
     binaryPath,
-    [
-      "--fabric",
-      path.join(bundlesDirectory, fixture.bundleFileName),
-      "--screenshot",
-      outputPath,
-      "--frames",
-      SCREENSHOT_FRAME_COUNT,
-    ],
+    [...bundleArguments, "--screenshot", outputPath, "--frames", fixture.frameCount],
     { encoding: "utf8", env: clientEnvironment, timeout: RENDER_TIMEOUT_MS },
   );
 
   if (render.status !== SUCCESSFUL_EXIT_STATUS || !existsSync(outputPath)) {
     throw new Error(
-      `rnl_window --screenshot exited with status ${String(render.status)} for ${fixture.bundleFileName}:\n` +
+      `rnl_window --screenshot exited with status ${String(render.status)} for ${fixture.goldenFileName}:\n` +
         `${render.stdout}${render.stderr}\n${COMPOSITOR_NAME}:\n${compositorLog}`,
     );
   }

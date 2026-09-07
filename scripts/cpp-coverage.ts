@@ -54,6 +54,7 @@ const scopedSourcePaths: readonly string[] = [
   "packages/core/src/RetainedScene.cpp",
   "packages/core/src/ScrollEventCadence.cpp",
   "packages/core/src/ScrollPhysics.cpp",
+  "packages/core/src/SurfaceCommitGate.cpp",
   "packages/core/src/SwitchContent.cpp",
   "packages/core/src/TextInputV3State.cpp",
   "packages/core/src/TextTransform.cpp",

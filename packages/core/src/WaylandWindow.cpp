@@ -173,6 +173,17 @@ bool WaylandWindow::takePendingResize() noexcept {
     return resized;
 }
 
+bool WaylandWindow::isConfigureAcknowledged() const noexcept { return configured_; }
+
+bool WaylandWindow::takeContentUpdateDiscarded() noexcept {
+    const bool discarded = contentUpdateDiscarded_;
+    contentUpdateDiscarded_ = false;
+
+    return discarded;
+}
+
+bool WaylandWindow::hasContentUpdateDiscarded() const noexcept { return contentUpdateDiscarded_; }
+
 ToplevelState WaylandWindow::toplevelState() const noexcept { return toplevelState_; }
 
 bool WaylandWindow::takeStateChange() noexcept {
@@ -401,7 +412,13 @@ void WaylandWindow::handleFeedbackPresented(void* data, struct wp_presentation_f
 }
 
 void WaylandWindow::handleFeedbackDiscarded(void* data, struct wp_presentation_feedback* feedback) {
-    static_cast<WaylandWindow*>(data)->frameTiming_.recordDiscarded();
+    WaylandWindow* window = static_cast<WaylandWindow*>(data);
+
+    window->frameTiming_.recordDiscarded();
+
+    // A discarded content update is owed no `wl_surface.frame` callback, so a client that only draws on one would
+    // stop here and show whatever the compositor last accepted, which after the first frame is nothing.
+    window->contentUpdateDiscarded_ = true;
     wp_presentation_feedback_destroy(feedback);
 }
 

@@ -183,6 +183,25 @@ bool SkiaVulkanRenderer::drawFrame(WaylandWindow& window, const SceneDamage& fra
         mergeDamage(pendingDamage, frameDamage);
     }
 
+    // The four ways this window ends up mapped and never shown, asked as one question before a buffer is attached.
+    // `takeContentUpdateDiscarded` is read unconditionally so a discard is never left pending behind a frame that
+    // bailed out for a different reason and then re-presented for a stale one.
+    const SurfaceCommitState observedCommitState{.isConfigureAcknowledged = window.isConfigureAcknowledged(),
+                                                 .doesBufferExtentMatchConfigure =
+                                                     swapchainSize_.width == window.size().width &&
+                                                     swapchainSize_.height == window.size().height,
+                                                 .wasLastContentUpdateDiscarded = window.takeContentUpdateDiscarded(),
+                                                 .consecutiveAcquireStarvations = consecutiveAcquireStarvations_,
+                                                 .extraSwapchainImages = extraSwapchainImages_};
+    const SurfaceCommitAction commitAction = surfaceCommitActionFor(applySurfaceCommitFault(
+        observedCommitState, std::exchange(pendingSurfaceCommitFault_, SurfaceCommitFault::None)));
+
+    lastSurfaceCommitAction_ = commitAction;
+
+    if (!applySurfaceCommitAction(commitAction, window)) {
+        return false;
+    }
+
     currentBackbufferIndex_ = (currentBackbufferIndex_ + 1) % backbuffers_.size();
     Backbuffer& backbuffer = backbuffers_[currentBackbufferIndex_];
 
@@ -212,6 +231,14 @@ bool SkiaVulkanRenderer::drawFrame(WaylandWindow& window, const SceneDamage& fra
     // frame here. `PresentThenRecreateSwapchain` is the exception: VK_SUBOPTIMAL_KHR still hands back a usable
     // image, and dropping it would cost a frame the compositor could have shown.
     const VulkanRecovery acquireRecovery = vulkanRecoveryFor(acquireResult);
+
+    // A run of these is what SurfaceCommitGate turns into a bigger swapchain. One of them is pacing, so only the
+    // run counts, and any acquire that hands an image back is evidence the shortage is over.
+    if (acquireRecovery == VulkanRecovery::RetryNextFrame) {
+        ++consecutiveAcquireStarvations_;
+    } else {
+        consecutiveAcquireStarvations_ = 0;
+    }
 
     if (acquireRecovery != VulkanRecovery::Proceed && acquireRecovery != VulkanRecovery::PresentThenRecreateSwapchain) {
         vkDestroySemaphore(device_, acquireSemaphore, nullptr);
@@ -297,6 +324,52 @@ bool SkiaVulkanRenderer::drawFrame(WaylandWindow& window, const SceneDamage& fra
 }
 
 void SkiaVulkanRenderer::injectSwapchainLossOnNextFrame() noexcept { debugSwapchainLossPending_ = true; }
+
+void SkiaVulkanRenderer::injectSurfaceCommitFaultOnNextFrame(SurfaceCommitFault fault) noexcept {
+    pendingSurfaceCommitFault_ = fault;
+}
+
+SurfaceCommitAction SkiaVulkanRenderer::lastSurfaceCommitAction() const noexcept { return lastSurfaceCommitAction_; }
+
+// Returns whether the frame may go on to acquire an image. Every false is a frame that attaches nothing and has
+// already done whatever the rule prescribed instead, so the next one starts from a swapchain that can be shown.
+bool SkiaVulkanRenderer::applySurfaceCommitAction(SurfaceCommitAction action, const WaylandWindow& window) {
+    switch (action) { // COV_EXCL: every SurfaceCommitAction value has a case, so no-match cannot execute
+    case SurfaceCommitAction::WaitForConfigure:
+        return false;
+    case SurfaceCommitAction::RecreateSwapchainAtConfiguredExtent:
+        requestedSize_ = window.size();
+        createSwapchain();
+
+        return false;
+    case SurfaceCommitAction::RecreateSwapchainWithMoreImages:
+        // Reset first: the rebuild is the answer to the run of starved acquires, so leaving the count standing
+        // would rebuild again on the next frame and grow the swapchain without bound.
+        consecutiveAcquireStarvations_ = 0;
+        ++extraSwapchainImages_;
+        createSwapchain();
+
+        return false;
+    case SurfaceCommitAction::RepresentDiscardedFrame:
+        // A full repaint rather than an idle present: the update the compositor discarded is the one this frame
+        // has to replace, and `createBackbuffers` seeds these lists with the full surface for the same reason.
+        for (SceneDamage& pendingDamage : imageDamage_) {
+            mergeDamage(pendingDamage, SceneDamage{fullSurfaceRect()});
+        }
+
+        return true;
+    case SurfaceCommitAction::AttachBuffer:
+        return true;
+    }
+
+    return true; // COV_EXCL: every SurfaceCommitAction value has a case above, so this cannot execute
+}
+
+facebook::react::Rect SkiaVulkanRenderer::fullSurfaceRect() const noexcept {
+    return facebook::react::Rect{.origin = {},
+                                 .size = {.width = static_cast<facebook::react::Float>(swapchainSize_.width),
+                                          .height = static_cast<facebook::react::Float>(swapchainSize_.height)}};
+}
 
 void SkiaVulkanRenderer::applyRecovery(VulkanRecovery recovery, VkResult result, const char* operation) {
     switch (recovery) {
@@ -558,7 +631,9 @@ void SkiaVulkanRenderer::createSwapchain() {
         throw std::runtime_error("swapchain images cannot be used as colour attachments");
     }
 
-    uint32_t imageCount = capabilities.minImageCount + kSwapchainImageMargin;
+    // `extraSwapchainImages_` is what SurfaceCommitGate's shortage recovery grows: a software driver handed the
+    // minimum can stop returning images at all, and one more is what lets the acquire make progress again.
+    uint32_t imageCount = capabilities.minImageCount + kSwapchainImageMargin + extraSwapchainImages_;
 
     if (capabilities.maxImageCount > 0) {
         imageCount = std::min(imageCount, capabilities.maxImageCount);
@@ -643,12 +718,7 @@ void SkiaVulkanRenderer::createBackbuffers(VkFormat imageFormat, VkImageUsageFla
 
     // Every image of a fresh swapchain holds undefined pixels, so each one owes a full repaint before any partial
     // one is meaningful. This is also what makes a resize a full redraw without a special case for it.
-    const facebook::react::Rect fullSurface{
-        .origin = {},
-        .size = {.width = static_cast<facebook::react::Float>(swapchainSize_.width),
-                 .height = static_cast<facebook::react::Float>(swapchainSize_.height)}};
-
-    imageDamage_.assign(imageCount, SceneDamage{fullSurface});
+    imageDamage_.assign(imageCount, SceneDamage{fullSurfaceRect()});
 
     // Skia's own VulkanWindowContext keeps one more backbuffer than there are swapchain images so a command buffer
     // has a chance to retire before its render semaphore is reused.
