@@ -5,10 +5,12 @@
 #include "ToplevelState.h"
 #include "WaylandSeat.h"
 #include "WaylandSerialLedger.h"
+#include "WindowDecorations.h"
 
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -35,12 +37,34 @@ struct xdg_toplevel_listener;
 struct xdg_wm_base;
 struct xdg_wm_base_listener;
 struct zwp_text_input_manager_v3;
+struct zxdg_decoration_manager_v1;
+struct zxdg_toplevel_decoration_v1;
+struct zxdg_toplevel_decoration_v1_listener;
 
 namespace react_native_linux {
 
 struct WindowSize {
     uint32_t width;
     uint32_t height;
+};
+
+/**
+ * What the desktop matches this window on, and who it is told to decorate it.
+ *
+ * `applicationIdentifier` is `xdg_toplevel.set_app_id`, and it has to equal the installed desktop file's name
+ * without its `.desktop` suffix or none of the matching works: zed#53962 is KWin window rules silently not
+ * applying, and zed#33897 is the window missing from the GNOME switcher, both from the same one request being
+ * wrong. It is a separate string from the title for exactly that reason — the title is what a human reads and
+ * changes per document, the identifier is what the compositor keys on and never changes.
+ *
+ * `forceClientDecorations` is the test seam: it makes `decorationMode` answer `Client` whatever the compositor
+ * says, so the drawn title bar can be proven under a compositor that does implement
+ * `zxdg_decoration_manager_v1`. See *Decorations and app_id (#329)* in docs/cpp-toolchain.md.
+ */
+struct WindowIdentity {
+    std::string title;
+    std::string applicationIdentifier;
+    bool forceClientDecorations{false};
 };
 
 /**
@@ -86,7 +110,7 @@ struct WindowSize {
  */
 class WaylandWindow final {
 public:
-    WaylandWindow(const std::string& title, WindowSize initialSize);
+    WaylandWindow(const WindowIdentity& identity, WindowSize initialSize);
     WaylandWindow(const WaylandWindow&) = delete;
     WaylandWindow(WaylandWindow&&) = delete;
     WaylandWindow& operator=(const WaylandWindow&) = delete;
@@ -127,6 +151,28 @@ public:
      * would otherwise skip, and the frame that draws is the one that consumes it.
      */
     bool hasContentUpdateDiscarded() const noexcept;
+
+    /**
+     * Who draws this window's chrome, as `decideDecorationMode` decides it from the manager's presence, the
+     * `--force-client-decorations` flag and the compositor's most recent
+     * `zxdg_toplevel_decoration_v1.configure`. Answered live rather than cached, because a compositor may
+     * reconfigure the mode at any time.
+     */
+    DecorationMode decorationMode() const noexcept;
+    const std::string& title() const noexcept;
+
+    /**
+     * The four requests the drawn title bar makes of the compositor. `move` and `resize` take their serial from
+     * the ledger's `InteractiveMove` kind (#330) and are simply not sent when nothing has recorded a qualifying
+     * press yet, because a request built from a zero serial is declined exactly as silently as one built from a
+     * stale one. `edge` is an `xdg_toplevel::resize_edge` wire value, which is what `resizeEdgeOfHit` produces.
+     */
+    void startInteractiveMove();
+    void startInteractiveResize(uint32_t edge);
+    void toggleMaximized();
+    void minimize();
+    /** What the drawn close button does: the same flag `xdg_toplevel.close` sets, so teardown takes one path. */
+    void requestClose() noexcept;
 
     /** The activated/maximized/fullscreen/resizing bits from the most recent `xdg_toplevel.configure`. */
     ToplevelState toplevelState() const noexcept;
@@ -174,6 +220,7 @@ private:
     void bindGlobal(wl_registry* registry, uint32_t name, const char* interfaceName, uint32_t version);
     void dispatchWithTimeout(std::chrono::milliseconds timeout);
     void onToplevelConfigure(int32_t width, int32_t height, const wl_array* states);
+    void negotiateDecorations();
     void destroyFrameCallback() noexcept;
 
     static void handleRegistryGlobal(void* data, wl_registry* registry, uint32_t name, const char* interfaceName,
@@ -188,6 +235,7 @@ private:
     static void handleToplevelClose(void* data, xdg_toplevel* toplevel);
     static void handleToplevelConfigureBounds(void* data, xdg_toplevel* toplevel, int32_t width, int32_t height);
     static void handleToplevelWmCapabilities(void* data, xdg_toplevel* toplevel, wl_array* capabilities);
+    static void handleDecorationConfigure(void* data, zxdg_toplevel_decoration_v1* decoration, uint32_t mode);
     static void handleFrameDone(void* data, wl_callback* callback, uint32_t time);
     // presentation-time's generated header declares a *function* named wp_presentation_feedback, which hides the
     // struct of the same name in C++, so the type needs its elaborated spelling everywhere it is named.
@@ -203,6 +251,7 @@ private:
     static const xdg_wm_base_listener kWmBaseListener;
     static const xdg_surface_listener kXdgSurfaceListener;
     static const xdg_toplevel_listener kToplevelListener;
+    static const zxdg_toplevel_decoration_v1_listener kDecorationListener;
     static const wl_callback_listener kFrameCallbackListener;
     static const wp_presentation_listener kPresentationListener;
     static const wp_presentation_feedback_listener kPresentationFeedbackListener;
@@ -213,6 +262,8 @@ private:
     wl_shm* sharedMemory_{nullptr};
     std::unique_ptr<WaylandSeat> seat_;
     zwp_text_input_manager_v3* textInputManager_{nullptr};
+    zxdg_decoration_manager_v1* decorationManager_{nullptr};
+    zxdg_toplevel_decoration_v1* toplevelDecoration_{nullptr};
     wp_presentation* presentation_{nullptr};
     xdg_wm_base* wmBase_{nullptr};
     wl_surface* surface_{nullptr};
@@ -222,6 +273,9 @@ private:
     FrameTiming frameTiming_;
     std::vector<FrameTiming::Frame> presentedFrames_;
     WindowSize size_;
+    std::string title_;
+    bool forceClientDecorations_{false};
+    std::optional<uint32_t> configuredDecorationMode_;
     ToplevelState toplevelState_;
     bool configured_{false};
     bool frameCallbackFired_{false};

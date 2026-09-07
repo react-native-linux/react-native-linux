@@ -73,6 +73,8 @@ public:
     WaylandSeat& operator=(WaylandSeat&&) = delete;
     ~WaylandSeat() noexcept;
 
+    /** The `wl_seat` every request that names one — `xdg_toplevel.move`, `.resize`, `.show_window_menu` — sends. */
+    wl_seat* seat() const noexcept;
     std::vector<InputEvent> takeEvents();
     size_t droppedEventCount() const noexcept;
     void attachTextInput(zwp_text_input_manager_v3* manager);

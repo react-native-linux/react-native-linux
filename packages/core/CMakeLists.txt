@@ -928,6 +928,11 @@ if(RNL_ENABLE_WINDOW)
     # wp_presentation is stable and measures rather than paces: ADR-0001 decision 3. See *Frame timing* in
     # docs/cpp-toolchain.md.
     set(RNL_PRESENTATION_TIME_XML ${RNL_WAYLAND_PROTOCOLS_DIR}/stable/presentation-time/presentation-time.xml)
+    # xdg-decoration is unstable for the same reason text-input is — it has never been promoted — and GNOME
+    # implements none of it, which is what makes the drawn title bar mandatory rather than a fallback. See
+    # *Decorations and app_id (#329)* in docs/cpp-toolchain.md.
+    set(RNL_XDG_DECORATION_XML
+        ${RNL_WAYLAND_PROTOCOLS_DIR}/unstable/xdg-decoration/xdg-decoration-unstable-v1.xml)
 
     if(NOT PkgConfig_FOUND)
         list(APPEND RNL_WINDOW_MISSING "pkg-config")
@@ -957,6 +962,10 @@ if(RNL_ENABLE_WINDOW)
 
     if(NOT RNL_WAYLAND_PROTOCOLS_DIR OR NOT EXISTS "${RNL_PRESENTATION_TIME_XML}")
         list(APPEND RNL_WINDOW_MISSING "wayland-protocols (stable/presentation-time)")
+    endif()
+
+    if(NOT RNL_WAYLAND_PROTOCOLS_DIR OR NOT EXISTS "${RNL_XDG_DECORATION_XML}")
+        list(APPEND RNL_WINDOW_MISSING "wayland-protocols (unstable/xdg-decoration)")
     endif()
 
     if(NOT Vulkan_FOUND)
@@ -1041,6 +1050,28 @@ elseif(RNL_ENABLE_WINDOW)
     target_include_directories(rnl_presentation_time PUBLIC ${RNL_PROTOCOL_DIR})
     target_link_libraries(rnl_presentation_time PUBLIC PkgConfig::RNL_WAYLAND_CLIENT)
 
+    add_custom_command(
+        OUTPUT ${RNL_PROTOCOL_DIR}/xdg-decoration-unstable-v1-client-protocol.h
+        COMMAND ${RNL_WAYLAND_SCANNER} client-header ${RNL_XDG_DECORATION_XML}
+                ${RNL_PROTOCOL_DIR}/xdg-decoration-unstable-v1-client-protocol.h
+        DEPENDS ${RNL_XDG_DECORATION_XML}
+        COMMENT "wayland-scanner client-header xdg-decoration-unstable-v1"
+        VERBATIM)
+
+    add_custom_command(
+        OUTPUT ${RNL_PROTOCOL_DIR}/xdg-decoration-unstable-v1-protocol.c
+        COMMAND ${RNL_WAYLAND_SCANNER} private-code ${RNL_XDG_DECORATION_XML}
+                ${RNL_PROTOCOL_DIR}/xdg-decoration-unstable-v1-protocol.c
+        DEPENDS ${RNL_XDG_DECORATION_XML}
+        COMMENT "wayland-scanner private-code xdg-decoration-unstable-v1"
+        VERBATIM)
+
+    add_library(rnl_xdg_decoration STATIC
+        ${RNL_PROTOCOL_DIR}/xdg-decoration-unstable-v1-protocol.c
+        ${RNL_PROTOCOL_DIR}/xdg-decoration-unstable-v1-client-protocol.h)
+    target_include_directories(rnl_xdg_decoration PUBLIC ${RNL_PROTOCOL_DIR})
+    target_link_libraries(rnl_xdg_decoration PUBLIC PkgConfig::RNL_WAYLAND_CLIENT rnl_xdg_shell)
+
     add_executable(rnl_window
         src/AutomationServer.cpp
         src/RendererLadder.cpp
@@ -1049,11 +1080,13 @@ elseif(RNL_ENABLE_WINDOW)
         src/SurfaceCommitGate.cpp
         src/TextInputClient.cpp
         src/TextInputV3State.cpp
+        src/TitleBarPainter.cpp
         src/ToplevelState.cpp
         src/VulkanResultPolicy.cpp
         src/WaylandSeat.cpp
         src/WaylandSerialLedger.cpp
         src/WaylandWindow.cpp
+        src/WindowDecorations.cpp
         src/WindowMain.cpp
         src/FrameClock.cpp
         src/FrameTiming.cpp
@@ -1083,6 +1116,7 @@ elseif(RNL_ENABLE_WINDOW)
             rnl_react_core
             rnl_scene_painter
             rnl_xdg_shell
+            rnl_xdg_decoration
             rnl_text_input
             rnl_presentation_time
             rnl_skia
@@ -1092,6 +1126,11 @@ elseif(RNL_ENABLE_WINDOW)
             PkgConfig::RNL_FONTCONFIG
             Threads::Threads
             ${CMAKE_DL_LIBS})
+    # The drawn title bar's text resolves from the same pinned family the scene's text does, so the bar in a
+    # golden is the same face on every machine. An absolute path for the reason the text pipeline's copy of this
+    # definition is one: there is no asset packaging yet.
+    target_compile_definitions(rnl_window
+        PRIVATE "RNL_BUNDLED_FONT_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/fonts\"")
     set_target_properties(rnl_window PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
     # Neither virtual-input protocol is part of wayland-protocols, and Ubuntu ships no wlr-protocols package, so
