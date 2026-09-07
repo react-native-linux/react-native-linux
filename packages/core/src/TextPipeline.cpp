@@ -17,6 +17,7 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkString.h"
+#include "include/core/SkTypeface.h"
 #include "include/ports/SkFontMgr_directory.h"
 #include "include/ports/SkFontMgr_fontconfig.h"
 #include "include/ports/SkFontScanner_FreeType.h"
@@ -444,6 +445,31 @@ skia::textlayout::PlaceholderStyle toPlaceholderStyle(const facebook::react::Att
 }
 
 /**
+ * Whether `kBundledFontFamily`'s normal-weight, upright face is the exact face `scripts/fonts.lock.json` pins
+ * (`NotoSans-Regular.ttf`), not merely some face under that family name. `matchFamily(...)->count() > 0` alone
+ * (the check this replaces) passed as long as *any* Noto Sans style resolved. `getResourceName` — the obvious
+ * way to name the file backing a typeface — is unimplemented for `SkFontMgr_New_Custom_Directory`'s typefaces
+ * (always returns 0), so this asks `matchFamilyStyle` for the exact style `FontFamilyRequestKind::VendoredDefault`
+ * requests instead, the same way text layout does, and checks the *style it actually got back*:
+ * `matchFamilyStyle`'s nearest-match fallback does not enforce an exact style, and with `NotoSans-Regular.ttf`
+ * missing and only `NotoSans-Bold.ttf`/`NotoSans-Italic.ttf` left, it silently returns the italic face — weight
+ * 400, but slant 1, not upright — instead of failing. `resolvedStyleIsPinnedDefault` does the actual comparison,
+ * kept pure and Skia-free in `PinnedFontFamilies.cpp` so the wrong-face regression is table-tested without a
+ * live `SkFontMgr`.
+ */
+bool bundledFontFamilyResolvesPinnedFile(SkFontMgr& assetFontManager) {
+    const sk_sp<SkTypeface> typeface = assetFontManager.matchFamilyStyle(kBundledFontFamily, SkFontStyle());
+
+    if (typeface == nullptr) {
+        return false;
+    }
+
+    const SkFontStyle style = typeface->fontStyle();
+
+    return resolvedStyleIsPinnedDefault(style.weight(), style.width(), static_cast<int>(style.slant()));
+}
+
+/**
  * Aborts the process when a family `scripts/fonts.lock.json` pins did not resolve from the asset font manager —
  * #314, the resolvable-but-wrong-source sibling of the #70 diagnostic. #307 measured what happens without this:
  * a stale `packages/core/fonts` silently fell through to fontconfig's system emoji face, a different file by
@@ -453,7 +479,7 @@ skia::textlayout::PlaceholderStyle toPlaceholderStyle(const facebook::react::Att
  */
 void checkPinnedFontFamiliesResolve(SkFontMgr& assetFontManager) {
     const std::vector<PinnedFontFamilyResolution> resolutions{
-        {kBundledFontFamily, assetFontManager.matchFamily(kBundledFontFamily)->count() > 0},
+        {kBundledFontFamily, bundledFontFamilyResolvesPinnedFile(assetFontManager)},
         {kEmojiFontFamily, assetFontManager.matchFamily(kEmojiFontFamily)->count() > 0}};
 
     const std::optional<std::string> fatalMessage = pinnedFontFamiliesFatalMessage(resolutions);
@@ -465,16 +491,19 @@ void checkPinnedFontFamiliesResolve(SkFontMgr& assetFontManager) {
 }
 
 /**
- * Reports the family and file `FontFamilyRequestKind::VendoredDefault` resolves to, for the automation channel
- * of #214: an out-of-process driver has no other way to ask what an unset, `sans-serif` or `system-ui`
- * `fontFamily` actually drew, and #372's whole point is that the answer must not depend on the host. Called once,
- * at `TextPipelineState` construction, since the answer is the same vendored file for the process's whole
- * lifetime — `scripts/fonts.lock.json` pins the file name alongside the family `checkPinnedFontFamiliesResolve`
- * already confirmed resolves.
+ * Traces the family and file `FontFamilyRequestKind::VendoredDefault` resolves to, for a developer or an
+ * out-of-process driver asking what an unset, `sans-serif` or `system-ui` `fontFamily` actually drew — #372's
+ * whole point is that the answer must not depend on the host. This is informational, not a fault, so it goes
+ * through `std::cerr` directly rather than `reportNativeError`: that function also feeds the e2e driver's
+ * `ListErrors` automation channel and its trace-substring gate (#233), both of which treat every line they see
+ * as a scenario failure. `[rnl-text]` is deliberately not one of `scenario.ts`'s `ERROR_TRACE_PATTERNS`, unlike
+ * `[text]`. Called once, at `TextPipelineState` construction, since the answer is the same vendored file for the
+ * process's whole lifetime — `scripts/fonts.lock.json` pins the file name alongside the family
+ * `checkPinnedFontFamiliesResolve` already confirmed resolves.
  */
 void reportResolvedDefaultFontFamily() {
-    reportNativeError("text", "default fontFamily resolved to \"" + std::string(kBundledFontFamily) + "\" (" +
-                                  std::string(RNL_BUNDLED_FONT_DIR) + "/" + kDefaultFontFamilyFileName + ")");
+    std::cerr << "[rnl-text] default fontFamily resolved to \"" << kBundledFontFamily << "\" ("
+              << RNL_BUNDLED_FONT_DIR << "/" << kDefaultFontFamilyFileName << ")" << std::endl;
 }
 
 struct TextPipelineState {
