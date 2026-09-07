@@ -7089,15 +7089,20 @@ don't copy — so a version bump re-runs it at the new SHA:
 | `react/renderer/scheduler/tests/SchedulerDelegateInvalidationTest.cpp` | 7 |
 | `react/runtime/tests/cxx/{ReactInstance,RuntimeExecutorShutdown}Test.cpp` | 30 |
 
-211 cases are *discovered*, all of section B's E2 list, and no upstream file is left out of the source list.
-Two qualifications on what that number means when the suite runs. One case reports itself skipped at runtime:
-`ReactInstanceTest.testRegistersRuntimeSchedulerAsEventLoopControl` is guarded by a feature flag upstream ships
-off, so `ctest` counts it as not run rather than as passed, and 210 execute. And the TSan configure discovers
-209 rather than 211, because the `TEST_FILTER` in `packages/core/tests/hermes/CMakeLists.txt` keeps two cases
-out of that one configure, so 208 execute there. `dev` and `asan` discover 211 and run 210.
+211 cases are in the sources, all of section B's E2 list, and no upstream file is left out of the source list.
+Three qualifications on what that number means when the suite runs. The `TEST_FILTER` in
+`packages/core/tests/hermes/CMakeLists.txt` keeps one case out of every configure, so `dev` and `asan` discover
+210. One case reports itself skipped at runtime: `ReactInstanceTest.testRegistersRuntimeSchedulerAsEventLoopControl`
+is guarded by a feature flag upstream ships off, so `ctest` counts it as not run rather than as passed, and 209
+execute. And the TSan configure keeps two more cases out, so it discovers 208 and executes 207.
 
-The two are vendored failures, neither reachable from anything this platform calls, and per AGENTS.md a filter
+The three are vendored failures, none reachable from anything this platform calls, and per AGENTS.md a filter
 naming a case is not a suppression file; there is none in this repository.
+
+- `BridgingTest.highResTimeStampTest` (#393) — round-trips `HighResTimeStamp::now()` through `toJs`, a double of
+  milliseconds, and back. A double holds 2^53 exact integers, so nanosecond precision survives only while the
+  steady clock is below about 9e15 ns, roughly two and a half hours of host uptime; on a runner that has been up
+  longer the equality fails on every preset, which is how it first surfaced on a run that had passed all day.
 
 - `Runtimes/JSITest.SetRuntimeData` (#383) — a lock-order inversion, `M0 => M1 => M0`, between the
   process-global JSI runtime-data mutex in `ReactCommon/jsi/jsi/jsi.cpp`, which `Runtime::setRuntimeDataImpl`
