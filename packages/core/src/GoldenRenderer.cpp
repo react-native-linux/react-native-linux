@@ -688,6 +688,14 @@ int renderGolden(const std::string& bundlePath, const std::string& outputPath, i
     return paintSettledScene(runFabricBundle(bundlePath, toSurfaceSize(width, height)), outputPath, width, height);
 }
 
+int renderAppearanceGolden(const std::string& bundlePath, const std::string& outputPath,
+                           ColorScheme portalColorScheme, std::optional<ColorScheme> colorSchemeOverride,
+                           int width, int height) {
+    return paintSettledScene(
+        runAppearanceFabricBundle(bundlePath, toSurfaceSize(width, height), portalColorScheme, colorSchemeOverride),
+        outputPath, width, height);
+}
+
 int renderScrollGolden(const std::string& bundlePath, const std::string& outputPath,
                        facebook::react::Point surfacePoint, int wheelNotches, int width, int height) {
     return paintSettledScene(

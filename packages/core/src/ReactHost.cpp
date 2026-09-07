@@ -145,6 +145,8 @@ facebook::react::ReactInstance& ReactHost::reactInstance() noexcept { return *re
 
 DimensionsSource& ReactHost::dimensions() noexcept { return turboModuleRegistry_->dimensions(); }
 
+AppearanceModel& ReactHost::appearance() noexcept { return turboModuleRegistry_->appearance(); }
+
 void ReactHost::publishPendingDimensions() { turboModuleRegistry_->publishPendingDimensions(); }
 
 void ReactHost::loadScript(std::unique_ptr<const facebook::react::JSBigString> script, const std::string& sourceUrl) {

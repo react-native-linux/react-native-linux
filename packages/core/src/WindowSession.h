@@ -1,5 +1,9 @@
 #pragma once
 
+#ifdef RNL_ENABLE_APPEARANCE_PORTAL
+#include "AppearancePortal.h"
+#endif
+
 #include "FabricHost.h"
 #include "FrameClock.h"
 #include "InputPipeline.h"
@@ -42,6 +46,11 @@ namespace react_native_linux {
  * `DimensionsSource` and `deliverInput` emits at most one `didUpdateDimensions` per frame for whatever accumulated
  * there, so a compositor that sends a burst of configures during an interactive resize cannot re-render a
  * `useWindowDimensions` consumer once per event. See *Dimensions and TurboModules* in docs/cpp-toolchain.md.
+ *
+ * `deliverInput` pumps the appearance portal on the same beat and for the same reason (#52): the D-Bus
+ * connection is polled where the frame already is, so `org.freedesktop.portal.Settings`'s `SettingChanged`
+ * callback runs on the frame thread and the unsynchronised `AppearanceModel` behind `Appearance.getColorScheme()`
+ * has exactly one writer. See *Appearance and PlatformColor* in docs/cpp-toolchain.md.
  *
  * `recordFrameTick` is a second, separate clock: `FrameClock` decides whether the *paint* — `takeFrame` plus the
  * renderer's present — happens at all this iteration, which `deliverInput`'s per-input frame timing does not need
@@ -99,10 +108,19 @@ public:
 
 private:
     void configureDimensions(WindowSize size);
+
+    /**
+     * Applies the portal's answer before the bundle runs, so a module-scope `Appearance.getColorScheme()` already
+     * sees the desktop's scheme rather than `kFallbackColorScheme` followed by a change event one frame later.
+     */
+    void seedColorScheme();
     double takeFrameMilliseconds();
     bool hasPendingWork() const;
 
     ReactHost reactHost_;
+#ifdef RNL_ENABLE_APPEARANCE_PORTAL
+    AppearancePortal appearancePortal_;
+#endif
     std::unique_ptr<FabricHost> fabricHost_;
     std::chrono::steady_clock::time_point lastFrameTime_{std::chrono::steady_clock::now()};
     FrameClock frameClock_;

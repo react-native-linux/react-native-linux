@@ -709,6 +709,29 @@ FabricRunResult runFabricBundle(const std::optional<std::string>& bundlePath, fa
     return finishFabricRun(reactHost, fabricHost);
 }
 
+FabricRunResult runAppearanceFabricBundle(const std::string& bundlePath, facebook::react::Size surfaceSize,
+                                          ColorScheme portalColorScheme,
+                                          std::optional<ColorScheme> colorSchemeOverride) {
+    ReactHost reactHost;
+    std::unique_ptr<FabricHost> fabricHost = std::make_unique<FabricHost>(reactHost.reactInstance(), surfaceSize);
+
+    configureDimensions(reactHost, surfaceSize);
+
+    // Before the script, exactly as `WindowSession::seedColorScheme` applies the portal's initial read before the
+    // bundle runs: a fixture reads `Appearance.getColorScheme()` at module scope and has to see the scheme it was
+    // launched in rather than the fallback plus a change event it never waited for.
+    reactHost.appearance().onPortalColorSchemeChanged(portalColorScheme);
+    reactHost.appearance().setColorScheme(colorSchemeOverride);
+
+    loadAndSettle(reactHost, bundlePath);
+
+    for (size_t frame = 0; frame < kHeadlessFrameCount; ++frame) {
+        deliverInputFrame(reactHost, *fabricHost, {});
+    }
+
+    return finishFabricRun(reactHost, fabricHost);
+}
+
 FabricHitPaintRunResult runHitSampledFabricBundle(const std::string& bundlePath, facebook::react::Size surfaceSize,
                                                   int sampleStep) {
     ReactHost reactHost;

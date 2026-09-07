@@ -693,15 +693,15 @@ What this does not cover: an end-to-end resize under the headless compositor. Th
 resize path is still proven by reasoning about `WaylandWindow::onToplevelConfigure` rather than by a running
 compositor.
 
-## Appearance override (#260)
+## Appearance and PlatformColor (#52, #260)
 
 `Appearance.setColorScheme` from upstream's `NativeAppearance.js` is an app-level override of the colour scheme
-that wins over whatever the source of truth reports, until it is cleared with `null`. That source of truth —
-`org.freedesktop.appearance color-scheme` over `org.freedesktop.portal.Settings` — is issue #52 and is not wired
-up yet; *Focus and keyboard*'s deferral list names the same round trip as the reason the focus ring is not themed.
-What #260 builds ahead of that wiring is the precedence rule between the override and whatever the portal
-eventually reports, in `packages/core/src/Appearance.h`/`.cpp`, as three pure functions rather than a class that
-depends on D-Bus:
+that wins over whatever the source of truth reports, until it is cleared. The source of truth is
+`org.freedesktop.appearance color-scheme` over `org.freedesktop.portal.Settings`. #260 built the precedence rule
+between the two; #52 is the module, the portal client and `PlatformColor` on top of it.
+
+The precedence rule lives in `packages/core/src/Appearance.h`/`.cpp` as three pure functions rather than a class
+that depends on D-Bus:
 
 - `resolveEffectiveColorScheme(override, portalValue)` — the override if one is set, otherwise the portal value.
   This is `getColorScheme()`.
@@ -714,15 +714,97 @@ depends on D-Bus:
   signal entirely, but `AppearanceModel` still records the new portal value, so the override's own
   `setColorScheme(null)` resolves to it immediately rather than waiting on a second round trip.
 
-`AppearanceModel` is the small stateful wrapper #52's TurboModule and D-Bus listener plug into: `setColorScheme`
-and `onPortalColorSchemeChanged` are its two write paths, `colorScheme()` is `getColorScheme()`, and
-`setChangeListener` is where `appearanceChanged` gets its callback once a real event emitter exists. Nothing here
-is reachable from JavaScript yet — there is no `NativeAppearance` TurboModule registration and no portal D-Bus
-client, both of which are #52's scope — so `AppearanceTest.cpp` proves the precedence rule with a table test over
-the two pure functions plus a fake portal (a direct call to `onPortalColorSchemeChanged`, standing in for the
-D-Bus listener #52 has not written yet). `Appearance.cpp` is in the 100% line-and-branch scope of
-`scripts/cpp-coverage.ts`. The golden-image and TSan layers that #52's acceptance criteria ask for need a
-running portal source and a JavaScript-reachable module to race against, so they stay with #52.
+`AppearanceModel` is the small stateful wrapper both write paths meet in: `setColorScheme` is the module's,
+`onPortalColorSchemeChanged` is the portal's, `colorScheme()` is `getColorScheme()`, and `setChangeListener` is
+where `appearanceChanged` gets its callback.
+
+### The module
+
+`LinuxAppearanceModule` in `TurboModuleRegistry.cpp` is `NativeAppearanceCxxSpec` over that model, registered
+under `Appearance` beside `DeviceInfo` and `AnimatedModule`. It owns no policy: `getColorScheme` is the model's
+resolved answer as a `ColorSchemeName`, `setColorScheme` decodes a `ColorSchemeOverride` with
+`colorSchemeFromName` — `light` and `dark` set an override, `auto` and `unspecified` clear it — and
+`appearanceChanged` is emitted from the model's change listener through `emitDeviceEvent`, so a portal signal and
+an override change reach `RCTDeviceEventEmitter` by one path. `addListener` and `removeListeners` are the
+`RCTEventEmitter` bookkeeping the spec carries and are empty, exactly as they are in upstream's C++ modules.
+
+The emit is asynchronous: `emitDeviceEvent` goes through the module's `CallInvoker`, so an event queued by a
+synchronous `setColorScheme` lands after that call returns. Fixtures assert the trace from a timer, not at module
+scope.
+
+### The portal client: sd-bus
+
+Nothing in this tree linked a D-Bus client before #52, so the choice was open. **sd-bus**, from libsystemd, won
+it: libdbus needs its own main-loop integration and a hand-written marshalling layer, GDBus drags in GLib and a
+`GMainContext` this platform has no other use for, and `sdbus-c++` is a third-party wrapper over sd-bus itself.
+sd-bus is already on every systemd host, is one `pkg_check_modules(libsystemd)`, and is the only one of the four
+whose loop can be *pumped* rather than *owned*.
+
+That last property is the whole threading design. `AppearancePortal::processPendingSignals` calls
+`sd_bus_process` until the connection is empty, from `WindowSession::deliverInput` — the same once-per-frame
+place `publishPendingDimensions` is called from. The `SettingChanged` match callback therefore runs on the frame
+thread, and the unsynchronised `AppearanceModel` has exactly one writer. There is no dispatch thread and no
+mutex, and no TSan case to write, because nothing here crosses a thread: a portal signal reaches JavaScript
+exactly as a compositor configure does, recorded on the frame thread and published through the `CallInvoker`.
+
+The initial value is read once at construction with `ReadOne`, and applied by `WindowSession::seedColorScheme`
+before the bundle's script runs, so a module-scope `Appearance.getColorScheme()` already sees the desktop's
+scheme rather than the fallback followed by a change event a frame later.
+
+**The documented fallback:** no session bus, no `org.freedesktop.portal.Desktop` on it, a portal older than
+xdg-desktop-portal 1.15 (which introduced `ReadOne`), or the value 0 "no preference" all leave the portal silent,
+and the platform keeps `kFallbackColorScheme` — light, which is what the XDG specification says an unset
+preference means. `setColorScheme` still works, so an app on a portal-less desktop themes itself rather than
+failing to start. A build without libsystemd compiles `AppearancePortal.cpp` out entirely
+(`RNL_ENABLE_APPEARANCE_PORTAL`) and CMake says so at configure time.
+
+### PlatformColor
+
+#52 carried `needs:decision` for the token set. The decision is six names —
+`labelColor`, `secondaryLabelColor`, `windowBackgroundColor`, `controlBackgroundColor`, `separatorColor`,
+`linkColor` — in `packages/core/src/PlatformColor.cpp`, as a pure table from name and scheme to packed ARGB.
+macOS and iOS expose the whole `NSColor`/`UIColor` catalogue and then spend issues on the parts Fabric never
+wired up (rn-macos#2736, rn-macos#1846); Linux has no system catalogue to mirror, because the portal publishes a
+colour *scheme* rather than a palette, so a hundred names would be a hundred invented colours. An unrecognised
+name resolves to nothing, which is what lets the JavaScript side throw something readable instead of putting an
+undefined colour into a prop — rn-macos#413 is the version where it does not.
+
+It reaches JavaScript as one host function, `globalThis.__rnlPlatformColor(name)`, installed beside the
+TurboModule binding. A global rather than a module method because `PlatformColor` has no TurboModule spec on any
+platform: a colour has to be resolvable synchronously from `processColor`, which is not a call site an
+asynchronous module method can serve. It reads the scheme on every call, so **there is no resolved value anywhere
+that can go stale** — which is the answer to the bug cluster the issue was filed for. A theme change re-renders,
+the re-render resolves the same names again, and the commit that carries the new colours damages what it changed
+like any other commit.
+
+### Proving it
+
+```bash
+hello_react packages/core/test-bundles/appearance.js
+hello_react --appearance-golden packages/core/test-bundles/appearance-color.js out.png <light|dark> [override]
+```
+
+- **Unit.** `AppearanceTest.cpp` tables the precedence rule (#260), `colorSchemeFromPortalSetting` over the three
+  values the portal defines and the reserved rest, `colorSchemeFromName` over both `ColorSchemeName`s and both
+  spellings of "clear", and the whole `PlatformColor` token set in both schemes plus a name outside it.
+  `Appearance.cpp` and `PlatformColor.cpp` are in the 100% line-and-branch scope of `scripts/cpp-coverage.ts`.
+- **Trace.** `appearance.js` reads the scheme, overrides it, restates the same override, clears it, and prints
+  every `appearanceChanged` it receives. The trace is `dark,light` — two events for three `setColorScheme` calls,
+  because a restated override is not a change. It resolves `labelColor` at each step, so the same name answering
+  a different colour and then the original one again is the JavaScript-visible proof that nothing caches.
+- **Golden.** `appearance-color.js` renders three bands from one bundle: the tokens as the run booted, under an
+  override to dark, and after clearing it. Three renders of that one bundle are the triple —
+  `appearance-light.png` (portal light), `appearance-dark.png` (portal dark) and `appearance-override.png`
+  (portal dark, `setColorScheme('light')` already in force). The override render differs from the light render in
+  exactly one band: band three is dark, because clearing an override falls back to what the *portal* said and not
+  to what the app last displayed. That is `shouldEmitOnPortalChange`'s recorded-portal-value contract in pixels,
+  and no cached colour could produce it.
+
+What this does not cover: a `SettingChanged` signal arriving under a running compositor. `AppearancePortal.cpp`
+needs a live session bus and a real portal, so it is outside the coverage gate like `WaylandWindow.cpp`; the
+decode it depends on is the tabled `colorSchemeFromPortalSetting`, and the frame-thread pump has no concurrency
+to race. An e2e case that drives a real portal setting change under the headless compositor is the remaining
+layer of #52's acceptance criteria.
 
 ## Animated backend (#127, #128)
 

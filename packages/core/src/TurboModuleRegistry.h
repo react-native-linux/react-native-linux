@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Appearance.h"
 #include "DimensionsSource.h"
 
 #include <jsi/jsi.h>
@@ -19,29 +20,32 @@ class TurboModule;
 
 namespace react_native_linux {
 
+class LinuxAppearanceModule;
 class LinuxDeviceInfoModule;
 
 /**
  * The TurboModules this platform registers, and the single `TurboModuleBinding` that exposes them to JavaScript
- * (#50). `DeviceInfo` came first; `NativeAnimatedModule` is the second (#127).
+ * (#50). `DeviceInfo` came first, `NativeAnimatedModule` is the second (#127) and `Appearance` the third (#52),
+ * over the `AppearanceModel` precedence engine of #260.
  *
  * Upstream's `ReactCxxPlatform` does this with `ReactCxxTurboModuleProvider`: a chain of provider callbacks over
  * every core module it ships, installed from its own `ReactHost`. This is the same shape reduced to what two
- * modules need — one name-to-factory map, one lookup, `nullptr` for everything else. Its `DeviceInfoModule` is not
- * reusable here — it answers `getConstants` with a hardcoded 1280x720 and has no way to be told a surface size —
+ * modules need — one name-to-factory map, one lookup, `nullptr` for everything else. Its `DeviceInfoModule` is
+ * not reusable here — it answers `getConstants` with a hardcoded 1280x720 and has no way to be told a surface size —
  * so that module is ours; `AnimatedModule` is upstream's, built exactly as `ReactCxxTurboModuleProvider` builds
  * it, from the shared `NativeAnimatedNodesManagerProvider` the host owns. The generated
- * `NativeDeviceInfoCxxSpec` and `NativeAnimatedModuleCxxSpec` come from `packages/core/generated`.
+ * `NativeDeviceInfoCxxSpec`, `NativeAnimatedModuleCxxSpec` and `NativeAppearanceCxxSpec` come from
+ * `packages/core/generated`.
  *
- * `DeviceInfo` is constructed eagerly rather than per lookup, because the frame thread needs a handle to it to
- * emit `didUpdateDimensions` whether or not JavaScript has ever asked for the module. `AnimatedModule` is built
- * per lookup, which is what upstream does, and is what defers `NativeAnimatedNodesManagerProvider::getOrCreate` —
+ * `DeviceInfo` and `Appearance` are constructed eagerly rather than per lookup, because the frame thread needs a
+ * handle to each to emit `didUpdateDimensions` and `appearanceChanged` whether or not JavaScript has ever asked
+ * for the module. `AnimatedModule` is built per lookup, which is what upstream does, and is what defers `NativeAnimatedNodesManagerProvider::getOrCreate` —
  * and therefore the `UIManagerBinding` lookup inside it — until JavaScript actually reaches for the module.
  *
  * Threading contract: `install` runs on the JavaScript thread, inside the `initializeRuntime` bindings installer,
  * and so does every factory in the map, because `TurboModuleBinding` only calls the provider from a JavaScript
- * property access. `dimensions` and `publishPendingDimensions` run on the platform frame thread; both reach
- * JavaScript only through `DimensionsSource`'s mutex and the module's `CallInvoker`.
+ * property access. `dimensions`, `publishPendingDimensions` and `appearance` run on the platform frame thread;
+ * all three reach JavaScript only through `DimensionsSource`'s mutex and the modules' `CallInvoker`.
  */
 class TurboModuleRegistry final {
 public:
@@ -50,6 +54,14 @@ public:
         std::shared_ptr<facebook::react::NativeAnimatedNodesManagerProvider> animatedNodesManagerProvider);
 
     DimensionsSource& dimensions() noexcept;
+
+    /**
+     * The colour-scheme state `Appearance` answers from. Whoever owns the portal connection writes it:
+     * `WindowSession` through `AppearancePortal`, the headless golden runner from its `--appearance-golden`
+     * argument. See *Appearance and PlatformColor* in docs/cpp-toolchain.md.
+     */
+    AppearanceModel& appearance() noexcept;
+
     void install(facebook::jsi::Runtime& runtime);
 
     /**
@@ -64,6 +76,8 @@ private:
 
     std::shared_ptr<DimensionsSource> dimensionsSource_;
     std::shared_ptr<LinuxDeviceInfoModule> deviceInfoModule_;
+    std::shared_ptr<AppearanceModel> appearanceModel_;
+    std::shared_ptr<LinuxAppearanceModule> appearanceModule_;
     std::unordered_map<std::string_view, ModuleFactory> moduleFactories_;
 };
 

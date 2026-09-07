@@ -39,6 +39,7 @@ constexpr std::string_view kFocusCommandGoldenFlag = "--focus-command-golden";
 constexpr std::string_view kAnimatedImageFlag = "--animated-image";
 constexpr std::string_view kTypeFlag = "--type";
 constexpr std::string_view kAnimationFrameTraceFlag = "--raf-trace";
+constexpr std::string_view kAppearanceGoldenFlag = "--appearance-golden";
 /**
  * Which proof `--golden`, `--damage-golden` and `--hit-paint-golden` run. All three take the same arguments and
  * write the same kind of PNG; the last two also assert something about the scene they painted.
@@ -74,6 +75,8 @@ constexpr size_t kFocusCommandGoldenArgumentCount = 5;
 constexpr size_t kAnimatedImageArgumentCount = 5;
 constexpr size_t kTypeArgumentCount = 5;
 constexpr size_t kAnimationFrameTraceArgumentCount = 4;
+constexpr size_t kAppearanceGoldenArgumentCount = 5;
+constexpr size_t kAppearanceGoldenOverriddenArgumentCount = 6;
 
 std::optional<int> parsePositiveDimension(std::string_view text) {
     int value = 0;
@@ -308,6 +311,36 @@ int runTypeCommand(std::span<char*> arguments) {
                                                  kGoldenDefaultHeight);
 }
 
+int runAppearanceGoldenCommand(std::span<char*> arguments) {
+    const std::optional<react_native_linux::ColorScheme> portalColorScheme =
+        react_native_linux::colorSchemeFromName(std::string_view(arguments[4]));
+
+    if (!portalColorScheme.has_value()) {
+        std::cerr << "[hello_react] " << kAppearanceGoldenFlag << " scheme must be light or dark" << std::endl;
+
+        return 1;
+    }
+
+    // Absent, the run has no override, which is not the same as an override that resolves to the portal's own
+    // value: clearing the first falls back to the portal and clearing the second is a no-op. The optional is
+    // what keeps those two apart, here and in `AppearanceModel`.
+    std::optional<react_native_linux::ColorScheme> colorSchemeOverride;
+
+    if (arguments.size() == kAppearanceGoldenOverriddenArgumentCount) {
+        colorSchemeOverride = react_native_linux::colorSchemeFromName(std::string_view(arguments[5]));
+
+        if (!colorSchemeOverride.has_value()) {
+            std::cerr << "[hello_react] " << kAppearanceGoldenFlag << " override must be light or dark" << std::endl;
+
+            return 1;
+        }
+    }
+
+    return react_native_linux::renderAppearanceGolden(std::string(arguments[2]), std::string(arguments[3]),
+                                                      portalColorScheme.value(), colorSchemeOverride,
+                                                      kGoldenDefaultWidth, kGoldenDefaultHeight);
+}
+
 std::string_view toGoldenFlag(GoldenKind goldenKind) {
     if (goldenKind == GoldenKind::Damage) {
         return kDamageGoldenFlag;
@@ -382,8 +415,8 @@ int reportMissingSkia() {
     std::cerr << "[hello_react] " << kGoldenFlag << ", " << kDamageGoldenFlag << ", " << kHitPaintGoldenFlag
               << ", " << kTextFitGoldenFlag << ", " << kFirstFrameGoldenFlag << ", " << kScrollToFlag << ", "
               << kMaintainPositionGoldenFlag << ", " << kFocusTabFlag << ", " << kFocusClickFlag << ", "
-              << kClickedFrameFlag << ", "
-              << kFocusCommandGoldenFlag << ", " << kAnimatedImageFlag << " and " << kTypeFlag
+              << kClickedFrameFlag << ", " << kFocusCommandGoldenFlag << ", " << kAnimatedImageFlag << ", "
+              << kTypeFlag << " and " << kAppearanceGoldenFlag
               << " need Skia, which this build was configured without; run node scripts/vendor-skia.ts and "
                  "reconfigure"
               << std::endl;
@@ -406,6 +439,8 @@ int runFocusCommandGoldenCommand(std::span<char*> /*arguments*/) { return report
 int runAnimatedImageCommand(std::span<char*> /*arguments*/) { return reportMissingSkia(); }
 
 int runTypeCommand(std::span<char*> /*arguments*/) { return reportMissingSkia(); }
+
+int runAppearanceGoldenCommand(std::span<char*> /*arguments*/) { return reportMissingSkia(); }
 
 #endif
 
@@ -431,6 +466,7 @@ int main(int argc, char** argv) {
     const bool isAnimatedImageRequested = arguments.size() > 1 && kAnimatedImageFlag == arguments[1];
     const bool isTypeRequested = arguments.size() > 1 && kTypeFlag == arguments[1];
     const bool isAnimationFrameTraceRequested = arguments.size() > 1 && kAnimationFrameTraceFlag == arguments[1];
+    const bool isAppearanceGoldenRequested = arguments.size() > 1 && kAppearanceGoldenFlag == arguments[1];
 
     if (isFabricRequested && arguments.size() < 3) {
         std::cerr << "[hello_react] " << kFabricFlag << " requires a bundle path" << std::endl;
@@ -491,6 +527,14 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    if (isAppearanceGoldenRequested && arguments.size() != kAppearanceGoldenArgumentCount &&
+        arguments.size() != kAppearanceGoldenOverriddenArgumentCount) {
+        std::cerr << "[hello_react] " << kAppearanceGoldenFlag
+                  << " requires <bundle> <output.png> <light|dark> [override]" << std::endl;
+
+        return 1;
+    }
+
     if (isTypeRequested && arguments.size() != kTypeArgumentCount) {
         std::cerr << "[hello_react] " << kTypeFlag << " requires <bundle> <output.png> \"<sequence>\"" << std::endl;
 
@@ -540,6 +584,10 @@ int main(int argc, char** argv) {
 
         if (isTypeRequested) {
             return runTypeCommand(arguments);
+        }
+
+        if (isAppearanceGoldenRequested) {
+            return runAppearanceGoldenCommand(arguments);
         }
 
         if (isGoldenRequested || isDamageGoldenRequested || isHitPaintGoldenRequested || isTextFitGoldenRequested ||

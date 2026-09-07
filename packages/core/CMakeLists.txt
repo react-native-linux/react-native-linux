@@ -806,6 +806,7 @@ add_library(rnl_react_core STATIC
     src/JsErrorReporter.cpp
     src/LinuxAnimationChoreographer.cpp
     src/LinuxMountingManager.cpp
+    src/PlatformColor.cpp
     src/ReactHost.cpp
     src/RetainedScene.cpp
     src/ScrollController.cpp
@@ -1051,6 +1052,22 @@ elseif(RNL_ENABLE_WINDOW)
         src/FrameClock.cpp
         src/FrameTiming.cpp
     src/WindowSession.cpp)
+
+    # The XDG desktop portal colour-scheme source of #52. sd-bus rather than libdbus, GDBus or sdbus-c++: it is
+    # the only client of the four whose loop can be pumped from an existing frame thread instead of owning one,
+    # and it is one pkg-config module on every systemd host. Absent it, `Appearance` still answers — with
+    # `kFallbackColorScheme` and `setColorScheme` overrides — which is the documented no-portal fallback.
+    if(PkgConfig_FOUND)
+        pkg_check_modules(RNL_SYSTEMD QUIET IMPORTED_TARGET libsystemd)
+    endif()
+
+    if(RNL_SYSTEMD_FOUND)
+        target_sources(rnl_window PRIVATE src/AppearancePortal.cpp)
+        target_compile_definitions(rnl_window PRIVATE RNL_ENABLE_APPEARANCE_PORTAL)
+        target_link_libraries(rnl_window PRIVATE PkgConfig::RNL_SYSTEMD)
+    else()
+        message(WARNING "libsystemd is unavailable; the appearance portal is disabled and Appearance answers the light fallback")
+    endif()
     target_compile_options(rnl_window PRIVATE -Wall -Wextra)
     target_include_directories(rnl_window PRIVATE src)
     # libskia.a is a single static archive built against system freetype and fontconfig, so those two
