@@ -255,6 +255,10 @@ fence, and every submission fence belongs to Ganesh, which does its own device-l
 *creation* calls keep `checkVulkanResult` rather than the table, because a surface lost while rebuilding for a
 lost surface has no recovery left to try.
 
+Recreating the surface also re-queries `vkGetPhysicalDeviceSurfaceSupportKHR` for the retained queue family, since
+the spec ties presentation support to a specific `VkSurfaceKHR` rather than to the physical device, and fails fatally
+with the queue family and surface named if the new one does not support it, without rebuilding the device.
+
 The table lives in `VulkanResultPolicy.{h,cpp}`, which include neither Vulkan nor Skia: it states the ten result
 values as its own constants, exactly as `ToplevelState` states xdg-shell's four, which is what puts it inside the
 `rnl_core_tests` coverage gate at 100 % of lines and branches. `SkiaVulkanRenderer.cpp` compiles a

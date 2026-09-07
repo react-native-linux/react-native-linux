@@ -333,6 +333,20 @@ void SkiaVulkanRenderer::recreateSurface() {
     vkDestroySurfaceKHR(instance_, vulkanSurface_, nullptr);
     vulkanSurface_ = VK_NULL_HANDLE;
     createWaylandSurface();
+
+    // The spec requires re-querying presentation support per VkSurfaceKHR: the retained queue family presented to
+    // the surface that was just destroyed, not to this one.
+    VkBool32 presentSupported = VK_FALSE;
+    checkVulkanResult(
+        vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice_, queueFamilyIndex_, vulkanSurface_, &presentSupported),
+        "vkGetPhysicalDeviceSurfaceSupportKHR");
+
+    if (presentSupported == VK_FALSE) {
+        throw std::runtime_error("vkGetPhysicalDeviceSurfaceSupportKHR failed: queue family " +
+                                  std::to_string(queueFamilyIndex_) +
+                                  " does not support presenting to the recreated surface");
+    }
+
     createSwapchain();
 }
 
