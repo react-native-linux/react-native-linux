@@ -60,10 +60,11 @@ const fixtures: readonly GoldenFixture[] = [
   // Issue #251: head, middle, tail and clip, each at numberOfLines 1 and 2.
   // The bold amber fragment sits where the cut falls, and the last row is one token wider than its box.
   // `--text-fit-golden` asserts every truncated paragraph still fits the frame it was measured for.
+  // The three-backgroundColor row proves #37926: the ellipsis carries the style of the fragment holding the first removed byte, not a kept neighbour's.
   {
     bundleFileName: "ellipsize.js",
     goldenFileName: "ellipsize.png",
-    renderArguments: ["880", "840"],
+    renderArguments: ["880", "960"],
     renderFlag: "--text-fit-golden",
   },
   // #372: what an unset fontFamily, "sans-serif" and "system-ui" resolve to — the vendored Noto Sans, asked for directly rather than through fontconfig, so a host's own sans-serif alias cannot answer it.

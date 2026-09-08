@@ -50,6 +50,9 @@ const white = 0xfff2f4f8 | 0;
 const muted = 0xff9aa4b2 | 0;
 const amber = 0xffe5c07b | 0;
 const panel = 0xff1e2430 | 0;
+const teal = 0xff2f8f8f | 0;
+const crimson = 0xffcc4444 | 0;
+const amberBackground = 0xff8a6d2f | 0;
 
 const panelWidth = 360;
 const panelLeft = 40;
@@ -146,9 +149,34 @@ const withAttachment = labelled(
   ],
 );
 
+// Three runs, three backgroundColors: react/react-native#37926 was the ellipsis painting the background colour
+// of the text it replaced, which reads as correct only when there is one run to replace. With three, "the text
+// it replaced" is ambiguous, and the fragment the search actually names is the one holding the first removed
+// byte (TextPipeline.cpp, `ellipsizedAttributedString`) — here the crimson middle run, not the kept teal head or
+// the kept amber tail. If the ellipsis painted with the wrong run's background this row would show it.
+function backgroundColorSentence() {
+  return [
+    text({ backgroundColor: teal }, [rawText('Teal opening. ')]),
+    text({ backgroundColor: crimson }, [
+      rawText(
+        'Crimson filler long enough that the search always cuts inside it no matter how the width settles. ',
+      ),
+    ]),
+    text({ backgroundColor: amberBackground }, [rawText('Amber closing.')]),
+  ];
+}
+
+const backgroundColorRow = labelled(
+  panelLeft,
+  620,
+  'middle, one line, three backgroundColors: the ellipsis carries the removed crimson run (#37926)',
+  { color: white, fontSize: 16, numberOfLines: 1, ellipsizeMode: 'middle' },
+  backgroundColorSentence(),
+);
+
 // One row per mode over a paragraph whose middle run is a nested <Text>: the searched cuts and the line limit
 // have to land the same way they do on the unnested rows above, which is what #312 is.
-const nestedRowTops = [620, 730];
+const nestedRowTops = [730, 840];
 const nestedRows = [];
 
 for (let index = 0; index < modes.length; index += 1) {
@@ -168,7 +196,14 @@ const heading = paragraph(
   [rawText('ellipsizeMode: head, middle, tail and clip')],
 );
 
-const root = view({ flex: 1 }, [heading, ...rows, ...unbreakable, ...withAttachment, ...nestedRows]);
+const root = view({ flex: 1 }, [
+  heading,
+  ...rows,
+  ...unbreakable,
+  ...withAttachment,
+  ...backgroundColorRow,
+  ...nestedRows,
+]);
 const rootChildren = fabric.createChildSet();
 
 fabric.appendChildToSet(rootChildren, root);
