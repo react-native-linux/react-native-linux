@@ -11,4 +11,13 @@ ConstructorInitializerIndentWidth: 4
 PointerAlignment: Left
 ReferenceAlignment: Left
 IncludeBlocks: Regroup
+# React Native headers get their own group so the alphabetical run of <react/renderer/...> includes
+# never merges with the standard-library run and reads as a cross-file clone to jscpd.
+IncludeCategories:
+  - Regex: "^<react/"
+    Priority: 4
+  - Regex: "^<"
+    Priority: 3
+  - Regex: ".*"
+    Priority: 1
 SeparateDefinitionBlocks: Always
