@@ -7663,6 +7663,62 @@ earlier suite has read that flag, and passes in the one-process-per-case run `gt
 That is the same upstream limitation the `react/featureflags` exclusion names above, and running the binary
 directly is a debugging convenience rather than a supported invocation.
 
+### The Fantom-style headless runner (#210)
+
+`FantomTester` is upstream's Fantom tester (`private/react-native-fantom/tester`) reduced to what this platform
+already has: a real Hermes runtime, bridgeless, a real Fabric surface, and no window. It is compiled into
+`rnl_core_hermes_tests` — the only binary in the build that both links Hermes and is not a window — so a
+GoogleTest case can boot a bundle, commit a tree, and assert on the tree, in a plain container with no
+compositor, no GPU and no golden image. Every other layer this repository has for renderer behaviour needs the
+headless Wayland rig; this one needs a shell.
+
+The tester is `ReactHost` plus `FabricHost` at a caller-chosen surface size, which is exactly what
+`BundleRunner` starts for a headless run, and nothing else. What it adds over `BundleRunner` is the shape of
+upstream's `Fantom.runTask`: a task is a script evaluated in the one runtime the tester owns, and tasks compose,
+so a case can commit, assert, mutate and assert again rather than running a bundle to completion and reading
+the corpse. `runTask` returns once the script, the event beat it induced and every timer either armed have run,
+which is what makes the assertion after it read a settled tree without a sleep.
+
+`renderMountTree` (`packages/core/src/MountTreeText.cpp`) is our `RenderOutput`: the committed scene as one
+deterministic string, one element per mounted node, named `rn-` plus the lower-cased component name and
+carrying the frame Yoga computed for it.
+
+```text
+<rn-rootview layoutMetrics-frame="{x:0,y:0,width:400,height:300}">
+  <rn-view layoutMetrics-frame="{x:20,y:20,width:360,height:260}" testID="panel">
+    <rn-scrollview layoutMetrics-frame="{x:10,y:140,width:120,height:100}" testID="scroll">
+      <rn-view layoutMetrics-frame="{x:0,y:0,width:120,height:400}" testID="content" />
+    </rn-scrollview>
+  </rn-view>
+</rn-rootview>
+```
+
+It is a golden with no pixels: a failure names the node and the number that moved instead of a rectangle of
+changed pixels, and there is no rasterizer, no font and no tolerance in the loop. It is a pure function over
+`SceneNodes`, so it lives in `rnl_core_tests` under the coverage gate as well, where its own suite asserts the
+formatting rules the mount tests then rely on.
+
+`FantomTesterTest` mounts one node per M1 component — `View`, `Text` as the `Paragraph` its `RawText` flattens
+into, `Image`, `ScrollView`, `TextInput`, and the `View` a `Pressable` is at the mounting layer — and asserts
+the whole tree inline. The panel carries `collapsable: false`, because a `View` with only a `testID` forms a
+view but not a stacking context and Fabric hoists such a node's children to the nearest ancestor that is one;
+that is upstream's view flattening, and the prop is how React Native itself opts out of it.
+
+Two constraints the code states rather than works around. Frames in the fixtures are authored absolutely, so
+what the tree proves is the mount rather than the measurement of a font the container may not have. And the
+tester's destructor calls `ReactNativeFeatureFlags::dangerouslyReset()`: `ReactHost`'s constructor installs the
+platform's overrides and upstream throws on a second `override` in a process, so without it a binary could hold
+one tester for its whole life.
+
+The ASan and TSan switches upstream spells `FANTOM_ENABLE_ASAN` and `FANTOM_ENABLE_TSAN` are the `asan` and
+`tsan` presets here, which sanitize the whole build including this binary; there is no per-target switch and no
+reason for one.
+
+Not yet delivered, and tracked on #210: upstream's `*-itest.js` corpus does not run against this. The corpus
+lives under `private/react-native-fantom/`, which `scripts/vendor.lock.json` does not fetch, and each file
+needs `NativeFantom`'s JavaScript surface — `createRoot`, `dispatchNativeEvent`, `installTimerMock` — plus a
+jest runner pointed at the binary. The runner and the assertion surface are the half that had to exist first.
+
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on every pull request and on every push to `main`, under
