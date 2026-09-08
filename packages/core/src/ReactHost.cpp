@@ -158,6 +158,8 @@ DimensionsSource& ReactHost::dimensions() noexcept { return turboModuleRegistry_
 
 AppearanceModel& ReactHost::appearance() noexcept { return turboModuleRegistry_->appearance(); }
 
+ActivationModel& ReactHost::activation() noexcept { return turboModuleRegistry_->activation(); }
+
 void ReactHost::publishPendingDimensions() { turboModuleRegistry_->publishPendingDimensions(); }
 
 void ReactHost::loadScript(std::unique_ptr<const facebook::react::JSBigString> script, const std::string& sourceUrl) {

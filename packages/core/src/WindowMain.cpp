@@ -9,6 +9,10 @@
 #include "RetainedScene.h"
 #include "ScenePainter.h"
 #include "SharedMemoryRasterRenderer.h"
+#include "SingleInstanceActivation.h"
+#ifdef RNL_ENABLE_SINGLE_INSTANCE_ACTIVATION
+#include "SingleInstanceCoordinator.h"
+#endif
 #include "SkiaVulkanRenderer.h"
 #include "SurfaceCommitGate.h"
 #include "TextInputClient.h"
@@ -354,6 +358,14 @@ WindowArguments parseArguments(std::span<char*> arguments) {
 
         if (flag != kFabricFlag && flag != kScreenshotFlag && flag != kFramesFlag && flag != kFrameLogFlag &&
             flag != kRendererFlag && flag != kAppIdFlag && flag != kTitleFlag) {
+            // Not a flag at all: the desktop entry's `Exec=... %u` expansion for single-instance activation
+            // (#363) hands this process a bare URL, with no `--` of its own. Nothing here consumes it — the
+            // single-instance check reads the *original* argv directly, ahead of this parse — so it is not an
+            // error, only not a flag this parser has anything to do with.
+            if (!flag.starts_with("--")) {
+                continue;
+            }
+
             parsed.error = "unknown argument " + std::string(flag);
 
             return parsed;
@@ -919,6 +931,28 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // Single-instance activation (#363), ahead of any Wayland or Vulkan bring-up: a second launch that loses the
+    // name race has nothing left to do but forward its argv and cwd to whichever process holds it and exit, and
+    // it has to decide that before paying for a window it is about to close.
+#ifdef RNL_ENABLE_SINGLE_INSTANCE_ACTIVATION
+    std::optional<react_native_linux::SingleInstanceCoordinator> singleInstanceCoordinator;
+    std::optional<std::string> ownActivationUrl;
+    {
+        const std::vector<std::string> ownArgv(arguments.begin(), arguments.end());
+        const react_native_linux::ActivationRequest ownActivation =
+            react_native_linux::buildActivationRequest(ownArgv, std::filesystem::current_path().native());
+
+        singleInstanceCoordinator.emplace(parsedArguments.applicationIdentifier, ownActivation);
+        ownActivationUrl = react_native_linux::extractActivationUrl(ownActivation.argv);
+    }
+
+    if (!singleInstanceCoordinator->isPrimaryInstance()) {
+        return 0;
+    }
+#else
+    const std::optional<std::string> ownActivationUrl;
+#endif
+
     try {
         react_native_linux::WaylandWindow window(
             react_native_linux::WindowIdentity{.title = parsedArguments.title,
@@ -1000,7 +1034,8 @@ int main(int argc, char** argv) {
 
             if (parsedArguments.bundlePath.has_value()) {
                 session.emplace(parsedArguments.bundlePath.value(),
-                                react_native_linux::WindowSize{chrome.content.width, chrome.content.height});
+                                react_native_linux::WindowSize{chrome.content.width, chrome.content.height},
+                                ownActivationUrl);
 
                 // --ime-debug owns the text input by hand, so focus must not also drive it: the two would race to
                 // enable and disable the same object. Without that flag, focus is the only thing that touches it.
@@ -1112,6 +1147,23 @@ int main(int argc, char** argv) {
                 }
 
                 bool presented = false;
+
+                // Pumped once per frame, on the same beat as `AppearancePortal` (#363): a later instance's
+                // forwarded activation can arrive at any time this process keeps running, not only at startup.
+#ifdef RNL_ENABLE_SINGLE_INSTANCE_ACTIVATION
+                if (singleInstanceCoordinator.has_value() && singleInstanceCoordinator->isPrimaryInstance()) {
+                    const std::optional<std::string> activatedUrl =
+                        singleInstanceCoordinator->takePendingActivationUrl();
+
+                    if (activatedUrl.has_value()) {
+                        std::cout << "[rnl-single-instance] activation received" << std::endl;
+
+                        if (session.has_value()) {
+                            session->deliverActivationUrl(activatedUrl.value());
+                        }
+                    }
+                }
+#endif
 
                 if (session.has_value()) {
                     // Input first, and unconditionally: the event beat is induced inside this call, and it is what

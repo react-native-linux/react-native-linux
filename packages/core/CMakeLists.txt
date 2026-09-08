@@ -789,6 +789,7 @@ endif()
 # ---------------------------------------------------------------------------
 
 add_library(rnl_react_core STATIC
+    src/Activation.cpp
     src/ActivityIndicatorContent.cpp
     src/AnimationFrameQueue.cpp
     src/Appearance.cpp
@@ -1107,8 +1108,14 @@ elseif(RNL_ENABLE_WINDOW)
         target_sources(rnl_window PRIVATE src/AppearancePortal.cpp)
         target_compile_definitions(rnl_window PRIVATE RNL_ENABLE_APPEARANCE_PORTAL)
         target_link_libraries(rnl_window PRIVATE PkgConfig::RNL_SYSTEMD)
+
+        # Single-instance activation (#363) shares the same sd-bus dependency, on the same libsystemd-or-nothing
+        # terms: no session bus means no arbitration, and every launch is the primary instance. See
+        # `SingleInstanceCoordinator`.
+        target_sources(rnl_window PRIVATE src/SingleInstanceActivation.cpp src/SingleInstanceCoordinator.cpp)
+        target_compile_definitions(rnl_window PRIVATE RNL_ENABLE_SINGLE_INSTANCE_ACTIVATION)
     else()
-        message(WARNING "libsystemd is unavailable; the appearance portal is disabled and Appearance answers the light fallback")
+        message(WARNING "libsystemd is unavailable; the appearance portal and single-instance activation are disabled")
     endif()
     target_compile_options(rnl_window PRIVATE -Wall -Wextra)
     target_include_directories(rnl_window PRIVATE src)

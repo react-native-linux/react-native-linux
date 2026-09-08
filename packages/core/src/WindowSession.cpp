@@ -35,13 +35,19 @@ uint64_t toNanosecondsSinceEpoch(std::chrono::steady_clock::time_point timePoint
 
 } // namespace
 
-WindowSession::WindowSession(const std::string& bundlePath, WindowSize size)
+WindowSession::WindowSession(const std::string& bundlePath, WindowSize size,
+                             std::optional<std::string> initialActivationUrl)
     : fabricHost_(std::make_unique<FabricHost>(reactHost_.reactInstance(), toSurfaceSize(size))),
       frameJournal_(kNominalVsyncNanoseconds, kHangThresholdVsyncCount * kNominalVsyncNanoseconds) {
     // Before the script, so the first `Dimensions.get` a bundle makes at module scope already answers with the
     // window's requested size rather than with the pre-configure default.
     configureDimensions(size);
     seedColorScheme();
+
+    if (initialActivationUrl.has_value()) {
+        deliverActivationUrl(initialActivationUrl.value());
+    }
+
     reactHost_.loadScript(facebook::react::JSBigFileString::fromPath(bundlePath), bundlePath);
 }
 
@@ -114,6 +120,10 @@ FrameClock::Tick WindowSession::recordFrameTick(FrameClock::Source source, std::
 }
 
 const FrameClock& WindowSession::frameClock() const noexcept { return frameClock_; }
+
+void WindowSession::deliverActivationUrl(const std::string& url) {
+    reactHost_.activation().onActivationUrlReceived(url);
+}
 
 void WindowSession::seedColorScheme() {
 #ifdef RNL_ENABLE_APPEARANCE_PORTAL
