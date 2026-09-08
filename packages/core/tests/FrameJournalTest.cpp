@@ -1,7 +1,9 @@
 #include "FrameJournal.h"
 
 #include <cstdint>
+#include <ctime>
 #include <gtest/gtest.h>
+#include <optional>
 
 namespace {
 
@@ -257,6 +259,106 @@ TEST(FrameJournalTest, ASummaryLineCarriesEveryField) {
     EXPECT_EQ(FrameJournal::formatSummaryLine(summary),
              "{\"journalSummary\":true,\"frames\":238,\"hangs\":1,\"p50Ns\":11000000,\"p95Ns\":15000000,"
              "\"maxNs\":33000000}");
+}
+
+TEST(FrameJournalTest, ATotalExactlyOnTheThresholdIsAHang) {
+    FrameJournal journal = buildJournal();
+
+    journal.recordDamage(1 * kMillisecond);
+    const std::optional<FrameJournal::ClosedFrame> closed =
+        journal.recordPresented(1 * kMillisecond + kTotalHangThreshold);
+
+    ASSERT_TRUE(closed.has_value());
+    EXPECT_EQ(closed->dirtyToPresentNanoseconds, kTotalHangThreshold);
+    EXPECT_TRUE(closed->isHang);
+}
+
+TEST(FrameJournalTest, APaintExactlyOnTheThresholdIsAHang) {
+    FrameJournal journal = buildJournal();
+
+    journal.recordDamage(1 * kMillisecond);
+    journal.recordPaintStart(1 * kMillisecond);
+    journal.recordPaintEnd(1 * kMillisecond + kPaintHangThreshold);
+    const std::optional<FrameJournal::ClosedFrame> closed =
+        journal.recordPresented(1 * kMillisecond + kPaintHangThreshold + kMillisecond);
+
+    ASSERT_TRUE(closed.has_value());
+    EXPECT_EQ(closed->paintNanoseconds.value(), kPaintHangThreshold);
+    EXPECT_LT(closed->dirtyToPresentNanoseconds, kTotalHangThreshold);
+    EXPECT_TRUE(closed->isHang);
+}
+
+TEST(FrameJournalTest, AZeroSampleCapacityIsClampedToOneRatherThanPoppingAnEmptyRing) {
+    FrameJournal journal(kPaintHangThreshold, kTotalHangThreshold, 0);
+
+    journal.recordDamage(0);
+    journal.recordPresented(1 * kMillisecond);
+    journal.recordDamage(100 * kMillisecond);
+    journal.recordPresented(100 * kMillisecond + 2 * kMillisecond);
+
+    const FrameJournal::Summary summary = journal.summarise();
+
+    EXPECT_EQ(summary.frames, 2U);
+    EXPECT_EQ(summary.maximumNanoseconds, 2U * kMillisecond);
+    EXPECT_EQ(summary.medianNanoseconds, 2U * kMillisecond);
+}
+
+// The drain order `WindowMain::writeFrameLines` applies: a presented frame followed by a discarded content update
+// keeps the presentation's sample and its hang, which charging the discontinuity first would have thrown away.
+TEST(FrameJournalTest, APresentedThenDiscardedPairKeepsThePresentationsRecord) {
+    FrameJournal journal = buildJournal();
+
+    journal.recordDamage(0);
+    const std::optional<FrameJournal::ClosedFrame> closed = journal.recordPresented(kTotalHangThreshold);
+    journal.recordDiscontinuity();
+    journal.recordDamage(100 * kMillisecond);
+    const std::optional<FrameJournal::ClosedFrame> next = journal.recordPresented(105 * kMillisecond);
+
+    ASSERT_TRUE(closed.has_value());
+    EXPECT_TRUE(closed->isHang);
+    ASSERT_TRUE(next.has_value());
+    EXPECT_EQ(next->dirtyToPresentNanoseconds, 5U * kMillisecond);
+    EXPECT_EQ(journal.summarise().frames, 2U);
+    EXPECT_EQ(journal.summarise().hangs, 1U);
+}
+
+// The animation tick's own dirty edge (`WindowSession::tickAnimations`): damage recorded after the frame tick
+// read a clean session still opens the interval the same frame's paint and present close.
+TEST(FrameJournalTest, DamageRecordedAfterACleanFrameTickStillOpensThatFramesInterval) {
+    FrameJournal journal = buildJournal();
+
+    journal.recordDamage(2 * kMillisecond);
+    journal.recordPaintStart(3 * kMillisecond);
+    journal.recordPaintEnd(4 * kMillisecond);
+    const std::optional<FrameJournal::ClosedFrame> closed = journal.recordPresented(10 * kMillisecond);
+
+    ASSERT_TRUE(closed.has_value());
+    EXPECT_EQ(closed->dirtyToPresentNanoseconds, 8U * kMillisecond);
+    EXPECT_EQ(closed->paintNanoseconds.value(), 1U * kMillisecond);
+}
+
+TEST(FrameJournalTest, ThePresentationClockOffsetIsZeroWhenThereIsNothingToConvert) {
+    const uint32_t monotonic = static_cast<uint32_t>(CLOCK_MONOTONIC);
+
+    EXPECT_EQ(react_native_linux::presentationClockOffsetNanoseconds(std::nullopt, 500, 900), 0);
+    EXPECT_EQ(react_native_linux::presentationClockOffsetNanoseconds(monotonic, 500, 900), 0);
+    EXPECT_EQ(react_native_linux::presentationClockOffsetNanoseconds(static_cast<uint32_t>(CLOCK_REALTIME),
+                                                                    std::nullopt, 900),
+              0);
+}
+
+TEST(FrameJournalTest, ThePresentationClockOffsetIsTheDifferenceBetweenTheTwoSamples) {
+    const uint32_t realtime = static_cast<uint32_t>(CLOCK_REALTIME);
+
+    EXPECT_EQ(react_native_linux::presentationClockOffsetNanoseconds(realtime, 500, 900), 400);
+    EXPECT_EQ(react_native_linux::presentationClockOffsetNanoseconds(realtime, 900, 500), -400);
+}
+
+TEST(FrameJournalTest, ATimestampConvertsByTheOffsetAndClampsAtZero) {
+    EXPECT_EQ(react_native_linux::toSteadyClockNanoseconds(1000, 0), 1000U);
+    EXPECT_EQ(react_native_linux::toSteadyClockNanoseconds(1000, 400), 1400U);
+    EXPECT_EQ(react_native_linux::toSteadyClockNanoseconds(1000, -400), 600U);
+    EXPECT_EQ(react_native_linux::toSteadyClockNanoseconds(1000, -4000), 0U);
 }
 
 } // namespace

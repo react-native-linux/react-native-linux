@@ -26,17 +26,16 @@ namespace react_native_linux {
  * `recordPresented` starts clean, so a latency is never computed across a frame the compositor threw away.
  *
  * Pure, in the shape of `FrameClock` and `FrameTiming`: no clock reads, no Wayland, every timestamp a nanosecond
- * count the caller supplies. The caller — `WindowSession` for the dirty edge and the paint span, `WindowMain` for
- * closing against a `wp_presentation` result — is expected to share one clock domain, `std::chrono::steady_clock`,
- * which is `CLOCK_MONOTONIC` on this platform and therefore the same domain `wp_presentation.clock_id` reports
- * under every compositor this runs on; see *Frame timing* in docs/cpp-toolchain.md for why that match is not
- * resolved more rigorously than stating it.
+ * count the caller supplies. Every timestamp is in `std::chrono::steady_clock`'s domain: `WindowSession` supplies
+ * the dirty edge and the paint span from that clock directly, and `WindowMain` converts each `wp_presentation`
+ * timestamp into it with `presentationClockOffsetNanoseconds`/`toSteadyClockNanoseconds` below rather than
+ * assuming the compositor's clock is the same one.
  *
  * The hang rule has two independent triggers, matching GPUI's `crates/gpui/src/profiler/hang.rs`: a paint whose
- * own span exceeded `paintHangThresholdNanoseconds`, or a total dirty-to-present that reached
+ * own span reached `paintHangThresholdNanoseconds`, or a total dirty-to-present that reached
  * `totalHangThresholdNanoseconds` — "many small pieces of work can drop a frame as thoroughly as one long
- * stall". Either flags the closed frame `isHang`; a frame with no paint span recorded can still hang on the
- * total trigger alone.
+ * stall". Both compare with `>=`, so a span exactly on a threshold is a hang. Either flags the closed frame
+ * `isHang`; a frame with no paint span recorded can still hang on the total trigger alone.
  */
 class FrameJournal final {
 public:
@@ -56,6 +55,7 @@ public:
 
     static constexpr size_t kDefaultSampleCapacity = 4096;
 
+    /** `sampleCapacity` is clamped to at least one: a zero-length ring would pop an empty deque on the first close. */
     FrameJournal(uint64_t paintHangThresholdNanoseconds, uint64_t totalHangThresholdNanoseconds,
                 size_t sampleCapacity = kDefaultSampleCapacity);
 
@@ -91,5 +91,19 @@ private:
     size_t presentedFrames_{0};
     size_t hangCount_{0};
 };
+
+/**
+ * `wp_presentation.clock_id` names the clock the compositor's presentation timestamps are in, and the journal's
+ * own timestamps come from `std::chrono::steady_clock`. This is the offset to add to a presentation timestamp to
+ * land in that domain, computed from one sample of each clock: zero when the compositor's clock is
+ * `CLOCK_MONOTONIC` — which `steady_clock` is under both libstdc++ and libc++ — and zero when no `clock_id` event
+ * has arrived or the compositor's clock could not be sampled, because there is then nothing to convert against.
+ */
+int64_t presentationClockOffsetNanoseconds(std::optional<uint32_t> presentationClockId,
+                                           std::optional<uint64_t> presentationClockNanoseconds,
+                                           uint64_t steadyClockNanoseconds);
+
+/** Applies that offset, clamped at zero: a converted timestamp before the steady clock's epoch is not a duration. */
+uint64_t toSteadyClockNanoseconds(uint64_t presentationTimestampNanoseconds, int64_t offsetNanoseconds);
 
 } // namespace react_native_linux

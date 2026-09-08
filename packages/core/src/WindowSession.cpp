@@ -87,6 +87,14 @@ void WindowSession::tickAnimations(std::chrono::steady_clock::time_point now) {
     // `requestAnimationFrame` callbacks get it through the JavaScript thread. Both are driven from here so a
     // fallback-timeout frame — the only kind an occluded window gets — drives them too.
     reactHost_.dispatchAnimationFrames(now);
+
+    // The mutation an animation step produces lands here, after `recordFrameTick` has already read
+    // `hasPendingWork` for this frame and before `takeFrame` consumes the damage it produced, so without this the
+    // journal never sees the dirty edge of a natively driven animation: the step that lands the final value is
+    // charged to no interval at all. `recordDamage` is edge-only, so a frame that was already dirty coalesces.
+    if (hasPendingWork()) {
+        frameJournal_.recordDamage(toNanosecondsSinceEpoch(now));
+    }
 }
 
 FrameClock::Tick WindowSession::recordFrameTick(FrameClock::Source source, std::chrono::steady_clock::time_point now) {

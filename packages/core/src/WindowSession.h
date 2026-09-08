@@ -58,9 +58,11 @@ namespace react_native_linux {
  * renderer's present — happens at all this iteration, which `deliverInput`'s per-input frame timing does not need
  * to know about. See *Frame clock* in docs/cpp-toolchain.md for why the two are independent.
  *
- * `recordFrameTick` is also where the frame journal of #345 sees its dirty edge: it marks `FrameJournal` dirty
- * from the same `hasPendingWork` signal the fallback timeout already reads, on every call regardless of source,
+ * `recordFrameTick` is where the frame journal of #345 sees its dirty edge: it marks `FrameJournal` dirty from
+ * the same `hasPendingWork` signal the fallback timeout already reads, on every call regardless of source,
  * because an invalidation exists independently of whichever frame source wakes the loop that answers it.
+ * `tickAnimations` marks it again on the same terms, because an animation step's mutation lands after
+ * `recordFrameTick` has read that signal and before `takeFrame` consumes it.
  * `recordPaintStart`/`recordPaintEnd` bracket the paint span `WindowMain` runs between `takeFrame` and the
  * renderer's present, and `closeJournalFrame` closes the interval once a `wp_presentation` result exists for it.
  * See *Frame journal* in docs/cpp-toolchain.md.

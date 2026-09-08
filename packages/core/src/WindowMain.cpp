@@ -27,6 +27,7 @@
 #include <array>
 #include <charconv>
 #include <chrono>
+#include <ctime>
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
@@ -78,6 +79,7 @@ constexpr int32_t kImeDebugCursorX = 64;
 constexpr int32_t kImeDebugCursorY = 64;
 constexpr int32_t kImeDebugCursorWidth = 2;
 constexpr int32_t kImeDebugCursorHeight = 24;
+constexpr uint64_t kNanosecondsPerSecond = 1'000'000'000;
 
 /**
  * `--screenshot <path>` runs the ordinary loop and reads the last presented swapchain image back into a PNG, so
@@ -142,39 +144,64 @@ struct AutomationChannel {
 };
 
 /**
- * Drains the presented frames `WaylandWindow` recorded since the last call, writes `FrameTiming`'s line for each,
- * and — when a session is running the frame journal — closes the matching journal interval and writes its line
- * too.
- *
- * `FrameTiming`'s own API reports discarded content updates as a cumulative count rather than as an interleaved
- * stream with the presented ones, so the two cannot be read back in the order the compositor produced them: this
- * charges every discarded event since the last call as a journal discontinuity *before* draining the presented
- * frames, which can occasionally abandon an interval a discarded frame did not itself own. Discarded content
- * updates are rare enough in practice — a resize preempting an in-flight commit is the only reason `WaylandWindow`
- * documents for one — that this is a stated approximation rather than a precision behaviour. See *Frame journal*
- * in docs/cpp-toolchain.md.
+ * One sample of the clock `wp_presentation.clock_id` named, absent when there is no clock id, when it names
+ * `CLOCK_MONOTONIC` — which `steady_clock` already is, so there is nothing to convert — and when the clock cannot
+ * be read at all.
  */
-void writeFrameLines(std::ostream& frameLog, react_native_linux::WaylandWindow& window,
-                     react_native_linux::WindowSession* session, uint32_t& previousDiscardedFrames) {
-    if (session != nullptr) {
-        const uint32_t discardedFrames = window.frameTimingSummary().discarded;
-
-        for (uint32_t discarded = previousDiscardedFrames; discarded < discardedFrames; ++discarded) {
-            session->reportJournalDiscontinuity();
-        }
-
-        previousDiscardedFrames = discardedFrames;
+std::optional<uint64_t> readPresentationClockNanoseconds(std::optional<uint32_t> presentationClockId) {
+    if (!presentationClockId.has_value() || presentationClockId.value() == static_cast<uint32_t>(CLOCK_MONOTONIC)) {
+        return std::nullopt;
     }
 
-    for (const react_native_linux::FrameTiming::Frame& frame : window.takePresentedFrames()) {
-        frameLog << react_native_linux::FrameTiming::formatFrameLine(frame) << "\n";
+    timespec sample{};
+
+    if (clock_gettime(static_cast<clockid_t>(presentationClockId.value()), &sample) != 0) {
+        return std::nullopt;
+    }
+
+    return (static_cast<uint64_t>(sample.tv_sec) * kNanosecondsPerSecond) + static_cast<uint64_t>(sample.tv_nsec);
+}
+
+/**
+ * Drains the `wp_presentation` feedback events `WaylandWindow` recorded since the last call — presented frames and
+ * discarded content updates, in the order the compositor delivered them — writes `FrameTiming`'s line for each
+ * presented one, and, when a session is running the frame journal, closes the matching journal interval or charges
+ * a discontinuity in that same order. Order is what makes a presented-then-discarded pair report the
+ * presentation's latency and its hang rather than losing both to the discard.
+ *
+ * The compositor's timestamps are in whatever clock `wp_presentation.clock_id` named, and the journal's dirty
+ * edges come from `steady_clock`, so both clocks are sampled once per batch and the offset between them is
+ * applied to every timestamp in it. See *Frame journal* in docs/cpp-toolchain.md.
+ */
+void writeFrameLines(std::ostream& frameLog, react_native_linux::WaylandWindow& window,
+                     react_native_linux::WindowSession* session) {
+    const std::vector<react_native_linux::WaylandWindow::PresentationEvent> events = window.takePresentationEvents();
+
+    if (events.empty()) {
+        return;
+    }
+
+    const int64_t clockOffsetNanoseconds = react_native_linux::presentationClockOffsetNanoseconds(
+        window.presentationClockId(), readPresentationClockNanoseconds(window.presentationClockId()),
+        static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count()));
+
+    for (const react_native_linux::WaylandWindow::PresentationEvent& event : events) {
+        if (!event.has_value()) {
+            if (session != nullptr) {
+                session->reportJournalDiscontinuity();
+            }
+
+            continue;
+        }
+
+        frameLog << react_native_linux::FrameTiming::formatFrameLine(event.value()) << "\n";
 
         if (session == nullptr) {
             continue;
         }
 
-        const std::optional<react_native_linux::FrameJournal::ClosedFrame> closed =
-            session->closeJournalFrame(frame.presentedNanoseconds);
+        const std::optional<react_native_linux::FrameJournal::ClosedFrame> closed = session->closeJournalFrame(
+            react_native_linux::toSteadyClockNanoseconds(event.value().presentedNanoseconds, clockOffsetNanoseconds));
 
         if (closed.has_value()) {
             frameLog << react_native_linux::FrameJournal::formatClosedFrameLine(closed.value()) << "\n";
@@ -938,7 +965,6 @@ int main(int argc, char** argv) {
 
         ImeDebugSink imeDebugSink;
         std::optional<std::ofstream> frameLog;
-        uint32_t previousDiscardedFrames = 0;
         bool lastKeyboardFocus = false;
         bool keyboardFocusAnnounced = false;
         uint32_t lastOutputEnterCount = 0;
@@ -953,8 +979,7 @@ int main(int argc, char** argv) {
             // Presentation feedback for the frames committed before this iteration arrived during the previous
             // waitForRedraw, so the drain belongs at the top of the loop rather than beside the present.
             if (frameLog.has_value()) {
-                writeFrameLines(frameLog.value(), window, session.has_value() ? &session.value() : nullptr,
-                                previousDiscardedFrames);
+                writeFrameLines(frameLog.value(), window, session.has_value() ? &session.value() : nullptr);
             }
 
             const bool hasResized = window.takePendingResize();
@@ -1105,7 +1130,7 @@ int main(int argc, char** argv) {
         if (frameLog.has_value()) {
             react_native_linux::WindowSession* sessionPointer = session.has_value() ? &session.value() : nullptr;
 
-            writeFrameLines(frameLog.value(), window, sessionPointer, previousDiscardedFrames);
+            writeFrameLines(frameLog.value(), window, sessionPointer);
             frameLog.value() << react_native_linux::FrameTiming::formatSummaryLine(window.frameTimingSummary(),
                                                                                    window.isPresentationSupported())
                              << "\n";

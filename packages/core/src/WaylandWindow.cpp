@@ -9,6 +9,7 @@
 #include <cerrno>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <poll.h>
 #include <stdexcept>
 #include <vector>
@@ -288,14 +289,16 @@ void WaylandWindow::requestPresentationFeedback() {
 
 bool WaylandWindow::isPresentationSupported() const noexcept { return presentation_ != nullptr; }
 
-std::vector<FrameTiming::Frame> WaylandWindow::takePresentedFrames() {
-    std::vector<FrameTiming::Frame> taken;
-    taken.swap(presentedFrames_);
+std::vector<WaylandWindow::PresentationEvent> WaylandWindow::takePresentationEvents() {
+    std::vector<PresentationEvent> taken;
+    taken.swap(presentationEvents_);
 
     return taken;
 }
 
 FrameTiming::Summary WaylandWindow::frameTimingSummary() const { return frameTiming_.summarise(); }
+
+std::optional<uint32_t> WaylandWindow::presentationClockId() const noexcept { return presentationClockId_; }
 
 bool WaylandWindow::waitForRedraw(std::chrono::milliseconds fallbackTimeout) {
     const std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::now() + fallbackTimeout;
@@ -492,9 +495,12 @@ void WaylandWindow::handleFrameDone(void* data, wl_callback* callback, uint32_t 
     window->frameCallbackFired_ = true;
 }
 
-// The presentation clock is whatever clock_id names — CLOCK_MONOTONIC on every compositor we run under. Only the
-// differences between two presentation timestamps are ever used, so the domain does not have to be resolved.
-void WaylandWindow::handlePresentationClockId(void* /*data*/, wp_presentation* /*presentation*/, uint32_t /*clock*/) {}
+// The presentation clock is whatever clock_id names, and it is retained rather than dropped: `FrameTiming` only
+// ever subtracts two presentation timestamps, but the frame journal compares one against a `steady_clock` dirty
+// edge, which needs the domain resolved. See `presentationClockOffsetNanoseconds` in FrameJournal.h.
+void WaylandWindow::handlePresentationClockId(void* data, wp_presentation* /*presentation*/, uint32_t clockId) {
+    static_cast<WaylandWindow*>(data)->presentationClockId_ = clockId;
+}
 
 void WaylandWindow::handleFeedbackSyncOutput(void* /*data*/, struct wp_presentation_feedback* /*feedback*/,
                                              wl_output* /*output*/) {}
@@ -509,7 +515,7 @@ void WaylandWindow::handleFeedbackPresented(void* data, struct wp_presentation_f
     const uint64_t presentedNanoseconds = (seconds * kNanosecondsPerSecond) + nanoseconds;
     const uint64_t sequence = (static_cast<uint64_t>(sequenceHigh) << kHighWordShift) | sequenceLow;
 
-    window->presentedFrames_.push_back(
+    window->presentationEvents_.emplace_back(
         window->frameTiming_.recordPresented(sequence, presentedNanoseconds, refresh, flags));
     wp_presentation_feedback_destroy(feedback);
 }
@@ -518,6 +524,7 @@ void WaylandWindow::handleFeedbackDiscarded(void* data, struct wp_presentation_f
     WaylandWindow* window = static_cast<WaylandWindow*>(data);
 
     window->frameTiming_.recordDiscarded();
+    window->presentationEvents_.emplace_back(std::nullopt);
 
     // A discarded content update is owed no `wl_surface.frame` callback, so a client that only draws on one would
     // stop here and show whatever the compositor last accepted, which after the first frame is nothing.
