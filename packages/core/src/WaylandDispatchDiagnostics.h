@@ -30,8 +30,12 @@ enum class WaylandDispatchOutcome : uint8_t {
  * `dispatchResult` is the raw return value of `wl_display_dispatch_pending`, `wl_display_flush` or
  * `wl_display_read_events`. `displayErrno` is `wl_display_get_error(display)`, read only when `dispatchResult`
  * is negative — the caller must not call it otherwise, since libwayland leaves it meaningless after a success.
+ * `callErrno` is the plain C `errno` captured immediately after the same call: `wl_display_flush` reports
+ * back-pressure by returning `-1` and setting `errno` to `EAGAIN` without touching the display's own fatal-error
+ * state, so `displayErrno` alone is `0` on that path and looks identical to success having already been read.
+ * Either one reporting `EAGAIN` is enough to classify the result as `Retry`.
  */
-WaylandDispatchOutcome classifyWaylandDispatchResult(int dispatchResult, int displayErrno) noexcept;
+WaylandDispatchOutcome classifyWaylandDispatchResult(int dispatchResult, int displayErrno, int callErrno) noexcept;
 
 /** The detail `wl_display_get_protocol_error` reports: which object, on which interface, rejected for what. */
 struct WaylandProtocolErrorDetail {

@@ -8,6 +8,7 @@
 #include "xdg-shell-client-protocol.h"
 
 #include <algorithm>
+#include <cerrno>
 #include <cstring>
 #include <memory>
 #include <optional>
@@ -39,6 +40,10 @@ constexpr std::string_view kWaylandErrorSource = "rnl-window";
 // No `xdg_surface.configure` this window sends ever carries this serial, so the compositor is guaranteed to
 // reject it rather than coincidentally accept it as a stale-but-valid one.
 constexpr uint32_t kInvalidAckConfigureSerial = 0xFFFFFFFF;
+
+constexpr bool closesWaylandWindow(WaylandDispatchOutcome outcome) noexcept {
+    return outcome == WaylandDispatchOutcome::ProtocolError || outcome == WaylandDispatchOutcome::DisplayError;
+}
 
 } // namespace
 
@@ -373,12 +378,13 @@ void WaylandWindow::bindGlobal(wl_registry* registry, uint32_t name, const char*
     }
 }
 
-bool WaylandWindow::reportDispatchFailure(int result) {
+WaylandDispatchOutcome WaylandWindow::reportDispatchFailure(int result) {
+    const int callErrno = errno;
     const int displayErrno = result < 0 ? wl_display_get_error(display_) : 0;
-    const WaylandDispatchOutcome outcome = classifyWaylandDispatchResult(result, displayErrno);
+    const WaylandDispatchOutcome outcome = classifyWaylandDispatchResult(result, displayErrno, callErrno);
 
     if (outcome == WaylandDispatchOutcome::Continue || outcome == WaylandDispatchOutcome::Retry) {
-        return false;
+        return outcome;
     }
 
     if (outcome == WaylandDispatchOutcome::ProtocolError) {
@@ -393,32 +399,52 @@ bool WaylandWindow::reportDispatchFailure(int result) {
 
         reportNativeError(kWaylandErrorSource, formatWaylandProtocolError(detail, std::strerror(displayErrno)));
     } else {
-        reportNativeError(kWaylandErrorSource, formatWaylandDisplayError(std::strerror(displayErrno)));
+        const int reportedErrno = displayErrno != 0 ? displayErrno : callErrno;
+        reportNativeError(kWaylandErrorSource, formatWaylandDisplayError(std::strerror(reportedErrno)));
     }
 
     closed_ = true;
 
-    return true;
+    return outcome;
 }
 
 void WaylandWindow::dispatchWithTimeout(std::chrono::milliseconds timeout) {
     while (wl_display_prepare_read(display_) != 0) {
-        if (reportDispatchFailure(wl_display_dispatch_pending(display_))) {
+        if (closesWaylandWindow(reportDispatchFailure(wl_display_dispatch_pending(display_)))) {
             return;
         }
     }
 
-    if (reportDispatchFailure(wl_display_flush(display_))) {
-        wl_display_cancel_read(display_);
+    while (true) {
+        const WaylandDispatchOutcome flushOutcome = reportDispatchFailure(wl_display_flush(display_));
 
-        return;
+        if (flushOutcome != WaylandDispatchOutcome::Retry) {
+            if (closesWaylandWindow(flushOutcome)) {
+                wl_display_cancel_read(display_);
+
+                return;
+            }
+
+            break;
+        }
+
+        // Back-pressure on the display socket (#331): block for the same bounded timeout the read side polls
+        // with, then retry the flush, rather than falling through to a read poll that never sends the request.
+        pollfd flushPollDescriptor{.fd = wl_display_get_fd(display_), .events = POLLOUT, .revents = 0};
+        const int flushReadyDescriptors = poll(&flushPollDescriptor, 1, static_cast<int>(timeout.count()));
+
+        if (flushReadyDescriptors <= 0 || (flushPollDescriptor.revents & POLLOUT) == 0) {
+            wl_display_cancel_read(display_);
+
+            return;
+        }
     }
 
     pollfd pollDescriptor{.fd = wl_display_get_fd(display_), .events = POLLIN, .revents = 0};
     const int readyDescriptors = poll(&pollDescriptor, 1, static_cast<int>(timeout.count()));
 
     if (readyDescriptors > 0 && (pollDescriptor.revents & POLLIN) != 0) {
-        if (reportDispatchFailure(wl_display_read_events(display_))) {
+        if (closesWaylandWindow(reportDispatchFailure(wl_display_read_events(display_)))) {
             return;
         }
     } else {

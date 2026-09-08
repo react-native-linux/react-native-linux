@@ -13,24 +13,28 @@ using react_native_linux::WaylandDispatchOutcome;
 using react_native_linux::WaylandProtocolErrorDetail;
 
 TEST(WaylandDispatchDiagnosticsTest, ASuccessfulResultIsAClosedCleanlyOrNoOpOutcome) {
-    EXPECT_EQ(classifyWaylandDispatchResult(0, 0), WaylandDispatchOutcome::Continue);
-    EXPECT_EQ(classifyWaylandDispatchResult(1, 0), WaylandDispatchOutcome::Continue);
+    EXPECT_EQ(classifyWaylandDispatchResult(0, 0, 0), WaylandDispatchOutcome::Continue);
+    EXPECT_EQ(classifyWaylandDispatchResult(1, 0, 0), WaylandDispatchOutcome::Continue);
 }
 
-TEST(WaylandDispatchDiagnosticsTest, EagainIsRetry) {
-    EXPECT_EQ(classifyWaylandDispatchResult(-1, EAGAIN), WaylandDispatchOutcome::Retry);
+TEST(WaylandDispatchDiagnosticsTest, DisplayErrnoEagainIsRetry) {
+    EXPECT_EQ(classifyWaylandDispatchResult(-1, EAGAIN, 0), WaylandDispatchOutcome::Retry);
+}
+
+TEST(WaylandDispatchDiagnosticsTest, CallErrnoEagainIsRetryEvenWithNoDisplayError) {
+    EXPECT_EQ(classifyWaylandDispatchResult(-1, 0, EAGAIN), WaylandDispatchOutcome::Retry);
 }
 
 TEST(WaylandDispatchDiagnosticsTest, EprotoIsProtocolError) {
-    EXPECT_EQ(classifyWaylandDispatchResult(-1, EPROTO), WaylandDispatchOutcome::ProtocolError);
+    EXPECT_EQ(classifyWaylandDispatchResult(-1, EPROTO, 0), WaylandDispatchOutcome::ProtocolError);
 }
 
 TEST(WaylandDispatchDiagnosticsTest, EpipeIsDisplayError) {
-    EXPECT_EQ(classifyWaylandDispatchResult(-1, EPIPE), WaylandDispatchOutcome::DisplayError);
+    EXPECT_EQ(classifyWaylandDispatchResult(-1, EPIPE, EPIPE), WaylandDispatchOutcome::DisplayError);
 }
 
 TEST(WaylandDispatchDiagnosticsTest, AnyOtherNegativeErrnoIsDisplayError) {
-    EXPECT_EQ(classifyWaylandDispatchResult(-1, EINVAL), WaylandDispatchOutcome::DisplayError);
+    EXPECT_EQ(classifyWaylandDispatchResult(-1, EINVAL, EINVAL), WaylandDispatchOutcome::DisplayError);
 }
 
 TEST(WaylandDispatchDiagnosticsTest, ProtocolErrorFormatsInterfaceObjectAndCode) {

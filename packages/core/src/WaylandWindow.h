@@ -3,6 +3,7 @@
 #include "FrameTiming.h"
 #include "InputPipeline.h"
 #include "ToplevelState.h"
+#include "WaylandDispatchDiagnostics.h"
 #include "WaylandSeat.h"
 #include "WaylandSerialLedger.h"
 #include "WindowDecorations.h"
@@ -250,11 +251,12 @@ private:
     void dispatchWithTimeout(std::chrono::milliseconds timeout);
     /**
      * Classifies one dispatch/flush/read-events return value through `classifyWaylandDispatchResult`
-     * (`WaylandDispatchDiagnostics.h`) and reports a protocol or display error through `reportNativeError` when it
-     * is one. Returns whether the connection is now unusable — `EAGAIN` and success both return false, because
-     * neither closes the window. See *Window host* in docs/cpp-toolchain.md.
+     * (`WaylandDispatchDiagnostics.h`), passing both `wl_display_get_error` and the plain `errno` the call itself
+     * left behind, and reports a protocol or display error through `reportNativeError` when the outcome is one.
+     * Returns the outcome so the caller can retry on `Retry` instead of just knowing not to close on it. See
+     * *Window host* in docs/cpp-toolchain.md.
      */
-    bool reportDispatchFailure(int result);
+    WaylandDispatchOutcome reportDispatchFailure(int result);
     void onToplevelConfigure(int32_t width, int32_t height, const wl_array* states);
     void negotiateDecorations();
     void destroyFrameCallback() noexcept;

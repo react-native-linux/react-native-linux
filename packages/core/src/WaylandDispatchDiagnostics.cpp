@@ -4,12 +4,12 @@
 
 namespace react_native_linux {
 
-WaylandDispatchOutcome classifyWaylandDispatchResult(int dispatchResult, int displayErrno) noexcept {
+WaylandDispatchOutcome classifyWaylandDispatchResult(int dispatchResult, int displayErrno, int callErrno) noexcept {
     if (dispatchResult >= 0) {
         return WaylandDispatchOutcome::Continue;
     }
 
-    if (displayErrno == EAGAIN) {
+    if (displayErrno == EAGAIN || callErrno == EAGAIN) {
         return WaylandDispatchOutcome::Retry;
     }
 

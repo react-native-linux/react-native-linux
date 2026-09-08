@@ -270,25 +270,37 @@ regardless of which one actually happened — indistinguishable from the user cl
 
 `WaylandDispatchDiagnostics.h` is the fix, kept dependency-free (no `<wayland-client.h>`) the same way
 `ToplevelState.h`'s `decodeToplevelStates` is, so it sits in the unit-test coverage gate rather than needing a
-live compositor to exercise. `classifyWaylandDispatchResult(result, displayErrno)` turns a return value and
-`wl_display_get_error`'s errno into one of four outcomes: `Continue` for success — which is also the "clean close"
-case, since `xdg_toplevel.close` sets the exit flag from inside a dispatch that itself succeeded — `Retry` for
-`EAGAIN`, `ProtocolError` for `EPROTO`, and `DisplayError` for everything else. `WaylandWindow::reportDispatchFailure`
-calls it after every dispatch/flush/read, reads `wl_display_get_protocol_error` for the interface, object id and
-code on a `ProtocolError`, and reports either message through `reportNativeError` (#214), which is what puts it
-on `ListErrors` as well as the trace:
+live compositor to exercise. `classifyWaylandDispatchResult(result, displayErrno, callErrno)` turns a return
+value, `wl_display_get_error`'s errno and the plain C `errno` the failing call itself left behind into one of
+four outcomes: `Continue` for success — which is also the "clean close" case, since `xdg_toplevel.close` sets the
+exit flag from inside a dispatch that itself succeeded — `Retry` when either errno is `EAGAIN`, `ProtocolError`
+for `EPROTO`, and `DisplayError` for everything else. The two errno inputs matter separately: `wl_display_flush`
+reports socket back-pressure by returning `-1` and setting only `errno` to `EAGAIN`, leaving the display's own
+fatal-error state at `0` — reading `displayErrno` alone therefore misclassified a transient flush stall as a
+`DisplayError` and closed the window on ordinary back-pressure. `WaylandWindow::reportDispatchFailure` captures
+`errno` immediately after each dispatch/flush/read call, reads `wl_display_get_protocol_error` for the interface,
+object id and code on a `ProtocolError`, and reports either message through `reportNativeError` (#214), which is
+what puts it on `ListErrors` as well as the trace:
 
 ```
 [rnl-window] wayland protocol error: <interface>#<id> code <n> (<errno text>)
 [rnl-window] wayland display error: <errno text>
 ```
 
+It returns the classified outcome rather than a bare "did this close" bool, so `WaylandWindow::dispatchWithTimeout`
+can act on `Retry` instead of merely not closing on it: a `Retry` from `wl_display_flush` polls the display fd for
+`POLLOUT`, bounded by the same timeout the read side polls `POLLIN` with, and retries the flush — rather than
+falling through to a read poll that would leave the pending request unsent — and gives up (without closing) if
+that poll times out.
+
 `--inject-protocol-error` is the fault-injection hook this needed to prove end to end: right after the window
 comes up, it acknowledges the initial `xdg_surface.configure` a second time with a serial no `configure` ever
 sent, which xdg-shell requires the compositor to reject with `XDG_SURFACE_ERROR_INVALID_SERIAL`. The
-`protocol-error` e2e scenario runs it and asserts the structured line appears in the trace instead of a bare
-"broken pipe". `EAGAIN`'s busy-spin and the `xdg_wm_base.ping` responsiveness contract are #331's other half and
-remain open; this change is the diagnostic, not the event-loop rework.
+`protocol-error` e2e scenario runs it, asserts the structured line appears in the trace, and — via the scenario
+schema's `reject` list — asserts libwayland's own bare "Broken pipe" never does, so an `allowErrors` scenario that
+tolerates the structured line can still fail on an unrelated regression in the same trace. The
+`xdg_wm_base.ping` responsiveness contract is #331's other remaining half; this change is the diagnostic and the
+flush retry, not the whole event-loop rework.
 
 ### Swapchain to SkSurface
 
