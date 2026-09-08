@@ -132,7 +132,7 @@ describe("parseScenario frameBudget", () => {
   const frameBudget = { minFrames: MINIMUM_FRAMES, p95Ms: BUDGET_P95_MS };
 
   it("reads a perf budget", () => {
-    expect(parseScenario({ ...validScenario, frameBudget }, "fixture.json").frameBudget).toEqual(frameBudget);
+    expect(parseScenario({ ...validScenario, frameBudget }, "fixture.json").frameBudget).toMatchObject(frameBudget);
   });
 
   it("rejects a perf budget that is not an object", () => {

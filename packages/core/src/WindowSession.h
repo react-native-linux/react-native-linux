@@ -6,6 +6,7 @@
 
 #include "FabricHost.h"
 #include "FrameClock.h"
+#include "FrameJournal.h"
 #include "InputPipeline.h"
 #include "LinuxMountingManager.h"
 #include "ReactHost.h"
@@ -13,6 +14,7 @@
 
 #include <chrono>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -56,6 +58,15 @@ namespace react_native_linux {
  * renderer's present — happens at all this iteration, which `deliverInput`'s per-input frame timing does not need
  * to know about. See *Frame clock* in docs/cpp-toolchain.md for why the two are independent.
  *
+ * `recordFrameTick` is where the frame journal of #345 sees its dirty edge: it marks `FrameJournal` dirty from
+ * the same `hasPendingWork` signal the fallback timeout already reads, on every call regardless of source,
+ * because an invalidation exists independently of whichever frame source wakes the loop that answers it.
+ * `tickAnimations` marks it again on the same terms, because an animation step's mutation lands after
+ * `recordFrameTick` has read that signal and before `takeFrame` consumes it.
+ * `recordPaintStart`/`recordPaintEnd` bracket the paint span `WindowMain` runs between `takeFrame` and the
+ * renderer's present, and `closeJournalFrame` closes the interval once a `wp_presentation` result exists for it.
+ * See *Frame journal* in docs/cpp-toolchain.md.
+ *
  * Shutdown contract: destruction stops the surface, drains the JavaScript thread so the queued unmount runs while
  * the scheduler delegate is still alive, and only then destroys the Fabric host and the instance, in that order.
  */
@@ -89,6 +100,23 @@ public:
     FrameClock::Tick recordFrameTick(FrameClock::Source source, std::chrono::steady_clock::time_point now);
     SceneFrame takeFrame();
     bool hasReportedFatalError() const;
+
+    /**
+     * Brackets the paint span the caller runs between `takeFrame` and the renderer's present. Both are no-ops
+     * when the frame journal has no open interval — a callback-driven draw of an unchanged picture still paints
+     * without ever having been dirty, and the journal must not fabricate a dirty edge to explain it.
+     */
+    void recordPaintStart(std::chrono::steady_clock::time_point now);
+    void recordPaintEnd(std::chrono::steady_clock::time_point now);
+
+    /**
+     * Closes the frame journal's open interval, if any, against a `wp_presentation` result. `std::nullopt` is the
+     * idle-boundary outcome — nothing was dirty since the last close — not an error.
+     */
+    std::optional<FrameJournal::ClosedFrame> closeJournalFrame(uint64_t presentedNanoseconds);
+    /** A presentation the compositor discarded: abandons the open interval so no latency reads across it. */
+    void reportJournalDiscontinuity();
+    FrameJournal::Summary frameJournalSummary() const;
 
     /**
      * The three questions the automation channel (#214) asks of a running session: the committed tree, copied
@@ -127,6 +155,7 @@ private:
     std::unique_ptr<FabricHost> fabricHost_;
     std::chrono::steady_clock::time_point lastFrameTime_{std::chrono::steady_clock::now()};
     FrameClock frameClock_;
+    FrameJournal frameJournal_;
 };
 
 } // namespace react_native_linux

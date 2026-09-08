@@ -54,6 +54,15 @@ const readCoordinate = (value: unknown, label: string, sourceName: string): numb
   return value;
 };
 
+/** Unlike `readPositiveInteger`, zero is a real budget here — "no hangs allowed" — not an unset field. */
+const readNonNegativeInteger = (value: unknown, label: string, sourceName: string): number => {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < MINIMUM_COORDINATE) {
+    throw new Error(`${sourceName}: "${label}" must be a non-negative integer`);
+  }
+
+  return value;
+};
+
 const readObject = (value: unknown, label: string, sourceName: string): Record<string, unknown> => {
   if (!isRecord(value)) {
     throw new Error(`${sourceName}: "${label}" must be a JSON object`);
@@ -104,6 +113,7 @@ const readOptionalStringArray = (
 export {
   isRecord,
   readCoordinate,
+  readNonNegativeInteger,
   readObject,
   readOptionalBoolean,
   readOptionalStringArray,

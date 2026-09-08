@@ -21,10 +21,23 @@ facebook::react::Size toSurfaceSize(WindowSize size) {
                                  .height = static_cast<facebook::react::Float>(size.height)};
 }
 
+// A fixed nominal refresh, matching the 16.7 ms CI regression budget documented for the animated-frames scenario
+// in *Frame timing* (docs/cpp-toolchain.md): a real per-output refresh-rate-driven threshold needs the frame
+// journal to see `wp_presentation`'s refresh hint, which `WindowSession` does not have — it knows nothing about
+// Wayland. Reading that hint into the threshold is a follow-up, not this change.
+constexpr uint64_t kNominalVsyncNanoseconds = 16'666'666;
+constexpr uint64_t kHangThresholdVsyncCount = 2;
+
+uint64_t toNanosecondsSinceEpoch(std::chrono::steady_clock::time_point timePoint) {
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(timePoint.time_since_epoch()).count());
+}
+
 } // namespace
 
 WindowSession::WindowSession(const std::string& bundlePath, WindowSize size)
-    : fabricHost_(std::make_unique<FabricHost>(reactHost_.reactInstance(), toSurfaceSize(size))) {
+    : fabricHost_(std::make_unique<FabricHost>(reactHost_.reactInstance(), toSurfaceSize(size))),
+      frameJournal_(kNominalVsyncNanoseconds, kHangThresholdVsyncCount * kNominalVsyncNanoseconds) {
     // Before the script, so the first `Dimensions.get` a bundle makes at module scope already answers with the
     // window's requested size rather than with the pre-configure default.
     configureDimensions(size);
@@ -74,14 +87,30 @@ void WindowSession::tickAnimations(std::chrono::steady_clock::time_point now) {
     // `requestAnimationFrame` callbacks get it through the JavaScript thread. Both are driven from here so a
     // fallback-timeout frame — the only kind an occluded window gets — drives them too.
     reactHost_.dispatchAnimationFrames(now);
+
+    // The mutation an animation step produces lands here, after `recordFrameTick` has already read
+    // `hasPendingWork` for this frame and before `takeFrame` consumes the damage it produced, so without this the
+    // journal never sees the dirty edge of a natively driven animation: the step that lands the final value is
+    // charged to no interval at all. `recordDamage` is edge-only, so a frame that was already dirty coalesces.
+    if (hasPendingWork()) {
+        frameJournal_.recordDamage(toNanosecondsSinceEpoch(now));
+    }
 }
 
 FrameClock::Tick WindowSession::recordFrameTick(FrameClock::Source source, std::chrono::steady_clock::time_point now) {
+    const bool hasPending = hasPendingWork();
+
+    // The dirty edge exists independently of whichever frame source wakes this call: a callback tick draws
+    // whether or not there is pending work, but the invalidation it might be answering was already there.
+    if (hasPending) {
+        frameJournal_.recordDamage(toNanosecondsSinceEpoch(now));
+    }
+
     if (source == FrameClock::Source::Callback) {
         return frameClock_.onFrameCallback(now);
     }
 
-    return frameClock_.onFallbackTimeout(now, hasPendingWork());
+    return frameClock_.onFallbackTimeout(now, hasPending);
 }
 
 const FrameClock& WindowSession::frameClock() const noexcept { return frameClock_; }
@@ -95,6 +124,22 @@ void WindowSession::seedColorScheme() {
     }
 #endif
 }
+
+void WindowSession::recordPaintStart(std::chrono::steady_clock::time_point now) {
+    frameJournal_.recordPaintStart(toNanosecondsSinceEpoch(now));
+}
+
+void WindowSession::recordPaintEnd(std::chrono::steady_clock::time_point now) {
+    frameJournal_.recordPaintEnd(toNanosecondsSinceEpoch(now));
+}
+
+std::optional<FrameJournal::ClosedFrame> WindowSession::closeJournalFrame(uint64_t presentedNanoseconds) {
+    return frameJournal_.recordPresented(presentedNanoseconds);
+}
+
+void WindowSession::reportJournalDiscontinuity() { frameJournal_.recordDiscontinuity(); }
+
+FrameJournal::Summary WindowSession::frameJournalSummary() const { return frameJournal_.summarise(); }
 
 void WindowSession::configureDimensions(WindowSize size) {
     reactHost_.dimensions().configure(static_cast<double>(size.width), static_cast<double>(size.height),

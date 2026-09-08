@@ -3,7 +3,7 @@
   "bundle": "animated.js",
   "ready": "animated: batch ok",
   "frames": 240,
-  "frameBudget": { "p95Ms": 17.5, "minFrames": 60 },
+  "frameBudget": { "p95Ms": 17.5, "minFrames": 60, "maxHangs": 1 },
   "steps": ["sleep 500"],
   "expect": ["animated: module present", "animated: batch ok", "animated: value 0.75"]
 }

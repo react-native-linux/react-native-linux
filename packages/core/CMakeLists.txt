@@ -1090,6 +1090,7 @@ elseif(RNL_ENABLE_WINDOW)
         src/WindowDecorations.cpp
         src/WindowMain.cpp
         src/FrameClock.cpp
+        src/FrameJournal.cpp
         src/FrameTiming.cpp
     src/WindowSession.cpp)
 

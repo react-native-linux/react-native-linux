@@ -6916,7 +6916,10 @@ the type has to be spelled `struct wp_presentation_feedback` wherever it is name
 `requestPresentationFeedback` sits beside `requestFrameCallback` inside `SkiaVulkanRenderer::drawFrame`, before
 the present request, because `vkQueuePresentKHR` is what commits the surface and the feedback request has to
 attach to the same pending content update. Both `presented` and `discarded` are destructor events, so each handler
-destroys its own proxy. `presented` records `{seq, presented ns, refresh ns, flags}`; `discarded` only counts.
+destroys its own proxy. `presented` records `{seq, presented ns, refresh ns, flags}`; `discarded` counts, and both append to the ordered
+`takePresentationEvents` stream the frame journal drains. `clock_id` is retained rather than dropped: `FrameTiming`
+only ever subtracts two presentation timestamps, but the journal compares one against a `steady_clock` dirty edge
+— see *Frame journal*.
 
 The arithmetic is `FrameTiming` (`packages/core/src/FrameTiming.{h,cpp}`), a pure class in the shape of
 `FrameClock`: no Wayland, no clock reads, every value passed in, and therefore under the 100% line-and-branch C++
@@ -6961,6 +6964,98 @@ gate nobody will keep. The floor under weston's and cage's 60 Hz pacing is the p
 dropped frame still reads roughly double the interval, around 33 ms, and clears the gate by a wide margin either
 way. 17.5 ms is the CI regression gate; the 8.33 ms number in the testing gospel is a **real hardware** budget and
 is measured on real hardware, not here.
+
+### Frame journal (#345)
+
+`FrameTiming`'s p95 and #124's native-driver frame cost are both gates on the platform's own pacing. Neither is
+the number zed#26900 and zed#13203 are about: "at least four frames", or "two frames", between a pointer moving
+and the picture that answers it — GPUI's `PresentedFrame::dirty_to_present_duration()`, the span from the first
+invalidation a frame is answering to the moment that frame was presented, not from the start of its own paint.
+
+`FrameJournal` (`packages/core/src/FrameJournal.{h,cpp}`) is that metric, pure in the shape of `FrameClock` and
+`FrameTiming`: no clock reads, no Wayland, every timestamp a nanosecond count the caller supplies. `recordDamage`
+is the clean-to-dirty edge and only the edge — a call while an interval is already open is a coalesced
+invalidation, counted but not moving `dirtyAt`, exactly as GPUI's journal counts how many invalidations one frame
+answered. `recordPaintStart`/`recordPaintEnd` bracket the paint span of whichever frame closes the interval, and
+are no-ops with no interval open — a callback-driven draw of an unchanged picture still paints without ever
+having been dirty, and the journal must not invent a dirty edge to explain it. `recordPresented` closes the
+interval against a presentation result; `std::nullopt` is the idle-boundary outcome, not an error. A
+`wp_presentation_feedback.discarded`, or any other reason a caller cannot say which presentation answered an
+interval, is `recordDiscontinuity`: it abandons the interval outright, so the next `recordPresented` starts clean
+and a latency is never computed across a frame the compositor threw away.
+
+**The hang rule has two independent triggers**, matching GPUI's `crates/gpui/src/profiler/hang.rs`: a paint whose
+own span reached a threshold, or a total dirty-to-present that reached a second, larger threshold — "many small
+pieces of work can drop a frame as thoroughly as one long stall". Both compare with `>=`, so a span landing
+exactly on its threshold is a hang and the documented word "reached" is the one the code implements. Either flags
+the closed frame `isHang`, and a frame with no paint span recorded can still hang on the total trigger alone. `WindowSession` constructs its
+journal with a nominal 16.666 ms (60 Hz) as the paint threshold and twice that, two vsync intervals, as the total
+threshold — the same 16.7 ms this section's CI regression budget already uses, for the same reason: a real
+per-output refresh-rate-driven threshold needs the refresh hint `wp_presentation` reports, which `WindowSession`
+does not have because it knows nothing about Wayland. Reading that hint into the threshold is a follow-up.
+
+**Where the timestamps come from**, given `WindowSession` owns the journal but not the Wayland connection:
+`recordFrameTick` marks the dirty edge from the same `hasPendingWork` signal the fallback timeout already reads
+(*Frame clock*, above) — on every call, regardless of whether the tick draws, because an invalidation exists
+independently of whichever frame source wakes the loop that might answer it. `tickAnimations` marks it a second
+time on the same terms, and has to: an animation step's mutation lands *after* `recordFrameTick` read that signal
+and *before* `takeFrame` consumes the damage it produced, so without it the step that lands an animation's final
+value is charged to no interval at all. `recordDamage` is edge-only, so a frame that was already dirty coalesces
+rather than moving its `dirtyAt`. `WindowMain` brackets the actual
+Skia work with `recordPaintStart`/`recordPaintEnd` inside the paint callback it already passes `drawFrame` — not
+`drawFrame`'s own swapchain bookkeeping and not the present call after it, because neither is the work
+`paintScene` is answering the frame's damage with. Closing an interval happens where `--frame-log` drains
+`WaylandWindow::takePresentationEvents()`, which is **one ordered stream** of `wp_presentation_feedback` outcomes
+— a presented frame, or `std::nullopt` for a discarded content update — in the order the compositor delivered
+them. Order is load-bearing rather than cosmetic: a presented frame followed by a discarded one is a closed
+interval and then a discontinuity, and the cumulative-discarded-count reading this replaced charged every
+discontinuity in a drain first, which threw away that presentation's latency and its hang. `FrameTiming` keeps its
+own cumulative `frames`/`discarded` counters unchanged; the ordered stream exists for the journal.
+
+**The clock domains are converted rather than assumed.** `wp_presentation.clock_id` names the clock the
+compositor's timestamps are in, and the journal's dirty edges come from `std::chrono::steady_clock`, so
+`WaylandWindow` now retains that clock id and `WindowMain` samples both clocks once per drained batch and applies
+the offset to every timestamp in it. `presentationClockOffsetNanoseconds` and `toSteadyClockNanoseconds`
+(FrameJournal.h) are the pure, table-tested rule: the offset is zero when the compositor's clock is
+`CLOCK_MONOTONIC` — which `steady_clock` is under both libstdc++ and libc++, and which is what every compositor
+this runs under reports — and zero when no `clock_id` event has arrived or the named clock cannot be sampled,
+because there is then nothing to convert against. Only that short-circuit was previously relied on, silently.
+
+**The log.** Each presented frame's `FrameTiming` line is followed, when it closed an open interval, by the
+journal's own line for the same event:
+
+```json
+{"journal":true,"dirtyToPresentNs":11000000,"paintNs":3000000,"hang":false}
+```
+
+`paintNs` is absent when no paint span was recorded for that interval; `hang` is always present. The run ends
+with the journal's own summary line, beside `FrameTiming`'s:
+
+```json
+{"journalSummary":true,"frames":238,"hangs":1,"p50Ns":11000000,"p95Ns":15000000,"maxNs":33000000}
+```
+
+`frames` counts closed intervals — idle-boundary presents are not among them — and the percentiles are nearest
+rank over the last 4096 closed intervals, exactly as `FrameTiming`'s own. The two summaries are separate JSON
+objects rather than merged into one, because they are computed by independent pure classes: `FrameJournal` knows
+nothing about `wp_presentation`, and giving it FrameTiming's knowledge, or the reverse, to save two keystrokes in
+a log line would be the coupling the Prime Directive asks not to add.
+
+**The gate.** `frameBudget.maxHangs` on a scenario is the ceiling, and `null` — the default — opts a scenario out
+rather than defaulting to a number nobody measured. What it counts includes the **first frame after mount**: the
+short scenarios measure two journalled frames and one hang, 50–73 ms of dirty-to-present, because the first
+picture a bundle produces genuinely takes that long to reach the screen. That is real latency and is left in the
+count, so a `maxHangs` calibrated from a CI run has to have room for it. `scripts/e2e/frame-log.ts` fails closed
+on a malformed summary — an unparsable line, or one whose fields are not all non-negative safe integers, reads as
+no summary rather than as a summary of zeroes, because zeroes and a negative `hangs` alike would pass
+`maxHangs: 0` on a run that measured nothing; the grader's `describeFrameJournal` note prints the journal's
+numbers on every run that has one, budget or not, exactly as `FrameTiming`'s note does. `scripts/e2e/frame-log.ts`
+holds `parseFrameJournalSummary` and `findFrameHangFailures` pure and tested at the repository's 100% threshold;
+`grade.ts` is the file reading around them. `animated-frames.json` sets `"maxHangs": 1`, calibrated from what CI
+actually measured under cage and lavapipe across two runs of #345's PR: animated-frames journalled 3 frames with
+0 hangs and a 15.99 ms maximum both times, raf-idle 237 frames with 0 hangs at 17.5 ms and 238 with 1 hang at
+36.9 ms, and the short scenarios reported the first frame after mount as a hang at 50-73 ms. The 1 is headroom
+for exactly that first-frame-after-mount hang; a second hang in a 240-frame run is a regression.
 
 ### Screenshots
 

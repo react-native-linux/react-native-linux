@@ -200,9 +200,25 @@ public:
      */
     void requestPresentationFeedback();
     bool isPresentationSupported() const noexcept;
-    /** The presented frames recorded since the last call, in the order the compositor reported them. */
-    std::vector<FrameTiming::Frame> takePresentedFrames();
+
+    /**
+     * One `wp_presentation_feedback` outcome, in the order the compositor delivered it: the presented frame, or
+     * `std::nullopt` for a `discarded` content update. The frame journal (#345) needs the order, not just the
+     * counts — a presented frame followed by a discarded one is a closed interval and then a discontinuity, and
+     * charging the discontinuity first would throw away the presentation's latency and its hang.
+     */
+    using PresentationEvent = std::optional<FrameTiming::Frame>;
+
+    /** The feedback events recorded since the last call, in the order the compositor reported them. */
+    std::vector<PresentationEvent> takePresentationEvents();
     FrameTiming::Summary frameTimingSummary() const;
+
+    /**
+     * The clock `wp_presentation.clock_id` named for its timestamps, absent until that event arrives (and on a
+     * compositor advertising no `wp_presentation` at all). `WindowMain` converts presentation timestamps into
+     * `steady_clock`'s domain with it; see `presentationClockOffsetNanoseconds` in FrameJournal.h.
+     */
+    std::optional<uint32_t> presentationClockId() const noexcept;
 
     bool waitForRedraw(std::chrono::milliseconds fallbackTimeout);
 
@@ -275,7 +291,8 @@ private:
     xdg_toplevel* toplevel_{nullptr};
     wl_callback* frameCallback_{nullptr};
     FrameTiming frameTiming_;
-    std::vector<FrameTiming::Frame> presentedFrames_;
+    std::vector<PresentationEvent> presentationEvents_;
+    std::optional<uint32_t> presentationClockId_;
     WindowSize size_;
     std::string title_;
     bool forceClientDecorations_{false};

@@ -1,6 +1,7 @@
 import {
   isRecord,
   readCoordinate,
+  readNonNegativeInteger,
   readObject,
   readOptionalBoolean,
   readOptionalStringArray,
@@ -33,10 +34,11 @@ const PARENT_DIRECTORY = "..";
 const ERROR_TRACE_PATTERNS: readonly string[] = ["[js-error]", "[bundle-runner]", "[image]", "[text]", "[rnl-window]"];
 
 /**
- * The perf gate of #7. `p95Ms` is the ninety-fifth percentile `wp_presentation` frame time the run may not exceed;
- * `minFrames` is how many frames must have presented for that percentile to mean anything, not pass by accident.
+ * The perf gate of #7: `p95Ms`/`minFrames` bound the p95 `wp_presentation` frame time and the frames needed for
+ * it to mean anything. `maxHangs` (#345) caps hang-thresholded frames; `null` opts out, `0` is a measured zero.
  */
 interface FrameBudget {
+  readonly maxHangs: number | null;
   readonly minFrames: number;
   readonly p95Ms: number;
 }
@@ -123,6 +125,8 @@ const readFrameBudget = (record: Record<string, unknown>, sourceName: string): F
   const budget = readObject(record["frameBudget"], "frameBudget", sourceName);
 
   return {
+    maxHangs:
+      "maxHangs" in budget ? readNonNegativeInteger(budget["maxHangs"], "frameBudget.maxHangs", sourceName) : null,
     minFrames: readPositiveInteger(budget["minFrames"], "frameBudget.minFrames", sourceName),
     p95Ms: readPositiveNumber(budget["p95Ms"], "frameBudget.p95Ms", sourceName),
   };
@@ -220,10 +224,7 @@ const parseScenario = (value: unknown, sourceName: string): Scenario => {
 
 const formatInjectorScript = (steps: readonly string[]): string => `${steps.join("\n")}\n`;
 
-/**
- * Ordered substring matching: every expectation has to appear on a later line than the one before it, which is
- * what makes a trace assertion about a sequence of events rather than a set of them.
- */
+/** Ordered substring matching: every expectation must appear on a later line than the one before it. */
 const findMissingExpectations = (traceLines: readonly string[], expectations: readonly string[]): readonly string[] => {
   const missing: string[] = [];
   let searchIndex = FIRST_LINE_INDEX;
