@@ -69,6 +69,22 @@
         "CMAKE_SHARED_LINKER_FLAGS": "-fsanitize=thread",
         "HERMES_ENABLE_THREAD_SANITIZER": "ON"
       }
+    },
+    {
+      "name": "asan-tests",
+      "displayName": "rnl_core_tests under AddressSanitizer and UndefinedBehaviorSanitizer",
+      "inherits": "asan",
+      "cacheVariables": {
+        "RNL_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "tsan-tests",
+      "displayName": "rnl_core_tests under ThreadSanitizer",
+      "inherits": "tsan",
+      "cacheVariables": {
+        "RNL_BUILD_TESTS": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -83,7 +99,7 @@
     {
       "name": "test",
       "configurePreset": "test",
-      "targets": ["rnl_core_tests"]
+      "targets": ["rnl_core_tests", "rnl_core_allocation_cost_tests"]
     },
     {
       "name": "asan",
@@ -92,6 +108,16 @@
     {
       "name": "tsan",
       "configurePreset": "tsan"
+    },
+    {
+      "name": "asan-tests",
+      "configurePreset": "asan-tests",
+      "targets": ["rnl_core_tests"]
+    },
+    {
+      "name": "tsan-tests",
+      "configurePreset": "tsan-tests",
+      "targets": ["rnl_core_tests"]
     }
   ],
   "testPresets": [
@@ -130,6 +156,28 @@
     {
       "name": "tsan",
       "configurePreset": "tsan",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "timeout": 300
+      }
+    },
+    {
+      "name": "asan-tests",
+      "configurePreset": "asan-tests",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "timeout": 300
+      }
+    },
+    {
+      "name": "tsan-tests",
+      "configurePreset": "tsan-tests",
       "output": {
         "outputOnFailure": true
       },

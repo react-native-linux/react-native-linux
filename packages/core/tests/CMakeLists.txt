@@ -48,6 +48,59 @@ file(GLOB RNL_UPSTREAM_TIMELINE_TESTS
 # core and mounting need react/renderer/element (ComponentBuilder); see the target_sources block below,
 # which links react_renderer_element for the whole upstream tranche.
 
+# Shared by rnl_core_tests and rnl_core_allocation_cost_tests below: the platform sources the scene and
+# mounting fixtures exercise, compiled directly into each test binary rather than linked from
+# rnl_react_core (a Hermes-linked target).
+set(RNL_CORE_SCENE_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/Activation.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ActivityIndicatorContent.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/AnimationFrameQueue.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/Appearance.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/AutomationProtocol.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/Clipboard.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/DefaultFontFamily.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/DimensionsSource.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/EditorModel.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/EllipsizeSearch.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/FocusModel.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/FontSizeScaling.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/FrameClock.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/FrameJournal.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/FrameTiming.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/GpuResourceInvalidation.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/HostTimerRegistry.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ImageContent.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/InputDispatcher.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/InputPipeline.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/LineBoxMetrics.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/LinuxAnimationChoreographer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/LinuxMountingManager.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/MountTreeText.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/PinnedFontFamilies.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/PlatformColor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/RendererLadder.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ResourceResolver.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/RetainedScene.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ScrollController.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ScrollEventCadence.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ScrollPhysics.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/SeededTestScheduler.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/SingleInstanceActivation.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/SurfaceCommitGate.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/SurfacePresentationPolicy.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/SwitchComponent.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/SwitchContent.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputComponent.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputController.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputSession.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputV3State.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextTransform.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ToplevelState.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/VulkanResultPolicy.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/WaylandDispatchDiagnostics.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/WaylandSerialLedger.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/WindowDecorations.cpp)
+
 add_executable(rnl_core_tests
     ActivationTest.cpp
     ActivityIndicatorTest.cpp
@@ -58,7 +111,6 @@ add_executable(rnl_core_tests
     AnimatedConformanceTest.cpp
     AnimatedPropsTest.cpp
     AnimationChoreographerTest.cpp
-    AllocationCostTest.cpp
     AppearanceTest.cpp
     BorderGeometryTest.cpp
     DefaultFontFamilyTest.cpp
@@ -123,54 +175,7 @@ add_executable(rnl_core_tests
     ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/DecayAnimationDriverTest.cpp
     ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/EventAnimationDriverTests.cpp
     ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/ManagedPropsMountingOverrideTests.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/Activation.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ActivityIndicatorContent.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/AnimationFrameQueue.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/Appearance.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/AutomationProtocol.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/Clipboard.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/DefaultFontFamily.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/DimensionsSource.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/EditorModel.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/EllipsizeSearch.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/FocusModel.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/FontSizeScaling.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/FrameClock.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/FrameJournal.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/FrameTiming.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/HostTimerRegistry.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ResourceResolver.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ImageContent.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/InputDispatcher.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/InputPipeline.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/LineBoxMetrics.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/LinuxAnimationChoreographer.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/LinuxMountingManager.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/MountTreeText.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/PinnedFontFamilies.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/PlatformColor.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/RendererLadder.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/RetainedScene.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ScrollController.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/SeededTestScheduler.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ScrollEventCadence.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ScrollPhysics.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/SingleInstanceActivation.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/SwitchComponent.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/SwitchContent.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputComponent.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputController.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputSession.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputV3State.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextTransform.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ToplevelState.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/GpuResourceInvalidation.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/SurfaceCommitGate.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/SurfacePresentationPolicy.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/VulkanResultPolicy.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/WaylandDispatchDiagnostics.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/WaylandSerialLedger.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/WindowDecorations.cpp
+    ${RNL_CORE_SCENE_SOURCES}
     ${RNL_UPSTREAM_CSS_TESTS}
     ${RNL_UPSTREAM_GRAPHICS_TESTS}
     ${RNL_UPSTREAM_TIMELINE_TESTS})
@@ -302,9 +307,9 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     target_link_options(rnl_core_tests PRIVATE -fprofile-instr-generate)
 endif()
 
-# One upstream case is not discovered in the UBSan configure, and only there; it runs in dev, in test and
-# locally. It is a filter on one named case rather than a sanitizer suppression file, of which this repository
-# has none. Delete it when the React Native pin moves past a version that has fixed it.
+# Two upstream cases are not discovered under a sanitizer, and only there; both run in dev, in test and
+# locally. Each is a filter on one named case rather than a suppression file, of which this repository has
+# none. Delete each when the React Native pin moves past a version that has fixed it.
 #
 #   #412 FindShadowNodeByTagTest.ConcurrentFindAndCommitStress: yoga's `Node` derives from the empty tag
 #        `struct YGNode` that forms the opaque `YGNodeRef` of its C API, so `YGNodeGetOwner` upcasts whatever
@@ -315,10 +320,52 @@ endif()
 #        -fsanitize=alignment rejects the derived-to-base conversion before the comparison it exists for. The
 #        upstream fix is one word, reading the owner through yoga's C++ `childYogaNode->getOwner()`, which is
 #        already how the next line writes it; both files are vendored and neither is ours to patch.
+#   #414 TaskDispatchThreadTest.MultipleDelayedTasksOrder: vendored, unmodified upstream
+#        (ReactCxxPlatform/react/threading/tests) trusts a sleep_for to happen-after a background push_back
+#        rather than a real synchronization primitive; TSan does not credit a sleep as one. The ordering
+#        contract it meant to prove is pinned deterministically in ThreadingConformanceTest.cpp instead.
+#
+# The #411 and #413 filters this branch used to carry are gone: both were fixed rather than excluded — the
+# recorder/dispatcher cycle in SceneTest.cpp's fixture, and HostTimerRegistry's member destruction order.
 set(RNL_CORE_TESTS_FILTER "")
 
 if(CMAKE_CXX_FLAGS MATCHES "-fsanitize=[^ ]*undefined")
     set(RNL_CORE_TESTS_FILTER "-FindShadowNodeByTagTest.ConcurrentFindAndCommitStress")
 endif()
 
-gtest_discover_tests(rnl_core_tests TEST_FILTER "${RNL_CORE_TESTS_FILTER}")
+if(CMAKE_CXX_FLAGS MATCHES "-fsanitize=thread")
+    set(RNL_CORE_TESTS_FILTER "-TaskDispatchThreadTest.MultipleDelayedTasksOrder")
+endif()
+
+if(RNL_CORE_TESTS_FILTER STREQUAL "")
+    gtest_discover_tests(rnl_core_tests)
+else()
+    gtest_discover_tests(rnl_core_tests TEST_FILTER "${RNL_CORE_TESTS_FILTER}")
+endif()
+
+# #407: AllocationCostTest.cpp replaces the process's global operator new/delete (AllocationProbe.h) to
+# count allocations, and those replacement definitions collide with libclang_rt.{asan,tsan}_cxx's own
+# allocator interposition at link time. It therefore lives in its own binary rather than in rnl_core_tests,
+# and that binary is not configured at all under a sanitizer build; every other source it measures
+# (LinuxAnimationChoreographer, LinuxMountingManager, RetainedScene) is still compiled into rnl_core_tests
+# and so still runs under asan and tsan.
+if(NOT CMAKE_CXX_FLAGS MATCHES "-fsanitize")
+    add_executable(rnl_core_allocation_cost_tests
+        AllocationCostTest.cpp
+        ${RNL_CORE_SCENE_SOURCES})
+    target_link_libraries(rnl_core_allocation_cost_tests PRIVATE react_renderer_element)
+    target_compile_options(rnl_core_allocation_cost_tests PRIVATE -Wall -Wextra -fexceptions -frtti)
+    target_include_directories(rnl_core_allocation_cost_tests
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+    target_link_libraries(rnl_core_allocation_cost_tests
+        PRIVATE
+            GTest::gtest_main
+            jsi
+            rnl_jsidynamic
+            folly_runtime
+            rnl_textinput
+            ${RNL_REACT_COMMON_TARGETS}
+            atomic)
+    set_target_properties(rnl_core_allocation_cost_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+    gtest_discover_tests(rnl_core_allocation_cost_tests)
+endif()
