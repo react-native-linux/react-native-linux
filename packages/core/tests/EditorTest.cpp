@@ -450,6 +450,50 @@ TEST(EditorModelTest, AnEmptyPreeditEndsTheCompositionAndOtherwiseDoesNothing) {
     EXPECT_FALSE(model.isComposing());
 }
 
+TEST(EditorModelTest, SurroundingTextIsTheWholeDisplayTextWhenThereIsNoComposition) {
+    EditorModel model = modelWith("ab");
+
+    const EditorModel::SurroundingText surrounding = model.surroundingText();
+
+    EXPECT_EQ(surrounding.text, "ab");
+    EXPECT_EQ(surrounding.cursorByte, 2U);
+    EXPECT_EQ(surrounding.anchorByte, 2U);
+}
+
+TEST(EditorModelTest, SurroundingTextNeverIncludesTheComposingRunAndClampsACaretInsideItToWhereItBegan) {
+    EditorModel model = modelWith(std::string(kEAcute) + "b");
+
+    EXPECT_TRUE(model.applyPreedit("nihao", 0, 3));
+
+    const EditorModel::SurroundingText surrounding = model.surroundingText();
+
+    // "nihao" (5 bytes) is cut back out of "\xC3\xA9" + "b" + "nihao", and both ends of the caret pair — one
+    // sitting on the run's own start already, one strictly inside it — land on the byte the run began at.
+    EXPECT_EQ(surrounding.text, std::string(kEAcute) + "b");
+    EXPECT_EQ(surrounding.cursorByte, 3U);
+    EXPECT_EQ(surrounding.anchorByte, 3U);
+}
+
+TEST(EditorModelTest, SurroundingTextAfterTheComposingRunShiftsBackByItsByteLength) {
+    EditorModel model = modelWith(std::string(kEAcute) + "Z");
+
+    EXPECT_TRUE(model.setSelectionRange(2, 2));
+    EXPECT_TRUE(model.applyPreedit("xy", 2, 2));
+    EXPECT_EQ(model.text(), std::string(kEAcute) + "xyZ");
+    EXPECT_EQ(model.compositionBeginByte(), 2U);
+    EXPECT_EQ(model.compositionEndByte(), 4U);
+
+    EXPECT_TRUE(model.setSelectionRange(model.text().size(), model.text().size()));
+
+    const EditorModel::SurroundingText surrounding = model.surroundingText();
+
+    // The caret sits on the "Z" that followed the composing run, so once "xy" is cut back out it moves back by
+    // exactly the two bytes that left with it.
+    EXPECT_EQ(surrounding.text, std::string(kEAcute) + "Z");
+    EXPECT_EQ(surrounding.cursorByte, 3U);
+    EXPECT_EQ(surrounding.anchorByte, 3U);
+}
+
 TEST(EditorModelTest, ACommitReplacesTheComposingRunAndCountsAsAnEdit) {
     EditorModel model;
 

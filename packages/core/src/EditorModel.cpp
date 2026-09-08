@@ -215,6 +215,37 @@ size_t EditorModel::compositionEndByte() const noexcept { return compositionBegi
 
 bool EditorModel::isComposing() const noexcept { return isComposing_; }
 
+EditorModel::SurroundingText EditorModel::surroundingText() const {
+    std::string text = displayText();
+    size_t cursorByte = displayOffsetForByte(selection_.caretByte);
+    size_t anchorByte = displayOffsetForByte(selection_.anchorByte);
+
+    if (isComposing_) {
+        const size_t compositionBeginDisplay = displayOffsetForByte(compositionBeginByte());
+        const size_t compositionEndDisplay = displayOffsetForByte(compositionEndByte());
+        const size_t compositionDisplayLength = compositionEndDisplay - compositionBeginDisplay;
+
+        text.erase(compositionBeginDisplay, compositionDisplayLength);
+
+        const auto excludeComposition = [&](size_t offset) {
+            if (offset <= compositionBeginDisplay) {
+                return offset;
+            }
+
+            if (offset >= compositionEndDisplay) {
+                return offset - compositionDisplayLength;
+            }
+
+            return compositionBeginDisplay;
+        };
+
+        cursorByte = excludeComposition(cursorByte);
+        anchorByte = excludeComposition(anchorByte);
+    }
+
+    return SurroundingText{.text = std::move(text), .cursorByte = cursorByte, .anchorByte = anchorByte};
+}
+
 int EditorModel::mostRecentEventCount() const noexcept { return mostRecentEventCount_; }
 
 bool EditorModel::setText(std::string text) {
