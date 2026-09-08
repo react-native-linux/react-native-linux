@@ -13,6 +13,7 @@ import type { Scenario } from "./scenario.ts";
 import { gradeAutomation } from "./automation.ts";
 import path from "node:path";
 import { runKeyboardAwareInjection } from "./keyboard-focus.ts";
+import { scalePointerSteps } from "./pointer-scale.ts";
 
 const NO_TEXT = "";
 const CROPPED_ARTIFACT_NAME = "screenshot-cropped.png";
@@ -229,11 +230,16 @@ interface InjectionRun {
   readonly waitForExpectedClose: () => Promise<boolean>;
 }
 
-/** Runs `run.scenario.steps` through `run.inject`, threading its exit status to `resolveInjectionFailure` above. */
+/**
+ * Runs `run.scenario.steps` through `run.inject`, threading its exit status to `resolveInjectionFailure` above.
+ * `scalePointerSteps` converts every `move`/`click` line's coordinates from the logical pixels a scenario is
+ * authored in to `rnl_inject`'s own surface pixels first, so the same rounding rule #374 gave the surface side
+ * carries the injected coordinate rather than the raw logical one.
+ */
 const injectAndResolveFailure = async (run: InjectionRun): Promise<string | null> => {
   let status: number | null = null;
   const failure = await runKeyboardAwareInjection(
-    run.scenario.steps,
+    scalePointerSteps(run.scenario.steps),
     (steps) => {
       const outcome = run.inject(steps);
       ({ status } = outcome);
