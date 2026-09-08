@@ -36,12 +36,15 @@ jobs:
 
       # format:cpp shells out to clang-format-18 (docs/cpp-toolchain.md, Toolchain paragraph); it is the only
       # part of `pnpm validate` that needs a native tool on PATH.
-      - name: Install clang-format
+      # desktop-file-validate is what packages/cli's desktop-entry spec runs the generated entry through, so the
+      # spec-conformance assertion is real rather than a string comparison.
+      - name: Install clang-format and desktop-file-utils
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y clang-format-18
+          sudo apt-get install -y clang-format-18 desktop-file-utils
           clang-format-18 --version
+          desktop-file-validate --version
 
       - name: Validate
         run: pnpm validate

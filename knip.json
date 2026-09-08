@@ -9,7 +9,8 @@
       "project": ["src/**/*.ts"]
     },
     "packages/cli": {
-      "project": ["src/**/*.ts"]
+      "project": ["src/**/*.ts"],
+      "ignoreBinaries": ["desktop-file-validate"]
     },
     "packages/core": {
       "entry": ["goldens/*.spec.ts", "scripts/*.ts"],

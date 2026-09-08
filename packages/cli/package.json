@@ -6,10 +6,16 @@
   "exports": {
     ".": "./src/platform-config.ts",
     "./animation-rung.ts": "./src/animation-rung.ts",
+    "./desktop-entry.ts": "./src/desktop-entry.ts",
+    "./hicolor-icon-tree.ts": "./src/hicolor-icon-tree.ts",
     "./metro-config.ts": "./src/metro-config.ts"
+  },
+  "dependencies": {
+    "pngjs": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "@types/pngjs": "catalog:",
     "vitest": "catalog:"
   }
 }
