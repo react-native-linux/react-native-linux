@@ -51,9 +51,15 @@ endif()
 # re-runs them at the new SHA. jsi/jsi/test/testlib.cpp is upstream's JSI conformance suite; the only source of
 # ours in this binary is HermesRuntimeFactory.cpp, which supplies the runtimeGenerators() it declares but does
 # not define, exactly as react-native-windows' JsiRuntimeGenerators.cpp does.
+# #210: the Fantom-style headless runner and the mount-tree text its cases assert on. Both are compiled here
+# rather than linked from rnl_react_core because the runner exists only for tests, and rnl_react_core is what
+# rnl_window links.
 add_executable(rnl_core_hermes_tests
+    FantomTesterTest.cpp
     HermesRuntimeFactory.cpp
     ReactHostTeardownTest.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/FantomTester.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/MountTreeText.cpp
     ${googletest_SOURCE_DIR}/googlemock/src/gmock_main.cc
     ${REACT_COMMON_DIR}/jsi/jsi/test/testlib.cpp
     ${REACT_COMMON_DIR}/react/bridging/tests/BridgingTest.cpp
