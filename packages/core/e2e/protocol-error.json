@@ -5,6 +5,7 @@
   "frames": 900,
   "injectProtocolError": true,
   "allowErrors": true,
+  "expectsExitAfter": "wayland protocol error: xdg_wm_base#7",
   "steps": ["sleep 500"],
   "expect": ["[rnl-window] wayland protocol error: xdg_wm_base#"],
   "reject": ["Broken pipe"]

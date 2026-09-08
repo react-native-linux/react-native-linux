@@ -320,10 +320,15 @@ Both scenarios name `ready` as a line printed before their own injection, not `h
 the before-bring-up hook can kill the process ahead of the bundle ever running, and the after-frame hook injects
 before `WindowSession` — and therefore the bundle — even exists, so either scenario waiting on the bundle's own
 line would be waiting on a race it can lose. `[rnl-decorations] mode=bare` prints unconditionally before both
-hooks fire and is what each scenario waits on instead. `scripts/e2e.ts`'s `driveAndStop` also reads
-`compositor.signalCode` once its run finishes: a signal there is `cage` or the `rnl_window` child crashing, never
-a scenario's own exit, and it fails the scenario regardless of `allowErrors` — the gap that let a run ending in a
-Hermes abort still print "passed".
+hooks fire and is what each scenario waits on instead. Once the window dies on the injected error, `rnl_inject`
+loses its socket and exits with status 1 the same way a closed window does, so both scenarios name
+`expectsExitAfter` — the generalised form of `window-decorations-close`'s own opt-in — as the structured line's
+own substring, `wayland protocol error: xdg_wm_base#7`: `resolveInjectionFailure` forgives that status only once
+the trace carries it. `resolveExpectedOutcome` also takes `compositor.signalCode` now, alongside `trace`, and
+folds `describeCompositorCrash` into the same unwaivable set `reject` already sits in — a signal there is `cage`
+or the `rnl_window` child crashing, never a scenario's own exit, and it fails the scenario regardless of
+`allowErrors` or `expectFailure` — the gap that let a run ending in a Hermes abort still print "passed", and that
+let `expectFailure` on top of it wave the crash away as the negative control's own expected failure.
 
 ### Swapchain to SkSurface
 

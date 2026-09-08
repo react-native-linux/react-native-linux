@@ -69,27 +69,45 @@ const describeRejectedTraceFailures = (scenario: Scenario, trace: string): reado
     (rejection) => `the trace produced the rejected "${rejection}"`,
   );
 
+/** `compositor.signalCode` set means `cage`/`rnl_window` crashed: never a scenario's own exit, never invertible. */
+const describeCompositorCrash = (signalCode: NodeJS.Signals | null): readonly string[] =>
+  signalCode === null ? [] : [`cage signal ${signalCode}`];
+
+/** The run-level facts `resolveExpectedOutcome` needs beyond the scenario and its failures, bundled to stay at 3 params. */
+interface RunOutcome {
+  readonly signal: NodeJS.Signals | null;
+  readonly trace: string;
+}
+
 /**
  * `expectFailure` inverts `failures` for a negative control: the scenario passes only when grading it produced at
- * least one, and reports one of its own when it produced none. `trace`'s rejected substrings are appended after
- * that inversion rather than folded into `failures` before it, on purpose: a rejected substring is never the
- * failure `expectFailure` expects, so it must go on keeping the scenario failing even once the inversion clears
- * everything else.
+ * least one, and reports one of its own when it produced none. `outcome.trace`'s rejected substrings and
+ * `outcome.signal`'s crash are appended after that inversion rather than folded into `failures` before it, on
+ * purpose: neither is ever the one failure `expectFailure` expects, so both must go on keeping the scenario
+ * failing even once the inversion clears everything else.
  */
-const resolveExpectedOutcome = (scenario: Scenario, failures: readonly string[], trace: string): readonly string[] => {
-  const rejected = describeRejectedTraceFailures(scenario, trace);
+const resolveExpectedOutcome = (
+  scenario: Scenario,
+  failures: readonly string[],
+  outcome: RunOutcome,
+): readonly string[] => {
+  const unwaivable = [
+    ...describeCompositorCrash(outcome.signal),
+    ...describeRejectedTraceFailures(scenario, outcome.trace),
+  ];
 
   if (!scenario.expectFailure) {
-    return [...rejected, ...failures];
+    return [...unwaivable, ...failures];
   }
 
   const inverted =
     failures.length === EMPTY_LENGTH ? ["expectFailure is set, but the scenario produced no failures"] : [];
 
-  return [...rejected, ...inverted];
+  return [...unwaivable, ...inverted];
 };
 
 export {
+  describeCompositorCrash,
   describeRejectedTraceFailures,
   describeTraceFailures,
   findErrorLines,

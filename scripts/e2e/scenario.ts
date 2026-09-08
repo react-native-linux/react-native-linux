@@ -4,6 +4,7 @@ import {
   readNonNegativeInteger,
   readObject,
   readOptionalBoolean,
+  readOptionalString,
   readOptionalStringArray,
   readPositiveInteger,
   readPositiveNumber,
@@ -71,8 +72,8 @@ interface Scenario {
   readonly expect: readonly string[];
   /** A negative control: the scenario passes only if grading it produces at least one failure. */
   readonly expectFailure: boolean;
-  /** `rnl_inject`'s exit status 1 is accepted once the trace also carries the window's own "closed before frame". */
-  readonly expectsWindowClose: boolean;
+  /** `rnl_inject`'s exit status 1 is accepted once the trace also carries this substring; `null` never accepts it. */
+  readonly expectsExitAfter: string | null;
   /** How long `rnl_window` runs before it captures its screenshot and exits. */
   readonly frames: number;
   readonly frameBudget: FrameBudget | null;
@@ -199,7 +200,7 @@ const parseScenario = (value: unknown, sourceName: string): Scenario => {
     bundle: readString(value["bundle"], "bundle", sourceName),
     expect: readStringArray(value["expect"], "expect", sourceName),
     expectFailure: readOptionalBoolean(value, "expectFailure", sourceName),
-    expectsWindowClose: readOptionalBoolean(value, "expectsWindowClose", sourceName),
+    expectsExitAfter: readOptionalString(value, "expectsExitAfter", sourceName),
     frameBudget: readFrameBudget(value, sourceName),
     frames: readFrameCount(value, sourceName),
     injectProtocolError: readOptionalBoolean(value, "injectProtocolError", sourceName),

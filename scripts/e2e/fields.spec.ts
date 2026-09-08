@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readOptionalStringArray } from "./fields.ts";
+import { readOptionalString, readOptionalStringArray } from "./fields.ts";
 
 const NON_STRING_ENTRY = 1;
 
@@ -27,6 +27,26 @@ describe("readOptionalStringArray", () => {
   it("rejects an array with a non-string entry", () => {
     expect(() => readOptionalStringArray({ windowFlags: [NON_STRING_ENTRY] }, "windowFlags", "fixture.json")).toThrow(
       'fixture.json: "windowFlags" must be an array of strings',
+    );
+  });
+});
+
+describe("readOptionalString", () => {
+  it("returns null when the field is omitted", () => {
+    expect(readOptionalString({}, "expectsExitAfter", "fixture.json")).toBeNull();
+  });
+
+  it("returns null for an explicit JSON null", () => {
+    expect(readOptionalString({ expectsExitAfter: null }, "expectsExitAfter", "fixture.json")).toBeNull();
+  });
+
+  it("reads an explicit non-empty string", () => {
+    expect(readOptionalString({ expectsExitAfter: "closed" }, "expectsExitAfter", "fixture.json")).toBe("closed");
+  });
+
+  it("rejects an explicit empty string", () => {
+    expect(() => readOptionalString({ expectsExitAfter: "" }, "expectsExitAfter", "fixture.json")).toThrow(
+      'fixture.json: "expectsExitAfter" must be a non-empty string',
     );
   });
 });

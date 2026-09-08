@@ -24,7 +24,6 @@ const RUN_TIMEOUT_MS = 120_000;
 const INJECT_TIMEOUT_MS = 60_000;
 const POLL_INTERVAL_MS = 50;
 const COMPOSITOR_STOP_GRACE_MS = 250;
-const CLOSE_TRACE_LINE = "[rnl-window] the window closed before frame";
 
 /** Cage: weston only offers weston-test, shipped nowhere. See *E2E driver (#7)* in docs/cpp-toolchain.md. */
 const COMPOSITOR_NAME = "cage";
@@ -194,7 +193,8 @@ const driveScenario = async (run: ScenarioRun, workspace: Workspace): Promise<re
   const injectionFailure = await injectAndResolveFailure({
     inject: (steps) => injectSteps(steps, workspace.runtimeDirectory, socketName),
     scenario,
-    waitForExpectedClose: () => waitUntil(() => workspace.trace.text.includes(CLOSE_TRACE_LINE), READY_TIMEOUT_MS),
+    waitForExpectedClose: () =>
+      waitUntil(() => workspace.trace.text.includes(scenario.expectsExitAfter ?? ""), READY_TIMEOUT_MS),
     waitForKeyboardFocus: () => waitUntil(() => isKeyboardFocused(workspace.trace.text), READY_TIMEOUT_MS),
   });
   const automationFailures = await gradeAutomationChannel({
@@ -225,8 +225,7 @@ const driveAndStop = async (
   workspace: Workspace,
 ): Promise<readonly string[]> => {
   try {
-    const failures = await driveScenario(run, workspace);
-    return compositor.signalCode === null ? failures : [`cage signal ${compositor.signalCode}`, ...failures];
+    return await driveScenario(run, workspace);
   } finally {
     await stopCompositor(compositor);
   }
@@ -254,7 +253,7 @@ const runScenario = async (run: ScenarioRun, rig: Rig, attemptKey: string): Prom
 
   const failures = [...runFailures, ...describeTraceFailures(run.scenario, workspace.trace.text), ...grade.failures];
 
-  return resolveExpectedOutcome(run.scenario, failures, workspace.trace.text);
+  return resolveExpectedOutcome(run.scenario, failures, { signal: compositor.signalCode, trace: workspace.trace.text });
 };
 
 const reportScenario = (failures: readonly string[], attemptKey: string): void => {

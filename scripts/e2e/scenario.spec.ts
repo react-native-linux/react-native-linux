@@ -25,7 +25,7 @@ describe("parseScenario", () => {
       bundle: "pressable.js",
       expect: ["pressable: topClick on box at 200,140"],
       expectFailure: false,
-      expectsWindowClose: false,
+      expectsExitAfter: null,
       frameBudget: null,
       frames: EXPLICIT_FRAME_COUNT,
       injectProtocolError: false,
@@ -40,11 +40,11 @@ describe("parseScenario", () => {
   it("defaults the frame budget", () =>
     expect(parseScenario(validScenario, "fixture.json").frames).toBe(DEFAULT_FRAME_COUNT));
 
-  it("reads an explicit allowErrors, expectFailure, expectsWindowClose and windowFlags", () => {
+  it("reads an explicit allowErrors, expectFailure, expectsExitAfter and windowFlags", () => {
     const overrides = {
       allowErrors: true,
       expectFailure: true,
-      expectsWindowClose: true,
+      expectsExitAfter: "the window closed before frame",
       windowFlags: ["--force-client-decorations"],
     };
 

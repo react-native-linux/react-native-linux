@@ -22,7 +22,7 @@ const baseScenario: Scenario = {
   bundle: "pressable.js",
   expect: ["pressable: topClick"],
   expectFailure: false,
-  expectsWindowClose: false,
+  expectsExitAfter: null,
   frameBudget: null,
   frames: 600,
   injectProtocolError: false,

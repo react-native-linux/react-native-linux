@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  describeCompositorCrash,
   describeRejectedTraceFailures,
   describeTraceFailures,
   findErrorLines,
@@ -116,21 +117,32 @@ describe("describeRejectedTraceFailures", () => {
   });
 });
 
+describe("describeCompositorCrash", () => {
+  it("reports nothing for a null signal", () => {
+    expect(describeCompositorCrash(null)).toEqual([]);
+  });
+
+  it("reports the signal name that killed the compositor", () => {
+    expect(describeCompositorCrash("SIGABRT")).toEqual(["cage signal SIGABRT"]);
+  });
+});
+
 describe("resolveExpectedOutcome", () => {
   const scenario = parseScenario(validScenario, "fixture.json");
   const negativeControl = { ...scenario, expectFailure: true };
+  const noCrash = { signal: null, trace: "" };
 
   it("passes failures through unchanged when expectFailure is not set", () => {
-    expect(resolveExpectedOutcome(scenario, ["boom"], "")).toEqual(["boom"]);
-    expect(resolveExpectedOutcome(scenario, [], "")).toEqual([]);
+    expect(resolveExpectedOutcome(scenario, ["boom"], noCrash)).toEqual(["boom"]);
+    expect(resolveExpectedOutcome(scenario, [], noCrash)).toEqual([]);
   });
 
   it("turns a failing run into a pass when expectFailure is set", () => {
-    expect(resolveExpectedOutcome(negativeControl, ["boom"], "")).toEqual([]);
+    expect(resolveExpectedOutcome(negativeControl, ["boom"], noCrash)).toEqual([]);
   });
 
   it("fails a run with no failures when expectFailure is set", () => {
-    expect(resolveExpectedOutcome(negativeControl, [], "")).toEqual([
+    expect(resolveExpectedOutcome(negativeControl, [], noCrash)).toEqual([
       "expectFailure is set, but the scenario produced no failures",
     ]);
   });
@@ -140,8 +152,14 @@ describe("resolveExpectedOutcome", () => {
     const trace = "Broken pipe (os error 32)";
     const invertible = describeTraceFailures(control, trace);
 
-    expect(resolveExpectedOutcome(control, invertible, trace)).toEqual([
+    expect(resolveExpectedOutcome(control, invertible, { signal: null, trace })).toEqual([
       'the trace produced the rejected "Broken pipe"',
+    ]);
+  });
+
+  it("never inverts away a compositor crash, even once expectFailure clears every other failure", () => {
+    expect(resolveExpectedOutcome(negativeControl, ["boom"], { signal: "SIGABRT", trace: "" })).toEqual([
+      "cage signal SIGABRT",
     ]);
   });
 });
