@@ -62,6 +62,7 @@ const scopedSourcePaths: readonly string[] = [
   "packages/core/src/TextInputV3State.cpp",
   "packages/core/src/TextTransform.cpp",
   "packages/core/src/ToplevelState.cpp",
+  "packages/core/src/GpuResourceInvalidation.cpp",
   "packages/core/src/VulkanResultPolicy.cpp",
   "packages/core/src/WaylandDispatchDiagnostics.cpp",
   "packages/core/src/WaylandSerialLedger.cpp",

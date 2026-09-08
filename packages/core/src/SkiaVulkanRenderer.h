@@ -1,5 +1,6 @@
 #pragma once
 
+#include "GpuResourceInvalidation.h"
 #include "RendererLadder.h"
 #include "RetainedScene.h"
 #include "SurfaceCommitGate.h"
@@ -12,7 +13,9 @@
 #include "include/gpu/vk/VulkanExtensions.h"
 
 #include <cstdint>
+#include <deque>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 #include <vulkan/vulkan_core.h>
@@ -71,6 +74,13 @@ namespace react_native_linux {
  * never seen in production — a lost surface on an output hotplug, a lost device on resume — a reviewed table
  * entry rather than a missing `if`. See *VkResult policy* in docs/cpp-toolchain.md.
  *
+ * The invalidation contract for a lost device is `GpuResourceInvalidation.h` and this class is its only executor.
+ * `recreateDevice` walks `kGpuCachedResources` in order and drops every entry the table marks device-owned before
+ * the `VkDevice` behind them is destroyed, so no handle created on the lost device can reach the fresh one; the
+ * entries the table marks as held in host memory are re-uploaded on first use and are deliberately untouched.
+ * `dropDeviceOwnedResource` switches over the enumeration without a default, which makes a cache added to this
+ * process later a compile error here rather than a garbled frame after a resume.
+ *
  * Threading contract: every member runs on the thread that owns the process run loop, the same thread the Wayland
  * connection is dispatched on. Nothing here is safe to call concurrently.
  */
@@ -86,6 +96,7 @@ public:
 
     void resize(WindowSize size) override;
     void injectSwapchainLossOnNextFrame() noexcept;
+    void injectDeviceLossOnNextFrame() noexcept;
 
     /**
      * The device this renderer came up on, as `RendererLadder.h`'s driver identity: the record persisted for the
@@ -114,6 +125,9 @@ private:
     facebook::react::Rect fullSurfaceRect() const noexcept;
     void applyRecovery(VulkanRecovery recovery, VkResult result, const char* operation);
     void recreateSurface();
+    void recreateDevice();
+    void dropDeviceOwnedResource(GpuCachedResource resource);
+    std::optional<VkResult> takeInjectedAcquireResult() noexcept;
     void createInstance();
     void createWaylandSurface();
     void selectPhysicalDevice();
@@ -154,7 +168,7 @@ private:
     uint32_t consecutiveAcquireStarvations_{0};
     SurfaceCommitFault pendingSurfaceCommitFault_{SurfaceCommitFault::None};
     SurfaceCommitAction lastSurfaceCommitAction_{SurfaceCommitAction::AttachBuffer};
-    bool debugSwapchainLossPending_{false};
+    std::deque<VkResult> debugInjectedAcquireResults_;
 };
 
 /**

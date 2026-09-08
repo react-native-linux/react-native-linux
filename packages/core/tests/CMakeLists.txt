@@ -97,6 +97,7 @@ add_executable(rnl_core_tests
     TextInputSessionTest.cpp
     ToplevelStateTest.cpp
     UpstreamTestDriftOracleTest.cpp
+    GpuResourceInvalidationTest.cpp
     SurfaceCommitGateTest.cpp
     VulkanResultPolicyTest.cpp
     WaylandDispatchDiagnosticsTest.cpp
@@ -143,6 +144,7 @@ add_executable(rnl_core_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputV3State.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextTransform.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ToplevelState.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/GpuResourceInvalidation.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/SurfaceCommitGate.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/VulkanResultPolicy.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/WaylandDispatchDiagnostics.cpp

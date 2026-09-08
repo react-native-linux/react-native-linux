@@ -12,6 +12,8 @@ VulkanRecovery vulkanRecoveryFor(int32_t result) noexcept {
         return VulkanRecovery::RecreateSwapchain;
     case kVulkanErrorSurfaceLost:
         return VulkanRecovery::RecreateSurface;
+    case kVulkanErrorDeviceLost:
+        return VulkanRecovery::RecreateDevice;
     case kVulkanTimeout:
     case kVulkanNotReady:
         return VulkanRecovery::RetryNextFrame;

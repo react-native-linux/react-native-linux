@@ -1014,14 +1014,17 @@ int main(int argc, char** argv) {
                                                       "the compositor does not advertise zwp_text_input_manager_v3");
             }
 
-            // The recreation path of the VkResult policy has no other trigger a developer can pull: a headless
-            // compositor never resizes the window and never loses the surface, so without this the swapchain rebuild
-            // is only ever reached on a real desktop by closing a lid. One injected VK_ERROR_OUT_OF_DATE_KHR at the
-            // first acquire makes the frame after it a rebuilt swapchain and a full repaint. See *VkResult policy*
-            // in docs/cpp-toolchain.md.
+            // The recreation paths of the VkResult policy have no other trigger a developer can pull: a headless
+            // compositor never resizes the window, never loses the surface and never resets the GPU, so without this
+            // they are only ever reached on a real desktop by closing a lid or updating a driver. One injected
+            // VK_ERROR_OUT_OF_DATE_KHR at the first acquire rebuilds the swapchain, and one injected
+            // VK_ERROR_DEVICE_LOST at the second rebuilds the device, the queue and the GrDirectContext and drops
+            // every resource GpuResourceInvalidation.h marks device-owned. Both frames after them are full
+            // repaints. See *VkResult policy* in docs/cpp-toolchain.md.
             // Vulkan-only: the raster rung has no swapchain to lose and no surface-commit state machine to fault.
             if (parsedArguments.windowDebug && broughtUp.vulkanRenderer != nullptr) {
                 broughtUp.vulkanRenderer->injectSwapchainLossOnNextFrame();
+                broughtUp.vulkanRenderer->injectDeviceLossOnNextFrame();
             }
 
             AutomationChannel automation;
