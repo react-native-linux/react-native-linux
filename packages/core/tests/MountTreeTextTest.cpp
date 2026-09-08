@@ -47,6 +47,16 @@ TEST(MountTreeTextTest, RendersTwoCoordinatesThatDifferBeyondSixDigitsDifferentl
               "<rn-view layoutMetrics-frame=\"{x:0.1234567,y:0.1234568,width:0,height:0}\" />\n");
 }
 
+TEST(MountTreeTextTest, EscapesTheCharactersATestIdCannotCarryInAnAttribute) {
+    SceneNodes nodes;
+
+    nodes[1] = makeNode(1, 0, "View", {});
+    nodes[1].testId = "a&b<c\"d";
+
+    EXPECT_EQ(renderMountTree(nodes),
+              "<rn-view layoutMetrics-frame=\"{x:0,y:0,width:0,height:0}\" testID=\"a&amp;b&lt;c&quot;d\" />\n");
+}
+
 TEST(MountTreeTextTest, RendersTheTestIdWhenTheNodeCarriesOne) {
     SceneNodes nodes;
 

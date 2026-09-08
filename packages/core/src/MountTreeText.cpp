@@ -31,6 +31,34 @@ std::string formatCoordinate(facebook::react::Float coordinate) {
     return std::string(buffer.data(), formatted.ptr);
 }
 
+/**
+ * The three characters an attribute value cannot carry literally. A `testID` is authored in JavaScript and is
+ * whatever the bundle put there, so an unescaped one could close the attribute and make the rendered tree parse
+ * as a different tree than the one that mounted.
+ */
+std::string escapeAttributeValue(const std::string& value) {
+    std::string escaped;
+
+    for (char character : value) {
+        switch (character) {
+        case '&':
+            escaped += "&amp;";
+            break;
+        case '<':
+            escaped += "&lt;";
+            break;
+        case '"':
+            escaped += "&quot;";
+            break;
+        default:
+            escaped.push_back(character);
+            break;
+        }
+    }
+
+    return escaped;
+}
+
 std::string formatFrame(const facebook::react::Rect& frame) {
     return "{x:" + formatCoordinate(frame.origin.x) + ",y:" + formatCoordinate(frame.origin.y) +
            ",width:" + formatCoordinate(frame.size.width) + ",height:" + formatCoordinate(frame.size.height) + "}";
@@ -60,7 +88,7 @@ void appendNode(const SceneNodes& nodes, facebook::react::Tag tag, size_t depth,
     rendered += indent + "<" + name + " layoutMetrics-frame=\"" + formatFrame(node.layoutMetrics.frame) + "\"";
 
     if (!node.testId.empty()) {
-        rendered += " testID=\"" + node.testId + "\"";
+        rendered += " testID=\"" + escapeAttributeValue(node.testId) + "\"";
     }
 
     if (node.childTags.empty()) {
