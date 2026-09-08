@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Activation.h"
 #include "Appearance.h"
 #include "DimensionsSource.h"
 
@@ -21,6 +22,7 @@ namespace react_native_linux {
 
 class LinuxAppearanceModule;
 class LinuxDeviceInfoModule;
+class LinuxLinkingModule;
 
 /**
  * The TurboModules this platform registers, and the single `TurboModuleBinding` that exposes them to JavaScript
@@ -62,6 +64,13 @@ public:
      */
     AppearanceModel& appearance() noexcept;
 
+    /**
+     * The state behind `Linking.getInitialURL()` and the `url` device event (#363). Whoever decides an activation
+     * URL writes it: `WindowSession` seeds it from this process's own launch `argv`, and later
+     * `SingleInstanceCoordinator` feeds it a later instance's forwarded `argv`.
+     */
+    ActivationModel& activation() noexcept;
+
     void install(facebook::jsi::Runtime& runtime);
 
     /**
@@ -78,6 +87,8 @@ private:
     std::shared_ptr<LinuxDeviceInfoModule> deviceInfoModule_;
     std::shared_ptr<AppearanceModel> appearanceModel_;
     std::shared_ptr<LinuxAppearanceModule> appearanceModule_;
+    std::shared_ptr<ActivationModel> activationModel_;
+    std::shared_ptr<LinuxLinkingModule> linkingModule_;
     std::unordered_map<std::string_view, ModuleFactory> moduleFactories_;
 };
 

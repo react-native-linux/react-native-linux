@@ -49,6 +49,7 @@ file(GLOB RNL_UPSTREAM_TIMELINE_TESTS
 # which links react_renderer_element for the whole upstream tranche.
 
 add_executable(rnl_core_tests
+    ActivationTest.cpp
     ActivityIndicatorTest.cpp
     AutomationProtocolTest.cpp
     AnimatedHitTestTest.cpp
@@ -93,6 +94,7 @@ add_executable(rnl_core_tests
     ScrollTest.cpp
     SwitchTest.cpp
     ShadowTreeCommitTest.cpp
+    SingleInstanceActivationTest.cpp
     TextRasterizationPolicyTest.cpp
     TextTransformTest.cpp
     ThreadingConformanceTest.cpp
@@ -111,6 +113,7 @@ add_executable(rnl_core_tests
     ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/DecayAnimationDriverTest.cpp
     ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/EventAnimationDriverTests.cpp
     ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/ManagedPropsMountingOverrideTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/Activation.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ActivityIndicatorContent.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/AnimationFrameQueue.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/Appearance.cpp
@@ -140,6 +143,7 @@ add_executable(rnl_core_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/SeededTestScheduler.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ScrollEventCadence.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ScrollPhysics.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/SingleInstanceActivation.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/SwitchComponent.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/SwitchContent.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputComponent.cpp

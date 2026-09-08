@@ -72,7 +72,8 @@ namespace react_native_linux {
  */
 class WindowSession final {
 public:
-    WindowSession(const std::string& bundlePath, WindowSize size);
+    WindowSession(const std::string& bundlePath, WindowSize size,
+                  std::optional<std::string> initialActivationUrl = std::nullopt);
     WindowSession(const WindowSession&) = delete;
     WindowSession(WindowSession&&) = delete;
     WindowSession& operator=(const WindowSession&) = delete;
@@ -87,6 +88,12 @@ public:
      */
     void setTextInputFocusSink(TextInputFocusSink* textInputFocusSink);
     void deliverInput(const std::vector<InputEvent>& events);
+
+    /**
+     * Feeds an activation URL to `Linking` (#363): this process's own launch `argv`, seeded once before the
+     * bundle loads, or a later instance's forwarded `argv`, delivered as it arrives. See `ActivationModel`.
+     */
+    void deliverActivationUrl(const std::string& url);
 
     /** Delegates to `FabricHost::tickAnimations` once per drawn frame. */
     void tickAnimations(std::chrono::steady_clock::time_point now);
