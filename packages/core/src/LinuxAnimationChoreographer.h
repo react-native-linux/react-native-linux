@@ -1,10 +1,10 @@
 #pragma once
 
-#include <react/renderer/animationbackend/AnimationChoreographer.h>
-#include <react/renderer/uimanager/UIManagerAnimationBackend.h>
-
 #include <atomic>
 #include <chrono>
+
+#include <react/renderer/animationbackend/AnimationChoreographer.h>
+#include <react/renderer/uimanager/UIManagerAnimationBackend.h>
 
 namespace react_native_linux {
 

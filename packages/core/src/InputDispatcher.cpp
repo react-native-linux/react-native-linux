@@ -7,6 +7,11 @@
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
+
 #include <react/renderer/components/FBReactNativeSpec/EventEmitters.h>
 #include <react/renderer/components/FBReactNativeSpec/Props.h>
 #include <react/renderer/components/scrollview/ScrollViewShadowNode.h>
@@ -24,10 +29,6 @@
 #include <react/renderer/graphics/Size.h>
 #include <react/renderer/mounting/ShadowTree.h>
 #include <react/renderer/mounting/ShadowView.h>
-#include <string>
-#include <string_view>
-#include <utility>
-#include <vector>
 
 namespace react_native_linux {
 
@@ -702,7 +703,8 @@ void InputDispatcher::updateTextInput() {
     const std::optional<TextInputContentPurpose> contentPurpose = textInputController_.focusedContentPurpose();
     const std::optional<ReportedTextInputField> currentField =
         contentPurpose.has_value() && focusedNode_ != nullptr
-            ? std::optional{ReportedTextInputField{.tag = focusedNode_->getTag(), .contentPurpose = contentPurpose.value()}}
+            ? std::optional{ReportedTextInputField{.tag = focusedNode_->getTag(),
+                                                   .contentPurpose = contentPurpose.value()}}
             : std::nullopt;
 
     if (currentField == reportedTextInputField_) {

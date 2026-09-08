@@ -22,17 +22,12 @@ bool isContinuationByte(char byte) {
     return (static_cast<unsigned char>(byte) & kContinuationMask) == kContinuationValue;
 }
 
-bool isSupplementaryLeadByte(char byte) {
-    return static_cast<unsigned char>(byte) >= kFourByteLeadValue;
-}
+bool isSupplementaryLeadByte(char byte) { return static_cast<unsigned char>(byte) >= kFourByteLeadValue; }
 
-bool isWhitespaceByte(char byte) {
-    return byte == ' ' || (byte >= '\t' && byte <= '\r');
-}
+bool isWhitespaceByte(char byte) { return byte == ' ' || (byte >= '\t' && byte <= '\r'); }
 
 size_t countBoundariesBelow(const std::vector<size_t>& boundaries, size_t byteOffset) {
-    return static_cast<size_t>(std::lower_bound(boundaries.begin(), boundaries.end(), byteOffset) -
-                               boundaries.begin());
+    return static_cast<size_t>(std::lower_bound(boundaries.begin(), boundaries.end(), byteOffset) - boundaries.begin());
 }
 
 size_t boundaryBefore(const std::vector<size_t>& boundaries, size_t byteOffset, size_t fallback) {
@@ -206,9 +201,7 @@ size_t EditorModel::selectionBeginByte() const noexcept {
     return std::min(selection_.anchorByte, selection_.caretByte);
 }
 
-size_t EditorModel::selectionEndByte() const noexcept {
-    return std::max(selection_.anchorByte, selection_.caretByte);
-}
+size_t EditorModel::selectionEndByte() const noexcept { return std::max(selection_.anchorByte, selection_.caretByte); }
 
 bool EditorModel::hasSelection() const noexcept { return selection_.anchorByte != selection_.caretByte; }
 
@@ -340,10 +333,10 @@ bool EditorModel::applyPreedit(const std::string& preedit, int32_t cursorBegin, 
     // The protocol's cursor pair is a range inside the pre-edit rather than a single position: equal values are
     // a cursor and different ones are a selection the input method wants shown. `-1, -1` is a hidden cursor, and
     // the end of the composing run is where every toolkit puts the caret then.
-    const size_t anchorOffset = cursorBegin < 0 ? preedit.size()
-                                                : std::min(static_cast<size_t>(cursorBegin), preedit.size());
-    const size_t caretOffset = cursorEnd < 0 ? preedit.size()
-                                             : std::min(static_cast<size_t>(cursorEnd), preedit.size());
+    const size_t anchorOffset =
+        cursorBegin < 0 ? preedit.size() : std::min(static_cast<size_t>(cursorBegin), preedit.size());
+    const size_t caretOffset =
+        cursorEnd < 0 ? preedit.size() : std::min(static_cast<size_t>(cursorEnd), preedit.size());
 
     selection_ = EditorSelection{.anchorByte = clampToGrapheme(begin + anchorOffset),
                                  .caretByte = clampToGrapheme(begin + caretOffset)};

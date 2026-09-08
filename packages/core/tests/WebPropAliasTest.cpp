@@ -4,6 +4,8 @@
 #include <folly/dynamic.h>
 #include <gtest/gtest.h>
 #include <memory>
+#include <utility>
+
 #include <react/renderer/components/view/AccessibilityPrimitives.h>
 #include <react/renderer/components/view/AccessibilityProps.h>
 #include <react/renderer/components/view/ViewComponentDescriptor.h>
@@ -13,7 +15,6 @@
 #include <react/renderer/core/LayoutableShadowNode.h>
 #include <react/renderer/graphics/Rect.h>
 #include <react/renderer/mounting/ShadowTree.h>
-#include <utility>
 
 namespace {
 
@@ -54,14 +55,13 @@ struct RoleResolution final {
 class WebPropAliasTest : public ::testing::Test {
 protected:
     RoleResolution roleResolutionFor(folly::dynamic props) {
-        const std::shared_ptr<const ShadowNode> node =
-            makeConfiguredShadowNode(viewDescriptor_, 1, kSurfaceId, contextContainer_, std::move(props),
-                                     std::make_shared<const ChildList>());
+        const std::shared_ptr<const ShadowNode> node = makeConfiguredShadowNode(
+            viewDescriptor_, 1, kSurfaceId, contextContainer_, std::move(props), std::make_shared<const ChildList>());
         const auto& viewProps = std::static_pointer_cast<const ViewShadowNode>(node)->getConcreteProps();
 
         return RoleResolution{.traits = viewProps.accessibilityTraits,
-                             .accessibilityRole = viewProps.accessibilityRole,
-                             .role = viewProps.role};
+                              .accessibilityRole = viewProps.accessibilityRole,
+                              .role = viewProps.role};
     }
 
     Rect frameOf(Tag tag, const std::map<Tag, Rect>& frames) {
@@ -218,22 +218,22 @@ folly::dynamic absoluteBox(folly::dynamic extra, bool fixWidth = kFixDimension, 
 }
 
 TEST_F(WebPropAliasTest, InsetIsTheSameAsSettingAllFourPhysicalEdges) {
-    const Rect withAlias = frameOf(
-        11, commit(folly::dynamic::object("width", 300)("height", 300),
-                   {absoluteBox(folly::dynamic::object("inset", 20), kOmitDimension, kOmitDimension)}));
-    const Rect withCanonical = frameOf(
-        11, commit(folly::dynamic::object("width", 300)("height", 300),
-                   {absoluteBox(folly::dynamic::object("top", 20)("left", 20)("right", 20)("bottom", 20),
-                               kOmitDimension, kOmitDimension)}));
+    const Rect withAlias =
+        frameOf(11, commit(folly::dynamic::object("width", 300)("height", 300),
+                           {absoluteBox(folly::dynamic::object("inset", 20), kOmitDimension, kOmitDimension)}));
+    const Rect withCanonical =
+        frameOf(11, commit(folly::dynamic::object("width", 300)("height", 300),
+                           {absoluteBox(folly::dynamic::object("top", 20)("left", 20)("right", 20)("bottom", 20),
+                                        kOmitDimension, kOmitDimension)}));
 
     EXPECT_EQ(withAlias, withCanonical);
     EXPECT_EQ(withAlias, (Rect{.origin = {.x = 20, .y = 20}, .size = {.width = 260, .height = 260}}));
 }
 
 TEST_F(WebPropAliasTest, InsetInlineIsTheSameAsSettingLeftAndRight) {
-    const Rect withAlias = frameOf(
-        11, commit(folly::dynamic::object("width", 300)("height", 300),
-                   {absoluteBox(folly::dynamic::object("insetInline", 15), kOmitDimension, kFixDimension)}));
+    const Rect withAlias =
+        frameOf(11, commit(folly::dynamic::object("width", 300)("height", 300),
+                           {absoluteBox(folly::dynamic::object("insetInline", 15), kOmitDimension, kFixDimension)}));
     const Rect withCanonical = frameOf(
         11, commit(folly::dynamic::object("width", 300)("height", 300),
                    {absoluteBox(folly::dynamic::object("left", 15)("right", 15), kOmitDimension, kFixDimension)}));
@@ -244,9 +244,9 @@ TEST_F(WebPropAliasTest, InsetInlineIsTheSameAsSettingLeftAndRight) {
 }
 
 TEST_F(WebPropAliasTest, InsetBlockIsTheSameAsSettingTopAndBottom) {
-    const Rect withAlias = frameOf(
-        11, commit(folly::dynamic::object("width", 300)("height", 300),
-                   {absoluteBox(folly::dynamic::object("insetBlock", 15), kFixDimension, kOmitDimension)}));
+    const Rect withAlias =
+        frameOf(11, commit(folly::dynamic::object("width", 300)("height", 300),
+                           {absoluteBox(folly::dynamic::object("insetBlock", 15), kFixDimension, kOmitDimension)}));
     const Rect withCanonical = frameOf(
         11, commit(folly::dynamic::object("width", 300)("height", 300),
                    {absoluteBox(folly::dynamic::object("top", 15)("bottom", 15), kFixDimension, kOmitDimension)}));
@@ -257,24 +257,20 @@ TEST_F(WebPropAliasTest, InsetBlockIsTheSameAsSettingTopAndBottom) {
 }
 
 TEST_F(WebPropAliasTest, StartIsTheSameAsLeftInLeftToRightDirection) {
-    const Rect withAlias = frameOf(
-        11, commit(folly::dynamic::object("width", 300)("height", 300), {absoluteBox(folly::dynamic::object(
-                                                                             "start", 25))}));
-    const Rect withCanonical = frameOf(
-        11, commit(folly::dynamic::object("width", 300)("height", 300), {absoluteBox(folly::dynamic::object(
-                                                                             "left", 25))}));
+    const Rect withAlias = frameOf(11, commit(folly::dynamic::object("width", 300)("height", 300),
+                                              {absoluteBox(folly::dynamic::object("start", 25))}));
+    const Rect withCanonical = frameOf(11, commit(folly::dynamic::object("width", 300)("height", 300),
+                                                  {absoluteBox(folly::dynamic::object("left", 25))}));
 
     EXPECT_EQ(withAlias.origin.x, withCanonical.origin.x);
     EXPECT_EQ(withAlias.origin.x, 25);
 }
 
 TEST_F(WebPropAliasTest, EndIsTheSameAsRightInLeftToRightDirection) {
-    const Rect withAlias = frameOf(
-        11, commit(folly::dynamic::object("width", 300)("height", 300), {absoluteBox(folly::dynamic::object(
-                                                                             "end", 20))}));
-    const Rect withCanonical = frameOf(
-        11, commit(folly::dynamic::object("width", 300)("height", 300), {absoluteBox(folly::dynamic::object(
-                                                                             "right", 20))}));
+    const Rect withAlias = frameOf(11, commit(folly::dynamic::object("width", 300)("height", 300),
+                                              {absoluteBox(folly::dynamic::object("end", 20))}));
+    const Rect withCanonical = frameOf(11, commit(folly::dynamic::object("width", 300)("height", 300),
+                                                  {absoluteBox(folly::dynamic::object("right", 20))}));
 
     EXPECT_EQ(withAlias.origin.x, withCanonical.origin.x);
     EXPECT_EQ(withAlias.origin.x, 300 - 50 - 20);
@@ -288,9 +284,8 @@ TEST_F(WebPropAliasTest, EndIsTheSameAsRightInLeftToRightDirection) {
  * mapping that always sent `start` to `left` and `end` to `right` would still pass every test above.
  */
 TEST_F(WebPropAliasTest, StartIsTheSameAsRightInRightToLeftDirection) {
-    const Rect withAlias =
-        frameOf(11, commit(folly::dynamic::object("width", 300)("height", 300)("direction", "rtl"),
-                           {absoluteBox(folly::dynamic::object("start", 25))}));
+    const Rect withAlias = frameOf(11, commit(folly::dynamic::object("width", 300)("height", 300)("direction", "rtl"),
+                                              {absoluteBox(folly::dynamic::object("start", 25))}));
     const Rect withCanonical =
         frameOf(11, commit(folly::dynamic::object("width", 300)("height", 300)("direction", "rtl"),
                            {absoluteBox(folly::dynamic::object("right", 25))}));
@@ -300,9 +295,8 @@ TEST_F(WebPropAliasTest, StartIsTheSameAsRightInRightToLeftDirection) {
 }
 
 TEST_F(WebPropAliasTest, EndIsTheSameAsLeftInRightToLeftDirection) {
-    const Rect withAlias =
-        frameOf(11, commit(folly::dynamic::object("width", 300)("height", 300)("direction", "rtl"),
-                           {absoluteBox(folly::dynamic::object("end", 20))}));
+    const Rect withAlias = frameOf(11, commit(folly::dynamic::object("width", 300)("height", 300)("direction", "rtl"),
+                                              {absoluteBox(folly::dynamic::object("end", 20))}));
     const Rect withCanonical =
         frameOf(11, commit(folly::dynamic::object("width", 300)("height", 300)("direction", "rtl"),
                            {absoluteBox(folly::dynamic::object("left", 20))}));
@@ -318,15 +312,13 @@ TEST_F(WebPropAliasTest, EndIsTheSameAsLeftInRightToLeftDirection) {
  * two disagree.
  */
 TEST_F(WebPropAliasTest, StartOutranksLeftWhichOutranksInsetInlineWhichOutranksInset) {
-    const Rect leftOverInset = frameOf(
-        11, commit(folly::dynamic::object("width", 300)("height", 300),
-                   {absoluteBox(folly::dynamic::object("left", 30)("inset", 5))}));
-    const Rect insetInlineOverInset = frameOf(
-        11, commit(folly::dynamic::object("width", 300)("height", 300),
-                   {absoluteBox(folly::dynamic::object("insetInline", 12)("inset", 5))}));
-    const Rect startOverLeft = frameOf(
-        11, commit(folly::dynamic::object("width", 300)("height", 300),
-                   {absoluteBox(folly::dynamic::object("start", 40)("left", 30))}));
+    const Rect leftOverInset = frameOf(11, commit(folly::dynamic::object("width", 300)("height", 300),
+                                                  {absoluteBox(folly::dynamic::object("left", 30)("inset", 5))}));
+    const Rect insetInlineOverInset =
+        frameOf(11, commit(folly::dynamic::object("width", 300)("height", 300),
+                           {absoluteBox(folly::dynamic::object("insetInline", 12)("inset", 5))}));
+    const Rect startOverLeft = frameOf(11, commit(folly::dynamic::object("width", 300)("height", 300),
+                                                  {absoluteBox(folly::dynamic::object("start", 40)("left", 30))}));
 
     EXPECT_EQ(leftOverInset.origin.x, 30);
     EXPECT_EQ(insetInlineOverInset.origin.x, 12);
@@ -350,9 +342,8 @@ TEST_F(WebPropAliasTest, GapIsTheSameAsColumnGapInARowContainer) {
 TEST_F(WebPropAliasTest, GapIsTheSameAsRowGapInAColumnContainer) {
     const std::map<Tag, Rect> withAlias = commit(folly::dynamic::object("width", 100)("height", 300)("gap", 10),
                                                  {box(folly::dynamic::object()), box(folly::dynamic::object())});
-    const std::map<Tag, Rect> withCanonical =
-        commit(folly::dynamic::object("width", 100)("height", 300)("rowGap", 10),
-               {box(folly::dynamic::object()), box(folly::dynamic::object())});
+    const std::map<Tag, Rect> withCanonical = commit(folly::dynamic::object("width", 100)("height", 300)("rowGap", 10),
+                                                     {box(folly::dynamic::object()), box(folly::dynamic::object())});
 
     EXPECT_EQ(frameOf(12, withAlias).origin.y, frameOf(12, withCanonical).origin.y);
     EXPECT_EQ(frameOf(12, withAlias).origin.y, 60);
@@ -375,18 +366,16 @@ TEST_F(WebPropAliasTest, MarginInlineIsTheSameAsMarginLeftAndMarginRight) {
 TEST_F(WebPropAliasTest, MarginBlockIsTheSameAsMarginTopAndMarginBottom) {
     const Rect withAlias = frameOf(11, commit(folly::dynamic::object("width", 100)("height", 300),
                                               {box(folly::dynamic::object("marginBlock", 10))}));
-    const Rect withCanonical =
-        frameOf(11, commit(folly::dynamic::object("width", 100)("height", 300),
-                           {box(folly::dynamic::object("marginTop", 10)("marginBottom", 10))}));
+    const Rect withCanonical = frameOf(11, commit(folly::dynamic::object("width", 100)("height", 300),
+                                                  {box(folly::dynamic::object("marginTop", 10)("marginBottom", 10))}));
 
     EXPECT_EQ(withAlias.origin.y, withCanonical.origin.y);
     EXPECT_EQ(withAlias.origin.y, 10);
 }
 
 TEST_F(WebPropAliasTest, PaddingInlineIsTheSameAsPaddingLeftAndPaddingRight) {
-    const Rect withAlias =
-        frameOf(11, commit(folly::dynamic::object("width", 300)("height", 100)("paddingInline", 10),
-                           {box(folly::dynamic::object())}));
+    const Rect withAlias = frameOf(11, commit(folly::dynamic::object("width", 300)("height", 100)("paddingInline", 10),
+                                              {box(folly::dynamic::object())}));
     const Rect withCanonical =
         frameOf(11, commit(folly::dynamic::object("width", 300)("height", 100)("paddingLeft", 10)("paddingRight", 10),
                            {box(folly::dynamic::object())}));
@@ -396,9 +385,8 @@ TEST_F(WebPropAliasTest, PaddingInlineIsTheSameAsPaddingLeftAndPaddingRight) {
 }
 
 TEST_F(WebPropAliasTest, PaddingBlockIsTheSameAsPaddingTopAndPaddingBottom) {
-    const Rect withAlias =
-        frameOf(11, commit(folly::dynamic::object("width", 100)("height", 300)("paddingBlock", 10),
-                           {box(folly::dynamic::object())}));
+    const Rect withAlias = frameOf(11, commit(folly::dynamic::object("width", 100)("height", 300)("paddingBlock", 10),
+                                              {box(folly::dynamic::object())}));
     const Rect withCanonical =
         frameOf(11, commit(folly::dynamic::object("width", 100)("height", 300)("paddingTop", 10)("paddingBottom", 10),
                            {box(folly::dynamic::object())}));
@@ -413,8 +401,7 @@ TEST_F(WebPropAliasTest, PaddingBlockIsTheSameAsPaddingTopAndPaddingBottom) {
  */
 TEST_F(WebPropAliasTest, PaddingLeftOutranksPaddingInline) {
     const Rect frame =
-        frameOf(11, commit(folly::dynamic::object("width", 300)("height", 100)("paddingLeft", 30)("paddingInline",
-                                                                                                   5),
+        frameOf(11, commit(folly::dynamic::object("width", 300)("height", 100)("paddingLeft", 30)("paddingInline", 5),
                            {box(folly::dynamic::object())}));
 
     EXPECT_EQ(frame.origin.x, 30);

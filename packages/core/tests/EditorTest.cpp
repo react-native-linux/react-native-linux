@@ -10,10 +10,10 @@
 namespace {
 
 using react_native_linux::CaretMotion;
+using react_native_linux::clampedScrollOffset;
 using react_native_linux::clipboardText;
 using react_native_linux::EditorModel;
 using react_native_linux::EditorSelection;
-using react_native_linux::clampedScrollOffset;
 using react_native_linux::followedScrollOffset;
 using react_native_linux::segmentUtf8CodePoints;
 using react_native_linux::setClipboardText;

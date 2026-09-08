@@ -54,7 +54,7 @@ bool shouldEmitOnOverrideChange(std::optional<ColorScheme> previousOverride, std
 }
 
 bool shouldEmitOnPortalChange(std::optional<ColorScheme> currentOverride, ColorScheme previousPortalColorScheme,
-                               ColorScheme nextPortalColorScheme) {
+                              ColorScheme nextPortalColorScheme) {
     return !currentOverride.has_value() && previousPortalColorScheme != nextPortalColorScheme;
 }
 

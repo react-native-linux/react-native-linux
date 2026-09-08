@@ -1,7 +1,6 @@
 #pragma once
 
 #include "RetainedScene.h"
-
 #include "include/core/SkColor.h"
 
 class SkCanvas;

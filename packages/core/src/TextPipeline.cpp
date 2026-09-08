@@ -7,11 +7,10 @@
 #include "PinnedFontFamilies.h"
 #include "TextGeometry.h"
 #include "TextTransform.h"
-
-#include "include/core/SkFontTypes.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkFontMgr.h"
 #include "include/core/SkFontStyle.h"
+#include "include/core/SkFontTypes.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRefCnt.h"
@@ -29,21 +28,21 @@
 #include "modules/skunicode/include/SkUnicode.h"
 #include "modules/skunicode/include/SkUnicode_icu.h"
 
-#include <react/renderer/attributedstring/TextAttributes.h>
-#include <react/renderer/attributedstring/primitives.h>
-#include <react/renderer/graphics/Color.h>
-
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdlib>
+#include <iostream>
 #include <memory>
 #include <mutex>
-#include <iostream>
 #include <optional>
 #include <string>
 #include <unordered_set>
 #include <vector>
+
+#include <react/renderer/attributedstring/TextAttributes.h>
+#include <react/renderer/attributedstring/primitives.h>
+#include <react/renderer/graphics/Color.h>
 
 namespace react_native_linux {
 
@@ -92,11 +91,9 @@ SkColor toSkColor(facebook::react::SharedColor color) {
 }
 
 float resolvedFontSize(const facebook::react::TextAttributes& attributes) {
-    const float fontSize = std::isnan(attributes.fontSize) ? kDefaultFontSize
-                                                           : static_cast<float>(attributes.fontSize);
-    const float multiplier = std::isnan(attributes.fontSizeMultiplier)
-                                 ? 1.0F
-                                 : static_cast<float>(attributes.fontSizeMultiplier);
+    const float fontSize = std::isnan(attributes.fontSize) ? kDefaultFontSize : static_cast<float>(attributes.fontSize);
+    const float multiplier =
+        std::isnan(attributes.fontSizeMultiplier) ? 1.0F : static_cast<float>(attributes.fontSizeMultiplier);
 
     return fontSize * multiplier;
 }
@@ -153,9 +150,8 @@ void reportGenericFontFamilyResolution(const std::string& family, const SkString
     static std::unordered_set<std::string> reportedFamilies;
 
     if (reportedFamilies.insert(family).second) {
-        reportNativeError("text",
-                          "fontFamily \"" + family + "\" resolved to \"" + std::string(resolved.c_str()) +
-                              "\" via fontconfig");
+        reportNativeError("text", "fontFamily \"" + family + "\" resolved to \"" + std::string(resolved.c_str()) +
+                                      "\" via fontconfig");
     }
 }
 
@@ -217,14 +213,14 @@ std::vector<SkString> toFontFamilies(const facebook::react::TextAttributes& attr
     std::vector<SkString> families;
 
     switch (classifyFontFamilyRequest(attributes.fontFamily)) {
-        case FontFamilyRequestKind::VendoredDefault:
-            break;
-        case FontFamilyRequestKind::FontconfigGeneric:
-            families = resolveGenericFamily(attributes, fontCollection);
-            break;
-        case FontFamilyRequestKind::Named:
-            families = resolveNamedFamily(attributes, fontCollection);
-            break;
+    case FontFamilyRequestKind::VendoredDefault:
+        break;
+    case FontFamilyRequestKind::FontconfigGeneric:
+        families = resolveGenericFamily(attributes, fontCollection);
+        break;
+    case FontFamilyRequestKind::Named:
+        families = resolveNamedFamily(attributes, fontCollection);
+        break;
     }
 
     families.emplace_back(kBundledFontFamily);
@@ -240,15 +236,15 @@ skia::textlayout::TextDecoration toDecoration(const facebook::react::TextAttribu
     }
 
     switch (attributes.textDecorationLineType.value()) {
-        case facebook::react::TextDecorationLineType::Underline:
-            return skia::textlayout::TextDecoration::kUnderline;
-        case facebook::react::TextDecorationLineType::Strikethrough:
-            return skia::textlayout::TextDecoration::kLineThrough;
-        case facebook::react::TextDecorationLineType::UnderlineStrikethrough:
-            return static_cast<skia::textlayout::TextDecoration>(skia::textlayout::TextDecoration::kUnderline |
-                                                                 skia::textlayout::TextDecoration::kLineThrough);
-        case facebook::react::TextDecorationLineType::None:
-            return skia::textlayout::TextDecoration::kNoDecoration;
+    case facebook::react::TextDecorationLineType::Underline:
+        return skia::textlayout::TextDecoration::kUnderline;
+    case facebook::react::TextDecorationLineType::Strikethrough:
+        return skia::textlayout::TextDecoration::kLineThrough;
+    case facebook::react::TextDecorationLineType::UnderlineStrikethrough:
+        return static_cast<skia::textlayout::TextDecoration>(skia::textlayout::TextDecoration::kUnderline |
+                                                             skia::textlayout::TextDecoration::kLineThrough);
+    case facebook::react::TextDecorationLineType::None:
+        return skia::textlayout::TextDecoration::kNoDecoration;
     }
 
     return skia::textlayout::TextDecoration::kNoDecoration;
@@ -260,16 +256,16 @@ skia::textlayout::TextDecorationStyle toDecorationStyle(const facebook::react::T
     }
 
     switch (attributes.textDecorationStyle.value()) {
-        case facebook::react::TextDecorationStyle::Solid:
-            return skia::textlayout::TextDecorationStyle::kSolid;
-        case facebook::react::TextDecorationStyle::Double:
-            return skia::textlayout::TextDecorationStyle::kDouble;
-        case facebook::react::TextDecorationStyle::Dotted:
-            return skia::textlayout::TextDecorationStyle::kDotted;
-        case facebook::react::TextDecorationStyle::Dashed:
-            return skia::textlayout::TextDecorationStyle::kDashed;
-        case facebook::react::TextDecorationStyle::Wavy:
-            return skia::textlayout::TextDecorationStyle::kWavy;
+    case facebook::react::TextDecorationStyle::Solid:
+        return skia::textlayout::TextDecorationStyle::kSolid;
+    case facebook::react::TextDecorationStyle::Double:
+        return skia::textlayout::TextDecorationStyle::kDouble;
+    case facebook::react::TextDecorationStyle::Dotted:
+        return skia::textlayout::TextDecorationStyle::kDotted;
+    case facebook::react::TextDecorationStyle::Dashed:
+        return skia::textlayout::TextDecorationStyle::kDashed;
+    case facebook::react::TextDecorationStyle::Wavy:
+        return skia::textlayout::TextDecorationStyle::kWavy;
     }
 
     return skia::textlayout::TextDecorationStyle::kSolid;
@@ -288,10 +284,11 @@ void applyTextShadow(skia::textlayout::TextStyle& style, const facebook::react::
     }
 
     const facebook::react::Size offset = attributes.textShadowOffset.value_or(facebook::react::Size{0.0F, 0.0F});
-    const float blurSigma = std::isnan(attributes.textShadowRadius) ? 0.0F : static_cast<float>(attributes.textShadowRadius);
+    const float blurSigma =
+        std::isnan(attributes.textShadowRadius) ? 0.0F : static_cast<float>(attributes.textShadowRadius);
 
-    style.addShadow(skia::textlayout::TextShadow{
-        toSkColor(attributes.textShadowColor), SkPoint::Make(offset.width, offset.height), blurSigma});
+    style.addShadow(skia::textlayout::TextShadow{toSkColor(attributes.textShadowColor),
+                                                 SkPoint::Make(offset.width, offset.height), blurSigma});
 }
 
 /**
@@ -387,19 +384,19 @@ skia::textlayout::TextAlign toTextAlign(const facebook::react::TextAttributes& a
     }
 
     switch (attributes.alignment.value()) {
-        case facebook::react::TextAlignment::Left:
-            return skia::textlayout::TextAlign::kLeft;
-        case facebook::react::TextAlignment::Right:
-            return skia::textlayout::TextAlign::kRight;
-        case facebook::react::TextAlignment::Center:
-            return skia::textlayout::TextAlign::kCenter;
-        case facebook::react::TextAlignment::Justified:
-            return skia::textlayout::TextAlign::kJustify;
-        case facebook::react::TextAlignment::End:
-            return skia::textlayout::TextAlign::kEnd;
-        case facebook::react::TextAlignment::Natural:
-        case facebook::react::TextAlignment::Start:
-            return skia::textlayout::TextAlign::kStart;
+    case facebook::react::TextAlignment::Left:
+        return skia::textlayout::TextAlign::kLeft;
+    case facebook::react::TextAlignment::Right:
+        return skia::textlayout::TextAlign::kRight;
+    case facebook::react::TextAlignment::Center:
+        return skia::textlayout::TextAlign::kCenter;
+    case facebook::react::TextAlignment::Justified:
+        return skia::textlayout::TextAlign::kJustify;
+    case facebook::react::TextAlignment::End:
+        return skia::textlayout::TextAlign::kEnd;
+    case facebook::react::TextAlignment::Natural:
+    case facebook::react::TextAlignment::Start:
+        return skia::textlayout::TextAlign::kStart;
     }
 
     return skia::textlayout::TextAlign::kStart;
@@ -502,8 +499,8 @@ void checkPinnedFontFamiliesResolve(SkFontMgr& assetFontManager) {
  * `checkPinnedFontFamiliesResolve` already confirmed resolves.
  */
 void reportResolvedDefaultFontFamily() {
-    std::cerr << "[rnl-text] default fontFamily resolved to \"" << kBundledFontFamily << "\" ("
-              << RNL_BUNDLED_FONT_DIR << "/" << kDefaultFontFamilyFileName << ")" << std::endl;
+    std::cerr << "[rnl-text] default fontFamily resolved to \"" << kBundledFontFamily << "\" (" << RNL_BUNDLED_FONT_DIR
+              << "/" << kDefaultFontFamilyFileName << ")" << std::endl;
 }
 
 struct TextPipelineState {
@@ -531,9 +528,8 @@ TextPipelineState& textPipelineState() {
 }
 
 facebook::react::Rect toRect(const SkRect& rect) {
-    return facebook::react::Rect{
-        .origin = facebook::react::Point{.x = rect.fLeft, .y = rect.fTop},
-        .size = facebook::react::Size{.width = rect.width(), .height = rect.height()}};
+    return facebook::react::Rect{.origin = facebook::react::Point{.x = rect.fLeft, .y = rect.fTop},
+                                 .size = facebook::react::Size{.width = rect.width(), .height = rect.height()}};
 }
 
 std::vector<facebook::react::Rect> toRects(const std::vector<skia::textlayout::TextBox>& boxes) {
@@ -573,21 +569,18 @@ facebook::react::Rect caretRectangle(skia::textlayout::Paragraph& paragraph, siz
     if (!following.empty()) {
         const SkRect& rect = following.front().rect;
 
-        return facebook::react::Rect{
-            .origin = facebook::react::Point{.x = rect.fLeft, .y = rect.fTop},
-            .size = facebook::react::Size{.width = kCaretWidth, .height = rect.height()}};
+        return facebook::react::Rect{.origin = facebook::react::Point{.x = rect.fLeft, .y = rect.fTop},
+                                     .size = facebook::react::Size{.width = kCaretWidth, .height = rect.height()}};
     }
 
     const std::vector<skia::textlayout::TextBox> preceding =
-        caretUtf16 == 0 ? std::vector<skia::textlayout::TextBox>{}
-                        : rangeBoxes(paragraph, caretUtf16 - 1, caretUtf16);
+        caretUtf16 == 0 ? std::vector<skia::textlayout::TextBox>{} : rangeBoxes(paragraph, caretUtf16 - 1, caretUtf16);
 
     if (!preceding.empty()) {
         const SkRect& rect = preceding.back().rect;
 
-        return facebook::react::Rect{
-            .origin = facebook::react::Point{.x = rect.fRight, .y = rect.fTop},
-            .size = facebook::react::Size{.width = kCaretWidth, .height = rect.height()}};
+        return facebook::react::Rect{.origin = facebook::react::Point{.x = rect.fRight, .y = rect.fTop},
+                                     .size = facebook::react::Size{.width = kCaretWidth, .height = rect.height()}};
     }
 
     return facebook::react::Rect{.origin = facebook::react::Point{.x = 0, .y = 0},
@@ -679,17 +672,17 @@ facebook::react::AttributedString::Fragment slicedFragment(const facebook::react
  * keeping the style of the fragment it was cut from and the ellipsis taking the style of the fragment whose text
  * it stands for (react/react-native#37926).
  */
-facebook::react::AttributedString ellipsizedAttributedString(
-    const facebook::react::AttributedString& attributedString, const std::vector<std::string>& transformedTexts,
-    const EllipsizePlan& plan) {
+facebook::react::AttributedString ellipsizedAttributedString(const facebook::react::AttributedString& attributedString,
+                                                             const std::vector<std::string>& transformedTexts,
+                                                             const EllipsizePlan& plan) {
     const facebook::react::AttributedString::Fragments& fragments = attributedString.getFragments();
     facebook::react::AttributedString truncated;
 
     truncated.setBaseTextAttributes(attributedString.getBaseTextAttributes());
 
     for (const EllipsizePiece& piece : plan.leadingPieces) {
-        truncated.appendFragment(slicedFragment(fragments[piece.fragmentIndex],
-                                                transformedTexts[piece.fragmentIndex], piece));
+        truncated.appendFragment(
+            slicedFragment(fragments[piece.fragmentIndex], transformedTexts[piece.fragmentIndex], piece));
     }
 
     facebook::react::AttributedString::Fragment ellipsis = fragments[plan.ellipsisFragmentIndex];
@@ -699,8 +692,8 @@ facebook::react::AttributedString ellipsizedAttributedString(
     truncated.appendFragment(std::move(ellipsis));
 
     for (const EllipsizePiece& piece : plan.trailingPieces) {
-        truncated.appendFragment(slicedFragment(fragments[piece.fragmentIndex],
-                                                transformedTexts[piece.fragmentIndex], piece));
+        truncated.appendFragment(
+            slicedFragment(fragments[piece.fragmentIndex], transformedTexts[piece.fragmentIndex], piece));
     }
 
     return truncated;
@@ -740,8 +733,7 @@ layoutParagraphForField(const facebook::react::AttributedString& attributedStrin
     }
 
     const EllipsizePlan plan = searchEllipsizePlan(
-        side.value(), transformedTexts, segmentText(wholeText).graphemeStarts,
-        [&](const EllipsizePlan& candidate) {
+        side.value(), transformedTexts, segmentText(wholeText).graphemeStarts, [&](const EllipsizePlan& candidate) {
             return !buildAndLayoutParagraph(ellipsizedAttributedString(attributedString, transformedTexts, candidate),
                                             paragraphAttributes, maximumWidth)
                         ->didExceedMaxLines();
@@ -796,8 +788,8 @@ ParagraphMetrics measureParagraphMetrics(const facebook::react::AttributedString
     paragraph->getLineMetrics(lines);
 
     for (const skia::textlayout::LineMetrics& line : lines) {
-        metrics.lines.push_back(ParagraphLineMetrics{.width = static_cast<float>(line.fWidth),
-                                                     .height = static_cast<float>(line.fHeight)});
+        metrics.lines.push_back(
+            ParagraphLineMetrics{.width = static_cast<float>(line.fWidth), .height = static_cast<float>(line.fHeight)});
     }
 
     return metrics;
@@ -841,9 +833,8 @@ size_t utf16IndexAtPoint(const facebook::react::AttributedString& attributedStri
                          facebook::react::Point localPoint) {
     const std::unique_ptr<skia::textlayout::Paragraph> paragraph =
         layoutEditorParagraph(attributedString, paragraphAttributes, maximumWidth);
-    const skia::textlayout::PositionWithAffinity position =
-        paragraph->getGlyphPositionAtCoordinate(static_cast<SkScalar>(localPoint.x),
-                                                static_cast<SkScalar>(localPoint.y));
+    const skia::textlayout::PositionWithAffinity position = paragraph->getGlyphPositionAtCoordinate(
+        static_cast<SkScalar>(localPoint.x), static_cast<SkScalar>(localPoint.y));
 
     return position.position <= 0 ? 0 : static_cast<size_t>(position.position);
 }

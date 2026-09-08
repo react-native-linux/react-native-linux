@@ -6,6 +6,11 @@
 #include <latch>
 #include <map>
 #include <memory>
+#include <string>
+#include <thread>
+#include <utility>
+#include <vector>
+
 #include <react/renderer/components/root/RootShadowNode.h>
 #include <react/renderer/components/scrollview/ScrollViewComponentDescriptor.h>
 #include <react/renderer/components/scrollview/ScrollViewShadowNode.h>
@@ -25,10 +30,6 @@
 #include <react/renderer/graphics/Rect.h>
 #include <react/renderer/mounting/MountingCoordinator.h>
 #include <react/renderer/mounting/ShadowTree.h>
-#include <string>
-#include <thread>
-#include <utility>
-#include <vector>
 
 namespace {
 

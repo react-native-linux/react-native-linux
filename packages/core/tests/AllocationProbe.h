@@ -97,8 +97,7 @@ public:
  * How many global allocations one frame's worth of work cost. The callable is invoked directly rather than through
  * a `std::function`, so the measurement does not pay for its own indirection.
  */
-template <typename FrameCallable>
-std::size_t allocationsDuringFrame(const FrameCallable& frame) {
+template <typename FrameCallable> std::size_t allocationsDuringFrame(const FrameCallable& frame) {
     const AllocationScope scope;
 
     frame();
@@ -108,13 +107,9 @@ std::size_t allocationsDuringFrame(const FrameCallable& frame) {
 
 } // namespace react_native_linux
 
-void* operator new(std::size_t size) {
-    return react_native_linux::countedAllocation(size);
-}
+void* operator new(std::size_t size) { return react_native_linux::countedAllocation(size); }
 
-void* operator new[](std::size_t size) {
-    return react_native_linux::countedAllocation(size);
-}
+void* operator new[](std::size_t size) { return react_native_linux::countedAllocation(size); }
 
 void* operator new(std::size_t size, const std::nothrow_t&) noexcept {
     return react_native_linux::countedAllocationOrNull(size);
@@ -124,26 +119,14 @@ void* operator new[](std::size_t size, const std::nothrow_t&) noexcept {
     return react_native_linux::countedAllocationOrNull(size);
 }
 
-void operator delete(void* pointer) noexcept {
-    react_native_linux::countedRelease(pointer);
-}
+void operator delete(void* pointer) noexcept { react_native_linux::countedRelease(pointer); }
 
-void operator delete[](void* pointer) noexcept {
-    react_native_linux::countedRelease(pointer);
-}
+void operator delete[](void* pointer) noexcept { react_native_linux::countedRelease(pointer); }
 
-void operator delete(void* pointer, std::size_t) noexcept {
-    react_native_linux::countedRelease(pointer);
-}
+void operator delete(void* pointer, std::size_t) noexcept { react_native_linux::countedRelease(pointer); }
 
-void operator delete[](void* pointer, std::size_t) noexcept {
-    react_native_linux::countedRelease(pointer);
-}
+void operator delete[](void* pointer, std::size_t) noexcept { react_native_linux::countedRelease(pointer); }
 
-void operator delete(void* pointer, const std::nothrow_t&) noexcept {
-    react_native_linux::countedRelease(pointer);
-}
+void operator delete(void* pointer, const std::nothrow_t&) noexcept { react_native_linux::countedRelease(pointer); }
 
-void operator delete[](void* pointer, const std::nothrow_t&) noexcept {
-    react_native_linux::countedRelease(pointer);
-}
+void operator delete[](void* pointer, const std::nothrow_t&) noexcept { react_native_linux::countedRelease(pointer); }

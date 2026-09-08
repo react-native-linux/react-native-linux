@@ -1,10 +1,8 @@
 #include "LinuxMountingManager.h"
 #include "SceneTestSupport.h"
 
-#include <gtest/gtest.h>
-
 #include <folly/dynamic.h>
-
+#include <gtest/gtest.h>
 #include <string>
 #include <utility>
 #include <vector>
@@ -28,8 +26,7 @@ constexpr MountingTransaction::Number kLaterTransaction = 8;
 // `SceneTestSupport.h`'s `transactionOf` numbers every transaction 1; these tests assert on the number the
 // diagnostics record, so they need to choose it.
 MountingTransaction numberedTransactionOf(MountingTransaction::Number number, ShadowViewMutationList&& mutations) {
-    return MountingTransaction{kSurfaceTag, number, std::move(mutations),
-                               facebook::react::TransactionTelemetry{}};
+    return MountingTransaction{kSurfaceTag, number, std::move(mutations), facebook::react::TransactionTelemetry{}};
 }
 
 // One painted child mounted under the surface root, which is what every command case and the well-formed

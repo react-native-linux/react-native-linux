@@ -26,8 +26,7 @@ struct PinnedFontFamilyResolution {
  * sibling for "resolved, but from the wrong source" rather than "did not resolve at all". Kept pure so the
  * message text is table-tested against a fake resolution list without a live `SkFontMgr`.
  */
-std::optional<std::string> pinnedFontFamiliesFatalMessage(
-    const std::vector<PinnedFontFamilyResolution>& resolutions);
+std::optional<std::string> pinnedFontFamiliesFatalMessage(const std::vector<PinnedFontFamilyResolution>& resolutions);
 
 /**
  * Whether a resolved face's style is exactly the upright, normal-weight, normal-width style
@@ -43,4 +42,4 @@ std::optional<std::string> pinnedFontFamiliesFatalMessage(
  */
 bool resolvedStyleIsPinnedDefault(int weight, int width, int slant);
 
-}  // namespace react_native_linux
+} // namespace react_native_linux

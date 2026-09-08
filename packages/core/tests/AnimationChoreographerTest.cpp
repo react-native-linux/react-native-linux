@@ -1,13 +1,12 @@
 #include "LinuxAnimationChoreographer.h"
 
-#include <gtest/gtest.h>
-
-#include <react/renderer/animationbackend/AnimationBackend.h>
-
 #include <chrono>
 #include <cstdint>
+#include <gtest/gtest.h>
 #include <memory>
 #include <vector>
+
+#include <react/renderer/animationbackend/AnimationBackend.h>
 
 namespace {
 

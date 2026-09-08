@@ -1,9 +1,9 @@
 #include "ReactNativeFeatureFlagsOverridesLinux.h"
 
 #include <gtest/gtest.h>
-#include <react/featureflags/ReactNativeFeatureFlags.h>
-
 #include <memory>
+
+#include <react/featureflags/ReactNativeFeatureFlags.h>
 
 namespace {
 

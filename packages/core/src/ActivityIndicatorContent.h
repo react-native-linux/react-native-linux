@@ -2,9 +2,9 @@
 
 #include "RetainedScene.h"
 
-#include <react/renderer/graphics/Rect.h>
-
 #include <cstdint>
+
+#include <react/renderer/graphics/Rect.h>
 
 namespace react_native_linux {
 

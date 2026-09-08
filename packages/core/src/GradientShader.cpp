@@ -6,12 +6,6 @@
 #include "include/core/SkTileMode.h"
 #include "include/effects/SkGradient.h"
 
-#include <react/renderer/graphics/ColorStop.h>
-#include <react/renderer/graphics/Float.h>
-#include <react/renderer/graphics/LinearGradient.h>
-#include <react/renderer/graphics/RadialGradient.h>
-#include <react/renderer/graphics/ValueUnit.h>
-
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -21,6 +15,12 @@
 #include <optional>
 #include <variant>
 #include <vector>
+
+#include <react/renderer/graphics/ColorStop.h>
+#include <react/renderer/graphics/Float.h>
+#include <react/renderer/graphics/LinearGradient.h>
+#include <react/renderer/graphics/RadialGradient.h>
+#include <react/renderer/graphics/ValueUnit.h>
 
 namespace react_native_linux {
 
@@ -51,13 +51,9 @@ struct GradientRadii {
     float vertical{0.0F};
 };
 
-float toDegrees(float radians) {
-    return radians * kHalfTurnDegrees / std::numbers::pi_v<float>;
-}
+float toDegrees(float radians) { return radians * kHalfTurnDegrees / std::numbers::pi_v<float>; }
 
-float toRadians(float degrees) {
-    return degrees * std::numbers::pi_v<float> / kHalfTurnDegrees;
-}
+float toRadians(float degrees) { return degrees * std::numbers::pi_v<float> / kHalfTurnDegrees; }
 
 /**
  * Where one authored colour stop sits on the gradient line, as a fraction of it. A percentage is that fraction
@@ -81,8 +77,8 @@ std::optional<float> resolveStopPosition(const facebook::react::ValueUnit& posit
  * stop sits at 0 and an unpositioned last stop at 1, a position never moves backwards past the largest one before
  * it, and each run of unpositioned stops is spread evenly between the two positioned stops around it.
  */
-std::vector<facebook::react::ProcessedColorStop> fixedColorStops(
-    const std::vector<facebook::react::ColorStop>& colorStops, float gradientLineLength) {
+std::vector<facebook::react::ProcessedColorStop>
+fixedColorStops(const std::vector<facebook::react::ColorStop>& colorStops, float gradientLineLength) {
     std::vector<facebook::react::ProcessedColorStop> fixed(colorStops.size());
     float largestPositionSoFar = resolveStopPosition(colorStops.front().position, gradientLineLength).value_or(0.0F);
 
@@ -99,8 +95,8 @@ std::vector<facebook::react::ProcessedColorStop> fixedColorStops(
 
         if (position.has_value()) {
             largestPositionSoFar = std::max(position.value(), largestPositionSoFar);
-            fixed[index] = facebook::react::ProcessedColorStop{.color = colorStops[index].color,
-                                                              .position = largestPositionSoFar};
+            fixed[index] =
+                facebook::react::ProcessedColorStop{.color = colorStops[index].color, .position = largestPositionSoFar};
         }
     }
 
@@ -145,8 +141,7 @@ GradientRamp toGradientRamp(const std::vector<facebook::react::ColorStop>& color
 }
 
 SkGradient toSkGradient(const GradientRamp& ramp) {
-    return SkGradient{SkGradient::Colors{ramp.colors, ramp.positions, SkTileMode::kClamp},
-                      SkGradient::Interpolation{}};
+    return SkGradient{SkGradient::Colors{ramp.colors, ramp.positions, SkTileMode::kClamp}, SkGradient::Interpolation{}};
 }
 
 /**
@@ -207,8 +202,7 @@ GradientLine gradientLine(float angleDegrees, float width, float height) {
     const float halfWidth = width / 2;
     const float halfHeight = height / 2;
     const float cornerX = angle < kHalfTurnDegrees ? halfWidth : -halfWidth;
-    const float cornerY =
-        (angle < kQuarterTurnDegrees || angle >= kThreeQuarterTurnDegrees) ? halfHeight : -halfHeight;
+    const float cornerY = (angle < kQuarterTurnDegrees || angle >= kThreeQuarterTurnDegrees) ? halfHeight : -halfHeight;
     const float intercept = cornerY - (perpendicularSlope * cornerX);
     const float endX = intercept / (slope - perpendicularSlope);
     const float endY = (perpendicularSlope * endX) + intercept;
@@ -267,8 +261,7 @@ GradientRadii sideRadii(SkPoint center, float width, float height, bool isCloses
  * ellipse, so the semi-major axis follows from the ellipse equation through that corner.
  */
 GradientRadii cornerRadii(SkPoint center, float width, float height, bool isClosest, bool isCircle) {
-    const std::array<SkPoint, 4> corners{SkPoint{0, 0}, SkPoint{width, 0}, SkPoint{width, height},
-                                         SkPoint{0, height}};
+    const std::array<SkPoint, 4> corners{SkPoint{0, 0}, SkPoint{width, 0}, SkPoint{width, height}, SkPoint{0, height}};
     SkPoint chosenCorner = corners.front();
     float chosenDistance = std::hypot(center.fX - chosenCorner.fX, center.fY - chosenCorner.fY);
 

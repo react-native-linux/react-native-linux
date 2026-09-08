@@ -11,6 +11,9 @@
 
 namespace {
 
+using facebook::react::AccessibilityState;
+using facebook::react::AccessibilityValue;
+using facebook::react::Role;
 using react_native_linux::AccessibilityChange;
 using react_native_linux::AutomationCommand;
 using react_native_linux::AutomationError;
@@ -27,9 +30,6 @@ using react_native_linux::formatAutomationResponse;
 using react_native_linux::kMaxRequestBytes;
 using react_native_linux::parseAutomationRequest;
 using react_native_linux::reportNativeError;
-using facebook::react::AccessibilityState;
-using facebook::react::AccessibilityValue;
-using facebook::react::Role;
 using react_native_linux::SceneAccessibility;
 using react_native_linux::SceneNode;
 using react_native_linux::SceneNodes;
@@ -343,9 +343,9 @@ TEST(AutomationProtocol, PrunesSkipsAndExposesEachNodeByItsAccessibilityProps) {
          .accessibilityLabel = "",
          .expectedTags = {2}},
         {.what = "importantForAccessibility no drops the node but keeps its subtree",
-         .accessibility = SceneAccessibility{.accessible = true,
-                                             .importantForAccessibility =
-                                                 facebook::react::ImportantForAccessibility::No},
+         .accessibility =
+             SceneAccessibility{.accessible = true,
+                                .importantForAccessibility = facebook::react::ImportantForAccessibility::No},
          .accessibilityLabel = "Ignored",
          .expectedTags = {3}},
         {.what = "importantForAccessibility no-hide-descendants drops the subtree",
@@ -361,9 +361,8 @@ TEST(AutomationProtocol, PrunesSkipsAndExposesEachNodeByItsAccessibilityProps) {
     };
 
     for (const ExposureCase& exposure : cases) {
-        const folly::dynamic projected =
-            describeAccessibilityTree(buildProjectionTree(exposure.accessibility,
-                                                          std::string(exposure.accessibilityLabel)))["nodes"];
+        const folly::dynamic projected = describeAccessibilityTree(
+            buildProjectionTree(exposure.accessibility, std::string(exposure.accessibilityLabel)))["nodes"];
 
         EXPECT_EQ(projectedTags(projected), exposure.expectedTags) << exposure.what;
     }
@@ -398,7 +397,8 @@ TEST(AutomationProtocol, ResolvesTheRoleFromTheAuthoredNameThenTheAriaRole) {
     };
 
     for (const RoleCase& role : cases) {
-        const folly::dynamic projected = describeAccessibilityTree(buildProjectionTree(role.accessibility, ""))["nodes"];
+        const folly::dynamic projected =
+            describeAccessibilityTree(buildProjectionTree(role.accessibility, ""))["nodes"];
 
         ASSERT_EQ(projected.size(), 1U);
         EXPECT_EQ(projected[0]["role"].asString(), role.expectedRole);
@@ -506,9 +506,7 @@ TEST(AutomationProtocol, DropsAChildTheSceneNoLongerHoldsInsteadOfMarkingIt) {
     EXPECT_EQ(describeAccessibilityTree(nodes)["nodes"][0].count("children"), 0U);
 }
 
-TEST(AutomationProtocol, ProjectsAnEmptySceneAsNoNodes) {
-    EXPECT_TRUE(describeAccessibilityTree({})["nodes"].empty());
-}
+TEST(AutomationProtocol, ProjectsAnEmptySceneAsNoNodes) { EXPECT_TRUE(describeAccessibilityTree({})["nodes"].empty()); }
 
 TEST(AutomationProtocol, ReadsTheAccessibilityPropsOffTheMountedShadowView) {
     const std::shared_ptr<ViewProps> viewProps = std::make_shared<ViewProps>();

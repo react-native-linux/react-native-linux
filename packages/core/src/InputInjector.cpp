@@ -272,14 +272,14 @@ bool sendKeysym(Injector& injector, xkb_keysym_t keysym, uint32_t state) {
     const uint32_t held = modifierMaskOf(injector, keysym);
 
     if (held != kNoModifiers) {
-        injector.heldModifiers = state == kPressedState ? injector.heldModifiers | held
-                                                        : injector.heldModifiers & ~held;
+        injector.heldModifiers =
+            state == kPressedState ? injector.heldModifiers | held : injector.heldModifiers & ~held;
     }
 
     const uint32_t shifted = stroke.shifted && state == kPressedState ? injector.shiftMask : kNoModifiers;
 
-    zwp_virtual_keyboard_v1_modifiers(injector.keyboard, injector.heldModifiers | shifted, kNoModifiers,
-                                      kNoModifiers, kFirstLayout);
+    zwp_virtual_keyboard_v1_modifiers(injector.keyboard, injector.heldModifiers | shifted, kNoModifiers, kNoModifiers,
+                                      kFirstLayout);
     zwp_virtual_keyboard_v1_key(injector.keyboard, elapsedMilliseconds(injector), stroke.code, state);
 
     return true;
@@ -325,8 +325,8 @@ bool parseState(std::string_view name, uint32_t& state) {
 }
 
 void movePointer(Injector& injector, uint32_t x, uint32_t y) {
-    zwlr_virtual_pointer_v1_motion_absolute(injector.pointer, elapsedMilliseconds(injector), x, y,
-                                            injector.outputWidth, injector.outputHeight);
+    zwlr_virtual_pointer_v1_motion_absolute(injector.pointer, elapsedMilliseconds(injector), x, y, injector.outputWidth,
+                                            injector.outputHeight);
     zwlr_virtual_pointer_v1_frame(injector.pointer);
 }
 
@@ -430,8 +430,7 @@ bool runWheel(Injector& injector, std::string_view rest) {
         return reportError("wheel takes at most 838860 notches, which is what a wl_fixed_t axis value holds");
     }
 
-    const int32_t steps =
-        static_cast<int32_t>(notches) * (direction == "up" ? kUpwardWheelSign : kDownwardWheelSign);
+    const int32_t steps = static_cast<int32_t>(notches) * (direction == "up" ? kUpwardWheelSign : kDownwardWheelSign);
 
     zwlr_virtual_pointer_v1_axis_discrete(injector.pointer, elapsedMilliseconds(injector),
                                           WL_POINTER_AXIS_VERTICAL_SCROLL,

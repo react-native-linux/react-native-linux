@@ -13,10 +13,9 @@ constexpr int kPinnedDefaultWeight = 400;
 constexpr int kPinnedDefaultWidth = 5;
 constexpr int kPinnedDefaultSlant = 0;
 
-}  // namespace
+} // namespace
 
-std::optional<std::string> pinnedFontFamiliesFatalMessage(
-    const std::vector<PinnedFontFamilyResolution>& resolutions) {
+std::optional<std::string> pinnedFontFamiliesFatalMessage(const std::vector<PinnedFontFamilyResolution>& resolutions) {
     std::vector<std::string> missingFamilies;
 
     for (const PinnedFontFamilyResolution& resolution : resolutions) {
@@ -50,4 +49,4 @@ bool resolvedStyleIsPinnedDefault(int weight, int width, int slant) {
     return weight == kPinnedDefaultWeight && width == kPinnedDefaultWidth && slant == kPinnedDefaultSlant;
 }
 
-}  // namespace react_native_linux
+} // namespace react_native_linux

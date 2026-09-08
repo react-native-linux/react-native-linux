@@ -1,6 +1,8 @@
 #pragma once
 
 #include <memory>
+#include <string>
+
 #include <react/renderer/components/textinput/BaseTextInputProps.h>
 #include <react/renderer/components/textinput/BaseTextInputShadowNode.h>
 #include <react/renderer/components/textinput/TextInputEventEmitter.h>
@@ -10,7 +12,6 @@
 #include <react/renderer/core/RawProps.h>
 #include <react/renderer/core/ShadowNode.h>
 #include <react/renderer/textlayoutmanager/TextLayoutManager.h>
-#include <string>
 
 namespace react_native_linux {
 

@@ -7,6 +7,11 @@
 #include <latch>
 #include <memory>
 #include <optional>
+#include <string>
+#include <thread>
+#include <utility>
+#include <vector>
+
 #include <react/featureflags/ReactNativeFeatureFlags.h>
 #include <react/featureflags/ReactNativeFeatureFlagsDefaults.h>
 #include <react/renderer/components/root/RootShadowNode.h>
@@ -30,10 +35,6 @@
 #include <react/renderer/mounting/ShadowTreeDelegate.h>
 #include <react/renderer/mounting/ShadowViewMutation.h>
 #include <react/utils/ContextContainer.h>
-#include <string>
-#include <thread>
-#include <utility>
-#include <vector>
 
 namespace {
 

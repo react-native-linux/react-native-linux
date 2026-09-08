@@ -1,15 +1,15 @@
 #pragma once
 
-#include <react/runtime/PlatformTimerRegistry.h>
-#include <react/runtime/TimerManager.h>
-#include <react/threading/TaskDispatchThread.h>
-
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
+
+#include <react/runtime/PlatformTimerRegistry.h>
+#include <react/runtime/TimerManager.h>
+#include <react/threading/TaskDispatchThread.h>
 
 namespace react_native_linux {
 

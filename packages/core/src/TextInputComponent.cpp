@@ -1,11 +1,12 @@
 #include "TextInputComponent.h"
 
 #include <memory>
+#include <string>
+
 #include <react/renderer/attributedstring/AttributedString.h>
 #include <react/renderer/attributedstring/AttributedStringBox.h>
 #include <react/renderer/core/ComponentDescriptor.h>
 #include <react/renderer/core/propsConversions.h>
-#include <string>
 
 namespace react_native_linux {
 

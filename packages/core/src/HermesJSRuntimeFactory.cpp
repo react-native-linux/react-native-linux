@@ -2,7 +2,6 @@
 
 #include <hermes/hermes.h>
 #include <jsi/jsi.h>
-
 #include <memory>
 #include <utility>
 

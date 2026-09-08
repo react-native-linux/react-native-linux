@@ -1,8 +1,8 @@
 #pragma once
 
-#include <react/renderer/attributedstring/primitives.h>
-
 #include <string>
+
+#include <react/renderer/attributedstring/primitives.h>
 
 namespace react_native_linux {
 

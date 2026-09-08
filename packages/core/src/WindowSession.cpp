@@ -2,15 +2,15 @@
 
 #include "DimensionsSource.h"
 
-#include <cxxreact/JSBigString.h>
-#include <react/renderer/graphics/Float.h>
-#include <react/renderer/graphics/Size.h>
-
 #include <chrono>
+#include <cxxreact/JSBigString.h>
 #include <memory>
 #include <optional>
 #include <string>
 #include <vector>
+
+#include <react/renderer/graphics/Float.h>
+#include <react/renderer/graphics/Size.h>
 
 namespace react_native_linux {
 

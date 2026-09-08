@@ -1,6 +1,10 @@
 #include <folly/dynamic.h>
 #include <gtest/gtest.h>
 #include <memory>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include <react/renderer/attributedstring/AttributedString.h>
 #include <react/renderer/attributedstring/TextAttributes.h>
 #include <react/renderer/attributedstring/primitives.h>
@@ -18,9 +22,6 @@
 #include <react/renderer/core/ShadowNode.h>
 #include <react/renderer/core/ShadowNodeFragment.h>
 #include <react/utils/ContextContainer.h>
-#include <string>
-#include <utility>
-#include <vector>
 
 namespace {
 

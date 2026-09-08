@@ -2,12 +2,13 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <react/renderer/components/view/PointerEvent.h>
-#include <react/renderer/core/ReactPrimitives.h>
-#include <react/renderer/graphics/Point.h>
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include <react/renderer/components/view/PointerEvent.h>
+#include <react/renderer/core/ReactPrimitives.h>
+#include <react/renderer/graphics/Point.h>
 
 namespace react_native_linux {
 

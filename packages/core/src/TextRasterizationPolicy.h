@@ -41,7 +41,7 @@ enum class TextPixelGeometry {
 struct TextRasterizationPolicy {
     bool deviceIndependentFonts{true};
     TextPixelGeometry pixelGeometry{TextPixelGeometry::Unknown};
-    float textGamma{0.0F};   // sRGB, Skia's SK_GAMMA_EXPONENT default
+    float textGamma{0.0F};    // sRGB, Skia's SK_GAMMA_EXPONENT default
     float textContrast{0.5F}; // Skia's SK_GAMMA_CONTRAST default
 };
 
@@ -49,8 +49,6 @@ struct TextRasterizationPolicy {
  * The policy, as a value. Called by the renderers at surface creation so the construction site reads as the
  * decision it is.
  */
-constexpr TextRasterizationPolicy textRasterizationPolicy() {
-    return TextRasterizationPolicy{};
-}
+constexpr TextRasterizationPolicy textRasterizationPolicy() { return TextRasterizationPolicy{}; }
 
 } // namespace react_native_linux

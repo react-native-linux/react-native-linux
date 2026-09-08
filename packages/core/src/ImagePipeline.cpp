@@ -3,7 +3,6 @@
 #include "AutomationProtocol.h"
 #include "ImageContent.h"
 #include "ImageDecoder.h"
-
 #include "include/codec/SkCodec.h"
 #include "include/codec/SkCodecAnimation.h"
 #include "include/codec/SkGifDecoder.h"

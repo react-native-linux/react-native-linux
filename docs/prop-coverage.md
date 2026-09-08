@@ -242,11 +242,11 @@ assertion and not an implementation.
 | `multiline` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:78` | implemented | `EditorModelTest, AMultilineFieldKeepsPastedNewlines` |
 | `disableKeyboardShortcuts` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:80` | not-implemented | #54 |
 | `acceptDragAndDropTypes` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:82` | not-implemented | #60 |
-| `keyboardType` | `packages/core/src/TextInputComponent.h:45` | implemented | `TextInputSessionTest, TheContentPurposeIsTheClosestOneTheFieldsPropsName` |
-| `secureTextEntry` | `packages/core/src/TextInputComponent.h:46` | implemented | `EditorModelTest, SecureTextEntryMasksEveryGraphemeAndNeverTheBuffer` |
-| `caretHidden` | `packages/core/src/TextInputComponent.h:47` | implemented | `RetainedSceneTextInputTest, CaretHiddenRemovesTheCaretColourAndTheCaretWithIt` |
-| `selectTextOnFocus` | `packages/core/src/TextInputComponent.h:48` | not-implemented | #54 |
-| `scrollEnabled` | `packages/core/src/TextInputComponent.h:52` | implemented | `TextInputControllerTest, ScrollEnabledDefaultsToTrueAndIsWhatMakesAFieldAWindowOnItsOwnContent` |
+| `keyboardType` | `packages/core/src/TextInputComponent.h:46` | implemented | `TextInputSessionTest, TheContentPurposeIsTheClosestOneTheFieldsPropsName` |
+| `secureTextEntry` | `packages/core/src/TextInputComponent.h:47` | implemented | `EditorModelTest, SecureTextEntryMasksEveryGraphemeAndNeverTheBuffer` |
+| `caretHidden` | `packages/core/src/TextInputComponent.h:48` | implemented | `RetainedSceneTextInputTest, CaretHiddenRemovesTheCaretColourAndTheCaretWithIt` |
+| `selectTextOnFocus` | `packages/core/src/TextInputComponent.h:49` | not-implemented | #54 |
+| `scrollEnabled` | `packages/core/src/TextInputComponent.h:53` | implemented | `TextInputControllerTest, ScrollEnabledDefaultsToTrueAndIsWhatMakesAFieldAWindowOnItsOwnContent` |
 
 ## Switch
 

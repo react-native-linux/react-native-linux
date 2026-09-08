@@ -5,15 +5,15 @@
 #include "ScrollEventCadence.h"
 #include "ScrollPhysics.h"
 
-#include <react/renderer/components/scrollview/ScrollViewShadowNode.h>
-#include <react/renderer/core/ReactPrimitives.h>
-#include <react/renderer/graphics/Point.h>
-#include <react/renderer/uimanager/UIManager.h>
-
 #include <memory>
 #include <optional>
 #include <unordered_map>
 #include <vector>
+
+#include <react/renderer/components/scrollview/ScrollViewShadowNode.h>
+#include <react/renderer/core/ReactPrimitives.h>
+#include <react/renderer/graphics/Point.h>
+#include <react/renderer/uimanager/UIManager.h>
 
 namespace react_native_linux {
 
@@ -158,14 +158,13 @@ private:
      * mounting transaction that moved the content. Never null, so no caller has to handle a refusal that cannot
      * happen.
      */
-    ScrollTarget& acquireMaintainedNode(
-        const std::shared_ptr<const facebook::react::ScrollViewShadowNode>& scrollView);
+    ScrollTarget& acquireMaintainedNode(const std::shared_ptr<const facebook::react::ScrollViewShadowNode>& scrollView);
     std::shared_ptr<const facebook::react::ScrollViewShadowNode> scrollViewWithTag(facebook::react::Tag tag) const;
     std::shared_ptr<const facebook::react::ShadowNode> rootShadowNode() const;
     bool advanceTarget(ScrollTarget& target, const facebook::react::ScrollViewShadowNode& scrollView,
                        double frameMilliseconds);
-    std::shared_ptr<const facebook::react::ScrollViewShadowNode> scrollViewUnderPointer(
-        facebook::react::Point surfacePoint) const;
+    std::shared_ptr<const facebook::react::ScrollViewShadowNode>
+    scrollViewUnderPointer(facebook::react::Point surfacePoint) const;
 
     std::shared_ptr<facebook::react::UIManager> uiManager_;
     facebook::react::SurfaceId surfaceId_;

@@ -57,7 +57,7 @@ public:
 
     /** `sampleCapacity` is clamped to at least one: a zero-length ring would pop an empty deque on the first close. */
     FrameJournal(uint64_t paintHangThresholdNanoseconds, uint64_t totalHangThresholdNanoseconds,
-                size_t sampleCapacity = kDefaultSampleCapacity);
+                 size_t sampleCapacity = kDefaultSampleCapacity);
 
     void recordDamage(uint64_t nowNanoseconds);
     void recordPaintStart(uint64_t nowNanoseconds);

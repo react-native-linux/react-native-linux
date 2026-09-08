@@ -2,13 +2,12 @@
 #include "SceneTestSupport.h"
 
 #include <gtest/gtest.h>
-
-#include <react/renderer/components/scrollview/ScrollViewProps.h>
-#include <react/renderer/components/scrollview/primitives.h>
-
 #include <memory>
 #include <optional>
 #include <vector>
+
+#include <react/renderer/components/scrollview/ScrollViewProps.h>
+#include <react/renderer/components/scrollview/primitives.h>
 
 // `maintainVisibleContentPosition` as a property of the mounting transaction rather than of the frame that
 // follows it (#292): the scene `executeMount` produces already holds the content where the prepended children
@@ -37,13 +36,9 @@ constexpr float kViewportWidth = 200.0F;
 constexpr int kRowCount = 3;
 constexpr int kPrependedRowCount = 2;
 
-Rect scrollViewFrame() {
-    return makeRect(0, 0, kViewportWidth, kViewportHeight);
-}
+Rect scrollViewFrame() { return makeRect(0, 0, kViewportWidth, kViewportHeight); }
 
-Rect contentBounds(int rowCount) {
-    return makeRect(0, 0, kViewportWidth, static_cast<float>(rowCount) * kRowHeight);
-}
+Rect contentBounds(int rowCount) { return makeRect(0, 0, kViewportWidth, static_cast<float>(rowCount) * kRowHeight); }
 
 Rect rowFrame(int position) {
     return makeRect(0, static_cast<float>(position) * kRowHeight, kViewportWidth, kRowHeight);
@@ -73,8 +68,8 @@ ShadowView scrollView(Point contentOffset, int rowCount, bool maintaining,
     return shadowView;
 }
 
-void appendCreateAndInsert(ShadowViewMutationList& mutations, facebook::react::Tag parentTag,
-                           const ShadowView& child, int index) {
+void appendCreateAndInsert(ShadowViewMutationList& mutations, facebook::react::Tag parentTag, const ShadowView& child,
+                           int index) {
     mutations.push_back(ShadowViewMutation::CreateMutation(child));
     mutations.push_back(ShadowViewMutation::InsertMutation(parentTag, child, index));
 }
@@ -91,8 +86,8 @@ void appendRows(ShadowViewMutationList& mutations, facebook::react::Tag parentTa
 void appendPrependedRows(ShadowViewMutationList& mutations, facebook::react::Tag parentTag,
                          facebook::react::Tag firstTag) {
     for (int position = 0; position < kPrependedRowCount; position++) {
-        appendCreateAndInsert(mutations, parentTag,
-                              makePaintedView(firstTag + position, rowFrame(position), red()), position);
+        appendCreateAndInsert(mutations, parentTag, makePaintedView(firstTag + position, rowFrame(position), red()),
+                              position);
     }
 }
 
@@ -108,8 +103,7 @@ void appendGrownScrollView(ShadowViewMutationList& mutations, Point contentOffse
                            std::optional<int> autoscrollToTopThreshold = std::nullopt) {
     mutations.push_back(ShadowViewMutation::UpdateMutation(
         scrollView(contentOffset, kRowCount, maintaining, autoscrollToTopThreshold),
-        scrollView(contentOffset, kRowCount + kPrependedRowCount, maintaining, autoscrollToTopThreshold),
-        kSurfaceTag));
+        scrollView(contentOffset, kRowCount + kPrependedRowCount, maintaining, autoscrollToTopThreshold), kSurfaceTag));
 }
 
 /**
@@ -151,8 +145,8 @@ ShadowViewMutationList prependMutations(Point contentOffset, bool maintaining,
 std::vector<MaintainedScrollOffset> prepend(LinuxMountingManager& mountingManager, Point contentOffset,
                                             bool maintaining,
                                             std::optional<int> autoscrollToTopThreshold = std::nullopt) {
-    mountingManager.executeMount(
-        kSurfaceTag, transactionOf(prependMutations(contentOffset, maintaining, autoscrollToTopThreshold)));
+    mountingManager.executeMount(kSurfaceTag,
+                                 transactionOf(prependMutations(contentOffset, maintaining, autoscrollToTopThreshold)));
 
     return mountingManager.takeMaintainedScrollOffsets();
 }
@@ -195,8 +189,7 @@ TEST(LinuxMountingManagerMaintainPositionTest, AutoscrollToTopThresholdTakesTheN
 
     mountRows(mountingManager, Point{.x = 0, .y = 100}, true, 200);
 
-    const std::vector<MaintainedScrollOffset> maintained =
-        prepend(mountingManager, Point{.x = 0, .y = 100}, true, 200);
+    const std::vector<MaintainedScrollOffset> maintained = prepend(mountingManager, Point{.x = 0, .y = 100}, true, 200);
 
     ASSERT_EQ(maintained.size(), 1U);
     EXPECT_EQ(maintained.front().offset, (Point{}));
@@ -273,8 +266,7 @@ TEST(LinuxMountingManagerMaintainPositionTest, TwoPrependsBeforeTheStateCatchesU
 
     ASSERT_EQ(second.size(), 1U);
     EXPECT_EQ(second.front().offset, (Point{.x = 0, .y = 500}));
-    EXPECT_FALSE(
-        react_native_linux::findDisplacedPrimitive(beforeSecond, mountingManager.snapshotScene()).has_value());
+    EXPECT_FALSE(react_native_linux::findDisplacedPrimitive(beforeSecond, mountingManager.snapshotScene()).has_value());
 }
 
 TEST(LinuxMountingManagerMaintainPositionTest, TheStateCatchingUpRetiresTheAdoptedOffset) {
@@ -295,9 +287,9 @@ TEST(LinuxMountingManagerMaintainPositionTest, TheStateCatchingUpRetiresTheAdopt
 
     ShadowViewMutationList scrolledByJavaScript;
 
-    scrolledByJavaScript.push_back(ShadowViewMutation::UpdateMutation(
-        scrollView(Point{.x = 0, .y = 300}, rowCount, true), scrollView(Point{.x = 0, .y = 40}, rowCount, true),
-        kSurfaceTag));
+    scrolledByJavaScript.push_back(
+        ShadowViewMutation::UpdateMutation(scrollView(Point{.x = 0, .y = 300}, rowCount, true),
+                                           scrollView(Point{.x = 0, .y = 40}, rowCount, true), kSurfaceTag));
     mountingManager.executeMount(kSurfaceTag, transactionOf(std::move(scrolledByJavaScript)));
 
     EXPECT_EQ(mountingManager.dumpScene().find("contentOffset=(0.00, 40.00)") != std::string::npos, true);
@@ -320,8 +312,8 @@ TEST(LinuxMountingManagerMaintainPositionTest, AListOfOneRowIsAnchoredOnThatRow)
 
     appendPrependedRows(prepended, kContentViewTag, kFirstPrependedRowTag);
     prepended.push_back(ShadowViewMutation::UpdateMutation(
-        makeView(kContentViewTag, contentBounds(1)),
-        makeView(kContentViewTag, contentBounds(1 + kPrependedRowCount)), kScrollViewTag));
+        makeView(kContentViewTag, contentBounds(1)), makeView(kContentViewTag, contentBounds(1 + kPrependedRowCount)),
+        kScrollViewTag));
     prepended.push_back(ShadowViewMutation::UpdateMutation(
         makePaintedView(kFirstRowTag, rowFrame(0), blue()),
         makePaintedView(kFirstRowTag, rowFrame(kPrependedRowCount), blue()), kContentViewTag));

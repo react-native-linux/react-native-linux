@@ -14,4 +14,4 @@ FontFamilyRequestKind classifyFontFamilyRequest(const std::string& fontFamily) {
     return FontFamilyRequestKind::Named;
 }
 
-}  // namespace react_native_linux
+} // namespace react_native_linux

@@ -1,10 +1,12 @@
-#include <react/renderer/textlayoutmanager/TextLayoutManager.h>
-
 #include "TextPipeline.h"
-
 #include "include/core/SkRect.h"
 #include "modules/skparagraph/include/DartTypes.h"
 #include "modules/skparagraph/include/Paragraph.h"
+
+#include <cmath>
+#include <cstddef>
+#include <memory>
+#include <vector>
 
 #include <react/renderer/attributedstring/AttributedString.h>
 #include <react/renderer/attributedstring/AttributedStringBox.h>
@@ -14,12 +16,8 @@
 #include <react/renderer/graphics/Rect.h>
 #include <react/renderer/graphics/Size.h>
 #include <react/renderer/textlayoutmanager/TextLayoutContext.h>
+#include <react/renderer/textlayoutmanager/TextLayoutManager.h>
 #include <react/renderer/textlayoutmanager/TextMeasureCache.h>
-
-#include <cmath>
-#include <cstddef>
-#include <memory>
-#include <vector>
 
 /**
  * The Linux `TextLayoutManager`: the one measurement Yoga asks for, answered by SkParagraph.
@@ -71,10 +69,10 @@ TextMeasurement::Attachments measureAttachments(const AttributedString& attribut
 
         const SkRect& rect = placeholders[placeholderIndex].rect;
 
-        attachments.push_back(TextMeasurement::Attachment{
-            .frame = Rect{.origin = {.x = rect.fLeft, .y = rect.fTop},
-                          .size = {.width = rect.width(), .height = rect.height()}},
-            .isClipped = false});
+        attachments.push_back(
+            TextMeasurement::Attachment{.frame = Rect{.origin = {.x = rect.fLeft, .y = rect.fTop},
+                                                      .size = {.width = rect.width(), .height = rect.height()}},
+                                        .isClipped = false});
         ++placeholderIndex;
     }
 
@@ -89,9 +87,8 @@ TextMeasurement measureWithSkParagraph(const AttributedString& attributedString,
 
     // getLongestLine is the width the text actually occupies, which is what Yoga wants; the layout width is only
     // the bound it was wrapped against. Rounding up keeps the last glyph inside the frame Yoga then assigns.
-    const Size size = layoutConstraints.clamp(
-        Size{.width = static_cast<Float>(std::ceil(paragraph->getLongestLine())),
-             .height = static_cast<Float>(std::ceil(paragraph->getHeight()))});
+    const Size size = layoutConstraints.clamp(Size{.width = static_cast<Float>(std::ceil(paragraph->getLongestLine())),
+                                                   .height = static_cast<Float>(std::ceil(paragraph->getHeight()))});
 
     return TextMeasurement{.size = size, .attachments = measureAttachments(attributedString, *paragraph)};
 }

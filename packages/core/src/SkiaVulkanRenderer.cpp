@@ -456,8 +456,8 @@ void SkiaVulkanRenderer::recreateSurface() {
 
     if (presentSupported == VK_FALSE) {
         throw std::runtime_error("vkGetPhysicalDeviceSurfaceSupportKHR failed: queue family " +
-                                  std::to_string(queueFamilyIndex_) +
-                                  " does not support presenting to the recreated surface");
+                                 std::to_string(queueFamilyIndex_) +
+                                 " does not support presenting to the recreated surface");
     }
 
     createSwapchain();

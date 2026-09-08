@@ -72,7 +72,7 @@ One entry point mirrors CI exactly: `pnpm validate` (format check, typecheck, li
 - `pnpm ts` — `tsc --noEmit`, maximum strictness: `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `isolatedModules`.
 - `pnpm deadcode` — **knip**: unused files, exports, and dependencies across the workspace.
 - `pnpm cpd` — **jscpd** duplication check.
-- C++: **clang-format** and **clang-tidy** (curated set: `bugprone-*`, `performance-*`, `modernize-*`, selected `cppcoreguidelines-*`) run through the CMake presets. `CMAKE_EXPORT_COMPILE_COMMANDS=ON` is always set so clangd works from a fresh checkout. A `NOLINT` needs a stated reason and is reviewed like an API change.
+- C++: `pnpm format:cpp` / `pnpm format:cpp:check` run **clang-format 18** (the CI-pinned version; the check refuses to run under any other version) over `packages/core/src` and `packages/core/tests`, and `format:cpp:check` is part of `pnpm validate`. **clang-tidy** (curated set: `bugprone-*`, `performance-*`, `modernize-*`, selected `cppcoreguidelines-*`) runs through the CMake presets. `CMAKE_EXPORT_COMPILE_COMMANDS=ON` is always set so clangd works from a fresh checkout. A `NOLINT` needs a stated reason and is reviewed like an API change.
 - Meta-files: **actionlint** (workflows), **shellcheck** + **shfmt** (scripts), **typos** (spelling), **gitleaks** (secrets); **lychee** link-checks docs weekly in CI.
 - **Renovate** keeps pinned dependencies fresh; PR titles are gated on Conventional Commits.
 

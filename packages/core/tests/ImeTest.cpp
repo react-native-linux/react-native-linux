@@ -3,9 +3,10 @@
 
 #include <cstdint>
 #include <gtest/gtest.h>
-#include <react/renderer/graphics/Point.h>
 #include <string>
 #include <vector>
+
+#include <react/renderer/graphics/Point.h>
 
 namespace {
 

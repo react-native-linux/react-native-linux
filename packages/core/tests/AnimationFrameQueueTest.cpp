@@ -1,11 +1,11 @@
 #include "AnimationFrameQueue.h"
-#include "FrameClock.h"
 
-#include <gtest/gtest.h>
+#include "FrameClock.h"
 
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <gtest/gtest.h>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -30,10 +30,8 @@ std::chrono::steady_clock::time_point timeAt(int64_t milliseconds) {
  * The callback is returned rather than kept here so the caller owns it for the length of the test, and it names
  * itself through a raw pointer to that owned copy rather than capturing the owner, which would be a cycle.
  */
-std::shared_ptr<AnimationFrameQueue::Callback> startSelfRegisteringLoop(AnimationFrameQueue& queue,
-                                                                       size_t& tickCount) {
-    const std::shared_ptr<AnimationFrameQueue::Callback> loop =
-        std::make_shared<AnimationFrameQueue::Callback>();
+std::shared_ptr<AnimationFrameQueue::Callback> startSelfRegisteringLoop(AnimationFrameQueue& queue, size_t& tickCount) {
+    const std::shared_ptr<AnimationFrameQueue::Callback> loop = std::make_shared<AnimationFrameQueue::Callback>();
 
     *loop = [&queue, &tickCount, self = loop.get()](double /*frameTimestampMilliseconds*/) {
         ++tickCount;
@@ -87,8 +85,7 @@ TEST(AnimationFrameQueueTest, CallbacksRunInRegistrationOrderWithOneTimestampFor
     }
 
     EXPECT_EQ(queue.dispatchFrame(kFirstFrameTimestamp), 4U);
-    EXPECT_EQ(trace.entries,
-              (std::vector<std::string>{"first@16", "second@16", "third@16", "fourth@16"}));
+    EXPECT_EQ(trace.entries, (std::vector<std::string>{"first@16", "second@16", "third@16", "fourth@16"}));
 }
 
 /**
@@ -102,9 +99,8 @@ TEST(AnimationFrameQueueTest, AThousandRegistrationsAllRunOnOneFrameInOrder) {
     std::vector<size_t> dispatchOrder;
 
     for (size_t index = 0; index < kRegistrationCount; ++index) {
-        queue.request([&dispatchOrder, index](double /*frameTimestampMilliseconds*/) {
-            dispatchOrder.push_back(index);
-        });
+        queue.request(
+            [&dispatchOrder, index](double /*frameTimestampMilliseconds*/) { dispatchOrder.push_back(index); });
     }
 
     EXPECT_EQ(queue.dispatchFrame(kFirstFrameTimestamp), kRegistrationCount);
@@ -306,8 +302,7 @@ TEST(AnimationFrameQueueTest, TheFallbackDeadlineKeepsDrawingWhenOnlyAnAnimation
     for (int64_t timeout = 1; timeout <= kTimeoutCount; ++timeout) {
         const std::chrono::steady_clock::time_point now =
             std::chrono::steady_clock::time_point(std::chrono::milliseconds(timeout * kFallbackIntervalMilliseconds));
-        const react_native_linux::FrameClock::Tick frameTick =
-            clock.onFallbackTimeout(now, queue.hasPendingRequests());
+        const react_native_linux::FrameClock::Tick frameTick = clock.onFallbackTimeout(now, queue.hasPendingRequests());
 
         ASSERT_TRUE(frameTick.shouldDraw);
         ASSERT_EQ(frameTick.source, react_native_linux::FrameClock::Source::Timer);

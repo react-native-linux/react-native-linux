@@ -4,10 +4,11 @@
 #include <cstdint>
 #include <gtest/gtest.h>
 #include <linux/input-event-codes.h>
-#include <react/renderer/core/ReactPrimitives.h>
-#include <react/renderer/graphics/Point.h>
 #include <string>
 #include <vector>
+
+#include <react/renderer/core/ReactPrimitives.h>
+#include <react/renderer/graphics/Point.h>
 
 namespace {
 
@@ -161,8 +162,8 @@ TEST(PointerOffsetWithinTargetTest, InvertsEveryComposedTransform) {
         // box on both axes, which is a local offset of 12.5 — not the 25 a plain subtraction from the (still
         // untransformed-looking) forward-mapped origin (75,75) would report.
         {"a target scaled 2x about its own centre",
-         PointerTargetTransform{.scaleX = 2, .translateX = -125, .scaleY = 2, .translateY = -125,
-                                .frameOrigin = makePoint(100, 100)},
+         PointerTargetTransform{
+             .scaleX = 2, .translateX = -125, .scaleY = 2, .translateY = -125, .frameOrigin = makePoint(100, 100)},
          makePoint(100, 100), makePoint(12.5, 12.5)},
         // Scaled 2x on X only, 1x on Y, about its own centre (50, 25) of a 100x50 box at the local origin: the
         // surface centre does not move (a point at the centre of a scale is invariant), and the local point under
@@ -173,22 +174,22 @@ TEST(PointerOffsetWithinTargetTest, InvertsEveryComposedTransform) {
         // reports the box's own centre — (25, 25) inside a 50x50 box — not the (-25, 25) a plain subtraction from
         // the forward-mapped (now rotated) corner would report.
         {"a target rotated 90 degrees, pressed at its centre",
-         PointerTargetTransform{.scaleX = 0, .skewX = -1, .translateX = 250, .skewY = 1, .scaleY = 0,
-                                .frameOrigin = makePoint(100, 100)},
+         PointerTargetTransform{
+             .scaleX = 0, .skewX = -1, .translateX = 250, .skewY = 1, .scaleY = 0, .frameOrigin = makePoint(100, 100)},
          makePoint(125, 125), makePoint(25, 25)},
         // The same rotated target, pressed where its own local origin corner now sits on the surface — (150, 100)
         // is `mapPoint` of the frame's own (100, 100) origin through the same matrix — reports local (0, 0), the
         // frame's own corner.
         {"a target rotated 90 degrees, pressed at its own rotated corner",
-         PointerTargetTransform{.scaleX = 0, .skewX = -1, .translateX = 250, .skewY = 1, .scaleY = 0,
-                                .frameOrigin = makePoint(100, 100)},
+         PointerTargetTransform{
+             .scaleX = 0, .skewX = -1, .translateX = 250, .skewY = 1, .scaleY = 0, .frameOrigin = makePoint(100, 100)},
          makePoint(150, 100), makePoint(0, 0)},
         // `scale: 0` maps every surface point onto the target's own origin, so hit-testing never lands on it —
         // the same floor `RetainedScene::toUntransformedPoint` applies. There is nothing to invert towards, so the
         // offset is zero rather than a divide by zero.
         {"a target scaled to nothing",
-         PointerTargetTransform{.scaleX = 0, .translateX = 10, .scaleY = 0, .translateY = 20,
-                                .frameOrigin = makePoint(5, 5)},
+         PointerTargetTransform{
+             .scaleX = 0, .translateX = 10, .scaleY = 0, .translateY = 20, .frameOrigin = makePoint(5, 5)},
          makePoint(400, 400), makePoint(0, 0)},
         // Issue #299: the exact matrix an 80x40 box at (650, 100) rotated 90 degrees about its own centre
         // (690, 120) composes — invisible or not, this is the matrix `SceneHit` carries for it now, and this row
@@ -198,8 +199,13 @@ TEST(PointerOffsetWithinTargetTest, InvertsEveryComposedTransform) {
         // at the centre, because the centre of a rotation does not move and an identity matrix would answer that
         // probe the same way; this point only comes out right if the matrix is the rotation it claims to be.
         {"a fully transparent target rotated 90 degrees, pressed at its own rotated corner",
-         PointerTargetTransform{.scaleX = 0, .skewX = -1, .translateX = 810, .skewY = 1, .scaleY = 0,
-                                .translateY = -570, .frameOrigin = makePoint(650, 100)},
+         PointerTargetTransform{.scaleX = 0,
+                                .skewX = -1,
+                                .translateX = 810,
+                                .skewY = 1,
+                                .scaleY = 0,
+                                .translateY = -570,
+                                .frameOrigin = makePoint(650, 100)},
          makePoint(710, 80), makePoint(0, 0)},
     };
 
@@ -473,10 +479,9 @@ TEST(PointerRouterTest, AScrollThatMovedCancelsThePressItStartedUnder) {
         {"a wheel notch up", InputEventKind::PointerScrollDiscrete, ScrollAxisKind::Vertical, -1.0, true},
         {"a touchpad delta", InputEventKind::PointerScrollContinuous, ScrollAxisKind::Vertical, -12.5, true},
         {"a horizontal wheel notch", InputEventKind::PointerScrollDiscrete, ScrollAxisKind::Horizontal, 0.25, true},
-        {"the fingers leaving the touchpad", InputEventKind::PointerScrollStop, ScrollAxisKind::Vertical, 0.0,
+        {"the fingers leaving the touchpad", InputEventKind::PointerScrollStop, ScrollAxisKind::Vertical, 0.0, false},
+        {"a delta that coalesced to nothing", InputEventKind::PointerScrollContinuous, ScrollAxisKind::Vertical, 0.0,
          false},
-        {"a delta that coalesced to nothing", InputEventKind::PointerScrollContinuous, ScrollAxisKind::Vertical,
-         0.0, false},
     };
 
     for (const ScrollDuringPressCase& scrollCase : cases) {
@@ -485,8 +490,7 @@ TEST(PointerRouterTest, AScrollThatMovedCancelsThePressItStartedUnder) {
         routePrimaryButton(router, InputEventKind::PointerButtonPress);
         router.cancelPressForScroll(makeScrollEvent(scrollCase));
 
-        const std::vector<PointerDispatch> released =
-            routePrimaryButton(router, InputEventKind::PointerButtonRelease);
+        const std::vector<PointerDispatch> released = routePrimaryButton(router, InputEventKind::PointerButtonRelease);
 
         // The release is a pointerUp whatever the scroll did, so Pressability reports onPressOut either way; the
         // click is what the cancel removes, and the click is what becomes onPress.

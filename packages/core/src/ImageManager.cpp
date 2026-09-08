@@ -1,16 +1,15 @@
-#include <react/renderer/imagemanager/ImageManager.h>
-
 #include "ImagePipeline.h"
 
+#include <memory>
+#include <utility>
+
+#include <react/renderer/imagemanager/ImageManager.h>
 #include <react/renderer/imagemanager/ImageRequest.h>
 #include <react/renderer/imagemanager/ImageRequestParams.h>
 #include <react/renderer/imagemanager/ImageResponse.h>
 #include <react/renderer/imagemanager/ImageResponseObserverCoordinator.h>
 #include <react/renderer/imagemanager/ImageTelemetry.h>
 #include <react/renderer/imagemanager/primitives.h>
-
-#include <memory>
-#include <utility>
 
 /**
  * The Linux `ImageManager`: the one request `ImageShadowNode` makes, answered by Skia's codecs.
@@ -52,12 +51,10 @@ ImageRequest ImageManager::requestImage(const ImageSource& imageSource, SurfaceI
 
     // Weak, because the request belongs to the shadow node's state: a source that changes before its decode
     // finishes leaves a coordinator nothing is waiting on, and completing it would be reviving a dead request.
-    const std::weak_ptr<const ImageResponseObserverCoordinator> observers =
-        imageRequest.getSharedObserverCoordinator();
+    const std::weak_ptr<const ImageResponseObserverCoordinator> observers = imageRequest.getSharedObserverCoordinator();
 
     react_native_linux::requestImageDecode(
-        imageSource.uri,
-        [observers](const std::shared_ptr<const react_native_linux::DecodedImageFrames>& decoded) {
+        imageSource.uri, [observers](const std::shared_ptr<const react_native_linux::DecodedImageFrames>& decoded) {
             const std::shared_ptr<const ImageResponseObserverCoordinator> coordinator = observers.lock();
 
             if (coordinator == nullptr) {

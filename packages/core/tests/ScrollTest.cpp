@@ -8,13 +8,14 @@
 #include <LinuxMountingManager.h>
 #include <cstddef>
 #include <gtest/gtest.h>
+#include <vector>
+
 #include <react/renderer/components/scrollview/ScrollViewComponentDescriptor.h>
 #include <react/renderer/components/scrollview/ScrollViewShadowNode.h>
 #include <react/renderer/core/LayoutConstraints.h>
 #include <react/renderer/core/LayoutContext.h>
 #include <react/renderer/graphics/Point.h>
 #include <react/renderer/mounting/ShadowTree.h>
-#include <vector>
 
 namespace {
 
@@ -675,9 +676,8 @@ TEST(SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe) {
          .travel = 30.0,
          .contentLength = kContentLength,
          .viewportLength = kViewportLength,
-         .snapping = ScrollSnapConfiguration{.interval = 100.0,
-                                             .alignment = ScrollSnapAlignment::Center,
-                                             .snapToStart = false},
+         .snapping =
+             ScrollSnapConfiguration{.interval = 100.0, .alignment = ScrollSnapAlignment::Center, .snapToStart = false},
          .expected = 30.0},
         {.what = "an interval with no multiple inside the scrollable range snaps to nothing",
          .offset = 0.0,
@@ -866,9 +866,8 @@ std::vector<ScrollChildFrame> rows(const std::vector<int>& tags) {
     std::vector<ScrollChildFrame> children;
 
     for (size_t index = 0; index < tags.size(); ++index) {
-        children.push_back(ScrollChildFrame{.tag = tags[index],
-                                            .position = static_cast<double>(index) * kRowLength,
-                                            .length = kRowLength});
+        children.push_back(ScrollChildFrame{
+            .tag = tags[index], .position = static_cast<double>(index) * kRowLength, .length = kRowLength});
     }
 
     return children;
@@ -1220,11 +1219,9 @@ private:
     std::shared_ptr<const ShadowNode> makeMultilineField(Tag tag, double width, double height, bool scrollEnabled) {
         return makeConfiguredShadowNode(
             textInputDescriptor_, tag, kSurfaceId, contextContainer_,
-            folly::dynamic::object("width", width)("height", height)("multiline", true)("scrollEnabled",
-                                                                                        scrollEnabled),
+            folly::dynamic::object("width", width)("height", height)("multiline", true)("scrollEnabled", scrollEnabled),
             std::make_shared<const ChildList>());
     }
-
 
     std::shared_ptr<const ShadowNode> makeChild(Tag tag, double width, double height) {
         return makeConfiguredShadowNode(viewDescriptor_, tag, kSurfaceId, contextContainer_,
@@ -1439,7 +1436,7 @@ TEST_F(ScrollControllerTest, ScrollToEndLandsOnTheContentEndTheTrailingInsetAdju
     // work: 230 is nothing to do and the content's own end, 200, is 30 points back up.
     controller.dispatchCommands(
         {SceneCommand{.tag = 20, .name = "scrollTo", .args = folly::dynamic::array(0, 230, false)}});
-        controller.advance(kFrameMilliseconds60Hz);
+    controller.advance(kFrameMilliseconds60Hz);
 
     EXPECT_FALSE(controller.hasDispatchedScrollEvent());
 

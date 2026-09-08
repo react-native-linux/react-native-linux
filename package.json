@@ -11,6 +11,8 @@
     "e2e": "node scripts/e2e.ts",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
+    "format:cpp": "node scripts/format-cpp.ts",
+    "format:cpp:check": "node scripts/format-cpp.ts --check",
     "lint": "oxlint --deny-warnings",
     "prop-coverage:check": "node scripts/prop-coverage.ts check",
     "prop-coverage:report": "node scripts/prop-coverage.ts report",
@@ -26,7 +28,7 @@
     "upstream:check": "node scripts/upstream.ts check",
     "upstream:patch": "node scripts/upstream.ts patch",
     "upstream:vendor": "node scripts/upstream.ts vendor",
-    "validate": "pnpm format:check && pnpm ts && pnpm lint && pnpm deadcode && pnpm cpd && pnpm test && pnpm validate:meta",
+    "validate": "pnpm format:check && pnpm format:cpp:check && pnpm ts && pnpm lint && pnpm deadcode && pnpm cpd && pnpm test && pnpm validate:meta",
     "validate:meta": "node scripts/validate-meta.ts"
   },
   "devDependencies": {

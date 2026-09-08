@@ -1,7 +1,6 @@
 #include "DimensionsSource.h"
 
 #include <gtest/gtest.h>
-
 #include <initializer_list>
 #include <optional>
 

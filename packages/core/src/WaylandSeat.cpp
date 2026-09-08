@@ -372,8 +372,8 @@ void WaylandSeat::handleKeyboardKeymap(void* data, wl_keyboard* /*keyboard*/, ui
     static_cast<WaylandSeat*>(data)->loadKeymap(format, keymapDescriptor, size);
 }
 
-void WaylandSeat::handleKeyboardEnter(void* data, wl_keyboard* /*keyboard*/, uint32_t serial,
-                                      wl_surface* /*surface*/, wl_array* /*keys*/) {
+void WaylandSeat::handleKeyboardEnter(void* data, wl_keyboard* /*keyboard*/, uint32_t serial, wl_surface* /*surface*/,
+                                      wl_array* /*keys*/) {
     WaylandSeat* seat = static_cast<WaylandSeat*>(data);
 
     seat->serialLedger_.recordKeyboardEnter(serial);

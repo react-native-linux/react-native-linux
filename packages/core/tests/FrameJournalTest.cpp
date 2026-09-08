@@ -240,7 +240,8 @@ TEST(FrameJournalTest, AClosedFrameLineOmitsThePaintFieldWithoutAPaintSpan) {
     const FrameJournal::ClosedFrame frame{
         .dirtyToPresentNanoseconds = 8 * kMillisecond, .paintNanoseconds = std::nullopt, .isHang = false};
 
-    EXPECT_EQ(FrameJournal::formatClosedFrameLine(frame), "{\"journal\":true,\"dirtyToPresentNs\":8000000,\"hang\":false}");
+    EXPECT_EQ(FrameJournal::formatClosedFrameLine(frame),
+              "{\"journal\":true,\"dirtyToPresentNs\":8000000,\"hang\":false}");
 }
 
 TEST(FrameJournalTest, AClosedFrameLineCarriesThePaintFieldAndAHangFlag) {
@@ -248,17 +249,19 @@ TEST(FrameJournalTest, AClosedFrameLineCarriesThePaintFieldAndAHangFlag) {
         .dirtyToPresentNanoseconds = 40 * kMillisecond, .paintNanoseconds = 20 * kMillisecond, .isHang = true};
 
     EXPECT_EQ(FrameJournal::formatClosedFrameLine(frame),
-             "{\"journal\":true,\"dirtyToPresentNs\":40000000,\"paintNs\":20000000,\"hang\":true}");
+              "{\"journal\":true,\"dirtyToPresentNs\":40000000,\"paintNs\":20000000,\"hang\":true}");
 }
 
 TEST(FrameJournalTest, ASummaryLineCarriesEveryField) {
-    const FrameJournal::Summary summary{
-        .frames = 238, .hangs = 1, .medianNanoseconds = 11 * kMillisecond,
-        .percentile95Nanoseconds = 15 * kMillisecond, .maximumNanoseconds = 33 * kMillisecond};
+    const FrameJournal::Summary summary{.frames = 238,
+                                        .hangs = 1,
+                                        .medianNanoseconds = 11 * kMillisecond,
+                                        .percentile95Nanoseconds = 15 * kMillisecond,
+                                        .maximumNanoseconds = 33 * kMillisecond};
 
     EXPECT_EQ(FrameJournal::formatSummaryLine(summary),
-             "{\"journalSummary\":true,\"frames\":238,\"hangs\":1,\"p50Ns\":11000000,\"p95Ns\":15000000,"
-             "\"maxNs\":33000000}");
+              "{\"journalSummary\":true,\"frames\":238,\"hangs\":1,\"p50Ns\":11000000,\"p95Ns\":15000000,"
+              "\"maxNs\":33000000}");
 }
 
 TEST(FrameJournalTest, ATotalExactlyOnTheThresholdIsAHang) {
@@ -343,7 +346,7 @@ TEST(FrameJournalTest, ThePresentationClockOffsetIsZeroWhenThereIsNothingToConve
     EXPECT_EQ(react_native_linux::presentationClockOffsetNanoseconds(std::nullopt, 500, 900), 0);
     EXPECT_EQ(react_native_linux::presentationClockOffsetNanoseconds(monotonic, 500, 900), 0);
     EXPECT_EQ(react_native_linux::presentationClockOffsetNanoseconds(static_cast<uint32_t>(CLOCK_REALTIME),
-                                                                    std::nullopt, 900),
+                                                                     std::nullopt, 900),
               0);
 }
 

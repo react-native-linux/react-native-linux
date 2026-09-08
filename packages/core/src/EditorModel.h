@@ -63,8 +63,7 @@ size_t utf8OffsetForUtf16Index(const std::string& text, size_t utf16Index);
  * anywhere else. This is one function rather than two because a single-line field scrolls horizontally and a
  * multiline one vertically by exactly the same rule.
  */
-float followedScrollOffset(float currentOffset, float caretBegin, float caretEnd, float boxLength,
-                           float contentLength);
+float followedScrollOffset(float currentOffset, float caretBegin, float caretEnd, float boxLength, float contentLength);
 
 /**
  * A field's window offset held inside the content it is a window on, on one axis.

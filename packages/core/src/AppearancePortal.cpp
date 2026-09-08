@@ -39,8 +39,7 @@ int AppearancePortal::onSettingChanged(sd_bus_message* message, void* userData, 
         return 0;
     }
 
-    if (std::string_view(settingNamespace) != kAppearanceNamespace ||
-        std::string_view(settingKey) != kColorSchemeKey) {
+    if (std::string_view(settingNamespace) != kAppearanceNamespace || std::string_view(settingKey) != kColorSchemeKey) {
         return 0;
     }
 
@@ -50,7 +49,8 @@ int AppearancePortal::onSettingChanged(sd_bus_message* message, void* userData, 
         return 0;
     }
 
-    static_cast<AppearancePortal*>(userData)->signalledColorScheme_ = resolvePortalSettingOrFallback(portalSettingValue);
+    static_cast<AppearancePortal*>(userData)->signalledColorScheme_ =
+        resolvePortalSettingOrFallback(portalSettingValue);
 
     return 0;
 }

@@ -129,8 +129,7 @@ int64_t presentationClockOffsetNanoseconds(std::optional<uint32_t> presentationC
         return 0;
     }
 
-    return static_cast<int64_t>(steadyClockNanoseconds) -
-        static_cast<int64_t>(presentationClockNanoseconds.value());
+    return static_cast<int64_t>(steadyClockNanoseconds) - static_cast<int64_t>(presentationClockNanoseconds.value());
 }
 
 uint64_t toSteadyClockNanoseconds(uint64_t presentationTimestampNanoseconds, int64_t offsetNanoseconds) {
@@ -141,9 +140,9 @@ uint64_t toSteadyClockNanoseconds(uint64_t presentationTimestampNanoseconds, int
 
 std::string FrameJournal::formatSummaryLine(const Summary& summary) {
     return "{\"journalSummary\":true,\"frames\":" + std::to_string(summary.frames) +
-          ",\"hangs\":" + std::to_string(summary.hangs) + ",\"p50Ns\":" + std::to_string(summary.medianNanoseconds) +
-          ",\"p95Ns\":" + std::to_string(summary.percentile95Nanoseconds) +
-          ",\"maxNs\":" + std::to_string(summary.maximumNanoseconds) + "}";
+           ",\"hangs\":" + std::to_string(summary.hangs) + ",\"p50Ns\":" + std::to_string(summary.medianNanoseconds) +
+           ",\"p95Ns\":" + std::to_string(summary.percentile95Nanoseconds) +
+           ",\"maxNs\":" + std::to_string(summary.maximumNanoseconds) + "}";
 }
 
 } // namespace react_native_linux

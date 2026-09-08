@@ -4,12 +4,12 @@
 #include "LinuxMountingManager.h"
 #include "RetainedScene.h"
 
+#include <optional>
+#include <string>
+
 #include <react/renderer/core/ReactPrimitives.h>
 #include <react/renderer/graphics/Point.h>
 #include <react/renderer/graphics/Size.h>
-
-#include <optional>
-#include <string>
 
 namespace react_native_linux {
 

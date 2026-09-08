@@ -2,23 +2,21 @@
 #include "RetainedScene.h"
 #include "SceneTestSupport.h"
 
-#include <gtest/gtest.h>
-
+#include <array>
 #include <atomic>
-#include <latch>
-#include <thread>
-
+#include <cstddef>
+#include <cstdint>
 #include <folly/dynamic.h>
+#include <gtest/gtest.h>
+#include <latch>
+#include <memory>
+#include <string>
+#include <thread>
+#include <utility>
+
 #include <react/renderer/graphics/Transform.h>
 #include <react/renderer/graphics/TransformUtils.h>
 #include <react/renderer/graphics/ValueUnit.h>
-
-#include <array>
-#include <cstddef>
-#include <cstdint>
-#include <memory>
-#include <string>
-#include <utility>
 
 // Issue #130: `AnimationBackend` splits every animation frame by whether its mutations touch layout, and the half
 // that does not reaches this platform as `synchronouslyUpdateViewOnUIThread` — no Fabric commit, no Yoga relayout,
@@ -49,9 +47,7 @@ constexpr float kPercentTranslation = 50.0F;
 constexpr float kResolvedPercentTranslation = 60.0F;
 constexpr size_t kMatrixValueCount = 6;
 
-Rect animatedFrame() {
-    return makeRect(24, 24, 120, 80);
-}
+Rect animatedFrame() { return makeRect(24, 24, 120, 80); }
 
 folly::dynamic animatedProp(const std::string& propName, const folly::dynamic& value) {
     return folly::dynamic::object(propName, value);
@@ -89,10 +85,8 @@ folly::dynamic packedTransform(const Transform& transform) {
 }
 
 TransformOperation translateOperation(ValueUnit x, ValueUnit y) {
-    return TransformOperation{.type = TransformOperationType::Translate,
-                              .x = x,
-                              .y = y,
-                              .z = ValueUnit(0.0F, UnitType::Point)};
+    return TransformOperation{
+        .type = TransformOperationType::Translate, .x = x, .y = y, .z = ValueUnit(0.0F, UnitType::Point)};
 }
 
 Transform translateThenRotate() {
@@ -210,8 +204,7 @@ TEST(AnimatedPropsTest, ATransformArrayResolvesToTheMatrixACommitWouldHaveProduc
 }
 
 TEST(AnimatedPropsTest, APercentageTranslationResolvesAgainstTheNodesOwnFrame) {
-    const SceneMatrix animated =
-        animatedMatrixMatchingTheCommitPath(percentTranslation(), propsWithBackground(blue()));
+    const SceneMatrix animated = animatedMatrixMatchingTheCommitPath(percentTranslation(), propsWithBackground(blue()));
 
     EXPECT_FLOAT_EQ(animated.translateX, kResolvedPercentTranslation);
 }

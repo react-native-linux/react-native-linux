@@ -1,8 +1,7 @@
 #include "ShadowTreeTestSupport.h"
 
-#include <gtest/gtest.h>
-
 #include <filesystem>
+#include <gtest/gtest.h>
 #include <set>
 #include <string>
 #include <string_view>

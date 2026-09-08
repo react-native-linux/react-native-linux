@@ -2,11 +2,11 @@
 
 #include "Appearance.h"
 
-#include <react/renderer/core/ReactPrimitives.h>
-#include <react/renderer/graphics/Point.h>
-
 #include <optional>
 #include <string>
+
+#include <react/renderer/core/ReactPrimitives.h>
+#include <react/renderer/graphics/Point.h>
 
 namespace react_native_linux {
 
@@ -35,9 +35,8 @@ int renderGolden(const std::string& bundlePath, const std::string& outputPath, i
  * golden must not depend on how the host that rendered it was themed. See *Appearance and PlatformColor* in
  * docs/cpp-toolchain.md.
  */
-int renderAppearanceGolden(const std::string& bundlePath, const std::string& outputPath,
-                           ColorScheme portalColorScheme, std::optional<ColorScheme> colorSchemeOverride,
-                           int width, int height);
+int renderAppearanceGolden(const std::string& bundlePath, const std::string& outputPath, ColorScheme portalColorScheme,
+                           std::optional<ColorScheme> colorSchemeOverride, int width, int height);
 
 /**
  * The same rig, after a mouse wheel has been turned `wheelNotches` times over `surfacePoint`.
@@ -76,7 +75,7 @@ int renderClickedFrameGolden(const std::string& bundlePath, const std::string& o
                              facebook::react::Point surfacePoint, int frameCount, int width, int height);
 
 int renderFocusClickGolden(const std::string& bundlePath, const std::string& outputPath,
-                          facebook::react::Point surfacePoint, int width, int height);
+                           facebook::react::Point surfacePoint, int width, int height);
 
 /**
  * The same rig, after a synthesised `focus` `dispatchCommand` for `focusedTag` — not a Tab press, not a click —
@@ -87,7 +86,7 @@ int renderFocusClickGolden(const std::string& bundlePath, const std::string& out
  * that command ran in, rather than the one after it, which this run never takes a third frame to reach.
  */
 int renderFocusCommandGolden(const std::string& bundlePath, const std::string& outputPath,
-                            facebook::react::Tag focusedTag, int width, int height);
+                             facebook::react::Tag focusedTag, int width, int height);
 
 /**
  * The same rig, after every animated `<Image>` has been advanced `frameCount` frames of a fixed 60 Hz step.
@@ -95,8 +94,8 @@ int renderFocusCommandGolden(const std::string& bundlePath, const std::string& o
  * Which frame of a GIF is on screen after a given stretch of wall-clock time is the whole of issue #257, and a
  * picture of the frame it landed on is how that is checked in. See *Image* in docs/cpp-toolchain.md.
  */
-int renderAnimatedImageGolden(const std::string& bundlePath, const std::string& outputPath, int frameCount,
-                              int width, int height);
+int renderAnimatedImageGolden(const std::string& bundlePath, const std::string& outputPath, int frameCount, int width,
+                              int height);
 
 /**
  * The same rig, after Tab has focused the fixture's `<TextInput>` and `keySequence` has been typed into it.

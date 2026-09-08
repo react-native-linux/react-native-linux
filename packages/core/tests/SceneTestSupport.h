@@ -4,6 +4,12 @@
 #include "RetainedScene.h"
 #include "TextInputComponent.h"
 
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include <react/renderer/attributedstring/AttributedString.h>
 #include <react/renderer/attributedstring/AttributedStringBox.h>
 #include <react/renderer/attributedstring/ParagraphAttributes.h>
@@ -31,12 +37,6 @@
 #include <react/renderer/mounting/ShadowViewMutation.h>
 #include <react/renderer/telemetry/TransactionTelemetry.h>
 
-#include <cstdint>
-#include <memory>
-#include <string>
-#include <utility>
-#include <vector>
-
 // Shared fixture builders for the `packages/core/tests` GoogleTest suites that exercise `RetainedScene` and
 // `LinuxMountingManager` directly — `SceneTest.cpp`, `SceneReuseTest.cpp` and
 // `LinuxMountingManagerDiagnosticsTest.cpp`. They build the same handful of
@@ -55,22 +55,22 @@ namespace {
 using facebook::react::MountingTransaction;
 using facebook::react::Point;
 using facebook::react::Rect;
-using facebook::react::SharedColor;
 using facebook::react::ShadowView;
 using facebook::react::ShadowViewMutation;
 using facebook::react::ShadowViewMutationList;
+using facebook::react::SharedColor;
 using facebook::react::Size;
 using facebook::react::Tag;
 using facebook::react::Transform;
 using facebook::react::UnitType;
 using facebook::react::ValueUnit;
 using facebook::react::ViewProps;
+using react_native_linux::findDisplacedPrimitive;
 using react_native_linux::LinuxMountingManager;
 using react_native_linux::RetainedScene;
 using react_native_linux::SceneDamage;
 using react_native_linux::SceneEditorState;
 using react_native_linux::SceneFrame;
-using react_native_linux::findDisplacedPrimitive;
 using react_native_linux::ScenePrimitive;
 using react_native_linux::ScenePrimitiveDisplacement;
 using react_native_linux::SceneSnapshot;
@@ -84,13 +84,9 @@ facebook::react::Rect makeRect(float x, float y, float width, float height) {
                                  .size = facebook::react::Size{.width = width, .height = height}};
 }
 
-facebook::react::SharedColor blue() {
-    return facebook::react::colorFromRGBA(51, 102, 204, 255);
-}
+facebook::react::SharedColor blue() { return facebook::react::colorFromRGBA(51, 102, 204, 255); }
 
-facebook::react::SharedColor red() {
-    return facebook::react::colorFromRGBA(204, 51, 51, 255);
-}
+facebook::react::SharedColor red() { return facebook::react::colorFromRGBA(204, 51, 51, 255); }
 
 facebook::react::ShadowView makeView(facebook::react::Tag tag, facebook::react::Rect frame) {
     facebook::react::ShadowView shadowView;
@@ -167,14 +163,13 @@ facebook::react::ShadowView makeParagraph(facebook::react::Tag tag, facebook::re
  * no placeholder — so every existing caller is unaffected; the trailing three parameters exist for the cases
  * that set one of them.
  */
-facebook::react::ShadowView makeImage(facebook::react::Tag tag, facebook::react::Rect frame,
-                                      const std::string& uri, facebook::react::ImageResizeMode resizeMode,
+facebook::react::ShadowView makeImage(facebook::react::Tag tag, facebook::react::Rect frame, const std::string& uri,
+                                      facebook::react::ImageResizeMode resizeMode,
                                       facebook::react::SharedColor tintColor, float blurRadius = 0.0F,
                                       facebook::react::EdgeInsets capInsets = {},
                                       facebook::react::ImageSource defaultSource = {},
                                       facebook::react::ImageSource loadingIndicatorSource = {}) {
-    const std::shared_ptr<facebook::react::ImageProps> imageProps =
-        std::make_shared<facebook::react::ImageProps>();
+    const std::shared_ptr<facebook::react::ImageProps> imageProps = std::make_shared<facebook::react::ImageProps>();
 
     imageProps->resizeMode = resizeMode;
     imageProps->tintColor = tintColor;
@@ -196,16 +191,15 @@ facebook::react::ShadowView makeImage(facebook::react::Tag tag, facebook::react:
     shadowView.props = imageProps;
     shadowView.state = std::make_shared<const facebook::react::ConcreteState<facebook::react::ImageState>>(
         std::make_shared<const facebook::react::ImageState>(
-            imageSource, facebook::react::ImageRequest{imageSource, nullptr},
-            facebook::react::ImageRequestParams{}),
+            imageSource, facebook::react::ImageRequest{imageSource, nullptr}, facebook::react::ImageRequestParams{}),
         facebook::react::ShadowNodeFamily::Weak{});
 
     return shadowView;
 }
 
 // The `resizeMode`-less shape every caller that never varies it wants — every `SceneReuseTest.cpp` image case.
-facebook::react::ShadowView makeImage(facebook::react::Tag tag, facebook::react::Rect frame,
-                                      const std::string& uri, facebook::react::SharedColor tintColor) {
+facebook::react::ShadowView makeImage(facebook::react::Tag tag, facebook::react::Rect frame, const std::string& uri,
+                                      facebook::react::SharedColor tintColor) {
     return makeImage(tag, frame, uri, facebook::react::ImageResizeMode::Cover, tintColor);
 }
 
@@ -268,7 +262,7 @@ facebook::react::ShadowView makeTextInput(facebook::react::Tag tag, facebook::re
 }
 
 void addChild(react_native_linux::RetainedScene& scene, facebook::react::Tag parentTag,
-             const facebook::react::ShadowView& child) {
+              const facebook::react::ShadowView& child) {
     scene.createNode(child);
     scene.insertChild(parentTag, child, 0);
 }

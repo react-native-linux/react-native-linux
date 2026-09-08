@@ -3,12 +3,11 @@
 #include "SceneTestSupport.h"
 
 #include <gtest/gtest.h>
+#include <memory>
+#include <vector>
 
 #include <react/renderer/components/view/AccessibilityPrimitives.h>
 #include <react/renderer/components/view/ViewProps.h>
-
-#include <memory>
-#include <vector>
 
 // #264: an `accessibilityState`/`accessibilityValue` change is the smallest observable of "an AT-SPI
 // `state-changed`/`property-change` event would fire here" this platform can assert on before the AT-SPI bridge
@@ -43,7 +42,8 @@ std::shared_ptr<ViewProps> propsWithValue(int now) {
     return viewProps;
 }
 
-void mountWithAccessibilityProps(LinuxMountingManager& mountingManager, const std::shared_ptr<ViewProps>& initialProps) {
+void mountWithAccessibilityProps(LinuxMountingManager& mountingManager,
+                                 const std::shared_ptr<ViewProps>& initialProps) {
     const ShadowView child = makeStyledView(kMountedTag, makeRect(0, 0, 10, 10), initialProps);
     ShadowViewMutationList mutations{ShadowViewMutation::CreateMutation(child),
                                      ShadowViewMutation::InsertMutation(kSurfaceTag, child, 0)};
@@ -76,9 +76,9 @@ ShadowViewMutation toggleCheckedMutation(AccessibilityState::CheckedState from, 
 // asks what recording a change looks like starts from.
 void mountAndToggleChecked(LinuxMountingManager& mountingManager) {
     mountWithAccessibilityProps(mountingManager, propsWithState(AccessibilityState::CheckedState::Unchecked));
-    mountingManager.executeMount(
-        kSurfaceTag, transactionOf({toggleCheckedMutation(AccessibilityState::CheckedState::Unchecked,
-                                                          AccessibilityState::CheckedState::Checked)}));
+    mountingManager.executeMount(kSurfaceTag,
+                                 transactionOf({toggleCheckedMutation(AccessibilityState::CheckedState::Unchecked,
+                                                                      AccessibilityState::CheckedState::Checked)}));
 }
 
 TEST(LinuxMountingManagerAccessibilityChangesTest, StartsWithNoChanges) {
@@ -105,10 +105,10 @@ TEST(LinuxMountingManagerAccessibilityChangesTest, AValueChangeIsRecordedWithout
     mountWithAccessibilityProps(mountingManager, propsWithValue(1));
     const ShadowView previous = makeStyledView(kMountedTag, makeRect(0, 0, 10, 10), propsWithValue(1));
 
-    mountingManager.executeMount(kSurfaceTag,
-                                 transactionOf({ShadowViewMutation::UpdateMutation(
-                                     previous, makeStyledView(kMountedTag, makeRect(0, 0, 10, 10), propsWithValue(2)),
-                                     kSurfaceTag)}));
+    mountingManager.executeMount(
+        kSurfaceTag,
+        transactionOf({ShadowViewMutation::UpdateMutation(
+            previous, makeStyledView(kMountedTag, makeRect(0, 0, 10, 10), propsWithValue(2)), kSurfaceTag)}));
 
     const std::vector<AccessibilityChange> changes = mountingManager.takeAccessibilityChanges();
 
@@ -132,7 +132,7 @@ TEST(LinuxMountingManagerAccessibilityChangesTest, AStateAndValueChangeInOneComm
 
     mountingManager.executeMount(
         kSurfaceTag, transactionOf({ShadowViewMutation::UpdateMutation(
-                        previous, makeStyledView(kMountedTag, makeRect(0, 0, 10, 10), nextProps), kSurfaceTag)}));
+                         previous, makeStyledView(kMountedTag, makeRect(0, 0, 10, 10), nextProps), kSurfaceTag)}));
 
     const std::vector<AccessibilityChange> changes = mountingManager.takeAccessibilityChanges();
 
@@ -161,10 +161,12 @@ TEST(LinuxMountingManagerAccessibilityChangesTest, TwoUpdatesForOneTagInOneTrans
     mountWithAccessibilityProps(mountingManager, initialProps);
 
     const ShadowView initial = makeStyledView(kMountedTag, makeRect(0, 0, 10, 10), initialProps);
-    const ShadowView stateOnly = makeStyledView(
-        kMountedTag, makeRect(0, 0, 10, 10), identifiedCheckedProps("second", AccessibilityState::CheckedState::Checked, 1));
-    const ShadowView valueOnly = makeStyledView(
-        kMountedTag, makeRect(0, 0, 10, 10), identifiedCheckedProps("third", AccessibilityState::CheckedState::Checked, 2));
+    const ShadowView stateOnly =
+        makeStyledView(kMountedTag, makeRect(0, 0, 10, 10),
+                       identifiedCheckedProps("second", AccessibilityState::CheckedState::Checked, 1));
+    const ShadowView valueOnly =
+        makeStyledView(kMountedTag, makeRect(0, 0, 10, 10),
+                       identifiedCheckedProps("third", AccessibilityState::CheckedState::Checked, 2));
 
     mountingManager.executeMount(
         kSurfaceTag, transactionOf({ShadowViewMutation::UpdateMutation(initial, stateOnly, kSurfaceTag),
@@ -184,12 +186,12 @@ TEST(LinuxMountingManagerAccessibilityChangesTest, AnUpdateThatLeavesStateAndVal
     const ShadowView previous = mountCheckedView(mountingManager);
 
     // Only the frame differs — a plain relayout, not an accessibility change.
-    mountingManager.executeMount(
-        kSurfaceTag, transactionOf({ShadowViewMutation::UpdateMutation(
-                        previous,
-                        makeStyledView(kMountedTag, makeRect(0, 0, 20, 20),
-                                      propsWithState(AccessibilityState::CheckedState::Checked)),
-                        kSurfaceTag)}));
+    mountingManager.executeMount(kSurfaceTag,
+                                 transactionOf({ShadowViewMutation::UpdateMutation(
+                                     previous,
+                                     makeStyledView(kMountedTag, makeRect(0, 0, 20, 20),
+                                                    propsWithState(AccessibilityState::CheckedState::Checked)),
+                                     kSurfaceTag)}));
 
     EXPECT_TRUE(mountingManager.takeAccessibilityChanges().empty());
 }
@@ -207,8 +209,8 @@ TEST(LinuxMountingManagerAccessibilityChangesTest, AnUpdateCarryingNoViewPropsRe
 
 TEST(LinuxMountingManagerAccessibilityChangesTest, AnUpdateForATagTheSceneDoesNotHoldRecordsNothing) {
     LinuxMountingManager mountingManager;
-    const ShadowView orphan = makeStyledView(kMountedTag, makeRect(0, 0, 10, 10),
-                                             propsWithState(AccessibilityState::CheckedState::Checked));
+    const ShadowView orphan =
+        makeStyledView(kMountedTag, makeRect(0, 0, 10, 10), propsWithState(AccessibilityState::CheckedState::Checked));
 
     mountingManager.executeMount(kSurfaceTag,
                                  transactionOf({ShadowViewMutation::UpdateMutation(orphan, orphan, kSurfaceTag)}));
@@ -223,11 +225,11 @@ TEST(LinuxMountingManagerAccessibilityChangesTest, ARemountIsNotMistakenForAStat
         makeStyledView(kMountedTag, makeRect(0, 0, 10, 10), propsWithState(AccessibilityState::CheckedState::Checked));
 
     mountingManager.executeMount(
-        kSurfaceTag,
-        transactionOf({ShadowViewMutation::DeleteMutation(makeStyledView(
-                           kMountedTag, makeRect(0, 0, 10, 10), propsWithState(AccessibilityState::CheckedState::Unchecked))),
-                       ShadowViewMutation::CreateMutation(remounted),
-                       ShadowViewMutation::InsertMutation(kSurfaceTag, remounted, 0)}));
+        kSurfaceTag, transactionOf({ShadowViewMutation::DeleteMutation(
+                                        makeStyledView(kMountedTag, makeRect(0, 0, 10, 10),
+                                                       propsWithState(AccessibilityState::CheckedState::Unchecked))),
+                                    ShadowViewMutation::CreateMutation(remounted),
+                                    ShadowViewMutation::InsertMutation(kSurfaceTag, remounted, 0)}));
 
     EXPECT_TRUE(mountingManager.takeAccessibilityChanges().empty());
 }
@@ -248,7 +250,7 @@ ShadowView mountAndToggleCheckedWithTestId(LinuxMountingManager& mountingManager
 
     mountingManager.executeMount(
         kSurfaceTag, transactionOf({ShadowViewMutation::UpdateMutation(
-                        makeStyledView(kMountedTag, makeRect(0, 0, 10, 10), initialProps), checked, kSurfaceTag)}));
+                         makeStyledView(kMountedTag, makeRect(0, 0, 10, 10), initialProps), checked, kSurfaceTag)}));
 
     return checked;
 }
@@ -273,8 +275,9 @@ TEST(LinuxMountingManagerAccessibilityChangesTest, AChangeRecordedBeforeARemoval
 
     // The node is removed after the change was recorded — the scene no longer has a "toggle" tag to look up by
     // the time this change is described, but the change already captured its own testID at record time.
-    mountingManager.executeMount(kSurfaceTag, transactionOf({ShadowViewMutation::RemoveMutation(kSurfaceTag, removed, 0),
-                                                             ShadowViewMutation::DeleteMutation(removed)}));
+    mountingManager.executeMount(kSurfaceTag,
+                                 transactionOf({ShadowViewMutation::RemoveMutation(kSurfaceTag, removed, 0),
+                                                ShadowViewMutation::DeleteMutation(removed)}));
 
     EXPECT_EQ(changes[0].testId, "toggle");
 }

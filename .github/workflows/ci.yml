@@ -34,6 +34,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # format:cpp shells out to clang-format-18 (docs/cpp-toolchain.md, Toolchain paragraph); it is the only
+      # part of `pnpm validate` that needs a native tool on PATH.
+      - name: Install clang-format
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y clang-format-18
+          clang-format-18 --version
+
       - name: Validate
         run: pnpm validate
 

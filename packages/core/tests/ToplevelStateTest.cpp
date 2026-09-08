@@ -67,7 +67,7 @@ TEST(ToplevelStateTest, AnUnrecognisedStateIsIgnored) {
 struct TiledEdgeCase {
     std::string name;
     uint32_t wireState;
-    bool ToplevelState::* field;
+    bool ToplevelState::*field;
 };
 
 TEST(ToplevelStateTest, EachTiledEdgeIsDecodedIndependently) {

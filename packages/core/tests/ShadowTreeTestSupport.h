@@ -9,6 +9,9 @@
 #include <folly/dynamic.h>
 #include <gtest/gtest.h>
 #include <map>
+#include <string>
+#include <vector>
+
 #include <react/featureflags/ReactNativeFeatureFlags.h>
 #include <react/featureflags/ReactNativeFeatureFlagsDefaults.h>
 #include <react/renderer/components/root/RootShadowNode.h>
@@ -33,8 +36,6 @@
 #include <react/renderer/mounting/ShadowTree.h>
 #include <react/renderer/mounting/ShadowTreeDelegate.h>
 #include <react/renderer/uimanager/UIManager.h>
-#include <string>
-#include <vector>
 
 // The using-declarations both commit-driven test files share. They live here rather than in each file because a
 // second copy of the list is a jscpd clone at threshold 0. The header is included by tests only, so the
@@ -163,9 +164,9 @@ std::shared_ptr<const facebook::react::ShadowNode> makeConfiguredShadowNode(
  * untouched and only the child list changes. A helper rather than a lambda body repeated per fixture because the
  * same clone is a jscpd clone at threshold 0.
  */
-inline facebook::react::RootShadowNode::Unshared cloneRootWithChildren(
-    const facebook::react::RootShadowNode& oldRootShadowNode,
-    std::shared_ptr<const std::vector<std::shared_ptr<const facebook::react::ShadowNode>>> children) {
+inline facebook::react::RootShadowNode::Unshared
+cloneRootWithChildren(const facebook::react::RootShadowNode& oldRootShadowNode,
+                      std::shared_ptr<const std::vector<std::shared_ptr<const facebook::react::ShadowNode>>> children) {
     return std::static_pointer_cast<facebook::react::RootShadowNode>(oldRootShadowNode.ShadowNode::clone(
         ShadowNodeFragment{.props = ShadowNodeFragment::propsPlaceholder(), .children = std::move(children)}));
 }
@@ -179,7 +180,7 @@ inline facebook::react::RootShadowNode::Unshared cloneRootWithChildren(
  */
 template <typename PerNode>
 void collectAbsoluteFrames(const std::shared_ptr<const facebook::react::ShadowNode>& node, Point parentOrigin,
-                          std::map<Tag, Rect>& frames, const PerNode& perNode) {
+                           std::map<Tag, Rect>& frames, const PerNode& perNode) {
     perNode(node);
 
     const auto* layoutable = dynamic_cast<const LayoutableShadowNode*>(node.get());

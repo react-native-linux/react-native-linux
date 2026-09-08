@@ -37,14 +37,12 @@ SwitchGeometry switchGeometry(const facebook::react::Rect& frame, float thumbPro
     const float thumbDiameter = static_cast<float>(std::min(frame.size.width, frame.size.height));
     const float thumbRadius = std::max((thumbDiameter / 2) - kSwitchThumbInset, 0.0F);
     const float travelStart = static_cast<float>(frame.origin.x) + kSwitchThumbInset + thumbRadius;
-    const float travelEnd =
-        static_cast<float>(frame.origin.x + frame.size.width) - kSwitchThumbInset - thumbRadius;
+    const float travelEnd = static_cast<float>(frame.origin.x + frame.size.width) - kSwitchThumbInset - thumbRadius;
     const float travel = std::max(travelEnd, travelStart) - travelStart;
 
     return SwitchGeometry{.track = roundedBorderBox(frame, pillRadii(frame)),
-                          .thumbCenter =
-                              facebook::react::Point{.x = travelStart + (travel * clampedProgress),
-                                                     .y = frame.origin.y + (frame.size.height / 2)},
+                          .thumbCenter = facebook::react::Point{.x = travelStart + (travel * clampedProgress),
+                                                                .y = frame.origin.y + (frame.size.height / 2)},
                           .thumbRadius = thumbRadius};
 }
 

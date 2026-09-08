@@ -1,11 +1,11 @@
 #include "ConsoleBinding.h"
 
-#include <react/runtime/JSRuntimeBindings.h>
-
 #include <cstddef>
 #include <iostream>
 #include <ostream>
 #include <string>
+
+#include <react/runtime/JSRuntimeBindings.h>
 
 namespace react_native_linux {
 
