@@ -293,14 +293,28 @@ can act on `Retry` instead of merely not closing on it: a `Retry` from `wl_displ
 falling through to a read poll that would leave the pending request unsent — and gives up (without closing) if
 that poll times out.
 
-`--inject-protocol-error` is the fault-injection hook this needed to prove end to end: right after the window
-comes up, it acknowledges the initial `xdg_surface.configure` a second time with a serial no `configure` ever
-sent, which xdg-shell requires the compositor to reject with `XDG_SURFACE_ERROR_INVALID_SERIAL`. The
-`protocol-error` e2e scenario runs it, asserts the structured line appears in the trace, and — via the scenario
-schema's `reject` list — asserts libwayland's own bare "Broken pipe" never does, so an `allowErrors` scenario that
-tolerates the structured line can still fail on an unrelated regression in the same trace. The
-`xdg_wm_base.ping` responsiveness contract is #331's other remaining half; this change is the diagnostic and the
-flush retry, not the whole event-loop rework.
+`--inject-protocol-error` and `--inject-protocol-error-after-frame` are the fault-injection hooks this needed to
+prove end to end: both acknowledge the initial `xdg_surface.configure` a second time with a serial no `configure`
+ever sent, which xdg-shell requires the compositor to reject — the wlroots-based compositor CI runs under posts
+that rejection against `xdg_wm_base`, code 4, not against `xdg_surface` itself, so the scenarios assert on
+`xdg_wm_base#` rather than guessing the object from the spec alone. They differ in when: `--inject-protocol-error`
+injects before the first frame, which is the fatal-before-dispatch path — the failure this needed CI to find,
+where a renderer failure that happens before the client has read the socket (an unrecoverable `VkResult` from a
+surface the compositor has already torn down, say) used to report its own symptom and exit before
+`WaylandWindow::dispatchWithTimeout` ever saw the protocol error at all. `WaylandWindow::reportPendingDisplayError`
+closes that gap: it drains the socket without blocking and reports whatever is on it exactly the way
+`reportDispatchFailure` already does, and `WindowMain`'s top-level catch calls it before its own fatal report so
+the Wayland cause, when there is one, lands on the trace ahead of the symptom that came from it.
+`--inject-protocol-error-after-frame` injects the same rejection once a frame has already presented instead,
+proving the *ordinary* path needs none of that: the surface is healthy, so the error reaches
+`dispatchWithTimeout`'s own event loop with nothing to catch. The `protocol-error` and `protocol-error-loop` e2e
+scenarios run the two, assert the structured line appears in the trace, and — via the scenario schema's `reject`
+list — assert libwayland's own bare "Broken pipe" never does, so an `allowErrors` scenario that tolerates the
+structured line can still fail on an unrelated regression in the same trace; `reject` failures are checked outside
+`expectFailure`'s inversion for the same reason, so a rejected substring cannot be waved through by a negative
+control expecting a different failure. The `xdg_wm_base.ping` responsiveness contract is #331's other remaining
+half; this change is the diagnostic, the flush retry and the two fault-injection paths, not the whole event-loop
+rework.
 
 ### Swapchain to SkSurface
 

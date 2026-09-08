@@ -91,9 +91,7 @@ const wp_presentation_feedback_listener WaylandWindow::kPresentationFeedbackList
 };
 
 WaylandWindow::WaylandWindow(const WindowIdentity& identity, WindowSize initialSize)
-    : size_(initialSize),
-      title_(identity.title),
-      forceClientDecorations_(identity.forceClientDecorations),
+    : size_(initialSize), title_(identity.title), forceClientDecorations_(identity.forceClientDecorations),
       noDecorations_(identity.noDecorations) {
     display_ = wl_display_connect(nullptr);
 
@@ -326,6 +324,12 @@ bool WaylandWindow::waitForRedraw(std::chrono::milliseconds fallbackTimeout) {
     }
 
     return !closed_;
+}
+
+bool WaylandWindow::reportPendingDisplayError() {
+    dispatchWithTimeout(std::chrono::milliseconds::zero());
+
+    return closed_;
 }
 
 bool WaylandWindow::hasFrameCallbackFired() const noexcept { return frameCallbackFired_; }
