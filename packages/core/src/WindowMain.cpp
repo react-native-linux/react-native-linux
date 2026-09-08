@@ -78,6 +78,7 @@ constexpr std::string_view kNoDecorationsFlag = "--no-decorations";
 constexpr std::string_view kDefaultTitle = "react-native-linux";
 constexpr std::string_view kDefaultApplicationIdentifier = "react-native-linux";
 constexpr int kPrimaryPointerButton = 0;
+constexpr int kSecondaryPointerButton = 2;
 constexpr std::string_view kInjectProtocolErrorFlag = "--inject-protocol-error";
 constexpr std::string_view kInjectProtocolErrorAfterFrameFlag = "--inject-protocol-error-after-frame";
 constexpr std::string_view kWindowErrorSource = "rnl-window";
@@ -718,6 +719,8 @@ routeDecorationInput(react_native_linux::WaylandWindow& window, WindowChrome& ch
 
         const bool isPrimaryPress = event.kind == react_native_linux::InputEventKind::PointerButtonPress &&
                                     event.button == kPrimaryPointerButton;
+        const bool isSecondaryPress = event.kind == react_native_linux::InputEventKind::PointerButtonPress &&
+                                      event.button == kSecondaryPointerButton;
         const bool isPrimaryRelease = event.kind == react_native_linux::InputEventKind::PointerButtonRelease &&
                                       event.button == kPrimaryPointerButton;
         const bool routedToContent = chrome.pointerCapture.routeToContent(hit, isPrimaryPress, isPrimaryRelease);
@@ -725,6 +728,9 @@ routeDecorationInput(react_native_linux::WaylandWindow& window, WindowChrome& ch
         if (!routedToContent) {
             if (isPrimaryPress) {
                 activateDecoration(window, chrome, hit);
+            } else if (isSecondaryPress && hit == react_native_linux::DecorationHit::Drag) {
+                window.showWindowMenu(static_cast<int32_t>(event.surfacePoint.x),
+                                      static_cast<int32_t>(event.surfacePoint.y));
             }
 
             continue;

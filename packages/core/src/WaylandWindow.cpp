@@ -250,6 +250,16 @@ void WaylandWindow::startInteractiveResize(uint32_t edge) {
     xdg_toplevel_resize(toplevel_, seat_->seat(), serial.value(), edge);
 }
 
+void WaylandWindow::showWindowMenu(int32_t x, int32_t y) {
+    const std::optional<uint32_t> serial = serialLedger_.requestSerial(WaylandSerialKind::InteractiveMove);
+
+    if (seat_ == nullptr || !serial.has_value()) {
+        return;
+    }
+
+    xdg_toplevel_show_window_menu(toplevel_, seat_->seat(), serial.value(), x, y);
+}
+
 void WaylandWindow::toggleMaximized() {
     if (toplevelState_.maximized) {
         xdg_toplevel_unset_maximized(toplevel_);
