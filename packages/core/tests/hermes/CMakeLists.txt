@@ -53,6 +53,7 @@ endif()
 # not define, exactly as react-native-windows' JsiRuntimeGenerators.cpp does.
 add_executable(rnl_core_hermes_tests
     HermesRuntimeFactory.cpp
+    ReactHostTeardownTest.cpp
     ${googletest_SOURCE_DIR}/googlemock/src/gmock_main.cc
     ${REACT_COMMON_DIR}/jsi/jsi/test/testlib.cpp
     ${REACT_COMMON_DIR}/react/bridging/tests/BridgingTest.cpp

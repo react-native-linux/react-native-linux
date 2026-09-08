@@ -316,6 +316,15 @@ control expecting a different failure. The `xdg_wm_base.ping` responsiveness con
 half; this change is the diagnostic, the flush retry and the two fault-injection paths, not the whole event-loop
 rework.
 
+Both scenarios name `ready` as a line printed before their own injection, not `hello.js`'s own "bundle evaluated":
+the before-bring-up hook can kill the process ahead of the bundle ever running, and the after-frame hook injects
+before `WindowSession` — and therefore the bundle — even exists, so either scenario waiting on the bundle's own
+line would be waiting on a race it can lose. `[rnl-decorations] mode=bare` prints unconditionally before both
+hooks fire and is what each scenario waits on instead. `scripts/e2e.ts`'s `driveAndStop` also reads
+`compositor.signalCode` once its run finishes: a signal there is `cage` or the `rnl_window` child crashing, never
+a scenario's own exit, and it fails the scenario regardless of `allowErrors` — the gap that let a run ending in a
+Hermes abort still print "passed".
+
 ### Swapchain to SkSurface
 
 Each swapchain `VkImage` is wrapped directly as an `SkSurface` through `GrBackendRenderTargets::MakeVk` plus
@@ -1320,16 +1329,29 @@ because the frame thread needs a handle to it; `AnimatedModule` is built per loo
 the scheduler share a `NativeAnimatedNodesManager`.
 
 Destruction order is load-bearing and is now explicit in `~ReactHost`: quit the JavaScript thread, release the
-registry, release the manager provider, then destroy the instance. A `TurboModule` owns a `jsi::WeakObject` — the
-cached JavaScript representation `TurboModuleBinding::getModule` attaches to it — and a JSI pointer that outlives
-its runtime aborts a debug Hermes with *"This PointerValue was left dangling after the Runtime was destroyed"*.
-`DeviceInfo` is the module that made this reachable: it is held eagerly by the registry, so before this ordering
-the last reference to it was released after `reactInstance_.reset()` had already torn the runtime down, and only
-on a bundle that actually looked the module up — `--resize dimensions.js` aborted at exit in the Debug CI job
-while the Release presets did not. Members alone do not give this order, because the instance is reset explicitly
-in the destructor body and members are destroyed only after it returns. Nothing in `TurboModuleRegistry` or
-`LinuxDeviceInfoModule` caches a `jsi::Value` of its own; the representation inside the base class is the whole
-of the JSI state a module carries.
+registry, release the manager provider, release this host's own `TimerManager` reference, then destroy the
+instance. A `TurboModule` owns a `jsi::WeakObject` — the cached JavaScript representation
+`TurboModuleBinding::getModule` attaches to it — and a JSI pointer that outlives its runtime aborts a debug Hermes
+with *"This PointerValue was left dangling after the Runtime was destroyed"*. `DeviceInfo` is the module that made
+this reachable: it is held eagerly by the registry, so before this ordering the last reference to it was released
+after `reactInstance_.reset()` had already torn the runtime down, and only on a bundle that actually looked the
+module up — `--resize dimensions.js` aborted at exit in the Debug CI job while the Release presets did not.
+Members alone do not give this order, because the instance is reset explicitly in the destructor body and members
+are destroyed only after it returns. Nothing in `TurboModuleRegistry` or `LinuxDeviceInfoModule` caches a
+`jsi::Value` of its own; the representation inside the base class is the whole of the JSI state a module carries.
+
+The same failure has a second, later-discovered source: upstream's `TimerManager::timers_` holds a real
+`jsi::Function` per pending `setTimeout`/`setInterval` callback, and `TimerManager::quit()` — called from its own
+destructor — never clears that map. `ReactHost` passes `timerManager_` into `ReactInstance`'s constructor, so the
+two are joint owners of the same `TimerManager`, and `ReactInstance`'s own member order (correctly) drops its
+copy before it destroys its runtime — but that only destroys `TimerManager` itself, callbacks and all, if it was
+the *last* owner. Before this host also released its copy first, `ReactHost::timerManager_`'s own destruction
+happened in the compiler-generated epilogue after `reactInstance_.reset()` had already returned, which is after
+the runtime was gone; a bundle closed with a `setTimeout` still pending — `--inject-protocol-error-after-frame`
+on `hello.js`, which schedules two, is what found it — hit the same "dangling `PointerValue`" abort on exactly
+that map entry. `timerManager_.reset()` ahead of `reactInstance_.reset()` makes this host's copy the one that
+goes second only when it needs to, and guarantees `TimerManager` is never the one still holding a `jsi::Function`
+once the runtime beneath it is gone.
 
 Building the module per lookup is also what defers `NativeAnimatedNodesManagerProvider::getOrCreate` until
 JavaScript first reaches for the module. That call resolves the `UIManager` out of the runtime through
