@@ -1,7 +1,10 @@
 // The text-style matrix for the golden-image rig: `letterSpacing`, `textTransform`, `textDecorationLine` (with
-// `textDecorationColor`/`textDecorationStyle`), `textShadow*` and `fontVariant`, each mapped from `TextAttributes`
-// onto SkParagraph's `TextStyle` in `src/TextPipeline.cpp`, at two font sizes. Issue #250; docs/cpp-toolchain.md
-// *Text* documents which of these were unmapped before this fixture and what each row proves.
+// `textDecorationColor`/`textDecorationStyle`), `textShadow*`, `fontVariant`, and `fontWeight`/`fontStyle`, each
+// mapped from `TextAttributes` onto SkParagraph's `TextStyle` in `src/TextPipeline.cpp`, at two font sizes. Issue
+// #250; docs/cpp-toolchain.md *Text* documents which of these were unmapped before this fixture and what each row
+// proves. The `fontWeight`/`fontStyle` row is issue #70 item 3: it draws the vendored Noto Sans Bold and Italic
+// faces next to Regular, and `bundledFontFamilyResolvesPinnedBoldFile`/`...ItalicFile` in `TextPipeline.cpp` are
+// what prove those are the pinned files rather than a synthesized faux-bold/faux-italic of Regular.
 //
 // Every string is ASCII plus the Latin-1 Supplement letters `TextTransform.cpp`'s case mapping covers (à-ÿ,
 // À-Þ), for the same reason `text.js` is ASCII: anything outside the vendored Noto Sans falls through to
@@ -164,6 +167,13 @@ addPropertyRows(
     text({ color: sky, fontVariant: ['lining-nums'] }, [rawText('0123456789')]),
   ],
 );
+
+addPropertyRows('fontWeight: bold / fontStyle: italic / both, against the Regular control', () => [
+  text({ color: white }, [rawText('regular ')]),
+  text({ color: amber, fontWeight: 'bold' }, [rawText('bold ')]),
+  text({ color: green, fontStyle: 'italic' }, [rawText('italic ')]),
+  text({ color: sky, fontWeight: 'bold', fontStyle: 'italic' }, [rawText('bold italic')]),
+]);
 
 const styleMatrixRoot = view({ flex: 1 }, [heading, ...rows]);
 const styleMatrixChildren = fabric.createChildSet();

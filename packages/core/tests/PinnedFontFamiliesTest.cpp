@@ -9,7 +9,7 @@ namespace {
 
 using react_native_linux::pinnedFontFamiliesFatalMessage;
 using react_native_linux::PinnedFontFamilyResolution;
-using react_native_linux::resolvedStyleIsPinnedDefault;
+using react_native_linux::resolvedStyleMatchesExactly;
 
 TEST(PinnedFontFamiliesTest, EveryPinnedFamilyResolvedIsNotFatal) {
     const std::vector<PinnedFontFamilyResolution> resolutions{{"Noto Sans", true}, {"Noto Color Emoji", true}};
@@ -41,8 +41,9 @@ TEST(PinnedFontFamiliesTest, EveryMissingFamilyIsNamed) {
     EXPECT_NE(message->find("\"Noto Color Emoji\""), std::string::npos);
 }
 
-TEST(PinnedFontFamiliesTest, TheUprightNormalWeightNormalWidthStyleIsThePinnedDefault) {
-    EXPECT_TRUE(resolvedStyleIsPinnedDefault(/* weight */ 400, /* width */ 5, /* slant */ 0));
+TEST(PinnedFontFamiliesTest, TheExactRequestedStyleMatches) {
+    EXPECT_TRUE(resolvedStyleMatchesExactly(/* weight */ 400, /* width */ 5, /* slant */ 0, /* expectedWeight */ 400,
+                                            /* expectedWidth */ 5, /* expectedSlant */ 0));
 }
 
 // The #372/CodeRabbit regression, measured against a real `SkFontMgr_New_Custom_Directory`: with
@@ -50,16 +51,34 @@ TEST(PinnedFontFamiliesTest, TheUprightNormalWeightNormalWidthStyleIsThePinnedDe
 // Sans")` is still non-empty (a family-only check would call this resolved), and
 // `matchFamilyStyle("Noto Sans", SkFontStyle())`'s nearest-match fallback silently returns the italic face
 // — weight 400, matching the request, but slant 1, not upright.
-TEST(PinnedFontFamiliesTest, OnlyANonRegularNotoSansFaceIsNotThePinnedDefaultStyle) {
-    EXPECT_FALSE(resolvedStyleIsPinnedDefault(/* weight */ 400, /* width */ 5, /* slant */ 1));
+TEST(PinnedFontFamiliesTest, ANearestMatchedItalicRequestIsNotTheDefaultStyle) {
+    EXPECT_FALSE(resolvedStyleMatchesExactly(/* weight */ 400, /* width */ 5, /* slant */ 1, /* expectedWeight */ 400,
+                                             /* expectedWidth */ 5, /* expectedSlant */ 0));
 }
 
-TEST(PinnedFontFamiliesTest, ABoldFaceIsNotThePinnedDefaultStyle) {
-    EXPECT_FALSE(resolvedStyleIsPinnedDefault(/* weight */ 700, /* width */ 5, /* slant */ 0));
+// #70 item 3: `bundledFontFamilyResolvesPinnedBoldFile`/`...ItalicFile` in `TextPipeline.cpp` compare a
+// live-resolved style against 700/5/0 and 400/5/1 through this same function.
+TEST(PinnedFontFamiliesTest, ABoldFaceMatchesTheBoldRequest) {
+    EXPECT_TRUE(resolvedStyleMatchesExactly(/* weight */ 700, /* width */ 5, /* slant */ 0, /* expectedWeight */ 700,
+                                            /* expectedWidth */ 5, /* expectedSlant */ 0));
 }
 
-TEST(PinnedFontFamiliesTest, ANonNormalWidthIsNotThePinnedDefaultStyle) {
-    EXPECT_FALSE(resolvedStyleIsPinnedDefault(/* weight */ 400, /* width */ 3, /* slant */ 0));
+TEST(PinnedFontFamiliesTest, ANearestMatchedRegularRequestIsNotABoldFace) {
+    EXPECT_FALSE(resolvedStyleMatchesExactly(/* weight */ 400, /* width */ 5, /* slant */ 0,
+                                             /* expectedWeight */ 700, /* expectedWidth */ 5,
+                                             /* expectedSlant */ 0));
+}
+
+TEST(PinnedFontFamiliesTest, ANearestMatchedRegularRequestIsNotAnItalicFace) {
+    EXPECT_FALSE(resolvedStyleMatchesExactly(/* weight */ 400, /* width */ 5, /* slant */ 0,
+                                             /* expectedWeight */ 400, /* expectedWidth */ 5,
+                                             /* expectedSlant */ 1));
+}
+
+TEST(PinnedFontFamiliesTest, AMismatchedWidthIsNotAnExactMatch) {
+    EXPECT_FALSE(resolvedStyleMatchesExactly(/* weight */ 400, /* width */ 3, /* slant */ 0,
+                                             /* expectedWeight */ 400, /* expectedWidth */ 5,
+                                             /* expectedSlant */ 0));
 }
 
 } // namespace
