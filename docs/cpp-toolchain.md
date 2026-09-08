@@ -7706,9 +7706,10 @@ that is upstream's view flattening, and the prop is how React Native itself opts
 
 Two constraints the code states rather than works around. Frames in the fixtures are authored absolutely, so
 what the tree proves is the mount rather than the measurement of a font the container may not have. And the
-tester's destructor calls `ReactNativeFeatureFlags::dangerouslyReset()`: `ReactHost`'s constructor installs the
-platform's overrides and upstream throws on a second `override` in a process, so without it a binary could hold
-one tester for its whole life.
+tester holds the platform's feature-flag overrides in an RAII member rather than resetting them in its
+destructor: `ReactHost`'s constructor installs them and upstream throws on a second `override` in a process, so
+without the reset a binary could hold one tester for its whole life — and a `FabricHost` that throws while it is
+being constructed never runs the destructor, which is why the reset is a member's rather than a line's.
 
 The ASan and TSan switches upstream spells `FANTOM_ENABLE_ASAN` and `FANTOM_ENABLE_TSAN` are the `asan` and
 `tsan` presets here, which sanitize the whole build including this binary; there is no per-target switch and no

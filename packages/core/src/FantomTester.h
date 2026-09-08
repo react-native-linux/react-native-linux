@@ -48,7 +48,24 @@ public:
     bool hasReportedFatalError() const;
 
 private:
+    /**
+     * Drops the platform's feature-flag overrides when it goes out of scope. `ReactHost`'s constructor installs
+     * them and upstream throws on a second `override` in a process, so a tester that left them behind would let
+     * a binary hold exactly one tester for its whole life. It is a member rather than a line in the destructor
+     * because a `FabricHost` that throws while it is being constructed destroys the members already built and
+     * never runs that destructor at all, and the next tester would then be the one that threw.
+     */
+    struct FeatureFlagOverrideScope final {
+        FeatureFlagOverrideScope() = default;
+        FeatureFlagOverrideScope(const FeatureFlagOverrideScope&) = delete;
+        FeatureFlagOverrideScope(FeatureFlagOverrideScope&&) = delete;
+        FeatureFlagOverrideScope& operator=(const FeatureFlagOverrideScope&) = delete;
+        FeatureFlagOverrideScope& operator=(FeatureFlagOverrideScope&&) = delete;
+        ~FeatureFlagOverrideScope() noexcept;
+    };
+
     ReactHost reactHost_;
+    FeatureFlagOverrideScope featureFlagOverrideScope_;
     std::unique_ptr<FabricHost> fabricHost_;
     size_t taskCount_{0};
 };

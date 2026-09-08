@@ -25,15 +25,14 @@ FantomTester::FantomTester(facebook::react::Size surfaceSize)
                                       DimensionsSource::kDefaultScale);
 }
 
+FantomTester::FeatureFlagOverrideScope::~FeatureFlagOverrideScope() noexcept {
+    facebook::react::ReactNativeFeatureFlags::dangerouslyReset();
+}
+
 FantomTester::~FantomTester() noexcept {
     fabricHost_->stopSurface();
     reactHost_.drainJavaScriptThread();
     fabricHost_.reset();
-
-    // `ReactHost`'s constructor installs the platform's feature-flag overrides, and upstream throws on a second
-    // `override` for the process. One tester per process would be the alternative, so the overrides are dropped
-    // here rather than at the next construction: this is the object whose lifetime the host's is nested inside.
-    facebook::react::ReactNativeFeatureFlags::dangerouslyReset();
 }
 
 void FantomTester::runTask(const std::string& script) {
