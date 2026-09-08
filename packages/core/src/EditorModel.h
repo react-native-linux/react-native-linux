@@ -156,6 +156,25 @@ public:
     size_t compositionEndByte() const noexcept;
     bool isComposing() const noexcept;
 
+    /**
+     * The display text, caret and anchor with the composing run cut out of all three, in the display buffer's own
+     * byte offsets — what `zwp_text_input_v3::set_surrounding_text` is required to carry. The protocol says the
+     * composing text must never appear in surrounding text, because the compositor already knows what it sent as
+     * `preedit_string`; echoing it back is the double-apply class of bug this exists to keep off the wire.
+     *
+     * A caret or anchor inside the composing run has nowhere left to point once the run is gone, so it clamps to
+     * where the run began — the position both sides agree describes "the composition has not landed yet".
+     */
+    struct SurroundingText {
+        std::string text;
+        size_t cursorByte{0};
+        size_t anchorByte{0};
+
+        bool operator==(const SurroundingText&) const = default;
+    };
+
+    SurroundingText surroundingText() const;
+
     int mostRecentEventCount() const noexcept;
 
     /**

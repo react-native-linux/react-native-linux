@@ -581,9 +581,10 @@ void TextInputController::publish(TextInputField& field) {
     }
 
     if (isFocused && textInputFocusSink_ != nullptr) {
-        textInputFocusSink_->setSurroundingText(
-            displayed, static_cast<int32_t>(field.editor.displayOffsetForByte(field.editor.selection().caretByte)),
-            static_cast<int32_t>(field.editor.displayOffsetForByte(field.editor.selection().anchorByte)));
+        const EditorModel::SurroundingText surrounding = field.editor.surroundingText();
+
+        textInputFocusSink_->setSurroundingText(surrounding.text, static_cast<int32_t>(surrounding.cursorByte),
+                                                static_cast<int32_t>(surrounding.anchorByte));
         textInputFocusSink_->setCursorRectangle(
             static_cast<int32_t>(box.origin.x + geometry.caret.origin.x - field.scrollOffsetX),
             static_cast<int32_t>(box.origin.y + geometry.caret.origin.y),
