@@ -1080,6 +1080,7 @@ elseif(RNL_ENABLE_WINDOW)
         src/SharedMemoryRasterRenderer.cpp
         src/SkiaVulkanRenderer.cpp
         src/SurfaceCommitGate.cpp
+        src/SurfacePresentationPolicy.cpp
         src/TextInputClient.cpp
         src/TextInputSession.cpp
         src/TextInputV3State.cpp

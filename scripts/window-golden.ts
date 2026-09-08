@@ -2,6 +2,7 @@ import { argv, env, pid, stderr, stdout } from "node:process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
+import { fixtures } from "./window-fixtures.ts";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
@@ -16,8 +17,6 @@ const SOCKET_TIMEOUT_MS = 15_000;
 const SOCKET_POLL_INTERVAL_MS = 50;
 const COMPOSITOR_STOP_GRACE_MS = 250;
 const RENDER_TIMEOUT_MS = 120_000;
-const SCREENSHOT_FRAME_COUNT = "60";
-const FIRST_FRAME_COUNT = "1";
 const WINDOW_WIDTH = "800";
 const WINDOW_HEIGHT = "600";
 
@@ -34,39 +33,11 @@ const generatedManifestName = "rnl-lvp_icd.generated.json";
 /** Every variable that could point the client at the developer's own session or driver; dropped, not overwritten. */
 const overriddenEnvironmentNames = new Set(["DISPLAY", "WAYLAND_DISPLAY", "VK_DRIVER_FILES", "VK_ICD_FILENAMES"]);
 
-interface WindowFixture {
-  readonly bundleFileName: string | null;
-  readonly extraArguments: readonly string[];
-  readonly goldenFileName: string;
-  readonly frameCount: string;
-}
-
 const repositoryRoot = path.resolve(import.meta.dirname, "..");
 const packageDirectory = path.join(repositoryRoot, "packages", "core");
 const bundlesDirectory = path.join(packageDirectory, "test-bundles");
 const binaryPath = path.join(repositoryRoot, "build", "dev", "bin", "rnl_window");
 const defaultOutputDirectory = path.join(repositoryRoot, "build", "window-goldens");
-
-const clientDecorations = ["--app-id", "org.reactnative.linux.golden", "--force-client-decorations"];
-
-/**
- * The first-frame fixture takes no bundle and one frame: the placeholder paints synchronously, so this is the
- * first-buffer check the invisible-window bug (#328) fails and a 60-frame settle does not. See *Surface commit
- * ordering* in docs/cpp-toolchain.md. The decorations fixture is #329's drawn bar; the other three are bare.
- */
-const defaultFixture = { extraArguments: ["--no-decorations"], frameCount: SCREENSHOT_FRAME_COUNT };
-
-const fixtures: readonly WindowFixture[] = [
-  { ...defaultFixture, bundleFileName: "fabric-view.js", goldenFileName: "window-fabric-view.png" },
-  { ...defaultFixture, bundleFileName: "view-props.js", goldenFileName: "window-view-props.png" },
-  { ...defaultFixture, bundleFileName: null, frameCount: FIRST_FRAME_COUNT, goldenFileName: "window-first-frame.png" },
-  {
-    ...defaultFixture,
-    bundleFileName: "fabric-view.js",
-    extraArguments: clientDecorations,
-    goldenFileName: "window-decorations.png",
-  },
-];
 
 const findExecutable = (executableName: string): string | null => {
   for (const searchDirectory of (env["PATH"] ?? "").split(path.delimiter)) {
@@ -208,7 +179,7 @@ const stopCompositor = async (compositor: ReturnType<typeof spawn>, runtimeDirec
 };
 
 const renderFixture = (
-  fixture: WindowFixture,
+  fixture: (typeof fixtures)[number],
   outputPath: string,
   clientEnvironment: Record<string, string | undefined>,
 ): void => {

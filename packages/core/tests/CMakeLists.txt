@@ -104,6 +104,7 @@ add_executable(rnl_core_tests
     UpstreamTestDriftOracleTest.cpp
     GpuResourceInvalidationTest.cpp
     SurfaceCommitGateTest.cpp
+    SurfacePresentationPolicyTest.cpp
     VulkanResultPolicyTest.cpp
     WaylandDispatchDiagnosticsTest.cpp
     WaylandSerialLedgerTest.cpp
@@ -155,6 +156,7 @@ add_executable(rnl_core_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ToplevelState.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/GpuResourceInvalidation.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/SurfaceCommitGate.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/SurfacePresentationPolicy.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/VulkanResultPolicy.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/WaylandDispatchDiagnostics.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/WaylandSerialLedger.cpp

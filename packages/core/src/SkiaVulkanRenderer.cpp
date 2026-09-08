@@ -1,6 +1,7 @@
 #include "SkiaVulkanRenderer.h"
 
 #include "RendererLadder.h"
+#include "SurfacePresentationPolicy.h"
 #include "TextRasterizationPolicySkia.h"
 #include "VulkanResultPolicy.h"
 #include "include/core/SkAlphaType.h"
@@ -120,6 +121,11 @@ static_assert(kVulkanDeviceTypeIntegratedGpu == static_cast<uint32_t>(VK_PHYSICA
 static_assert(kVulkanDeviceTypeDiscreteGpu == static_cast<uint32_t>(VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU));
 static_assert(kVulkanDeviceTypeVirtualGpu == static_cast<uint32_t>(VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU));
 static_assert(kVulkanDeviceTypeCpu == static_cast<uint32_t>(VK_PHYSICAL_DEVICE_TYPE_CPU));
+
+static_assert(kCompositeAlphaOpaqueBit == static_cast<uint32_t>(VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR));
+static_assert(kCompositeAlphaPreMultipliedBit == static_cast<uint32_t>(VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR));
+static_assert(kCompositeAlphaPostMultipliedBit == static_cast<uint32_t>(VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR));
+static_assert(kCompositeAlphaInheritBit == static_cast<uint32_t>(VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR));
 
 std::string describePhysicalDevice(const VkPhysicalDeviceProperties& properties) {
     return std::string(static_cast<const char*>(properties.deviceName)) + " " +
@@ -703,24 +709,26 @@ void SkiaVulkanRenderer::createSwapchain() {
                                                            surfaceFormats.data()),
                       "vkGetPhysicalDeviceSurfaceFormatsKHR");
 
-    VkSurfaceFormatKHR selectedFormat{VK_FORMAT_UNDEFINED, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
+    SurfaceFormatAvailability formatAvailability{};
 
     for (const VkSurfaceFormatKHR& candidate : surfaceFormats) {
-        if (candidate.colorSpace != VK_COLOR_SPACE_SRGB_NONLINEAR_KHR ||
-            colorTypeForFormat(candidate.format) == kUnknown_SkColorType) {
+        if (candidate.colorSpace != VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
             continue;
         }
 
-        selectedFormat = candidate;
-
-        if (candidate.format == VK_FORMAT_B8G8R8A8_UNORM) {
-            break;
-        }
+        formatAvailability.isPreferredBgra8Available |= candidate.format == VK_FORMAT_B8G8R8A8_UNORM;
+        formatAvailability.isFallbackRgba8Available |= candidate.format == VK_FORMAT_R8G8B8A8_UNORM;
     }
 
-    if (selectedFormat.format == VK_FORMAT_UNDEFINED) {
+    const SurfaceFormatChoice formatChoice = selectSurfaceFormat(formatAvailability);
+
+    if (formatChoice == SurfaceFormatChoice::NoUsableFormat) {
         throw std::runtime_error("no 8-bit sRGB swapchain format is available on this surface");
     }
+
+    const VkFormat selectedFormatValue =
+        formatChoice == SurfaceFormatChoice::PreferredBgra8 ? VK_FORMAT_B8G8R8A8_UNORM : VK_FORMAT_R8G8B8A8_UNORM;
+    const VkSurfaceFormatKHR selectedFormat{selectedFormatValue, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
 
     VkImageUsageFlags imageUsage =
         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
@@ -738,10 +746,8 @@ void SkiaVulkanRenderer::createSwapchain() {
         imageCount = std::min(imageCount, capabilities.maxImageCount);
     }
 
-    const VkCompositeAlphaFlagBitsKHR compositeAlpha =
-        (capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR) != 0
-            ? VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR
-            : VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
+    const SurfaceAlphaChoice alphaChoice = selectSurfaceAlpha(capabilities.supportedCompositeAlpha);
+    const auto compositeAlpha = static_cast<VkCompositeAlphaFlagBitsKHR>(compositeAlphaFlagBitFor(alphaChoice));
 
     VkSwapchainKHR previousSwapchain = swapchain_;
     const VkSwapchainCreateInfoKHR swapchainCreateInfo{
@@ -775,6 +781,9 @@ void SkiaVulkanRenderer::createSwapchain() {
 
     swapchainSize_ = WindowSize{extent.width, extent.height};
     createBackbuffers(selectedFormat.format, imageUsage);
+
+    std::cout << "[rnl-window] swapchain format=" << describeSurfaceFormatChoice(formatChoice)
+              << " composite-alpha=" << describeSurfaceAlphaChoice(alphaChoice) << std::endl;
 }
 
 void SkiaVulkanRenderer::createBackbuffers(VkFormat imageFormat, VkImageUsageFlags imageUsage) {
