@@ -101,10 +101,10 @@ describe("generateDesktopEntry, list and value escaping", () => {
     expect(entry.contents).toContain('Exec="/opt/react native/flagship"');
   });
 
-  it("escapes backslashes and double quotes inside a quoted executable", () => {
+  it("escapes backslashes and double quotes inside a quoted executable, doubling each backslash again for the general value-escaping rule", () => {
     const entry = generateDesktopEntry({ ...baseManifest, exec: '/opt/weird "path"\\bin flagship' });
 
-    expect(entry.contents).toContain(String.raw`Exec="/opt/weird \"path\"\\bin flagship"`);
+    expect(entry.contents).toContain(String.raw`Exec="/opt/weird \\"path\\"\\\\bin flagship"`);
   });
 });
 

@@ -40,16 +40,16 @@ const joinDesktopEntryList = (items: readonly string[]): string =>
 
 const executableNeedsQuoting = /[\s"'\\><~|&;$*?#()`]/u;
 
-const quoteExecutable = (exec: string): string => {
+const quoteExecutableArgument = (exec: string): string => {
   if (!executableNeedsQuoting.test(exec)) {
     return exec;
   }
-  const escaped = exec
+  const shellEscaped = exec
     .replaceAll("\\", String.raw`\\`)
     .replaceAll('"', String.raw`\"`)
     .replaceAll("$", String.raw`\$`)
     .replaceAll("`", String.raw`\``);
-  return `"${escaped}"`;
+  return `"${shellEscaped}"`;
 };
 
 const validateIconValue = (icon: string): string => {
@@ -88,7 +88,7 @@ const generateDesktopEntry = (manifest: DesktopEntryManifest): GeneratedDesktopE
     "Type=Application",
     `Name=${escapeDesktopEntryValue(manifest.displayName)}`,
     ...(typeof comment === "string" ? [`Comment=${escapeDesktopEntryValue(comment)}`] : []),
-    `Exec=${quoteExecutable(manifest.exec)}${fieldCode}`,
+    `Exec=${escapeDesktopEntryValue(quoteExecutableArgument(manifest.exec))}${fieldCode}`,
     `Icon=${icon}`,
     `Categories=${joinDesktopEntryList(manifest.categories)}`,
     "Terminal=false",

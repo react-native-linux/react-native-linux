@@ -70,23 +70,22 @@ describe("layoutHicolorIconTree, mixed square sizes", () => {
     ]);
   });
 
-  it("suffixes the install path with @2 for a scale-2 source", () => {
+  it("names a scaled directory by its nominal size, dividing the source pixels by the scale", () => {
     const tree = layoutHicolorIconTree(
       [squareIcon(iconSize256, "/src/icon-256@2.png", doubleScale)],
       applicationIdentifier,
     );
 
     expect(tree.entries[firstEntryIndex]?.installPath).toBe(
-      "usr/share/icons/hicolor/256x256@2/apps/org.reactnativelinux.Flagship.png",
+      "usr/share/icons/hicolor/128x128@2/apps/org.reactnativelinux.Flagship.png",
     );
   });
 });
 
 describe("layoutHicolorIconTree, the directory icon and the no-square-icon failure", () => {
-  it("picks the largest square icon as the directory icon, ignoring non-square sources", () => {
+  it("picks the largest of several square icons as the directory icon", () => {
     const icons = [
       squareIcon(iconSize128, "/src/icon-128.png"),
-      { height: wideIconHeight, sourcePath: "/src/icon-wide.png", width: wideIconWidth },
       squareIcon(iconSize256, "/src/icon-256.png"),
       squareIcon(iconSize64, "/src/icon-64.png"),
     ];
@@ -97,19 +96,35 @@ describe("layoutHicolorIconTree, the directory icon and the no-square-icon failu
     expect(tree.entries).toHaveLength(icons.length);
   });
 
-  it("fails by name, not by panic, when no source icon is square", () => {
+  it("fails by name, not by panic, when every source is non-square", () => {
     const icons = [{ height: wideIconHeight, sourcePath: "/src/icon-wide.png", width: wideIconWidth }];
 
     expect(() => layoutHicolorIconTree(icons, applicationIdentifier)).toThrow(NoSquareIconError);
   });
 
-  it("reports the source count in the no-square-icon error message", () => {
+  it("fails on a mixed set too: any non-square source fails the whole tree", () => {
+    const icons = [
+      squareIcon(iconSize128, "/src/icon-128.png"),
+      { height: wideIconHeight, sourcePath: "/src/icon-wide.png", width: wideIconWidth },
+      squareIcon(iconSize256, "/src/icon-256.png"),
+    ];
+
+    expect(() => layoutHicolorIconTree(icons, applicationIdentifier)).toThrow(NoSquareIconError);
+  });
+
+  it("names the offending source and its dimensions in the error message", () => {
     const icons = [
       { height: wideIconHeight, sourcePath: "/src/icon-wide.png", width: wideIconWidth },
       { height: iconSize128, sourcePath: "/src/icon-tall.png", width: iconSize64 },
     ];
 
-    expect(() => layoutHicolorIconTree(icons, applicationIdentifier)).toThrow(`among ${icons.length} source(s)`);
+    expect(() => layoutHicolorIconTree(icons, applicationIdentifier)).toThrow(
+      `Icon source "/src/icon-wide.png" is ${wideIconWidth}x${wideIconHeight}, not square`,
+    );
+  });
+
+  it("fails when no icon sources are given at all", () => {
+    expect(() => layoutHicolorIconTree([], applicationIdentifier)).toThrow(NoSquareIconError);
   });
 });
 

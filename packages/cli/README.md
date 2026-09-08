@@ -27,10 +27,13 @@ path or a themed icon name, neither required to equal the identifier or the base
   rules for backslash, semicolon and control characters.
 - `src/hicolor-icon-tree.ts` — `layoutHicolorIconTree(icons, applicationIdentifier)` reads each source icon's
   *real* dimensions rather than trusting a filename (Tauri's `list_icon_files` is the reference), lays each out
-  at `usr/share/icons/hicolor/<w>x<h>[@2]/apps/<applicationIdentifier>.png`, and picks the largest square icon as
-  the directory icon (the AppImage `.DirIcon` selection). A source set with no square icon throws
-  `NoSquareIconError` by name — the AppImage bundler path this mirrors panics instead. `readPngDimensions` decodes
-  a PNG buffer with `pngjs`; `loadIconSource` is the thin disk-reading wrapper around it.
+  at `usr/share/icons/hicolor/<nominal-w>x<nominal-h>[@2]/apps/<applicationIdentifier>.png` — the nominal size is
+  the source's pixel size divided by its scale, so a 256px source at scale 2 lands in the `128x128@2` directory,
+  not `256x256@2` — and picks the largest square icon as the directory icon (the AppImage `.DirIcon` selection).
+  Every source must be square: a non-square source fails the whole call by name (`NoSquareIconError`, naming the
+  offending source and its dimensions) rather than being silently skipped, and an empty source list fails the
+  same way — the AppImage bundler path this mirrors panics instead. `readPngDimensions` decodes a PNG buffer with
+  `pngjs`; `loadIconSource` is the thin disk-reading wrapper around it.
 
 Both generators are pure functions over their inputs: no filesystem or process side effects beyond
 `loadIconSource`'s read. Validate a generated entry against the specification with `desktop-file-validate` (part

@@ -24,8 +24,8 @@ interface HicolorIconTree {
 }
 
 class NoSquareIconError extends Error {
-  public constructor(sourceCount: number) {
-    super(`No square icon found among ${sourceCount} source(s); the hicolor tree requires at least one`);
+  public constructor(message: string) {
+    super(message);
     this.name = "NoSquareIconError";
   }
 }
@@ -33,30 +33,48 @@ class NoSquareIconError extends Error {
 const noWidthSeenYet = -1;
 
 const hicolorInstallPath = (applicationIdentifier: string, icon: IconSource): string => {
-  const scaleSuffix = icon.scale === doubleScale ? "@2" : "";
-  return `usr/share/icons/hicolor/${icon.width}x${icon.height}${scaleSuffix}/apps/${applicationIdentifier}.png`;
+  const scale = icon.scale ?? standardScale;
+  const nominalSize = icon.width / scale;
+  const scaleSuffix = scale === doubleScale ? "@2" : "";
+  return `usr/share/icons/hicolor/${nominalSize}x${nominalSize}${scaleSuffix}/apps/${applicationIdentifier}.png`;
+};
+
+const requireEverySourceSquare = (icons: readonly IconSource[]): void => {
+  for (const icon of icons) {
+    if (icon.width !== icon.height) {
+      throw new NoSquareIconError(
+        `Icon source "${icon.sourcePath}" is ${icon.width}x${icon.height}, not square; every hicolor source must be square`,
+      );
+    }
+  }
+};
+
+const widestSourcePath = (icons: readonly IconSource[]): string => {
+  let largestWidth = noWidthSeenYet;
+  let largestSourcePath = "";
+  for (const icon of icons) {
+    if (icon.width > largestWidth) {
+      largestWidth = icon.width;
+      largestSourcePath = icon.sourcePath;
+    }
+  }
+
+  if (largestWidth === noWidthSeenYet) {
+    throw new NoSquareIconError("No icon sources were given; the hicolor tree requires at least one");
+  }
+
+  return largestSourcePath;
 };
 
 const layoutHicolorIconTree = (icons: readonly IconSource[], applicationIdentifier: string): HicolorIconTree => {
+  requireEverySourceSquare(icons);
+
   const entries = icons.map((icon) => ({
     installPath: hicolorInstallPath(applicationIdentifier, icon),
     sourcePath: icon.sourcePath,
   }));
 
-  let largestSquareWidth = noWidthSeenYet;
-  let largestSquareSourcePath = "";
-  for (const icon of icons) {
-    if (icon.width === icon.height && icon.width > largestSquareWidth) {
-      largestSquareWidth = icon.width;
-      largestSquareSourcePath = icon.sourcePath;
-    }
-  }
-
-  if (largestSquareWidth === noWidthSeenYet) {
-    throw new NoSquareIconError(icons.length);
-  }
-
-  return { directoryIconSourcePath: largestSquareSourcePath, entries };
+  return { directoryIconSourcePath: widestSourcePath(icons), entries };
 };
 
 const readPngDimensions = (pngBuffer: Buffer): { readonly width: number; readonly height: number } => {
