@@ -5,7 +5,7 @@
   "frames": 900,
   "injectProtocolError": true,
   "allowErrors": true,
-  "expectFailure": true,
   "steps": ["sleep 500"],
-  "expect": ["[rnl-window] wayland protocol error: xdg_surface#"]
+  "expect": ["[rnl-window] wayland protocol error: xdg_surface#"],
+  "reject": ["Broken pipe"]
 }

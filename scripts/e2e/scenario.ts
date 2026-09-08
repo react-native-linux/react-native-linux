@@ -15,23 +15,10 @@ import path from "node:path";
 import { readAccessibilityChanges } from "./accessibility-changes.ts";
 
 const DEFAULT_FRAME_COUNT = 600;
-const EMPTY_LENGTH = 0;
-const NOT_FOUND_INDEX = -1;
-const FIRST_LINE_INDEX = 0;
-const NEXT_LINE = 1;
-
 const FRAME_LOG_FILE_NAME = "frames.jsonl";
 const SCREENSHOT_FILE_NAME = "screenshot.png";
 const TRACE_FILE_NAME = "trace.log";
 const PARENT_DIRECTORY = "..";
-
-/**
- * The narrow slice of "error" the trace can prove today, per #233: an uncaught JS error's own report from
- * `JsErrorReporter`, and the bracketed component tags `rnl_window`'s C++ diagnostics use when they hit a fault.
- * A raw `console.error`/`console.warn` call is deliberately not in this list — `ConsoleBinding` prints it with no
- * prefix, indistinguishable from `console.log`, until #214's `ListErrors` channel replaces this mechanism.
- */
-const ERROR_TRACE_PATTERNS: readonly string[] = ["[js-error]", "[bundle-runner]", "[image]", "[text]", "[rnl-window]"];
 
 /**
  * The perf gate of #7: `p95Ms`/`minFrames` bound the p95 `wp_presentation` frame time and the frames needed for
@@ -94,6 +81,8 @@ interface Scenario {
   readonly name: string;
   /** The trace line that means the bundle has committed and input can start. */
   readonly ready: string;
+  /** Trace substrings the run must never produce, checked regardless of `allowErrors`/`expectFailure`. */
+  readonly reject: readonly string[];
   readonly screenshot: ScreenshotComparison | null;
   /** `rnl_inject` script lines. */
   readonly steps: readonly string[];
@@ -216,6 +205,7 @@ const parseScenario = (value: unknown, sourceName: string): Scenario => {
     injectProtocolError: readOptionalBoolean(value, "injectProtocolError", sourceName),
     name: readString(value["name"], "name", sourceName),
     ready: readString(value["ready"], "ready", sourceName),
+    reject: readOptionalStringArray(value, "reject", sourceName) ?? [],
     screenshot: readScreenshotComparison(value, sourceName),
     steps: readStringArray(value["steps"], "steps", sourceName),
     windowFlags: readOptionalStringArray(value, "windowFlags", sourceName),
@@ -223,59 +213,6 @@ const parseScenario = (value: unknown, sourceName: string): Scenario => {
 };
 
 const formatInjectorScript = (steps: readonly string[]): string => `${steps.join("\n")}\n`;
-
-/** Ordered substring matching: every expectation must appear on a later line than the one before it. */
-const findMissingExpectations = (traceLines: readonly string[], expectations: readonly string[]): readonly string[] => {
-  const missing: string[] = [];
-  let searchIndex = FIRST_LINE_INDEX;
-
-  for (const expectation of expectations) {
-    const remaining = traceLines.slice(searchIndex);
-    const matchIndex = remaining.findIndex((line) => line.includes(expectation));
-
-    if (matchIndex === NOT_FOUND_INDEX) {
-      missing.push(expectation);
-    } else {
-      searchIndex += matchIndex + NEXT_LINE;
-    }
-  }
-
-  return missing;
-};
-
-/** Every trace line that matches one of `ERROR_TRACE_PATTERNS`, in the order the trace produced them. */
-const findErrorLines = (traceLines: readonly string[]): readonly string[] =>
-  traceLines.filter((line) => ERROR_TRACE_PATTERNS.some((pattern) => line.includes(pattern)));
-
-/**
- * Every failure the trace itself proves: a missing expectation, and — unless `allowErrors` opts a scenario out —
- * a logged error line. The #233 error gate stacks onto the pre-existing ordered-substring assertions rather than
- * replacing them.
- */
-const describeTraceFailures = (scenario: Scenario, trace: string): readonly string[] => {
-  const traceLines = trace.split("\n");
-  const missing = findMissingExpectations(traceLines, scenario.expect).map(
-    (expectation) => `the trace never produced "${expectation}"`,
-  );
-
-  if (scenario.allowErrors) {
-    return missing;
-  }
-
-  return [...missing, ...findErrorLines(traceLines).map((line) => `the trace logged an error: ${line}`)];
-};
-
-/**
- * `expectFailure` inverts a run's failures for a negative control: the scenario passes only when grading it
- * produced at least one failure, and reports one of its own when grading produced none.
- */
-const resolveExpectedOutcome = (scenario: Scenario, failures: readonly string[]): readonly string[] => {
-  if (!scenario.expectFailure) {
-    return failures;
-  }
-
-  return failures.length === EMPTY_LENGTH ? ["expectFailure is set, but the scenario produced no failures"] : [];
-};
 
 const resolveArtifactPaths = (artifactsRoot: string, scenarioName: string): ArtifactPaths => {
   const directory = path.join(artifactsRoot, scenarioName);
@@ -288,13 +225,6 @@ const resolveArtifactPaths = (artifactsRoot: string, scenarioName: string): Arti
   };
 };
 
-export {
-  describeTraceFailures,
-  findErrorLines,
-  findMissingExpectations,
-  formatInjectorScript,
-  parseScenario,
-  resolveArtifactPaths,
-  resolveExpectedOutcome,
-};
+export { describeTraceFailures, resolveExpectedOutcome } from "./trace-grading.ts";
+export { formatInjectorScript, parseScenario, resolveArtifactPaths };
 export type { FrameBudget, Scenario, ScenarioAutomation };

@@ -41,6 +41,7 @@ const baseScenario: Scenario = {
   injectProtocolError: false,
   name: "pressable-click",
   ready: "pressable: committed surface 1",
+  reject: [],
   screenshot: null,
   steps: ["sleep 500"],
   windowFlags: [],

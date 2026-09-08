@@ -1,13 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  describeTraceFailures,
-  findErrorLines,
-  findMissingExpectations,
-  formatInjectorScript,
-  parseScenario,
-  resolveArtifactPaths,
-  resolveExpectedOutcome,
-} from "./scenario.ts";
+import { formatInjectorScript, parseScenario, resolveArtifactPaths } from "./scenario.ts";
 
 const DEFAULT_FRAME_COUNT = 600;
 const EXPLICIT_FRAME_COUNT = 120;
@@ -39,6 +31,7 @@ describe("parseScenario", () => {
       injectProtocolError: false,
       name: "pressable-click",
       ready: "pressable: committed surface 1",
+      reject: [],
       screenshot: null,
       steps: ["sleep 500", "click 200 140"],
     });
@@ -65,6 +58,11 @@ describe("parseScenario", () => {
     const overrides = { allowErrors: true, expectFailure: true, injectProtocolError: true };
     expect(parseScenario({ ...validScenario, ...overrides }, "fixture.json")).toMatchObject(overrides);
   });
+
+  it("reads an explicit reject list", () =>
+    expect(parseScenario({ ...validScenario, reject: ["Broken pipe"] }, "fixture.json").reject).toEqual([
+      "Broken pipe",
+    ]));
 });
 
 describe("parseScenario boolean rejections", () => {
@@ -201,90 +199,6 @@ describe("parseScenario screenshot", () => {
 describe("formatInjectorScript", () => {
   it("writes one step per line and terminates the last one", () => {
     expect(formatInjectorScript(["sleep 500", "click 200 140"])).toBe("sleep 500\nclick 200 140\n");
-  });
-});
-
-describe("findMissingExpectations", () => {
-  const trace = ["pressable: committed surface 1", "pressable: topPointerDown on box", "pressable: topClick on box"];
-
-  it("reports nothing when every expectation appears in order", () => {
-    expect(findMissingExpectations(trace, ["topPointerDown", "topClick"])).toEqual([]);
-  });
-
-  it("reports an expectation the trace never produced", () => {
-    expect(findMissingExpectations(trace, ["topKeyPress"])).toEqual(["topKeyPress"]);
-  });
-
-  it("reports an expectation that only appears before the one it has to follow", () => {
-    expect(findMissingExpectations(trace, ["topClick", "topPointerDown"])).toEqual(["topPointerDown"]);
-  });
-});
-
-describe("findErrorLines", () => {
-  it("reports nothing when no line matches a known pattern", () => {
-    expect(findErrorLines(["pressable: committed surface 1", "pressable: topClick on box"])).toEqual([]);
-  });
-
-  it("finds an uncaught JS error's own report", () => {
-    const trace = ["throws: failing bundle evaluated", "[js-error] fatal Error: intentional bundle failure"];
-
-    expect(findErrorLines(trace)).toEqual(["[js-error] fatal Error: intentional bundle failure"]);
-  });
-
-  it("finds a native diagnostic prefix", () => {
-    const trace = ["[rnl-window] the compositor does not advertise zwp_text_input_manager_v3"];
-
-    expect(findErrorLines(trace)).toEqual(trace);
-  });
-});
-
-describe("describeTraceFailures", () => {
-  const scenario = parseScenario(validScenario, "fixture.json");
-  const passingTrace = ["pressable: committed surface 1", "pressable: topClick on box at 200,140"].join("\n");
-
-  it("reports nothing for a trace with every expectation and no error line", () => {
-    expect(describeTraceFailures(scenario, passingTrace)).toEqual([]);
-  });
-
-  it("reports a missing expectation", () => {
-    expect(describeTraceFailures(scenario, "pressable: committed surface 1")).toEqual([
-      'the trace never produced "pressable: topClick on box at 200,140"',
-    ]);
-  });
-
-  it("reports a logged error line", () => {
-    const trace = `${passingTrace}\n[js-error] fatal Error: intentional bundle failure`;
-
-    expect(describeTraceFailures(scenario, trace)).toEqual([
-      "the trace logged an error: [js-error] fatal Error: intentional bundle failure",
-    ]);
-  });
-
-  it("does not report an error line when allowErrors is set", () => {
-    const tolerant = { ...scenario, allowErrors: true };
-    const trace = `${passingTrace}\n[js-error] fatal Error: intentional bundle failure`;
-
-    expect(describeTraceFailures(tolerant, trace)).toEqual([]);
-  });
-});
-
-describe("resolveExpectedOutcome", () => {
-  const scenario = parseScenario(validScenario, "fixture.json");
-  const negativeControl = { ...scenario, expectFailure: true };
-
-  it("passes failures through unchanged when expectFailure is not set", () => {
-    expect(resolveExpectedOutcome(scenario, ["boom"])).toEqual(["boom"]);
-    expect(resolveExpectedOutcome(scenario, [])).toEqual([]);
-  });
-
-  it("turns a failing run into a pass when expectFailure is set", () => {
-    expect(resolveExpectedOutcome(negativeControl, ["boom"])).toEqual([]);
-  });
-
-  it("fails a run with no failures when expectFailure is set", () => {
-    expect(resolveExpectedOutcome(negativeControl, [])).toEqual([
-      "expectFailure is set, but the scenario produced no failures",
-    ]);
   });
 });
 
