@@ -36,6 +36,17 @@ TEST(MountTreeTextTest, KeepsTheDigitsOfAFractionalFrame) {
     EXPECT_EQ(renderMountTree(nodes), "<rn-view layoutMetrics-frame=\"{x:0.5,y:0,width:10.25,height:0}\" />\n");
 }
 
+// Six fractional digits are what `std::to_string` prints, so these two coordinates would render identically
+// under it and a node that moved would assert as one that had not.
+TEST(MountTreeTextTest, RendersTwoCoordinatesThatDifferBeyondSixDigitsDifferently) {
+    SceneNodes nodes;
+
+    nodes[1] = makeNode(1, 0, "View", {.origin = {.x = 0.1234567F, .y = 0.1234568F}, .size = {}});
+
+    EXPECT_EQ(renderMountTree(nodes),
+              "<rn-view layoutMetrics-frame=\"{x:0.1234567,y:0.1234568,width:0,height:0}\" />\n");
+}
+
 TEST(MountTreeTextTest, RendersTheTestIdWhenTheNodeCarriesOne) {
     SceneNodes nodes;
 

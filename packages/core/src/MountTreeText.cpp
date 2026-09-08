@@ -1,7 +1,9 @@
 #include "MountTreeText.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
+#include <charconv>
 #include <cstddef>
 #include <string>
 #include <vector>
@@ -12,20 +14,21 @@ namespace {
 
 constexpr size_t kIndentSpacesPerLevel = 2;
 
+// The shortest round-trip form of a `float` is at most fifteen characters, sign and exponent included, so
+// `std::to_chars` below cannot run out of room and its result never has to be checked.
+constexpr size_t kCoordinateCapacity = 32;
+
 /**
- * A coordinate with no trailing zeroes, so `100` renders as `100` rather than as `100.000000` and a fractional
- * layout keeps the digits that distinguish it.
+ * A coordinate in the shortest form that reads back as the same number: `100` renders as `100` rather than as
+ * `100.000000`, and two coordinates that differ render differently. `std::to_string` cannot do the second — it
+ * prints six fractional digits and nothing beyond them, so it collapses `0.1234567` and `0.1234568` onto one
+ * string and a moved node would assert as unmoved.
  */
 std::string formatCoordinate(facebook::react::Float coordinate) {
-    std::string formatted = std::to_string(static_cast<double>(coordinate));
+    std::array<char, kCoordinateCapacity> buffer{};
+    const std::to_chars_result formatted = std::to_chars(buffer.data(), buffer.data() + buffer.size(), coordinate);
 
-    formatted.erase(formatted.find_last_not_of('0') + 1);
-
-    if (formatted.back() == '.') {
-        formatted.pop_back();
-    }
-
-    return formatted;
+    return std::string(buffer.data(), formatted.ptr);
 }
 
 std::string formatFrame(const facebook::react::Rect& frame) {
