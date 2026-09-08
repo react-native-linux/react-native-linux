@@ -20,6 +20,10 @@ namespace react_native_linux {
  * TimerManager; callTimer is invoked from the dispatch thread and hands the callback back to the JS thread through
  * the runtime executor. hasPendingTimers and waitUntilIdle are called from the thread that owns the process run
  * loop, which is the main thread for the hello_react host.
+ *
+ * Destruction order: taskDispatchThread_ is declared last so it is destroyed first, joining the dispatch thread
+ * before timersMutex_ and idleCondition_ are torn down. Any other order lets the dispatch thread call
+ * idleCondition_.notify_all() on an already-destroyed condition variable.
  */
 class HostTimerRegistry final : public facebook::react::PlatformTimerRegistry {
 public:
@@ -48,11 +52,11 @@ private:
     void scheduleTimer(uint32_t timerId, double delayMilliseconds, bool isRecurring);
     void dispatchTimer(uint32_t timerId, double delayMilliseconds);
 
-    facebook::react::TaskDispatchThread taskDispatchThread_{"TimerRegistry"};
     std::weak_ptr<facebook::react::TimerManager> timerManager_;
     std::mutex timersMutex_;
     std::condition_variable idleCondition_;
     std::unordered_map<uint32_t, ScheduledTimer> timers_;
+    facebook::react::TaskDispatchThread taskDispatchThread_{"TimerRegistry"};
 };
 
 } // namespace react_native_linux
