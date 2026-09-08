@@ -3,6 +3,7 @@
 #include "FrameTiming.h"
 #include "InputPipeline.h"
 #include "ToplevelState.h"
+#include "WaylandDispatchDiagnostics.h"
 #include "WaylandSeat.h"
 #include "WaylandSerialLedger.h"
 #include "WindowDecorations.h"
@@ -223,6 +224,18 @@ public:
     bool waitForRedraw(std::chrono::milliseconds fallbackTimeout);
 
     /**
+     * Drains whatever the compositor has already sent on the display socket, without blocking, and reports it as
+     * the structured protocol/display line if it is one. A fatal failure outside this class — an unrecoverable
+     * `VkResult` from the swapchain path, for instance — can be the *symptom* of a Wayland protocol error the
+     * process has not read off the socket yet, since libwayland only updates `wl_display_get_error` once it has
+     * dispatched the event carrying it: without this, the process reports the symptom (a bare `VkResult` name)
+     * and never the structured line #331 exists to produce. The caller (`WindowMain`'s top-level catch) calls
+     * this before its own fatal report so the Wayland cause, if any, is on the trace before the symptom is.
+     * Returns whether it reported one.
+     */
+    bool reportPendingDisplayError();
+
+    /**
      * Whether the compositor has sent `wl_callback.done` for the frame callback currently or most recently
      * requested. `requestFrameCallback` — called from inside `SkiaVulkanRenderer::drawFrame` — is what resets this,
      * so a caller that skips drawing on a fallback timeout leaves it exactly as `waitForRedraw` last left it: a
@@ -236,9 +249,28 @@ public:
      * from. See #330 and *The serial ledger* in docs/cpp-toolchain.md. */
     const WaylandSerialLedger& serialLedger() const noexcept;
 
+    /**
+     * `--inject-protocol-error`/`--inject-protocol-error-after-frame`'s hook (#331): acknowledges the initial
+     * `xdg_surface.configure` a second time with a serial no `configure` ever sent, which xdg-shell requires the
+     * compositor to reject. The object named in the rejection is compositor-specific, not fixed by the spec: the
+     * wlroots-based compositor CI runs under posts it against `xdg_wm_base`, code 4, rather than against
+     * `xdg_surface` itself. It exists to prove, under a real compositor, that the next dispatch reports that
+     * rejection through `reportNativeError` instead of a bare "broken pipe". See *Window host* in
+     * docs/cpp-toolchain.md.
+     */
+    void injectInvalidAckConfigureForTesting();
+
 private:
     void bindGlobal(wl_registry* registry, uint32_t name, const char* interfaceName, uint32_t version);
     void dispatchWithTimeout(std::chrono::milliseconds timeout);
+    /**
+     * Classifies one dispatch/flush/read-events return value through `classifyWaylandDispatchResult`
+     * (`WaylandDispatchDiagnostics.h`), passing both `wl_display_get_error` and the plain `errno` the call itself
+     * left behind, and reports a protocol or display error through `reportNativeError` when the outcome is one.
+     * Returns the outcome so the caller can retry on `Retry` instead of just knowing not to close on it. See
+     * *Window host* in docs/cpp-toolchain.md.
+     */
+    WaylandDispatchOutcome reportDispatchFailure(int result);
     void onToplevelConfigure(int32_t width, int32_t height, const wl_array* states);
     void negotiateDecorations();
     void destroyFrameCallback() noexcept;

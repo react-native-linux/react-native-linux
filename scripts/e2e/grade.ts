@@ -202,18 +202,20 @@ interface InjectionOutcome {
 }
 
 /**
- * `expectsWindowClose` scenarios (window-decorations-close) drive a click that closes the window mid-run, so
- * `rnl_inject` loses its socket and exits with status 1. Only that exact status is eligible: 2 is `rnl_inject`'s
- * own usage/argument error and `null` is a signal (the #233 `INJECT_TIMEOUT_MS` kill, among others) — neither is
- * the socket disappearing, so both keep failing the scenario regardless of the trace. `waitForExpectedClose` is
- * asked only once status agrees, and accepting the failure still needs it to resolve `true`.
+ * `expectsExitAfter` scenarios (window-decorations-close, the two protocol-error scenarios) drive `rnl_window`
+ * into dying on its own mid-run — a closed window, a rejected protocol request — so `rnl_inject` loses its socket
+ * and exits with status 1. Only that exact status is eligible: 2 is `rnl_inject`'s own usage/argument error and
+ * `null` is a signal (the #233 `INJECT_TIMEOUT_MS` kill, among others) — neither is the socket disappearing, so
+ * both keep failing the scenario regardless of the trace. `waitForExpectedClose` — which checks the trace for
+ * `expectsExitAfter`'s substring — is asked only once status agrees, and accepting the failure still needs it to
+ * resolve `true`, so a status-1 exit for an unrelated reason still fails.
  */
 const resolveInjectionFailure = async (
   outcome: InjectionOutcome,
-  expectsWindowClose: boolean,
+  expectsExitAfter: string | null,
   waitForExpectedClose: () => Promise<boolean>,
 ): Promise<string | null> => {
-  if (outcome.failure === null || !expectsWindowClose || outcome.status !== EXPECTED_CLOSE_STATUS) {
+  if (outcome.failure === null || expectsExitAfter === null || outcome.status !== EXPECTED_CLOSE_STATUS) {
     return outcome.failure;
   }
 
@@ -241,7 +243,7 @@ const injectAndResolveFailure = async (run: InjectionRun): Promise<string | null
     run.waitForKeyboardFocus,
   );
 
-  return resolveInjectionFailure({ failure, status }, run.scenario.expectsWindowClose, run.waitForExpectedClose);
+  return resolveInjectionFailure({ failure, status }, run.scenario.expectsExitAfter, run.waitForExpectedClose);
 };
 
 export { gradeArtifacts, gradeAutomationChannel, injectAndResolveFailure, resolveInjectionFailure, resolveWindowFlags };

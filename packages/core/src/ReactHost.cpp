@@ -138,6 +138,16 @@ ReactHost::~ReactHost() noexcept {
     animationFrameQueue_.clear();
     turboModuleRegistry_.reset();
     animatedNodesManagerProvider_.reset();
+
+    // `timerManager_` is a second owner of the same upstream `TimerManager` `reactInstance_` was constructed
+    // with, and `TimerManager` never clears `timers_` — its map of pending `setTimeout`/`setInterval` callbacks,
+    // each a real `jsi::Function` — on `quit()`. `ReactInstance`'s own member order destroys its copy of
+    // `timerManager_` before its runtime, which is correct, but that only destroys `TimerManager` itself if
+    // it was the last owner. Resetting this copy first makes it so: whichever `.reset()` runs second is the one
+    // that actually destroys `TimerManager`, and dropping ours here guarantees that happens no later than
+    // `reactInstance_`'s, while the runtime `reactInstance_` owns is still alive. Getting this backwards is
+    // what "This PointerValue was left dangling after the Runtime was destroyed" reports.
+    timerManager_.reset();
     reactInstance_.reset();
 }
 

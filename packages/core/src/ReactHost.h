@@ -44,14 +44,20 @@ namespace react_native_linux {
  * loop for the headless host, the platform frame thread for the window host. The JavaScript that the instance
  * runs never touches this object; it runs on the JavaScript thread this class owns.
  *
- * Shutdown contract: destruction quits the JavaScript thread synchronously, then releases the TurboModules and
- * the animated manager provider, and only then destroys the instance. The thread goes first because the
- * instance's teardown assumes no further task can be scheduled onto it; the modules go before the instance
- * because a `TurboModule` owns a `jsi::WeakObject` — its cached JavaScript representation — and a JSI pointer
- * that outlives its runtime aborts a debug Hermes with "This PointerValue was left dangling after the Runtime was
- * destroyed". Member destruction order alone does not give that, because the instance is reset explicitly here
- * and members are destroyed only afterwards. Anything layered on top — a Fabric surface, for example — must
- * already have been stopped and drained by its owner.
+ * Shutdown contract: destruction quits the JavaScript thread synchronously, then releases the TurboModules, the
+ * animated manager provider and this host's own `TimerManager` reference, and only then destroys the instance.
+ * The thread goes first because the instance's teardown assumes no further task can be scheduled onto it; the
+ * rest go before the instance because each owns a `jsi` value — a `TurboModule`'s cached `jsi::WeakObject`, a
+ * pending `setTimeout`/`setInterval` callback's `jsi::Function` inside `TimerManager::timers_` — and a JSI
+ * pointer that outlives its runtime aborts a debug Hermes with "This PointerValue was left dangling after the
+ * Runtime was destroyed". `TimerManager` is shared with `reactInstance_` (constructed with the same
+ * `shared_ptr`), so this host's copy has to be released explicitly and before the instance's: `TimerManager`
+ * itself is destroyed only once its last owner drops it, and `ReactInstance`'s own member order already drops
+ * its copy before its runtime — releasing ours first is what guarantees the *other* copy going away is the one
+ * that is safe, rather than a race on which `.reset()` a caller happened to write last. Member destruction order
+ * alone does not give any of this, because the instance is reset explicitly here and members are destroyed only
+ * afterwards. Anything layered on top — a Fabric surface, for example — must already have been stopped and
+ * drained by its owner.
  */
 class ReactHost final {
 public:

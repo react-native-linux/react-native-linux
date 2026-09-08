@@ -4,6 +4,7 @@ import {
   readNonNegativeInteger,
   readObject,
   readOptionalBoolean,
+  readOptionalString,
   readOptionalStringArray,
   readPositiveInteger,
   readPositiveNumber,
@@ -15,23 +16,10 @@ import path from "node:path";
 import { readAccessibilityChanges } from "./accessibility-changes.ts";
 
 const DEFAULT_FRAME_COUNT = 600;
-const EMPTY_LENGTH = 0;
-const NOT_FOUND_INDEX = -1;
-const FIRST_LINE_INDEX = 0;
-const NEXT_LINE = 1;
-
 const FRAME_LOG_FILE_NAME = "frames.jsonl";
 const SCREENSHOT_FILE_NAME = "screenshot.png";
 const TRACE_FILE_NAME = "trace.log";
 const PARENT_DIRECTORY = "..";
-
-/**
- * The narrow slice of "error" the trace can prove today, per #233: an uncaught JS error's own report from
- * `JsErrorReporter`, and the bracketed component tags `rnl_window`'s C++ diagnostics use when they hit a fault.
- * A raw `console.error`/`console.warn` call is deliberately not in this list — `ConsoleBinding` prints it with no
- * prefix, indistinguishable from `console.log`, until #214's `ListErrors` channel replaces this mechanism.
- */
-const ERROR_TRACE_PATTERNS: readonly string[] = ["[js-error]", "[bundle-runner]", "[image]", "[text]", "[rnl-window]"];
 
 /**
  * The perf gate of #7: `p95Ms`/`minFrames` bound the p95 `wp_presentation` frame time and the frames needed for
@@ -44,13 +32,12 @@ interface FrameBudget {
 }
 
 /**
- * `golden` is a file name under `packages/core/e2e/goldens`. A golden that does not exist yet is a skip with a
- * note rather than a failure, because the picture has to be blessed from a CI artifact before it can be compared.
- *
- * `crop`, when set, narrows the captured screenshot to a rectangle before comparing it against the golden, so an
- * unrelated change elsewhere on the page does not invalidate it. The golden is stored already cropped to that
- * same rectangle — addressing the rectangle by a node's `testID` instead needs #216's tree dump and is out of
- * scope here, so the scenario names it directly.
+ * `golden` is a file name under `packages/core/e2e/goldens`. A golden that does not exist yet is a skip with a note
+ * rather than a failure, because the picture has to be blessed from a CI artifact before it can be compared. `crop`,
+ * when set, narrows the captured screenshot to a rectangle before comparing it against the golden, so an unrelated
+ * change elsewhere on the page does not invalidate it. The golden is stored already cropped to that same rectangle —
+ * addressing the rectangle by a node's `testID` instead needs #216's tree dump and is out of scope here, so the
+ * scenario names it directly.
  */
 interface ScreenshotComparison {
   readonly crop: Crop | null;
@@ -59,15 +46,13 @@ interface ScreenshotComparison {
 }
 
 /**
- * What the automation channel (#214) is asked to prove about this scenario, and the flag that opens it: a
- * scenario without an `automation` block runs a window that never listens. `listErrorsMustBeEmpty` is the
- * `verifyNoErrorLogs` react-native-windows asserts in `afterEach`, asked of the runtime rather than grepped out
- * of the trace; `visualTreeSnapshot` names a file under the package's `e2e/goldens` the committed tree has to
- * match; `accessibilityTreeSnapshot` names one under `e2e/snapshots` its accessibility projection has to match;
- * `markTestPassed` requires the bundle to have called `globalThis.__rnlMarkTestPassed()`; `accessibilityChanges`
- * names the `accessibilityState`/`accessibilityValue` changes (#264) `ListAccessibilityChanges` has to have
- * recorded by the time the channel is asked — a bundle mounts the node, then a `setTimeout` toggles it, which is
- * what turns the mount's own `Create` into the `Update` the channel counts.
+ * What the automation channel (#214) proves about a scenario, and the flag that opens it: a scenario without an
+ * `automation` block runs a window that never listens. `listErrorsMustBeEmpty` is `verifyNoErrorLogs`, asked of the
+ * runtime instead of grepped from the trace. `visualTreeSnapshot` and `accessibilityTreeSnapshot` name files under the
+ * package's `e2e/goldens`/`e2e/snapshots` the committed and accessibility trees must match. `markTestPassed` requires
+ * the bundle to have called `globalThis.__rnlMarkTestPassed()`. `accessibilityChanges` names the
+ * `accessibilityState`/`accessibilityValue` changes (#264) `ListAccessibilityChanges` must have recorded by the time
+ * the channel is asked.
  */
 interface ScenarioAutomation {
   readonly accessibilityChanges: ReturnType<typeof readAccessibilityChanges>;
@@ -87,14 +72,18 @@ interface Scenario {
   readonly expect: readonly string[];
   /** A negative control: the scenario passes only if grading it produces at least one failure. */
   readonly expectFailure: boolean;
-  /** `rnl_inject`'s exit status 1 is accepted once the trace also carries the window's own "closed before frame". */
-  readonly expectsWindowClose: boolean;
+  /** `rnl_inject`'s exit status 1 is accepted once the trace also carries this substring; `null` never accepts it. */
+  readonly expectsExitAfter: string | null;
   /** How long `rnl_window` runs before it captures its screenshot and exits. */
   readonly frames: number;
   readonly frameBudget: FrameBudget | null;
+  /** Passes `--inject-protocol-error` (#331): proves a real dispatch failure is reported structured, not grepped. */
+  readonly injectProtocolError: boolean;
   readonly name: string;
   /** The trace line that means the bundle has committed and input can start. */
   readonly ready: string;
+  /** Trace substrings the run must never produce, checked regardless of `allowErrors`/`expectFailure`. */
+  readonly reject: readonly string[];
   readonly screenshot: ScreenshotComparison | null;
   /** `rnl_inject` script lines. */
   readonly steps: readonly string[];
@@ -211,11 +200,13 @@ const parseScenario = (value: unknown, sourceName: string): Scenario => {
     bundle: readString(value["bundle"], "bundle", sourceName),
     expect: readStringArray(value["expect"], "expect", sourceName),
     expectFailure: readOptionalBoolean(value, "expectFailure", sourceName),
-    expectsWindowClose: readOptionalBoolean(value, "expectsWindowClose", sourceName),
+    expectsExitAfter: readOptionalString(value, "expectsExitAfter", sourceName),
     frameBudget: readFrameBudget(value, sourceName),
     frames: readFrameCount(value, sourceName),
+    injectProtocolError: readOptionalBoolean(value, "injectProtocolError", sourceName),
     name: readString(value["name"], "name", sourceName),
     ready: readString(value["ready"], "ready", sourceName),
+    reject: readOptionalStringArray(value, "reject", sourceName) ?? [],
     screenshot: readScreenshotComparison(value, sourceName),
     steps: readStringArray(value["steps"], "steps", sourceName),
     windowFlags: readOptionalStringArray(value, "windowFlags", sourceName),
@@ -223,59 +214,6 @@ const parseScenario = (value: unknown, sourceName: string): Scenario => {
 };
 
 const formatInjectorScript = (steps: readonly string[]): string => `${steps.join("\n")}\n`;
-
-/** Ordered substring matching: every expectation must appear on a later line than the one before it. */
-const findMissingExpectations = (traceLines: readonly string[], expectations: readonly string[]): readonly string[] => {
-  const missing: string[] = [];
-  let searchIndex = FIRST_LINE_INDEX;
-
-  for (const expectation of expectations) {
-    const remaining = traceLines.slice(searchIndex);
-    const matchIndex = remaining.findIndex((line) => line.includes(expectation));
-
-    if (matchIndex === NOT_FOUND_INDEX) {
-      missing.push(expectation);
-    } else {
-      searchIndex += matchIndex + NEXT_LINE;
-    }
-  }
-
-  return missing;
-};
-
-/** Every trace line that matches one of `ERROR_TRACE_PATTERNS`, in the order the trace produced them. */
-const findErrorLines = (traceLines: readonly string[]): readonly string[] =>
-  traceLines.filter((line) => ERROR_TRACE_PATTERNS.some((pattern) => line.includes(pattern)));
-
-/**
- * Every failure the trace itself proves: a missing expectation, and — unless `allowErrors` opts a scenario out —
- * a logged error line. The #233 error gate stacks onto the pre-existing ordered-substring assertions rather than
- * replacing them.
- */
-const describeTraceFailures = (scenario: Scenario, trace: string): readonly string[] => {
-  const traceLines = trace.split("\n");
-  const missing = findMissingExpectations(traceLines, scenario.expect).map(
-    (expectation) => `the trace never produced "${expectation}"`,
-  );
-
-  if (scenario.allowErrors) {
-    return missing;
-  }
-
-  return [...missing, ...findErrorLines(traceLines).map((line) => `the trace logged an error: ${line}`)];
-};
-
-/**
- * `expectFailure` inverts a run's failures for a negative control: the scenario passes only when grading it
- * produced at least one failure, and reports one of its own when grading produced none.
- */
-const resolveExpectedOutcome = (scenario: Scenario, failures: readonly string[]): readonly string[] => {
-  if (!scenario.expectFailure) {
-    return failures;
-  }
-
-  return failures.length === EMPTY_LENGTH ? ["expectFailure is set, but the scenario produced no failures"] : [];
-};
 
 const resolveArtifactPaths = (artifactsRoot: string, scenarioName: string): ArtifactPaths => {
   const directory = path.join(artifactsRoot, scenarioName);
@@ -288,13 +226,6 @@ const resolveArtifactPaths = (artifactsRoot: string, scenarioName: string): Arti
   };
 };
 
-export {
-  describeTraceFailures,
-  findErrorLines,
-  findMissingExpectations,
-  formatInjectorScript,
-  parseScenario,
-  resolveArtifactPaths,
-  resolveExpectedOutcome,
-};
+export { describeTraceFailures, resolveExpectedOutcome } from "./trace-grading.ts";
+export { formatInjectorScript, parseScenario, resolveArtifactPaths };
 export type { FrameBudget, Scenario, ScenarioAutomation };

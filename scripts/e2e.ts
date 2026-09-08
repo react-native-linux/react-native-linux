@@ -10,7 +10,6 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { gradeArtifacts, gradeAutomationChannel, injectAndResolveFailure, resolveWindowFlags } from "./e2e/grade.ts";
 import { isKeyboardFocused, planRuns, readRequestedScenarios } from "./e2e/discovery.ts";
 import { spawn, spawnSync } from "node:child_process";
-
 import { setTimeout as delay } from "node:timers/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
@@ -25,7 +24,6 @@ const RUN_TIMEOUT_MS = 120_000;
 const INJECT_TIMEOUT_MS = 60_000;
 const POLL_INTERVAL_MS = 50;
 const COMPOSITOR_STOP_GRACE_MS = 250;
-const CLOSE_TRACE_LINE = "[rnl-window] the window closed before frame";
 
 /** Cage: weston only offers weston-test, shipped nowhere. See *E2E driver (#7)* in docs/cpp-toolchain.md. */
 const COMPOSITOR_NAME = "cage";
@@ -99,6 +97,7 @@ const startCompositor = (run: ScenarioRun, rig: Rig, workspace: Workspace): Comp
       workspace.frameLogPath,
       ...(run.scenario.automation === null ? [] : ["--automation"]),
       ...resolveWindowFlags(run.scenario.windowFlags),
+      ...(run.scenario.injectProtocolError ? ["--inject-protocol-error"] : []),
     ],
     {
       env: buildEnvironment({
@@ -194,7 +193,8 @@ const driveScenario = async (run: ScenarioRun, workspace: Workspace): Promise<re
   const injectionFailure = await injectAndResolveFailure({
     inject: (steps) => injectSteps(steps, workspace.runtimeDirectory, socketName),
     scenario,
-    waitForExpectedClose: () => waitUntil(() => workspace.trace.text.includes(CLOSE_TRACE_LINE), READY_TIMEOUT_MS),
+    waitForExpectedClose: () =>
+      waitUntil(() => workspace.trace.text.includes(scenario.expectsExitAfter ?? ""), READY_TIMEOUT_MS),
     waitForKeyboardFocus: () => waitUntil(() => isKeyboardFocused(workspace.trace.text), READY_TIMEOUT_MS),
   });
   const automationFailures = await gradeAutomationChannel({
@@ -253,7 +253,7 @@ const runScenario = async (run: ScenarioRun, rig: Rig, attemptKey: string): Prom
 
   const failures = [...runFailures, ...describeTraceFailures(run.scenario, workspace.trace.text), ...grade.failures];
 
-  return resolveExpectedOutcome(run.scenario, failures);
+  return resolveExpectedOutcome(run.scenario, failures, { signal: compositor.signalCode, trace: workspace.trace.text });
 };
 
 const reportScenario = (failures: readonly string[], attemptKey: string): void => {
@@ -289,7 +289,6 @@ if (compositorPath === null || lavapipeIcdPath === null || unavailableReasons.le
   for (const reason of unavailableReasons) {
     stderr.write(`${reason}\n`);
   }
-
   process.exitCode = UNAVAILABLE_EXIT_STATUS;
 } else {
   mkdirSync(artifactsRoot, { recursive: true });

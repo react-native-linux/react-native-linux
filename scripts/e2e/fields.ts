@@ -110,12 +110,17 @@ const readOptionalStringArray = (
   return value;
 };
 
+/** `null` for an omitted field or an explicit JSON `null`; an explicit empty string still hits `readString`'s reject. */
+const readOptionalString = (record: Record<string, unknown>, label: string, sourceName: string): string | null =>
+  !(label in record) || record[label] === null ? null : readString(record[label], label, sourceName);
+
 export {
   isRecord,
   readCoordinate,
   readNonNegativeInteger,
   readObject,
   readOptionalBoolean,
+  readOptionalString,
   readOptionalStringArray,
   readPositiveInteger,
   readPositiveNumber,

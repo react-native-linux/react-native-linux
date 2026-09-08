@@ -1,0 +1,165 @@
+import { describe, expect, it } from "vitest";
+import {
+  describeCompositorCrash,
+  describeRejectedTraceFailures,
+  describeTraceFailures,
+  findErrorLines,
+  findMissingExpectations,
+  findRejectedMatches,
+  resolveExpectedOutcome,
+} from "./trace-grading.ts";
+import { parseScenario } from "./scenario.ts";
+
+const validScenario = {
+  bundle: "pressable.js",
+  expect: ["pressable: topClick on box at 200,140"],
+  name: "pressable-click",
+  ready: "pressable: committed surface 1",
+  steps: ["sleep 500", "click 200 140"],
+};
+
+describe("findMissingExpectations", () => {
+  const trace = ["pressable: committed surface 1", "pressable: topPointerDown on box", "pressable: topClick on box"];
+
+  it("reports nothing when every expectation appears in order", () => {
+    expect(findMissingExpectations(trace, ["topPointerDown", "topClick"])).toEqual([]);
+  });
+
+  it("reports an expectation the trace never produced", () => {
+    expect(findMissingExpectations(trace, ["topKeyPress"])).toEqual(["topKeyPress"]);
+  });
+
+  it("reports an expectation that only appears before the one it has to follow", () => {
+    expect(findMissingExpectations(trace, ["topClick", "topPointerDown"])).toEqual(["topPointerDown"]);
+  });
+});
+
+describe("findRejectedMatches", () => {
+  const trace = ["pressable: committed surface 1", "[rnl-window] wayland protocol error: xdg_surface#1 code 3"];
+
+  it("reports nothing when no rejection appears", () => {
+    expect(findRejectedMatches(trace, ["Broken pipe"])).toEqual([]);
+  });
+
+  it("reports a rejection that appears anywhere in the trace", () => {
+    expect(findRejectedMatches([...trace, "Broken pipe (os error 32)"], ["Broken pipe"])).toEqual(["Broken pipe"]);
+  });
+});
+
+describe("findErrorLines", () => {
+  it("reports nothing when no line matches a known pattern", () => {
+    expect(findErrorLines(["pressable: committed surface 1", "pressable: topClick on box"])).toEqual([]);
+  });
+
+  it("finds an uncaught JS error's own report", () => {
+    const trace = ["throws: failing bundle evaluated", "[js-error] fatal Error: intentional bundle failure"];
+
+    expect(findErrorLines(trace)).toEqual(["[js-error] fatal Error: intentional bundle failure"]);
+  });
+
+  it("finds a native diagnostic prefix", () => {
+    const trace = ["[rnl-window] the compositor does not advertise zwp_text_input_manager_v3"];
+
+    expect(findErrorLines(trace)).toEqual(trace);
+  });
+});
+
+describe("describeTraceFailures", () => {
+  const scenario = parseScenario(validScenario, "fixture.json");
+  const passingTrace = ["pressable: committed surface 1", "pressable: topClick on box at 200,140"].join("\n");
+
+  it("reports nothing for a trace with every expectation and no error line", () => {
+    expect(describeTraceFailures(scenario, passingTrace)).toEqual([]);
+  });
+
+  it("reports a missing expectation", () => {
+    expect(describeTraceFailures(scenario, "pressable: committed surface 1")).toEqual([
+      'the trace never produced "pressable: topClick on box at 200,140"',
+    ]);
+  });
+
+  it("reports a logged error line", () => {
+    const trace = `${passingTrace}\n[js-error] fatal Error: intentional bundle failure`;
+
+    expect(describeTraceFailures(scenario, trace)).toEqual([
+      "the trace logged an error: [js-error] fatal Error: intentional bundle failure",
+    ]);
+  });
+
+  it("does not report an error line when allowErrors is set", () => {
+    const tolerant = { ...scenario, allowErrors: true };
+    const trace = `${passingTrace}\n[js-error] fatal Error: intentional bundle failure`;
+
+    expect(describeTraceFailures(tolerant, trace)).toEqual([]);
+  });
+
+  it("does not report a rejected substring: that is describeRejectedTraceFailures's job", () => {
+    const rejecting = { ...scenario, reject: ["Broken pipe"] };
+    const trace = `${passingTrace}\nBroken pipe (os error 32)`;
+
+    expect(describeTraceFailures(rejecting, trace)).toEqual([]);
+  });
+});
+
+describe("describeRejectedTraceFailures", () => {
+  const scenario = parseScenario(validScenario, "fixture.json");
+  const passingTrace = ["pressable: committed surface 1", "pressable: topClick on box at 200,140"].join("\n");
+
+  it("reports nothing when the reject list is empty", () => {
+    expect(describeRejectedTraceFailures(scenario, passingTrace)).toEqual([]);
+  });
+
+  it("reports a rejected substring even when allowErrors is set", () => {
+    const tolerant = { ...scenario, allowErrors: true, reject: ["Broken pipe"] };
+    const trace = `${passingTrace}\nBroken pipe (os error 32)`;
+
+    expect(describeRejectedTraceFailures(tolerant, trace)).toEqual(['the trace produced the rejected "Broken pipe"']);
+  });
+});
+
+describe("describeCompositorCrash", () => {
+  it("reports nothing for a null signal", () => {
+    expect(describeCompositorCrash(null)).toEqual([]);
+  });
+
+  it("reports the signal name that killed the compositor", () => {
+    expect(describeCompositorCrash("SIGABRT")).toEqual(["cage signal SIGABRT"]);
+  });
+});
+
+describe("resolveExpectedOutcome", () => {
+  const scenario = parseScenario(validScenario, "fixture.json");
+  const negativeControl = { ...scenario, expectFailure: true };
+  const noCrash = { signal: null, trace: "" };
+
+  it("passes failures through unchanged when expectFailure is not set", () => {
+    expect(resolveExpectedOutcome(scenario, ["boom"], noCrash)).toEqual(["boom"]);
+    expect(resolveExpectedOutcome(scenario, [], noCrash)).toEqual([]);
+  });
+
+  it("turns a failing run into a pass when expectFailure is set", () => {
+    expect(resolveExpectedOutcome(negativeControl, ["boom"], noCrash)).toEqual([]);
+  });
+
+  it("fails a run with no failures when expectFailure is set", () => {
+    expect(resolveExpectedOutcome(negativeControl, [], noCrash)).toEqual([
+      "expectFailure is set, but the scenario produced no failures",
+    ]);
+  });
+
+  it("never inverts away a rejected substring, even once expectFailure clears every other failure", () => {
+    const control = { ...negativeControl, reject: ["Broken pipe"] };
+    const trace = "Broken pipe (os error 32)";
+    const invertible = describeTraceFailures(control, trace);
+
+    expect(resolveExpectedOutcome(control, invertible, { signal: null, trace })).toEqual([
+      'the trace produced the rejected "Broken pipe"',
+    ]);
+  });
+
+  it("never inverts away a compositor crash, even once expectFailure clears every other failure", () => {
+    expect(resolveExpectedOutcome(negativeControl, ["boom"], { signal: "SIGABRT", trace: "" })).toEqual([
+      "cage signal SIGABRT",
+    ]);
+  });
+});

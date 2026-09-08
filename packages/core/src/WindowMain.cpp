@@ -28,9 +28,9 @@
 #include <array>
 #include <charconv>
 #include <chrono>
-#include <ctime>
 #include <cstdint>
 #include <cstdlib>
+#include <ctime>
 #include <exception>
 #include <filesystem>
 #include <folly/json/dynamic.h>
@@ -74,6 +74,8 @@ constexpr std::string_view kNoDecorationsFlag = "--no-decorations";
 constexpr std::string_view kDefaultTitle = "react-native-linux";
 constexpr std::string_view kDefaultApplicationIdentifier = "react-native-linux";
 constexpr int kPrimaryPointerButton = 0;
+constexpr std::string_view kInjectProtocolErrorFlag = "--inject-protocol-error";
+constexpr std::string_view kInjectProtocolErrorAfterFrameFlag = "--inject-protocol-error-after-frame";
 constexpr std::string_view kWindowErrorSource = "rnl-window";
 constexpr std::string_view kImeDebugSurroundingText = "react-native-linux";
 constexpr int32_t kImeDebugCursorX = 64;
@@ -112,6 +114,17 @@ constexpr uint64_t kNanosecondsPerSecond = 1'000'000'000;
  * initial configure on request, and no driver starves an acquire to order. The proof the flag gives is that the
  * window comes back — a present after every injected state — rather than going blank. See *Surface commit
  * ordering* in docs/cpp-toolchain.md.
+ *
+ * `--inject-protocol-error` is #331's fault-injection hook: right after the window is up but before the first
+ * frame, it acknowledges the initial configure a second time with a serial the compositor never sent, which
+ * xdg-shell requires it to reject. It exists to prove that the rejection is reported through `reportNativeError`
+ * — `[rnl-window] wayland protocol error: <interface>#<id> code <n> (<errno text>)` — instead of the bare "broken
+ * pipe" the process used to exit with, even on the fatal-before-dispatch path: bring-up has not yet read the
+ * socket, so a fatal renderer failure this early can otherwise report its own symptom (an unrecoverable
+ * `VkResult`, say) before the Wayland cause is ever read — `WaylandWindow::reportPendingDisplayError` closes that
+ * gap. `--inject-protocol-error-after-frame` injects the same rejection once a frame has already presented
+ * instead, proving the ordinary path: `WaylandWindow::dispatchWithTimeout`'s own event loop reports it, with
+ * nothing to catch. See *Window host* in docs/cpp-toolchain.md.
  */
 struct WindowArguments {
     std::optional<std::string> bundlePath;
@@ -126,6 +139,8 @@ struct WindowArguments {
     bool noDecorations{false};
     bool imeDebug{false};
     bool windowDebug{false};
+    bool injectProtocolError{false};
+    bool injectProtocolErrorAfterFrame{false};
     std::string error;
 };
 
@@ -315,6 +330,18 @@ WindowArguments parseArguments(std::span<char*> arguments) {
 
         if (flag == kForceClientDecorationsFlag) {
             parsed.forceClientDecorations = true;
+
+            continue;
+        }
+
+        if (flag == kInjectProtocolErrorFlag) {
+            parsed.injectProtocolError = true;
+
+            continue;
+        }
+
+        if (flag == kInjectProtocolErrorAfterFrameFlag) {
+            parsed.injectProtocolErrorAfterFrame = true;
 
             continue;
         }
@@ -890,277 +917,302 @@ int main(int argc, char** argv) {
                                                .forceClientDecorations = parsedArguments.forceClientDecorations,
                                                .noDecorations = parsedArguments.noDecorations},
             react_native_linux::WindowSize{kInitialWidth, kInitialHeight});
-        const std::optional<std::string> ladderPath = ladderStatePath();
-        const std::string driverIdentity = react_native_linux::probeVulkanDriverIdentity();
-        RendererBringUp broughtUp = bringUpRenderer(window, parsedArguments, ladderPath, driverIdentity);
-        react_native_linux::WindowRenderer& renderer = *broughtUp.renderer;
-        bool hasRecordedFirstPresentedFrame = false;
-        std::optional<react_native_linux::WindowSession> session;
-        WindowChrome chrome;
 
-        refreshChrome(chrome, window);
-        std::cout << "[rnl-decorations] mode="
-                  << decorationModeName(chrome.mode)
-                  << " app-id=" << parsedArguments.applicationIdentifier << " content=" << chrome.content.width << "x"
-                  << chrome.content.height << std::endl;
+        // A fatal failure below this line — an unrecoverable `VkResult` from the swapchain path, for instance —
+        // can be the symptom of a Wayland protocol error the process has not read off the socket yet (#331):
+        // draining the display before the outer catch reports the symptom is what puts the structured line on
+        // the trace ahead of it. See `WaylandWindow::reportPendingDisplayError`.
+        try {
+            const std::optional<std::string> ladderPath = ladderStatePath();
+            const std::string driverIdentity = react_native_linux::probeVulkanDriverIdentity();
+            RendererBringUp broughtUp = bringUpRenderer(window, parsedArguments, ladderPath, driverIdentity);
+            react_native_linux::WindowRenderer& renderer = *broughtUp.renderer;
+            bool hasRecordedFirstPresentedFrame = false;
+            std::optional<react_native_linux::WindowSession> session;
+            WindowChrome chrome;
 
-        const auto drawPlaceholder = [&chrome, &window](SkCanvas& canvas, react_native_linux::WindowSize /*size*/,
-                                                        const react_native_linux::SceneDamage& surfaceDamage) {
-            paintDecoratedFrame(
-                canvas, chrome, window.title(), surfaceDamage,
-                [&chrome](SkCanvas& contentCanvas, const react_native_linux::SceneDamage& contentDamage) {
-                    paintPlaceholderFrame(contentCanvas,
-                                          react_native_linux::WindowSize{chrome.content.width, chrome.content.height},
-                                          contentDamage);
-                });
-        };
-
-        // This is the first buffer the compositor can ever show, so `--frames 1` has to name this present rather
-        // than the loop's next one: the capture is armed beforehand, exactly as the loop arms it for every later
-        // frame, so a first-buffer failure that recovers on the next frame cannot pass a fixture that means to
-        // check the first one. See *Surface commit ordering* in docs/cpp-toolchain.md.
-        uint32_t presentedFrames = 0;
-        const bool isStartupCaptureFrame =
-            parsedArguments.screenshotPath.has_value() && presentedFrames + 1 >= parsedArguments.frameCount;
-
-        if (isStartupCaptureFrame) {
-            renderer.captureNextFrame(parsedArguments.screenshotPath.value());
-        }
-
-        const bool startupFramePresented = renderer.drawFrame(window, {}, drawPlaceholder);
-
-        if (startupFramePresented) {
-            ++presentedFrames;
-        }
-
-        announceFirstPresentedFrameOnce(startupFramePresented, hasRecordedFirstPresentedFrame, ladderPath,
-                                        broughtUp.record);
-
-        bool hasCaptured = isStartupCaptureFrame && !renderer.hasPendingCapture();
-
-        if (parsedArguments.bundlePath.has_value()) {
-            session.emplace(parsedArguments.bundlePath.value(),
-                            react_native_linux::WindowSize{chrome.content.width, chrome.content.height});
-
-            // --ime-debug owns the text input by hand, so focus must not also drive it: the two would race to
-            // enable and disable the same object. Without that flag, focus is the only thing that touches it.
-            if (!parsedArguments.imeDebug) {
-                session->setTextInputFocusSink(window.textInput());
-            }
-        }
-
-        if (parsedArguments.imeDebug && window.textInput() == nullptr) {
-            react_native_linux::reportNativeError(kWindowErrorSource,
-                                                  "the compositor does not advertise zwp_text_input_manager_v3");
-        }
-
-        // The recreation path of the VkResult policy has no other trigger a developer can pull: a headless
-        // compositor never resizes the window and never loses the surface, so without this the swapchain rebuild
-        // is only ever reached on a real desktop by closing a lid. One injected VK_ERROR_OUT_OF_DATE_KHR at the
-        // first acquire makes the frame after it a rebuilt swapchain and a full repaint. See *VkResult policy*
-        // in docs/cpp-toolchain.md.
-        // Vulkan-only: the raster rung has no swapchain to lose and no surface-commit state machine to fault.
-        if (parsedArguments.windowDebug && broughtUp.vulkanRenderer != nullptr) {
-            broughtUp.vulkanRenderer->injectSwapchainLossOnNextFrame();
-        }
-
-        AutomationChannel automation;
-
-        if (parsedArguments.automation) {
-            automation.server.emplace(react_native_linux::defaultAutomationSocketPath());
-
-            // The trace, because that is the only channel the driver is already reading when the window starts.
-            std::cout << "[rnl-automation] listening on " << automation.server->socketPath() << std::endl;
-        }
-
-        ImeDebugSink imeDebugSink;
-        std::optional<std::ofstream> frameLog;
-        bool lastKeyboardFocus = false;
-        bool keyboardFocusAnnounced = false;
-        uint32_t lastOutputEnterCount = 0;
-        uint32_t lastOutputLeaveCount = 0;
-        uint32_t injectedFaultCount = 0;
-
-        if (parsedArguments.frameLogPath.has_value()) {
-            frameLog.emplace(parsedArguments.frameLogPath.value());
-        }
-
-        while (!window.isClosed() && !hasCaptured) {
-            // Presentation feedback for the frames committed before this iteration arrived during the previous
-            // waitForRedraw, so the drain belongs at the top of the loop rather than beside the present.
-            if (frameLog.has_value()) {
-                writeFrameLines(frameLog.value(), window, session.has_value() ? &session.value() : nullptr);
-            }
-
-            const bool hasResized = window.takePendingResize();
-            const react_native_linux::ContentExtent previousChromeContent = chrome.content;
-
-            // The chrome first, and unconditionally: the content extent a resize hands the session is measured
-            // below the bar, and the bar's own active state can change without any resize at all.
             refreshChrome(chrome, window);
+            std::cout << "[rnl-decorations] mode=" << decorationModeName(chrome.mode)
+                      << " app-id=" << parsedArguments.applicationIdentifier << " content=" << chrome.content.width
+                      << "x" << chrome.content.height << std::endl;
 
-            // A `zxdg_toplevel_decoration_v1.configure` can switch decoration modes with no window resize at
-            // all, which moves the content extent by the bar's height without `hasResized` ever being true —
-            // the session has to see that too, or its viewport stays sized for the mode it no longer has.
-            const bool hasContentExtentChanged = chrome.content.width != previousChromeContent.width ||
-                                                 chrome.content.height != previousChromeContent.height;
+            const auto drawPlaceholder = [&chrome, &window](SkCanvas& canvas, react_native_linux::WindowSize /*size*/,
+                                                            const react_native_linux::SceneDamage& surfaceDamage) {
+                paintDecoratedFrame(
+                    canvas, chrome, window.title(), surfaceDamage,
+                    [&chrome](SkCanvas& contentCanvas, const react_native_linux::SceneDamage& contentDamage) {
+                        paintPlaceholderFrame(
+                            contentCanvas, react_native_linux::WindowSize{chrome.content.width, chrome.content.height},
+                            contentDamage);
+                    });
+            };
 
-            if (hasResized) {
-                renderer.resize(window.size());
+            if (parsedArguments.injectProtocolError) {
+                window.injectInvalidAckConfigureForTesting();
             }
 
-            if ((hasResized || hasContentExtentChanged) && session.has_value()) {
-                session->resize(react_native_linux::WindowSize{chrome.content.width, chrome.content.height});
-            }
+            // This is the first buffer the compositor can ever show, so `--frames 1` has to name this present rather
+            // than the loop's next one: the capture is armed beforehand, exactly as the loop arms it for every later
+            // frame, so a first-buffer failure that recovers on the next frame cannot pass a fixture that means to
+            // check the first one. See *Surface commit ordering* in docs/cpp-toolchain.md.
+            uint32_t presentedFrames = 0;
+            const bool isStartupCaptureFrame =
+                parsedArguments.screenshotPath.has_value() && presentedFrames + 1 >= parsedArguments.frameCount;
 
-            announceKeyboardFocusOnce(window, keyboardFocusAnnounced);
-
-            if (parsedArguments.windowDebug) {
-                printWindowDebugTransitions(window, lastKeyboardFocus, lastOutputEnterCount, lastOutputLeaveCount);
-
-                if (broughtUp.vulkanRenderer != nullptr) {
-                    injectNextSurfaceCommitFault(*broughtUp.vulkanRenderer, injectedFaultCount);
-                }
-            }
-
-            // The capture is armed before the frame that carries it, because the readback happens inside
-            // drawFrame while the image is still owned by this process. A frame that rebuilds the swapchain
-            // instead of painting leaves the request pending, so the next one takes it.
-            if (automation.server.has_value()) {
-                serveAutomation(automation, renderer, session.has_value() ? &session.value() : nullptr);
-            }
-
-            // Never while an automation capture is armed: the two would name the same pending path and one
-            // picture would be written to the other's file.
-            const bool isCaptureFrame = parsedArguments.screenshotPath.has_value() &&
-                                        !automation.pendingScreenshotPath.has_value() &&
-                                        presentedFrames + 1 >= parsedArguments.frameCount;
-
-            if (isCaptureFrame) {
+            if (isStartupCaptureFrame) {
                 renderer.captureNextFrame(parsedArguments.screenshotPath.value());
             }
 
-            const std::vector<react_native_linux::InputEvent> frameEvents =
-                routeDecorationInput(window, chrome, window.takeInputEvents());
+            const bool startupFramePresented = renderer.drawFrame(window, {}, drawPlaceholder);
 
-            if (parsedArguments.imeDebug) {
-                enableImeDebug(window.textInput());
-
-                for (const react_native_linux::InputEvent& event : frameEvents) {
-                    react_native_linux::deliverImeEvent(event, imeDebugSink);
-                }
-            }
-
-            bool presented = false;
-
-            if (session.has_value()) {
-                // Input first, and unconditionally: the event beat is induced inside this call, and it is what
-                // releases everything Fabric has queued since the last frame onto the JavaScript thread.
-                session->deliverInput(frameEvents);
-
-                // A frame callback always draws; a fallback timeout draws only if the session reports pending
-                // work, so an occluded window with nothing left to animate stops spinning the GPU every fallback
-                // tick instead of chasing a callback the compositor is never going to send. See *Frame clock* in
-                // docs/cpp-toolchain.md.
-                const react_native_linux::FrameClock::Source frameSource =
-                    window.hasFrameCallbackFired() ? react_native_linux::FrameClock::Source::Callback
-                                                   : react_native_linux::FrameClock::Source::Timer;
-                const std::chrono::steady_clock::time_point frameTime = std::chrono::steady_clock::now();
-                const react_native_linux::FrameClock::Tick tick = session->recordFrameTick(frameSource, frameTime);
-
-                // A pending capture is work in its own right: --screenshot and the automation channel's
-                // TakeScreenshot both read back a presented frame, and a static scene under a compositor that
-                // withholds frame callbacks would otherwise never present one and never answer.
-                // A discarded content update is the third reason to draw regardless of the clock: it never turned
-                // into light and is owed no frame callback, so nothing else would ever wake this window to
-                // replace it. See *Surface commit ordering* in docs/cpp-toolchain.md.
-                if (tick.shouldDraw || renderer.hasPendingCapture() || window.hasContentUpdateDiscarded()) {
-                    // The animation backend is driven by the same instant the frame clock measured, and before
-                    // the scene is taken, so a mutation this frame produces is in the snapshot it paints. A
-                    // running animation is also pending work, so a fallback timeout keeps drawing it when the
-                    // compositor withholds callbacks. See *Animation choreographer* in docs/cpp-toolchain.md.
-                    session->tickAnimations(frameTime);
-
-                    // The scene and the damage that describes it have to come out of the mounting manager
-                    // together, under one lock: a transaction landing between them would leave damage this scene
-                    // cannot satisfy.
-                    const react_native_linux::SceneFrame frame = session->takeFrame();
-
-                    // A chrome change — activation, a resize, the mode itself — repaints everything rather than
-                    // being expressed as another damage rectangle: it happens once per user gesture, and an
-                    // empty damage list is already this renderer's word for a full repaint.
-                    react_native_linux::SceneDamage surfaceDamage;
-
-                    if (!chrome.isRepaintNeeded) {
-                        surfaceDamage = frame.damage;
-
-                        for (facebook::react::Rect& rectangle : surfaceDamage) {
-                            rectangle.origin.y += chrome.content.topOffset;
-                        }
-                    }
-
-                    // The paint span the frame journal (#345) times is exactly the Skia work between them: not
-                    // `drawFrame`'s swapchain bookkeeping, and not the present call after it, because neither is
-                    // the work `paintScene` is answering the frame's damage with.
-                    presented = renderer.drawFrame(
-                        window, surfaceDamage,
-                        [&frame, &chrome, &window, &session](SkCanvas& canvas, react_native_linux::WindowSize /*size*/,
-                                                   const react_native_linux::SceneDamage& imageDamage) {
-                            session->recordPaintStart(std::chrono::steady_clock::now());
-                            paintDecoratedFrame(canvas, chrome, window.title(), imageDamage,
-                                                [&frame](SkCanvas& contentCanvas,
-                                                         const react_native_linux::SceneDamage& contentDamage) {
-                                                    react_native_linux::paintScene(contentCanvas, frame.scene,
-                                                                                   contentDamage);
-                                                });
-                            session->recordPaintEnd(std::chrono::steady_clock::now());
-                        });
-                }
-            } else {
-                presented = renderer.drawFrame(window, {}, drawPlaceholder);
-            }
-
-            if (parsedArguments.windowDebug && broughtUp.vulkanRenderer != nullptr) {
-                printSurfaceCommitOutcome(*broughtUp.vulkanRenderer, presented);
-            }
-
-            announceFirstPresentedFrameOnce(presented, hasRecordedFirstPresentedFrame, ladderPath, broughtUp.record);
-
-            if (presented) {
+            if (startupFramePresented) {
                 ++presentedFrames;
-                chrome.isRepaintNeeded = false;
             }
-            hasCaptured = isCaptureFrame && !renderer.hasPendingCapture();
 
-            if (!hasCaptured && !window.waitForRedraw(kFrameCallbackFallback)) {
-                break;
+            // The bring-up hook above proves the fatal-before-dispatch path (#331): a renderer failure that
+            // happens before the client ever reads the socket. This one proves the ordinary path instead — the
+            // surface is already up and a frame already presented, so the same injected error is expected to
+            // reach `WaylandWindow::dispatchWithTimeout` through the normal event loop rather than through a
+            // caught exception.
+            if (parsedArguments.injectProtocolErrorAfterFrame) {
+                window.injectInvalidAckConfigureForTesting();
             }
-        }
 
-        if (frameLog.has_value()) {
-            react_native_linux::WindowSession* sessionPointer = session.has_value() ? &session.value() : nullptr;
+            announceFirstPresentedFrameOnce(startupFramePresented, hasRecordedFirstPresentedFrame, ladderPath,
+                                            broughtUp.record);
 
-            writeFrameLines(frameLog.value(), window, sessionPointer);
-            frameLog.value() << react_native_linux::FrameTiming::formatSummaryLine(window.frameTimingSummary(),
-                                                                                   window.isPresentationSupported())
-                             << "\n";
+            bool hasCaptured = isStartupCaptureFrame && !renderer.hasPendingCapture();
 
-            if (sessionPointer != nullptr) {
-                frameLog.value() << react_native_linux::FrameJournal::formatSummaryLine(
-                                        sessionPointer->frameJournalSummary())
+            if (parsedArguments.bundlePath.has_value()) {
+                session.emplace(parsedArguments.bundlePath.value(),
+                                react_native_linux::WindowSize{chrome.content.width, chrome.content.height});
+
+                // --ime-debug owns the text input by hand, so focus must not also drive it: the two would race to
+                // enable and disable the same object. Without that flag, focus is the only thing that touches it.
+                if (!parsedArguments.imeDebug) {
+                    session->setTextInputFocusSink(window.textInput());
+                }
+            }
+
+            if (parsedArguments.imeDebug && window.textInput() == nullptr) {
+                react_native_linux::reportNativeError(kWindowErrorSource,
+                                                      "the compositor does not advertise zwp_text_input_manager_v3");
+            }
+
+            // The recreation path of the VkResult policy has no other trigger a developer can pull: a headless
+            // compositor never resizes the window and never loses the surface, so without this the swapchain rebuild
+            // is only ever reached on a real desktop by closing a lid. One injected VK_ERROR_OUT_OF_DATE_KHR at the
+            // first acquire makes the frame after it a rebuilt swapchain and a full repaint. See *VkResult policy*
+            // in docs/cpp-toolchain.md.
+            // Vulkan-only: the raster rung has no swapchain to lose and no surface-commit state machine to fault.
+            if (parsedArguments.windowDebug && broughtUp.vulkanRenderer != nullptr) {
+                broughtUp.vulkanRenderer->injectSwapchainLossOnNextFrame();
+            }
+
+            AutomationChannel automation;
+
+            if (parsedArguments.automation) {
+                automation.server.emplace(react_native_linux::defaultAutomationSocketPath());
+
+                // The trace, because that is the only channel the driver is already reading when the window starts.
+                std::cout << "[rnl-automation] listening on " << automation.server->socketPath() << std::endl;
+            }
+
+            ImeDebugSink imeDebugSink;
+            std::optional<std::ofstream> frameLog;
+            bool lastKeyboardFocus = false;
+            bool keyboardFocusAnnounced = false;
+            uint32_t lastOutputEnterCount = 0;
+            uint32_t lastOutputLeaveCount = 0;
+            uint32_t injectedFaultCount = 0;
+
+            if (parsedArguments.frameLogPath.has_value()) {
+                frameLog.emplace(parsedArguments.frameLogPath.value());
+            }
+
+            while (!window.isClosed() && !hasCaptured) {
+                // Presentation feedback for the frames committed before this iteration arrived during the previous
+                // waitForRedraw, so the drain belongs at the top of the loop rather than beside the present.
+                if (frameLog.has_value()) {
+                    writeFrameLines(frameLog.value(), window, session.has_value() ? &session.value() : nullptr);
+                }
+
+                const bool hasResized = window.takePendingResize();
+                const react_native_linux::ContentExtent previousChromeContent = chrome.content;
+
+                // The chrome first, and unconditionally: the content extent a resize hands the session is measured
+                // below the bar, and the bar's own active state can change without any resize at all.
+                refreshChrome(chrome, window);
+
+                // A `zxdg_toplevel_decoration_v1.configure` can switch decoration modes with no window resize at
+                // all, which moves the content extent by the bar's height without `hasResized` ever being true —
+                // the session has to see that too, or its viewport stays sized for the mode it no longer has.
+                const bool hasContentExtentChanged = chrome.content.width != previousChromeContent.width ||
+                                                     chrome.content.height != previousChromeContent.height;
+
+                if (hasResized) {
+                    renderer.resize(window.size());
+                }
+
+                if ((hasResized || hasContentExtentChanged) && session.has_value()) {
+                    session->resize(react_native_linux::WindowSize{chrome.content.width, chrome.content.height});
+                }
+
+                announceKeyboardFocusOnce(window, keyboardFocusAnnounced);
+
+                if (parsedArguments.windowDebug) {
+                    printWindowDebugTransitions(window, lastKeyboardFocus, lastOutputEnterCount, lastOutputLeaveCount);
+
+                    if (broughtUp.vulkanRenderer != nullptr) {
+                        injectNextSurfaceCommitFault(*broughtUp.vulkanRenderer, injectedFaultCount);
+                    }
+                }
+
+                // The capture is armed before the frame that carries it, because the readback happens inside
+                // drawFrame while the image is still owned by this process. A frame that rebuilds the swapchain
+                // instead of painting leaves the request pending, so the next one takes it.
+                if (automation.server.has_value()) {
+                    serveAutomation(automation, renderer, session.has_value() ? &session.value() : nullptr);
+                }
+
+                // Never while an automation capture is armed: the two would name the same pending path and one
+                // picture would be written to the other's file.
+                const bool isCaptureFrame = parsedArguments.screenshotPath.has_value() &&
+                                            !automation.pendingScreenshotPath.has_value() &&
+                                            presentedFrames + 1 >= parsedArguments.frameCount;
+
+                if (isCaptureFrame) {
+                    renderer.captureNextFrame(parsedArguments.screenshotPath.value());
+                }
+
+                const std::vector<react_native_linux::InputEvent> frameEvents =
+                    routeDecorationInput(window, chrome, window.takeInputEvents());
+
+                if (parsedArguments.imeDebug) {
+                    enableImeDebug(window.textInput());
+
+                    for (const react_native_linux::InputEvent& event : frameEvents) {
+                        react_native_linux::deliverImeEvent(event, imeDebugSink);
+                    }
+                }
+
+                bool presented = false;
+
+                if (session.has_value()) {
+                    // Input first, and unconditionally: the event beat is induced inside this call, and it is what
+                    // releases everything Fabric has queued since the last frame onto the JavaScript thread.
+                    session->deliverInput(frameEvents);
+
+                    // A frame callback always draws; a fallback timeout draws only if the session reports pending
+                    // work, so an occluded window with nothing left to animate stops spinning the GPU every fallback
+                    // tick instead of chasing a callback the compositor is never going to send. See *Frame clock* in
+                    // docs/cpp-toolchain.md.
+                    const react_native_linux::FrameClock::Source frameSource =
+                        window.hasFrameCallbackFired() ? react_native_linux::FrameClock::Source::Callback
+                                                       : react_native_linux::FrameClock::Source::Timer;
+                    const std::chrono::steady_clock::time_point frameTime = std::chrono::steady_clock::now();
+                    const react_native_linux::FrameClock::Tick tick = session->recordFrameTick(frameSource, frameTime);
+
+                    // A pending capture is work in its own right: --screenshot and the automation channel's
+                    // TakeScreenshot both read back a presented frame, and a static scene under a compositor that
+                    // withholds frame callbacks would otherwise never present one and never answer.
+                    // A discarded content update is the third reason to draw regardless of the clock: it never turned
+                    // into light and is owed no frame callback, so nothing else would ever wake this window to
+                    // replace it. See *Surface commit ordering* in docs/cpp-toolchain.md.
+                    if (tick.shouldDraw || renderer.hasPendingCapture() || window.hasContentUpdateDiscarded()) {
+                        // The animation backend is driven by the same instant the frame clock measured, and before
+                        // the scene is taken, so a mutation this frame produces is in the snapshot it paints. A
+                        // running animation is also pending work, so a fallback timeout keeps drawing it when the
+                        // compositor withholds callbacks. See *Animation choreographer* in docs/cpp-toolchain.md.
+                        session->tickAnimations(frameTime);
+
+                        // The scene and the damage that describes it have to come out of the mounting manager
+                        // together, under one lock: a transaction landing between them would leave damage this scene
+                        // cannot satisfy.
+                        const react_native_linux::SceneFrame frame = session->takeFrame();
+
+                        // A chrome change — activation, a resize, the mode itself — repaints everything rather than
+                        // being expressed as another damage rectangle: it happens once per user gesture, and an
+                        // empty damage list is already this renderer's word for a full repaint.
+                        react_native_linux::SceneDamage surfaceDamage;
+
+                        if (!chrome.isRepaintNeeded) {
+                            surfaceDamage = frame.damage;
+
+                            for (facebook::react::Rect& rectangle : surfaceDamage) {
+                                rectangle.origin.y += chrome.content.topOffset;
+                            }
+                        }
+
+                        // The paint span the frame journal (#345) times is exactly the Skia work between them: not
+                        // `drawFrame`'s swapchain bookkeeping, and not the present call after it, because neither is
+                        // the work `paintScene` is answering the frame's damage with.
+                        presented = renderer.drawFrame(
+                            window, surfaceDamage,
+                            [&frame, &chrome, &window, &session](SkCanvas& canvas,
+                                                                 react_native_linux::WindowSize /*size*/,
+                                                                 const react_native_linux::SceneDamage& imageDamage) {
+                                session->recordPaintStart(std::chrono::steady_clock::now());
+                                paintDecoratedFrame(canvas, chrome, window.title(), imageDamage,
+                                                    [&frame](SkCanvas& contentCanvas,
+                                                             const react_native_linux::SceneDamage& contentDamage) {
+                                                        react_native_linux::paintScene(contentCanvas, frame.scene,
+                                                                                       contentDamage);
+                                                    });
+                                session->recordPaintEnd(std::chrono::steady_clock::now());
+                            });
+                    }
+                } else {
+                    presented = renderer.drawFrame(window, {}, drawPlaceholder);
+                }
+
+                if (parsedArguments.windowDebug && broughtUp.vulkanRenderer != nullptr) {
+                    printSurfaceCommitOutcome(*broughtUp.vulkanRenderer, presented);
+                }
+
+                announceFirstPresentedFrameOnce(presented, hasRecordedFirstPresentedFrame, ladderPath,
+                                                broughtUp.record);
+
+                if (presented) {
+                    ++presentedFrames;
+                    chrome.isRepaintNeeded = false;
+                }
+                hasCaptured = isCaptureFrame && !renderer.hasPendingCapture();
+
+                if (!hasCaptured && !window.waitForRedraw(kFrameCallbackFallback)) {
+                    break;
+                }
+            }
+
+            if (frameLog.has_value()) {
+                react_native_linux::WindowSession* sessionPointer = session.has_value() ? &session.value() : nullptr;
+
+                writeFrameLines(frameLog.value(), window, sessionPointer);
+                frameLog.value() << react_native_linux::FrameTiming::formatSummaryLine(window.frameTimingSummary(),
+                                                                                       window.isPresentationSupported())
                                  << "\n";
+
+                if (sessionPointer != nullptr) {
+                    frameLog.value() << react_native_linux::FrameJournal::formatSummaryLine(
+                                            sessionPointer->frameJournalSummary())
+                                     << "\n";
+                }
             }
+
+            if (parsedArguments.screenshotPath.has_value() && !hasCaptured) {
+                react_native_linux::reportNativeError(
+                    kWindowErrorSource, "the window closed before frame " + std::to_string(parsedArguments.frameCount) +
+                                            " could be captured");
+
+                return 1;
+            }
+
+            return session.has_value() && session->hasReportedFatalError() ? 1 : 0;
+        } catch (const std::exception&) {
+            window.reportPendingDisplayError();
+
+            throw;
         }
-
-        if (parsedArguments.screenshotPath.has_value() && !hasCaptured) {
-            react_native_linux::reportNativeError(kWindowErrorSource, "the window closed before frame " +
-                                                                          std::to_string(parsedArguments.frameCount) +
-                                                                          " could be captured");
-
-            return 1;
-        }
-
-        return session.has_value() && session->hasReportedFatalError() ? 1 : 0;
     } catch (const std::exception& error) {
         react_native_linux::reportNativeError(kWindowErrorSource, error.what());
 

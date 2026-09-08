@@ -261,6 +261,75 @@ painting over pixels the compositor is reading; every frame repaints the whole s
 the untouched one is an unknown number of frames stale and the buffer-age bookkeeping that would fix that is not
 worth carrying on the rung whose only job is to work at all.
 
+### Wayland dispatch errors (#331)
+
+`wl_display_dispatch_pending`, `wl_display_flush` and `wl_display_read_events` returning negative all used to mean
+the same thing to `WaylandWindow::dispatchWithTimeout`: `closed_ = true`, no diagnostic. That collapsed three
+different failures into one, and the process exited with libwayland's own `Broken pipe (os error 32)` on stderr
+regardless of which one actually happened — indistinguishable from the user closing the window.
+
+`WaylandDispatchDiagnostics.h` is the fix, kept dependency-free (no `<wayland-client.h>`) the same way
+`ToplevelState.h`'s `decodeToplevelStates` is, so it sits in the unit-test coverage gate rather than needing a
+live compositor to exercise. `classifyWaylandDispatchResult(result, displayErrno, callErrno)` turns a return
+value, `wl_display_get_error`'s errno and the plain C `errno` the failing call itself left behind into one of
+four outcomes: `Continue` for success — which is also the "clean close" case, since `xdg_toplevel.close` sets the
+exit flag from inside a dispatch that itself succeeded — `Retry` when either errno is `EAGAIN`, `ProtocolError`
+for `EPROTO`, and `DisplayError` for everything else. The two errno inputs matter separately: `wl_display_flush`
+reports socket back-pressure by returning `-1` and setting only `errno` to `EAGAIN`, leaving the display's own
+fatal-error state at `0` — reading `displayErrno` alone therefore misclassified a transient flush stall as a
+`DisplayError` and closed the window on ordinary back-pressure. `WaylandWindow::reportDispatchFailure` captures
+`errno` immediately after each dispatch/flush/read call, reads `wl_display_get_protocol_error` for the interface,
+object id and code on a `ProtocolError`, and reports either message through `reportNativeError` (#214), which is
+what puts it on `ListErrors` as well as the trace:
+
+```
+[rnl-window] wayland protocol error: <interface>#<id> code <n> (<errno text>)
+[rnl-window] wayland display error: <errno text>
+```
+
+It returns the classified outcome rather than a bare "did this close" bool, so `WaylandWindow::dispatchWithTimeout`
+can act on `Retry` instead of merely not closing on it: a `Retry` from `wl_display_flush` polls the display fd for
+`POLLOUT`, bounded by the same timeout the read side polls `POLLIN` with, and retries the flush — rather than
+falling through to a read poll that would leave the pending request unsent — and gives up (without closing) if
+that poll times out.
+
+`--inject-protocol-error` and `--inject-protocol-error-after-frame` are the fault-injection hooks this needed to
+prove end to end: both acknowledge the initial `xdg_surface.configure` a second time with a serial no `configure`
+ever sent, which xdg-shell requires the compositor to reject — the wlroots-based compositor CI runs under posts
+that rejection against `xdg_wm_base`, code 4, not against `xdg_surface` itself, so the scenarios assert on
+`xdg_wm_base#` rather than guessing the object from the spec alone. They differ in when: `--inject-protocol-error`
+injects before the first frame, which is the fatal-before-dispatch path — the failure this needed CI to find,
+where a renderer failure that happens before the client has read the socket (an unrecoverable `VkResult` from a
+surface the compositor has already torn down, say) used to report its own symptom and exit before
+`WaylandWindow::dispatchWithTimeout` ever saw the protocol error at all. `WaylandWindow::reportPendingDisplayError`
+closes that gap: it drains the socket without blocking and reports whatever is on it exactly the way
+`reportDispatchFailure` already does, and `WindowMain`'s top-level catch calls it before its own fatal report so
+the Wayland cause, when there is one, lands on the trace ahead of the symptom that came from it.
+`--inject-protocol-error-after-frame` injects the same rejection once a frame has already presented instead,
+proving the *ordinary* path needs none of that: the surface is healthy, so the error reaches
+`dispatchWithTimeout`'s own event loop with nothing to catch. The `protocol-error` and `protocol-error-loop` e2e
+scenarios run the two, assert the structured line appears in the trace, and — via the scenario schema's `reject`
+list — assert libwayland's own bare "Broken pipe" never does, so an `allowErrors` scenario that tolerates the
+structured line can still fail on an unrelated regression in the same trace; `reject` failures are checked outside
+`expectFailure`'s inversion for the same reason, so a rejected substring cannot be waved through by a negative
+control expecting a different failure. The `xdg_wm_base.ping` responsiveness contract is #331's other remaining
+half; this change is the diagnostic, the flush retry and the two fault-injection paths, not the whole event-loop
+rework.
+
+Both scenarios name `ready` as a line printed before their own injection, not `hello.js`'s own "bundle evaluated":
+the before-bring-up hook can kill the process ahead of the bundle ever running, and the after-frame hook injects
+before `WindowSession` — and therefore the bundle — even exists, so either scenario waiting on the bundle's own
+line would be waiting on a race it can lose. `[rnl-decorations] mode=bare` prints unconditionally before both
+hooks fire and is what each scenario waits on instead. Once the window dies on the injected error, `rnl_inject`
+loses its socket and exits with status 1 the same way a closed window does, so both scenarios name
+`expectsExitAfter` — the generalised form of `window-decorations-close`'s own opt-in — as the structured line's
+own substring, `wayland protocol error: xdg_wm_base#7`: `resolveInjectionFailure` forgives that status only once
+the trace carries it. `resolveExpectedOutcome` also takes `compositor.signalCode` now, alongside `trace`, and
+folds `describeCompositorCrash` into the same unwaivable set `reject` already sits in — a signal there is `cage`
+or the `rnl_window` child crashing, never a scenario's own exit, and it fails the scenario regardless of
+`allowErrors` or `expectFailure` — the gap that let a run ending in a Hermes abort still print "passed", and that
+let `expectFailure` on top of it wave the crash away as the negative control's own expected failure.
+
 ### Swapchain to SkSurface
 
 Each swapchain `VkImage` is wrapped directly as an `SkSurface` through `GrBackendRenderTargets::MakeVk` plus
@@ -1265,16 +1334,29 @@ because the frame thread needs a handle to it; `AnimatedModule` is built per loo
 the scheduler share a `NativeAnimatedNodesManager`.
 
 Destruction order is load-bearing and is now explicit in `~ReactHost`: quit the JavaScript thread, release the
-registry, release the manager provider, then destroy the instance. A `TurboModule` owns a `jsi::WeakObject` — the
-cached JavaScript representation `TurboModuleBinding::getModule` attaches to it — and a JSI pointer that outlives
-its runtime aborts a debug Hermes with *"This PointerValue was left dangling after the Runtime was destroyed"*.
-`DeviceInfo` is the module that made this reachable: it is held eagerly by the registry, so before this ordering
-the last reference to it was released after `reactInstance_.reset()` had already torn the runtime down, and only
-on a bundle that actually looked the module up — `--resize dimensions.js` aborted at exit in the Debug CI job
-while the Release presets did not. Members alone do not give this order, because the instance is reset explicitly
-in the destructor body and members are destroyed only after it returns. Nothing in `TurboModuleRegistry` or
-`LinuxDeviceInfoModule` caches a `jsi::Value` of its own; the representation inside the base class is the whole
-of the JSI state a module carries.
+registry, release the manager provider, release this host's own `TimerManager` reference, then destroy the
+instance. A `TurboModule` owns a `jsi::WeakObject` — the cached JavaScript representation
+`TurboModuleBinding::getModule` attaches to it — and a JSI pointer that outlives its runtime aborts a debug Hermes
+with *"This PointerValue was left dangling after the Runtime was destroyed"*. `DeviceInfo` is the module that made
+this reachable: it is held eagerly by the registry, so before this ordering the last reference to it was released
+after `reactInstance_.reset()` had already torn the runtime down, and only on a bundle that actually looked the
+module up — `--resize dimensions.js` aborted at exit in the Debug CI job while the Release presets did not.
+Members alone do not give this order, because the instance is reset explicitly in the destructor body and members
+are destroyed only after it returns. Nothing in `TurboModuleRegistry` or `LinuxDeviceInfoModule` caches a
+`jsi::Value` of its own; the representation inside the base class is the whole of the JSI state a module carries.
+
+The same failure has a second, later-discovered source: upstream's `TimerManager::timers_` holds a real
+`jsi::Function` per pending `setTimeout`/`setInterval` callback, and `TimerManager::quit()` — called from its own
+destructor — never clears that map. `ReactHost` passes `timerManager_` into `ReactInstance`'s constructor, so the
+two are joint owners of the same `TimerManager`, and `ReactInstance`'s own member order (correctly) drops its
+copy before it destroys its runtime — but that only destroys `TimerManager` itself, callbacks and all, if it was
+the *last* owner. Before this host also released its copy first, `ReactHost::timerManager_`'s own destruction
+happened in the compiler-generated epilogue after `reactInstance_.reset()` had already returned, which is after
+the runtime was gone; a bundle closed with a `setTimeout` still pending — `--inject-protocol-error-after-frame`
+on `hello.js`, which schedules two, is what found it — hit the same "dangling `PointerValue`" abort on exactly
+that map entry. `timerManager_.reset()` ahead of `reactInstance_.reset()` makes this host's copy the one that
+goes second only when it needs to, and guarantees `TimerManager` is never the one still holding a `jsi::Function`
+once the runtime beneath it is gone.
 
 Building the module per lookup is also what defers `NativeAnimatedNodesManagerProvider::getOrCreate` until
 JavaScript first reaches for the module. That call resolves the `UIManager` out of the runtime through
