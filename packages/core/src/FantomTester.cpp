@@ -6,9 +6,10 @@
 #include <chrono>
 #include <cxxreact/JSBigString.h>
 #include <memory>
-#include <react/featureflags/ReactNativeFeatureFlags.h>
 #include <string>
 #include <utility>
+
+#include <react/featureflags/ReactNativeFeatureFlags.h>
 
 namespace react_native_linux {
 

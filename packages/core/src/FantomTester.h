@@ -5,8 +5,9 @@
 
 #include <cstddef>
 #include <memory>
-#include <react/renderer/graphics/Size.h>
 #include <string>
+
+#include <react/renderer/graphics/Size.h>
 
 namespace react_native_linux {
 
