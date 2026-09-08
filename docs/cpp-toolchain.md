@@ -5591,11 +5591,12 @@ leave and enter a compositor with one window cannot be made to produce. Where it
 text-input manager — a composition token falls back to the editor-level events, which is that delivery minus the
 session, and the session traces do not appear; the session lifecycle stays the unit gate's below.
 
-The scenario walks a composition into field A, a focus change to field B (the abandoned run comes off the screen
-because `TextInputController` clears the outgoing field's composing run at the focus change itself — the
-compositor-side teardown alone would deliver its empty pre-edit to whichever field holds the caret *now*, leaving
-A composing forever), a clean composition and commit in B, then a second composition — asserting the ordered
-traces and the two committed texts, with the first field's never appearing.
+The scenario walks a committed composition into field A, a focus change to field B, a clean composition and
+commit in B, then a second composition in B — asserting the ordered traces and the two committed texts, with
+nothing of B's landing in A. The walk commits before the focus change because it must: while a composition is
+open, every key belongs to the input method (#54's routing rule), so a Tab mid-composition is dropped on every
+compositor, not just this one. The abandoned-composition walk — a run still composing when the caret leaves — is
+the controller unit gate above and the `{SessionLeave}`/`{SessionEnter}` pair where a text-input manager exists.
 
 What still needs a real compositor is the wire decode under live traffic, which `ImeTest` covers with recorded
 sequences, and the compositor-side half of the protocol — being the input method rather than talking to one,
