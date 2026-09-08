@@ -44,8 +44,40 @@ desktop-file-validate ./org.example.App.desktop
 ```
 
 **Not yet built** (left for follow-up on #356 — see the issue's acceptance criteria for the full list): the
-manifest schema these generators' inputs are drawn from at package time (#362 owns the reverse-DNS identifier
-field, display name, categories and icon source list as one validated schema); the package-time writer that lays
-the generated entry and icon tree onto disk; post-install/post-remove hooks that refresh the icon cache and the
-desktop database; and the end-to-end assertion that an installed package's entry, launched under the headless
-compositor, reports back an `app_id` equal to the entry's basename.
+package-time writer that lays the generated entry and icon tree onto disk; post-install/post-remove hooks that
+refresh the icon cache and the desktop database; and the end-to-end assertion that an installed package's entry,
+launched under the headless compositor, reports back an `app_id` equal to the entry's basename.
+
+## Linux bundle manifest (#362)
+
+Six things have to agree on what the application is called — the executable, the `.desktop` entry, `--app-id`,
+the D-Bus well-known name, the package name, and the artefact filenames — and each package format has its own
+naming rules on top (case, allowed characters, architecture spelling). `src/linux-bundle-manifest.ts` is the one
+schema this is read from, so identity is invented once rather than at every point of use.
+
+- `LinuxBundleManifest` (`src/linux-bundle-manifest.ts`) holds `applicationIdentifier` (a reverse-DNS identifier
+  — the same field `DesktopEntryManifest.applicationIdentifier` (#356) is fed from), `displayName` (free text,
+  used only for the `Name` key — renaming it never changes anything identity-derived), `version` (semantic),
+  `categories`, `shortDescription`, `longDescription`, `homepage`, `licence`, `iconSourcePaths` (fed to
+  `layoutHicolorIconTree`), and the optional `urlSchemes`, `fileAssociationMimeTypes` and
+  `extraRuntimeDependencies`. `validateLinuxBundleManifest(candidate)` checks every field, rejects an unrecognized
+  key instead of ignoring it, and throws `LinuxBundleManifestValidationError` naming every failing field at once
+  (`fieldErrors`) rather than stopping at the first one — the tauri#13999 lesson is that identity and display
+  name being the same field is itself the bug, so the two are validated, and used, separately.
+- `linuxBundleManifestJsonSchema` is the canonical JSON Schema, generated from the same field-descriptor table the
+  validator runs against (so the two cannot drift from each other) and checked in at
+  `schemas/linux-bundle-manifest.schema.json`. `pnpm manifest-schema:check` (part of `pnpm validate`) fails the
+  build when the checked-in file is stale; `pnpm manifest-schema:generate` regenerates it — the
+  `check-generated-files` shape tauri-utils uses for its own config struct.
+- `src/linux-package-format-names.ts` derives per-format names from the manifest rather than taking them as
+  input: `derivePackageName(manifest)` kebab-cases the *last* reverse-DNS segment of `applicationIdentifier` —
+  never `displayName` — so a display-name change leaves the package name, and every artefact filename built from
+  it, untouched. `deriveFormatArtifactNames(manifest, format, hostArchitecture)` looks up one rule table entry per
+  format (`formatNameRules`, a `Record` covering every declared `LinuxPackageFormat`, so `pnpm ts` fails a build
+  that adds a format without adding its rules) and returns the package name, the architecture token, and the
+  artefact filename:
+  - `deb` — `amd64` / `arm64`, `<name>_<version>_<arch>.deb` (Debian convention).
+  - `pacman` — `x86_64` / `aarch64`, `<name>-<version>-1-<arch>.pkg.tar.zst` (Arch convention, the AUR channel
+    #25 packages against). This is also the direct fix for tauri#10031 (an AppImage bundler spelling `aarch64`
+    where the convention is `arm64`) and tauri#12073 (a `.deb` name that is allowed to contain uppercase letters):
+    each format's case and architecture spelling live in exactly one place.

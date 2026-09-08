@@ -1,0 +1,78 @@
+{
+  "$id": "https://react-native-linux.dev/schemas/linux-bundle-manifest.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "applicationIdentifier": {
+      "pattern": "^(?<firstSegment>[A-Za-z][A-Za-z0-9]*)(?:\\.(?<nextSegment>[A-Za-z][A-Za-z0-9]*)){1,}$",
+      "type": "string"
+    },
+    "categories": {
+      "items": {
+        "pattern": "^[A-Za-z]+$",
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "displayName": {
+      "type": "string"
+    },
+    "extraRuntimeDependencies": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "fileAssociationMimeTypes": {
+      "items": {
+        "pattern": "^[a-z0-9][a-z0-9!#$&^_.+-]*\\/[a-z0-9][a-z0-9!#$&^_.+-]*$",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "homepage": {
+      "type": "string"
+    },
+    "iconSourcePaths": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "licence": {
+      "pattern": "^[A-Za-z0-9.+-]+$",
+      "type": "string"
+    },
+    "longDescription": {
+      "type": "string"
+    },
+    "shortDescription": {
+      "type": "string"
+    },
+    "urlSchemes": {
+      "items": {
+        "pattern": "^[a-z][a-z0-9+.-]*$",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "version": {
+      "pattern": "^(?<core>\\d+\\.\\d+\\.\\d+)(?:-(?<prerelease>[0-9A-Za-z-.]+))?(?:\\+(?<build>[0-9A-Za-z-.]+))?$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "applicationIdentifier",
+    "categories",
+    "displayName",
+    "homepage",
+    "iconSourcePaths",
+    "licence",
+    "longDescription",
+    "shortDescription",
+    "version"
+  ],
+  "title": "LinuxBundleManifest",
+  "type": "object"
+}

@@ -8,6 +8,9 @@
     "./animation-rung.ts": "./src/animation-rung.ts",
     "./desktop-entry.ts": "./src/desktop-entry.ts",
     "./hicolor-icon-tree.ts": "./src/hicolor-icon-tree.ts",
+    "./linux-bundle-manifest.ts": "./src/linux-bundle-manifest.ts",
+    "./linux-package-format-names.ts": "./src/linux-package-format-names.ts",
+    "./manifest-schema-drift.ts": "./src/manifest-schema-drift.ts",
     "./metro-config.ts": "./src/metro-config.ts"
   },
   "dependencies": {
