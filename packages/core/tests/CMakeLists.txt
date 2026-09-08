@@ -75,6 +75,7 @@ add_executable(rnl_core_tests
     ImageCacheTest.cpp
     ImageTest.cpp
     ImeTest.cpp
+    HoverChainTest.cpp
     InputDispatcherTest.cpp
     InputTest.cpp
     LayoutConformanceTest.cpp
