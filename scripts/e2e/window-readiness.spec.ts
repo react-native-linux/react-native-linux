@@ -25,7 +25,11 @@ describe("hasPresentedFirstFrame", () => {
 
 describe("waitForWindowReadyFailures when both signals arrive", () => {
   it("resolves to an empty array", async () => {
-    const failures = await waitForWindowReadyFailures("app-ready", { text: "" }, () => Promise.resolve(true));
+    const failures = await waitForWindowReadyFailures(
+      { bundleReadyTraceLine: "app-ready", expectedExitTraceLine: null },
+      { text: "" },
+      () => Promise.resolve(true),
+    );
 
     expect(failures).toHaveLength(EMPTY_LENGTH);
   });
@@ -33,7 +37,11 @@ describe("waitForWindowReadyFailures when both signals arrive", () => {
   it("waits for both signals concurrently rather than one after the other", async () => {
     const wait = vi.fn(() => Promise.resolve(true));
 
-    await waitForWindowReadyFailures("app-ready", { text: "" }, wait);
+    await waitForWindowReadyFailures(
+      { bundleReadyTraceLine: "app-ready", expectedExitTraceLine: null },
+      { text: "" },
+      wait,
+    );
 
     expect(wait).toHaveBeenCalledTimes(TWO_CALLS);
   });
@@ -41,14 +49,18 @@ describe("waitForWindowReadyFailures when both signals arrive", () => {
 
 describe("waitForWindowReadyFailures when one signal never arrives", () => {
   it("names only the window's line when the bundle's ready line arrives first", async () => {
-    const failures = await waitForWindowReadyFailures("app-ready", { text: "app-ready\n" }, echoIsReady);
+    const failures = await waitForWindowReadyFailures(
+      { bundleReadyTraceLine: "app-ready", expectedExitTraceLine: null },
+      { text: "app-ready\n" },
+      echoIsReady,
+    );
 
     expect(failures).toEqual([`the window never printed "${FIRST_PRESENTED_FRAME_TRACE_LINE}"`]);
   });
 
   it("names only the bundle's line when the presented-frame line arrives first", async () => {
     const failures = await waitForWindowReadyFailures(
-      "app-ready",
+      { bundleReadyTraceLine: "app-ready", expectedExitTraceLine: null },
       { text: FIRST_PRESENTED_FRAME_TRACE_LINE },
       echoIsReady,
     );
@@ -59,11 +71,35 @@ describe("waitForWindowReadyFailures when one signal never arrives", () => {
 
 describe("waitForWindowReadyFailures when neither signal arrives", () => {
   it("names both", async () => {
-    const failures = await waitForWindowReadyFailures("app-ready", { text: "" }, () => Promise.resolve(false));
+    const failures = await waitForWindowReadyFailures(
+      { bundleReadyTraceLine: "app-ready", expectedExitTraceLine: null },
+      { text: "" },
+      () => Promise.resolve(false),
+    );
 
     expect(failures).toEqual([
       'the bundle never printed "app-ready"',
       `the window never printed "${FIRST_PRESENTED_FRAME_TRACE_LINE}"`,
     ]);
+  });
+});
+
+describe("waitForWindowReadyFailures for a scenario that expects the window to exit", () => {
+  it("lets the expected-exit line stand in for the presented frame", async () => {
+    const failures = await waitForWindowReadyFailures(
+      { bundleReadyTraceLine: "app-ready", expectedExitTraceLine: "wayland protocol error" },
+      { text: "app-ready\n[rnl-window] wayland protocol error: xdg_wm_base#7 code 4\n" },
+      echoIsReady,
+    );
+    expect(failures).toHaveLength(EMPTY_LENGTH);
+  });
+
+  it("still names the missing presented frame when neither line arrives", async () => {
+    const failures = await waitForWindowReadyFailures(
+      { bundleReadyTraceLine: "app-ready", expectedExitTraceLine: "wayland protocol error" },
+      { text: "app-ready\n" },
+      echoIsReady,
+    );
+    expect(failures).toEqual([`the window never printed "${FIRST_PRESENTED_FRAME_TRACE_LINE}"`]);
   });
 });

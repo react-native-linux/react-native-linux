@@ -178,8 +178,10 @@ const driveScenario = async (run: ScenarioRun, workspace: Workspace): Promise<re
   const readyFailures =
     socketName === null
       ? [`${COMPOSITOR_NAME} never created a wayland socket in ${workspace.runtimeDirectory}`]
-      : await waitForWindowReadyFailures(scenario.ready, workspace.trace, (isReady) =>
-          waitUntil(isReady, READY_TIMEOUT_MS),
+      : await waitForWindowReadyFailures(
+          { bundleReadyTraceLine: scenario.ready, expectedExitTraceLine: scenario.expectsExitAfter ?? null },
+          workspace.trace,
+          (isReady) => waitUntil(isReady, READY_TIMEOUT_MS),
         );
 
   if (socketName === null || readyFailures.length !== EMPTY_LENGTH) {

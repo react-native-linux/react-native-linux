@@ -20,17 +20,26 @@ interface TraceSource {
 /**
  * Waits for the bundle's own ready line and the window's first-presented-frame line concurrently — neither's
  * arrival depends on the other having been observed first — and returns the empty array once both have appeared,
- * or an array naming whichever one (or both) never did. `wait` is `scripts/e2e.ts`'s own `waitUntil`, already
- * bound to its timeout, injected so this stays free of a real timer in its own tests.
+ * or an array naming whichever one (or both) never did. A scenario that expects the window to exit on an injected
+ * fault (`expectsExitAfter`) may never present at all, so its expected-exit line satisfies the presented-frame
+ * wait too. `wait` is `scripts/e2e.ts`'s own `waitUntil`, already bound to its timeout, injected so this stays
+ * free of a real timer in its own tests.
  */
+/** The two trace lines a scenario names: the bundle's own ready line, and the exit it expects, if any. */
+interface ReadyTraceLines {
+  readonly bundleReadyTraceLine: string;
+  readonly expectedExitTraceLine: string | null;
+}
+
 const waitForWindowReadyFailures = async (
-  bundleReadyTraceLine: string,
+  { bundleReadyTraceLine, expectedExitTraceLine }: ReadyTraceLines,
   trace: TraceSource,
   wait: (isReady: () => boolean) => Promise<boolean>,
 ): Promise<readonly string[]> => {
+  const hasExpectedExit = (): boolean => expectedExitTraceLine !== null && trace.text.includes(expectedExitTraceLine);
   const [bundleReady, framePresented] = await Promise.all([
     wait(() => trace.text.includes(bundleReadyTraceLine)),
-    wait(() => hasPresentedFirstFrame(trace.text)),
+    wait(() => hasPresentedFirstFrame(trace.text) || hasExpectedExit()),
   ]);
 
   return [
