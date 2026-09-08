@@ -214,11 +214,11 @@ public:
         const std::vector<react_native_linux::InputEvent> events = react_native_linux::parseKeySequence(token);
 
         if (events.size() == 1 && events[0].kind == react_native_linux::InputEventKind::ImePreedit) {
-            return Step{.preedit = events[0].text};
+            return Step{.events = events, .preedit = events[0].text};
         }
 
         if (events.size() == 1 && events[0].kind == react_native_linux::InputEventKind::ImeCommit) {
-            return Step{.commit = events[0].text};
+            return Step{.events = events, .commit = events[0].text};
         }
 
         return Step{.events = events};
