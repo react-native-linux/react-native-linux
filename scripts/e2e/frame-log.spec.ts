@@ -74,10 +74,10 @@ describe("parseFrameLogSummary, on a summary it cannot trust", () => {
     expect(parseFrameLogSummary(summaryLine(fields))).toBeNull();
   });
 
-  // 1e999 is how a truncated or corrupted number reaches the parser as Infinity, which is not a frame time.
-  it("returns null when a field parses to a number that is not finite", () => {
+  // Every field is a count or a duration, so Infinity (1e999), negatives and fractions are corruption.
+  it.each(["1e999", "-1", "16.5"])("returns null when a field parses to %s", (corruptedValue) => {
     expect(
-      parseFrameLogSummary(summaryLine('"discarded":2,"frames":240,"maxNs":1e999,"p50Ns":0,"p95Ns":0')),
+      parseFrameLogSummary(summaryLine(`"discarded":2,"frames":240,"maxNs":${corruptedValue},"p50Ns":0,"p95Ns":0`)),
     ).toBeNull();
   });
 });
@@ -128,12 +128,18 @@ describe("parseFrameJournalSummary, on a summary it cannot trust", () => {
     expect(parseFrameJournalSummary(journalSummaryLine(fields))).toBeNull();
   });
 
-  it("returns null when a field is not a number, and when it parses to one that is not finite", () => {
+  it("returns null when a field is not a number at all", () => {
     expect(
       parseFrameJournalSummary(journalSummaryLine('"frames":238,"hangs":"none","maxNs":0,"p50Ns":0,"p95Ns":0')),
     ).toBeNull();
+  });
+
+  // A negative hang count would otherwise pass a maxHangs of 0 on a line no window could have written.
+  it.each(["1e999", "-1", "0.5"])("returns null when hangs parses to %s", (corruptedValue) => {
     expect(
-      parseFrameJournalSummary(journalSummaryLine('"frames":238,"hangs":0,"maxNs":1e999,"p50Ns":0,"p95Ns":0')),
+      parseFrameJournalSummary(
+        journalSummaryLine(`"frames":238,"hangs":${corruptedValue},"maxNs":0,"p50Ns":0,"p95Ns":0`),
+      ),
     ).toBeNull();
   });
 });

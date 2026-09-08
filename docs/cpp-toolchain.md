@@ -6994,14 +6994,16 @@ rather than defaulting to a number nobody measured. What it counts includes the 
 short scenarios measure two journalled frames and one hang, 50–73 ms of dirty-to-present, because the first
 picture a bundle produces genuinely takes that long to reach the screen. That is real latency and is left in the
 count, so a `maxHangs` calibrated from a CI run has to have room for it. `scripts/e2e/frame-log.ts` fails closed
-on a malformed summary — an unparseable line, or one missing any journal field, reads as no summary rather than
-as a summary of zeroes, because zeroes would pass `maxHangs: 0` on a run that measured nothing; the grader's `describeFrameJournal` note prints the journal's
+on a malformed summary — an unparsable line, or one whose fields are not all non-negative safe integers, reads as
+no summary rather than as a summary of zeroes, because zeroes and a negative `hangs` alike would pass
+`maxHangs: 0` on a run that measured nothing; the grader's `describeFrameJournal` note prints the journal's
 numbers on every run that has one, budget or not, exactly as `FrameTiming`'s note does. `scripts/e2e/frame-log.ts`
 holds `parseFrameJournalSummary` and `findFrameHangFailures` pure and tested at the repository's 100% threshold;
-`grade.ts` is the file reading around them. `animated-frames.json` does not set `maxHangs` yet: a real number has
-to come from what CI actually measures under cage and lavapipe, and this change ships the plumbing without one
-so that whoever opens the PR that first runs it in CI can read the artifact, state the measured p99 with
-headroom, and set the budget in the same PR — see #345.
+`grade.ts` is the file reading around them. `animated-frames.json` sets `"maxHangs": 1`, calibrated from what CI
+actually measured under cage and lavapipe across two runs of #345's PR: animated-frames journalled 3 frames with
+0 hangs and a 15.99 ms maximum both times, raf-idle 237 frames with 0 hangs at 17.5 ms and 238 with 1 hang at
+36.9 ms, and the short scenarios reported the first frame after mount as a hang at 50-73 ms. The 1 is headroom
+for exactly that first-frame-after-mount hang; a second hang in a 240-frame run is a regression.
 
 ### Screenshots
 

@@ -2,6 +2,7 @@ import type { FrameBudget } from "./scenario.ts";
 
 const NANOSECONDS_PER_MILLISECOND = 1_000_000;
 const MILLISECOND_DECIMALS = 2;
+const SMALLEST_COUNT = 0;
 
 /**
  * The last line `rnl_window --frame-log` writes. It is matched by its marker rather than by position so a run
@@ -55,14 +56,18 @@ const parseJsonRecord = (line: string): Record<string, unknown> | null => {
   }
 };
 
-const readFiniteNumber = (record: Record<string, unknown>, key: string): number | null => {
+/**
+ * Every number in either summary is a count or a nanosecond duration, so a negative or fractional one is a
+ * corrupted line rather than a small measurement: `"hangs":-1` would otherwise pass a `maxHangs: 0` budget.
+ */
+const readCount = (record: Record<string, unknown>, key: string): number | null => {
   const value = record[key];
 
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= SMALLEST_COUNT ? value : null;
 };
 
 /** Every field read, or none of them: one missing number is a summary that cannot be graded. */
-const hasOnlyFiniteNumbers = <Key extends string>(fields: Record<Key, number | null>): fields is Record<Key, number> =>
+const hasOnlyCounts = <Key extends string>(fields: Record<Key, number | null>): fields is Record<Key, number> =>
   Object.values(fields).every((value) => value !== null);
 
 const formatMilliseconds = (nanoseconds: number): string =>
@@ -82,14 +87,14 @@ const parseFrameLogSummary = (frameLogText: string): FrameLogSummary | null => {
   }
 
   const fields = {
-    discarded: readFiniteNumber(parsed, "discarded"),
-    frames: readFiniteNumber(parsed, "frames"),
-    maximumNanoseconds: readFiniteNumber(parsed, "maxNs"),
-    medianNanoseconds: readFiniteNumber(parsed, "p50Ns"),
-    percentile95Nanoseconds: readFiniteNumber(parsed, "p95Ns"),
+    discarded: readCount(parsed, "discarded"),
+    frames: readCount(parsed, "frames"),
+    maximumNanoseconds: readCount(parsed, "maxNs"),
+    medianNanoseconds: readCount(parsed, "p50Ns"),
+    percentile95Nanoseconds: readCount(parsed, "p95Ns"),
   };
 
-  return hasOnlyFiniteNumbers(fields) ? { ...fields, unsupported: parsed["unsupported"] === true } : null;
+  return hasOnlyCounts(fields) ? { ...fields, unsupported: parsed["unsupported"] === true } : null;
 };
 
 /**
@@ -112,14 +117,14 @@ const parseFrameJournalSummary = (frameLogText: string): FrameJournalSummary | n
   }
 
   const fields = {
-    frames: readFiniteNumber(parsed, "frames"),
-    hangs: readFiniteNumber(parsed, "hangs"),
-    maximumNanoseconds: readFiniteNumber(parsed, "maxNs"),
-    medianNanoseconds: readFiniteNumber(parsed, "p50Ns"),
-    percentile95Nanoseconds: readFiniteNumber(parsed, "p95Ns"),
+    frames: readCount(parsed, "frames"),
+    hangs: readCount(parsed, "hangs"),
+    maximumNanoseconds: readCount(parsed, "maxNs"),
+    medianNanoseconds: readCount(parsed, "p50Ns"),
+    percentile95Nanoseconds: readCount(parsed, "p95Ns"),
   };
 
-  return hasOnlyFiniteNumbers(fields) ? fields : null;
+  return hasOnlyCounts(fields) ? fields : null;
 };
 
 /**
