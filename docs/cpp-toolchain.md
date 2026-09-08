@@ -7720,6 +7720,69 @@ lives under `private/react-native-fantom/`, which `scripts/vendor.lock.json` doe
 needs `NativeFantom`'s JavaScript surface — `createRoot`, `dispatchNativeEvent`, `installTimerMock` — plus a
 jest runner pointed at the binary. The runner and the assertion surface are the half that had to exist first.
 
+## Seeded interleaving (#346)
+
+TSan finds data races and every other suite here asserts one interleaving. Neither finds a *logical* race — a
+promise resolved between a commit and a mount, an animation frame arriving between a scroll event and its
+settle. `packages/core/src/SeededTestScheduler.{h,cpp}` makes the interleaving an input instead of an accident,
+copying the four decisions `crates/scheduler/src/test_scheduler.rs` in `zed-industries/zed` made
+(`docs/research/gpui-zed-2026-09-06.md`, section E20):
+
+- **The ready order is seeded.** `run` takes its next task from the ready queue by seeded choice rather than by
+  queue position, so one seed is one reproducible interleaving and a hundred seeds are a hundred of them.
+- **The virtual clock jumps.** `scheduleAfter` never sleeps: with nothing ready, `run` moves `now()` to the
+  earliest deadline and releases every timer due at it. A test with a five-second timer costs no wall clock, and
+  real time is unreachable by construction rather than by discipline.
+- **Timeouts are counted in ticks.** `scheduleAfterSeededTicks(maximumTicks, task)` resolves after a seeded
+  number of executed tasks and returns that number, so a timeout-versus-completion race is decided by the seed
+  instead of by how loaded the machine is.
+- **Parking is forbidden.** `beginWait("promise-resolution")` declares work the run may not finish without. A
+  wait nothing completes is not a hang here: `run` drains and returns
+  `forbidden parking: seed 9 drained after 1 ticks with unfinished waits: promise-resolution`, naming the seed
+  and every wait, which is the report a `PENDING_TRACES` backtrace exists to approximate.
+
+The scheduler is single-threaded by construction — task bodies run on the thread that constructed it — which is
+what makes an interleaving a property of the seed rather than of the operating system's scheduler. Code under
+test keeps its own threads; the scheduler orders the calls made into it.
+
+`runSeededIterations(testFilter, body)` is the loop around it. The starting seed is `SEED` and the count is
+`ITERATIONS`, both read from the environment and both falling back to a default (0 and 100) when unset or
+unparsable. It stops at the first seed for which `body` returns false and hands back that seed with the line
+that replays it:
+
+```text
+failing seed: 1003 — replay with: SEED=1003 ITERATIONS=1 ctest --preset test -R SeededTestSchedulerTest
+```
+
+so a hundred-seed failure names the one interleaving to debug instead of the hundred that were tried. The
+replay line is asserted by `SeededTestSchedulerTest.AFailingIterationReportsItsSeedAndTheCommandThatReplaysIt`
+rather than eyeballed, because a wrong replay instruction is worse than none.
+
+`SeededTestScheduler.cpp` is compiled only into `rnl_core_tests`, never into `rnl_react_core`; it sits in
+`src/` and in the `scripts/cpp-coverage.ts` scope list because the executor deciding what a hundred other tests
+prove has to meet the same 100% line-and-branch gate they do.
+
+`packages/core/tests/SeededInterleavingTest.cpp` is the first consumer: #212's timer-seam contract — a deleted
+timer never fires and `HostTimerRegistry` always reaches idle — re-run over a hundred seeded orders of its own
+operations instead of the single hand-written order `ThreadingConformanceTest.cpp` asserts. The seed decides
+which timers recur, how long each delay is, and the order the creations and the cancellations are issued in.
+
+**TSan.** Both suites are TSan-clean, but not through `ctest --preset tsan`: `AllocationCostTest.cpp` defines
+the global `operator new`/`operator delete` that `AllocationProbe.h` counts with, and those collide with
+`libclang_rt.tsan_cxx`'s own definitions at link time, so the whole test binary does not link under the `tsan`
+preset on any platform. Until that suite is separated into its own target, the sanitizer run for these tests is
+the same link with that one object dropped:
+
+```bash
+cmake --preset tsan -DRNL_BUILD_TESTS=ON
+cmake --build build/tsan --target rnl_core_tests
+cd build/tsan && ninja -t commands bin/rnl_core_tests | tail -1 \
+  | sed 's#packages/core/tests/CMakeFiles/rnl_core_tests.dir/AllocationCostTest.cpp.o##; s#bin/rnl_core_tests#bin/rnl_core_tests_tsan#g' \
+  | bash
+ITERATIONS=500 ./bin/rnl_core_tests_tsan --gtest_filter='Seeded*'
+```
+
+
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on every pull request and on every push to `main`, under
