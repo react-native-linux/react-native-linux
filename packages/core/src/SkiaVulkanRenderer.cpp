@@ -41,6 +41,7 @@ sk_sp<VulkanMemoryAllocator> Make(const VulkanBackendContext& backendContext, Th
 #include <cstdint>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -261,11 +262,12 @@ bool SkiaVulkanRenderer::drawFrame(WaylandWindow& window, const SceneDamage& fra
 
     // The injected result replaces the call rather than its return value: a successful acquire leaves a pending
     // signal on the semaphore, and destroying a semaphore in that state is undefined.
-    const bool injectSwapchainLoss = std::exchange(debugSwapchainLossPending_, false);
+    const std::optional<VkResult> injectedAcquireResult = takeInjectedAcquireResult();
     const VkResult acquireResult =
-        injectSwapchainLoss ? VK_ERROR_OUT_OF_DATE_KHR
-                            : vkAcquireNextImageKHR(device_, swapchain_, kAcquireTimeoutNanoseconds, acquireSemaphore,
-                                                    VK_NULL_HANDLE, &backbuffer.imageIndex);
+        injectedAcquireResult.has_value()
+            ? *injectedAcquireResult
+            : vkAcquireNextImageKHR(device_, swapchain_, kAcquireTimeoutNanoseconds, acquireSemaphore, VK_NULL_HANDLE,
+                                    &backbuffer.imageIndex);
 
     // An image that is not presentable cannot be drawn into, so every recovery other than "carry on" abandons the
     // frame here. `PresentThenRecreateSwapchain` is the exception: VK_SUBOPTIMAL_KHR still hands back a usable
@@ -284,10 +286,10 @@ bool SkiaVulkanRenderer::drawFrame(WaylandWindow& window, const SceneDamage& fra
         vkDestroySemaphore(device_, acquireSemaphore, nullptr);
         applyRecovery(acquireRecovery, acquireResult, "vkAcquireNextImageKHR");
 
-        if (injectSwapchainLoss) {
+        if (injectedAcquireResult.has_value()) {
             std::cout << "[rnl-window] injected " << describeVulkanResult(acquireResult)
-                      << " at vkAcquireNextImageKHR; the swapchain was rebuilt at " << swapchainSize_.width << "x"
-                      << swapchainSize_.height << std::endl;
+                      << " at vkAcquireNextImageKHR; the renderer rebuilt at " << swapchainSize_.width << "x"
+                      << swapchainSize_.height << " on " << driverIdentity_ << std::endl;
         }
 
         return false;
@@ -363,7 +365,24 @@ bool SkiaVulkanRenderer::drawFrame(WaylandWindow& window, const SceneDamage& fra
     return true;
 }
 
-void SkiaVulkanRenderer::injectSwapchainLossOnNextFrame() noexcept { debugSwapchainLossPending_ = true; }
+void SkiaVulkanRenderer::injectSwapchainLossOnNextFrame() noexcept {
+    debugInjectedAcquireResults_.push_back(VK_ERROR_OUT_OF_DATE_KHR);
+}
+
+void SkiaVulkanRenderer::injectDeviceLossOnNextFrame() noexcept {
+    debugInjectedAcquireResults_.push_back(VK_ERROR_DEVICE_LOST);
+}
+
+std::optional<VkResult> SkiaVulkanRenderer::takeInjectedAcquireResult() noexcept {
+    if (debugInjectedAcquireResults_.empty()) {
+        return std::nullopt;
+    }
+
+    const VkResult injected = debugInjectedAcquireResults_.front();
+    debugInjectedAcquireResults_.pop_front();
+
+    return injected;
+}
 
 void SkiaVulkanRenderer::injectSurfaceCommitFaultOnNextFrame(SurfaceCommitFault fault) noexcept {
     pendingSurfaceCommitFault_ = fault;
@@ -425,6 +444,10 @@ void SkiaVulkanRenderer::applyRecovery(VulkanRecovery recovery, VkResult result,
         recreateSurface();
 
         return;
+    case VulkanRecovery::RecreateDevice:
+        recreateDevice();
+
+        return;
     case VulkanRecovery::FatalWithDiagnostic:
         throw std::runtime_error(describeFailure(result, operation));
     }
@@ -461,6 +484,55 @@ void SkiaVulkanRenderer::recreateSurface() {
     }
 
     createSwapchain();
+}
+
+// The invalidation contract of GpuResourceInvalidation.h, carried out: every resource the table marks device-owned
+// is dropped, in the table's order, before the VkDevice that owns it is destroyed. The instance and the
+// VkSurfaceKHR survive a lost device, so the physical device is re-selected against the surface already held, which
+// also re-queries presentation support and re-reads the driver identity — a device lost to a driver update comes
+// back as a different one, and the trace has to say so.
+void SkiaVulkanRenderer::recreateDevice() {
+    for (const GpuCachedResource resource : kGpuCachedResources) {
+        if (gpuResourceFateOnDeviceLoss(resource) == GpuResourceFate::DroppedBeforeTheNextPaint) {
+            dropDeviceOwnedResource(resource);
+        }
+    }
+
+    if (swapchain_ != VK_NULL_HANDLE) {
+        vkDestroySwapchainKHR(device_, swapchain_, nullptr);
+        swapchain_ = VK_NULL_HANDLE;
+    }
+
+    vkDestroyDevice(device_, nullptr);
+    device_ = VK_NULL_HANDLE;
+    queue_ = VK_NULL_HANDLE;
+
+    selectPhysicalDevice();
+    createDevice();
+    createDirectContext();
+
+    // A fresh swapchain seeds every image's damage list with the whole surface, so the frame after a device loss
+    // is a full repaint and nothing is carried over from the images the lost device held.
+    createSwapchain();
+}
+
+void SkiaVulkanRenderer::dropDeviceOwnedResource(GpuCachedResource resource) {
+    switch (resource) { // COV_EXCL: every GpuCachedResource value has a case, so no-match cannot execute
+    case GpuCachedResource::GaneshResourceCacheAndGlyphAtlas:
+        // Abandoned rather than released: releasing would free through a device that is already gone, and
+        // abandoning is what stops Ganesh issuing any further Vulkan call, including from the surfaces below.
+        directContext_->abandonContext();
+        directContext_.reset();
+
+        return;
+    case GpuCachedResource::SwapchainImageSurfaces:
+        destroyBackbuffers();
+
+        return;
+    case GpuCachedResource::RetainedSceneDecodedImagePixels:
+    case GpuCachedResource::TextPipelineParagraphLayouts:
+        return;
+    }
 }
 
 void SkiaVulkanRenderer::createInstance() {

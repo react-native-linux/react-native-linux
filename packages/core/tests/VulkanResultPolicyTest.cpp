@@ -27,7 +27,7 @@ constexpr std::array<PolicyRow, 10> kPolicyTable{{
     {1'000'001'003, "VK_SUBOPTIMAL_KHR", VulkanRecovery::PresentThenRecreateSwapchain},
     {-1'000'001'004, "VK_ERROR_OUT_OF_DATE_KHR", VulkanRecovery::RecreateSwapchain},
     {-1'000'000'000, "VK_ERROR_SURFACE_LOST_KHR", VulkanRecovery::RecreateSurface},
-    {-4, "VK_ERROR_DEVICE_LOST", VulkanRecovery::FatalWithDiagnostic},
+    {-4, "VK_ERROR_DEVICE_LOST", VulkanRecovery::RecreateDevice},
     {-1, "VK_ERROR_OUT_OF_HOST_MEMORY", VulkanRecovery::FatalWithDiagnostic},
     {-2, "VK_ERROR_OUT_OF_DEVICE_MEMORY", VulkanRecovery::FatalWithDiagnostic},
     {-1'000'255'000, "VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT", VulkanRecovery::FatalWithDiagnostic},

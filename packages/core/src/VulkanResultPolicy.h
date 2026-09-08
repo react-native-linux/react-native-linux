@@ -18,6 +18,7 @@ enum class VulkanRecovery : uint8_t {
     PresentThenRecreateSwapchain,
     RecreateSwapchain,
     RecreateSurface,
+    RecreateDevice,
     RetryNextFrame,
     FatalWithDiagnostic,
 };
@@ -55,11 +56,14 @@ constexpr int32_t kVulkanErrorFullScreenExclusiveModeLost = -1'000'255'000;
  *   the device would be both wrong and slower — see zed#14225 and zed#43851, where this was unwrapped instead.
  * - `VK_TIMEOUT` and `VK_NOT_READY` retry on the next frame with nothing rebuilt: no image was free within the
  *   acquire timeout, which is a pacing outcome and not a fault.
- * - `VK_ERROR_DEVICE_LOST`, both out-of-memory results and `VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT` are
- *   fatal with a named diagnostic. Recovering from device loss means invalidating every cached GPU handle in the
- *   process, which is a contract across `RetainedScene` and the text pipeline rather than a swapchain rebuild;
- *   until that contract exists, dying with the result named beats replaying stale handles into a fresh device,
- *   which is exactly the crash zed#62998 reports.
+ * - `VK_ERROR_DEVICE_LOST` rebuilds the device, the queue and the `GrDirectContext` and then the swapchain, and
+ *   drops every cached resource `GpuResourceInvalidation.h` marks as device-owned first. A lid close, a suspend
+ *   and resume, a driver update and a GPU reset all arrive as this result, and an application that dies on it is
+ *   not shippable — zed#23288. The dropping is the whole of the difficulty and is why it is a contract rather
+ *   than a bigger rebuild: a handle replayed into the fresh device is the crash zed#62998 reports and the
+ *   garbling zed#58382 reports.
+ * - Both out-of-memory results and `VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT` are fatal with a named
+ *   diagnostic, because no recovery exists that does not first free the allocation that failed.
  */
 VulkanRecovery vulkanRecoveryFor(int32_t result) noexcept;
 

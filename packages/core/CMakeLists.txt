@@ -1075,6 +1075,7 @@ elseif(RNL_ENABLE_WINDOW)
 
     add_executable(rnl_window
         src/AutomationServer.cpp
+        src/GpuResourceInvalidation.cpp
         src/RendererLadder.cpp
         src/SharedMemoryRasterRenderer.cpp
         src/SkiaVulkanRenderer.cpp

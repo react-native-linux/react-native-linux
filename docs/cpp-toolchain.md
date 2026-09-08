@@ -366,17 +366,38 @@ failure mode Zed carries in [zed#23288](https://github.com/zed-industries/zed/is
 | `VK_ERROR_OUT_OF_DATE_KHR` | recreate the swapchain now | The image is not presentable at all, so there is nothing to salvage. This is the lid-close and the resize. |
 | `VK_ERROR_SURFACE_LOST_KHR` | recreate the surface, then the swapchain | An output hotplug or a compositor restart invalidates the `VkSurfaceKHR` without invalidating the device, so the device, the queue and the `GrDirectContext` all survive. |
 | `VK_TIMEOUT`, `VK_NOT_READY` | retry on the next frame | No image was free within the acquire timeout. A pacing outcome, not a fault. |
-| `VK_ERROR_DEVICE_LOST` | fatal with a named diagnostic | See below. |
+| `VK_ERROR_DEVICE_LOST` | rebuild the device, the queue and the `GrDirectContext`, then the swapchain | A lid close, a suspend and resume, a driver update and a GPU reset all arrive as this result, so an application that dies on it is not shippable — zed#23288. See below for what has to be dropped first. |
 | `VK_ERROR_OUT_OF_HOST_MEMORY`, `VK_ERROR_OUT_OF_DEVICE_MEMORY` | fatal with a named diagnostic | No recovery exists that does not first free the allocation that failed. |
 | `VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT`, everything else | fatal with a named diagnostic | An unrecognised result is a driver contract this code has never been read against; guessing a recovery would hide the bug rather than fix it. |
 
-Device loss is deliberately fatal *for now*, and that is the honest half-answer rather than the finished one.
-Recovering from it means invalidating every cached GPU handle in the process — the retained scene's, the text
-pipeline's — before the next paint, which is a contract across those classes and not a swapchain rebuild.
-Until that contract exists, dying with `VK_ERROR_DEVICE_LOST` named in the message beats replaying stale handles
-into a fresh device, which is the crash
-[zed#62998](https://github.com/zed-industries/zed/issues/62998) reports and the garbling
-[zed#58382](https://github.com/zed-industries/zed/issues/58382) reports. #327 stays open for it.
+**The device-loss invalidation contract.** Rebuilding the device is the easy half; the half that decides whether
+the next frame crashes is that no handle created on the lost device may reach the fresh one, which is the crash
+[zed#62998](https://github.com/zed-industries/zed/issues/62998) reports, and that no handle may survive with its
+texture emptied, which is the garbling [zed#58382](https://github.com/zed-industries/zed/issues/58382) reports.
+That is a contract across classes rather than a code path, so it is written as one:
+`GpuResourceInvalidation.h` enumerates every kind of cached resource in this process and what a device loss owes
+each one.
+
+| Cached resource | On device loss | Why |
+| --- | --- | --- |
+| `GaneshResourceCacheAndGlyphAtlas` | dropped before the next paint | The `GrDirectContext`'s own resource cache is where an uploaded image texture and the glyph atlas the text pipeline's paragraphs draw through actually live. It is *abandoned* rather than released, because releasing would free through a device that is already gone, and abandoning is what stops Ganesh issuing any further Vulkan call. |
+| `SwapchainImageSurfaces` | dropped before the next paint | Every `SkSurface` wrapping a swapchain image, and the semaphores beside them, belong to the lost device. |
+| `RetainedSceneDecodedImagePixels` | re-uploaded from host memory | `SkImages::RasterFromPixmapCopy` bitmaps held by the nodes drawing them. They name no `VkDevice`, so the fresh one re-uploads them on first use — dropping them would blank the window for no reason. |
+| `TextPipelineParagraphLayouts` | re-uploaded from host memory | `layoutParagraph` builds a `Paragraph` fresh for every measurement and every paint and stores none across frames, so there is nothing here to go stale. |
+
+`kGpuCachedResources` is an array rather than a set because the order is load-bearing: the context is abandoned
+before the surfaces built on it are released, so the last reference to a surface cannot free through a device that
+is gone. `SkiaVulkanRenderer::recreateDevice` walks it, and `dropDeviceOwnedResource` switches over the
+enumeration without a `default`, which is what makes a cache added to this process later a compile error here
+rather than a garbled frame after a resume. The rebuild then re-selects the physical device against the
+`VkSurfaceKHR` it already holds — the instance and the surface both survive a lost device — which re-queries
+presentation support and re-reads the driver identity, because a device lost to a driver update comes back as a
+different one. `createSwapchain` seeds every image's damage list with the whole surface, so the frame after the
+recovery is a full repaint by construction.
+
+The table is `GpuResourceInvalidation.{h,cpp}`, which includes neither Vulkan nor Skia for the same reason
+`VulkanResultPolicy` does not, and is in the `rnl_core_tests` coverage gate at 100 % of lines and branches;
+`GpuResourceInvalidationTest` asserts the whole of it as data, including the order the recovery walks it in.
 
 There is no fence wait to police on this path: the acquire signals a semaphore and passes `VK_NULL_HANDLE` for its
 fence, and every submission fence belongs to Ganesh, which does its own device-lost reporting. The swapchain
@@ -393,19 +414,30 @@ values as its own constants, exactly as `ToplevelState` states xdg-shell's four,
 `static_assert` per constant against `vulkan_core.h`, so a drift between the two is a build error rather than a
 silently wrong policy.
 
-**Proving the recreation.** The lavapipe-under-weston window job never returns any of these results: the rig does
-not resize the toplevel, never hotplugs an output and never restarts the compositor, so the recreation path is
-unreachable from CI as it stands. `--window-debug` therefore arms one injected `VK_ERROR_OUT_OF_DATE_KHR` at the
-first acquire, which is a fault injection and not a mock — the renderer takes the real recovery, rebuilds a real
-swapchain against the real surface, and the frame after it is a full repaint because a fresh swapchain seeds
-every image's damage list with the whole surface. It prints the result it injected and the size it rebuilt at, so
-the recovery is visible in the trace rather than inferred.
+**Proving the recreations.** The lavapipe-under-weston window job never returns any of these results: the rig
+does not resize the toplevel, never hotplugs an output, never restarts the compositor and never resets the GPU,
+so both recreation paths are unreachable from CI as it stands. `--window-debug` therefore arms one injected
+`VK_ERROR_OUT_OF_DATE_KHR` at the first acquire and one injected `VK_ERROR_DEVICE_LOST` at the next, which are
+fault injections and not mocks — the renderer takes the real recoveries, rebuilding a real swapchain against the
+real surface and then a real `VkDevice`, `VkQueue` and `GrDirectContext` against the real driver. Each prints the
+result it injected, the size it rebuilt at and the driver it came back on, so the recovery is visible in the trace
+rather than inferred.
 
-Under Hyprland, `--window-debug --screenshot` and a plain `--screenshot` of the same fixture produce a
-byte-identical image, which is the assertion that the rebuilt swapchain renders the same frame the original one
-would have: the recovery is complete, not merely survived. The table itself is proved by
-`VulkanResultPolicyTest`. An e2e step that restarts the compositor mid-scenario, which is issue #327's third
-acceptance criterion, is not built.
+Under Hyprland on a `AMD Radeon 890M Graphics (RADV STRIX1)`, both injections rebuild and the run goes on to
+present, and `--window-debug --screenshot` and a plain `--screenshot` of the same fixture produce a
+byte-identical image (sha256 `ce989cec…7051`) — which is the assertion that the rebuilt device renders the same
+frame the original one would have: the recovery is complete, not merely survived. The tables themselves are
+proved by `VulkanResultPolicyTest` and `GpuResourceInvalidationTest`.
+
+**What is still not proved.** Issue #327's third acceptance criterion is an e2e step that restarts the headless
+compositor mid-scenario and asserts the application renders afterwards, and it is not built because as written it
+is not reachable. `scripts/e2e.ts` runs the window as cage's child in one process tree, so killing the compositor
+kills the window with it; and even given a compositor started independently, a Wayland client does not survive its
+compositor's death at all — the `wl_display` socket goes away, every object with it, and the client would have to
+reconnect and rebuild its surface, its toplevel and its seat, which no desktop toolkit does. A compositor restart
+is therefore a process-model question and not a `VkResult` one, and it belongs to #369. What a compositor restart
+*does* deliver to a surviving Vulkan surface — `VK_ERROR_SURFACE_LOST_KHR` — is already a recovery in the table
+above.
 
 ### Surface commit ordering (#328)
 
