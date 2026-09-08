@@ -291,6 +291,19 @@ TEST(TextInputSessionTest, AStaleSerialHoldsTheStateBackAndAMatchingOneReleasesI
     EXPECT_TRUE(isEmpty(session.takeBatch()));
 }
 
+TEST(TextInputSessionTest, AVirtualInputMethodsDoneIsAMatchingSerial) {
+    TextInputSession session = makeEnabledSession();
+
+    session.setSurroundingText(kSurroundingText, 5, 5);
+    session.takeBatch();
+    session.applyDone();
+
+    // A stale serial would have reset the sent state and made this identical text a re-send.
+    session.setSurroundingText(kSurroundingText, 5, 5);
+
+    EXPECT_TRUE(isEmpty(session.takeBatch()));
+}
+
 TEST(TextInputSessionTest, ACompositorThatNeverAnswersLeavesTheStateHeldBackRatherThanResent) {
     TextInputSession session = makeEnabledSession();
 

@@ -1,0 +1,23 @@
+{
+  "name": "text-input-compose",
+  "bundle": "text-input-compose.js",
+  "ready": "text-input-compose: committed surface 1",
+  "frames": 600,
+  "windowFlags": [
+    "--no-decorations",
+    "--inject-key-sequence",
+    "{Tab}{Preedit:ni}{Tab}{Preedit:ha}{Commit:好}{SessionLeave}{SessionEnter}{Preedit:ya}{Commit:o}"
+  ],
+  "steps": ["sleep 3000"],
+  "expect": [
+    "[rnl-ime] field focused",
+    "[rnl-ime] session enabled",
+    "[rnl-ime] field focused",
+    "[rnl-ime] session disabled",
+    "[rnl-ime] session enabled",
+    "text-input-compose: change on second text=\"好\"",
+    "[rnl-ime] session enabled",
+    "text-input-compose: change on second text=\"好o\""
+  ],
+  "reject": ["text-input-compose: change on first"]
+}

@@ -85,6 +85,8 @@ std::vector<InputEvent> TextInputSession::applyDone(uint32_t serial) {
     return composition_.applyDone();
 }
 
+std::vector<InputEvent> TextInputSession::applyDone() { return applyDone(commitRequestCount_); }
+
 TextInputSessionBatch TextInputSession::takeBatch() {
     TextInputSessionBatch batch;
     const std::optional<FocusedField> target = hasKeyboardFocus_ ? focusedField_ : std::nullopt;
