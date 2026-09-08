@@ -225,7 +225,8 @@ const driveAndStop = async (
   workspace: Workspace,
 ): Promise<readonly string[]> => {
   try {
-    return await driveScenario(run, workspace);
+    const failures = await driveScenario(run, workspace);
+    return compositor.signalCode === null ? failures : [`cage signal ${compositor.signalCode}`, ...failures];
   } finally {
     await stopCompositor(compositor);
   }
@@ -289,7 +290,6 @@ if (compositorPath === null || lavapipeIcdPath === null || unavailableReasons.le
   for (const reason of unavailableReasons) {
     stderr.write(`${reason}\n`);
   }
-
   process.exitCode = UNAVAILABLE_EXIT_STATUS;
 } else {
   mkdirSync(artifactsRoot, { recursive: true });

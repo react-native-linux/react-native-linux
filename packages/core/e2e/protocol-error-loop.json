@@ -1,7 +1,7 @@
 {
   "name": "protocol-error-loop",
   "bundle": "hello.js",
-  "ready": "react-native-linux: bundle evaluated",
+  "ready": "[rnl-decorations] mode=bare",
   "frames": 900,
   "windowFlags": ["--no-decorations", "--inject-protocol-error-after-frame"],
   "allowErrors": true,

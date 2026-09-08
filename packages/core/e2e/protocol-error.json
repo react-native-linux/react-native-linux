@@ -1,7 +1,7 @@
 {
   "name": "protocol-error",
   "bundle": "hello.js",
-  "ready": "react-native-linux: bundle evaluated",
+  "ready": "[rnl-decorations] mode=bare",
   "frames": 900,
   "injectProtocolError": true,
   "allowErrors": true,
