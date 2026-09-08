@@ -41,16 +41,19 @@ struct RecordedFocusCall {
 class RecordingTextInputFocusSink final : public TextInputFocusSink {
 public:
     void focusField(int32_t fieldIdentifier, TextInputContentPurpose contentPurpose) override {
-        calls.push_back(RecordedFocusCall{.isFocus = true, .fieldIdentifier = fieldIdentifier, .contentPurpose = contentPurpose});
+        calls.push_back(
+            RecordedFocusCall{.isFocus = true, .fieldIdentifier = fieldIdentifier, .contentPurpose = contentPurpose});
     }
 
     void blurField() override {
-        calls.push_back(
-            RecordedFocusCall{.isFocus = false, .fieldIdentifier = 0, .contentPurpose = TextInputContentPurpose::Normal});
+        calls.push_back(RecordedFocusCall{
+            .isFocus = false, .fieldIdentifier = 0, .contentPurpose = TextInputContentPurpose::Normal});
     }
 
     void setSurroundingText(std::string /*text*/, int32_t /*cursor*/, int32_t /*anchor*/) override {}
+
     void setCursorRectangle(int32_t /*x*/, int32_t /*y*/, int32_t /*width*/, int32_t /*height*/) override {}
+
     void flushTextInput() override {}
 
     std::vector<RecordedFocusCall> calls;
@@ -76,10 +79,10 @@ protected:
 
         shadowTree_->commit(
             [this](const RootShadowNode& oldRootShadowNode) {
-                return std::static_pointer_cast<RootShadowNode>(oldRootShadowNode.ShadowNode::clone(ShadowNodeFragment{
-                    .props = ShadowNodeFragment::propsPlaceholder(),
-                    .children = std::make_shared<const ChildList>(
-                        ChildList{makeAccessibleField(kFieldAlphaTag), makeAccessibleField(kFieldBetaTag)})}));
+                return std::static_pointer_cast<RootShadowNode>(oldRootShadowNode.ShadowNode::clone(
+                    ShadowNodeFragment{.props = ShadowNodeFragment::propsPlaceholder(),
+                                       .children = std::make_shared<const ChildList>(ChildList{
+                                           makeAccessibleField(kFieldAlphaTag), makeAccessibleField(kFieldBetaTag)})}));
             },
             commitOptions);
 
@@ -90,7 +93,9 @@ protected:
         dispatcher_->dispatch({});
     }
 
-    void focus(Tag tag) { dispatcher_->dispatchCommands({{.tag = tag, .name = kFocusCommandName, .args = folly::dynamic::object()}}); }
+    void focus(Tag tag) {
+        dispatcher_->dispatchCommands({{.tag = tag, .name = kFocusCommandName, .args = folly::dynamic::object()}});
+    }
 
     /** The one shape every `focusField` call in these tests takes: a Normal-purpose field, named by its tag. */
     static void expectFocusFieldCall(const RecordedFocusCall& call, Tag fieldTag) {

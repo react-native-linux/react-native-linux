@@ -7,9 +7,7 @@ namespace react_native_linux {
 
 namespace {
 
-bool hasLineHeightOverride(float fontSize, float lineHeight) {
-    return fontSize > 0.0F && !std::isnan(lineHeight);
-}
+bool hasLineHeightOverride(float fontSize, float lineHeight) { return fontSize > 0.0F && !std::isnan(lineHeight); }
 
 } // namespace
 

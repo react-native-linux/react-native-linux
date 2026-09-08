@@ -1,10 +1,9 @@
 #include "ImageContent.h"
 #include "SceneTestSupport.h"
 
-#include <gtest/gtest.h>
-
 #include <chrono>
 #include <cstdint>
+#include <gtest/gtest.h>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -19,9 +18,9 @@ using react_native_linux::DecodedImageFrames;
 using react_native_linux::hasCapInsets;
 using react_native_linux::ImageCache;
 using react_native_linux::imagePlacement;
+using react_native_linux::ImageSourceKind;
 using react_native_linux::isAnimatedImage;
 using react_native_linux::kAnimatedImageRepeatsForever;
-using react_native_linux::ImageSourceKind;
 using react_native_linux::PendingImageDecodes;
 using react_native_linux::ResolvedImageSource;
 using react_native_linux::resolveImageSource;
@@ -35,9 +34,7 @@ constexpr size_t kEntryByteCount = 100;
 const Rect kTileFrame{.origin = Point{.x = 100, .y = 200}, .size = Size{.width = 400, .height = 200}};
 const Size kImageSize{.width = 64, .height = 48};
 
-ResolvedImageSource resolve(const std::string& uri) {
-    return resolveImageSource(uri, kAssetDirectory);
-}
+ResolvedImageSource resolve(const std::string& uri) { return resolveImageSource(uri, kAssetDirectory); }
 
 std::vector<uint8_t> resolvedBytes(const std::string& payload) {
     return resolve("data:image/png;base64," + payload).bytes;
@@ -53,9 +50,7 @@ void expectPlacement(SceneImageResizeMode resizeMode, Size imageSize, float x, f
 }
 
 // Whatever the decoder produced, seen as the cache and the scene see it: a pointer with a lifetime.
-std::shared_ptr<void> makeFramePixels() {
-    return std::make_shared<int>(0);
-}
+std::shared_ptr<void> makeFramePixels() { return std::make_shared<int>(0); }
 
 std::shared_ptr<const DecodedImageFrames> makeDecodedImage() {
     return std::make_shared<const DecodedImageFrames>(
@@ -70,8 +65,7 @@ constexpr double kSixtyHertzMilliseconds = 1000.0 / 60.0;
 constexpr double kOneHundredAndTwentyHertzMilliseconds = 1000.0 / 120.0;
 
 std::shared_ptr<const DecodedImageFrames> makeAnimation(int32_t repetitionCount) {
-    DecodedImageFrames decoded{.frames = {}, .frameDurationsMilliseconds = {},
-                               .repetitionCount = repetitionCount};
+    DecodedImageFrames decoded{.frames = {}, .frameDurationsMilliseconds = {}, .repetitionCount = repetitionCount};
 
     for (size_t frame = 0; frame < kFixtureFrameCount; frame++) {
         decoded.frames.push_back(makeFramePixels());
@@ -81,13 +75,9 @@ std::shared_ptr<const DecodedImageFrames> makeAnimation(int32_t repetitionCount)
     return std::make_shared<const DecodedImageFrames>(std::move(decoded));
 }
 
-void fill(ImageCache& cache, const std::string& uri) {
-    cache.insert(uri, makeDecodedImage(), kEntryByteCount);
-}
+void fill(ImageCache& cache, const std::string& uri) { cache.insert(uri, makeDecodedImage(), kEntryByteCount); }
 
-TEST(ImageSourceTest, AnEmptyUriIsUnsupported) {
-    EXPECT_EQ(resolve("").kind, ImageSourceKind::Unsupported);
-}
+TEST(ImageSourceTest, AnEmptyUriIsUnsupported) { EXPECT_EQ(resolve("").kind, ImageSourceKind::Unsupported); }
 
 TEST(ImageSourceTest, AFileUriDropsItsScheme) {
     const ResolvedImageSource source = resolve("file:///tmp/tile.png");
@@ -96,9 +86,7 @@ TEST(ImageSourceTest, AFileUriDropsItsScheme) {
     EXPECT_EQ(source.filePath, "/tmp/tile.png");
 }
 
-TEST(ImageSourceTest, AnAbsolutePathIsUsedAsItStands) {
-    EXPECT_EQ(resolve("/tmp/tile.png").filePath, "/tmp/tile.png");
-}
+TEST(ImageSourceTest, AnAbsolutePathIsUsedAsItStands) { EXPECT_EQ(resolve("/tmp/tile.png").filePath, "/tmp/tile.png"); }
 
 TEST(ImageSourceTest, ARelativePathResolvesAgainstTheAssetDirectory) {
     const ResolvedImageSource source = resolve("tile.png");
@@ -136,9 +124,7 @@ TEST(ImageSourceTest, TheWholeBase64AlphabetDecodes) {
     EXPECT_EQ(resolvedBytes("////"), (std::vector<uint8_t>{0xFF, 0xFF, 0xFF}));
 }
 
-TEST(ImageSourceTest, Base64PaddingEndsThePayload) {
-    EXPECT_EQ(resolvedBytes("QQ=="), (std::vector<uint8_t>{0x41}));
-}
+TEST(ImageSourceTest, Base64PaddingEndsThePayload) { EXPECT_EQ(resolvedBytes("QQ=="), (std::vector<uint8_t>{0x41})); }
 
 TEST(ImageSourceTest, ACharacterOutsideTheBase64AlphabetFailsTheWholePayload) {
     EXPECT_EQ(resolve("data:image/png;base64,AA~A").kind, ImageSourceKind::Unsupported);
@@ -173,9 +159,7 @@ TEST(ImagePlacementTest, AnImageWithNoAreaPlacesNothing) {
 // `SkCanvas::drawImageNine` never scales; everything else is arithmetic on two structs, kept here so it stays
 // inside the coverage gate rather than inside `ScenePainter.cpp`.
 
-TEST(CapInsetsTest, AllZeroDoesNotEngageNineSlice) {
-    EXPECT_FALSE(hasCapInsets(facebook::react::EdgeInsets{}));
-}
+TEST(CapInsetsTest, AllZeroDoesNotEngageNineSlice) { EXPECT_FALSE(hasCapInsets(facebook::react::EdgeInsets{})); }
 
 TEST(CapInsetsTest, AnySingleNonZeroEdgeEngagesNineSlice) {
     EXPECT_TRUE(hasCapInsets(facebook::react::EdgeInsets{.left = 2}));
@@ -185,7 +169,8 @@ TEST(CapInsetsTest, AnySingleNonZeroEdgeEngagesNineSlice) {
 }
 
 TEST(CapInsetsTest, TheCentreIsTheImageWithEveryEdgeCutAway) {
-    const Rect center = capInsetsCenter(kImageSize, facebook::react::EdgeInsets{.left = 2, .top = 3, .right = 4, .bottom = 5});
+    const Rect center =
+        capInsetsCenter(kImageSize, facebook::react::EdgeInsets{.left = 2, .top = 3, .right = 4, .bottom = 5});
 
     EXPECT_FLOAT_EQ(center.origin.x, 2);
     EXPECT_FLOAT_EQ(center.origin.y, 3);
@@ -558,8 +543,7 @@ TEST(ImagePlaceholderTest, TenUpdatesBeforeOneDecodePublishesProduceOneRequest) 
 
 // A scene with a placeholder-only node already mounted and its one request already recorded, for the two tests
 // below: what clears the pending flag is the listener call itself, not what it carries.
-RetainedScene mountedPlaceholderNodeRecordingRequests(std::vector<std::string>& requestedUris,
-                                                      ShadowView& node) {
+RetainedScene mountedPlaceholderNodeRecordingRequests(std::vector<std::string>& requestedUris, ShadowView& node) {
     RetainedScene scene = sceneForPlaceholderTests();
 
     scene.setPlaceholderImageDecodeRequester(
@@ -747,8 +731,7 @@ void expectDamagedOnly(RetainedScene& scene, const Rect& expected) {
 }
 
 // Tag 2 clips, tag 3 is the animation laid out entirely to the right of it, so nothing of the image survives.
-RetainedScene sceneWithClippedAnimation(ImageCache& cache,
-                                        const std::shared_ptr<const DecodedImageFrames>& animation) {
+RetainedScene sceneWithClippedAnimation(ImageCache& cache, const std::shared_ptr<const DecodedImageFrames>& animation) {
     cache.insert("loop.gif", animation, kEntryByteCount);
 
     RetainedScene scene = sceneReadingCache(cache);
@@ -1148,13 +1131,12 @@ TEST(ImageJavaScriptSettleTest, ACommitTheDrainReportsIsSettledAgainBeforeReturn
     int settleCount = 0;
     int drainCount = 0;
 
-    const bool hasReachedFixedPoint = settleImageDecodesAndJavaScript(
-        [&settleCount]() { ++settleCount; },
-        [&drainCount]() {
-            ++drainCount;
+    const bool hasReachedFixedPoint = settleImageDecodesAndJavaScript([&settleCount]() { ++settleCount; },
+                                                                      [&drainCount]() {
+                                                                          ++drainCount;
 
-            return drainCount == 1;
-        });
+                                                                          return drainCount == 1;
+                                                                      });
 
     EXPECT_TRUE(hasReachedFixedPoint);
     EXPECT_EQ(settleCount, 2);

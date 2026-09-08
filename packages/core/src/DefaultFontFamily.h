@@ -37,4 +37,4 @@ enum class FontFamilyRequestKind {
  */
 FontFamilyRequestKind classifyFontFamilyRequest(const std::string& fontFamily);
 
-}  // namespace react_native_linux
+} // namespace react_native_linux

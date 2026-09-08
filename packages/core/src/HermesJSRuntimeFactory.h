@@ -1,9 +1,9 @@
 #pragma once
 
 #include <cxxreact/MessageQueueThread.h>
-#include <react/runtime/JSRuntimeFactory.h>
-
 #include <memory>
+
+#include <react/runtime/JSRuntimeFactory.h>
 
 namespace react_native_linux {
 

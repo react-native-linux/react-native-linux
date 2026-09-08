@@ -12,23 +12,24 @@ constexpr size_t kindIndex(WaylandSerialKind kind) noexcept { return static_cast
 } // namespace
 
 std::string_view nameOfSerialKind(WaylandSerialKind kind) noexcept {
-    switch (kind) { // COV_EXCL: every WaylandSerialKind value has a case below, so the implicit no-match branch cannot execute
-        case WaylandSerialKind::PointerEnter:
-            return "pointer enter";
-        case WaylandSerialKind::PointerButtonPress:
-            return "pointer button press";
-        case WaylandSerialKind::KeyboardEnter:
-            return "keyboard enter";
-        case WaylandSerialKind::KeyboardKeyPress:
-            return "keyboard key press";
-        case WaylandSerialKind::TouchDown:
-            return "touch down";
-        case WaylandSerialKind::Configure:
-            return "configure";
-        case WaylandSerialKind::InteractiveMove:
-            return "interactive move";
-        case WaylandSerialKind::Selection:
-            return "selection";
+    switch (kind) { // COV_EXCL: every WaylandSerialKind value has a case below, so the implicit no-match branch cannot
+                    // execute
+    case WaylandSerialKind::PointerEnter:
+        return "pointer enter";
+    case WaylandSerialKind::PointerButtonPress:
+        return "pointer button press";
+    case WaylandSerialKind::KeyboardEnter:
+        return "keyboard enter";
+    case WaylandSerialKind::KeyboardKeyPress:
+        return "keyboard key press";
+    case WaylandSerialKind::TouchDown:
+        return "touch down";
+    case WaylandSerialKind::Configure:
+        return "configure";
+    case WaylandSerialKind::InteractiveMove:
+        return "interactive move";
+    case WaylandSerialKind::Selection:
+        return "selection";
     }
 
     return "unknown"; // COV_EXCL: every WaylandSerialKind value has a case above, so this fallback cannot execute

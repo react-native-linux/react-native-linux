@@ -18,15 +18,15 @@ constexpr int kDivisionSign = 0xF7;
 
 bool isAsciiWhitespace(char byte) {
     switch (byte) {
-        case ' ':
-        case '\t':
-        case '\n':
-        case '\v':
-        case '\f':
-        case '\r':
-            return true;
-        default:
-            return false;
+    case ' ':
+    case '\t':
+    case '\n':
+    case '\v':
+    case '\f':
+    case '\r':
+        return true;
+    default:
+        return false;
     }
 }
 
@@ -176,16 +176,17 @@ std::string capitalize(const std::string& text) {
 } // namespace
 
 std::string applyTextTransform(const std::string& utf8Text, facebook::react::TextTransform transform) {
-    switch (transform) { // COV_EXCL: every TextTransform value has a case below, so the implicit no-match branch cannot execute
-        case facebook::react::TextTransform::Uppercase:
-            return mapCase(utf8Text, true);
-        case facebook::react::TextTransform::Lowercase:
-            return mapCase(utf8Text, false);
-        case facebook::react::TextTransform::Capitalize:
-            return capitalize(utf8Text);
-        case facebook::react::TextTransform::None:
-        case facebook::react::TextTransform::Unset:
-            return utf8Text;
+    switch (transform) { // COV_EXCL: every TextTransform value has a case below, so the implicit no-match branch cannot
+                         // execute
+    case facebook::react::TextTransform::Uppercase:
+        return mapCase(utf8Text, true);
+    case facebook::react::TextTransform::Lowercase:
+        return mapCase(utf8Text, false);
+    case facebook::react::TextTransform::Capitalize:
+        return capitalize(utf8Text);
+    case facebook::react::TextTransform::None:
+    case facebook::react::TextTransform::Unset:
+        return utf8Text;
     }
 
     return utf8Text; // COV_EXCL: every TextTransform value has a case above, so this fallback cannot execute

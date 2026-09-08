@@ -6,25 +6,24 @@
 #include "SwitchContent.h"
 #include "TextGeometry.h"
 #include "TextPipeline.h"
-
 #include "include/core/SkBlendMode.h"
+#include "include/core/SkBlurTypes.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkColorFilter.h"
 #include "include/core/SkImage.h"
+#include "include/core/SkMaskFilter.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
 #include "include/core/SkPathBuilder.h"
+#include "include/core/SkPathTypes.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRRect.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSamplingOptions.h"
 #include "include/core/SkShader.h"
-#include "include/core/SkBlurTypes.h"
-#include "include/core/SkMaskFilter.h"
-#include "include/core/SkPathTypes.h"
 #include "include/core/SkTileMode.h"
 #include "include/effects/SkDashPathEffect.h"
 #include "include/effects/SkImageFilters.h"
@@ -52,9 +51,7 @@ SkRect toSkRect(const facebook::react::Rect& frame) {
     return SkRect::MakeXYWH(frame.origin.x, frame.origin.y, frame.size.width, frame.size.height);
 }
 
-SkRect toSkRect(const SceneRoundedBox& box) {
-    return toSkRect(box.bounds);
-}
+SkRect toSkRect(const SceneRoundedBox& box) { return toSkRect(box.bounds); }
 
 /**
  * The one `SkRRect` every consumer of a node's shape draws with: the fill, the ring's two edges, the
@@ -170,8 +167,7 @@ sk_sp<SkPathEffect> toDashEffect(facebook::react::BorderStyle borderStyle, SkSca
  * border with uneven widths therefore draws solid, which is the deviation *View props fidelity* records.
  */
 bool isUniformWidth(const facebook::react::BorderWidths& widths) {
-    return widths.left == widths.top && widths.left == widths.right && widths.left == widths.bottom &&
-           widths.left > 0;
+    return widths.left == widths.top && widths.left == widths.right && widths.left == widths.bottom && widths.left > 0;
 }
 
 /**
@@ -211,8 +207,8 @@ void paintDashedBorder(SkCanvas& canvas, const ScenePrimitive& primitive, const 
         return;
     }
 
-    const std::array<SkPath, 4> wedges = edgeWedges(toSkRect(borderBox),
-                                                    toSkRect(roundedContentBox(borderBox, primitive.borderWidths)));
+    const std::array<SkPath, 4> wedges =
+        edgeWedges(toSkRect(borderBox), toSkRect(roundedContentBox(borderBox, primitive.borderWidths)));
 
     for (size_t side = 0; side < wedges.size(); side++) {
         if (SkColorGetA(sideColors[side]) == 0) {
@@ -358,8 +354,8 @@ void paintInsetShadows(SkCanvas& canvas, const ScenePrimitive& primitive, const 
 void paintBorder(SkCanvas& canvas, const ScenePrimitive& primitive, const SceneRoundedBox& borderBox,
                  const SkRRect& outer) {
     if (isUniformWidth(primitive.borderWidths)) {
-        sk_sp<SkPathEffect> dashEffect = toDashEffect(primitive.borderStyles.left,
-                                                      static_cast<SkScalar>(primitive.borderWidths.left));
+        sk_sp<SkPathEffect> dashEffect =
+            toDashEffect(primitive.borderStyles.left, static_cast<SkScalar>(primitive.borderWidths.left));
 
         if (dashEffect != nullptr) {
             paintDashedBorder(canvas, primitive, borderBox, std::move(dashEffect));
@@ -418,8 +414,7 @@ void paintParagraph(SkCanvas& canvas, const SceneTextContent& text) {
     }
 
     const std::unique_ptr<skia::textlayout::Paragraph> paragraph =
-        layoutParagraph(text.attributedString, text.paragraphAttributes,
-                        static_cast<float>(text.frame.size.width));
+        layoutParagraph(text.attributedString, text.paragraphAttributes, static_cast<float>(text.frame.size.width));
 
     paragraph->paint(&canvas, text.frame.origin.x, text.frame.origin.y);
 }
@@ -470,10 +465,9 @@ void paintEditor(SkCanvas& canvas, const SceneTextContent& text, const SceneEdit
     for (const facebook::react::Rect& composition : geometry.composition) {
         const facebook::react::Rect underline{
             .origin = facebook::react::Point{.x = composition.origin.x + text.frame.origin.x,
-                                             .y = composition.origin.y + text.frame.origin.y +
-                                                  composition.size.height - kCompositionUnderlineHeight},
-            .size = facebook::react::Size{.width = composition.size.width,
-                                          .height = kCompositionUnderlineHeight}};
+                                             .y = composition.origin.y + text.frame.origin.y + composition.size.height -
+                                                  kCompositionUnderlineHeight},
+            .size = facebook::react::Size{.width = composition.size.width, .height = kCompositionUnderlineHeight}};
 
         fillRect(canvas, underline, editor.caretColorArgb);
     }
@@ -532,9 +526,9 @@ void paintImage(SkCanvas& canvas, const ScenePrimitive& primitive, const SceneIm
     if (hasCapInsets(image.capInsets)) {
         const facebook::react::Rect center = capInsetsCenter(imageSize, image.capInsets);
         const SkIRect centerPixels = SkIRect::MakeXYWH(static_cast<int32_t>(std::lround(center.origin.x)),
-                                                        static_cast<int32_t>(std::lround(center.origin.y)),
-                                                        static_cast<int32_t>(std::lround(center.size.width)),
-                                                        static_cast<int32_t>(std::lround(center.size.height)));
+                                                       static_cast<int32_t>(std::lround(center.origin.y)),
+                                                       static_cast<int32_t>(std::lround(center.size.width)),
+                                                       static_cast<int32_t>(std::lround(center.size.height)));
 
         canvas.drawImageNine(decoded, centerPixels, toSkRect(primitive.frame), SkFilterMode::kLinear, &paint);
 
@@ -591,8 +585,7 @@ void paintActivityIndicator(SkCanvas& canvas, const ScenePrimitive& primitive,
     paint.setStrokeCap(SkPaint::kRound_Cap);
     paint.setStrokeWidth(geometry.strokeWidth);
     paint.setColor(content.colorArgb);
-    canvas.drawArc(toSkRect(geometry.bounds), geometry.startAngleDegrees, geometry.sweepAngleDegrees, false,
-                   paint);
+    canvas.drawArc(toSkRect(geometry.bounds), geometry.startAngleDegrees, geometry.sweepAngleDegrees, false, paint);
 }
 
 /**

@@ -1,11 +1,11 @@
 #pragma once
 
-#include <react/renderer/attributedstring/AttributedString.h>
-#include <react/renderer/attributedstring/ParagraphAttributes.h>
-
 #include "modules/skparagraph/include/Paragraph.h"
 
 #include <memory>
+
+#include <react/renderer/attributedstring/AttributedString.h>
+#include <react/renderer/attributedstring/ParagraphAttributes.h>
 
 namespace react_native_linux {
 

@@ -6,8 +6,9 @@
 #include <folly/dynamic.h>
 #include <gtest/gtest.h>
 #include <memory>
-#include <react/renderer/core/State.h>
 #include <vector>
+
+#include <react/renderer/core/State.h>
 
 namespace {
 
@@ -55,8 +56,8 @@ protected:
             [this, extraProps](const RootShadowNode& oldRootShadowNode) {
                 return std::static_pointer_cast<RootShadowNode>(oldRootShadowNode.ShadowNode::clone(ShadowNodeFragment{
                     .props = ShadowNodeFragment::propsPlaceholder(),
-                    .children = std::make_shared<const ChildList>(
-                        ChildList{makeField(kFieldTag, std::move(extraProps))})}));
+                    .children =
+                        std::make_shared<const ChildList>(ChildList{makeField(kFieldTag, std::move(extraProps))})}));
             },
             commitOptions);
 

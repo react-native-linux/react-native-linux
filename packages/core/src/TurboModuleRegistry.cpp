@@ -6,15 +6,15 @@
 #include <ReactCommon/CallInvoker.h>
 #include <ReactCommon/TurboModule.h>
 #include <ReactCommon/TurboModuleBinding.h>
-#include <react/coremodules/DeviceInfoModule.h>
-#include <react/renderer/animated/AnimatedModule.h>
-#include <react/renderer/animated/NativeAnimatedNodesManagerProvider.h>
-
 #include <memory>
 #include <optional>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include <react/coremodules/DeviceInfoModule.h>
+#include <react/renderer/animated/AnimatedModule.h>
+#include <react/renderer/animated/NativeAnimatedNodesManagerProvider.h>
 
 namespace react_native_linux {
 
@@ -118,8 +118,7 @@ void installPlatformColorBinding(facebook::jsi::Runtime& runtime, std::shared_pt
     runtime.global().setProperty(
         runtime, "__rnlPlatformColor",
         facebook::jsi::Function::createFromHostFunction(
-            runtime, facebook::jsi::PropNameID::forAscii(runtime, "__rnlPlatformColor"),
-            kPlatformColorArgumentCount,
+            runtime, facebook::jsi::PropNameID::forAscii(runtime, "__rnlPlatformColor"), kPlatformColorArgumentCount,
             [appearanceModel = std::move(appearanceModel)](
                 facebook::jsi::Runtime& hostRuntime, const facebook::jsi::Value& /*thisValue*/,
                 const facebook::jsi::Value* arguments, size_t count) -> facebook::jsi::Value {
@@ -154,8 +153,7 @@ TurboModuleRegistry::TurboModuleRegistry(
                              [appearanceModule = appearanceModule_]() { return appearanceModule; });
     moduleFactories_.emplace(
         facebook::react::AnimatedModule::kModuleName,
-        [jsInvoker = std::move(jsInvoker),
-         animatedNodesManagerProvider = std::move(animatedNodesManagerProvider)]() {
+        [jsInvoker = std::move(jsInvoker), animatedNodesManagerProvider = std::move(animatedNodesManagerProvider)]() {
             return std::make_shared<facebook::react::AnimatedModule>(jsInvoker, animatedNodesManagerProvider);
         });
 }
@@ -168,8 +166,8 @@ void TurboModuleRegistry::install(facebook::jsi::Runtime& runtime) {
     installPlatformColorBinding(runtime, appearanceModel_);
     facebook::react::TurboModuleBinding::install(
         runtime,
-        [moduleFactories = moduleFactories_](facebook::jsi::Runtime& /*runtime*/, const std::string& name)
-            -> std::shared_ptr<facebook::react::TurboModule> {
+        [moduleFactories = moduleFactories_](facebook::jsi::Runtime& /*runtime*/,
+                                             const std::string& name) -> std::shared_ptr<facebook::react::TurboModule> {
             const auto moduleFactory = moduleFactories.find(name);
 
             if (moduleFactory == moduleFactories.end()) {

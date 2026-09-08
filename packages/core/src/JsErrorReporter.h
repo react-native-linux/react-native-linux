@@ -1,8 +1,7 @@
 #pragma once
 
-#include <jserrorhandler/JsErrorHandler.h>
-
 #include <atomic>
+#include <jserrorhandler/JsErrorHandler.h>
 #include <memory>
 
 namespace react_native_linux {

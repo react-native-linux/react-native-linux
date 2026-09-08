@@ -2,10 +2,6 @@
 
 #include "RetainedScene.h"
 
-#include <react/renderer/graphics/Rect.h>
-#include <react/renderer/graphics/RectangleEdges.h>
-#include <react/renderer/graphics/Size.h>
-
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
@@ -17,6 +13,10 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+#include <react/renderer/graphics/Rect.h>
+#include <react/renderer/graphics/RectangleEdges.h>
+#include <react/renderer/graphics/Size.h>
 
 namespace react_native_linux {
 

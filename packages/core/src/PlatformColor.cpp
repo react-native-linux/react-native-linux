@@ -13,9 +13,7 @@ struct PlatformColorEntry {
 };
 
 constexpr std::array<PlatformColorEntry, 6> kPlatformColors{{
-    {.name = "labelColor",
-     .lightArgb = static_cast<int32_t>(0xFF1B1F23),
-     .darkArgb = static_cast<int32_t>(0xFFE6EDF3)},
+    {.name = "labelColor", .lightArgb = static_cast<int32_t>(0xFF1B1F23), .darkArgb = static_cast<int32_t>(0xFFE6EDF3)},
     {.name = "secondaryLabelColor",
      .lightArgb = static_cast<int32_t>(0xFF5C6370),
      .darkArgb = static_cast<int32_t>(0xFF8B949E)},
@@ -28,9 +26,7 @@ constexpr std::array<PlatformColorEntry, 6> kPlatformColors{{
     {.name = "separatorColor",
      .lightArgb = static_cast<int32_t>(0xFFD0D7DE),
      .darkArgb = static_cast<int32_t>(0xFF30363D)},
-    {.name = "linkColor",
-     .lightArgb = static_cast<int32_t>(0xFF0969DA),
-     .darkArgb = static_cast<int32_t>(0xFF58A6FF)},
+    {.name = "linkColor", .lightArgb = static_cast<int32_t>(0xFF0969DA), .darkArgb = static_cast<int32_t>(0xFF58A6FF)},
 }};
 
 } // namespace

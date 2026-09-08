@@ -7,11 +7,12 @@
 
 #include <memory>
 #include <optional>
+#include <vector>
+
 #include <react/renderer/core/ReactPrimitives.h>
 #include <react/renderer/core/ShadowNode.h>
 #include <react/renderer/graphics/Point.h>
 #include <react/renderer/uimanager/UIManager.h>
-#include <vector>
 
 namespace react_native_linux {
 
@@ -152,6 +153,7 @@ private:
     std::shared_ptr<const facebook::react::ShadowNode> focusedNode_;
     std::shared_ptr<const facebook::react::ShadowNode> syncedRoot_;
     TextInputController textInputController_;
+
     /**
      * The field tag and content purpose the last frame told the compositor's text input, so a trace line is
      * written when either changes and not once per frame. The tag has to travel with the purpose: two fields of

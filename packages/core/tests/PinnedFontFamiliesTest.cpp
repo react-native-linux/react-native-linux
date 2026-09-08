@@ -1,15 +1,14 @@
 #include "PinnedFontFamilies.h"
 
 #include <gtest/gtest.h>
-
 #include <optional>
 #include <string>
 #include <vector>
 
 namespace {
 
-using react_native_linux::PinnedFontFamilyResolution;
 using react_native_linux::pinnedFontFamiliesFatalMessage;
+using react_native_linux::PinnedFontFamilyResolution;
 using react_native_linux::resolvedStyleIsPinnedDefault;
 
 TEST(PinnedFontFamiliesTest, EveryPinnedFamilyResolvedIsNotFatal) {
@@ -63,4 +62,4 @@ TEST(PinnedFontFamiliesTest, ANonNormalWidthIsNotThePinnedDefaultStyle) {
     EXPECT_FALSE(resolvedStyleIsPinnedDefault(/* weight */ 400, /* width */ 3, /* slant */ 0));
 }
 
-}  // namespace
+} // namespace

@@ -21,8 +21,7 @@ namespace react_native_linux {
  * it is true, dereferences `SchedulerToolbox::animationChoreographer` unconditionally, so every host that builds a
  * `Scheduler` has to supply one. See *Animated backend* in docs/cpp-toolchain.md.
  */
-class ReactNativeFeatureFlagsOverridesLinux final
-    : public facebook::react::ReactNativeFeatureFlagsOverridesOSSStable {
+class ReactNativeFeatureFlagsOverridesLinux final : public facebook::react::ReactNativeFeatureFlagsOverridesOSSStable {
 public:
     bool cxxNativeAnimatedEnabled() override { return true; }
 

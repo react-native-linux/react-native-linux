@@ -192,8 +192,7 @@ std::shared_ptr<ViewProps> propsWithShadow(float offsetX, float offsetY, float b
 // The mount damages the whole surface, which would cover any shadow whether or not the extent knew about one. So
 // every assertion below is about a *change*, read from a scene whose mount damage has already been taken: the
 // card mounts with `before`, the mount damage is drained, and the card is updated to `after`.
-SceneDamage damageOfUpdatingTheCard(const std::shared_ptr<ViewProps>& before,
-                                    const std::shared_ptr<ViewProps>& after) {
+SceneDamage damageOfUpdatingTheCard(const std::shared_ptr<ViewProps>& before, const std::shared_ptr<ViewProps>& after) {
     RetainedScene scene;
 
     scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});

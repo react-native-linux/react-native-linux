@@ -10,14 +10,15 @@
 #include <exception>
 #include <iostream>
 #include <optional>
-#include <react/renderer/core/ReactPrimitives.h>
-#include <react/renderer/graphics/Float.h>
-#include <react/renderer/graphics/Point.h>
-#include <react/renderer/graphics/Size.h>
 #include <span>
 #include <string>
 #include <string_view>
 #include <system_error>
+
+#include <react/renderer/core/ReactPrimitives.h>
+#include <react/renderer/graphics/Float.h>
+#include <react/renderer/graphics/Point.h>
+#include <react/renderer/graphics/Size.h>
 
 namespace {
 
@@ -132,8 +133,7 @@ int runInjectPointerCommand(std::span<char*> arguments) {
     const std::optional<facebook::react::Point> surfacePoint = parseSurfacePoint(arguments[3], arguments[4]);
 
     if (!surfacePoint.has_value()) {
-        std::cerr << "[hello_react] " << kInjectPointerFlag << " x and y must be non-negative integers"
-                  << std::endl;
+        std::cerr << "[hello_react] " << kInjectPointerFlag << " x and y must be non-negative integers" << std::endl;
 
         return 1;
     }
@@ -153,8 +153,7 @@ int runAnimatedScrollCommand(std::span<char*> arguments) {
 
     if (!surfacePoint.has_value() || !notches.has_value()) {
         std::cerr << "[hello_react] " << kAnimatedScrollFlag
-                  << " x and y must be non-negative integers and notches a positive one"
-                  << std::endl;
+                  << " x and y must be non-negative integers and notches a positive one" << std::endl;
 
         return 1;
     }
@@ -188,8 +187,7 @@ int runAnimationFrameTraceCommand(std::span<char*> arguments) {
     const std::optional<int> parsedFrames = parsePositiveDimension(arguments[3]);
 
     if (!parsedFrames.has_value()) {
-        std::cerr << "[hello_react] " << kAnimationFrameTraceFlag << " frames must be a positive integer"
-                  << std::endl;
+        std::cerr << "[hello_react] " << kAnimationFrameTraceFlag << " frames must be a positive integer" << std::endl;
 
         return 1;
     }
@@ -216,8 +214,8 @@ int runScrollToCommand(std::span<char*> arguments, bool isMaintainingPosition) {
     const std::optional<int> parsedNotches = parsePositiveDimension(arguments[6]);
 
     if (!surfacePoint.has_value() || !parsedNotches.has_value()) {
-        std::cerr << "[hello_react] " << flag
-                  << " x and y must be non-negative integers and notches a positive one" << std::endl;
+        std::cerr << "[hello_react] " << flag << " x and y must be non-negative integers and notches a positive one"
+                  << std::endl;
 
         return 1;
     }
@@ -256,8 +254,7 @@ int runFocusClickCommand(std::span<char*> arguments) {
     }
 
     return react_native_linux::renderFocusClickGolden(std::string(arguments[2]), std::string(arguments[3]),
-                                                      surfacePoint.value(), kGoldenDefaultWidth,
-                                                      kGoldenDefaultHeight);
+                                                      surfacePoint.value(), kGoldenDefaultWidth, kGoldenDefaultHeight);
 }
 
 int runClickedFrameCommand(std::span<char*> arguments) {
@@ -266,15 +263,14 @@ int runClickedFrameCommand(std::span<char*> arguments) {
 
     if (!surfacePoint.has_value() || !parsedFrames.has_value()) {
         std::cerr << "[hello_react] " << kClickedFrameFlag
-                  << " x and y must be non-negative integers and frames a positive one"
-                  << std::endl;
+                  << " x and y must be non-negative integers and frames a positive one" << std::endl;
 
         return 1;
     }
 
     return react_native_linux::renderClickedFrameGolden(std::string(arguments[2]), std::string(arguments[3]),
-                                                        surfacePoint.value(), parsedFrames.value(),
-                                                        kGoldenDefaultWidth, kGoldenDefaultHeight);
+                                                        surfacePoint.value(), parsedFrames.value(), kGoldenDefaultWidth,
+                                                        kGoldenDefaultHeight);
 }
 
 int runFocusCommandGoldenCommand(std::span<char*> arguments) {
@@ -286,9 +282,9 @@ int runFocusCommandGoldenCommand(std::span<char*> arguments) {
         return 1;
     }
 
-    return react_native_linux::renderFocusCommandGolden(
-        std::string(arguments[2]), std::string(arguments[3]),
-        static_cast<facebook::react::Tag>(focusedTag.value()), kGoldenDefaultWidth, kGoldenDefaultHeight);
+    return react_native_linux::renderFocusCommandGolden(std::string(arguments[2]), std::string(arguments[3]),
+                                                        static_cast<facebook::react::Tag>(focusedTag.value()),
+                                                        kGoldenDefaultWidth, kGoldenDefaultHeight);
 }
 
 int runAnimatedImageCommand(std::span<char*> arguments) {
@@ -307,8 +303,7 @@ int runAnimatedImageCommand(std::span<char*> arguments) {
 
 int runTypeCommand(std::span<char*> arguments) {
     return react_native_linux::renderTypedGolden(std::string(arguments[2]), std::string(arguments[3]),
-                                                 std::string(arguments[4]), kGoldenDefaultWidth,
-                                                 kGoldenDefaultHeight);
+                                                 std::string(arguments[4]), kGoldenDefaultWidth, kGoldenDefaultHeight);
 }
 
 int runAppearanceGoldenCommand(std::span<char*> arguments) {
@@ -412,11 +407,11 @@ int runGoldenCommand(std::span<char*> arguments, GoldenKind goldenKind) {
 #else
 
 int reportMissingSkia() {
-    std::cerr << "[hello_react] " << kGoldenFlag << ", " << kDamageGoldenFlag << ", " << kHitPaintGoldenFlag
-              << ", " << kTextFitGoldenFlag << ", " << kFirstFrameGoldenFlag << ", " << kScrollToFlag << ", "
+    std::cerr << "[hello_react] " << kGoldenFlag << ", " << kDamageGoldenFlag << ", " << kHitPaintGoldenFlag << ", "
+              << kTextFitGoldenFlag << ", " << kFirstFrameGoldenFlag << ", " << kScrollToFlag << ", "
               << kMaintainPositionGoldenFlag << ", " << kFocusTabFlag << ", " << kFocusClickFlag << ", "
-              << kClickedFrameFlag << ", " << kFocusCommandGoldenFlag << ", " << kAnimatedImageFlag << ", "
-              << kTypeFlag << " and " << kAppearanceGoldenFlag
+              << kClickedFrameFlag << ", " << kFocusCommandGoldenFlag << ", " << kAnimatedImageFlag << ", " << kTypeFlag
+              << " and " << kAppearanceGoldenFlag
               << " need Skia, which this build was configured without; run node scripts/vendor-skia.ts and "
                  "reconfigure"
               << std::endl;
@@ -501,8 +496,8 @@ int main(int argc, char** argv) {
     }
 
     if (isClickedFrameRequested && arguments.size() != kClickedFrameArgumentCount) {
-        std::cerr << "[hello_react] " << kClickedFrameFlag
-                  << " requires <bundle> <output.png> <x> <y> <frames>" << std::endl;
+        std::cerr << "[hello_react] " << kClickedFrameFlag << " requires <bundle> <output.png> <x> <y> <frames>"
+                  << std::endl;
 
         return 1;
     }
@@ -515,8 +510,7 @@ int main(int argc, char** argv) {
     }
 
     if (isAnimatedImageRequested && arguments.size() != kAnimatedImageArgumentCount) {
-        std::cerr << "[hello_react] " << kAnimatedImageFlag << " requires <bundle> <output.png> <frames>"
-                  << std::endl;
+        std::cerr << "[hello_react] " << kAnimatedImageFlag << " requires <bundle> <output.png> <frames>" << std::endl;
 
         return 1;
     }
@@ -593,7 +587,7 @@ int main(int argc, char** argv) {
         if (isGoldenRequested || isDamageGoldenRequested || isHitPaintGoldenRequested || isTextFitGoldenRequested ||
             isFirstFrameGoldenRequested) {
             return runGoldenCommand(arguments, toGoldenKind(isDamageGoldenRequested, isHitPaintGoldenRequested,
-                                                           isTextFitGoldenRequested, isFirstFrameGoldenRequested));
+                                                            isTextFitGoldenRequested, isFirstFrameGoldenRequested));
         }
 
         std::optional<std::string> bundlePath;

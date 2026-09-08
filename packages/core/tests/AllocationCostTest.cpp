@@ -1,21 +1,19 @@
 #include "AllocationProbe.h"
-
 #include "LinuxAnimationChoreographer.h"
 #include "LinuxMountingManager.h"
 #include "RetainedScene.h"
 #include "SceneTestSupport.h"
 
-#include <gtest/gtest.h>
-
-#include <folly/dynamic.h>
-#include <react/renderer/uimanager/UIManagerAnimationBackend.h>
-
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <folly/dynamic.h>
+#include <gtest/gtest.h>
 #include <iostream>
 #include <memory>
 #include <string>
+
+#include <react/renderer/uimanager/UIManagerAnimationBackend.h>
 
 // The one translation unit that can watch the allocator: `AllocationProbe.h` replaces the global operators and
 // permits exactly one includer, so the frame cost of #124 and the mounting cost of #106 are measured together.
@@ -123,9 +121,7 @@ std::chrono::steady_clock::time_point frameTimeAt(size_t frameNumber) {
         std::chrono::milliseconds(kFrameIntervalMilliseconds * static_cast<int64_t>(frameNumber + 1)));
 }
 
-Rect costFrame() {
-    return makeRect(24, 24, 120, 80);
-}
+Rect costFrame() { return makeRect(24, 24, 120, 80); }
 
 folly::dynamic payloadOf(const std::string& propName, const folly::dynamic& value) {
     return folly::dynamic::object(propName, value);
@@ -266,7 +262,6 @@ TEST(AnimationFrameCostTest, TakingTheDamageListAllocatesNothingAndTheNextFrameR
     EXPECT_LE(cost.laterFrameAllocations, kPaintPropFrameAllocationCeiling);
 }
 
-
 // Issue #106. Upstream shipped a first mount that allocated about 6.9 GB of raster data before the bundle had
 // finished evaluating (core#56980), and a mounting cost of about a millisecond per view (core#51869). Neither is
 // visible without a counter, so this is the counter.
@@ -310,10 +305,10 @@ std::shared_ptr<ViewProps> decoratedProps() {
 }
 
 ShadowView costView(size_t index) {
-    return makeStyledView(static_cast<Tag>(kFirstCostTag + index),
-                          makeRect(static_cast<float>(index % 40) * 20.0F, static_cast<float>(index / 40) * 20.0F,
-                                   18, 18),
-                          decoratedProps());
+    return makeStyledView(
+        static_cast<Tag>(kFirstCostTag + index),
+        makeRect(static_cast<float>(index % 40) * 20.0F, static_cast<float>(index / 40) * 20.0F, 18, 18),
+        decoratedProps());
 }
 
 /**
@@ -356,9 +351,8 @@ void startSurface(LinuxMountingManager& mountingManager) {
 }
 
 size_t allocationsMounting(LinuxMountingManager& mountingManager, ShadowViewMutationList&& mutations) {
-    return allocationsDuringFrame([&]() {
-        mountingManager.executeMount(kSurfaceTag, transactionOf(std::move(mutations)));
-    });
+    return allocationsDuringFrame(
+        [&]() { mountingManager.executeMount(kSurfaceTag, transactionOf(std::move(mutations))); });
 }
 
 TEST(MountingCostTest, AMountingTransactionCostsABoundedNumberOfAllocationsPerNode) {
@@ -368,8 +362,7 @@ TEST(MountingCostTest, AMountingTransactionCostsABoundedNumberOfAllocationsPerNo
 
     const size_t allocations = allocationsMounting(mountingManager, mountMutations(kLargeTreeNodeCount));
 
-    std::cout << "[cost] mount: " << allocations << " allocations for " << kLargeTreeNodeCount << " nodes"
-              << std::endl;
+    std::cout << "[cost] mount: " << allocations << " allocations for " << kLargeTreeNodeCount << " nodes" << std::endl;
 
     EXPECT_LE(allocations, kMountAllocationsPerNodeCeiling * kLargeTreeNodeCount);
 }

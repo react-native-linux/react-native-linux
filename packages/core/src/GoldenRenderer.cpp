@@ -25,13 +25,14 @@
 #include <iostream>
 #include <limits>
 #include <optional>
-#include <react/renderer/graphics/Float.h>
-#include <react/renderer/graphics/Size.h>
-#include <react/renderer/textlayoutmanager/TextLayoutManager.h>
 #include <sstream>
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+#include <react/renderer/graphics/Float.h>
+#include <react/renderer/graphics/Size.h>
+#include <react/renderer/textlayoutmanager/TextLayoutManager.h>
 
 namespace react_native_linux {
 
@@ -421,7 +422,7 @@ bool doesEveryTextInputAgreeWithACompanionText(const SceneSnapshot& scene) {
             }
 
             if (std::abs(static_cast<float>(field.text->frame.size.height) -
-                        static_cast<float>(text.text->frame.size.height)) > kTextFitTolerance) {
+                         static_cast<float>(text.text->frame.size.height)) > kTextFitTolerance) {
                 std::cerr << "[golden] tag " << field.tag << " is a TextInput " << field.text->frame.size.height
                           << " points tall, but tag " << text.tag << " holds the same string in a <Text> "
                           << text.text->frame.size.height << " points tall" << std::endl;
@@ -487,9 +488,9 @@ float restingFirstLineTop(const SceneTextContent& text, bool isMultiline) {
     }
 
     const float caretTop = static_cast<float>(geometry.caret.origin.y);
-    const float restingScrollOffset = followedScrollOffset(
-        0.0F, caretTop, caretTop + static_cast<float>(geometry.caret.size.height),
-        static_cast<float>(text.frame.size.height), geometry.contentHeight);
+    const float restingScrollOffset =
+        followedScrollOffset(0.0F, caretTop, caretTop + static_cast<float>(geometry.caret.size.height),
+                             static_cast<float>(text.frame.size.height), geometry.contentHeight);
 
     return -restingScrollOffset;
 }
@@ -517,8 +518,9 @@ bool haveSameEditorGeometry(const ScenePrimitive& first, const ScenePrimitive& s
     if (std::abs(firstGeometry.contentWidth - settledGeometry.contentWidth) > kTextFitTolerance ||
         std::abs(firstGeometry.contentHeight - settledGeometry.contentHeight) > kTextFitTolerance) {
         std::cerr << "[golden] tag " << first.tag << " measured " << firstGeometry.contentWidth << "x"
-                  << firstGeometry.contentHeight << " of content on the first frame and " << settledGeometry.contentWidth
-                  << "x" << settledGeometry.contentHeight << " once settled" << std::endl;
+                  << firstGeometry.contentHeight << " of content on the first frame and "
+                  << settledGeometry.contentWidth << "x" << settledGeometry.contentHeight << " once settled"
+                  << std::endl;
 
         return false;
     }
@@ -535,8 +537,8 @@ bool haveSameEditorGeometry(const ScenePrimitive& first, const ScenePrimitive& s
     if (!firstMetrics.lines.empty() &&
         std::abs(firstMetrics.lines.front().height - settledMetrics.lines.front().height) > kTextFitTolerance) {
         std::cerr << "[golden] tag " << first.tag << " painted a first line " << firstMetrics.lines.front().height
-                  << " points tall on the first frame and " << settledMetrics.lines.front().height
-                  << " once settled" << std::endl;
+                  << " points tall on the first frame and " << settledMetrics.lines.front().height << " once settled"
+                  << std::endl;
 
         return false;
     }
@@ -546,8 +548,8 @@ bool haveSameEditorGeometry(const ScenePrimitive& first, const ScenePrimitive& s
 
     if (std::abs(firstLineTop - settledLineTop) > kTextFitTolerance) {
         std::cerr << "[golden] tag " << first.tag << " rested its first line at " << firstLineTop
-                  << " points from the content box's top on the first frame and " << settledLineTop
-                  << " once settled" << std::endl;
+                  << " points from the content box's top on the first frame and " << settledLineTop << " once settled"
+                  << std::endl;
 
         return false;
     }
@@ -597,8 +599,8 @@ bool doFirstAndSettledFramesAgree(const SceneSnapshot& first, const SceneSnapsho
                       << first[index].frame.origin.y << ") " << first[index].frame.size.width << "x"
                       << first[index].frame.size.height << " on the first frame and at ("
                       << settled[index].frame.origin.x << ", " << settled[index].frame.origin.y << ") "
-                      << settled[index].frame.size.width << "x" << settled[index].frame.size.height
-                      << " once settled" << std::endl;
+                      << settled[index].frame.size.width << "x" << settled[index].frame.size.height << " once settled"
+                      << std::endl;
 
             return false;
         }
@@ -637,8 +639,7 @@ bool doPrependedFramesAgree(const SceneSnapshot& before, const SceneSnapshot& af
 
     if (displaced->isMissing) {
         std::cerr << "[golden] tag " << displaced->tag << " was on screen at (" << displaced->before.origin.x << ", "
-                  << displaced->before.origin.y << ") before the prepend and is painted nowhere after it"
-                  << std::endl;
+                  << displaced->before.origin.y << ") before the prepend and is painted nowhere after it" << std::endl;
 
         return false;
     }
@@ -661,8 +662,7 @@ bool doPrependedFramesAgree(const SceneSnapshot& before, const SceneSnapshot& af
  */
 int paintSettledScene(const FabricRunResult& run, const std::string& outputPath, int width, int height) {
     if (!run.hasSettled) {
-        std::cerr << "[golden] gave up waiting for JavaScript to settle; refusing to write " << outputPath
-                  << std::endl;
+        std::cerr << "[golden] gave up waiting for JavaScript to settle; refusing to write " << outputPath << std::endl;
 
         return 1;
     }
@@ -688,9 +688,8 @@ int renderGolden(const std::string& bundlePath, const std::string& outputPath, i
     return paintSettledScene(runFabricBundle(bundlePath, toSurfaceSize(width, height)), outputPath, width, height);
 }
 
-int renderAppearanceGolden(const std::string& bundlePath, const std::string& outputPath,
-                           ColorScheme portalColorScheme, std::optional<ColorScheme> colorSchemeOverride,
-                           int width, int height) {
+int renderAppearanceGolden(const std::string& bundlePath, const std::string& outputPath, ColorScheme portalColorScheme,
+                           std::optional<ColorScheme> colorSchemeOverride, int width, int height) {
     return paintSettledScene(
         runAppearanceFabricBundle(bundlePath, toSurfaceSize(width, height), portalColorScheme, colorSchemeOverride),
         outputPath, width, height);
@@ -712,24 +711,24 @@ int renderFocusGolden(const std::string& bundlePath, const std::string& outputPa
 int renderClickedFrameGolden(const std::string& bundlePath, const std::string& outputPath,
                              facebook::react::Point surfacePoint, int frameCount, int width, int height) {
     return paintSettledScene(
-        runClickedFrameFabricBundle(bundlePath, toSurfaceSize(width, height), surfacePoint, frameCount),
-        outputPath, width, height);
+        runClickedFrameFabricBundle(bundlePath, toSurfaceSize(width, height), surfacePoint, frameCount), outputPath,
+        width, height);
 }
 
 int renderFocusClickGolden(const std::string& bundlePath, const std::string& outputPath,
-                          facebook::react::Point surfacePoint, int width, int height) {
+                           facebook::react::Point surfacePoint, int width, int height) {
     return paintSettledScene(runFocusClickedFabricBundle(bundlePath, toSurfaceSize(width, height), surfacePoint),
                              outputPath, width, height);
 }
 
 int renderFocusCommandGolden(const std::string& bundlePath, const std::string& outputPath,
-                            facebook::react::Tag focusedTag, int width, int height) {
+                             facebook::react::Tag focusedTag, int width, int height) {
     return paintSettledScene(runFocusCommandedFabricBundle(bundlePath, toSurfaceSize(width, height), focusedTag),
                              outputPath, width, height);
 }
 
-int renderAnimatedImageGolden(const std::string& bundlePath, const std::string& outputPath, int frameCount,
-                              int width, int height) {
+int renderAnimatedImageGolden(const std::string& bundlePath, const std::string& outputPath, int frameCount, int width,
+                              int height) {
     return paintSettledScene(runAnimatedImageFabricBundle(bundlePath, toSurfaceSize(width, height), frameCount),
                              outputPath, width, height);
 }
@@ -763,8 +762,7 @@ int renderDamageGolden(const std::string& bundlePath, const std::string& outputP
     }
 
     if (!run.hasSettled) {
-        std::cerr << "[golden] gave up waiting for JavaScript to settle; refusing to write " << outputPath
-                  << std::endl;
+        std::cerr << "[golden] gave up waiting for JavaScript to settle; refusing to write " << outputPath << std::endl;
 
         return 1;
     }
@@ -801,8 +799,7 @@ int renderHitPaintGolden(const std::string& bundlePath, const std::string& outpu
         runHitSampledFabricBundle(bundlePath, toSurfaceSize(width, height), kHitSampleStep);
 
     if (!run.hasSettled) {
-        std::cerr << "[golden] gave up waiting for JavaScript to settle; refusing to write " << outputPath
-                  << std::endl;
+        std::cerr << "[golden] gave up waiting for JavaScript to settle; refusing to write " << outputPath << std::endl;
 
         return 1;
     }

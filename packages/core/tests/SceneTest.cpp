@@ -8,6 +8,13 @@
 #include <folly/dynamic.h>
 #include <gtest/gtest.h>
 #include <memory>
+#include <string>
+#include <utility>
+#include <vector>
+#include <yoga/enums/Edge.h>
+#include <yoga/enums/Overflow.h>
+#include <yoga/style/StyleLength.h>
+
 #include <react/renderer/attributedstring/AttributedString.h>
 #include <react/renderer/attributedstring/AttributedStringBox.h>
 #include <react/renderer/attributedstring/ParagraphAttributes.h>
@@ -27,7 +34,6 @@
 #include <react/renderer/core/RawEvent.h>
 #include <react/renderer/core/ReactPrimitives.h>
 #include <react/renderer/core/ShadowNodeFamily.h>
-#include <react/renderer/runtimescheduler/RuntimeScheduler.h>
 #include <react/renderer/graphics/BackgroundImage.h>
 #include <react/renderer/graphics/Color.h>
 #include <react/renderer/graphics/ColorStop.h>
@@ -44,13 +50,8 @@
 #include <react/renderer/mounting/MountingTransaction.h>
 #include <react/renderer/mounting/ShadowView.h>
 #include <react/renderer/mounting/ShadowViewMutation.h>
+#include <react/renderer/runtimescheduler/RuntimeScheduler.h>
 #include <react/renderer/telemetry/TransactionTelemetry.h>
-#include <string>
-#include <utility>
-#include <vector>
-#include <yoga/enums/Edge.h>
-#include <yoga/enums/Overflow.h>
-#include <yoga/style/StyleLength.h>
 
 namespace {
 
@@ -1175,20 +1176,17 @@ TEST(RetainedSceneImageTest, DumpCarriesTheImageSource) {
 }
 
 TEST(RetainedSceneImageTest, ANodeWithoutBlurRadiusCarriesZero) {
-    EXPECT_FLOAT_EQ(sceneWithTile(makeTile(2, makeRect(0, 0, 64, 48), "tile.png"))
-                        .snapshot()
-                        .front()
-                        .image.value()
-                        .blurRadius,
-                    0.0F);
+    EXPECT_FLOAT_EQ(
+        sceneWithTile(makeTile(2, makeRect(0, 0, 64, 48), "tile.png")).snapshot().front().image.value().blurRadius,
+        0.0F);
 }
 
 TEST(RetainedSceneImageTest, BlurRadiusTravelsFromPropsToTheSnapshotUnaffectedByInheritedOpacity) {
     RetainedScene scene = sceneWithTranslucentParent();
 
-    addChild(scene, 2,
-             makeImage(3, makeRect(0, 0, 64, 48), "tile.png", facebook::react::ImageResizeMode::Cover,
-                      SharedColor{}, 8.0F));
+    addChild(
+        scene, 2,
+        makeImage(3, makeRect(0, 0, 64, 48), "tile.png", facebook::react::ImageResizeMode::Cover, SharedColor{}, 8.0F));
 
     EXPECT_FLOAT_EQ(scene.snapshot().front().image.value().blurRadius, 8.0F);
 }
@@ -1203,16 +1201,15 @@ TEST(RetainedSceneImageTest, CapInsetsTravelFromPropsToTheSnapshot) {
     const facebook::react::EdgeInsets capInsets{.left = 2, .top = 3, .right = 4, .bottom = 5};
 
     addChild(scene, 2,
-             makeImage(3, makeRect(0, 0, 64, 48), "tile.png", facebook::react::ImageResizeMode::Cover,
-                      SharedColor{}, 0.0F, capInsets));
+             makeImage(3, makeRect(0, 0, 64, 48), "tile.png", facebook::react::ImageResizeMode::Cover, SharedColor{},
+                       0.0F, capInsets));
 
     EXPECT_EQ(scene.snapshot().front().image.value().capInsets, capInsets);
 }
 
 TEST(RetainedSceneImageTest, ABlurredImageDamagesOnlyItsOwnFrameLikeAnUnblurredOne) {
-    RetainedScene blurred =
-        sceneWithTile(makeImage(2, makeRect(40, 60, 120, 90), "tile.png",
-                                facebook::react::ImageResizeMode::Cover, SharedColor{}, 8.0F));
+    RetainedScene blurred = sceneWithTile(makeImage(2, makeRect(40, 60, 120, 90), "tile.png",
+                                                    facebook::react::ImageResizeMode::Cover, SharedColor{}, 8.0F));
 
     blurred.takeDamage();
     blurred.damageImageSource("tile.png", nullptr);
@@ -1310,7 +1307,7 @@ makeImageWithLoadObserver(Tag tag, Rect frame, const std::string& uri, bool comp
 
     shadowView.state = std::make_shared<const facebook::react::ConcreteState<facebook::react::ImageState>>(
         std::make_shared<const facebook::react::ImageState>(imageSource, std::move(imageRequest),
-                                                             facebook::react::ImageRequestParams{}),
+                                                            facebook::react::ImageRequestParams{}),
         facebook::react::ShadowNodeFamily::Weak{});
     shadowView.eventEmitter = eventEmitter;
 
@@ -1320,8 +1317,8 @@ makeImageWithLoadObserver(Tag tag, Rect frame, const std::string& uri, bool comp
 // The mount itself is already `ImageStateBecomesTheImageOnTheNode`'s proof; this adds only the one thing that
 // test cannot see — that a completed request's observer actually reached JavaScript.
 TEST(RetainedSceneImageTest, ALoadObserverAttachesAndFiresWithoutDisturbingTheMount) {
-    const std::pair<std::shared_ptr<facebook::react::ImageEventEmitter>, std::shared_ptr<DispatchRecorder>>
-        recording = makeRecordingImageEventEmitter();
+    const std::pair<std::shared_ptr<facebook::react::ImageEventEmitter>, std::shared_ptr<DispatchRecorder>> recording =
+        makeRecordingImageEventEmitter();
     const SceneSnapshot snapshot =
         sceneWithTile(makeImageWithLoadObserver(2, makeRect(40, 60, 120, 90), "tile.png", true, recording.first).first)
             .snapshot();
@@ -1335,13 +1332,12 @@ TEST(RetainedSceneImageTest, ALoadObserverAttachesAndFiresWithoutDisturbingTheMo
 // twice on the same recording emitter, and asserts the recorder still shows the one `onLoad` the first mount
 // produced rather than two — the double-attach issue #301's `isSameSource` guard exists to skip.
 TEST(RetainedSceneImageTest, AReMountWithTheSameSourceDoesNotReattachTheLoadObserver) {
-    const std::pair<std::shared_ptr<facebook::react::ImageEventEmitter>, std::shared_ptr<DispatchRecorder>>
-        recording = makeRecordingImageEventEmitter();
+    const std::pair<std::shared_ptr<facebook::react::ImageEventEmitter>, std::shared_ptr<DispatchRecorder>> recording =
+        makeRecordingImageEventEmitter();
     RetainedScene scene =
         sceneWithTile(makeImageWithLoadObserver(2, makeRect(40, 60, 120, 90), "tile.png", true, recording.first).first);
 
-    scene.updateNode(
-        makeImageWithLoadObserver(2, makeRect(40, 60, 120, 90), "tile.png", true, recording.first).first);
+    scene.updateNode(makeImageWithLoadObserver(2, makeRect(40, 60, 120, 90), "tile.png", true, recording.first).first);
 
     const SceneSnapshot snapshot = scene.snapshot();
 
@@ -1355,8 +1351,8 @@ TEST(RetainedSceneImageTest, AReMountWithTheSameSourceDoesNotReattachTheLoadObse
 // failure into an event — asserted against the recorder rather than by absence of a crash, so a future observer
 // that wired one of them in by accident would fail this rather than pass it silently.
 TEST(RetainedSceneImageTest, ProgressAndFailureReachTheLoadObserverButProduceNoEvent) {
-    const std::pair<std::shared_ptr<facebook::react::ImageEventEmitter>, std::shared_ptr<DispatchRecorder>>
-        recording = makeRecordingImageEventEmitter();
+    const std::pair<std::shared_ptr<facebook::react::ImageEventEmitter>, std::shared_ptr<DispatchRecorder>> recording =
+        makeRecordingImageEventEmitter();
     const std::pair<ShadowView, std::shared_ptr<const facebook::react::ImageResponseObserverCoordinator>> fixture =
         makeImageWithLoadObserver(2, makeRect(40, 60, 120, 90), "tile.png", false, recording.first);
     const RetainedScene scene = sceneWithTile(fixture.first);
@@ -1871,13 +1867,13 @@ TEST(RetainedSceneTextInputTest, ThePlaceholderIsPaintedWithTheFieldsOwnFontWeig
     // pass an RGB-only assertion.
     EXPECT_NE(placeholderAttributes.foregroundColor, styled->textAttributes.foregroundColor);
     EXPECT_EQ(facebook::react::redFromColor(placeholderAttributes.foregroundColor),
-             facebook::react::redFromColor(translucentRed));
+              facebook::react::redFromColor(translucentRed));
     EXPECT_EQ(facebook::react::greenFromColor(placeholderAttributes.foregroundColor),
-             facebook::react::greenFromColor(translucentRed));
+              facebook::react::greenFromColor(translucentRed));
     EXPECT_EQ(facebook::react::blueFromColor(placeholderAttributes.foregroundColor),
-             facebook::react::blueFromColor(translucentRed));
+              facebook::react::blueFromColor(translucentRed));
     EXPECT_EQ(facebook::react::alphaFromColor(placeholderAttributes.foregroundColor),
-             facebook::react::alphaFromColor(translucentRed));
+              facebook::react::alphaFromColor(translucentRed));
 }
 
 // The alignment a wrapped placeholder would wrap with is the same `ParagraphAttributes` object the value wraps

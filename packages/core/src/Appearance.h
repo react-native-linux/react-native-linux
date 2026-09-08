@@ -89,7 +89,7 @@ ColorScheme resolveEffectiveColorScheme(std::optional<ColorScheme> colorSchemeOv
 bool shouldEmitOnOverrideChange(std::optional<ColorScheme> previousOverride, std::optional<ColorScheme> nextOverride);
 
 bool shouldEmitOnPortalChange(std::optional<ColorScheme> currentOverride, ColorScheme previousPortalColorScheme,
-                               ColorScheme nextPortalColorScheme);
+                              ColorScheme nextPortalColorScheme);
 
 class AppearanceModel {
 public:

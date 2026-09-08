@@ -1,8 +1,8 @@
 #include "TextTransform.h"
 
-#include <react/renderer/attributedstring/primitives.h>
-
 #include <gtest/gtest.h>
+
+#include <react/renderer/attributedstring/primitives.h>
 
 namespace {
 

@@ -2,22 +2,17 @@
 
 #include "DimensionsSource.h"
 #include "FabricHost.h"
+#include "ImageContent.h"
 #include "InputPipeline.h"
 #include "ReactHost.h"
-
-#include "ImageContent.h"
 
 #ifdef RNL_ENABLE_IMAGES
 #include "ImageDecoder.h"
 #endif
 
-#include <cxxreact/JSBigString.h>
-#include <react/renderer/graphics/Float.h>
-#include <react/renderer/graphics/Point.h>
-#include <react/renderer/graphics/Size.h>
-
 #include <chrono>
 #include <cstddef>
+#include <cxxreact/JSBigString.h>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -26,6 +21,10 @@
 #include <thread>
 #include <utility>
 #include <vector>
+
+#include <react/renderer/graphics/Float.h>
+#include <react/renderer/graphics/Point.h>
+#include <react/renderer/graphics/Size.h>
 
 namespace react_native_linux {
 
@@ -126,9 +125,8 @@ struct SettledFrame {
 SettledFrame settleFabricRun(ReactHost& reactHost, FabricHost& fabricHost) {
     SceneDamage accumulatedDamage;
 
-    const bool hasSettled = settleImageDecodesAndJavaScript(
-        settlePendingImageDecodes,
-        [&reactHost, &fabricHost, &accumulatedDamage]() {
+    const bool hasSettled =
+        settleImageDecodesAndJavaScript(settlePendingImageDecodes, [&reactHost, &fabricHost, &accumulatedDamage]() {
             fabricHost.induceEventBeat();
 
             if (!reactHost.runUntilQuiescent(kQuiescenceBudget)) {
@@ -213,9 +211,8 @@ std::vector<InputEvent> makeWheelFrame(facebook::react::Point surfacePoint, int 
     InputQueue queue;
 
     for (int notch = 0; notch < wheelNotches; ++notch) {
-        queue.push(InputEvent{.kind = InputEventKind::PointerScrollDiscrete,
-                              .surfacePoint = surfacePoint,
-                              .scrollAmount = 1.0});
+        queue.push(InputEvent{
+            .kind = InputEventKind::PointerScrollDiscrete, .surfacePoint = surfacePoint, .scrollAmount = 1.0});
     }
 
     return queue.drain();
@@ -276,8 +273,7 @@ StartedFabricRun startFabricRunAtFirstCommit(ReactHost& reactHost, const std::st
     const bool hasCommitted = !waitForFirstCommit(reactHost, *fabricHost, true).empty();
 
     if (!hasCommitted) {
-        std::cerr << "[bundle-runner] the bundle committed no scene, so there is nothing to " << subject
-                  << std::endl;
+        std::cerr << "[bundle-runner] the bundle committed no scene, so there is nothing to " << subject << std::endl;
     }
 
     return StartedFabricRun{.fabricHost = std::move(fabricHost), .hasCommitted = hasCommitted};
@@ -350,8 +346,7 @@ WheelDrivenRun startWheelDrivenRun(ReactHost& reactHost, const std::string& bund
     run.fabricHost->dispatchInput(makeWheelFrame(surfacePoint, wheelNotches));
 
     for (size_t frame = 0;
-         frame < kMaximumInjectedScrollFrames && run.fabricHost->advanceScroll(kInjectedFrameMilliseconds);
-         ++frame) {
+         frame < kMaximumInjectedScrollFrames && run.fabricHost->advanceScroll(kInjectedFrameMilliseconds); ++frame) {
     }
 
     run.fabricHost->induceEventBeat();
@@ -574,10 +569,9 @@ FabricRunResult runFocusTabbedFabricBundle(const std::string& bundlePath, facebo
     // One press per frame, press and release together, because that is what a compositor delivers: a key held
     // across a frame boundary is a repeat, and repeats are not synthesised. See *Input* in docs/cpp-toolchain.md.
     for (int press = 0; press < tabPresses; ++press) {
-        deliverInputFrame(
-            reactHost, *fabricHost,
-            {InputEvent{.kind = InputEventKind::KeyPress, .key = kTabKeyName, .code = kTabKeyCode},
-             InputEvent{.kind = InputEventKind::KeyRelease, .key = kTabKeyName, .code = kTabKeyCode}});
+        deliverInputFrame(reactHost, *fabricHost,
+                          {InputEvent{.kind = InputEventKind::KeyPress, .key = kTabKeyName, .code = kTabKeyCode},
+                           InputEvent{.kind = InputEventKind::KeyRelease, .key = kTabKeyName, .code = kTabKeyCode}});
     }
 
     return finishFabricRun(reactHost, fabricHost);
@@ -664,8 +658,7 @@ FabricRunResult runTypedFabricBundle(const std::string& bundlePath, facebook::re
     std::unique_ptr<FabricHost> fabricHost = startFabricRun(reactHost, bundlePath, surfaceSize);
 
     if (waitForFirstCommit(reactHost, *fabricHost, true).empty()) {
-        std::cerr << "[bundle-runner] the bundle committed no scene, so there is nothing to type into"
-                  << std::endl;
+        std::cerr << "[bundle-runner] the bundle committed no scene, so there is nothing to type into" << std::endl;
     }
 
     // The same Tab a user presses to reach the field, through the same traversal `--focus-tab` proves: the

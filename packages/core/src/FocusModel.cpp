@@ -1,13 +1,13 @@
 #include "FocusModel.h"
 
-#include <react/renderer/components/view/accessibilityPropsConversions.h>
-
 #include <algorithm>
 #include <cstddef>
 #include <optional>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include <react/renderer/components/view/accessibilityPropsConversions.h>
 
 namespace react_native_linux {
 
@@ -116,8 +116,8 @@ std::string effectiveAccessibilityRole(const std::string& accessibilityRole, fac
 
 bool isTextInputComponent(const std::string& componentName) { return componentName == kTextInputComponentName; }
 
-std::optional<double> computeScrollIntoViewOffset(double viewportOffset, double viewportExtent,
-                                                  double targetOffset, double targetExtent) {
+std::optional<double> computeScrollIntoViewOffset(double viewportOffset, double viewportExtent, double targetOffset,
+                                                  double targetExtent) {
     if (targetOffset < viewportOffset) {
         return targetOffset;
     }

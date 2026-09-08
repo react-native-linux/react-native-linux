@@ -1,12 +1,12 @@
 #pragma once
 
-#include <react/renderer/attributedstring/primitives.h>
-
 #include <cstddef>
 #include <functional>
 #include <optional>
 #include <string>
 #include <vector>
+
+#include <react/renderer/attributedstring/primitives.h>
 
 namespace react_native_linux {
 

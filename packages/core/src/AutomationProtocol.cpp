@@ -6,7 +6,6 @@
 #include <cstdint>
 #include <exception>
 #include <folly/json/json.h>
-#include <react/renderer/components/view/accessibilityPropsConversions.h>
 #include <iostream>
 #include <mutex>
 #include <optional>
@@ -16,6 +15,8 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+#include <react/renderer/components/view/accessibilityPropsConversions.h>
 
 namespace react_native_linux {
 
@@ -177,9 +178,8 @@ std::string accessibilityRoleOf(const SceneNode& node) {
 }
 
 bool isAccessibilityPruned(const SceneNode& node) {
-    return node.accessibility.elementsHidden ||
-           node.accessibility.importantForAccessibility ==
-               facebook::react::ImportantForAccessibility::NoHideDescendants;
+    return node.accessibility.elementsHidden || node.accessibility.importantForAccessibility ==
+                                                    facebook::react::ImportantForAccessibility::NoHideDescendants;
 }
 
 bool isAccessibilityExposed(const SceneNode& node) {

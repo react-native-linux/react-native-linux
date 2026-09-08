@@ -5,8 +5,9 @@
 #include <gtest/gtest.h>
 #include <memory>
 #include <mutex>
-#include <react/runtime/TimerManager.h>
 #include <vector>
+
+#include <react/runtime/TimerManager.h>
 
 namespace react_native_linux {
 

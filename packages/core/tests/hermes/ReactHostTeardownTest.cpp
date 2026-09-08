@@ -1,9 +1,8 @@
 #include "ReactHost.h"
 
+#include <chrono>
 #include <cxxreact/JSBigString.h>
 #include <gtest/gtest.h>
-
-#include <chrono>
 #include <memory>
 
 namespace react_native_linux {
@@ -20,7 +19,7 @@ TEST(ReactHostTeardownTest, DestroysCleanlyWithAPendingTimerCallbackStillOutstan
     ReactHost reactHost;
 
     reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>(kScriptWithPendingTimer),
-                          "ReactHostTeardownTest.js");
+                         "ReactHostTeardownTest.js");
 
     EXPECT_FALSE(reactHost.runUntilQuiescent(kQuiescenceBudget));
 

@@ -34,11 +34,10 @@ struct TrackedImage {
  * observes the drop.
  */
 std::shared_ptr<const DecodedImageFrames> trackedImage(bool* destroyedFlag) {
-    return std::make_shared<const DecodedImageFrames>(
-        DecodedImageFrames{.frames = {std::shared_ptr<void>(new TrackedImage(destroyedFlag),
-                                                            [](TrackedImage* image) { delete image; })},
-                           .frameDurationsMilliseconds = {},
-                           .repetitionCount = 0});
+    return std::make_shared<const DecodedImageFrames>(DecodedImageFrames{
+        .frames = {std::shared_ptr<void>(new TrackedImage(destroyedFlag), [](TrackedImage* image) { delete image; })},
+        .frameDurationsMilliseconds = {},
+        .repetitionCount = 0});
 }
 
 TEST(ImageCacheTest, AdmitsAnImageAndAccountsItsBytes) {

@@ -12,6 +12,9 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <string>
+#include <utility>
+
 #include <react/renderer/attributedstring/AttributedString.h>
 #include <react/renderer/attributedstring/AttributedStringBox.h>
 #include <react/renderer/attributedstring/TextAttributes.h>
@@ -23,8 +26,6 @@
 #include <react/renderer/core/StateData.h>
 #include <react/renderer/graphics/Float.h>
 #include <react/renderer/graphics/Size.h>
-#include <string>
-#include <utility>
 
 namespace react_native_linux {
 

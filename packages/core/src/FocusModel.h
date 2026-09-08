@@ -1,12 +1,12 @@
 #pragma once
 
-#include <react/renderer/components/view/AccessibilityPrimitives.h>
-#include <react/renderer/core/ReactPrimitives.h>
-
 #include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
+
+#include <react/renderer/components/view/AccessibilityPrimitives.h>
+#include <react/renderer/core/ReactPrimitives.h>
 
 namespace react_native_linux {
 
@@ -133,8 +133,8 @@ std::string effectiveAccessibilityRole(const std::string& accessibilityRole, fac
  * the viewport reveals its start rather than oscillating between the two rules, because there is no offset that
  * satisfies both.
  */
-std::optional<double> computeScrollIntoViewOffset(double viewportOffset, double viewportExtent,
-                                                  double targetOffset, double targetExtent);
+std::optional<double> computeScrollIntoViewOffset(double viewportOffset, double viewportExtent, double targetOffset,
+                                                  double targetExtent);
 
 /**
  * Whether a focused component owns a text cursor, and therefore whether the compositor's text input is enabled

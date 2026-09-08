@@ -3,19 +3,19 @@
 #include "ConsoleBinding.h"
 #include "ReactNativeFeatureFlagsOverridesLinux.h"
 
-#include <cmath>
-#include <jsi/jsi.h>
-#include <react/featureflags/ReactNativeFeatureFlags.h>
-#include <react/renderer/animated/NativeAnimatedNodesManagerProvider.h>
-#include <react/renderer/runtimescheduler/RuntimeSchedulerCallInvoker.h>
-
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstddef>
+#include <jsi/jsi.h>
 #include <memory>
 #include <string>
 #include <thread>
 #include <utility>
+
+#include <react/featureflags/ReactNativeFeatureFlags.h>
+#include <react/renderer/animated/NativeAnimatedNodesManagerProvider.h>
+#include <react/renderer/runtimescheduler/RuntimeSchedulerCallInvoker.h>
 
 namespace react_native_linux {
 
@@ -64,13 +64,14 @@ void installAnimationFrameBinding(facebook::jsi::Runtime& runtime, AnimationFram
             runtime, facebook::jsi::PropNameID::forAscii(runtime, "requestAnimationFrame"), 1,
             [&animationFrameQueue](facebook::jsi::Runtime& callRuntime, const facebook::jsi::Value& /*thisValue*/,
                                    const facebook::jsi::Value* arguments, size_t count) {
-                if (count < 1 || !arguments[0].isObject() || !arguments[0].getObject(callRuntime).isFunction(callRuntime)) {
-                    throw facebook::jsi::JSError(
-                        callRuntime, "The first argument to requestAnimationFrame must be a function.");
+                if (count < 1 || !arguments[0].isObject() ||
+                    !arguments[0].getObject(callRuntime).isFunction(callRuntime)) {
+                    throw facebook::jsi::JSError(callRuntime,
+                                                 "The first argument to requestAnimationFrame must be a function.");
                 }
 
-                const std::shared_ptr<facebook::jsi::Function> callback =
-                    std::make_shared<facebook::jsi::Function>(arguments[0].getObject(callRuntime).getFunction(callRuntime));
+                const std::shared_ptr<facebook::jsi::Function> callback = std::make_shared<facebook::jsi::Function>(
+                    arguments[0].getObject(callRuntime).getFunction(callRuntime));
                 const uint64_t requestHandle =
                     animationFrameQueue.request([&callRuntime, callback](double frameTimestampMilliseconds) {
                         callback->call(callRuntime, frameTimestampMilliseconds);
@@ -196,12 +197,10 @@ void ReactHost::dispatchAnimationFrames(std::chrono::steady_clock::time_point no
         return;
     }
 
-    const double frameTimestampMilliseconds =
-        std::chrono::duration<double, std::milli>(now.time_since_epoch()).count();
+    const double frameTimestampMilliseconds = std::chrono::duration<double, std::milli>(now.time_since_epoch()).count();
 
     reactInstance_->getBufferedRuntimeExecutor()(
-        [&animationFrameQueue = animationFrameQueue_,
-         frameTimestampMilliseconds](facebook::jsi::Runtime& /*runtime*/) {
+        [&animationFrameQueue = animationFrameQueue_, frameTimestampMilliseconds](facebook::jsi::Runtime& /*runtime*/) {
             animationFrameQueue.dispatchFrame(frameTimestampMilliseconds);
         });
 }

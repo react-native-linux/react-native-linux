@@ -1,15 +1,13 @@
-#include "SceneTestSupport.h"
-
 #include "ActivityIndicatorContent.h"
 #include "RetainedScene.h"
+#include "SceneTestSupport.h"
 
 #include <gtest/gtest.h>
+#include <memory>
+#include <stdexcept>
 
 #include <react/renderer/components/FBReactNativeSpec/Props.h>
 #include <react/renderer/graphics/Color.h>
-
-#include <memory>
-#include <stdexcept>
 
 // The `<ActivityIndicator>` of issue #261: where the arc is stroked, how far round it has turned, and what stops
 // it turning. The picture is `activity-indicator.png`.

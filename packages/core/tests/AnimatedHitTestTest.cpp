@@ -4,24 +4,22 @@
 #include "RetainedScene.h"
 #include "SceneTestSupport.h"
 
-#include <gtest/gtest.h>
-
 #include <array>
-
-#include <folly/dynamic.h>
-#include <react/renderer/animated/NativeAnimatedNodesManager.h>
-#include <react/renderer/components/view/primitives.h>
-#include <react/renderer/core/ReactPrimitives.h>
-#include <yoga/enums/Overflow.h>
-
 #include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <folly/dynamic.h>
+#include <gtest/gtest.h>
 #include <memory>
 #include <optional>
 #include <unordered_map>
 #include <vector>
+#include <yoga/enums/Overflow.h>
+
+#include <react/renderer/animated/NativeAnimatedNodesManager.h>
+#include <react/renderer/components/view/primitives.h>
+#include <react/renderer/core/ReactPrimitives.h>
 
 // Issues #97 and #121: a native-driven animation writes the retained scene every frame and commits nothing, so
 // the shadow tree's LayoutMetrics describe where a moving node started rather than where it is. Hit testing
@@ -56,22 +54,14 @@ constexpr double kTranslation = 120.0;
 constexpr size_t kTickCount = 3;
 constexpr double kFrameIntervalMilliseconds = 1000.0 / 60.0;
 
-Size surfaceSize() {
-    return Size{.width = 800, .height = 600};
-}
+Size surfaceSize() { return Size{.width = 800, .height = 600}; }
 
-Rect boxFrame() {
-    return makeRect(100, 80, 200, 120);
-}
+Rect boxFrame() { return makeRect(100, 80, 200, 120); }
 
-Point pointAt(float x, float y) {
-    return Point{.x = x, .y = y};
-}
+Point pointAt(float x, float y) { return Point{.x = x, .y = y}; }
 
 // The centre of the box as it was laid out, which is also where a press lands before anything animates it.
-Point boxCentre() {
-    return pointAt(200, 140);
-}
+Point boxCentre() { return pointAt(200, 140); }
 
 std::shared_ptr<ViewProps> propsWithPointerEvents(PointerEventsMode pointerEvents) {
     const std::shared_ptr<ViewProps> viewProps = std::make_shared<ViewProps>();
@@ -127,9 +117,7 @@ RetainedScene sceneWithBox(const std::shared_ptr<ViewProps>& viewProps) {
 }
 
 // A child that pokes out of its parent on the right, so a clip and the absence of one give different answers.
-Rect innerFrame() {
-    return makeRect(150, 20, 200, 80);
-}
+Rect innerFrame() { return makeRect(150, 20, 200, 80); }
 
 RetainedScene sceneWithNestedBox(const std::shared_ptr<ViewProps>& viewProps) {
     RetainedScene scene = sceneWithBox(viewProps);
@@ -142,8 +130,7 @@ RetainedScene sceneWithNestedBox(const std::shared_ptr<ViewProps>& viewProps) {
 // The payload `TransformAnimatedNode::collectViewUpdates` produces for one animated `translateX`, which is what
 // reaches `synchronouslyUpdateViewOnUIThread` under the `transform` key.
 folly::dynamic translationProps(double translateX) {
-    return folly::dynamic::object("transform",
-                                  folly::dynamic::array(folly::dynamic::object("translateX", translateX)));
+    return folly::dynamic::object("transform", folly::dynamic::array(folly::dynamic::object("translateX", translateX)));
 }
 
 // Mounts a painted box under a fresh surface and consumes the frame that mounting it produced.
@@ -167,9 +154,7 @@ std::chrono::steady_clock::time_point& frameTime() {
     return tickTime;
 }
 
-std::chrono::steady_clock::time_point frameTimeNow() {
-    return frameTime();
-}
+std::chrono::steady_clock::time_point frameTimeNow() { return frameTime(); }
 
 TEST(AnimatedHitTestTest, APointOnANodeFindsThatNodeAndTheOriginItWasPaintedAt) {
     const RetainedScene scene = sceneWithBox(propsWithBackground(blue()));
@@ -258,14 +243,22 @@ TEST(AnimatedHitTestTest, PointerEventsComposeAcrossTwoLevelsAsTheTableSays) {
     constexpr PointerEventsMode kBoxNone = PointerEventsMode::BoxNone;
     constexpr PointerEventsMode kBoxOnly = PointerEventsMode::BoxOnly;
     const std::array<PointerEventsCase, 16> table{{
-        {kAuto, kAuto, kInnerTag, kBoxTag},       {kAuto, kNone, kBoxTag, kBoxTag},
-        {kAuto, kBoxNone, kBoxTag, kBoxTag},      {kAuto, kBoxOnly, kInnerTag, kBoxTag},
-        {kNone, kAuto, kSurfaceTag, kSurfaceTag}, {kNone, kNone, kSurfaceTag, kSurfaceTag},
-        {kNone, kBoxNone, kSurfaceTag, kSurfaceTag}, {kNone, kBoxOnly, kSurfaceTag, kSurfaceTag},
-        {kBoxNone, kAuto, kInnerTag, kSurfaceTag}, {kBoxNone, kNone, kSurfaceTag, kSurfaceTag},
-        {kBoxNone, kBoxNone, kSurfaceTag, kSurfaceTag}, {kBoxNone, kBoxOnly, kInnerTag, kSurfaceTag},
-        {kBoxOnly, kAuto, kBoxTag, kBoxTag},      {kBoxOnly, kNone, kBoxTag, kBoxTag},
-        {kBoxOnly, kBoxNone, kBoxTag, kBoxTag},   {kBoxOnly, kBoxOnly, kBoxTag, kBoxTag},
+        {kAuto, kAuto, kInnerTag, kBoxTag},
+        {kAuto, kNone, kBoxTag, kBoxTag},
+        {kAuto, kBoxNone, kBoxTag, kBoxTag},
+        {kAuto, kBoxOnly, kInnerTag, kBoxTag},
+        {kNone, kAuto, kSurfaceTag, kSurfaceTag},
+        {kNone, kNone, kSurfaceTag, kSurfaceTag},
+        {kNone, kBoxNone, kSurfaceTag, kSurfaceTag},
+        {kNone, kBoxOnly, kSurfaceTag, kSurfaceTag},
+        {kBoxNone, kAuto, kInnerTag, kSurfaceTag},
+        {kBoxNone, kNone, kSurfaceTag, kSurfaceTag},
+        {kBoxNone, kBoxNone, kSurfaceTag, kSurfaceTag},
+        {kBoxNone, kBoxOnly, kInnerTag, kSurfaceTag},
+        {kBoxOnly, kAuto, kBoxTag, kBoxTag},
+        {kBoxOnly, kNone, kBoxTag, kBoxTag},
+        {kBoxOnly, kBoxNone, kBoxTag, kBoxTag},
+        {kBoxOnly, kBoxOnly, kBoxTag, kBoxTag},
     }};
 
     for (const PointerEventsCase& entry : table) {
@@ -421,37 +414,31 @@ TEST_F(AnimatedFrameAgreementTest, EveryTickLeavesTheSceneAtTheValueTheDriverJus
             handedOverTranslations.push_back(props["transform"][0]["translateX"].asDouble());
             mountingManager.synchronouslyUpdateViewOnUIThread(tag, props);
         },
-        [&fabricCommitCount](std::unordered_map<Tag, folly::dynamic>& /*updates*/) { ++fabricCommitCount; },
-        nullptr);
+        [&fabricCommitCount](std::unordered_map<Tag, folly::dynamic>& /*updates*/) { ++fabricCommitCount; }, nullptr);
 
     // The batch AnimatedModule::finishOperationBatch would have queued: the graph is built and the animation
     // started on the render thread, inside the first tick, exactly as it is in the window.
     NativeAnimatedNodesManager* manager = nodesManager.get();
 
     nodesManager->scheduleOnUI([manager]() {
-        manager->createAnimatedNode(kValueNodeTag,
-                                    folly::dynamic::object("type", "value")("value", 0)("offset", 0));
-        manager->createAnimatedNode(
-            kTransformNodeTag,
-            folly::dynamic::object("type", "transform")(
-                "transforms", folly::dynamic::array(folly::dynamic::object("type", "animated")(
-                                  "property", "translateX")("nodeTag", kValueNodeTag))));
+        manager->createAnimatedNode(kValueNodeTag, folly::dynamic::object("type", "value")("value", 0)("offset", 0));
+        manager->createAnimatedNode(kTransformNodeTag,
+                                    folly::dynamic::object("type", "transform")(
+                                        "transforms", folly::dynamic::array(folly::dynamic::object("type", "animated")(
+                                                          "property", "translateX")("nodeTag", kValueNodeTag))));
         manager->createAnimatedNode(
             kStyleNodeTag,
-            folly::dynamic::object("type", "style")("style",
-                                                    folly::dynamic::object("transform", kTransformNodeTag)));
-        manager->createAnimatedNode(
-            kPropsNodeTag,
-            folly::dynamic::object("type", "props")("props", folly::dynamic::object("style", kStyleNodeTag)));
+            folly::dynamic::object("type", "style")("style", folly::dynamic::object("transform", kTransformNodeTag)));
+        manager->createAnimatedNode(kPropsNodeTag, folly::dynamic::object("type", "props")(
+                                                       "props", folly::dynamic::object("style", kStyleNodeTag)));
         manager->connectAnimatedNodes(kValueNodeTag, kTransformNodeTag);
         manager->connectAnimatedNodes(kTransformNodeTag, kStyleNodeTag);
         manager->connectAnimatedNodes(kStyleNodeTag, kPropsNodeTag);
         manager->connectAnimatedNodeToView(kPropsNodeTag, kBoxTag);
-        manager->startAnimatingNode(
-            kAnimationId, kValueNodeTag,
-            folly::dynamic::object("type", "frames")("frames", folly::dynamic::array(0.0, 0.5, 1.0))(
-                "toValue", kTranslationEnd),
-            std::nullopt);
+        manager->startAnimatingNode(kAnimationId, kValueNodeTag,
+                                    folly::dynamic::object("type", "frames")(
+                                        "frames", folly::dynamic::array(0.0, 0.5, 1.0))("toValue", kTranslationEnd),
+                                    std::nullopt);
     });
 
     std::vector<size_t> commitsPerTick;

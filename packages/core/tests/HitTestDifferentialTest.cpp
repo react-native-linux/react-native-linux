@@ -6,6 +6,10 @@
 #include <gtest/gtest.h>
 #include <initializer_list>
 #include <memory>
+#include <utility>
+#include <vector>
+#include <yoga/enums/PositionType.h>
+
 #include <react/renderer/components/scrollview/ScrollViewProps.h>
 #include <react/renderer/components/scrollview/ScrollViewShadowNode.h>
 #include <react/renderer/components/scrollview/ScrollViewState.h>
@@ -23,9 +27,6 @@
 #include <react/renderer/graphics/Rect.h>
 #include <react/renderer/graphics/Transform.h>
 #include <react/renderer/mounting/ShadowView.h>
-#include <utility>
-#include <vector>
-#include <yoga/enums/PositionType.h>
 
 // Issue #235. `RetainedScene::findNodeAtPoint` reads the painted scene and
 // `LayoutableShadowNode::findNodeAtPoint` reads the committed shadow tree — #97 splits them on purpose so an

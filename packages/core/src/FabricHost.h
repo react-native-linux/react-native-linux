@@ -7,6 +7,12 @@
 #include "RetainedScene.h"
 #include "ScrollController.h"
 
+#include <chrono>
+#include <functional>
+#include <memory>
+#include <string>
+#include <vector>
+
 #include <react/renderer/componentregistry/ComponentDescriptorProviderRegistry.h>
 #include <react/renderer/graphics/Size.h>
 #include <react/renderer/scheduler/Scheduler.h>
@@ -15,12 +21,6 @@
 #include <react/renderer/uimanager/UIManagerAnimationBackend.h>
 #include <react/runtime/ReactInstance.h>
 #include <react/utils/ContextContainer.h>
-
-#include <chrono>
-#include <functional>
-#include <memory>
-#include <string>
-#include <vector>
 
 namespace react_native_linux {
 

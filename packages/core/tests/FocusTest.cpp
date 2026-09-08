@@ -1,25 +1,24 @@
 #include "FocusModel.h"
 
 #include <gtest/gtest.h>
-
-#include <react/renderer/components/view/AccessibilityPrimitives.h>
-#include <react/renderer/core/ReactPrimitives.h>
-
 #include <optional>
 #include <string>
 #include <vector>
+
+#include <react/renderer/components/view/AccessibilityPrimitives.h>
+#include <react/renderer/core/ReactPrimitives.h>
 
 namespace {
 
 using facebook::react::Role;
 using facebook::react::Tag;
+using react_native_linux::computeScrollIntoViewOffset;
+using react_native_linux::effectiveAccessibilityRole;
 using react_native_linux::FocusDirection;
+using react_native_linux::focusDirectionForKey;
 using react_native_linux::FocusModel;
 using react_native_linux::FocusOrigin;
 using react_native_linux::FocusTransition;
-using react_native_linux::computeScrollIntoViewOffset;
-using react_native_linux::effectiveAccessibilityRole;
-using react_native_linux::focusDirectionForKey;
 using react_native_linux::isActivationKey;
 using react_native_linux::isTextInputComponent;
 
@@ -130,8 +129,8 @@ TEST_P(FocusTagWithVisibilityTest, TheRequestedVisibilityWinsRegardlessOfOrigin)
 }
 
 INSTANTIATE_TEST_SUITE_P(FocusCommand, FocusTagWithVisibilityTest,
-                        ::testing::Values(FocusVisibilityCase{.requestedVisibility = true},
-                                          FocusVisibilityCase{.requestedVisibility = false}));
+                         ::testing::Values(FocusVisibilityCase{.requestedVisibility = true},
+                                           FocusVisibilityCase{.requestedVisibility = false}));
 
 TEST(FocusModelTest, FocusTagWithVisibilityStillBlursOnATagThatIsNotFocusable) {
     FocusModel model = modelWithThreeFocusables();

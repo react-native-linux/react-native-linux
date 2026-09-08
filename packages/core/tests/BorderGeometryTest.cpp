@@ -1,13 +1,12 @@
 #include "SceneTestSupport.h"
 
-#include <gtest/gtest.h>
-
-#include <react/renderer/components/view/primitives.h>
-
 #include <array>
+#include <gtest/gtest.h>
 #include <yoga/enums/Edge.h>
 #include <yoga/enums/Overflow.h>
 #include <yoga/style/StyleLength.h>
+
+#include <react/renderer/components/view/primitives.h>
 
 // Issues #99 and #100.
 //
@@ -28,21 +27,17 @@ namespace yoga = facebook::yoga;
 using facebook::react::BorderRadii;
 using facebook::react::BorderWidths;
 using facebook::react::CornerRadii;
-using react_native_linux::SceneRoundedBox;
 using react_native_linux::roundedBorderBox;
 using react_native_linux::roundedBoxContainsPoint;
 using react_native_linux::roundedContentBox;
+using react_native_linux::SceneRoundedBox;
 
 constexpr Tag kBoxTag = 2;
 constexpr Tag kInnerTag = 3;
 
-Point pointAt(float x, float y) {
-    return Point{.x = x, .y = y};
-}
+Point pointAt(float x, float y) { return Point{.x = x, .y = y}; }
 
-CornerRadii circularCorner(float radius) {
-    return CornerRadii{.vertical = radius, .horizontal = radius};
-}
+CornerRadii circularCorner(float radius) { return CornerRadii{.vertical = radius, .horizontal = radius}; }
 
 BorderRadii uniformRadii(float radius) {
     return BorderRadii{.topLeft = circularCorner(radius),
@@ -58,9 +53,7 @@ void expectCorner(const CornerRadii& corner, float horizontal, float vertical) {
 
 // A frame whose top-left corner arc is centred at (160, 140) with a radius of 60, so the arithmetic in the press
 // tests below is readable rather than derived.
-Rect boxFrame() {
-    return makeRect(100, 80, 200, 120);
-}
+Rect boxFrame() { return makeRect(100, 80, 200, 120); }
 
 constexpr float kCornerRadius = 60.0F;
 
@@ -101,8 +94,8 @@ SceneSnapshot snapshotOfBorderWidths(float width, float pointScaleFactor) {
 
 TEST(BorderGeometryTest, TheContentBoxIsTheBorderBoxInsetByEachSideWithItsCornersReduced) {
     const SceneRoundedBox borderBox = roundedBorderBox(makeRect(10, 20, 200, 100), uniformRadii(30));
-    const SceneRoundedBox contentBox = roundedContentBox(
-        borderBox, BorderWidths{.left = 4, .top = 6, .right = 8, .bottom = 10});
+    const SceneRoundedBox contentBox =
+        roundedContentBox(borderBox, BorderWidths{.left = 4, .top = 6, .right = 8, .bottom = 10});
 
     EXPECT_FLOAT_EQ(contentBox.bounds.origin.x, 14);
     EXPECT_FLOAT_EQ(contentBox.bounds.origin.y, 26);
@@ -118,8 +111,8 @@ TEST(BorderGeometryTest, TheContentBoxIsTheBorderBoxInsetByEachSideWithItsCorner
 
 TEST(BorderGeometryTest, ABorderWiderThanTheBoxCollapsesTheContentBoxInsteadOfInvertingIt) {
     const SceneRoundedBox borderBox = roundedBorderBox(makeRect(0, 0, 40, 20), uniformRadii(6));
-    const SceneRoundedBox contentBox = roundedContentBox(
-        borderBox, BorderWidths{.left = 100, .top = 100, .right = 100, .bottom = 100});
+    const SceneRoundedBox contentBox =
+        roundedContentBox(borderBox, BorderWidths{.left = 100, .top = 100, .right = 100, .bottom = 100});
 
     EXPECT_FLOAT_EQ(contentBox.bounds.origin.x, 40);
     EXPECT_FLOAT_EQ(contentBox.bounds.origin.y, 20);
@@ -173,9 +166,7 @@ TEST(BorderGeometryTest, EachRoundedCornerExcludesThePointsItsOwnArcDoesNotCover
 
 constexpr uint32_t kHalfBlueArgb = 0x803366CCU;
 
-facebook::react::SharedColor halfBlue() {
-    return facebook::react::colorFromRGBA(51, 102, 204, 128);
-}
+facebook::react::SharedColor halfBlue() { return facebook::react::colorFromRGBA(51, 102, 204, 128); }
 
 SceneSnapshot snapshotOfBorderStyle(yoga::StyleLength width, facebook::react::BorderStyle borderStyle,
                                     facebook::react::SharedColor backgroundColor) {
@@ -278,8 +269,7 @@ TEST(BorderGeometryTest, TheHitRegionIsTheSameRoundedBoxTheSnapshotIsPaintedWith
 
     for (int column = 0; column < 70; column++) {
         for (int row = 0; row < 44; row++) {
-            const Point sample = pointAt(96.0F + static_cast<float>(column * 3),
-                                         76.0F + static_cast<float>(row * 3));
+            const Point sample = pointAt(96.0F + static_cast<float>(column * 3), 76.0F + static_cast<float>(row * 3));
             const bool isPainted = roundedBoxContainsPoint(painted, sample);
 
             EXPECT_EQ(scene.findNodeAtPoint(kSurfaceTag, sample).tag == kBoxTag, isPainted)

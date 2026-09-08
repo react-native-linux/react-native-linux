@@ -1,8 +1,7 @@
 #include "FrameClock.h"
 
-#include <gtest/gtest.h>
-
 #include <chrono>
+#include <gtest/gtest.h>
 
 namespace {
 

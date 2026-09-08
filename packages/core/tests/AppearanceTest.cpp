@@ -1,4 +1,5 @@
 #include "Appearance.h"
+
 #include "PlatformColor.h"
 
 #include <cstdint>
@@ -13,9 +14,9 @@
 namespace {
 
 using react_native_linux::AppearanceModel;
+using react_native_linux::ColorScheme;
 using react_native_linux::colorSchemeFromName;
 using react_native_linux::colorSchemeFromPortalSetting;
-using react_native_linux::ColorScheme;
 using react_native_linux::kFallbackColorScheme;
 using react_native_linux::nameOfColorScheme;
 using react_native_linux::platformColor;
@@ -57,18 +58,19 @@ TEST_P(OverrideChangeTest, MatchesTheTable) {
     EXPECT_EQ(shouldEmitOnOverrideChange(testCase.previousOverride, testCase.nextOverride), testCase.expectedEmit);
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    Table, OverrideChangeTest,
-    ::testing::Values(
-        // Setting an override for the first time emits.
-        OverrideChangeCase{std::nullopt, kDark, true}, OverrideChangeCase{std::nullopt, kLight, true},
-        // Clearing an override emits, "returning to the portal value".
-        OverrideChangeCase{kDark, std::nullopt, true}, OverrideChangeCase{kLight, std::nullopt, true},
-        // Switching between the two override values emits.
-        OverrideChangeCase{kDark, kLight, true}, OverrideChangeCase{kLight, kDark, true},
-        // Restating the same override, or clearing an override that was never set, is a no-op.
-        OverrideChangeCase{kDark, kDark, false}, OverrideChangeCase{kLight, kLight, false},
-        OverrideChangeCase{std::nullopt, std::nullopt, false}));
+INSTANTIATE_TEST_SUITE_P(Table, OverrideChangeTest,
+                         ::testing::Values(
+                             // Setting an override for the first time emits.
+                             OverrideChangeCase{std::nullopt, kDark, true},
+                             OverrideChangeCase{std::nullopt, kLight, true},
+                             // Clearing an override emits, "returning to the portal value".
+                             OverrideChangeCase{kDark, std::nullopt, true},
+                             OverrideChangeCase{kLight, std::nullopt, true},
+                             // Switching between the two override values emits.
+                             OverrideChangeCase{kDark, kLight, true}, OverrideChangeCase{kLight, kDark, true},
+                             // Restating the same override, or clearing an override that was never set, is a no-op.
+                             OverrideChangeCase{kDark, kDark, false}, OverrideChangeCase{kLight, kLight, false},
+                             OverrideChangeCase{std::nullopt, std::nullopt, false}));
 
 // shouldEmitOnPortalChange: an override in place swallows the signal; without one, only an actual value change
 // emits.
@@ -86,7 +88,7 @@ TEST_P(PortalChangeTest, MatchesTheTable) {
     const PortalChangeCase testCase = GetParam();
 
     EXPECT_EQ(shouldEmitOnPortalChange(testCase.currentOverride, testCase.previousPortalColorScheme,
-                                        testCase.nextPortalColorScheme),
+                                       testCase.nextPortalColorScheme),
               testCase.expectedEmit);
 }
 
@@ -323,9 +325,7 @@ TEST(PlatformColorUnknownNameTest, AnUnrecognisedNameResolvesToNothingInEitherSc
     EXPECT_EQ(platformColor("systemPinkColor", kDark), std::nullopt);
 }
 
-TEST(PlatformColorUnknownNameTest, AnEmptyNameResolvesToNothing) {
-    EXPECT_EQ(platformColor("", kLight), std::nullopt);
-}
+TEST(PlatformColorUnknownNameTest, AnEmptyNameResolvesToNothing) { EXPECT_EQ(platformColor("", kLight), std::nullopt); }
 
 constexpr int kConcurrentIterations = 2000;
 

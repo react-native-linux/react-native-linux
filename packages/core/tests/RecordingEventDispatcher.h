@@ -2,14 +2,15 @@
 
 #include <functional>
 #include <memory>
+#include <string>
+#include <vector>
+
 #include <react/renderer/core/EventBeat.h>
 #include <react/renderer/core/EventDispatcher.h>
 #include <react/renderer/core/EventListener.h>
 #include <react/renderer/core/EventQueueProcessor.h>
 #include <react/renderer/core/RawEvent.h>
 #include <react/renderer/runtimescheduler/RuntimeScheduler.h>
-#include <string>
-#include <vector>
 
 namespace react_native_linux {
 

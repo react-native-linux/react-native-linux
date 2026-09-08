@@ -28,9 +28,7 @@ double usableDecelerationRate(double decelerationRate) {
  * The whole distance a velocity still has to cover: the integral of `velocity * rate^t` over `t` from now until
  * the velocity reaches zero.
  */
-double momentumTravel(double velocity, double decelerationRate) {
-    return velocity / -std::log(decelerationRate);
-}
+double momentumTravel(double velocity, double decelerationRate) { return velocity / -std::log(decelerationRate); }
 
 /**
  * How far a snapped item's offset sits behind the multiple of the interval that names it, which is the whole of
@@ -160,8 +158,7 @@ ScrollAxisState dragAxis(const ScrollAxisState& axis, double delta, double frame
     const double moved = clampScrollOffset(axis.offset + delta, bounds);
     const bool hasElapsed = frameMilliseconds > 0.0;
 
-    return ScrollAxisState{.offset = moved,
-                           .velocity = hasElapsed ? (moved - axis.offset) / frameMilliseconds : 0.0};
+    return ScrollAxisState{.offset = moved, .velocity = hasElapsed ? (moved - axis.offset) / frameMilliseconds : 0.0};
 }
 
 ScrollDestination scrollToDestination(double currentOffset, double targetOffset, bool isAnimated,
@@ -179,9 +176,7 @@ ScrollDestination scrollToDestination(double currentOffset, double targetOffset,
     const double travel = destination - currentOffset;
     const double speed = velocityForTravel(std::abs(travel), decelerationRate);
 
-    return ScrollDestination{.offset = currentOffset,
-                             .velocity = travel < 0 ? -speed : speed,
-                             .hasWork = true};
+    return ScrollDestination{.offset = currentOffset, .velocity = travel < 0 ? -speed : speed, .hasWork = true};
 }
 
 bool hasSnapPoints(const ScrollSnapConfiguration& snapping) {
@@ -225,8 +220,7 @@ double settleTargetOffset(const ScrollAxisState& axis, double decelerationRate, 
         points.push_back(maximumOffset);
     }
 
-    const double target =
-        chooseSnapPoint(points, snapFrom, axis.velocity, snapping.isIntervalMomentumDisabled);
+    const double target = chooseSnapPoint(points, snapFrom, axis.velocity, snapping.isIntervalMomentumDisabled);
 
     return clampScrollOffset(target, bounds);
 }

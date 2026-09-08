@@ -9,6 +9,10 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
 #include <react/renderer/components/textinput/TextInputEventEmitter.h>
 #include <react/renderer/core/ReactPrimitives.h>
 #include <react/renderer/core/ShadowNode.h>
@@ -16,9 +20,6 @@
 #include <react/renderer/graphics/Rect.h>
 #include <react/renderer/graphics/Size.h>
 #include <react/renderer/uimanager/UIManager.h>
-#include <string>
-#include <unordered_map>
-#include <vector>
 
 namespace react_native_linux {
 

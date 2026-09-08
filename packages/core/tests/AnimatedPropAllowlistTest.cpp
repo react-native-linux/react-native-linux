@@ -1,20 +1,20 @@
 #include "AnimatedPropAllowlist.h"
+
 #include "LinuxMountingManager.h"
 #include "SceneTestSupport.h"
 
-#include <gtest/gtest.h>
-
-#include <folly/dynamic.h>
-#include <react/renderer/animated/NativeAnimatedNodesManager.h>
-#include <react/renderer/animated/internal/NativeAnimatedAllowlist.h>
-#include <react/renderer/core/ReactPrimitives.h>
-
 #include <algorithm>
+#include <folly/dynamic.h>
+#include <gtest/gtest.h>
 #include <limits>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+#include <react/renderer/animated/NativeAnimatedNodesManager.h>
+#include <react/renderer/animated/internal/NativeAnimatedAllowlist.h>
+#include <react/renderer/core/ReactPrimitives.h>
 
 // Issue #122: the set of props the Linux native driver can animate is written down once, in `kAnimatableProps`,
 // and this file is the boundary that keeps it honest in both directions. Upstream's
@@ -44,16 +44,36 @@ constexpr Tag kPropsNodeTag = 103;
 // spelling of a transform. None of them are refusals in principle — each is a paintable prop nobody has needed
 // yet, and moving one into `kAnimatableProps` means deleting its line here.
 std::vector<std::string> expectedUnpaintedUpstreamProps() {
-    return {"borderBottomColor",       "borderBottomEndRadius", "borderBottomLeftRadius",
-            "borderBottomRightRadius", "borderBottomStartRadius", "borderColor",
-            "borderEndColor",          "borderEndEndRadius",    "borderEndStartRadius",
-            "borderLeftColor",         "borderRadius",          "borderRightColor",
-            "borderStartColor",        "borderStartEndRadius",  "borderStartStartRadius",
-            "borderTopColor",          "borderTopEndRadius",    "borderTopLeftRadius",
-            "borderTopRightRadius",    "borderTopStartRadius",  "color",
-            "elevation",               "scaleX",                "scaleY",
-            "shadowOpacity",           "shadowRadius",          "tintColor",
-            "translateX",              "translateY",            "zIndex"};
+    return {"borderBottomColor",
+            "borderBottomEndRadius",
+            "borderBottomLeftRadius",
+            "borderBottomRightRadius",
+            "borderBottomStartRadius",
+            "borderColor",
+            "borderEndColor",
+            "borderEndEndRadius",
+            "borderEndStartRadius",
+            "borderLeftColor",
+            "borderRadius",
+            "borderRightColor",
+            "borderStartColor",
+            "borderStartEndRadius",
+            "borderStartStartRadius",
+            "borderTopColor",
+            "borderTopEndRadius",
+            "borderTopLeftRadius",
+            "borderTopRightRadius",
+            "borderTopStartRadius",
+            "color",
+            "elevation",
+            "scaleX",
+            "scaleY",
+            "shadowOpacity",
+            "shadowRadius",
+            "tintColor",
+            "translateX",
+            "translateY",
+            "zIndex"};
 }
 
 std::vector<std::string> upstreamPropsWeDoNotPaint() {
@@ -121,15 +141,12 @@ TEST(AnimatedPropAllowlistTest, ANonFiniteOpacityFromTheRealNodesManagerIsReject
     NativeAnimatedNodesManager* manager = nodesManager.get();
 
     nodesManager->scheduleOnUI([manager]() {
-        manager->createAnimatedNode(
-            kValueNodeTag,
-            folly::dynamic::object("type", "value")("value", std::numeric_limits<double>::quiet_NaN())("offset", 0));
-        manager->createAnimatedNode(
-            kStyleNodeTag,
-            folly::dynamic::object("type", "style")("style", folly::dynamic::object("opacity", kValueNodeTag)));
-        manager->createAnimatedNode(
-            kPropsNodeTag,
-            folly::dynamic::object("type", "props")("props", folly::dynamic::object("style", kStyleNodeTag)));
+        manager->createAnimatedNode(kValueNodeTag, folly::dynamic::object("type", "value")(
+                                                       "value", std::numeric_limits<double>::quiet_NaN())("offset", 0));
+        manager->createAnimatedNode(kStyleNodeTag, folly::dynamic::object("type", "style")(
+                                                       "style", folly::dynamic::object("opacity", kValueNodeTag)));
+        manager->createAnimatedNode(kPropsNodeTag, folly::dynamic::object("type", "props")(
+                                                       "props", folly::dynamic::object("style", kStyleNodeTag)));
         manager->connectAnimatedNodes(kValueNodeTag, kStyleNodeTag);
         manager->connectAnimatedNodes(kStyleNodeTag, kPropsNodeTag);
         manager->connectAnimatedNodeToView(kPropsNodeTag, kAnimatedTag);

@@ -6,13 +6,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <linux/input-event-codes.h>
-#include <react/renderer/components/view/PointerEvent.h>
-#include <react/renderer/graphics/Float.h>
-#include <react/timing/primitives.h>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
+
+#include <react/renderer/components/view/PointerEvent.h>
+#include <react/renderer/graphics/Float.h>
+#include <react/timing/primitives.h>
 
 namespace react_native_linux {
 

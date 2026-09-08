@@ -2,10 +2,9 @@
 
 #include "Appearance.h"
 
-#include <systemd/sd-bus.h>
-
 #include <memory>
 #include <optional>
+#include <systemd/sd-bus.h>
 
 namespace react_native_linux {
 

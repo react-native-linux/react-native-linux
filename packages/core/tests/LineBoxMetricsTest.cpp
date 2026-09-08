@@ -1,9 +1,8 @@
 #include "LineBoxMetrics.h"
 
-#include <gtest/gtest.h>
-
 #include <array>
 #include <cmath>
+#include <gtest/gtest.h>
 #include <optional>
 #include <string_view>
 

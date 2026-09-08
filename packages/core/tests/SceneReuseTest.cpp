@@ -3,8 +3,13 @@
 #include "SceneTestSupport.h"
 
 #include <gtest/gtest.h>
-
+#include <memory>
 #include <stdexcept>
+#include <string>
+#include <utility>
+#include <vector>
+#include <yoga/enums/Edge.h>
+#include <yoga/style/StyleLength.h>
 
 #include <react/renderer/components/view/ViewProps.h>
 #include <react/renderer/core/ReactPrimitives.h>
@@ -15,13 +20,6 @@
 #include <react/renderer/graphics/ValueUnit.h>
 #include <react/renderer/mounting/ShadowView.h>
 #include <react/renderer/mounting/ShadowViewMutation.h>
-#include <yoga/enums/Edge.h>
-#include <yoga/style/StyleLength.h>
-
-#include <memory>
-#include <string>
-#include <utility>
-#include <vector>
 
 // Issue #107: `RetainedScene` reuses a Fabric tag across a delete-then-create pair exactly the way iOS Fabric
 // recycles a view, and every one of the upstream `prepareForRecycle` bugs it links (core#55090, core#53050,
@@ -154,9 +152,9 @@ TEST(RetainedSceneReuseTest, AParagraphReplacedByAnEmptyOneCarriesNoOldTextEithe
 
 TEST(RetainedSceneReuseTest, AnImageReplacedByTheSameTagCarriesNoOldSourceOrTint) {
     RetainedScene scene;
-    const SceneSnapshot snapshot = snapshotAfterReplacement(scene, makeImage(2, makeRect(0, 0, 64, 48), "old.png",
-                                                                            red()),
-                                                            makeImage(2, makeRect(0, 0, 64, 48), "new.png", blue()));
+    const SceneSnapshot snapshot =
+        snapshotAfterReplacement(scene, makeImage(2, makeRect(0, 0, 64, 48), "old.png", red()),
+                                 makeImage(2, makeRect(0, 0, 64, 48), "new.png", blue()));
 
     ASSERT_EQ(snapshot.size(), 1U);
     ASSERT_TRUE(snapshot[0].image.has_value());

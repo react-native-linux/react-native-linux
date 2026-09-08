@@ -15,9 +15,9 @@ facebook::react::ShadowNodeTraits SwitchShadowNode::BaseTraits() {
     return traits;
 }
 
-facebook::react::Size SwitchShadowNode::measureContent(
-    const facebook::react::LayoutContext& /*layoutContext*/,
-    const facebook::react::LayoutConstraints& /*layoutConstraints*/) const {
+facebook::react::Size
+SwitchShadowNode::measureContent(const facebook::react::LayoutContext& /*layoutContext*/,
+                                 const facebook::react::LayoutConstraints& /*layoutConstraints*/) const {
     return kSwitchSize;
 }
 

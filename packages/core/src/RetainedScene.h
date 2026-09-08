@@ -3,7 +3,17 @@
 #include "AnimatedPropAllowlist.h"
 #include "ScrollPhysics.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <folly/dynamic.h>
+#include <functional>
+#include <memory>
+#include <optional>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+
 #include <react/renderer/attributedstring/AttributedString.h>
 #include <react/renderer/attributedstring/ParagraphAttributes.h>
 #include <react/renderer/components/view/AccessibilityPrimitives.h>
@@ -18,16 +28,6 @@
 #include <react/renderer/graphics/Size.h>
 #include <react/renderer/graphics/Transform.h>
 #include <react/renderer/mounting/ShadowView.h>
-
-#include <cstddef>
-#include <cstdint>
-#include <functional>
-#include <memory>
-#include <optional>
-#include <string>
-#include <unordered_map>
-#include <unordered_set>
-#include <vector>
 
 namespace react_native_linux {
 

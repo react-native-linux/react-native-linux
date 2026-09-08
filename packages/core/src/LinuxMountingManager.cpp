@@ -1,9 +1,6 @@
 #include "LinuxMountingManager.h"
 
 #include <glog/logging.h>
-#include <react/renderer/components/view/ViewProps.h>
-#include <react/renderer/mounting/ShadowViewMutation.h>
-
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -11,6 +8,9 @@
 #include <string_view>
 #include <utility>
 #include <vector>
+
+#include <react/renderer/components/view/ViewProps.h>
+#include <react/renderer/mounting/ShadowViewMutation.h>
 
 namespace react_native_linux {
 
@@ -167,7 +167,8 @@ SceneNodes LinuxMountingManager::visualTreeNodes() const {
 }
 
 void LinuxMountingManager::recordAccessibilityChangeIfAny(
-    const facebook::react::ShadowView& next, std::unordered_map<facebook::react::Tag, std::size_t>& changedThisTransaction) {
+    const facebook::react::ShadowView& next,
+    std::unordered_map<facebook::react::Tag, std::size_t>& changedThisTransaction) {
     const auto previous = scene_.nodes().find(next.tag);
 
     if (previous == scene_.nodes().end()) {
@@ -220,26 +221,27 @@ void LinuxMountingManager::executeMount(facebook::react::SurfaceId /*surfaceId*/
     std::unordered_map<facebook::react::Tag, std::size_t> accessibilityChangesThisTransaction;
 
     for (const facebook::react::ShadowViewMutation& mutation : mountingTransaction.getMutations()) {
-        switch (mutation.type) { // COV_EXCL: every ShadowViewMutation::Type value has a case, so the implicit no-match branch cannot execute
-            case facebook::react::ShadowViewMutation::Create:
-                scene_.createNode(mutation.newChildShadowView);
-                break;
-            case facebook::react::ShadowViewMutation::Delete:
-                verifyTagIsKnown("Delete", mutation.oldChildShadowView.tag);
-                scene_.deleteNode(mutation.oldChildShadowView.tag);
-                break;
-            case facebook::react::ShadowViewMutation::Insert:
-                scene_.insertChild(mutation.parentTag, mutation.newChildShadowView, mutation.index);
-                break;
-            case facebook::react::ShadowViewMutation::Remove:
-                verifyTagIsKnown("Remove", mutation.oldChildShadowView.tag);
-                scene_.removeChild(mutation.parentTag, mutation.oldChildShadowView);
-                break;
-            case facebook::react::ShadowViewMutation::Update:
-                verifyTagIsKnown("Update", mutation.newChildShadowView.tag);
-                recordAccessibilityChangeIfAny(mutation.newChildShadowView, accessibilityChangesThisTransaction);
-                scene_.updateNode(mutation.newChildShadowView);
-                break;
+        switch (mutation.type) { // COV_EXCL: every ShadowViewMutation::Type value has a case, so the implicit no-match
+                                 // branch cannot execute
+        case facebook::react::ShadowViewMutation::Create:
+            scene_.createNode(mutation.newChildShadowView);
+            break;
+        case facebook::react::ShadowViewMutation::Delete:
+            verifyTagIsKnown("Delete", mutation.oldChildShadowView.tag);
+            scene_.deleteNode(mutation.oldChildShadowView.tag);
+            break;
+        case facebook::react::ShadowViewMutation::Insert:
+            scene_.insertChild(mutation.parentTag, mutation.newChildShadowView, mutation.index);
+            break;
+        case facebook::react::ShadowViewMutation::Remove:
+            verifyTagIsKnown("Remove", mutation.oldChildShadowView.tag);
+            scene_.removeChild(mutation.parentTag, mutation.oldChildShadowView);
+            break;
+        case facebook::react::ShadowViewMutation::Update:
+            verifyTagIsKnown("Update", mutation.newChildShadowView.tag);
+            recordAccessibilityChangeIfAny(mutation.newChildShadowView, accessibilityChangesThisTransaction);
+            scene_.updateNode(mutation.newChildShadowView);
+            break;
         }
     }
 

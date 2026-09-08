@@ -1,8 +1,5 @@
 #include "ImageContent.h"
 
-#include <react/renderer/graphics/Float.h>
-#include <react/renderer/graphics/Point.h>
-
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -13,6 +10,9 @@
 #include <string_view>
 #include <utility>
 #include <vector>
+
+#include <react/renderer/graphics/Float.h>
+#include <react/renderer/graphics/Point.h>
 
 namespace react_native_linux {
 
@@ -152,9 +152,8 @@ ResolvedImageSource resolveImageSource(const std::string& uri, const std::string
     }
 
     if (startsWith(uri, kFileScheme)) {
-        return ResolvedImageSource{.kind = ImageSourceKind::File,
-                                   .filePath = uri.substr(kFileScheme.size()),
-                                   .bytes = {}};
+        return ResolvedImageSource{
+            .kind = ImageSourceKind::File, .filePath = uri.substr(kFileScheme.size()), .bytes = {}};
     }
 
     // Every other scheme is remote as far as this platform is concerned, and there is no networking stack behind
@@ -167,9 +166,7 @@ ResolvedImageSource resolveImageSource(const std::string& uri, const std::string
         return ResolvedImageSource{.kind = ImageSourceKind::File, .filePath = uri, .bytes = {}};
     }
 
-    return ResolvedImageSource{.kind = ImageSourceKind::File,
-                               .filePath = assetDirectory + "/" + uri,
-                               .bytes = {}};
+    return ResolvedImageSource{.kind = ImageSourceKind::File, .filePath = assetDirectory + "/" + uri, .bytes = {}};
 }
 
 facebook::react::Rect imagePlacement(SceneImageResizeMode resizeMode, const facebook::react::Rect& frame,
@@ -199,16 +196,15 @@ bool hasCapInsets(const facebook::react::EdgeInsets& capInsets) {
     return capInsets.left > 0 || capInsets.top > 0 || capInsets.right > 0 || capInsets.bottom > 0;
 }
 
-facebook::react::Rect capInsetsCenter(facebook::react::Size imageSize,
-                                      const facebook::react::EdgeInsets& capInsets) {
+facebook::react::Rect capInsetsCenter(facebook::react::Size imageSize, const facebook::react::EdgeInsets& capInsets) {
     const facebook::react::Float left = std::clamp(capInsets.left, 0.0F, imageSize.width);
     const facebook::react::Float right = std::clamp(capInsets.right, 0.0F, imageSize.width - left);
     const facebook::react::Float top = std::clamp(capInsets.top, 0.0F, imageSize.height);
     const facebook::react::Float bottom = std::clamp(capInsets.bottom, 0.0F, imageSize.height - top);
 
-    return facebook::react::Rect{.origin = {.x = left, .y = top},
-                                 .size = {.width = imageSize.width - left - right,
-                                          .height = imageSize.height - top - bottom}};
+    return facebook::react::Rect{
+        .origin = {.x = left, .y = top},
+        .size = {.width = imageSize.width - left - right, .height = imageSize.height - top - bottom}};
 }
 
 bool isAnimatedImage(const DecodedImageFrames& decoded) {
@@ -275,13 +271,9 @@ void ImageCache::insert(const std::string& uri, std::shared_ptr<const DecodedIma
     }
 }
 
-size_t ImageCache::byteCount() const {
-    return byteCount_;
-}
+size_t ImageCache::byteCount() const { return byteCount_; }
 
-size_t ImageCache::entryCount() const {
-    return entries_.size();
-}
+size_t ImageCache::entryCount() const { return entries_.size(); }
 
 void ImageCache::eraseEntry(const std::string& uri) {
     const auto entry = entries_.find(uri);
@@ -312,9 +304,7 @@ void PendingImageDecodes::notePublished() {
 }
 
 bool PendingImageDecodes::waitUntilSettled(std::mutex& registrationMutex, std::chrono::milliseconds budget) {
-    {
-        const std::lock_guard<std::mutex> registrationGuard(registrationMutex);
-    }
+    { const std::lock_guard<std::mutex> registrationGuard(registrationMutex); }
 
     std::unique_lock<std::mutex> guard(mutex_);
 

@@ -3,14 +3,14 @@
 #include "EditorModel.h"
 #include "RetainedScene.h"
 
+#include <cstddef>
+#include <string>
+#include <vector>
+
 #include <react/renderer/attributedstring/AttributedString.h>
 #include <react/renderer/attributedstring/ParagraphAttributes.h>
 #include <react/renderer/graphics/Point.h>
 #include <react/renderer/graphics/Rect.h>
-
-#include <cstddef>
-#include <string>
-#include <vector>
 
 namespace react_native_linux {
 

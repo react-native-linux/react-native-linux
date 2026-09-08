@@ -4,10 +4,11 @@
 #include <array>
 #include <cmath>
 #include <folly/dynamic.h>
-#include <react/renderer/animated/nodes/AnimatedNode.h>
-#include <react/renderer/animated/nodes/StyleAnimatedNode.h>
 #include <string>
 #include <vector>
+
+#include <react/renderer/animated/nodes/AnimatedNode.h>
+#include <react/renderer/animated/nodes/StyleAnimatedNode.h>
 
 namespace facebook::react {
 

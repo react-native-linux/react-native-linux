@@ -1,17 +1,15 @@
-#include "SceneTestSupport.h"
-
 #include "RetainedScene.h"
+#include "SceneTestSupport.h"
 #include "SwitchComponent.h"
 #include "SwitchContent.h"
 
+#include <cstdint>
 #include <gtest/gtest.h>
+#include <memory>
+#include <stdexcept>
 
 #include <react/renderer/components/FBReactNativeSpec/Props.h>
 #include <react/renderer/graphics/Color.h>
-
-#include <cstdint>
-#include <memory>
-#include <stdexcept>
 
 // The `<Switch>` of issue #261, in the three layers that can be wrong arithmetically: where the two parts are
 // drawn, how the thumb gets from one end to the other on the frame clock, and what the scene reads off the props

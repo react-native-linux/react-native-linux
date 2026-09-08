@@ -3,9 +3,8 @@
 #include "Appearance.h"
 #include "DimensionsSource.h"
 
-#include <jsi/jsi.h>
-
 #include <functional>
+#include <jsi/jsi.h>
 #include <memory>
 #include <string_view>
 #include <unordered_map>
@@ -39,8 +38,9 @@ class LinuxDeviceInfoModule;
  *
  * `DeviceInfo` and `Appearance` are constructed eagerly rather than per lookup, because the frame thread needs a
  * handle to each to emit `didUpdateDimensions` and `appearanceChanged` whether or not JavaScript has ever asked
- * for the module. `AnimatedModule` is built per lookup, which is what upstream does, and is what defers `NativeAnimatedNodesManagerProvider::getOrCreate` —
- * and therefore the `UIManagerBinding` lookup inside it — until JavaScript actually reaches for the module.
+ * for the module. `AnimatedModule` is built per lookup, which is what upstream does, and is what defers
+ * `NativeAnimatedNodesManagerProvider::getOrCreate` — and therefore the `UIManagerBinding` lookup inside it — until
+ * JavaScript actually reaches for the module.
  *
  * Threading contract: `install` runs on the JavaScript thread, inside the `initializeRuntime` bindings installer,
  * and so does every factory in the map, because `TurboModuleBinding` only calls the provider from a JavaScript

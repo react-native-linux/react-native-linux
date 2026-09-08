@@ -1,10 +1,10 @@
 #pragma once
 
-#include <react/renderer/graphics/BackgroundImage.h>
-#include <react/renderer/graphics/Rect.h>
-
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkShader.h"
+
+#include <react/renderer/graphics/BackgroundImage.h>
+#include <react/renderer/graphics/Rect.h>
 
 namespace react_native_linux {
 

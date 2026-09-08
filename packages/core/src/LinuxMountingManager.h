@@ -3,20 +3,20 @@
 #include "AutomationProtocol.h"
 #include "RetainedScene.h"
 
+#include <cstdint>
 #include <folly/dynamic.h>
+#include <mutex>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <vector>
+
 #include <react/renderer/core/ReactPrimitives.h>
 #include <react/renderer/graphics/Point.h>
 #include <react/renderer/graphics/Size.h>
 #include <react/renderer/mounting/MountingTransaction.h>
 #include <react/renderer/mounting/ShadowView.h>
 #include <react/renderer/uimanager/IMountingManager.h>
-
-#include <cstdint>
-#include <mutex>
-#include <string>
-#include <string_view>
-#include <unordered_map>
-#include <vector>
 
 namespace react_native_linux {
 

@@ -313,8 +313,8 @@ TEST(WindowDecorationsTest, TheConversionPairIsExactOnTheScaleGridAndBoundedByCe
 
     for (const ScaleGridCase& gridCase : cases) {
         const WindowExtent surface{gridCase.surfaceExtent, gridCase.surfaceExtent};
-        const WindowExtent logical = surfaceToLogical(DecorationMode::Server, /*isFullscreen=*/false, kMetrics,
-                                                       gridCase.scale, surface);
+        const WindowExtent logical =
+            surfaceToLogical(DecorationMode::Server, /*isFullscreen=*/false, kMetrics, gridCase.scale, surface);
         const WindowExtent roundTripped =
             logicalToSurface(DecorationMode::Server, /*isFullscreen=*/false, kMetrics, gridCase.scale, logical);
         const WindowExtent expectedRoundTripped{gridCase.expectedRoundTrippedExtent,
@@ -444,7 +444,8 @@ TEST(WindowDecorationsTest, ReleaseDropsTheCaptureABareOrServerModeWouldOtherwis
         capture.release();
 
         // Client: the dropped capture no longer overrides the next event's own hit test, in either direction.
-        EXPECT_TRUE(capture.routeToContent(DecorationHit::Content, /*isPrimaryPress=*/false, /*isPrimaryRelease=*/false))
+        EXPECT_TRUE(
+            capture.routeToContent(DecorationHit::Content, /*isPrimaryPress=*/false, /*isPrimaryRelease=*/false))
             << releaseCase.name;
         EXPECT_FALSE(capture.routeToContent(DecorationHit::Close, /*isPrimaryPress=*/false, /*isPrimaryRelease=*/false))
             << releaseCase.name;

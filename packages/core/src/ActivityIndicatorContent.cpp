@@ -18,8 +18,7 @@ float activityIndicatorPhase(double elapsedMilliseconds) {
 
 ActivityIndicatorGeometry activityIndicatorGeometry(const facebook::react::Rect& frame,
                                                     const SceneActivityIndicatorContent& content) {
-    const float strokeWidth =
-        content.isLarge ? kActivityIndicatorLargeStrokeWidth : kActivityIndicatorSmallStrokeWidth;
+    const float strokeWidth = content.isLarge ? kActivityIndicatorLargeStrokeWidth : kActivityIndicatorSmallStrokeWidth;
     const float diameter =
         std::max(static_cast<float>(std::min(frame.size.width, frame.size.height)) - strokeWidth, 0.0F);
     const facebook::react::Point origin{.x = frame.origin.x + ((frame.size.width - diameter) / 2),
