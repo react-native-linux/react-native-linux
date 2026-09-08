@@ -175,6 +175,8 @@ public:
      */
     void startInteractiveMove();
     void startInteractiveResize(uint32_t edge);
+    /** `xdg_toplevel::show_window_menu`, at the surface point the secondary press that asked for it landed on. */
+    void showWindowMenu(int32_t x, int32_t y);
     void toggleMaximized();
     void minimize();
     /** What the drawn close button does: the same flag `xdg_toplevel.close` sets, so teardown takes one path. */
