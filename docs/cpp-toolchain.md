@@ -7164,10 +7164,16 @@ because there is then nothing to convert against. Only that short-circuit was pr
 journal's own line for the same event:
 
 ```json
-{"journal":true,"dirtyToPresentNs":11000000,"paintNs":3000000,"hang":false}
+{"journal":true,"dirtyToPresentNs":11000000,"paintNs":3000000,"inputEvents":2,"hang":false}
 ```
 
-`paintNs` is absent when no paint span was recorded for that interval; `hang` is always present. The run ends
+`paintNs` is absent when no paint span was recorded for that interval; `inputEvents` is absent when the frame
+answered no input, which is most frames; `hang` is always present. `inputEvents` is the input tag — the number of
+events the window had received but no presented frame had yet answered when the interval's dirty edge fired, fed
+by `WindowSession::deliverInput` from the batch's size before it dispatches. It is what makes an injected input
+event traceable to the presented frame that answered it: the charge accumulates until a dirty edge takes it,
+survives an idle-boundary present and a discontinuity (input nobody answered is still owed an answer), and is
+lost only with an interval the compositor discarded. The run ends
 with the journal's own summary line, beside `FrameTiming`'s:
 
 ```json
@@ -7195,6 +7201,12 @@ actually measured under cage and lavapipe across two runs of #345's PR: animated
 0 hangs and a 15.99 ms maximum both times, raf-idle 237 frames with 0 hangs at 17.5 ms and 238 with 1 hang at
 36.9 ms, and the short scenarios reported the first frame after mount as a hang at 50-73 ms. The 1 is headroom
 for exactly that first-frame-after-mount hang; a second hang in a 240-frame run is a regression.
+
+**The trace.** A scenario's `"inputTrace": true` turns the journal's input tag into a gate (#345's e2e half): the
+run's frame log must carry at least one journal record naming the input its presented frame answered, which is
+the trace from the injector's pointer event to the light it reached. `mouse-button.json` sets it. The gate fails
+closed — a log without the journal's summary is the same failure a missing `FrameTiming` summary is, and a
+journal that closed no input-answering frame means the injection never reached light.
 
 ### Screenshots
 

@@ -3,6 +3,7 @@ import {
   describeFrameJournal,
   describeFrameTiming,
   findFrameBudgetFailures,
+  findInputTraceFailures,
   parseFrameJournalSummary,
   parseFrameLogSummary,
 } from "./frame-log.ts";
@@ -72,17 +73,21 @@ const gradeFrameTiming = (scenario: Scenario, frameLogPath: string): Grade => {
   const frameLogText = existsSync(frameLogPath) ? readFileSync(frameLogPath, "utf8") : NO_TEXT;
   const summary = parseFrameLogSummary(frameLogText);
   const journalSummary = parseFrameJournalSummary(frameLogText);
+  const inputTraceFailures = findInputTraceFailures(frameLogText, scenario.inputTrace, frameLogPath);
   const notes = [
     ...(summary === null ? [] : [describeFrameTiming(summary)]),
     ...(journalSummary === null ? [] : [describeFrameJournal(journalSummary)]),
   ];
 
   if (scenario.frameBudget === null) {
-    return { failures: [], notes };
+    return { failures: inputTraceFailures, notes };
   }
 
   return {
-    failures: findFrameBudgetFailures({ budget: scenario.frameBudget, frameLogPath, journalSummary, summary }),
+    failures: [
+      ...findFrameBudgetFailures({ budget: scenario.frameBudget, frameLogPath, journalSummary, summary }),
+      ...inputTraceFailures,
+    ],
     notes,
   };
 };

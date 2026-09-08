@@ -3,6 +3,7 @@ import {
   describeFrameJournal,
   describeFrameTiming,
   findFrameBudgetFailures,
+  findInputTraceFailures,
   parseFrameJournalSummary,
   parseFrameLogSummary,
 } from "./frame-log.ts";
@@ -241,6 +242,36 @@ describe("findFrameBudgetFailures hang budget", () => {
     expect(findFrameBudgetFailures(budgetInputs({ budget: hangBudget, journalSummary }))).toEqual([
       "3 frames hung past the frame journal's thresholds, the budget allows at most 0",
     ]);
+  });
+});
+
+describe("findInputTraceFailures", () => {
+  const inputFrameLine = '{"journal":true,"dirtyToPresentNs":11000000,"inputEvents":2,"hang":false}';
+  const noInputFrameLine = '{"journal":true,"dirtyToPresentNs":11000000,"hang":false}';
+
+  const frameLogOf = (...journalLines: readonly string[]): string =>
+    [...journalLines, healthySummary, healthyJournalSummary, ""].join("\n");
+
+  it("asks nothing when the scenario does not opt in", () => {
+    expect(findInputTraceFailures("", false, FRAME_LOG_PATH)).toEqual([]);
+  });
+
+  it("reports a log without a journal summary rather than grading a trace it cannot see", () => {
+    expect(findInputTraceFailures(healthySummary, true, FRAME_LOG_PATH)).toEqual([
+      `the window wrote no frame-journal summary to ${FRAME_LOG_PATH}`,
+    ]);
+  });
+
+  it("reports a journal that closed no input-answering frame", () => {
+    expect(findInputTraceFailures(frameLogOf(noInputFrameLine), true, FRAME_LOG_PATH)).toEqual([
+      `no presented frame in ${FRAME_LOG_PATH} answered an injected input event in the frame journal's records`,
+    ]);
+  });
+
+  it("counts a record that names the input its frame answered, skipping ones it cannot read", () => {
+    const frameLog = frameLogOf('{"journal":true,"dirtyToPresentNs":11000000', inputFrameLine);
+
+    expect(findInputTraceFailures(frameLog, true, FRAME_LOG_PATH)).toEqual([]);
   });
 });
 

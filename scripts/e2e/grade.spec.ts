@@ -39,6 +39,7 @@ const baseScenario: Scenario = {
   frameBudget: null,
   frames: 600,
   injectProtocolError: false,
+  inputTrace: false,
   name: "pressable-click",
   ready: "pressable: committed surface 1",
   reject: [],

@@ -99,9 +99,9 @@ constexpr uint64_t kNanosecondsPerSecond = 1'000'000'000;
  * times. It is what the e2e driver's perf gate reads. See *Frame timing* in docs/cpp-toolchain.md.
  *
  * When a bundle is running, each presented frame's line is followed by the frame journal's own line for the same
- * event (#345) — the dirty-to-present latency and paint span, when the frame closed an open interval — and the
- * run ends with the journal's own summary line, beside `FrameTiming`'s. See *Frame journal* in
- * docs/cpp-toolchain.md.
+ * event (#345) — the dirty-to-present latency, the paint span and the count of input events the frame answered,
+ * when the frame closed an open interval — and the run ends with the journal's own summary line, beside
+ * `FrameTiming`'s. See *Frame journal* in docs/cpp-toolchain.md.
  *
  * `--window-debug` is issue #218's manual proof, the same role `--ime-debug` plays for text composition: none of
  * the desktop lifecycle contract's activated/maximized/fullscreen/resizing bits, `wl_surface` enter/leave, or

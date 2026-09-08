@@ -15,6 +15,19 @@ constexpr uint64_t kTotalHangThreshold = 33 * kMillisecond;
 
 FrameJournal buildJournal() { return FrameJournal(kPaintHangThreshold, kTotalHangThreshold); }
 
+/**
+ * Opens an interval at `damageAtNanoseconds` and closes it at `presentedAtNanoseconds`, the input cases' tail.
+ */
+FrameJournal::ClosedFrame closeOneInterval(FrameJournal& journal, uint64_t damageAtNanoseconds,
+                                           uint64_t presentedAtNanoseconds) {
+    journal.recordDamage(damageAtNanoseconds);
+    const std::optional<FrameJournal::ClosedFrame> closed = journal.recordPresented(presentedAtNanoseconds);
+
+    EXPECT_TRUE(closed.has_value());
+
+    return closed.value_or(FrameJournal::ClosedFrame{});
+}
+
 TEST(FrameJournalTest, AnEmptyJournalSummarisesToZeroes) {
     const FrameJournal::Summary summary = buildJournal().summarise();
 
@@ -304,6 +317,83 @@ TEST(FrameJournalTest, AZeroSampleCapacityIsClampedToOneRatherThanPoppingAnEmpty
     EXPECT_EQ(summary.frames, 2U);
     EXPECT_EQ(summary.maximumNanoseconds, 2U * kMillisecond);
     EXPECT_EQ(summary.medianNanoseconds, 2U * kMillisecond);
+}
+
+// The input tag (#345): the number of events the window had received but no presented frame had answered when the
+// interval's dirty edge fired. This is what makes an injected input event traceable to the frame that answered it.
+TEST(FrameJournalTest, AnIntervalOpenedByInputCarriesTheInputCount) {
+    FrameJournal journal = buildJournal();
+
+    journal.recordInput(2);
+    EXPECT_EQ(closeOneInterval(journal, 1 * kMillisecond, 9 * kMillisecond).inputEvents, 2U);
+}
+
+TEST(FrameJournalTest, InputCountsAccumulateUntilTheDirtyEdgeConsumesThem) {
+    FrameJournal journal = buildJournal();
+
+    journal.recordInput(1);
+    journal.recordInput(2);
+    EXPECT_EQ(closeOneInterval(journal, 1 * kMillisecond, 9 * kMillisecond).inputEvents, 3U);
+}
+
+// An event that arrives while a frame is being painted is answered by the frame after it, not the one in flight.
+TEST(FrameJournalTest, InputArrivingAfterTheDirtyEdgeIsChargedToTheNextFrame) {
+    FrameJournal journal = buildJournal();
+
+    journal.recordInput(1);
+    journal.recordDamage(1 * kMillisecond);
+    journal.recordInput(1);
+    const std::optional<FrameJournal::ClosedFrame> firstClosed = journal.recordPresented(9 * kMillisecond);
+
+    ASSERT_TRUE(firstClosed.has_value());
+    EXPECT_EQ(firstClosed->inputEvents, 1U);
+
+    journal.recordDamage(20 * kMillisecond);
+    const std::optional<FrameJournal::ClosedFrame> secondClosed = journal.recordPresented(25 * kMillisecond);
+
+    ASSERT_TRUE(secondClosed.has_value());
+    EXPECT_EQ(secondClosed->inputEvents, 1U);
+}
+
+// Input nobody answered is still owed an answer: an idle-boundary present must not drop the charge.
+TEST(FrameJournalTest, AnIdlePresentLeavesUnansweredInputChargedToTheNextInterval) {
+    FrameJournal journal = buildJournal();
+
+    journal.recordInput(1);
+    EXPECT_FALSE(journal.recordPresented(9 * kMillisecond).has_value());
+    EXPECT_EQ(closeOneInterval(journal, 20 * kMillisecond, 25 * kMillisecond).inputEvents, 1U);
+}
+
+// The one charge that is lost: the interval that would have carried it was discarded, so nothing truthful can be
+// said about which presentation answered it.
+TEST(FrameJournalTest, InputChargedToAnAbandonedIntervalIsNotRechargedToTheNextOne) {
+    FrameJournal journal = buildJournal();
+
+    journal.recordInput(1);
+    journal.recordDamage(1 * kMillisecond);
+    journal.recordDiscontinuity();
+
+    EXPECT_EQ(closeOneInterval(journal, 10 * kMillisecond, 15 * kMillisecond).inputEvents, 0U);
+}
+
+TEST(FrameJournalTest, AFrameThatAnsweredNoInputOmitsTheInputField) {
+    FrameJournal journal = buildJournal();
+
+    const FrameJournal::ClosedFrame closed = closeOneInterval(journal, 1 * kMillisecond, 9 * kMillisecond);
+
+    EXPECT_EQ(closed.inputEvents, 0U);
+    EXPECT_EQ(FrameJournal::formatClosedFrameLine(closed),
+              "{\"journal\":true,\"dirtyToPresentNs\":8000000,\"hang\":false}");
+}
+
+TEST(FrameJournalTest, AFrameThatAnsweredInputNamesTheCountInItsLine) {
+    FrameJournal journal = buildJournal();
+
+    journal.recordInput(3);
+    const FrameJournal::ClosedFrame closed = closeOneInterval(journal, 1 * kMillisecond, 9 * kMillisecond);
+
+    EXPECT_EQ(FrameJournal::formatClosedFrameLine(closed),
+              "{\"journal\":true,\"dirtyToPresentNs\":8000000,\"inputEvents\":3,\"hang\":false}");
 }
 
 // The drain order `WindowMain::writeFrameLines` applies: a presented frame followed by a discarded content update

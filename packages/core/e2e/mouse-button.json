@@ -3,6 +3,7 @@
   "bundle": "mouse-button.js",
   "ready": "mouse-button: committed surface 1",
   "frames": 600,
+  "inputTrace": true,
   "steps": [
     "sleep 500",
     "move 200 140",
