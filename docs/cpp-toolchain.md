@@ -6901,7 +6901,8 @@ cage -- rnl_window --fabric <bundle> --frames <n> --screenshot build/e2e/<scenar
 
 with `WLR_BACKENDS=headless`, `WLR_RENDERER=pixman`, `WLR_LIBINPUT_NO_DEVICES=1`, `XKB_DEFAULT_LAYOUT=us` and the
 lavapipe ICD pinned by the same discovery `scripts/window-golden.ts` exports, waits for the wayland socket to
-appear in that directory, waits for the scenario's `ready` line on the window's stdout, and then injects.
+appear in that directory, waits for both the scenario's `ready` line and the window's first-presented-frame line
+on the window's stdout (#373, below), and then injects.
 
 **Keyboard-focus wait (#304).** A scenario's steps are split at the first `key`/`type` step:
 `scripts/e2e/keyboard-focus.ts`'s `runKeyboardAwareInjection` runs everything before that step through one
@@ -6916,6 +6917,22 @@ true, **unconditionally** — deliberately not the `[rnl-window] keyboard enter`
 would never fire in a scenario run. It also has to be a different tag than `[rnl-window]`: `ERROR_TRACE_PATTERNS`
 in `scripts/e2e/scenario.ts` treats any `[rnl-window]` line as a fault, and an expected, successful focus arrival
 is not one — reusing that tag here would fail the error gate on every keyboard scenario, not just this one.
+
+**Ready is the first presented frame (#373).** A bundle's `ready` line only proves the bundle mounted; it says
+nothing about whether the window ever put a pixel on screen, and a driver that trusts it alone can run input, or
+grade a screenshot, against a surface the compositor has not actually presented yet. `scripts/e2e/window-
+readiness.ts`'s `waitForWindowReadyFailures` closes that gap the same way `runKeyboardAwareInjection` closes the keyboard
+one: it waits for the bundle's `ready` line and for `[rnl-present] first frame presented` concurrently — neither
+depends on the other having arrived first — before the driver runs the first input step or trusts `ready` as
+sufficient, and a timeout names whichever of the two lines never appeared (or both).
+
+`WindowMain.cpp`'s `announceFirstPresentedFrameOnce` prints that line, **unconditionally**, the first time
+`WaylandWindow::hasPresentedFirstFrame()` turns true: the first `wp_presentation_feedback.presented`, or, on a
+compositor that binds no `wp_presentation`, the first `wl_surface.frame` callback. That degradation is named once
+too, immediately after the window connects, as `[rnl-present] no wp_presentation; degrading readiness to
+wl_surface.frame` — before any frame has had a chance to present, so it never races the readiness line itself.
+Same tag discipline as `[rnl-focus]`: `[rnl-present]`, not `[rnl-window]`, so the ordinary, expected first
+presentation does not trip `ERROR_TRACE_PATTERNS`.
 
 Every scenario with a keyboard step repeats `RNL_E2E_REPEAT` times (default 1, unchanged); run
 `RNL_E2E_REPEAT=10 pnpm e2e` to reproduce the ten-green-runs acceptance locally or in an ad hoc CI job. Each

@@ -309,6 +309,8 @@ FrameTiming::Summary WaylandWindow::frameTimingSummary() const { return frameTim
 
 std::optional<uint32_t> WaylandWindow::presentationClockId() const noexcept { return presentationClockId_; }
 
+bool WaylandWindow::hasPresentedFirstFrame() const noexcept { return presentedFirstFrame_; }
+
 bool WaylandWindow::waitForRedraw(std::chrono::milliseconds fallbackTimeout) {
     const std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::now() + fallbackTimeout;
 
@@ -555,6 +557,13 @@ void WaylandWindow::handleFrameDone(void* data, wl_callback* callback, uint32_t 
     wl_callback_destroy(callback);
     window->frameCallback_ = nullptr;
     window->frameCallbackFired_ = true;
+
+    // The readiness signal of #373 degrades to this callback only when the compositor advertises no
+    // wp_presentation: with it bound, handleFeedbackPresented is the more precise signal, because a frame
+    // callback fires on every commit regardless of whether that commit ever reached the screen.
+    if (window->presentation_ == nullptr) {
+        window->presentedFirstFrame_ = true;
+    }
 }
 
 // The presentation clock is whatever clock_id names, and it is retained rather than dropped: `FrameTiming` only
@@ -579,6 +588,7 @@ void WaylandWindow::handleFeedbackPresented(void* data, struct wp_presentation_f
 
     window->presentationEvents_.emplace_back(
         window->frameTiming_.recordPresented(sequence, presentedNanoseconds, refresh, flags));
+    window->presentedFirstFrame_ = true;
     wp_presentation_feedback_destroy(feedback);
 }
 

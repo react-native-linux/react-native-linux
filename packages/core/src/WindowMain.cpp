@@ -823,15 +823,24 @@ void writeLadderRecord(const std::optional<std::string>& path, const react_nativ
     stored << react_native_linux::formatRendererLadderRecord(record);
 }
 
-// The first presented frame is what says this rung works, and clearing the crash count is the only thing that
-// stops the next launch from stepping past it. See #373 for the signal itself. Called after the startup draw and
-// again inside the loop, because `--screenshot --frames 1` can present and consume its capture on the startup
-// draw alone, skipping the loop entirely.
-void announceFirstPresentedFrameOnce(bool presented, bool& hasRecordedFirstPresentedFrame,
-                                     const std::optional<std::string>& ladderPath,
+/**
+ * The one first-presentation event #396 and #373 both need: `presented` is `drawFrame`'s own immediate result,
+ * true on the same call whether or not the loop below ever runs, which is what lets `--screenshot --frames 1`
+ * clear the crash count and print the readiness line before the process can exit without another Wayland round
+ * trip; `window.hasPresentedFirstFrame()` is the compositor's own confirmation via `wp_presentation_feedback` (or
+ * `wl_surface.frame` when presentation is not supported), which a longer-lived run dispatches on an earlier
+ * iteration's `waitForRedraw`. Either one means this rung's first frame reached the screen, so it fires on
+ * whichever comes first. The tag is `[rnl-present]`, not `[rnl-window]`, because `ERROR_TRACE_PATTERNS` in
+ * `scripts/e2e/scenario.ts` treats any `[rnl-window]` line as a fault, and this one fires on the ordinary,
+ * expected first presented frame. Called after the startup draw and again inside the loop, because the startup
+ * draw alone can be the only frame this process ever presents.
+ */
+void announceFirstPresentedFrameOnce(react_native_linux::WaylandWindow& window, bool presented,
+                                     bool& firstPresentedFrameAnnounced, const std::optional<std::string>& ladderPath,
                                      const react_native_linux::RendererLadderRecord& record) {
-    if (presented && !hasRecordedFirstPresentedFrame) {
-        hasRecordedFirstPresentedFrame = true;
+    if (!firstPresentedFrameAnnounced && (presented || window.hasPresentedFirstFrame())) {
+        firstPresentedFrameAnnounced = true;
+        std::cout << "[rnl-present] first frame presented" << std::endl;
         writeLadderRecord(ladderPath, react_native_linux::recordFirstPresentedFrame(record));
     }
 }
@@ -927,7 +936,7 @@ int main(int argc, char** argv) {
             const std::string driverIdentity = react_native_linux::probeVulkanDriverIdentity();
             RendererBringUp broughtUp = bringUpRenderer(window, parsedArguments, ladderPath, driverIdentity);
             react_native_linux::WindowRenderer& renderer = *broughtUp.renderer;
-            bool hasRecordedFirstPresentedFrame = false;
+            bool firstPresentedFrameAnnounced = false;
             std::optional<react_native_linux::WindowSession> session;
             WindowChrome chrome;
 
@@ -949,6 +958,12 @@ int main(int argc, char** argv) {
 
             if (parsedArguments.injectProtocolError) {
                 window.injectInvalidAckConfigureForTesting();
+            }
+
+            // Known as soon as the registry roundtrip in WaylandWindow's constructor completes, so the degradation is
+            // named once, here, rather than inferred later from which readiness signal happened to fire first.
+            if (!window.isPresentationSupported()) {
+                std::cout << "[rnl-present] no wp_presentation; degrading readiness to wl_surface.frame" << std::endl;
             }
 
             // This is the first buffer the compositor can ever show, so `--frames 1` has to name this present rather
@@ -978,7 +993,7 @@ int main(int argc, char** argv) {
                 window.injectInvalidAckConfigureForTesting();
             }
 
-            announceFirstPresentedFrameOnce(startupFramePresented, hasRecordedFirstPresentedFrame, ladderPath,
+            announceFirstPresentedFrameOnce(window, startupFramePresented, firstPresentedFrameAnnounced, ladderPath,
                                             broughtUp.record);
 
             bool hasCaptured = isStartupCaptureFrame && !renderer.hasPendingCapture();
@@ -1170,7 +1185,7 @@ int main(int argc, char** argv) {
                     printSurfaceCommitOutcome(*broughtUp.vulkanRenderer, presented);
                 }
 
-                announceFirstPresentedFrameOnce(presented, hasRecordedFirstPresentedFrame, ladderPath,
+                announceFirstPresentedFrameOnce(window, presented, firstPresentedFrameAnnounced, ladderPath,
                                                 broughtUp.record);
 
                 if (presented) {
