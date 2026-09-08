@@ -83,6 +83,7 @@ add_executable(rnl_core_tests
     LinuxMountingManagerDiagnosticsTest.cpp
     LinuxMountingManagerMaintainPositionTest.cpp
     LinuxMountingManagerPendingDamageTest.cpp
+    MountTreeTextTest.cpp
     NestedTextFragmentTest.cpp
     PinnedFontFamiliesTest.cpp
     RendererLadderTest.cpp
@@ -128,6 +129,7 @@ add_executable(rnl_core_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/LineBoxMetrics.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/LinuxAnimationChoreographer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/LinuxMountingManager.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/MountTreeText.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/PinnedFontFamilies.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/PlatformColor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/RendererLadder.cpp
