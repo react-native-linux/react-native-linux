@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  describeRejectedTraceFailures,
   describeTraceFailures,
   findErrorLines,
   findMissingExpectations,
@@ -91,11 +92,27 @@ describe("describeTraceFailures", () => {
     expect(describeTraceFailures(tolerant, trace)).toEqual([]);
   });
 
+  it("does not report a rejected substring: that is describeRejectedTraceFailures's job", () => {
+    const rejecting = { ...scenario, reject: ["Broken pipe"] };
+    const trace = `${passingTrace}\nBroken pipe (os error 32)`;
+
+    expect(describeTraceFailures(rejecting, trace)).toEqual([]);
+  });
+});
+
+describe("describeRejectedTraceFailures", () => {
+  const scenario = parseScenario(validScenario, "fixture.json");
+  const passingTrace = ["pressable: committed surface 1", "pressable: topClick on box at 200,140"].join("\n");
+
+  it("reports nothing when the reject list is empty", () => {
+    expect(describeRejectedTraceFailures(scenario, passingTrace)).toEqual([]);
+  });
+
   it("reports a rejected substring even when allowErrors is set", () => {
     const tolerant = { ...scenario, allowErrors: true, reject: ["Broken pipe"] };
     const trace = `${passingTrace}\nBroken pipe (os error 32)`;
 
-    expect(describeTraceFailures(tolerant, trace)).toEqual(['the trace produced the rejected "Broken pipe"']);
+    expect(describeRejectedTraceFailures(tolerant, trace)).toEqual(['the trace produced the rejected "Broken pipe"']);
   });
 });
 
@@ -104,17 +121,27 @@ describe("resolveExpectedOutcome", () => {
   const negativeControl = { ...scenario, expectFailure: true };
 
   it("passes failures through unchanged when expectFailure is not set", () => {
-    expect(resolveExpectedOutcome(scenario, ["boom"])).toEqual(["boom"]);
-    expect(resolveExpectedOutcome(scenario, [])).toEqual([]);
+    expect(resolveExpectedOutcome(scenario, ["boom"], "")).toEqual(["boom"]);
+    expect(resolveExpectedOutcome(scenario, [], "")).toEqual([]);
   });
 
   it("turns a failing run into a pass when expectFailure is set", () => {
-    expect(resolveExpectedOutcome(negativeControl, ["boom"])).toEqual([]);
+    expect(resolveExpectedOutcome(negativeControl, ["boom"], "")).toEqual([]);
   });
 
   it("fails a run with no failures when expectFailure is set", () => {
-    expect(resolveExpectedOutcome(negativeControl, [])).toEqual([
+    expect(resolveExpectedOutcome(negativeControl, [], "")).toEqual([
       "expectFailure is set, but the scenario produced no failures",
+    ]);
+  });
+
+  it("never inverts away a rejected substring, even once expectFailure clears every other failure", () => {
+    const control = { ...negativeControl, reject: ["Broken pipe"] };
+    const trace = "Broken pipe (os error 32)";
+    const invertible = describeTraceFailures(control, trace);
+
+    expect(resolveExpectedOutcome(control, invertible, trace)).toEqual([
+      'the trace produced the rejected "Broken pipe"',
     ]);
   });
 });

@@ -41,35 +41,59 @@ const findRejectedMatches = (traceLines: readonly string[], rejections: readonly
   rejections.filter((rejection) => traceLines.some((line) => line.includes(rejection)));
 
 /**
- * Every failure the trace itself proves: a missing expectation, a rejected substring, and — unless `allowErrors`
- * opts a scenario out — a logged error line.
+ * Every failure the trace itself proves that `expectFailure` may legitimately invert: a missing expectation, and
+ * — unless `allowErrors` opts a scenario out — a logged error line. `reject` deliberately does not feed this: see
+ * `describeRejectedTraceFailures`.
  */
 const describeTraceFailures = (scenario: Scenario, trace: string): readonly string[] => {
   const traceLines = trace.split("\n");
   const missing = findMissingExpectations(traceLines, scenario.expect).map(
     (expectation) => `the trace never produced "${expectation}"`,
   );
-  const rejected = findRejectedMatches(traceLines, scenario.reject).map(
-    (rejection) => `the trace produced the rejected "${rejection}"`,
-  );
 
   if (scenario.allowErrors) {
-    return [...missing, ...rejected];
+    return missing;
   }
 
-  return [...missing, ...rejected, ...findErrorLines(traceLines).map((line) => `the trace logged an error: ${line}`)];
+  return [...missing, ...findErrorLines(traceLines).map((line) => `the trace logged an error: ${line}`)];
 };
 
 /**
- * `expectFailure` inverts a run's failures for a negative control: the scenario passes only when grading it
- * produced at least one failure, and reports one of its own when grading produced none.
+ * Every `reject` substring the trace produced, as a failure `resolveExpectedOutcome` never sees and therefore can
+ * never invert: `expectFailure` exists to pass a negative control that produced the one failure it was built to
+ * produce, and a rejected substring is never that failure — it means something else went wrong in the same run,
+ * which stays a failure even when the scenario also expects a different one.
  */
-const resolveExpectedOutcome = (scenario: Scenario, failures: readonly string[]): readonly string[] => {
+const describeRejectedTraceFailures = (scenario: Scenario, trace: string): readonly string[] =>
+  findRejectedMatches(trace.split("\n"), scenario.reject).map(
+    (rejection) => `the trace produced the rejected "${rejection}"`,
+  );
+
+/**
+ * `expectFailure` inverts `failures` for a negative control: the scenario passes only when grading it produced at
+ * least one, and reports one of its own when it produced none. `trace`'s rejected substrings are appended after
+ * that inversion rather than folded into `failures` before it, on purpose: a rejected substring is never the
+ * failure `expectFailure` expects, so it must go on keeping the scenario failing even once the inversion clears
+ * everything else.
+ */
+const resolveExpectedOutcome = (scenario: Scenario, failures: readonly string[], trace: string): readonly string[] => {
+  const rejected = describeRejectedTraceFailures(scenario, trace);
+
   if (!scenario.expectFailure) {
-    return failures;
+    return [...rejected, ...failures];
   }
 
-  return failures.length === EMPTY_LENGTH ? ["expectFailure is set, but the scenario produced no failures"] : [];
+  const inverted =
+    failures.length === EMPTY_LENGTH ? ["expectFailure is set, but the scenario produced no failures"] : [];
+
+  return [...rejected, ...inverted];
 };
 
-export { describeTraceFailures, findErrorLines, findMissingExpectations, findRejectedMatches, resolveExpectedOutcome };
+export {
+  describeRejectedTraceFailures,
+  describeTraceFailures,
+  findErrorLines,
+  findMissingExpectations,
+  findRejectedMatches,
+  resolveExpectedOutcome,
+};

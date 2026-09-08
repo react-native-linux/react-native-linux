@@ -1,9 +1,9 @@
 {
-  "name": "protocol-error",
+  "name": "protocol-error-loop",
   "bundle": "hello.js",
   "ready": "react-native-linux: bundle evaluated",
   "frames": 900,
-  "injectProtocolError": true,
+  "windowFlags": ["--no-decorations", "--inject-protocol-error-after-frame"],
   "allowErrors": true,
   "steps": ["sleep 500"],
   "expect": ["[rnl-window] wayland protocol error: xdg_wm_base#"],

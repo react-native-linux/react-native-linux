@@ -253,7 +253,7 @@ const runScenario = async (run: ScenarioRun, rig: Rig, attemptKey: string): Prom
 
   const failures = [...runFailures, ...describeTraceFailures(run.scenario, workspace.trace.text), ...grade.failures];
 
-  return resolveExpectedOutcome(run.scenario, failures);
+  return resolveExpectedOutcome(run.scenario, failures, workspace.trace.text);
 };
 
 const reportScenario = (failures: readonly string[], attemptKey: string): void => {
