@@ -2,7 +2,6 @@ import type { FrameBudget } from "./scenario.ts";
 
 const NANOSECONDS_PER_MILLISECOND = 1_000_000;
 const MILLISECOND_DECIMALS = 2;
-const MISSING_NUMBER = 0;
 
 /**
  * The last line `rnl_window --frame-log` writes. It is matched by its marker rather than by position so a run
@@ -41,11 +40,30 @@ interface FrameJournalSummary {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-const readNumber = (record: Record<string, unknown>, key: string): number => {
+/**
+ * Both parsers fail closed, which is the whole point of them: a truncated or malformed summary line has to read as
+ * "no summary" — which every caller already treats as a failure — rather than as a summary of zeroes, because a
+ * summary of zeroes passes `maxHangs: 0` and a `p95Ns` of 0 on a run that measured nothing at all.
+ */
+const parseJsonRecord = (line: string): Record<string, unknown> | null => {
+  try {
+    const parsed: unknown = JSON.parse(line);
+
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+const readFiniteNumber = (record: Record<string, unknown>, key: string): number | null => {
   const value = record[key];
 
-  return typeof value === "number" ? value : MISSING_NUMBER;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 };
+
+/** Every field read, or none of them: one missing number is a summary that cannot be graded. */
+const hasOnlyFiniteNumbers = <Key extends string>(fields: Record<Key, number | null>): fields is Record<Key, number> =>
+  Object.values(fields).every((value) => value !== null);
 
 const formatMilliseconds = (nanoseconds: number): string =>
   (nanoseconds / NANOSECONDS_PER_MILLISECOND).toFixed(MILLISECOND_DECIMALS);
@@ -57,20 +75,21 @@ const parseFrameLogSummary = (frameLogText: string): FrameLogSummary | null => {
     return null;
   }
 
-  const parsed: unknown = JSON.parse(summaryLine);
+  const parsed = parseJsonRecord(summaryLine);
 
-  if (!isRecord(parsed)) {
+  if (parsed === null) {
     return null;
   }
 
-  return {
-    discarded: readNumber(parsed, "discarded"),
-    frames: readNumber(parsed, "frames"),
-    maximumNanoseconds: readNumber(parsed, "maxNs"),
-    medianNanoseconds: readNumber(parsed, "p50Ns"),
-    percentile95Nanoseconds: readNumber(parsed, "p95Ns"),
-    unsupported: parsed["unsupported"] === true,
+  const fields = {
+    discarded: readFiniteNumber(parsed, "discarded"),
+    frames: readFiniteNumber(parsed, "frames"),
+    maximumNanoseconds: readFiniteNumber(parsed, "maxNs"),
+    medianNanoseconds: readFiniteNumber(parsed, "p50Ns"),
+    percentile95Nanoseconds: readFiniteNumber(parsed, "p95Ns"),
   };
+
+  return hasOnlyFiniteNumbers(fields) ? { ...fields, unsupported: parsed["unsupported"] === true } : null;
 };
 
 /**
@@ -86,19 +105,21 @@ const parseFrameJournalSummary = (frameLogText: string): FrameJournalSummary | n
     return null;
   }
 
-  const parsed: unknown = JSON.parse(summaryLine);
+  const parsed = parseJsonRecord(summaryLine);
 
-  if (!isRecord(parsed)) {
+  if (parsed === null) {
     return null;
   }
 
-  return {
-    frames: readNumber(parsed, "frames"),
-    hangs: readNumber(parsed, "hangs"),
-    maximumNanoseconds: readNumber(parsed, "maxNs"),
-    medianNanoseconds: readNumber(parsed, "p50Ns"),
-    percentile95Nanoseconds: readNumber(parsed, "p95Ns"),
+  const fields = {
+    frames: readFiniteNumber(parsed, "frames"),
+    hangs: readFiniteNumber(parsed, "hangs"),
+    maximumNanoseconds: readFiniteNumber(parsed, "maxNs"),
+    medianNanoseconds: readFiniteNumber(parsed, "p50Ns"),
+    percentile95Nanoseconds: readFiniteNumber(parsed, "p95Ns"),
   };
+
+  return hasOnlyFiniteNumbers(fields) ? fields : null;
 };
 
 /**

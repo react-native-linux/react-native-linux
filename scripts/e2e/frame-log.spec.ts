@@ -58,16 +58,27 @@ describe("parseFrameLogSummary", () => {
   it("returns null when the summary line is not a JSON object", () => {
     expect(parseFrameLogSummary('[{"summary":true,"frames":0}]')).toBeNull();
   });
+});
 
-  it("reads a missing percentile as zero rather than failing the parse", () => {
-    expect(parseFrameLogSummary(summaryLine('"frames":10'))).toEqual({
-      discarded: 0,
-      frames: 10,
-      maximumNanoseconds: 0,
-      medianNanoseconds: 0,
-      percentile95Nanoseconds: 0,
-      unsupported: false,
-    });
+describe("parseFrameLogSummary, on a summary it cannot trust", () => {
+  it("returns null for a summary line that is not valid JSON at all", () => {
+    expect(parseFrameLogSummary('{"summary":true,"frames":240')).toBeNull();
+  });
+
+  // Fail closed: a summary of defaulted zeroes would pass a p95 budget on a run that measured nothing.
+  it.each(["discarded", "frames", "maxNs", "p50Ns", "p95Ns"])("returns null when %s is missing", (missingKey) => {
+    const fields = ['"discarded":2', '"frames":240', '"maxNs":31000000', '"p50Ns":16000000', '"p95Ns":16600000']
+      .filter((field) => !field.startsWith(`"${missingKey}"`))
+      .join(",");
+
+    expect(parseFrameLogSummary(summaryLine(fields))).toBeNull();
+  });
+
+  // 1e999 is how a truncated or corrupted number reaches the parser as Infinity, which is not a frame time.
+  it("returns null when a field parses to a number that is not finite", () => {
+    expect(
+      parseFrameLogSummary(summaryLine('"discarded":2,"frames":240,"maxNs":1e999,"p50Ns":0,"p95Ns":0')),
+    ).toBeNull();
   });
 });
 
@@ -101,15 +112,29 @@ describe("parseFrameJournalSummary", () => {
   it("returns null when the journal summary line is not a JSON object", () => {
     expect(parseFrameJournalSummary('[{"journalSummary":true,"frames":0}]')).toBeNull();
   });
+});
 
-  it("reads a missing field as zero rather than failing the parse", () => {
-    expect(parseFrameJournalSummary(journalSummaryLine('"frames":10'))).toEqual({
-      frames: 10,
-      hangs: 0,
-      maximumNanoseconds: 0,
-      medianNanoseconds: 0,
-      percentile95Nanoseconds: 0,
-    });
+describe("parseFrameJournalSummary, on a summary it cannot trust", () => {
+  it("returns null for a journal summary line that is not valid JSON at all", () => {
+    expect(parseFrameJournalSummary('{"journalSummary":true,"hangs":0')).toBeNull();
+  });
+
+  // Fail closed: `hangs` defaulted to zero would pass a `maxHangs: 0` budget on a summary that never reported one.
+  it.each(["frames", "hangs", "maxNs", "p50Ns", "p95Ns"])("returns null when %s is missing", (missingKey) => {
+    const fields = ['"frames":238', '"hangs":0', '"maxNs":20000000', '"p50Ns":11000000', '"p95Ns":15000000']
+      .filter((field) => !field.startsWith(`"${missingKey}"`))
+      .join(",");
+
+    expect(parseFrameJournalSummary(journalSummaryLine(fields))).toBeNull();
+  });
+
+  it("returns null when a field is not a number, and when it parses to one that is not finite", () => {
+    expect(
+      parseFrameJournalSummary(journalSummaryLine('"frames":238,"hangs":"none","maxNs":0,"p50Ns":0,"p95Ns":0')),
+    ).toBeNull();
+    expect(
+      parseFrameJournalSummary(journalSummaryLine('"frames":238,"hangs":0,"maxNs":1e999,"p50Ns":0,"p95Ns":0')),
+    ).toBeNull();
   });
 });
 
