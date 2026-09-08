@@ -70,7 +70,7 @@ const assertLinuxInstallIdentity = (contents: string, applicationIdentifier: str
 /**
  * The package-time half of #356: one plan of staged files from the manifest and the laid-out icon tree. The
  * desktop entry is generated with the identifier as its `Icon` — the themed name the tree's paths install the
- * PNGs under — so the compositor asking for any standard size resolves a file whose themed name is the running
+ * icons under — so the compositor asking for any standard size resolves a file whose themed name is the running
  * application. The executable path is the caller's: the manifest says nothing about where the package puts the
  * binary, and inventing a convention here would be one more place to disagree with the package builder about.
  */
