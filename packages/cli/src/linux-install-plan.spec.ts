@@ -113,6 +113,15 @@ describe("planLinuxInstall identity with the running application", () => {
       assertLinuxInstallIdentity(plan.files[desktopEntryFileIndex]?.contents ?? "", plan.applicationIdentifier),
     ).toBeUndefined();
   });
+
+  it("rejects an icon tree that belongs to another application identifier", () => {
+    const foreignTree = layoutHicolorIconTree([squareIcon(iconSize256)], "org.example.Other");
+
+    expect(() => planLinuxInstall(manifest, foreignTree, executablePath)).toThrow(IdentityMismatchError);
+    expect(() => planLinuxInstall(manifest, foreignTree, executablePath)).toThrow(
+      /installs "usr\/share\/icons\/hicolor\/256x256\/apps\/org\.example\.Other\.png", not the application identifier's/u,
+    );
+  });
 });
 
 describe("assertLinuxInstallIdentity", () => {

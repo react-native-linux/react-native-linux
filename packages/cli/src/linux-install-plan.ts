@@ -92,6 +92,15 @@ const planLinuxInstall = (
 
   assertLinuxInstallIdentity(entry.contents, manifest.applicationIdentifier);
 
+  // The tree can belong to another application: an identifier whose themed name nothing staged carries points the entry at an icon never installed.
+  for (const icon of iconTree.entries) {
+    if (!icon.installPath.endsWith(`/apps/${manifest.applicationIdentifier}.png`)) {
+      throw new IdentityMismatchError(
+        `the icon tree installs "${icon.installPath}", not the application identifier's themed name "${manifest.applicationIdentifier}.png"`,
+      );
+    }
+  }
+
   return {
     applicationIdentifier: manifest.applicationIdentifier,
     files: [

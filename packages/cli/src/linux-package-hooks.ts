@@ -17,10 +17,11 @@ interface LinuxPackageHooks {
 type LinuxPackageFormat = "deb" | "pacman" | "rpm";
 
 const hicolorIconDirectory = "/usr/share/icons/hicolor";
+const applicationsDirectory = "/usr/share/applications";
 
 const refreshCaches = (): readonly string[] => [
   `if [ -x /usr/bin/gtk-update-icon-cache ]; then gtk-update-icon-cache -q ${hicolorIconDirectory}; fi`,
-  "if [ -x /usr/bin/update-desktop-database ]; then update-desktop-database -q; fi",
+  `if [ -x /usr/bin/update-desktop-database ]; then update-desktop-database -q ${applicationsDirectory}; fi`,
 ];
 
 const hooksForFormat = (format: LinuxPackageFormat): LinuxPackageHooks => {
