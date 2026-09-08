@@ -94,13 +94,13 @@ set_target_properties(rnl_core_hermes_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY 
 #        back through static_cast<int64_t>(units * 1e6), which truncates; whenever the product lands a hair
 #        below the integer it started from, the nanosecond is lost, which is about one timestamp in five at
 #        any uptime.
-#   #395 immediateTaskYieldsToSynchronousAccess: starts a real thread that requests synchronous access and
-#        lines it up with the scheduler's yield check by sleeping, so on a loaded runner whichever side wins
-#        decides what the stub queue holds at the assertion.
+#   #395 immediateTaskYieldsToSynchronousAccess and normalTaskYieldsToSynchronousAccess: each starts a real
+#        thread that requests synchronous access and lines it up with the scheduler's yield check by sleeping,
+#        so on a loaded runner whichever side wins decides what the stub queue holds at the assertion.
 #
 # All four are vendored and none is reachable from anything this platform calls.
 set(RNL_HERMES_TESTS_FILTER
-    "-BridgingTest.highResTimeStampTest:UseModernRuntimeScheduler/RuntimeSchedulerTest.immediateTaskYieldsToSynchronousAccess/*")
+    "-BridgingTest.highResTimeStampTest:UseModernRuntimeScheduler/RuntimeSchedulerTest.*TaskYieldsToSynchronousAccess/*")
 
 if(CMAKE_CXX_FLAGS MATCHES "-fsanitize=thread")
     string(APPEND RNL_HERMES_TESTS_FILTER
