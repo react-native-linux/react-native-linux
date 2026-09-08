@@ -11,8 +11,8 @@
   "steps": ["sleep 3000"],
   "expect": [
     "[rnl-ime] field focused",
-    "text-input-compose: change on second text=\"好\"",
-    "text-input-compose: change on second text=\"好o\""
+    "text-input-compose: topChange on second text=\"好\"",
+    "text-input-compose: topChange on second text=\"好o\""
   ],
-  "reject": ["text-input-compose: change on first"]
+  "reject": ["text-input-compose: topChange on first"]
 }
