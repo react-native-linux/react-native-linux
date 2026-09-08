@@ -7204,7 +7204,10 @@ for exactly that first-frame-after-mount hang; a second hang in a 240-frame run 
 
 **The trace.** A scenario's `"inputTrace": true` turns the journal's input tag into a gate (#345's e2e half): the
 run's frame log must carry at least one journal record naming the input its presented frame answered, which is
-the trace from the injector's pointer event to the light it reached. `mouse-button.json` sets it. The gate fails
+the trace from the injector's pointer event to the light it reached. `switch.json` sets it, on the controlled
+toggle — the fixture whose press changes no pixel by itself and whose committed reply is exactly the frame that
+answers the input; a bundle whose input handlers only log produces no damage at all, and the gate correctly
+refuses to pretend a frame answered. The gate fails
 closed — a log without the journal's summary is the same failure a missing `FrameTiming` summary is, and a
 journal that closed no input-answering frame means the injection never reached light.
 
