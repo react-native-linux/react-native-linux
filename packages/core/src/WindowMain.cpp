@@ -1228,27 +1228,38 @@ int main(int argc, char** argv) {
                 std::vector<react_native_linux::InputEvent> frameEvents =
                     routeDecorationInput(window, chrome, window.takeInputEvents());
 
-                // One paced token per interval, spliced into the frame's own batch: the injected events reach the
-                // dispatcher in the same delivery the compositor's would, and a session or composition token
-                // reaches the text input the same wire event would have.
+                // One paced token per interval, spliced into the frame's own batch. A composition token routes
+                // through the text-input session where the compositor advertises one — the same delivery the
+                // wire's preedit_string/commit_string+done pair would take — and falls back to the editor-level
+                // events where it does not (cage advertises no manager), which is that delivery minus the
+                // session. Either way the editor sees one composition, never two.
                 if (injectedSequence.has_value()) {
                     const std::optional<InjectedKeySequence::Step> step =
                         injectedSequence->take(std::chrono::steady_clock::now());
 
                     if (step.has_value()) {
                         react_native_linux::TextInputClient* textInput = window.textInput();
+                        bool routedToSession = false;
 
-                        if (step->sessionLeave && textInput != nullptr) {
-                            textInput->onLeave();
-                        } else if (step->sessionEnter && textInput != nullptr) {
-                            textInput->onEnter();
-                        } else if (step->preedit.has_value() && textInput != nullptr) {
-                            textInput->compose(step->preedit.value());
-                        } else if (step->commit.has_value() && textInput != nullptr) {
-                            textInput->commitComposition(step->commit.value());
+                        if (textInput != nullptr) {
+                            if (step->sessionLeave) {
+                                textInput->onLeave();
+                                routedToSession = true;
+                            } else if (step->sessionEnter) {
+                                textInput->onEnter();
+                                routedToSession = true;
+                            } else if (step->preedit.has_value()) {
+                                textInput->compose(step->preedit.value());
+                                routedToSession = true;
+                            } else if (step->commit.has_value()) {
+                                textInput->commitComposition(step->commit.value());
+                                routedToSession = true;
+                            }
                         }
 
-                        frameEvents.insert(frameEvents.end(), step->events.begin(), step->events.end());
+                        if (!routedToSession) {
+                            frameEvents.insert(frameEvents.end(), step->events.begin(), step->events.end());
+                        }
                     }
                 }
 

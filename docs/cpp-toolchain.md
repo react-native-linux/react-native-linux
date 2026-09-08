@@ -5583,15 +5583,19 @@ fixture of one field and one focusable node that is not a field, and the `text-i
 the same three lines across a Tab into the field, a click on the button and a Tab back.
 
 The composition e2e is `text-input-compose`, driven by `rnl_window --inject-key-sequence`: the key-sequence
-grammar `parseKeySequence` already speaks, paced one token per interval across the frame loop. `{Preedit:...}`
-and `{Commit:...}` route through the session — the same `preedit_string`/`commit_string`+`done` pair the wire
-carries, so the teardown and the serial gating are exercised and not only the editor the run lands in — and
-`{SessionLeave}`/`{SessionEnter}` replay the keyboard leave and enter a compositor with one window cannot be
-made to produce. The scenario walks a composition into field A, a focus change to field B (the teardown takes
-the abandoned run off the screen, and the field that lost the caret loses it too — `TextInputController`
-clears the outgoing field's composing run at the focus change itself), a clean composition and commit in B,
-then a leave, an enter and a second composition — asserting the ordered session traces and the two committed
-texts, with the first field's never appearing.
+grammar `parseKeySequence` already speaks, paced one token per interval across the frame loop. Where the
+compositor advertises `zwp_text_input_manager_v3`, `{Preedit:...}` and `{Commit:...}` route through the session —
+the same `preedit_string`/`commit_string`+`done` pair the wire carries, so the teardown and the serial gating are
+exercised and not only the editor the run lands in — and `{SessionLeave}`/`{SessionEnter}` replay the keyboard
+leave and enter a compositor with one window cannot be made to produce. Where it does not — cage advertises no
+text-input manager — a composition token falls back to the editor-level events, which is that delivery minus the
+session, and the session traces do not appear; the session lifecycle stays the unit gate's below.
+
+The scenario walks a composition into field A, a focus change to field B (the abandoned run comes off the screen
+because `TextInputController` clears the outgoing field's composing run at the focus change itself — the
+compositor-side teardown alone would deliver its empty pre-edit to whichever field holds the caret *now*, leaving
+A composing forever), a clean composition and commit in B, then a second composition — asserting the ordered
+traces and the two committed texts, with the first field's never appearing.
 
 What still needs a real compositor is the wire decode under live traffic, which `ImeTest` covers with recorded
 sequences, and the compositor-side half of the protocol — being the input method rather than talking to one,
