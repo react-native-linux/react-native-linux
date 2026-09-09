@@ -5,6 +5,7 @@
 #include "EllipsizeSearch.h"
 #include "LineBoxMetrics.h"
 #include "PinnedFontFamilies.h"
+#include "ResourceResolver.h"
 #include "TextGeometry.h"
 #include "TextTransform.h"
 #include "include/core/SkColor.h"
@@ -533,18 +534,22 @@ void checkPinnedFontFamiliesResolve(SkFontMgr& assetFontManager) {
  * process's whole lifetime — `scripts/fonts.lock.json` pins the file name alongside the family
  * `checkPinnedFontFamiliesResolve` already confirmed resolves.
  */
-void reportResolvedDefaultFontFamily() {
-    std::cerr << "[rnl-text] default fontFamily resolved to \"" << kBundledFontFamily << "\" (" << RNL_BUNDLED_FONT_DIR
-              << "/" << kDefaultFontFamilyFileName << ")" << std::endl;
+void reportResolvedDefaultFontFamily(const std::filesystem::path& fontDirectory) {
+    std::cerr << "[rnl-text] default fontFamily resolved to \"" << kBundledFontFamily << "\" (" << fontDirectory << "/"
+              << kDefaultFontFamilyFileName << ")" << std::endl;
 }
 
 struct TextPipelineState {
     TextPipelineState()
         : fontCollection(sk_make_sp<skia::textlayout::FontCollection>()), unicode(SkUnicodes::ICU::Make()) {
-        sk_sp<SkFontMgr> assetFontManager = SkFontMgr_New_Custom_Directory(RNL_BUNDLED_FONT_DIR);
+        // One resolution per process: the search reads the environment and the filesystem, and the answer cannot
+        // change while the process runs.
+        static const std::filesystem::path fontDirectory = react_native_linux::ResourceResolver::runtimeFontDirectory(
+            std::optional<std::filesystem::path>(RNL_BUNDLED_FONT_DIR));
+        sk_sp<SkFontMgr> assetFontManager = SkFontMgr_New_Custom_Directory(fontDirectory.string().c_str());
 
         checkPinnedFontFamiliesResolve(*assetFontManager);
-        reportResolvedDefaultFontFamily();
+        reportResolvedDefaultFontFamily(fontDirectory);
 
         fontCollection->setAssetFontManager(assetFontManager);
         fontCollection->setDefaultFontManager(SkFontMgr_New_FontConfig(nullptr, SkFontScanner_Make_FreeType()),

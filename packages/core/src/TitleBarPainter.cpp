@@ -1,5 +1,6 @@
 #include "TitleBarPainter.h"
 
+#include "ResourceResolver.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkFont.h"
@@ -41,7 +42,11 @@ SkRect toSkRect(const DecorationRect& rectangle) {
 
 const SkFont& titleFont() {
     static const SkFont font(
-        SkFontMgr_New_Custom_Directory(RNL_BUNDLED_FONT_DIR)->matchFamilyStyle(kTitleFontFamily, SkFontStyle()),
+        SkFontMgr_New_Custom_Directory(react_native_linux::ResourceResolver::runtimeFontDirectory(
+                                           std::optional<std::filesystem::path>(RNL_BUNDLED_FONT_DIR))
+                                           .string()
+                                           .c_str())
+            ->matchFamilyStyle(kTitleFontFamily, SkFontStyle()),
         kTitleSize);
 
     return font;
