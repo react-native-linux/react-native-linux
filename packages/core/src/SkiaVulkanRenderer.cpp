@@ -782,7 +782,7 @@ void SkiaVulkanRenderer::createSwapchain() {
     swapchainSize_ = WindowSize{extent.width, extent.height};
     createBackbuffers(selectedFormat.format, imageUsage);
 
-    std::cout << "[rnl-window] swapchain format=" << describeSurfaceFormatChoice(formatChoice)
+    std::cout << "[rnl-present] swapchain format=" << describeSurfaceFormatChoice(formatChoice)
               << " composite-alpha=" << describeSurfaceAlphaChoice(alphaChoice) << std::endl;
 }
 

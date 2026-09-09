@@ -33,7 +33,7 @@ constexpr uint32_t kCompositeAlphaInheritBit = 0x00000008;
  * not a choice this renderer makes per frame, it is how `SkSurfaces::WrapBackendRenderTarget` is called — so
  * `PreMultiplied` is the only mode that composites what was actually painted without another pass over every
  * pixel. `Opaque` is the safe fallback: the compositor ignores the alpha channel entirely, which loses
- * transparency but never mis-blends it, unlike presenting premultiplied colour into a mode that expects
+ * transparency but never blends it incorrectly, unlike presenting premultiplied colour into a mode that expects
  * straight alpha. `PostMultiplied` and `InheritFromWindowSystem` are accepted only when nothing better is
  * offered, so that swapchain creation succeeds rather than throwing on a surface capable of showing the window at
  * all.
@@ -50,7 +50,7 @@ enum class SurfaceAlphaChoice : uint8_t {
  *
  * 1. `PreMultiplied`, if `kCompositeAlphaPreMultipliedBit` is supported. Matches Skia's output exactly.
  * 2. `Opaque`, if `kCompositeAlphaOpaqueBit` is supported. Correct-looking, merely not transparent.
- * 3. `PostMultiplied`, if `kCompositeAlphaPostMultipliedBit` is supported. Mis-blends translucent edges against
+ * 3. `PostMultiplied`, if `kCompositeAlphaPostMultipliedBit` is supported. Blends translucent edges incorrectly against
  *    premultiplied source colour, but is still a valid swapchain.
  * 4. `InheritFromWindowSystem` otherwise — the INHERIT-only surface, which some compositors report alone with
  *    nothing else set. There is always at least one bit set per the Vulkan specification, so this is reached only

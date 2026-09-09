@@ -528,7 +528,7 @@ later does not. See *Window goldens*.
 
 An invisible window has a second, unrelated cause besides the ordering rule above: a swapchain created with a
 composite alpha or an image format the surface does not actually support, or one Skia's premultiplied output
-mis-blends against. `SkiaVulkanRenderer::createSwapchain` used to answer both with a loop and a ternary; both are
+blends incorrectly against. `SkiaVulkanRenderer::createSwapchain` used to answer both with a loop and a ternary; both are
 now one table each in `SurfacePresentationPolicy.{h,cpp}`, which — like `VulkanResultPolicy` and
 `SurfaceCommitGate` — includes neither Vulkan nor Skia, which is what puts it inside the `rnl_core_tests` coverage
 gate at 100 % of lines and branches.
@@ -538,8 +538,8 @@ gate at 100 % of lines and branches.
 | Precedence | Supported bit | Choice | Why |
 | --- | --- | --- | --- |
 | 1 | `VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR` | pre-multiplied | Matches Skia's output exactly: `SkSurfaces::WrapBackendRenderTarget` always paints `kPremul_SkAlphaType`, so nothing further has to change per pixel. |
-| 2 | `VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR` | opaque | The compositor ignores the alpha channel entirely. Transparency is lost, but nothing mis-blends. |
-| 3 | `VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR` | post-multiplied | Expects straight alpha; premultiplied colour composited through it mis-blends translucent edges, but the swapchain is still valid. |
+| 2 | `VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR` | opaque | The compositor ignores the alpha channel entirely. Transparency is lost, but nothing blends incorrectly. |
+| 3 | `VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR` | post-multiplied | Expects straight alpha; premultiplied colour composited through it blends translucent edges incorrectly, but the swapchain is still valid. |
 | 4 | otherwise (INHERIT is the only bit reported) | inherit-from-window-system | The Vulkan specification guarantees at least one bit is always set, so this is reached only on an INHERIT-only surface. |
 
 **Surface format**, over the sRGB non-linear candidates `vkGetPhysicalDeviceSurfaceFormatsKHR` reports, reduced to
@@ -549,8 +549,11 @@ missing-preferred-format case — is a named failure rather than an unreachable 
 
 `SkiaVulkanRenderer.cpp` compiles a `static_assert` per composite-alpha constant against
 `VkCompositeAlphaFlagBitsKHR`, exactly as it does for `VulkanResultPolicy`'s `VkResult` constants, and prints the
-choice it made — `[rnl-window] swapchain format=<bgra8|rgba8> composite-alpha=<choice>` — on every swapchain
-creation, so the table's decision is visible in the trace rather than inferred. On this project's own RADV
+choice it made — `[rnl-present] swapchain format=<bgra8|rgba8> composite-alpha=<choice>` — on every swapchain
+creation, so the table's decision is visible in the trace rather than inferred. The line is tagged
+`[rnl-present]` rather than `[rnl-window]` because `ERROR_TRACE_PATTERNS` in `scripts/e2e/trace-grading.ts`
+treats every `[rnl-window]` line as a fault: that prefix is reserved for diagnostics, and an informational
+line wearing it fails every e2e scenario that starts a window. On this project's own RADV
 development driver the trace reads `format=bgra8 composite-alpha=pre-multiplied`.
 
 **Proving the blend.** `--transparent-background` clears the scene to `SK_ColorTRANSPARENT` instead of
