@@ -189,6 +189,16 @@ public:
     /** Whether `toplevelState` changed since the last call. Coalesces a burst of configures into one change. */
     bool takeStateChange() noexcept;
 
+    /**
+     * Replays an `xdg_toplevel.configure` by hand, through the very same body the wire's own configure runs, so
+     * the e2e driver's `--inject-window-sequence` (#430) can drive an extent and a state array under cage — a
+     * kiosk compositor that sizes its only window to the output and honours neither `set_maximized` nor
+     * `set_fullscreen`. It proves everything downstream of the configure: the pending-resize and
+     * pending-state-change flags, the relayout, the repaint and the present. It proves nothing about the wire
+     * half — no serial is acknowledged, because none was sent.
+     */
+    void injectConfigure(uint32_t width, uint32_t height, ToplevelState state) noexcept;
+
     /** How many `wl_surface.enter`/`.leave` events this surface has received, since construction. */
     uint32_t outputEnterCount() const noexcept;
     uint32_t outputLeaveCount() const noexcept;
@@ -307,6 +317,8 @@ private:
      */
     WaylandDispatchOutcome reportDispatchFailure(int result);
     void onToplevelConfigure(int32_t width, int32_t height, const wl_array* states);
+    /** The one body a configure takes, whether it arrived on the wire or through `injectConfigure`. */
+    void applyConfigure(int32_t width, int32_t height, ToplevelState decoded) noexcept;
     void negotiateDecorations();
     void destroyFrameCallback() noexcept;
 

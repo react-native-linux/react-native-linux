@@ -7058,6 +7058,59 @@ resolved against the uploaded keymap by walking it — `xkb_keymap_key_get_syms_
 level — rather than against a table of characters, which is what makes `type` and `key` the same lookup, and the
 evdev keycode both protocols carry is the keymap's keycode minus the X11 offset of 8 that *Input* describes.
 
+### Window control (#430)
+
+The injector cannot drive a resize, a window state or an output scale, and no amount of work on it would change
+that: `rnl_inject` owns no window and binds no xdg-shell, so it has nothing to send a `configure` about, and cage
+is a kiosk compositor that sizes its only client to the output and answers neither `set_maximized` nor
+`set_fullscreen`. Maestro has no resize primitive either, for the different reason that mobile has no resizable
+window, so there is no corpus to copy from — every upstream flow under `packages/rn-tester/.maestro/` was read and
+none of them resizes, changes orientation, or opens a second window.
+
+So the primitive lives in the window, alongside `--inject-key-sequence`, which exists for the same reason: cage
+runs no input method either. `--inject-window-sequence` takes brace-delimited tokens, parsed by
+`parseWindowControlSequence` in `WindowControlSequence.cpp` and paced one per 100 ms across the frame loop, each
+one replaying an `xdg_toplevel.configure` through `WaylandWindow::injectConfigure` — the *same* body the wire's
+own configure runs, so there is no second path to drift:
+
+```text
+{800x600}                    one configure at that extent
+{Drag:800x600:1000x600:5}    five configures interpolated inclusively between the two extents
+{Maximized} {Unmaximized}    the state bit, set or cleared, at whatever extent is current
+{Fullscreen} {Unfullscreen}
+{Tiled} {Untiled}            all four tiled edges at once, per isEffectivelyTiled's rule
+{Maximized:1280x800}         any state token may carry the extent that state arrives with
+```
+
+A drag carries `resizing` on every configure but its last, which is what a compositor does across an interactive
+resize and what makes the end of a drag distinguishable from its middle. Each applied step prints one
+`[rnl-geometry] configure <w>x<h> maximized=<n> fullscreen=<n> tiled=<n> resizing=<n>` line, deliberately *not*
+tagged `[rnl-window]`: `ERROR_TRACE_PATTERNS` in `scripts/e2e/trace-grading.ts` treats every line with that tag as
+a fault, so an informational line has to carry a different one. The step is applied at the top of the frame loop,
+before `takePendingResize`, so the configure a frame replays is the configure that frame relayouts, paints and
+presents — which is what makes "one layout pass and one paint per configure" an assertion the trace can carry at
+all (#42, #432, #433, #435).
+
+`packages/core/e2e/window-control.json` is the scenario: a tree whose rows are 50 % and 100 % of the surface
+width, driven through a configure, a five-step drag, maximize, unmaximize, fullscreen and unfullscreen, asserting
+the `[rnl-geometry]` line of each and the `onLayout` the tree answers it with — and that the row returns to the
+extent it started at once the states are all cleared again.
+
+**What it does not drive, and why.** *Output scale is not drivable and no token pretends to be.* The window binds
+no `wl_output`, vendors neither `wp_fractional_scale_v1` nor `wp_viewporter`, and never calls
+`wl_surface.set_buffer_scale`; `WindowSession::configureDimensions` passes `DimensionsSource::kDefaultScale`
+unconditionally, because 1 is the only scale this client is ever told about. There is therefore no scale for a
+driver primitive to change — a token would have to invent the plumbing first, and that plumbing is #113's, with
+#51 owning what re-rasterisation has to prove once it exists. The same holds for the wire half of the states this
+primitive replays: an injected configure acknowledges no serial, because none was sent, so #218's *event*
+contract is proved from the window's side only.
+
+Of the four Maestro patterns issue #430 lists, two are already how this rig works — the driver waits on a trace
+line rather than sleeping (`extendedWaitUntil`), and the automation channel is the in-app test runner whose result
+the driver reads back (`platform-test-pass-count-N`). Golden comparison with a threshold is `screenshot` in the
+scenario format. The fourth, `runFlow: when: platform:`, is deliberately not adopted: this harness has one
+platform, so a guard that degenerates to an empty passing flow would only be a way to skip silently.
+
 ### The rig
 
 `scripts/e2e.ts` is the driver. Per scenario it creates a private `XDG_RUNTIME_DIR`, starts

@@ -20,6 +20,7 @@
 #include "TitleBarPainter.h"
 #include "ToplevelState.h"
 #include "WaylandWindow.h"
+#include "WindowControlSequence.h"
 #include "WindowDecorations.h"
 #include "WindowRenderer.h"
 #include "WindowSession.h"
@@ -160,6 +161,7 @@ constexpr int kSecondaryPointerButton = 2;
 constexpr std::string_view kInjectProtocolErrorFlag = "--inject-protocol-error";
 constexpr std::string_view kInjectProtocolErrorAfterFrameFlag = "--inject-protocol-error-after-frame";
 constexpr std::string_view kInjectKeySequenceFlag = "--inject-key-sequence";
+constexpr std::string_view kInjectWindowSequenceFlag = "--inject-window-sequence";
 constexpr std::string_view kWindowErrorSource = "rnl-window";
 constexpr std::string_view kImeDebugSurroundingText = "react-native-linux";
 constexpr int32_t kImeDebugCursorX = 64;
@@ -216,6 +218,12 @@ constexpr uint64_t kNanosecondsPerSecond = 1'000'000'000;
  * runs no input method and cannot lose its only window's keyboard focus, which is precisely the two things the
  * composition e2e has to walk through. See *The compositor and input-method matrix* in docs/cpp-toolchain.md.
  *
+ * `--inject-window-sequence "<sequence>"` is #430's window-control primitive: `parseWindowControlSequence`'s
+ * grammar of replayed `xdg_toplevel.configure` events — an extent, a state array, or a drag interpolated between
+ * two extents — paced one per interval across the frame loop. It exists because cage is a kiosk compositor: it
+ * sizes its only window to the output and honours neither `set_maximized` nor `set_fullscreen`, so a second
+ * extent and a window state are two more things no scenario can obtain from the compositor itself.
+ *
  * `--transparent-background` is #328's composite-alpha and premultiplication proof: it clears the scene to
  * `SK_ColorTRANSPARENT` instead of `kSceneBackgroundColor`, so whatever the swapchain's chosen composite alpha
  * and Skia's premultiplied output do with a real alpha channel is visible rather than hidden behind an opaque
@@ -238,6 +246,7 @@ struct WindowArguments {
     bool injectProtocolError{false};
     bool injectProtocolErrorAfterFrame{false};
     std::optional<std::string> injectKeySequence;
+    std::vector<react_native_linux::WindowControlStep> injectedWindowSteps;
     std::string error;
 };
 
@@ -316,6 +325,36 @@ private:
     std::vector<std::string> tokens_;
     size_t nextTokenIndex_{0};
     std::chrono::steady_clock::time_point lastTokenTime_{std::chrono::steady_clock::now()};
+};
+
+/**
+ * The window-control primitive of #430, paced exactly as `InjectedKeySequence` paces input: one replayed
+ * `xdg_toplevel.configure` per interval across the frame loop, so each configure lands in its own frame and a
+ * drag is a stream of configures rather than two discrete sizes. It exists for the same reason the key sequence
+ * does — cage is a kiosk compositor, so no scenario can obtain a second extent, a maximized state or a
+ * fullscreen state from the compositor itself. See *Window host* in docs/cpp-toolchain.md.
+ */
+class InjectedWindowSequence final {
+public:
+    explicit InjectedWindowSequence(std::vector<react_native_linux::WindowControlStep> steps)
+        : steps_(std::move(steps)) {}
+
+    std::optional<react_native_linux::WindowControlStep> take(std::chrono::steady_clock::time_point now) {
+        if (nextStepIndex_ >= steps_.size() || now - lastStepTime_ < kInjectWindowSequenceInterval) {
+            return std::nullopt;
+        }
+
+        lastStepTime_ = now;
+
+        return steps_[nextStepIndex_++];
+    }
+
+private:
+    static constexpr std::chrono::milliseconds kInjectWindowSequenceInterval{100};
+
+    std::vector<react_native_linux::WindowControlStep> steps_;
+    size_t nextStepIndex_{0};
+    std::chrono::steady_clock::time_point lastStepTime_{std::chrono::steady_clock::now()};
 };
 
 /**
@@ -449,6 +488,10 @@ std::string describeMissingValue(std::string_view flag) {
         return "--inject-key-sequence requires a key sequence";
     }
 
+    if (flag == kInjectWindowSequenceFlag) {
+        return "--inject-window-sequence requires a window control sequence";
+    }
+
     if (flag == kTitleFlag) {
         return "--title requires a window title";
     }
@@ -522,7 +565,8 @@ WindowArguments parseArguments(std::span<char*> arguments) {
         }
 
         if (flag != kFabricFlag && flag != kScreenshotFlag && flag != kFramesFlag && flag != kFrameLogFlag &&
-            flag != kRendererFlag && flag != kAppIdFlag && flag != kTitleFlag && flag != kInjectKeySequenceFlag) {
+            flag != kRendererFlag && flag != kAppIdFlag && flag != kTitleFlag && flag != kInjectKeySequenceFlag &&
+            flag != kInjectWindowSequenceFlag) {
             // Not a flag at all: the desktop entry's `Exec=... %u` expansion for single-instance activation
             // (#363) hands this process a bare URL, with no `--` of its own. Nothing here consumes it — the
             // single-instance check reads the *original* argv directly, ahead of this parse — so it is not an
@@ -563,6 +607,16 @@ WindowArguments parseArguments(std::span<char*> arguments) {
             parsed.applicationIdentifier = std::string(value);
         } else if (flag == kInjectKeySequenceFlag) {
             parsed.injectKeySequence = std::string(value);
+        } else if (flag == kInjectWindowSequenceFlag) {
+            react_native_linux::WindowControlSequence sequence = react_native_linux::parseWindowControlSequence(value);
+
+            if (!sequence.error.empty()) {
+                parsed.error = sequence.error;
+
+                return parsed;
+            }
+
+            parsed.injectedWindowSteps = std::move(sequence.steps);
         } else if (flag == kTitleFlag) {
             parsed.title = std::string(value);
         } else {
@@ -1235,6 +1289,7 @@ int main(int argc, char** argv) {
 
             bool hasCaptured = isStartupCaptureFrame && !renderer.hasPendingCapture();
 
+            InjectedWindowSequence injectedWindowSequence(parsedArguments.injectedWindowSteps);
             // The startup token of #336: the launcher's credential, handed back on this window's surface so the
             // shell completes its startup notification, then stripped from the environment so nothing this
             // process spawns — Metro, the CLI's tooling, a Linking.openURL handler — inherits an activation that
@@ -1318,6 +1373,22 @@ int main(int argc, char** argv) {
                 // waitForRedraw, so the drain belongs at the top of the loop rather than beside the present.
                 if (frameLog.has_value()) {
                     writeFrameLines(frameLog.value(), window, session.has_value() ? &session.value() : nullptr);
+                }
+
+                // Before the pending-resize read below, so the configure this iteration replays is the one this
+                // iteration relayouts, paints and presents — which is what makes "one layout pass and one paint
+                // per configure" an assertion a scenario can make on the trace at all (#42, #432, #433, #435).
+                if (const std::optional<react_native_linux::WindowControlStep> windowStep =
+                        injectedWindowSequence.take(std::chrono::steady_clock::now());
+                    windowStep.has_value()) {
+                    // A zero extent is a state-only token: the window keeps the extent the compositor gave it.
+                    const react_native_linux::WindowControlStep resolvedStep{
+                        .width = windowStep->width == 0 ? window.size().width : windowStep->width,
+                        .height = windowStep->height == 0 ? window.size().height : windowStep->height,
+                        .state = windowStep->state};
+
+                    window.injectConfigure(resolvedStep.width, resolvedStep.height, resolvedStep.state);
+                    std::cout << react_native_linux::describeWindowControlStep(resolvedStep) << std::endl;
                 }
 
                 const bool hasResized = window.takePendingResize();

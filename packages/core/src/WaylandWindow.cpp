@@ -524,9 +524,15 @@ std::optional<std::string> WaylandWindow::takeActivationToken() {
 }
 
 void WaylandWindow::onToplevelConfigure(int32_t width, int32_t height, const wl_array* states) {
-    const ToplevelState decoded =
-        decodeToplevelStates(static_cast<const uint32_t*>(states->data), states->size / sizeof(uint32_t));
+    applyConfigure(width, height,
+                   decodeToplevelStates(static_cast<const uint32_t*>(states->data), states->size / sizeof(uint32_t)));
+}
 
+void WaylandWindow::injectConfigure(uint32_t width, uint32_t height, ToplevelState state) noexcept {
+    applyConfigure(static_cast<int32_t>(width), static_cast<int32_t>(height), state);
+}
+
+void WaylandWindow::applyConfigure(int32_t width, int32_t height, ToplevelState decoded) noexcept {
     if (decoded != toplevelState_) {
         toplevelState_ = decoded;
         pendingStateChange_ = true;
