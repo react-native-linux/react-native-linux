@@ -4,6 +4,7 @@
 #include "WaylandDispatchDiagnostics.h"
 #include "presentation-time-client-protocol.h"
 #include "text-input-unstable-v3-client-protocol.h"
+#include "xdg-activation-v1-client-protocol.h"
 #include "xdg-decoration-unstable-v1-client-protocol.h"
 #include "xdg-shell-client-protocol.h"
 
@@ -382,6 +383,9 @@ void WaylandWindow::bindGlobal(wl_registry* registry, uint32_t name, const char*
         void* bound = wl_registry_bind(registry, name, &zwp_text_input_manager_v3_interface,
                                        std::min(version, kMaximumTextInputManagerVersion));
         textInputManager_ = static_cast<zwp_text_input_manager_v3*>(bound);
+    } else if (std::strcmp(interfaceName, xdg_activation_v1_interface.name) == 0) {
+        void* bound = wl_registry_bind(registry, name, &xdg_activation_v1_interface, 1);
+        activation_ = static_cast<xdg_activation_v1*>(bound);
     } else if (std::strcmp(interfaceName, zxdg_decoration_manager_v1_interface.name) == 0) {
         void* bound = wl_registry_bind(registry, name, &zxdg_decoration_manager_v1_interface,
                                        std::min(version, kMaximumDecorationManagerVersion));
@@ -468,6 +472,55 @@ void WaylandWindow::dispatchWithTimeout(std::chrono::milliseconds timeout) {
     }
 
     reportDispatchFailure(wl_display_dispatch_pending(display_));
+}
+
+void WaylandWindow::handleActivationTokenDone(void* data, xdg_activation_token_v1* token, const char* tokenString) {
+    WaylandWindow* window = static_cast<WaylandWindow*>(data);
+
+    window->requestedActivationToken_ = tokenString == nullptr ? "" : std::string(tokenString);
+    xdg_activation_token_v1_destroy(token);
+    window->pendingActivationToken_ = nullptr;
+}
+
+void WaylandWindow::completeStartupActivation(const std::string& token) {
+    if (activation_ == nullptr) {
+        return;
+    }
+
+    // The inbound half: the token string is the credential, `activate` names the surface it raises.
+    xdg_activation_v1_activate(activation_, token.c_str(), surface_);
+}
+
+void WaylandWindow::requestActivationToken() {
+    if (activation_ == nullptr || pendingActivationToken_ != nullptr) {
+        return;
+    }
+
+    const std::optional<uint32_t> serial = serialLedger_.requestSerial(WaylandSerialKind::Selection);
+
+    if (!serial.has_value()) {
+        // A token bound to no press serial is declined exactly as an interactive move given a release serial is:
+        // the ledger's rule, and the reason the request waits until a press has happened rather than sending a
+        // serial that is known-wrong. See *Window host* in docs/cpp-toolchain.md.
+        return;
+    }
+
+    pendingActivationToken_ = xdg_activation_v1_get_activation_token(activation_);
+    static const xdg_activation_token_v1_listener kActivationTokenListener = {
+        .done = WaylandWindow::handleActivationTokenDone,
+    };
+
+    xdg_activation_token_v1_add_listener(pendingActivationToken_, &kActivationTokenListener, this);
+    xdg_activation_token_v1_set_serial(pendingActivationToken_, serial.value(), seat_->seat());
+    xdg_activation_token_v1_set_surface(pendingActivationToken_, surface_);
+    xdg_activation_token_v1_commit(pendingActivationToken_);
+}
+
+std::optional<std::string> WaylandWindow::takeActivationToken() {
+    std::optional<std::string> token = std::move(requestedActivationToken_);
+    requestedActivationToken_.reset();
+
+    return token;
 }
 
 void WaylandWindow::onToplevelConfigure(int32_t width, int32_t height, const wl_array* states) {

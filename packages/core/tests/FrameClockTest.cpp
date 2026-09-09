@@ -130,4 +130,56 @@ TEST(FrameClockTest, APermanentlySilentFrameSourceIsDetectableFromTheCounters) {
     EXPECT_EQ(clock.lastCallbackAt(), std::nullopt);
 }
 
+TEST(FrameClockTest, TheFallbackIntervalStretchesWithInactivityOverTheDisplayOwnPeriod) {
+    using namespace react_native_linux;
+
+    const std::chrono::nanoseconds refresh{8'333'333};
+
+    EXPECT_EQ(
+        FrameClock::fallbackInterval(FrameClock::WindowActivity::Active, FrameClock::ThermalState::Nominal, refresh),
+        refresh);
+    EXPECT_EQ(
+        FrameClock::fallbackInterval(FrameClock::WindowActivity::Inactive, FrameClock::ThermalState::Nominal, refresh),
+        refresh * 3);
+    EXPECT_EQ(
+        FrameClock::fallbackInterval(FrameClock::WindowActivity::Occluded, FrameClock::ThermalState::Nominal, refresh),
+        refresh * 8);
+}
+
+TEST(FrameClockTest, TheFallbackIntervalStretchesFromTheDisplaySPeriodNotFromAFixedConstant) {
+    using namespace react_native_linux;
+
+    const std::chrono::nanoseconds refresh60{16'666'666};
+
+    EXPECT_EQ(FrameClock::fallbackInterval(FrameClock::WindowActivity::Inactive, FrameClock::ThermalState::Nominal,
+                                           refresh60),
+              refresh60 * 3);
+}
+
+TEST(FrameClockTest, ASeriousOrCriticalThermalStateCapsTheIntervalAtOne60HzFrame) {
+    using namespace react_native_linux;
+
+    const std::chrono::nanoseconds refresh144{6'944'444};
+
+    for (const FrameClock::WindowActivity activity :
+         {FrameClock::WindowActivity::Active, FrameClock::WindowActivity::Inactive,
+          FrameClock::WindowActivity::Occluded}) {
+        EXPECT_EQ(FrameClock::fallbackInterval(activity, FrameClock::ThermalState::Serious, refresh144),
+                  std::chrono::nanoseconds{16'666'666});
+        EXPECT_EQ(FrameClock::fallbackInterval(activity, FrameClock::ThermalState::Critical, refresh144),
+                  std::chrono::nanoseconds{16'666'666});
+    }
+}
+
+TEST(FrameClockTest, TheThermalStateClassifiesAgainstTheZoneSOwnCriticalTrip) {
+    using namespace react_native_linux;
+
+    EXPECT_EQ(FrameClock::thermalStateFromCriticalRatio(0.5), FrameClock::ThermalState::Nominal);
+    EXPECT_EQ(FrameClock::thermalStateFromCriticalRatio(0.89), FrameClock::ThermalState::Nominal);
+    EXPECT_EQ(FrameClock::thermalStateFromCriticalRatio(0.9), FrameClock::ThermalState::Serious);
+    EXPECT_EQ(FrameClock::thermalStateFromCriticalRatio(0.99), FrameClock::ThermalState::Serious);
+    EXPECT_EQ(FrameClock::thermalStateFromCriticalRatio(1.0), FrameClock::ThermalState::Critical);
+    EXPECT_EQ(FrameClock::thermalStateFromCriticalRatio(1.1), FrameClock::ThermalState::Critical);
+}
+
 } // namespace

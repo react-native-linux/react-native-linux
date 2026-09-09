@@ -936,6 +936,9 @@ if(RNL_ENABLE_WINDOW)
     # *Decorations and app_id (#329)* in docs/cpp-toolchain.md.
     set(RNL_XDG_DECORATION_XML
         ${RNL_WAYLAND_PROTOCOLS_DIR}/unstable/xdg-decoration/xdg-decoration-unstable-v1.xml)
+    # xdg-activation is still staging (see *Activation tokens (#336)* in docs/cpp-toolchain.md): the launcher's
+    # token completes the shell's startup notification, and Linking.openURL hands one to the handler it opens.
+    set(RNL_XDG_ACTIVATION_XML ${RNL_WAYLAND_PROTOCOLS_DIR}/staging/xdg-activation/xdg-activation-v1.xml)
 
     if(NOT PkgConfig_FOUND)
         list(APPEND RNL_WINDOW_MISSING "pkg-config")
@@ -969,6 +972,10 @@ if(RNL_ENABLE_WINDOW)
 
     if(NOT RNL_WAYLAND_PROTOCOLS_DIR OR NOT EXISTS "${RNL_XDG_DECORATION_XML}")
         list(APPEND RNL_WINDOW_MISSING "wayland-protocols (unstable/xdg-decoration)")
+    endif()
+
+    if(NOT RNL_WAYLAND_PROTOCOLS_DIR OR NOT EXISTS "${RNL_XDG_ACTIVATION_XML}")
+        list(APPEND RNL_WINDOW_MISSING "wayland-protocols (staging/xdg-activation)")
     endif()
 
     if(NOT Vulkan_FOUND)
@@ -1075,6 +1082,28 @@ elseif(RNL_ENABLE_WINDOW)
     target_include_directories(rnl_xdg_decoration PUBLIC ${RNL_PROTOCOL_DIR})
     target_link_libraries(rnl_xdg_decoration PUBLIC PkgConfig::RNL_WAYLAND_CLIENT rnl_xdg_shell)
 
+    add_custom_command(
+        OUTPUT ${RNL_PROTOCOL_DIR}/xdg-activation-v1-client-protocol.h
+        COMMAND ${RNL_WAYLAND_SCANNER} client-header ${RNL_XDG_ACTIVATION_XML}
+                ${RNL_PROTOCOL_DIR}/xdg-activation-v1-client-protocol.h
+        DEPENDS ${RNL_XDG_ACTIVATION_XML}
+        COMMENT "wayland-scanner client-header xdg-activation-v1"
+        VERBATIM)
+
+    add_custom_command(
+        OUTPUT ${RNL_PROTOCOL_DIR}/xdg-activation-v1-protocol.c
+        COMMAND ${RNL_WAYLAND_SCANNER} private-code ${RNL_XDG_ACTIVATION_XML}
+                ${RNL_PROTOCOL_DIR}/xdg-activation-v1-protocol.c
+        DEPENDS ${RNL_XDG_ACTIVATION_XML}
+        COMMENT "wayland-scanner private-code xdg-activation-v1"
+        VERBATIM)
+
+    add_library(rnl_xdg_activation STATIC
+        ${RNL_PROTOCOL_DIR}/xdg-activation-v1-protocol.c
+        ${RNL_PROTOCOL_DIR}/xdg-activation-v1-client-protocol.h)
+    target_include_directories(rnl_xdg_activation PUBLIC ${RNL_PROTOCOL_DIR})
+    target_link_libraries(rnl_xdg_activation PUBLIC PkgConfig::RNL_WAYLAND_CLIENT)
+
     add_executable(rnl_window
         src/AutomationServer.cpp
         src/GpuResourceInvalidation.cpp
@@ -1100,6 +1129,7 @@ elseif(RNL_ENABLE_WINDOW)
         src/FrameJournal.cpp
         src/FrameTiming.cpp
         src/ResourceResolver.cpp
+        src/StartupActivationToken.cpp
     src/WindowSession.cpp)
 
     # The XDG desktop portal colour-scheme source of #52. sd-bus rather than libdbus, GDBus or sdbus-c++: it is
@@ -1132,6 +1162,7 @@ elseif(RNL_ENABLE_WINDOW)
             rnl_react_core
             rnl_scene_painter
             rnl_xdg_shell
+            rnl_xdg_activation
             rnl_xdg_decoration
             rnl_text_input
             rnl_presentation_time

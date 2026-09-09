@@ -14,6 +14,7 @@
 #include "SingleInstanceCoordinator.h"
 #endif
 #include "SkiaVulkanRenderer.h"
+#include "StartupActivationToken.h"
 #include "SurfaceCommitGate.h"
 #include "TextInputClient.h"
 #include "TitleBarPainter.h"
@@ -58,7 +59,83 @@ namespace {
 constexpr uint32_t kInitialWidth = 800;
 constexpr uint32_t kInitialHeight = 600;
 constexpr uint32_t kDefaultScreenshotFrames = 60;
-constexpr std::chrono::milliseconds kFrameCallbackFallback{50};
+// The frame-pacing inputs of #335. The fallback interval is the decision `FrameClock::fallbackInterval` makes
+// from the window's activity, the machine's thermal state and the display's frame period; the thermal state is
+// re-read from the kernel's thermal zones at most once a second, because a file walk per fallback tick is the
+// very waste the pacing exists to avoid. The display period is the nominal 60 Hz one until the compositor's
+// refresh hint is plumbed into the resolver (the follow-up #449 names for the journal thresholds applies here
+// too). The stretch multipliers make the deactivated fallback 50 ms — exactly what the fixed constant used to
+// give every window — while an activated window whose callbacks stopped is re-polled at full rate.
+constexpr std::chrono::nanoseconds kNominalRefreshInterval{16'666'666};
+constexpr std::chrono::milliseconds kThermalReadInterval{1'000};
+constexpr const char* kThermalZoneGlob = "/sys/class/thermal/thermal_zone*";
+
+react_native_linux::FrameClock::ThermalState readThermalState(std::chrono::steady_clock::time_point now) {
+    static std::chrono::steady_clock::time_point lastRead{};
+    static react_native_linux::FrameClock::ThermalState cached = react_native_linux::FrameClock::ThermalState::Nominal;
+
+    if (now - lastRead < kThermalReadInterval) {
+        return cached;
+    }
+
+    double worstRatio = 0.0;
+
+    // A container or a kernel without thermal zones has none to read: that is nominal, not an error. The
+    // error_code overloads return an end iterator instead of throwing, which is what the golden rig's window
+    // taught CI the hard way.
+    std::error_code zonesError;
+    const std::filesystem::directory_iterator zonesEnd;
+
+    for (std::filesystem::directory_iterator zone(kThermalZoneGlob, zonesError); zone != zonesEnd;
+         zone.increment(zonesError)) {
+        if (zonesError) {
+            break;
+        }
+
+        std::ifstream temperatureFile(zone->path() / "temp");
+
+        double temperature = 0.0;
+
+        if (!(temperatureFile >> temperature) || temperature <= 0.0) {
+            continue;
+        }
+
+        double criticalTrip = 0.0;
+
+        std::error_code tripsError;
+        const std::filesystem::directory_iterator tripsEnd;
+
+        for (std::filesystem::directory_iterator trip(zone->path(), tripsError); trip != tripsEnd;
+             trip.increment(tripsError)) {
+            if (tripsError) {
+                break;
+            }
+
+            const std::string tripName = trip->path().filename().string();
+
+            if (!tripName.starts_with("trip_point_") || !tripName.ends_with("_temp")) {
+                continue;
+            }
+
+            std::ifstream tripFile(trip->path());
+            double tripTemperature = 0.0;
+
+            if (tripFile >> tripTemperature && tripTemperature > criticalTrip) {
+                criticalTrip = tripTemperature;
+            }
+        }
+
+        if (criticalTrip > 0.0) {
+            worstRatio = std::max(worstRatio, temperature / criticalTrip);
+        }
+    }
+
+    cached = react_native_linux::FrameClock::thermalStateFromCriticalRatio(worstRatio);
+    lastRead = now;
+
+    return cached;
+}
+
 constexpr SkColor kCardColor = SkColorSetRGB(0x33, 0x66, 0xCC);
 constexpr SkScalar kCardInset = 64.0F;
 constexpr SkScalar kCardCornerRadius = 24.0F;
@@ -791,6 +868,30 @@ bool carriesSurfacePoint(react_native_linux::InputEventKind kind) {
            kind == react_native_linux::InputEventKind::PointerScrollStop;
 }
 
+/** The trace name of a resize-gutter hit — the acceptance of #367 names the edge, so the line does too. */
+std::string_view decorationHitName(react_native_linux::DecorationHit hit) {
+    switch (hit) {
+    case react_native_linux::DecorationHit::ResizeTop:
+        return "top";
+    case react_native_linux::DecorationHit::ResizeBottom:
+        return "bottom";
+    case react_native_linux::DecorationHit::ResizeLeft:
+        return "left";
+    case react_native_linux::DecorationHit::ResizeRight:
+        return "right";
+    case react_native_linux::DecorationHit::ResizeTopLeft:
+        return "top-left";
+    case react_native_linux::DecorationHit::ResizeTopRight:
+        return "top-right";
+    case react_native_linux::DecorationHit::ResizeBottomLeft:
+        return "bottom-left";
+    case react_native_linux::DecorationHit::ResizeBottomRight:
+        return "bottom-right";
+    default:
+        return "none";
+    }
+}
+
 void activateDecoration(react_native_linux::WaylandWindow& window, WindowChrome& chrome,
                         react_native_linux::DecorationHit hit) {
     if (hit == react_native_linux::DecorationHit::Close) {
@@ -819,11 +920,16 @@ void activateDecoration(react_native_linux::WaylandWindow& window, WindowChrome&
             return;
         }
 
+        // The e2e trace of #367: the request is what the acceptance names, and the line is how a scenario
+        // proves it was sent — the compositor's own answer (a grab, or a quiet no-op on a kiosk) is invisible
+        // to the client either way.
+        std::cout << "[rnl-decorations] move" << std::endl;
         window.startInteractiveMove();
 
         return;
     }
 
+    std::cout << "[rnl-decorations] resize " << decorationHitName(hit) << std::endl;
     window.startInteractiveResize(react_native_linux::resizeEdgeOfHit(hit));
 }
 
@@ -872,6 +978,8 @@ routeDecorationInput(react_native_linux::WaylandWindow& window, WindowChrome& ch
             if (isPrimaryPress) {
                 activateDecoration(window, chrome, hit);
             } else if (isSecondaryPress && hit == react_native_linux::DecorationHit::Drag) {
+                std::cout << "[rnl-decorations] window-menu " << event.surfacePoint.x << "," << event.surfacePoint.y
+                          << std::endl;
                 window.showWindowMenu(static_cast<int32_t>(event.surfacePoint.x),
                                       static_cast<int32_t>(event.surfacePoint.y));
             }
@@ -1182,6 +1290,27 @@ int main(int argc, char** argv) {
             bool hasCaptured = isStartupCaptureFrame && !renderer.hasPendingCapture();
 
             InjectedWindowSequence injectedWindowSequence(parsedArguments.injectedWindowSteps);
+            // The startup token of #336: the launcher's credential, handed back on this window's surface so the
+            // shell completes its startup notification, then stripped from the environment so nothing this
+            // process spawns — Metro, the CLI's tooling, a Linking.openURL handler — inherits an activation that
+            // is not theirs. Read once, consumed at most once, and only when the compositor can even answer.
+            static react_native_linux::StartupActivationToken startupActivationToken =
+                react_native_linux::StartupActivationToken::fromEnvironment([] {
+                    const char* value = std::getenv(react_native_linux::kStartupActivationTokenVariable);
+
+                    return value == nullptr ? std::nullopt : std::optional<std::string>(value);
+                }());
+
+            const std::optional<std::string> startupToken = startupActivationToken.take();
+
+            if (startupToken.has_value()) {
+                window.completeStartupActivation(startupToken.value());
+                // Stripped before anything this process spawns can inherit it — Metro, the CLI's tooling, a
+                // Linking.openURL handler — each of which would otherwise claim an activation that is not
+                // theirs. Unsetting is unconditional: once this window has the credential, the environment must
+                // not carry a second copy of it.
+                unsetenv(react_native_linux::kStartupActivationTokenVariable);
+            }
 
             std::optional<InjectedKeySequence> injectedSequence =
                 parsedArguments.injectKeySequence.has_value()
@@ -1457,8 +1586,20 @@ int main(int argc, char** argv) {
                 }
                 hasCaptured = isCaptureFrame && !renderer.hasPendingCapture();
 
-                if (!hasCaptured && !window.waitForRedraw(kFrameCallbackFallback)) {
-                    break;
+                if (!hasCaptured) {
+                    // The compositor is not pacing this window — that is what the fallback is for — so the wait
+                    // is the interval the pacing decision (#335) makes from the window's activity, the machine's
+                    // thermal state and the display's frame period.
+                    const std::chrono::steady_clock::time_point fallbackNow = std::chrono::steady_clock::now();
+                    const std::chrono::nanoseconds fallbackInterval = react_native_linux::FrameClock::fallbackInterval(
+                        window.toplevelState().activated ? react_native_linux::FrameClock::WindowActivity::Active
+                                                         : react_native_linux::FrameClock::WindowActivity::Inactive,
+                        readThermalState(fallbackNow), kNominalRefreshInterval);
+
+                    if (!window.waitForRedraw(
+                            std::chrono::duration_cast<std::chrono::milliseconds>(fallbackInterval))) {
+                        break;
+                    }
                 }
             }
 
