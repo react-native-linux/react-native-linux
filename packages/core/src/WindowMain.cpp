@@ -790,11 +790,16 @@ void activateDecoration(react_native_linux::WaylandWindow& window, WindowChrome&
             return;
         }
 
+        // The e2e trace of #367: the request is what the acceptance names, and the line is how a scenario
+        // proves it was sent — the compositor's own answer (a grab, or a quiet no-op on a kiosk) is invisible
+        // to the client either way.
+        std::cout << "[rnl-decorations] move" << std::endl;
         window.startInteractiveMove();
 
         return;
     }
 
+    std::cout << "[rnl-decorations] resize " << decorationHitName(hit) << std::endl;
     window.startInteractiveResize(react_native_linux::resizeEdgeOfHit(hit));
 }
 
@@ -843,6 +848,8 @@ routeDecorationInput(react_native_linux::WaylandWindow& window, WindowChrome& ch
             if (isPrimaryPress) {
                 activateDecoration(window, chrome, hit);
             } else if (isSecondaryPress && hit == react_native_linux::DecorationHit::Drag) {
+                std::cout << "[rnl-decorations] window-menu " << event.surfacePoint.x << "," << event.surfacePoint.y
+                          << std::endl;
                 window.showWindowMenu(static_cast<int32_t>(event.surfacePoint.x),
                                       static_cast<int32_t>(event.surfacePoint.y));
             }
