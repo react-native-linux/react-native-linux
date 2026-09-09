@@ -1,0 +1,28 @@
+{
+  "name": "window-decorations-requests",
+  "bundle": "decorations-target.js",
+  "ready": "decorations-target: committed surface 1",
+  "frames": 600,
+  "windowFlags": ["--force-client-decorations", "--app-id", "org.reactnative.linux.e2e"],
+  "steps": [
+    "sleep 500",
+    "click 300 16",
+    "sleep 300",
+    "click 1276 300",
+    "sleep 300",
+    "move 600 16",
+    "button right press",
+    "button right release",
+    "sleep 300",
+    "click 600 260",
+    "sleep 500"
+  ],
+  "expect": [
+    "[rnl-decorations] mode=client app-id=org.reactnative.linux.e2e",
+    "[rnl-decorations] move",
+    "[rnl-decorations] resize right",
+    "[rnl-decorations] window-menu 600,16",
+    "decorations-target: topPointerDown on content at 600,228"
+  ],
+  "reject": ["[rnl-decorations] resize left", "[rnl-decorations] resize top", "[rnl-decorations] close"]
+}

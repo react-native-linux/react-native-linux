@@ -42,7 +42,10 @@ jobs:
       - name: Install clang-format and desktop-file-utils
         run: |
           set -euo pipefail
-          sudo apt-get update
+          # The runner image's third-party google-chrome apt source has been returning a hash-sum
+          # mismatch, failing every `apt-get update` in jobs that do not care about it. Drop the source
+          # before the update when the update fails: our packages come from the Ubuntu archives.
+          sudo apt-get update || (sudo rm -f /etc/apt/sources.list.d/google-chrome.list && sudo apt-get update)
           sudo apt-get install -y clang-format-18 desktop-file-utils
           clang-format-18 --version
           desktop-file-validate --version
@@ -152,7 +155,7 @@ jobs:
       - name: Install build prerequisites
         run: |
           set -euo pipefail
-          sudo apt-get update
+          sudo apt-get update || (sudo rm -f /etc/apt/sources.list.d/google-chrome.list && sudo apt-get update)
           sudo apt-get install -y \
             build-essential \
             ccache \
@@ -283,7 +286,7 @@ jobs:
       - name: Install build prerequisites
         run: |
           set -euo pipefail
-          sudo apt-get update
+          sudo apt-get update || (sudo rm -f /etc/apt/sources.list.d/google-chrome.list && sudo apt-get update)
           sudo apt-get install -y \
             build-essential \
             ccache \
@@ -538,7 +541,7 @@ jobs:
       - name: Install build prerequisites
         run: |
           set -euo pipefail
-          sudo apt-get update
+          sudo apt-get update || (sudo rm -f /etc/apt/sources.list.d/google-chrome.list && sudo apt-get update)
           sudo apt-get install -y \
             build-essential \
             ccache \

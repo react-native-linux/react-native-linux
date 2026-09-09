@@ -814,6 +814,30 @@ bool carriesSurfacePoint(react_native_linux::InputEventKind kind) {
            kind == react_native_linux::InputEventKind::PointerScrollStop;
 }
 
+/** The trace name of a resize-gutter hit — the acceptance of #367 names the edge, so the line does too. */
+std::string_view decorationHitName(react_native_linux::DecorationHit hit) {
+    switch (hit) {
+    case react_native_linux::DecorationHit::ResizeTop:
+        return "top";
+    case react_native_linux::DecorationHit::ResizeBottom:
+        return "bottom";
+    case react_native_linux::DecorationHit::ResizeLeft:
+        return "left";
+    case react_native_linux::DecorationHit::ResizeRight:
+        return "right";
+    case react_native_linux::DecorationHit::ResizeTopLeft:
+        return "top-left";
+    case react_native_linux::DecorationHit::ResizeTopRight:
+        return "top-right";
+    case react_native_linux::DecorationHit::ResizeBottomLeft:
+        return "bottom-left";
+    case react_native_linux::DecorationHit::ResizeBottomRight:
+        return "bottom-right";
+    default:
+        return "none";
+    }
+}
+
 void activateDecoration(react_native_linux::WaylandWindow& window, WindowChrome& chrome,
                         react_native_linux::DecorationHit hit) {
     if (hit == react_native_linux::DecorationHit::Close) {
@@ -842,11 +866,16 @@ void activateDecoration(react_native_linux::WaylandWindow& window, WindowChrome&
             return;
         }
 
+        // The e2e trace of #367: the request is what the acceptance names, and the line is how a scenario
+        // proves it was sent — the compositor's own answer (a grab, or a quiet no-op on a kiosk) is invisible
+        // to the client either way.
+        std::cout << "[rnl-decorations] move" << std::endl;
         window.startInteractiveMove();
 
         return;
     }
 
+    std::cout << "[rnl-decorations] resize " << decorationHitName(hit) << std::endl;
     window.startInteractiveResize(react_native_linux::resizeEdgeOfHit(hit));
 }
 
@@ -895,6 +924,8 @@ routeDecorationInput(react_native_linux::WaylandWindow& window, WindowChrome& ch
             if (isPrimaryPress) {
                 activateDecoration(window, chrome, hit);
             } else if (isSecondaryPress && hit == react_native_linux::DecorationHit::Drag) {
+                std::cout << "[rnl-decorations] window-menu " << event.surfacePoint.x << "," << event.surfacePoint.y
+                          << std::endl;
                 window.showWindowMenu(static_cast<int32_t>(event.surfacePoint.x),
                                       static_cast<int32_t>(event.surfacePoint.y));
             }
