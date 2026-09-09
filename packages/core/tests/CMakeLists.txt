@@ -95,6 +95,7 @@ add_executable(rnl_core_tests
     PinnedFontFamiliesTest.cpp
     PixelAndFontScaleTest.cpp
     RendererLadderTest.cpp
+    ResizeRelayoutTest.cpp
     SceneTest.cpp
     SeededInterleavingTest.cpp
     SeededTestSchedulerTest.cpp
