@@ -63,6 +63,7 @@ add_executable(rnl_core_tests
     BorderGeometryTest.cpp
     DefaultFontFamilyTest.cpp
     DimensionsTest.cpp
+    SceneNodeResetTest.cpp
     SceneReuseTest.cpp
     ShadowTest.cpp
     EditorTest.cpp
