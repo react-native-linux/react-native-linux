@@ -35,13 +35,6 @@ constexpr float kScrolledDown = 250.0F;
 constexpr size_t kNodeCount = static_cast<size_t>(kRowCount) + 3;
 constexpr int32_t kOpaqueBlue = static_cast<int32_t>(0xFF3366CCU);
 
-LayoutConstraints surfaceConstraints(float width) {
-    const Size size{.width = width, .height = kSurfaceHeight};
-
-    return LayoutConstraints{
-        .minimumSize = size, .maximumSize = size, .layoutDirection = facebook::react::LayoutDirection::LeftToRight};
-}
-
 folly::dynamic paintedProps(folly::dynamic props) {
     props["backgroundColor"] = kOpaqueBlue;
 
@@ -85,7 +78,8 @@ protected:
 
     void resizeTo(float width) {
         const PropsParserContext propsParserContext{kSurfaceId, *contextContainer_};
-        const LayoutConstraints layoutConstraints = surfaceConstraints(width);
+        const LayoutConstraints layoutConstraints =
+            react_native_linux::exactSurfaceConstraints(Size{.width = width, .height = kSurfaceHeight});
 
         commit([&propsParserContext, &layoutConstraints](const RootShadowNode& oldRootShadowNode) {
             return oldRootShadowNode.clone(propsParserContext, layoutConstraints, LayoutContext{});
