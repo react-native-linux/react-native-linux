@@ -8134,6 +8134,27 @@ Two flags fantom sets are deliberately dropped, because fantom targets the NDK a
 and libstdc++: `FOLLY_USE_LIBCPP` (folly would include libc++'s `<__config>`) and `FOLLY_HAVE_XSI_STRERROR_R`
 (glibc's `strerror_r` is the GNU variant and returns `char*`).
 
+<<<<<<< HEAD
+### Idle pacing (#335)
+
+ADR-0001's pacing obligation has two halves: hit the compositor's deadline when there is something to show
+(#20), and stop when there is not. The second half lives in the fallback: `FrameClock::fallbackInterval` decides
+how long `waitForRedraw` waits when the compositor is not pacing the window — a deactivated window stretches the
+interval to three display periods, an occluded one to eight, and an active one keeps the display's own period.
+A serious or critical thermal state caps the interval at one 60 Hz frame whatever the display or the activity
+would otherwise stretch it to: the machine is saying it is slow, and the stretch is a saving only while the
+thermal state is nominal. The thermal state comes from the kernel's thermal zones — each zone's temperature
+against its own critical trip (`thermalStateFromCriticalRatio`: at the trip is critical, 0.9 of it is serious) —
+re-read at most once a second, because a file walk per fallback tick is the waste the pacing exists to avoid.
+
+An idle window that is *also* clean already does nothing: the fallback draws only when the session reports
+pending work, so an occluded window with no animation stops presenting entirely (see *Frame clock*). Still open
+on #335: the clean-window re-present (presenting the last frame without repainting needs the renderer to hold
+it — swapchain images do not survive a present), the e2e deactivation scenario, and the idle GPU-time ceiling —
+the last two share the container-matrix rig.
+
+=======
+>>>>>>> origin/main
 ### The resource resolver (#361)
 
 Everything the running process finds on disk goes through one ordered search (`packages/core/src/ResourceResolver.{h,cpp}`,

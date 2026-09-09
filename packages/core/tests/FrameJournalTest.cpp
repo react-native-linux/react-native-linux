@@ -430,6 +430,20 @@ TEST(FrameJournalTest, DamageRecordedAfterACleanFrameTickStillOpensThatFramesInt
     EXPECT_EQ(closed->paintNanoseconds.value(), 1U * kMillisecond);
 }
 
+// #335's faster fallback pacing exposed this: the compositor's presentation clock and steady_clock drift
+// between the per-batch offset samples, and a presented time a few microseconds before the dirty edge used to
+// wrap a unsigned subtraction into a sample that poisoned every percentile and tripped the fail-closed parser.
+TEST(FrameJournalTest, APresentedTimeInsideTheClockSkewClampsToZeroRatherThanWrapping) {
+    FrameJournal journal = buildJournal();
+
+    journal.recordDamage(1'000'000'000);
+    const std::optional<FrameJournal::ClosedFrame> closed = journal.recordPresented(999'999'980);
+
+    ASSERT_TRUE(closed.has_value());
+    EXPECT_EQ(closed->dirtyToPresentNanoseconds, 0U);
+    EXPECT_FALSE(closed->isHang);
+}
+
 TEST(FrameJournalTest, ThePresentationClockOffsetIsZeroWhenThereIsNothingToConvert) {
     const uint32_t monotonic = static_cast<uint32_t>(CLOCK_MONOTONIC);
 
