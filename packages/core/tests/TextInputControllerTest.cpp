@@ -281,6 +281,22 @@ TEST_F(TextInputControllerTest, TheCompositionLifecycleSuppressesNothingTheModel
     EXPECT_FALSE(controller_->isComposing());
 }
 
+// #340: the field that loses the caret mid-composition loses the composing run with it. Without this the
+// abandoned pre-edit stays rendered in a field nobody is typing into, and the composition the next field starts
+// is not the clean start the session's teardown promises.
+TEST_F(TextInputControllerTest, AFocusChangeTakesTheAbandonedCompositionWithIt) {
+    commitTextInput(folly::dynamic::object());
+
+    controller_->onImePreedit("ni", 0, 2);
+
+    EXPECT_TRUE(controller_->isComposing());
+
+    controller_->setFocusedNode(nullptr);
+    controller_->setFocusedNode(mountedField_);
+
+    EXPECT_FALSE(controller_->isComposing());
+}
+
 // core#54570: an uncontrolled multiline field never grew. Upstream's `updateStateIfNeeded` skips a field whose
 // React-tree text is empty, so the state's font-size multiplier stayed NaN, compared unequal to the layout's, and
 // `attributedStringBoxToMeasure` measured the placeholder for the rest of the field's life. The initial state now

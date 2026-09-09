@@ -23,6 +23,7 @@ using react_native_linux::InputEventKind;
 using react_native_linux::InputModifiers;
 using react_native_linux::InputQueue;
 using react_native_linux::isTextKey;
+using react_native_linux::keySequenceTokens;
 using react_native_linux::kInputQueueCapacity;
 using react_native_linux::makeActivationDispatch;
 using react_native_linux::notchesForValue120;
@@ -614,6 +615,23 @@ TEST(ParseKeySequenceTest, IgnoresTokensItDoesNotRecogniseAndStopsAtAnUnclosedOn
 
     ASSERT_EQ(truncated.size(), 2U);
     EXPECT_EQ(truncated[0].key, "a");
+}
+
+TEST(ParseKeySequenceTest, SplitsASequenceIntoTheTokensThePacerNeeds) {
+    const std::vector<std::string> tokens = keySequenceTokens("{Tab}{Preedit:ni}x");
+
+    ASSERT_EQ(tokens.size(), 3U);
+    EXPECT_EQ(tokens[0], "{Tab}");
+    EXPECT_EQ(tokens[1], "{Preedit:ni}");
+    EXPECT_EQ(tokens[2], "x");
+}
+
+TEST(ParseKeySequenceTest, TheTokenizerHandsAnUnclosedGroupToTheCallerVerbatim) {
+    const std::vector<std::string> tokens = keySequenceTokens("{Tab}{Leave");
+
+    ASSERT_EQ(tokens.size(), 2U);
+    EXPECT_EQ(tokens[0], "{Tab}");
+    EXPECT_EQ(tokens[1], "{Leave");
 }
 
 #pragma mark - the mouse payload contract (#66)

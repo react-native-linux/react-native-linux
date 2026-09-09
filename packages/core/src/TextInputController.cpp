@@ -140,11 +140,24 @@ void TextInputController::setMountedFields(const std::vector<std::shared_ptr<con
 void TextInputController::setFocusedNode(const std::shared_ptr<const facebook::react::ShadowNode>& shadowNode) {
     const std::shared_ptr<const TextInputShadowNode> textInput =
         std::dynamic_pointer_cast<const TextInputShadowNode>(shadowNode);
+    const facebook::react::Tag nextTag = textInput == nullptr ? 0 : textInput->getTag();
+
+    // A composition is per field, and the field that loses the caret mid-composition loses the run with it —
+    // otherwise the abandoned pre-edit stays rendered in a field nobody is typing into, which is the leak between
+    // fields #340 is about. The compositor-side teardown answers the same rule with an empty pre-edit delivered
+    // to whichever field holds the caret now; this is the client half, applied at the focus change itself.
+    if (nextTag != focusedTag_) {
+        TextInputField* previous = focusedField();
+
+        if (previous != nullptr && previous->editor.isComposing()) {
+            previous->editor.applyPreedit("", 0, 0);
+        }
+    }
 
     isSelectingByPointer_ = false;
     isCaretVisible_ = true;
     blinkMilliseconds_ = 0.0;
-    focusedTag_ = textInput == nullptr ? 0 : textInput->getTag();
+    focusedTag_ = nextTag;
 }
 
 bool TextInputController::isComposing() const {

@@ -632,14 +632,14 @@ bool isTextKey(const std::string& key) {
     return codePointLength(key, 0) == key.size() && isPrintableText(key);
 }
 
-std::vector<InputEvent> parseKeySequence(const std::string& sequence) {
-    std::vector<InputEvent> events;
+std::vector<std::string> keySequenceTokens(const std::string& sequence) {
+    std::vector<std::string> tokens;
 
     for (size_t index = 0; index < sequence.size();) {
         if (sequence[index] != kTokenOpen) {
             const size_t width = codePointLength(sequence, index);
 
-            appendKeyPress(events, sequence.substr(index, width), {});
+            tokens.push_back(sequence.substr(index, width));
             index += width;
 
             continue;
@@ -648,11 +648,35 @@ std::vector<InputEvent> parseKeySequence(const std::string& sequence) {
         const size_t close = sequence.find(kTokenClose, index);
 
         if (close == std::string::npos) {
-            return events;
+            tokens.push_back(sequence.substr(index));
+
+            break;
         }
 
-        appendToken(events, sequence.substr(index + 1, close - index - 1));
+        tokens.push_back(sequence.substr(index, close - index + 1));
         index = close + 1;
+    }
+
+    return tokens;
+}
+
+std::vector<InputEvent> parseKeySequence(const std::string& sequence) {
+    std::vector<InputEvent> events;
+
+    for (const std::string& token : keySequenceTokens(sequence)) {
+        if (token.front() == kTokenOpen) {
+            // An unterminated group cannot be a token, and `parseKeySequence` has always stopped there rather
+            // than guessing where it ended.
+            if (token.back() != kTokenClose) {
+                break;
+            }
+
+            appendToken(events, token.substr(1, token.size() - 2));
+
+            continue;
+        }
+
+        appendKeyPress(events, token, {});
     }
 
     return events;

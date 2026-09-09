@@ -1,0 +1,20 @@
+{
+  "name": "text-input-compose",
+  "bundle": "text-input-compose.js",
+  "ready": "text-input-compose: committed surface 1",
+  "frames": 600,
+  "windowFlags": [
+    "--no-decorations",
+    "--inject-key-sequence",
+    "{Tab}{Preedit:ni}{Commit:ni}{Tab}{Preedit:ha}{Commit:好}{Preedit:ya}{Commit:o}"
+  ],
+  "steps": ["sleep 3000"],
+  "expect": [
+    "[rnl-ime] field focused",
+    "text-input-compose: topChange on first text=\"ni\"",
+    "text-input-compose: topFocus on second",
+    "text-input-compose: topChange on second text=\"好\"",
+    "text-input-compose: topChange on second text=\"好o\""
+  ],
+  "reject": ["text-input-compose: topChange on first text=\"好\""]
+}

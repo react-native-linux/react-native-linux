@@ -5597,16 +5597,32 @@ values the protocol reads as "never", a stale serial and a compositor that never
 protocol plumbing that needs a compositor, and `--ime-debug` is the test for it.
 
 The session's transitions are observable without a compositor, because `InputDispatcher` writes one trace line
-per change — `[rnl-ime] field focused purpose=email`, `[rnl-ime] field blurred`. `hello_react --type
+per change — `[rnl-ime] field focused purpose=email`, `[rnl-ime] field blurred` — and `TextInputClient` writes
+the session lifecycle's own, `[rnl-ime] session enabled` and `[rnl-ime] session disabled`, which are the two
+transitions no field change explains: a re-enable after a keyboard leave and enter. `hello_react --type
 packages/core/test-bundles/text-input-session.js /tmp/rnl-session.png "{Tab}{Tab}{Tab}"` prints them for a
 fixture of one field and one focusable node that is not a field, and the `text-input-session` e2e scenario asserts
-the same three lines across a Tab into the field, a click on the button and a Tab back. What that scenario cannot
-prove is composition itself: cage runs no input method, so the e2e proves the enable and disable sequence and the
-unit gate proves what each of them carries.
+the same three lines across a Tab into the field, a click on the button and a Tab back.
 
-The e2e layer issue #26 asks for — a virtual input method injecting composition under the headless compositor —
-is not built. It needs the harness to speak the compositor side, `input-method-v2`, which is a second protocol
-implementation and the *Deferrals* below explain why it is not this issue's.
+The composition e2e is `text-input-compose`, driven by `rnl_window --inject-key-sequence`: the key-sequence
+grammar `parseKeySequence` already speaks, paced one token per interval across the frame loop. Where the
+compositor advertises `zwp_text_input_manager_v3`, `{Preedit:...}` and `{Commit:...}` route through the session —
+the same `preedit_string`/`commit_string`+`done` pair the wire carries, so the teardown and the serial gating are
+exercised and not only the editor the run lands in — and `{SessionLeave}`/`{SessionEnter}` replay the keyboard
+leave and enter a compositor with one window cannot be made to produce. Where it does not — cage advertises no
+text-input manager — a composition token falls back to the editor-level events, which is that delivery minus the
+session, and the session traces do not appear; the session lifecycle stays the unit gate's below.
+
+The scenario walks a committed composition into field A, a focus change to field B, a clean composition and
+commit in B, then a second composition in B — asserting the ordered traces and the two committed texts, with
+nothing of B's landing in A. The walk commits before the focus change because it must: while a composition is
+open, every key belongs to the input method (#54's routing rule), so a Tab mid-composition is dropped on every
+compositor, not just this one. The abandoned-composition walk — a run still composing when the caret leaves — is
+the controller unit gate above and the `{SessionLeave}`/`{SessionEnter}` pair where a text-input manager exists.
+
+What still needs a real compositor is the wire decode under live traffic, which `ImeTest` covers with recorded
+sequences, and the compositor-side half of the protocol — being the input method rather than talking to one,
+`input-method-v2` — which stays the *Deferrals* below.
 
 ### Deferrals, with owners
 
