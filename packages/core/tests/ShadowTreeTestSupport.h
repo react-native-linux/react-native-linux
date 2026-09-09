@@ -134,6 +134,17 @@ inline void removeShadowTree(facebook::react::UIManager& uiManager, SurfaceId su
 }
 
 /**
+ * The `LayoutConstraints` a Wayland configure produces: one exact size pinned as both bounds, which is what
+ * `FabricHost::setSurfaceSize` hands `SurfaceHandler::constraintLayout`. Shared because the same three fields in
+ * two resize-driven fixtures is a jscpd clone at threshold 0.
+ */
+inline LayoutConstraints exactSurfaceConstraints(Size surfaceSize) {
+    return LayoutConstraints{.minimumSize = surfaceSize,
+                             .maximumSize = surfaceSize,
+                             .layoutDirection = facebook::react::LayoutDirection::LeftToRight};
+}
+
+/**
  * One configured shadow node from a concrete component descriptor: family, parsed props, optional initial state.
  * The three commit-driven fixtures build their nodes through this because the same body three times is a jscpd
  * clone at threshold 0.
