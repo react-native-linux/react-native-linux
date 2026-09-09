@@ -63,6 +63,7 @@ const scopedSourcePaths: readonly string[] = [
   "packages/core/src/SeededTestScheduler.cpp",
   "packages/core/src/SingleInstanceActivation.cpp",
   "packages/core/src/SurfaceCommitGate.cpp",
+  "packages/core/src/SurfacePresentationPolicy.cpp",
   "packages/core/src/SwitchContent.cpp",
   "packages/core/src/TextInputSession.cpp",
   "packages/core/src/TextInputV3State.cpp",

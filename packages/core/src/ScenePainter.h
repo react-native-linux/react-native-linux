@@ -36,6 +36,11 @@ constexpr float kFocusRingWidth = 2.0F;
  * here derives a second rounded rect; issue #99 is that rule, and `RetainedScene::findNodeAtPoint` is the
  * consumer that proves it, because it answers with the same box and links no Skia at all.
  *
+ * `isBackgroundTransparent` clears to `SK_ColorTRANSPARENT` instead of `kSceneBackgroundColor`, which is what a
+ * fixture proving #328's composite-alpha selection needs: the swapchain image then carries a real alpha channel
+ * outside whatever the scene paints over, for the compositor to blend against its own backdrop rather than this
+ * platform's own opaque one.
+ *
  * There is exactly one implementation of this because there is exactly one picture. The window draws it into a
  * swapchain-backed `SkSurface` every frame and the golden-image rig draws it into an offscreen raster surface once;
  * if the two ever diverged, a golden would stop describing what the window shows.
@@ -43,6 +48,7 @@ constexpr float kFocusRingWidth = 2.0F;
  * Threading contract: the canvas and the snapshot both belong to the calling thread. The snapshot is already a
  * copy taken under the mounting manager's mutex, so nothing here touches the retained scene.
  */
-void paintScene(SkCanvas& canvas, const SceneSnapshot& scene, const SceneDamage& damage);
+void paintScene(SkCanvas& canvas, const SceneSnapshot& scene, const SceneDamage& damage,
+                bool isBackgroundTransparent = false);
 
 } // namespace react_native_linux
