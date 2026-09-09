@@ -241,14 +241,16 @@ TEST_F(ResourceResolverTest, TheDevelopmentFontDirectoryRequiresTheMarker) {
     EXPECT_EQ(ResourceResolver::developmentFontDirectory(baked), std::optional<fs::path>(baked));
 }
 
-TEST_F(ResourceResolverTest, TheRuntimeFontDirectoryResolvesTheRepositoryFontsWhenRunFromTheBuildTree) {
+// Hermetic: the vendored fonts are a build-time artifact, so the fake build tree carries its own marker and
+// font directory instead of relying on the checkout having vendored them.
+TEST_F(ResourceResolverTest, TheRuntimeFontDirectoryResolvesTheBuildTreeWhenTheMarkerIsPresent) {
     unsetenv("RNL_RESOURCE_ROOT");
 
-    const std::filesystem::path baked = fs::path(__FILE__).parent_path() / ".." / "fonts";
+    const std::filesystem::path baked = root_ / "baked" / "fonts";
+    fs::create_directories(baked);
+    writeFile(baked / ".." / "CMakeLists.txt", "");
 
-    EXPECT_TRUE(fs::exists(baked));
-    EXPECT_EQ(ResourceResolver::developmentFontDirectory(baked), std::optional<fs::path>(fs::weakly_canonical(baked)));
-    EXPECT_EQ(ResourceResolver::runtimeFontDirectory(baked), fs::weakly_canonical(baked));
+    EXPECT_EQ(ResourceResolver::runtimeFontDirectory(baked), baked);
 }
 
 TEST_F(ResourceResolverTest, TheWritableDirectoryReturnsANonExistentOverrideRatherThanCreatingIt) {
