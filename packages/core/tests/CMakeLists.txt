@@ -79,6 +79,7 @@ add_executable(rnl_core_tests
     InputDispatcherTest.cpp
     InputTest.cpp
     LayoutConformanceTest.cpp
+    LayoutWidthRoundTripTest.cpp
     LineBoxMetricsTest.cpp
     LinuxMountingManagerAccessibilityChangesTest.cpp
     LinuxMountingManagerDiagnosticsTest.cpp
