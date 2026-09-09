@@ -77,6 +77,7 @@ add_executable(rnl_core_tests
     ImageTest.cpp
     ImeTest.cpp
     InputDispatcherTest.cpp
+    InputEventDispatchConformanceTest.cpp
     InputTest.cpp
     LayoutConformanceTest.cpp
     LineBoxMetricsTest.cpp
