@@ -1,0 +1,27 @@
+{
+  "name": "keyboard-scroll-pages-and-lines",
+  "bundle": "focus-scroll-list.js",
+  "ready": "focus-scroll-list: committed surface 1",
+  "frames": 900,
+  "steps": [
+    "sleep 500",
+    "key Tab press",
+    "key Tab release",
+    "sleep 300",
+    "key Next press",
+    "key Next release",
+    "sleep 300",
+    "key Up press",
+    "key Up release",
+    "sleep 300",
+    "key Home press",
+    "key Home release",
+    "sleep 500"
+  ],
+  "expect": [
+    "focus-scroll-list: topFocus on row0",
+    "focus-scroll-list: topScroll on scrollView at 0,110",
+    "focus-scroll-list: topScroll on scrollView at 0,70",
+    "focus-scroll-list: topScroll on scrollView at 0,0"
+  ]
+}

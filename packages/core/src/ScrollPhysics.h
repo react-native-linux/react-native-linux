@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace react_native_linux {
@@ -256,5 +258,55 @@ double maintainedScrollOffset(double offset, const std::vector<ScrollChildFrame>
  */
 ScrollAxisState decelerateAxis(const ScrollAxisState& axis, double frameMilliseconds, double decelerationRate,
                                const ScrollAxisBounds& bounds);
+
+/**
+ * How far one arrow key scrolls: exactly one wheel notch, so pressing the down arrow and turning the wheel one
+ * notch move the content the same distance and the two input paths do not disagree about what a step is.
+ *
+ * Issue #441 asks for a line derived from the content's line height. Nothing reports one: `LineBoxMetrics`
+ * measures a line box from an `ascent` and a `descent` no `ScrollViewShadowNode` has, because the vendored
+ * `TextLayoutManager` declares no `measureLines` and a `<ScrollView>` has no font of its own. Until a line box
+ * reaches the shadow tree this is a stated constant rather than a font metric, on the same footing as
+ * `kWheelNotchDistance`, which is a distance no device reports either.
+ */
+inline constexpr double kKeyboardLineDistance = kWheelNotchDistance;
+
+/**
+ * Which way, and by how much, a key moves one axis of a `<ScrollView>`.
+ *
+ * The step is what the key means; the distance it works out as is `keyboardScrollDestination`, because only the
+ * bounds know how long a page is and where the ends are. Keeping the two apart is what lets the key table be
+ * asserted without a viewport and the arithmetic be asserted without a keyboard.
+ */
+enum class KeyboardScrollStep : uint8_t { LineBackward, LineForward, PageBackward, PageForward, ToStart, ToEnd };
+
+struct KeyboardScrollIntent {
+    KeyboardScrollStep step{KeyboardScrollStep::LineForward};
+    bool isHorizontal{false};
+};
+
+/**
+ * The key-to-step table, as DOM key names — what `domKeyName` already produces, so `Prior` and `Next` have
+ * already become `PageUp` and `PageDown` and the space bar has already become `" "`.
+ *
+ * Page Up and Page Down, Home and End, and the four arrows are the desktop convention no mobile React Native
+ * platform has a story for; space is page down and shift-space is page up, which is the one place the modifier
+ * changes the meaning of the key rather than the target of it. Every other key, and every arrow with a modifier
+ * held, answers `std::nullopt` — a key this table does not name is not a scroll and must be left for whoever
+ * else wants it.
+ */
+std::optional<KeyboardScrollIntent> keyboardScrollIntent(const std::string& key, bool isShiftDown);
+
+/**
+ * Where `intent` puts an axis resting at `currentOffset`, clamped to the same range every other scroll is
+ * clamped to.
+ *
+ * A page is one viewport less one line, which is the overlap that keeps the line the reader was on visible
+ * across the jump, and never less than one line, so a viewport shorter than the overlap still moves. Home and
+ * End are `minimumScrollOffset` and `maximumScrollOffset` — the extremes the content inset defines rather than
+ * zero and the content height, so a keyboard scroll lands exactly where `scrollToEnd` lands.
+ */
+double keyboardScrollDestination(const KeyboardScrollIntent& intent, double currentOffset,
+                                 const ScrollAxisBounds& bounds);
 
 } // namespace react_native_linux

@@ -5282,11 +5282,12 @@ issue filed when they were not:
 
 ### Routing, and the unhandled-key policy
 
-Keys go to the focused node and to nothing else. A key pressed with nothing focused is **dropped**, and that is a
-policy rather than an omission: the surface root has no instance handle — see the deferral in *Input* — so it
-cannot be an event target, and on Wayland a key that reached this client is a key the compositor already routed
-here, so there is nothing to escape to. react-native-macos#683 is what a platform that passes unconsumed keys
-back to the system sounds like.
+Key *events* go to the focused node and to nothing else. A key pressed with nothing focused reaches **no node**,
+and that is a policy rather than an omission: the surface root has no instance handle — see the deferral in
+*Input* — so it cannot be an event target, and on Wayland a key that reached this client is a key the compositor
+already routed here, so there is nothing to escape to. react-native-macos#683 is what a platform that passes
+unconsumed keys back to the system sounds like. Such a key can still **scroll**, which is a platform action and
+not a delivered event; see *Keyboard scrolling* below.
 
 The key reaches React **before** the traversal or activation it may also trigger, so a Tab is visible to the node
 that had focus rather than swallowed by the platform. Nothing can cancel that traversal: there is no return
@@ -5296,6 +5297,57 @@ Enter and Space on a focused node synthesise **the same `click` the pointer path
 code, with the target's own origin as the coordinates so the offset inside the target is zero. `Pressability`
 therefore turns them into `onPressIn`, `onPressOut` and `onPress` with no keyboard path of its own, which is what
 react-native-macos#1622 was missing.
+
+### Keyboard scrolling, and what loses to a focused field (#441)
+
+A scrollable region that cannot be scrolled from the keyboard is unusable without a mouse, and there is nothing
+upstream to copy: React Native has no keyboard scrolling on any platform, no test for it on either, and
+core#52833 — an iPad with a keyboard attached, the closest mobile gets to our default configuration — has been
+open with no mechanism proposed.
+
+**The arbitration rule is that a scroll key scrolls only what nothing else claimed.** `dispatchKeyEvent` already
+resolves a key in a fixed order, and keyboard scrolling is appended to the end of it rather than inserted into
+it: a composition in progress swallows everything, then the focused `<TextInput>`'s editor, then Tab traversal,
+then Enter/Space activation of the focused node, then — and only then — `scrollByKey`. That is why Space types a
+space in a field and clicks a `<Pressable>` before it ever pages a list, and why Home goes to the start of a line
+rather than to the top of the list the field sits in. Page Down is the key that always scrolls, because nothing
+above it in the order claims it.
+
+A focused `<TextInput>` refuses **every** scroll key here, not only the ones its editor consumes. The editor
+answers `Ignored` for Page Up, Page Down and the vertical arrows — multi-line caret motion is #54's — and a field
+that swallowed Home but let Page Down scroll the list out from under its own caret would be a worse contract than
+either half alone.
+
+**What a key scrolls** is the nearest `<ScrollView>` enclosing the focused node, found with the same
+`deepestAncestorMatching` walk scroll-into-view uses. With nothing focused it is the surface's outermost
+`<ScrollView>`, so a page of unfocusable text is readable without a mouse — the case the issue is actually about.
+
+**How far** is `keyboardScrollIntent` and `keyboardScrollDestination` in `ScrollPhysics`, which are arithmetic and
+therefore inside the coverage gate:
+
+| Key | Step | Distance |
+| --- | --- | --- |
+| Page Down, Space | forward one page | `viewportLength - kKeyboardLineDistance`, never below one line |
+| Page Up, Shift+Space | back one page | the same, negated |
+| Home | to the start | `minimumScrollOffset` — `-contentInset.top`, not zero |
+| End | to the end | `maximumScrollOffset` — where `scrollToEnd` lands |
+| Arrow Down / Up | one line, vertical | `kKeyboardLineDistance` |
+| Arrow Right / Left | one line, horizontal | `kKeyboardLineDistance` |
+
+`kKeyboardLineDistance` is `kWheelNotchDistance`, so one arrow key and one wheel notch travel the same distance
+and the two input paths do not disagree about what a step is. The issue asks for a line derived from the content's
+line height; nothing reports one, because `LineBoxMetrics` needs an `ascent` and a `descent` no
+`ScrollViewShadowNode` has and the vendored `TextLayoutManager` declares no `measureLines`. It is a stated
+constant until a line box reaches the shadow tree. Shift with anything but the space bar is left alone: shift-arrow
+and shift-Page Down extend a selection everywhere on the desktop.
+
+The movement itself is **not** performed in the input path. `scrollByKey` enqueues the ordinary unanimated
+`scrollTo` that `ScrollController::routeCommand` already clamps and brackets, exactly as scroll-into-view does, so
+a keyboard scroll reaches `VirtualizedList` windowing as one `onScroll` at the new offset with no momentum after
+it — the cadence of #45, not a third motion model — and `scrollEnabled={false}` refuses it there rather than in a
+second gate here. The offset it reads is the committed `ScrollViewState`'s, which lags the controller's
+authoritative one by the event beat that publishes it; keys arrive one per frame from the compositor, so two aimed
+at one destination is not a case that occurs.
 
 ### The IME enable path
 
