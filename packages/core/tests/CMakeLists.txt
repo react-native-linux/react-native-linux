@@ -73,6 +73,7 @@ add_executable(rnl_core_tests
     FrameJournalTest.cpp
     FrameTimingTest.cpp
     HitTestDifferentialTest.cpp
+    ResourceResolverTest.cpp
     ImageCacheTest.cpp
     ImageTest.cpp
     ImeTest.cpp
@@ -129,6 +130,7 @@ add_executable(rnl_core_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/FrameJournal.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/FrameTiming.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/HostTimerRegistry.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ResourceResolver.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ImageContent.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/InputDispatcher.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/InputPipeline.cpp

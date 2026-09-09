@@ -7955,6 +7955,28 @@ Two flags fantom sets are deliberately dropped, because fantom targets the NDK a
 and libstdc++: `FOLLY_USE_LIBCPP` (folly would include libc++'s `<__config>`) and `FOLLY_HAVE_XSI_STRERROR_R`
 (glibc's `strerror_r` is the GNU variant and returns `char*`).
 
+### The resource resolver (#361)
+
+Everything the running process finds on disk goes through one ordered search (`packages/core/src/ResourceResolver.{h,cpp}`,
+pure and at the 100% gate): the `RNL_RESOURCE_ROOT` override — the harness's and a developer's; when set it is
+the *only* source searched, and a resource it lacks fails rather than falling through, because a silently
+ignored override is a harness testing the wrong tree — then the portable-bundle root (a `portable.marker` file
+beside the executable), then the installed prefix (`<resolved executable>/../share/react-native-linux`, with
+every symlink followed — the tauri `restart` shape), then the build tree, only while the development marker
+(the CMakeLists beside the vendored fonts) is there. A resource missing from every source throws
+`ResourceNotFoundError` naming the resource and every directory searched — the #314 rule, generalised.
+
+The first consumer is the font directory: the three `SkFontMgr_New_Custom_Directory` call sites now ask
+`ResourceResolver::runtimeFontDirectory(RNL_BUNDLED_FONT_DIR)` instead of using the baked build-tree path
+directly, so an installed binary finds its fonts under the install prefix and a build-tree binary keeps
+resolving the vendored ones. Writable locations are the XDG base directories (`writableDirectory`): an absolute
+`$XDG_*_HOME` wins, a relative one is ignored as the specification requires, and the default under `$HOME` is
+returned whether or not it exists yet — creating it is the consumer's job at first write. The storage module of
+#23 is the consumer that rule was written for.
+
+Still open on the issue: the clean-container e2e that launches the installed package from `/usr/bin` and asserts
+the same golden the build-tree e2e runs — it shares the container-matrix decision with #349, #356 and #357.
+
 ### The runtime dependency floor (#357)
 
 What the shipped binary demands of the machine it lands on is read off the ELF, not hand-maintained: `readelf -V

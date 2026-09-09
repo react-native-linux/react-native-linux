@@ -647,6 +647,7 @@ if(TARGET rnl_skia)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/LineBoxMetrics.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/PinnedFontFamilies.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/TextLayoutManager.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/ResourceResolver.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/TextPipeline.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/TextTransform.cpp)
     set_property(TARGET react_renderer_textlayoutmanager PROPERTY SOURCES ${RNL_TEXT_LAYOUT_MANAGER_SOURCES})
@@ -1095,6 +1096,7 @@ elseif(RNL_ENABLE_WINDOW)
         src/FrameClock.cpp
         src/FrameJournal.cpp
         src/FrameTiming.cpp
+        src/ResourceResolver.cpp
     src/WindowSession.cpp)
 
     # The XDG desktop portal colour-scheme source of #52. sd-bus rather than libdbus, GDBus or sdbus-c++: it is
