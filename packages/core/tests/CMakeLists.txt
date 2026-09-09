@@ -88,6 +88,7 @@ add_executable(rnl_core_tests
     NestedTextFragmentTest.cpp
     PinnedFontFamiliesTest.cpp
     RendererLadderTest.cpp
+    ResizeRelayoutTest.cpp
     SceneTest.cpp
     SeededInterleavingTest.cpp
     SeededTestSchedulerTest.cpp
