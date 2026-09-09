@@ -82,6 +82,7 @@ add_executable(rnl_core_tests
     InputDispatcherTest.cpp
     InputEventDispatchConformanceTest.cpp
     InputTest.cpp
+    KeyboardScrollTest.cpp
     LayoutConformanceTest.cpp
     LayoutWidthRoundTripTest.cpp
     LineBoxMetricsTest.cpp

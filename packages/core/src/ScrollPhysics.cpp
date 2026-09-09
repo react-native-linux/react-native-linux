@@ -1,8 +1,11 @@
 #include "ScrollPhysics.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
+#include <optional>
+#include <string>
 #include <vector>
 
 namespace react_native_linux {
@@ -19,6 +22,29 @@ namespace {
  */
 constexpr double kFastestDecelerationRate = 0.5;
 constexpr double kSlowestDecelerationRate = 0.9999;
+
+constexpr char kSpaceKey[] = " ";
+
+/**
+ * The keys that scroll, other than the space bar: the two page keys, the two extremes, and the four arrows, in
+ * the DOM names `domKeyName` produces. A table rather than a chain of comparisons because it is a table — the
+ * issue asks for the key-to-step mapping to be assertable as one.
+ */
+struct KeyboardScrollKey {
+    const char* key;
+    KeyboardScrollStep step;
+    bool isHorizontal;
+};
+
+constexpr std::array<KeyboardScrollKey, 8> kKeyboardScrollKeys{
+    {{.key = "PageUp", .step = KeyboardScrollStep::PageBackward, .isHorizontal = false},
+     {.key = "PageDown", .step = KeyboardScrollStep::PageForward, .isHorizontal = false},
+     {.key = "Home", .step = KeyboardScrollStep::ToStart, .isHorizontal = false},
+     {.key = "End", .step = KeyboardScrollStep::ToEnd, .isHorizontal = false},
+     {.key = "ArrowUp", .step = KeyboardScrollStep::LineBackward, .isHorizontal = false},
+     {.key = "ArrowDown", .step = KeyboardScrollStep::LineForward, .isHorizontal = false},
+     {.key = "ArrowLeft", .step = KeyboardScrollStep::LineBackward, .isHorizontal = true},
+     {.key = "ArrowRight", .step = KeyboardScrollStep::LineForward, .isHorizontal = true}}};
 
 double usableDecelerationRate(double decelerationRate) {
     return std::clamp(decelerationRate, kFastestDecelerationRate, kSlowestDecelerationRate);
@@ -266,6 +292,59 @@ ScrollAxisState decelerateAxis(const ScrollAxisState& axis, double frameMillisec
     const bool hasStopped = isComingToRest || moved != target;
 
     return ScrollAxisState{.offset = moved, .velocity = hasStopped ? 0.0 : axis.velocity * decay};
+}
+
+std::optional<KeyboardScrollIntent> keyboardScrollIntent(const std::string& key, bool isShiftDown,
+                                                         bool isControlAltOrMetaDown) {
+    if (isControlAltOrMetaDown) {
+        return std::nullopt;
+    }
+
+    if (key == kSpaceKey) {
+        return KeyboardScrollIntent{.step = isShiftDown ? KeyboardScrollStep::PageBackward
+                                                        : KeyboardScrollStep::PageForward};
+    }
+
+    // Shift with anything but the space bar is a selection gesture rather than a scroll — shift-arrow and
+    // shift-Page Down extend a selection everywhere on the desktop — so it is left for whoever owns selection.
+    if (isShiftDown) {
+        return std::nullopt;
+    }
+
+    const auto named = std::find_if(kKeyboardScrollKeys.begin(), kKeyboardScrollKeys.end(),
+                                    [&key](const KeyboardScrollKey& candidate) { return key == candidate.key; });
+
+    if (named == kKeyboardScrollKeys.end()) {
+        return std::nullopt;
+    }
+
+    return KeyboardScrollIntent{.step = named->step, .isHorizontal = named->isHorizontal};
+}
+
+double keyboardScrollDestination(const KeyboardScrollIntent& intent, double currentOffset,
+                                 const ScrollAxisBounds& bounds) {
+    if (intent.step == KeyboardScrollStep::ToStart) {
+        return minimumScrollOffset(bounds);
+    }
+
+    if (intent.step == KeyboardScrollStep::ToEnd) {
+        return maximumScrollOffset(bounds);
+    }
+
+    const double page = std::max(bounds.viewportLength - kKeyboardLineDistance, kKeyboardLineDistance);
+
+    if (intent.step == KeyboardScrollStep::PageBackward) {
+        return clampScrollOffset(currentOffset - page, bounds);
+    }
+
+    if (intent.step == KeyboardScrollStep::PageForward) {
+        return clampScrollOffset(currentOffset + page, bounds);
+    }
+
+    const double line =
+        intent.step == KeyboardScrollStep::LineBackward ? -kKeyboardLineDistance : kKeyboardLineDistance;
+
+    return clampScrollOffset(currentOffset + line, bounds);
 }
 
 } // namespace react_native_linux

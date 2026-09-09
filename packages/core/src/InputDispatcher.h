@@ -3,15 +3,18 @@
 #include "FocusModel.h"
 #include "InputPipeline.h"
 #include "LinuxMountingManager.h"
+#include "ScrollPhysics.h"
 #include "TextInputController.h"
 
 #include <memory>
 #include <optional>
 #include <vector>
 
+#include <react/renderer/components/scrollview/ScrollViewShadowNode.h>
 #include <react/renderer/core/ReactPrimitives.h>
 #include <react/renderer/core/ShadowNode.h>
 #include <react/renderer/graphics/Point.h>
+#include <react/renderer/graphics/RectangleEdges.h>
 #include <react/renderer/uimanager/UIManager.h>
 
 namespace react_native_linux {
@@ -71,10 +74,12 @@ inline PointerTargetTransform transformOfHit(const SceneHit& hit) {
  * arithmetically wrong about the result; this class only feeds it tags and turns its answers into events, a scene
  * mark and a text-input enable.
  *
- * Keys go to the focused node and to nothing else. A key pressed with nothing focused is dropped here rather than
- * sent to the surface root, because a root with no instance handle cannot be an event target — see the deferral
- * in *Input* — and a key nobody consumed has nowhere else to go on Wayland, where the compositor already decided
- * this client should receive it.
+ * Key *events* go to the focused node and to nothing else. A key pressed with nothing focused reaches no node
+ * rather than the surface root, because a root with no instance handle cannot be an event target — see the
+ * deferral in *Input*. What such a key can still do is scroll: `scrollByKey` is the last thing `dispatchKeyEvent`
+ * tries, and with nothing focused it moves the surface's outermost `<ScrollView>`, which is what makes a page of
+ * unfocusable text readable without a mouse. That is a platform action rather than a delivered event, so it needs
+ * no target with an instance handle.
  *
  * Composition is the one input that is not routed at all. `zwp_text_input_v3` follows the compositor's keyboard
  * focus, so the target of a pre-edit or a commit is whatever holds the text cursor: the `TextInputController`
@@ -140,6 +145,8 @@ private:
     void applyFocusTransition(const FocusTransition& transition, bool preventScroll = false);
     void updateTextInput();
     void scrollFocusedNodeIntoView() const;
+    void scrollByKey(const InputEvent& event) const;
+    std::shared_ptr<const facebook::react::ScrollViewShadowNode> keyboardScrollTarget() const;
     std::shared_ptr<const facebook::react::ShadowNode> focusableNode(facebook::react::Tag tag) const;
     facebook::react::Tag focusableAncestorTag(const facebook::react::ShadowNode& shadowNode) const;
 
