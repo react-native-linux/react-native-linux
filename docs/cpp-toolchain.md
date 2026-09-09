@@ -7955,6 +7955,32 @@ Two flags fantom sets are deliberately dropped, because fantom targets the NDK a
 and libstdc++: `FOLLY_USE_LIBCPP` (folly would include libc++'s `<__config>`) and `FOLLY_HAVE_XSI_STRERROR_R`
 (glibc's `strerror_r` is the GNU variant and returns `char*`).
 
+### The runtime dependency floor (#357)
+
+What the shipped binary demands of the machine it lands on is read off the ELF, not hand-maintained: `readelf -V
+-d` on the built binary names the required symbol versions (`.gnu.version_r`) and the `DT_NEEDED` set
+(`.dynamic`), and `packages/cli/src/dependency-floor.ts` turns that into the floor — the `GLIBC_*`/`GLIBCXX_*`/
+`CXXABI_*` maxima per family, and every needed library resolved to a host package per target distribution. It is
+pure over the tool's text output, so the fixture in its spec is the same text `readelf` prints, at 100%.
+`libc.so.6` and `libm.so.6` resolve to one `libc6`; the vendored Hermes, JSI, double-conversion and fmt are
+payload the package ships and are not dependencies; anything else fails by name — `namcap` reads a `PKGBUILD`,
+not a binary, and a missing `Depends` entry is a `dlopen` failure on a user's machine, not a build error.
+
+The constraints spell differently per format: the `.deb` `Depends:` value constrains `libc6 (>= glibc-floor)`
+and `libstdc++6 (>= epoch)` — the GLIBCXX floor mapped through the libstdc++ ABI timeline's anchors, failing by
+name on an unmapped version; the `CXXABI` floor rides along (one library ships both families, GLIBCXX is the
+finer-grained epoch, and the lock records both). The PKGBUILD's `depends` carries `glibc>=floor` plus bare
+names — a rolling release has no meaningful per-symbol epoch.
+
+`pnpm dependency-floor:check` recomputes the floor from `build/dev/bin/rnl_window` and compares it against the
+checked-in `packages/cli/dependency-floor.lock.json`; `--update` rewrites the lock. The lock is the review
+artifact: a toolchain bump that silently raises the floor shows up as a reviewed diff, not as a user report.
+The floor is set by the build host and cannot be lowered afterwards — the machine that builds release artifacts
+must be the oldest distribution support is claimed for (the checked-in lock is an Arch build floor, which is
+why its `glibc>=2.44` is so high; a release built on an older baseline lowers it deliberately, in a reviewed
+lock change). Still open on the issue: the per-distribution clean-container install-and-launch gate, which
+shares the container-matrix decision with #349 and #356's e2e.
+
 ## Known hazards
 
 1. **`HERMES_ENABLE_TOOLS=ON` is mandatory** even though no CLI is shipped. Hermes precompiles `InternalBytecode`

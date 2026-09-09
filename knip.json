@@ -3,7 +3,7 @@
   "workspaces": {
     ".": {
       "project": ["*.ts", "scripts/**/*.ts"],
-      "ignoreBinaries": ["cmake", "ctest"]
+      "ignoreBinaries": ["cmake", "ctest", "readelf"]
     },
     "packages/*": {
       "project": ["src/**/*.ts"]

@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/platform-config.ts",
     "./animation-rung.ts": "./src/animation-rung.ts",
+    "./dependency-floor.ts": "./src/dependency-floor.ts",
     "./desktop-entry.ts": "./src/desktop-entry.ts",
     "./hicolor-icon-tree.ts": "./src/hicolor-icon-tree.ts",
     "./linux-bundle-manifest.ts": "./src/linux-bundle-manifest.ts",
