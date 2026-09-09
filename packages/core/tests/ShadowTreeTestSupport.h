@@ -134,6 +134,17 @@ inline void removeShadowTree(facebook::react::UIManager& uiManager, SurfaceId su
 }
 
 /**
+ * The `LayoutConstraints` a Wayland configure produces: one exact size pinned as both bounds, which is what
+ * `FabricHost::setSurfaceSize` hands `SurfaceHandler::constraintLayout`. Shared because the same three fields in
+ * two resize-driven fixtures is a jscpd clone at threshold 0.
+ */
+inline LayoutConstraints exactSurfaceConstraints(Size surfaceSize) {
+    return LayoutConstraints{.minimumSize = surfaceSize,
+                             .maximumSize = surfaceSize,
+                             .layoutDirection = facebook::react::LayoutDirection::LeftToRight};
+}
+
+/**
  * One configured shadow node from a concrete component descriptor: family, parsed props, optional initial state.
  * The three commit-driven fixtures build their nodes through this because the same body three times is a jscpd
  * clone at threshold 0.
@@ -169,6 +180,24 @@ cloneRootWithChildren(const facebook::react::RootShadowNode& oldRootShadowNode,
                       std::shared_ptr<const std::vector<std::shared_ptr<const facebook::react::ShadowNode>>> children) {
     return std::static_pointer_cast<facebook::react::RootShadowNode>(oldRootShadowNode.ShadowNode::clone(
         ShadowNodeFragment{.props = ShadowNodeFragment::propsPlaceholder(), .children = std::move(children)}));
+}
+
+/**
+ * The one synchronous commit every commit-driven fixture's `SetUp` makes: the root's own props untouched, its
+ * children replaced with `children`. `mountSynchronously` so the fixture can hit-test or focus against the result
+ * immediately, and state reconciliation off because nothing here ever round-trips a state update through it.
+ */
+inline void
+commitChildren(facebook::react::ShadowTree& shadowTree,
+               std::shared_ptr<const std::vector<std::shared_ptr<const facebook::react::ShadowNode>>> children) {
+    const facebook::react::ShadowTreeCommitOptions commitOptions{.enableStateReconciliation = false,
+                                                                 .mountSynchronously = true};
+
+    shadowTree.commit(
+        [&children](const facebook::react::RootShadowNode& oldRootShadowNode) {
+            return cloneRootWithChildren(oldRootShadowNode, std::move(children));
+        },
+        commitOptions);
 }
 
 /**

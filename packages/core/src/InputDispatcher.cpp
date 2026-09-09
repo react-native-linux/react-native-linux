@@ -232,6 +232,30 @@ deepestAncestorMatching(const facebook::react::ShadowNode& shadowNode, const fac
 }
 
 /**
+ * The first `<ScrollView>` in a pre-order walk of `shadowNode`'s subtree, which is the outermost one on the
+ * leftmost path — what a key scrolls when nothing at all is focused.
+ */
+std::shared_ptr<const facebook::react::ScrollViewShadowNode>
+firstScrollView(const facebook::react::ShadowNode& shadowNode) {
+    for (const std::shared_ptr<const facebook::react::ShadowNode>& child : shadowNode.getChildren()) {
+        const std::shared_ptr<const facebook::react::ScrollViewShadowNode> scrollView =
+            std::dynamic_pointer_cast<const facebook::react::ScrollViewShadowNode>(child);
+
+        if (scrollView != nullptr) {
+            return scrollView;
+        }
+
+        const std::shared_ptr<const facebook::react::ScrollViewShadowNode> nested = firstScrollView(*child);
+
+        if (nested != nullptr) {
+            return nested;
+        }
+    }
+
+    return nullptr;
+}
+
+/**
  * The transform a tag with no matrix of its own gets: the surface root, and a `UIManager::findNodeAtPoint`
  * fallback hit for a painted tag the committed shadow tree does not contain. Neither has a transform this reading
  * could miss — the root never carries one, and the fallback path is a stale-geometry compromise already, not a
@@ -470,7 +494,11 @@ void InputDispatcher::dispatchKeyEvent(const InputEvent& event) {
 
     if (focusedNode_ != nullptr && isActivationKey(accessibilityRoleOf(*focusedNode_), event.key)) {
         emitActivation(event);
+
+        return;
     }
+
+    scrollByKey(event);
 }
 
 void InputDispatcher::emitKeyEvent(const InputEvent& event) const {
@@ -764,6 +792,94 @@ facebook::react::Tag InputDispatcher::focusableAncestorTag(const facebook::react
         });
 
     return ancestor == nullptr ? kNoTag : ancestor->getTag();
+}
+
+/**
+ * The `<ScrollView>` a scroll key moves: the nearest one enclosing the focused node, or — with nothing focused —
+ * the surface's outermost one, so a page of text that contains no focusable node at all still scrolls.
+ */
+std::shared_ptr<const facebook::react::ScrollViewShadowNode> InputDispatcher::keyboardScrollTarget() const {
+    const std::shared_ptr<const facebook::react::ShadowNode> root = rootShadowNode();
+
+    if (root == nullptr) {
+        return nullptr;
+    }
+
+    if (focusedNode_ == nullptr) {
+        return firstScrollView(*root);
+    }
+
+    return std::dynamic_pointer_cast<const facebook::react::ScrollViewShadowNode>(deepestAncestorMatching(
+        *focusedNode_, *root, [](const std::shared_ptr<const facebook::react::ShadowNode>& child) {
+            return std::dynamic_pointer_cast<const facebook::react::ScrollViewShadowNode>(child) != nullptr;
+        }));
+}
+
+/**
+ * Issue #441's arbitration, and the last thing a key press can mean.
+ *
+ * **A scroll key scrolls only what nothing else claimed.** Everything above this in `dispatchKeyEvent` has
+ * already had its say, in this order: a composition in progress, then the focused `<TextInput>`'s editor, then
+ * Tab traversal, then the activation of the focused node. Scrolling is the fallback, which is why Space types a
+ * space in a field and activates a `<Pressable>` before it ever pages a list, and why Home goes to the start of
+ * a line rather than to the top of the list the field sits in.
+ *
+ * A focused `<TextInput>` refuses every scroll key here rather than only the ones its editor consumes. The
+ * editor answers `Ignored` for Page Up, Page Down and the vertical arrows — it has no multi-line caret motion
+ * yet (#54 owns that) — and a field that swallowed Home but let Page Down scroll the list out from under its own
+ * caret would be a worse contract than either half alone.
+ *
+ * The movement itself is not performed here: this enqueues the ordinary `scrollTo` that
+ * `ScrollController::routeCommand` already clamps, brackets and emits `onScroll` for, exactly as
+ * `scrollFocusedNodeIntoView` does, so a keyboard scroll reaches `VirtualizedList` as the same event cadence a
+ * wheel does. `scrollEnabled={false}` is refused there rather than tested here, for the same reason.
+ *
+ * The offset read is the committed `ScrollViewState`'s, which is the same offset the scroll-into-view geometry
+ * reads and lags the controller's authoritative one by the event beat that publishes it — so two scroll keys
+ * inside a single frame aim at one destination rather than two. Keys arrive one per frame from the compositor.
+ */
+void InputDispatcher::scrollByKey(const InputEvent& event) const {
+    if (focusedNode_ != nullptr && isTextInputComponent(focusedNode_->getComponentName())) {
+        return;
+    }
+
+    const bool isControlAltOrMetaDown = event.modifiers.control || event.modifiers.alt || event.modifiers.meta;
+    const std::optional<KeyboardScrollIntent> intent =
+        keyboardScrollIntent(event.key, event.modifiers.shift, isControlAltOrMetaDown);
+
+    if (!intent.has_value()) {
+        return;
+    }
+
+    const std::shared_ptr<const facebook::react::ScrollViewShadowNode> scrollView = keyboardScrollTarget();
+
+    if (scrollView == nullptr) {
+        return;
+    }
+
+    const facebook::react::Size viewportSize = scrollView->getLayoutMetrics().frame.size;
+    const facebook::react::Size contentSize = scrollView->getStateData().getContentSize();
+    const facebook::react::EdgeInsets contentInset = scrollView->getConcreteProps().contentInset;
+    const facebook::react::Point contentOffset = scrollView->getStateData().contentOffset;
+
+    const ScrollAxisBounds bounds = intent->isHorizontal ? ScrollAxisBounds{.contentLength = contentSize.width,
+                                                                            .viewportLength = viewportSize.width,
+                                                                            .leadingInset = contentInset.left,
+                                                                            .trailingInset = contentInset.right}
+                                                         : ScrollAxisBounds{.contentLength = contentSize.height,
+                                                                            .viewportLength = viewportSize.height,
+                                                                            .leadingInset = contentInset.top,
+                                                                            .trailingInset = contentInset.bottom};
+
+    const double destination =
+        keyboardScrollDestination(intent.value(), intent->isHorizontal ? contentOffset.x : contentOffset.y, bounds);
+
+    const folly::dynamic scrollToArguments =
+        folly::dynamic::array(intent->isHorizontal ? destination : contentOffset.x,
+                              intent->isHorizontal ? contentOffset.y : destination, false);
+
+    mountingManager_->dispatchCommand(facebook::react::ShadowView(*scrollView), kScrollToCommandName,
+                                      scrollToArguments);
 }
 
 } // namespace react_native_linux

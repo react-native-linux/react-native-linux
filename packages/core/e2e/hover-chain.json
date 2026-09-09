@@ -1,0 +1,41 @@
+{
+  "name": "hover-chain",
+  "bundle": "hover-chain.js",
+  "ready": "hover-chain: committed surface 1",
+  "frames": 900,
+  "steps": [
+    "sleep 500",
+    "move 50 50",
+    "sleep 100",
+    "move 150 50",
+    "sleep 100",
+    "move 120 20",
+    "sleep 100",
+    "move 350 50",
+    "sleep 100",
+    "move 590 50",
+    "sleep 100",
+    "move 50 300",
+    "sleep 500"
+  ],
+  "expect": [
+    "hover-chain: topPointerOver on left at 50,50",
+    "hover-chain: topPointerEnter on left at 50,50",
+    "hover-chain: topPointerOut on left at 150,50",
+    "hover-chain: topPointerLeave on left at 150,50",
+    "hover-chain: topPointerOver on right at 150,50",
+    "hover-chain: topPointerEnter on right at 150,50",
+    "hover-chain: topPointerOut on right at 120,20",
+    "hover-chain: topPointerOver on nested at 120,20",
+    "hover-chain: topPointerEnter on nested at 120,20",
+    "hover-chain: topPointerOut on nested at 350,50",
+    "hover-chain: topPointerLeave on nested at 350,50",
+    "hover-chain: topPointerLeave on right at 350,50",
+    "hover-chain: topPointerOver on cover at 350,50",
+    "hover-chain: topPointerEnter on cover at 350,50",
+    "hover-chain: topPointerOut on cover at 590,50",
+    "hover-chain: topPointerLeave on cover at 590,50",
+    "hover-chain: topPointerOver on clipped at 590,50",
+    "hover-chain: topPointerEnter on clipped at 590,50"
+  ]
+}

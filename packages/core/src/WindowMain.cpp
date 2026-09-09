@@ -151,6 +151,7 @@ constexpr std::string_view kAppIdFlag = "--app-id";
 constexpr std::string_view kTitleFlag = "--title";
 constexpr std::string_view kForceClientDecorationsFlag = "--force-client-decorations";
 constexpr std::string_view kNoDecorationsFlag = "--no-decorations";
+constexpr std::string_view kTransparentBackgroundFlag = "--transparent-background";
 constexpr std::string_view kDefaultTitle = "react-native-linux";
 constexpr std::string_view kDefaultApplicationIdentifier = "react-native-linux";
 constexpr int kPrimaryPointerButton = 0;
@@ -213,6 +214,11 @@ constexpr uint64_t kNanosecondsPerSecond = 1'000'000'000;
  * the `{SessionLeave}`/`{SessionEnter}` pair that replays a keyboard leave and enter. It exists because cage
  * runs no input method and cannot lose its only window's keyboard focus, which is precisely the two things the
  * composition e2e has to walk through. See *The compositor and input-method matrix* in docs/cpp-toolchain.md.
+ *
+ * `--transparent-background` is #328's composite-alpha and premultiplication proof: it clears the scene to
+ * `SK_ColorTRANSPARENT` instead of `kSceneBackgroundColor`, so whatever the swapchain's chosen composite alpha
+ * and Skia's premultiplied output do with a real alpha channel is visible rather than hidden behind an opaque
+ * clear every other run paints over it. See *Surface format and composite alpha* in docs/cpp-toolchain.md.
  */
 struct WindowArguments {
     std::optional<std::string> bundlePath;
@@ -225,6 +231,7 @@ struct WindowArguments {
     bool automation{false};
     bool forceClientDecorations{false};
     bool noDecorations{false};
+    bool transparentBackground{false};
     bool imeDebug{false};
     bool windowDebug{false};
     bool injectProtocolError{false};
@@ -503,6 +510,12 @@ WindowArguments parseArguments(std::span<char*> arguments) {
 
         if (flag == kNoDecorationsFlag) {
             parsed.noDecorations = true;
+
+            continue;
+        }
+
+        if (flag == kTransparentBackgroundFlag) {
+            parsed.transparentBackground = true;
 
             continue;
         }
@@ -1417,16 +1430,17 @@ int main(int argc, char** argv) {
                         // the work `paintScene` is answering the frame's damage with.
                         presented = renderer.drawFrame(
                             window, surfaceDamage,
-                            [&frame, &chrome, &window, &session](SkCanvas& canvas,
-                                                                 react_native_linux::WindowSize /*size*/,
-                                                                 const react_native_linux::SceneDamage& imageDamage) {
+                            [&frame, &chrome, &window, &session,
+                             &parsedArguments](SkCanvas& canvas, react_native_linux::WindowSize /*size*/,
+                                               const react_native_linux::SceneDamage& imageDamage) {
                                 session->recordPaintStart(std::chrono::steady_clock::now());
-                                paintDecoratedFrame(canvas, chrome, window.title(), imageDamage,
-                                                    [&frame](SkCanvas& contentCanvas,
-                                                             const react_native_linux::SceneDamage& contentDamage) {
-                                                        react_native_linux::paintScene(contentCanvas, frame.scene,
-                                                                                       contentDamage);
-                                                    });
+                                paintDecoratedFrame(
+                                    canvas, chrome, window.title(), imageDamage,
+                                    [&frame, &parsedArguments](SkCanvas& contentCanvas,
+                                                               const react_native_linux::SceneDamage& contentDamage) {
+                                        react_native_linux::paintScene(contentCanvas, frame.scene, contentDamage,
+                                                                       parsedArguments.transparentBackground);
+                                    });
                                 session->recordPaintEnd(std::chrono::steady_clock::now());
                             });
                     }

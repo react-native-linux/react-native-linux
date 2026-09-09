@@ -717,14 +717,14 @@ void clipToDamage(SkCanvas& canvas, const SceneDamage& damage) {
 
 } // namespace
 
-void paintScene(SkCanvas& canvas, const SceneSnapshot& scene, const SceneDamage& damage) {
+void paintScene(SkCanvas& canvas, const SceneSnapshot& scene, const SceneDamage& damage, bool isBackgroundTransparent) {
     const SkAutoCanvasRestore damageRestore(&canvas, true);
 
     if (!damage.empty()) {
         clipToDamage(canvas, damage);
     }
 
-    canvas.clear(kSceneBackgroundColor);
+    canvas.clear(isBackgroundTransparent ? SK_ColorTRANSPARENT : kSceneBackgroundColor);
 
     // Every matrix in a snapshot is absolute, so the canvas matrix is replaced rather than concatenated. The
     // surface's own matrix is preserved as the base so a scaled or translated canvas still composes correctly.

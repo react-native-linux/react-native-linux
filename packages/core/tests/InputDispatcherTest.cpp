@@ -11,10 +11,7 @@
 
 namespace {
 
-using facebook::react::RootShadowNode;
 using facebook::react::ShadowNode;
-using facebook::react::ShadowNodeFragment;
-using facebook::react::ShadowTreeCommitOptions;
 using facebook::react::Tag;
 using react_native_linux::InputDispatcher;
 using react_native_linux::TextInputContentPurpose;
@@ -75,16 +72,9 @@ protected:
     void SetUp() override {
         TextInputFieldFixture::SetUp();
 
-        const ShadowTreeCommitOptions commitOptions{.enableStateReconciliation = false, .mountSynchronously = true};
-
-        shadowTree_->commit(
-            [this](const RootShadowNode& oldRootShadowNode) {
-                return std::static_pointer_cast<RootShadowNode>(oldRootShadowNode.ShadowNode::clone(
-                    ShadowNodeFragment{.props = ShadowNodeFragment::propsPlaceholder(),
-                                       .children = std::make_shared<const ChildList>(ChildList{
-                                           makeAccessibleField(kFieldAlphaTag), makeAccessibleField(kFieldBetaTag)})}));
-            },
-            commitOptions);
+        react_native_linux::commitChildren(
+            *shadowTree_, std::make_shared<const ChildList>(
+                              ChildList{makeAccessibleField(kFieldAlphaTag), makeAccessibleField(kFieldBetaTag)}));
 
         dispatcher_ = std::make_unique<InputDispatcher>(uiManager_, mountingManager_, kSurfaceId);
         dispatcher_->setTextInputFocusSink(&sink_);

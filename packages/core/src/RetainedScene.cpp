@@ -1292,6 +1292,17 @@ void RetainedScene::createNode(const facebook::react::ShadowView& shadowView) {
 
 void RetainedScene::deleteNode(facebook::react::Tag tag) {
     damageSubtree(tag);
+
+    // Unlink from the parent that still lists this tag before the node goes, or a `Delete` that never saw its
+    // `Remove` leaves the parent naming a tag that no longer exists. That entry is inert while the tag stays gone,
+    // but a later `Create` reusing the tag re-materialises the node under that stale parent *and* as a detached
+    // root of its own, so one node is painted and hit-tested twice.
+    const auto node = nodes_.find(tag);
+
+    if (node != nodes_.end()) {
+        eraseChildTag(nodes_, node->second.parentTag, tag);
+    }
+
     nodes_.erase(tag);
     editorStates_.erase(tag);
 

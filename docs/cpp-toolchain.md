@@ -524,10 +524,46 @@ commits already carries the whole picture. Capturing that one frame is therefore
 buffer attached is the one the compositor shows — an invisible window fails it, and a settled capture sixty frames
 later does not. See *Window goldens*.
 
-What is deliberately not here: the composite-alpha and premultiplication half of #328 — the surface-format
-selection table, the half-transparent fixture over a compositor-supplied backdrop, and the e2e assertion that the
-compositor's own screenshot is not uniformly transparent. That is a separate seam from the ordering rule and #328
-stays open for it.
+### Surface format and composite alpha (#328)
+
+An invisible window has a second, unrelated cause besides the ordering rule above: a swapchain created with a
+composite alpha or an image format the surface does not actually support, or one Skia's premultiplied output
+blends incorrectly against. `SkiaVulkanRenderer::createSwapchain` used to answer both with a loop and a ternary; both are
+now one table each in `SurfacePresentationPolicy.{h,cpp}`, which — like `VulkanResultPolicy` and
+`SurfaceCommitGate` — includes neither Vulkan nor Skia, which is what puts it inside the `rnl_core_tests` coverage
+gate at 100 % of lines and branches.
+
+**Composite alpha**, over the reported `VkSurfaceCapabilitiesKHR.supportedCompositeAlpha`:
+
+| Precedence | Supported bit | Choice | Why |
+| --- | --- | --- | --- |
+| 1 | `VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR` | pre-multiplied | Matches Skia's output exactly: `SkSurfaces::WrapBackendRenderTarget` always paints `kPremul_SkAlphaType`, so nothing further has to change per pixel. |
+| 2 | `VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR` | opaque | The compositor ignores the alpha channel entirely. Transparency is lost, but nothing blends incorrectly. |
+| 3 | `VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR` | post-multiplied | Expects straight alpha; premultiplied colour composited through it blends translucent edges incorrectly, but the swapchain is still valid. |
+| 4 | otherwise (INHERIT is the only bit reported) | inherit-from-window-system | The Vulkan specification guarantees at least one bit is always set, so this is reached only on an INHERIT-only surface. |
+
+**Surface format**, over the sRGB non-linear candidates `vkGetPhysicalDeviceSurfaceFormatsKHR` reports, reduced to
+which of the two formats `colorTypeForFormat` can wrap (`VK_FORMAT_B8G8R8A8_UNORM`, `VK_FORMAT_R8G8B8A8_UNORM`):
+the preferred format wins if it is present, the fallback wins if only it is present, and `NoUsableFormat` — the
+missing-preferred-format case — is a named failure rather than an unreachable default when neither is.
+
+`SkiaVulkanRenderer.cpp` compiles a `static_assert` per composite-alpha constant against
+`VkCompositeAlphaFlagBitsKHR`, exactly as it does for `VulkanResultPolicy`'s `VkResult` constants, and prints the
+choice it made — `[rnl-present] swapchain format=<bgra8|rgba8> composite-alpha=<choice>` — on every swapchain
+creation, so the table's decision is visible in the trace rather than inferred. The line is tagged
+`[rnl-present]` rather than `[rnl-window]` because `ERROR_TRACE_PATTERNS` in `scripts/e2e/trace-grading.ts`
+treats every `[rnl-window]` line as a fault: that prefix is reserved for diagnostics, and an informational
+line wearing it fails every e2e scenario that starts a window. On this project's own RADV
+development driver the trace reads `format=bgra8 composite-alpha=pre-multiplied`.
+
+**Proving the blend.** `--transparent-background` clears the scene to `SK_ColorTRANSPARENT` instead of
+`kSceneBackgroundColor`, so the swapchain image carries a real alpha channel outside whatever the scene paints —
+the `window-translucent.png` golden fixture (`translucent-view.js`) is a single half-transparent box painted this
+way, over the window's own transparent background, and the `composite-alpha` e2e scenario runs the same bundle
+against a live compositor asserting the trace line above appears. What that scenario cannot yet prove is what the
+*compositor* actually composited: `rnl_window --screenshot` reads back the swapchain image before the compositor
+touches it, so proving the compositor's own output is not uniformly transparent needs a compositor-side capture —
+`zwlr_screencopy_v1` against cage, which this rig does not have a client for. #328 stays open for that capture.
 
 ### Pacing
 
@@ -5246,11 +5282,12 @@ issue filed when they were not:
 
 ### Routing, and the unhandled-key policy
 
-Keys go to the focused node and to nothing else. A key pressed with nothing focused is **dropped**, and that is a
-policy rather than an omission: the surface root has no instance handle — see the deferral in *Input* — so it
-cannot be an event target, and on Wayland a key that reached this client is a key the compositor already routed
-here, so there is nothing to escape to. react-native-macos#683 is what a platform that passes unconsumed keys
-back to the system sounds like.
+Key *events* go to the focused node and to nothing else. A key pressed with nothing focused reaches **no node**,
+and that is a policy rather than an omission: the surface root has no instance handle — see the deferral in
+*Input* — so it cannot be an event target, and on Wayland a key that reached this client is a key the compositor
+already routed here, so there is nothing to escape to. react-native-macos#683 is what a platform that passes
+unconsumed keys back to the system sounds like. Such a key can still **scroll**, which is a platform action and
+not a delivered event; see *Keyboard scrolling* below.
 
 The key reaches React **before** the traversal or activation it may also trigger, so a Tab is visible to the node
 that had focus rather than swallowed by the platform. Nothing can cancel that traversal: there is no return
@@ -5260,6 +5297,57 @@ Enter and Space on a focused node synthesise **the same `click` the pointer path
 code, with the target's own origin as the coordinates so the offset inside the target is zero. `Pressability`
 therefore turns them into `onPressIn`, `onPressOut` and `onPress` with no keyboard path of its own, which is what
 react-native-macos#1622 was missing.
+
+### Keyboard scrolling, and what loses to a focused field (#441)
+
+A scrollable region that cannot be scrolled from the keyboard is unusable without a mouse, and there is nothing
+upstream to copy: React Native has no keyboard scrolling on any platform, no test for it on either, and
+core#52833 — an iPad with a keyboard attached, the closest mobile gets to our default configuration — has been
+open with no mechanism proposed.
+
+**The arbitration rule is that a scroll key scrolls only what nothing else claimed.** `dispatchKeyEvent` already
+resolves a key in a fixed order, and keyboard scrolling is appended to the end of it rather than inserted into
+it: a composition in progress swallows everything, then the focused `<TextInput>`'s editor, then Tab traversal,
+then Enter/Space activation of the focused node, then — and only then — `scrollByKey`. That is why Space types a
+space in a field and clicks a `<Pressable>` before it ever pages a list, and why Home goes to the start of a line
+rather than to the top of the list the field sits in. Page Down is the key that always scrolls, because nothing
+above it in the order claims it.
+
+A focused `<TextInput>` refuses **every** scroll key here, not only the ones its editor consumes. The editor
+answers `Ignored` for Page Up, Page Down and the vertical arrows — multi-line caret motion is #54's — and a field
+that swallowed Home but let Page Down scroll the list out from under its own caret would be a worse contract than
+either half alone.
+
+**What a key scrolls** is the nearest `<ScrollView>` enclosing the focused node, found with the same
+`deepestAncestorMatching` walk scroll-into-view uses. With nothing focused it is the surface's outermost
+`<ScrollView>`, so a page of unfocusable text is readable without a mouse — the case the issue is actually about.
+
+**How far** is `keyboardScrollIntent` and `keyboardScrollDestination` in `ScrollPhysics`, which are arithmetic and
+therefore inside the coverage gate:
+
+| Key | Step | Distance |
+| --- | --- | --- |
+| Page Down, Space | forward one page | `viewportLength - kKeyboardLineDistance`, never below one line |
+| Page Up, Shift+Space | back one page | the same, negated |
+| Home | to the start | `minimumScrollOffset` — `-contentInset.top`, not zero |
+| End | to the end | `maximumScrollOffset` — where `scrollToEnd` lands |
+| Arrow Down / Up | one line, vertical | `kKeyboardLineDistance` |
+| Arrow Right / Left | one line, horizontal | `kKeyboardLineDistance` |
+
+`kKeyboardLineDistance` is `kWheelNotchDistance`, so one arrow key and one wheel notch travel the same distance
+and the two input paths do not disagree about what a step is. The issue asks for a line derived from the content's
+line height; nothing reports one, because `LineBoxMetrics` needs an `ascent` and a `descent` no
+`ScrollViewShadowNode` has and the vendored `TextLayoutManager` declares no `measureLines`. It is a stated
+constant until a line box reaches the shadow tree. Shift with anything but the space bar is left alone: shift-arrow
+and shift-Page Down extend a selection everywhere on the desktop.
+
+The movement itself is **not** performed in the input path. `scrollByKey` enqueues the ordinary unanimated
+`scrollTo` that `ScrollController::routeCommand` already clamps and brackets, exactly as scroll-into-view does, so
+a keyboard scroll reaches `VirtualizedList` windowing as one `onScroll` at the new offset with no momentum after
+it — the cadence of #45, not a third motion model — and `scrollEnabled={false}` refuses it there rather than in a
+second gate here. The offset it reads is the committed `ScrollViewState`'s, which lags the controller's
+authoritative one by the event beat that publishes it; keys arrive one per frame from the compositor, so two aimed
+at one destination is not a case that occurs.
 
 ### The IME enable path
 
@@ -7656,6 +7744,34 @@ pnpm test:native
 per-test pass/fail reporting through CTest, the latter to produce the coverage-instrumented run the gate grades.
 Both runs are deterministic and side-effect-free, so running the suite twice costs time, not correctness.
 
+`AllocationCostTest.cpp` is not one of them: it replaces the process's global `operator new`/`delete`
+(`AllocationProbe.h`) to count allocations, and that replacement collides with `libclang_rt.{asan,tsan}_cxx`'s own
+allocator interposition at link time (#407). It is its own binary, `rnl_core_allocation_cost_tests`, built from
+the same `RNL_CORE_SCENE_SOURCES` list `rnl_core_tests` compiles, and `packages/core/tests/CMakeLists.txt` does
+not configure it at all when `CMAKE_CXX_FLAGS` carries `-fsanitize` — the `test` preset builds it alongside
+`rnl_core_tests`, and the sanitizer presets below do not build it, full stop, rather than filtering it out of a
+`ctest` run that would fail to link. The sources it measures — `LinuxAnimationChoreographer.cpp`,
+`LinuxMountingManager.cpp`, `RetainedScene.cpp` — are still compiled into `rnl_core_tests` itself, so they are
+still exercised, just not for their allocation counts, under `asan` and `tsan`.
+
+`asan-tests` and `tsan-tests` are two more configure, build and test presets: each inherits the sanitizer flags
+of `asan` or `tsan` and adds `RNL_BUILD_TESTS=ON`, in its own build directory (`build/asan-tests`,
+`build/tsan-tests`) so it does not collide with the Hermes-linked configure the `asan`/`tsan` presets already
+run in CI. The `native (asan)` and `native (tsan)` matrix entries configure, build and `ctest` both: the ordinary
+sanitizer preset for `hello_react` and `rnl_core_hermes_tests`, and the matching `-tests` preset for
+`rnl_core_tests`. That is what makes Engineering Rule 6's "covered by a TSan-clean test" claim about
+`RetainedScene` and `LinuxMountingManager` — 1,700-odd cases — checked by CI rather than by whichever agent ran
+it locally last.
+
+```bash
+cmake --preset asan-tests
+cmake --build --preset asan-tests
+ctest --preset asan-tests
+```
+
+or `tsan-tests` for the ThreadSanitizer build. Both presets carry the same 300-second per-test `execution.timeout`
+as `asan`, `tsan` and `dev`.
+
 ### The Hermes-linked binary (#228)
 
 `rnl_core_tests` is Hermes-free by construction, so the upstream suites that construct a real
@@ -7882,8 +7998,8 @@ with the version in a trailing comment; Renovate keeps those SHAs fresh through 
 | `meta` | `ubuntu-24.04` | 10 min | actionlint, typos, shellcheck, shfmt, gitleaks. |
 | `unit` | `ubuntu-24.04` | 30 min | `rnl_core_tests`, the Hermes-free GoogleTest suite for `RetainedScene` and `LinuxMountingManager`, run under `ctest` and gated at 100% line and branch coverage by `scripts/cpp-coverage.ts`. Needs neither Hermes nor Skia. |
 | `native (dev)` | `ubuntu-24.04` | 120 min | The whole C++ toolchain: vendor, configure, build, `rnl_core_hermes_tests` under `ctest`, the four `hello_react` acceptance paths, and the golden-image comparison. |
-| `native (asan)` | `ubuntu-24.04` | 120 min | The same build, the same suite and the same four paths under ASan + UBSan. |
-| `native (tsan)` | `ubuntu-24.04` | 120 min | The same build, the same suite and the same four paths under TSan. |
+| `native (asan)` | `ubuntu-24.04` | 120 min | The same build, the same suite and the same four paths under ASan + UBSan, plus `rnl_core_tests` under the `asan-tests` preset (#407). |
+| `native (tsan)` | `ubuntu-24.04` | 120 min | The same build, the same suite and the same four paths under TSan, plus `rnl_core_tests` under the `tsan-tests` preset (#407). |
 | `window` | `ubuntu-24.04` | 120 min | `rnl_window` built and run under `weston --backend=headless` with lavapipe, and the window goldens compared. The only job that reaches the Vulkan swapchain. See *Window goldens*. |
 
 The three `native` entries are one matrix job with `fail-fast: false`, so a sanitizer failure never hides the
@@ -7908,6 +8024,14 @@ so turning the option off explicitly would delete the test.
 Only `--target hello_react` and `--target rnl_core_hermes_tests` are built. Building `all` would additionally
 build Hermes' CLI tool suite — `hermes`, `hvm`, `hbcdump` and the rest — none of which anything here runs.
 `hermesc` is still built, because `InternalBytecode` depends on it.
+
+The `asan` and `tsan` entries additionally configure, build and `ctest` the matching `-tests` preset —
+`asan-tests` or `tsan-tests` — which is `RNL_BUILD_TESTS=ON` under the same sanitizer flags, in its own build
+directory so it never shares a configure with the Hermes-linked targets above. That is what puts `rnl_core_tests`,
+and the `RetainedScene`/`LinuxMountingManager` sources it compiles directly, under ASan+UBSan and TSan (#407); the
+`dev` entry has no such step; `rnl_core_allocation_cost_tests` is not among the targets it builds, because
+`packages/core/tests/CMakeLists.txt` does not configure that target at all under a sanitizer. See *Unit tests and
+coverage*.
 
 The acceptance step is the documented checklist turned into assertions, and it runs identically in all three
 entries:
@@ -8010,6 +8134,7 @@ Two flags fantom sets are deliberately dropped, because fantom targets the NDK a
 and libstdc++: `FOLLY_USE_LIBCPP` (folly would include libc++'s `<__config>`) and `FOLLY_HAVE_XSI_STRERROR_R`
 (glibc's `strerror_r` is the GNU variant and returns `char*`).
 
+<<<<<<< HEAD
 ### Idle pacing (#335)
 
 ADR-0001's pacing obligation has two halves: hit the compositor's deadline when there is something to show
@@ -8028,6 +8153,8 @@ on #335: the clean-window re-present (presenting the last frame without repainti
 it — swapchain images do not survive a present), the e2e deactivation scenario, and the idle GPU-time ceiling —
 the last two share the container-matrix rig.
 
+=======
+>>>>>>> origin/main
 ### The resource resolver (#361)
 
 Everything the running process finds on disk goes through one ordered search (`packages/core/src/ResourceResolver.{h,cpp}`,

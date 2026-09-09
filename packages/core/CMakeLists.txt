@@ -644,6 +644,7 @@ if(TARGET rnl_skia)
     list(APPEND RNL_TEXT_LAYOUT_MANAGER_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/src/DefaultFontFamily.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/EllipsizeSearch.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/FontSizeScaling.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/LineBoxMetrics.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/PinnedFontFamilies.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/TextLayoutManager.cpp
@@ -1081,6 +1082,7 @@ elseif(RNL_ENABLE_WINDOW)
         src/SharedMemoryRasterRenderer.cpp
         src/SkiaVulkanRenderer.cpp
         src/SurfaceCommitGate.cpp
+        src/SurfacePresentationPolicy.cpp
         src/TextInputClient.cpp
         src/TextInputSession.cpp
         src/TextInputV3State.cpp

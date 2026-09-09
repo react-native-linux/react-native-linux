@@ -1,0 +1,9 @@
+{
+  "name": "composite-alpha",
+  "bundle": "translucent-view.js",
+  "ready": "translucent-view: committed surface 1",
+  "frames": 60,
+  "windowFlags": ["--no-decorations", "--transparent-background"],
+  "steps": ["sleep 200"],
+  "expect": ["[rnl-present] swapchain format=", "composite-alpha=", "translucent-view: committed surface 1"]
+}

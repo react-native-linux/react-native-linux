@@ -4,8 +4,10 @@
 #include <folly/dynamic.h>
 #include <gtest/gtest.h>
 #include <latch>
+#include <limits>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <utility>
@@ -91,6 +93,26 @@ folly::dynamic wrappingRow(double width, folly::dynamic extra = folly::dynamic::
     return props;
 }
 
+constexpr facebook::react::Float kNarrowSurfaceWidth = 320;
+constexpr facebook::react::Float kWideSurfaceWidth = 640;
+constexpr facebook::react::Float kSurfaceHeight = 480;
+
+LayoutConstraints surfaceOf(facebook::react::Float width) {
+    return LayoutConstraints{.minimumSize = Size{width, kSurfaceHeight}, .maximumSize = Size{width, kSurfaceHeight}};
+}
+
+std::string describeFrames(const std::map<Tag, Rect>& frames) {
+    std::string description;
+
+    for (const auto& [tag, frame] : frames) {
+        description += std::to_string(tag) + ":(" + std::to_string(frame.origin.x) + "," +
+                       std::to_string(frame.origin.y) + " " + std::to_string(frame.size.width) + "x" +
+                       std::to_string(frame.size.height) + ") ";
+    }
+
+    return description;
+}
+
 /**
  * The layout conformance suite: every case commits a real tree through the ShadowTree commit path — the same
  * Yoga layout the platform runs on the commit thread — and reads absolute frames back out of the committed
@@ -115,11 +137,7 @@ protected:
             },
             commitOptions);
 
-        committedRevision_ = shadowTree_->getCurrentRevision();
-
-        collectFrames(committedRevision_.rootShadowNode, Point{});
-
-        return frames_;
+        return collectCommittedFrames();
     }
 
     const ShadowNode& node(Tag tag) const {
@@ -204,6 +222,29 @@ protected:
             },
             commitOptions);
 
+        return collectCommittedFrames();
+    }
+
+    /**
+     * The tree already committed, laid out again under new root constraints — the resize path exactly:
+     * `SurfaceHandler::constraintLayout` commits `RootShadowNode::clone(parserContext, constraints, context)`
+     * and nothing else, so the child nodes handed to Yoga are the same objects the previous layout produced.
+     */
+    const std::map<Tag, Rect>& resizeTo(LayoutConstraints constraints) {
+        const PropsParserContext parserContext{kSurfaceId, *contextContainer_};
+        const ShadowTreeCommitOptions commitOptions{.enableStateReconciliation = false, .mountSynchronously = true};
+
+        shadowTree_->commit(
+            [&](const RootShadowNode& oldRootShadowNode) {
+                return oldRootShadowNode.clone(parserContext, constraints, LayoutContext{});
+            },
+            commitOptions);
+
+        return collectCommittedFrames();
+    }
+
+protected:
+    const std::map<Tag, Rect>& collectCommittedFrames() {
         committedRevision_ = shadowTree_->getCurrentRevision();
 
         frames_.clear();
@@ -214,7 +255,6 @@ protected:
         return frames_;
     }
 
-protected:
     std::shared_ptr<const ChildList> withReplacedProps(const ChildList& children, Tag targetTag,
                                                        const facebook::react::Props::Shared& updatedProps) {
         auto replaced = std::make_shared<ChildList>();
@@ -1043,12 +1083,7 @@ TEST_F(LayoutConformanceTest, ConcurrentCompetingCommitsLandExactlyOneTree) {
     singleChildThread.join();
     twoChildrenThread.join();
 
-    committedRevision_ = shadowTree_->getCurrentRevision();
-
-    frames_.clear();
-    nodes_.clear();
-    scrollViewContentSizes_.clear();
-    collectFrames(committedRevision_.rootShadowNode, Point{});
+    collectCommittedFrames();
 
     const bool isSingleChildShape = frames_.count(11) == 1 && frames_.count(12) == 0;
     const bool isTwoChildrenShape = frames_.count(11) == 0 && frames_.count(12) == 1;
@@ -1064,4 +1099,127 @@ TEST_F(LayoutConformanceTest, ConcurrentCompetingCommitsLandExactlyOneTree) {
     }
 }
 
+#pragma mark - resize round-trip
+
+/**
+ * Every shape below laid out at one surface width, then another, then back — the drag out and back that a
+ * desktop window makes continuously. The third layout is compared against the first for byte-identical frames
+ * rather than approximately equal ones, because a resize that lands on a width it has already shown has exactly
+ * one correct answer: the one it showed then. The one Yoga shape that does not satisfy this is pinned in
+ * LayoutWidthRoundTripTest.cpp; every shape reachable through our own commit path does.
+ */
+TEST_F(LayoutConformanceTest, ResizingToAWidthAndBackRestoresEveryFrame) {
+    const std::vector<std::pair<std::string, std::vector<NodeSpec>>> shapes{
+        {"stretched column of fixed boxes", boxes({10, 11, 12}, kIndefinite, 40)},
+        {"row of flexing children",
+         {NodeSpec{.tag = 10,
+                   .props = folly::dynamic::object("flexDirection", "row")("flex", 1),
+                   .children = {NodeSpec{.tag = 11, .props = folly::dynamic::object("flex", 1)},
+                                NodeSpec{.tag = 12, .props = folly::dynamic::object("flex", 2)},
+                                NodeSpec{.tag = 13, .props = folly::dynamic::object("width", 50)}}}}},
+        {"wrapping row of fixed boxes",
+         {NodeSpec{.tag = 10,
+                   .props =
+                       folly::dynamic::object("flexDirection", "row")("flexWrap", "wrap")("alignItems", "flex-end"),
+                   .children = boxes({11, 12, 13, 14, 15}, 90, 40)}}},
+        {"percentage widths under a centred parent",
+         {NodeSpec{.tag = 10,
+                   .props = folly::dynamic::object("alignItems", "center")("flex", 1),
+                   .children = {NodeSpec{.tag = 11, .props = folly::dynamic::object("width", "60%")("height", 30)},
+                                NodeSpec{.tag = 12, .props = folly::dynamic::object("width", 40)("height", 30)}}}}},
+        {"scroll view over a content column",
+         {NodeSpec{.tag = 10,
+                   .componentName = "ScrollView",
+                   .props = folly::dynamic::object("flex", 1),
+                   .children = boxes({11, 12, 13}, kIndefinite, 120)}}}};
+
+    for (const auto& [name, tree] : shapes) {
+        const std::map<Tag, Rect> atNarrow = commitTree(surfaceOf(kNarrowSurfaceWidth), tree);
+        const std::map<Tag, Rect> atWide = resizeTo(surfaceOf(kWideSurfaceWidth));
+        const std::map<Tag, Rect> backAtNarrow = resizeTo(surfaceOf(kNarrowSurfaceWidth));
+
+        EXPECT_NE(describeFrames(atNarrow), describeFrames(atWide)) << name << " does not respond to the resize";
+        EXPECT_EQ(describeFrames(atNarrow), describeFrames(backAtNarrow)) << name << " did not come back";
+    }
+}
+
+/**
+ * A wrap container swept across every width a drag would visit, up and then back down. Wrapping is the one
+ * layout rule whose output is a step function of the width, so it is where a width the sweep visits twice is
+ * most likely to answer differently the second time. The height may only fall as the container widens, and the
+ * descending pass has to retrace the ascending one exactly.
+ */
+TEST_F(LayoutConformanceTest, WrapContainerHeightIsMonotonicAndRepeatableAcrossAWidthSweep) {
+    const std::vector<NodeSpec> tree{
+        NodeSpec{.tag = 10,
+                 .props = folly::dynamic::object("flexDirection", "row")("flexWrap", "wrap"),
+                 .children = boxes({11, 12, 13, 14, 15, 16}, 90, 40)}};
+
+    std::vector<facebook::react::Float> sweptWidths;
+
+    for (facebook::react::Float width = 100; width <= 600; width += 10) {
+        sweptWidths.push_back(width);
+    }
+
+    commitTree(surfaceOf(sweptWidths.front()), tree);
+
+    std::map<facebook::react::Float, facebook::react::Float> heightByWidth;
+    facebook::react::Float previousHeight = std::numeric_limits<facebook::react::Float>::max();
+
+    for (const facebook::react::Float width : sweptWidths) {
+        const facebook::react::Float height = resizeTo(surfaceOf(width)).at(10).size.height;
+
+        EXPECT_LE(height, previousHeight) << "the wrap container grew taller as it widened, at width " << width;
+
+        heightByWidth.emplace(width, height);
+        previousHeight = height;
+    }
+
+    for (auto width = sweptWidths.rbegin(); width != sweptWidths.rend(); ++width) {
+        EXPECT_FLOAT_EQ(resizeTo(surfaceOf(*width)).at(10).size.height, heightByWidth.at(*width))
+            << "the wrap container answered differently on the way back, at width " << *width;
+    }
+}
+
+/**
+ * facebook/react-native#57690: a layout update that moves a view without resizing it, under a wrapper the differ
+ * flattens away, produced no mount item at all. A resize is overwhelmingly this mutation — the centred box below
+ * changes only its origin when the surface widens, and nothing about it is re-rendered — so a differ that drops
+ * it drops most of what a drag has to repaint.
+ */
+TEST_F(LayoutConformanceTest, ResizeThatOnlyMovesAViewStillProducesAMountItem) {
+    constexpr Tag kBoxTag = 11;
+
+    commitTree(surfaceOf(kNarrowSurfaceWidth),
+               {NodeSpec{.tag = 10,
+                         .props = folly::dynamic::object("alignItems", "center")("flex", 1),
+                         .children = {NodeSpec{.tag = kBoxTag,
+                                               .props = folly::dynamic::object("width", 40)("height", 40)(
+                                                   "backgroundColor", 0xFF3366CC)}}}});
+
+    const std::shared_ptr<const MountingCoordinator> mountingCoordinator = shadowTree_->getMountingCoordinator();
+
+    ASSERT_TRUE(mountingCoordinator->pullTransaction().has_value());
+
+    const Rect boxAtNarrow = frames_.at(kBoxTag);
+    const Rect boxAtWide = resizeTo(surfaceOf(kWideSurfaceWidth)).at(kBoxTag);
+
+    ASSERT_NE(boxAtNarrow.origin.x, boxAtWide.origin.x);
+    ASSERT_EQ(boxAtNarrow.size, boxAtWide.size);
+
+    const std::optional<MountingTransaction> transaction = mountingCoordinator->pullTransaction();
+
+    ASSERT_TRUE(transaction.has_value());
+
+    bool hasUpdateForBox = false;
+
+    for (const ShadowViewMutation& mutation : transaction->getMutations()) {
+        if (mutation.type == ShadowViewMutation::Update && mutation.newChildShadowView.tag == kBoxTag) {
+            hasUpdateForBox = true;
+            EXPECT_FLOAT_EQ(mutation.newChildShadowView.layoutMetrics.frame.origin.x, boxAtWide.origin.x);
+        }
+    }
+
+    EXPECT_TRUE(hasUpdateForBox) << "the resize moved the box but the differ emitted no mount item for it";
+}
 } // namespace
