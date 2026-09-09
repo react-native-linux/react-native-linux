@@ -3114,6 +3114,28 @@ Three properties of that line, each deliberate:
 The CSS generic families — `serif`, `sans-serif`, `monospace`, `cursive`, `fantasy` — are exempt, because
 resolving `monospace` to a real monospace face is the point of asking for it rather than a failure to find it.
 
+**#70 item 3, the bold/italic slice.** `scripts/vendor-fonts.ts` now pins three static Noto Sans faces —
+Regular, Bold and Italic, see *Font strategy, and why goldens need it* below — which raised a question the
+original diagnostic did not answer: does `matchFamilyStyle("Noto Sans", SkFontStyle::Bold())` actually return
+`NotoSans-Bold.ttf`, or does it nearest-match to whichever face is closest and let Skia synthesize a faux-bold
+from it? A synthesized face still draws something, so nothing above would notice. `bundledFontFamilyResolvesPinnedBoldFile`
+and `bundledFontFamilyResolvesPinnedItalicFile` in `TextPipeline.cpp` are the #314-pattern answer: each asks
+`matchFamilyStyle` for `SkFontStyle::Bold()`/`Italic()` and checks the *resolved face's own style* — weight 700
+for bold, slant 1 for italic — through `resolvedStyleMatchesExactly` in `PinnedFontFamilies.cpp`, the same
+pure, Skia-free comparison the regular face's own check (`bundledFontFamilyResolvesPinnedFile`) already used.
+`checkPinnedFontFamiliesResolve` now aborts on either one failing, exactly as it already did for the regular
+face and the emoji face. Measured against the real,
+vendored files, both resolve correctly: `test-bundles/text-style-matrix.js`'s `fontWeight`/`fontStyle` row draws
+Regular, Bold, Italic and Bold+Italic side by side against `goldens/text-style-matrix.png`, and the visible
+difference in letterforms (not just weight) between the bold and the regular runs is the proof the face changed,
+not just its weight flag.
+
+Still open, and not attempted in this slice: **item 1**, the application's own `assets/fonts/*.ttf` registered
+ahead of fontconfig — blocked on the asset convention issue #22 has not settled yet, and inventing a
+one-value config for it ahead of that would be the kind of scaffolding the Prime Directive rejects. **Item 4**,
+an inspectable fallback chain (react-native#48625), and **variable-font weight/style selection** — no variable
+font is vendored, and vendoring one is its own decision about golden reproducibility, not a documentation gap.
+
 ### Truncation that is not at the tail (#251)
 
 `ellipsizeMode` has four values and SkParagraph implements one of them. `ParagraphStyle::setEllipsis` appends its
