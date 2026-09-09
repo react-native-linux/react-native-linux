@@ -3,6 +3,7 @@
 #include "text-input-unstable-v3-client-protocol.h"
 
 #include <cstdint>
+#include <iostream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -96,6 +97,17 @@ void TextInputClient::setCursorRectangle(int32_t x, int32_t y, int32_t width, in
 void TextInputClient::flushTextInput() {
     const TextInputSessionBatch batch = session_.takeBatch();
 
+    // The lifecycle traces beside `InputDispatcher`'s field-focus lines: enable and disable are the session's own
+    // transitions, and the two that no field change explains — a re-enable after a keyboard leave and enter — are
+    // the ones #340's e2e reads.
+    if (batch.enable) {
+        std::cout << "[rnl-ime] session enabled" << std::endl;
+    }
+
+    if (batch.disable) {
+        std::cout << "[rnl-ime] session disabled" << std::endl;
+    }
+
     // The protocol has no reset request, so a teardown is a `disable` with a `commit` of its own — see
     // TextInputSession for why a field change goes through one.
     if (batch.disable) {
@@ -136,7 +148,19 @@ void TextInputClient::pushEvents(const std::vector<InputEvent>& events) {
     }
 }
 
+void TextInputClient::onEnter() { session_.enter(); }
+
 void TextInputClient::onLeave() { pushEvents(session_.leave()); }
+
+void TextInputClient::compose(const std::string& text) {
+    session_.recordPreeditString(text, static_cast<int32_t>(text.size()), static_cast<int32_t>(text.size()));
+    pushEvents(session_.applyDone());
+}
+
+void TextInputClient::commitComposition(const std::string& text) {
+    session_.recordCommitString(text);
+    pushEvents(session_.applyDone());
+}
 
 void TextInputClient::onDone(uint32_t serial) {
     // No flush here: `applyDone` can release pending surrounding-text or cursor-rectangle state that
@@ -149,7 +173,7 @@ void TextInputClient::onDone(uint32_t serial) {
 }
 
 void TextInputClient::handleEnter(void* data, zwp_text_input_v3* /*textInput*/, wl_surface* /*surface*/) {
-    static_cast<TextInputClient*>(data)->session_.enter();
+    static_cast<TextInputClient*>(data)->onEnter();
 }
 
 void TextInputClient::handleLeave(void* data, zwp_text_input_v3* /*textInput*/, wl_surface* /*surface*/) {

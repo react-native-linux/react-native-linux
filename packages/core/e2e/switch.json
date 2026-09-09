@@ -3,6 +3,7 @@
   "bundle": "switch.js",
   "ready": "switch: committed surface 1",
   "frames": 600,
+  "inputTrace": true,
   "steps": ["sleep 500", "move 85 315", "sleep 100", "click 85 315", "sleep 500"],
   "screenshot": {
     "golden": "switch-toggled.png",

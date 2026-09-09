@@ -443,20 +443,19 @@ skia::textlayout::PlaceholderStyle toPlaceholderStyle(const facebook::react::Att
 }
 
 /**
- * Whether `kBundledFontFamily`'s normal-weight, upright face is the exact face `scripts/fonts.lock.json` pins
- * (`NotoSans-Regular.ttf`), not merely some face under that family name. `matchFamily(...)->count() > 0` alone
- * (the check this replaces) passed as long as *any* Noto Sans style resolved. `getResourceName` — the obvious
- * way to name the file backing a typeface — is unimplemented for `SkFontMgr_New_Custom_Directory`'s typefaces
- * (always returns 0), so this asks `matchFamilyStyle` for the exact style `FontFamilyRequestKind::VendoredDefault`
- * requests instead, the same way text layout does, and checks the *style it actually got back*:
- * `matchFamilyStyle`'s nearest-match fallback does not enforce an exact style, and with `NotoSans-Regular.ttf`
- * missing and only `NotoSans-Bold.ttf`/`NotoSans-Italic.ttf` left, it silently returns the italic face — weight
- * 400, but slant 1, not upright — instead of failing. `resolvedStyleIsPinnedDefault` does the actual comparison,
- * kept pure and Skia-free in `PinnedFontFamilies.cpp` so the wrong-face regression is table-tested without a
- * live `SkFontMgr`.
+ * Whether `kBundledFontFamily`'s face for `requestedStyle` is the exact file `scripts/fonts.lock.json` pins for
+ * it, not merely some face under that family name. `matchFamily(...)->count() > 0` alone (the check this
+ * replaces) passed as long as *any* Noto Sans style resolved. `getResourceName` — the obvious way to name the
+ * file backing a typeface — is unimplemented for `SkFontMgr_New_Custom_Directory`'s typefaces (always returns
+ * 0), so this asks `matchFamilyStyle` for the exact style being requested instead, the same way text layout
+ * does, and checks the *style it actually got back*: `matchFamilyStyle`'s nearest-match fallback does not
+ * enforce an exact style, and with the file for `requestedStyle` missing, it silently returns whichever of the
+ * other pinned faces is closest — `resolvedStyleMatchesExactly` in `PinnedFontFamilies.cpp` does the actual
+ * comparison, kept pure and Skia-free so the wrong-face regression is table-tested without a live `SkFontMgr`.
  */
-bool bundledFontFamilyResolvesPinnedFile(SkFontMgr& assetFontManager) {
-    const sk_sp<SkTypeface> typeface = assetFontManager.matchFamilyStyle(kBundledFontFamily, SkFontStyle());
+bool bundledFontFamilyResolvesRequestedStyle(SkFontMgr& assetFontManager, const SkFontStyle& requestedStyle,
+                                             int expectedWeight, int expectedWidth, int expectedSlant) {
+    const sk_sp<SkTypeface> typeface = assetFontManager.matchFamilyStyle(kBundledFontFamily, requestedStyle);
 
     if (typeface == nullptr) {
         return false;
@@ -464,7 +463,40 @@ bool bundledFontFamilyResolvesPinnedFile(SkFontMgr& assetFontManager) {
 
     const SkFontStyle style = typeface->fontStyle();
 
-    return resolvedStyleIsPinnedDefault(style.weight(), style.width(), static_cast<int>(style.slant()));
+    return resolvedStyleMatchesExactly(style.weight(), style.width(), static_cast<int>(style.slant()), expectedWeight,
+                                       expectedWidth, expectedSlant);
+}
+
+/**
+ * `FontFamilyRequestKind::VendoredDefault`'s own case of `bundledFontFamilyResolvesRequestedStyle`: the
+ * `NotoSans-Regular.ttf` regression #372/CodeRabbit measured, where a missing regular face let `matchFamilyStyle`
+ * nearest-match to the italic one — weight 400, matching the request, but slant 1, not upright.
+ */
+bool bundledFontFamilyResolvesPinnedFile(SkFontMgr& assetFontManager) {
+    return bundledFontFamilyResolvesRequestedStyle(assetFontManager, SkFontStyle(), SkFontStyle::kNormal_Weight,
+                                                   SkFontStyle::kNormal_Width, SkFontStyle::kUpright_Slant);
+}
+
+/**
+ * #70 item 3's bold case: whether requesting `SkFontStyle::Bold()` off `kBundledFontFamily` resolves to a face
+ * that is *itself* bold (weight 700), i.e. `NotoSans-Bold.ttf`, rather than `matchFamilyStyle` nearest-matching
+ * to the regular or italic face and Skia embolding it synthetically — a synthesized face still draws something,
+ * but it is not the pinned file, and would drift silently the moment `NotoSans-Bold.ttf` went missing from
+ * `packages/core/fonts` the same way #314 found the emoji face could.
+ */
+bool bundledFontFamilyResolvesPinnedBoldFile(SkFontMgr& assetFontManager) {
+    return bundledFontFamilyResolvesRequestedStyle(assetFontManager, SkFontStyle::Bold(), SkFontStyle::kBold_Weight,
+                                                   SkFontStyle::kNormal_Width, SkFontStyle::kUpright_Slant);
+}
+
+/**
+ * The italic counterpart of `bundledFontFamilyResolvesPinnedBoldFile`: whether `SkFontStyle::Italic()` off
+ * `kBundledFontFamily` resolves to `NotoSans-Italic.ttf` itself (slant 1, weight still 400) rather than a
+ * nearest-matched upright face Skia slants synthetically.
+ */
+bool bundledFontFamilyResolvesPinnedItalicFile(SkFontMgr& assetFontManager) {
+    return bundledFontFamilyResolvesRequestedStyle(assetFontManager, SkFontStyle::Italic(), SkFontStyle::kNormal_Weight,
+                                                   SkFontStyle::kNormal_Width, SkFontStyle::kItalic_Slant);
 }
 
 /**
@@ -473,11 +505,14 @@ bool bundledFontFamilyResolvesPinnedFile(SkFontMgr& assetFontManager) {
  * a stale `packages/core/fonts` silently fell through to fontconfig's system emoji face, a different file by
  * sha256, and the golden drifted by hundreds of pixels with no error printed anywhere. Checked once, at
  * `TextPipelineState` construction, because every text run asks for the same two families and a directory
- * missing one of them is missing it on every frame.
+ * missing one of them is missing it on every frame. The bold and italic entries are #70 item 3's extension of
+ * the same guard to the two other pinned Noto Sans faces.
  */
 void checkPinnedFontFamiliesResolve(SkFontMgr& assetFontManager) {
     const std::vector<PinnedFontFamilyResolution> resolutions{
         {kBundledFontFamily, bundledFontFamilyResolvesPinnedFile(assetFontManager)},
+        {"Noto Sans (bold)", bundledFontFamilyResolvesPinnedBoldFile(assetFontManager)},
+        {"Noto Sans (italic)", bundledFontFamilyResolvesPinnedItalicFile(assetFontManager)},
         {kEmojiFontFamily, assetFontManager.matchFamily(kEmojiFontFamily)->count() > 0}};
 
     const std::optional<std::string> fatalMessage = pinnedFontFamiliesFatalMessage(resolutions);

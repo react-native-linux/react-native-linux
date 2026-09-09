@@ -98,6 +98,8 @@ public:
     void recordCommitString(std::string text);
     void recordDeleteSurroundingText(uint32_t beforeLength, uint32_t afterLength);
     std::vector<InputEvent> applyDone(uint32_t serial);
+    /** A `done` that answers the state we last sent — the virtual input method's, which knows no serial. */
+    std::vector<InputEvent> applyDone();
 
     /** The requests this frame owes the compositor. Taking them is what records that they were sent. */
     TextInputSessionBatch takeBatch();

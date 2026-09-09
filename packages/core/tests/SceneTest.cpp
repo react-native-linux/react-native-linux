@@ -1268,9 +1268,13 @@ makeRecordingImageEventEmitter() {
             eventQueueProcessor, std::move(eventBeat), [](const facebook::react::StateUpdate& /*stateUpdate*/) {},
             std::weak_ptr<facebook::react::EventLogger>{});
 
-    eventDispatcher->addListener(
-        std::make_shared<const facebook::react::EventListener>([recorder](const facebook::react::RawEvent& event) {
-            recorder->types.push_back(event.type);
+    // The listener records into the recorder without co-owning it: the recorder owns the dispatcher, the
+    // dispatcher owns this listener, so a `shared_ptr<DispatchRecorder>` capture here would close that ring and
+    // strand every allocation in it at process exit (issue #411). The reference is non-owning but never dangles
+    // for the same reason -- the only path that reaches this lambda starts at the recorder that holds it alive.
+    eventDispatcher->addListener(std::make_shared<const facebook::react::EventListener>(
+        [&recordedEventTypes = recorder->types](const facebook::react::RawEvent& event) {
+            recordedEventTypes.push_back(event.type);
 
             return false;
         }));

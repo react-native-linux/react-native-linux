@@ -65,7 +65,10 @@ namespace react_native_linux {
  * `recordFrameTick` has read that signal and before `takeFrame` consumes it.
  * `recordPaintStart`/`recordPaintEnd` bracket the paint span `WindowMain` runs between `takeFrame` and the
  * renderer's present, and `closeJournalFrame` closes the interval once a `wp_presentation` result exists for it.
- * See *Frame journal* in docs/cpp-toolchain.md.
+ * `deliverInput` feeds the batch's size to `FrameJournal::recordInput` before dispatching, which is what makes
+ * an injected input event traceable to the presented frame that answered it: the closed frame's log line names
+ * how many input events the window had received but no presented frame had yet answered when its dirty edge
+ * fired. See *Frame journal* in docs/cpp-toolchain.md.
  *
  * Shutdown contract: destruction stops the surface, drains the JavaScript thread so the queued unmount runs while
  * the scheduler delegate is still alive, and only then destroys the Fabric host and the instance, in that order.

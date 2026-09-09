@@ -50,9 +50,26 @@ public:
     bool isFocused() const noexcept;
     bool isEnabled() const noexcept;
 
+    /**
+     * The wire's `enter`/`leave`, callable by hand: `--inject-key-sequence` (#340) replays a keyboard leave and
+     * enter the compositor would have sent, which is what proves the re-enable after focus loss under a
+     * compositor that cannot be made to take focus away from its only window. The handlers below are their only
+     * other callers.
+     */
+    void onEnter();
+    void onLeave();
+
+    /**
+     * The virtual input method's composition steps (#340): the wire's `preedit_string`/`commit_string` followed
+     * by their `done`, as one step, so an injected composition travels the session — the teardown that takes a
+     * half-composed word off the screen and the serial gating — and not only the editor it lands in. The cursor
+     * pair is the end of the run, where every toolkit puts the caret during composition.
+     */
+    void compose(const std::string& text);
+    void commitComposition(const std::string& text);
+
 private:
     void pushEvents(const std::vector<InputEvent>& events);
-    void onLeave();
     void onDone(uint32_t serial);
 
     static zwp_text_input_v3_listener makeTextInputListener();

@@ -20,6 +20,11 @@ const SUMMARY_MARKER = '"summary":true';
  */
 const JOURNAL_SUMMARY_MARKER = '"journalSummary":true';
 
+/** The journal's own per-frame record; `inputEvents` names the injected input the presented frame answered. */
+const JOURNAL_FRAME_MARKER = '"journal":true';
+
+const NO_INPUT_EVENTS = 0;
+
 interface FrameLogSummary {
   readonly discarded: number;
   readonly frames: number;
@@ -156,6 +161,43 @@ const findFrameHangFailures = (
   ];
 };
 
+/**
+ * How many of the log's journal records carry the input tag — the presented frames that answered injected input,
+ * which is #345's e2e trace from an injected pointer event to the frame it reached. The window omits
+ * `inputEvents` when a frame answered none, so an absent field is a zero; a record that cannot be parsed is
+ * skipped rather than guessed at, which can only ever under-count, never fabricate a frame.
+ */
+const countInputAnsweredFrames = (frameLogText: string): number =>
+  frameLogText
+    .split("\n")
+    .filter((line) => line.includes(JOURNAL_FRAME_MARKER))
+    .map((line) => parseJsonRecord(line))
+    .filter((record): record is Record<string, unknown> => record !== null)
+    .map((record) => readCount(record, "inputEvents") ?? NO_INPUT_EVENTS)
+    .filter((count) => count > NO_INPUT_EVENTS).length;
+
+/**
+ * The e2e half of #345's acceptance: an injected input event has to be traceable to the presented frame that
+ * answered it. `inputTrace` opts a scenario in, and a run that opts in fails closed — a log without the
+ * journal's summary cannot say anything about any frame, and a journal that closed no input-answering frame
+ * means the injection never reached light.
+ */
+const findInputTraceFailures = (frameLogText: string, isRequired: boolean, frameLogPath: string): readonly string[] => {
+  if (!isRequired) {
+    return [];
+  }
+
+  if (parseFrameJournalSummary(frameLogText) === null) {
+    return [`the window wrote no frame-journal summary to ${frameLogPath}`];
+  }
+
+  if (countInputAnsweredFrames(frameLogText) === NO_INPUT_EVENTS) {
+    return [`no presented frame in ${frameLogPath} answered an injected input event in the frame journal's records`];
+  }
+
+  return [];
+};
+
 interface FrameBudgetGradeInputs {
   readonly budget: FrameBudget;
   readonly frameLogPath: string;
@@ -211,6 +253,7 @@ export {
   describeFrameJournal,
   describeFrameTiming,
   findFrameBudgetFailures,
+  findInputTraceFailures,
   parseFrameJournalSummary,
   parseFrameLogSummary,
 };

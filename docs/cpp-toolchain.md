@@ -3114,6 +3114,28 @@ Three properties of that line, each deliberate:
 The CSS generic families — `serif`, `sans-serif`, `monospace`, `cursive`, `fantasy` — are exempt, because
 resolving `monospace` to a real monospace face is the point of asking for it rather than a failure to find it.
 
+**#70 item 3, the bold/italic slice.** `scripts/vendor-fonts.ts` now pins three static Noto Sans faces —
+Regular, Bold and Italic, see *Font strategy, and why goldens need it* below — which raised a question the
+original diagnostic did not answer: does `matchFamilyStyle("Noto Sans", SkFontStyle::Bold())` actually return
+`NotoSans-Bold.ttf`, or does it nearest-match to whichever face is closest and let Skia synthesize a faux-bold
+from it? A synthesized face still draws something, so nothing above would notice. `bundledFontFamilyResolvesPinnedBoldFile`
+and `bundledFontFamilyResolvesPinnedItalicFile` in `TextPipeline.cpp` are the #314-pattern answer: each asks
+`matchFamilyStyle` for `SkFontStyle::Bold()`/`Italic()` and checks the *resolved face's own style* — weight 700
+for bold, slant 1 for italic — through `resolvedStyleMatchesExactly` in `PinnedFontFamilies.cpp`, the same
+pure, Skia-free comparison the regular face's own check (`bundledFontFamilyResolvesPinnedFile`) already used.
+`checkPinnedFontFamiliesResolve` now aborts on either one failing, exactly as it already did for the regular
+face and the emoji face. Measured against the real,
+vendored files, both resolve correctly: `test-bundles/text-style-matrix.js`'s `fontWeight`/`fontStyle` row draws
+Regular, Bold, Italic and Bold+Italic side by side against `goldens/text-style-matrix.png`, and the visible
+difference in letterforms (not just weight) between the bold and the regular runs is the proof the face changed,
+not just its weight flag.
+
+Still open, and not attempted in this slice: **item 1**, the application's own `assets/fonts/*.ttf` registered
+ahead of fontconfig — blocked on the asset convention issue #22 has not settled yet, and inventing a
+one-value config for it ahead of that would be the kind of scaffolding the Prime Directive rejects. **Item 4**,
+an inspectable fallback chain (react-native#48625), and **variable-font weight/style selection** — no variable
+font is vendored, and vendoring one is its own decision about golden reproducibility, not a documentation gap.
+
 ### Truncation that is not at the tail (#251)
 
 `ellipsizeMode` has four values and SkParagraph implements one of them. `ParagraphStyle::setEllipsis` appends its
@@ -5575,16 +5597,32 @@ values the protocol reads as "never", a stale serial and a compositor that never
 protocol plumbing that needs a compositor, and `--ime-debug` is the test for it.
 
 The session's transitions are observable without a compositor, because `InputDispatcher` writes one trace line
-per change — `[rnl-ime] field focused purpose=email`, `[rnl-ime] field blurred`. `hello_react --type
+per change — `[rnl-ime] field focused purpose=email`, `[rnl-ime] field blurred` — and `TextInputClient` writes
+the session lifecycle's own, `[rnl-ime] session enabled` and `[rnl-ime] session disabled`, which are the two
+transitions no field change explains: a re-enable after a keyboard leave and enter. `hello_react --type
 packages/core/test-bundles/text-input-session.js /tmp/rnl-session.png "{Tab}{Tab}{Tab}"` prints them for a
 fixture of one field and one focusable node that is not a field, and the `text-input-session` e2e scenario asserts
-the same three lines across a Tab into the field, a click on the button and a Tab back. What that scenario cannot
-prove is composition itself: cage runs no input method, so the e2e proves the enable and disable sequence and the
-unit gate proves what each of them carries.
+the same three lines across a Tab into the field, a click on the button and a Tab back.
 
-The e2e layer issue #26 asks for — a virtual input method injecting composition under the headless compositor —
-is not built. It needs the harness to speak the compositor side, `input-method-v2`, which is a second protocol
-implementation and the *Deferrals* below explain why it is not this issue's.
+The composition e2e is `text-input-compose`, driven by `rnl_window --inject-key-sequence`: the key-sequence
+grammar `parseKeySequence` already speaks, paced one token per interval across the frame loop. Where the
+compositor advertises `zwp_text_input_manager_v3`, `{Preedit:...}` and `{Commit:...}` route through the session —
+the same `preedit_string`/`commit_string`+`done` pair the wire carries, so the teardown and the serial gating are
+exercised and not only the editor the run lands in — and `{SessionLeave}`/`{SessionEnter}` replay the keyboard
+leave and enter a compositor with one window cannot be made to produce. Where it does not — cage advertises no
+text-input manager — a composition token falls back to the editor-level events, which is that delivery minus the
+session, and the session traces do not appear; the session lifecycle stays the unit gate's below.
+
+The scenario walks a committed composition into field A, a focus change to field B, a clean composition and
+commit in B, then a second composition in B — asserting the ordered traces and the two committed texts, with
+nothing of B's landing in A. The walk commits before the focus change because it must: while a composition is
+open, every key belongs to the input method (#54's routing rule), so a Tab mid-composition is dropped on every
+compositor, not just this one. The abandoned-composition walk — a run still composing when the caret leaves — is
+the controller unit gate above and the `{SessionLeave}`/`{SessionEnter}` pair where a text-input manager exists.
+
+What still needs a real compositor is the wire decode under live traffic, which `ImeTest` covers with recorded
+sequences, and the compositor-side half of the protocol — being the input method rather than talking to one,
+`input-method-v2` — which stays the *Deferrals* below.
 
 ### Deferrals, with owners
 
@@ -7164,10 +7202,16 @@ because there is then nothing to convert against. Only that short-circuit was pr
 journal's own line for the same event:
 
 ```json
-{"journal":true,"dirtyToPresentNs":11000000,"paintNs":3000000,"hang":false}
+{"journal":true,"dirtyToPresentNs":11000000,"paintNs":3000000,"inputEvents":2,"hang":false}
 ```
 
-`paintNs` is absent when no paint span was recorded for that interval; `hang` is always present. The run ends
+`paintNs` is absent when no paint span was recorded for that interval; `inputEvents` is absent when the frame
+answered no input, which is most frames; `hang` is always present. `inputEvents` is the input tag — the number of
+events the window had received but no presented frame had yet answered when the interval's dirty edge fired, fed
+by `WindowSession::deliverInput` from the batch's size before it dispatches. It is what makes an injected input
+event traceable to the presented frame that answered it: the charge accumulates until a dirty edge takes it,
+survives an idle-boundary present and a discontinuity (input nobody answered is still owed an answer), and is
+lost only with an interval the compositor discarded. The run ends
 with the journal's own summary line, beside `FrameTiming`'s:
 
 ```json
@@ -7195,6 +7239,15 @@ actually measured under cage and lavapipe across two runs of #345's PR: animated
 0 hangs and a 15.99 ms maximum both times, raf-idle 237 frames with 0 hangs at 17.5 ms and 238 with 1 hang at
 36.9 ms, and the short scenarios reported the first frame after mount as a hang at 50-73 ms. The 1 is headroom
 for exactly that first-frame-after-mount hang; a second hang in a 240-frame run is a regression.
+
+**The trace.** A scenario's `"inputTrace": true` turns the journal's input tag into a gate (#345's e2e half): the
+run's frame log must carry at least one journal record naming the input its presented frame answered, which is
+the trace from the injector's pointer event to the light it reached. `switch.json` sets it, on the controlled
+toggle — the fixture whose press changes no pixel by itself and whose committed reply is exactly the frame that
+answers the input; a bundle whose input handlers only log produces no damage at all, and the gate correctly
+refuses to pretend a frame answered. The gate fails
+closed — a log without the journal's summary is the same failure a missing `FrameTiming` summary is, and a
+journal that closed no input-answering frame means the injection never reached light.
 
 ### Screenshots
 

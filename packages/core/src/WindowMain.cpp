@@ -81,6 +81,7 @@ constexpr int kPrimaryPointerButton = 0;
 constexpr int kSecondaryPointerButton = 2;
 constexpr std::string_view kInjectProtocolErrorFlag = "--inject-protocol-error";
 constexpr std::string_view kInjectProtocolErrorAfterFrameFlag = "--inject-protocol-error-after-frame";
+constexpr std::string_view kInjectKeySequenceFlag = "--inject-key-sequence";
 constexpr std::string_view kWindowErrorSource = "rnl-window";
 constexpr std::string_view kImeDebugSurroundingText = "react-native-linux";
 constexpr int32_t kImeDebugCursorX = 64;
@@ -99,9 +100,9 @@ constexpr uint64_t kNanosecondsPerSecond = 1'000'000'000;
  * times. It is what the e2e driver's perf gate reads. See *Frame timing* in docs/cpp-toolchain.md.
  *
  * When a bundle is running, each presented frame's line is followed by the frame journal's own line for the same
- * event (#345) — the dirty-to-present latency and paint span, when the frame closed an open interval — and the
- * run ends with the journal's own summary line, beside `FrameTiming`'s. See *Frame journal* in
- * docs/cpp-toolchain.md.
+ * event (#345) — the dirty-to-present latency, the paint span and the count of input events the frame answered,
+ * when the frame closed an open interval — and the run ends with the journal's own summary line, beside
+ * `FrameTiming`'s. See *Frame journal* in docs/cpp-toolchain.md.
  *
  * `--window-debug` is issue #218's manual proof, the same role `--ime-debug` plays for text composition: none of
  * the desktop lifecycle contract's activated/maximized/fullscreen/resizing bits, `wl_surface` enter/leave, or
@@ -130,6 +131,12 @@ constexpr uint64_t kNanosecondsPerSecond = 1'000'000'000;
  * gap. `--inject-protocol-error-after-frame` injects the same rejection once a frame has already presented
  * instead, proving the ordinary path: `WaylandWindow::dispatchWithTimeout`'s own event loop reports it, with
  * nothing to catch. See *Window host* in docs/cpp-toolchain.md.
+ *
+ * `--inject-key-sequence "<sequence>"` is #340's virtual input method: `parseKeySequence`'s grammar paced one
+ * token per interval across the frame loop, so a headless run composes into real fields — pre-edit, commit and
+ * the `{SessionLeave}`/`{SessionEnter}` pair that replays a keyboard leave and enter. It exists because cage
+ * runs no input method and cannot lose its only window's keyboard focus, which is precisely the two things the
+ * composition e2e has to walk through. See *The compositor and input-method matrix* in docs/cpp-toolchain.md.
  */
 struct WindowArguments {
     std::optional<std::string> bundlePath;
@@ -146,6 +153,7 @@ struct WindowArguments {
     bool windowDebug{false};
     bool injectProtocolError{false};
     bool injectProtocolErrorAfterFrame{false};
+    std::optional<std::string> injectKeySequence;
     std::string error;
 };
 
@@ -162,6 +170,68 @@ struct WindowArguments {
 struct AutomationChannel {
     std::optional<react_native_linux::AutomationServer> server;
     std::optional<std::string> pendingScreenshotPath;
+};
+
+/**
+ * The virtual input method of #340's e2e. `--inject-key-sequence` takes `parseKeySequence`'s grammar — ordinary
+ * keys, `{Preedit:...}` and `{Commit:...}` among them — and paces it one token per interval, so each token lands
+ * in one frame. A composition token routes through the text-input session, exactly as the wire's
+ * `preedit_string`/`commit_string`+`done` pair would, so the teardown and the serial gating are exercised and
+ * not only the editor the run lands in; a key token's events join the frame's batch at the same entry the
+ * compositor's events ride. `{SessionLeave}` and `{SessionEnter}` are the session's own wire events rather than
+ * key events, replayed by hand: a compositor with one window cannot be made to take that window's keyboard
+ * focus away, which is what a leave-and-enter under a real compositor is. See *The compositor and input-method
+ * matrix* in docs/cpp-toolchain.md.
+ */
+class InjectedKeySequence final {
+public:
+    struct Step {
+        std::vector<react_native_linux::InputEvent> events;
+        std::optional<std::string> preedit;
+        std::optional<std::string> commit;
+        bool sessionLeave{false};
+        bool sessionEnter{false};
+    };
+
+    explicit InjectedKeySequence(std::string sequence) : tokens_(react_native_linux::keySequenceTokens(sequence)) {}
+
+    std::optional<Step> take(std::chrono::steady_clock::time_point now) {
+        if (nextTokenIndex_ >= tokens_.size() || now - lastTokenTime_ < kInjectKeySequenceInterval) {
+            return std::nullopt;
+        }
+
+        lastTokenTime_ = now;
+        const std::string& token = tokens_[nextTokenIndex_++];
+
+        if (token == kSessionLeaveToken) {
+            return Step{.sessionLeave = true};
+        }
+
+        if (token == kSessionEnterToken) {
+            return Step{.sessionEnter = true};
+        }
+
+        const std::vector<react_native_linux::InputEvent> events = react_native_linux::parseKeySequence(token);
+
+        if (events.size() == 1 && events[0].kind == react_native_linux::InputEventKind::ImePreedit) {
+            return Step{.events = events, .preedit = events[0].text};
+        }
+
+        if (events.size() == 1 && events[0].kind == react_native_linux::InputEventKind::ImeCommit) {
+            return Step{.events = events, .commit = events[0].text};
+        }
+
+        return Step{.events = events};
+    }
+
+private:
+    static constexpr std::chrono::milliseconds kInjectKeySequenceInterval{200};
+    static constexpr std::string_view kSessionLeaveToken = "{SessionLeave}";
+    static constexpr std::string_view kSessionEnterToken = "{SessionEnter}";
+
+    std::vector<std::string> tokens_;
+    size_t nextTokenIndex_{0};
+    std::chrono::steady_clock::time_point lastTokenTime_{std::chrono::steady_clock::now()};
 };
 
 /**
@@ -291,6 +361,10 @@ std::string describeMissingValue(std::string_view flag) {
         return "--app-id requires an application identifier";
     }
 
+    if (flag == kInjectKeySequenceFlag) {
+        return "--inject-key-sequence requires a key sequence";
+    }
+
     if (flag == kTitleFlag) {
         return "--title requires a window title";
     }
@@ -358,7 +432,7 @@ WindowArguments parseArguments(std::span<char*> arguments) {
         }
 
         if (flag != kFabricFlag && flag != kScreenshotFlag && flag != kFramesFlag && flag != kFrameLogFlag &&
-            flag != kRendererFlag && flag != kAppIdFlag && flag != kTitleFlag) {
+            flag != kRendererFlag && flag != kAppIdFlag && flag != kTitleFlag && flag != kInjectKeySequenceFlag) {
             // Not a flag at all: the desktop entry's `Exec=... %u` expansion for single-instance activation
             // (#363) hands this process a bare URL, with no `--` of its own. Nothing here consumes it — the
             // single-instance check reads the *original* argv directly, ahead of this parse — so it is not an
@@ -397,6 +471,8 @@ WindowArguments parseArguments(std::span<char*> arguments) {
             }
         } else if (flag == kAppIdFlag) {
             parsed.applicationIdentifier = std::string(value);
+        } else if (flag == kInjectKeySequenceFlag) {
+            parsed.injectKeySequence = std::string(value);
         } else if (flag == kTitleFlag) {
             parsed.title = std::string(value);
         } else {
@@ -1038,6 +1114,11 @@ int main(int argc, char** argv) {
 
             bool hasCaptured = isStartupCaptureFrame && !renderer.hasPendingCapture();
 
+            std::optional<InjectedKeySequence> injectedSequence =
+                parsedArguments.injectKeySequence.has_value()
+                    ? std::optional<InjectedKeySequence>(InjectedKeySequence(parsedArguments.injectKeySequence.value()))
+                    : std::nullopt;
+
             if (parsedArguments.bundlePath.has_value()) {
                 session.emplace(parsedArguments.bundlePath.value(),
                                 react_native_linux::WindowSize{chrome.content.width, chrome.content.height},
@@ -1144,8 +1225,43 @@ int main(int argc, char** argv) {
                     renderer.captureNextFrame(parsedArguments.screenshotPath.value());
                 }
 
-                const std::vector<react_native_linux::InputEvent> frameEvents =
+                std::vector<react_native_linux::InputEvent> frameEvents =
                     routeDecorationInput(window, chrome, window.takeInputEvents());
+
+                // One paced token per interval, spliced into the frame's own batch. A composition token routes
+                // through the text-input session where the compositor advertises one — the same delivery the
+                // wire's preedit_string/commit_string+done pair would take — and falls back to the editor-level
+                // events where it does not (cage advertises no manager), which is that delivery minus the
+                // session. Either way the editor sees one composition, never two.
+                if (injectedSequence.has_value()) {
+                    const std::optional<InjectedKeySequence::Step> step =
+                        injectedSequence->take(std::chrono::steady_clock::now());
+
+                    if (step.has_value()) {
+                        react_native_linux::TextInputClient* textInput = window.textInput();
+                        bool routedToSession = false;
+
+                        if (textInput != nullptr) {
+                            if (step->sessionLeave) {
+                                textInput->onLeave();
+                                routedToSession = true;
+                            } else if (step->sessionEnter) {
+                                textInput->onEnter();
+                                routedToSession = true;
+                            } else if (step->preedit.has_value()) {
+                                textInput->compose(step->preedit.value());
+                                routedToSession = true;
+                            } else if (step->commit.has_value()) {
+                                textInput->commitComposition(step->commit.value());
+                                routedToSession = true;
+                            }
+                        }
+
+                        if (!routedToSession) {
+                            frameEvents.insert(frameEvents.end(), step->events.begin(), step->events.end());
+                        }
+                    }
+                }
 
                 if (parsedArguments.imeDebug) {
                     enableImeDebug(window.textInput());

@@ -385,4 +385,12 @@ bool isTextKey(const std::string& key);
  */
 std::vector<InputEvent> parseKeySequence(const std::string& sequence);
 
+/**
+ * The same grammar, one token per entry: a `{...}` group, or one character. This is the unit `--inject-key-sequence`
+ * paces across frames — one token's events land in one frame's batch, so a chord stays together and a composition
+ * lands after the focus change that must precede it. An unterminated `{` is the sequence's last token, spelled
+ * exactly as it was written, so a caller that recognises tokens can tell it from a well-formed one.
+ */
+std::vector<std::string> keySequenceTokens(const std::string& sequence);
+
 } // namespace react_native_linux
