@@ -80,6 +80,7 @@ set(RNL_CORE_SCENE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/PlatformColor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/RendererLadder.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ResourceResolver.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/StartupActivationToken.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/RetainedScene.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ScrollController.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ScrollEventCadence.cpp
@@ -127,6 +128,7 @@ add_executable(rnl_core_tests
     FrameTimingTest.cpp
     HitTestDifferentialTest.cpp
     ResourceResolverTest.cpp
+    StartupActivationTokenTest.cpp
     ImageCacheTest.cpp
     ImageTest.cpp
     ImeTest.cpp

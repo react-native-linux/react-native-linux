@@ -14,6 +14,7 @@
 #include "SingleInstanceCoordinator.h"
 #endif
 #include "SkiaVulkanRenderer.h"
+#include "StartupActivationToken.h"
 #include "SurfaceCommitGate.h"
 #include "TextInputClient.h"
 #include "TitleBarPainter.h"
@@ -1126,6 +1127,28 @@ int main(int argc, char** argv) {
                                             broughtUp.record);
 
             bool hasCaptured = isStartupCaptureFrame && !renderer.hasPendingCapture();
+
+            // The startup token of #336: the launcher's credential, handed back on this window's surface so the
+            // shell completes its startup notification, then stripped from the environment so nothing this
+            // process spawns — Metro, the CLI's tooling, a Linking.openURL handler — inherits an activation that
+            // is not theirs. Read once, consumed at most once, and only when the compositor can even answer.
+            static react_native_linux::StartupActivationToken startupActivationToken =
+                react_native_linux::StartupActivationToken::fromEnvironment([] {
+                    const char* value = std::getenv(react_native_linux::kStartupActivationTokenVariable);
+
+                    return value == nullptr ? std::nullopt : std::optional<std::string>(value);
+                }());
+
+            const std::optional<std::string> startupToken = startupActivationToken.take();
+
+            if (startupToken.has_value()) {
+                window.completeStartupActivation(startupToken.value());
+                // Stripped before anything this process spawns can inherit it — Metro, the CLI's tooling, a
+                // Linking.openURL handler — each of which would otherwise claim an activation that is not
+                // theirs. Unsetting is unconditional: once this window has the credential, the environment must
+                // not carry a second copy of it.
+                unsetenv(react_native_linux::kStartupActivationTokenVariable);
+            }
 
             std::optional<InjectedKeySequence> injectedSequence =
                 parsedArguments.injectKeySequence.has_value()
