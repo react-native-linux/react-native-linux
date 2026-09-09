@@ -1093,6 +1093,7 @@ elseif(RNL_ENABLE_WINDOW)
         src/WaylandSeat.cpp
         src/WaylandSerialLedger.cpp
         src/WaylandWindow.cpp
+        src/WindowControlSequence.cpp
         src/WindowDecorations.cpp
         src/WindowMain.cpp
         src/FrameClock.cpp

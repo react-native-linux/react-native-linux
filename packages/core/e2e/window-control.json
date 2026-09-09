@@ -1,0 +1,24 @@
+{
+  "name": "window-control",
+  "bundle": "window-control.js",
+  "ready": "window-control: committed surface 1",
+  "frames": 600,
+  "windowFlags": [
+    "--no-decorations",
+    "--inject-window-sequence",
+    "{800x600}{Drag:800x600:1000x600:5}{Maximized:1200x700}{Unmaximized:800x600}{Fullscreen:1200x700}{Unfullscreen:800x600}"
+  ],
+  "steps": ["sleep 4000"],
+  "expect": [
+    "window-control: committed surface 1",
+    "[rnl-geometry] configure 800x600 maximized=0 fullscreen=0 tiled=0 resizing=0",
+    "window-control: topLayout on half 400x120",
+    "[rnl-geometry] configure 1000x600 maximized=0 fullscreen=0 tiled=0 resizing=0",
+    "window-control: topLayout on half 500x120",
+    "[rnl-geometry] configure 1200x700 maximized=1 fullscreen=0 tiled=0 resizing=0",
+    "[rnl-geometry] configure 800x600 maximized=0 fullscreen=0 tiled=0 resizing=0",
+    "[rnl-geometry] configure 1200x700 maximized=0 fullscreen=1 tiled=0 resizing=0",
+    "[rnl-geometry] configure 800x600 maximized=0 fullscreen=0 tiled=0 resizing=0",
+    "window-control: topLayout on half 400x120"
+  ]
+}

@@ -99,6 +99,7 @@ set(RNL_CORE_SCENE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/VulkanResultPolicy.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/WaylandDispatchDiagnostics.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/WaylandSerialLedger.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/WindowControlSequence.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/WindowDecorations.cpp)
 
 add_executable(rnl_core_tests
@@ -171,6 +172,7 @@ add_executable(rnl_core_tests
     WaylandDispatchDiagnosticsTest.cpp
     WaylandSerialLedgerTest.cpp
     WebPropAliasTest.cpp
+    WindowControlSequenceTest.cpp
     WindowDecorationsTest.cpp
     ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/AnimatedNodeTests.cpp
     ${RNL_UPSTREAM_ANIMATED_TESTS_DIR}/AnimationDriverTests.cpp
