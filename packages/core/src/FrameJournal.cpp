@@ -42,8 +42,12 @@ void FrameJournal::recordDamage(uint64_t nowNanoseconds) {
         return;
     }
 
-    openInterval_ = OpenInterval{.dirtyAtNanoseconds = nowNanoseconds, .invalidationCount = 1};
+    openInterval_ =
+        OpenInterval{.dirtyAtNanoseconds = nowNanoseconds, .invalidationCount = 1, .inputEvents = pendingInputEvents_};
+    pendingInputEvents_ = 0;
 }
+
+void FrameJournal::recordInput(uint64_t eventCount) { pendingInputEvents_ += eventCount; }
 
 void FrameJournal::recordPaintStart(uint64_t nowNanoseconds) {
     if (openInterval_.has_value()) {
@@ -86,8 +90,10 @@ std::optional<FrameJournal::ClosedFrame> FrameJournal::recordPresented(uint64_t 
 
     dirtyToPresentNanoseconds_.push_back(dirtyToPresentNanoseconds);
 
-    return ClosedFrame{
-        .dirtyToPresentNanoseconds = dirtyToPresentNanoseconds, .paintNanoseconds = paintNanoseconds, .isHang = isHang};
+    return ClosedFrame{.dirtyToPresentNanoseconds = dirtyToPresentNanoseconds,
+                       .paintNanoseconds = paintNanoseconds,
+                       .isHang = isHang,
+                       .inputEvents = interval.inputEvents};
 }
 
 void FrameJournal::recordDiscontinuity() { openInterval_.reset(); }
@@ -114,6 +120,10 @@ std::string FrameJournal::formatClosedFrameLine(const ClosedFrame& frame) {
 
     if (frame.paintNanoseconds.has_value()) {
         line += ",\"paintNs\":" + std::to_string(frame.paintNanoseconds.value());
+    }
+
+    if (frame.inputEvents > 0) {
+        line += ",\"inputEvents\":" + std::to_string(frame.inputEvents);
     }
 
     line += frame.isHang ? std::string(",\"hang\":true") : std::string(",\"hang\":false");

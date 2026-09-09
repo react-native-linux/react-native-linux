@@ -77,6 +77,12 @@ interface Scenario {
   /** How long `rnl_window` runs before it captures its screenshot and exits. */
   readonly frames: number;
   readonly frameBudget: FrameBudget | null;
+  /**
+   * The e2e half of #345: requires the run's frame log to carry a journal record naming the presented frame that
+   * answered the injected input. `false` — the default — asks nothing, so only scenarios whose point is the
+   * input-to-frame trace pay for it.
+   */
+  readonly inputTrace: boolean;
   /** Passes `--inject-protocol-error` (#331): proves a real dispatch failure is reported structured, not grepped. */
   readonly injectProtocolError: boolean;
   readonly name: string;
@@ -204,6 +210,7 @@ const parseScenario = (value: unknown, sourceName: string): Scenario => {
     frameBudget: readFrameBudget(value, sourceName),
     frames: readFrameCount(value, sourceName),
     injectProtocolError: readOptionalBoolean(value, "injectProtocolError", sourceName),
+    inputTrace: readOptionalBoolean(value, "inputTrace", sourceName),
     name: readString(value["name"], "name", sourceName),
     ready: readString(value["ready"], "ready", sourceName),
     reject: readOptionalStringArray(value, "reject", sourceName) ?? [],

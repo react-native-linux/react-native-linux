@@ -17,7 +17,7 @@ const validScenario = {
   steps: ["sleep 500", "click 200 140"],
 };
 
-describe("parseScenario", () => {
+describe("parseScenario, field by field", () => {
   it("reads every field of a valid scenario", () => {
     expect(parseScenario({ ...validScenario, frames: EXPLICIT_FRAME_COUNT }, "fixture.json")).toEqual({
       allowErrors: false,
@@ -29,6 +29,7 @@ describe("parseScenario", () => {
       frameBudget: null,
       frames: EXPLICIT_FRAME_COUNT,
       injectProtocolError: false,
+      inputTrace: false,
       name: "pressable-click",
       ready: "pressable: committed surface 1",
       reject: [],
@@ -36,7 +37,9 @@ describe("parseScenario", () => {
       steps: ["sleep 500", "click 200 140"],
     });
   });
+});
 
+describe("parseScenario", () => {
   it("defaults the frame budget", () =>
     expect(parseScenario(validScenario, "fixture.json").frames).toBe(DEFAULT_FRAME_COUNT));
 
@@ -59,6 +62,9 @@ describe("parseScenario", () => {
     expect(parseScenario({ ...validScenario, ...overrides }, "fixture.json")).toMatchObject(overrides);
   });
 
+  it("reads an explicit inputTrace", () =>
+    expect(parseScenario({ ...validScenario, inputTrace: true }, "fixture.json").inputTrace).toBe(true));
+
   it("reads an explicit reject list", () =>
     expect(parseScenario({ ...validScenario, reject: ["Broken pipe"] }, "fixture.json").reject).toEqual([
       "Broken pipe",
@@ -69,6 +75,9 @@ describe("parseScenario boolean rejections", () => {
   it("rejects allowErrors and expectFailure fields that are not booleans", () => {
     expect(() => parseScenario({ ...validScenario, allowErrors: "yes" }, "fixture.json")).toThrow(
       'fixture.json: "allowErrors" must be a boolean',
+    );
+    expect(() => parseScenario({ ...validScenario, inputTrace: "yes" }, "fixture.json")).toThrow(
+      'fixture.json: "inputTrace" must be a boolean',
     );
     expect(() => parseScenario({ ...validScenario, expectFailure: "yes" }, "fixture.json")).toThrow(
       'fixture.json: "expectFailure" must be a boolean',

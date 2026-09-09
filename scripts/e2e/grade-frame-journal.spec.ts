@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 
 const MINIMUM_FRAMES = 60;
 const BUDGET_P95_MS = 16.7;
+const SUMMARY_LINE_INDEX = 2;
 
 const baseScenario: Scenario = {
   allowErrors: false,
@@ -26,6 +27,7 @@ const baseScenario: Scenario = {
   frameBudget: null,
   frames: 600,
   injectProtocolError: false,
+  inputTrace: false,
   name: "pressable-click",
   ready: "pressable: committed surface 1",
   reject: [],
@@ -100,5 +102,34 @@ describe("gradeArtifacts frame journal", () => {
     expect(gradeArtifacts(inputsFor(scenario)).failures).toEqual([
       "3 frames hung past the frame journal's thresholds, the budget allows at most 0",
     ]);
+  });
+});
+
+describe("gradeArtifacts input trace", () => {
+  const scenario: Scenario = { ...baseScenario, inputTrace: true };
+  const frameTimingSummaryLine = healthyFrameLogWithJournal.split("\n")[SUMMARY_LINE_INDEX] ?? "";
+  const journalSummaryLine =
+    '{"journalSummary":true,"frames":1,"hangs":0,"p50Ns":11000000,"p95Ns":11000000,"maxNs":11000000}';
+
+  it("fails a run whose journal answered no injected input", () => {
+    writeFrameLog(healthyFrameLogWithJournal);
+
+    expect(gradeArtifacts(inputsFor(scenario)).failures).toEqual([
+      `no presented frame in ${path.join(workspace, "frames.jsonl")} answered an injected input event in the ` +
+        `frame journal's records`,
+    ]);
+  });
+
+  it("passes a run whose journal names the frame the input answered", () => {
+    writeFrameLog(
+      [
+        '{"journal":true,"dirtyToPresentNs":11000000,"inputEvents":2,"hang":false}',
+        frameTimingSummaryLine,
+        journalSummaryLine,
+        "",
+      ].join("\n"),
+    );
+
+    expect(gradeArtifacts(inputsFor(scenario)).failures).toEqual([]);
   });
 });
