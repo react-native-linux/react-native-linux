@@ -75,12 +75,20 @@ void TextInputSession::recordDeleteSurroundingText(uint32_t beforeLength, uint32
 }
 
 std::vector<InputEvent> TextInputSession::applyDone(uint32_t serial) {
-    needsStateResend_ = serial != commitRequestCount_;
-
-    if (needsStateResend_) {
+    if (serial != commitRequestCount_) {
+        // A `done` answering a commit we have already replaced: the composition it carries belongs to a state
+        // that is gone — possibly a field that no longer holds the caret — and applying it would type the
+        // abandonment into whatever field is focused now. Chromium's `IsImeStateConsistent` rule is the same
+        // discard (#371). The state we sent since is held back for the re-send, exactly as before.
+        composition_.discardPending();
+        needsStateResend_ = true;
         sentSurroundingText_.reset();
         sentCursorRectangle_.reset();
+
+        return {};
     }
+
+    needsStateResend_ = false;
 
     return composition_.applyDone();
 }

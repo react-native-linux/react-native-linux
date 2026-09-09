@@ -257,26 +257,32 @@ TEST(TextInputSessionTest, TheTwoEmptyValuesTheProtocolReadsAsNeverAreNotSent) {
     EXPECT_TRUE(isEmpty(session.takeBatch()));
 }
 
-TEST(TextInputSessionTest, AStaleSerialHoldsTheStateBackAndAMatchingOneReleasesIt) {
+TEST(TextInputSessionTest, AStaleSerialDiscardsThePendingCompositionAndHoldsTheStateBack) {
     TextInputSession session = makeEnabledSession();
 
     session.setSurroundingText(kSurroundingText, 5, 5);
     session.setCursorRectangle(kCaret);
     session.takeBatch();
 
+    session.recordPreeditString(kPreeditText, 2, 2);
     session.recordCommitString(kPreeditText);
 
+    // #371: a done answering a commit we have already replaced carries a composition that belongs to a state
+    // that is gone — applying it would type the abandonment into whatever field holds the caret now. Nothing
+    // is emitted, and the pending batch is gone: a matching done afterwards applies nothing either.
     const std::vector<InputEvent> stale = session.applyDone(kStaleSerial);
 
-    // The composition is never gated on the serial: the keystrokes are the user's.
-    ASSERT_EQ(stale.size(), 1U);
-    EXPECT_EQ(stale[0].kind, InputEventKind::ImeCommit);
+    EXPECT_TRUE(stale.empty());
 
     session.setCursorRectangle(kMovedCaret);
 
     EXPECT_TRUE(isEmpty(session.takeBatch()));
 
     session.applyDone(kSecondCommit);
+
+    const std::vector<InputEvent> afterMatchingDone = session.applyDone(kSecondCommit);
+
+    EXPECT_TRUE(afterMatchingDone.empty());
 
     const TextInputSessionBatch released = session.takeBatch();
 
