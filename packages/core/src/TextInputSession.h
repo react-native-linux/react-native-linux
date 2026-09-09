@@ -77,12 +77,13 @@ struct TextInputSessionBatch {
  * of one field leaks into the next — zed-industries/zed#52952 and #59882.
  *
  * The serial on `done` is the compositor's count of our `commit` requests. One that is not our own count means
- * the compositor answered a state we have already replaced, so the state we sent is treated as never having
- * landed and is sent again on the first `done` whose serial matches. The composition itself is never gated on
- * it: the user's keystrokes are not negotiable.
+ * the compositor answered a state we have already replaced: the pending composition it carries is discarded
+ * outright (#371 — applying it would type the abandonment into whatever field holds the caret now), and the
+ * state we sent since is treated as never having landed and is sent again on the first `done` whose serial
+ * matches.
  *
- * Threading contract: constructed, called and destroyed on the frame thread, from inside the Wayland dispatch
- * `TextInputClient` listens on. Nothing here is synchronised and nothing here needs to be.
+ * Threading contract: the session lives on the frame thread — constructed, driven and destroyed inside the
+ * Wayland dispatch `TextInputClient` runs its listeners on, so nothing here carries a lock.
  */
 class TextInputSession final {
 public:

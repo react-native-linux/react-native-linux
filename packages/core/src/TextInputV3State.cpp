@@ -22,6 +22,13 @@ std::vector<InputEvent> TextInputV3State::reset() {
     return events;
 }
 
+void TextInputV3State::discardPending() {
+    preeditText_.clear();
+    preeditCursorBegin_ = 0;
+    preeditCursorEnd_ = 0;
+    resetPending();
+}
+
 void TextInputV3State::recordPreeditString(std::string text, int32_t cursorBegin, int32_t cursorEnd) {
     pendingPreeditText_ = std::move(text);
     pendingPreeditCursorBegin_ = cursorBegin;

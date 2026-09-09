@@ -36,6 +36,12 @@ public:
     void recordCommitString(std::string text);
     void recordDeleteSurroundingText(uint32_t beforeLength, uint32_t afterLength);
     std::vector<InputEvent> applyDone();
+    /**
+     * Throws the pending batch away without emitting anything — what a `done` answering an already-replaced
+     * commit does (#371): the composition it carries belongs to a state that is gone, possibly a field that no
+     * longer holds the caret, and applying it would type the abandonment into whatever field is focused now.
+     */
+    void discardPending();
 
 private:
     void resetPending();

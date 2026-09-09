@@ -5511,12 +5511,14 @@ Neither is sent until there is something real to say.
 ### The serial, and what a mismatch means
 
 The compositor counts our `commit` requests and sends that count back as the serial on `done`. A serial that is
-not our own count means the compositor answered a state we have already replaced: the composition still applies —
-the user's keystrokes are not negotiable — but the surrounding text and the cursor rectangle we sent are treated
-as never having landed, and they go out again on the first `done` whose serial matches. `enable` clears the gate,
-because the `commit` that carries an `enable` cannot wait for a serial that only another `commit` would produce.
-A compositor that never sends a matching `done` therefore sends no more state and keeps composing, which is the
-right way round: state is an optimisation for the input method, composition is the user's text.
+not our own count means the compositor answered a state we have already replaced: the pending composition it
+carries is discarded outright (#371 — applying it would type the abandonment into whatever field holds the caret
+now, which is the state-not-transferred-between-fields corruption zed#52952 and #59882 describe), and the
+surrounding text and the cursor rectangle we sent are treated as never having landed, going out again on the
+first `done` whose serial matches. `enable` clears the gate, because the `commit` that carries an `enable`
+cannot wait for a serial that only another `commit` would produce. A compositor that never sends a matching
+`done` therefore sends no more state and stops composing into the field — the composition it was answering
+belonged to a state that is gone.
 
 ### Focus, and what enabling costs
 
