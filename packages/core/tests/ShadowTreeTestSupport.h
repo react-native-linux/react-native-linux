@@ -172,6 +172,24 @@ cloneRootWithChildren(const facebook::react::RootShadowNode& oldRootShadowNode,
 }
 
 /**
+ * The one synchronous commit every commit-driven fixture's `SetUp` makes: the root's own props untouched, its
+ * children replaced with `children`. `mountSynchronously` so the fixture can hit-test or focus against the result
+ * immediately, and state reconciliation off because nothing here ever round-trips a state update through it.
+ */
+inline void
+commitChildren(facebook::react::ShadowTree& shadowTree,
+               std::shared_ptr<const std::vector<std::shared_ptr<const facebook::react::ShadowNode>>> children) {
+    const facebook::react::ShadowTreeCommitOptions commitOptions{.enableStateReconciliation = false,
+                                                                 .mountSynchronously = true};
+
+    shadowTree.commit(
+        [&children](const facebook::react::RootShadowNode& oldRootShadowNode) {
+            return cloneRootWithChildren(oldRootShadowNode, std::move(children));
+        },
+        commitOptions);
+}
+
+/**
  * The absolute-frame tree walk every commit-driven layout fixture replays: each node's own `LayoutableShadowNode`
  * frame folded into the running parent origin, with `perNode` for whatever else a fixture wants to read off the
  * node it is currently at (a `ScrollView`'s content size, a tag-to-node index) — called once per visited node,
