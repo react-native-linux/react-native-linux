@@ -89,6 +89,7 @@ add_executable(rnl_core_tests
     MountTreeTextTest.cpp
     NestedTextFragmentTest.cpp
     PinnedFontFamiliesTest.cpp
+    PixelAndFontScaleTest.cpp
     RendererLadderTest.cpp
     SceneTest.cpp
     SeededInterleavingTest.cpp
@@ -127,6 +128,7 @@ add_executable(rnl_core_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/EditorModel.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/EllipsizeSearch.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/FocusModel.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/FontSizeScaling.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/FrameClock.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/FrameJournal.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/FrameTiming.cpp
