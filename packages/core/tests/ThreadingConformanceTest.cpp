@@ -2,12 +2,14 @@
 
 #include <atomic>
 #include <chrono>
+#include <future>
 #include <gtest/gtest.h>
 #include <memory>
 #include <mutex>
 #include <vector>
 
 #include <react/runtime/TimerManager.h>
+#include <react/threading/TaskDispatchThread.h>
 
 namespace react_native_linux {
 
@@ -140,6 +142,40 @@ TEST_F(TimerSeamTest, TimersCreatedFromTwoThreadsAllLandAndTheRegistrySettles) {
     registry.deleteTimer(2);
 
     EXPECT_TRUE(registry.waitUntilIdle(std::chrono::milliseconds(100)));
+}
+
+/**
+ * The dispatch-order contract of `TaskDispatchThread`, the thread `HostTimerRegistry` above runs its timers on:
+ * its queue is ordered by due time, not by the order tasks were posted.
+ *
+ * Threading contract. `order` is written only on the dispatch thread and read only on the calling thread after
+ * `lastTaskFinished`'s future is ready. `std::promise::set_value` synchronizes with the return from the wait
+ * that observes it, so every write to `order` happens-before the read — a real edge rather than a wall-clock
+ * sleep, which is why this case is TSan-clean where upstream's `TaskDispatchThreadTest.MultipleDelayedTasksOrder`
+ * is not (#414).
+ *
+ * Both tasks are posted from inside a `runSync` body, which occupies the loop while it runs, so they are queued
+ * before the loop can consider either one. The assertion therefore turns on the queue's ordering alone and not
+ * on how fast the posting thread got to its second call.
+ */
+TEST(TaskDispatchOrderTest, DelayedTasksRunInDueTimeOrderRatherThanPostingOrder) {
+    facebook::react::TaskDispatchThread dispatcher;
+    std::vector<int> order;
+    std::promise<void> lastTaskFinished;
+    std::future<void> lastTaskFuture = lastTaskFinished.get_future();
+
+    dispatcher.runSync([&] {
+        dispatcher.runAsync(
+            [&] {
+                order.push_back(2);
+                lastTaskFinished.set_value();
+            },
+            std::chrono::milliseconds(100));
+        dispatcher.runAsync([&] { order.push_back(1); }, std::chrono::milliseconds(0));
+    });
+
+    ASSERT_EQ(lastTaskFuture.wait_for(std::chrono::seconds(5)), std::future_status::ready);
+    EXPECT_EQ(order, (std::vector<int>{1, 2}));
 }
 
 } // namespace react_native_linux
