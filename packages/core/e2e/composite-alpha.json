@@ -5,5 +5,5 @@
   "frames": 60,
   "windowFlags": ["--no-decorations", "--transparent-background"],
   "steps": ["sleep 200"],
-  "expect": ["translucent-view: committed surface 1", "[rnl-present] swapchain format=", "composite-alpha="]
+  "expect": ["[rnl-present] swapchain format=", "composite-alpha=", "translucent-view: committed surface 1"]
 }
