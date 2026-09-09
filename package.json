@@ -14,6 +14,7 @@
     "format:cpp": "node scripts/format-cpp.ts",
     "format:cpp:check": "node scripts/format-cpp.ts --check",
     "lint": "oxlint --deny-warnings",
+    "dependency-floor:check": "node scripts/dependency-floor.ts",
     "manifest-schema:check": "node scripts/linux-bundle-manifest-schema.ts check",
     "manifest-schema:generate": "node scripts/linux-bundle-manifest-schema.ts generate",
     "prop-coverage:check": "node scripts/prop-coverage.ts check",
