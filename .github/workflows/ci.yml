@@ -405,6 +405,22 @@ jobs:
       - name: Run rnl_core_hermes_tests under ctest
         run: ctest --preset "$RNL_PRESET"
 
+      # #407: rnl_core_tests — the Hermes-free GoogleTest suite for RetainedScene and LinuxMountingManager —
+      # never ran under a sanitizer: only the test preset configured it. The asan-tests/tsan-tests presets
+      # reuse this entry's sanitizer flags with RNL_BUILD_TESTS=ON, in their own build directory
+      # (build/asan-tests, build/tsan-tests) so this configure's Hermes-linked targets are untouched.
+      - name: Configure rnl_core_tests under the sanitizer
+        if: matrix.preset != 'dev'
+        run: cmake --preset "${{ matrix.preset }}-tests"
+
+      - name: Build rnl_core_tests under the sanitizer
+        if: matrix.preset != 'dev'
+        run: cmake --build --preset "${{ matrix.preset }}-tests"
+
+      - name: Run rnl_core_tests under the sanitizer
+        if: matrix.preset != 'dev'
+        run: ctest --preset "${{ matrix.preset }}-tests"
+
       - name: Run hello_react acceptance paths
         run: |
           set -euo pipefail

@@ -7744,6 +7744,34 @@ pnpm test:native
 per-test pass/fail reporting through CTest, the latter to produce the coverage-instrumented run the gate grades.
 Both runs are deterministic and side-effect-free, so running the suite twice costs time, not correctness.
 
+`AllocationCostTest.cpp` is not one of them: it replaces the process's global `operator new`/`delete`
+(`AllocationProbe.h`) to count allocations, and that replacement collides with `libclang_rt.{asan,tsan}_cxx`'s own
+allocator interposition at link time (#407). It is its own binary, `rnl_core_allocation_cost_tests`, built from
+the same `RNL_CORE_SCENE_SOURCES` list `rnl_core_tests` compiles, and `packages/core/tests/CMakeLists.txt` does
+not configure it at all when `CMAKE_CXX_FLAGS` carries `-fsanitize` — the `test` preset builds it alongside
+`rnl_core_tests`, and the sanitizer presets below do not build it, full stop, rather than filtering it out of a
+`ctest` run that would fail to link. The sources it measures — `LinuxAnimationChoreographer.cpp`,
+`LinuxMountingManager.cpp`, `RetainedScene.cpp` — are still compiled into `rnl_core_tests` itself, so they are
+still exercised, just not for their allocation counts, under `asan` and `tsan`.
+
+`asan-tests` and `tsan-tests` are two more configure, build and test presets: each inherits the sanitizer flags
+of `asan` or `tsan` and adds `RNL_BUILD_TESTS=ON`, in its own build directory (`build/asan-tests`,
+`build/tsan-tests`) so it does not collide with the Hermes-linked configure the `asan`/`tsan` presets already
+run in CI. The `native (asan)` and `native (tsan)` matrix entries configure, build and `ctest` both: the ordinary
+sanitizer preset for `hello_react` and `rnl_core_hermes_tests`, and the matching `-tests` preset for
+`rnl_core_tests`. That is what makes Engineering Rule 6's "covered by a TSan-clean test" claim about
+`RetainedScene` and `LinuxMountingManager` — 1,700-odd cases — checked by CI rather than by whichever agent ran
+it locally last.
+
+```bash
+cmake --preset asan-tests
+cmake --build --preset asan-tests
+ctest --preset asan-tests
+```
+
+or `tsan-tests` for the ThreadSanitizer build. Both presets carry the same 300-second per-test `execution.timeout`
+as `asan`, `tsan` and `dev`.
+
 ### The Hermes-linked binary (#228)
 
 `rnl_core_tests` is Hermes-free by construction, so the upstream suites that construct a real
@@ -7970,8 +7998,8 @@ with the version in a trailing comment; Renovate keeps those SHAs fresh through 
 | `meta` | `ubuntu-24.04` | 10 min | actionlint, typos, shellcheck, shfmt, gitleaks. |
 | `unit` | `ubuntu-24.04` | 30 min | `rnl_core_tests`, the Hermes-free GoogleTest suite for `RetainedScene` and `LinuxMountingManager`, run under `ctest` and gated at 100% line and branch coverage by `scripts/cpp-coverage.ts`. Needs neither Hermes nor Skia. |
 | `native (dev)` | `ubuntu-24.04` | 120 min | The whole C++ toolchain: vendor, configure, build, `rnl_core_hermes_tests` under `ctest`, the four `hello_react` acceptance paths, and the golden-image comparison. |
-| `native (asan)` | `ubuntu-24.04` | 120 min | The same build, the same suite and the same four paths under ASan + UBSan. |
-| `native (tsan)` | `ubuntu-24.04` | 120 min | The same build, the same suite and the same four paths under TSan. |
+| `native (asan)` | `ubuntu-24.04` | 120 min | The same build, the same suite and the same four paths under ASan + UBSan, plus `rnl_core_tests` under the `asan-tests` preset (#407). |
+| `native (tsan)` | `ubuntu-24.04` | 120 min | The same build, the same suite and the same four paths under TSan, plus `rnl_core_tests` under the `tsan-tests` preset (#407). |
 | `window` | `ubuntu-24.04` | 120 min | `rnl_window` built and run under `weston --backend=headless` with lavapipe, and the window goldens compared. The only job that reaches the Vulkan swapchain. See *Window goldens*. |
 
 The three `native` entries are one matrix job with `fail-fast: false`, so a sanitizer failure never hides the
@@ -7996,6 +8024,14 @@ so turning the option off explicitly would delete the test.
 Only `--target hello_react` and `--target rnl_core_hermes_tests` are built. Building `all` would additionally
 build Hermes' CLI tool suite — `hermes`, `hvm`, `hbcdump` and the rest — none of which anything here runs.
 `hermesc` is still built, because `InternalBytecode` depends on it.
+
+The `asan` and `tsan` entries additionally configure, build and `ctest` the matching `-tests` preset —
+`asan-tests` or `tsan-tests` — which is `RNL_BUILD_TESTS=ON` under the same sanitizer flags, in its own build
+directory so it never shares a configure with the Hermes-linked targets above. That is what puts `rnl_core_tests`,
+and the `RetainedScene`/`LinuxMountingManager` sources it compiles directly, under ASan+UBSan and TSan (#407); the
+`dev` entry has no such step; `rnl_core_allocation_cost_tests` is not among the targets it builds, because
+`packages/core/tests/CMakeLists.txt` does not configure that target at all under a sanitizer. See *Unit tests and
+coverage*.
 
 The acceptance step is the documented checklist turned into assertions, and it runs identically in all three
 entries:
