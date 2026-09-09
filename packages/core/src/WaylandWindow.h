@@ -35,6 +35,8 @@ struct xdg_surface;
 struct xdg_surface_listener;
 struct xdg_toplevel;
 struct xdg_toplevel_listener;
+struct xdg_activation_v1;
+struct xdg_activation_token_v1;
 struct xdg_wm_base;
 struct xdg_wm_base_listener;
 struct zwp_text_input_manager_v3;
@@ -235,6 +237,25 @@ public:
      */
     bool hasPresentedFirstFrame() const noexcept;
 
+    /**
+     * Completes the startup activation of #336: the launcher put `XDG_ACTIVATION_TOKEN` in this process's
+     * environment, and handing it back — `xdg_activation_token_v1.set_token` + `.activate` on this window's
+     * surface — is what tells the compositor the application it was waiting for has shown its window. A no-op
+     * when the compositor advertises no `xdg_activation_v1`: there is no notification to complete there.
+     */
+    void completeStartupActivation(const std::string& token);
+
+    /**
+     * Requests an activation token for the outbound direction of #336 — `Linking.openURL` handing one to the
+     * handler it spawns so the browser it opens takes focus rather than opening behind this window. The request
+     * carries the ledger's latest press serial and this surface; the compositor answers on the next dispatch
+     * round trip, and the token is retrieved with `takeActivationToken`.
+     */
+    void requestActivationToken();
+
+    /** The token the last `requestActivationToken` produced, exactly once; `std::nullopt` until the `done` event. */
+    std::optional<std::string> takeActivationToken();
+
     bool waitForRedraw(std::chrono::milliseconds fallbackTimeout);
 
     /**
@@ -293,6 +314,7 @@ private:
                                      uint32_t version);
     static void handleRegistryGlobalRemove(void* data, wl_registry* registry, uint32_t name);
     static void handleWmBasePing(void* data, xdg_wm_base* wmBase, uint32_t serial);
+    static void handleActivationTokenDone(void* data, xdg_activation_token_v1* token, const char* tokenString);
     static void handleSurfaceConfigure(void* data, xdg_surface* xdgSurface, uint32_t serial);
     static void handleSurfaceEnter(void* data, wl_surface* surface, wl_output* output);
     static void handleSurfaceLeave(void* data, wl_surface* surface, wl_output* output);
@@ -329,6 +351,9 @@ private:
     std::unique_ptr<WaylandSeat> seat_;
     zwp_text_input_manager_v3* textInputManager_{nullptr};
     zxdg_decoration_manager_v1* decorationManager_{nullptr};
+    xdg_activation_v1* activation_{nullptr};
+    xdg_activation_token_v1* pendingActivationToken_{nullptr};
+    std::optional<std::string> requestedActivationToken_;
     zxdg_toplevel_decoration_v1* toplevelDecoration_{nullptr};
     wp_presentation* presentation_{nullptr};
     xdg_wm_base* wmBase_{nullptr};
