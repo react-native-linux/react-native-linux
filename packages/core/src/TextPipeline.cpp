@@ -3,6 +3,7 @@
 #include "AutomationProtocol.h"
 #include "DefaultFontFamily.h"
 #include "EllipsizeSearch.h"
+#include "FontSizeScaling.h"
 #include "LineBoxMetrics.h"
 #include "PinnedFontFamilies.h"
 #include "TextGeometry.h"
@@ -92,10 +93,9 @@ SkColor toSkColor(facebook::react::SharedColor color) {
 
 float resolvedFontSize(const facebook::react::TextAttributes& attributes) {
     const float fontSize = std::isnan(attributes.fontSize) ? kDefaultFontSize : static_cast<float>(attributes.fontSize);
-    const float multiplier =
-        std::isnan(attributes.fontSizeMultiplier) ? 1.0F : static_cast<float>(attributes.fontSizeMultiplier);
 
-    return fontSize * multiplier;
+    return scaledFontSize(fontSize, static_cast<float>(attributes.fontSizeMultiplier),
+                          static_cast<float>(attributes.maxFontSizeMultiplier));
 }
 
 SkFontStyle::Slant toSlant(const facebook::react::TextAttributes& attributes) {

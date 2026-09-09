@@ -644,6 +644,7 @@ if(TARGET rnl_skia)
     list(APPEND RNL_TEXT_LAYOUT_MANAGER_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/src/DefaultFontFamily.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/EllipsizeSearch.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/FontSizeScaling.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/LineBoxMetrics.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/PinnedFontFamilies.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/TextLayoutManager.cpp
