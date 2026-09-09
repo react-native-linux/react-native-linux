@@ -291,11 +291,14 @@ struct KeyboardScrollIntent {
  *
  * Page Up and Page Down, Home and End, and the four arrows are the desktop convention no mobile React Native
  * platform has a story for; space is page down and shift-space is page up, which is the one place the modifier
- * changes the meaning of the key rather than the target of it. Every other key, and every arrow with a modifier
- * held, answers `std::nullopt` — a key this table does not name is not a scroll and must be left for whoever
- * else wants it.
+ * changes the meaning of the key rather than the target of it. Every other key, and every scroll key with a
+ * modifier held, answers `std::nullopt` — a key this table does not name is not a scroll and must be left for
+ * whoever else wants it. Control, Alt and Meta are chord prefixes the desktop has already spent: Ctrl+Page Down
+ * switches tabs, Alt+Left goes back, Meta+Up is the compositor's. Scrolling on one of those would steal a
+ * gesture from whoever owns it, so a chord is not a scroll even when the key alone would be.
  */
-std::optional<KeyboardScrollIntent> keyboardScrollIntent(const std::string& key, bool isShiftDown);
+std::optional<KeyboardScrollIntent> keyboardScrollIntent(const std::string& key, bool isShiftDown,
+                                                         bool isControlAltOrMetaDown);
 
 /**
  * Where `intent` puts an axis resting at `currentOffset`, clamped to the same range every other scroll is

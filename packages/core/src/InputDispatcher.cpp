@@ -843,7 +843,9 @@ void InputDispatcher::scrollByKey(const InputEvent& event) const {
         return;
     }
 
-    const std::optional<KeyboardScrollIntent> intent = keyboardScrollIntent(event.key, event.modifiers.shift);
+    const bool isControlAltOrMetaDown = event.modifiers.control || event.modifiers.alt || event.modifiers.meta;
+    const std::optional<KeyboardScrollIntent> intent =
+        keyboardScrollIntent(event.key, event.modifiers.shift, isControlAltOrMetaDown);
 
     if (!intent.has_value()) {
         return;

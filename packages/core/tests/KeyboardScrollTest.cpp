@@ -70,8 +70,12 @@ InputEvent keyPress(std::string key, bool isShiftDown = false) {
         .kind = InputEventKind::KeyPress, .key = std::move(key), .modifiers = InputModifiers{.shift = isShiftDown}};
 }
 
+InputEvent chordedKeyPress(std::string key, InputModifiers modifiers) {
+    return InputEvent{.kind = InputEventKind::KeyPress, .key = std::move(key), .modifiers = modifiers};
+}
+
 double destinationOf(const std::string& key, double currentOffset, const ScrollAxisBounds& bounds) {
-    const std::optional<KeyboardScrollIntent> intent = keyboardScrollIntent(key, false);
+    const std::optional<KeyboardScrollIntent> intent = keyboardScrollIntent(key, false, false);
 
     EXPECT_TRUE(intent.has_value());
 
@@ -81,15 +85,15 @@ double destinationOf(const std::string& key, double currentOffset, const ScrollA
 #pragma mark - the key-to-step table (#441)
 
 TEST(KeyboardScrollTableTest, ThePageKeysArePagesAndTheExtremeKeysAreExtremes) {
-    EXPECT_EQ(keyboardScrollIntent("PageUp", false).value().step, KeyboardScrollStep::PageBackward);
-    EXPECT_EQ(keyboardScrollIntent("PageDown", false).value().step, KeyboardScrollStep::PageForward);
-    EXPECT_EQ(keyboardScrollIntent("Home", false).value().step, KeyboardScrollStep::ToStart);
-    EXPECT_EQ(keyboardScrollIntent("End", false).value().step, KeyboardScrollStep::ToEnd);
+    EXPECT_EQ(keyboardScrollIntent("PageUp", false, false).value().step, KeyboardScrollStep::PageBackward);
+    EXPECT_EQ(keyboardScrollIntent("PageDown", false, false).value().step, KeyboardScrollStep::PageForward);
+    EXPECT_EQ(keyboardScrollIntent("Home", false, false).value().step, KeyboardScrollStep::ToStart);
+    EXPECT_EQ(keyboardScrollIntent("End", false, false).value().step, KeyboardScrollStep::ToEnd);
 }
 
 TEST(KeyboardScrollTableTest, TheVerticalArrowsAreLinesOnTheVerticalAxis) {
-    const KeyboardScrollIntent up = keyboardScrollIntent("ArrowUp", false).value();
-    const KeyboardScrollIntent down = keyboardScrollIntent("ArrowDown", false).value();
+    const KeyboardScrollIntent up = keyboardScrollIntent("ArrowUp", false, false).value();
+    const KeyboardScrollIntent down = keyboardScrollIntent("ArrowDown", false, false).value();
 
     EXPECT_EQ(up.step, KeyboardScrollStep::LineBackward);
     EXPECT_FALSE(up.isHorizontal);
@@ -98,8 +102,8 @@ TEST(KeyboardScrollTableTest, TheVerticalArrowsAreLinesOnTheVerticalAxis) {
 }
 
 TEST(KeyboardScrollTableTest, TheHorizontalArrowsAreLinesOnTheHorizontalAxis) {
-    const KeyboardScrollIntent left = keyboardScrollIntent("ArrowLeft", false).value();
-    const KeyboardScrollIntent right = keyboardScrollIntent("ArrowRight", false).value();
+    const KeyboardScrollIntent left = keyboardScrollIntent("ArrowLeft", false, false).value();
+    const KeyboardScrollIntent right = keyboardScrollIntent("ArrowRight", false, false).value();
 
     EXPECT_EQ(left.step, KeyboardScrollStep::LineBackward);
     EXPECT_TRUE(left.isHorizontal);
@@ -108,24 +112,34 @@ TEST(KeyboardScrollTableTest, TheHorizontalArrowsAreLinesOnTheHorizontalAxis) {
 }
 
 TEST(KeyboardScrollTableTest, SpaceIsPageDownAndShiftSpaceIsPageUp) {
-    EXPECT_EQ(keyboardScrollIntent(" ", false).value().step, KeyboardScrollStep::PageForward);
-    EXPECT_EQ(keyboardScrollIntent(" ", true).value().step, KeyboardScrollStep::PageBackward);
-    EXPECT_FALSE(keyboardScrollIntent(" ", true).value().isHorizontal);
+    EXPECT_EQ(keyboardScrollIntent(" ", false, false).value().step, KeyboardScrollStep::PageForward);
+    EXPECT_EQ(keyboardScrollIntent(" ", true, false).value().step, KeyboardScrollStep::PageBackward);
+    EXPECT_FALSE(keyboardScrollIntent(" ", true, false).value().isHorizontal);
 }
 
 TEST(KeyboardScrollTableTest, AKeyThatIsNotInTheTableIsNotAScroll) {
-    EXPECT_FALSE(keyboardScrollIntent("a", false).has_value());
-    EXPECT_FALSE(keyboardScrollIntent("Tab", false).has_value());
-    EXPECT_FALSE(keyboardScrollIntent("Enter", false).has_value());
-    EXPECT_FALSE(keyboardScrollIntent("", false).has_value());
+    EXPECT_FALSE(keyboardScrollIntent("a", false, false).has_value());
+    EXPECT_FALSE(keyboardScrollIntent("Tab", false, false).has_value());
+    EXPECT_FALSE(keyboardScrollIntent("Enter", false, false).has_value());
+    EXPECT_FALSE(keyboardScrollIntent("", false, false).has_value());
+}
+
+// Control, Alt and Meta are chord prefixes the desktop has already spent — Ctrl+Page Down switches tabs,
+// Alt+Left goes back, Meta+Up belongs to the compositor — so a chord is not a scroll even on a key that is.
+TEST(KeyboardScrollTableTest, AControlAltOrMetaChordIsNotAScroll) {
+    for (const std::string& key : {std::string("PageDown"), std::string("Home"), std::string("End"),
+                                   std::string("ArrowDown"), std::string("ArrowRight"), std::string(" ")}) {
+        EXPECT_FALSE(keyboardScrollIntent(key, false, true).has_value()) << key;
+        EXPECT_FALSE(keyboardScrollIntent(key, true, true).has_value()) << key;
+    }
 }
 
 // Shift with anything but the space bar extends a selection everywhere on the desktop, so it is not a scroll here.
 TEST(KeyboardScrollTableTest, ShiftWithAnythingButSpaceIsLeftForSelection) {
-    EXPECT_FALSE(keyboardScrollIntent("PageDown", true).has_value());
-    EXPECT_FALSE(keyboardScrollIntent("ArrowDown", true).has_value());
-    EXPECT_FALSE(keyboardScrollIntent("Home", true).has_value());
-    EXPECT_FALSE(keyboardScrollIntent("End", true).has_value());
+    EXPECT_FALSE(keyboardScrollIntent("PageDown", true, false).has_value());
+    EXPECT_FALSE(keyboardScrollIntent("ArrowDown", true, false).has_value());
+    EXPECT_FALSE(keyboardScrollIntent("Home", true, false).has_value());
+    EXPECT_FALSE(keyboardScrollIntent("End", true, false).has_value());
 }
 
 #pragma mark - the step-to-distance arithmetic (#441)
@@ -372,6 +386,18 @@ TEST_F(KeyboardScrollArbitrationTest, SpaceWithNothingFocusedPagesTheListAndShif
     // Back up from a content offset still at zero, because nothing has published the page down yet: the shift is
     // what is under test, and it asks for the top rather than for the same place the plain space asked for.
     EXPECT_DOUBLE_EQ(scrollToOffset(pressKey(*dispatcher, " ", true)).second, 0.0);
+}
+
+// A chord reaches this path with a key the table does name, so it is the dispatcher that has to decline it.
+TEST_F(KeyboardScrollArbitrationTest, AControlAltOrMetaChordScrollsNothing) {
+    commitScrollableTree();
+    const std::unique_ptr<InputDispatcher> dispatcher = makeDispatcher();
+
+    for (const InputModifiers modifiers :
+         {InputModifiers{.control = true}, InputModifiers{.alt = true}, InputModifiers{.meta = true}}) {
+        dispatcher->dispatch({chordedKeyPress("PageDown", modifiers)});
+        EXPECT_TRUE(mountingManager_->takeCommands().empty());
+    }
 }
 
 TEST_F(KeyboardScrollArbitrationTest, AKeyThatIsNotAScrollKeyScrollsNothing) {

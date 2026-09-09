@@ -294,7 +294,12 @@ ScrollAxisState decelerateAxis(const ScrollAxisState& axis, double frameMillisec
     return ScrollAxisState{.offset = moved, .velocity = hasStopped ? 0.0 : axis.velocity * decay};
 }
 
-std::optional<KeyboardScrollIntent> keyboardScrollIntent(const std::string& key, bool isShiftDown) {
+std::optional<KeyboardScrollIntent> keyboardScrollIntent(const std::string& key, bool isShiftDown,
+                                                         bool isControlAltOrMetaDown) {
+    if (isControlAltOrMetaDown) {
+        return std::nullopt;
+    }
+
     if (key == kSpaceKey) {
         return KeyboardScrollIntent{.step = isShiftDown ? KeyboardScrollStep::PageBackward
                                                         : KeyboardScrollStep::PageForward};
