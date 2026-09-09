@@ -69,7 +69,13 @@ std::optional<FrameJournal::ClosedFrame> FrameJournal::recordPresented(uint64_t 
     const OpenInterval interval = openInterval_.value();
     openInterval_.reset();
 
-    const uint64_t dirtyToPresentNanoseconds = presentedNanoseconds - interval.dirtyAtNanoseconds;
+    // The presentation timestamp is converted from the compositor's clock into steady_clock's domain with an
+    // offset sampled once per drain batch, and the two clocks drift relative to each other between samples —
+    // skew of tens of microseconds can land the presented time a hair before the dirty edge, which as an
+    // unsigned subtraction wraps to a number that poisons every percentile after it. A present that arrives
+    // within the skew clamps to zero: the frame answered the dirty edge within the same tick.
+    const uint64_t dirtyToPresentNanoseconds =
+        presentedNanoseconds > interval.dirtyAtNanoseconds ? presentedNanoseconds - interval.dirtyAtNanoseconds : 0;
     std::optional<uint64_t> paintNanoseconds;
     bool isHang = dirtyToPresentNanoseconds >= totalHangThresholdNanoseconds_;
 
