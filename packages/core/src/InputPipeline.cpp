@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -114,6 +115,21 @@ int buttonsBitOf(int button) { return buttonsMaskOfDomButton(button); }
 // to invert towards — the same floor `RetainedScene::toUntransformedPoint` uses for the identical reason.
 constexpr float kSingularDeterminant = 1e-6F;
 
+/**
+ * The compositor's `wl_pointer`/`wl_keyboard` timestamp — milliseconds on its clock, which under Wayland is
+ * `CLOCK_MONOTONIC` and therefore the same clock `std::chrono::steady_clock` reads and `HighResTimeStamp` is built
+ * on. Zero means the event carried no time; a synthetic injected event and the protocol events that carry none
+ * take the route time instead, so a unit test can still distinguish "the compositor stamped this" from "we did".
+ */
+facebook::react::HighResTimeStamp eventTimeStamp(uint32_t eventTimeMilliseconds) {
+    if (eventTimeMilliseconds == 0) {
+        return facebook::react::HighResTimeStamp::now();
+    }
+
+    return facebook::react::HighResTimeStamp::fromChronoSteadyClockTimePoint(
+        std::chrono::steady_clock::time_point(std::chrono::milliseconds(eventTimeMilliseconds)));
+}
+
 facebook::react::PointerEvent makePointerEvent(const InputEvent& event, facebook::react::Point targetOffset, int button,
                                                int detail, int buttons) {
     facebook::react::PointerEvent pointerEvent{};
@@ -138,7 +154,7 @@ facebook::react::PointerEvent makePointerEvent(const InputEvent& event, facebook
     pointerEvent.metaKey = event.modifiers.meta;
     pointerEvent.isPrimary = true;
     pointerEvent.button = button;
-    pointerEvent.timeStamp = facebook::react::HighResTimeStamp::now();
+    pointerEvent.timeStamp = eventTimeStamp(event.eventTimeMilliseconds);
 
     return pointerEvent;
 }
@@ -451,6 +467,9 @@ bool coalesceIntoPrevious(InputEvent& previous, const InputEvent& event) {
     }
 
     previous.scrollAmount += event.scrollAmount;
+    // The event time advances with the run even though the deltas are summed: the compositor's last stamp is the
+    // one the coalesced event is answering, not the first.
+    previous.eventTimeMilliseconds = event.eventTimeMilliseconds;
 
     return true;
 }

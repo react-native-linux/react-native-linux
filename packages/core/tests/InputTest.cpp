@@ -75,6 +75,26 @@ TEST(InputQueueTest, CoalescesAHighRateMotionBurstIntoOneEvent) {
     EXPECT_EQ(queue.droppedEventCount(), 0U);
 }
 
+/**
+ * The axis path shares the pointer path's time source (#455): two continuous deltas that coalesce sum their
+ * amount, but the compositor stamp advances to the later one, because that is the event the `ScrollController`
+ * is answering.
+ */
+TEST(InputQueueTest, ACoalescedScrollCarriesTheLaterCompositorEventTime) {
+    InputQueue queue;
+
+    queue.push(InputEvent{
+        .kind = InputEventKind::PointerScrollContinuous, .scrollAmount = 3.0, .eventTimeMilliseconds = 100U});
+    queue.push(InputEvent{
+        .kind = InputEventKind::PointerScrollContinuous, .scrollAmount = 4.0, .eventTimeMilliseconds = 116U});
+
+    const std::vector<InputEvent> drained = queue.drain();
+
+    ASSERT_EQ(drained.size(), 1U);
+    EXPECT_DOUBLE_EQ(drained[0].scrollAmount, 7.0);
+    EXPECT_EQ(drained[0].eventTimeMilliseconds, 116U);
+}
+
 TEST(InputQueueTest, KeepsTheMotionOnEachSideOfAButtonPress) {
     InputQueue queue;
 
@@ -349,6 +369,28 @@ TEST(PointerRouterTest, CarriesTheModifierStateOntoThePointerEvent) {
     EXPECT_FALSE(dispatches[0].event.shiftKey);
     EXPECT_TRUE(dispatches[0].event.altKey);
     EXPECT_TRUE(dispatches[0].event.metaKey);
+}
+
+/**
+ * Issue #455. `wl_pointer` stamps every motion with the compositor's own event time, and `event.timeStamp` has
+ * to be that number rather than `HighResTimeStamp::now()` at route time — otherwise every input-latency number
+ * is measured from when this platform got around to processing the event. A distinctly large value makes the
+ * route time (tens of millions of milliseconds since boot) impossible to confuse with it.
+ */
+TEST(PointerRouterTest, CarriesTheCompositorsEventTimeRatherThanTheRouteTime) {
+    constexpr uint32_t kCompositorEventTimeMilliseconds = 987654U;
+
+    PointerRouter router;
+
+    InputEvent event = makeMotion(10, 10);
+
+    event.eventTimeMilliseconds = kCompositorEventTimeMilliseconds;
+
+    const std::vector<PointerDispatch> dispatches = router.route(event, kBoxTag, makePoint(0, 0));
+
+    ASSERT_EQ(dispatches.size(), 1U);
+    EXPECT_DOUBLE_EQ(dispatches[0].event.timeStamp.toDOMHighResTimeStamp(),
+                     static_cast<double>(kCompositorEventTimeMilliseconds));
 }
 
 TEST(KeyEventTest, NamedKeysBecomeTheirDomNamesRatherThanTheirControlCharacters) {

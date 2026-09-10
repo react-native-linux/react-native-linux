@@ -65,6 +65,11 @@ enum class ScrollAxisKind : uint8_t {
  * for pointer events. `scrollAmount` is points for `PointerScrollContinuous`, whole notches for
  * `PointerScrollDiscrete`, and unused otherwise; both grow in the direction `contentOffset` grows in, which is
  * content moving up or left.
+ *
+ * `eventTimeMilliseconds` is the compositor's own timestamp for this event, as `wl_pointer`/`wl_keyboard` report
+ * it: milliseconds on the compositor's monotonic clock, which is the clock `HighResTimeStamp` reads on Linux. A
+ * source that carries no time — a synthetic injected event, or a protocol event without one — leaves it zero and
+ * the pointer event falls back to the route time.
  */
 struct InputEvent {
     InputEventKind kind{InputEventKind::PointerMotion};
@@ -80,6 +85,7 @@ struct InputEvent {
     uint32_t deleteAfterLength{0};
     ScrollAxisKind scrollAxis{ScrollAxisKind::Vertical};
     double scrollAmount{0.0};
+    uint32_t eventTimeMilliseconds{0};
 };
 
 /**
