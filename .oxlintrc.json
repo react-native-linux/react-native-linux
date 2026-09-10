@@ -59,6 +59,12 @@
       "rules": {
         "eslint/max-lines": "off"
       }
+    },
+    {
+      "files": ["commitlint.config.mjs"],
+      "rules": {
+        "import/no-default-export": "off"
+      }
     }
   ],
   "ignorePatterns": ["**/test-bundles", "build", "coverage", "packages/*/upstream", "third_party"]

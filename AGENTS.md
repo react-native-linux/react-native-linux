@@ -80,7 +80,7 @@ Deliberately excluded until proven necessary (Prime Directive): cppcheck, includ
 
 ## Git Commits And Pull Requests
 
-Conventional Commits for commit messages and PR titles: `type(scope): short description`. Scopes: `core`, `cli`, `harness`, `modules`; omit for repo-wide docs and tooling. Types: `feat`, `fix`, `refactor`, `chore`, `docs`, `ci`, `test`, `perf`, `build`.
+Conventional Commits for commit messages and PR titles: `type(scope): short description`. The scope is the lane the change belongs to — `core`, `renderer`, `text`, `input`, `a11y`, `animation`, `cli`, `harness`, `modules`, `packaging`, `testing`, `infra`, `tooling` — or `research`/`adr` for a document; omit it for repo-wide docs and tooling. Types: `feat`, `fix`, `refactor`, `chore`, `docs`, `ci`, `test`, `perf`, `build`. The gate is `commitlint` in CI's `meta` job, applied to the PR title and to every commit the PR carries; the squash-merge flow makes the PR title the landed commit, so one rule set governs both.
 
 Never mention AI tools, bots, generated output, co-authors, or automation services in commits, PR titles, or PR descriptions.
 

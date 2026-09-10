@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "commitlint": "commitlint --from origin/main",
     "codegen": "node scripts/codegen-core.ts",
     "cpd": "jscpd packages",
     "create-package": "node scripts/create-package.ts",
@@ -35,6 +36,7 @@
     "validate:meta": "node scripts/validate-meta.ts"
   },
   "devDependencies": {
+    "@commitlint/cli": "^21.2.2",
     "@react-native-linux/cli": "workspace:*",
     "@react-native/codegen": "0.87.1",
     "@types/pngjs": "catalog:",
