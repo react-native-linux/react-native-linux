@@ -79,6 +79,7 @@ set(RNL_CORE_SCENE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/PinnedFontFamilies.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/PlatformColor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/RendererLadder.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ParagraphLayoutCache.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ResourceResolver.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/StartupActivationToken.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/RetainedScene.cpp
@@ -128,6 +129,7 @@ add_executable(rnl_core_tests
     FrameJournalTest.cpp
     FrameTimingTest.cpp
     HitTestDifferentialTest.cpp
+    ParagraphLayoutCacheTest.cpp
     ResourceResolverTest.cpp
     StartupActivationTokenTest.cpp
     ImageCacheTest.cpp

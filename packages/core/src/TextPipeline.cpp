@@ -5,6 +5,7 @@
 #include "EllipsizeSearch.h"
 #include "FontSizeScaling.h"
 #include "LineBoxMetrics.h"
+#include "ParagraphLayoutCache.h"
 #include "PinnedFontFamilies.h"
 #include "ResourceResolver.h"
 #include "TextGeometry.h"
@@ -559,6 +560,9 @@ struct TextPipelineState {
     std::mutex mutex;
     sk_sp<skia::textlayout::FontCollection> fontCollection;
     sk_sp<SkUnicode> unicode;
+    // The measure cache of #342, guarded by the same mutex the shape takes: one lock per lookup, and the
+    // shapes it removes from that critical section are the point.
+    ParagraphLayoutCache paragraphLayoutCache{512};
 };
 
 TextPipelineState& textPipelineState() {
@@ -650,6 +654,41 @@ std::vector<std::string> transformedFragmentTexts(const facebook::react::Attribu
     }
 
     return texts;
+}
+
+/** The cache key's text half: the transformed display text every fragment contributes, in order. */
+std::string joinedFragmentTexts(const facebook::react::AttributedString& attributedString) {
+    std::string joined;
+
+    for (const std::string& fragmentText : transformedFragmentTexts(attributedString)) {
+        joined += fragmentText;
+    }
+
+    return joined;
+}
+
+/** The cache key's attribute half: everything that changes a measurement except the text and the width. */
+std::string toAttributesSignature(const facebook::react::AttributedString& attributedString,
+                                  const facebook::react::ParagraphAttributes& paragraphAttributes) {
+    std::string signature = "maxLines=" + std::to_string(paragraphAttributes.maximumNumberOfLines) +
+                            ";ellipsize=" + std::to_string(static_cast<int>(paragraphAttributes.ellipsizeMode));
+
+    for (const facebook::react::AttributedString::Fragment& fragment : attributedString.getFragments()) {
+        if (fragment.isAttachment()) {
+            signature += ";attachment";
+
+            continue;
+        }
+
+        const facebook::react::TextAttributes& attributes = fragment.textAttributes;
+
+        signature +=
+            ";f" + std::to_string(attributes.fontSize) + ":" +
+            (attributes.fontWeight.has_value() ? std::to_string(static_cast<int>(*attributes.fontWeight)) : "none") +
+            ":" + std::to_string(attributes.letterSpacing) + ":" + std::to_string(attributes.lineHeight);
+    }
+
+    return signature;
 }
 
 std::unique_ptr<skia::textlayout::Paragraph>
@@ -819,17 +858,37 @@ EditorGeometry measureEditorGeometry(const SceneTextContent& text, const SceneEd
 ParagraphMetrics measureParagraphMetrics(const facebook::react::AttributedString& attributedString,
                                          const facebook::react::ParagraphAttributes& paragraphAttributes,
                                          float maximumWidth) {
-    const std::unique_ptr<skia::textlayout::Paragraph> paragraph =
-        layoutParagraph(attributedString, paragraphAttributes, maximumWidth);
-    ParagraphMetrics metrics{.longestLineWidth = paragraph->getLongestLine(), .height = paragraph->getHeight()};
+    // The two-frame cache of #342: a scrolled list of unchanged rows re-asks this on every frame, and the
+    // answer is a pure function of the display text, the paragraph attributes and the wrap width. Colour is
+    // deliberately outside the key, so re-tinting a row reuses its measurement. The entry's maker runs under
+    // the same layout mutex the shape always took, so the cache does not widen the critical section — it
+    // removes whole shapes from it.
+    const ParagraphLayoutCache::Key cacheKey{.text = joinedFragmentTexts(attributedString),
+                                             .attributes = toAttributesSignature(attributedString, paragraphAttributes),
+                                             .maximumWidth = maximumWidth};
 
-    std::vector<skia::textlayout::LineMetrics> lines;
+    const ParagraphLayoutCache::Metrics cached = textPipelineState().paragraphLayoutCache.lookup(cacheKey, [&] {
+        const std::unique_ptr<skia::textlayout::Paragraph> paragraph =
+            layoutParagraph(attributedString, paragraphAttributes, maximumWidth);
 
-    paragraph->getLineMetrics(lines);
+        ParagraphLayoutCache::Metrics metrics{.longestLineWidth = paragraph->getLongestLine(),
+                                              .height = paragraph->getHeight()};
 
-    for (const skia::textlayout::LineMetrics& line : lines) {
-        metrics.lines.push_back(
-            ParagraphLineMetrics{.width = static_cast<float>(line.fWidth), .height = static_cast<float>(line.fHeight)});
+        std::vector<skia::textlayout::LineMetrics> lines;
+
+        paragraph->getLineMetrics(lines);
+
+        for (const skia::textlayout::LineMetrics& line : lines) {
+            metrics.lines.emplace_back(static_cast<float>(line.fWidth), static_cast<float>(line.fHeight));
+        }
+
+        return metrics;
+    });
+
+    ParagraphMetrics metrics{.longestLineWidth = cached.longestLineWidth, .height = cached.height};
+
+    for (const auto& [width, height] : cached.lines) {
+        metrics.lines.push_back(ParagraphLineMetrics{.width = width, .height = height});
     }
 
     return metrics;
