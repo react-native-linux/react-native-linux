@@ -490,6 +490,62 @@ ScrollAxisKind scrollAxisForPointerAxis(uint32_t waylandAxis, const InputModifie
 
 double notchesForValue120(int32_t value120) { return static_cast<double>(value120) / 120.0; }
 
+double ScrollAxisLock::filter(const InputEvent& event) {
+    if (event.kind == InputEventKind::PointerScrollDiscrete) {
+        return event.scrollAmount;
+    }
+
+    const bool hasPreviousTime = lastEventTimeMilliseconds_.has_value();
+    const bool isNewGesture =
+        hasPreviousTime && event.eventTimeMilliseconds != 0 &&
+        event.eventTimeMilliseconds > lastEventTimeMilliseconds_.value() &&
+        event.eventTimeMilliseconds - lastEventTimeMilliseconds_.value() > kGestureSeparationMilliseconds;
+
+    if (isNewGesture) {
+        lockedAxis_.reset();
+        lockedDistance_ = 0.0;
+    }
+
+    if (event.eventTimeMilliseconds != 0) {
+        lastEventTimeMilliseconds_ = event.eventTimeMilliseconds;
+    }
+
+    const double magnitude = std::abs(event.scrollAmount);
+
+    if (magnitude == 0.0) {
+        return event.scrollAmount;
+    }
+
+    if (!lockedAxis_.has_value()) {
+        lockedAxis_ = event.scrollAxis;
+        lockedDistance_ = magnitude;
+
+        return event.scrollAmount;
+    }
+
+    if (event.scrollAxis == lockedAxis_.value()) {
+        lockedDistance_ += magnitude;
+
+        return event.scrollAmount;
+    }
+
+    // A deliberate turn onto the other axis takes the lock and the delta passes; anything smaller is the drift
+    // this filter exists to remove.
+    if (magnitude >= kUnlockDistancePoints && magnitude >= kUnlockRatio * lockedDistance_) {
+        lockedAxis_ = event.scrollAxis;
+        lockedDistance_ = magnitude;
+
+        return event.scrollAmount;
+    }
+
+    return 0.0;
+}
+
+void ScrollAxisLock::release() {
+    lockedAxis_.reset();
+    lockedDistance_ = 0.0;
+}
+
 std::vector<InputEvent> InputQueue::drain() { return std::exchange(events_, {}); }
 
 size_t InputQueue::droppedEventCount() const noexcept { return droppedEventCount_; }

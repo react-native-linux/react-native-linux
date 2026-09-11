@@ -137,6 +137,40 @@ ScrollAxisKind scrollAxisForPointerAxis(uint32_t waylandAxis, const InputModifie
 double notchesForValue120(int32_t value120);
 
 /**
+ * The dominant-axis lock a two-finger touchpad scroll needs (#341).
+ *
+ * Wayland hands a client raw axis deltas and nothing else, and a two-finger scroll is never exactly vertical, so
+ * without a lock a downward scroll inside a horizontally scrollable row drifts sideways. The rule is GPUI's
+ * `OngoingScroll`: the first non-zero delta picks the dominant axis and the other axis is zeroed while the lock
+ * holds; the lock releases only when the other axis exceeds `kUnlockDistancePoints` and is at least
+ * `kUnlockRatio` times the locked axis's accumulated distance — a deliberate turn; and a pause longer than
+ * `kGestureSeparationMilliseconds` starts a new gesture when the compositor sent no `axis_stop`. A discrete wheel
+ * is neither locked nor locking, because it is already axis-aligned by construction.
+ */
+class ScrollAxisLock final {
+public:
+    /** Public so the unit table and the implementation cannot drift apart on the numbers. */
+    static constexpr uint32_t kGestureSeparationMilliseconds = 28;
+    static constexpr double kUnlockDistancePoints = 6.0;
+    static constexpr double kUnlockRatio = 1.9;
+
+    /**
+     * The amount to apply for one scroll event. A continuous delta is suppressed to zero while the other axis
+     * holds the lock; a discrete wheel passes through untouched. `eventTimeMilliseconds` is the compositor's event
+     * time, used only to detect the pause between two gestures; zero means unknown and cannot delimit one.
+     */
+    double filter(const InputEvent& event);
+
+    /** `wl_pointer.axis_stop`: the fingers left the touchpad, so the next delta starts a new gesture. */
+    void release();
+
+private:
+    std::optional<ScrollAxisKind> lockedAxis_;
+    double lockedDistance_{0.0};
+    std::optional<uint32_t> lastEventTimeMilliseconds_;
+};
+
+/**
  * The W3C `button` number an evdev button code maps to: 0 primary, 1 auxiliary, 2 secondary, 3 and 4 the
  * backward/forward pair the side buttons of a five-button mouse send. Returns -1 for codes the platform does not
  * name, and the seat drops the events carrying those.

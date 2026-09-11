@@ -342,7 +342,10 @@ bool ScrollController::isScrollActive() const noexcept {
 void ScrollController::route(const InputEvent& event) {
     if (event.kind == InputEventKind::PointerScrollStop) {
         // The stop carries no position, and at most one ScrollView can have a finger on it, so releasing every
-        // target that has one is the same answer as remembering which one did.
+        // target that has one is the same answer as remembering which one did. It is also the gesture boundary the
+        // axis lock needs: two fingers leaving is the one unambiguous "the next delta starts over" (#341).
+        axisLock_.release();
+
         for (auto& entry : targets_) {
             entry.second.hasReleased = entry.second.hasReleased || entry.second.isFingerDown;
         }
@@ -359,12 +362,12 @@ void ScrollController::route(const InputEvent& event) {
     ScrollTargetAxis& axis = event.scrollAxis == ScrollAxisKind::Horizontal ? target->horizontal : target->vertical;
 
     if (event.kind == InputEventKind::PointerScrollDiscrete) {
-        axis.pendingNotches += event.scrollAmount;
+        axis.pendingNotches += axisLock_.filter(event);
 
         return;
     }
 
-    axis.pendingDrag += event.scrollAmount;
+    axis.pendingDrag += axisLock_.filter(event);
     target->isFingerDown = true;
 }
 
