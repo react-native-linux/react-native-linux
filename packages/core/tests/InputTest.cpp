@@ -1,5 +1,6 @@
 #include "InputPipeline.h"
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <gtest/gtest.h>
@@ -13,6 +14,7 @@
 
 namespace {
 
+using facebook::react::HighResTimeStamp;
 using facebook::react::Point;
 using facebook::react::Tag;
 using react_native_linux::buttonsMaskOfDomButton;
@@ -20,6 +22,7 @@ using react_native_linux::domButtonOfEvdevCode;
 using react_native_linux::domKeyCode;
 using react_native_linux::domKeyName;
 using react_native_linux::earliestEventTimeNanoseconds;
+using react_native_linux::EventTimeMapper;
 using react_native_linux::InputEvent;
 using react_native_linux::InputEventKind;
 using react_native_linux::InputModifiers;
@@ -374,25 +377,25 @@ TEST(PointerRouterTest, CarriesTheModifierStateOntoThePointerEvent) {
 }
 
 /**
- * Issue #455. `wl_pointer` stamps every motion with the compositor's own event time, and `event.timeStamp` has
- * to be that number rather than `HighResTimeStamp::now()` at route time — otherwise every input-latency number
- * is measured from when this platform got around to processing the event. A distinctly large value makes the
- * route time (tens of millions of milliseconds since boot) impossible to confuse with it.
+ * Issue #455. `wl_pointer` stamps every motion with the compositor's own event time, and the window maps that
+ * onto the client clock once per session; `event.timeStamp` has to carry the mapped value rather than
+ * `HighResTimeStamp::now()` at route time, or every input-latency number is measured from when this platform got
+ * around to processing the event.
  */
-TEST(PointerRouterTest, CarriesTheCompositorsEventTimeRatherThanTheRouteTime) {
-    constexpr uint32_t kCompositorEventTimeMilliseconds = 987654U;
+TEST(PointerRouterTest, CarriesTheMappedEventTimeRatherThanTheRouteTime) {
+    const HighResTimeStamp mapped = HighResTimeStamp::fromChronoSteadyClockTimePoint(
+        std::chrono::steady_clock::time_point(std::chrono::milliseconds(987654)));
 
     PointerRouter router;
 
     InputEvent event = makeMotion(10, 10);
 
-    event.eventTimeMilliseconds = kCompositorEventTimeMilliseconds;
+    event.eventTime = mapped;
 
     const std::vector<PointerDispatch> dispatches = router.route(event, kBoxTag, makePoint(0, 0));
 
     ASSERT_EQ(dispatches.size(), 1U);
-    EXPECT_DOUBLE_EQ(dispatches[0].event.timeStamp.toDOMHighResTimeStamp(),
-                     static_cast<double>(kCompositorEventTimeMilliseconds));
+    EXPECT_DOUBLE_EQ(dispatches[0].event.timeStamp.toDOMHighResTimeStamp(), mapped.toDOMHighResTimeStamp());
 }
 
 TEST(KeyEventTest, NamedKeysBecomeTheirDomNamesRatherThanTheirControlCharacters) {
@@ -814,16 +817,49 @@ TEST(ScrollSourceTest, Value120ConvertsToFractionalNotches) {
     }
 }
 
+HighResTimeStamp steadyAt(uint32_t milliseconds) {
+    return HighResTimeStamp::fromChronoSteadyClockTimePoint(
+        std::chrono::steady_clock::time_point(std::chrono::milliseconds(milliseconds)));
+}
+
 /**
- * #455: the frame journal needs the earliest compositor time in the batch, on the steady clock, to turn the input
- * tag into an input-to-present latency. Events without a time are skipped, and an empty batch has none.
+ * #455. Wayland's event `time` has an unspecified base, so the window maps the compositor's clock onto the
+ * client's: the first timed event samples the offset and reads as its own receipt time, and every later event is
+ * shifted by the same offset.
  */
-TEST(EventTimeTest, TheEarliestCompositorTimeInABatchIsTheOneReported) {
+TEST(EventTimeMapperTest, TheFirstTimedEventSamplesTheOffsetAndReadsAsNow) {
+    EventTimeMapper mapper;
+
+    // The compositor counts from 400 ms while the client clock reads 1000 ms: a 600 ms offset.
+    EXPECT_DOUBLE_EQ(mapper.map(400, steadyAt(1000)).toDOMHighResTimeStamp(), 1000.0);
+}
+
+TEST(EventTimeMapperTest, LaterEventsKeepTheOffsetTheFirstEventSampled) {
+    EventTimeMapper mapper;
+    mapper.map(400, steadyAt(1000));
+
+    EXPECT_DOUBLE_EQ(mapper.map(450, steadyAt(1000)).toDOMHighResTimeStamp(), 1050.0);
+}
+
+TEST(EventTimeMapperTest, AnUntimedEventReadsAsNowAndDoesNotSampleTheOffset) {
+    EventTimeMapper mapper;
+
+    EXPECT_DOUBLE_EQ(mapper.map(0, steadyAt(1000)).toDOMHighResTimeStamp(), 1000.0);
+    // The zero event did not sample, so the first timed one still does.
+    EXPECT_DOUBLE_EQ(mapper.map(400, steadyAt(1000)).toDOMHighResTimeStamp(), 1000.0);
+    EXPECT_DOUBLE_EQ(mapper.map(450, steadyAt(1000)).toDOMHighResTimeStamp(), 1050.0);
+}
+
+/**
+ * #455: the frame journal needs the earliest mapped event time in the batch, on the client clock, to turn the
+ * input tag into an input-to-present latency. Events without a time are skipped, and an empty batch has none.
+ */
+TEST(EventTimeTest, TheEarliestMappedTimeInABatchIsTheOneReported) {
     const std::vector<InputEvent> batch{
         makeMotion(1, 1),
-        InputEvent{.kind = InputEventKind::PointerButtonPress, .eventTimeMilliseconds = 500U},
-        InputEvent{.kind = InputEventKind::PointerMotion, .eventTimeMilliseconds = 200U},
-        InputEvent{.kind = InputEventKind::PointerMotion, .eventTimeMilliseconds = 800U},
+        InputEvent{.kind = InputEventKind::PointerButtonPress, .eventTime = steadyAt(500)},
+        InputEvent{.kind = InputEventKind::PointerMotion, .eventTime = steadyAt(200)},
+        InputEvent{.kind = InputEventKind::PointerMotion, .eventTime = steadyAt(800)},
     };
 
     const std::optional<uint64_t> earliest = earliestEventTimeNanoseconds(batch);
@@ -832,7 +868,7 @@ TEST(EventTimeTest, TheEarliestCompositorTimeInABatchIsTheOneReported) {
     EXPECT_EQ(earliest.value(), 200U * 1'000'000U);
 }
 
-TEST(EventTimeTest, ABatchWithNoCompositorTimeReportsNothing) {
+TEST(EventTimeTest, ABatchWithNoMappedTimeReportsNothing) {
     EXPECT_FALSE(earliestEventTimeNanoseconds({}).has_value());
     EXPECT_FALSE(earliestEventTimeNanoseconds({makeMotion(1, 1)}).has_value());
 }

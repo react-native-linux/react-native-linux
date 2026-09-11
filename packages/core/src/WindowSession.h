@@ -90,7 +90,7 @@ public:
      * exactly while a text component holds focus. Null when the compositor advertises no text-input manager.
      */
     void setTextInputFocusSink(TextInputFocusSink* textInputFocusSink);
-    void deliverInput(const std::vector<InputEvent>& events);
+    void deliverInput(std::vector<InputEvent> events);
 
     /**
      * Feeds an activation URL to `Linking` (#363): this process's own launch `argv`, seeded once before the
@@ -166,6 +166,7 @@ private:
     std::chrono::steady_clock::time_point lastFrameTime_{std::chrono::steady_clock::now()};
     FrameClock frameClock_;
     FrameJournal frameJournal_;
+    EventTimeMapper eventTimeMapper_;
 };
 
 } // namespace react_native_linux

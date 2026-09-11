@@ -115,21 +115,6 @@ int buttonsBitOf(int button) { return buttonsMaskOfDomButton(button); }
 // to invert towards — the same floor `RetainedScene::toUntransformedPoint` uses for the identical reason.
 constexpr float kSingularDeterminant = 1e-6F;
 
-/**
- * The compositor's `wl_pointer`/`wl_keyboard` timestamp — milliseconds on its clock, which under Wayland is
- * `CLOCK_MONOTONIC` and therefore the same clock `std::chrono::steady_clock` reads and `HighResTimeStamp` is built
- * on. Zero means the event carried no time; a synthetic injected event and the protocol events that carry none
- * take the route time instead, so a unit test can still distinguish "the compositor stamped this" from "we did".
- */
-facebook::react::HighResTimeStamp eventTimeStamp(uint32_t eventTimeMilliseconds) {
-    if (eventTimeMilliseconds == 0) {
-        return facebook::react::HighResTimeStamp::now();
-    }
-
-    return facebook::react::HighResTimeStamp::fromChronoSteadyClockTimePoint(
-        std::chrono::steady_clock::time_point(std::chrono::milliseconds(eventTimeMilliseconds)));
-}
-
 facebook::react::PointerEvent makePointerEvent(const InputEvent& event, facebook::react::Point targetOffset, int button,
                                                int detail, int buttons) {
     facebook::react::PointerEvent pointerEvent{};
@@ -154,7 +139,8 @@ facebook::react::PointerEvent makePointerEvent(const InputEvent& event, facebook
     pointerEvent.metaKey = event.modifiers.meta;
     pointerEvent.isPrimary = true;
     pointerEvent.button = button;
-    pointerEvent.timeStamp = eventTimeStamp(event.eventTimeMilliseconds);
+    pointerEvent.timeStamp =
+        event.eventTime.has_value() ? event.eventTime.value() : facebook::react::HighResTimeStamp::now();
 
     return pointerEvent;
 }
@@ -643,17 +629,37 @@ bool isScrollEvent(const InputEvent& event) {
            event.kind == InputEventKind::PointerScrollDiscrete || event.kind == InputEventKind::PointerScrollStop;
 }
 
+facebook::react::HighResTimeStamp EventTimeMapper::map(uint32_t eventTimeMilliseconds,
+                                                       facebook::react::HighResTimeStamp now) {
+    if (eventTimeMilliseconds == 0) {
+        return now;
+    }
+
+    const facebook::react::HighResTimeStamp compositorTime =
+        facebook::react::HighResTimeStamp::fromChronoSteadyClockTimePoint(
+            std::chrono::steady_clock::time_point(std::chrono::milliseconds(eventTimeMilliseconds)));
+
+    if (!offset_.has_value()) {
+        offset_ = now - compositorTime;
+
+        return now;
+    }
+
+    return compositorTime + offset_.value();
+}
+
 std::optional<uint64_t> earliestEventTimeNanoseconds(const std::vector<InputEvent>& events) {
     std::optional<uint64_t> earliest;
 
     for (const InputEvent& event : events) {
-        if (event.eventTimeMilliseconds == 0) {
+        if (!event.eventTime.has_value()) {
             continue;
         }
 
-        const uint64_t nanoseconds = static_cast<uint64_t>(
-            std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::milliseconds(event.eventTimeMilliseconds))
-                .count());
+        const uint64_t nanoseconds =
+            static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                      event.eventTime.value().toChronoSteadyClockTimePoint().time_since_epoch())
+                                      .count());
 
         if (!earliest.has_value() || nanoseconds < earliest.value()) {
             earliest = nanoseconds;

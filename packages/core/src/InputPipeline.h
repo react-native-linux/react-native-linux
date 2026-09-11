@@ -67,10 +67,11 @@ enum class ScrollAxisKind : uint8_t {
  * `PointerScrollDiscrete`, and unused otherwise; both grow in the direction `contentOffset` grows in, which is
  * content moving up or left.
  *
- * `eventTimeMilliseconds` is the compositor's own timestamp for this event, as `wl_pointer`/`wl_keyboard` report
- * it: milliseconds on the compositor's monotonic clock, which is the clock `HighResTimeStamp` reads on Linux. A
- * source that carries no time — a synthetic injected event, or a protocol event without one — leaves it zero and
- * the pointer event falls back to the route time.
+ * `eventTimeMilliseconds` is the raw timestamp `wl_pointer`/`wl_keyboard` carried, in the compositor's own units.
+ * Wayland defines its base as unspecified, so it is meaningful only for relative comparisons within the session —
+ * which is what the axis lock uses it for — and the window maps it onto the client clock once per session into
+ * `eventTime`. `eventTime` is that mapped value; it is absent for a synthetic injected event and for a protocol
+ * event that carried no time, and the pointer event falls back to the route time then.
  */
 struct InputEvent {
     InputEventKind kind{InputEventKind::PointerMotion};
@@ -87,6 +88,7 @@ struct InputEvent {
     ScrollAxisKind scrollAxis{ScrollAxisKind::Vertical};
     double scrollAmount{0.0};
     uint32_t eventTimeMilliseconds{0};
+    std::optional<facebook::react::HighResTimeStamp> eventTime;
 };
 
 /**
@@ -96,9 +98,27 @@ struct InputEvent {
 bool isScrollEvent(const InputEvent& event);
 
 /**
- * The earliest compositor event time in a batch, in `std::chrono::steady_clock` nanoseconds, or nothing when no
- * event in the batch carried one. The frame journal charges it to the frame that answers the input, which is what
- * turns the compositor's own timestamp into an observable input-to-present latency (#455).
+ * Maps the compositor's event clock onto the client's `HighResTimeStamp` clock (#455).
+ *
+ * Wayland carries a millisecond `time` with every pointer and keyboard event, but the protocol does not say what
+ * its zero point is — a compositor may count from boot, from its own start, or from anything else. The first
+ * timed event samples the offset between the two clocks and every later event is shifted by it, so a client never
+ * assumes the compositor shares `steady_clock`'s epoch. The first event reads as its own receipt time, which is
+ * the best a cross-clock mapping can say without a round trip, and the offset it establishes keeps later events
+ * in the correct relative order.
+ */
+class EventTimeMapper final {
+public:
+    facebook::react::HighResTimeStamp map(uint32_t eventTimeMilliseconds, facebook::react::HighResTimeStamp now);
+
+private:
+    std::optional<facebook::react::HighResDuration> offset_;
+};
+
+/**
+ * The earliest mapped event time in a batch, in `std::chrono::steady_clock` nanoseconds, or nothing when no event
+ * in the batch was timed. The frame journal charges it to the frame that answers the input, which is what turns
+ * the compositor's own timestamp into an observable input-to-present latency (#455).
  */
 std::optional<uint64_t> earliestEventTimeNanoseconds(const std::vector<InputEvent>& events);
 
