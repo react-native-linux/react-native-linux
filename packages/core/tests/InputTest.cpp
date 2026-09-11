@@ -28,6 +28,7 @@ using react_native_linux::InputEventKind;
 using react_native_linux::InputModifiers;
 using react_native_linux::InputQueue;
 using react_native_linux::isTextKey;
+using react_native_linux::KeyRepeat;
 using react_native_linux::keySequenceTokens;
 using react_native_linux::kInputQueueCapacity;
 using react_native_linux::makeActivationDispatch;
@@ -947,6 +948,57 @@ TEST(ScrollAxisLockTest, AZeroDeltaNeitherLocksNorSuppresses) {
 
     EXPECT_DOUBLE_EQ(lock.filter(continuousScroll(ScrollAxisKind::Vertical, 0.0, 0)), 0.0);
     EXPECT_DOUBLE_EQ(lock.filter(continuousScroll(ScrollAxisKind::Horizontal, 5.0, 0)), 5.0);
+}
+
+/**
+ * #65. Wayland clients synthesize key repeat from `wl_keyboard.repeat_info`: nothing repeats before the delay,
+ * then once per `1000 / rate` milliseconds, and a frame long enough for several repeats emits them all. Time is
+ * an absolute monotonic clock so time before the press can never advance the delay.
+ */
+TEST(KeyRepeatTest, TheFirstRepeatWaitsTheDelayThenRepeatsAtTheRate) {
+    KeyRepeat repeat;
+    repeat.setRepeatInfo(20, 500);
+    repeat.press(1000);
+
+    EXPECT_EQ(repeat.advance(1499), 0U);
+    EXPECT_EQ(repeat.advance(1500), 1U);
+    // A 20-per-second rate is one repeat every 50 ms.
+    EXPECT_EQ(repeat.advance(1549), 0U);
+    EXPECT_EQ(repeat.advance(1550), 1U);
+    // 100 ms of frames at 20/s is two more repeats.
+    EXPECT_EQ(repeat.advance(1650), 2U);
+}
+
+TEST(KeyRepeatTest, AZeroRateNeverRepeats) {
+    KeyRepeat repeat;
+    repeat.setRepeatInfo(0, 500);
+    repeat.press(1000);
+
+    EXPECT_TRUE(repeat.isHeld());
+    EXPECT_EQ(repeat.advance(100000), 0U);
+}
+
+TEST(KeyRepeatTest, APressBeforeRepeatInfoArrivesDoesNotRepeat) {
+    KeyRepeat repeat;
+    repeat.press(1000);
+
+    EXPECT_EQ(repeat.advance(5000), 0U);
+}
+
+TEST(KeyRepeatTest, ReleaseStopsRepeatingUntilTheNextPress) {
+    KeyRepeat repeat;
+    repeat.setRepeatInfo(20, 50);
+    repeat.press(1000);
+    EXPECT_EQ(repeat.advance(1050), 1U);
+
+    repeat.release();
+    EXPECT_FALSE(repeat.isHeld());
+    EXPECT_EQ(repeat.advance(2000), 0U);
+
+    // A fresh press waits the delay again before its first repeat.
+    repeat.press(2000);
+    EXPECT_EQ(repeat.advance(2049), 0U);
+    EXPECT_EQ(repeat.advance(2050), 1U);
 }
 
 } // namespace

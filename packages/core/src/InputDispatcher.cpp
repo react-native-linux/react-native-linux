@@ -100,19 +100,20 @@ std::optional<bool> readFocusVisible(const folly::dynamic& args) {
 
 /**
  * The payload shape both react-native-macos and react-native-windows already agree on, plus `code`, which only
- * Windows carries and which a Wayland client gets for free from the evdev keycode. `repeat` is always false
- * because `wl_keyboard.repeat_info` is accepted and ignored — a held key produces one `keyDown` — and it is in
- * the payload rather than absent from it so that a component reading it never sees `undefined`. See
- * *Focus and keyboard* in docs/cpp-toolchain.md for the divergences.
+ * Windows carries and which a Wayland client gets for free from the evdev keycode. `repeat` is false for a
+ * physical press and true for a `keyDown` this platform synthesized from `wl_keyboard.repeat_info`. `isComposing`
+ * is true for a key the input method is still composing, which is how a handler tells a real Enter from the Enter
+ * that commits an IME candidate (react-native-windows#5821); see *Focus and keyboard* in docs/cpp-toolchain.md.
  */
-folly::dynamic makeKeyPayload(const InputEvent& event) {
+folly::dynamic makeKeyPayload(const InputEvent& event, bool isComposing) {
     folly::dynamic payload = folly::dynamic::object("key", event.key)("code", event.code);
 
     payload["ctrlKey"] = event.modifiers.control;
     payload["shiftKey"] = event.modifiers.shift;
     payload["altKey"] = event.modifiers.alt;
     payload["metaKey"] = event.modifiers.meta;
-    payload["repeat"] = false;
+    payload["repeat"] = event.repeat;
+    payload["isComposing"] = isComposing;
 
     return payload;
 }
@@ -456,17 +457,21 @@ void InputDispatcher::dispatchPointerEvent(const InputEvent& event) {
 }
 
 void InputDispatcher::dispatchKeyEvent(const InputEvent& event) {
-    // While an input method is composing, a key is neither text nor a command: the commit is the text, and a
-    // field that also saw the key would insert the character twice. Nothing reaches React either, which is the
-    // react-native-macos#683 and #2312 ordering rule from *IME* in docs/cpp-toolchain.md.
-    if (textInputController_.isComposing()) {
+    const bool isComposing = textInputController_.isComposing();
+
+    // The key reaches React before anything else, so a Tab is visible to the node that had focus rather than
+    // swallowed by the platform, and a composing key is visible with `isComposing` set — react-native-windows
+    // #5821 needs a handler to tell a real Enter from the one that commits an IME candidate. There is no return
+    // channel from JavaScript on this path, so nothing can cancel what follows; that is the `preventDefault`
+    // deferral in docs/cpp-toolchain.md.
+    emitKeyEvent(event, isComposing);
+
+    // A composing key is not editor input: the commit is the text, and letting the key edit the buffer too would
+    // insert every character twice. That is the react-native-macos#683 and #2312 ordering rule from *IME* in
+    // docs/cpp-toolchain.md, with the key now visible to React and the edit withheld.
+    if (isComposing) {
         return;
     }
-
-    // The key reaches React before the traversal it may also trigger, so a Tab is visible to the node that had
-    // focus rather than swallowed by the platform. There is no return channel from JavaScript on this path, so
-    // nothing can cancel the traversal; that is the `preventDefault` deferral in docs/cpp-toolchain.md.
-    emitKeyEvent(event);
 
     const TextInputKeyResult editorResult = textInputController_.handleKey(event);
 
@@ -501,7 +506,7 @@ void InputDispatcher::dispatchKeyEvent(const InputEvent& event) {
     scrollByKey(event);
 }
 
-void InputDispatcher::emitKeyEvent(const InputEvent& event) const {
+void InputDispatcher::emitKeyEvent(const InputEvent& event, bool isComposing) const {
     if (focusedNode_ == nullptr) {
         return;
     }
@@ -513,7 +518,7 @@ void InputDispatcher::emitKeyEvent(const InputEvent& event) const {
     }
 
     emitter->dispatchEvent(event.kind == InputEventKind::KeyPress ? kKeyDownEventType : kKeyUpEventType,
-                           makeKeyPayload(event), facebook::react::RawEvent::Category::Discrete);
+                           makeKeyPayload(event, isComposing), facebook::react::RawEvent::Category::Discrete);
 }
 
 void InputDispatcher::emitActivation(const InputEvent& event) const {

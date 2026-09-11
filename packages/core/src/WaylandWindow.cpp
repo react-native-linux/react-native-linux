@@ -352,6 +352,10 @@ std::vector<InputEvent> WaylandWindow::takeInputEvents() {
         return {};
     }
 
+    // Key repeat is the client's job on Wayland (#65), so it is advanced once per frame; the synthesized
+    // `keyDown`s join the compositor's own events in the same batch.
+    seat_->advanceKeyRepeat();
+
     return seat_->takeEvents();
 }
 

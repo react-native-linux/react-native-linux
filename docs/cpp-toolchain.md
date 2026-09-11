@@ -5083,8 +5083,10 @@ order.
 - **Scroll** is no longer a deferral. `wl_pointer.axis`, `axis_stop` and `axis_discrete` are queued and routed to
   a `<ScrollView>` rather than to the pointer state machine, because a wheel moves a container and a click hits a
   node. `axis_source` is still ignored, and *ScrollView* says why.
-- **Key repeat.** `wl_keyboard.repeat_info` is accepted and ignored, so a held key produces one `keyDown`.
-  Synthesising repeat means a timer in the frame loop, which is the same machinery text input will need.
+- **Key repeat** is no longer a deferral. `wl_keyboard.repeat_info` supplies the delay before the first repeat and
+  the rate after it to a `KeyRepeat` in `InputPipeline.cpp`, advanced once per frame in
+  `WaylandWindow::takeInputEvents`, so a held key produces `keyDown`s with `repeat` set. *Focus and keyboard* has
+  the payload.
 - **Focus traversal** is no longer a deferral. Tab order, the focus ring, `onFocus`/`onBlur` and Enter/Space
   activation are issues #37 and #38 and are implemented; *Focus and keyboard* below is the contract and its own
   deferral list.
@@ -5252,7 +5254,7 @@ so Enter and Space never reach a control that can never hold focus.
 `keyDown` and `keyUp` carry:
 
 ```text
-{ key, code, ctrlKey, shiftKey, altKey, metaKey, repeat }
+{ key, code, ctrlKey, shiftKey, altKey, metaKey, repeat, isComposing }
 ```
 
 `key` and `code` are DOM values, computed by `domKeyName` and `domKeyCode` in `InputPipeline.cpp` where the
@@ -5273,12 +5275,14 @@ issue filed when they were not:
 | `key` | DOM value | DOM-ish, subset of keys (#437) | DOM value |
 | `code` | DOM physical code | absent | present |
 | `ctrlKey`/`shiftKey`/`altKey`/`metaKey` | present | present | present |
-| `repeat` | present, always `false` | present | present |
+| `repeat` | present, `true` for a synthesized repeat | present | present |
+| `isComposing` | present | absent | present (react-native-windows#5821) |
 | `capsLockKey`, `numLockKey`, … | absent | present | absent |
 | `nativeEvent.keyCode` | absent | absent | present |
 
-`repeat` is always `false` because `wl_keyboard.repeat_info` is accepted and ignored — a held key produces one
-`keyDown`. It is in the payload rather than absent from it so a component reading it never sees `undefined`.
+`repeat` is `true` only for a `keyDown` this platform synthesized from `wl_keyboard.repeat_info`; the compositor's
+own press and release carry `false`. `isComposing` is `true` for a key the input method is still composing, which
+is how a handler tells a real Enter from the Enter that commits an IME candidate.
 
 ### Routing, and the unhandled-key policy
 
@@ -5290,7 +5294,9 @@ unconsumed keys back to the system sounds like. Such a key can still **scroll**,
 not a delivered event; see *Keyboard scrolling* below.
 
 The key reaches React **before** the traversal or activation it may also trigger, so a Tab is visible to the node
-that had focus rather than swallowed by the platform. Nothing can cancel that traversal: there is no return
+that had focus rather than swallowed by the platform. A key that arrives while a field is composing is delivered
+the same way, with `isComposing` set, but does not reach the editor: the commit is the text, and letting the key
+edit the buffer too would insert every character twice. Nothing can cancel that traversal: there is no return
 channel from JavaScript on this path, which is the `preventDefault` deferral below.
 
 Enter and Space on a focused node synthesise **the same `click` the pointer path produces**, built by the same
@@ -5430,11 +5436,12 @@ in it is Fabric plumbing that needs a `UIManager` and a committed tree, and `--f
 - **`preventDefault` on a key.** A component cannot cancel a traversal or an activation, because Fabric's event
   path has no return channel a platform can read synchronously. `validKeysDown`/`validKeysUp` — Windows' answer,
   where a component declares the keys it wants — is the same deferral: it is a prop, and props are the fork above.
-- **Key repeat.** `wl_keyboard.repeat_info` is still accepted and ignored, so `repeat` is always false. Named in
-  *Input* as well; it needs a timer in the frame loop.
-- **Keys during composition** is no longer a deferral. While a `zwp_text_input_v3` composition is active no key
-  is dispatched at all — not to the focused field and not to React — because text arrives as a commit and only as
-  a commit. The rule, and why it is the one place this platform filters a key, is in *TextInput*.
+- **Key repeat** is no longer a deferral either: `KeyRepeat` synthesizes it from `wl_keyboard.repeat_info`, once
+  per frame. Named in *Input* as well.
+- **Keys during composition** is no longer a deferral. While a `zwp_text_input_v3` composition is active a key is
+  still dispatched — to React, with `isComposing` set — but not to the editor, because text arrives as a commit and
+  only as a commit, and letting the key edit the buffer too would insert every character twice. The rule, and why
+  it is the one place this platform withholds a key from the field, is in *TextInput*.
 - **The ring's colour.** Fixed accent, not the compositor's. Reading the system accent is an
   `org.freedesktop.portal.Settings` round trip and a theming subsystem, and there is no other themed value yet.
 - **Clipped-out nodes.** A focusable scrolled out of an `overflow: hidden` ancestor is still in the tab order.
@@ -6072,10 +6079,11 @@ leave. The numbered decisions issue #54 asks to be written down:
 6. **A click outside blurs the field and emits `onBlur` once**, which is the focus model's existing rule and
    react-native-macos#999. A click inside places the caret at the glyph nearest the pointer, and a drag from
    there extends the selection.
-7. **While a composition is active no key is dispatched at all** — not to the editor, not to React. Text arrives
-   as a commit and only as a commit, so a field that also inserted the key events an input method leaves behind
-   would double every composed character. That is the react-native-macos#683 and #2312 ordering rule, and it is
-   the one place this platform filters a key.
+7. **While a composition is active a key reaches React but not the editor.** It is dispatched with `isComposing`
+   set, so a handler can tell a real Enter from the Enter that commits an IME candidate (react-native-windows#5821),
+   but the editor ignores it: text arrives as a commit and only as a commit, so a field that also inserted the key
+   events an input method leaves behind would double every composed character. That is the react-native-macos#683
+   and #2312 ordering rule, and it is the one place this platform withholds a key from the field.
 
 A read-only or non-`editable` field still selects and copies; only the mutating branches are gated.
 

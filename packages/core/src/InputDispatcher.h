@@ -135,7 +135,7 @@ private:
 
     void dispatchPointerEvent(const InputEvent& event);
     void dispatchKeyEvent(const InputEvent& event);
-    void emitKeyEvent(const InputEvent& event) const;
+    void emitKeyEvent(const InputEvent& event, bool isComposing) const;
     void emitActivation(const InputEvent& event) const;
     void emitFocusEvent(const facebook::react::ShadowNode& shadowNode, bool isFocused) const;
     void emitSwitchChange(const facebook::react::ShadowNode& shadowNode) const;

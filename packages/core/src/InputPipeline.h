@@ -89,6 +89,8 @@ struct InputEvent {
     double scrollAmount{0.0};
     uint32_t eventTimeMilliseconds{0};
     std::optional<facebook::react::HighResTimeStamp> eventTime;
+    /** A `keyDown` the platform synthesized from `wl_keyboard.repeat_info`, not one the compositor sent (#65). */
+    bool repeat{false};
 };
 
 /**
@@ -343,6 +345,32 @@ std::string domKeyName(const std::string& keysymName, const std::string& keyText
  * the evdev keycode the kernel reported. Unknown keys are `Unidentified`, which is also the DOM's answer.
  */
 std::string domKeyCode(uint32_t evdevKeycode);
+
+/**
+ * `wl_keyboard.repeat_info`-driven key repeat (#65).
+ *
+ * Wayland clients synthesize key repeat themselves: the compositor sends `repeat_info` once — a rate in repeats
+ * per second and a delay before the first repeat — and then only the physical press and release. `press` records
+ * the clock the delay starts from and `advance` is called once per frame with the current monotonic clock,
+ * answering how many repeats are due since the press; a frame long enough for several emits them all, in order,
+ * and time before the press can never advance the delay because the delay is measured from the press. A rate of
+ * zero never repeats, which is the compositor's way of saying key repeat is off.
+ */
+class KeyRepeat final {
+public:
+    void setRepeatInfo(int32_t ratePerSecond, int32_t delayMilliseconds);
+    void press(uint64_t nowMilliseconds);
+    void release();
+    bool isHeld() const noexcept;
+    uint32_t advance(uint64_t nowMilliseconds);
+
+private:
+    int32_t ratePerSecond_{0};
+    int32_t delayMilliseconds_{0};
+    bool isHeld_{false};
+    uint64_t pressedAtMilliseconds_{0};
+    uint32_t emittedRepeats_{0};
+};
 
 /**
  * The click a key activation produces on the focused node.
