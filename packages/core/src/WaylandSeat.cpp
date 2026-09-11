@@ -144,6 +144,22 @@ std::vector<InputEvent> WaylandSeat::takeEvents() { return queue_.drain(); }
 
 size_t WaylandSeat::droppedEventCount() const noexcept { return queue_.droppedEventCount(); }
 
+void WaylandSeat::advanceKeyRepeat(uint32_t elapsedMilliseconds) {
+    const uint32_t repeats = keyRepeat_.advance(elapsedMilliseconds);
+
+    if (!heldKey_.has_value()) {
+        return;
+    }
+
+    for (uint32_t index = 0; index < repeats; ++index) {
+        InputEvent repeated = heldKey_.value();
+        repeated.kind = InputEventKind::KeyPress;
+        repeated.repeat = true;
+        repeated.eventTimeMilliseconds = 0;
+        queue_.push(repeated);
+    }
+}
+
 void WaylandSeat::updateCapabilities(uint32_t capabilities) {
     const bool hasPointer = (capabilities & WL_SEAT_CAPABILITY_POINTER) != 0;
     const bool hasKeyboard = (capabilities & WL_SEAT_CAPABILITY_KEYBOARD) != 0;
@@ -260,19 +276,31 @@ void WaylandSeat::pushKey(uint32_t serial, uint32_t key, uint32_t state, uint32_
         return;
     }
 
-    const InputEventKind kind =
-        state == WL_KEYBOARD_KEY_STATE_PRESSED ? InputEventKind::KeyPress : InputEventKind::KeyRelease;
+    const bool isPressed = state == WL_KEYBOARD_KEY_STATE_PRESSED;
+    const InputEventKind kind = isPressed ? InputEventKind::KeyPress : InputEventKind::KeyRelease;
     const uint32_t xkbKeycode = key + kEvdevToXkbKeycodeOffset;
 
     // The DOM names are computed here rather than downstream because this is the only place that has an
     // xkb_state; the naming rules themselves are in InputPipeline, where the coverage gate scores them.
-    queue_.push(
-        InputEvent{.kind = kind,
-                   .surfacePoint = pointerPosition_,
-                   .key = domKeyName(keysymName(keyboardState_, xkbKeycode), keyText(keyboardState_, xkbKeycode)),
-                   .code = domKeyCode(key),
-                   .modifiers = modifiers_,
-                   .eventTimeMilliseconds = timeMilliseconds});
+    const InputEvent event{.kind = kind,
+                           .surfacePoint = pointerPosition_,
+                           .key =
+                               domKeyName(keysymName(keyboardState_, xkbKeycode), keyText(keyboardState_, xkbKeycode)),
+                           .code = domKeyCode(key),
+                           .modifiers = modifiers_,
+                           .eventTimeMilliseconds = timeMilliseconds};
+
+    queue_.push(event);
+
+    // Repeat tracks the most recently pressed key (#65): a release of a different, still-held key leaves the
+    // repeat running, and only the release of the key it is repeating for stops it.
+    if (isPressed) {
+        keyRepeat_.press();
+        heldKey_ = event;
+    } else if (heldKey_.has_value() && heldKey_->code == event.code) {
+        keyRepeat_.release();
+        heldKey_.reset();
+    }
 }
 
 void WaylandSeat::releasePointer() noexcept {
@@ -421,8 +449,9 @@ void WaylandSeat::handleKeyboardModifiers(void* data, wl_keyboard* /*keyboard*/,
     static_cast<WaylandSeat*>(data)->updateModifiers(depressed, latched, locked, group);
 }
 
-void WaylandSeat::handleKeyboardRepeatInfo(void* /*data*/, wl_keyboard* /*keyboard*/, int32_t /*rate*/,
-                                           int32_t /*delay*/) {}
+void WaylandSeat::handleKeyboardRepeatInfo(void* data, wl_keyboard* /*keyboard*/, int32_t rate, int32_t delay) {
+    static_cast<WaylandSeat*>(data)->keyRepeat_.setRepeatInfo(rate, delay);
+}
 
 void WaylandSeat::attachTextInput(zwp_text_input_manager_v3* manager) {
     textInput_ = std::make_unique<TextInputClient>(manager, seat_, queue_);

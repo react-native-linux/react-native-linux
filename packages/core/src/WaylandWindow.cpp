@@ -352,6 +352,14 @@ std::vector<InputEvent> WaylandWindow::takeInputEvents() {
         return {};
     }
 
+    // Key repeat is the client's job on Wayland (#65), so it is advanced once per frame with the time since the
+    // last drain; the synthesized `keyDown`s join the compositor's own events in the same batch.
+    const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+    const std::chrono::milliseconds elapsed =
+        std::chrono::duration_cast<std::chrono::milliseconds>(now - lastRepeatAdvance_);
+    lastRepeatAdvance_ = now;
+    seat_->advanceKeyRepeat(static_cast<uint32_t>(elapsed.count()));
+
     return seat_->takeEvents();
 }
 

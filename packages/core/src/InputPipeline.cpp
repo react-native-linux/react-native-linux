@@ -98,6 +98,7 @@ int buttonsMaskOfDomButton(int domButton) {
 
 namespace {
 
+constexpr double kMillisecondsPerSecond = 1000.0;
 constexpr int kMousePointerId = 1;
 constexpr int kClickDetail = 1;
 constexpr int kNoDetail = 0;
@@ -665,6 +666,41 @@ std::string domKeyCode(uint32_t evdevKeycode) {
     }
 
     return std::string(kUnidentifiedKey);
+}
+
+void KeyRepeat::setRepeatInfo(int32_t ratePerSecond, int32_t delayMilliseconds) {
+    ratePerSecond_ = ratePerSecond;
+    delayMilliseconds_ = delayMilliseconds;
+}
+
+void KeyRepeat::press() {
+    isHeld_ = true;
+    millisecondsUntilNext_ = static_cast<double>(delayMilliseconds_);
+}
+
+void KeyRepeat::release() {
+    isHeld_ = false;
+    millisecondsUntilNext_ = 0.0;
+}
+
+bool KeyRepeat::isHeld() const noexcept { return isHeld_; }
+
+uint32_t KeyRepeat::advance(uint32_t elapsedMilliseconds) {
+    if (!isHeld_ || ratePerSecond_ <= 0) {
+        return 0;
+    }
+
+    millisecondsUntilNext_ -= static_cast<double>(elapsedMilliseconds);
+
+    const double interval = kMillisecondsPerSecond / static_cast<double>(ratePerSecond_);
+    uint32_t repeats = 0;
+
+    while (millisecondsUntilNext_ <= 0.0) {
+        ++repeats;
+        millisecondsUntilNext_ += interval;
+    }
+
+    return repeats;
 }
 
 PointerDispatch makeActivationDispatch(const InputEvent& event, facebook::react::Point targetOrigin) {
