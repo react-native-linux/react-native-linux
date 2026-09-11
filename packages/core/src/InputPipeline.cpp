@@ -643,6 +643,26 @@ bool isScrollEvent(const InputEvent& event) {
            event.kind == InputEventKind::PointerScrollDiscrete || event.kind == InputEventKind::PointerScrollStop;
 }
 
+std::optional<uint64_t> earliestEventTimeNanoseconds(const std::vector<InputEvent>& events) {
+    std::optional<uint64_t> earliest;
+
+    for (const InputEvent& event : events) {
+        if (event.eventTimeMilliseconds == 0) {
+            continue;
+        }
+
+        const uint64_t nanoseconds = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::milliseconds(event.eventTimeMilliseconds))
+                .count());
+
+        if (!earliest.has_value() || nanoseconds < earliest.value()) {
+            earliest = nanoseconds;
+        }
+    }
+
+    return earliest;
+}
+
 bool isTextKey(const std::string& key) {
     if (key.empty()) {
         return false;

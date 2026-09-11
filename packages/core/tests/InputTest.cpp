@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <gtest/gtest.h>
 #include <linux/input-event-codes.h>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -18,6 +19,7 @@ using react_native_linux::buttonsMaskOfDomButton;
 using react_native_linux::domButtonOfEvdevCode;
 using react_native_linux::domKeyCode;
 using react_native_linux::domKeyName;
+using react_native_linux::earliestEventTimeNanoseconds;
 using react_native_linux::InputEvent;
 using react_native_linux::InputEventKind;
 using react_native_linux::InputModifiers;
@@ -810,6 +812,29 @@ TEST(ScrollSourceTest, Value120ConvertsToFractionalNotches) {
     for (const auto& [value120, notches] : table) {
         EXPECT_DOUBLE_EQ(notchesForValue120(value120), notches) << "value120 " << value120;
     }
+}
+
+/**
+ * #455: the frame journal needs the earliest compositor time in the batch, on the steady clock, to turn the input
+ * tag into an input-to-present latency. Events without a time are skipped, and an empty batch has none.
+ */
+TEST(EventTimeTest, TheEarliestCompositorTimeInABatchIsTheOneReported) {
+    const std::vector<InputEvent> batch{
+        makeMotion(1, 1),
+        InputEvent{.kind = InputEventKind::PointerButtonPress, .eventTimeMilliseconds = 500U},
+        InputEvent{.kind = InputEventKind::PointerMotion, .eventTimeMilliseconds = 200U},
+        InputEvent{.kind = InputEventKind::PointerMotion, .eventTimeMilliseconds = 800U},
+    };
+
+    const std::optional<uint64_t> earliest = earliestEventTimeNanoseconds(batch);
+
+    ASSERT_TRUE(earliest.has_value());
+    EXPECT_EQ(earliest.value(), 200U * 1'000'000U);
+}
+
+TEST(EventTimeTest, ABatchWithNoCompositorTimeReportsNothing) {
+    EXPECT_FALSE(earliestEventTimeNanoseconds({}).has_value());
+    EXPECT_FALSE(earliestEventTimeNanoseconds({makeMotion(1, 1)}).has_value());
 }
 
 } // namespace

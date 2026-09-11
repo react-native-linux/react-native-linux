@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -93,6 +94,13 @@ struct InputEvent {
  * because a wheel moves the deepest `<ScrollView>` under the pointer, which is not the node a click would land on.
  */
 bool isScrollEvent(const InputEvent& event);
+
+/**
+ * The earliest compositor event time in a batch, in `std::chrono::steady_clock` nanoseconds, or nothing when no
+ * event in the batch carried one. The frame journal charges it to the frame that answers the input, which is what
+ * turns the compositor's own timestamp into an observable input-to-present latency (#455).
+ */
+std::optional<uint64_t> earliestEventTimeNanoseconds(const std::vector<InputEvent>& events);
 
 /**
  * The scroll axis a `wl_pointer` axis event takes. A horizontal axis is horizontal, and a vertical axis with

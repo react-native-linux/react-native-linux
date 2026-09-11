@@ -69,7 +69,7 @@ void WindowSession::deliverInput(const std::vector<InputEvent>& events) {
     // The frame journal's input tag (#345): the events this batch carries are charged to the next dirty edge, so
     // the presented frame that answers them names them in the frame log. Charged before anything else the batch
     // does, because everything below — dispatch, the event beat, the scroll integration — is work the tag answers.
-    frameJournal_.recordInput(events.size());
+    frameJournal_.recordInput(events.size(), earliestEventTimeNanoseconds(events));
 
     const double frameMilliseconds = takeFrameMilliseconds();
 
