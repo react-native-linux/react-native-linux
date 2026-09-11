@@ -373,7 +373,6 @@ private:
     xdg_surface* xdgSurface_{nullptr};
     xdg_toplevel* toplevel_{nullptr};
     wl_callback* frameCallback_{nullptr};
-    std::chrono::steady_clock::time_point lastRepeatAdvance_{std::chrono::steady_clock::now()};
     FrameTiming frameTiming_;
     std::vector<PresentationEvent> presentationEvents_;
     std::optional<uint32_t> presentationClockId_;

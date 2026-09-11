@@ -673,32 +673,42 @@ void KeyRepeat::setRepeatInfo(int32_t ratePerSecond, int32_t delayMilliseconds) 
     delayMilliseconds_ = delayMilliseconds;
 }
 
-void KeyRepeat::press() {
+void KeyRepeat::press(uint64_t nowMilliseconds) {
     isHeld_ = true;
-    millisecondsUntilNext_ = static_cast<double>(delayMilliseconds_);
+    pressedAtMilliseconds_ = nowMilliseconds;
+    emittedRepeats_ = 0;
 }
 
 void KeyRepeat::release() {
     isHeld_ = false;
-    millisecondsUntilNext_ = 0.0;
+    emittedRepeats_ = 0;
 }
 
 bool KeyRepeat::isHeld() const noexcept { return isHeld_; }
 
-uint32_t KeyRepeat::advance(uint32_t elapsedMilliseconds) {
+uint32_t KeyRepeat::advance(uint64_t nowMilliseconds) {
     if (!isHeld_ || ratePerSecond_ <= 0) {
         return 0;
     }
 
-    millisecondsUntilNext_ -= static_cast<double>(elapsedMilliseconds);
+    const double elapsedMilliseconds = static_cast<double>(nowMilliseconds - pressedAtMilliseconds_);
 
-    const double interval = kMillisecondsPerSecond / static_cast<double>(ratePerSecond_);
-    uint32_t repeats = 0;
-
-    while (millisecondsUntilNext_ <= 0.0) {
-        ++repeats;
-        millisecondsUntilNext_ += interval;
+    if (elapsedMilliseconds < static_cast<double>(delayMilliseconds_)) {
+        return 0;
     }
+
+    const double intervalMilliseconds = kMillisecondsPerSecond / static_cast<double>(ratePerSecond_);
+    const uint32_t dueRepeats =
+        static_cast<uint32_t>(
+            std::floor((elapsedMilliseconds - static_cast<double>(delayMilliseconds_)) / intervalMilliseconds)) +
+        1;
+
+    if (dueRepeats <= emittedRepeats_) {
+        return 0;
+    }
+
+    const uint32_t repeats = dueRepeats - emittedRepeats_;
+    emittedRepeats_ = dueRepeats;
 
     return repeats;
 }

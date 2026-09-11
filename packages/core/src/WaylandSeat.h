@@ -79,10 +79,11 @@ public:
     std::vector<InputEvent> takeEvents();
     size_t droppedEventCount() const noexcept;
     /**
-     * Synthesizes the `keyDown`s `wl_keyboard.repeat_info` asks for while a key is held (#65), with the frame's
-     * elapsed milliseconds. Called once per frame before `takeEvents`, so the repeats land in that frame's batch.
+     * Synthesizes the `keyDown`s `wl_keyboard.repeat_info` asks for while a key is held (#65), against the
+     * current monotonic clock. Called once per frame before `takeEvents`, so the repeats land in that frame's
+     * batch.
      */
-    void advanceKeyRepeat(uint32_t elapsedMilliseconds);
+    void advanceKeyRepeat();
     void attachTextInput(zwp_text_input_manager_v3* manager);
     TextInputClient* textInput() const noexcept;
     /** `wl_keyboard.enter` most recently reached this seat's surface and no `.leave` has followed it yet. */
@@ -102,6 +103,11 @@ private:
     void pushPointerButton(uint32_t serial, uint32_t button, uint32_t state, uint32_t timeMilliseconds);
     void pushPointerLeave(uint32_t timeMilliseconds);
     void pushKey(uint32_t serial, uint32_t key, uint32_t state, uint32_t timeMilliseconds);
+    /**
+     * One key event rebuilt from the current keymap and modifier state, so a synthesized repeat never carries a
+     * stale `key` after the layout or a modifier changed mid-hold (#65).
+     */
+    InputEvent makeKeyEvent(uint32_t evdevKeycode, InputEventKind kind) const;
     void releasePointer() noexcept;
     void releaseKeyboard() noexcept;
 
@@ -150,8 +156,8 @@ private:
     facebook::react::Point pointerPosition_{};
     uint32_t lastEventTimeMilliseconds_{0};
     KeyRepeat keyRepeat_;
-    /** The press a synthesized repeat is built from, while the key is held; empty when nothing is held. */
-    std::optional<InputEvent> heldKey_;
+    /** The evdev keycode of the press a synthesized repeat is built from, while it is held. */
+    std::optional<uint32_t> heldKeyCode_;
     std::unique_ptr<TextInputClient> textInput_;
     bool hasKeyboardFocus_{false};
 };

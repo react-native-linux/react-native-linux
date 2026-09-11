@@ -3,6 +3,7 @@
 #include "TextInputClient.h"
 
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <linux/input-event-codes.h>
@@ -57,6 +58,13 @@ std::string keyText(xkb_state* keyboardState, uint32_t keycode) {
 
 bool isModifierActive(xkb_state* keyboardState, const char* modifierName) {
     return xkb_state_mod_name_is_active(keyboardState, modifierName, XKB_STATE_MODS_EFFECTIVE) > 0;
+}
+
+/** Milliseconds on `CLOCK_MONOTONIC`, the clock the repeat delay and rate are measured against (#65). */
+uint64_t monotonicMilliseconds() {
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+            .count());
 }
 
 } // namespace
@@ -144,16 +152,15 @@ std::vector<InputEvent> WaylandSeat::takeEvents() { return queue_.drain(); }
 
 size_t WaylandSeat::droppedEventCount() const noexcept { return queue_.droppedEventCount(); }
 
-void WaylandSeat::advanceKeyRepeat(uint32_t elapsedMilliseconds) {
-    const uint32_t repeats = keyRepeat_.advance(elapsedMilliseconds);
+void WaylandSeat::advanceKeyRepeat() {
+    const uint32_t repeats = keyRepeat_.advance(monotonicMilliseconds());
 
-    if (!heldKey_.has_value()) {
+    if (!heldKeyCode_.has_value() || keyboardState_ == nullptr) {
         return;
     }
 
     for (uint32_t index = 0; index < repeats; ++index) {
-        InputEvent repeated = heldKey_.value();
-        repeated.kind = InputEventKind::KeyPress;
+        InputEvent repeated = makeKeyEvent(heldKeyCode_.value(), InputEventKind::KeyPress);
         repeated.repeat = true;
         repeated.eventTimeMilliseconds = 0;
         queue_.push(repeated);
@@ -269,6 +276,19 @@ void WaylandSeat::pushPointerLeave(uint32_t timeMilliseconds) {
                            .eventTimeMilliseconds = timeMilliseconds});
 }
 
+InputEvent WaylandSeat::makeKeyEvent(uint32_t evdevKeycode, InputEventKind kind) const {
+    const uint32_t xkbKeycode = evdevKeycode + kEvdevToXkbKeycodeOffset;
+
+    // The DOM names are computed here rather than downstream because this is the only place that has an
+    // xkb_state; the naming rules themselves are in InputPipeline, where the coverage gate scores them.
+    return InputEvent{.kind = kind,
+                      .surfacePoint = pointerPosition_,
+                      .key = domKeyName(keysymName(keyboardState_, xkbKeycode), keyText(keyboardState_, xkbKeycode)),
+                      .code = domKeyCode(evdevKeycode),
+                      .modifiers = modifiers_,
+                      .eventTimeMilliseconds = 0};
+}
+
 void WaylandSeat::pushKey(uint32_t serial, uint32_t key, uint32_t state, uint32_t timeMilliseconds) {
     serialLedger_.recordKeyboardKey(serial, state == WL_KEYBOARD_KEY_STATE_PRESSED);
 
@@ -277,29 +297,22 @@ void WaylandSeat::pushKey(uint32_t serial, uint32_t key, uint32_t state, uint32_
     }
 
     const bool isPressed = state == WL_KEYBOARD_KEY_STATE_PRESSED;
-    const InputEventKind kind = isPressed ? InputEventKind::KeyPress : InputEventKind::KeyRelease;
-    const uint32_t xkbKeycode = key + kEvdevToXkbKeycodeOffset;
-
-    // The DOM names are computed here rather than downstream because this is the only place that has an
-    // xkb_state; the naming rules themselves are in InputPipeline, where the coverage gate scores them.
-    const InputEvent event{.kind = kind,
-                           .surfacePoint = pointerPosition_,
-                           .key =
-                               domKeyName(keysymName(keyboardState_, xkbKeycode), keyText(keyboardState_, xkbKeycode)),
-                           .code = domKeyCode(key),
-                           .modifiers = modifiers_,
-                           .eventTimeMilliseconds = timeMilliseconds};
+    InputEvent event = makeKeyEvent(key, isPressed ? InputEventKind::KeyPress : InputEventKind::KeyRelease);
+    event.eventTimeMilliseconds = timeMilliseconds;
 
     queue_.push(event);
 
     // Repeat tracks the most recently pressed key (#65): a release of a different, still-held key leaves the
-    // repeat running, and only the release of the key it is repeating for stops it.
+    // repeat running, and only the release of the key it is repeating for stops it. A key the keymap marks as
+    // non-repeating — a modifier, Caps Lock — never arms it.
     if (isPressed) {
-        keyRepeat_.press();
-        heldKey_ = event;
-    } else if (heldKey_.has_value() && heldKey_->code == event.code) {
+        if (xkb_keymap_key_repeats(keymap_, key + kEvdevToXkbKeycodeOffset) != 0) {
+            heldKeyCode_ = key;
+            keyRepeat_.press(monotonicMilliseconds());
+        }
+    } else if (heldKeyCode_.has_value() && heldKeyCode_.value() == key) {
         keyRepeat_.release();
-        heldKey_.reset();
+        heldKeyCode_.reset();
     }
 }
 
@@ -317,6 +330,9 @@ void WaylandSeat::releaseKeyboard() noexcept {
     }
 
     hasKeyboardFocus_ = false;
+    // No keyboard, no repeat: with the capability gone no release can ever arrive to stop it.
+    keyRepeat_.release();
+    heldKeyCode_.reset();
 }
 
 void WaylandSeat::handleSeatCapabilities(void* data, wl_seat* /*seat*/, uint32_t capabilities) {
@@ -434,7 +450,12 @@ void WaylandSeat::handleKeyboardEnter(void* data, wl_keyboard* /*keyboard*/, uin
 
 void WaylandSeat::handleKeyboardLeave(void* data, wl_keyboard* /*keyboard*/, uint32_t /*serial*/,
                                       wl_surface* /*surface*/) {
-    static_cast<WaylandSeat*>(data)->hasKeyboardFocus_ = false;
+    WaylandSeat* seat = static_cast<WaylandSeat*>(data);
+
+    seat->hasKeyboardFocus_ = false;
+    // The compositor will not deliver the release for a key held when focus left, so repeat has to stop here.
+    seat->keyRepeat_.release();
+    seat->heldKeyCode_.reset();
 }
 
 void WaylandSeat::handleKeyboardKey(void* data, wl_keyboard* /*keyboard*/, uint32_t serial, uint32_t time, uint32_t key,
