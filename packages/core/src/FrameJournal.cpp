@@ -42,12 +42,23 @@ void FrameJournal::recordDamage(uint64_t nowNanoseconds) {
         return;
     }
 
-    openInterval_ =
-        OpenInterval{.dirtyAtNanoseconds = nowNanoseconds, .invalidationCount = 1, .inputEvents = pendingInputEvents_};
+    openInterval_ = OpenInterval{.dirtyAtNanoseconds = nowNanoseconds,
+                                 .invalidationCount = 1,
+                                 .inputEvents = pendingInputEvents_,
+                                 .earliestInputNanoseconds = pendingEarliestInputNanoseconds_};
     pendingInputEvents_ = 0;
+    pendingEarliestInputNanoseconds_.reset();
 }
 
-void FrameJournal::recordInput(uint64_t eventCount) { pendingInputEvents_ += eventCount; }
+void FrameJournal::recordInput(uint64_t eventCount, std::optional<uint64_t> earliestEventNanoseconds) {
+    pendingInputEvents_ += eventCount;
+
+    if (earliestEventNanoseconds.has_value() &&
+        (!pendingEarliestInputNanoseconds_.has_value() ||
+         earliestEventNanoseconds.value() < pendingEarliestInputNanoseconds_.value())) {
+        pendingEarliestInputNanoseconds_ = earliestEventNanoseconds;
+    }
+}
 
 void FrameJournal::recordPaintStart(uint64_t nowNanoseconds) {
     if (openInterval_.has_value()) {
@@ -84,6 +95,15 @@ std::optional<FrameJournal::ClosedFrame> FrameJournal::recordPresented(uint64_t 
         isHang = isHang || paintNanoseconds.value() >= paintHangThresholdNanoseconds_;
     }
 
+    // The compositor's own event time to the presentation that answered it, clamped the same way the dirty edge
+    // is: a present inside the clock skew is a zero, not an unsigned wrap.
+    std::optional<uint64_t> inputToPresentNanoseconds;
+    if (interval.earliestInputNanoseconds.has_value()) {
+        const uint64_t earliestInputNanoseconds = interval.earliestInputNanoseconds.value();
+        inputToPresentNanoseconds =
+            presentedNanoseconds > earliestInputNanoseconds ? presentedNanoseconds - earliestInputNanoseconds : 0;
+    }
+
     ++presentedFrames_;
 
     if (isHang) {
@@ -99,7 +119,8 @@ std::optional<FrameJournal::ClosedFrame> FrameJournal::recordPresented(uint64_t 
     return ClosedFrame{.dirtyToPresentNanoseconds = dirtyToPresentNanoseconds,
                        .paintNanoseconds = paintNanoseconds,
                        .isHang = isHang,
-                       .inputEvents = interval.inputEvents};
+                       .inputEvents = interval.inputEvents,
+                       .inputToPresentNanoseconds = inputToPresentNanoseconds};
 }
 
 void FrameJournal::recordDiscontinuity() { openInterval_.reset(); }
@@ -130,6 +151,10 @@ std::string FrameJournal::formatClosedFrameLine(const ClosedFrame& frame) {
 
     if (frame.inputEvents > 0) {
         line += ",\"inputEvents\":" + std::to_string(frame.inputEvents);
+    }
+
+    if (frame.inputToPresentNanoseconds.has_value()) {
+        line += ",\"inputToPresentNs\":" + std::to_string(frame.inputToPresentNanoseconds.value());
     }
 
     line += frame.isHang ? std::string(",\"hang\":true") : std::string(",\"hang\":false");

@@ -86,10 +86,16 @@ private:
     void updateCapabilities(uint32_t capabilities);
     void loadKeymap(uint32_t format, int32_t keymapDescriptor, uint32_t size);
     void updateModifiers(uint32_t depressed, uint32_t latched, uint32_t locked, uint32_t group);
-    void pushPointerPosition(InputEventKind kind, int32_t surfaceX, int32_t surfaceY);
-    void pushPointerButton(uint32_t serial, uint32_t button, uint32_t state);
-    void pushPointerLeave();
-    void pushKey(uint32_t serial, uint32_t key, uint32_t state);
+    /**
+     * Remembers a compositor timestamp and answers with it, or with the last one if this event carried none.
+     * `wl_pointer.enter`/`.leave`, `axis_discrete` and `axis_value120` have no time of their own, so they inherit
+     * the most recent event that did — the axis motion a wheel notch accompanies, or the press it belongs to.
+     */
+    uint32_t recordEventTime(uint32_t timeMilliseconds);
+    void pushPointerPosition(InputEventKind kind, int32_t surfaceX, int32_t surfaceY, uint32_t timeMilliseconds);
+    void pushPointerButton(uint32_t serial, uint32_t button, uint32_t state, uint32_t timeMilliseconds);
+    void pushPointerLeave(uint32_t timeMilliseconds);
+    void pushKey(uint32_t serial, uint32_t key, uint32_t state, uint32_t timeMilliseconds);
     void releasePointer() noexcept;
     void releaseKeyboard() noexcept;
 
@@ -136,6 +142,7 @@ private:
     InputQueue queue_;
     InputModifiers modifiers_;
     facebook::react::Point pointerPosition_{};
+    uint32_t lastEventTimeMilliseconds_{0};
     std::unique_ptr<TextInputClient> textInput_;
     bool hasKeyboardFocus_{false};
 };

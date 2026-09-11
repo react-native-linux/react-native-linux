@@ -26,12 +26,13 @@ namespace react_native_linux {
  * `recordPresented` starts clean, so a latency is never computed across a frame the compositor threw away.
  *
  * `recordInput` is what makes an injected input event traceable to the presented frame that answered it — GPUI's
- * `caused_invalidation` tag, reduced to the one number per frame this journal can honestly carry. Input events the
- * window has received but no presented frame has answered yet accumulate until the next `recordDamage` charges
- * them to the interval that edge opens; they survive an idle-boundary present and a discontinuity, because input
- * nobody answered is still owed an answer. The charge is lost only with an interval the compositor discarded —
- * the one case where nothing truthful can be said about which presentation answered it. A frame whose count is
- * zero is the common case, so its log line omits the field entirely.
+ * `caused_invalidation` tag, reduced to the one number per frame this journal can honestly carry, plus the
+ * earliest compositor time in the batch, which is what makes the input-to-present latency observable rather than
+ * merely countable (#455). Input events the window has received but no presented frame has answered yet accumulate
+ * until the next `recordDamage` charges them to the interval that edge opens; they survive an idle-boundary present
+ * and a discontinuity, because input nobody answered is still owed an answer. The charge is lost only with an
+ * interval the compositor discarded — the one case where nothing truthful can be said about which presentation
+ * answered it. A frame whose count is zero is the common case, so its log line omits the field entirely.
  *
  * Pure, in the shape of `FrameClock` and `FrameTiming`: no clock reads, no Wayland, every timestamp a nanosecond
  * count the caller supplies. Every timestamp is in `std::chrono::steady_clock`'s domain: `WindowSession` supplies
@@ -52,6 +53,8 @@ public:
         std::optional<uint64_t> paintNanoseconds;
         bool isHang{false};
         uint64_t inputEvents{0};
+        /** From the earliest input this frame answered, when it answered timed input, to its presentation. */
+        std::optional<uint64_t> inputToPresentNanoseconds;
     };
 
     struct Summary {
@@ -69,8 +72,12 @@ public:
                  size_t sampleCapacity = kDefaultSampleCapacity);
 
     void recordDamage(uint64_t nowNanoseconds);
-    /** Counts input events received but not yet answered by any presented frame; charged at the next dirty edge. */
-    void recordInput(uint64_t eventCount);
+    /**
+     * Counts input events received but not yet answered by any presented frame, and remembers the earliest
+     * compositor event time among them; both are charged at the next dirty edge. The time is optional because a
+     * synthetic injected event carries none.
+     */
+    void recordInput(uint64_t eventCount, std::optional<uint64_t> earliestEventNanoseconds = std::nullopt);
     void recordPaintStart(uint64_t nowNanoseconds);
     void recordPaintEnd(uint64_t nowNanoseconds);
     std::optional<ClosedFrame> recordPresented(uint64_t presentedNanoseconds);
@@ -91,6 +98,7 @@ private:
         uint64_t dirtyAtNanoseconds{0};
         uint64_t invalidationCount{0};
         uint64_t inputEvents{0};
+        std::optional<uint64_t> earliestInputNanoseconds;
         std::optional<uint64_t> paintStartNanoseconds;
         std::optional<uint64_t> paintEndNanoseconds;
     };
@@ -100,6 +108,7 @@ private:
     size_t sampleCapacity_;
     std::optional<OpenInterval> openInterval_;
     uint64_t pendingInputEvents_{0};
+    std::optional<uint64_t> pendingEarliestInputNanoseconds_;
     std::deque<uint64_t> dirtyToPresentNanoseconds_;
     size_t presentedFrames_{0};
     size_t hangCount_{0};

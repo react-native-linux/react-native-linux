@@ -336,6 +336,39 @@ TEST(FrameJournalTest, InputCountsAccumulateUntilTheDirtyEdgeConsumesThem) {
     EXPECT_EQ(closeOneInterval(journal, 1 * kMillisecond, 9 * kMillisecond).inputEvents, 3U);
 }
 
+// #455: the earliest compositor event time the frame answered, measured to the presentation that answered it. A
+// later batch can carry the earliest event, so the minimum across everything unanswered is what the frame reports.
+TEST(FrameJournalTest, TheEarliestCompositorTimeAcrossBatchesIsWhatThePresentingFrameAnswers) {
+    FrameJournal journal = buildJournal();
+
+    journal.recordInput(2, 2 * kMillisecond);
+    journal.recordInput(1, 5 * kMillisecond);
+    journal.recordInput(1, 1 * kMillisecond);
+    const FrameJournal::ClosedFrame closed = closeOneInterval(journal, 3 * kMillisecond, 9 * kMillisecond);
+
+    ASSERT_TRUE(closed.inputToPresentNanoseconds.has_value());
+    EXPECT_EQ(closed.inputToPresentNanoseconds.value(), 8U * kMillisecond);
+}
+
+TEST(FrameJournalTest, InputWithoutACompositorTimeProducesNoLatency) {
+    FrameJournal journal = buildJournal();
+
+    journal.recordInput(1);
+    const FrameJournal::ClosedFrame closed = closeOneInterval(journal, 1 * kMillisecond, 9 * kMillisecond);
+
+    EXPECT_FALSE(closed.inputToPresentNanoseconds.has_value());
+}
+
+TEST(FrameJournalTest, AnEventTimeAfterThePresentClampsTheLatencyToZeroRatherThanWrapping) {
+    FrameJournal journal = buildJournal();
+
+    journal.recordInput(1, 12 * kMillisecond);
+    const FrameJournal::ClosedFrame closed = closeOneInterval(journal, 1 * kMillisecond, 9 * kMillisecond);
+
+    ASSERT_TRUE(closed.inputToPresentNanoseconds.has_value());
+    EXPECT_EQ(closed.inputToPresentNanoseconds.value(), 0U);
+}
+
 // An event that arrives while a frame is being painted is answered by the frame after it, not the one in flight.
 TEST(FrameJournalTest, InputArrivingAfterTheDirtyEdgeIsChargedToTheNextFrame) {
     FrameJournal journal = buildJournal();
@@ -394,6 +427,17 @@ TEST(FrameJournalTest, AFrameThatAnsweredInputNamesTheCountInItsLine) {
 
     EXPECT_EQ(FrameJournal::formatClosedFrameLine(closed),
               "{\"journal\":true,\"dirtyToPresentNs\":8000000,\"inputEvents\":3,\"hang\":false}");
+}
+
+TEST(FrameJournalTest, AFrameThatAnsweredTimedInputNamesTheLatencyInItsLine) {
+    FrameJournal journal = buildJournal();
+
+    journal.recordInput(1, 2 * kMillisecond);
+    const FrameJournal::ClosedFrame closed = closeOneInterval(journal, 3 * kMillisecond, 9 * kMillisecond);
+
+    EXPECT_EQ(FrameJournal::formatClosedFrameLine(closed),
+              "{\"journal\":true,\"dirtyToPresentNs\":6000000,\"inputEvents\":1,\"inputToPresentNs\":7000000,"
+              "\"hang\":false}");
 }
 
 // The drain order `WindowMain::writeFrameLines` applies: a presented frame followed by a discarded content update

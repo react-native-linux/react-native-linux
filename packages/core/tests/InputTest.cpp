@@ -1,9 +1,11 @@
 #include "InputPipeline.h"
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <gtest/gtest.h>
 #include <linux/input-event-codes.h>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -12,12 +14,15 @@
 
 namespace {
 
+using facebook::react::HighResTimeStamp;
 using facebook::react::Point;
 using facebook::react::Tag;
 using react_native_linux::buttonsMaskOfDomButton;
 using react_native_linux::domButtonOfEvdevCode;
 using react_native_linux::domKeyCode;
 using react_native_linux::domKeyName;
+using react_native_linux::earliestEventTimeNanoseconds;
+using react_native_linux::EventTimeMapper;
 using react_native_linux::InputEvent;
 using react_native_linux::InputEventKind;
 using react_native_linux::InputModifiers;
@@ -73,6 +78,26 @@ TEST(InputQueueTest, CoalescesAHighRateMotionBurstIntoOneEvent) {
     EXPECT_FLOAT_EQ(drained[0].surfacePoint.x, static_cast<float>(kHighRateMotionCount - 1));
     EXPECT_FLOAT_EQ(drained[0].surfacePoint.y, static_cast<float>((kHighRateMotionCount - 1) * 2));
     EXPECT_EQ(queue.droppedEventCount(), 0U);
+}
+
+/**
+ * The axis path shares the pointer path's time source (#455): two continuous deltas that coalesce sum their
+ * amount, but the compositor stamp advances to the later one, because that is the event the `ScrollController`
+ * is answering.
+ */
+TEST(InputQueueTest, ACoalescedScrollCarriesTheLaterCompositorEventTime) {
+    InputQueue queue;
+
+    queue.push(InputEvent{
+        .kind = InputEventKind::PointerScrollContinuous, .scrollAmount = 3.0, .eventTimeMilliseconds = 100U});
+    queue.push(InputEvent{
+        .kind = InputEventKind::PointerScrollContinuous, .scrollAmount = 4.0, .eventTimeMilliseconds = 116U});
+
+    const std::vector<InputEvent> drained = queue.drain();
+
+    ASSERT_EQ(drained.size(), 1U);
+    EXPECT_DOUBLE_EQ(drained[0].scrollAmount, 7.0);
+    EXPECT_EQ(drained[0].eventTimeMilliseconds, 116U);
 }
 
 TEST(InputQueueTest, KeepsTheMotionOnEachSideOfAButtonPress) {
@@ -349,6 +374,28 @@ TEST(PointerRouterTest, CarriesTheModifierStateOntoThePointerEvent) {
     EXPECT_FALSE(dispatches[0].event.shiftKey);
     EXPECT_TRUE(dispatches[0].event.altKey);
     EXPECT_TRUE(dispatches[0].event.metaKey);
+}
+
+/**
+ * Issue #455. `wl_pointer` stamps every motion with the compositor's own event time, and the window maps that
+ * onto the client clock once per session; `event.timeStamp` has to carry the mapped value rather than
+ * `HighResTimeStamp::now()` at route time, or every input-latency number is measured from when this platform got
+ * around to processing the event.
+ */
+TEST(PointerRouterTest, CarriesTheMappedEventTimeRatherThanTheRouteTime) {
+    const HighResTimeStamp mapped = HighResTimeStamp::fromChronoSteadyClockTimePoint(
+        std::chrono::steady_clock::time_point(std::chrono::milliseconds(987654)));
+
+    PointerRouter router;
+
+    InputEvent event = makeMotion(10, 10);
+
+    event.eventTime = mapped;
+
+    const std::vector<PointerDispatch> dispatches = router.route(event, kBoxTag, makePoint(0, 0));
+
+    ASSERT_EQ(dispatches.size(), 1U);
+    EXPECT_DOUBLE_EQ(dispatches[0].event.timeStamp.toDOMHighResTimeStamp(), mapped.toDOMHighResTimeStamp());
 }
 
 TEST(KeyEventTest, NamedKeysBecomeTheirDomNamesRatherThanTheirControlCharacters) {
@@ -768,6 +815,62 @@ TEST(ScrollSourceTest, Value120ConvertsToFractionalNotches) {
     for (const auto& [value120, notches] : table) {
         EXPECT_DOUBLE_EQ(notchesForValue120(value120), notches) << "value120 " << value120;
     }
+}
+
+HighResTimeStamp steadyAt(uint32_t milliseconds) {
+    return HighResTimeStamp::fromChronoSteadyClockTimePoint(
+        std::chrono::steady_clock::time_point(std::chrono::milliseconds(milliseconds)));
+}
+
+/**
+ * #455. Wayland's event `time` has an unspecified base, so the window maps the compositor's clock onto the
+ * client's: the first timed event samples the offset and reads as its own receipt time, and every later event is
+ * shifted by the same offset.
+ */
+TEST(EventTimeMapperTest, TheFirstTimedEventSamplesTheOffsetAndReadsAsNow) {
+    EventTimeMapper mapper;
+
+    // The compositor counts from 400 ms while the client clock reads 1000 ms: a 600 ms offset.
+    EXPECT_DOUBLE_EQ(mapper.map(400, steadyAt(1000)).toDOMHighResTimeStamp(), 1000.0);
+}
+
+TEST(EventTimeMapperTest, LaterEventsKeepTheOffsetTheFirstEventSampled) {
+    EventTimeMapper mapper;
+    mapper.map(400, steadyAt(1000));
+
+    EXPECT_DOUBLE_EQ(mapper.map(450, steadyAt(1000)).toDOMHighResTimeStamp(), 1050.0);
+}
+
+TEST(EventTimeMapperTest, AnUntimedEventReadsAsNowAndDoesNotSampleTheOffset) {
+    EventTimeMapper mapper;
+
+    EXPECT_DOUBLE_EQ(mapper.map(0, steadyAt(1000)).toDOMHighResTimeStamp(), 1000.0);
+    // The zero event did not sample, so the first timed one still does.
+    EXPECT_DOUBLE_EQ(mapper.map(400, steadyAt(1000)).toDOMHighResTimeStamp(), 1000.0);
+    EXPECT_DOUBLE_EQ(mapper.map(450, steadyAt(1000)).toDOMHighResTimeStamp(), 1050.0);
+}
+
+/**
+ * #455: the frame journal needs the earliest mapped event time in the batch, on the client clock, to turn the
+ * input tag into an input-to-present latency. Events without a time are skipped, and an empty batch has none.
+ */
+TEST(EventTimeTest, TheEarliestMappedTimeInABatchIsTheOneReported) {
+    const std::vector<InputEvent> batch{
+        makeMotion(1, 1),
+        InputEvent{.kind = InputEventKind::PointerButtonPress, .eventTime = steadyAt(500)},
+        InputEvent{.kind = InputEventKind::PointerMotion, .eventTime = steadyAt(200)},
+        InputEvent{.kind = InputEventKind::PointerMotion, .eventTime = steadyAt(800)},
+    };
+
+    const std::optional<uint64_t> earliest = earliestEventTimeNanoseconds(batch);
+
+    ASSERT_TRUE(earliest.has_value());
+    EXPECT_EQ(earliest.value(), 200U * 1'000'000U);
+}
+
+TEST(EventTimeTest, ABatchWithNoMappedTimeReportsNothing) {
+    EXPECT_FALSE(earliestEventTimeNanoseconds({}).has_value());
+    EXPECT_FALSE(earliestEventTimeNanoseconds({makeMotion(1, 1)}).has_value());
 }
 
 } // namespace

@@ -1507,7 +1507,7 @@ int main(int argc, char** argv) {
                 if (session.has_value()) {
                     // Input first, and unconditionally: the event beat is induced inside this call, and it is what
                     // releases everything Fabric has queued since the last frame onto the JavaScript thread.
-                    session->deliverInput(frameEvents);
+                    session->deliverInput(std::move(frameEvents));
 
                     // A frame callback always draws; a fallback timeout draws only if the session reports pending
                     // work, so an occluded window with nothing left to animate stops spinning the GPU every fallback

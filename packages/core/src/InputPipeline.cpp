@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -138,7 +139,8 @@ facebook::react::PointerEvent makePointerEvent(const InputEvent& event, facebook
     pointerEvent.metaKey = event.modifiers.meta;
     pointerEvent.isPrimary = true;
     pointerEvent.button = button;
-    pointerEvent.timeStamp = facebook::react::HighResTimeStamp::now();
+    pointerEvent.timeStamp =
+        event.eventTime.has_value() ? event.eventTime.value() : facebook::react::HighResTimeStamp::now();
 
     return pointerEvent;
 }
@@ -451,6 +453,9 @@ bool coalesceIntoPrevious(InputEvent& previous, const InputEvent& event) {
     }
 
     previous.scrollAmount += event.scrollAmount;
+    // The event time advances with the run even though the deltas are summed: the compositor's last stamp is the
+    // one the coalesced event is answering, not the first.
+    previous.eventTimeMilliseconds = event.eventTimeMilliseconds;
 
     return true;
 }
@@ -622,6 +627,46 @@ PointerDispatch makeActivationDispatch(const InputEvent& event, facebook::react:
 bool isScrollEvent(const InputEvent& event) {
     return event.kind == InputEventKind::PointerScrollContinuous ||
            event.kind == InputEventKind::PointerScrollDiscrete || event.kind == InputEventKind::PointerScrollStop;
+}
+
+facebook::react::HighResTimeStamp EventTimeMapper::map(uint32_t eventTimeMilliseconds,
+                                                       facebook::react::HighResTimeStamp now) {
+    if (eventTimeMilliseconds == 0) {
+        return now;
+    }
+
+    const facebook::react::HighResTimeStamp compositorTime =
+        facebook::react::HighResTimeStamp::fromChronoSteadyClockTimePoint(
+            std::chrono::steady_clock::time_point(std::chrono::milliseconds(eventTimeMilliseconds)));
+
+    if (!offset_.has_value()) {
+        offset_ = now - compositorTime;
+
+        return now;
+    }
+
+    return compositorTime + offset_.value();
+}
+
+std::optional<uint64_t> earliestEventTimeNanoseconds(const std::vector<InputEvent>& events) {
+    std::optional<uint64_t> earliest;
+
+    for (const InputEvent& event : events) {
+        if (!event.eventTime.has_value()) {
+            continue;
+        }
+
+        const uint64_t nanoseconds =
+            static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                      event.eventTime.value().toChronoSteadyClockTimePoint().time_since_epoch())
+                                      .count());
+
+        if (!earliest.has_value() || nanoseconds < earliest.value()) {
+            earliest = nanoseconds;
+        }
+    }
+
+    return earliest;
 }
 
 bool isTextKey(const std::string& key) {
