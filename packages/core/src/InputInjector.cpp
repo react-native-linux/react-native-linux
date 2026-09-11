@@ -4,6 +4,7 @@
 #include <array>
 #include <charconv>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -302,7 +303,7 @@ std::string_view nextToken(std::string_view& rest) {
     return token;
 }
 
-bool parseNumber(std::string_view text, uint32_t& value) {
+template <typename Value> bool parseNumber(std::string_view text, Value& value) {
     const std::from_chars_result parsed = std::from_chars(text.data(), text.data() + text.size(), value);
 
     return parsed.ec == std::errc{} && parsed.ptr == text.data() + text.size();
@@ -440,16 +441,60 @@ bool runWheel(Injector& injector, std::string_view rest) {
     return true;
 }
 
+/**
+ * One frame of continuous two-finger pan, the touchpad half of `wheel` (#341). Both axes travel in one `frame`,
+ * and the axis with the larger magnitude goes first: the platform's dominant-axis lock picks the first non-zero
+ * delta, and a gesture is dominated by the axis the fingers actually moved along, not the drift.
+ */
+bool runPan(Injector& injector, std::string_view rest) {
+    double horizontal = 0.0;
+    double vertical = 0.0;
+
+    if (!parseNumber(nextToken(rest), horizontal) || !parseNumber(nextToken(rest), vertical)) {
+        return reportError("pan needs a horizontal and a vertical point delta");
+    }
+
+    const auto sendAxis = [&injector](uint32_t axis, double value) {
+        zwlr_virtual_pointer_v1_axis(injector.pointer, elapsedMilliseconds(injector), axis,
+                                     wl_fixed_from_double(value));
+    };
+
+    if (std::abs(vertical) >= std::abs(horizontal)) {
+        sendAxis(WL_POINTER_AXIS_VERTICAL_SCROLL, vertical);
+        sendAxis(WL_POINTER_AXIS_HORIZONTAL_SCROLL, horizontal);
+    } else {
+        sendAxis(WL_POINTER_AXIS_HORIZONTAL_SCROLL, horizontal);
+        sendAxis(WL_POINTER_AXIS_VERTICAL_SCROLL, vertical);
+    }
+
+    zwlr_virtual_pointer_v1_frame(injector.pointer);
+
+    return true;
+}
+
+/** The fingers left the touchpad: ends the gesture and clears the platform's active-axis lock. */
+bool runPanStop(Injector& injector, std::string_view /*rest*/) {
+    const uint32_t time = elapsedMilliseconds(injector);
+
+    zwlr_virtual_pointer_v1_axis_stop(injector.pointer, time, WL_POINTER_AXIS_VERTICAL_SCROLL);
+    zwlr_virtual_pointer_v1_axis_stop(injector.pointer, time, WL_POINTER_AXIS_HORIZONTAL_SCROLL);
+    zwlr_virtual_pointer_v1_frame(injector.pointer);
+
+    return true;
+}
+
 struct Command {
     std::string_view name;
     bool (*run)(Injector&, std::string_view);
 };
 
-constexpr std::array<Command, 7> kCommands{{
+constexpr std::array<Command, 9> kCommands{{
     {.name = "move", .run = runMove},
     {.name = "click", .run = runClick},
     {.name = "button", .run = runButton},
     {.name = "wheel", .run = runWheel},
+    {.name = "pan", .run = runPan},
+    {.name = "pan_stop", .run = runPanStop},
     {.name = "key", .run = runKey},
     {.name = "type", .run = runType},
     {.name = "sleep", .run = runSleep},

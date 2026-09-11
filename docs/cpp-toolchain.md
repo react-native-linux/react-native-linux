@@ -7047,6 +7047,8 @@ move <x> <y>                 # absolute, in output pixels
 click <x> <y>                # move, then a left press and release
 button left|middle|right press|release
 wheel up|down <notches>      # one vertical axis_discrete carrying the signed notch count
+pan <dx> <dy>                # one frame of continuous two-axis `axis`, in surface points; larger axis first
+pan_stop                     # `axis_stop` on both axes, ending the gesture
 key <keysym> press|release   # an xkb keysym name, for example Tab or Return
 type <text>                  # ASCII, shifted characters send the shift modifier
 sleep <milliseconds>
