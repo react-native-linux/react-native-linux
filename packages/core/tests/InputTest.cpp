@@ -40,6 +40,7 @@ using react_native_linux::PointerRouter;
 using react_native_linux::PointerTargetTransform;
 using react_native_linux::scrollAxisForPointerAxis;
 using react_native_linux::ScrollAxisKind;
+using react_native_linux::ScrollAxisLock;
 
 constexpr Tag kBoxTag = 4;
 constexpr Tag kOtherTag = 5;
@@ -871,6 +872,81 @@ TEST(EventTimeTest, TheEarliestMappedTimeInABatchIsTheOneReported) {
 TEST(EventTimeTest, ABatchWithNoMappedTimeReportsNothing) {
     EXPECT_FALSE(earliestEventTimeNanoseconds({}).has_value());
     EXPECT_FALSE(earliestEventTimeNanoseconds({makeMotion(1, 1)}).has_value());
+}
+
+InputEvent continuousScroll(ScrollAxisKind axis, double amount, uint32_t timeMilliseconds) {
+    return InputEvent{.kind = InputEventKind::PointerScrollContinuous,
+                      .scrollAxis = axis,
+                      .scrollAmount = amount,
+                      .eventTimeMilliseconds = timeMilliseconds};
+}
+
+InputEvent discreteScroll(ScrollAxisKind axis, double amount) {
+    return InputEvent{.kind = InputEventKind::PointerScrollDiscrete, .scrollAxis = axis, .scrollAmount = amount};
+}
+
+/**
+ * #341. A two-finger scroll is never exactly vertical, so the filter has to pick an axis and hold it: a
+ * five-degree drift must not move the nested horizontal list under the pointer. The locked axis always passes;
+ * the other axis is zeroed until it is both past the unlock distance and enough larger than the locked run to be
+ * a deliberate turn rather than the same drift.
+ */
+TEST(ScrollAxisLockTest, ADiagonalDriftStaysLockedToTheAxisItStartedOn) {
+    ScrollAxisLock lock;
+
+    EXPECT_DOUBLE_EQ(lock.filter(continuousScroll(ScrollAxisKind::Vertical, 10.0, 100)), 10.0);
+    EXPECT_DOUBLE_EQ(lock.filter(continuousScroll(ScrollAxisKind::Horizontal, 2.0, 108)), 0.0);
+    EXPECT_DOUBLE_EQ(lock.filter(continuousScroll(ScrollAxisKind::Horizontal, 3.0, 116)), 0.0);
+    EXPECT_DOUBLE_EQ(lock.filter(continuousScroll(ScrollAxisKind::Vertical, 4.0, 124)), 4.0);
+}
+
+TEST(ScrollAxisLockTest, ADeliberateTurnUnlocksAndTakesTheLock) {
+    ScrollAxisLock lock;
+
+    EXPECT_DOUBLE_EQ(lock.filter(continuousScroll(ScrollAxisKind::Vertical, 4.0, 100)), 4.0);
+    // 7 is past the 6 point floor but not yet 1.9 times the locked run, so it is still the drift.
+    EXPECT_DOUBLE_EQ(lock.filter(continuousScroll(ScrollAxisKind::Horizontal, 7.0, 108)), 0.0);
+    EXPECT_DOUBLE_EQ(lock.filter(continuousScroll(ScrollAxisKind::Horizontal, 8.0, 116)), 8.0);
+    // The lock moved to horizontal, so the vertical axis is now the one that is suppressed.
+    EXPECT_DOUBLE_EQ(lock.filter(continuousScroll(ScrollAxisKind::Vertical, 5.0, 124)), 0.0);
+}
+
+TEST(ScrollAxisLockTest, APauseLongerThanTheSeparationStartsANewGesture) {
+    ScrollAxisLock lock;
+
+    EXPECT_DOUBLE_EQ(lock.filter(continuousScroll(ScrollAxisKind::Vertical, 10.0, 1000)), 10.0);
+    EXPECT_DOUBLE_EQ(lock.filter(continuousScroll(ScrollAxisKind::Horizontal, 2.0, 1020)), 0.0);
+    // 40 ms since the last event is past the 28 ms separation, so this is a new gesture and it takes the lock.
+    EXPECT_DOUBLE_EQ(lock.filter(continuousScroll(ScrollAxisKind::Horizontal, 2.0, 1060)), 2.0);
+    // A time that does not advance, and an unknown time, cannot delimit a new gesture.
+    EXPECT_DOUBLE_EQ(lock.filter(continuousScroll(ScrollAxisKind::Horizontal, 1.0, 1060)), 1.0);
+    EXPECT_DOUBLE_EQ(lock.filter(continuousScroll(ScrollAxisKind::Horizontal, 1.0, 0)), 1.0);
+}
+
+TEST(ScrollAxisLockTest, AnAxisStopReleasesTheLock) {
+    ScrollAxisLock lock;
+
+    EXPECT_DOUBLE_EQ(lock.filter(continuousScroll(ScrollAxisKind::Vertical, 10.0, 100)), 10.0);
+
+    lock.release();
+
+    EXPECT_DOUBLE_EQ(lock.filter(continuousScroll(ScrollAxisKind::Horizontal, 3.0, 108)), 3.0);
+}
+
+TEST(ScrollAxisLockTest, ADiscreteWheelIsNeitherLockedNorLocking) {
+    ScrollAxisLock lock;
+
+    EXPECT_DOUBLE_EQ(lock.filter(continuousScroll(ScrollAxisKind::Vertical, 10.0, 100)), 10.0);
+    EXPECT_DOUBLE_EQ(lock.filter(discreteScroll(ScrollAxisKind::Horizontal, 3.0)), 3.0);
+    // The wheel did not disturb the continuous gesture's lock.
+    EXPECT_DOUBLE_EQ(lock.filter(continuousScroll(ScrollAxisKind::Horizontal, 2.0, 108)), 0.0);
+}
+
+TEST(ScrollAxisLockTest, AZeroDeltaNeitherLocksNorSuppresses) {
+    ScrollAxisLock lock;
+
+    EXPECT_DOUBLE_EQ(lock.filter(continuousScroll(ScrollAxisKind::Vertical, 0.0, 0)), 0.0);
+    EXPECT_DOUBLE_EQ(lock.filter(continuousScroll(ScrollAxisKind::Horizontal, 5.0, 0)), 5.0);
 }
 
 } // namespace

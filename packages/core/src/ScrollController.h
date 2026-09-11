@@ -169,6 +169,7 @@ private:
     std::shared_ptr<facebook::react::UIManager> uiManager_;
     facebook::react::SurfaceId surfaceId_;
     std::unordered_map<facebook::react::Tag, ScrollTarget> targets_;
+    ScrollAxisLock axisLock_;
     bool hasDispatchedScrollEvent_{false};
 };
 
