@@ -1,0 +1,21 @@
+{
+  "name": "scroll-axis-lock",
+  "bundle": "scroll-axis-lock.js",
+  "ready": "axis-lock: committed surface 1",
+  "frames": 600,
+  "steps": [
+    "sleep 500",
+    "move 160 100",
+    "sleep 100",
+    "pan 1 12",
+    "sleep 150",
+    "pan 1 12",
+    "sleep 150",
+    "pan 1 12",
+    "sleep 150",
+    "pan_stop",
+    "sleep 800"
+  ],
+  "expect": ["axis-lock: committed surface 1", "axis-lock: vertical moved"],
+  "reject": ["axis-lock: drift"]
+}

@@ -4,6 +4,7 @@
 #include <array>
 #include <charconv>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -56,7 +57,6 @@ struct Injector {
     // Which modifiers a `key <name> press` is currently holding down, so a chord is three lines of a script
     // rather than something the vocabulary cannot say. Cleared key by key as each one is released.
     uint32_t heldModifiers{kNoModifiers};
-    std::chrono::steady_clock::time_point startedAt{std::chrono::steady_clock::now()};
 };
 
 struct KeyStroke {
@@ -70,10 +70,16 @@ bool reportError(std::string_view message) {
     return false;
 }
 
-uint32_t elapsedMilliseconds(const Injector& injector) {
-    const std::chrono::steady_clock::duration elapsed = std::chrono::steady_clock::now() - injector.startedAt;
+/**
+ * The timestamp both virtual-input protocols carry: milliseconds on `CLOCK_MONOTONIC`, which is the clock the
+ * compositor stamps its own events with and the clock the platform reads back through `HighResTimeStamp`. A
+ * timestamp relative to the injector's start would leave the application's `event.timeStamp` — and any latency
+ * derived from it — on a different epoch than the presentation clock.
+ */
+uint32_t monotonicMilliseconds() {
+    const std::chrono::steady_clock::duration sinceEpoch = std::chrono::steady_clock::now().time_since_epoch();
 
-    return static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count());
+    return static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::milliseconds>(sinceEpoch).count());
 }
 
 void handleOutputGeometry(void* /*data*/, wl_output* /*output*/, int32_t /*x*/, int32_t /*y*/,
@@ -280,7 +286,7 @@ bool sendKeysym(Injector& injector, xkb_keysym_t keysym, uint32_t state) {
 
     zwp_virtual_keyboard_v1_modifiers(injector.keyboard, injector.heldModifiers | shifted, kNoModifiers, kNoModifiers,
                                       kFirstLayout);
-    zwp_virtual_keyboard_v1_key(injector.keyboard, elapsedMilliseconds(injector), stroke.code, state);
+    zwp_virtual_keyboard_v1_key(injector.keyboard, monotonicMilliseconds(), stroke.code, state);
 
     return true;
 }
@@ -302,7 +308,7 @@ std::string_view nextToken(std::string_view& rest) {
     return token;
 }
 
-bool parseNumber(std::string_view text, uint32_t& value) {
+template <typename Value> bool parseNumber(std::string_view text, Value& value) {
     const std::from_chars_result parsed = std::from_chars(text.data(), text.data() + text.size(), value);
 
     return parsed.ec == std::errc{} && parsed.ptr == text.data() + text.size();
@@ -325,13 +331,13 @@ bool parseState(std::string_view name, uint32_t& state) {
 }
 
 void movePointer(Injector& injector, uint32_t x, uint32_t y) {
-    zwlr_virtual_pointer_v1_motion_absolute(injector.pointer, elapsedMilliseconds(injector), x, y, injector.outputWidth,
+    zwlr_virtual_pointer_v1_motion_absolute(injector.pointer, monotonicMilliseconds(), x, y, injector.outputWidth,
                                             injector.outputHeight);
     zwlr_virtual_pointer_v1_frame(injector.pointer);
 }
 
 void sendButton(Injector& injector, uint32_t button, uint32_t state) {
-    zwlr_virtual_pointer_v1_button(injector.pointer, elapsedMilliseconds(injector), button, state);
+    zwlr_virtual_pointer_v1_button(injector.pointer, monotonicMilliseconds(), button, state);
     zwlr_virtual_pointer_v1_frame(injector.pointer);
 }
 
@@ -432,9 +438,49 @@ bool runWheel(Injector& injector, std::string_view rest) {
 
     const int32_t steps = static_cast<int32_t>(notches) * (direction == "up" ? kUpwardWheelSign : kDownwardWheelSign);
 
-    zwlr_virtual_pointer_v1_axis_discrete(injector.pointer, elapsedMilliseconds(injector),
-                                          WL_POINTER_AXIS_VERTICAL_SCROLL,
+    zwlr_virtual_pointer_v1_axis_discrete(injector.pointer, monotonicMilliseconds(), WL_POINTER_AXIS_VERTICAL_SCROLL,
                                           wl_fixed_from_double(kPointsPerWheelNotch * steps), steps);
+    zwlr_virtual_pointer_v1_frame(injector.pointer);
+
+    return true;
+}
+
+/**
+ * One frame of continuous two-finger pan, the touchpad half of `wheel` (#341). Both axes travel in one `frame`,
+ * and the axis with the larger magnitude goes first: the platform's dominant-axis lock picks the first non-zero
+ * delta, and a gesture is dominated by the axis the fingers actually moved along, not the drift.
+ */
+bool runPan(Injector& injector, std::string_view rest) {
+    double horizontal = 0.0;
+    double vertical = 0.0;
+
+    if (!parseNumber(nextToken(rest), horizontal) || !parseNumber(nextToken(rest), vertical)) {
+        return reportError("pan needs a horizontal and a vertical point delta");
+    }
+
+    const auto sendAxis = [&injector](uint32_t axis, double value) {
+        zwlr_virtual_pointer_v1_axis(injector.pointer, monotonicMilliseconds(), axis, wl_fixed_from_double(value));
+    };
+
+    if (std::abs(vertical) >= std::abs(horizontal)) {
+        sendAxis(WL_POINTER_AXIS_VERTICAL_SCROLL, vertical);
+        sendAxis(WL_POINTER_AXIS_HORIZONTAL_SCROLL, horizontal);
+    } else {
+        sendAxis(WL_POINTER_AXIS_HORIZONTAL_SCROLL, horizontal);
+        sendAxis(WL_POINTER_AXIS_VERTICAL_SCROLL, vertical);
+    }
+
+    zwlr_virtual_pointer_v1_frame(injector.pointer);
+
+    return true;
+}
+
+/** The fingers left the touchpad: ends the gesture and clears the platform's active-axis lock. */
+bool runPanStop(Injector& injector, std::string_view /*rest*/) {
+    const uint32_t time = monotonicMilliseconds();
+
+    zwlr_virtual_pointer_v1_axis_stop(injector.pointer, time, WL_POINTER_AXIS_VERTICAL_SCROLL);
+    zwlr_virtual_pointer_v1_axis_stop(injector.pointer, time, WL_POINTER_AXIS_HORIZONTAL_SCROLL);
     zwlr_virtual_pointer_v1_frame(injector.pointer);
 
     return true;
@@ -445,11 +491,13 @@ struct Command {
     bool (*run)(Injector&, std::string_view);
 };
 
-constexpr std::array<Command, 7> kCommands{{
+constexpr std::array<Command, 9> kCommands{{
     {.name = "move", .run = runMove},
     {.name = "click", .run = runClick},
     {.name = "button", .run = runButton},
     {.name = "wheel", .run = runWheel},
+    {.name = "pan", .run = runPan},
+    {.name = "pan_stop", .run = runPanStop},
     {.name = "key", .run = runKey},
     {.name = "type", .run = runType},
     {.name = "sleep", .run = runSleep},
