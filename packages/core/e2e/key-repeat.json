@@ -1,0 +1,11 @@
+{
+  "name": "key-repeat",
+  "bundle": "key-repeat.js",
+  "ready": "key-repeat: committed surface 1",
+  "frames": 600,
+  "steps": ["sleep 500", "click 120 110", "sleep 200", "key a press", "sleep 1500", "key a release", "sleep 400"],
+  "automation": {
+    "markTestPassed": true
+  },
+  "expect": ["key-repeat: committed surface 1", "key-repeat: repeat key=a"]
+}
