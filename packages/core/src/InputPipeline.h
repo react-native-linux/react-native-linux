@@ -69,6 +69,13 @@ enum class ScrollAxisKind : uint8_t {
 struct InputEvent {
     InputEventKind kind{InputEventKind::PointerMotion};
     facebook::react::Point surfacePoint{};
+    /**
+     * The compositor's own event time, in milliseconds on the `wl_pointer`/`wl_keyboard` clock — which is
+     * `CLOCK_MONOTONIC`, the domain `HighResTimeStamp` is built on. Zero when the event was synthesized (a
+     * virtual input method's composition, a test's, an activation click): those have no compositor time, and
+     * the emitter falls back to its own clock rather than inventing one (#455).
+     */
+    uint32_t eventTimeMilliseconds{0};
     int button{0};
     std::string key{};
     std::string code{};
@@ -81,6 +88,17 @@ struct InputEvent {
     ScrollAxisKind scrollAxis{ScrollAxisKind::Vertical};
     double scrollAmount{0.0};
 };
+
+/**
+ * The steady-clock instant a compositor's 32-bit millisecond timestamp names.
+ *
+ * `wl_pointer`/`wl_keyboard` time is `CLOCK_MONOTONIC` milliseconds — `steady_clock`'s own clock — but the
+ * protocol's field is 32 bits and wraps after 49.7 days of uptime. The value congruent to it modulo 2^32 that
+ * lies within the last wrap of `steadyNowMilliseconds` is therefore the instant it names: an input event older
+ * than one wrap is not one a client can be handed, and reading the raw field as an absolute time would place
+ * every event on a machine up for longer than that some 49.7 days in the past (#455).
+ */
+uint64_t steadyMillisecondsForEventTime(uint32_t eventTimeMilliseconds, uint64_t steadyNowMilliseconds);
 
 /**
  * Whether this event belongs to the scroll pipeline rather than the pointer one. The two are routed separately

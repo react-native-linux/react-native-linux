@@ -19,6 +19,8 @@ namespace react_native_linux {
 namespace {
 
 constexpr int kUnmappedButton = -1;
+// `wl_pointer.enter` carries no time; zero is the "no compositor time" the emitter falls back on.
+constexpr uint32_t kNoCompositorEventTime = 0;
 constexpr size_t kKeysymNameCapacity = 64;
 // The longest text one key can produce is one UTF-8 code point, which is four bytes, plus the terminator
 // xkb_state_key_get_utf8 always writes.
@@ -208,14 +210,18 @@ void WaylandSeat::updateModifiers(uint32_t depressed, uint32_t latched, uint32_t
     modifiers_.meta = isModifierActive(keyboardState_, XKB_MOD_NAME_LOGO);
 }
 
-void WaylandSeat::pushPointerPosition(InputEventKind kind, int32_t surfaceX, int32_t surfaceY) {
+void WaylandSeat::pushPointerPosition(InputEventKind kind, uint32_t eventTimeMilliseconds, int32_t surfaceX,
+                                      int32_t surfaceY) {
     pointerPosition_ = facebook::react::Point{.x = static_cast<facebook::react::Float>(wl_fixed_to_double(surfaceX)),
                                               .y = static_cast<facebook::react::Float>(wl_fixed_to_double(surfaceY))};
 
-    queue_.push(InputEvent{.kind = kind, .surfacePoint = pointerPosition_, .modifiers = modifiers_});
+    queue_.push(InputEvent{.kind = kind,
+                           .surfacePoint = pointerPosition_,
+                           .eventTimeMilliseconds = eventTimeMilliseconds,
+                           .modifiers = modifiers_});
 }
 
-void WaylandSeat::pushPointerButton(uint32_t serial, uint32_t button, uint32_t state) {
+void WaylandSeat::pushPointerButton(uint32_t serial, uint32_t eventTimeMilliseconds, uint32_t button, uint32_t state) {
     serialLedger_.recordPointerButton(serial, state == WL_POINTER_BUTTON_STATE_PRESSED);
 
     const int domButton = domButtonOfEvdevCode(button);
@@ -227,8 +233,11 @@ void WaylandSeat::pushPointerButton(uint32_t serial, uint32_t button, uint32_t s
     const InputEventKind kind = state == WL_POINTER_BUTTON_STATE_PRESSED ? InputEventKind::PointerButtonPress
                                                                          : InputEventKind::PointerButtonRelease;
 
-    queue_.push(
-        InputEvent{.kind = kind, .surfacePoint = pointerPosition_, .button = domButton, .modifiers = modifiers_});
+    queue_.push(InputEvent{.kind = kind,
+                           .surfacePoint = pointerPosition_,
+                           .eventTimeMilliseconds = eventTimeMilliseconds,
+                           .button = domButton,
+                           .modifiers = modifiers_});
 }
 
 void WaylandSeat::pushPointerLeave() {
@@ -236,7 +245,7 @@ void WaylandSeat::pushPointerLeave() {
         InputEvent{.kind = InputEventKind::PointerLeave, .surfacePoint = pointerPosition_, .modifiers = modifiers_});
 }
 
-void WaylandSeat::pushKey(uint32_t serial, uint32_t key, uint32_t state) {
+void WaylandSeat::pushKey(uint32_t serial, uint32_t eventTimeMilliseconds, uint32_t key, uint32_t state) {
     serialLedger_.recordKeyboardKey(serial, state == WL_KEYBOARD_KEY_STATE_PRESSED);
 
     if (keyboardState_ == nullptr) {
@@ -252,6 +261,7 @@ void WaylandSeat::pushKey(uint32_t serial, uint32_t key, uint32_t state) {
     queue_.push(
         InputEvent{.kind = kind,
                    .surfacePoint = pointerPosition_,
+                   .eventTimeMilliseconds = eventTimeMilliseconds,
                    .key = domKeyName(keysymName(keyboardState_, xkbKeycode), keyText(keyboardState_, xkbKeycode)),
                    .code = domKeyCode(key),
                    .modifiers = modifiers_});
@@ -284,7 +294,7 @@ void WaylandSeat::handlePointerEnter(void* data, wl_pointer* /*pointer*/, uint32
     WaylandSeat* seat = static_cast<WaylandSeat*>(data);
 
     seat->serialLedger_.recordPointerEnter(serial);
-    seat->pushPointerPosition(InputEventKind::PointerMotion, surfaceX, surfaceY);
+    seat->pushPointerPosition(InputEventKind::PointerMotion, kNoCompositorEventTime, surfaceX, surfaceY);
 }
 
 void WaylandSeat::handlePointerLeave(void* data, wl_pointer* /*pointer*/, uint32_t /*serial*/,
@@ -292,14 +302,14 @@ void WaylandSeat::handlePointerLeave(void* data, wl_pointer* /*pointer*/, uint32
     static_cast<WaylandSeat*>(data)->pushPointerLeave();
 }
 
-void WaylandSeat::handlePointerMotion(void* data, wl_pointer* /*pointer*/, uint32_t /*time*/, int32_t surfaceX,
+void WaylandSeat::handlePointerMotion(void* data, wl_pointer* /*pointer*/, uint32_t time, int32_t surfaceX,
                                       int32_t surfaceY) {
-    static_cast<WaylandSeat*>(data)->pushPointerPosition(InputEventKind::PointerMotion, surfaceX, surfaceY);
+    static_cast<WaylandSeat*>(data)->pushPointerPosition(InputEventKind::PointerMotion, time, surfaceX, surfaceY);
 }
 
-void WaylandSeat::handlePointerButton(void* data, wl_pointer* /*pointer*/, uint32_t serial, uint32_t /*time*/,
+void WaylandSeat::handlePointerButton(void* data, wl_pointer* /*pointer*/, uint32_t serial, uint32_t time,
                                       uint32_t button, uint32_t state) {
-    static_cast<WaylandSeat*>(data)->pushPointerButton(serial, button, state);
+    static_cast<WaylandSeat*>(data)->pushPointerButton(serial, time, button, state);
 }
 
 namespace {
@@ -313,10 +323,11 @@ namespace {
  * queue pairs a discrete notch with the `axis` event that duplicates it and the `ScrollController` turns whatever
  * survives into motion, because both of those are arithmetic a unit test can see and this file is not.
  */
-InputEvent makeScrollEvent(InputEventKind kind, uint32_t waylandAxis, double amount,
+InputEvent makeScrollEvent(InputEventKind kind, uint32_t eventTimeMilliseconds, uint32_t waylandAxis, double amount,
                            facebook::react::Point surfacePoint, InputModifiers modifiers) {
     return InputEvent{.kind = kind,
                       .surfacePoint = surfacePoint,
+                      .eventTimeMilliseconds = eventTimeMilliseconds,
                       .modifiers = modifiers,
                       .scrollAxis = scrollAxisForPointerAxis(waylandAxis, modifiers),
                       .scrollAmount = amount};
@@ -324,15 +335,39 @@ InputEvent makeScrollEvent(InputEventKind kind, uint32_t waylandAxis, double amo
 
 } // namespace
 
-void WaylandSeat::handlePointerAxis(void* data, wl_pointer* /*pointer*/, uint32_t /*time*/, uint32_t axis,
-                                    int32_t value) {
+void WaylandSeat::handlePointerAxis(void* data, wl_pointer* /*pointer*/, uint32_t time, uint32_t axis, int32_t value) {
     WaylandSeat* seat = static_cast<WaylandSeat*>(data);
 
-    seat->queue_.push(makeScrollEvent(InputEventKind::PointerScrollContinuous, axis, wl_fixed_to_double(value),
+    // The frame's `axis` event is the one that carries the time. Its `axis_discrete`/`axis_value120` companion
+    // arrived first — the protocol sends it before `axis` — and was held for exactly this: it goes out now,
+    // stamped with the frame's own instant, and the continuous event follows it, where `InputQueue` drops it as
+    // the duplicate it is. The discrete one is what survives, and it now carries the right time (#455).
+    const size_t axisIndex = static_cast<size_t>(scrollAxisForPointerAxis(axis, seat->modifiers_));
+
+    if (seat->pendingDiscreteScrollEvents_[axisIndex].has_value()) {
+        InputEvent discrete = seat->pendingDiscreteScrollEvents_[axisIndex].value();
+
+        discrete.eventTimeMilliseconds = time;
+        seat->queue_.push(discrete);
+        seat->pendingDiscreteScrollEvents_[axisIndex].reset();
+    }
+
+    seat->queue_.push(makeScrollEvent(InputEventKind::PointerScrollContinuous, time, axis, wl_fixed_to_double(value),
                                       seat->pointerPosition_, seat->modifiers_));
 }
 
-void WaylandSeat::handlePointerFrame(void* /*data*/, wl_pointer* /*pointer*/) {}
+void WaylandSeat::handlePointerFrame(void* data, wl_pointer* /*pointer*/) {
+    WaylandSeat* seat = static_cast<WaylandSeat*>(data);
+
+    // A frame ends the companion window: a discrete event whose `axis` never followed is flushed with no
+    // compositor time rather than left to be stamped by an unrelated frame's axis later.
+    for (std::optional<InputEvent>& pending : seat->pendingDiscreteScrollEvents_) {
+        if (pending.has_value()) {
+            seat->queue_.push(pending.value());
+            pending.reset();
+        }
+    }
+}
 
 // wl_pointer.axis_source distinguishes a wheel from a finger, and routing does not read it: axis_discrete (or
 // axis_value120) is what a wheel sends and axis_stop is what a finger sends, so the event kind that arrives is
@@ -349,22 +384,26 @@ void WaylandSeat::handlePointerAxisSource(void* /*data*/, wl_pointer* /*pointer*
 void WaylandSeat::handlePointerAxisValue120(void* data, wl_pointer* /*pointer*/, uint32_t axis, int32_t value120) {
     WaylandSeat* seat = static_cast<WaylandSeat*>(data);
 
-    seat->queue_.push(makeScrollEvent(InputEventKind::PointerScrollDiscrete, axis, notchesForValue120(value120),
-                                      seat->pointerPosition_, seat->modifiers_));
+    // Held for the `axis` event that follows in the same frame: the companion carries no time, and the `axis`
+    // event is where the frame's instant arrives (#455).
+    seat->pendingDiscreteScrollEvents_[static_cast<size_t>(scrollAxisForPointerAxis(axis, seat->modifiers_))] =
+        makeScrollEvent(InputEventKind::PointerScrollDiscrete, 0, axis, notchesForValue120(value120),
+                        seat->pointerPosition_, seat->modifiers_);
 }
 
-void WaylandSeat::handlePointerAxisStop(void* data, wl_pointer* /*pointer*/, uint32_t /*time*/, uint32_t axis) {
+void WaylandSeat::handlePointerAxisStop(void* data, wl_pointer* /*pointer*/, uint32_t time, uint32_t axis) {
     WaylandSeat* seat = static_cast<WaylandSeat*>(data);
 
     seat->queue_.push(
-        makeScrollEvent(InputEventKind::PointerScrollStop, axis, 0.0, seat->pointerPosition_, seat->modifiers_));
+        makeScrollEvent(InputEventKind::PointerScrollStop, time, axis, 0.0, seat->pointerPosition_, seat->modifiers_));
 }
 
 void WaylandSeat::handlePointerAxisDiscrete(void* data, wl_pointer* /*pointer*/, uint32_t axis, int32_t discrete) {
     WaylandSeat* seat = static_cast<WaylandSeat*>(data);
 
-    seat->queue_.push(makeScrollEvent(InputEventKind::PointerScrollDiscrete, axis, discrete, seat->pointerPosition_,
-                                      seat->modifiers_));
+    seat->pendingDiscreteScrollEvents_[static_cast<size_t>(scrollAxisForPointerAxis(axis, seat->modifiers_))] =
+        makeScrollEvent(InputEventKind::PointerScrollDiscrete, 0, axis, discrete, seat->pointerPosition_,
+                        seat->modifiers_);
 }
 
 void WaylandSeat::handleKeyboardKeymap(void* data, wl_keyboard* /*keyboard*/, uint32_t format, int32_t keymapDescriptor,
@@ -385,9 +424,9 @@ void WaylandSeat::handleKeyboardLeave(void* data, wl_keyboard* /*keyboard*/, uin
     static_cast<WaylandSeat*>(data)->hasKeyboardFocus_ = false;
 }
 
-void WaylandSeat::handleKeyboardKey(void* data, wl_keyboard* /*keyboard*/, uint32_t serial, uint32_t /*time*/,
-                                    uint32_t key, uint32_t state) {
-    static_cast<WaylandSeat*>(data)->pushKey(serial, key, state);
+void WaylandSeat::handleKeyboardKey(void* data, wl_keyboard* /*keyboard*/, uint32_t serial, uint32_t time, uint32_t key,
+                                    uint32_t state) {
+    static_cast<WaylandSeat*>(data)->pushKey(serial, time, key, state);
 }
 
 void WaylandSeat::handleKeyboardModifiers(void* data, wl_keyboard* /*keyboard*/, uint32_t /*serial*/,

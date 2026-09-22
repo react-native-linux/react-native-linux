@@ -35,6 +35,7 @@ using react_native_linux::PointerRouter;
 using react_native_linux::PointerTargetTransform;
 using react_native_linux::scrollAxisForPointerAxis;
 using react_native_linux::ScrollAxisKind;
+using react_native_linux::steadyMillisecondsForEventTime;
 
 constexpr Tag kBoxTag = 4;
 constexpr Tag kOtherTag = 5;
@@ -641,6 +642,53 @@ TEST(ParseKeySequenceTest, TheTokenizerHandsAnUnclosedGroupToTheCallerVerbatim) 
  * Native's PointerEvent declares, and the codes a mouse nobody sells does not send map to -1, which the seat
  * drops.
  */
+/**
+ * #455: the protocol's 32-bit millisecond field wraps after 49.7 days of uptime, so the instant it names is the
+ * value congruent to it modulo 2^32 nearest below the caller's now — not the raw field read as an absolute time,
+ * which would place every event on a long-running machine 49.7 days in the past.
+ */
+TEST(MousePayloadTest, ACompositorEventTimeIsExtendedAcrossTheThirtyTwoBitWrap) {
+    constexpr uint64_t kWrap = 1ULL << 32;
+
+    // No wrap yet: the field is the instant.
+    EXPECT_EQ(steadyMillisecondsForEventTime(4123, 9000), 4123U);
+
+    // The clock has wrapped once since the event: 50 ms after a wrap that now sits at 2^32 + 100.
+    EXPECT_EQ(steadyMillisecondsForEventTime(50, kWrap + 100), kWrap + 50);
+
+    // And an event at the very top of the field on a now just past the wrap.
+    EXPECT_EQ(steadyMillisecondsForEventTime(0xFFFFFFFFU, kWrap + 10), kWrap - 1);
+}
+
+/**
+ * #455: the compositor's event time reaches the emitter instead of the routing clock. The same clock domain is
+ * the whole reason this is a copy rather than a conversion — `wl_pointer`'s time is `CLOCK_MONOTONIC`
+ * milliseconds and `HighResTimeStamp` is `steady_clock` — so a motion stamped 4 123 ms arrives as 4 123 ms.
+ */
+TEST(MousePayloadTest, TheCompositorEventTimeReachesTheEmitterInsteadOfTheRoutingClock) {
+    PointerRouter router;
+    InputEvent motion = makeButton(InputEventKind::PointerButtonPress, kPrimaryButton);
+    motion.eventTimeMilliseconds = 4123;
+
+    const std::vector<PointerDispatch> dispatches = router.route(motion, kBoxTag, makePoint(0, 0));
+
+    ASSERT_EQ(dispatches.size(), 1U);
+    EXPECT_DOUBLE_EQ(dispatches[0].event.timeStamp.toDOMHighResTimeStamp(), 4123.0);
+}
+
+/** A synthesized event — a virtual input method's, a test's — falls back to the routing clock, not to zero. */
+TEST(MousePayloadTest, ASynthesizedEventFallsBackToTheRoutingClock) {
+    PointerRouter router;
+    InputEvent motion = makeButton(InputEventKind::PointerButtonPress, kPrimaryButton);
+
+    const std::vector<PointerDispatch> dispatches = router.route(motion, kBoxTag, makePoint(0, 0));
+
+    ASSERT_EQ(dispatches.size(), 1U);
+    // Not a fixed number: the assertion is that it is a real clock reading rather than the epoch.
+    EXPECT_GT(dispatches[0].event.timeStamp.toDOMHighResTimeStamp(), 0.0);
+    EXPECT_NE(dispatches[0].event.timeStamp.toDOMHighResTimeStamp(), 4123.0);
+}
+
 TEST(MousePayloadTest, DomButtonOfEvdevCodeMapsTheW3CButtonNumbers) {
     const std::vector<std::pair<uint32_t, int>> table = {
         {BTN_LEFT, 0}, {BTN_MIDDLE, 1}, {BTN_RIGHT, 2},   {BTN_SIDE, 3},

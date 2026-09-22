@@ -4740,6 +4740,27 @@ wl_pointer / wl_keyboard ─▶ WaylandSeat ─▶ InputQueue ─┐        fram
                               PointerEventsProcessor ─▶ UIManagerBinding ─▶ RN$ event handler
 ```
 
+### The compositor's event time (#455)
+
+`wl_pointer` and `wl_keyboard` stamp every motion, button, axis and key event with a time in `CLOCK_MONOTONIC`
+milliseconds, which is `steady_clock`'s own clock — and therefore `HighResTimeStamp`'s, whose
+`fromChronoSteadyClockTimePoint` exists for exactly this conversion. `InputEvent::eventTimeMilliseconds` carries
+it from `WaylandSeat` (whose handlers now thread the protocol's `time` argument through, including `axis`'s
+companions `axis_discrete` and `axis_value120`, which carry none and read the frame's own `axis` time back) all
+the way to the emitters: `makePointerEvent` stamps `PointerEvent::timeStamp` with it, and `ScrollController`
+stamps the frame's `ScrollEvent` with the last scroll event's. A synthesized event — a virtual input method's
+composition, a test's, the activation click a key produces — has no compositor time, and zero means "fall back
+to the routing clock" rather than "report 1970".
+
+What that buys is measurable input latency: JS `event.timeStamp`, the Event Timing API, gesture velocity and
+every frame-journal correlation now answer when the input *happened* rather than when this process got around to
+routing it. Before this, we sat permanently in upstream's "no native timeStamp available" branch.
+
+Still open on #455: the frame-journal latency assertion — the gap between this event time and the presented
+frame that answered it. The journal's `inputEvents` tag (#345) counts the input a frame answered; carrying the
+event *time* into the journal's closed-frame record is the next step, and the e2e that reads the gap needs the
+container-matrix rig.
+
 ### The event beat, and why per-frame batching falls out of it
 
 Upstream requires every platform to subclass `EventBeat`, because only the host knows when a frame's events are

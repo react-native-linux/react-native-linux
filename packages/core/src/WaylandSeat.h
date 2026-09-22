@@ -3,9 +3,11 @@
 #include "InputPipeline.h"
 #include "WaylandSerialLedger.h"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
 struct wl_array;
@@ -86,10 +88,10 @@ private:
     void updateCapabilities(uint32_t capabilities);
     void loadKeymap(uint32_t format, int32_t keymapDescriptor, uint32_t size);
     void updateModifiers(uint32_t depressed, uint32_t latched, uint32_t locked, uint32_t group);
-    void pushPointerPosition(InputEventKind kind, int32_t surfaceX, int32_t surfaceY);
-    void pushPointerButton(uint32_t serial, uint32_t button, uint32_t state);
+    void pushPointerPosition(InputEventKind kind, uint32_t eventTimeMilliseconds, int32_t surfaceX, int32_t surfaceY);
+    void pushPointerButton(uint32_t serial, uint32_t eventTimeMilliseconds, uint32_t button, uint32_t state);
     void pushPointerLeave();
-    void pushKey(uint32_t serial, uint32_t key, uint32_t state);
+    void pushKey(uint32_t serial, uint32_t eventTimeMilliseconds, uint32_t key, uint32_t state);
     void releasePointer() noexcept;
     void releaseKeyboard() noexcept;
 
@@ -134,6 +136,12 @@ private:
     xkb_state* keyboardState_{nullptr};
     WaylandSerialLedger& serialLedger_;
     InputQueue queue_;
+    /**
+     * A frame's `axis_discrete`/`axis_value120` companion, held until the `axis` event that carries the time
+     * arrives — the protocol sends the companion first, so a seat that pushed it immediately would stamp it with
+     * the previous frame's time (#455). One per axis, because a frame may carry both.
+     */
+    std::array<std::optional<InputEvent>, 2> pendingDiscreteScrollEvents_;
     InputModifiers modifiers_;
     facebook::react::Point pointerPosition_{};
     std::unique_ptr<TextInputClient> textInput_;

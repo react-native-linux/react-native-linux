@@ -20,7 +20,12 @@ const NO_SHELL_SCRIPTS_FOUND_LENGTH = 0;
 const SUCCESSFUL_EXIT_STATUS = 0;
 const FAILURE_EXIT_STATUS = 1;
 
-const excludedDirectoryNames = new Set(["node_modules", ".git", "coverage"]);
+/*
+ * The build and third_party trees hold generated and vendored sources — FetchContent dependencies and the
+ * vendored React Native — whose shell scripts are not ours to lint and which exist only once something has been
+ * built, so without them `pnpm validate` passes on a fresh checkout and fails on a working one.
+ */
+const excludedDirectoryNames = new Set(["node_modules", ".git", "coverage", "build", "third_party"]);
 
 const findShellScriptPaths = (directoryPath: string): string[] => {
   const shellScriptPaths: string[] = [];

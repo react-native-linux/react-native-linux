@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -108,6 +109,16 @@ constexpr int kNoTilt = 0;
 constexpr int kNoTwist = 0;
 constexpr char kMousePointerType[] = "mouse";
 
+/** One wrap of the protocol's 32-bit millisecond timestamp. */
+constexpr uint64_t kEventTimeWrapMilliseconds = 1ULL << 32;
+
+/** The steady clock in the same millisecond domain the protocol's event times are in. */
+uint64_t steadyNowMilliseconds() {
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+            .count());
+}
+
 int buttonsBitOf(int button) { return buttonsMaskOfDomButton(button); }
 
 // A matrix whose determinant is under this maps every point onto a line or onto a point, so nothing is inside it
@@ -138,7 +149,16 @@ facebook::react::PointerEvent makePointerEvent(const InputEvent& event, facebook
     pointerEvent.metaKey = event.modifiers.meta;
     pointerEvent.isPrimary = true;
     pointerEvent.button = button;
-    pointerEvent.timeStamp = facebook::react::HighResTimeStamp::now();
+    // The compositor's event time when the event carries one, so JS `event.timeStamp` and everything derived
+    // from it — Event Timing, input-latency measurement, gesture velocity — answer when the input happened
+    // rather than when this process got around to routing it (#455). A synthesized event falls back to the
+    // routing clock, because it has no compositor time to report.
+    pointerEvent.timeStamp =
+        event.eventTimeMilliseconds == 0
+            ? facebook::react::HighResTimeStamp::now()
+            : facebook::react::HighResTimeStamp::fromChronoSteadyClockTimePoint(
+                  std::chrono::steady_clock::time_point(std::chrono::milliseconds(
+                      steadyMillisecondsForEventTime(event.eventTimeMilliseconds, steadyNowMilliseconds()))));
 
     return pointerEvent;
 }
@@ -456,6 +476,12 @@ bool coalesceIntoPrevious(InputEvent& previous, const InputEvent& event) {
 }
 
 } // namespace
+
+uint64_t steadyMillisecondsForEventTime(uint32_t eventTimeMilliseconds, uint64_t steadyNowMilliseconds) {
+    const uint64_t elapsed = (steadyNowMilliseconds - eventTimeMilliseconds) % kEventTimeWrapMilliseconds;
+
+    return steadyNowMilliseconds - elapsed;
+}
 
 void InputQueue::push(const InputEvent& event) {
     if (!events_.empty() && coalesceIntoPrevious(events_.back(), event)) {

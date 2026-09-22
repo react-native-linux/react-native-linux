@@ -3,6 +3,7 @@
 #include "TextInputComponent.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <memory>
 #include <optional>
@@ -244,15 +245,29 @@ void applyDestination(ScrollTargetAxis& axis, const ScrollDestination& destinati
     axis.pendingVelocity = destination.velocity;
 }
 
-facebook::react::ScrollEvent makeScrollEvent(const ScrollViewMetrics& metrics, facebook::react::Point contentOffset) {
+facebook::react::ScrollEvent makeScrollEvent(const ScrollViewMetrics& metrics, facebook::react::Point contentOffset,
+                                             uint32_t eventTimeMilliseconds) {
     facebook::react::ScrollEvent scrollEvent;
 
     scrollEvent.contentSize = metrics.contentSize;
     scrollEvent.contentOffset = contentOffset;
     scrollEvent.containerSize = metrics.viewportSize;
     scrollEvent.zoomScale = 1;
-    scrollEvent.timestamp = static_cast<facebook::react::Float>(
-        facebook::react::HighResTimeStamp::now().toDOMHighResTimeStamp() / kMillisecondsPerSecond);
+    // The compositor's time when the scroll input that moved this offset carried one — the same rule, and the
+    // same wrap-aware conversion, the pointer path follows (#455) — and the routing clock for inertial motion,
+    // which no event caused.
+    const facebook::react::HighResTimeStamp timestamp =
+        eventTimeMilliseconds == 0
+            ? facebook::react::HighResTimeStamp::now()
+            : facebook::react::HighResTimeStamp::fromChronoSteadyClockTimePoint(
+                  std::chrono::steady_clock::time_point(std::chrono::milliseconds(steadyMillisecondsForEventTime(
+                      eventTimeMilliseconds,
+                      static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                std::chrono::steady_clock::now().time_since_epoch())
+                                                .count())))));
+
+    scrollEvent.timestamp =
+        static_cast<facebook::react::Float>(timestamp.toDOMHighResTimeStamp() / kMillisecondsPerSecond);
 
     return scrollEvent;
 }
@@ -340,6 +355,8 @@ bool ScrollController::isScrollActive() const noexcept {
 }
 
 void ScrollController::route(const InputEvent& event) {
+    lastScrollEventTimeMilliseconds_ = event.eventTimeMilliseconds;
+
     if (event.kind == InputEventKind::PointerScrollStop) {
         // The stop carries no position, and at most one ScrollView can have a finger on it, so releasing every
         // target that has one is the same answer as remembering which one did.
@@ -523,7 +540,8 @@ bool ScrollController::advanceTarget(ScrollTarget& target, const facebook::react
                                                   .isMomentumRunning = target.isMomentumRunning});
 
     if (emitter != nullptr) {
-        const facebook::react::ScrollEvent scrollEvent = makeScrollEvent(metrics, contentOffset);
+        const facebook::react::ScrollEvent scrollEvent =
+            makeScrollEvent(metrics, contentOffset, lastScrollEventTimeMilliseconds_);
 
         if (cadenceEvents.beginDrag) {
             emitter->onScrollBeginDrag(scrollEvent);

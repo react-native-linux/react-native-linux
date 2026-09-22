@@ -169,6 +169,8 @@ private:
     std::shared_ptr<facebook::react::UIManager> uiManager_;
     facebook::react::SurfaceId surfaceId_;
     std::unordered_map<facebook::react::Tag, ScrollTarget> targets_;
+    /** The compositor time of the last scroll event routed, for the frame's emitted scroll events (#455). */
+    uint32_t lastScrollEventTimeMilliseconds_{0};
     bool hasDispatchedScrollEvent_{false};
 };
 
