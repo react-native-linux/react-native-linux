@@ -2,6 +2,7 @@
 
 #include <charconv>
 #include <cstddef>
+#include <limits>
 #include <optional>
 #include <system_error>
 
@@ -14,6 +15,12 @@ constexpr char kTokenClose = '}';
 constexpr char kExtentSeparator = 'x';
 constexpr char kArgumentSeparator = ':';
 constexpr uint32_t kMinimumDragConfigures = 2;
+// A drag's configure count is a loop bound and a reserve, so an absurd one is a typo rather than a test: a
+// replay nobody means, and a way to exhaust memory before the window starts. This is a practical ceiling.
+constexpr uint32_t kMaximumDragConfigures = 1024;
+// `WaylandWindow::injectConfigure` narrows each extent to `int32_t`, so a value above that would arrive
+// non-positive and be ignored while the trace reported the resize as having happened.
+constexpr uint32_t kMaximumExtent = static_cast<uint32_t>(std::numeric_limits<int32_t>::max());
 
 struct Extent {
     uint32_t width{0};
@@ -41,7 +48,8 @@ std::optional<Extent> parseExtent(std::string_view text) {
     const std::optional<uint32_t> width = parsePositiveNumber(text.substr(0, separator));
     const std::optional<uint32_t> height = parsePositiveNumber(text.substr(separator + 1));
 
-    if (!width.has_value() || !height.has_value()) {
+    if (!width.has_value() || !height.has_value() || width.value() > kMaximumExtent ||
+        height.value() > kMaximumExtent) {
         return std::nullopt;
     }
 
@@ -101,7 +109,7 @@ bool appendDrag(std::string_view arguments, Extent& extent, ToplevelState& state
     const std::optional<uint32_t> configures = parsePositiveNumber(arguments.substr(secondSeparator + 1));
 
     if (!from.has_value() || !to.has_value() || !configures.has_value() ||
-        configures.value() < kMinimumDragConfigures) {
+        configures.value() < kMinimumDragConfigures || configures.value() > kMaximumDragConfigures) {
         return false;
     }
 

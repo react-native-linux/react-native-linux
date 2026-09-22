@@ -31,6 +31,32 @@ TEST(WindowControlSequenceTest, AnUnknownTokenIsRejectedByName) {
     EXPECT_EQ(parse("{Shaded}").error, "unknown window control token {Shaded}");
 }
 
+// An extent above INT32_MAX would be narrowed to a non-positive int32 by `injectConfigure` and ignored, while
+// the trace reported the resize as having happened - a configure the window never applied.
+TEST(WindowControlSequenceTest, AnExtentAboveInt32MaxIsRejected) {
+    const WindowControlSequence parsed = parse("{2147483648x768}");
+
+    EXPECT_FALSE(parsed.error.empty());
+    EXPECT_TRUE(parsed.steps.empty());
+
+    // The height is bounded the same way...
+    EXPECT_FALSE(parse("{768x2147483648}").error.empty());
+
+    // ...and the largest value that does fit is accepted.
+    EXPECT_TRUE(parse("{2147483647x768}").error.empty());
+}
+
+// A drag's count is a loop bound and a reserve; an absurd one is a typo that would exhaust memory before the
+// window started rather than a replay anyone means.
+TEST(WindowControlSequenceTest, ADragCountAboveThePracticalCeilingIsRejected) {
+    const WindowControlSequence parsed = parse("{Drag:100x100:200x200:1025}");
+
+    EXPECT_FALSE(parsed.error.empty());
+    EXPECT_TRUE(parsed.steps.empty());
+
+    EXPECT_TRUE(parse("{Drag:100x100:200x200:1024}").error.empty());
+}
+
 TEST(WindowControlSequenceTest, ARejectedSequenceKeepsNoStepsFromBeforeTheFault) {
     const WindowControlSequence parsed = parse("{1024x768}{Shaded}");
 
