@@ -16,6 +16,9 @@ const error = 2;
 /** The longest header the merged history carries, with headroom. */
 const headerMaxLength = 200;
 
+/** The length of a scope nobody supplied. */
+const emptyScopeLength = 0;
+
 /** The types of AGENTS.md, in its own order. */
 const types = ["feat", "fix", "refactor", "chore", "docs", "ci", "test", "perf", "build"];
 
@@ -44,10 +47,40 @@ const scopes = [
   "e2e",
 ];
 
+/**
+ * The types whose commits may be repo-wide, and so may omit a scope — the same exemption AGENTS.md's sentence
+ * carries ("omit it for repo-wide docs and tooling"). Every other type must name its lane.
+ */
+const scopeExemptTypes = ["docs", "chore", "ci"];
+
+/*
+ * Commitlint's own `scope-enum` validates a scope that is *supplied*; it cannot require one. This local rule
+ * closes that gap, so a `fix:` or `feat:` without a lane is rejected rather than silently accepted as if the
+ * exemption applied to it.
+ */
+const scopeRequiredPlugin = {
+  rules: {
+    "scope-required-unless-repo-wide": (parsed) => {
+      const type = parsed.type ?? "";
+      const hasScope = typeof parsed.scope === "string" && parsed.scope.length > emptyScopeLength;
+
+      if (hasScope || scopeExemptTypes.includes(type)) {
+        return [true];
+      }
+
+      return [
+        false,
+        `a "${type}" commit must name its lane; only repo-wide docs and tooling (${scopeExemptTypes.join(", ")}) may omit the scope`,
+      ];
+    },
+  },
+};
+
 const rules = {
   "header-max-length": [error, "always", headerMaxLength],
   "scope-case": [error, "always", "lower-case"],
   "scope-enum": [error, "always", scopes],
+  "scope-required-unless-repo-wide": [error, "always"],
   "subject-empty": [error, "never"],
   "subject-full-stop": [error, "never", "."],
   "type-case": [error, "always", "lower-case"],
@@ -56,6 +89,6 @@ const rules = {
 };
 
 // Commitlint resolves its config only through a default export — there is no named-export entry point.
-const commitlintConfig = { extends: [], rules };
+const commitlintConfig = { extends: [], plugins: [scopeRequiredPlugin], rules };
 
 export default commitlintConfig;
