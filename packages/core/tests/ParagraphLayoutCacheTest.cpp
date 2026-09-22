@@ -1,7 +1,10 @@
 #include "ParagraphLayoutCache.h"
 
+#include <atomic>
 #include <gtest/gtest.h>
+#include <latch>
 #include <string>
+#include <thread>
 
 namespace {
 
@@ -155,6 +158,57 @@ TEST(ParagraphLayoutCacheTest, TheCapacityCapsTheCurrentFrameAndNeverEvictsThePr
     (void)cache.lookup(kKey, [&calls] { return countingShape(calls); });
 
     EXPECT_EQ(calls, 1);
+}
+
+/** A frame at capacity evicts its oldest entry rather than silently refusing to cache the new one. */
+TEST(ParagraphLayoutCacheTest, AFrameAtCapacityEvictsItsOldestEntryRatherThanDroppingTheNewOne) {
+    ParagraphLayoutCache cache(2);
+
+    const ParagraphLayoutCache::Key first{.text = "one", .attributes = "", .maximumWidth = 100.0F};
+    const ParagraphLayoutCache::Key second{.text = "two", .attributes = "", .maximumWidth = 100.0F};
+    const ParagraphLayoutCache::Key third{.text = "three", .attributes = "", .maximumWidth = 100.0F};
+
+    (void)cache.lookup(first, keyMetrics);
+    (void)cache.lookup(second, keyMetrics);
+
+    int calls = 0;
+    (void)cache.lookup(third, [&calls] { return countingShape(calls); });
+
+    EXPECT_EQ(calls, 1);
+    EXPECT_EQ(cache.currentFrameEntryCount(), 2U);
+
+    // The newest entry is cached...
+    EXPECT_EQ(cache.lookup(third, [&calls] { return countingShape(calls); }).longestLineWidth, 1.0F);
+    EXPECT_EQ(calls, 1);
+}
+
+/**
+ * The double-checked insert: two lookups of one key that both miss because both are shaping outside the lock.
+ * The first to re-enter inserts, the second finds the entry and returns it rather than inserting a duplicate.
+ */
+TEST(ParagraphLayoutCacheTest, ARacingLookupOfOneKeyShapesTwiceAndInsertsOnce) {
+    ParagraphLayoutCache cache(8);
+    std::latch bothShaping(2);
+    std::atomic<int> shapeCount{0};
+
+    const auto shapeTogether = [&] {
+        bothShaping.count_down();
+        bothShaping.wait();
+        ++shapeCount;
+
+        return ParagraphLayoutCache::Metrics{.longestLineWidth = 1.0F, .height = 1.0F};
+    };
+
+    std::thread first([&] { (void)cache.lookup(kKey, shapeTogether); });
+    std::thread second([&] { (void)cache.lookup(kKey, shapeTogether); });
+
+    first.join();
+    second.join();
+
+    // Both shaped — the lock is not held across makeEntry — and exactly one entry landed.
+    EXPECT_EQ(shapeCount.load(), 2);
+    EXPECT_EQ(cache.currentFrameEntryCount(), 1U);
+    EXPECT_EQ(cache.missCount(), 2U);
 }
 
 } // namespace
