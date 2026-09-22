@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -24,14 +25,14 @@ namespace react_native_linux {
  * cache is otherwise read from whatever thread measures.
  *
  * Pure and lib-counting: the caller supplies the metrics through `makeEntry`, so the cache never touches Skia,
- * and that is what puts it under the 100% gate without a Skia fixture. Threads: reads and hits race
- * `endFrame`'s swap only in the sense GPUI's does — the contract below states it, and the TSan job runs the
- * concurrent case.
+ * and that is what puts it under the 100% gate without a Skia fixture.
  *
  * Threading contract: `lookup` is called from the commit thread or the frame thread; `endFrame` from the frame
- * thread between frames. The frame-index guard in `lookup` makes a hit on the previous frame promote instead of
- * read, and a `std::mutex` guards the two deques; the lock is per cache, and the layout mutex it reduces
- * contention on is the one `TextPipelineState` holds for the whole shape.
+ * thread between frames. Both take `mutex_`, which guards the two frames and the counters. `makeEntry` is
+ * deliberately called *outside* that lock — it shapes a paragraph and so enters `TextPipelineState`'s layout
+ * mutex, and holding this one across it would invert the two locks' order against a frame thread that holds the
+ * layout mutex and then measures. A miss therefore shapes unlocked and re-checks before inserting, so a racing
+ * lookup of the same key inserts one entry, not two.
  */
 class ParagraphLayoutCache final {
 public:
@@ -64,9 +65,9 @@ public:
     /** Swaps current to previous and clears current, dropping every entry that just went unused. */
     void endFrame();
 
-    [[nodiscard]] size_t currentFrameEntryCount() const noexcept;
-    [[nodiscard]] uint64_t hitCount() const noexcept;
-    [[nodiscard]] uint64_t missCount() const noexcept;
+    [[nodiscard]] size_t currentFrameEntryCount() const;
+    [[nodiscard]] uint64_t hitCount() const;
+    [[nodiscard]] uint64_t missCount() const;
 
 private:
     struct Entry {
@@ -74,10 +75,16 @@ private:
         Metrics metrics;
     };
 
+    /** Shapes a miss outside the lock, then inserts it under it, re-checking for a racing insert first. */
+    Metrics shapeAndInsert(const Key& key, const std::function<Metrics()>& makeEntry);
+
+    /** Inserts into the current frame, evicting its oldest entry when it is at capacity. */
+    void insertBounded(Entry entry);
+
     size_t capacity_;
+    mutable std::mutex mutex_;
     std::vector<Entry> currentFrame_;
     std::vector<Entry> previousFrame_;
-    uint64_t frameIndex_{0};
     uint64_t hitCount_{0};
     uint64_t missCount_{0};
 };

@@ -5,6 +5,7 @@
 #include "EllipsizeSearch.h"
 #include "FontSizeScaling.h"
 #include "LineBoxMetrics.h"
+#include "ParagraphAttributesSignature.h"
 #include "ParagraphLayoutCache.h"
 #include "PinnedFontFamilies.h"
 #include "ResourceResolver.h"
@@ -668,29 +669,6 @@ std::string joinedFragmentTexts(const facebook::react::AttributedString& attribu
 }
 
 /** The cache key's attribute half: everything that changes a measurement except the text and the width. */
-std::string toAttributesSignature(const facebook::react::AttributedString& attributedString,
-                                  const facebook::react::ParagraphAttributes& paragraphAttributes) {
-    std::string signature = "maxLines=" + std::to_string(paragraphAttributes.maximumNumberOfLines) +
-                            ";ellipsize=" + std::to_string(static_cast<int>(paragraphAttributes.ellipsizeMode));
-
-    for (const facebook::react::AttributedString::Fragment& fragment : attributedString.getFragments()) {
-        if (fragment.isAttachment()) {
-            signature += ";attachment";
-
-            continue;
-        }
-
-        const facebook::react::TextAttributes& attributes = fragment.textAttributes;
-
-        signature +=
-            ";f" + std::to_string(attributes.fontSize) + ":" +
-            (attributes.fontWeight.has_value() ? std::to_string(static_cast<int>(*attributes.fontWeight)) : "none") +
-            ":" + std::to_string(attributes.letterSpacing) + ":" + std::to_string(attributes.lineHeight);
-    }
-
-    return signature;
-}
-
 std::unique_ptr<skia::textlayout::Paragraph>
 buildAndLayoutParagraph(const facebook::react::AttributedString& attributedString,
                         const facebook::react::ParagraphAttributes& paragraphAttributes, float maximumWidth) {
