@@ -6862,6 +6862,24 @@ drives four of them through a compositor's `wl_pointer` and asserts the target b
 2. **The sampling correspondence above**, which is a property of the proof rather than of the renderer, and is
    documented here so the next person does not rediscover it as a false positive.
 
+## Release bytecode parity (#82)
+
+A release build runs `hermesc -O` bytecode rather than the source a development build runs, and
+react-native-windows' record (#10255's white screen, #11952's `Array.prototype.flat()` that broke in release only)
+is what happens when nothing compares the two. `hello_react` already runs a `.hbc` file: Hermes recognises the
+bytecode magic in the same `evaluateJavaScript` path. Three gates hold the two configurations to one behaviour:
+
+- `golden images from release bytecode` in `goldens/golden.spec.ts` compiles every golden fixture with the tree's own
+  `build/dev/bin/hermesc -O` and asserts it against the same checked-in golden, with the same tolerance.
+- CI's native job runs `hello.js` and `test-bundles/engine-conformance.js` (one line per language feature) from source
+  and from bytecode and fails on any difference in their output.
+- A bytecode file whose version is not the runtime's must fail with a readable error, and it does: Hermes reports
+  `Wrong bytecode version. Expected <n> but got <m>` as a fatal JavaScript error, exit status 1, and CI asserts
+  that text against a header it corrupts on purpose.
+
+Not yet: a Metro production bundle (there is no Metro build here yet, #22), and symbolication of a bytecode stack
+through its source map.
+
 ## Window goldens
 
 The raster rig above proves the scene and the paint code path on the CPU. This one proves the half it cannot
