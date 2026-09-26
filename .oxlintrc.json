@@ -16,6 +16,12 @@
         "ignorePattern": "v8 ignore"
       }
     ],
+    "eslint/new-cap": [
+      "error",
+      {
+        "capIsNewExceptions": ["PlatformColor"]
+      }
+    ],
     "eslint/no-ternary": "off",
     "eslint/one-var": ["error", "never"],
     "import/extensions": [
