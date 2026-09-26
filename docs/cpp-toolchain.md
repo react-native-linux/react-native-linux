@@ -7826,6 +7826,14 @@ the `rnl_textinput` target, which the scene needs to read a field's props — an
 `gtest_discover_tests` so `ctest` finds every `TEST` individually. Under Clang, `rnl_core_tests` also gets
 `-fprofile-instr-generate -fcoverage-mapping`, LLVM's source-based coverage instrumentation.
 
+**This tier cannot see text size (#457).** Without Skia there is no `TextPipeline.cpp`, so the `TextLayoutManager`
+linked here is upstream's `platform/cxx` stub, which measures every paragraph to its layout constraints' minimum —
+0x0 unconstrained — whatever its text. A contract that depends on a paragraph's intrinsic size belongs to the golden
+or e2e tiers; `TextLayoutManagerStubTest` asserts the stub's answer so the day this tier measures text for real is a
+failing test rather than a surprise. Two suites work around it knowingly: `LayoutWidthRoundTripTest` drives a Yoga
+measure function of its own in place of a `Paragraph`, and `NestedTextFragmentTest` asserts on the attributed string
+a `Paragraph` builds, never on its size.
+
 `scripts/cpp-coverage.ts` is the gate: it runs `rnl_core_tests` with `LLVM_PROFILE_FILE` pointed at
 `build/test/coverage`, merges the raw profile with `llvm-profdata merge -sparse`, exports it as lcov with
 `llvm-cov export --format=lcov`, and grades line and branch coverage per file against an explicit list

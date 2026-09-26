@@ -165,6 +165,7 @@ add_executable(rnl_core_tests
     SwitchTest.cpp
     ShadowTreeCommitTest.cpp
     SingleInstanceActivationTest.cpp
+    TextLayoutManagerStubTest.cpp
     TextRasterizationPolicyTest.cpp
     TextTransformTest.cpp
     ThreadingConformanceTest.cpp
