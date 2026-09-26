@@ -46,6 +46,7 @@
     "oxfmt": "catalog:",
     "oxlint": "catalog:",
     "pngjs": "catalog:",
+    "react-native-worklets": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },

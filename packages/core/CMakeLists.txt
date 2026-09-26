@@ -1243,6 +1243,51 @@ elseif(RNL_ENABLE_WINDOW)
     set_target_properties(rnl_inject PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 endif()
 
+# ---------------------------------------------------------------------------
+# rnl_worklets (#134)
+#
+# react-native-worklets' shared C++, compiled from the installed package rather than a vendored copy: the version
+# is pinned by the workspace catalog, exactly as scripts/vendor.lock.json pins React Native, and Reanimated 4.6
+# requires worklets 0.12.x. Common/cpp needs one platform file, the PlatformLogger in src/. The version and the
+# static feature flags are read from the package's own package.json and src/featureFlags/staticFlags.json, the
+# same two files its podspec reads, so a bump cannot leave a stale define behind. WORKLETS_FETCH_PREVIEW_ENABLED
+# stays undefined: it is the one part of worklets that wants a networking stack of its own.
+# ---------------------------------------------------------------------------
+
+set(RNL_WORKLETS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../node_modules/react-native-worklets)
+
+if(NOT EXISTS ${RNL_WORKLETS_DIR}/Common/cpp/worklets)
+    message(FATAL_ERROR "react-native-worklets is not installed. Run: pnpm install")
+endif()
+
+file(READ ${RNL_WORKLETS_DIR}/package.json RNL_WORKLETS_PACKAGE_JSON)
+string(JSON RNL_WORKLETS_VERSION GET ${RNL_WORKLETS_PACKAGE_JSON} version)
+file(READ ${RNL_WORKLETS_DIR}/src/featureFlags/staticFlags.json RNL_WORKLETS_STATIC_FLAGS)
+string(JSON RNL_WORKLETS_STATIC_FLAG_COUNT LENGTH ${RNL_WORKLETS_STATIC_FLAGS})
+math(EXPR RNL_WORKLETS_LAST_STATIC_FLAG "${RNL_WORKLETS_STATIC_FLAG_COUNT} - 1")
+set(RNL_WORKLETS_FEATURE_FLAGS "")
+
+foreach(rnl_flag_index RANGE ${RNL_WORKLETS_LAST_STATIC_FLAG})
+    string(JSON rnl_flag_name MEMBER ${RNL_WORKLETS_STATIC_FLAGS} ${rnl_flag_index})
+    string(JSON rnl_flag_value GET ${RNL_WORKLETS_STATIC_FLAGS} ${rnl_flag_name})
+
+    if(rnl_flag_value)
+        string(APPEND RNL_WORKLETS_FEATURE_FLAGS "[${rnl_flag_name}:true]")
+    else()
+        string(APPEND RNL_WORKLETS_FEATURE_FLAGS "[${rnl_flag_name}:false]")
+    endif()
+endforeach()
+
+file(GLOB_RECURSE RNL_WORKLETS_SOURCES CONFIGURE_DEPENDS ${RNL_WORKLETS_DIR}/Common/cpp/worklets/*.cpp)
+add_library(rnl_worklets OBJECT ${RNL_WORKLETS_SOURCES} src/WorkletsPlatformLogger.cpp)
+target_include_directories(rnl_worklets PUBLIC ${RNL_WORKLETS_DIR}/Common/cpp)
+target_precompile_headers(rnl_worklets PRIVATE src/WorkletsLinuxPrefix.h)
+target_compile_definitions(rnl_worklets
+    PRIVATE WORKLETS_VERSION=${RNL_WORKLETS_VERSION}
+    PUBLIC "WORKLETS_FEATURE_FLAGS=${RNL_WORKLETS_FEATURE_FLAGS}")
+target_compile_reactnative_options(rnl_worklets PRIVATE)
+target_link_libraries(rnl_worklets PUBLIC hermesvm jsi folly_runtime ${RNL_REACT_COMMON_TARGETS})
+
 # The upstream suites that construct a real Hermes runtime live in their own binary in this configure, because
 # they cannot live in the Hermes-free one. See packages/core/tests/hermes/CMakeLists.txt and
 # docs/cpp-toolchain.md.
