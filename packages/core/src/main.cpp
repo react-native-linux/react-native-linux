@@ -423,8 +423,6 @@ int runAppGoldenCommand(std::span<char*> arguments) {
 
 #else
 
-int runAppGoldenCommand(std::span<char*> /*arguments*/) { return reportMissingSkia(); }
-
 int reportMissingSkia() {
     std::cerr << "[hello_react] " << kGoldenFlag << ", " << kDamageGoldenFlag << ", " << kHitPaintGoldenFlag << ", "
               << kTextFitGoldenFlag << ", " << kFirstFrameGoldenFlag << ", " << kScrollToFlag << ", "
@@ -437,6 +435,8 @@ int reportMissingSkia() {
 
     return 1;
 }
+
+int runAppGoldenCommand(std::span<char*> /*arguments*/) { return reportMissingSkia(); }
 
 int runGoldenCommand(std::span<char*> /*arguments*/, GoldenKind /*goldenKind*/) { return reportMissingSkia(); }
 
