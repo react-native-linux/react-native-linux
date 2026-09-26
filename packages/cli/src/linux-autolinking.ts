@@ -206,6 +206,72 @@ const classifyDependency = (request: AutolinkingRequest, dependency: Autolinking
   return classifyByConfigFile(request, dependency) ?? classifyByPlatforms(request, dependency);
 };
 
+const descriptorKeys = [
+  "cmakeListsPath",
+  "cxxModuleCMakeListsModuleName",
+  "cxxModuleCMakeListsPath",
+  "cxxModuleHeaderName",
+  "sourceDir",
+] as const;
+
+const toDescriptor = (value: unknown): NativeBuildDescriptor | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  return Object.fromEntries(
+    descriptorKeys.flatMap((key) => {
+      const field = value[key];
+
+      return typeof field === "string" ? [[key, field]] : [];
+    }),
+  );
+};
+
+const toDependency = ([name, value]: readonly [string, unknown]): readonly AutolinkingDependency[] => {
+  if (!isRecord(value) || typeof value["root"] !== "string") {
+    return [];
+  }
+
+  const platforms = isRecord(value["platforms"]) ? value["platforms"] : {};
+
+  return [
+    {
+      name,
+      platforms: { android: toDescriptor(platforms["android"]), linux: toDescriptor(platforms["linux"]) },
+      root: value["root"],
+    },
+  ];
+};
+
+/**
+ * The part of the community CLI's `react-native config` JSON discovery reads: the application root and, per
+ * dependency, its root and its Android and Linux descriptors. Anything else, and any malformed entry, is ignored.
+ */
+const parseReactNativeConfig = (
+  contents: string,
+): { readonly dependencies: readonly AutolinkingDependency[]; readonly root: string } => {
+  const parsed: unknown = JSON.parse(contents);
+
+  if (!isRecord(parsed) || typeof parsed["root"] !== "string") {
+    throw new TypeError("react-native config output must be a JSON object with a string root");
+  }
+
+  const dependencies = isRecord(parsed["dependencies"]) ? Object.entries(parsed["dependencies"]) : [];
+
+  return { dependencies: dependencies.flatMap((entry) => toDependency(entry)), root: parsed["root"] };
+};
+
+/** The names an application opts out with `dependencies: { name: { platforms: { linux: null } } }`. */
+const readOptedOutDependencyNames = (applicationConfig: unknown): ReadonlySet<string> => {
+  const dependencies =
+    isRecord(applicationConfig) && isRecord(applicationConfig["dependencies"]) ? applicationConfig["dependencies"] : {};
+  const optsOut = (value: unknown): boolean =>
+    isRecord(value) && isRecord(value["platforms"]) && value["platforms"]["linux"] === null;
+
+  return new Set(Object.keys(dependencies).filter((name) => optsOut(dependencies[name])));
+};
+
 /**
  * Issue #146: every dependency the community CLI's `config` resolved gets exactly one verdict, by the rules of
  * docs/research/ecosystem-compatibility.md §4.1, in that section's order except that the opt-out is decided first,
@@ -217,4 +283,4 @@ const discoverLinuxAutolinking = (request: AutolinkingRequest): readonly Autolin
     .toSorted((left, right) => left.name.localeCompare(right.name))
     .map((dependency) => classifyDependency(request, dependency));
 
-export { discoverLinuxAutolinking };
+export { discoverLinuxAutolinking, parseReactNativeConfig, readOptedOutDependencyNames };

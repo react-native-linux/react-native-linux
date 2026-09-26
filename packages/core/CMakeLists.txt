@@ -1288,6 +1288,30 @@ target_compile_definitions(rnl_worklets
 target_compile_reactnative_options(rnl_worklets PRIVATE)
 target_link_libraries(rnl_worklets PUBLIC hermesvm jsi folly_runtime ${RNL_REACT_COMMON_TARGETS})
 
+# ---------------------------------------------------------------------------
+# Autolinking (#147)
+#
+# RNL_AUTOLINKING_CMAKE names the file scripts/autolink.ts generates from the autolinking verdicts of #146. It adds
+# each linked library's own CMakeLists unchanged, so the three target names a `cpp-library` already links have to
+# exist first: jsi, react_codegen_<Name>Spec (defined by the generated file) and `reactnative`, which is this
+# platform's React Native umbrella. The generated registration source is compiled into each host executable.
+# ---------------------------------------------------------------------------
+
+set(RNL_AUTOLINKING_CMAKE "" CACHE FILEPATH "The rnl_autolinking.cmake scripts/autolink.ts generated, or empty")
+
+if(RNL_AUTOLINKING_CMAKE)
+    add_library(reactnative INTERFACE)
+    target_link_libraries(reactnative INTERFACE rnl_react_core)
+    include(${RNL_AUTOLINKING_CMAKE})
+
+    foreach(host hello_react rnl_window)
+        if(TARGET ${host})
+            target_sources(${host} PRIVATE ${RNL_AUTOLINKING_SOURCES})
+            target_link_libraries(${host} PRIVATE ${RNL_AUTOLINKED_TARGETS})
+        endif()
+    endforeach()
+endif()
+
 # The upstream suites that construct a real Hermes runtime live in their own binary in this configure, because
 # they cannot live in the Hermes-free one. See packages/core/tests/hermes/CMakeLists.txt and
 # docs/cpp-toolchain.md.

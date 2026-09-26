@@ -396,11 +396,31 @@ jobs:
           printf 'max_size = 2G\ncompression = true\n' > "$CCACHE_DIR/ccache.conf"
           ccache --zero-stats
 
+      # #147: an unmodified create-react-native-library `cpp-library` (the rendered template in
+      # packages/cli/test-fixtures/cpp-library) is autolinked into every host this configure builds. The JSON is
+      # the shape `react-native config` prints, with the Android descriptor the template's react-native.config.js
+      # declares; the library itself carries no Linux file.
+      - name: Generate autolinking for the cpp-library fixture
+        run: |
+          set -euo pipefail
+          library="$GITHUB_WORKSPACE/packages/cli/test-fixtures/cpp-library"
+          cat > /tmp/rnl-autolink-config.json <<EOF
+          {"root": "$GITHUB_WORKSPACE/build/autolink-app", "dependencies": {"react-native-cpp-library": {
+            "root": "$library", "platforms": {"linux": null, "android": {
+              "cmakeListsPath": "$library/android/generated/jni/CMakeLists.txt",
+              "cxxModuleCMakeListsModuleName": "react-native-cpp-library",
+              "cxxModuleCMakeListsPath": "$library/android/CMakeLists.txt",
+              "cxxModuleHeaderName": "CppLibraryImpl"}}}}}
+          EOF
+          node scripts/autolink.ts /tmp/rnl-autolink-config.json "build/autolinking-$RNL_PRESET"
+
       # RNL_ENABLE_WINDOW is left ON deliberately. Neither wayland-client nor a Vulkan loader is installed,
       # so configure has to print "rnl_window is disabled, missing: ..." and carry on; a fatal error there is
       # a regression in the graceful-degradation path.
       - name: Configure
-        run: cmake --preset "$RNL_PRESET" -DRNL_ENABLE_SKIA="$RNL_ENABLE_SKIA"
+        run: |
+          cmake --preset "$RNL_PRESET" -DRNL_ENABLE_SKIA="$RNL_ENABLE_SKIA" \
+            -DRNL_AUTOLINKING_CMAKE="$GITHUB_WORKSPACE/build/autolinking-$RNL_PRESET/rnl_autolinking.cmake"
 
       - name: Build hello_react
         run: cmake --build "build/$RNL_PRESET" --target hello_react
@@ -462,6 +482,9 @@ jobs:
           grep -q "networking: response 200 for request 1" /tmp/rnl-networking.log
           grep -q "networking: completed with [0-9]* bytes, error none" /tmp/rnl-networking.log
           grep -q "networking: body mentions the proof: true" /tmp/rnl-networking.log
+
+          "$binary" packages/core/test-bundles/autolinking.js | tee /tmp/rnl-autolinking.log
+          grep -q "autolinking: CppLibrary.multiply(3, 4) = 12" /tmp/rnl-autolinking.log
 
           "$binary" packages/core/test-bundles/hello.js | tee /tmp/rnl-hello.log
           grep -q "react-native-linux: timer fired" /tmp/rnl-hello.log
