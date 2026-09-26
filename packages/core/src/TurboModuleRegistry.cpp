@@ -258,17 +258,17 @@ TurboModuleRegistry::TurboModuleRegistry(
                                                                    []() { return std::make_unique<CurlHttpClient>(); });
     });
 
-    // An autolinked library's C++ TurboModules, registered by the generated rnl_autolinking.cpp (#147). The map's
-    // keys live for the whole process, so viewing them is safe, and a name this platform already serves keeps ours.
+    moduleFactories_.emplace(facebook::react::AnimatedModule::kModuleName,
+                             [jsInvoker, animatedNodesManagerProvider = std::move(animatedNodesManagerProvider)]() {
+                                 return std::make_shared<facebook::react::AnimatedModule>(jsInvoker,
+                                                                                          animatedNodesManagerProvider);
+                             });
+
+    // An autolinked library's C++ TurboModules, registered by the generated rnl_autolinking.cpp (#147), last so that
+    // a name this platform already serves keeps ours. The map's keys live for the whole process, so viewing is safe.
     for (const auto& [name, moduleProvider] : facebook::react::globalExportedCxxTurboModuleMap()) {
         moduleFactories_.emplace(name, [moduleProvider, jsInvoker]() { return moduleProvider(jsInvoker); });
     }
-
-    moduleFactories_.emplace(
-        facebook::react::AnimatedModule::kModuleName,
-        [jsInvoker = std::move(jsInvoker), animatedNodesManagerProvider = std::move(animatedNodesManagerProvider)]() {
-            return std::make_shared<facebook::react::AnimatedModule>(jsInvoker, animatedNodesManagerProvider);
-        });
 }
 
 DimensionsSource& TurboModuleRegistry::dimensions() noexcept { return *dimensionsSource_; }
