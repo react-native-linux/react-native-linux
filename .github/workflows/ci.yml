@@ -187,6 +187,7 @@ jobs:
             libdouble-conversion-dev \
             libfmt-dev \
             libgoogle-glog-dev \
+            libcurl4-openssl-dev \
             libicu-dev \
             llvm-18 \
             ninja-build \
@@ -320,6 +321,7 @@ jobs:
             libfontconfig-dev \
             libfreetype-dev \
             libgoogle-glog-dev \
+            libcurl4-openssl-dev \
             libicu-dev \
             llvm-18 \
             ninja-build \
@@ -451,6 +453,16 @@ jobs:
           "$binary" | tee /tmp/rnl-smoke.log
           grep -q "react-native-linux: hermes alive" /tmp/rnl-smoke.log
 
+          # #79: a request through the Networking TurboModule and the libcurl client, against a loopback server.
+          python3 -m http.server 8781 --bind 127.0.0.1 --directory packages/core/test-bundles > /dev/null 2>&1 &
+          server=$!
+          for _ in $(seq 50); do curl -sf http://127.0.0.1:8781/ > /dev/null && break; sleep 0.1; done
+          "$binary" packages/core/test-bundles/networking.js | tee /tmp/rnl-networking.log
+          kill "$server"
+          grep -q "networking: response 200 for request 1" /tmp/rnl-networking.log
+          grep -q "networking: completed with [0-9]* bytes, error none" /tmp/rnl-networking.log
+          grep -q "networking: body mentions the proof: true" /tmp/rnl-networking.log
+
           "$binary" packages/core/test-bundles/hello.js | tee /tmp/rnl-hello.log
           grep -q "react-native-linux: timer fired" /tmp/rnl-hello.log
           grep -q "react-native-linux: nested timer fired" /tmp/rnl-hello.log
@@ -574,6 +586,7 @@ jobs:
             libfontconfig-dev \
             libfreetype-dev \
             libgoogle-glog-dev \
+            libcurl4-openssl-dev \
             libicu-dev \
             libvulkan-dev \
             libwayland-dev \

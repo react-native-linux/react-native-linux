@@ -62,6 +62,8 @@ set(BUILD_SHARED_LIBS OFF)
 find_package(double-conversion CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
 find_package(Threads REQUIRED)
+# #79: libcurl is the HTTP client behind upstream's NetworkingModule; see src/CurlHttpClient.h.
+find_package(CURL REQUIRED)
 
 add_library(double-conversion INTERFACE)
 target_link_libraries(double-conversion INTERFACE double-conversion::double-conversion)
@@ -800,6 +802,7 @@ add_library(rnl_react_core STATIC
     src/AutomationProtocol.cpp
     src/Clipboard.cpp
     src/ConsoleBinding.cpp
+    src/CurlHttpClient.cpp
     src/DimensionsSource.cpp
     src/EditorModel.cpp
     src/FabricHost.cpp
@@ -822,12 +825,17 @@ add_library(rnl_react_core STATIC
     src/SwitchContent.cpp
     src/TextInputComponent.cpp
     src/TextInputController.cpp
-    src/TurboModuleRegistry.cpp)
+    src/TurboModuleRegistry.cpp
+    # #79: upstream's C++ Networking TurboModule and the factory keys it is built from, compiled here rather than
+    # through react/io and react/http, whose globs also pull in the WebSocket, image-loader and resource modules.
+    ${REACT_CXX_PLATFORM_DIR}/react/http/IHttpClient.cpp
+    ${REACT_CXX_PLATFORM_DIR}/react/io/NetworkingModule.cpp)
 target_compile_options(rnl_react_core PRIVATE -Wall -Wextra)
 target_compile_options(rnl_react_core PUBLIC -fexceptions -frtti)
-target_include_directories(rnl_react_core PUBLIC src)
+target_include_directories(rnl_react_core PUBLIC src ${REACT_CXX_PLATFORM_DIR})
 target_link_libraries(rnl_react_core
     PUBLIC
+        CURL::libcurl
         hermesvm
         jsi
         rnl_jsidynamic

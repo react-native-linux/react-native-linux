@@ -1144,6 +1144,21 @@ Deliberately not generated yet: third-party library specs and the autolinking th
 `RCTThirdPartyFabricComponentsProvider` equivalent, and the JNI, Java and Objective-C++ artifact families, none
 of which a Linux target can compile. Those are follow-ups to #21 and #22.
 
+## Networking (#79)
+
+`fetch` and `XMLHttpRequest` reach upstream's C++ `NetworkingModule` (`ReactCxxPlatform/react/io`, compiled into
+`rnl_react_core` on its own rather than through the `react/io` glob), and this platform supplies only the
+`IHttpClient` it is built from: `src/CurlHttpClient.cpp`, over libcurl's multi interface on one worker thread the
+client owns. TLS is libcurl's against the distribution's trust store. Redirects are followed, `Accept-Encoding`
+is negotiated and decoded, a timeout is reported as one, and a cancelled request completes with no callback.
+
+The Networking module is a streaming contract. A text request with incremental updates hands every chunk to
+JavaScript as it arrives and never buffers; anything else is buffered without a ceiling and delivered once. That
+is the difference between this client and the five react-native-windows bugs #79 cites, and
+`CurlHttpClientTest` proves both halves with a 12 MB body against a loopback server, plus a multipart upload with
+a file part. `test-bundles/networking.js` is the end-to-end proof through the TurboModule. Not yet: a `blob` request
+body (there is no Blob module), cookies, WebSocket, and the Metro dev-server contract.
+
 ## Dimensions and TurboModules (#50)
 
 `DeviceInfo` is the first TurboModule this platform registers, and registering it is what builds the TurboModule
@@ -4063,12 +4078,11 @@ readable at a glance.
 
 Each is deliberate, and each is a thing to fix rather than a thing to argue about:
 
-- **No `http` or `https`.** There is no networking stack in this build at all — `ReactCxxPlatform`'s HTTP client
-  needs nlohmann_json and OpenSSL, and neither is linked. A remote source is not a decode that failed; it is a
-  decode that was never attempted. It arrives with the Metro dev server work. `source.headers` is one instance of
-  this rather than a separate gap: upstream's own `fromRawValue<ImageSource>` already parses it onto
-  `ImageSource::headers`, but nothing here has a fetch to pass it to, so it is read and never used. Owned by the
-  same networking work as the rest of this bullet, not tracked as its own deviation.
+- **No `http` or `https` image sources.** `fetch` and `XMLHttpRequest` work (see *Networking (#79)*), but
+  `<Image>` does not load through that client yet. A remote source is not a decode that failed; it is a decode that
+  was never attempted. `source.headers` is one instance of this rather than a separate gap: upstream's own
+  `fromRawValue<ImageSource>` already parses it onto `ImageSource::headers`, but nothing passes it to a fetch, so it
+  is read and never used. Owned by #79's remote-image slice, not tracked as its own deviation.
 - **Animated GIF only.** See *Animated GIF (#257)*. Animated WebP needs a codec this Skia archive does not carry,
   and APNG is not in Skia at all; both decode to a first frame at best.
 - **No `srcSet` or scale selection.** `ImageShadowNode` picks the best area fit among several sources and we paint
