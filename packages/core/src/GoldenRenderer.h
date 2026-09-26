@@ -23,7 +23,8 @@ namespace react_native_linux {
  *
  * Returns a process exit status: 0 when the file was written and the bundle reported no fatal JavaScript error.
  */
-int renderGolden(const std::string& bundlePath, const std::string& outputPath, int width, int height);
+int renderGolden(const std::string& bundlePath, const std::string& outputPath, int width, int height,
+                 const std::string& moduleName = {});
 
 /**
  * The same rig, with the portal reporting `portalColorScheme` before the bundle loads.

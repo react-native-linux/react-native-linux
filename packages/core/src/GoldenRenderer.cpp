@@ -684,8 +684,10 @@ int paintSettledScene(const FabricRunResult& run, const std::string& outputPath,
 
 } // namespace
 
-int renderGolden(const std::string& bundlePath, const std::string& outputPath, int width, int height) {
-    return paintSettledScene(runFabricBundle(bundlePath, toSurfaceSize(width, height)), outputPath, width, height);
+int renderGolden(const std::string& bundlePath, const std::string& outputPath, int width, int height,
+                 const std::string& moduleName) {
+    return paintSettledScene(runFabricBundle(bundlePath, toSurfaceSize(width, height), moduleName), outputPath, width,
+                             height);
 }
 
 int renderAppearanceGolden(const std::string& bundlePath, const std::string& outputPath, ColorScheme portalColorScheme,

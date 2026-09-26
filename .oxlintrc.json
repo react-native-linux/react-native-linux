@@ -33,6 +33,20 @@
     "oxc/no-async-await": "off",
     "oxc/no-optional-chaining": "off",
     "oxc/no-rest-spread-properties": "off",
+    "react/forbid-component-props": "off",
+    "react/function-component-definition": [
+      "error",
+      {
+        "namedComponents": "arrow-function"
+      }
+    ],
+    "react/jsx-filename-extension": [
+      "error",
+      {
+        "extensions": [".tsx"]
+      }
+    ],
+    "react/react-in-jsx-scope": "off",
     "unicorn/no-null": "off"
   },
   "overrides": [
@@ -45,6 +59,7 @@
     {
       "files": ["packages/core/src-linux/**"],
       "rules": {
+        "import/no-default-export": "off",
         "unicorn/filename-case": "off"
       }
     },
@@ -64,6 +79,12 @@
       "files": ["commitlint.config.mjs"],
       "rules": {
         "import/no-default-export": "off"
+      }
+    },
+    {
+      "files": ["**/*.d.ts"],
+      "rules": {
+        "import/unambiguous": "off"
       }
     }
   ],

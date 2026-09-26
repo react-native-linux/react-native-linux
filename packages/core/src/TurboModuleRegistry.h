@@ -5,6 +5,7 @@
 #include "DimensionsSource.h"
 
 #include <functional>
+#include <jserrorhandler/JsErrorHandler.h>
 #include <jsi/jsi.h>
 #include <memory>
 #include <string_view>
@@ -53,7 +54,8 @@ class TurboModuleRegistry final {
 public:
     TurboModuleRegistry(
         std::shared_ptr<facebook::react::CallInvoker> jsInvoker,
-        std::shared_ptr<facebook::react::NativeAnimatedNodesManagerProvider> animatedNodesManagerProvider);
+        std::shared_ptr<facebook::react::NativeAnimatedNodesManagerProvider> animatedNodesManagerProvider,
+        facebook::react::JsErrorHandler::OnJsError onJsError);
 
     DimensionsSource& dimensions() noexcept;
 
@@ -83,6 +85,7 @@ public:
 private:
     using ModuleFactory = std::function<std::shared_ptr<facebook::react::TurboModule>()>;
 
+    std::shared_ptr<facebook::react::CallInvoker> jsInvoker_;
     std::shared_ptr<DimensionsSource> dimensionsSource_;
     std::shared_ptr<LinuxDeviceInfoModule> deviceInfoModule_;
     std::shared_ptr<AppearanceModel> appearanceModel_;

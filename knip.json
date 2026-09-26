@@ -14,9 +14,14 @@
       "ignoreBinaries": ["desktop-file-validate"]
     },
     "packages/core": {
-      "entry": ["goldens/*.spec.ts", "scripts/*.ts"],
+      "entry": ["goldens/*.spec.ts", "scripts/*.ts", "src-linux/**/*.linux.ts"],
       "project": ["goldens/**/*.ts", "scripts/**/*.ts", "src-linux/**/*.ts"],
       "ignoreBinaries": ["cmake"]
+    },
+    "packages/test-harness": {
+      "entry": ["index.ts", "scripts/*.ts"],
+      "project": ["src/**/*.tsx", "scripts/**/*.ts"],
+      "ignoreDependencies": ["@babel/runtime", "@react-native/babel-preset"]
     }
   }
 }

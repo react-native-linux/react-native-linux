@@ -123,7 +123,7 @@ ReactHost::ReactHost() : javaScriptThread_(std::make_shared<facebook::react::Mes
     animatedNodesManagerProvider_ = std::make_shared<facebook::react::NativeAnimatedNodesManagerProvider>();
     turboModuleRegistry_ = std::make_unique<TurboModuleRegistry>(
         std::make_shared<facebook::react::RuntimeSchedulerCallInvoker>(reactInstance_->getRuntimeScheduler()),
-        animatedNodesManagerProvider_);
+        animatedNodesManagerProvider_, errorReporter_.createHandler());
 
     reactInstance_->initializeRuntime(
         {}, [registry = turboModuleRegistry_.get(), hasMarkedTestPassed = hasMarkedTestPassed_,

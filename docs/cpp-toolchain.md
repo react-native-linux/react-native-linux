@@ -1208,6 +1208,33 @@ unmodified `create-react-native-library` 0.63 template, and calls it from `test-
 Our C++ ABI toward a library is the vendored React Native pin's; what a library may assume beyond that is #89's
 question, not this generator's.
 
+## A React Native application (#22)
+
+`packages/test-harness` is an ordinary React Native 0.87.1 application — `react`, `react-native`, `@babel/runtime`,
+Metro and the React Native Babel preset, an `index.ts` that calls `AppRegistry.registerComponent("TestHarness", …)`
+and a `View`/`Text`/`StyleSheet` screen — and `node packages/test-harness/scripts/bundle.ts [out]` bundles it with
+Metro for `--platform linux`. `hello_react --app-golden <ModuleName> <bundle> <out.png>` runs it the way an
+application runs: `FabricHost` starts its surface with that module name, and upstream's `AppRegistryBinding` calls
+`RN$AppRegistry.runApplication` once the bundle has registered it. The `application golden` case in
+`goldens/golden.spec.ts` bundles, renders and compares `goldens/test-harness-app.png`.
+
+What it took, all of it upstream's code except the resolver table:
+
+- **Resolution.** `createLinuxResolveRequest` in `packages/cli/src/metro-config.ts` is the `resolveRequest`: Metro's
+  own `linux`, `native`, default extension chain, then an overlay substitution on the *resolved* file. React Native
+  ships twelve files as `.android`/`.ios` pairs behind a base file that re-exports `./Self`, which a `linux`
+  resolution would resolve back to itself and import as `undefined`. `Platform` and `BaseViewConfig` have overlays in
+  `src-linux`; the other ten take the upstream variant `linuxUpstreamVariantIndex` names, each with its reason.
+  `BaseViewConfig.linux.ts` is both upstream configs merged, because neither is a superset of the other and a prop
+  missing from `validAttributes` never reaches the native side.
+- **Modules.** React Native's own JavaScript asks for the default C++ TurboModules — feature flags, microtasks, idle
+  callbacks, DOM, the observers, web performance — as soon as `InitializeCore` runs, so `TurboModuleRegistry` falls
+  back to upstream's `DefaultTurboModules`, and `ExceptionsManager` is upstream's `NativeExceptionsManager` reporting
+  through the host's own error handler.
+
+Not yet: the `init` template and a fresh-project build (#57), the Metro dev server (#79), and a `PlatformColor`
+overlay over `__rnlPlatformColor` (#52).
+
 ## Dimensions and TurboModules (#50)
 
 `DeviceInfo` is the first TurboModule this platform registers, and registering it is what builds the TurboModule

@@ -36,5 +36,8 @@
     "pngjs": "catalog:",
     "react-native-platform-override": "catalog:",
     "vitest": "catalog:"
+  },
+  "peerDependencies": {
+    "react-native": "0.87.1"
   }
 }
