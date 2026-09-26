@@ -55,6 +55,13 @@ struct SceneCommand {
 std::string rejectedAnimatedPropMessage(std::string_view propName, AnimatedPropRejection rejection);
 
 /**
+ * What the log says when a mounting transaction carried a `NaN` or an infinity into the scene. It names the node
+ * and the prop, because issue #8318's whole complaint is that the failure surfaces thousands of frames from the
+ * cause with nothing in it to identify either.
+ */
+std::string rejectedNonFinitePropMessage(facebook::react::Tag tag, std::string_view propName);
+
+/**
  * What the mounting layer saw that the scene could not explain.
  *
  * A mutation that updates, removes or deletes a tag the scene does not hold, and a command aimed at one, are the
@@ -75,6 +82,9 @@ struct MountDiagnostics {
     facebook::react::MountingTransaction::Number firstUnknownTransactionNumber{0};
     uint64_t rejectedAnimatedProps{0};
     std::string firstRejectedAnimatedProp;
+    uint64_t rejectedNonFiniteProps{0};
+    std::string firstRejectedNonFiniteProp;
+    facebook::react::Tag firstRejectedNonFiniteTag{0};
 };
 
 /**
@@ -230,6 +240,7 @@ public:
 private:
     bool verifyTagIsKnown(std::string_view operation, facebook::react::Tag tag);
     void reportRejectedAnimatedProp(const RejectedAnimatedProp& rejectedProp);
+    void reportRejectedNonFiniteProp(const RejectedNonFiniteProp& rejectedProp);
     /**
      * `changedThisTransaction` maps a tag already recorded in this transaction to its position in
      * `accessibilityChanges_`, so a second `Update` on the same tag in one transaction ORs its

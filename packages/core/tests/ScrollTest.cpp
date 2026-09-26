@@ -8,6 +8,7 @@
 #include <LinuxMountingManager.h>
 #include <cstddef>
 #include <gtest/gtest.h>
+#include <limits>
 #include <vector>
 
 #include <react/renderer/components/scrollview/ScrollViewComponentDescriptor.h>
@@ -1111,6 +1112,13 @@ protected:
 
     ScrollController makeController() { return ScrollController(uiManager_, kSurfaceId); }
 
+    // One frame after a `scrollTo(0, y)` command on the committed ScrollView.
+    static void scrollToThenAdvance(ScrollController& controller, const folly::dynamic& y) {
+        controller.dispatchCommands(
+            {SceneCommand{.tag = 20, .name = "scrollTo", .args = folly::dynamic::array(0, y, false)}});
+        controller.advance(kFrameMilliseconds60Hz);
+    }
+
     /**
      * A 100x100 page holding a 100x50 multiline field at its top and 300 points of plain content under it, so
      * one point of the page is over the field and another is not.
@@ -1719,6 +1727,28 @@ TEST_F(ScrollControllerTest, AWheelGestureWithoutAStopStillTerminates) {
     controller.advance(kFrameMilliseconds60Hz);
 
     EXPECT_FALSE(controller.hasDispatchedScrollEvent());
+}
+
+// Issue #73 at the command boundary. `clampScrollOffset` is `std::clamp`, which passes a `NaN` straight through,
+// so a `scrollTo(0, NaN)` used to write a non-finite offset that every rest test in `ScrollPhysics` compares with
+// `<` and therefore never satisfies: the ScrollView scrolled to nowhere and stayed active forever. A non-finite
+// argument now reads as the origin, exactly as a missing or wrongly typed one already did.
+TEST_F(ScrollControllerTest, ANonFiniteScrollToArgumentReadsAsTheOrigin) {
+    commitScrollView(folly::dynamic::object());
+    ScrollController controller = makeController();
+
+    scrollToThenAdvance(controller, 150);
+
+    EXPECT_TRUE(controller.hasDispatchedScrollEvent());
+
+    scrollToThenAdvance(controller, std::numeric_limits<double>::quiet_NaN());
+
+    // It moved, and it moved to the origin rather than to nowhere: one more frame and the scroll is over.
+    EXPECT_TRUE(controller.hasDispatchedScrollEvent());
+
+    controller.advance(kFrameMilliseconds60Hz);
+
+    EXPECT_FALSE(controller.isScrollActive());
 }
 
 } // namespace

@@ -272,6 +272,13 @@ const fixtures: readonly GoldenFixture[] = [
   },
   // #118: one wrapping grid at two container widths — a break-point regression is a visible difference.
   { bundleFileName: "wrapping.js", goldenFileName: "wrapping.png", renderArguments: [], renderFlag: "--golden" },
+  // #73: non-finite transform, opacity and radius paint as their defaults; a zero or negative size paints nothing.
+  {
+    bundleFileName: "non-finite.js",
+    goldenFileName: "non-finite.png",
+    renderArguments: [],
+    renderFlag: "--golden",
+  },
   // #117: the <Image> + aspectRatio + maxWidth combination, clamped and unclamped side by side.
   {
     bundleFileName: "aspect-ratio.js",

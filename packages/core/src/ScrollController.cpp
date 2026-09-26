@@ -3,6 +3,7 @@
 #include "TextInputComponent.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <memory>
 #include <optional>
@@ -210,16 +211,22 @@ void adoptMaintainedOffset(ScrollTargetAxis& axis) {
 }
 
 /**
- * One positional argument of a `dispatchCommand` payload, or a default. A command whose arguments are missing or
- * of the wrong type scrolls to the origin rather than failing: it arrives from JavaScript, and the frame thread
- * is not where a third-party library's mistake should be fatal.
+ * One positional argument of a `dispatchCommand` payload, or a default. A command whose arguments are missing, of
+ * the wrong type, or not a finite number scrolls to the origin rather than failing: it arrives from JavaScript,
+ * and the frame thread is not where a third-party library's mistake should be fatal.
+ *
+ * Non-finite is grouped with the other two rather than clamped because `clampScrollOffset` is `std::clamp`, which
+ * passes a `NaN` straight through to `contentOffset` and from there to every descendant's composed origin. That
+ * is issue #73's boundary rule at the command boundary.
  */
 double readNumberArgument(const folly::dynamic& args, size_t index) {
     if (!args.isArray() || index >= args.size() || !args[index].isNumber()) {
         return 0.0;
     }
 
-    return args[index].asDouble();
+    const double value = args[index].asDouble();
+
+    return std::isfinite(value) ? value : 0.0;
 }
 
 bool readBooleanArgument(const folly::dynamic& args, size_t index) {

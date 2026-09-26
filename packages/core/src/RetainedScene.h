@@ -10,6 +10,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -554,6 +555,23 @@ struct SceneNode {
     std::optional<SceneMaintainedScroll> maintainedScroll;
 };
 
+/**
+ * A numeric a mounting transaction carried into the scene that was not a finite number.
+ *
+ * Issue #73's boundary rule for the mount path, the counterpart of `RejectedAnimatedProp` for the animation one:
+ * `NaN` and `+/-Inf` are refused where they arrive and the field keeps its default, because every consumer
+ * downstream compares them with `<` and `<=`. A `NaN` frame therefore paints an unspecified `SkRect`, damages
+ * nothing — `hasArea` is false — and makes `roundedBoxContainsPoint` answer *true* everywhere, so an invisible
+ * node swallows every press on the surface. That is
+ * [core#57780](https://github.com/facebook/react-native/issues/57780) exactly.
+ *
+ * `propName` is a string literal owned by `RetainedScene.cpp`, so this holds a view of it rather than a copy.
+ */
+struct RejectedNonFiniteProp {
+    facebook::react::Tag tag{};
+    std::string_view propName;
+};
+
 using SceneNodes = std::unordered_map<facebook::react::Tag, SceneNode>;
 
 /**
@@ -780,6 +798,14 @@ public:
      * *Holding the visible content still* in docs/cpp-toolchain.md.
      */
     std::vector<MaintainedScrollOffset> maintainScrollPositions();
+
+    /**
+     * The non-finite values the mutations just applied carried, in arrival order, for its caller to count and
+     * name; the scene has already replaced each one with its default. Draining rather than returning per-mutation
+     * is what keeps `createNode`, `insertChild` and `updateNode` void, and one transaction is the same batch the
+     * `MaintainedScrollOffset` drain above uses.
+     */
+    std::vector<RejectedNonFiniteProp> takeRejectedNonFiniteProps();
     SceneDamage takeDamage();
     std::string dump() const;
 
@@ -797,6 +823,7 @@ private:
     void damageSubtree(facebook::react::Tag tag);
 
     SceneNodes nodes_;
+    std::vector<RejectedNonFiniteProp> rejectedNonFiniteProps_;
     SceneDamage damage_;
     std::unordered_map<facebook::react::Tag, SceneEditorState> editorStates_;
     facebook::react::Tag focusedTag_{0};

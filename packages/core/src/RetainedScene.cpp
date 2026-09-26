@@ -32,9 +32,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <initializer_list>
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -461,6 +463,65 @@ bool isPrimitiveVisible(const ScenePrimitive& primitive) {
            isEdgeVisible(primitive.borderWidths.top, primitive.borderColorsArgb.top) ||
            isEdgeVisible(primitive.borderWidths.right, primitive.borderColorsArgb.right) ||
            isEdgeVisible(primitive.borderWidths.bottom, primitive.borderColorsArgb.bottom);
+}
+
+/**
+ * Whether every number handed in is finite, which is issue #73's whole question.
+ *
+ * `std::isfinite` and not a comparison, because a comparison is the bug: `std::clamp(NaN, 0, 1)` is `NaN` and
+ * `std::max(NaN, 0)` is `NaN`, so none of the clamps the readers above already apply reject one.
+ */
+bool allFinite(std::initializer_list<facebook::react::Float> values) {
+    return std::all_of(values.begin(), values.end(), [](facebook::react::Float value) { return std::isfinite(value); });
+}
+
+/**
+ * Refuses every non-finite geometric value a mounting transaction wrote onto `node`, replacing it with the
+ * default the node would have had without the prop, and names each one for its caller to report.
+ *
+ * One pass at the end of `writeNode` rather than a guard inside each reader: `resolveTransform` and
+ * `resolveBorderMetrics` resolve percentages against the frame, so a `NaN` frame produces a `NaN` matrix and
+ * `NaN` radii, and checking the results catches the frame's poison and the props' own in the same place.
+ * The fields are the ones issue #73 names that a `NaN` can actually reach — frame, transform, opacity, border
+ * radii and scroll offset. Border *widths* are absent deliberately: they arrive only through `yogaStyle`, and
+ * Yoga's `StyleLength::points` folds a `NaN` into undefined before we ever see it, so a branch here for them
+ * would be dead code rather than a guard.
+ */
+void rejectNonFiniteValues(SceneNode& node, std::vector<RejectedNonFiniteProp>& rejected) {
+    const auto reject = [&node, &rejected](std::string_view propName) {
+        rejected.push_back(RejectedNonFiniteProp{.tag = node.tag, .propName = propName});
+    };
+    const facebook::react::Rect& frame = node.layoutMetrics.frame;
+    const facebook::react::BorderRadii& radii = node.borderMetrics.borderRadii;
+
+    if (!allFinite({frame.origin.x, frame.origin.y, frame.size.width, frame.size.height})) {
+        node.layoutMetrics.frame = {};
+        reject("frame");
+    }
+
+    if (!allFinite({node.transform.scaleX, node.transform.skewX, node.transform.translateX, node.transform.skewY,
+                    node.transform.scaleY, node.transform.translateY})) {
+        node.transform = {};
+        reject("transform");
+    }
+
+    if (!std::isfinite(node.opacity)) {
+        node.opacity = 1.0F;
+        reject("opacity");
+    }
+
+    if (!allFinite({radii.topLeft.horizontal, radii.topLeft.vertical, radii.topRight.horizontal,
+                    radii.topRight.vertical, radii.bottomLeft.horizontal, radii.bottomLeft.vertical,
+                    radii.bottomRight.horizontal, radii.bottomRight.vertical})) {
+        node.borderMetrics.borderRadii = {};
+        reject("borderRadius");
+    }
+
+    if (node.scrollContentOffset.has_value() &&
+        !allFinite({node.scrollContentOffset->x, node.scrollContentOffset->y})) {
+        node.scrollContentOffset = facebook::react::Point{};
+        reject("contentOffset");
+    }
 }
 
 void readPaintProps(SceneNode& node, const facebook::react::ShadowView& shadowView) {
@@ -1595,10 +1656,22 @@ std::vector<RejectedAnimatedProp> RetainedScene::applyAnimatedProps(facebook::re
             node.backgroundColor =
                 meaningfulColor(facebook::react::SharedColor{static_cast<facebook::react::Color>(value.asInt())});
             break;
-        case AnimatableProp::Transform:
-            node.transform = toSceneMatrix(facebook::react::BaseViewProps::resolveTransform(
+        case AnimatableProp::Transform: {
+            // The `isDouble` guard above tests the payload, and a transform's payload is the operation array; a
+            // `NaN` in one of its numbers is only visible in the matrix they resolve to.
+            const SceneMatrix resolved = toSceneMatrix(facebook::react::BaseViewProps::resolveTransform(
                 node.layoutMetrics.frame.size, parseAnimatedTransform(value), node.transformOrigin));
+
+            if (!allFinite({resolved.scaleX, resolved.skewX, resolved.translateX, resolved.skewY, resolved.scaleY,
+                            resolved.translateY})) {
+                rejectedProps.push_back(
+                    RejectedAnimatedProp{.name = propName, .rejection = AnimatedPropRejection::NonFinite});
+                break;
+            }
+
+            node.transform = resolved;
             break;
+        }
         }
     }
 
@@ -1669,8 +1742,13 @@ SceneNode& RetainedScene::writeNode(const facebook::react::ShadowView& shadowVie
     readSwitchContent(node, shadowView);
     readActivityIndicatorContent(node, shadowView);
     readScrollContent(node, shadowView);
+    rejectNonFiniteValues(node, rejectedNonFiniteProps_);
 
     return node;
+}
+
+std::vector<RejectedNonFiniteProp> RetainedScene::takeRejectedNonFiniteProps() {
+    return std::exchange(rejectedNonFiniteProps_, {});
 }
 
 std::vector<facebook::react::Tag> RetainedScene::sortedRootTags() const {
