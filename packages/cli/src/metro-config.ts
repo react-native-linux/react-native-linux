@@ -136,8 +136,11 @@ const createLinuxResolveRequest =
       platform,
     );
     const overlayPath =
-      typeof resolution === "object" && resolution !== null && "filePath" in resolution
-        ? resolveLinuxOverlayForResolvedFile(String(resolution.filePath), platform)
+      typeof resolution === "object" &&
+      resolution !== null &&
+      "filePath" in resolution &&
+      typeof resolution.filePath === "string"
+        ? resolveLinuxOverlayForResolvedFile(resolution.filePath, platform)
         : null;
 
     return overlayPath === null ? resolution : { filePath: overlayPath, type: "sourceFile" };

@@ -78,10 +78,12 @@ describe("createLinuxResolveRequest", () => {
     expect(result).toStrictEqual({ filePath: overlayPath, type: "sourceFile" });
   });
 
-  it.each([[{ filePath: upstreamFile("Components/View/View.js"), type: "sourceFile" }], [{ type: "empty" }], [null]])(
-    "returns %j unchanged when there is nothing to substitute",
-    (resolution) => {
-      expect(resolveWith(resolution, "./View").result).toBe(resolution);
-    },
-  );
+  it.each([
+    [{ filePath: upstreamFile("Components/View/View.js"), type: "sourceFile" }],
+    [{ type: "empty" }],
+    [{ filePath: 1, type: "sourceFile" }],
+    [null],
+  ])("returns %j unchanged when there is nothing to substitute", (resolution) => {
+    expect(resolveWith(resolution, "./View").result).toBe(resolution);
+  });
 });

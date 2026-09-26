@@ -428,7 +428,7 @@ int reportMissingSkia() {
               << kTextFitGoldenFlag << ", " << kFirstFrameGoldenFlag << ", " << kScrollToFlag << ", "
               << kMaintainPositionGoldenFlag << ", " << kFocusTabFlag << ", " << kFocusClickFlag << ", "
               << kClickedFrameFlag << ", " << kFocusCommandGoldenFlag << ", " << kAnimatedImageFlag << ", " << kTypeFlag
-              << " and " << kAppearanceGoldenFlag
+              << ", " << kAppearanceGoldenFlag << " and " << kAppGoldenFlag
               << " need Skia, which this build was configured without; run node scripts/vendor-skia.ts and "
                  "reconfigure"
               << std::endl;
