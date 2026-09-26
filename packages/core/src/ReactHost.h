@@ -42,7 +42,10 @@ namespace react_native_linux {
  *
  * Threading contract: every member here is called from the thread that constructed the host — the process run
  * loop for the headless host, the platform frame thread for the window host. The JavaScript that the instance
- * runs never touches this object; it runs on the JavaScript thread this class owns.
+ * runs never touches this object; it runs on the JavaScript thread this class owns. A TurboModule reaches the
+ * runtime from any other thread only through the `RuntimeSchedulerCallInvoker` it is constructed with: an
+ * `AsyncPromise` settled, and then released, on a worker thread while the frame thread runs is what
+ * `CrossThreadPromiseStressTest` holds TSan-clean (#77).
  *
  * Shutdown contract: destruction quits the JavaScript thread synchronously, then releases the TurboModules, the
  * animated manager provider and this host's own `TimerManager` reference, and only then destroys the instance.
