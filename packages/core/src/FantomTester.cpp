@@ -9,8 +9,6 @@
 #include <string>
 #include <utility>
 
-#include <react/featureflags/ReactNativeFeatureFlags.h>
-
 namespace react_native_linux {
 
 namespace {
@@ -23,10 +21,6 @@ FantomTester::FantomTester(facebook::react::Size surfaceSize)
     : fabricHost_(std::make_unique<FabricHost>(reactHost_.reactInstance(), surfaceSize)) {
     reactHost_.dimensions().configure(static_cast<double>(surfaceSize.width), static_cast<double>(surfaceSize.height),
                                       DimensionsSource::kDefaultScale);
-}
-
-FantomTester::FeatureFlagOverrideScope::~FeatureFlagOverrideScope() noexcept {
-    facebook::react::ReactNativeFeatureFlags::dangerouslyReset();
 }
 
 FantomTester::~FantomTester() noexcept {

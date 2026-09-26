@@ -179,12 +179,21 @@ folly::dynamic describeAccessibilityChanges(const std::vector<AccessibilityChang
  *
  * Threading contract: `record` is called from whichever thread hit the fault — the JavaScript thread for an
  * uncaught error, an image decode thread for a decode failure, the frame thread for a window fault — and `list`
- * from the frame thread while the automation channel is being served. The mutex is the whole guarantee.
+ * and `clear` from the frame thread, the former while the automation channel is being served and the latter as
+ * the instance that produced the faults is destroyed. The mutex is the whole guarantee.
  */
 class AutomationErrorLog final {
 public:
     void record(std::string source, std::string message);
     std::vector<AutomationError> list() const;
+
+    /**
+     * Forgets every fault recorded so far. `ReactHost`'s destructor calls it, because the log is process-wide and
+     * the faults in it are not: an instance that has been unloaded must not still be answering `ListErrors` for
+     * the one that replaced it, which is what reload-on-error — the case that reloads *because* of a fault —
+     * would otherwise see (#76).
+     */
+    void clear();
 
 private:
     mutable std::mutex mutex_;

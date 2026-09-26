@@ -630,6 +630,22 @@ TEST(AutomationProtocol, KeepsTheOrderTheErrorsWereReportedIn) {
     EXPECT_EQ(listed[1].source, "image");
 }
 
+// #76: the log is process-wide and the faults in it are not, so `ReactHost`'s destructor empties it. Without
+// this, the instance that replaces an unloaded one answers `ListErrors` with the dead one's errors.
+TEST(AutomationProtocol, ForgetsEveryRecordedFaultWhenCleared) {
+    AutomationErrorLog log;
+
+    log.record("javascript", "fatal Error: gone with the instance that threw it");
+    log.clear();
+
+    EXPECT_TRUE(log.list().empty());
+
+    log.record("image", "recorded after the clear");
+
+    ASSERT_EQ(log.list().size(), 1U);
+    EXPECT_EQ(log.list().front().message, "recorded after the clear");
+}
+
 TEST(AutomationProtocol, RecordsANativeFaultInTheProcessWideLog) {
     const size_t before = automationErrorLog().list().size();
 

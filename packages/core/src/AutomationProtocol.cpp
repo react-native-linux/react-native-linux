@@ -469,6 +469,12 @@ std::vector<AutomationError> AutomationErrorLog::list() const {
     return errors_;
 }
 
+void AutomationErrorLog::clear() {
+    const std::lock_guard<std::mutex> guard(mutex_);
+
+    errors_.clear();
+}
+
 AutomationErrorLog& automationErrorLog() {
     static AutomationErrorLog log;
 
