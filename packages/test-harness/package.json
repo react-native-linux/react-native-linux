@@ -1,0 +1,22 @@
+{
+  "name": "@react-native-linux/test-harness",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bundle": "node scripts/bundle.ts"
+  },
+  "dependencies": {
+    "@babel/runtime": "7.29.2",
+    "react": "19.2.8",
+    "react-native": "0.87.1"
+  },
+  "devDependencies": {
+    "@react-native-linux/cli": "workspace:*",
+    "@react-native/babel-preset": "0.87.1",
+    "@react-native/metro-config": "0.87.1",
+    "@types/react": "^19.1.1",
+    "metro": "0.87.1",
+    "metro-cache": "0.87.1"
+  }
+}

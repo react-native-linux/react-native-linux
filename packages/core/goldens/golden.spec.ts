@@ -137,6 +137,42 @@ describe.skipIf(!hasBinary || isRegenerating)("golden images from release byteco
   }
 });
 
+const harnessBundleScriptPath = path.join(repositoryRoot, "packages", "test-harness", "scripts", "bundle.ts");
+const harnessGoldenPath = path.join(goldensDirectory, "test-harness-app.png");
+
+/**
+ * #22: a real application rather than a bundle that commits by hand — the test-harness package's `App`, bundled by
+ * Metro for `--platform linux` through packages/cli's resolver and started through `AppRegistry` by module name.
+ */
+const renderHarnessApp = (scratchDirectory: string, outputPath: string): void => {
+  const bundlePath = path.join(scratchDirectory, "index.linux.bundle.js");
+
+  execFileSync(execPath, [harnessBundleScriptPath, bundlePath], { stdio: ["ignore", "ignore", "inherit"] });
+  execFileSync(binaryPath, ["--app-golden", "TestHarness", bundlePath, outputPath], {
+    stdio: ["ignore", "ignore", "inherit"],
+  });
+};
+
+describe.skipIf(!hasBinary)("application golden", () => {
+  it(
+    "renders the Metro-bundled test-harness app exactly as test-harness-app.png",
+    { timeout: RENDER_TIMEOUT_MS },
+    () => {
+      const scratchDirectory = mkdtempSync(path.join(tmpdir(), "rnl-golden-app-"));
+
+      try {
+        const renderedPath = isRegenerating ? harnessGoldenPath : path.join(scratchDirectory, "app.png");
+
+        renderHarnessApp(scratchDirectory, renderedPath);
+
+        expect(compareImages(decodePng(renderedPath), decodePng(harnessGoldenPath))).toBeNull();
+      } finally {
+        rmSync(scratchDirectory, { force: true, recursive: true });
+      }
+    },
+  );
+});
+
 // #372's `serif` and `monospace` resolve through fontconfig, so their pixels are whatever the host has installed and cannot be a checked-in golden — see `proofOnlyFixtures`.
 // The render still has to succeed: `renderFixture` throws if `hello_react` exits non-zero, and `--text-fit-golden` itself asserts every box still holds the paragraph it was measured for.
 // A passing test here is therefore proof the resolution path runs end to end, without asserting what the substituted face looks like.

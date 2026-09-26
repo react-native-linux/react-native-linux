@@ -53,7 +53,13 @@ namespace react_native_linux {
  */
 class FabricHost final {
 public:
-    FabricHost(facebook::react::ReactInstance& reactInstance, facebook::react::Size surfaceSize);
+    /**
+     * `moduleName` is the `AppRegistry` key the surface runs (#22): upstream's `AppRegistryBinding` calls
+     * `RN$AppRegistry.runApplication` with it once the bundle has registered it. Empty starts the empty surface the
+     * bare test bundles commit into by hand.
+     */
+    FabricHost(facebook::react::ReactInstance& reactInstance, facebook::react::Size surfaceSize,
+               const std::string& moduleName = {});
     FabricHost(const FabricHost&) = delete;
     FabricHost(FabricHost&&) = delete;
     FabricHost& operator=(const FabricHost&) = delete;

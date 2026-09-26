@@ -61,3 +61,5 @@ const Platform: LinuxPlatform = {
 };
 
 export { Platform, resolveIsDisableAnimations, resolveLinuxPlatformConstants, selectLinuxPlatform };
+// React Native's own modules import this file as `import Platform from './Platform'` (#22).
+export default Platform;

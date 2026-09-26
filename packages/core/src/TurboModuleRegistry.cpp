@@ -19,6 +19,8 @@
 
 #include <react/coremodules/DeviceInfoModule.h>
 #include <react/io/NetworkingModule.h>
+#include <react/logging/NativeExceptionsManager.h>
+#include <react/nativemodule/defaults/DefaultTurboModules.h>
 #include <react/renderer/animated/AnimatedModule.h>
 #include <react/renderer/animated/NativeAnimatedNodesManagerProvider.h>
 
@@ -233,8 +235,9 @@ void installPlatformColorBinding(facebook::jsi::Runtime& runtime, std::shared_pt
 
 TurboModuleRegistry::TurboModuleRegistry(
     std::shared_ptr<facebook::react::CallInvoker> jsInvoker,
-    std::shared_ptr<facebook::react::NativeAnimatedNodesManagerProvider> animatedNodesManagerProvider)
-    : dimensionsSource_(std::make_shared<DimensionsSource>()),
+    std::shared_ptr<facebook::react::NativeAnimatedNodesManagerProvider> animatedNodesManagerProvider,
+    facebook::react::JsErrorHandler::OnJsError onJsError)
+    : jsInvoker_(jsInvoker), dimensionsSource_(std::make_shared<DimensionsSource>()),
       deviceInfoModule_(std::make_shared<LinuxDeviceInfoModule>(jsInvoker, dimensionsSource_)),
       appearanceModel_(std::make_shared<AppearanceModel>(kFallbackColorScheme)),
       appearanceModule_(std::make_shared<LinuxAppearanceModule>(jsInvoker, appearanceModel_)),
@@ -257,6 +260,12 @@ TurboModuleRegistry::TurboModuleRegistry(
         return std::make_shared<facebook::react::NetworkingModule>(jsInvoker,
                                                                    []() { return std::make_unique<CurlHttpClient>(); });
     });
+    // #22: React Native's ExceptionsManager, upstream's C++ one, reporting through the host's own error handler —
+    // the same one a fatal error reaches through JsErrorHandler, so both paths print and record alike.
+    moduleFactories_.emplace(
+        facebook::react::NativeExceptionsManager::kModuleName, [jsInvoker, onJsError = std::move(onJsError)]() {
+            return std::make_shared<facebook::react::NativeExceptionsManager>(onJsError, jsInvoker);
+        });
 
     moduleFactories_.emplace(facebook::react::AnimatedModule::kModuleName,
                              [jsInvoker, animatedNodesManagerProvider = std::move(animatedNodesManagerProvider)]() {
@@ -281,12 +290,15 @@ void TurboModuleRegistry::install(facebook::jsi::Runtime& runtime) {
     installPlatformColorBinding(runtime, appearanceModel_);
     facebook::react::TurboModuleBinding::install(
         runtime,
-        [moduleFactories = moduleFactories_](facebook::jsi::Runtime& /*runtime*/,
-                                             const std::string& name) -> std::shared_ptr<facebook::react::TurboModule> {
+        [moduleFactories = moduleFactories_,
+         jsInvoker = jsInvoker_](facebook::jsi::Runtime& /*runtime*/,
+                                 const std::string& name) -> std::shared_ptr<facebook::react::TurboModule> {
             const auto moduleFactory = moduleFactories.find(name);
 
             if (moduleFactory == moduleFactories.end()) {
-                return nullptr;
+                // #22: everything React Native's own JavaScript asks for that this platform does not serve itself —
+                // feature flags, microtasks, DOM, the observers — is upstream's default C++ module, unchanged.
+                return facebook::react::DefaultTurboModules::getTurboModule(name, jsInvoker);
             }
 
             return moduleFactory->second();

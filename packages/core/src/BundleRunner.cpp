@@ -679,9 +679,11 @@ FabricRunResult runTypedFabricBundle(const std::string& bundlePath, facebook::re
     return finishFabricRun(reactHost, fabricHost);
 }
 
-FabricRunResult runFabricBundle(const std::optional<std::string>& bundlePath, facebook::react::Size surfaceSize) {
+FabricRunResult runFabricBundle(const std::optional<std::string>& bundlePath, facebook::react::Size surfaceSize,
+                                const std::string& moduleName) {
     ReactHost reactHost;
-    std::unique_ptr<FabricHost> fabricHost = std::make_unique<FabricHost>(reactHost.reactInstance(), surfaceSize);
+    std::unique_ptr<FabricHost> fabricHost =
+        std::make_unique<FabricHost>(reactHost.reactInstance(), surfaceSize, moduleName);
 
     configureDimensions(reactHost, surfaceSize);
     loadAndSettle(reactHost, bundlePath);

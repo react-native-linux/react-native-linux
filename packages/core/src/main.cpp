@@ -41,6 +41,8 @@ constexpr std::string_view kAnimatedImageFlag = "--animated-image";
 constexpr std::string_view kTypeFlag = "--type";
 constexpr std::string_view kAnimationFrameTraceFlag = "--raf-trace";
 constexpr std::string_view kAppearanceGoldenFlag = "--appearance-golden";
+constexpr std::string_view kAppGoldenFlag = "--app-golden";
+constexpr size_t kAppGoldenArgumentCount = 5;
 /**
  * Which proof `--golden`, `--damage-golden` and `--hit-paint-golden` run. All three take the same arguments and
  * write the same kind of PNG; the last two also assert something about the scene they painted.
@@ -404,7 +406,24 @@ int runGoldenCommand(std::span<char*> arguments, GoldenKind goldenKind) {
     return react_native_linux::renderGolden(bundlePath, outputPath, width, height);
 }
 
+/**
+ * `--app-golden <ModuleName> <bundle> <output.png>`: a Metro bundle run the way an application runs, its surface
+ * started by `AppRegistry` key rather than committed into by hand (#22).
+ */
+int runAppGoldenCommand(std::span<char*> arguments) {
+    if (arguments.size() != kAppGoldenArgumentCount) {
+        std::cerr << "[hello_react] " << kAppGoldenFlag << " requires <ModuleName> <bundle> <output.png>" << std::endl;
+
+        return 1;
+    }
+
+    return react_native_linux::renderGolden(arguments[3], arguments[4], kGoldenDefaultWidth, kGoldenDefaultHeight,
+                                            arguments[2]);
+}
+
 #else
+
+int runAppGoldenCommand(std::span<char*> /*arguments*/) { return reportMissingSkia(); }
 
 int reportMissingSkia() {
     std::cerr << "[hello_react] " << kGoldenFlag << ", " << kDamageGoldenFlag << ", " << kHitPaintGoldenFlag << ", "
@@ -582,6 +601,10 @@ int main(int argc, char** argv) {
 
         if (isAppearanceGoldenRequested) {
             return runAppearanceGoldenCommand(arguments);
+        }
+
+        if (arguments.size() > 1 && kAppGoldenFlag == arguments[1]) {
+            return runAppGoldenCommand(arguments);
         }
 
         if (isGoldenRequested || isDamageGoldenRequested || isHitPaintGoldenRequested || isTextFitGoldenRequested ||

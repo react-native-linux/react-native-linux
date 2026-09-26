@@ -137,7 +137,8 @@ public:
 
 } // namespace
 
-FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::react::Size surfaceSize)
+FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::react::Size surfaceSize,
+                       const std::string& moduleName)
     : contextContainer_(std::make_shared<const facebook::react::ContextContainer>()),
       componentDescriptorProviderRegistry_(std::make_shared<facebook::react::ComponentDescriptorProviderRegistry>()),
       mountingManager_(std::make_shared<LinuxMountingManager>()),
@@ -199,7 +200,7 @@ FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::
 
     mountingManager_->startSurface(kSurfaceId, surfaceSize);
 
-    surfaceHandler_ = std::make_unique<facebook::react::SurfaceHandler>("", kSurfaceId);
+    surfaceHandler_ = std::make_unique<facebook::react::SurfaceHandler>(moduleName, kSurfaceId);
     scheduler_->registerSurface(*surfaceHandler_);
     setSurfaceSize(surfaceSize);
     surfaceHandler_->start();

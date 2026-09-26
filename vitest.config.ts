@@ -7,6 +7,8 @@ export default defineConfig({
         "packages/*/src/**/*.spec.ts",
         "packages/core/goldens/*.spec.ts",
         "packages/core/src-linux/**/*.spec.ts",
+        // Imports upstream Flow Vitest cannot parse; the application golden renders through it (#22).
+        "packages/core/src-linux/Libraries/NativeComponent/BaseViewConfig.linux.ts",
         "scripts/codegen-core/**/*.spec.ts",
         "scripts/create-package/**/*.spec.ts",
         "scripts/doctor/**/*.spec.ts",

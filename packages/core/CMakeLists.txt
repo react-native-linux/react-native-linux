@@ -783,6 +783,45 @@ if(RNL_BUILD_TESTS)
     return()
 endif()
 
+# #22: upstream's default C++ TurboModules — feature flags, microtasks, idle callbacks, DOM, the observers, web
+# performance — which React Native's own JavaScript asks for as soon as InitializeCore runs. They exist only in the
+# runtime configure; the Hermes-free test build never links a TurboModule.
+set(RNL_REACT_COMMON_NATIVEMODULE_SUBDIRS
+    react/renderer/observers/intersection
+    react/renderer/observers/mutation
+    devtoolsruntimesettings
+    react/nativemodule/defaults
+    react/nativemodule/devtoolsruntimesettings
+    react/nativemodule/dom
+    react/nativemodule/featureflags
+    react/nativemodule/idlecallbacks
+    react/nativemodule/intersectionobserver
+    react/nativemodule/microtasks
+    react/nativemodule/mutationobserver
+    react/nativemodule/viewtransition
+    react/nativemodule/webperformance)
+
+foreach(rnl_subdir IN LISTS RNL_REACT_COMMON_NATIVEMODULE_SUBDIRS)
+    add_subdirectory(${REACT_COMMON_DIR}/${rnl_subdir} ReactCommon/${rnl_subdir})
+endforeach()
+
+# Every one named, because an OBJECT library's objects reach a link only through a direct link, never through
+# another OBJECT library's — the same reason RNL_REACT_COMMON_TARGETS lists its closure.
+set(RNL_REACT_COMMON_NATIVEMODULE_TARGETS
+    devtoolsruntimesettings
+    react_nativemodule_defaults
+    react_nativemodule_devtoolsruntimesettings
+    react_nativemodule_dom
+    react_nativemodule_featureflags
+    react_nativemodule_idlecallbacks
+    react_nativemodule_intersectionobserver
+    react_nativemodule_microtasks
+    react_nativemodule_mutationobserver
+    react_nativemodule_viewtransition
+    react_nativemodule_webperformance
+    react_renderer_observers_intersection
+    react_renderer_observers_mutation)
+
 # ---------------------------------------------------------------------------
 # rnl_react_core
 #
@@ -829,7 +868,9 @@ add_library(rnl_react_core STATIC
     # #79: upstream's C++ Networking TurboModule and the factory keys it is built from, compiled here rather than
     # through react/io and react/http, whose globs also pull in the WebSocket, image-loader and resource modules.
     ${REACT_CXX_PLATFORM_DIR}/react/http/IHttpClient.cpp
-    ${REACT_CXX_PLATFORM_DIR}/react/io/NetworkingModule.cpp)
+    ${REACT_CXX_PLATFORM_DIR}/react/io/NetworkingModule.cpp
+    # #22: upstream's C++ ExceptionsManager, compiled on its own rather than through react/logging's glob.
+    ${REACT_CXX_PLATFORM_DIR}/react/logging/NativeExceptionsManager.cpp)
 target_compile_options(rnl_react_core PRIVATE -Wall -Wextra)
 target_compile_options(rnl_react_core PUBLIC -fexceptions -frtti)
 target_include_directories(rnl_react_core PUBLIC src ${REACT_CXX_PLATFORM_DIR})
@@ -842,6 +883,7 @@ target_link_libraries(rnl_react_core
         folly_runtime
         rnl_textinput
         react_codegen_rncore
+        ${RNL_REACT_COMMON_NATIVEMODULE_TARGETS}
         ${RNL_REACT_COMMON_TARGETS}
         atomic)
 

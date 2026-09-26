@@ -96,7 +96,8 @@ int runAnimatedScroll(const std::string& bundlePath, facebook::react::Point surf
  */
 int runResizedFabricBundle(const std::string& bundlePath, facebook::react::Size resizedSurfaceSize);
 
-FabricRunResult runFabricBundle(const std::optional<std::string>& bundlePath, facebook::react::Size surfaceSize);
+FabricRunResult runFabricBundle(const std::optional<std::string>& bundlePath, facebook::react::Size surfaceSize,
+                                const std::string& moduleName = {});
 
 /**
  * The same run, with the portal reporting `portalColorScheme` and an optional app-level override already in
