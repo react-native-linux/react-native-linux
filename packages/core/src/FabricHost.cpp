@@ -11,6 +11,7 @@
 #include <chrono>
 #include <cstddef>
 #include <folly/dynamic.h>
+#include <iostream>
 #include <jsi/jsi.h>
 #include <memory>
 #include <string>
@@ -85,6 +86,17 @@ facebook::react::ComponentRegistryFactory createComponentRegistryFactory(
     providerRegistry->add(facebook::react::concreteComponentDescriptorProvider<
                           facebook::react::ActivityIndicatorViewComponentDescriptor>());
     providerRegistry->add(facebook::react::concreteComponentDescriptorProvider<SwitchComponentDescriptor>());
+
+    // Upstream's `useFabricInterop` default turns a name with no descriptor into an empty legacy-interop view, so
+    // a component that was never registered mounts as nothing and says nothing: react-native-windows#7566. This
+    // platform has no legacy view managers for interop to find, so the request is the one place the mistake is
+    // visible, and it is asked once per name.
+    providerRegistry->setComponentDescriptorProviderRequest([](facebook::react::ComponentName componentName) {
+        std::cerr << "[component] '" << componentName
+                  << "' has no native component registered on react-native-linux and mounts as an empty view; "
+                     "declare it in a *NativeComponent spec of a library that autolinks for linux\n"
+                  << std::flush;
+    });
 
     return [providerRegistry](const facebook::react::EventDispatcher::Weak& eventDispatcher,
                               const std::shared_ptr<const facebook::react::ContextContainer>& contextContainer) {

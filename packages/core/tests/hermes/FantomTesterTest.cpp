@@ -1,5 +1,6 @@
 #include "FantomTester.h"
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 namespace react_native_linux {
@@ -122,6 +123,18 @@ TEST(FantomTesterTest, LetsASecondTaskMutateTheTreeTheFirstOneCommitted) {
               "    <rn-view layoutMetrics-frame=\"{x:10,y:10,width:220,height:40}\" testID=\"pressable\" />\n"
               "  </rn-view>\n"
               "</rn-rootview>\n");
+    EXPECT_FALSE(tester.hasReportedFatalError());
+}
+
+TEST(FantomTesterTest, NamesAComponentThatHasNoNativeRegistrationInsteadOfMountingNothingSilently) {
+    FantomTester tester{kSurfaceSize};
+
+    tester.runTask(kFabricPrelude);
+    testing::internal::CaptureStderr();
+    tester.runTask("globalThis.commit([globalThis.createNode(2, 'RNSScreen', { collapsable: false })]);");
+
+    EXPECT_THAT(testing::internal::GetCapturedStderr(),
+                testing::HasSubstr("[component] 'RNSScreen' has no native component registered on react-native-linux"));
     EXPECT_FALSE(tester.hasReportedFatalError());
 }
 
