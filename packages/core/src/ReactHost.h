@@ -61,6 +61,10 @@ namespace react_native_linux {
  * alone does not give any of this, because the instance is reset explicitly here and members are destroyed only
  * afterwards. Anything layered on top — a Fabric surface, for example — must already have been stopped and
  * drained by its owner.
+ *
+ * Last, destruction hands back the feature-flag overrides the constructor installed. Upstream permits exactly one
+ * `override` per process and throws on the second, so a host that kept them would make itself the only host the
+ * process could ever have — the reload, Fast Refresh and multi-window failure #76 gates against.
  */
 class ReactHost final {
 public:

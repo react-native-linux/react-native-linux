@@ -58,7 +58,7 @@ add_executable(rnl_core_hermes_tests
     CrossThreadPromiseStressTest.cpp
     FantomTesterTest.cpp
     HermesRuntimeFactory.cpp
-    ReactHostTeardownTest.cpp
+    InstanceTeardownLeakTest.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../../src/FantomTester.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../../src/MountTreeText.cpp
     ${googletest_SOURCE_DIR}/googlemock/src/gmock_main.cc

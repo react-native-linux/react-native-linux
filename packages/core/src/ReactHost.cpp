@@ -1,5 +1,6 @@
 #include "ReactHost.h"
 
+#include "AutomationProtocol.h"
 #include "ConsoleBinding.h"
 #include "ReactNativeFeatureFlagsOverridesLinux.h"
 
@@ -150,6 +151,19 @@ ReactHost::~ReactHost() noexcept {
     // what "This PointerValue was left dangling after the Runtime was destroyed" reports.
     timerManager_.reset();
     reactInstance_.reset();
+
+    // Symmetry with the `override` the constructor called. Upstream throws "Feature flags cannot be overridden
+    // more than once" on a second `override` in a process, so a host that installed the overrides and did not
+    // hand them back made itself the only host this process could ever have — #76's failure shape exactly, and
+    // one that appears on the second instance rather than the first. `dangerouslyReset` also destroys the
+    // provider this host installed, so nothing of ours outlives the host either.
+    facebook::react::ReactNativeFeatureFlags::dangerouslyReset();
+
+    // The other process-global this host writes into. `automationErrorLog` is one log per process and the faults
+    // in it belong to one instance, so a host that did not forget its own on the way out would leave the next
+    // instance answering `ListErrors` with the dead one's errors — the reload-on-error case, which reloads
+    // precisely because a fault was recorded.
+    automationErrorLog().clear();
 }
 
 facebook::react::ReactInstance& ReactHost::reactInstance() noexcept { return *reactInstance_; }
