@@ -5,6 +5,7 @@
 
 #include <FBReactNativeSpec/FBReactNativeSpecJSI.h>
 #include <ReactCommon/CallInvoker.h>
+#include <ReactCommon/CxxTurboModuleUtils.h>
 #include <ReactCommon/TurboModule.h>
 #include <ReactCommon/TurboModuleBinding.h>
 #include <array>
@@ -256,6 +257,13 @@ TurboModuleRegistry::TurboModuleRegistry(
         return std::make_shared<facebook::react::NetworkingModule>(jsInvoker,
                                                                    []() { return std::make_unique<CurlHttpClient>(); });
     });
+
+    // An autolinked library's C++ TurboModules, registered by the generated rnl_autolinking.cpp (#147). The map's
+    // keys live for the whole process, so viewing them is safe, and a name this platform already serves keeps ours.
+    for (const auto& [name, moduleProvider] : facebook::react::globalExportedCxxTurboModuleMap()) {
+        moduleFactories_.emplace(name, [moduleProvider, jsInvoker]() { return moduleProvider(jsInvoker); });
+    }
+
     moduleFactories_.emplace(
         facebook::react::AnimatedModule::kModuleName,
         [jsInvoker = std::move(jsInvoker), animatedNodesManagerProvider = std::move(animatedNodesManagerProvider)]() {

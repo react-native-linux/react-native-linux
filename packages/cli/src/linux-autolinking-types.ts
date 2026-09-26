@@ -43,4 +43,8 @@ interface VerdictMessage {
   readonly packageName: string;
 }
 
-export type { AutolinkingDependency, AutolinkingRequest, AutolinkingVerdict, NativeBuildDescriptor };
+type AutolinkedLibrary = Extract<AutolinkingVerdict, { readonly kind: "linked" }> & {
+  readonly codegenName: string | null;
+};
+
+export type { AutolinkedLibrary, AutolinkingDependency, AutolinkingRequest, AutolinkingVerdict, NativeBuildDescriptor };

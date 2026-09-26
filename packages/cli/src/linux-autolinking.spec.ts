@@ -1,6 +1,6 @@
 import type { AutolinkingDependency, AutolinkingVerdict } from "./linux-autolinking-types.ts";
 import { describe, expect, it } from "vitest";
-import { discoverLinuxAutolinking } from "./linux-autolinking.ts";
+import { discoverLinuxAutolinking, parseReactNativeConfig, readOptedOutDependencyNames } from "./linux-autolinking.ts";
 
 const applicationConfigPath = "/app/react-native.config.js";
 const noFiles: Readonly<Record<string, string>> = {};
@@ -233,5 +233,66 @@ describe("discoverLinuxAutolinking, Expo and plain packages", () => {
       { kind: "no-native-code", message: "alpha: no native code for Linux; nothing to link", packageName: "alpha" },
       { kind: "no-native-code", message: "zeta: no native code for Linux; nothing to link", packageName: "zeta" },
     ]);
+  });
+});
+
+describe("parseReactNativeConfig", () => {
+  it("reads the application root and each dependency's root and descriptors, dropping everything else", () => {
+    const config = {
+      dependencies: {
+        broken: "not an object",
+        lib: {
+          platforms: {
+            android: { cxxModuleCMakeListsPath: "/lib/android/CMakeLists.txt", javaPackageName: 1 },
+            ios: {},
+          },
+          root: "/lib",
+        },
+        rootless: { platforms: {} },
+        unplatformed: { root: "/unplatformed" },
+      },
+      root: "/app",
+    };
+
+    expect(parseReactNativeConfig(JSON.stringify(config))).toStrictEqual({
+      dependencies: [
+        {
+          name: "lib",
+          platforms: { android: { cxxModuleCMakeListsPath: "/lib/android/CMakeLists.txt" }, linux: null },
+          root: "/lib",
+        },
+        { name: "unplatformed", platforms: { android: null, linux: null }, root: "/unplatformed" },
+      ],
+      root: "/app",
+    });
+  });
+
+  it("reads a config without dependencies as an empty tree", () => {
+    expect(parseReactNativeConfig('{ "root": "/app" }')).toStrictEqual({ dependencies: [], root: "/app" });
+  });
+
+  it.each([["[]"], ['{ "dependencies": {} }']])("fails loudly on %s", (contents) => {
+    expect(() => parseReactNativeConfig(contents)).toThrow(
+      "react-native config output must be a JSON object with a string root",
+    );
+  });
+});
+
+describe("readOptedOutDependencyNames", () => {
+  it("names each dependency whose platforms.linux is null", () => {
+    const applicationConfig = {
+      dependencies: {
+        kept: { platforms: { linux: {} } },
+        loose: "x",
+        optedOut: { platforms: { linux: null } },
+        plain: {},
+      },
+    };
+
+    expect([...readOptedOutDependencyNames(applicationConfig)]).toStrictEqual(["optedOut"]);
+  });
+
+  it.each([[null], [{}]])("names nobody for %j", (applicationConfig) => {
+    expect(readOptedOutDependencyNames(applicationConfig)).toStrictEqual(new Set());
   });
 });

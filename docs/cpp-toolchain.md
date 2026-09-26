@@ -1140,7 +1140,8 @@ any template.
 predates a React Native bump is detectable without rerunning the generator. The `validate` CI job runs
 `pnpm codegen` and fails on any diff under `packages/core/generated`; that is issue #85's determinism gate.
 
-Deliberately not generated yet: third-party library specs and the autolinking that would discover them, the
+Third-party library module specs are generated per autolinked library by `scripts/autolink.ts`; see
+*Autolinking* below. Deliberately not generated yet: third-party component specs, the
 `RCTThirdPartyFabricComponentsProvider` equivalent, and the JNI, Java and Objective-C++ artifact families, none
 of which a Linux target can compile. Those are follow-ups to #21 and #22.
 
@@ -1187,6 +1188,25 @@ precompiled prefix — makes up the difference, and each entry is an upstream as
 The one platform file `Common/cpp` needs, `PlatformLogger`, is `src/WorkletsPlatformLogger.cpp` and writes to stderr.
 Build cost against #78: 39 s wall clock for the 30 translation units at `-j16` under the `tsan` preset on a 24-thread
 machine.
+
+## Autolinking (#146, #147)
+
+`node scripts/autolink.ts <react-native config JSON> <output directory>` reads the dependency tree the community
+CLI's `react-native config` prints, gives every dependency one verdict (`packages/cli/src/linux-autolinking.ts`,
+the rules of docs/research/ecosystem-compatibility.md §4.1), and writes two files. `rnl_autolinking.cmake`
+defines each library's `react_codegen_<codegenConfig.name>` target over module codegen generated into the output
+directory, adds the library's own CMakeLists unchanged, and lists its target. `rnl_autolinking.cpp` registers each
+`cxxModuleHeaderName` class into upstream's `globalExportedCxxTurboModuleMap`, exactly as the `cpp-library`
+template's iOS `OnLoad.mm` does; `TurboModuleRegistry` serves every entry of that map it does not already serve.
+
+Configure with `-DRNL_AUTOLINKING_CMAKE=<output directory>/rnl_autolinking.cmake`. Core then defines
+`reactnative`, the umbrella a `cpp-library` links beside `jsi` and its codegen target, includes the file, and
+compiles the registration source into `hello_react` and `rnl_window` — into the executables rather than into an
+archive, so the static initializer cannot be dropped. CI autolinks `packages/cli/test-fixtures/cpp-library`, the
+unmodified `create-react-native-library` 0.63 template, and calls it from `test-bundles/autolinking.js`.
+
+Our C++ ABI toward a library is the vendored React Native pin's; what a library may assume beyond that is #89's
+question, not this generator's.
 
 ## Dimensions and TurboModules (#50)
 

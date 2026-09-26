@@ -67,5 +67,12 @@
       }
     }
   ],
-  "ignorePatterns": ["**/test-bundles", "build", "coverage", "packages/*/upstream", "third_party"]
+  "ignorePatterns": [
+    "**/test-bundles",
+    "build",
+    "coverage",
+    "packages/*/upstream",
+    "packages/cli/test-fixtures/cpp-library",
+    "third_party"
+  ]
 }

@@ -2,3 +2,6 @@
 # vendored tree nested under a workspace package, so the ignore that keeps upstream code out of our
 # formatter lives here. See docs/ecosystem/package-template.md.
 packages/*/upstream/
+# The create-react-native-library `cpp-library` template rendered verbatim for the autolinking fixture (#147); it
+# stays byte-for-byte the template's output.
+packages/cli/test-fixtures/cpp-library/
