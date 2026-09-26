@@ -1,0 +1,203 @@
+import type {
+  AutolinkingDependency,
+  AutolinkingRequest,
+  AutolinkingVerdict,
+  NativeBuildDescriptor,
+} from "./linux-autolinking-types.ts";
+import path from "node:path";
+
+interface NonPortableInclude {
+  readonly include: string;
+  readonly pattern: RegExp;
+}
+
+const linuxPlatformName = "linux";
+const nitroConfigFileName = "nitro.json";
+const expoModuleConfigFileName = "expo-module.config.json";
+const defaultCMakeListsFileName = "CMakeLists.txt";
+const portableImplementationKey = "all";
+
+const nonPortableIncludes: readonly NonPortableInclude[] = [
+  { include: "<jni.h>", pattern: /^\s*#\s*include\s*<jni\.h>/mu },
+  { include: "<fbjni/", pattern: /^\s*#\s*include\s*<fbjni\//mu },
+  { include: "#import", pattern: /^\s*#\s*import\b/mu },
+  { include: "an Apple framework header", pattern: /^\s*#\s*include\s*<(?:AppKit|Foundation|UIKit)\//mu },
+];
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const readJsonObject = (request: AutolinkingRequest, filePath: string): Record<string, unknown> | null => {
+  const contents = request.readFile(filePath);
+
+  if (contents === null) {
+    return null;
+  }
+
+  const parsed: unknown = JSON.parse(contents);
+
+  if (!isRecord(parsed)) {
+    throw new TypeError(`${filePath} must contain a JSON object`);
+  }
+
+  return parsed;
+};
+
+interface LinkTarget {
+  readonly cmakeListsPath: string;
+  readonly descriptor: NativeBuildDescriptor;
+  readonly packageName: string;
+}
+
+const linked = (
+  rule: "cxx-fallback" | "explicit",
+  { cmakeListsPath, descriptor, packageName }: LinkTarget,
+): AutolinkingVerdict => ({
+  cmakeListsPath,
+  kind: "linked",
+  message: `${packageName}: linked by the ${rule} rule from ${cmakeListsPath}`,
+  moduleHeaderName: descriptor.cxxModuleHeaderName ?? null,
+  moduleName: descriptor.cxxModuleCMakeListsModuleName ?? null,
+  packageName,
+  rule,
+});
+
+const linkExplicitly = (dependency: AutolinkingDependency, linux: NativeBuildDescriptor): AutolinkingVerdict => {
+  const sourceDirectory = linux.sourceDir ?? path.join(dependency.root, linuxPlatformName);
+  const cmakeListsPath =
+    linux.cxxModuleCMakeListsPath ?? linux.cmakeListsPath ?? path.join(sourceDirectory, defaultCMakeListsFileName);
+
+  return linked("explicit", { cmakeListsPath, descriptor: linux, packageName: dependency.name });
+};
+
+const describeUnimplemented = (unimplemented: readonly string[], configPath: string): string => {
+  const names = unimplemented.join(", ");
+
+  return names === "" ? "" : `; no "all" implementation in ${configPath} for ${names}, which throw when created`;
+};
+
+const classifyNitro = (
+  packageName: string,
+  configPath: string,
+  config: Record<string, unknown>,
+): AutolinkingVerdict => {
+  const { autolinking: declared } = config;
+  const autolinking = isRecord(declared) ? declared : {};
+  const hybridObjectNames = Object.keys(autolinking).toSorted();
+  const isPortable = (name: string): boolean => {
+    const entry = autolinking[name];
+
+    return isRecord(entry) && portableImplementationKey in entry;
+  };
+  const compiled = hybridObjectNames.filter((name) => isPortable(name));
+  const unimplemented = hybridObjectNames.filter((name) => !isPortable(name));
+
+  return {
+    compiled,
+    kind: "nitro",
+    message: `${packageName}: Nitro hybrid objects compiled: ${compiled.join(", ") || "none"}${describeUnimplemented(unimplemented, configPath)}`,
+    packageName,
+    unimplemented,
+  };
+};
+
+const lacksLinuxPlatform = ({ platforms }: Record<string, unknown>): boolean =>
+  !Array.isArray(platforms) || !platforms.includes(linuxPlatformName);
+
+const classifyByConfigFile = (
+  request: AutolinkingRequest,
+  dependency: AutolinkingDependency,
+): AutolinkingVerdict | null => {
+  const nitroConfigPath = path.join(dependency.root, nitroConfigFileName);
+  const nitroConfig = readJsonObject(request, nitroConfigPath);
+
+  if (nitroConfig !== null) {
+    return classifyNitro(dependency.name, nitroConfigPath, nitroConfig);
+  }
+
+  const expoConfigPath = path.join(dependency.root, expoModuleConfigFileName);
+  const expoConfig = readJsonObject(request, expoConfigPath);
+
+  if (expoConfig === null || !lacksLinuxPlatform(expoConfig)) {
+    return null;
+  }
+
+  return {
+    kind: "expo-module",
+    message: `${dependency.name}: not linked, ${expoConfigPath} does not list linux; Expo modules are not supported on Linux yet`,
+    packageName: dependency.name,
+  };
+};
+
+const findNonPortableInclude = (request: AutolinkingRequest, cmakeListsPath: string): string | null => {
+  for (const sourcePath of request.listSourceFiles(path.dirname(cmakeListsPath))) {
+    const contents = request.readFile(sourcePath) ?? "";
+    const offending = nonPortableIncludes.find(({ pattern }) => pattern.test(contents)) ?? null;
+
+    if (offending !== null) {
+      return `${sourcePath} includes ${offending.include}`;
+    }
+  }
+
+  return null;
+};
+
+const linkByCxxFallback = (request: AutolinkingRequest, target: LinkTarget): AutolinkingVerdict => {
+  const offending = findNonPortableInclude(request, target.cmakeListsPath);
+
+  if (offending === null) {
+    return linked("cxx-fallback", target);
+  }
+
+  return {
+    kind: "rejected",
+    message: `${target.packageName}: not linked, ${offending}; declare a portable build under platforms.linux in its react-native.config.js`,
+    packageName: target.packageName,
+  };
+};
+
+const classifyByPlatforms = (request: AutolinkingRequest, dependency: AutolinkingDependency): AutolinkingVerdict => {
+  const { android = null } = dependency.platforms;
+  const cmakeListsPath = android?.cxxModuleCMakeListsPath ?? null;
+
+  if (android === null || cmakeListsPath === null) {
+    return {
+      kind: "no-native-code",
+      message: `${dependency.name}: no native code for Linux; nothing to link`,
+      packageName: dependency.name,
+    };
+  }
+
+  return linkByCxxFallback(request, { cmakeListsPath, descriptor: android, packageName: dependency.name });
+};
+
+const classifyDependency = (request: AutolinkingRequest, dependency: AutolinkingDependency): AutolinkingVerdict => {
+  if (request.optedOutDependencyNames.has(dependency.name)) {
+    return {
+      kind: "opted-out",
+      message: `${dependency.name}: not linked, opted out by platforms.linux: null in ${request.applicationConfigPath}; remove that entry to link it`,
+      packageName: dependency.name,
+    };
+  }
+
+  const { linux = null } = dependency.platforms;
+
+  if (linux !== null) {
+    return linkExplicitly(dependency, linux);
+  }
+
+  return classifyByConfigFile(request, dependency) ?? classifyByPlatforms(request, dependency);
+};
+
+/**
+ * Issue #146: every dependency the community CLI's `config` resolved gets exactly one verdict, by the rules of
+ * docs/research/ecosystem-compatibility.md §4.1, in that section's order except that the opt-out is decided first,
+ * because it wins over every other rule. File access goes through the request, so discovery is a pure function of
+ * the dependency tree and the files it names.
+ */
+const discoverLinuxAutolinking = (request: AutolinkingRequest): readonly AutolinkingVerdict[] =>
+  request.dependencies
+    .toSorted((left, right) => left.name.localeCompare(right.name))
+    .map((dependency) => classifyDependency(request, dependency));
+
+export { discoverLinuxAutolinking };

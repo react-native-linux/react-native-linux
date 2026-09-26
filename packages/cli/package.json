@@ -9,6 +9,7 @@
     "./dependency-floor.ts": "./src/dependency-floor.ts",
     "./desktop-entry.ts": "./src/desktop-entry.ts",
     "./hicolor-icon-tree.ts": "./src/hicolor-icon-tree.ts",
+    "./linux-autolinking.ts": "./src/linux-autolinking.ts",
     "./linux-bundle-manifest.ts": "./src/linux-bundle-manifest.ts",
     "./linux-package-format-names.ts": "./src/linux-package-format-names.ts",
     "./manifest-schema-drift.ts": "./src/manifest-schema-drift.ts",
