@@ -59,6 +59,7 @@ add_executable(rnl_core_hermes_tests
     FantomTesterTest.cpp
     HermesRuntimeFactory.cpp
     InstanceTeardownLeakTest.cpp
+    WorkletsVersionTest.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../../src/FantomTester.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../../src/MountTreeText.cpp
     ${googletest_SOURCE_DIR}/googlemock/src/gmock_main.cc
@@ -83,10 +84,13 @@ target_link_libraries(rnl_core_hermes_tests
     PRIVATE
         rnl_hermes_googletest
         rnl_react_core
+        rnl_worklets
         react_renderer_element
         ${RNL_REACT_COMMON_TARGETS}
         atomic)
 set_target_properties(rnl_core_hermes_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+target_compile_definitions(rnl_core_hermes_tests
+    PRIVATE "RNL_WORKLETS_PACKAGE_JSON=\"${RNL_WORKLETS_DIR}/package.json\"")
 
 # Two upstream cases are not discovered in the TSan configure, and only there; both run in dev, in asan and
 # locally. Each is a filter on one named case rather than a sanitizer suppression file, of which this

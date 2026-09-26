@@ -1159,6 +1159,35 @@ is the difference between this client and the five react-native-windows bugs #79
 a file part. `test-bundles/networking.js` is the end-to-end proof through the TurboModule. Not yet: a `blob` request
 body (there is no Blob module), cookies, WebSocket, and the Metro dev-server contract.
 
+## react-native-worklets (#134)
+
+`rnl_worklets` compiles react-native-worklets' shared C++ (`Common/cpp/worklets`, 29 translation units at `0.12.2`)
+from the installed package. There is no vendored copy: the version is pinned by the `react-native-worklets` entry in
+the `pnpm-workspace.yaml` catalog, the way `scripts/vendor.lock.json` pins React Native, and `compatibility.json` in
+that release accepts React Native `0.83`–`0.87`, which Reanimated `4.6.0` (`packages/reanimated`) also requires.
+knip's `ignoreDependencies` names it because only CMake consumes it.
+
+The target is built exactly as the package's own `android/CMakeLists.txt` builds it: React Native's
+`target_compile_reactnative_options` (`-Wall -Werror`, clean), `WORKLETS_VERSION` from the package's `package.json`,
+and `WORKLETS_FEATURE_FLAGS` from its `src/featureFlags/staticFlags.json`, the two files its podspec reads. Because
+both come from the installed files at configure time, a bump cannot leave a stale define; `WorkletsVersionTest`
+reads `package.json` again at test time, so a bump without a reconfigure fails there instead of in worklets' own
+runtime version check. `WORKLETS_FETCH_PREVIEW_ENABLED` is left undefined, as the package's flag file also sets it.
+
+**Patch policy: none.** Nothing under `node_modules` is edited. Where `Common/cpp` does not build on a third
+platform, `src/WorkletsLinuxPrefix.h` — the counterpart of the package's Android `WorkletsPCH.h`, compiled in as a
+precompiled prefix — makes up the difference, and each entry is an upstream ask:
+
+- `<algorithm>` (`Tools/JSISerializer.cpp`), `<stdexcept>` (`Tools/FeatureFlags.h`) and `<iterator>`
+  (`Tools/WorkletsJSIUtils.cpp`) are used without being included; the Android precompiled header and fbjni supply
+  them there.
+- `RunLoop/AsyncQueueImpl.cpp` treats every platform that is not `ANDROID` as Apple and calls the one-argument
+  `pthread_setname_np`; the prefix declares that form over glibc's.
+
+The one platform file `Common/cpp` needs, `PlatformLogger`, is `src/WorkletsPlatformLogger.cpp` and writes to stderr.
+Build cost against #78: 39 s wall clock for the 30 translation units at `-j16` under the `tsan` preset on a 24-thread
+machine.
+
 ## Dimensions and TurboModules (#50)
 
 `DeviceInfo` is the first TurboModule this platform registers, and registering it is what builds the TurboModule
@@ -8229,7 +8258,6 @@ Two flags fantom sets are deliberately dropped, because fantom targets the NDK a
 and libstdc++: `FOLLY_USE_LIBCPP` (folly would include libc++'s `<__config>`) and `FOLLY_HAVE_XSI_STRERROR_R`
 (glibc's `strerror_r` is the GNU variant and returns `char*`).
 
-<<<<<<< HEAD
 ### Idle pacing (#335)
 
 ADR-0001's pacing obligation has two halves: hit the compositor's deadline when there is something to show
@@ -8248,8 +8276,6 @@ on #335: the clean-window re-present (presenting the last frame without repainti
 it — swapchain images do not survive a present), the e2e deactivation scenario, and the idle GPU-time ceiling —
 the last two share the container-matrix rig.
 
-=======
->>>>>>> origin/main
 ### The resource resolver (#361)
 
 Everything the running process finds on disk goes through one ordered search (`packages/core/src/ResourceResolver.{h,cpp}`,

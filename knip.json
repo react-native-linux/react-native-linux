@@ -3,7 +3,8 @@
   "workspaces": {
     ".": {
       "project": ["*.ts", "scripts/**/*.ts"],
-      "ignoreBinaries": ["cmake", "ctest", "readelf"]
+      "ignoreBinaries": ["cmake", "ctest", "readelf"],
+      "ignoreDependencies": ["react-native-worklets"]
     },
     "packages/*": {
       "project": ["src/**/*.ts"]
