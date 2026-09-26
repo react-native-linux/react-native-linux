@@ -18,6 +18,12 @@ const coreLinuxNativeComponentDirectory = path.join(coreLinuxUtilitiesDirectory,
 
 const linuxOverlayIndex: Readonly<Record<string, string>> = {
   "Libraries/NativeComponent/BaseViewConfig": path.join(coreLinuxNativeComponentDirectory, "BaseViewConfig.linux.ts"),
+  "Libraries/StyleSheet/PlatformColorValueTypes": path.join(
+    coreLinuxUtilitiesDirectory,
+    "..",
+    "StyleSheet",
+    "PlatformColorValueTypes.linux.ts",
+  ),
   "Libraries/Utilities/Platform": path.join(coreLinuxUtilitiesDirectory, "Platform.linux.ts"),
   "Libraries/Utilities/PlatformTypes": path.join(coreLinuxUtilitiesDirectory, "PlatformTypes.ts"),
 };
@@ -72,8 +78,6 @@ const linuxUpstreamVariantIndex: Readonly<Record<string, "android" | "ios">> = {
   "Libraries/Network/RCTNetworking": "android",
   // The only variant upstream ships.
   "Libraries/Settings/Settings": "ios",
-  // Semantic names; a linux overlay over `__rnlPlatformColor` replaces it (#52).
-  "Libraries/StyleSheet/PlatformColorValueTypes": "ios",
   // A desktop has no hardware back button, and the iOS variant is the one without one.
   "Libraries/Utilities/BackHandler": "ios",
 };
