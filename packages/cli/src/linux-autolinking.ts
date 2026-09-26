@@ -16,6 +16,8 @@ const nitroConfigFileName = "nitro.json";
 const expoModuleConfigFileName = "expo-module.config.json";
 const defaultCMakeListsFileName = "CMakeLists.txt";
 const portableImplementationKey = "all";
+const currentDirectoryVariablePattern = /\$\{CMAKE_CURRENT_(?:LIST|SOURCE)_DIR\}\//gu;
+const sourceReferencePattern = /[^\s"()]+\.(?:c|cc|cpp|cxx|h|hpp|m|mm)(?=[\s")]|$)/gu;
 
 const nonPortableIncludes: readonly NonPortableInclude[] = [
   { include: "<jni.h>", pattern: /^\s*#\s*include\s*<jni\.h>/mu },
@@ -129,8 +131,23 @@ const classifyByConfigFile = (
   };
 };
 
+const referencedSourceDirectories = (request: AutolinkingRequest, cmakeListsPath: string): readonly string[] => {
+  const cmakeListsDirectory = path.dirname(cmakeListsPath);
+  const references =
+    (request.readFile(cmakeListsPath) ?? "")
+      .replaceAll(currentDirectoryVariablePattern, "")
+      .match(sourceReferencePattern) ?? [];
+  const directories = references.map((reference) => path.dirname(path.resolve(cmakeListsDirectory, reference)));
+
+  return [...new Set(directories)].toSorted();
+};
+
 const findNonPortableInclude = (request: AutolinkingRequest, cmakeListsPath: string): string | null => {
-  for (const sourcePath of request.listSourceFiles(path.dirname(cmakeListsPath))) {
+  const sourcePaths = referencedSourceDirectories(request, cmakeListsPath).flatMap((directoryPath) =>
+    request.listSourceFiles(directoryPath),
+  );
+
+  for (const sourcePath of sourcePaths) {
     const contents = request.readFile(sourcePath) ?? "";
     const offending = nonPortableIncludes.find(({ pattern }) => pattern.test(contents)) ?? null;
 

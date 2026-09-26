@@ -6,14 +6,22 @@ const applicationConfigPath = "/app/react-native.config.js";
 const noFiles: Readonly<Record<string, string>> = {};
 const nobodyOptedOut: ReadonlySet<string> = new Set();
 
+const cppLibraryCMakeListsPath = "/node_modules/react-native-cpp-library/android/CMakeLists.txt";
+const cppLibrarySourcePath = "/node_modules/react-native-cpp-library/cpp/CppLibraryImpl.cpp";
+const templateCMakeLists = "add_library(\n    react-native-cpp-library\n    STATIC\n    ../cpp/CppLibraryImpl.cpp\n)\n";
+const cppLibraryFiles: Readonly<Record<string, string>> = {
+  [cppLibraryCMakeListsPath]: templateCMakeLists,
+  [cppLibrarySourcePath]: '#include "CppLibraryImpl.h"',
+};
+
 const cppLibrary: AutolinkingDependency = {
   name: "react-native-cpp-library",
   platforms: {
     android: {
-      cmakeListsPath: "/node_modules/react-native-cpp-library/android/CMakeLists.txt",
+      cmakeListsPath: "/node_modules/react-native-cpp-library/android/generated/jni/CMakeLists.txt",
       cxxModuleCMakeListsModuleName: "react-native-cpp-library",
-      cxxModuleCMakeListsPath: "/node_modules/react-native-cpp-library/cpp/CMakeLists.txt",
-      cxxModuleHeaderName: "NativeCppLibraryModule",
+      cxxModuleCMakeListsPath: cppLibraryCMakeListsPath,
+      cxxModuleHeaderName: "CppLibraryImpl",
     },
     linux: null,
   },
@@ -55,18 +63,24 @@ const packageAt = (name: string, platforms: AutolinkingDependency["platforms"] =
 
 describe("discoverLinuxAutolinking, the pure-C++ fallback", () => {
   it("links react-native-cpp-library, which mentions linux nowhere, through its Android cxxModule descriptor", () => {
-    const files = { "/node_modules/react-native-cpp-library/cpp/Module.cpp": '#include "NativeCppLibraryModule.h"' };
-
-    expect(discoverOne(cppLibrary, files)).toStrictEqual({
-      cmakeListsPath: "/node_modules/react-native-cpp-library/cpp/CMakeLists.txt",
+    expect(discoverOne(cppLibrary, cppLibraryFiles)).toStrictEqual({
+      cmakeListsPath: cppLibraryCMakeListsPath,
       kind: "linked",
-      message:
-        "react-native-cpp-library: linked by the cxx-fallback rule from /node_modules/react-native-cpp-library/cpp/CMakeLists.txt",
-      moduleHeaderName: "NativeCppLibraryModule",
+      message: `react-native-cpp-library: linked by the cxx-fallback rule from ${cppLibraryCMakeListsPath}`,
+      moduleHeaderName: "CppLibraryImpl",
       moduleName: "react-native-cpp-library",
       packageName: "react-native-cpp-library",
       rule: "cxx-fallback",
     });
+  });
+
+  it("ignores a JNI adapter beside the CMakeLists that the CMakeLists does not compile", () => {
+    const files = {
+      ...cppLibraryFiles,
+      "/node_modules/react-native-cpp-library/android/cpp-adapter.cpp": "#include <jni.h>",
+    };
+
+    expect(discoverOne(cppLibrary, files)).toMatchObject({ kind: "linked", rule: "cxx-fallback" });
   });
 
   it("links with no module name or header when the descriptor names only the CMakeLists", () => {
@@ -77,16 +91,20 @@ describe("discoverLinuxAutolinking, the pure-C++ fallback", () => {
     expect(discoverOne(dependency)).toMatchObject({ moduleHeaderName: null, moduleName: null, rule: "cxx-fallback" });
   });
 
-  it("treats a listed source that cannot be read as portable", () => {
+  it("treats a listed source that cannot be read, or a CMakeLists that cannot, as portable", () => {
+    const files: Readonly<Record<string, string>> = { [cppLibraryCMakeListsPath]: templateCMakeLists };
     const verdicts = discoverLinuxAutolinking({
       applicationConfigPath,
-      dependencies: [cppLibrary],
-      listSourceFiles: () => ["/node_modules/react-native-cpp-library/cpp/Gone.cpp"],
+      dependencies: [
+        cppLibrary,
+        packageAt("unreadable", { android: { cxxModuleCMakeListsPath: "/gone/CMakeLists.txt" } }),
+      ],
+      listSourceFiles: () => [cppLibrarySourcePath],
       optedOutDependencyNames: nobodyOptedOut,
-      readFile: () => null,
+      readFile: (filePath) => files[filePath] ?? null,
     });
 
-    expect(verdicts).toMatchObject([{ kind: "linked", rule: "cxx-fallback" }]);
+    expect(verdicts).toMatchObject([{ kind: "linked" }, { kind: "linked" }]);
   });
 });
 
@@ -98,8 +116,12 @@ describe("discoverLinuxAutolinking, the fallback's guard", () => {
     ["#include <Foundation/Foundation.h>", "an Apple framework header"],
   ])("rejects a source reading %s, naming the source and %s", (line, include) => {
     const sourcePath = "/node_modules/react-native-cpp-library/cpp/Platform.cpp";
+    const files = {
+      [cppLibraryCMakeListsPath]: `file(GLOB sources "$${"{"}CMAKE_CURRENT_SOURCE_DIR}/../cpp/*.cpp")`,
+      [sourcePath]: `${line}\n`,
+    };
 
-    expect(discoverOne(cppLibrary, { [sourcePath]: `${line}\n` })).toStrictEqual({
+    expect(discoverOne(cppLibrary, files)).toStrictEqual({
       kind: "rejected",
       message: `react-native-cpp-library: not linked, ${sourcePath} includes ${include}; declare a portable build under platforms.linux in its react-native.config.js`,
       packageName: "react-native-cpp-library",
