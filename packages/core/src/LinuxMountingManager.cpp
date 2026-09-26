@@ -45,6 +45,12 @@ std::string rejectedAnimatedPropMessage(std::string_view propName, AnimatedPropR
            " — animate it with useNativeDriver: false or file an issue";
 }
 
+std::string rejectedNonFinitePropMessage(facebook::react::Tag tag, std::string_view propName) {
+    return "[mounting] node " + std::to_string(tag) + " carries a non-finite " + std::string{propName} +
+           ", which the Linux scene refuses rather than painting: a NaN frame damages nothing, paints an "
+           "unspecified rectangle and answers every hit test — the prop kept its default instead";
+}
+
 void LinuxMountingManager::startSurface(facebook::react::SurfaceId surfaceId, facebook::react::Size size) {
     const std::lock_guard<std::mutex> guard(sceneMutex_);
 
@@ -251,6 +257,10 @@ void LinuxMountingManager::executeMount(facebook::react::SurfaceId /*surfaceId*/
     for (const MaintainedScrollOffset& maintained : scene_.maintainScrollPositions()) {
         maintainedScrollOffsets_.push_back(maintained);
     }
+
+    for (const RejectedNonFiniteProp& rejectedProp : scene_.takeRejectedNonFiniteProps()) {
+        reportRejectedNonFiniteProp(rejectedProp);
+    }
 }
 
 void LinuxMountingManager::dispatchCommand(const facebook::react::ShadowView& shadowView,
@@ -302,6 +312,17 @@ void LinuxMountingManager::reportRejectedAnimatedProp(const RejectedAnimatedProp
     }
 
     diagnostics_.rejectedAnimatedProps++;
+}
+
+void LinuxMountingManager::reportRejectedNonFiniteProp(const RejectedNonFiniteProp& rejectedProp) {
+    if (diagnostics_.rejectedNonFiniteProps == 0) {
+        diagnostics_.firstRejectedNonFiniteProp = std::string{rejectedProp.propName};
+        diagnostics_.firstRejectedNonFiniteTag = rejectedProp.tag;
+
+        LOG(ERROR) << rejectedNonFinitePropMessage(rejectedProp.tag, rejectedProp.propName);
+    }
+
+    diagnostics_.rejectedNonFiniteProps++;
 }
 
 } // namespace react_native_linux

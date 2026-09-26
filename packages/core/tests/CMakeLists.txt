@@ -152,6 +152,7 @@ add_executable(rnl_core_tests
     MountingRegistryConformanceTest.cpp
     MountTreeTextTest.cpp
     NestedTextFragmentTest.cpp
+    NonFiniteValueTest.cpp
     OnLayoutEmissionTest.cpp
     PinnedFontFamiliesTest.cpp
     PixelAndFontScaleTest.cpp
