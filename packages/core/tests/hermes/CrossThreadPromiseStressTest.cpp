@@ -1,5 +1,6 @@
 #include "ReactHost.h"
 
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <cxxreact/JSBigString.h>
@@ -7,6 +8,7 @@
 #include <future>
 #include <gtest/gtest.h>
 #include <jsi/jsi.h>
+#include <latch>
 #include <memory>
 #include <thread>
 #include <utility>
@@ -24,11 +26,18 @@ using facebook::react::AsyncPromise;
 constexpr std::size_t kSettlingThreadCount = 8;
 constexpr std::size_t kPromisesPerThread = 64;
 constexpr std::size_t kPromiseCount = kSettlingThreadCount * kPromisesPerThread;
+constexpr int kFrameCount = 100;
 constexpr std::chrono::milliseconds kQuiescenceBudget{5000};
 
 constexpr char kSettlementLedger[] = R"JAVASCRIPT(
 globalThis.resolvedSum = 0;
 globalThis.rejectedCount = 0;
+globalThis.frameCount = 0;
+const onFrame = () => {
+  globalThis.frameCount += 1;
+  requestAnimationFrame(onFrame);
+};
+requestAnimationFrame(onFrame);
 globalThis.observe = (promise) => promise.then(
   (value) => { globalThis.resolvedSum += value; },
   () => { globalThis.rejectedCount += 1; });
@@ -47,7 +56,8 @@ template <typename Result> Result onJavaScriptThread(ReactHost& reactHost, std::
  * Issue #77, the TurboModule promise leg of `ReactHost`'s threading contract: a module creates an
  * `AsyncPromise` on the JavaScript thread over the host's `RuntimeSchedulerCallInvoker` and hands it to a worker
  * thread, which settles it and then drops it. Settlement and the release of the promise's JSI-owning callbacks
- * therefore both happen off the JavaScript thread, concurrently with the frame thread's own entry points, and the
+ * therefore both happen off the JavaScript thread, concurrently with the frame thread dispatching a live
+ * `requestAnimationFrame` chain and publishing a dimensions change every frame, and the
  * invoker is the only path back to the runtime. Every even promise is resolved with its index and every odd one is
  * rejected; a second settle of the same promise is the late duplicate a module retrying a request produces, and
  * must be a no-op.
@@ -78,27 +88,34 @@ TEST(CrossThreadPromiseStressTest, PromisesSettledAndDroppedOffTheJavaScriptThre
             return promises;
         });
 
+    std::latch start{static_cast<std::ptrdiff_t>(kSettlingThreadCount) + 1};
     std::vector<std::thread> settlingThreads;
 
     for (std::size_t threadIndex = 0; threadIndex < kSettlingThreadCount; ++threadIndex) {
-        settlingThreads.emplace_back([threadIndex, promises = std::move(promisesPerThread[threadIndex])]() mutable {
-            for (std::size_t index = 0; index < promises.size(); ++index) {
-                const std::size_t promiseNumber = (threadIndex * kPromisesPerThread) + index;
+        settlingThreads.emplace_back(
+            [&start, threadIndex, promises = std::move(promisesPerThread[threadIndex])]() mutable {
+                start.arrive_and_wait();
 
-                for (int attempt = 0; attempt < 2; ++attempt) {
-                    if (promiseNumber % 2 == 0) {
-                        promises[index].resolve(static_cast<double>(promiseNumber));
-                    } else {
-                        promises[index].reject(facebook::react::Error("rejected off the JavaScript thread"));
+                for (std::size_t index = 0; index < promises.size(); ++index) {
+                    const std::size_t promiseNumber = (threadIndex * kPromisesPerThread) + index;
+
+                    for (int attempt = 0; attempt < 2; ++attempt) {
+                        if (promiseNumber % 2 == 0) {
+                            promises[index].resolve(static_cast<double>(promiseNumber));
+                        } else {
+                            promises[index].reject(facebook::react::Error("rejected off the JavaScript thread"));
+                        }
                     }
                 }
-            }
-        });
+            });
     }
 
-    for (int frame = 0; frame < 100; ++frame) {
-        reactHost.dispatchAnimationFrames(std::chrono::steady_clock::now());
+    start.arrive_and_wait();
+
+    for (int frame = 0; frame < kFrameCount; ++frame) {
+        reactHost.dimensions().configure(800.0 + frame, 600.0, 1.0);
         reactHost.publishPendingDimensions();
+        reactHost.dispatchAnimationFrames(std::chrono::steady_clock::now());
     }
 
     for (std::thread& settlingThread : settlingThreads) {
@@ -107,16 +124,17 @@ TEST(CrossThreadPromiseStressTest, PromisesSettledAndDroppedOffTheJavaScriptThre
 
     ASSERT_TRUE(reactHost.runUntilQuiescent(kQuiescenceBudget));
 
-    const std::pair<double, double> ledger =
-        onJavaScriptThread<std::pair<double, double>>(reactHost, [](Runtime& runtime) {
-            return std::pair{runtime.global().getProperty(runtime, "resolvedSum").asNumber(),
-                             runtime.global().getProperty(runtime, "rejectedCount").asNumber()};
-        });
+    const std::array<double, 3> ledger = onJavaScriptThread<std::array<double, 3>>(reactHost, [](Runtime& runtime) {
+        return std::array{runtime.global().getProperty(runtime, "resolvedSum").asNumber(),
+                          runtime.global().getProperty(runtime, "rejectedCount").asNumber(),
+                          runtime.global().getProperty(runtime, "frameCount").asNumber()};
+    });
 
     constexpr double kEvenPromiseCount = kPromiseCount / 2;
 
-    EXPECT_EQ(ledger.first, kEvenPromiseCount * (kEvenPromiseCount - 1));
-    EXPECT_EQ(ledger.second, kEvenPromiseCount);
+    EXPECT_EQ(ledger[0], kEvenPromiseCount * (kEvenPromiseCount - 1));
+    EXPECT_EQ(ledger[1], kEvenPromiseCount);
+    EXPECT_GT(ledger[2], 0.0);
     EXPECT_FALSE(reactHost.hasReportedFatalError());
 }
 
