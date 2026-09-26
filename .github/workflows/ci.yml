@@ -456,6 +456,26 @@ jobs:
           grep -q "react-native-linux: nested timer fired" /tmp/rnl-hello.log
           grep -q "react-native-linux: bundle done" /tmp/rnl-hello.log
 
+          # #82: release parity. The same bundles compiled to -O Hermes bytecode must print exactly what they print
+          # from source (react-native-windows#11952 is a feature that broke in release builds only), and a bytecode
+          # file from another Hermes must fail with a readable message rather than a crash.
+          hermesc="build/$RNL_PRESET/bin/hermesc"
+          for bundle in hello engine-conformance; do
+            "$hermesc" -O -w -emit-binary -out "/tmp/rnl-$bundle.hbc" "packages/core/test-bundles/$bundle.js"
+            "$binary" "packages/core/test-bundles/$bundle.js" 2> /dev/null \
+              | grep -E "^(react-native-linux|engine):" > "/tmp/rnl-$bundle.source.log"
+            "$binary" "/tmp/rnl-$bundle.hbc" 2> /dev/null | grep -E "^(react-native-linux|engine):" > "/tmp/rnl-$bundle.bytecode.log"
+            diff -u "/tmp/rnl-$bundle.source.log" "/tmp/rnl-$bundle.bytecode.log"
+          done
+          grep -qE "^engine: ([0-9]+)/\1 passed$" /tmp/rnl-engine-conformance.bytecode.log
+          python3 -c "import sys; d = bytearray(open(sys.argv[1], 'rb').read()); d[8] ^= 0xff; open(sys.argv[2], 'wb').write(d)" \
+            /tmp/rnl-hello.hbc /tmp/rnl-mismatch.hbc
+          status=0
+          "$binary" /tmp/rnl-mismatch.hbc > /tmp/rnl-mismatch.log 2>&1 || status=$?
+          cat /tmp/rnl-mismatch.log
+          test "$status" -eq 1
+          grep -q "Wrong bytecode version. Expected" /tmp/rnl-mismatch.log
+
           status=0
           "$binary" packages/core/test-bundles/throws.js > /tmp/rnl-throws.log 2>&1 || status=$?
           cat /tmp/rnl-throws.log

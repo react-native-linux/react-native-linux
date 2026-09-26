@@ -21,6 +21,7 @@ const goldensDirectory = import.meta.dirname;
 const packageDirectory = path.join(goldensDirectory, "..");
 const bundlesDirectory = path.join(packageDirectory, "test-bundles");
 const binaryPath = path.join(packageDirectory, "..", "..", "build", "dev", "bin", "hello_react");
+const hermesCompilerPath = path.join(packageDirectory, "..", "..", "build", "dev", "bin", "hermesc");
 const repositoryRoot = path.join(packageDirectory, "..", "..");
 const fontsLockFilePath = path.join(repositoryRoot, "scripts", "fonts.lock.json");
 const fontsDirectory = path.join(packageDirectory, "fonts");
@@ -35,9 +36,11 @@ if (hasBinary) {
   checkFontsAreVendored(fontsLockFilePath, fontsDirectory);
 }
 
-const renderFixture = (fixture: RenderableFixture, outputPath: string): void => {
-  const bundlePath = path.join(bundlesDirectory, fixture.bundleFileName);
-
+const renderFixture = (
+  fixture: RenderableFixture,
+  outputPath: string,
+  bundlePath = path.join(bundlesDirectory, fixture.bundleFileName),
+): void => {
   execFileSync(binaryPath, [fixture.renderFlag, bundlePath, outputPath, ...fixture.renderArguments], {
     stdio: ["ignore", "ignore", "inherit"],
   });
@@ -52,13 +55,37 @@ const decodePng = (filePath: string): { data: Uint8Array; height: number; width:
 const buildMissingGoldenMessage = (goldenPath: string): string =>
   `${goldenPath} does not exist. Regenerate it with "pnpm test:golden:update", review the image, then commit it.`;
 
-const expectGoldenToMatch = (fixture: GoldenFixture, goldenPath: string): void => {
+/**
+ * #82: a release build runs `hermesc -O` bytecode, not the source a development build runs, and
+ * react-native-windows#10255 is a release build that renders a white screen. Compiling the fixture first and
+ * comparing against the same golden is what makes the two configurations one assertion.
+ */
+const compileToBytecode = (fixture: RenderableFixture, scratchDirectory: string): string => {
+  const bytecodePath = path.join(scratchDirectory, `${fixture.bundleFileName}.hbc`);
+
+  execFileSync(hermesCompilerPath, [
+    "-O",
+    "-w",
+    "-emit-binary",
+    "-out",
+    bytecodePath,
+    path.join(bundlesDirectory, fixture.bundleFileName),
+  ]);
+
+  return bytecodePath;
+};
+
+const expectGoldenToMatch = (fixture: GoldenFixture, goldenPath: string, asBytecode = false): void => {
   const scratchDirectory = mkdtempSync(path.join(tmpdir(), "rnl-golden-"));
 
   try {
     const renderedPath = path.join(scratchDirectory, fixture.goldenFileName);
 
-    renderFixture(fixture, renderedPath);
+    renderFixture(
+      fixture,
+      renderedPath,
+      asBytecode ? compileToBytecode(fixture, scratchDirectory) : path.join(bundlesDirectory, fixture.bundleFileName),
+    );
 
     const actual = decodePng(renderedPath);
     const expected = decodePng(goldenPath);
@@ -95,6 +122,18 @@ describe.skipIf(!hasBinary)("golden images", () => {
       expect(existsSync(goldenPath), buildMissingGoldenMessage(goldenPath)).toBe(true);
       expectGoldenToMatch(fixture, goldenPath);
     });
+  }
+});
+
+describe.skipIf(!hasBinary || isRegenerating)("golden images from release bytecode", () => {
+  for (const fixture of fixtures) {
+    it(
+      `renders ${fixture.bundleFileName} as -O bytecode exactly as ${fixture.goldenFileName}`,
+      { timeout: RENDER_TIMEOUT_MS },
+      () => {
+        expectGoldenToMatch(fixture, path.join(goldensDirectory, fixture.goldenFileName), true);
+      },
+    );
   }
 });
 
