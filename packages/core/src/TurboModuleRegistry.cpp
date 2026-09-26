@@ -1,5 +1,6 @@
 #include "TurboModuleRegistry.h"
 
+#include "CurlHttpClient.h"
 #include "PlatformColor.h"
 
 #include <FBReactNativeSpec/FBReactNativeSpecJSI.h>
@@ -16,6 +17,7 @@
 #include <vector>
 
 #include <react/coremodules/DeviceInfoModule.h>
+#include <react/io/NetworkingModule.h>
 #include <react/renderer/animated/AnimatedModule.h>
 #include <react/renderer/animated/NativeAnimatedNodesManagerProvider.h>
 
@@ -248,6 +250,12 @@ TurboModuleRegistry::TurboModuleRegistry(
                              [appearanceModule = appearanceModule_]() { return appearanceModule; });
     moduleFactories_.emplace(LinuxLinkingModule::kModuleName,
                              [linkingModule = linkingModule_]() { return linkingModule; });
+    // #79: `fetch` and `XMLHttpRequest` reach upstream's C++ Networking module, which this platform only supplies
+    // the HTTP client for.
+    moduleFactories_.emplace(facebook::react::NetworkingModule::kModuleName, [jsInvoker]() {
+        return std::make_shared<facebook::react::NetworkingModule>(jsInvoker,
+                                                                   []() { return std::make_unique<CurlHttpClient>(); });
+    });
     moduleFactories_.emplace(
         facebook::react::AnimatedModule::kModuleName,
         [jsInvoker = std::move(jsInvoker), animatedNodesManagerProvider = std::move(animatedNodesManagerProvider)]() {

@@ -293,6 +293,12 @@ target_sources(rnl_core_tests PRIVATE
     ${RNL_UPSTREAM_JSERRORHANDLER_TESTS}
     ${RNL_UPSTREAM_TASK_DISPATCH_THREAD_TESTS})
 target_link_libraries(rnl_core_tests PRIVATE react_renderer_element)
+
+# #79: the libcurl HTTP client, against a loopback server inside the test. Only this binary compiles it, because
+# only this one is scored for coverage.
+target_sources(rnl_core_tests PRIVATE CurlHttpClientTest.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../src/CurlHttpClient.cpp)
+target_include_directories(rnl_core_tests PRIVATE ${REACT_CXX_PLATFORM_DIR})
+target_link_libraries(rnl_core_tests PRIVATE CURL::libcurl)
 target_compile_options(rnl_core_tests PRIVATE -Wall -Wextra -fexceptions -frtti)
 target_include_directories(rnl_core_tests
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src ${RNL_UPSTREAM_ANIMATED_TESTS_DIR})
