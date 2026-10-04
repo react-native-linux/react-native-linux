@@ -189,6 +189,7 @@ jobs:
             libgoogle-glog-dev \
             libcurl4-openssl-dev \
             libsqlite3-dev \
+            libxkbcommon-dev \
             libicu-dev \
             llvm-18 \
             ninja-build \
@@ -324,6 +325,7 @@ jobs:
             libgoogle-glog-dev \
             libcurl4-openssl-dev \
             libsqlite3-dev \
+            libxkbcommon-dev \
             libicu-dev \
             llvm-18 \
             ninja-build \

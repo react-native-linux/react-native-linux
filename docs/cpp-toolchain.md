@@ -7969,6 +7969,12 @@ ctest --preset asan-tests
 or `tsan-tests` for the ThreadSanitizer build. Both presets carry the same 300-second per-test `execution.timeout`
 as `asan`, `tsan` and `dev`.
 
+**Keymaps in the unit tier (#487).** `rnl_core_tests` links `libxkbcommon`, and nothing else from the window stack.
+`KeymapLayoutTest` compiles a US and a French AZERTY keymap and presses evdev `KEY_Q` under each: `key` is `"q"`
+and `"a"`, `code` is `"KeyQ"` both times, as a browser reports it. The case needs a real `xkb_state` but no
+compositor, so it lives here rather than in the window job; the unit, native and window jobs install
+`libxkbcommon-dev`, whose runtime brings the xkeyboard-config data the keymaps compile from.
+
 ### The Hermes-linked binary (#228)
 
 `rnl_core_tests` is Hermes-free by construction, so the upstream suites that construct a real

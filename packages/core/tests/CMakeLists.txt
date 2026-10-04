@@ -302,6 +302,14 @@ target_sources(rnl_core_tests PRIVATE CurlHttpClientTest.cpp ${CMAKE_CURRENT_SOU
 target_include_directories(rnl_core_tests PRIVATE ${REACT_CXX_PLATFORM_DIR})
 target_link_libraries(rnl_core_tests PRIVATE CURL::libcurl)
 
+# #487: a real xkb_state under a US and a French keymap, the one input proof a pure function cannot give. The unit
+# tier links libxkbcommon for it rather than moving the case to the window job, because the case needs no
+# compositor, only the library and the xkeyboard-config data it reads.
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(RNL_TEST_XKBCOMMON REQUIRED IMPORTED_TARGET xkbcommon)
+target_sources(rnl_core_tests PRIVATE KeymapLayoutTest.cpp)
+target_link_libraries(rnl_core_tests PRIVATE PkgConfig::RNL_TEST_XKBCOMMON)
+
 # #23: the SQLite store behind AsyncStorage, against files in the test's temporary directory.
 target_sources(rnl_core_tests PRIVATE AsyncStorageTest.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../src/AsyncStorage.cpp)
 target_link_libraries(rnl_core_tests PRIVATE SQLite::SQLite3)
