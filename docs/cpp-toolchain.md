@@ -2993,11 +2993,16 @@ The picture is the sixth row of `border-matrix.png`, which is why that golden is
   changes nothing about that, which is
   [core#49606](https://github.com/facebook/react-native/issues/49606).
 
+**Group opacity (#105).** A translucent node with children composites its subtree as one layer, as React Native
+does: the snapshot marks the first primitive the subtree paints with `opensLayers` (the alpha, outermost first) and
+the last with `closesLayers`, and `paintScene` wraps them in `saveLayerAlphaf`. That node's opacity is then left
+out of every colour beneath it, text included, so overlapping descendants no longer blend against each other.
+A translucent leaf keeps its alpha in its own colours, which is exact and costs no layer; a node at `opacity: 0`
+is dropped primitive by primitive. `view-props.png`'s nested-opacity box is the golden that changed:
+`0.5·background + 0.25·red + 0.25·white` rather than per-primitive alpha's `0.375 + 0.375 + 0.25`.
+
 Known deviations from iOS and Android, all deliberate:
 
-- **Opacity is per-primitive, not group opacity.** React Native composites a translucent subtree as one layer; we
-  multiply the alpha of each primitive instead. Overlapping descendants of a translucent ancestor therefore blend
-  against each other where the real thing would not. Fixing it means `saveLayerAlphaf` per stacking context.
 - **`borderStyle` draws, and a ring with four different widths is the one case that does not** (#101). See
   *Dashed and dotted borders* below.
 - **`borderCurve` is ignored.** Corners are always circular, never iOS' `continuous` squircle.
@@ -3822,8 +3827,6 @@ Each is deliberate, and each is a thing to fix rather than a thing to argue abou
 - **`adjustsFontSizeToFit`, `textAlignVertical` and `textBreakStrategy` are ignored.** `textTransform`,
   `fontVariant`, `textDecorationStyle` and `textShadow*` are no longer on this list; see *The text-style matrix
   (#250)*. `fontVariant`'s sixteen stylistic-set bits still are.
-- **Group opacity applies to text the same way it applies to views**: per-fragment alpha, not a composited layer.
-  Overlapping translucent text blends against itself. Same deviation, same fix, as *View props fidelity*.
 - **Every paint rebuilds the paragraph, and every snapshot copies the attributed string.** The damage walk runs
   the same snapshot code over a subtree per mutation, so a text-heavy tree copies its strings more than it needs
   to. Skia's shaped-run cache absorbs the layout half. Both are #20 concerns, not correctness ones.
