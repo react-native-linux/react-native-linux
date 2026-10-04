@@ -6,7 +6,6 @@
 #include <chrono>
 #include <cstddef>
 #include <folly/io/IOBuf.h>
-#include <future>
 #include <stdexcept>
 #include <string_view>
 #include <utility>
@@ -350,39 +349,43 @@ void CurlHttpClient::run() {
     }
 }
 
+namespace {
+
+size_t appendToBundle(char* data, size_t size, size_t count, void* bundle) {
+    static_cast<std::string*>(bundle)->append(data, size * count);
+
+    return size * count;
+}
+
+} // namespace
+
 std::string fetchBundle(const std::string& url) {
-    constexpr uint16_t kStatusClassDivisor = 100;
-    constexpr uint16_t kSuccessStatusClass = 2;
-    uint16_t status = 0;
+    // Metro's first build of a large application on a cold cache takes minutes, not seconds.
+    constexpr long kTransferTimeoutSeconds = 600;
+    constexpr long kStatusClassDivisor = 100;
+    constexpr long kSuccessStatusClass = 2;
+    const std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> easy(curl_easy_init(), &curl_easy_cleanup);
     std::string body;
-    std::string error;
-    std::promise<void> completed;
-    std::future<void> completion = completed.get_future();
+    long status = 0;
 
-    {
-        CurlHttpClient client;
+    // An easy handle follows no redirect, so an https:// bundle can never be served from a downgraded http:// one.
+    curl_easy_setopt(easy.get(), CURLOPT_URL, url.c_str());
+    curl_easy_setopt(easy.get(), CURLOPT_WRITEFUNCTION, &appendToBundle);
+    curl_easy_setopt(easy.get(), CURLOPT_WRITEDATA, &body);
+    curl_easy_setopt(easy.get(), CURLOPT_TIMEOUT, kTransferTimeoutSeconds);
+    curl_easy_setopt(easy.get(), CURLOPT_ACCEPT_ENCODING, "");
 
-        client.sendRequest(
-            {.onResponse = [&status](uint16_t responseCode,
-                                     const http::Headers& /*headers*/) { status = responseCode; },
-             .onBody =
-                 [&body](std::unique_ptr<folly::IOBuf> received) { body = received->moveToFbString().toStdString(); },
-             .onResponseComplete =
-                 [&error, &completed](std::string completionError, bool /*timeoutError*/) {
-                     error = std::move(completionError);
-                     completed.set_value();
-                 }},
-            "GET", url, {}, {}, 0, std::nullopt);
-        completion.wait();
-    }
+    const CURLcode result = curl_easy_perform(easy.get());
 
-    if (!error.empty()) {
-        throw std::runtime_error("Could not load the bundle from " + url + ": " + error);
-    }
+    curl_easy_getinfo(easy.get(), CURLINFO_RESPONSE_CODE, &status);
 
-    if (status / kStatusClassDivisor != kSuccessStatusClass) {
+    if (status != 0 && status / kStatusClassDivisor != kSuccessStatusClass) {
         throw std::runtime_error("Could not load the bundle from " + url + ": HTTP " + std::to_string(status) + "\n" +
                                  body);
+    }
+
+    if (result != CURLE_OK) {
+        throw std::runtime_error("Could not load the bundle from " + url + ": " + curl_easy_strerror(result));
     }
 
     return body;

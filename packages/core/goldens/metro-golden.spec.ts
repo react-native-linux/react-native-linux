@@ -8,6 +8,8 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 
 const RENDER_TIMEOUT_MS = 120_000;
+const METRO_STARTUP_TIMEOUT_MS = 45_000;
+const RENDER_PROCESS_TIMEOUT_MS = 45_000;
 
 const repositoryRoot = path.join(import.meta.dirname, "..", "..", "..");
 const binaryPath = path.join(repositoryRoot, "build", "dev", "bin", "hello_react");
@@ -39,14 +41,20 @@ const readMetroBundleUrl = async (output: AsyncIterator<unknown>, seen: string):
 const renderHarnessAppFromMetro = async (outputPath: string): Promise<void> => {
   const metro = spawn(execPath, [harnessServeScriptPath], { stdio: ["ignore", "pipe", "inherit"] });
 
+  // Killing Metro ends its stdout, which is what turns a server that never listens into a named failure.
+  const startupDeadline = setTimeout(() => metro.kill(), METRO_STARTUP_TIMEOUT_MS);
+
   try {
     const bundleUrl = await readMetroBundleUrl(metro.stdout[Symbol.asyncIterator](), "");
 
+    clearTimeout(startupDeadline);
     metro.stdout.resume();
     execFileSync(binaryPath, ["--app-golden", "TestHarness", bundleUrl, outputPath], {
       stdio: ["ignore", "ignore", "inherit"],
+      timeout: RENDER_PROCESS_TIMEOUT_MS,
     });
   } finally {
+    clearTimeout(startupDeadline);
     metro.kill();
   }
 };
