@@ -6,6 +6,8 @@
 #include <chrono>
 #include <cstddef>
 #include <folly/io/IOBuf.h>
+#include <future>
+#include <stdexcept>
 #include <string_view>
 #include <utility>
 
@@ -346,6 +348,44 @@ void CurlHttpClient::run() {
 
         curl_multi_poll(multi_.get(), nullptr, 0, kPollTimeoutMilliseconds, nullptr);
     }
+}
+
+std::string fetchBundle(const std::string& url) {
+    constexpr uint16_t kStatusClassDivisor = 100;
+    constexpr uint16_t kSuccessStatusClass = 2;
+    uint16_t status = 0;
+    std::string body;
+    std::string error;
+    std::promise<void> completed;
+    std::future<void> completion = completed.get_future();
+
+    {
+        CurlHttpClient client;
+
+        client.sendRequest(
+            {.onResponse = [&status](uint16_t responseCode,
+                                     const http::Headers& /*headers*/) { status = responseCode; },
+             .onBody =
+                 [&body](std::unique_ptr<folly::IOBuf> received) { body = received->moveToFbString().toStdString(); },
+             .onResponseComplete =
+                 [&error, &completed](std::string completionError, bool /*timeoutError*/) {
+                     error = std::move(completionError);
+                     completed.set_value();
+                 }},
+            "GET", url, {}, {}, 0, std::nullopt);
+        completion.wait();
+    }
+
+    if (!error.empty()) {
+        throw std::runtime_error("Could not load the bundle from " + url + ": " + error);
+    }
+
+    if (status / kStatusClassDivisor != kSuccessStatusClass) {
+        throw std::runtime_error("Could not load the bundle from " + url + ": HTTP " + std::to_string(status) + "\n" +
+                                 body);
+    }
+
+    return body;
 }
 
 std::optional<std::string> decodeBase64(const std::string& encoded) {

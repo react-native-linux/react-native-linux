@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "bundle": "node scripts/bundle.ts"
+    "bundle": "node scripts/bundle.ts",
+    "serve": "node scripts/serve.ts"
   },
   "dependencies": {
     "@babel/runtime": "7.29.2",

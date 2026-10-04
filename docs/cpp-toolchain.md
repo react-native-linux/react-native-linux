@@ -1157,8 +1157,15 @@ The Networking module is a streaming contract. A text request with incremental u
 JavaScript as it arrives and never buffers; anything else is buffered without a ceiling and delivered once. That
 is the difference between this client and the five react-native-windows bugs #79 cites, and
 `CurlHttpClientTest` proves both halves with a 12 MB body against a loopback server, plus a multipart upload with
-a file part. `test-bundles/networking.js` is the end-to-end proof through the TurboModule. Not yet: a `blob` request
-body (there is no Blob module), cookies, WebSocket, and the Metro dev-server contract.
+a file part. `test-bundles/networking.js` is the end-to-end proof through the TurboModule. A bundle location may also be an `http://` or `https://` URL:
+`ReactHost::loadBundle` fetches it through `fetchBundle`, over the same client, which is how `hello_react` and
+`rnl_window` load an app from a Metro dev server. Anything but a 2xx fails, naming the URL and carrying the
+response body, because Metro reports a build error as an HTTP 500 with the error as JSON.
+`goldens/metro-golden.spec.ts` serves the test-harness app from a real Metro
+(`packages/test-harness/scripts/serve.ts`) and requires the render from
+`index.bundle?platform=linux&dev=false&minify=false` to be identical to `test-harness-app.png`. Not yet: a `blob` request
+body (there is no Blob module), cookies, WebSocket, and the rest of the Metro dev-server contract: `dev=true`
+bundles, HMR over the WebSocket, and symbolication.
 
 ## react-native-worklets (#134)
 

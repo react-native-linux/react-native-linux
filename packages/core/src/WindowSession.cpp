@@ -3,7 +3,6 @@
 #include "DimensionsSource.h"
 
 #include <chrono>
-#include <cxxreact/JSBigString.h>
 #include <memory>
 #include <optional>
 #include <string>
@@ -48,7 +47,7 @@ WindowSession::WindowSession(const std::string& bundlePath, WindowSize size,
         deliverActivationUrl(initialActivationUrl.value());
     }
 
-    reactHost_.loadScript(facebook::react::JSBigFileString::fromPath(bundlePath), bundlePath);
+    reactHost_.loadBundle(bundlePath);
 }
 
 WindowSession::~WindowSession() noexcept {
