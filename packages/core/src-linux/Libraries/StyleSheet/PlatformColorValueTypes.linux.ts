@@ -23,8 +23,8 @@ const hostResolver = (): ResolvePlatformColor | null => {
 
 /**
  * #505: `PlatformColor('labelColor', 'secondaryLabelColor')` is an opaque value naming colours, resolved against
- * the current colour scheme only when a prop is sent to the native side — so the re-render an `appearanceChanged`
- * triggers resolves every name again, and no resolved colour is ever cached on this side.
+ * the current colour scheme when a prop is sent to the native side. React Native's prop diff skips a deep-equal
+ * value, so an unchanged `PlatformColor` is not resolved again after a scheme change; #260 owns that.
  */
 const PlatformColor = (...names: readonly string[]): LinuxPlatformColor => ({ linuxPlatformColorNames: names });
 
