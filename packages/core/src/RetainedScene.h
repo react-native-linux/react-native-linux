@@ -42,15 +42,15 @@ namespace react_native_linux {
  */
 struct SceneMatrix {
     float scaleX{1.0F};
-
-    /** Where `matrix` moves `point`: the affine the painter hands to `SkMatrix`, applied to one point. */
-    facebook::react::Point mapPoint(const SceneMatrix& matrix, facebook::react::Point point);
     float skewX{0.0F};
     float translateX{0.0F};
     float skewY{0.0F};
     float scaleY{1.0F};
     float translateY{0.0F};
 };
+
+/** Where `matrix` moves `point`: the affine the painter hands to `SkMatrix`, applied to one point. */
+facebook::react::Point mapPoint(const SceneMatrix& matrix, facebook::react::Point point);
 
 /**
  * One rounded box, in the untransformed coordinates the frame it came from is written in.
