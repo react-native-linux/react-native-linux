@@ -21,6 +21,7 @@ class TurboModule;
 
 namespace react_native_linux {
 
+class KeyValueStore;
 class LinuxAppearanceModule;
 class LinuxDeviceInfoModule;
 class LinuxLinkingModule;
@@ -73,6 +74,9 @@ public:
      */
     ActivationModel& activation() noexcept;
 
+    /** The store behind `RNAsyncStorage` (#23); `WindowSession` points it at the application's file. */
+    KeyValueStore& keyValueStore() noexcept;
+
     void install(facebook::jsi::Runtime& runtime);
 
     /**
@@ -92,6 +96,7 @@ private:
     std::shared_ptr<LinuxAppearanceModule> appearanceModule_;
     std::shared_ptr<ActivationModel> activationModel_;
     std::shared_ptr<LinuxLinkingModule> linkingModule_;
+    std::shared_ptr<KeyValueStore> keyValueStore_;
     std::unordered_map<std::string_view, ModuleFactory> moduleFactories_;
 };
 

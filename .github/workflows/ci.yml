@@ -188,6 +188,7 @@ jobs:
             libfmt-dev \
             libgoogle-glog-dev \
             libcurl4-openssl-dev \
+            libsqlite3-dev \
             libicu-dev \
             llvm-18 \
             ninja-build \
@@ -322,6 +323,7 @@ jobs:
             libfreetype-dev \
             libgoogle-glog-dev \
             libcurl4-openssl-dev \
+            libsqlite3-dev \
             libicu-dev \
             llvm-18 \
             ninja-build \
@@ -483,6 +485,16 @@ jobs:
           grep -q "networking: completed with [0-9]* bytes, error none" /tmp/rnl-networking.log
           grep -q "networking: body mentions the proof: true" /tmp/rnl-networking.log
 
+          # #23: every RNAsyncStorage method async-storage 3.x calls, through the TurboModule, on the in-memory store.
+          "$binary" packages/core/test-bundles/async-storage.js | tee /tmp/rnl-async-storage.log
+          grep -q "async-storage: setValues echoed 2 entries" /tmp/rnl-async-storage.log
+          grep -qF 'async-storage: values [{"key":"theme","value":"dark"},{"key":"locale","value":null}]' /tmp/rnl-async-storage.log
+          grep -qF 'async-storage: keys ["theme"]' /tmp/rnl-async-storage.log
+          grep -qF 'async-storage: cleared []' /tmp/rnl-async-storage.log
+          grep -qF 'async-storage: legacy [["legacy","v2"],["absent",null]]' /tmp/rnl-async-storage.log
+          grep -q "async-storage: merge rejected: AsyncStorage: legacy_multiMerge is not supported on Linux" /tmp/rnl-async-storage.log
+          grep -q "async-storage: missing argument rejected: AsyncStorage: argument 1 is missing" /tmp/rnl-async-storage.log
+
           "$binary" packages/core/test-bundles/autolinking.js | tee /tmp/rnl-autolinking.log
           grep -q "autolinking: CppLibrary.multiply(3, 4) = 12" /tmp/rnl-autolinking.log
 
@@ -630,6 +642,7 @@ jobs:
             libfreetype-dev \
             libgoogle-glog-dev \
             libcurl4-openssl-dev \
+            libsqlite3-dev \
             libicu-dev \
             libvulkan-dev \
             libwayland-dev \

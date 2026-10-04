@@ -6,6 +6,7 @@
 #include "InputPipeline.h"
 #include "LinuxMountingManager.h"
 #include "RendererLadder.h"
+#include "ResourceResolver.h"
 #include "RetainedScene.h"
 #include "ScenePainter.h"
 #include "SharedMemoryRasterRenderer.h"
@@ -1059,6 +1060,16 @@ std::optional<std::string> ladderStatePath() {
                                                        home == nullptr ? "" : home);
 }
 
+/** `$XDG_DATA_HOME/<app-id>/async-storage.sqlite`, the one file every `AsyncStorage` database lives in (#23). */
+std::string asyncStorageDatabasePath(const std::string& applicationIdentifier) {
+    const char* dataHome = std::getenv("XDG_DATA_HOME");
+    const char* home = std::getenv("HOME");
+    const std::filesystem::path dataDirectory = react_native_linux::ResourceResolver::writableDirectory(
+        dataHome == nullptr ? "" : dataHome, dataHome != nullptr, home == nullptr ? "" : home, ".local/share");
+
+    return (dataDirectory / applicationIdentifier / "async-storage.sqlite").string();
+}
+
 std::optional<react_native_linux::RendererLadderRecord> readLadderRecord(const std::optional<std::string>& path) {
     if (!path.has_value()) {
         return std::nullopt;
@@ -1320,7 +1331,7 @@ int main(int argc, char** argv) {
             if (parsedArguments.bundlePath.has_value()) {
                 session.emplace(parsedArguments.bundlePath.value(),
                                 react_native_linux::WindowSize{chrome.content.width, chrome.content.height},
-                                ownActivationUrl);
+                                asyncStorageDatabasePath(parsedArguments.applicationIdentifier), ownActivationUrl);
 
                 // --ime-debug owns the text input by hand, so focus must not also drive it: the two would race to
                 // enable and disable the same object. Without that flag, focus is the only thing that touches it.

@@ -174,6 +174,8 @@ AppearanceModel& ReactHost::appearance() noexcept { return turboModuleRegistry_-
 
 ActivationModel& ReactHost::activation() noexcept { return turboModuleRegistry_->activation(); }
 
+KeyValueStore& ReactHost::keyValueStore() noexcept { return turboModuleRegistry_->keyValueStore(); }
+
 void ReactHost::publishPendingDimensions() { turboModuleRegistry_->publishPendingDimensions(); }
 
 void ReactHost::loadScript(std::unique_ptr<const facebook::react::JSBigString> script, const std::string& sourceUrl) {

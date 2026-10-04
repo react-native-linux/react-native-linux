@@ -1,5 +1,6 @@
 #include "TurboModuleRegistry.h"
 
+#include "AsyncStorage.h"
 #include "CurlHttpClient.h"
 #include "PlatformColor.h"
 
@@ -8,6 +9,7 @@
 #include <ReactCommon/CxxTurboModuleUtils.h>
 #include <ReactCommon/TurboModule.h>
 #include <ReactCommon/TurboModuleBinding.h>
+#include <ReactCommon/TurboModuleUtils.h>
 #include <array>
 #include <cstring>
 #include <memory>
@@ -197,6 +199,259 @@ private:
 };
 
 /**
+ * `RNAsyncStorage`, the native module `@react-native-async-storage/async-storage` 3.x resolves on any platform that
+ * is not web or Windows (#23), over `KeyValueStore`. Written against `TurboModule::methodMap_` rather than a
+ * generated spec, because the spec belongs to a package this one does not depend on. `legacy_*` is the v2 surface
+ * `getLegacyStorage()` calls, kept in the database named by the empty string; `legacy_multiMerge` is in the spec
+ * but no 3.x code path calls it, so it rejects rather than carrying a JSON merge nobody exercises.
+ *
+ * Every method runs synchronously on the JavaScript thread and settles its promise before returning: the store is
+ * one local SQLite file, and a key-value batch costs less than the hop to a worker and back.
+ */
+class LinuxAsyncStorageModule final : public facebook::react::TurboModule {
+public:
+    static constexpr std::string_view kModuleName = "RNAsyncStorage";
+
+    LinuxAsyncStorageModule(std::shared_ptr<facebook::react::CallInvoker> jsInvoker,
+                            std::shared_ptr<KeyValueStore> store)
+        : TurboModule(std::string(kModuleName), std::move(jsInvoker)), store_(std::move(store)) {
+        methodMap_["getValues"] = {
+            2, [](Runtime& runtime, TurboModule& turboModule, const Value* arguments, size_t count) {
+                return settle(
+                    runtime,
+                    [&](KeyValueStore& store) {
+                        return toEntryObjects(runtime, store.get(databaseName(runtime, argument(arguments, count, 0)),
+                                                                 toStrings(runtime, argument(arguments, count, 1))));
+                    },
+                    turboModule);
+            }};
+        methodMap_["setValues"] = {
+            2, [](Runtime& runtime, TurboModule& turboModule, const Value* arguments, size_t count) {
+                return settle(
+                    runtime,
+                    [&](KeyValueStore& store) {
+                        const std::vector<KeyValueStore::Entry> entries =
+                            fromEntries(runtime, argument(arguments, count, 1));
+
+                        store.set(databaseName(runtime, argument(arguments, count, 0)), entries);
+
+                        return toEntryObjects(runtime, entries);
+                    },
+                    turboModule);
+            }};
+        methodMap_["removeValues"] = {
+            2, [](Runtime& runtime, TurboModule& turboModule, const Value* arguments, size_t count) {
+                return settle(
+                    runtime,
+                    [&](KeyValueStore& store) {
+                        store.remove(databaseName(runtime, argument(arguments, count, 0)),
+                                     toStrings(runtime, argument(arguments, count, 1)));
+
+                        return Value::undefined();
+                    },
+                    turboModule);
+            }};
+        methodMap_["getKeys"] = {
+            1, [](Runtime& runtime, TurboModule& turboModule, const Value* arguments, size_t count) {
+                return settle(
+                    runtime,
+                    [&](KeyValueStore& store) {
+                        return toStringArray(runtime, store.keys(databaseName(runtime, argument(arguments, count, 0))));
+                    },
+                    turboModule);
+            }};
+        methodMap_["clearStorage"] = {
+            1, [](Runtime& runtime, TurboModule& turboModule, const Value* arguments, size_t count) {
+                return settle(
+                    runtime,
+                    [&](KeyValueStore& store) {
+                        store.clear(databaseName(runtime, argument(arguments, count, 0)));
+
+                        return Value::undefined();
+                    },
+                    turboModule);
+            }};
+        methodMap_["legacy_multiGet"] = {
+            1, [](Runtime& runtime, TurboModule& turboModule, const Value* arguments, size_t count) {
+                return settle(
+                    runtime,
+                    [&](KeyValueStore& store) {
+                        return toEntryPairs(
+                            runtime, store.get(kLegacyDatabase, toStrings(runtime, argument(arguments, count, 0))));
+                    },
+                    turboModule);
+            }};
+        methodMap_["legacy_multiSet"] = {
+            1, [](Runtime& runtime, TurboModule& turboModule, const Value* arguments, size_t count) {
+                return settle(
+                    runtime,
+                    [&](KeyValueStore& store) {
+                        store.set(kLegacyDatabase, fromEntries(runtime, argument(arguments, count, 0)));
+
+                        return Value::undefined();
+                    },
+                    turboModule);
+            }};
+        methodMap_["legacy_multiRemove"] = {
+            1, [](Runtime& runtime, TurboModule& turboModule, const Value* arguments, size_t count) {
+                return settle(
+                    runtime,
+                    [&](KeyValueStore& store) {
+                        store.remove(kLegacyDatabase, toStrings(runtime, argument(arguments, count, 0)));
+
+                        return Value::undefined();
+                    },
+                    turboModule);
+            }};
+        methodMap_["legacy_multiMerge"] = {1, [](Runtime& runtime, TurboModule& turboModule, const Value*, size_t) {
+                                               return settle(
+                                                   runtime,
+                                                   [](KeyValueStore&) -> Value {
+                                                       throw std::runtime_error(
+                                                           "AsyncStorage: legacy_multiMerge is not supported on Linux");
+                                                   },
+                                                   turboModule);
+                                           }};
+        methodMap_["legacy_getAllKeys"] = {
+            0, [](Runtime& runtime, TurboModule& turboModule, const Value*, size_t) {
+                return settle(
+                    runtime, [&](KeyValueStore& store) { return toStringArray(runtime, store.keys(kLegacyDatabase)); },
+                    turboModule);
+            }};
+        methodMap_["legacy_clear"] = {0, [](Runtime& runtime, TurboModule& turboModule, const Value*, size_t) {
+                                          return settle(
+                                              runtime,
+                                              [](KeyValueStore& store) {
+                                                  store.clear(kLegacyDatabase);
+
+                                                  return Value::undefined();
+                                              },
+                                              turboModule);
+                                      }};
+    }
+
+private:
+    using Runtime = facebook::jsi::Runtime;
+    using Value = facebook::jsi::Value;
+
+    static constexpr const char* kLegacyDatabase = "";
+
+    template <typename Operation>
+    static Value settle(Runtime& runtime, Operation&& operation, TurboModule& turboModule) {
+        KeyValueStore& store = *static_cast<LinuxAsyncStorageModule&>(turboModule).store_;
+
+        return facebook::react::createPromiseAsJSIValue(
+            runtime, [&](Runtime& /*promiseRuntime*/, const std::shared_ptr<facebook::react::Promise>& promise) {
+                try {
+                    promise->resolve(operation(store));
+                } catch (const std::exception& error) {
+                    promise->reject(error.what());
+                }
+            });
+    }
+
+    static const Value& argument(const Value* arguments, size_t count, size_t index) {
+        if (index >= count) {
+            throw std::invalid_argument("AsyncStorage: argument " + std::to_string(index) + " is missing");
+        }
+
+        return arguments[index];
+    }
+
+    static std::string databaseName(Runtime& runtime, const Value& value) {
+        return value.asString(runtime).utf8(runtime);
+    }
+
+    static std::vector<std::string> toStrings(Runtime& runtime, const Value& value) {
+        const facebook::jsi::Array array = value.asObject(runtime).asArray(runtime);
+        std::vector<std::string> strings;
+
+        for (size_t index = 0; index < array.size(runtime); ++index) {
+            strings.push_back(array.getValueAtIndex(runtime, index).asString(runtime).utf8(runtime));
+        }
+
+        return strings;
+    }
+
+    static std::optional<std::string> optionalString(Runtime& runtime, const Value& value) {
+        if (value.isString()) {
+            return value.getString(runtime).utf8(runtime);
+        }
+
+        return std::nullopt;
+    }
+
+    static Value valueOf(Runtime& runtime, const std::optional<std::string>& value) {
+        if (value.has_value()) {
+            return facebook::jsi::String::createFromUtf8(runtime, value.value());
+        }
+
+        return Value::null();
+    }
+
+    static Value toStringArray(Runtime& runtime, const std::vector<std::string>& strings) {
+        facebook::jsi::Array array(runtime, strings.size());
+
+        for (size_t index = 0; index < strings.size(); ++index) {
+            array.setValueAtIndex(runtime, index, facebook::jsi::String::createFromUtf8(runtime, strings[index]));
+        }
+
+        return array;
+    }
+
+    /** `{ key, value }` objects from `setValues`, `[key, value]` pairs from `legacy_multiSet`. */
+    static std::vector<KeyValueStore::Entry> fromEntries(Runtime& runtime, const Value& value) {
+        const facebook::jsi::Array array = value.asObject(runtime).asArray(runtime);
+        std::vector<KeyValueStore::Entry> entries;
+
+        for (size_t index = 0; index < array.size(runtime); ++index) {
+            const facebook::jsi::Object element = array.getValueAtIndex(runtime, index).asObject(runtime);
+
+            if (element.isArray(runtime)) {
+                const facebook::jsi::Array pair = element.getArray(runtime);
+
+                entries.emplace_back(pair.getValueAtIndex(runtime, 0).asString(runtime).utf8(runtime),
+                                     optionalString(runtime, pair.getValueAtIndex(runtime, 1)));
+            } else {
+                entries.emplace_back(element.getProperty(runtime, "key").asString(runtime).utf8(runtime),
+                                     optionalString(runtime, element.getProperty(runtime, "value")));
+            }
+        }
+
+        return entries;
+    }
+
+    static Value toEntryObjects(Runtime& runtime, const std::vector<KeyValueStore::Entry>& entries) {
+        facebook::jsi::Array array(runtime, entries.size());
+
+        for (size_t index = 0; index < entries.size(); ++index) {
+            facebook::jsi::Object entry(runtime);
+
+            entry.setProperty(runtime, "key", facebook::jsi::String::createFromUtf8(runtime, entries[index].first));
+            entry.setProperty(runtime, "value", valueOf(runtime, entries[index].second));
+            array.setValueAtIndex(runtime, index, std::move(entry));
+        }
+
+        return array;
+    }
+
+    static Value toEntryPairs(Runtime& runtime, const std::vector<KeyValueStore::Entry>& entries) {
+        facebook::jsi::Array array(runtime, entries.size());
+
+        for (size_t index = 0; index < entries.size(); ++index) {
+            array.setValueAtIndex(runtime, index,
+                                  facebook::jsi::Array::createWithElements(
+                                      runtime, facebook::jsi::String::createFromUtf8(runtime, entries[index].first),
+                                      valueOf(runtime, entries[index].second)));
+        }
+
+        return array;
+    }
+
+    std::shared_ptr<KeyValueStore> store_;
+};
+
+/**
  * `PlatformColor('name')`, as the one host function a JavaScript `PlatformColorValueTypes.linux.js` needs.
  *
  * It is a global rather than a module method because `PlatformColor` has no TurboModule spec on any platform:
@@ -242,7 +497,8 @@ TurboModuleRegistry::TurboModuleRegistry(
       appearanceModel_(std::make_shared<AppearanceModel>(kFallbackColorScheme)),
       appearanceModule_(std::make_shared<LinuxAppearanceModule>(jsInvoker, appearanceModel_)),
       activationModel_(std::make_shared<ActivationModel>()),
-      linkingModule_(std::make_shared<LinuxLinkingModule>(jsInvoker, activationModel_)) {
+      linkingModule_(std::make_shared<LinuxLinkingModule>(jsInvoker, activationModel_)),
+      keyValueStore_(std::make_shared<KeyValueStore>()) {
     appearanceModel_->setChangeListener([appearanceModule = appearanceModule_.get()](ColorScheme colorScheme) {
         appearanceModule->emitAppearanceChange(colorScheme);
     });
@@ -254,6 +510,9 @@ TurboModuleRegistry::TurboModuleRegistry(
                              [appearanceModule = appearanceModule_]() { return appearanceModule; });
     moduleFactories_.emplace(LinuxLinkingModule::kModuleName,
                              [linkingModule = linkingModule_]() { return linkingModule; });
+    moduleFactories_.emplace(LinuxAsyncStorageModule::kModuleName, [jsInvoker, keyValueStore = keyValueStore_]() {
+        return std::make_shared<LinuxAsyncStorageModule>(jsInvoker, keyValueStore);
+    });
     // #79: `fetch` and `XMLHttpRequest` reach upstream's C++ Networking module, which this platform only supplies
     // the HTTP client for.
     moduleFactories_.emplace(facebook::react::NetworkingModule::kModuleName, [jsInvoker]() {
@@ -285,6 +544,8 @@ DimensionsSource& TurboModuleRegistry::dimensions() noexcept { return *dimension
 AppearanceModel& TurboModuleRegistry::appearance() noexcept { return *appearanceModel_; }
 
 ActivationModel& TurboModuleRegistry::activation() noexcept { return *activationModel_; }
+
+KeyValueStore& TurboModuleRegistry::keyValueStore() noexcept { return *keyValueStore_; }
 
 void TurboModuleRegistry::install(facebook::jsi::Runtime& runtime) {
     installPlatformColorBinding(runtime, appearanceModel_);

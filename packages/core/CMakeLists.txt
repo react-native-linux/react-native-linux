@@ -64,6 +64,8 @@ find_package(fmt CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 # #79: libcurl is the HTTP client behind upstream's NetworkingModule; see src/CurlHttpClient.h.
 find_package(CURL REQUIRED)
+# #23: SQLite is the store behind AsyncStorage; see src/AsyncStorage.h.
+find_package(SQLite3 REQUIRED)
 
 add_library(double-conversion INTERFACE)
 target_link_libraries(double-conversion INTERFACE double-conversion::double-conversion)
@@ -838,6 +840,7 @@ add_library(rnl_react_core STATIC
     src/ActivityIndicatorContent.cpp
     src/AnimationFrameQueue.cpp
     src/Appearance.cpp
+    src/AsyncStorage.cpp
     src/AutomationProtocol.cpp
     src/Clipboard.cpp
     src/ConsoleBinding.cpp
@@ -877,6 +880,7 @@ target_include_directories(rnl_react_core PUBLIC src ${REACT_CXX_PLATFORM_DIR})
 target_link_libraries(rnl_react_core
     PUBLIC
         CURL::libcurl
+        SQLite::SQLite3
         hermesvm
         jsi
         rnl_jsidynamic
