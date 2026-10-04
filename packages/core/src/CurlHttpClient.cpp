@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cstddef>
 #include <folly/io/IOBuf.h>
+#include <stdexcept>
 #include <string_view>
 #include <utility>
 
@@ -346,6 +347,48 @@ void CurlHttpClient::run() {
 
         curl_multi_poll(multi_.get(), nullptr, 0, kPollTimeoutMilliseconds, nullptr);
     }
+}
+
+namespace {
+
+size_t appendToBundle(char* data, size_t size, size_t count, void* bundle) {
+    static_cast<std::string*>(bundle)->append(data, size * count);
+
+    return size * count;
+}
+
+} // namespace
+
+std::string fetchBundle(const std::string& url) {
+    // Metro's first build of a large application on a cold cache takes minutes, not seconds.
+    constexpr long kTransferTimeoutSeconds = 600;
+    constexpr long kStatusClassDivisor = 100;
+    constexpr long kSuccessStatusClass = 2;
+    const std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> easy(curl_easy_init(), &curl_easy_cleanup);
+    std::string body;
+    long status = 0;
+
+    // An easy handle follows no redirect, so an https:// bundle can never be served from a downgraded http:// one.
+    curl_easy_setopt(easy.get(), CURLOPT_URL, url.c_str());
+    curl_easy_setopt(easy.get(), CURLOPT_WRITEFUNCTION, &appendToBundle);
+    curl_easy_setopt(easy.get(), CURLOPT_WRITEDATA, &body);
+    curl_easy_setopt(easy.get(), CURLOPT_TIMEOUT, kTransferTimeoutSeconds);
+    curl_easy_setopt(easy.get(), CURLOPT_ACCEPT_ENCODING, "");
+
+    const CURLcode result = curl_easy_perform(easy.get());
+
+    curl_easy_getinfo(easy.get(), CURLINFO_RESPONSE_CODE, &status);
+
+    if (status != 0 && status / kStatusClassDivisor != kSuccessStatusClass) {
+        throw std::runtime_error("Could not load the bundle from " + url + ": HTTP " + std::to_string(status) + "\n" +
+                                 body);
+    }
+
+    if (result != CURLE_OK) {
+        throw std::runtime_error("Could not load the bundle from " + url + ": " + curl_easy_strerror(result));
+    }
+
+    return body;
 }
 
 std::optional<std::string> decodeBase64(const std::string& encoded) {

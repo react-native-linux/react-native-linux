@@ -421,6 +421,37 @@ TEST(CurlHttpClientTest, RunsARequestThatSetNoOptionalCallbacks) {
     EXPECT_EQ(body, "x");
 }
 
+/** #79: loading a bundle from a Metro dev server, Metro's build-error response, and a redirect it never follows. */
+TEST(CurlHttpClientTest, FetchesABundleAndFailsOnABuildErrorARedirectOrNoServerNamingTheUrl) {
+    LoopbackServer server([](const std::string& request, int socket) {
+        if (request.starts_with("GET /index.bundle")) {
+            respond(socket, "200 OK", "", "globalThis.loaded = true;");
+        } else if (request.starts_with("GET /moved.bundle")) {
+            respond(socket, "302 Found", "Location: http://127.0.0.1:9/index.bundle\r\n", "");
+        } else {
+            respond(socket, "500 Internal Server Error", "", R"({"type":"TransformError"})");
+        }
+    });
+    const auto failureOf = [](const std::string& url) -> std::string {
+        try {
+            fetchBundle(url);
+        } catch (const std::runtime_error& error) {
+            return error.what();
+        }
+
+        return "no failure";
+    };
+
+    EXPECT_EQ(fetchBundle(server.url("/index.bundle?platform=linux")), "globalThis.loaded = true;");
+    EXPECT_EQ(failureOf(server.url("/broken.bundle")), "Could not load the bundle from " +
+                                                           server.url("/broken.bundle") +
+                                                           ": HTTP 500\n{\"type\":\"TransformError\"}");
+    EXPECT_EQ(failureOf(server.url("/moved.bundle")),
+              "Could not load the bundle from " + server.url("/moved.bundle") + ": HTTP 302\n");
+    EXPECT_TRUE(failureOf("http://127.0.0.1:9/index.bundle")
+                    .starts_with("Could not load the bundle from http://127.0.0.1:9/index.bundle: "));
+}
+
 TEST(CurlHttpClientTest, DecodesBase64WithAndWithoutPaddingAndRejectsForeignCharacters) {
     EXPECT_EQ(decodeBase64("aGk="), "hi");
     EXPECT_EQ(decodeBase64("aGk"), "hi");

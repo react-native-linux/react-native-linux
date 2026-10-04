@@ -2,6 +2,7 @@
 
 #include "AutomationProtocol.h"
 #include "ConsoleBinding.h"
+#include "CurlHttpClient.h"
 #include "ReactNativeFeatureFlagsOverridesLinux.h"
 
 #include <atomic>
@@ -177,6 +178,14 @@ ActivationModel& ReactHost::activation() noexcept { return turboModuleRegistry_-
 KeyValueStore& ReactHost::keyValueStore() noexcept { return turboModuleRegistry_->keyValueStore(); }
 
 void ReactHost::publishPendingDimensions() { turboModuleRegistry_->publishPendingDimensions(); }
+
+void ReactHost::loadBundle(const std::string& location) {
+    if (location.starts_with("http://") || location.starts_with("https://")) {
+        loadScript(std::make_unique<facebook::react::JSBigStdString>(fetchBundle(location)), location);
+    } else {
+        loadScript(facebook::react::JSBigFileString::fromPath(location), location);
+    }
+}
 
 void ReactHost::loadScript(std::unique_ptr<const facebook::react::JSBigString> script, const std::string& sourceUrl) {
     reactInstance_->loadScript(std::move(script), sourceUrl);

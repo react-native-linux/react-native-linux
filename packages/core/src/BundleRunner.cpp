@@ -55,14 +55,6 @@ constexpr size_t kMaximumInjectedScrollFrames = 2000;
 constexpr char kTabKeyName[] = "Tab";
 constexpr char kTabKeyCode[] = "Tab";
 
-std::unique_ptr<const facebook::react::JSBigString> readScript(const std::optional<std::string>& bundlePath) {
-    if (bundlePath.has_value()) {
-        return facebook::react::JSBigFileString::fromPath(bundlePath.value());
-    }
-
-    return std::make_unique<facebook::react::JSBigStdString>(kSmokeSource);
-}
-
 /**
  * The headless counterpart of an `xdg_toplevel.configure`: a run with no compositor still has a surface, and
  * `Dimensions.get` has to answer with that surface's size rather than with the pre-configure default.
@@ -73,9 +65,11 @@ void configureDimensions(ReactHost& reactHost, facebook::react::Size surfaceSize
 }
 
 void loadAndSettle(ReactHost& reactHost, const std::optional<std::string>& bundlePath) {
-    std::unique_ptr<const facebook::react::JSBigString> script = readScript(bundlePath);
-
-    reactHost.loadScript(std::move(script), bundlePath.value_or(kSmokeSourceUrl));
+    if (bundlePath.has_value()) {
+        reactHost.loadBundle(bundlePath.value());
+    } else {
+        reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>(kSmokeSource), kSmokeSourceUrl);
+    }
 
     if (!reactHost.runUntilQuiescent(kQuiescenceBudget)) {
         std::cerr << "[bundle-runner] gave up waiting for pending timers" << std::endl;
@@ -246,7 +240,7 @@ std::unique_ptr<FabricHost> startFabricRun(ReactHost& reactHost, const std::stri
     std::unique_ptr<FabricHost> fabricHost = std::make_unique<FabricHost>(reactHost.reactInstance(), surfaceSize);
 
     configureDimensions(reactHost, surfaceSize);
-    reactHost.loadScript(facebook::react::JSBigFileString::fromPath(bundlePath), bundlePath);
+    reactHost.loadBundle(bundlePath);
 
     return fabricHost;
 }

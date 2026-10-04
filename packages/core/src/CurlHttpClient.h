@@ -57,6 +57,15 @@ private:
     std::thread worker_;
 };
 
+/**
+ * The body of a GET to `url`, which is how a JavaScript bundle is loaded from a Metro dev server (#79). A blocking
+ * libcurl easy transfer rather than this client's multi interface: it follows no redirect and has a deadline,
+ * neither of which the Networking contract above wants. An HTTP status other than 2xx throws first, naming the URL
+ * and carrying the body, because a bundle Metro failed to build arrives as an HTTP 500 whose body is the build
+ * error as JSON; evaluating it as script would bury that error under a syntax error. A transfer error throws next.
+ */
+std::string fetchBundle(const std::string& url);
+
 /** Decodes standard base64, ignoring padding; `std::nullopt` for any character outside the alphabet. */
 std::optional<std::string> decodeBase64(const std::string& encoded);
 

@@ -103,6 +103,12 @@ public:
      */
     void publishPendingDimensions();
     void loadScript(std::unique_ptr<const facebook::react::JSBigString> script, const std::string& sourceUrl);
+
+    /**
+     * Loads the bundle at `location`: an `http://` or `https://` URL is fetched (a Metro dev server, #79), anything
+     * else is a file path. `location` is also the source URL stack traces and source maps name.
+     */
+    void loadBundle(const std::string& location);
     void drainJavaScriptThread();
 
     /**
