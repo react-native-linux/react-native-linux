@@ -5,7 +5,11 @@ interface LinuxPlatformColor {
 type ResolvePlatformColor = (name: string) => number | null;
 
 const isLinuxPlatformColor = (color: unknown): color is LinuxPlatformColor =>
-  typeof color === "object" && color !== null && "linuxPlatformColorNames" in color;
+  typeof color === "object" &&
+  color !== null &&
+  "linuxPlatformColorNames" in color &&
+  Array.isArray(color.linuxPlatformColorNames) &&
+  color.linuxPlatformColorNames.every((name: unknown) => typeof name === "string");
 
 const hostResolver = (): ResolvePlatformColor | null => {
   const resolver: unknown = Reflect.get(globalThis, "__rnlPlatformColor");

@@ -25,13 +25,16 @@ describe("PlatformColorValueTypes.linux", () => {
     expect(() => processColorObject(PlatformColor("labelColor"))).toThrow("none of these is a Linux platform color");
   });
 
-  it.each([[{ semantic: ["labelColor"] }], ["#fff"], [null]])(
-    "leaves %j to the rest of the colour pipeline",
-    (color) => {
-      expect(normalizeColorObject(color)).toBeNull();
-      expect(processColorObject(color, resolveLabelColor)).toBeNull();
-    },
-  );
+  it.each([
+    [{ semantic: ["labelColor"] }],
+    [{ linuxPlatformColorNames: null }],
+    [{ linuxPlatformColorNames: [true] }],
+    ["#fff"],
+    [null],
+  ])("leaves %j to the rest of the colour pipeline", (color) => {
+    expect(normalizeColorObject(color)).toBeNull();
+    expect(processColorObject(color, resolveLabelColor)).toBeNull();
+  });
 
   it("normalizes its own value to itself", () => {
     const color = PlatformColor("labelColor");
