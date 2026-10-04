@@ -157,10 +157,13 @@ target_compile_definitions(rnl_core_hermes_tests
 #   #395 immediateTaskYieldsToSynchronousAccess and normalTaskYieldsToSynchronousAccess: each starts a real
 #        thread that requests synchronous access and lines it up with the scheduler's yield check by sleeping,
 #        so on a loaded runner whichever side wins decides what the stub queue holds at the assertion.
+#   #511 VoidFunEmitsEvents: upstream's case static_pointer_casts the generated AsyncEventEmitter<jsi::Value> for
+#        onClick to AsyncEventEmitter<std::string>, which UBSan reports as an invalid downcast. What it checks is
+#        covered through JSI by CxxModuleTypeSurfaceTest.
 #
-# All four are vendored and none is reachable from anything this platform calls.
+# All are vendored and none is reachable from anything this platform calls.
 set(RNL_HERMES_TESTS_FILTER
-    "-BridgingTest.highResTimeStampTest:UseModernRuntimeScheduler/RuntimeSchedulerTest.*TaskYieldsToSynchronousAccess/*")
+    "-BridgingTest.highResTimeStampTest:UseModernRuntimeScheduler/RuntimeSchedulerTest.*TaskYieldsToSynchronousAccess/*:NativeCxxModuleExampleTests.VoidFunEmitsEvents")
 
 if(CMAKE_CXX_FLAGS MATCHES "-fsanitize=thread")
     string(APPEND RNL_HERMES_TESTS_FILTER
