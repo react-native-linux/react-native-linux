@@ -3015,8 +3015,10 @@ Known deviations from iOS and Android, all deliberate:
   ever multiplies a zero. With `perspective`, the dropped divide is the whole error. On a 100x50 frame turned 30
   degrees about Y, a corner lands 1.28 pixels from where the projection puts it at `perspective: 1000`, and 7.14
   pixels at `perspective: 200` (`TransformOriginTest`). `transform-origin.png` shows what the second case paints.
-  `transformOrigin` itself is exact: keywords, lengths and percentages resolve as CSS does, and a `matrix`
-  operation paints exactly as the operation list it spells (#104).
+  `transformOrigin` itself is exact for what reaches C++: the lengths and percentages upstream's JavaScript
+  `processTransformOrigin` turns keywords into pivot as CSS says they should, and a `matrix` operation paints
+  exactly as the operation list it spells (#104). The keyword spelling itself is upstream's JavaScript, not tested
+  here.
 
 The proof is `packages/core/tests/BorderGeometryTest.cpp`, inside the 100% gate — the content-box arithmetic, the
 corner containment, the hairline promotion, and the identity between what the hit test answers and what
