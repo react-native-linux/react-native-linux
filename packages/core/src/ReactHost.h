@@ -94,6 +94,9 @@ public:
     /** `Linking`'s activation state (#363); see `TurboModuleRegistry::activation`. */
     ActivationModel& activation() noexcept;
 
+    /** `RNAsyncStorage`'s store (#23), which `WindowSession` points at the application's file. */
+    KeyValueStore& keyValueStore() noexcept;
+
     /**
      * Emits at most one `didUpdateDimensions` for everything configured since the last call, on the JavaScript
      * thread. Called once per frame by the window host, and once after the resize by the headless one.

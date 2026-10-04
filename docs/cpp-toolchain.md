@@ -1235,6 +1235,17 @@ What it took, all of it upstream's code except the resolver table:
 Not yet: the `init` template and a fresh-project build (#57), the Metro dev server (#79), and a `PlatformColor`
 overlay over `__rnlPlatformColor` (#52).
 
+## AsyncStorage (#23)
+
+`@react-native-async-storage/async-storage` 3.x resolves its `.native` variant on Linux and asks for the
+`RNAsyncStorage` TurboModule, which `TurboModuleRegistry.cpp` serves over `src/AsyncStorage.cpp`: one SQLite table
+keyed by database name and key, in one file per application at `$XDG_DATA_HOME/<app-id>/async-storage.sqlite`, where
+`<app-id>` is `rnl_window`'s `--app-id`. A headless host (`hello_react`, the golden runner) keeps the store in memory
+and never writes into the user's home. `set` and `remove` are one transaction each. The `legacy_*` v2 methods use
+the database named by the empty string; `legacy_multiMerge` rejects, because no 3.x code path calls it.
+`AsyncStorageTest` covers the store, including a batch that fails part-way and lands nothing, and
+`test-bundles/async-storage.js` is the end-to-end proof through the TurboModule.
+
 ## Dimensions and TurboModules (#50)
 
 `DeviceInfo` is the first TurboModule this platform registers, and registering it is what builds the TurboModule

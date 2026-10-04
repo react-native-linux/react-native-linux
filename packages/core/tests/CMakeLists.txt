@@ -301,6 +301,10 @@ target_link_libraries(rnl_core_tests PRIVATE react_renderer_element)
 target_sources(rnl_core_tests PRIVATE CurlHttpClientTest.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../src/CurlHttpClient.cpp)
 target_include_directories(rnl_core_tests PRIVATE ${REACT_CXX_PLATFORM_DIR})
 target_link_libraries(rnl_core_tests PRIVATE CURL::libcurl)
+
+# #23: the SQLite store behind AsyncStorage, against files in the test's temporary directory.
+target_sources(rnl_core_tests PRIVATE AsyncStorageTest.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../src/AsyncStorage.cpp)
+target_link_libraries(rnl_core_tests PRIVATE SQLite::SQLite3)
 target_compile_options(rnl_core_tests PRIVATE -Wall -Wextra -fexceptions -frtti)
 target_include_directories(rnl_core_tests
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src ${RNL_UPSTREAM_ANIMATED_TESTS_DIR})

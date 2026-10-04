@@ -1,5 +1,6 @@
 #include "WindowSession.h"
 
+#include "AsyncStorage.h"
 #include "DimensionsSource.h"
 
 #include <chrono>
@@ -36,6 +37,7 @@ uint64_t toNanosecondsSinceEpoch(std::chrono::steady_clock::time_point timePoint
 } // namespace
 
 WindowSession::WindowSession(const std::string& bundlePath, WindowSize size,
+                             const std::string& asyncStorageDatabasePath,
                              std::optional<std::string> initialActivationUrl)
     : fabricHost_(std::make_unique<FabricHost>(reactHost_.reactInstance(), toSurfaceSize(size))),
       frameJournal_(kNominalVsyncNanoseconds, kHangThresholdVsyncCount * kNominalVsyncNanoseconds) {
@@ -43,6 +45,7 @@ WindowSession::WindowSession(const std::string& bundlePath, WindowSize size,
     // window's requested size rather than with the pre-configure default.
     configureDimensions(size);
     seedColorScheme();
+    reactHost_.keyValueStore().setDatabasePath(asyncStorageDatabasePath);
 
     if (initialActivationUrl.has_value()) {
         deliverActivationUrl(initialActivationUrl.value());
