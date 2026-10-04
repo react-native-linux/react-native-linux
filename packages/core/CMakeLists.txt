@@ -919,7 +919,7 @@ endif()
 # ---------------------------------------------------------------------------
 
 if(TARGET rnl_skia)
-    add_library(rnl_scene_painter STATIC src/GradientShader.cpp src/ScenePainter.cpp)
+    add_library(rnl_scene_painter STATIC src/ColorStops.cpp src/GradientShader.cpp src/ScenePainter.cpp)
     target_compile_options(rnl_scene_painter PRIVATE -Wall -Wextra)
     target_include_directories(rnl_scene_painter PUBLIC src)
     target_link_libraries(rnl_scene_painter PUBLIC rnl_react_core rnl_skia)

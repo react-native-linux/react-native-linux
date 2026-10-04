@@ -58,6 +58,7 @@ set(RNL_CORE_SCENE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/Appearance.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/AutomationProtocol.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/Clipboard.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ColorStops.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/DefaultFontFamily.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/DimensionsSource.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/EditorModel.cpp
@@ -117,6 +118,7 @@ add_executable(rnl_core_tests
     AnimationChoreographerTest.cpp
     AppearanceTest.cpp
     BorderGeometryTest.cpp
+    ColorStopTest.cpp
     DefaultFontFamilyTest.cpp
     DimensionsTest.cpp
     SceneNodeResetTest.cpp
