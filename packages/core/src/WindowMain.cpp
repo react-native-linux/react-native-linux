@@ -1241,7 +1241,10 @@ int main(int argc, char** argv) {
         // draining the display before the outer catch reports the symptom is what puts the structured line on
         // the trace ahead of it. See `WaylandWindow::reportPendingDisplayError`.
         try {
-            const std::optional<std::string> ladderPath = ladderStatePath();
+            // A forced rung is a diagnostic override, not the ladder's decision: recording it would make every later,
+            // unforced launch resume the forced rung (#368).
+            const std::optional<std::string> ladderPath =
+                parsedArguments.forcedRung.has_value() ? std::nullopt : ladderStatePath();
             const std::string driverIdentity = react_native_linux::probeVulkanDriverIdentity();
             RendererBringUp broughtUp = bringUpRenderer(window, parsedArguments, ladderPath, driverIdentity);
             react_native_linux::WindowRenderer& renderer = *broughtUp.renderer;

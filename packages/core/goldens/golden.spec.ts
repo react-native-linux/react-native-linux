@@ -204,6 +204,8 @@ const windowGoldenFileNames = [
   "window-view-props.png",
   "window-first-frame.png",
   "window-decorations.png",
+  "window-translucent.png",
+  "window-raster-fabric-view.png",
 ];
 
 /**
