@@ -21,6 +21,13 @@ const fixtures: readonly GoldenFixture[] = [
   { bundleFileName: "view-props.js", goldenFileName: "view-props.png", renderArguments: [], renderFlag: "--golden" },
   // #72: a paragraph's base direction from writingDirection or the inherited layout direction, in Latin text.
   { bundleFileName: "rtl-text.js", goldenFileName: "rtl-text.png", renderArguments: [], renderFlag: "--golden" },
+  // #104: a turn about each transformOrigin over the unturned frame, and what perspective reduces to.
+  {
+    bundleFileName: "transform-origin.js",
+    goldenFileName: "transform-origin.png",
+    renderArguments: [],
+    renderFlag: "--golden",
+  },
   // #99: the fill, the gradient, the ring, the content clip and the child clip all cut by one rounded box.
   { bundleFileName: "rounded-box.js", goldenFileName: "rounded-box.png", renderArguments: [], renderFlag: "--golden" },
   // #100: per-side colours, transparent edges, hairline widths and the corner mitres, at three scales.
