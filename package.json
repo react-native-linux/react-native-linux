@@ -16,6 +16,8 @@
     "format:cpp:check": "node scripts/format-cpp.ts --check",
     "lint": "oxlint --deny-warnings",
     "dependency-floor:check": "node scripts/dependency-floor.ts",
+    "override:check": "node scripts/override-report.ts --check",
+    "override:report": "node scripts/override-report.ts",
     "manifest-schema:check": "node scripts/linux-bundle-manifest-schema.ts check",
     "manifest-schema:generate": "node scripts/linux-bundle-manifest-schema.ts generate",
     "prop-coverage:check": "node scripts/prop-coverage.ts check",
@@ -32,7 +34,7 @@
     "upstream:check": "node scripts/upstream.ts check",
     "upstream:patch": "node scripts/upstream.ts patch",
     "upstream:vendor": "node scripts/upstream.ts vendor",
-    "validate": "pnpm format:check && pnpm format:cpp:check && pnpm ts && pnpm lint && pnpm deadcode && pnpm cpd && pnpm test && pnpm manifest-schema:check && pnpm validate:meta",
+    "validate": "pnpm format:check && pnpm format:cpp:check && pnpm ts && pnpm lint && pnpm deadcode && pnpm cpd && pnpm test && pnpm manifest-schema:check && pnpm override:check && pnpm validate:meta",
     "validate:meta": "node scripts/validate-meta.ts"
   },
   "devDependencies": {
@@ -46,6 +48,7 @@
     "oxfmt": "catalog:",
     "oxlint": "catalog:",
     "pngjs": "catalog:",
+    "react-native-platform-override": "catalog:",
     "react-native-worklets": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

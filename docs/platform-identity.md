@@ -342,13 +342,11 @@ against `v0.87.1`, not left as placeholders.
 `src/private/specs_DEPRECATED/modules/NativePlatformConstantsAndroid.js` (matching the exact base file RNW itself
 derives `NativePlatformConstantsWindows.js` from).
 
-**Commands the coordinator runs**, in `packages/core`, after `pnpm install` at the repo root (the tool itself is
-not installed until then):
-
-```bash
-pnpm install
-pnpm --filter @react-native-linux/core override:validate   # react-native-platform-override validate
-```
+**Commands.** `pnpm override:check`, part of `pnpm validate`, runs `react-native-platform-override`'s
+`validateManifest` against the *vendored* React Native tag (so a bump PR reports every override whose upstream file
+moved), requires every entry to name its issue, holds the count to the override budget (#86), and fails when
+`docs/override-report.md` is stale; `pnpm override:report` regenerates that report, which lists each override's
+size against upstream and its age in React Native minors.
 
 `validate` checks that every file matching `includePatterns` is listed, and that `derived`/`patch` entries'
 `baseHash` still matches what `add`/`upgrade` would compute. It needs network access to GitHub to fetch base
@@ -360,9 +358,10 @@ repository instead:
 
 ```bash
 mkdir -p ~/.cache/react-native-linux-tmp
-TMPDIR=~/.cache/react-native-linux-tmp pnpm --filter @react-native-linux/core override:validate
-``` When React
-Native is upgraded past `0.87.1`, run `react-native-platform-override upgrade` from `packages/core` to
+TMPDIR=~/.cache/react-native-linux-tmp pnpm override:check
+```
+
+When React Native is upgraded past `0.87.1`, run `react-native-platform-override upgrade` from `packages/core` to
 merge upstream changes into the three `derived` files and bump `baseVersion`.
 
 ## Deferred
