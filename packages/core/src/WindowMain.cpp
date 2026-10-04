@@ -605,6 +605,13 @@ WindowArguments parseArguments(std::span<char*> arguments) {
                 return parsed;
             }
         } else if (flag == kAppIdFlag) {
+            // The identifier names the desktop file and the AsyncStorage directory, so it must stay one component.
+            if (value.find('/') != std::string_view::npos || value == "." || value == "..") {
+                parsed.error = "--app-id must be a single path component, not '" + std::string(value) + "'";
+
+                return parsed;
+            }
+
             parsed.applicationIdentifier = std::string(value);
         } else if (flag == kInjectKeySequenceFlag) {
             parsed.injectKeySequence = std::string(value);
