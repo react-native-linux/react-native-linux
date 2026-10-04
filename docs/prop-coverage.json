@@ -1,6 +1,9 @@
 {
   "View": {
-    "opacity": { "state": "implemented", "test": "RetainedSceneTest, OpacityMultipliesDownTheTree" },
+    "opacity": {
+      "state": "implemented",
+      "test": "RetainedSceneTest, ATranslucentParentIsOneLayerOverItsSubtreeAndALeafKeepsItsOwnAlpha"
+    },
     "backgroundColor": {
       "state": "implemented",
       "test": "RetainedSceneTest, UpdateReplacesFrameAndBackgroundColorInPlace"
@@ -78,11 +81,11 @@
     "onTextLayout": { "state": "not-implemented", "issue": "#111" },
     "textAttributes": {
       "state": "implemented",
-      "test": "RetainedSceneTextTest, OpacityMultipliesIntoTheFragmentColors"
+      "test": "RetainedSceneTextTest, ATranslucentAncestorFadesTextAsALayerRatherThanThroughItsFragmentColors"
     },
     "foregroundColor": {
       "state": "implemented",
-      "test": "RetainedSceneTextTest, OpacityMultipliesIntoTheFragmentColors"
+      "test": "RetainedSceneTextTest, ATranslucentAncestorFadesTextAsALayerRatherThanThroughItsFragmentColors"
     },
     "backgroundColor": { "state": "implemented", "test": "text-metrics.png" },
     "opacity": { "state": "not-implemented", "issue": "#69" },
@@ -167,7 +170,7 @@
     },
     "tintColor": {
       "state": "implemented",
-      "test": "RetainedSceneImageTest, OpacityMultipliesIntoTheTintAlphaAndTheImageAlpha"
+      "test": "RetainedSceneImageTest, ATranslucentAncestorFadesAnImageAsALayerRatherThanThroughItsTint"
     },
     "internal_analyticTag": { "state": "not-implemented", "issue": "#69" },
     "resizeMethod": { "state": "not-implemented", "issue": "#44" },
