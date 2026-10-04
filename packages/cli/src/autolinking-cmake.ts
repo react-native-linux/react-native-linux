@@ -59,30 +59,51 @@ const generateAutolinkingCMake = (libraries: readonly AutolinkedLibrary[], codeg
     "",
   ].join("\n");
 
-const registrationLines = (moduleHeaderName: string): readonly string[] => [
-  `    registerCxxModuleToGlobalModuleMap(std::string(${moduleHeaderName}::kModuleName),`,
-  "                                       [](std::shared_ptr<CallInvoker> jsInvoker) {",
-  `                                           return std::make_shared<${moduleHeaderName}>(std::move(jsInvoker));`,
-  "                                       });",
+const registrationLines = (library: { moduleHeaderName: string; packageName: string }): readonly string[] => [
+  `    registerAutolinkedModule(std::string(${library.moduleHeaderName}::kModuleName), "${library.packageName}",`,
+  "                             [](std::shared_ptr<CallInvoker> jsInvoker) {",
+  `                                 return std::make_shared<${library.moduleHeaderName}>(std::move(jsInvoker));`,
+  "                             });",
+];
+
+/** Upstream's `registerCxxModuleToGlobalModuleMap` replaces a name silently; two libraries claiming one must not. */
+const duplicateGuardLines: readonly string[] = [
+  "void registerAutolinkedModule(",
+  "    std::string name, const char* packageName,",
+  "    std::function<std::shared_ptr<TurboModule>(std::shared_ptr<CallInvoker>)> moduleProvider) {",
+  "    if (globalExportedCxxTurboModuleMap().contains(name)) {",
+  '        std::cerr << "[autolinking] " << packageName << " registers the TurboModule \'" << name',
+  '                  << "\', which another autolinked library already registered" << std::endl;',
+  "        std::abort();",
+  "    }",
+  "",
+  "    registerCxxModuleToGlobalModuleMap(std::move(name), std::move(moduleProvider));",
+  "}",
+  "",
 ];
 
 /**
  * The C++ half: every C++ TurboModule a library names by `cxxModuleHeaderName` is registered into upstream's
  * `globalExportedCxxTurboModuleMap`, exactly as the `cpp-library` template's iOS `OnLoad.mm` does and with the
  * class-name convention Android's generated autolinking uses. The file is compiled into the host executable
- * itself, so the static initializer is never dropped by the linker the way one inside a static archive can be.
+ * itself, so the static initializer is never dropped by the linker the way one inside a static archive can be, and
+ * it runs before `main` and so before `TurboModuleRegistry` copies the map. A name two libraries both register
+ * aborts at startup naming the second package, rather than one module silently replacing the other (#148).
  */
 const generateAutolinkingRegistration = (libraries: readonly AutolinkedLibrary[]): string => {
-  const moduleHeaderNames = libraries.flatMap((library) =>
-    library.moduleHeaderName === null ? [] : [library.moduleHeaderName],
+  const modules = libraries.flatMap(({ moduleHeaderName, packageName }) =>
+    moduleHeaderName === null ? [] : [{ moduleHeaderName, packageName }],
   );
 
   return [
     `// ${generatedNotice}`,
     "#include <ReactCommon/CxxTurboModuleUtils.h>",
     "",
-    ...moduleHeaderNames.map((moduleHeaderName) => `#include <${moduleHeaderName}.h>`),
+    ...modules.map(({ moduleHeaderName }) => `#include <${moduleHeaderName}.h>`),
     "",
+    "#include <cstdlib>",
+    "#include <functional>",
+    "#include <iostream>",
     "#include <memory>",
     "#include <string>",
     "#include <utility>",
@@ -90,8 +111,9 @@ const generateAutolinkingRegistration = (libraries: readonly AutolinkedLibrary[]
     "namespace facebook::react {",
     "namespace {",
     "",
+    ...duplicateGuardLines,
     "const bool autolinkedModulesRegistered = [] {",
-    ...moduleHeaderNames.flatMap((moduleHeaderName) => registrationLines(moduleHeaderName)),
+    ...modules.flatMap((module) => registrationLines(module)),
     "    return true;",
     "}();",
     "",
