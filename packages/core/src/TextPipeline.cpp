@@ -9,6 +9,7 @@
 #include "ParagraphLayoutCache.h"
 #include "PinnedFontFamilies.h"
 #include "ResourceResolver.h"
+#include "TextDirection.h"
 #include "TextGeometry.h"
 #include "TextTransform.h"
 #include "include/core/SkColor.h"
@@ -419,7 +420,8 @@ skia::textlayout::ParagraphStyle toParagraphStyle(const facebook::react::Attribu
 
     style.setTextStyle(toTextStyle(baseAttributes, fontCollection));
     style.setTextAlign(toTextAlign(baseAttributes));
-    style.setTextDirection(skia::textlayout::TextDirection::kLtr);
+    style.setTextDirection(isRightToLeft(baseAttributes) ? skia::textlayout::TextDirection::kRtl
+                                                         : skia::textlayout::TextDirection::kLtr);
     // kAll keeps the first line's ascent and the last line's descent inside the applied height, so every line box
     // in a paragraph is the same size. kDisableFirstAscent/kDisableLastDescent are the asymmetry upstream's two
     // platforms disagree over; see *Vertical metrics (#110)* in docs/cpp-toolchain.md.
