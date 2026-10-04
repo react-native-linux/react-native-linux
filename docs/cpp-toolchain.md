@@ -1189,7 +1189,7 @@ The one platform file `Common/cpp` needs, `PlatformLogger`, is `src/WorkletsPlat
 Build cost against #78: 39 s wall clock for the 30 translation units at `-j16` under the `tsan` preset on a 24-thread
 machine.
 
-## Autolinking (#146, #147)
+## Autolinking (#146, #147, #149)
 
 `node scripts/autolink.ts <react-native config JSON> <output directory>` reads the dependency tree the community
 CLI's `react-native config` prints, gives every dependency one verdict (`packages/cli/src/linux-autolinking.ts`,
@@ -1207,6 +1207,19 @@ unmodified `create-react-native-library` 0.63 template, and calls it from `test-
 
 Our C++ ABI toward a library is the vendored React Native pin's; what a library may assume beyond that is #89's
 question, not this generator's.
+
+**Components (#149).** Every dependency with a `codegenConfig`, whether its native code is linked or not, has its
+specs run through `@react-native/codegen`: `modulesCxx` for module specs, and `componentsIOS`, upstream's generator
+for the shared C++ props, shadow nodes, event emitters, states and descriptors, for component specs (core's own
+components use it too). A library with components gets a static `react_codegen_<name>` that the host links, and
+`rnl_autolinking.cpp` appends each component that is not `interfaceOnly` to `autolinkedComponentDescriptorProviders()`
+(`src/AutolinkedComponents.h`). `FabricHost` adds those after the built-ins and refuses a name that is already
+registered, a built-in's or another library's, rather than letting one descriptor replace another. Such a component
+paints as a `View` because its props derive from `ViewProps`. An `interfaceOnly` component's descriptor is the
+library's own C++, which is #150/#151's. The fixture's `CppLibraryView` is the CI proof
+(`test-bundles/autolinked-component.js`). It is registered when the mount tree names it with its frame, and no
+"`[component] 'CppLibraryView' has no native component registered`" line appears. The interop fallback would lay
+out and paint an unregistered name too, so the frame alone proves nothing.
 
 ## A React Native application (#22)
 

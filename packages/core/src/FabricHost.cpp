@@ -1,5 +1,6 @@
 #include "FabricHost.h"
 
+#include "AutolinkedComponents.h"
 #include "SwitchComponent.h"
 #include "TextInputComponent.h"
 
@@ -14,7 +15,9 @@
 #include <iostream>
 #include <jsi/jsi.h>
 #include <memory>
+#include <stdexcept>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -35,6 +38,12 @@
 #include <react/renderer/scheduler/SchedulerToolbox.h>
 
 namespace react_native_linux {
+
+std::vector<facebook::react::ComponentDescriptorProvider>& autolinkedComponentDescriptorProviders() {
+    static std::vector<facebook::react::ComponentDescriptorProvider> providers;
+
+    return providers;
+}
 
 namespace {
 
@@ -63,29 +72,37 @@ constexpr facebook::react::SurfaceId kSurfaceId = 1;
 // shadow node and the props on top of those base classes; see *TextInput* in docs/cpp-toolchain.md.
 facebook::react::ComponentRegistryFactory createComponentRegistryFactory(
     const std::shared_ptr<facebook::react::ComponentDescriptorProviderRegistry>& providerRegistry) {
-    providerRegistry->add(
-        facebook::react::concreteComponentDescriptorProvider<facebook::react::RootComponentDescriptor>());
-    providerRegistry->add(
-        facebook::react::concreteComponentDescriptorProvider<facebook::react::ViewComponentDescriptor>());
-    providerRegistry->add(
-        facebook::react::concreteComponentDescriptorProvider<facebook::react::ImageComponentDescriptor>());
-    providerRegistry->add(
-        facebook::react::concreteComponentDescriptorProvider<facebook::react::ScrollViewComponentDescriptor>());
-    providerRegistry->add(
-        facebook::react::concreteComponentDescriptorProvider<facebook::react::ParagraphComponentDescriptor>());
-    providerRegistry->add(
-        facebook::react::concreteComponentDescriptorProvider<facebook::react::TextComponentDescriptor>());
-    providerRegistry->add(
-        facebook::react::concreteComponentDescriptorProvider<facebook::react::RawTextComponentDescriptor>());
-    providerRegistry->add(facebook::react::concreteComponentDescriptorProvider<TextInputComponentDescriptor>());
+    std::unordered_set<std::string> registeredNames;
+    const auto add = [&providerRegistry,
+                      &registeredNames](const facebook::react::ComponentDescriptorProvider& provider) {
+        if (!registeredNames.emplace(provider.name).second) {
+            throw std::logic_error(std::string("an autolinked library registers the component '") + provider.name +
+                                   "', which is already registered");
+        }
+
+        providerRegistry->add(provider);
+    };
+
+    add(facebook::react::concreteComponentDescriptorProvider<facebook::react::RootComponentDescriptor>());
+    add(facebook::react::concreteComponentDescriptorProvider<facebook::react::ViewComponentDescriptor>());
+    add(facebook::react::concreteComponentDescriptorProvider<facebook::react::ImageComponentDescriptor>());
+    add(facebook::react::concreteComponentDescriptorProvider<facebook::react::ScrollViewComponentDescriptor>());
+    add(facebook::react::concreteComponentDescriptorProvider<facebook::react::ParagraphComponentDescriptor>());
+    add(facebook::react::concreteComponentDescriptorProvider<facebook::react::TextComponentDescriptor>());
+    add(facebook::react::concreteComponentDescriptorProvider<facebook::react::RawTextComponentDescriptor>());
+    add(facebook::react::concreteComponentDescriptorProvider<TextInputComponentDescriptor>());
 
     // `ActivityIndicatorView` is upstream's own generated descriptor, unchanged: its spec is not `interfaceOnly`,
     // so codegen produced the props, the shadow node and the descriptor and there is nothing platform-specific
     // about any of them. `Switch` is `interfaceOnly` and stops at the props and the emitter, which is why
     // `src/SwitchComponent.h` supplies the rest.
-    providerRegistry->add(facebook::react::concreteComponentDescriptorProvider<
-                          facebook::react::ActivityIndicatorViewComponentDescriptor>());
-    providerRegistry->add(facebook::react::concreteComponentDescriptorProvider<SwitchComponentDescriptor>());
+    add(facebook::react::concreteComponentDescriptorProvider<
+        facebook::react::ActivityIndicatorViewComponentDescriptor>());
+    add(facebook::react::concreteComponentDescriptorProvider<SwitchComponentDescriptor>());
+
+    for (const facebook::react::ComponentDescriptorProvider& provider : autolinkedComponentDescriptorProviders()) {
+        add(provider);
+    }
 
     // Upstream's `useFabricInterop` default turns a name with no descriptor into an empty legacy-interop view, so
     // a component that was never registered mounts as nothing and says nothing: react-native-windows#7566. This
