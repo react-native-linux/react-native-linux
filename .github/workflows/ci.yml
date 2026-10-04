@@ -607,6 +607,12 @@ jobs:
         if: matrix.skia == 'ON'
         run: pnpm test:golden
 
+      # #210/#423: upstream's own *-itest.js files, unmodified, through upstream Fantom's in-runtime harness in
+      # hello_react. packages/core/fantom-expectations.json names the corpus and every known failure's issue.
+      - name: Run the upstream itests through Fantom
+        if: matrix.skia == 'ON'
+        run: node packages/test-harness/scripts/fantom.ts
+
   # The only job that reaches SkiaVulkanRenderer: a real swapchain on a real wl_surface, drawn by lavapipe under
   # a headless weston. It is deliberately separate from native (dev), which proves the opposite thing — that a
   # configure with no Wayland and no Vulkan loader disables rnl_window and carries on. Installing the graphics

@@ -793,6 +793,7 @@ set(RNL_REACT_COMMON_NATIVEMODULE_SUBDIRS
     react/renderer/observers/intersection
     react/renderer/observers/mutation
     devtoolsruntimesettings
+    react/nativemodule/cputime
     react/nativemodule/defaults
     react/nativemodule/devtoolsruntimesettings
     react/nativemodule/dom
@@ -812,6 +813,7 @@ endforeach()
 # another OBJECT library's — the same reason RNL_REACT_COMMON_TARGETS lists its closure.
 set(RNL_REACT_COMMON_NATIVEMODULE_TARGETS
     devtoolsruntimesettings
+    react_nativemodule_cpu
     react_nativemodule_defaults
     react_nativemodule_devtoolsruntimesettings
     react_nativemodule_dom

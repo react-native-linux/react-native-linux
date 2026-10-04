@@ -12,6 +12,7 @@
 #include <ReactCommon/TurboModuleUtils.h>
 #include <array>
 #include <cstring>
+#include <iostream>
 #include <memory>
 #include <optional>
 #include <spawn.h>
@@ -22,6 +23,7 @@
 #include <react/coremodules/DeviceInfoModule.h>
 #include <react/io/NetworkingModule.h>
 #include <react/logging/NativeExceptionsManager.h>
+#include <react/nativemodule/cputime/NativeCPUTime.h>
 #include <react/nativemodule/defaults/DefaultTurboModules.h>
 #include <react/renderer/animated/AnimatedModule.h>
 #include <react/renderer/animated/NativeAnimatedNodesManagerProvider.h>
@@ -452,6 +454,36 @@ private:
 };
 
 /**
+ * `NativeFantomCxx` (#210, #423): the two methods upstream Fantom's in-runtime test harness
+ * (`private/react-native-fantom/runtime/setup.js`) calls in a plain itest. `reportTestSuiteResultsJSON` prints the
+ * suite's results on one `[fantom]` line for `scripts/fantom.ts` to read, and `validateEmptyMessageQueue` asks
+ * nothing of a host whose queues drain on their own. Every other method of the spec drives a surface, an event or
+ * a timer mock this runner does not provide yet, so it is absent and a test that calls one fails naming it.
+ */
+class LinuxFantomModule final : public facebook::react::TurboModule {
+public:
+    static constexpr std::string_view kModuleName = "NativeFantomCxx";
+
+    explicit LinuxFantomModule(std::shared_ptr<facebook::react::CallInvoker> jsInvoker)
+        : TurboModule(std::string(kModuleName), std::move(jsInvoker)) {
+        methodMap_["reportTestSuiteResultsJSON"] = {1, [](facebook::jsi::Runtime& runtime, TurboModule& /*turboModule*/,
+                                                          const facebook::jsi::Value* arguments, size_t count) {
+                                                        if (count > 0 && arguments[0].isString()) {
+                                                            std::cout << "[fantom] "
+                                                                      << arguments[0].getString(runtime).utf8(runtime)
+                                                                      << std::endl;
+                                                        }
+
+                                                        return facebook::jsi::Value::undefined();
+                                                    }};
+        methodMap_["validateEmptyMessageQueue"] = {0,
+                                                   [](facebook::jsi::Runtime& /*runtime*/, TurboModule& /*turboModule*/,
+                                                      const facebook::jsi::Value* /*arguments*/,
+                                                      size_t /*count*/) { return facebook::jsi::Value::undefined(); }};
+    }
+};
+
+/**
  * `PlatformColor('name')`, as the one host function a JavaScript `PlatformColorValueTypes.linux.js` needs.
  *
  * It is a global rather than a module method because `PlatformColor` has no TurboModule spec on any platform:
@@ -513,6 +545,11 @@ TurboModuleRegistry::TurboModuleRegistry(
     moduleFactories_.emplace(LinuxAsyncStorageModule::kModuleName, [jsInvoker, keyValueStore = keyValueStore_]() {
         return std::make_shared<LinuxAsyncStorageModule>(jsInvoker, keyValueStore);
     });
+    moduleFactories_.emplace(LinuxFantomModule::kModuleName,
+                             [jsInvoker]() { return std::make_shared<LinuxFantomModule>(jsInvoker); });
+    // Upstream's own CPU-time module, which Fantom's test runtime and the web-performance itests read.
+    moduleFactories_.emplace(facebook::react::NativeCPUTime::kModuleName,
+                             [jsInvoker]() { return std::make_shared<facebook::react::NativeCPUTime>(jsInvoker); });
     // #79: `fetch` and `XMLHttpRequest` reach upstream's C++ Networking module, which this platform only supplies
     // the HTTP client for.
     moduleFactories_.emplace(facebook::react::NetworkingModule::kModuleName, [jsInvoker]() {

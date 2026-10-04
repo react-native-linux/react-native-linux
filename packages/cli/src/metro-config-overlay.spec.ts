@@ -61,6 +61,7 @@ describe("linuxUpstreamVariantIndex", () => {
       "Libraries/Network/RCTNetworking",
       "Libraries/Settings/Settings",
       "Libraries/Utilities/BackHandler",
+      "src/private/devsupport/rndevtools/ReactDevToolsSettingsManager",
     ]);
   });
 });
@@ -84,5 +85,49 @@ describe("createLinuxResolveRequest", () => {
     [null],
   ])("returns %j unchanged when there is nothing to substitute", (resolution) => {
     expect(resolveWith(resolution, "./View").result).toBe(resolution);
+  });
+});
+
+const devToolsOrigin = path.join("/app", "node_modules", "react-native", "Libraries", "Core", "setUpReactDevTools.js");
+const devToolsSpecifier = "../../src/private/devsupport/rndevtools/ReactDevToolsSettingsManager";
+
+const resolveOnly =
+  (existing: string) =>
+  (_context: unknown, name: string): unknown => {
+    if (name !== existing) {
+      throw new Error(`cannot resolve ${name}`);
+    }
+
+    return { filePath: name, type: "sourceFile" };
+  };
+
+describe("createLinuxResolveRequest for an upstream pair with no base file", () => {
+  it("retries the specifier as the variant the index names", () => {
+    const context = { originModulePath: devToolsOrigin, resolveRequest: resolveOnly(`${devToolsSpecifier}.android`) };
+
+    expect(createLinuxResolveRequest(() => false)(context, devToolsSpecifier, "linux")).toStrictEqual({
+      filePath: `${devToolsSpecifier}.android`,
+      type: "sourceFile",
+    });
+  });
+
+  it.each([
+    { moduleName: "./NotListed", originModulePath: devToolsOrigin, platform: "linux" },
+    { moduleName: devToolsSpecifier, originModulePath: devToolsOrigin, platform: "android" },
+    { moduleName: "react-native-svg", originModulePath: devToolsOrigin, platform: "linux" },
+    { moduleName: "./ReactDevToolsSettingsManager", originModulePath: "/app/src/App.js", platform: "linux" },
+  ])(
+    "rethrows the failure for $moduleName from $originModulePath on $platform",
+    ({ moduleName, originModulePath, platform }) => {
+      const context = { originModulePath, resolveRequest: resolveOnly("nothing") };
+
+      expect(() => createLinuxResolveRequest(() => false)(context, moduleName, platform)).toThrow("cannot resolve");
+    },
+  );
+
+  it("rethrows when Metro gives no origin", () => {
+    const context = { resolveRequest: resolveOnly("nothing") };
+
+    expect(() => createLinuxResolveRequest(() => false)(context, devToolsSpecifier, "linux")).toThrow("cannot resolve");
   });
 });

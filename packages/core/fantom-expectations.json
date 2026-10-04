@@ -1,0 +1,90 @@
+{
+  "private/featureflags/__tests__/ReactNativeFeatureFlags-itest.js": {},
+  "private/setup/__tests__/setUpDefaultReactNativeEnvironment-ComponentSideEffects-itest.js": {},
+  "private/setup/__tests__/setUpDefaultReactNativeEnvironment-FeatureFlags-itest.js": {},
+  "private/setup/__tests__/setUpDefaultReactNativeEnvironment-Globals-IntersectionObserver-itest.js": {},
+  "private/setup/__tests__/setUpDefaultReactNativeEnvironment-Globals-itest.js": {
+    "setUpDefaultReactNativeEnvironment (globals) Web APIs Networking should provide WebSocket": "no WebSocket module is registered yet (#79)"
+  },
+  "private/setup/__tests__/setUpDefaultReactNativeEnvironment-Globals-MutationObserver-itest.js": {},
+  "private/timers/__tests__/Timers-itest.js": {
+    "setTimeout does not fire before the delay elapses": "NativeFantom.setTimerMockEnabled and advanceTimers are not implemented (#210)",
+    "setTimeout fires once after the delay elapses": "NativeFantom.setTimerMockEnabled and advanceTimers are not implemented (#210)",
+    "setTimeout does not fire again after firing once": "NativeFantom.setTimerMockEnabled and advanceTimers are not implemented (#210)",
+    "setTimeout passes additional arguments to the callback": "NativeFantom.setTimerMockEnabled and advanceTimers are not implemented (#210)",
+    "setTimeout fires multiple timers in order of their due time": "NativeFantom.setTimerMockEnabled and advanceTimers are not implemented (#210)",
+    "setTimeout runs timers scheduled by other timers on the next advance": "NativeFantom.setTimerMockEnabled and advanceTimers are not implemented (#210)",
+    "clearTimeout prevents a pending timer from firing": "NativeFantom.setTimerMockEnabled and advanceTimers are not implemented (#210)",
+    "setInterval fires once per interval": "NativeFantom.setTimerMockEnabled and advanceTimers are not implemented (#210)",
+    "setInterval keeps firing across multiple advances until cleared": "NativeFantom.setTimerMockEnabled and advanceTimers are not implemented (#210)",
+    "clearInterval stops a recurring timer from firing again": "NativeFantom.setTimerMockEnabled and advanceTimers are not implemented (#210)"
+  },
+  "private/webapis/dom/abort-api/__tests__/AbortController-itest.js": {
+    "AbortController 'timeout' static method should abort after the timeout with a TimeoutError reason": "NativeFantom.setTimerMockEnabled and advanceTimers are not implemented (#210)",
+    "AbortController 'timeout' static method should throw a TypeError for a negative timeout": "NativeFantom.setTimerMockEnabled and advanceTimers are not implemented (#210)"
+  },
+  "private/webapis/errors/__tests__/DOMException-itest.js": {},
+  "private/webapis/geometry/__tests__/DOMRectList-itest.js": {},
+  "private/webapis/performance/__tests__/EventTimingAPI-itest.js": {
+    "Event Timing API reports events without event handlers or updates": "NativeFantom.startSurface is not implemented, so Fantom.createRoot cannot render (#210)",
+    "Event Timing API reports events with handlers but no updates": "NativeFantom.startSurface is not implemented, so Fantom.createRoot cannot render (#210)",
+    "Event Timing API reports events with updates": "NativeFantom.startSurface is not implemented, so Fantom.createRoot cannot render (#210)",
+    "Event Timing API provides the event timeStamp as startTime": "NativeFantom.startSurface is not implemented, so Fantom.createRoot cannot render (#210)",
+    "Event Timing API reports number of dispatched events via performance.eventCounts": "NativeFantom.startSurface is not implemented, so Fantom.createRoot cannot render (#210)",
+    "Event Timing API durationThreshold option works when used with `type`": "NativeFantom.startSurface is not implemented, so Fantom.createRoot cannot render (#210)",
+    "Event Timing API durationThreshold option defaults to 104ms for event entries per W3C spec": "NativeFantom.startSurface is not implemented, so Fantom.createRoot cannot render (#210)"
+  },
+  "private/webapis/performance/__tests__/LongTasksAPI-itest.js": {
+    "LongTasks API does NOT report short tasks (under 50ms)": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "LongTasks API reports long tasks (over 50ms)": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "LongTasks API tasks that yield should NOT be reported if they are longer than 50ms but had yielding opportunities in intervals shorter than 50ms": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "LongTasks API tasks that yield should be reported if running for longer than 50ms between yielding opportunities": "NativeFantom.forceHighResTimeStamp is not implemented (#210)"
+  },
+  "private/webapis/performance/__tests__/Performance-itest.js": {},
+  "private/webapis/performance/__tests__/PerformanceMemory-itest.js": {},
+  "private/webapis/performance/__tests__/PerformanceObserver-itest.js": {
+    "PerformanceObserver receives notifications for marks and measures": "NativeFantom.flushMessageQueue is not implemented, so Fantom.runTask cannot run (#210)",
+    "PerformanceObserver takeRecords() provides all buffered events and clears the buffer": "NativeFantom.flushMessageQueue is not implemented, so Fantom.runTask cannot run (#210)"
+  },
+  "private/webapis/performance/__tests__/UserTiming-itest.js": {
+    "User Timing allows creating instances of PerformanceMark directly": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "User Timing does NOT allow creating instances of PerformanceMeasure directly": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "User Timing mark works with default timestamp": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "User Timing mark works with custom timestamp": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "User Timing mark provides detail": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "User Timing mark provides a null detail if it is not provided or is undefined": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "User Timing mark throws if no name is provided": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "User Timing mark casts mark name to a string": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "User Timing mark casts startTime to a number": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "User Timing mark throws if startTime cannot be converted to a finite number": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "User Timing mark throws if startTime is negative": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "User Timing measure with measureOptions uses 0 as default start and now as default end": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "User Timing measure with measureOptions works with a start timestamp": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "User Timing measure with measureOptions works with start mark": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "User Timing measure with measureOptions works with end mark": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "User Timing measure with measureOptions works with start mark and end mark": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "User Timing measure with measureOptions works with a start timestamp and an end timestamp": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "User Timing measure with measureOptions works with a start timestamp and a duration": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "User Timing measure with measureOptions works with a start mark and a duration": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "User Timing measure with measureOptions works with an end timestamp and a duration": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "User Timing measure with measureOptions works with an end mark and a duration": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "User Timing measure with measureOptions throws if the specified mark does NOT exist": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "User Timing measure with startMark / endMark uses 0 as default start and now as default end": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "User Timing measure with startMark / endMark works with startMark": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "User Timing measure with startMark / endMark works with startMark and endMark": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "User Timing measure with startMark / endMark throws if the specified marks do NOT exist": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "User Timing measure provides detail": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "User Timing measure provides a null detail if it is not provided or is undefined": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "User Timing measure casts measure name to a string": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "User Timing measure throws if no name is provided": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "User Timing getting and clearing marks and measures provides access to all buffered entries ordered by startTime": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "User Timing getting and clearing marks and measures clears entries as specified": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "User Timing getting and clearing marks and measures handles consecutive adding and clearing (marks)": "NativeFantom.forceHighResTimeStamp is not implemented (#210)",
+    "User Timing getting and clearing marks and measures handles consecutive adding and clearing (measures)": "NativeFantom.forceHighResTimeStamp is not implemented (#210)"
+  },
+  "private/webapis/structuredClone/__tests__/structuredClone-itest.js": {
+    "structuredClone platform objects non-serializable platform objects does NOT clone ReadOnlyNode": "NativeFantom.startSurface is not implemented, so Fantom.createRoot cannot render (#210)",
+    "structuredClone platform objects non-serializable platform objects does NOT clone IntersectionObserverEntry": "NativeFantom.startSurface is not implemented, so Fantom.createRoot cannot render (#210)",
+    "structuredClone platform objects non-serializable platform objects does NOT clone MutationRecord": "NativeFantom.startSurface is not implemented, so Fantom.createRoot cannot render (#210)"
+  }
+}
