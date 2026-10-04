@@ -138,6 +138,9 @@ TEST(ColorStopTest, ColorStopsWithPositionedStopAdjacentToUnpositionedStop) {
     EXPECT_FLOAT_EQ(processed[3].position.value(), 0.8F);
 }
 
+/** A layer with no stops has nothing to fix up, and asking is not an error. */
+TEST(ColorStopTest, NoStopsFixUpToNoStops) { EXPECT_TRUE(fixedColorStops({}, 100).empty()); }
+
 /** A gradient line with no length gives a length position nothing to be a fraction of, so it sits at the start. */
 TEST(ColorStopTest, ALengthPositionOnAZeroLengthLineSitsAtTheStart) {
     const auto processed =

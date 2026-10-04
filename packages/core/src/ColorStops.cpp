@@ -144,6 +144,10 @@ std::array<ProcessedColorStop, kStopsPerHint> expandHint(const ProcessedColorSto
 } // namespace
 
 std::vector<ProcessedColorStop> fixedColorStops(const std::vector<ColorStop>& colorStops, float gradientLineLength) {
+    if (colorStops.empty()) {
+        return {};
+    }
+
     std::vector<ProcessedColorStop> stops = positionedStops(colorStops, gradientLineLength);
 
     // A hint is never first or last, and CSS's grammar puts a colour on each side of it.
