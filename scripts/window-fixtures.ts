@@ -15,7 +15,8 @@ const clientDecorations = ["--app-id", "org.reactnative.linux.golden", "--force-
  * first-buffer check the invisible-window bug (#328) fails and a 60-frame settle does not. See *Surface commit
  * ordering* in docs/cpp-toolchain.md. The decorations fixture is #329's drawn bar; the translucent one runs
  * `--transparent-background`, proving #328's composite-alpha selection; the raster one is #368's `wl_shm` bottom
- * rung, which has to draw what the Vulkan rung draws for the same bundle; the rest are bare.
+ * rung, which has to draw what the Vulkan rung draws for the same bundle, translucency included (#519); the rest
+ * are bare.
  */
 const defaultFixture = { extraArguments: ["--no-decorations"], frameCount: SCREENSHOT_FRAME_COUNT };
 
@@ -40,6 +41,12 @@ const fixtures: readonly WindowFixture[] = [
     bundleFileName: "fabric-view.js",
     extraArguments: [...defaultFixture.extraArguments, "--renderer", "raster"],
     goldenFileName: "window-raster-fabric-view.png",
+  },
+  {
+    ...defaultFixture,
+    bundleFileName: "translucent-view.js",
+    extraArguments: [...defaultFixture.extraArguments, "--transparent-background", "--renderer", "raster"],
+    goldenFileName: "window-raster-translucent.png",
   },
 ];
 
