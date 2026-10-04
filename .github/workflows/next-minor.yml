@@ -1,0 +1,113 @@
+name: next-minor
+
+# #58: the vendored React Native pin moved to the next minor, built and compared against the goldens. It is a signal,
+# not a gate: a red run is the list of what the next bump has to explain, read before any adaptation code is written.
+# See *React Native bump procedure (#58)* in docs/cpp-toolchain.md.
+on:
+  schedule:
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: next-minor-${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  next-minor:
+    name: next-minor (dev)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      CC: clang-18
+      CXX: clang++-18
+    steps:
+      - name: Free disk space
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install build prerequisites
+        run: |
+          set -euo pipefail
+          sudo apt-get update || (sudo rm -f /etc/apt/sources.list.d/google-chrome.list && sudo apt-get update)
+          sudo apt-get install -y \
+            build-essential \
+            clang-18 \
+            cmake \
+            git \
+            libboost-dev \
+            libcurl4-openssl-dev \
+            libdouble-conversion-dev \
+            libfmt-dev \
+            libfontconfig-dev \
+            libfreetype-dev \
+            libgoogle-glog-dev \
+            libicu-dev \
+            libsqlite3-dev \
+            ninja-build \
+            pkg-config \
+            python3
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The newest release of the minor after the vendored one, or its newest release candidate if it has no release
+      # yet. Nightlies are skipped: they have no git tag to vendor.
+      - name: Point the vendor lock at the next React Native minor
+        id: next
+        run: |
+          set -euo pipefail
+          current=$(jq -r .tag scripts/vendor.lock.json)
+          minor=$(echo "$current" | cut -d. -f2)
+          prefix="0.$((minor + 1))."
+          version=$(npm view react-native versions --json | jq -r --arg prefix "$prefix" \
+            '[.[] | select(startswith($prefix) and (contains("nightly") | not))]
+             | (map(select(test("-") | not)) | last) // last // empty')
+          if [ -z "$version" ]; then
+            echo "::notice::React Native has published nothing for ${prefix}x yet; nothing to build against"
+            exit 0
+          fi
+          jq --arg tag "v$version" '.tag = $tag' scripts/vendor.lock.json > /tmp/vendor.lock.json
+          mv /tmp/vendor.lock.json scripts/vendor.lock.json
+          echo "::notice::building against v$version instead of $current"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Vendor React Native
+        if: steps.next.outputs.tag != ''
+        run: node scripts/vendor-react-native.ts
+
+      - name: Vendor Skia
+        if: steps.next.outputs.tag != ''
+        run: node scripts/vendor-skia.ts
+
+      - name: Vendor fonts
+        if: steps.next.outputs.tag != ''
+        run: node scripts/vendor-fonts.ts
+
+      - name: Configure
+        if: steps.next.outputs.tag != ''
+        run: cmake --preset dev -DRNL_ENABLE_SKIA=ON
+
+      - name: Build hello_react
+        if: steps.next.outputs.tag != ''
+        run: cmake --build build/dev --target hello_react
+
+      - name: Compare golden images
+        if: steps.next.outputs.tag != ''
+        run: pnpm test:golden

@@ -5,6 +5,7 @@
   "scripts": {
     "commitlint": "commitlint --from origin/main",
     "codegen": "node scripts/codegen-core.ts",
+    "conformance": "pnpm test:golden && pnpm e2e",
     "cpd": "jscpd packages",
     "create-package": "node scripts/create-package.ts",
     "deadcode": "knip",
