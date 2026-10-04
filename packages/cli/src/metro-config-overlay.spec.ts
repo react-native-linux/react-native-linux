@@ -60,7 +60,6 @@ describe("linuxUpstreamVariantIndex", () => {
       "Libraries/Image/Image",
       "Libraries/Network/RCTNetworking",
       "Libraries/Settings/Settings",
-      "Libraries/StyleSheet/PlatformColorValueTypes",
       "Libraries/Utilities/BackHandler",
     ]);
   });
