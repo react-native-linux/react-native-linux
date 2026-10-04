@@ -82,17 +82,15 @@ const createWorkspace = (artifacts: Artifacts): Workspace => {
 };
 
 /**
- * The headless wlroots backend needs no DRM device and no seat, and the pixman renderer needs no GPU at all: the
- * compositor only has to accept the client's buffers, because the screenshot comes out of the client's own
- * swapchain. cage runs the window as its child and terminates when it exits, so the two are one process tree.
+ * Headless wlroots and pixman need no DRM device, seat or GPU: the screenshot comes from the client's swapchain.
+ * cage runs the window as its child and exits with it. Its stderr is folded into stdout so the trace keeps write
+ * order (#512), and `exec` keeps cage's own exit status and signal.
  */
 const startCompositor = (run: ScenarioRun, rig: Rig, workspace: Workspace): Compositor =>
   spawn(
     "sh",
     [
       "-c",
-      // One pipe for both streams, so the trace keeps the order the window wrote it in: two pipes reach this process
-      // in whatever order the event loop reads them. `exec` keeps cage's own exit status and signal.
       'exec "$0" "$@" 2>&1',
       rig.compositorPath,
       "--",
@@ -122,10 +120,7 @@ const startCompositor = (run: ScenarioRun, rig: Rig, workspace: Workspace): Comp
     },
   );
 
-/**
- * The event trace is the bundle's own `console.log` output, passed through by cage with stderr folded into stdout;
- * the fixtures are the format.
- */
+/** The event trace is the bundle's own `console.log` output, passed through by cage; the fixtures are the format. */
 const attachTrace = (compositor: Compositor, sink: TraceSink): void => {
   const record = (chunk: Buffer): void => {
     sink.text += chunk.toString();
