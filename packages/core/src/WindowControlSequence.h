@@ -44,7 +44,8 @@ struct WindowControlSequence {
  *
  *   `{800x600}`                       one configure at that extent
  *   `{Drag:800x600:1000x600:5}`       five configures interpolated from the first extent to the second
- *   `{Maximized}` `{Unmaximized}`     the matching state bit, set or cleared
+ *   `{Activated}` `{Deactivated}`     the matching state bit, set or cleared
+ *   `{Maximized}` `{Unmaximized}`
  *   `{Fullscreen}` `{Unfullscreen}`
  *   `{Tiled}` `{Untiled}`             all four tiled edges at once, per `isEffectivelyTiled`'s rule
  *   `{Maximized:1280x800}`            any state token may carry the extent that state arrives with

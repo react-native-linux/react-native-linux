@@ -139,6 +139,14 @@ TEST(WindowControlSequenceTest, EveryStateNameSetsAndClearsItsOwnBit) {
     EXPECT_FALSE(parsed.steps[5].state.tiledBottom);
 }
 
+TEST(WindowControlSequenceTest, ActivationIsAStateBitLikeTheOthers) {
+    const WindowControlSequence parsed = parse("{Activated}{Deactivated}");
+
+    ASSERT_EQ(parsed.steps.size(), 2U);
+    EXPECT_TRUE(parsed.steps[0].state.activated);
+    EXPECT_FALSE(parsed.steps[1].state.activated);
+}
+
 TEST(WindowControlSequenceTest, StateAndExtentBothCarryForwardAcrossTokens) {
     const WindowControlSequence parsed = parse("{Fullscreen:1920x1080}{Maximized}");
 

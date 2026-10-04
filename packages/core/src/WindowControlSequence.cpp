@@ -57,6 +57,12 @@ std::optional<Extent> parseExtent(std::string_view text) {
 }
 
 bool applyStateName(std::string_view name, ToplevelState& state) {
+    if (name == "Activated" || name == "Deactivated") {
+        state.activated = name == "Activated";
+
+        return true;
+    }
+
     if (name == "Maximized" || name == "Unmaximized") {
         state.maximized = name == "Maximized";
 
