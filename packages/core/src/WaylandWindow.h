@@ -181,6 +181,8 @@ public:
     void showWindowMenu(int32_t x, int32_t y);
     void toggleMaximized();
     void minimize();
+    /** `xdg_toplevel.set_max_size`, in window-geometry pixels; applied with the next surface commit. */
+    void setMaximumSize(uint32_t width, uint32_t height);
     /** What the drawn close button does: the same flag `xdg_toplevel.close` sets, so teardown takes one path. */
     void requestClose() noexcept;
 

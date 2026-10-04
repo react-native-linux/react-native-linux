@@ -273,6 +273,10 @@ void WaylandWindow::toggleMaximized() {
 
 void WaylandWindow::minimize() { xdg_toplevel_set_minimized(toplevel_); }
 
+void WaylandWindow::setMaximumSize(uint32_t width, uint32_t height) {
+    xdg_toplevel_set_max_size(toplevel_, static_cast<int32_t>(width), static_cast<int32_t>(height));
+}
+
 void WaylandWindow::requestClose() noexcept { closed_ = true; }
 
 ToplevelState WaylandWindow::toplevelState() const noexcept { return toplevelState_; }

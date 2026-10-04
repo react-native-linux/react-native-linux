@@ -214,6 +214,8 @@ void SkiaVulkanRenderer::resize(WindowSize size) {
 
 const std::string& SkiaVulkanRenderer::driverIdentity() const noexcept { return driverIdentity_; }
 
+uint32_t SkiaVulkanRenderer::maxImageDimension() const noexcept { return maxImageDimension_; }
+
 void SkiaVulkanRenderer::captureNextFrame(std::string outputPath) { pendingCapturePath_ = std::move(outputPath); }
 
 bool SkiaVulkanRenderer::hasPendingCapture() const noexcept { return !pendingCapturePath_.empty(); }
@@ -571,6 +573,7 @@ void SkiaVulkanRenderer::selectPhysicalDevice() {
     std::vector<uint32_t> presentableFamilies;
     std::vector<uint32_t> presentableDeviceTypes;
     std::vector<std::string> presentableIdentities;
+    std::vector<uint32_t> presentableMaxDimensions;
 
     for (VkPhysicalDevice candidate : physicalDevices) {
         VkPhysicalDeviceProperties properties{};
@@ -602,6 +605,7 @@ void SkiaVulkanRenderer::selectPhysicalDevice() {
             presentableFamilies.push_back(familyIndex);
             presentableDeviceTypes.push_back(static_cast<uint32_t>(properties.deviceType));
             presentableIdentities.push_back(describePhysicalDevice(properties));
+            presentableMaxDimensions.push_back(properties.limits.maxImageDimension2D);
 
             break;
         }
@@ -617,6 +621,7 @@ void SkiaVulkanRenderer::selectPhysicalDevice() {
     physicalDevice_ = presentableDevices[*selected];
     queueFamilyIndex_ = presentableFamilies[*selected];
     driverIdentity_ = presentableIdentities[*selected];
+    maxImageDimension_ = presentableMaxDimensions[*selected];
 }
 
 void SkiaVulkanRenderer::createDevice() {

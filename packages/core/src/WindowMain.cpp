@@ -1248,6 +1248,15 @@ int main(int argc, char** argv) {
             const std::string driverIdentity = react_native_linux::probeVulkanDriverIdentity();
             RendererBringUp broughtUp = bringUpRenderer(window, parsedArguments, ladderPath, driverIdentity);
             react_native_linux::WindowRenderer& renderer = *broughtUp.renderer;
+
+            // A configure larger than the device's largest image could never get a swapchain (#329). The raster rung
+            // has no such limit to state.
+            if (broughtUp.vulkanRenderer != nullptr) {
+                const uint32_t maxDimension = broughtUp.vulkanRenderer->maxImageDimension();
+
+                window.setMaximumSize(maxDimension, maxDimension);
+                std::cout << "[rnl-present] max-size " << maxDimension << "x" << maxDimension << std::endl;
+            }
             bool firstPresentedFrameAnnounced = false;
             std::optional<react_native_linux::WindowSession> session;
             WindowChrome chrome;

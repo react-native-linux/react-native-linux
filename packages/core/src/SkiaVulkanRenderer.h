@@ -104,6 +104,12 @@ public:
      */
     const std::string& driverIdentity() const noexcept;
 
+    /**
+     * The device's `maxImageDimension2D`: no swapchain image can be larger, so the window asks the compositor never
+     * to configure it larger (`WaylandWindow::setMaximumSize`, #329).
+     */
+    uint32_t maxImageDimension() const noexcept;
+
     /** Forces one `SurfaceCommitState` field on the next frame only, so `--window-debug` reaches each action. */
     void injectSurfaceCommitFaultOnNextFrame(SurfaceCommitFault fault) noexcept;
 
@@ -142,6 +148,7 @@ private:
 
     RendererRung rung_{kTopRendererRung};
     std::string driverIdentity_;
+    uint32_t maxImageDimension_{0};
     wl_display* waylandDisplay_{nullptr};
     wl_surface* waylandSurface_{nullptr};
     VkInstance instance_{VK_NULL_HANDLE};

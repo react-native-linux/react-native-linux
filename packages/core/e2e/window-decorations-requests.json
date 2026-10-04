@@ -18,6 +18,7 @@
     "sleep 500"
   ],
   "expect": [
+    "[rnl-present] max-size ",
     "[rnl-decorations] mode=client app-id=org.reactnative.linux.e2e",
     "[rnl-decorations] move",
     "[rnl-decorations] resize right",
