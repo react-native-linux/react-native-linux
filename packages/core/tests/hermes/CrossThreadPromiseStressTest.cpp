@@ -1,16 +1,24 @@
+#include "FabricHost.h"
+#include "ImageDecoder.h"
+#include "InputPipeline.h"
 #include "ReactHost.h"
 
 #include <array>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <cxxreact/JSBigString.h>
+#include <filesystem>
+#include <fstream>
 #include <functional>
 #include <future>
 #include <gtest/gtest.h>
 #include <jsi/jsi.h>
 #include <latch>
 #include <memory>
+#include <string>
 #include <thread>
+#include <unistd.h>
 #include <utility>
 #include <vector>
 
@@ -136,6 +144,147 @@ TEST(CrossThreadPromiseStressTest, PromisesSettledAndDroppedOffTheJavaScriptThre
     EXPECT_EQ(ledger[1], kEvenPromiseCount);
     EXPECT_GT(ledger[2], 0.0);
     EXPECT_FALSE(reactHost.hasReportedFatalError());
+}
+
+constexpr std::size_t kImageFileCount = 64;
+constexpr int kMountingFrameCount = 200;
+constexpr double kFrameMilliseconds = 16.0;
+
+// Unpaced, the loop finishes before the JavaScript thread has evaluated the script, and every frame then races an
+// empty surface; a millisecond lets commits land between frames, so input hits mounted images and decodes complete
+// into nodes the frame thread is reading.
+constexpr std::chrono::milliseconds kFramePause{1};
+
+// A 1x1 RGBA PNG, written to a file per URI because the decode cache is keyed by URI: one file is one decode.
+constexpr std::array<std::uint8_t, 70> kOnePixelPng{
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00,
+    0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00,
+    0x0D, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x50, 0x70, 0x68, 0xF8, 0x0F, 0x00, 0x03, 0x44, 0x01, 0xE0,
+    0x32, 0xAA, 0xBF, 0x84, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82};
+
+// Every animation frame recommits the same eight images with their sources walked on through the files, so mounts
+// request decodes on the JavaScript thread for as long as there are files left, and the nodes those decodes
+// complete into are the ones input is hitting. The nodes stay the same so an event still has a mounted target by
+// the time JavaScript handles it; upstream drops one whose target has unmounted.
+constexpr char kMountingLoop[] = R"JAVASCRIPT(
+const fabric = globalThis.nativeFabricUIManager;
+globalThis.deliveredPointerEvents = 0;
+globalThis.commitCount = 0;
+fabric.registerEventHandler((instanceHandle, type) => {
+  if (type.startsWith('topPointer') || type === 'topClick') {
+    globalThis.deliveredPointerEvents += 1;
+  }
+});
+const sourceOf = (file) => [{ uri: `file://${globalThis.imageDirectory}/${file}.png` }];
+// Fiber-shaped, because `PointerEventsProcessor` resolves a pointer event's target through
+// `instanceHandle.stateNode.node` and drops the event when that is missing.
+const instanceHandles = [];
+for (let index = 0; index < 8; index += 1) {
+  const instanceHandle = { stateNode: { node: null } };
+  instanceHandle.stateNode.node = fabric.createNode(2 + index * 2, 'Image', 1, {
+    height: 100,
+    left: (index % 4) * 100,
+    onPointerDown: true,
+    onPointerMove: true,
+    onPointerUp: true,
+    position: 'absolute',
+    source: sourceOf(index),
+    top: Math.floor(index / 4) * 100,
+    width: 100,
+  }, instanceHandle);
+  instanceHandles.push(instanceHandle);
+}
+const commit = () => {
+  const childSet = fabric.createChildSet();
+  instanceHandles.forEach((instanceHandle, index) => {
+    const file = (globalThis.commitCount * 8 + index) % globalThis.imageFileCount;
+    instanceHandle.stateNode.node = fabric.cloneNodeWithNewProps(instanceHandle.stateNode.node, {
+      source: sourceOf(file),
+    });
+    fabric.appendChildToSet(childSet, instanceHandle.stateNode.node);
+  });
+  fabric.completeRoot(1, childSet);
+  globalThis.commitCount += 1;
+  requestAnimationFrame(commit);
+};
+requestAnimationFrame(commit);
+)JAVASCRIPT";
+
+/**
+ * Issue #77, the mounting, image-decode and input legs of `FabricHost`'s threading contract: the JavaScript thread
+ * commits a new tree of images every animation frame, each mount requests decodes that complete on the decode
+ * worker and damage the scene through the mounting manager's listener, and this thread is the frame thread,
+ * calling every member the contract lets the frame loop call while the surface runs — in `WindowSession`'s order —
+ * with a press, a release and a motion injected every frame. TSan grades the races; the assertions grade that
+ * every leg did its work rather than none of it.
+ */
+TEST(CrossThreadMountingStressTest, MountsDecodesAndInputRunConcurrentlyWithTheFrameThread) {
+    const std::filesystem::path imageDirectory =
+        std::filesystem::temp_directory_path() / ("rnl-cross-thread-mounting-stress-" + std::to_string(::getpid()));
+
+    std::filesystem::remove_all(imageDirectory);
+    std::filesystem::create_directories(imageDirectory);
+
+    for (std::size_t file = 0; file < kImageFileCount; ++file) {
+        std::ofstream(imageDirectory / (std::to_string(file) + ".png"), std::ios::binary)
+            .write(reinterpret_cast<const char*>(kOnePixelPng.data()), kOnePixelPng.size());
+    }
+
+    ReactHost reactHost;
+    auto fabricHost =
+        std::make_unique<FabricHost>(reactHost.reactInstance(), facebook::react::Size{.width = 400, .height = 200});
+
+    reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>(
+                             "globalThis.imageDirectory = '" + imageDirectory.string() +
+                             "';\nglobalThis.imageFileCount = " + std::to_string(kImageFileCount) + ";\n" +
+                             kMountingLoop),
+                         "CrossThreadMountingStressTest.js");
+
+    for (int frame = 0; frame < kMountingFrameCount; ++frame) {
+        const auto now = std::chrono::steady_clock::now();
+        const facebook::react::Point point{.x = 50.0F + static_cast<float>(frame % 4) * 100.0F, .y = 50.0F};
+
+        fabricHost->advanceImageAnimations(kFrameMilliseconds);
+        fabricHost->dispatchInput({InputEvent{.kind = InputEventKind::PointerMotion, .surfacePoint = point},
+                                   InputEvent{.kind = InputEventKind::PointerButtonPress, .surfacePoint = point},
+                                   InputEvent{.kind = InputEventKind::PointerButtonRelease, .surfacePoint = point}});
+        fabricHost->advanceScroll(kFrameMilliseconds);
+        fabricHost->induceEventBeat();
+        fabricHost->tickAnimations(now);
+        reactHost.dispatchAnimationFrames(now);
+        static_cast<void>(fabricHost->takeFrame());
+        static_cast<void>(fabricHost->findNodeAtPoint(point));
+        std::this_thread::sleep_for(kFramePause);
+    }
+
+#ifdef RNL_ENABLE_IMAGES
+    EXPECT_TRUE(waitForPendingImageDecodes(kQuiescenceBudget));
+#endif
+    // Not fatal: a wait that times out still has to be followed by the shutdown order below.
+    EXPECT_TRUE(reactHost.runUntilQuiescent(kQuiescenceBudget));
+
+    const std::array<double, 2> ledger = onJavaScriptThread<std::array<double, 2>>(reactHost, [](Runtime& runtime) {
+        return std::array{runtime.global().getProperty(runtime, "commitCount").asNumber(),
+                          runtime.global().getProperty(runtime, "deliveredPointerEvents").asNumber()};
+    });
+
+    fabricHost->stopSurface();
+    reactHost.drainJavaScriptThread();
+    fabricHost.reset();
+
+    // The sanitizer presets build without Skia and so without a decoder: there, the images mount and nothing
+    // decodes them, and the decode leg is graded by the Skia builds alone.
+#ifdef RNL_ENABLE_IMAGES
+    for (std::size_t file = 0; file < kImageFileCount; ++file) {
+        EXPECT_NE(decodedImage("file://" + (imageDirectory / (std::to_string(file) + ".png")).string()), nullptr)
+            << file;
+    }
+#endif
+
+    EXPECT_GT(ledger[0], static_cast<double>(kImageFileCount) / 8);
+    EXPECT_GT(ledger[1], 0.0);
+    EXPECT_FALSE(reactHost.hasReportedFatalError());
+    std::filesystem::remove_all(imageDirectory);
 }
 
 } // namespace

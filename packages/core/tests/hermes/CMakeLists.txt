@@ -140,6 +140,11 @@ set_target_properties(rnl_core_hermes_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY 
 target_compile_definitions(rnl_core_hermes_tests
     PRIVATE "RNL_WORKLETS_PACKAGE_JSON=\"${RNL_WORKLETS_DIR}/package.json\"")
 
+# The image-decode leg of CrossThreadMountingStressTest exists only where rnl_react_core has a decoder.
+if(TARGET rnl_skia)
+    target_compile_definitions(rnl_core_hermes_tests PRIVATE RNL_ENABLE_IMAGES)
+endif()
+
 # Two upstream cases are not discovered in the TSan configure, and only there; both run in dev, in asan and
 # locally. Each is a filter on one named case rather than a sanitizer suppression file, of which this
 # repository has none. Delete each when the React Native pin moves past a version that has fixed it.
