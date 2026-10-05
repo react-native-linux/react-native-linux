@@ -71,6 +71,11 @@ struct SceneVisit {
     ScenePaintState childState;
 };
 
+facebook::react::Point mapPoint(const SceneMatrix& matrix, facebook::react::Point point) {
+    return facebook::react::Point{.x = (matrix.scaleX * point.x) + (matrix.skewX * point.y) + matrix.translateX,
+                                  .y = (matrix.skewY * point.x) + (matrix.scaleY * point.y) + matrix.translateY};
+}
+
 namespace {
 
 template <typename Nodes>
@@ -1115,11 +1120,6 @@ ScenePaintState paintStateOfAncestors(const SceneNodes& nodes, facebook::react::
     }
 
     return state;
-}
-
-facebook::react::Point mapPoint(const SceneMatrix& matrix, facebook::react::Point point) {
-    return facebook::react::Point{.x = (matrix.scaleX * point.x) + (matrix.skewX * point.y) + matrix.translateX,
-                                  .y = (matrix.skewY * point.x) + (matrix.scaleY * point.y) + matrix.translateY};
 }
 
 /**

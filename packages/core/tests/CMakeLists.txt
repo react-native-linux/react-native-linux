@@ -176,6 +176,7 @@ add_executable(rnl_core_tests
     TextInputControllerTest.cpp
     TextInputSessionTest.cpp
     ToplevelStateTest.cpp
+    TransformOriginTest.cpp
     UpstreamTestDriftOracleTest.cpp
     GpuResourceInvalidationTest.cpp
     SurfaceCommitGateTest.cpp

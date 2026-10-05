@@ -3010,8 +3010,15 @@ Known deviations from iOS and Android, all deliberate:
   is taken instead: a border with no colour draws nothing. Distinguishing the two needs a change to upstream's
   colour type, not to this renderer.
 - **`overflow: hidden` clips to the border box**, matching iOS `clipsToBounds`, where CSS clips to the padding box.
-- **Transforms are 2D only.** The 4x4 is reduced to its affine part, so `perspective`, `rotateX` and `rotateY` lose
-  their depth and collapse to their in-plane component, and `backfaceVisibility` is not honoured.
+- **Transforms are 2D only.** The 4x4 is reduced to its affine part, and `backfaceVisibility` is not honoured. For a
+  flat view the reduction is exact for `rotateX` and `rotateY` without `perspective`: the dropped depth column only
+  ever multiplies a zero. With `perspective`, the dropped divide is the whole error. On a 100x50 frame turned 30
+  degrees about Y, a corner lands 1.28 pixels from where the projection puts it at `perspective: 1000`, and 7.14
+  pixels at `perspective: 200` (`TransformOriginTest`). `transform-origin.png` shows what the second case paints.
+  `transformOrigin` itself is exact for what reaches C++: the lengths and percentages upstream's JavaScript
+  `processTransformOrigin` turns keywords into pivot as CSS says they should, and a `matrix` operation paints
+  exactly as the operation list it spells (#104). The keyword spelling itself is upstream's JavaScript, not tested
+  here.
 
 The proof is `packages/core/tests/BorderGeometryTest.cpp`, inside the 100% gate — the content-box arithmetic, the
 corner containment, the hairline promotion, and the identity between what the hit test answers and what
