@@ -7587,6 +7587,13 @@ refuses to pretend a frame answered. The gate fails
 closed — a log without the journal's summary is the same failure a missing `FrameTiming` summary is, and a
 journal that closed no input-answering frame means the injection never reached light.
 
+**Settling (#42).** `frameBudget.maxJournalledFrames` caps the journalled frames, the ones that painted damage.
+`resize-settle.json` sets it to 11. The scenario's window sequence is the first configure plus a 10-step drag, so
+each configure paints exactly once. Then the window sits for about 500 frames that must paint nothing. A window that
+repaints with nothing to answer, a self-triggering layout or a caret-style loop, fails this by hundreds of frames.
+The fixture is `resize-settle.js`: six 6-point paragraphs, wrapped and ellipsised, three of them at half the window.
+The unit half is `ResizeTextCostTest`, under *The cache*.
+
 ### Screenshots
 
 The driver now compares as well as captures, which is a deliberate departure from the split *Window goldens* makes

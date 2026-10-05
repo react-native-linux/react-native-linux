@@ -29,7 +29,7 @@ describe("parseScenario frameBudget maxHangs", () => {
     expect(
       parseScenario({ ...validScenario, frameBudget: { ...frameBudget, maxHangs: MAX_HANGS } }, "fixture.json")
         .frameBudget,
-    ).toEqual({ ...frameBudget, maxHangs: MAX_HANGS });
+    ).toEqual({ ...frameBudget, maxHangs: MAX_HANGS, maxJournalledFrames: null });
   });
 
   it("rejects a negative hang budget", () => {

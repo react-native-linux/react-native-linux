@@ -136,7 +136,7 @@ describe("gradeArtifacts frame timing", () => {
 
     const scenario = {
       ...baseScenario,
-      frameBudget: { maxHangs: null, minFrames: MINIMUM_FRAMES, p95Ms: BUDGET_P95_MS },
+      frameBudget: { maxHangs: null, maxJournalledFrames: null, minFrames: MINIMUM_FRAMES, p95Ms: BUDGET_P95_MS },
     };
 
     expect(gradeArtifacts(inputsFor(scenario)).failures).toEqual([]);
@@ -145,7 +145,7 @@ describe("gradeArtifacts frame timing", () => {
   it("fails a run whose frame log never appeared", () => {
     const scenario = {
       ...baseScenario,
-      frameBudget: { maxHangs: null, minFrames: MINIMUM_FRAMES, p95Ms: BUDGET_P95_MS },
+      frameBudget: { maxHangs: null, maxJournalledFrames: null, minFrames: MINIMUM_FRAMES, p95Ms: BUDGET_P95_MS },
     };
 
     expect(gradeArtifacts(inputsFor(scenario)).failures).toEqual([
