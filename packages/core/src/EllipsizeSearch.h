@@ -7,6 +7,7 @@
 #include <vector>
 
 #include <react/renderer/attributedstring/primitives.h>
+#include <react/renderer/core/ReactPrimitives.h>
 
 namespace react_native_linux {
 
@@ -55,11 +56,8 @@ struct EllipsizePlan {
 /**
  * The facts about a paragraph that decide whether a `head` or `middle` cut may be searched for it at all.
  *
- * Two of them are refusals rather than settings. A paragraph carrying an **inline attachment** is left alone
- * because `ParagraphShadowNode::layout` requires one measured attachment per attachment fragment and
- * `TextLayoutManager` pairs them with `getRectsForPlaceholders` in order, a pairing that only survives drops at
- * the tail. An **editor field** is left alone because a `<TextInput>` is a window onto its whole text, not a
- * truncated view of it: its caret, selection, composing run and hit testing are all UTF-16 offsets into the
+ * An **editor field** is a refusal rather than a setting: a `<TextInput>` is a window onto its whole text, not a
+ * truncated view of it. Its caret, selection, composing run and hit testing are all UTF-16 offsets into the
  * string React gave us, and a searched cut rebuilds that string, so every one of those offsets would address a
  * different character than the one on screen. A field scrolls its text instead, which is what makes those
  * offsets keep meaning what they say.
@@ -67,14 +65,13 @@ struct EllipsizePlan {
 struct EllipsizeCandidate {
     facebook::react::EllipsizeMode ellipsizeMode;
     int maximumNumberOfLines;
-    bool hasInlineAttachment;
     bool isEditorField;
 };
 
 /**
  * Which end of the text this paragraph's `ellipsizeMode` takes away, or nothing at all when the mode is one
- * SkParagraph answers itself (`tail`, `clip`), when there is no line limit, or when the paragraph is one of the
- * two the search must not rebuild.
+ * SkParagraph answers itself (`tail`, `clip`), when there is no line limit, or when the paragraph is an editor
+ * field.
  */
 std::optional<EllipsizeSide> searchedEllipsizeSide(const EllipsizeCandidate& candidate);
 
@@ -95,5 +92,19 @@ EllipsizePlan planEllipsize(EllipsizeSide side, const std::vector<std::string>& 
 EllipsizePlan searchEllipsizePlan(EllipsizeSide side, const std::vector<std::string>& fragmentStrings,
                                   const std::vector<size_t>& graphemeStarts,
                                   const std::function<bool(const EllipsizePlan&)>& fits);
+
+/**
+ * For each attachment React measured, the index of the placeholder rect it was laid out at, or nothing when the
+ * cut or the line limit removed it.
+ *
+ * `ParagraphShadowNode::layout` wants one measured attachment per attachment fragment of the string it built, but
+ * a `head` or `middle` cut lays out a rebuilt string whose attachments are a subset of those, and
+ * `getRectsForPlaceholders` answers in the order of the string it laid out. The pairing is therefore by the
+ * attachment's tag, never by position: a placeholder belongs to the attachment of the laid-out string at its
+ * index, and only the first `placeholderCount` of those were placed at all — the rest fell past the line limit.
+ */
+std::vector<std::optional<size_t>> placeholderIndicesByTag(const std::vector<facebook::react::Tag>& measuredTags,
+                                                           const std::vector<facebook::react::Tag>& laidOutTags,
+                                                           size_t placeholderCount);
 
 } // namespace react_native_linux

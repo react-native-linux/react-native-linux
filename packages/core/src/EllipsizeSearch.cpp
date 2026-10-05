@@ -1,6 +1,7 @@
 #include "EllipsizeSearch.h"
 
 #include <algorithm>
+#include <cstddef>
 
 namespace react_native_linux {
 
@@ -50,7 +51,7 @@ size_t fragmentIndexAtOffset(const std::vector<std::string>& fragmentStrings, si
 } // namespace
 
 std::optional<EllipsizeSide> searchedEllipsizeSide(const EllipsizeCandidate& candidate) {
-    if (candidate.maximumNumberOfLines <= 0 || candidate.hasInlineAttachment || candidate.isEditorField) {
+    if (candidate.maximumNumberOfLines <= 0 || candidate.isEditorField) {
         return std::nullopt;
     }
 
@@ -101,6 +102,24 @@ EllipsizePlan searchEllipsizePlan(EllipsizeSide side, const std::vector<std::str
     }
 
     return planEllipsize(side, fragmentStrings, graphemeStarts, keptGraphemes);
+}
+
+std::vector<std::optional<size_t>> placeholderIndicesByTag(const std::vector<facebook::react::Tag>& measuredTags,
+                                                           const std::vector<facebook::react::Tag>& laidOutTags,
+                                                           size_t placeholderCount) {
+    const auto placedEnd =
+        laidOutTags.begin() + static_cast<std::ptrdiff_t>(std::min(placeholderCount, laidOutTags.size()));
+    std::vector<std::optional<size_t>> indices;
+
+    for (const facebook::react::Tag tag : measuredTags) {
+        const auto placed = std::find(laidOutTags.begin(), placedEnd, tag);
+
+        indices.push_back(placed == placedEnd
+                              ? std::nullopt
+                              : std::optional<size_t>{static_cast<size_t>(placed - laidOutTags.begin())});
+    }
+
+    return indices;
 }
 
 } // namespace react_native_linux

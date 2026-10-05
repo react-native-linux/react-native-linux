@@ -40,6 +40,20 @@ layoutParagraph(const facebook::react::AttributedString& attributedString,
                 const facebook::react::ParagraphAttributes& paragraphAttributes, float maximumWidth);
 
 /**
+ * A laid-out paragraph and the string it was actually built from. They differ only when a `head` or `middle` cut
+ * rebuilt the string, and then the rebuilt one is what `getRectsForPlaceholders` answers in the order of: it is
+ * what `TextLayoutManager` pairs placeholders with attachments against (#313).
+ */
+struct LaidOutParagraph {
+    facebook::react::AttributedString attributedString;
+    std::unique_ptr<skia::textlayout::Paragraph> paragraph;
+};
+
+LaidOutParagraph layoutMeasuredParagraph(const facebook::react::AttributedString& attributedString,
+                                         const facebook::react::ParagraphAttributes& paragraphAttributes,
+                                         float maximumWidth);
+
+/**
  * The same layout for a `<TextInput>`, with one difference: a field's paragraph is never rebuilt by the
  * `head`/`middle` truncation search.
  *

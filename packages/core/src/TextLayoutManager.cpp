@@ -1,3 +1,4 @@
+#include "EllipsizeSearch.h"
 #include "TextPipeline.h"
 #include "include/core/SkRect.h"
 #include "modules/skparagraph/include/DartTypes.h"
@@ -6,6 +7,7 @@
 #include <cmath>
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include <react/renderer/attributedstring/AttributedString.h>
@@ -43,37 +45,44 @@ namespace facebook::react {
 
 namespace {
 
-/**
- * The attachment frames a measured paragraph produced, in fragment order.
- *
- * `ParagraphShadowNode::layout` asserts that there is exactly one attachment per attachment fragment, so a
- * placeholder that SkParagraph dropped — truncated away by a line limit — is reported as clipped rather than
- * omitted.
- */
-TextMeasurement::Attachments measureAttachments(const AttributedString& attributedString,
-                                                skia::textlayout::Paragraph& paragraph) {
-    TextMeasurement::Attachments attachments;
-    const std::vector<skia::textlayout::TextBox> placeholders = paragraph.getRectsForPlaceholders();
-    size_t placeholderIndex = 0;
+std::vector<Tag> attachmentTags(const AttributedString& attributedString) {
+    std::vector<Tag> tags;
 
     for (const AttributedString::Fragment& fragment : attributedString.getFragments()) {
-        if (!fragment.isAttachment()) {
-            continue;
+        if (fragment.isAttachment()) {
+            tags.push_back(fragment.parentShadowView.tag);
         }
+    }
 
-        if (placeholderIndex >= placeholders.size()) {
+    return tags;
+}
+
+/**
+ * The attachment frames a measured paragraph produced, in fragment order of the string React measured.
+ *
+ * `ParagraphShadowNode::layout` asserts that there is exactly one attachment per attachment fragment, so a
+ * placeholder that is not in the laid-out paragraph — removed by a `head` or `middle` cut, or truncated away by
+ * the line limit — is reported as clipped rather than omitted.
+ */
+TextMeasurement::Attachments measureAttachments(const AttributedString& attributedString,
+                                                const react_native_linux::LaidOutParagraph& laidOut) {
+    const std::vector<skia::textlayout::TextBox> placeholders = laidOut.paragraph->getRectsForPlaceholders();
+    TextMeasurement::Attachments attachments;
+
+    for (const std::optional<size_t> placeholderIndex : react_native_linux::placeholderIndicesByTag(
+             attachmentTags(attributedString), attachmentTags(laidOut.attributedString), placeholders.size())) {
+        if (!placeholderIndex.has_value()) {
             attachments.push_back(TextMeasurement::Attachment{.frame = {}, .isClipped = true});
 
             continue;
         }
 
-        const SkRect& rect = placeholders[placeholderIndex].rect;
+        const SkRect& rect = placeholders[placeholderIndex.value()].rect;
 
         attachments.push_back(
             TextMeasurement::Attachment{.frame = Rect{.origin = {.x = rect.fLeft, .y = rect.fTop},
                                                       .size = {.width = rect.width(), .height = rect.height()}},
                                         .isClipped = false});
-        ++placeholderIndex;
     }
 
     return attachments;
@@ -82,15 +91,16 @@ TextMeasurement::Attachments measureAttachments(const AttributedString& attribut
 TextMeasurement measureWithSkParagraph(const AttributedString& attributedString,
                                        const ParagraphAttributes& paragraphAttributes,
                                        const LayoutConstraints& layoutConstraints) {
-    const std::unique_ptr<skia::textlayout::Paragraph> paragraph = react_native_linux::layoutParagraph(
+    const react_native_linux::LaidOutParagraph laidOut = react_native_linux::layoutMeasuredParagraph(
         attributedString, paragraphAttributes, static_cast<float>(layoutConstraints.maximumSize.width));
 
     // getLongestLine is the width the text actually occupies, which is what Yoga wants; the layout width is only
     // the bound it was wrapped against. Rounding up keeps the last glyph inside the frame Yoga then assigns.
-    const Size size = layoutConstraints.clamp(Size{.width = static_cast<Float>(std::ceil(paragraph->getLongestLine())),
-                                                   .height = static_cast<Float>(std::ceil(paragraph->getHeight()))});
+    const Size size =
+        layoutConstraints.clamp(Size{.width = static_cast<Float>(std::ceil(laidOut.paragraph->getLongestLine())),
+                                     .height = static_cast<Float>(std::ceil(laidOut.paragraph->getHeight()))});
 
-    return TextMeasurement{.size = size, .attachments = measureAttachments(attributedString, *paragraph)};
+    return TextMeasurement{.size = size, .attachments = measureAttachments(attributedString, laidOut)};
 }
 
 } // namespace

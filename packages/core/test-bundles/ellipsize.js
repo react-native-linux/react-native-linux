@@ -4,11 +4,10 @@
 //
 // `head` and `middle` are the searched ones: the text that survives is found by measuring candidates with the
 // same shaper the paragraph is drawn with, so the cut lands on a grapheme boundary and the box still holds what
-// was measured for it. The fifth row is the two things the search does not do: a token with no break opportunity
-// inside it, which only `clip` cuts, and a paragraph carrying an inline attachment, which is left to the line
-// limit. The last two rows are issue #312: one row per mode over a paragraph whose middle run is a nested
-// `<Text>`, which truncates exactly as the unnested rows do because it is a styled fragment of the same
-// paragraph rather than something embedded in it.
+// was measured for it. The fifth row is a token with no break opportunity inside it, which only `clip` cuts,
+// beside a `head` and a `middle` cut over a paragraph carrying inline attachments (#313). The last two rows are
+// issue #312: one row per mode over a paragraph whose middle run is a nested `<Text>`, which truncates exactly as
+// the unnested rows do because it is a styled fragment of the same paragraph rather than something embedded in it.
 //
 // Every string is ASCII, for the reason text.js is: anything outside the vendored Noto Sans resolves through
 // fontconfig and stops being reproducible. The `letterSpacing` column is react/react-native#37511, where
@@ -134,19 +133,27 @@ const unbreakable = labelled(
   [rawText('Unbreakableantidisestablishmentarianismsupercalifragilistic')],
 );
 
-// A view-forming node inside a paragraph — here a nested <Paragraph> — is an inline attachment, and a paragraph
-// carrying one is not searched: the line limit truncates it with no ellipsis, because a head or middle cut would
-// drop placeholders from the front and every surviving one would then be paired with the wrong attachment.
-const withAttachment = labelled(
-  secondColumnLeft,
-  520,
-  'head, one line, with an inline attachment: the line limit only',
-  { color: white, fontSize: 16, numberOfLines: 1, ellipsizeMode: 'head' },
-  [
+// A view-forming node inside a paragraph — here a nested <Paragraph> — is an inline attachment. The searched cut
+// runs over it like any other grapheme, and each attachment that survives is placed by its own tag (#313): `head`
+// drops the first one and keeps the second at its own place, `middle` keeps both on either side of the ellipsis.
+function attachmentSentence() {
+  return [
     rawText('Prose with '),
-    paragraph({ color: amber, fontWeight: 'bold' }, [rawText('an inline attachment')]),
-    rawText(' inside it that runs well past the end of the box it was given.'),
-  ],
+    paragraph({ color: amber, fontWeight: 'bold' }, [rawText('first')]),
+    rawText(' inside it that runs well past the end of the box it was given, then '),
+    paragraph({ color: teal, fontWeight: 'bold' }, [rawText('second')]),
+    rawText(' at the end.'),
+  ];
+}
+
+const attachmentRows = ['head', 'middle'].flatMap((mode, index) =>
+  labelled(
+    secondColumnLeft,
+    520 + index * 100,
+    mode + ', one line, two inline attachments',
+    { color: white, fontSize: 16, numberOfLines: 1, ellipsizeMode: mode },
+    attachmentSentence(),
+  ),
 );
 
 // Three runs, three backgroundColors: react/react-native#37926 was the ellipsis painting the background colour
@@ -200,7 +207,7 @@ const root = view({ flex: 1 }, [
   heading,
   ...rows,
   ...unbreakable,
-  ...withAttachment,
+  ...attachmentRows,
   ...backgroundColorRow,
   ...nestedRows,
 ]);

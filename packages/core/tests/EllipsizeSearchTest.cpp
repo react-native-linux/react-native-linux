@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <functional>
 #include <gtest/gtest.h>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -14,6 +15,7 @@ using react_native_linux::EllipsizeCandidate;
 using react_native_linux::EllipsizePiece;
 using react_native_linux::EllipsizePlan;
 using react_native_linux::EllipsizeSide;
+using react_native_linux::placeholderIndicesByTag;
 using react_native_linux::planEllipsize;
 using react_native_linux::searchedEllipsizeSide;
 using react_native_linux::searchEllipsizePlan;
@@ -86,13 +88,10 @@ std::vector<size_t> asciiGraphemeStarts(size_t length) {
 }
 
 /**
- * A paragraph the search is allowed to rebuild: one line, no attachment, not a field.
+ * A paragraph the search is allowed to rebuild: one line, not a field.
  */
 EllipsizeCandidate truncatedParagraph(EllipsizeMode ellipsizeMode) {
-    return EllipsizeCandidate{.ellipsizeMode = ellipsizeMode,
-                              .maximumNumberOfLines = 1,
-                              .hasInlineAttachment = false,
-                              .isEditorField = false};
+    return EllipsizeCandidate{.ellipsizeMode = ellipsizeMode, .maximumNumberOfLines = 1, .isEditorField = false};
 }
 
 TEST(EllipsizeSearchTest, HeadAndMiddleAreTheModesTheSearchAnswers) {
@@ -109,14 +108,6 @@ TEST(EllipsizeSearchTest, WithNoLineLimitThereIsNothingToTruncateTo) {
     EllipsizeCandidate candidate = truncatedParagraph(EllipsizeMode::Head);
 
     candidate.maximumNumberOfLines = 0;
-
-    EXPECT_FALSE(searchedEllipsizeSide(candidate).has_value());
-}
-
-TEST(EllipsizeSearchTest, AParagraphWithAnInlineAttachmentIsNeverRebuilt) {
-    EllipsizeCandidate candidate = truncatedParagraph(EllipsizeMode::Middle);
-
-    candidate.hasInlineAttachment = true;
 
     EXPECT_FALSE(searchedEllipsizeSide(candidate).has_value());
 }
@@ -276,6 +267,50 @@ TEST(EllipsizeSearchTest, TextWithNoFragmentsBehindItStillNamesAFragmentForTheEl
 
     EXPECT_EQ(plan.ellipsisFragmentIndex, 0U);
     EXPECT_TRUE(plan.trailingPieces.empty());
+}
+
+/**
+ * "ab", an attachment tagged 7, "cdefgh", an attachment tagged 9, "ij": the object-replacement character an
+ * attachment fragment carries is one grapheme of three bytes, so the fake measurer counts it three wide.
+ */
+const std::vector<std::string> kAttachmentFragments{"ab", "\xEF\xBF\xBC", "cdefgh", "\xEF\xBF\xBC", "ij"};
+const std::vector<facebook::react::Tag> kAttachmentTags{7, 9};
+const std::vector<size_t> kAttachmentGraphemeStarts{0, 1, 2, 5, 6, 7, 8, 9, 10, 11, 14, 15, 16};
+
+/** The tags of the attachments a plan keeps, in the order the rebuilt string lays them out. */
+std::vector<facebook::react::Tag> keptAttachmentTags(const EllipsizePlan& plan) {
+    std::vector<facebook::react::Tag> tags;
+
+    for (const std::vector<EllipsizePiece>* pieces : {&plan.leadingPieces, &plan.trailingPieces}) {
+        for (const EllipsizePiece& piece : *pieces) {
+            if (piece.fragmentIndex == 1 || piece.fragmentIndex == 3) {
+                tags.push_back(kAttachmentTags[piece.fragmentIndex / 2]);
+            }
+        }
+    }
+
+    return tags;
+}
+
+TEST(EllipsizeSearchTest, AHeadCutDropsTheAttachmentBeforeItAndPairsTheOneAfterItWithTheFirstPlaceholder) {
+    const EllipsizePlan plan = searchWithin(EllipsizeSide::Head, kAttachmentFragments, kAttachmentGraphemeStarts, 10);
+
+    EXPECT_EQ(composedText(kAttachmentFragments, plan), std::string{kEllipsis} + "gh\xEF\xBF\xBCij");
+    EXPECT_EQ(placeholderIndicesByTag(kAttachmentTags, keptAttachmentTags(plan), 1),
+              (std::vector<std::optional<size_t>>{std::nullopt, 0}));
+}
+
+TEST(EllipsizeSearchTest, AMiddleCutBetweenTwoAttachmentsKeepsEachOnItsOwnPlaceholder) {
+    const EllipsizePlan plan = searchWithin(EllipsizeSide::Middle, kAttachmentFragments, kAttachmentGraphemeStarts, 13);
+
+    EXPECT_EQ(composedText(kAttachmentFragments, plan), "ab\xEF\xBF\xBC" + std::string{kEllipsis} + "\xEF\xBF\xBCij");
+    EXPECT_EQ(placeholderIndicesByTag(kAttachmentTags, keptAttachmentTags(plan), 2),
+              (std::vector<std::optional<size_t>>{0, 1}));
+}
+
+TEST(EllipsizeSearchTest, AnAttachmentPastTheLineLimitHasNoPlaceholderEvenThoughItWasKept) {
+    EXPECT_EQ(placeholderIndicesByTag(kAttachmentTags, kAttachmentTags, 1),
+              (std::vector<std::optional<size_t>>{0, std::nullopt}));
 }
 
 } // namespace

@@ -701,16 +701,6 @@ buildAndLayoutParagraph(const facebook::react::AttributedString& attributedStrin
     return paragraph;
 }
 
-bool hasInlineAttachment(const facebook::react::AttributedString& attributedString) {
-    for (const facebook::react::AttributedString::Fragment& fragment : attributedString.getFragments()) {
-        if (fragment.isAttachment()) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
 /**
  * One kept piece as a fragment of its own. Its text is already transformed, so the copy carries `None` rather
  * than transforming a second time.
@@ -768,20 +758,18 @@ facebook::react::AttributedString ellipsizedAttributedString(const facebook::rea
  * `isEditorField` is the caller saying which of the two public entry points below it is: a `<Paragraph>`, whose
  * string nothing else addresses by offset, or a `<TextInput>`, whose every offset addresses this same string.
  */
-std::unique_ptr<skia::textlayout::Paragraph>
-layoutParagraphForField(const facebook::react::AttributedString& attributedString,
-                        const facebook::react::ParagraphAttributes& paragraphAttributes, float maximumWidth,
-                        bool isEditorField) {
+LaidOutParagraph layoutParagraphForField(const facebook::react::AttributedString& attributedString,
+                                         const facebook::react::ParagraphAttributes& paragraphAttributes,
+                                         float maximumWidth, bool isEditorField) {
     const std::optional<EllipsizeSide> side =
         searchedEllipsizeSide(EllipsizeCandidate{.ellipsizeMode = paragraphAttributes.ellipsizeMode,
                                                  .maximumNumberOfLines = paragraphAttributes.maximumNumberOfLines,
-                                                 .hasInlineAttachment = hasInlineAttachment(attributedString),
                                                  .isEditorField = isEditorField});
     std::unique_ptr<skia::textlayout::Paragraph> paragraph =
         buildAndLayoutParagraph(attributedString, paragraphAttributes, maximumWidth);
 
     if (!side.has_value() || !paragraph->didExceedMaxLines()) {
-        return paragraph;
+        return LaidOutParagraph{.attributedString = attributedString, .paragraph = std::move(paragraph)};
     }
 
     const std::vector<std::string> transformedTexts = transformedFragmentTexts(attributedString);
@@ -798,16 +786,25 @@ layoutParagraphForField(const facebook::react::AttributedString& attributedStrin
                         ->didExceedMaxLines();
         });
 
-    return buildAndLayoutParagraph(ellipsizedAttributedString(attributedString, transformedTexts, plan),
-                                   paragraphAttributes, maximumWidth);
+    facebook::react::AttributedString truncated = ellipsizedAttributedString(attributedString, transformedTexts, plan);
+    std::unique_ptr<skia::textlayout::Paragraph> truncatedParagraph =
+        buildAndLayoutParagraph(truncated, paragraphAttributes, maximumWidth);
+
+    return LaidOutParagraph{.attributedString = std::move(truncated), .paragraph = std::move(truncatedParagraph)};
 }
 
 } // namespace
 
+LaidOutParagraph layoutMeasuredParagraph(const facebook::react::AttributedString& attributedString,
+                                         const facebook::react::ParagraphAttributes& paragraphAttributes,
+                                         float maximumWidth) {
+    return layoutParagraphForField(attributedString, paragraphAttributes, maximumWidth, false);
+}
+
 std::unique_ptr<skia::textlayout::Paragraph>
 layoutParagraph(const facebook::react::AttributedString& attributedString,
                 const facebook::react::ParagraphAttributes& paragraphAttributes, float maximumWidth) {
-    return layoutParagraphForField(attributedString, paragraphAttributes, maximumWidth, false);
+    return layoutMeasuredParagraph(attributedString, paragraphAttributes, maximumWidth).paragraph;
 }
 
 std::unique_ptr<skia::textlayout::Paragraph>
@@ -820,7 +817,7 @@ layoutEditorParagraph(const facebook::react::AttributedString& attributedString,
     untruncated.maximumNumberOfLines = 0;
     untruncated.ellipsizeMode = facebook::react::EllipsizeMode::Clip;
 
-    return layoutParagraphForField(attributedString, untruncated, maximumWidth, true);
+    return layoutParagraphForField(attributedString, untruncated, maximumWidth, true).paragraph;
 }
 
 EditorGeometry measureEditorGeometry(const SceneTextContent& text, const SceneEditorContent& editor) {

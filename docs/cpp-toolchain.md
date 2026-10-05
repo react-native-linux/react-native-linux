@@ -3344,22 +3344,22 @@ A field that does not fit scrolls instead (`SceneEditorContent::scrollOffsetX`),
 offsets meaning what they say. Every editor path — the geometry, the hit test and `paintEditor`'s own paint —
 therefore goes through `layoutEditorParagraph` rather than `layoutParagraph`, so a field measures and hit-tests
 its full text whatever its `numberOfLines` and `ellipsizeMode` say. The rule is
-`EllipsizeSearch.cpp`'s `searchedEllipsizeSide` and is asserted under the unit gate, next to the two other
-refusals it lives with.
+`EllipsizeSearch.cpp`'s `searchedEllipsizeSide` and is asserted under the unit gate.
 
-**A paragraph carrying inline attachments is not searched.** `ParagraphShadowNode::layout` requires exactly one
-measured attachment per attachment fragment, and `TextLayoutManager`'s walk pairs them with
-`getRectsForPlaceholders` in fragment order, reporting the ones SkParagraph dropped off the end as clipped. That
-pairing is only true because a line limit drops placeholders at the tail; a head or middle cut removes them from
-the front or the middle, and every surviving placeholder would then be paired with the wrong attachment. Such a
-paragraph therefore truncates the way `clip` does — the line limit cuts it, with no ellipsis — until the pairing
-is by identity rather than by order.
+**Placeholders pair with attachments by tag (#313).** `ParagraphShadowNode::layout` requires exactly one
+measured attachment per attachment fragment, but a head or middle cut lays out a rebuilt string whose attachments
+are a subset of those, and `getRectsForPlaceholders` answers in the order of the string it laid out. Pairing by
+position would hand every surviving placeholder to the wrong attachment once one was cut from the front, so
+`layoutMeasuredParagraph` returns the string it actually laid out alongside the paragraph, and `TextLayoutManager`
+pairs each measured attachment with the placeholder of the laid-out attachment carrying the same tag
+(`placeholderIndicesByTag`, under the unit gate). An attachment the cut removed, or that the line limit pushed
+past the last line, has no placeholder and is reported clipped.
 
 The picture is `test-bundles/ellipsize.js` and `goldens/ellipsize.png`: the four modes at `numberOfLines` 1 and 2,
 the two-line column also carrying `letterSpacing` — react/react-native#37511 is `middle` and letter spacing
-disagreeing about where the text ends — plus the two rows for what the search does not do: an unbreakable token
-wider than its box, which only `clip` cuts, and a paragraph with an inline attachment, which the line limit
-truncates on its own. The last two rows are the same four modes over a paragraph whose middle run is a nested
+disagreeing about where the text ends — plus an unbreakable token wider than its box, which only `clip` cuts, and
+a head and a middle cut over a paragraph carrying two inline attachments: head drops the first and keeps the
+second at its own place, middle keeps both either side of the ellipsis. The last two rows are the same four modes over a paragraph whose middle run is a nested
 `<Text>`, which truncates exactly as the unnested rows do.
 
 ### A nested `<Text>` is a fragment, not an attachment (#312)
@@ -3377,8 +3377,8 @@ kind of `ShadowNode`* branch and becomes an inline attachment. The picture barel
 measured and painted its own text at the placeholder's rect, in its own style — which is why this survived #111
 and #250 unnoticed; what did not survive is everything that reads the fragments. `numberOfLines` and the
 `ellipsizeMode` search apply to the paragraph they are on, so the outer paragraph truncated a single attachment
-character it could not cut, and the *A paragraph carrying inline attachments is not searched* refusal above fired
-on text that carried no attachment at all.
+character it could not cut, and the refusal to search a paragraph carrying inline attachments, which stood until
+#313, fired on text that carried no attachment at all.
 
 Every text golden was regenerated with the fix, not just `ellipsize.png`: `text.js`, `emoji.js`,
 `text-metrics.js` and `text-style-matrix.js` all build a nested `<Text>`, so all four were drawing a nested
@@ -3704,7 +3704,7 @@ measured result.
 | `fontVariant` | The four variants the golden matrix covers — `small-caps`, `oldstyle-nums`, `lining-nums`, `tabular-nums` — as the OpenType feature tags `smcp`/`onum`/`lnum`/`tnum` on `TextStyle::addFontFeature`. The sixteen stylistic-set bits are not mapped; see *Fidelity limits*. |
 | `textTransform` | `uppercase`/`lowercase`/`capitalize` applied to each fragment's string in `src/TextTransform.cpp` before it reaches `ParagraphBuilder::addText`, so both measurement and paint see the transformed string. Pure ASCII and Latin-1 Supplement case mapping — no ICU — so it is under the 100% gate; see *The text-style matrix (#250)*. |
 | `numberOfLines` | `ParagraphStyle::setMaxLines`. |
-| `ellipsizeMode` | `tail` is `ParagraphStyle::setEllipsis`; `head` and `middle` are a searched cut in `src/EllipsizeSearch.cpp` and `layoutParagraph`, except on a paragraph with inline attachments; `clip` truncates with no ellipsis and clips the paint to the frame. See *Truncation that is not at the tail (#251)*. |
+| `ellipsizeMode` | `tail` is `ParagraphStyle::setEllipsis`; `head` and `middle` are a searched cut in `src/EllipsizeSearch.cpp` and `layoutParagraph`, with inline attachments paired to placeholders by tag; `clip` truncates with no ellipsis and clips the paint to the frame. See *Truncation that is not at the tail (#251)*. |
 | Inline attachments | Added as SkParagraph placeholders sized from the attachment's own measured frame, and reported back through `getRectsForPlaceholders`. |
 
 ### Vertical metrics (#110)
