@@ -18,6 +18,7 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <unistd.h>
 #include <utility>
 #include <vector>
 
@@ -219,7 +220,7 @@ requestAnimationFrame(commit);
  */
 TEST(CrossThreadMountingStressTest, MountsDecodesAndInputRunConcurrentlyWithTheFrameThread) {
     const std::filesystem::path imageDirectory =
-        std::filesystem::temp_directory_path() / "rnl-cross-thread-mounting-stress";
+        std::filesystem::temp_directory_path() / ("rnl-cross-thread-mounting-stress-" + std::to_string(::getpid()));
 
     std::filesystem::remove_all(imageDirectory);
     std::filesystem::create_directories(imageDirectory);
@@ -257,9 +258,10 @@ TEST(CrossThreadMountingStressTest, MountsDecodesAndInputRunConcurrentlyWithTheF
     }
 
 #ifdef RNL_ENABLE_IMAGES
-    ASSERT_TRUE(waitForPendingImageDecodes(kQuiescenceBudget));
+    EXPECT_TRUE(waitForPendingImageDecodes(kQuiescenceBudget));
 #endif
-    ASSERT_TRUE(reactHost.runUntilQuiescent(kQuiescenceBudget));
+    // Not fatal: a wait that times out still has to be followed by the shutdown order below.
+    EXPECT_TRUE(reactHost.runUntilQuiescent(kQuiescenceBudget));
 
     const std::array<double, 2> ledger = onJavaScriptThread<std::array<double, 2>>(reactHost, [](Runtime& runtime) {
         return std::array{runtime.global().getProperty(runtime, "commitCount").asNumber(),
