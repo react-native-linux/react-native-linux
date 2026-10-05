@@ -11,6 +11,7 @@
 #include <vector>
 
 #include <react/renderer/components/scrollview/ScrollViewShadowNode.h>
+#include <react/renderer/components/view/TouchEventEmitter.h>
 #include <react/renderer/core/ReactPrimitives.h>
 #include <react/renderer/core/ShadowNode.h>
 #include <react/renderer/graphics/Point.h>
@@ -160,6 +161,15 @@ private:
     std::shared_ptr<const facebook::react::ShadowNode> focusedNode_;
     std::shared_ptr<const facebook::react::ShadowNode> syncedRoot_;
     TextInputController textInputController_;
+
+    /**
+     * The emitter of the last node a pointer event reached, other than the surface root. The root has no instance
+     * handle, so an event aimed at it never reaches `PointerEventsProcessor` and moving onto the bare background
+     * would end no hover chain (#36, case 3). A pointer event that resolves to the root is therefore delivered to
+     * the processor as a pointer leave through this emitter instead, which is the event upstream already treats as
+     * "the pointer left every React view" and answers with `pointerOut` and `pointerLeave` for the whole chain.
+     */
+    std::shared_ptr<const facebook::react::TouchEventEmitter> hoveredEmitter_;
 
     /**
      * The field tag and content purpose the last frame told the compositor's text input, so a trace line is
