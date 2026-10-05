@@ -11,5 +11,5 @@
     "press-mount: topPointerUp on target",
     "press-mount: topClick on target"
   ],
-  "reject": ["press-mount: duplicate down", "press-mount: unpaired up", "on background"]
+  "reject": ["press-mount: repeated", "on background"]
 }

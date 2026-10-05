@@ -37,7 +37,7 @@ const commit = (children) => {
 commit([background]);
 
 let targetMounted = false;
-let openPresses = 0;
+const deliveredCounts = new Map();
 
 fabric.registerEventHandler((instanceHandle, type) => {
   if (type === 'topPointerMove' && !targetMounted) {
@@ -52,18 +52,14 @@ fabric.registerEventHandler((instanceHandle, type) => {
     return;
   }
 
-  if (type === 'topPointerDown') {
-    openPresses += 1;
+  // Exactly once across the whole run: one click is injected, so any second down, up or click is a repeat,
+  // whether or not it overlapped the first.
+  const count = (deliveredCounts.get(type) ?? 0) + 1;
 
-    if (openPresses > 1) {
-      console.log('press-mount: duplicate down');
-    }
-  } else if (type === 'topPointerUp') {
-    openPresses -= 1;
+  deliveredCounts.set(type, count);
 
-    if (openPresses < 0) {
-      console.log('press-mount: unpaired up');
-    }
+  if (count > 1) {
+    console.log('press-mount: repeated ' + type);
   }
 
   console.log('press-mount: ' + type + ' on ' + instanceHandle.boxName);
