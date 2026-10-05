@@ -22,7 +22,7 @@
     "packages/test-harness": {
       "entry": ["index.ts", "scripts/*.ts"],
       "project": ["src/**/*.tsx", "scripts/**/*.ts"],
-      "ignoreDependencies": ["@babel/runtime", "@react-native/babel-preset"]
+      "ignoreDependencies": ["@babel/runtime", "@react-native/babel-preset", "metro-symbolicate"]
     }
   }
 }
