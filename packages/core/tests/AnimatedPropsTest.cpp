@@ -40,8 +40,6 @@ using react_native_linux::SceneMatrix;
 constexpr Tag kAnimatedTag = 2;
 constexpr Tag kUnknownTag = 404;
 constexpr double kHalfOpacity = 0.5;
-constexpr uint32_t kHalfBlueArgb = 0x803366CCU;
-constexpr uint32_t kHalfRedArgb = 0x80CC3333U;
 constexpr float kRotationRadians = 0.5F;
 constexpr float kPercentTranslation = 50.0F;
 constexpr float kResolvedPercentTranslation = 60.0F;
@@ -157,12 +155,13 @@ Rect damageBounds(const SceneDamage& damage) {
     return bounds;
 }
 
-TEST(AnimatedPropsTest, AnOpacityUpdateFoldsIntoTheColoursTheNextFramePaints) {
+TEST(AnimatedPropsTest, AnOpacityUpdateBecomesTheLayerTheNextFramePaintsTheNodeIn) {
     const SceneSnapshot snapshot =
         snapshotAfterAnimating(propsWithBackground(blue()), animatedProp("opacity", kHalfOpacity));
 
     ASSERT_EQ(snapshot.size(), 1U);
-    EXPECT_EQ(snapshot.at(0).backgroundColorArgb, kHalfBlueArgb);
+    EXPECT_EQ(snapshot.at(0).backgroundColorArgb, kBlueArgb);
+    EXPECT_EQ(snapshot.at(0).opensLayers, std::vector<float>{0.5F});
 }
 
 TEST(AnimatedPropsTest, AnOpacityUpdateDamagesTheNodeAndTheNextFrameCarriesIt) {
@@ -304,7 +303,7 @@ TEST(AnimatedPropsLifetimeTest, AnAnimationAttachedBeforeItsViewMountsAppliesFro
 
     // The tag is not poisoned by having been unknown: the update that arrives after the mount applies.
     ASSERT_EQ(snapshot.size(), 1U);
-    EXPECT_EQ(snapshot[0].backgroundColorArgb, kHalfBlueArgb);
+    EXPECT_EQ(snapshot[0].opensLayers, std::vector<float>{0.5F});
     EXPECT_EQ(mountingManager.mountDiagnostics().unknownTagOperations, kAnimationFrameCount);
 }
 
@@ -323,7 +322,8 @@ TEST(AnimatedPropsLifetimeTest, ATagMountedAgainAfterItsUnmountAnimatesAsTheNewN
     const SceneSnapshot snapshot = mountingManager.snapshotScene();
 
     ASSERT_EQ(snapshot.size(), 1U);
-    EXPECT_EQ(snapshot[0].backgroundColorArgb, kHalfRedArgb);
+    EXPECT_EQ(snapshot[0].backgroundColorArgb, kRedArgb);
+    EXPECT_EQ(snapshot[0].opensLayers, std::vector<float>{0.5F});
 }
 
 // The TSan half of #74: the frame thread animating a tag while the JavaScript thread mounts and unmounts it, so
@@ -382,7 +382,7 @@ TEST(AnimatedPropsTest, ANonAllowlistedPropIsCountedAndTheRestOfThePayloadStillA
     EXPECT_EQ(diagnostics.rejectedAnimatedProps, 1U);
     EXPECT_EQ(diagnostics.firstRejectedAnimatedProp, "shadowRadius");
     EXPECT_EQ(diagnostics.unknownTagOperations, 0U);
-    EXPECT_EQ(mountingManager.snapshotScene().at(0).backgroundColorArgb, kHalfBlueArgb);
+    EXPECT_EQ(mountingManager.snapshotScene().at(0).opensLayers, std::vector<float>{0.5F});
 }
 
 TEST(AnimatedPropsTest, EveryRejectedPropIsCountedAndOnlyTheFirstIsKept) {

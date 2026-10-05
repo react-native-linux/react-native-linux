@@ -2,7 +2,7 @@
   "View": {
     "opacity": {
       "state": "implemented",
-      "test": "RetainedSceneTest, ATranslucentParentIsOneLayerOverItsSubtreeAndALeafKeepsItsOwnAlpha"
+      "test": "RetainedSceneTest, ATranslucentParentAndATranslucentLeafEachCompositeAsALayer"
     },
     "backgroundColor": {
       "state": "implemented",

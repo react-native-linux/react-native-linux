@@ -2993,12 +2993,13 @@ The picture is the sixth row of `border-matrix.png`, which is why that golden is
   changes nothing about that, which is
   [core#49606](https://github.com/facebook/react-native/issues/49606).
 
-**Group opacity (#105).** A translucent node with children composites its subtree as one layer, as React Native
+**Group opacity (#105).** A translucent node composites itself and its subtree as one layer, as React Native
 does: the snapshot marks the first primitive the subtree paints with `opensLayers` (the alpha, outermost first) and
 the last with `closesLayers`, and `paintScene` wraps them in `saveLayerAlphaf`. That node's opacity is then left
 out of every colour beneath it, text included, so overlapping descendants no longer blend against each other.
-A translucent leaf keeps its alpha in its own colours, which is exact and costs no layer; a node at `opacity: 0`
-is dropped primitive by primitive. `view-props.png`'s nested-opacity box is the golden that changed:
+A translucent leaf is a layer too, because it paints overlapping operations of its own (background, border,
+shadow, text, focus ring) that per-primitive alpha would blend into each other; a node at `opacity: 0` is dropped
+primitive by primitive. `view-props.png`'s nested-opacity box is the golden that changed:
 `0.5·background + 0.25·red + 0.25·white` rather than per-primitive alpha's `0.375 + 0.375 + 0.25`.
 
 Known deviations from iOS and Android, all deliberate:

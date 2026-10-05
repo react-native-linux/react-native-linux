@@ -61,9 +61,6 @@ constexpr float kQuarterTurnRadians = 0.78539816F;
 
 namespace yoga = facebook::yoga;
 
-constexpr uint32_t kHalfBlueArgb = 0x803366CCU;
-constexpr uint32_t kHalfRedArgb = 0x80CC3333U;
-
 SharedColor invisibleBlue() { return facebook::react::colorFromRGBA(51, 102, 204, 0); }
 
 /**
@@ -481,7 +478,7 @@ TEST(RetainedSceneTest, ANodeWithoutATransformCarriesTheIdentityMatrixAndNoClips
     EXPECT_TRUE(snapshot[0].clips.empty());
 }
 
-TEST(RetainedSceneTest, ATranslucentParentIsOneLayerOverItsSubtreeAndALeafKeepsItsOwnAlpha) {
+TEST(RetainedSceneTest, ATranslucentParentAndATranslucentLeafEachCompositeAsALayer) {
     RetainedScene scene;
     const std::shared_ptr<ViewProps> parentProps = propsWithBackground(blue());
     const std::shared_ptr<ViewProps> childProps = propsWithBackground(red());
@@ -499,9 +496,9 @@ TEST(RetainedSceneTest, ATranslucentParentIsOneLayerOverItsSubtreeAndALeafKeepsI
     EXPECT_EQ(snapshot[0].backgroundColorArgb, kBlueArgb);
     EXPECT_EQ(snapshot[0].opensLayers, std::vector<float>{0.5F});
     EXPECT_EQ(snapshot[0].closesLayers, 0U);
-    EXPECT_EQ(snapshot[1].backgroundColorArgb, kHalfRedArgb);
-    EXPECT_TRUE(snapshot[1].opensLayers.empty());
-    EXPECT_EQ(snapshot[1].closesLayers, 1U);
+    EXPECT_EQ(snapshot[1].backgroundColorArgb, kRedArgb);
+    EXPECT_EQ(snapshot[1].opensLayers, std::vector<float>{0.5F});
+    EXPECT_EQ(snapshot[1].closesLayers, 2U);
 }
 
 TEST(RetainedSceneTest, NestedTranslucentSubtreesOpenOutermostFirstAndCloseTogether) {
@@ -614,7 +611,7 @@ TEST(RetainedSceneTest, BorderWidthsAndColorsAreReadPerSide) {
     EXPECT_EQ(snapshot[0].borderColorsArgb.bottom, 0U);
 }
 
-TEST(RetainedSceneTest, BorderOpacityFollowsTheInheritedOpacity) {
+TEST(RetainedSceneTest, ATranslucentNodePaintsItsBorderInsideItsOpacityLayer) {
     const std::shared_ptr<ViewProps> viewProps = std::make_shared<ViewProps>();
 
     viewProps->opacity = 0.5;
@@ -625,7 +622,8 @@ TEST(RetainedSceneTest, BorderOpacityFollowsTheInheritedOpacity) {
 
     ASSERT_EQ(snapshot.size(), 1U);
     EXPECT_EQ(snapshot[0].backgroundColorArgb, 0U);
-    EXPECT_EQ(snapshot[0].borderColorsArgb.left, kHalfBlueArgb);
+    EXPECT_EQ(snapshot[0].borderColorsArgb.left, kBlueArgb);
+    EXPECT_EQ(snapshot[0].opensLayers, std::vector<float>{0.5F});
 }
 
 TEST(RetainedSceneTest, EachBorderSideAloneIsEnoughToPaintANode) {
@@ -663,7 +661,8 @@ TEST(RetainedSceneTest, ABackgroundImageGradientTravelsToThePrimitiveWithTheInhe
     ASSERT_EQ(snapshot.size(), 1U);
     ASSERT_EQ(snapshot[0].backgroundImage.size(), 1U);
     EXPECT_TRUE(snapshot[0].backgroundImage.front() == facebook::react::BackgroundImage{blueToRedGradient()});
-    EXPECT_FLOAT_EQ(snapshot[0].backgroundImageOpacity, 0.5F);
+    EXPECT_FLOAT_EQ(snapshot[0].backgroundImageOpacity, 1.0F);
+    EXPECT_EQ(snapshot[0].opensLayers, std::vector<float>{0.5F});
     EXPECT_EQ(snapshot[0].backgroundColorArgb, 0U);
 }
 

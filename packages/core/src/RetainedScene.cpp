@@ -1036,13 +1036,12 @@ facebook::react::Point contentOrigin(const SceneNode& node, facebook::react::Poi
 }
 
 /**
- * Whether a node composites its subtree as one layer (#105): translucent, not invisible, and with children whose
- * overlap per-primitive alpha would get wrong. A translucent leaf has nothing to overlap and keeps its alpha in its
- * colours, which is exact and costs no layer. A fully transparent subtree is dropped primitive by primitive instead.
+ * Whether a node composites as one layer (#105): translucent and not invisible. A leaf as well as a parent, because
+ * a leaf paints overlapping operations of its own (background, border, shadow, text, focus ring) that per-primitive
+ * alpha would blend into each other where CSS fades the node as a whole. A fully transparent node is dropped
+ * primitive by primitive instead, and a node that paints nothing opens no layer at all.
  */
-bool opensOpacityLayer(const SceneNode& node) {
-    return node.opacity > 0.0F && node.opacity < 1.0F && !node.childTags.empty();
-}
+bool opensOpacityLayer(const SceneNode& node) { return node.opacity > 0.0F && node.opacity < 1.0F; }
 
 /**
  * `isOpacityLayer` is `opensOpacityLayer`'s answer when the walk paints: the node's own opacity is then applied by
