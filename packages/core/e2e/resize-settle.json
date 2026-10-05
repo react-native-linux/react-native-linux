@@ -8,7 +8,7 @@
     "p95Ms": 17.5,
     "minFrames": 60,
     "maxHangs": 1,
-    "maxJournalledFrames": 11
+    "maxJournalledFrames": 12
   },
   "steps": ["sleep 4000"],
   "expect": [

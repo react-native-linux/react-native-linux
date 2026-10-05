@@ -7588,8 +7588,10 @@ closed — a log without the journal's summary is the same failure a missing `Fr
 journal that closed no input-answering frame means the injection never reached light.
 
 **Settling (#42).** `frameBudget.maxJournalledFrames` caps the journalled frames, the ones that painted damage.
-`resize-settle.json` sets it to 11. The scenario's window sequence is the first configure plus a 10-step drag, so
-each configure paints exactly once. Then the window sits for about 500 frames that must paint nothing. A window that
+`resize-settle.json` sets it to 12. The window sequence is the first configure plus a 10-step drag, 11 configures
+that each paint exactly once, and the bundle's first commit is the twelfth. Locally that commit shares the first
+configure's frame, giving 11; on CI it painted a frame of its own. Then the window sits for about 500 frames that
+must paint nothing. A window that
 repaints with nothing to answer, a self-triggering layout or a caret-style loop, fails this by hundreds of frames.
 The fixture is `resize-settle.js`: six 6-point paragraphs, wrapped and ellipsised, three of them at half the window.
 The unit half is `ResizeTextCostTest`, under *The cache*.
