@@ -60,11 +60,11 @@ assertion and not an implementation.
 | View | 35 | 14 | 5 | 16 |
 | Text | 45 | 22 | 6 | 17 |
 | Image | 14 | 7 | 3 | 4 |
-| ScrollView | 39 | 10 | 2 | 27 |
+| ScrollView | 39 | 12 | 2 | 25 |
 | TextInput | 24 | 13 | 0 | 11 |
 | Switch | 8 | 5 | 3 | 0 |
 | ActivityIndicator | 4 | 4 | 0 | 0 |
-| **Total** | 169 | 75 | 19 | 75 |
+| **Total** | 169 | 77 | 19 | 73 |
 
 ## View
 
@@ -200,8 +200,8 @@ assertion and not an implementation.
 | `pagingEnabled` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:50` | implemented | `SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe` |
 | `pinchGestureEnabled` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:51` | not-implemented | #69 |
 | `scrollsToTop` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:52` | not-implemented | #69 |
-| `showsHorizontalScrollIndicator` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:53` | not-implemented | #49 |
-| `showsVerticalScrollIndicator` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:54` | not-implemented | #49 |
+| `showsHorizontalScrollIndicator` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:53` | implemented | `ScrollIndicatorSceneTest, ShowsVerticalScrollIndicatorFalseHidesIt` |
+| `showsVerticalScrollIndicator` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:54` | implemented | `ScrollIndicatorSceneTest, ShowsVerticalScrollIndicatorFalseHidesIt` |
 | `persistentScrollbar` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:55` | not-implemented | #49 |
 | `horizontal` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:56` | deviating | Both axes are always live and clamp independently, so a horizontal ScrollView works because its vertical axis has nothing to scroll rather than because the prop was read. |
 | `scrollEventThrottle` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:57` | deviating | The cadence is one `onScroll` per frame, the fastest React Native ever asks for; honouring a throttle means dropping events the frame already coalesced. Issue #45 owns the cadence contract. |

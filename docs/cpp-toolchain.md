@@ -4804,9 +4804,15 @@ test for those.
 - **`onScrollEndDrag`'s `velocity` and `targetContentOffset` are zero.** The pair itself is emitted — see *The
   cadence contract* — and `settleTargetOffset` is now the number `targetContentOffset` wants, but filling the two
   fields in is an event-payload change that belongs with the rubber band's `onScrollEndDrag` work.
-- **Scroll indicators.** `showsVerticalScrollIndicator`, `scrollIndicatorInsets`, `indicatorStyle` and
-  `persistentScrollbar` draw nothing. A scrollbar is a painted overlay with its own fade timer and its own hit
-  region, which is a component, not a prop.
+- **Scroll indicators, partly (#49).** A ScrollView whose content overflows an axis, and whose
+  `showsVerticalScrollIndicator` / `showsHorizontalScrollIndicator` allows it, paints an overlay thumb along that
+  edge: 6 points thick, 2 off the edge, the viewport's share of the content long (never under 24), and positioned
+  by the offset's share of the range (`src/ScrollIndicator.cpp`, which `ScrollIndicatorTest` holds at 100%). The
+  snapshot emits it after the content as a rounded bar with the ScrollView's own tag, matrix and clips, so it paints
+  above the rows and needs no painter of its own. A press anywhere on its track answers the ScrollView and never
+  reaches the content beneath, which is rn-macos#629. It overlays and never insets, so the content's layout does
+  not change. Still not done: the fade on inactivity (it is always shown while there is somewhere to scroll),
+  dragging the thumb, `scrollIndicatorInsets`, `indicatorStyle` and `persistentScrollbar`.
 - **`contentInsetAdjustmentBehavior`, `automaticallyAdjustContentInsets`, `scrollAwayPaddingTop`,
   `centerContent`.** The viewport is the ScrollView's frame and the content is `contentBoundingRect.size`;
   `contentInset` extends the range on each axis — see *The inset area is content* — but no inset is ever computed

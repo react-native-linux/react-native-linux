@@ -217,8 +217,14 @@
     },
     "pinchGestureEnabled": { "state": "not-implemented", "issue": "#69" },
     "scrollsToTop": { "state": "not-implemented", "issue": "#69" },
-    "showsHorizontalScrollIndicator": { "state": "not-implemented", "issue": "#49" },
-    "showsVerticalScrollIndicator": { "state": "not-implemented", "issue": "#49" },
+    "showsHorizontalScrollIndicator": {
+      "state": "implemented",
+      "test": "ScrollIndicatorSceneTest, ShowsVerticalScrollIndicatorFalseHidesIt"
+    },
+    "showsVerticalScrollIndicator": {
+      "state": "implemented",
+      "test": "ScrollIndicatorSceneTest, ShowsVerticalScrollIndicatorFalseHidesIt"
+    },
     "persistentScrollbar": { "state": "not-implemented", "issue": "#49" },
     "horizontal": {
       "state": "deviating",
