@@ -4,7 +4,7 @@
   "private": true,
   "codegenConfig": {
     "name": "CppLibrarySpec",
-    "type": "modules",
+    "type": "all",
     "jsSrcsDir": "src"
   }
 }
