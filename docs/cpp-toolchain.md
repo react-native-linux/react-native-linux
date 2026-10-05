@@ -3714,7 +3714,21 @@ nothing else caches anything, because a paragraph cache keyed on the same inputs
 own `ParagraphCache`, inside the `FontCollection`, caches shaped runs underneath both.
 
 What is **not** implemented is issue #14's measurable hit-rate probe. Instrumenting it belongs with the frame-time
-work in #20, where there is somewhere to report a number to.
+work in #20, where there is somewhere to report a number to. What is counted is the shape behind every miss:
+`paragraphLayoutCount()` (`TextGeometry.h`) is how many paragraphs `layoutParagraph` has built in the process.
+
+`ResizeTextCostTest` (#42) drags a surface through 20 configures over six 6-point paragraphs, all wrapped or
+ellipsised in boxes narrower than their text. Three are a fixed width and three take half the window. It asserts:
+
+- each configure shapes at most the three resized paragraphs;
+- each configure leaves exactly one frame of work;
+- once the drag stops, nothing asks for another frame.
+
+It measures 60 shapes over 20 configures: the three resized paragraphs once each per configure, and the fixed
+ones never again. Yoga does not re-measure a node whose constraints did not change, so those never reach this cache
+at all. The test is compiled only where Skia is, because the sanitizer presets have no text pipeline.
+`ParagraphLayoutCache` (#342) is not on this path. It serves `measureParagraphMetrics`, the golden renderer's
+diagnostics, and nothing calls its `endFrame`.
 
 ### Threading
 

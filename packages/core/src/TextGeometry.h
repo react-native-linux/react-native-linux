@@ -4,6 +4,7 @@
 #include "RetainedScene.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -113,5 +114,11 @@ ParagraphMetrics measureParagraphMetrics(const facebook::react::AttributedString
  * of splitting it.
  */
 TextSegments segmentText(const std::string& text);
+
+/**
+ * How many paragraphs `layoutParagraph` has shaped in this process: every text measure and paint that was not
+ * answered by a cache. Read by the resize-cost test of #42; relaxed, because it orders nothing.
+ */
+uint64_t paragraphLayoutCount();
 
 } // namespace react_native_linux
