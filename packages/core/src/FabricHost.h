@@ -50,6 +50,9 @@ namespace react_native_linux {
  * through a state update, `induceEventBeat` releases everything the queue has accumulated onto the JavaScript
  * thread, and the frame loop calls them in that order once per frame — which is what makes event delivery
  * frame-paced rather than per raw compositor event. See *Input* and *ScrollView* in docs/cpp-toolchain.md.
+ *
+ * `CrossThreadMountingStressTest` runs this contract under TSan: commits and image decodes from their own threads
+ * while the test thread makes every frame-thread call above, input included.
  */
 class FabricHost final {
 public:
