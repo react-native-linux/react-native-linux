@@ -1937,7 +1937,11 @@ tag and the shadow tree is searched for that tag, so the node React is told abou
 
 `hitTestNode` is a pre-order walk carrying a `ScenePaintState`, the same struct the snapshot walk carries:
 
-1. Visit the node with `visitNode`, producing the primitive it would paint and the state its children inherit.
+1. Compute the node's geometry with `nodeGeometry` — its composed frame and matrix — the same function
+   `visitNode` paints from. The state its children inherit (`childPaintState`, which copies the clip list) is
+   built only when there are children to recurse into, and no primitive is built at all: a pointer motion over a
+   list costs two allocations whether the list has 50 rows or 500 (#36, `HoverCostTest`), where building each
+   row's primitive cost two per row.
 2. If the node's `pointerEvents` allows children to be targets (`auto` or `box-none`), recurse into `childTags`
    **backwards**. Child order is mount order is paint order, so the last sibling painted is the one on top, and
    the first hit found front-to-back wins.

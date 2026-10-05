@@ -1048,14 +1048,44 @@ facebook::react::Point contentOrigin(const SceneNode& node, facebook::react::Poi
  */
 bool opensOpacityLayer(const SceneNode& node) { return node.opacity > 0.0F && node.opacity < 1.0F; }
 
+/** Where a node paints: its absolute frame and the matrix it is drawn with, as both painting and hit testing see it. */
+struct SceneNodeGeometry {
+    facebook::react::Rect frame;
+    SceneMatrix matrix;
+};
+
+SceneNodeGeometry nodeGeometry(const SceneNode& node, const ScenePaintState& state) {
+    const facebook::react::Rect frame{.origin = state.origin + node.layoutMetrics.frame.origin,
+                                      .size = node.layoutMetrics.frame.size};
+
+    return SceneNodeGeometry{
+        .frame = frame, .matrix = composeMatrices(state.matrix, matrixAboutCenter(node.transform, frame.getCenter()))};
+}
+
+/** What a node's children inherit: its content origin, its matrix, `opacity`, and its clips plus its own. */
+ScenePaintState childPaintState(const SceneNode& node, const ScenePaintState& state, const SceneNodeGeometry& geometry,
+                                float opacity) {
+    ScenePaintState childState{.origin = contentOrigin(node, geometry.frame.origin),
+                               .matrix = geometry.matrix,
+                               .opacity = opacity,
+                               .clips = state.clips};
+
+    if (node.clipsChildren) {
+        childState.clips.push_back(SceneClip{
+            .frame = geometry.frame, .borderRadii = node.borderMetrics.borderRadii, .matrix = geometry.matrix});
+    }
+
+    return childState;
+}
+
 /**
  * `isOpacityLayer` is `opensOpacityLayer`'s answer when the walk paints: the node's own opacity is then applied by
  * the painter's layer, so it is left out of every colour here and out of what its children inherit.
  */
 SceneVisit visitNode(const SceneNode& node, const ScenePaintState& state, bool isOpacityLayer = false) {
-    const facebook::react::Rect frame{.origin = state.origin + node.layoutMetrics.frame.origin,
-                                      .size = node.layoutMetrics.frame.size};
-    const SceneMatrix matrix = composeMatrices(state.matrix, matrixAboutCenter(node.transform, frame.getCenter()));
+    const SceneNodeGeometry geometry = nodeGeometry(node, state);
+    const facebook::react::Rect& frame = geometry.frame;
+    const SceneMatrix& matrix = geometry.matrix;
     const float opacity = state.opacity * (isOpacityLayer ? 1.0F : node.opacity);
     SceneVisit visit{
         .primitive =
@@ -1091,13 +1121,7 @@ SceneVisit visitNode(const SceneNode& node, const ScenePaintState& state, bool i
                                    ? std::optional<SceneActivityIndicatorContent>{resolveActivityIndicator(
                                          node.activityIndicator.value(), opacity)}
                                    : std::nullopt},
-        .childState = ScenePaintState{
-            .origin = contentOrigin(node, frame.origin), .matrix = matrix, .opacity = opacity, .clips = state.clips}};
-
-    if (node.clipsChildren) {
-        visit.childState.clips.push_back(
-            SceneClip{.frame = frame, .borderRadii = node.borderMetrics.borderRadii, .matrix = matrix});
-    }
+        .childState = childPaintState(node, state, geometry, opacity)};
 
     return visit;
 }
@@ -1228,14 +1252,21 @@ bool coversSurfacePoint(const SceneRoundedBox& box, const SceneMatrix& matrix, f
  * misses is exactly the corner no pixel was painted in. Upstream's shadow-tree hit test ignores radii and presses
  * the whole bounding rectangle; issue #99 is the decision not to.
  */
-bool coversPrimitive(const ScenePrimitive& primitive, facebook::react::Point surfacePoint) {
-    for (const SceneClip& clip : primitive.clips) {
+/**
+ * Whether a node's own rounded border box, cut by the clips it inherited, covers a surface point. It reads the
+ * clips where they already are rather than through a primitive that would copy them, because the hit test asks
+ * this of every sibling it passes, so a copy per node is a cost per row of a list on every pointer motion (#36).
+ */
+bool coversNode(const SceneNode& node, const SceneNodeGeometry& geometry, const std::vector<SceneClip>& clips,
+                facebook::react::Point surfacePoint) {
+    for (const SceneClip& clip : clips) {
         if (!coversSurfacePoint(roundedBorderBox(clip.frame, clip.borderRadii), clip.matrix, surfacePoint)) {
             return false;
         }
     }
 
-    return coversSurfacePoint(roundedBorderBox(primitive.frame, primitive.borderRadii), primitive.matrix, surfacePoint);
+    return coversSurfacePoint(roundedBorderBox(geometry.frame, node.borderMetrics.borderRadii), geometry.matrix,
+                              surfacePoint);
 }
 
 bool isPointerTarget(const SceneNode& node) {
@@ -1827,15 +1858,17 @@ SceneHit RetainedScene::hitTestNode(facebook::react::Tag tag, facebook::react::P
 
     const SceneNode& node = entry->second;
 
-    // The same visit `appendPrimitives` makes, so the frame, the matrix and the clips a hit is decided against are
-    // the ones the next snapshot paints. Changing either half alone changes both answers, which is what issue #97
-    // asks a platform to guarantee.
-    const SceneVisit visit = visitNode(node, state);
+    // The same geometry and child state `appendPrimitives` builds, from the same two functions, so the frame, the
+    // matrix and the clips a hit is decided against are the ones the next snapshot paints (#97). Only those, and
+    // not a whole primitive: building one per sibling would cost a hover a copy per row of a list (#36).
+    const SceneNodeGeometry geometry = nodeGeometry(node, state);
 
-    if (arePointerChildrenTargets(node)) {
+    if (arePointerChildrenTargets(node) && !node.childTags.empty()) {
+        const ScenePaintState childState = childPaintState(node, state, geometry, state.opacity * node.opacity);
+
         // Backwards, because child order is paint order and the last sibling painted is the one on top.
         for (size_t position = node.childTags.size(); position > 0; --position) {
-            const SceneHit hit = hitTestNode(node.childTags[position - 1], surfacePoint, visit.childState);
+            const SceneHit hit = hitTestNode(node.childTags[position - 1], surfacePoint, childState);
 
             if (hit.tag != 0) {
                 return hit;
@@ -1843,14 +1876,14 @@ SceneHit RetainedScene::hitTestNode(facebook::react::Tag tag, facebook::react::P
         }
     }
 
-    if (!isPointerTarget(node) || !coversPrimitive(visit.primitive, surfacePoint)) {
+    if (!isPointerTarget(node) || !coversNode(node, geometry, state.clips, surfacePoint)) {
         return SceneHit{};
     }
 
     return SceneHit{.tag = tag,
-                    .origin = mapPoint(visit.primitive.matrix, visit.primitive.frame.origin),
-                    .matrix = visit.primitive.matrix,
-                    .frameOrigin = visit.primitive.frame.origin};
+                    .origin = mapPoint(geometry.matrix, geometry.frame.origin),
+                    .matrix = geometry.matrix,
+                    .frameOrigin = geometry.frame.origin};
 }
 
 std::optional<facebook::react::Rect> RetainedScene::subtreeExtent(facebook::react::Tag tag) const {
