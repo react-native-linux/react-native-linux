@@ -2269,16 +2269,38 @@ down: the parse is upstream's, and matching it exactly is the point of the equal
 ### What the perf and e2e half still owes
 
 The `animated-frames.json` p95 gate already exists in the e2e driver — `animated.js` for 240 frames at
-`{"p95Ms": 17.5, "minFrames": 60}`, see *E2E driver* for why 17.5 ms and not the gospel's 8.33 ms. That covers
-#124's "a simple continuously animating view is in the gate permanently" criterion, which is
-[core#50716](https://github.com/facebook/react-native/issues/50716)'s shape. Still open, all of them still #124:
+`{"p95Ms": 17.5, "minFrames": 60}`, see *E2E driver* for why 17.5 ms and not the gospel's 8.33 ms. `animated.js`
+drives a value node no view is connected to, though, so it is not
+[core#50716](https://github.com/facebook/react-native/issues/50716)'s shape. `animated-views.js` is, and both of
+the scenarios below run it under the same budget, with `"maxHangs": 1`:
 
-- **N concurrent animated nodes.** #124 asks for a stated N and for predictable degradation past it. Neither the
-  scenario nor the number exists; the unit half above says the per-node cost is constant, not what N nodes cost.
-- **Animating while a list scrolls.** The
+- **`animated-views.json`: N = 32 views animating continuously.** Each view has its own value, transform, style
+  and props nodes and an endless `frames` animation (`iterations: -1`, what `Animated.loop` hands the native
+  driver) on `translateX`.
+- **`animated-views-scrolling.json`: the same, while a 50-row ScrollView is wheeled.** This is the
   [core#34583](https://github.com/facebook/react-native/issues/34583)/[core#38470](https://github.com/facebook/react-native/issues/38470)
-  combination, which is the shape that freezes rather than merely stutters. Needs a fixture bundle that has both,
-  and inherits the animated-fixture problem *Hit-testing under animation* already names.
+  combination, the shape that freezes rather than merely stutters.
+
+What N costs, measured on this rig with a probe around the frame loop's phases (Debug build, lavapipe; p50/p95 in
+ms; the probe is not in the tree):
+
+| scenario | input + scroll | animation step | take | draw | frame-thread total |
+| --- | --- | --- | --- | --- | --- |
+| scrolling, no animations | 0.15 / 0.23 | 0 | 0.10 / 0.14 | 2.31 / 3.10 | — |
+| 32 views | 0.04 / 0.06 | 1.54 / 1.92 | 0.08 / 0.12 | 0.67 / 1.07 | 2.34 / 2.97 |
+| 32 views, scrolling | 1.30–1.56 / 2.07 | 0.89–1.03 / 1.68 | 0.07 / 0.12 | 4.05–4.30 / 6.63 | 6.38–7.01 / 9.62 |
+| 64 views, scrolling | 2.09 / 3.29 | 1.96 / 2.83 | 0.09 / 0.14 | 7.01 / 10.57 | 11.41 / 15.31 |
+
+The step costs about 50 µs per animated view per frame in this Debug build, and degrades linearly. Scrolling
+under animation costs more than either alone for two reasons:
+
+- **Input.** Each scroll commit carries the animated nodes' props with it.
+- **Draw.** The frame's damage spans the list and the animated grid.
+
+N = 32 is the stated N because it keeps the scrolling scenario's frame-thread work near half a 60 Hz frame on
+this rig. That margin survives a slower CI runner, while a regression of core#50716's size, 20x, still misses
+every frame. N = 64 measured 15.3 ms at p95, a vsync's width from flaking.
+
 - **The animation step's own budget, separately from the frame's.** Measured with `wp_presentation` feedback at
   60 Hz and 120 Hz, per #20's harness. Today the driver asserts the frame, not the step inside it.
 - **CI artifact trend.** `build/e2e` is uploaded on every run, but nothing reads yesterday's numbers, so a

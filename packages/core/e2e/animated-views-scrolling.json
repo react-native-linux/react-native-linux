@@ -1,0 +1,20 @@
+{
+  "name": "animated-views-scrolling",
+  "bundle": "animated-views.js",
+  "ready": "animated-views: committed surface 1",
+  "frames": 240,
+  "frameBudget": { "p95Ms": 17.5, "minFrames": 60, "maxHangs": 1 },
+  "steps": [
+    "sleep 300",
+    "move 120 200",
+    "wheel down 3",
+    "sleep 150",
+    "wheel down 3",
+    "sleep 150",
+    "wheel up 3",
+    "sleep 150",
+    "wheel down 3",
+    "sleep 300"
+  ],
+  "expect": ["animated-views: committed surface 1", "animated-views: moving", "animated-views: scrolled"]
+}
