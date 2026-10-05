@@ -1040,11 +1040,23 @@ facebook::react::Point contentOrigin(const SceneNode& node, facebook::react::Poi
     return origin - node.scrollContentOffset.value();
 }
 
-SceneVisit visitNode(const SceneNode& node, const ScenePaintState& state) {
+/**
+ * Whether a node composites as one layer (#105): translucent and not invisible. A leaf as well as a parent, because
+ * a leaf paints overlapping operations of its own (background, border, shadow, text, focus ring) that per-primitive
+ * alpha would blend into each other where CSS fades the node as a whole. A fully transparent node is dropped
+ * primitive by primitive instead, and a node that paints nothing opens no layer at all.
+ */
+bool opensOpacityLayer(const SceneNode& node) { return node.opacity > 0.0F && node.opacity < 1.0F; }
+
+/**
+ * `isOpacityLayer` is `opensOpacityLayer`'s answer when the walk paints: the node's own opacity is then applied by
+ * the painter's layer, so it is left out of every colour here and out of what its children inherit.
+ */
+SceneVisit visitNode(const SceneNode& node, const ScenePaintState& state, bool isOpacityLayer = false) {
     const facebook::react::Rect frame{.origin = state.origin + node.layoutMetrics.frame.origin,
                                       .size = node.layoutMetrics.frame.size};
     const SceneMatrix matrix = composeMatrices(state.matrix, matrixAboutCenter(node.transform, frame.getCenter()));
-    const float opacity = state.opacity * node.opacity;
+    const float opacity = state.opacity * (isOpacityLayer ? 1.0F : node.opacity);
     SceneVisit visit{
         .primitive =
             ScenePrimitive{.tag = node.tag,
@@ -1774,7 +1786,9 @@ void RetainedScene::appendPrimitives(SceneSnapshot& primitives, facebook::react:
     }
 
     const SceneNode& node = entry->second;
-    SceneVisit visit = visitNode(node, state);
+    const bool isOpacityLayer = opensOpacityLayer(node);
+    const size_t firstPrimitive = primitives.size();
+    SceneVisit visit = visitNode(node, state, isOpacityLayer);
 
     visit.primitive.focusRing = isFocusVisible_ && tag == focusedTag_;
 
@@ -1792,6 +1806,14 @@ void RetainedScene::appendPrimitives(SceneSnapshot& primitives, facebook::react:
 
     for (facebook::react::Tag childTag : node.childTags) {
         appendPrimitives(primitives, childTag, visit.childState);
+    }
+
+    // Inner layers were attached while the children were appended, so this one goes in front: outermost first.
+    if (isOpacityLayer && primitives.size() > firstPrimitive) {
+        std::vector<float>& opens = primitives[firstPrimitive].opensLayers;
+
+        opens.insert(opens.begin(), node.opacity);
+        primitives.back().closesLayers += 1;
     }
 }
 

@@ -731,15 +731,26 @@ void paintScene(SkCanvas& canvas, const SceneSnapshot& scene, const SceneDamage&
     const SkMatrix baseMatrix = canvas.getLocalToDeviceAs3x3();
 
     for (const ScenePrimitive& primitive : scene) {
-        const SkAutoCanvasRestore restore(&canvas, true);
-
-        for (const SceneClip& clip : primitive.clips) {
-            canvas.setMatrix(SkMatrix::Concat(baseMatrix, toSkMatrix(clip.matrix)));
-            canvas.clipRRect(toSkRRect(roundedBorderBox(clip.frame, clip.borderRadii)), true);
+        // #105: a translucent subtree is one layer, composited once at its alpha, as React Native does.
+        for (const float layerOpacity : primitive.opensLayers) {
+            canvas.saveLayerAlphaf(nullptr, layerOpacity);
         }
 
-        canvas.setMatrix(SkMatrix::Concat(baseMatrix, toSkMatrix(primitive.matrix)));
-        paintPrimitive(canvas, primitive);
+        {
+            const SkAutoCanvasRestore restore(&canvas, true);
+
+            for (const SceneClip& clip : primitive.clips) {
+                canvas.setMatrix(SkMatrix::Concat(baseMatrix, toSkMatrix(clip.matrix)));
+                canvas.clipRRect(toSkRRect(roundedBorderBox(clip.frame, clip.borderRadii)), true);
+            }
+
+            canvas.setMatrix(SkMatrix::Concat(baseMatrix, toSkMatrix(primitive.matrix)));
+            paintPrimitive(canvas, primitive);
+        }
+
+        for (uint32_t closed = 0; closed < primitive.closesLayers; ++closed) {
+            canvas.restore();
+        }
     }
 }
 

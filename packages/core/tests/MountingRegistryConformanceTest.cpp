@@ -284,7 +284,7 @@ TEST(MountingRegistrySynchronousPropsTest, ACommitThatFollowsASynchronousUpdateR
     const SceneSnapshot animated = mountingManager.snapshotScene();
 
     ASSERT_EQ(animated.size(), 1U);
-    EXPECT_NE(animated.at(0).backgroundColorArgb, kBlueArgb);
+    EXPECT_EQ(animated.at(0).opensLayers, std::vector<float>{0.5F});
 
     ShadowViewMutationList settling;
 

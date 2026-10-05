@@ -224,7 +224,7 @@ TEST(ActivityIndicatorSceneTest, AnUpdateThatChangedNothingElseKeepsTheArcWhereI
     EXPECT_DOUBLE_EQ(indicatorOf(scene.snapshot(), 2).elapsedMilliseconds, kSixtyHertzMilliseconds);
 }
 
-TEST(ActivityIndicatorSceneTest, TheInheritedOpacityIsFoldedIntoTheArcsAlpha) {
+TEST(ActivityIndicatorSceneTest, ATranslucentAncestorFadesTheArcsAsALayerRatherThanThroughTheirAlpha) {
     RetainedScene scene;
     const std::shared_ptr<ViewProps> fadedProps = std::make_shared<ViewProps>();
 
@@ -234,7 +234,8 @@ TEST(ActivityIndicatorSceneTest, TheInheritedOpacityIsFoldedIntoTheArcsAlpha) {
     addChild(scene, 2, makeSpinningIndicator(3, kSmallFrame));
 
     EXPECT_EQ(kActivityIndicatorDefaultColorArgb >> 24U, 0xFFU);
-    EXPECT_EQ(indicatorOf(scene.snapshot(), 3).colorArgb >> 24U, 0x80U);
+    EXPECT_EQ(indicatorOf(scene.snapshot(), 3).colorArgb >> 24U, 0xFFU);
+    EXPECT_EQ(scene.snapshot().front().opensLayers, std::vector<float>{0.5F});
 }
 
 } // namespace
