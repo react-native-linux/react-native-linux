@@ -175,7 +175,8 @@ TEST(NonFiniteMountBoundary, ANonFiniteContentOffsetBecomesTheOrigin) {
 
         const SceneSnapshot snapshot = scene.snapshot();
 
-        ASSERT_EQ(snapshot.size(), 1U);
+        // The child, then the scroll view's own indicator (#49).
+        ASSERT_EQ(snapshot.size(), 2U);
         EXPECT_EQ(snapshot[0].frame, makeRect(0, 30, 50, 50));
     }
 }

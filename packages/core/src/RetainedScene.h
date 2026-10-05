@@ -463,6 +463,13 @@ struct SceneAccessibility {
     facebook::react::AccessibilityValue value;
 };
 
+/** What a `<ScrollView>`'s overlay indicators are drawn from (#49): its content size and which axes may show one. */
+struct SceneScrollIndicators {
+    facebook::react::Size content;
+    bool vertical{true};
+    bool horizontal{true};
+};
+
 /**
  * A `<ScrollView>`'s `maintainVisibleContentPosition` as the scene holds it: what the prop asks for, what the
  * offset is clamped against on each axis, and the children the anchor was last measured in.
@@ -548,6 +555,9 @@ struct SceneNode {
      * picture and the hit test agree by construction.
      */
     std::optional<facebook::react::Point> scrollContentOffset;
+
+    /** A `<ScrollView>`'s indicators, read with its offset; absent on every other node. */
+    std::optional<SceneScrollIndicators> scrollIndicators;
 
     /**
      * What a `<ScrollView>` asking for `maintainVisibleContentPosition` needs to hold the child the user is

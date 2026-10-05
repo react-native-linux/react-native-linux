@@ -63,6 +63,7 @@ const scopedSourcePaths: readonly string[] = [
   "packages/core/src/RendererLadder.cpp",
   "packages/core/src/ResourceResolver.cpp",
   "packages/core/src/RetainedScene.cpp",
+  "packages/core/src/ScrollIndicator.cpp",
   "packages/core/src/ScrollEventCadence.cpp",
   "packages/core/src/ScrollPhysics.cpp",
   "packages/core/src/SeededTestScheduler.cpp",

@@ -2,6 +2,7 @@
 
 #include "ActivityIndicatorContent.h"
 #include "ImageContent.h"
+#include "ScrollIndicator.h"
 #include "SwitchContent.h"
 #include "TextInputComponent.h"
 
@@ -956,6 +957,7 @@ void preferAdoptedOffset(SceneNode& node) {
 
 void readScrollContent(SceneNode& node, const facebook::react::ShadowView& shadowView) {
     node.scrollContentOffset = std::nullopt;
+    node.scrollIndicators = std::nullopt;
 
     const std::shared_ptr<const facebook::react::ConcreteState<facebook::react::ScrollViewState>> scrollState =
         std::dynamic_pointer_cast<const facebook::react::ConcreteState<facebook::react::ScrollViewState>>(
@@ -969,6 +971,13 @@ void readScrollContent(SceneNode& node, const facebook::react::ShadowView& shado
 
     node.scrollContentOffset = scrollState->getData().contentOffset;
     node.clipsChildren = true;
+
+    const auto* scrollProps = dynamic_cast<const facebook::react::ScrollViewProps*>(shadowView.props.get());
+
+    node.scrollIndicators =
+        SceneScrollIndicators{.content = scrollState->getData().getContentSize(),
+                              .vertical = scrollProps == nullptr || scrollProps->showsVerticalScrollIndicator,
+                              .horizontal = scrollProps == nullptr || scrollProps->showsHorizontalScrollIndicator};
 
     readMaintainedScroll(node, shadowView, scrollState->getData());
     preferAdoptedOffset(node);
@@ -1216,6 +1225,52 @@ bool coversSurfacePoint(const SceneRoundedBox& box, const SceneMatrix& matrix, f
  * misses is exactly the corner no pixel was painted in. Upstream's shadow-tree hit test ignores radii and presses
  * the whole bounding rectangle; issue #99 is the decision not to.
  */
+/**
+ * The overlay indicators a `<ScrollView>` shows (#49), in its own coordinates, for the offset it is at: one per axis
+ * it overflows on and allows. See `ScrollIndicator.h`.
+ */
+std::vector<ScrollIndicatorGeometry> scrollIndicatorsOf(const SceneNode& node) {
+    std::vector<ScrollIndicatorGeometry> geometries;
+
+    if (!node.scrollIndicators.has_value()) {
+        return geometries;
+    }
+
+    const SceneScrollIndicators& indicators = node.scrollIndicators.value();
+    const facebook::react::Size viewport = node.layoutMetrics.frame.size;
+    const facebook::react::Point offset = node.scrollContentOffset.value_or(facebook::react::Point{});
+    const std::optional<ScrollIndicatorGeometry> vertical =
+        indicators.vertical ? verticalScrollIndicator(viewport, indicators.content, offset.y) : std::nullopt;
+    const std::optional<ScrollIndicatorGeometry> horizontal =
+        indicators.horizontal ? horizontalScrollIndicator(viewport, indicators.content, offset.x) : std::nullopt;
+
+    for (const std::optional<ScrollIndicatorGeometry>& geometry : {vertical, horizontal}) {
+        if (geometry.has_value()) {
+            geometries.push_back(geometry.value());
+        }
+    }
+
+    return geometries;
+}
+
+/**
+ * A rounded bar inside `owner`'s frame, painted and hit-tested as `owner` itself: the same tag, matrix and inherited
+ * clips, at the opacity it inherited.
+ */
+ScenePrimitive barPrimitive(const ScenePrimitive& owner, const facebook::react::Rect& bar, float opacity) {
+    constexpr uint32_t kIndicatorArgb = 0x99A0A6B0U;
+    const facebook::react::Float radius = std::min(bar.size.width, bar.size.height) / 2;
+    const facebook::react::CornerRadii corner{.vertical = radius, .horizontal = radius};
+
+    return ScenePrimitive{
+        .tag = owner.tag,
+        .frame = facebook::react::Rect{.origin = owner.frame.origin + bar.origin, .size = bar.size},
+        .matrix = owner.matrix,
+        .clips = owner.clips,
+        .borderRadii = {.topLeft = corner, .topRight = corner, .bottomLeft = corner, .bottomRight = corner},
+        .backgroundColorArgb = scaleArgbAlpha(kIndicatorArgb, opacity)};
+}
+
 bool coversPrimitive(const ScenePrimitive& primitive, facebook::react::Point surfacePoint) {
     for (const SceneClip& clip : primitive.clips) {
         if (!coversSurfacePoint(roundedBorderBox(clip.frame, clip.borderRadii), clip.matrix, surfacePoint)) {
@@ -1786,6 +1841,13 @@ void RetainedScene::appendPrimitives(SceneSnapshot& primitives, facebook::react:
         }
     }
 
+    // #49: the indicators go above the content, so they are appended after the children they overlay.
+    std::vector<ScenePrimitive> indicatorBars;
+
+    for (const ScrollIndicatorGeometry& indicator : scrollIndicatorsOf(node)) {
+        indicatorBars.push_back(barPrimitive(visit.primitive, indicator.thumb, visit.childState.opacity));
+    }
+
     if (isPrimitiveVisible(visit.primitive)) {
         primitives.push_back(std::move(visit.primitive));
     }
@@ -1793,6 +1855,8 @@ void RetainedScene::appendPrimitives(SceneSnapshot& primitives, facebook::react:
     for (facebook::react::Tag childTag : node.childTags) {
         appendPrimitives(primitives, childTag, visit.childState);
     }
+
+    primitives.insert(primitives.end(), indicatorBars.begin(), indicatorBars.end());
 }
 
 SceneHit RetainedScene::hitTestNode(facebook::react::Tag tag, facebook::react::Point surfacePoint,
@@ -1809,6 +1873,20 @@ SceneHit RetainedScene::hitTestNode(facebook::react::Tag tag, facebook::react::P
     // the ones the next snapshot paints. Changing either half alone changes both answers, which is what issue #97
     // asks a platform to guarantee.
     const SceneVisit visit = visitNode(node, state);
+    const SceneHit nodeHit{.tag = tag,
+                           .origin = mapPoint(visit.primitive.matrix, visit.primitive.frame.origin),
+                           .matrix = visit.primitive.matrix,
+                           .frameOrigin = visit.primitive.frame.origin};
+
+    // #49: a press on an indicator's track belongs to the scroll view, never to the content painted beneath it
+    // (rn-macos#629).
+    if (isPointerTarget(node)) {
+        for (const ScrollIndicatorGeometry& indicator : scrollIndicatorsOf(node)) {
+            if (coversPrimitive(barPrimitive(visit.primitive, indicator.track, 1.0F), surfacePoint)) {
+                return nodeHit;
+            }
+        }
+    }
 
     if (arePointerChildrenTargets(node)) {
         // Backwards, because child order is paint order and the last sibling painted is the one on top.
@@ -1825,10 +1903,7 @@ SceneHit RetainedScene::hitTestNode(facebook::react::Tag tag, facebook::react::P
         return SceneHit{};
     }
 
-    return SceneHit{.tag = tag,
-                    .origin = mapPoint(visit.primitive.matrix, visit.primitive.frame.origin),
-                    .matrix = visit.primitive.matrix,
-                    .frameOrigin = visit.primitive.frame.origin};
+    return nodeHit;
 }
 
 std::optional<facebook::react::Rect> RetainedScene::subtreeExtent(facebook::react::Tag tag) const {

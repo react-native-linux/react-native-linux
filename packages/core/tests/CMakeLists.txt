@@ -86,6 +86,7 @@ set(RNL_CORE_SCENE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ResourceResolver.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/StartupActivationToken.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/RetainedScene.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ScrollIndicator.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ScrollController.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ScrollEventCadence.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ScrollPhysics.cpp
@@ -164,6 +165,7 @@ add_executable(rnl_core_tests
     SceneTest.cpp
     SeededInterleavingTest.cpp
     SeededTestSchedulerTest.cpp
+    ScrollIndicatorTest.cpp
     ScrollTest.cpp
     SwitchTest.cpp
     ShadowTreeCommitTest.cpp

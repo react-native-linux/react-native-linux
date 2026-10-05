@@ -126,7 +126,8 @@ TEST(RetainedSceneReuseTest, AScrollViewReplacedByTheSameTagStartsWithNoContentO
 
     const SceneSnapshot snapshot = scene.snapshot();
 
-    ASSERT_EQ(snapshot.size(), 1U);
+    // The row, then the scroll view's own indicator (#49).
+    ASSERT_EQ(snapshot.size(), 2U);
     EXPECT_FLOAT_EQ(snapshot[0].frame.origin.y, 60 + 80);
 }
 

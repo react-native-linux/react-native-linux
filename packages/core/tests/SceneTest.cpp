@@ -1495,14 +1495,15 @@ TEST(RetainedSceneScrollTest, AChildPaintedOutsideItsParentIsPressableThereUnles
 TEST(RetainedSceneScrollTest, ContentOffsetTranslatesTheChildrenOnBothAxes) {
     const SceneSnapshot snapshot = sceneWithScrollView(Point{.x = 25, .y = 120}).snapshot();
 
-    ASSERT_EQ(snapshot.size(), 1U);
+    // The row, then the scroll view's own indicator (#49).
+    ASSERT_EQ(snapshot.size(), 2U);
     expectPrimitive(snapshot[0], makeRect(35, 20, 200, 70), kBlueArgb);
 }
 
 TEST(RetainedSceneScrollTest, AScrollViewClipsItsChildrenWithNoOverflowPropInvolved) {
     const SceneSnapshot snapshot = sceneWithScrollView(Point{.x = 0, .y = 120}).snapshot();
 
-    ASSERT_EQ(snapshot.size(), 1U);
+    ASSERT_EQ(snapshot.size(), 2U);
     ASSERT_EQ(snapshot[0].clips.size(), 1U);
     expectRect(snapshot[0].clips.front().frame, scrollViewFrame());
 }
