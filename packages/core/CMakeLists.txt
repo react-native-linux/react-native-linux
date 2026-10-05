@@ -651,6 +651,7 @@ if(TARGET rnl_skia)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/FontSizeScaling.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/LineBoxMetrics.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/ParagraphAttributesSignature.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/TextDirection.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/ParagraphLayoutCache.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/PinnedFontFamilies.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/TextLayoutManager.cpp

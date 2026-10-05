@@ -81,6 +81,7 @@ set(RNL_CORE_SCENE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/PlatformColor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/RendererLadder.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ParagraphAttributesSignature.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextDirection.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ParagraphLayoutCache.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ResourceResolver.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/StartupActivationToken.cpp
@@ -169,6 +170,7 @@ add_executable(rnl_core_tests
     SingleInstanceActivationTest.cpp
     TextLayoutManagerStubTest.cpp
     TextRasterizationPolicyTest.cpp
+    TextDirectionTest.cpp
     TextTransformTest.cpp
     ThreadingConformanceTest.cpp
     TextInputControllerTest.cpp

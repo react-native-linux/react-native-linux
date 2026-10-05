@@ -140,10 +140,25 @@ TEST(ParagraphAttributesSignatureTest, TheOptionalAttributesSeparateTheSignature
     fragment.textAttributes.textTransform = facebook::react::TextTransform::Uppercase;
     fragment.textAttributes.alignment = facebook::react::TextAlignment::Center;
     fragment.textAttributes.baseWritingDirection = facebook::react::WritingDirection::RightToLeft;
+    fragment.textAttributes.layoutDirection = facebook::react::LayoutDirection::RightToLeft;
     fragment.textAttributes.lineHeight = 20.0F;
     styled.appendFragment(std::move(fragment));
 
     EXPECT_NE(base, signatureOf(styled));
+}
+
+/** #72: the inherited layout direction decides a natural paragraph's base direction, so it is part of the key. */
+TEST(ParagraphAttributesSignatureTest, TheLayoutDirectionAloneSeparatesTheSignature) {
+    AttributedString leftToRight;
+    AttributedString rightToLeft;
+    AttributedString::Fragment fragment = textFragment("Hello, world!", 14.0F, false);
+
+    fragment.textAttributes.layoutDirection = facebook::react::LayoutDirection::LeftToRight;
+    leftToRight.appendFragment(AttributedString::Fragment{fragment});
+    fragment.textAttributes.layoutDirection = facebook::react::LayoutDirection::RightToLeft;
+    rightToLeft.appendFragment(std::move(fragment));
+
+    EXPECT_NE(signatureOf(leftToRight), signatureOf(rightToLeft));
 }
 
 } // namespace

@@ -48,7 +48,10 @@ std::string toAttributesSignature(const facebook::react::AttributedString& attri
             ":" +
             (attributes.baseWritingDirection.has_value()
                  ? std::to_string(static_cast<int>(*attributes.baseWritingDirection))
-                 : "none");
+                 : "none") +
+            ":" +
+            (attributes.layoutDirection.has_value() ? std::to_string(static_cast<int>(*attributes.layoutDirection))
+                                                    : "none");
     }
 
     return signature;

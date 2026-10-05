@@ -58,13 +58,13 @@ assertion and not an implementation.
 | Component | Props | Implemented | Deviating | Not implemented |
 | --- | --- | --- | --- | --- |
 | View | 35 | 14 | 5 | 16 |
-| Text | 45 | 20 | 6 | 19 |
+| Text | 45 | 22 | 6 | 17 |
 | Image | 14 | 7 | 3 | 4 |
 | ScrollView | 39 | 10 | 2 | 27 |
 | TextInput | 24 | 13 | 0 | 11 |
 | Switch | 8 | 5 | 3 | 0 |
 | ActivityIndicator | 4 | 4 | 0 | 0 |
-| **Total** | 169 | 73 | 19 | 77 |
+| **Total** | 169 | 75 | 19 | 75 |
 
 ## View
 
@@ -130,7 +130,7 @@ assertion and not an implementation.
 | `textTransform` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:65` | implemented | `TextTransformTest` |
 | `lineHeight` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:68` | implemented | `LineBoxMetricsTest, ConvertsLineHeightPointsToAMultipleOfTheFontSize` |
 | `alignment` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:69` | implemented | `text.png` |
-| `baseWritingDirection` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:70` | not-implemented | #72 |
+| `baseWritingDirection` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:70` | implemented | `TextDirectionTest, AnExplicitWritingDirectionWinsAndANaturalOneFollowsTheLayout` |
 | `lineBreakStrategy` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:71` | not-implemented | #69 |
 | `lineBreakMode` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:72` | not-implemented | #69 |
 | `textDecorationColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:75` | implemented | `text-style-matrix.png` |
@@ -141,7 +141,7 @@ assertion and not an implementation.
 | `textShadowColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:83` | implemented | `text-style-matrix.png` |
 | `isHighlighted` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:86` | not-implemented | #43 |
 | `isPressable` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:87` | not-implemented | #43 |
-| `layoutDirection` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:93` | not-implemented | #119 |
+| `layoutDirection` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:93` | implemented | `rtl-text.png` |
 | `accessibilityRole` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:94` | not-implemented | #61 |
 | `role` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:95` | not-implemented | #61 |
 | `textEffects` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:98` | not-implemented | #69 |
