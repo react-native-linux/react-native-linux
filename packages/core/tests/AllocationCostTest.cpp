@@ -425,4 +425,66 @@ TEST(MountingCostTest, MountingAndUnmountingTheSameScreenCostsTheSameEveryCycle)
     EXPECT_EQ(secondCycle, thirdCycle);
 }
 
+// Issue #36: the per-event cost of hover, which is a hit test per pointer motion. rn-macos#1861 is hover going slow
+// on long lists, so the assertion is that a motion's cost does not depend on how long the list is.
+
+constexpr Tag kListScrollTag = 9000;
+constexpr Tag kFirstListRowTag = 9001;
+constexpr size_t kShortListRowCount = 50;
+constexpr size_t kLongListRowCount = 500;
+constexpr float kListRowHeight = 20.0F;
+
+/**
+ * Two: one hit test per side of the boundary, and each copies the clip list once, for the ScrollView's children to
+ * inherit. No row costs anything, which is the point; before #36 every row a hit test passed copied that list twice,
+ * so the same motion cost 200 allocations over 50 rows and 2,000 over 500. The ceiling leaves room for one
+ * incidental container, and the short-versus-long equality is what holds the line.
+ */
+constexpr size_t kHoverAllocationCeiling = 4;
+
+/** A ScrollView filling the surface's width, holding `rowCount` painted rows, each `kListRowHeight` tall. */
+ShadowViewMutationList listMutations(size_t rowCount) {
+    ShadowViewMutationList mutations;
+    const ShadowView scrollView = makeScrollView(kListScrollTag, makeRect(0, 0, 800, 600), Point{},
+                                                 makeRect(0, 0, 800, static_cast<float>(rowCount) * kListRowHeight));
+
+    mutations.push_back(ShadowViewMutation::CreateMutation(scrollView));
+    mutations.push_back(ShadowViewMutation::InsertMutation(kSurfaceTag, scrollView, 0));
+
+    for (size_t index = 0; index < rowCount; index++) {
+        const ShadowView row = makePaintedView(static_cast<Tag>(kFirstListRowTag + index),
+                                               makeRect(0, static_cast<float>(index) * kListRowHeight, 800, 18), red());
+
+        mutations.push_back(ShadowViewMutation::CreateMutation(row));
+        mutations.push_back(ShadowViewMutation::InsertMutation(kListScrollTag, row, static_cast<int>(index)));
+    }
+
+    return mutations;
+}
+
+/** One motion that crosses from the first row into the second: two hit tests, after one to warm the scene up. */
+size_t allocationsHoveringAcrossARowBoundary(size_t rowCount) {
+    LinuxMountingManager mountingManager;
+
+    startSurface(mountingManager);
+    mountingManager.executeMount(kSurfaceTag, transactionOf(listMutations(rowCount)));
+    static_cast<void>(mountingManager.findNodeAtPoint(kSurfaceTag, Point{.x = 100, .y = 10}));
+
+    return allocationsDuringFrame([&]() {
+        static_cast<void>(mountingManager.findNodeAtPoint(kSurfaceTag, Point{.x = 100, .y = 10}));
+        static_cast<void>(mountingManager.findNodeAtPoint(kSurfaceTag, Point{.x = 100, .y = 30}));
+    });
+}
+
+TEST(HoverCostTest, AMotionAcrossARowCostsTheSameOnALongListAsOnAShortOne) {
+    const size_t shortList = allocationsHoveringAcrossARowBoundary(kShortListRowCount);
+    const size_t longList = allocationsHoveringAcrossARowBoundary(kLongListRowCount);
+
+    std::cout << "[cost] hover: " << shortList << " allocations over " << kShortListRowCount << " rows, " << longList
+              << " over " << kLongListRowCount << std::endl;
+
+    EXPECT_EQ(shortList, longList);
+    EXPECT_LE(longList, kHoverAllocationCeiling);
+}
+
 } // namespace
