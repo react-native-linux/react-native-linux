@@ -69,16 +69,39 @@ for (let frame = 0; frame <= 60; frame += 1) {
   frames.push(frame <= 30 ? frame / 30 : (60 - frame) / 30);
 }
 
-let observedValue = null;
+// Every view's value is listened to, so the scenarios can say all of them moved — not just the first — and that
+// all of them were still moving after the list started scrolling.
+const movedTags = new Set();
+const movedWhileScrollingTags = new Set();
+let scrollEventCount = 0;
+
+const recordMovement = (tags, line, tag) => {
+  if (tags.size === animatedViewCount) {
+    return;
+  }
+
+  tags.add(tag);
+
+  if (tags.size === animatedViewCount) {
+    console.log(line);
+  }
+};
 
 globalThis.__rctDeviceEventEmitter = {
   emit: (eventName, event) => {
-    if (eventName !== 'onAnimatedValueUpdate' || observedValue !== null || event.value <= 0) {
+    if (eventName !== 'onAnimatedValueUpdate' || event.value <= 0) {
       return;
     }
 
-    observedValue = event.value;
-    console.log('animated-views: moving');
+    recordMovement(movedTags, 'animated-views: all ' + animatedViewCount + ' moving', event.tag);
+
+    if (scrollEventCount > 0) {
+      recordMovement(
+        movedWhileScrollingTags,
+        'animated-views: all ' + animatedViewCount + ' moving while scrolling',
+        event.tag
+      );
+    }
   },
 };
 
@@ -105,15 +128,22 @@ animatedViews.forEach((view, index) => {
   animated.startAnimatingNode(index + 1, valueTag, { type: 'frames', frames, toValue: 8, iterations: -1 }, () => {});
 });
 
-animated.startListeningToAnimatedNodeValue(1000);
+animatedViews.forEach((view, index) => animated.startListeningToAnimatedNodeValue(1000 + index * 4));
 animated.finishOperationBatch();
 
-let scrolled = false;
+// Twelve scroll events is twelve frames the list moved in, which is what the p95 gate needs to see for the
+// scrolling half of the run to be able to fail it: 12 of 239 intervals is past the 95th percentile.
+const kScrollEventsMeasured = 12;
 
 fabric.registerEventHandler((instanceHandle, type) => {
-  if (type === 'topScroll' && !scrolled) {
-    scrolled = true;
-    console.log('animated-views: scrolled');
+  if (type !== 'topScroll') {
+    return;
+  }
+
+  scrollEventCount += 1;
+
+  if (scrollEventCount === kScrollEventsMeasured) {
+    console.log('animated-views: scrolled ' + kScrollEventsMeasured + ' times');
   }
 });
 
