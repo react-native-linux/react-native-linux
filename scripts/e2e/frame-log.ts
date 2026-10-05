@@ -133,17 +133,21 @@ const parseFrameJournalSummary = (frameLogText: string): FrameJournalSummary | n
 };
 
 /**
- * The frame-journal half of the budget (#345): `maxHangs` is optional, and `null` opts a scenario out rather
- * than defaulting to a number nobody measured. A scenario that does gate on it but whose run produced no journal
+ * The frame-journal half of the budget: `maxHangs` (#345) caps hang-thresholded frames and `maxJournalledFrames`
+ * (#42) caps the frames that painted damage, which is how a scenario that injects a known number of changes says
+ * each painted once and nothing painted after. Both are optional, and `null` opts a scenario out rather than
+ * defaulting to a number nobody measured. A scenario that does gate on one but whose run produced no journal
  * summary fails the same way a run with no `FrameTiming` summary does — a truncated log names its own reason
  * rather than being silently skipped.
  */
-const findFrameHangFailures = (
+const findFrameJournalFailures = (
   journalSummary: FrameJournalSummary | null,
   budget: FrameBudget,
   frameLogPath: string,
 ): readonly string[] => {
-  if (budget.maxHangs === null) {
+  const { maxHangs, maxJournalledFrames } = budget;
+
+  if (maxHangs === null && maxJournalledFrames === null) {
     return [];
   }
 
@@ -151,13 +155,19 @@ const findFrameHangFailures = (
     return [`the window wrote no frame-journal summary to ${frameLogPath}`];
   }
 
-  if (journalSummary.hangs <= budget.maxHangs) {
-    return [];
-  }
-
   return [
-    `${String(journalSummary.hangs)} frames hung past the frame journal's thresholds, the budget allows at most ` +
-      `${String(budget.maxHangs)}`,
+    ...(maxHangs !== null && journalSummary.hangs > maxHangs
+      ? [
+          `${String(journalSummary.hangs)} frames hung past the frame journal's thresholds, the budget allows at ` +
+            `most ${String(maxHangs)}`,
+        ]
+      : []),
+    ...(maxJournalledFrames !== null && journalSummary.frames > maxJournalledFrames
+      ? [
+          `${String(journalSummary.frames)} frames painted damage, the budget allows at most ` +
+            `${String(maxJournalledFrames)}`,
+        ]
+      : []),
   ];
 };
 
@@ -232,7 +242,7 @@ const findFrameBudgetFailures = (inputs: FrameBudgetGradeInputs): readonly strin
             `the budget is ${String(budget.p95Ms)} ms`,
         ]
       : []),
-    ...findFrameHangFailures(journalSummary, budget, frameLogPath),
+    ...findFrameJournalFailures(journalSummary, budget, frameLogPath),
   ];
 };
 

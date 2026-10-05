@@ -24,9 +24,12 @@ const PARENT_DIRECTORY = "..";
 /**
  * The perf gate of #7: `p95Ms`/`minFrames` bound the p95 `wp_presentation` frame time and the frames needed for
  * it to mean anything. `maxHangs` (#345) caps hang-thresholded frames; `null` opts out, `0` is a measured zero.
+ * `maxJournalledFrames` (#42) caps the frames that painted damage, which is how a scenario says nothing repaints
+ * once its input stops; `null` opts out.
  */
 interface FrameBudget {
   readonly maxHangs: number | null;
+  readonly maxJournalledFrames: number | null;
   readonly minFrames: number;
   readonly p95Ms: number;
 }
@@ -122,6 +125,10 @@ const readFrameBudget = (record: Record<string, unknown>, sourceName: string): F
   return {
     maxHangs:
       "maxHangs" in budget ? readNonNegativeInteger(budget["maxHangs"], "frameBudget.maxHangs", sourceName) : null,
+    maxJournalledFrames:
+      "maxJournalledFrames" in budget
+        ? readNonNegativeInteger(budget["maxJournalledFrames"], "frameBudget.maxJournalledFrames", sourceName)
+        : null,
     minFrames: readPositiveInteger(budget["minFrames"], "frameBudget.minFrames", sourceName),
     p95Ms: readPositiveNumber(budget["p95Ms"], "frameBudget.p95Ms", sourceName),
   };

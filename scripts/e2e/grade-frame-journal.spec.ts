@@ -96,7 +96,7 @@ describe("gradeArtifacts frame journal", () => {
 
     const scenario = {
       ...baseScenario,
-      frameBudget: { maxHangs: 0, minFrames: MINIMUM_FRAMES, p95Ms: BUDGET_P95_MS },
+      frameBudget: { maxHangs: 0, maxJournalledFrames: null, minFrames: MINIMUM_FRAMES, p95Ms: BUDGET_P95_MS },
     };
 
     expect(gradeArtifacts(inputsFor(scenario)).failures).toEqual([
