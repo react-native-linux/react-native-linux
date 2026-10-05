@@ -95,6 +95,7 @@ TEST(ResizeTextCostTest, AConfigureSequenceShapesOnlyResizedTextAndSettlesInOneF
     EXPECT_EQ(configuresLeavingWork, kConfigureCount);
     EXPECT_FALSE(pendingAfterSettle);
     EXPECT_LE(mostShapesInOneConfigure, static_cast<uint64_t>(kResizedParagraphCount));
+    EXPECT_EQ(shapes, static_cast<uint64_t>(kConfigureCount * kResizedParagraphCount));
     EXPECT_FALSE(reactHost.hasReportedFatalError());
 }
 
