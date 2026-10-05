@@ -70,7 +70,7 @@ assertion and not an implementation.
 
 | Prop | Declared at | State | Proof, reason or owner |
 | --- | --- | --- | --- |
-| `opacity` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:46` | implemented | `RetainedSceneTest, ATranslucentParentIsOneLayerOverItsSubtreeAndALeafKeepsItsOwnAlpha` |
+| `opacity` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:46` | implemented | `RetainedSceneTest, ATranslucentParentAndATranslucentLeafEachCompositeAsALayer` |
 | `backgroundColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:47` | implemented | `RetainedSceneTest, UpdateReplacesFrameAndBackgroundColorInPlace` |
 | `borderRadii` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:50` | implemented | `BorderGeometryTest, TheHitRegionIsTheSameRoundedBoxTheSnapshotIsPaintedWith` |
 | `borderColors` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:51` | implemented | `border-matrix.png` |
