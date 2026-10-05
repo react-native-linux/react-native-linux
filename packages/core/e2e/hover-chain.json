@@ -36,6 +36,8 @@
     "hover-chain: topPointerOut on cover at 590,50",
     "hover-chain: topPointerLeave on cover at 590,50",
     "hover-chain: topPointerOver on clipped at 590,50",
-    "hover-chain: topPointerEnter on clipped at 590,50"
+    "hover-chain: topPointerEnter on clipped at 590,50",
+    "hover-chain: topPointerOut on clipped at 50,300",
+    "hover-chain: topPointerLeave on clipped at 50,300"
   ]
 }

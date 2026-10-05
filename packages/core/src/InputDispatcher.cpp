@@ -442,6 +442,13 @@ void InputDispatcher::dispatchPointerEvent(const InputEvent& event) {
 
     const std::shared_ptr<const facebook::react::TouchEventEmitter> emitter =
         std::dynamic_pointer_cast<const facebook::react::TouchEventEmitter>(target.shadowNode->getEventEmitter());
+    const bool isSurfaceRoot = target.shadowNode->getTag() == surfaceId_;
+
+    if (isSurfaceRoot && hoveredEmitter_ != nullptr) {
+        hoveredEmitter_->onPointerLeave(dispatches.front().event);
+    }
+
+    hoveredEmitter_ = isSurfaceRoot ? nullptr : emitter;
 
     if (emitter == nullptr) {
         return;

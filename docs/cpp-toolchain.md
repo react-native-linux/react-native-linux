@@ -5279,11 +5279,12 @@ order.
 - **Focus traversal** is no longer a deferral. Tab order, the focus ring, `onFocus`/`onBlur` and Enter/Space
   activation are issues #37 and #38 and are implemented; *Focus and keyboard* below is the contract and its own
   deferral list.
-- **A root instance handle.** `UIManager::startEmptySurface` does not give the root shadow node one, and
-  `PointerEventsProcessor::getShadowNodeFromEventTarget` returns null without it, so an event whose target is only
-  the root is dropped before the hover chain runs. The consequence is visible: moving off a view onto the
-  background does not currently produce `pointerOut`. Fixing it means giving the root a fiber-shaped handle, which
-  belongs with React Native's JavaScript surface registry rather than here.
+- **A root instance handle** is no longer a deferral for hover. `UIManager::startEmptySurface` still gives the root
+  shadow node none, so an event aimed at the root is still dropped by
+  `PointerEventsProcessor::getShadowNodeFromEventTarget`; instead, `InputDispatcher` keeps the emitter of the last
+  node a pointer event reached, and an event that resolves to the root is also sent through it as a
+  `topPointerLeave` — upstream's "the pointer left every React view", which the processor answers with
+  `pointerOut` and `pointerLeave` for the whole chain (#36, case 3; `HoverChainTest` and `e2e/hover-chain.json`).
 - **IME.** `zwp_text_input_v3` is issue #26 and is implemented; see *IME* below. Pre-edit rendering is no longer
   deferred either — the field of *TextInput* draws it. What is still missing is xkbcommon compose sequences and
   dead keys, which are a keyboard concern rather than an input-method one.
@@ -5476,8 +5477,8 @@ is how a handler tells a real Enter from the Enter that commits an IME candidate
 ### Routing, and the unhandled-key policy
 
 Key *events* go to the focused node and to nothing else. A key pressed with nothing focused reaches **no node**,
-and that is a policy rather than an omission: the surface root has no instance handle — see the deferral in
-*Input* — so it cannot be an event target, and on Wayland a key that reached this client is a key the compositor
+and that is a policy rather than an omission: the surface root has no instance handle — see *Input* — so it
+cannot be an event target, and on Wayland a key that reached this client is a key the compositor
 already routed here, so there is nothing to escape to. react-native-macos#683 is what a platform that passes
 unconsumed keys back to the system sounds like. Such a key can still **scroll**, which is a platform action and
 not a delivered event; see *Keyboard scrolling* below.
