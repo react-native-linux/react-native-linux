@@ -105,6 +105,9 @@ importers:
 
   packages/core:
     dependencies:
+      '@react-native/normalize-colors':
+        specifier: 0.87.1
+        version: 0.87.1
       react-native:
         specifier: 0.87.1
         version: 0.87.1(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.87.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.2.8)(supports-color@8.1.1)
@@ -4642,8 +4645,8 @@ snapshots:
     dependencies:
       '@react-native/js-polyfills': 0.87.1
       '@react-native/metro-babel-transformer': 0.87.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1)
-      metro-config: 0.87.0(supports-color@8.1.1)
-      metro-runtime: 0.87.0
+      metro-config: 0.87.1(supports-color@8.1.1)
+      metro-runtime: 0.87.1
     transitivePeerDependencies:
       - '@babel/core'
       - bufferutil
@@ -6078,7 +6081,7 @@ snapshots:
 
   metro-runtime@0.87.1:
     dependencies:
-      '@babel/runtime': 7.29.7
+      '@babel/runtime': 7.29.2
       flow-enums-runtime: 0.0.6
 
   metro-source-map@0.87.0(supports-color@8.1.1):

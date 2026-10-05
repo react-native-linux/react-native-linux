@@ -24,6 +24,12 @@ const linuxOverlayIndex: Readonly<Record<string, string>> = {
     "StyleSheet",
     "PlatformColorValueTypes.linux.ts",
   ),
+  "Libraries/StyleSheet/processColor": path.join(
+    coreLinuxUtilitiesDirectory,
+    "..",
+    "StyleSheet",
+    "processColor.linux.ts",
+  ),
   "Libraries/Utilities/Platform": path.join(coreLinuxUtilitiesDirectory, "Platform.linux.ts"),
   "Libraries/Utilities/PlatformTypes": path.join(coreLinuxUtilitiesDirectory, "PlatformTypes.ts"),
 };

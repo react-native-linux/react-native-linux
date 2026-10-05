@@ -30,6 +30,9 @@
     "vendor:fonts": "node ../../scripts/vendor-fonts.ts",
     "vendor:skia": "node ../../scripts/vendor-skia.ts"
   },
+  "dependencies": {
+    "@react-native/normalize-colors": "0.87.1"
+  },
   "devDependencies": {
     "@types/node": "catalog:",
     "@types/pngjs": "catalog:",
