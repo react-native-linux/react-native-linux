@@ -1196,6 +1196,23 @@ The one platform file `Common/cpp` needs, `PlatformLogger`, is `src/WorkletsPlat
 Build cost against #78: 39 s wall clock for the 30 translation units at `-j16` under the `tsan` preset on a 24-thread
 machine.
 
+## React Native bump procedure (#58)
+
+React Native's stability promise covers its JavaScript API, not its C++ or out-of-tree platforms, and this platform
+sits behind upstream on purpose. The oracle for "did this still work" is `pnpm conformance`: every golden image
+(headless, plus the window goldens when weston and lavapipe are present) and every e2e scenario with its event
+trace and frame-timing budget, run against the vendored pin. A bump is:
+
+1. Move `tag` in `scripts/vendor.lock.json`, then run `node scripts/vendor-react-native.ts` and `pnpm codegen`.
+2. Build and run `pnpm conformance` before writing any adaptation code.
+3. Triage every difference. A golden that changed is a behaviour change to explain in the pull request, not a golden
+   to regenerate: regenerating one because it failed deletes the test.
+4. Only then adapt, each change citing the difference it answers.
+
+`.github/workflows/next-minor.yml` does steps 1 and 2 weekly against the minor after the pinned one (its newest
+release, or newest release candidate), building `hello_react` and comparing the goldens. It is a signal, not a
+gate: a red run is the list the next bump will have to explain, known before anyone starts on it.
+
 ## Autolinking (#146, #147)
 
 `node scripts/autolink.ts <react-native config JSON> <output directory>` reads the dependency tree the community
