@@ -28,7 +28,9 @@ namespace {
 
 constexpr size_t kBytesPerPixel = 4;
 
-// wl_shm's WL_SHM_FORMAT_XRGB8888 is a 32-bit little-endian word, which is the byte order Skia calls BGRA.
+// wl_shm's WL_SHM_FORMAT_ARGB8888 is a 32-bit little-endian word, which is the byte order Skia calls BGRA. ARGB,
+// premultiplied, as the Vulkan rungs' composite alpha is: an opaque app clears opaque and loses nothing, and a
+// transparent one stays transparent when the ladder falls back to this rung (#519).
 constexpr SkColorType kBufferColorType = kBGRA_8888_SkColorType;
 
 void markBufferReleased(void* data, wl_buffer* /*waylandBuffer*/) { *static_cast<bool*>(data) = false; }
@@ -39,7 +41,7 @@ size_t rowBytesFor(WindowSize size) { return static_cast<size_t>(size.width) * k
 
 SkImageInfo imageInfoFor(WindowSize size) {
     return SkImageInfo::Make(static_cast<int>(size.width), static_cast<int>(size.height), kBufferColorType,
-                             kOpaque_SkAlphaType);
+                             kPremul_SkAlphaType);
 }
 
 SceneDamage fullSurfaceDamage(WindowSize size) {
@@ -170,7 +172,7 @@ void SharedMemoryRasterRenderer::createPool(WindowSize size) {
         buffer.isHeldByCompositor = false;
         buffer.waylandBuffer = wl_shm_pool_create_buffer(
             pool_, static_cast<int32_t>(index * bufferSize), static_cast<int32_t>(size.width),
-            static_cast<int32_t>(size.height), static_cast<int32_t>(rowBytesFor(size)), WL_SHM_FORMAT_XRGB8888);
+            static_cast<int32_t>(size.height), static_cast<int32_t>(rowBytesFor(size)), WL_SHM_FORMAT_ARGB8888);
         const SkSurfaceProps surfaceProps = skSurfacePropsFor(textRasterizationPolicy());
 
         buffer.surface = SkSurfaces::WrapPixels(imageInfoFor(size), buffer.pixels, rowBytesFor(size), &surfaceProps);
