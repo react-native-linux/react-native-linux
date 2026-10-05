@@ -2,6 +2,7 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "workspaces": {
     ".": {
+      "entry": ["scripts/codegen-cxx-module.ts"],
       "project": ["*.ts", "scripts/**/*.ts"],
       "ignoreBinaries": ["cmake", "ctest", "readelf"],
       "ignoreDependencies": ["react-native-worklets"]

@@ -7998,6 +7998,17 @@ cmake --build build/dev --target rnl_core_hermes_tests
 ctest --preset dev
 ```
 
+**The module type surface (#85).** rn-tester's `NativeCxxModuleExample` is upstream's C++ TurboModule over the
+whole module type surface: int, string and memberless enums, unions, nested and recursive objects, maps, sets,
+ArrayBuffers, host objects, callbacks, subscriptions, promises, event emitters and device events. Its spec,
+implementation and GoogleTest suite are outside the sparse checkout, so `tests/hermes/CMakeLists.txt` downloads
+the four files at the vendored tag, pinned by SHA-256; a React Native bump fails at configure until the hashes are
+re-read. `scripts/codegen-cxx-module.ts` turns the spec into `AppSpecsJSI.h` at build time, so the generated
+bindings always come from the pinned `@react-native/codegen`. Upstream's suite calls the C++ methods directly;
+`CxxModuleTypeSurfaceTest` calls every method from JavaScript, so each type crosses JSI in both directions under
+ASan and TSan. It leaves out two ArrayBuffer methods that settle on a detached thread, which
+`TestCallInvoker`'s unsynchronised queue cannot host, and three that `react_native_assert`, which aborts by design.
+
 The `dev`, `asan` and `tsan` test presets set `execution.timeout` to 300 seconds, which is a diagnosis tool
 rather than a budget: every case in either binary finishes in under two seconds in every configure, so a test
 that reaches five minutes has hung, and the point of the timeout is that `ctest` then names it and fails in five

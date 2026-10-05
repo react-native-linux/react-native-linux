@@ -47,6 +47,50 @@ if(NOT IS_SYMLINK ${RNL_UPSTREAM_FIXTURE_INCLUDE_DIR}/ReactCommon)
         ${RNL_UPSTREAM_FIXTURE_INCLUDE_DIR}/ReactCommon SYMBOLIC)
 endif()
 
+# #85: rn-tester's NativeCxxModuleExample, upstream's own C++ TurboModule over the module type surface (enums,
+# unions, nested and recursive objects, maps, sets, ArrayBuffers, callbacks, promises, event emitters), with its
+# spec, implementation and GoogleTest suite. rn-tester is outside the sparse checkout of third_party/react-native,
+# so the four files are fetched at the vendored tag and pinned by hash: a React Native bump fails here until the
+# hashes are re-read. The spec runs through @react-native/codegen at build time, so the generated header always
+# matches the pinned generator and spec.
+file(READ ${CMAKE_SOURCE_DIR}/scripts/vendor.lock.json RNL_VENDOR_LOCK)
+string(JSON RNL_REACT_NATIVE_TAG GET "${RNL_VENDOR_LOCK}" tag)
+set(RNL_CXX_MODULE_EXAMPLE_DIR ${CMAKE_CURRENT_BINARY_DIR}/upstream-fixtures/NativeCxxModuleExample)
+set(RNL_CXX_MODULE_EXAMPLE_FILES
+    "NativeCxxModuleExample.js=fd2b26e6de736303db8c98011b3b8e1c3849b02848d3e7ccb27e2804f3b3c741"
+    "NativeCxxModuleExample.h=77c99fa77785cf1b440934c2d9d0be49b73461a081e5b5f3ddfb2b3b628aecc8"
+    "NativeCxxModuleExample.cpp=aeb2d61de3acba0712c256dce3bd606c3c5cd1e6d01ad55381d67bb9429adc29"
+    "tests/NativeCxxModuleExampleTests.cpp=135f973b48865cd8a9d3b1ae041e484cc89531cd187fdb6d2ac572a6ed73e33b")
+
+foreach(RNL_FILE_AND_HASH IN LISTS RNL_CXX_MODULE_EXAMPLE_FILES)
+    string(REPLACE "=" ";" RNL_FILE_AND_HASH "${RNL_FILE_AND_HASH}")
+    list(GET RNL_FILE_AND_HASH 0 RNL_FILE)
+    list(GET RNL_FILE_AND_HASH 1 RNL_HASH)
+    file(DOWNLOAD
+        https://raw.githubusercontent.com/facebook/react-native/${RNL_REACT_NATIVE_TAG}/packages/rn-tester/NativeCxxModuleExample/${RNL_FILE}
+        ${RNL_CXX_MODULE_EXAMPLE_DIR}/${RNL_FILE}
+        EXPECTED_HASH SHA256=${RNL_HASH})
+endforeach()
+
+find_program(RNL_NODE node REQUIRED)
+add_custom_command(
+    OUTPUT ${RNL_CXX_MODULE_EXAMPLE_DIR}/AppSpecsJSI.h
+    COMMAND ${RNL_NODE} ${CMAKE_SOURCE_DIR}/scripts/codegen-cxx-module.ts
+        ${RNL_CXX_MODULE_EXAMPLE_DIR}/NativeCxxModuleExample.js AppSpecs ${RNL_CXX_MODULE_EXAMPLE_DIR}
+    DEPENDS ${CMAKE_SOURCE_DIR}/scripts/codegen-cxx-module.ts ${RNL_CXX_MODULE_EXAMPLE_DIR}/NativeCxxModuleExample.js
+    COMMENT "Generating AppSpecsJSI.h from rn-tester's NativeCxxModuleExample spec"
+    VERBATIM)
+
+# TurboModuleTestFixture.h is included as <ReactCommon/TurboModuleTestFixture.h> but lives in
+# nativemodule/core/tests/, so it gets the same configure-time symlink treatment as TestCallInvoker.h below.
+set(RNL_TURBO_MODULE_FIXTURE_INCLUDE_DIR ${CMAKE_CURRENT_BINARY_DIR}/upstream-turbomodule-fixture)
+file(MAKE_DIRECTORY ${RNL_TURBO_MODULE_FIXTURE_INCLUDE_DIR})
+
+if(NOT IS_SYMLINK ${RNL_TURBO_MODULE_FIXTURE_INCLUDE_DIR}/ReactCommon)
+    file(CREATE_LINK ${REACT_COMMON_DIR}/react/nativemodule/core/tests
+        ${RNL_TURBO_MODULE_FIXTURE_INCLUDE_DIR}/ReactCommon SYMBOLIC)
+endif()
+
 # The upstream suites, each compiled unmodified from its upstream path — link, don't copy — so a version bump
 # re-runs them at the new SHA. jsi/jsi/test/testlib.cpp is upstream's JSI conformance suite; the only source of
 # ours in this binary is HermesRuntimeFactory.cpp, which supplies the runtimeGenerators() it declares but does
@@ -58,8 +102,12 @@ add_executable(rnl_core_hermes_tests
     CrossThreadPromiseStressTest.cpp
     FantomTesterTest.cpp
     HermesRuntimeFactory.cpp
+    CxxModuleTypeSurfaceTest.cpp
     InstanceTeardownLeakTest.cpp
     WorkletsVersionTest.cpp
+    ${RNL_CXX_MODULE_EXAMPLE_DIR}/AppSpecsJSI.h
+    ${RNL_CXX_MODULE_EXAMPLE_DIR}/NativeCxxModuleExample.cpp
+    ${RNL_CXX_MODULE_EXAMPLE_DIR}/tests/NativeCxxModuleExampleTests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../../src/FantomTester.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../../src/MountTreeText.cpp
     ${googletest_SOURCE_DIR}/googlemock/src/gmock_main.cc
@@ -76,7 +124,7 @@ add_executable(rnl_core_hermes_tests
     ${REACT_COMMON_DIR}/react/runtime/tests/cxx/RuntimeExecutorShutdownTest.cpp)
 target_compile_options(rnl_core_hermes_tests PRIVATE -Wall -Wextra -fexceptions -frtti)
 target_include_directories(rnl_core_hermes_tests
-    PRIVATE ${REACT_COMMON_DIR}/jsi ${RNL_UPSTREAM_FIXTURE_INCLUDE_DIR})
+    PRIVATE ${REACT_COMMON_DIR}/jsi ${RNL_UPSTREAM_FIXTURE_INCLUDE_DIR} ${RNL_TURBO_MODULE_FIXTURE_INCLUDE_DIR})
 # rnl_react_core rather than RNL_REACT_COMMON_TARGETS directly: the Linux TextLayoutManager and ImageManager
 # swaps put our TextPipeline.cpp and ImagePipeline.cpp inside two of those upstream object libraries, and the
 # rest of what those two call — ImageContent, JsErrorReporter — is in rnl_react_core.
@@ -109,10 +157,13 @@ target_compile_definitions(rnl_core_hermes_tests
 #   #395 immediateTaskYieldsToSynchronousAccess and normalTaskYieldsToSynchronousAccess: each starts a real
 #        thread that requests synchronous access and lines it up with the scheduler's yield check by sleeping,
 #        so on a loaded runner whichever side wins decides what the stub queue holds at the assertion.
+#   #511 VoidFunEmitsEvents: upstream's case static_pointer_casts the generated AsyncEventEmitter<jsi::Value> for
+#        onClick to AsyncEventEmitter<std::string>, which UBSan reports as an invalid downcast. What it checks is
+#        covered through JSI by CxxModuleTypeSurfaceTest.
 #
-# All four are vendored and none is reachable from anything this platform calls.
+# All are vendored and none is reachable from anything this platform calls.
 set(RNL_HERMES_TESTS_FILTER
-    "-BridgingTest.highResTimeStampTest:UseModernRuntimeScheduler/RuntimeSchedulerTest.*TaskYieldsToSynchronousAccess/*")
+    "-BridgingTest.highResTimeStampTest:UseModernRuntimeScheduler/RuntimeSchedulerTest.*TaskYieldsToSynchronousAccess/*:NativeCxxModuleExampleTests.VoidFunEmitsEvents")
 
 if(CMAKE_CXX_FLAGS MATCHES "-fsanitize=thread")
     string(APPEND RNL_HERMES_TESTS_FILTER

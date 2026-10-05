@@ -29,6 +29,7 @@
     "packages/core/src-linux/**/*.ts",
     "packages/core/index.ts",
     "scripts/autolink.ts",
+    "scripts/codegen-cxx-module.ts",
     "scripts/codegen-core/**/*.ts",
     "scripts/codegen-core.ts",
     "scripts/create-package/**/*.ts",
