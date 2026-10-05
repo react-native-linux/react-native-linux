@@ -34,6 +34,7 @@
 #include "modules/skunicode/include/SkUnicode_icu.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <cstdlib>
@@ -802,13 +803,19 @@ layoutParagraphForField(const facebook::react::AttributedString& attributedStrin
                                    paragraphAttributes, maximumWidth);
 }
 
+std::atomic<uint64_t> paragraphLayoutCounter{0};
+
 } // namespace
 
 std::unique_ptr<skia::textlayout::Paragraph>
 layoutParagraph(const facebook::react::AttributedString& attributedString,
                 const facebook::react::ParagraphAttributes& paragraphAttributes, float maximumWidth) {
+    paragraphLayoutCounter.fetch_add(1, std::memory_order_relaxed);
+
     return layoutParagraphForField(attributedString, paragraphAttributes, maximumWidth, false);
 }
+
+uint64_t paragraphLayoutCount() { return paragraphLayoutCounter.load(std::memory_order_relaxed); }
 
 std::unique_ptr<skia::textlayout::Paragraph>
 layoutEditorParagraph(const facebook::react::AttributedString& attributedString,

@@ -140,9 +140,11 @@ set_target_properties(rnl_core_hermes_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY 
 target_compile_definitions(rnl_core_hermes_tests
     PRIVATE "RNL_WORKLETS_PACKAGE_JSON=\"${RNL_WORKLETS_DIR}/package.json\"")
 
-# The image-decode leg of CrossThreadMountingStressTest exists only where rnl_react_core has a decoder.
+# Two things exist only where rnl_react_core links Skia, and the sanitizer presets build without it: the decoder
+# behind CrossThreadMountingStressTest's image-decode leg, and the text pipeline ResizeTextCostTest shapes through.
 if(TARGET rnl_skia)
     target_compile_definitions(rnl_core_hermes_tests PRIVATE RNL_ENABLE_IMAGES)
+    target_sources(rnl_core_hermes_tests PRIVATE ResizeTextCostTest.cpp)
 endif()
 
 # Two upstream cases are not discovered in the TSan configure, and only there; both run in dev, in asan and
