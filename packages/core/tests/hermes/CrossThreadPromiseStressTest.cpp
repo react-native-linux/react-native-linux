@@ -161,33 +161,47 @@ constexpr std::array<std::uint8_t, 70> kOnePixelPng{
     0x0D, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x50, 0x70, 0x68, 0xF8, 0x0F, 0x00, 0x03, 0x44, 0x01, 0xE0,
     0x32, 0xAA, 0xBF, 0x84, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82};
 
-// Every animation frame commits a new tree of eight images whose sources walk through the files, so mounts
-// request decodes on the JavaScript thread for as long as there are files left and keep replacing the nodes the
-// decodes complete into after that.
+// Every animation frame recommits the same eight images with their sources walked on through the files, so mounts
+// request decodes on the JavaScript thread for as long as there are files left, and the nodes those decodes
+// complete into are the ones input is hitting. The nodes stay the same so an event still has a mounted target by
+// the time JavaScript handles it; upstream drops one whose target has unmounted.
 constexpr char kMountingLoop[] = R"JAVASCRIPT(
 const fabric = globalThis.nativeFabricUIManager;
-globalThis.deliveredEvents = 0;
+globalThis.deliveredPointerEvents = 0;
 globalThis.commitCount = 0;
-fabric.registerEventHandler(() => { globalThis.deliveredEvents += 1; });
-let nextTag = 2;
-const createNode = (componentName, props) => {
-  const instanceHandle = {};
-  globalThis.instanceHandles.push(instanceHandle);
-  const tag = nextTag;
-  nextTag += 2;
-  return fabric.createNode(tag, componentName, 1, props, instanceHandle);
-};
-const box = (left, top) => ({ height: 100, left, position: 'absolute', top, width: 100 });
-const commit = () => {
-  globalThis.instanceHandles = [];
-  const childSet = fabric.createChildSet();
-  for (let index = 0; index < 8; index += 1) {
-    const file = (globalThis.commitCount * 8 + index) % globalThis.imageFileCount;
-    fabric.appendChildToSet(childSet, createNode('Image', {
-      source: [{ uri: `file://${globalThis.imageDirectory}/${file}.png` }],
-      ...box((index % 4) * 100, Math.floor(index / 4) * 100),
-    }));
+fabric.registerEventHandler((instanceHandle, type) => {
+  if (type.startsWith('topPointer') || type === 'topClick') {
+    globalThis.deliveredPointerEvents += 1;
   }
+});
+const sourceOf = (file) => [{ uri: `file://${globalThis.imageDirectory}/${file}.png` }];
+// Fiber-shaped, because `PointerEventsProcessor` resolves a pointer event's target through
+// `instanceHandle.stateNode.node` and drops the event when that is missing.
+const instanceHandles = [];
+for (let index = 0; index < 8; index += 1) {
+  const instanceHandle = { stateNode: { node: null } };
+  instanceHandle.stateNode.node = fabric.createNode(2 + index * 2, 'Image', 1, {
+    height: 100,
+    left: (index % 4) * 100,
+    onPointerDown: true,
+    onPointerMove: true,
+    onPointerUp: true,
+    position: 'absolute',
+    source: sourceOf(index),
+    top: Math.floor(index / 4) * 100,
+    width: 100,
+  }, instanceHandle);
+  instanceHandles.push(instanceHandle);
+}
+const commit = () => {
+  const childSet = fabric.createChildSet();
+  instanceHandles.forEach((instanceHandle, index) => {
+    const file = (globalThis.commitCount * 8 + index) % globalThis.imageFileCount;
+    instanceHandle.stateNode.node = fabric.cloneNodeWithNewProps(instanceHandle.stateNode.node, {
+      source: sourceOf(file),
+    });
+    fabric.appendChildToSet(childSet, instanceHandle.stateNode.node);
+  });
   fabric.completeRoot(1, childSet);
   globalThis.commitCount += 1;
   requestAnimationFrame(commit);
@@ -242,22 +256,28 @@ TEST(CrossThreadMountingStressTest, MountsDecodesAndInputRunConcurrentlyWithTheF
         std::this_thread::sleep_for(kFramePause);
     }
 
+#ifdef RNL_ENABLE_IMAGES
     ASSERT_TRUE(waitForPendingImageDecodes(kQuiescenceBudget));
+#endif
     ASSERT_TRUE(reactHost.runUntilQuiescent(kQuiescenceBudget));
 
     const std::array<double, 2> ledger = onJavaScriptThread<std::array<double, 2>>(reactHost, [](Runtime& runtime) {
         return std::array{runtime.global().getProperty(runtime, "commitCount").asNumber(),
-                          runtime.global().getProperty(runtime, "deliveredEvents").asNumber()};
+                          runtime.global().getProperty(runtime, "deliveredPointerEvents").asNumber()};
     });
 
     fabricHost->stopSurface();
     reactHost.drainJavaScriptThread();
     fabricHost.reset();
 
+    // The sanitizer presets build without Skia and so without a decoder: there, the images mount and nothing
+    // decodes them, and the decode leg is graded by the Skia builds alone.
+#ifdef RNL_ENABLE_IMAGES
     for (std::size_t file = 0; file < kImageFileCount; ++file) {
         EXPECT_NE(decodedImage("file://" + (imageDirectory / (std::to_string(file) + ".png")).string()), nullptr)
             << file;
     }
+#endif
 
     EXPECT_GT(ledger[0], static_cast<double>(kImageFileCount) / 8);
     EXPECT_GT(ledger[1], 0.0);
