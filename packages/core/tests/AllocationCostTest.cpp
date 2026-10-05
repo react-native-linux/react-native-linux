@@ -270,8 +270,8 @@ TEST(AnimationFrameCostTest, TakingTheDamageListAllocatesNothingAndTheNextFrameR
 //
 //  - **The mounting transaction is per node** and always will be: each mutation writes a node into the scene. The
 //    ceiling is therefore per node, and it is what catches a new container per mounted view.
-//  - **The snapshot is not.** It walks the tree into one flat list, so its cost is the handful of reallocations
-//    that list's growth costs and nothing else. Asserting that a four-times-larger tree does not cost four times
+//  - **The snapshot is not.** It walks the tree into one flat list reserved at the node count, so its cost is that
+//    one list and nothing else. Asserting that a four-times-larger tree does not cost four times
 //    as much is what catches a per-primitive allocation appearing in the walk — a ceiling alone would not, because
 //    a per-node cost hides under any ceiling at a small enough node count.
 //
@@ -286,9 +286,10 @@ constexpr Tag kFirstCostTag = 100;
 // six, which is headroom for one more container per node and not for a second one.
 constexpr size_t kMountAllocationsPerNodeCeiling = 6;
 
-// 13 measured for 2000 nodes: the growth of one `SceneSnapshot` vector from empty to 2048, plus the damage list.
-// The ceiling is 32, which is what the same doubling costs if the vector ever starts at one element again.
-constexpr size_t kSnapshotAllocationCeiling = 32;
+// 2 measured for 2000 nodes: the `SceneSnapshot` vector, reserved at the node count, and the damage list. Before
+// the reserve it was 13, the doublings from empty to 2048 (#126). The ceiling is 4, which a vector growing from
+// empty again fails at any tree past 8 primitives.
+constexpr size_t kSnapshotAllocationCeiling = 4;
 
 // A four-times-larger tree may cost at most one more doubling than twice the smaller one. Linear-in-nodes fails
 // this by two orders of magnitude; logarithmic passes it with room.
@@ -423,6 +424,46 @@ TEST(MountingCostTest, MountingAndUnmountingTheSameScreenCostsTheSameEveryCycle)
     std::cout << "[cost] cycle: " << secondCycle << " then " << thirdCycle << std::endl;
 
     EXPECT_EQ(secondCycle, thirdCycle);
+}
+
+// Issue #126, point 2: mounting costs per mutation, not per tree. Appending one view is one create and one insert,
+// so it may cost the same whether 20 views are already mounted or 2,000 — in the transaction, and in the frame
+// that paints it, whose damage is the one new view.
+constexpr size_t kSmallMountedTreeNodeCount = 20;
+
+struct AppendCost {
+    size_t transaction;
+    size_t frame;
+};
+
+AppendCost allocationsAppendingOneView(size_t mountedNodeCount) {
+    LinuxMountingManager mountingManager;
+
+    startSurface(mountingManager);
+    mountingManager.executeMount(kSurfaceTag, transactionOf(mountMutations(mountedNodeCount)));
+    mountingManager.takeFrame();
+
+    const ShadowView appended = costView(mountedNodeCount);
+    ShadowViewMutationList append{
+        ShadowViewMutation::CreateMutation(appended),
+        ShadowViewMutation::InsertMutation(kSurfaceTag, appended, static_cast<int>(mountedNodeCount))};
+
+    const size_t transaction = allocationsMounting(mountingManager, std::move(append));
+    const size_t frame = allocationsDuringFrame([&]() { mountingManager.takeFrame(); });
+
+    return AppendCost{.transaction = transaction, .frame = frame};
+}
+
+TEST(MountingCostTest, AppendingOneViewCostsTheSameUnderTwoThousandViewsAsUnderTwenty) {
+    const AppendCost small = allocationsAppendingOneView(kSmallMountedTreeNodeCount);
+    const AppendCost large = allocationsAppendingOneView(kLargeTreeNodeCount);
+
+    std::cout << "[cost] append one view: transaction " << small.transaction << " under " << kSmallMountedTreeNodeCount
+              << ", " << large.transaction << " under " << kLargeTreeNodeCount << "; frame " << small.frame << " and "
+              << large.frame << std::endl;
+
+    EXPECT_EQ(small.transaction, large.transaction);
+    EXPECT_EQ(small.frame, large.frame);
 }
 
 // Issue #36: the per-event cost of hover, which is a hit test per pointer motion. rn-macos#1861 is hover going slow
