@@ -19,6 +19,8 @@ interface GoldenFixture {
 const fixtures: readonly GoldenFixture[] = [
   { bundleFileName: "fabric-view.js", goldenFileName: "fabric-view.png", renderArguments: [], renderFlag: "--golden" },
   { bundleFileName: "view-props.js", goldenFileName: "view-props.png", renderArguments: [], renderFlag: "--golden" },
+  // #119: one card under direction ltr and rtl, its logical edges, row order and start radius resolved per side.
+  { bundleFileName: "rtl-layout.js", goldenFileName: "rtl-layout.png", renderArguments: [], renderFlag: "--golden" },
   // #72: a paragraph's base direction from writingDirection or the inherited layout direction, in Latin text.
   { bundleFileName: "rtl-text.js", goldenFileName: "rtl-text.png", renderArguments: [], renderFlag: "--golden" },
   // #104: a turn about each transformOrigin over the unturned frame, and what perspective reduces to.
