@@ -1,0 +1,25 @@
+{
+  "name": "resize-round-trip",
+  "bundle": "resize-round-trip.js",
+  "ready": "resize-round-trip: committed surface 1",
+  "frames": 600,
+  "windowFlags": [
+    "--no-decorations",
+    "--inject-window-sequence",
+    "{800x600}{Drag:800x600:500x600:6}{Drag:500x600:800x600:6}"
+  ],
+  "frameBudget": {
+    "p95Ms": 17.5,
+    "minFrames": 60,
+    "maxHangs": 1,
+    "maxJournalledFrames": 14
+  },
+  "steps": ["sleep 4000"],
+  "expect": [
+    "resize-round-trip: committed surface 1",
+    "resize-round-trip: layout at 800 recorded",
+    "resize-round-trip: layout changed during the drag",
+    "resize-round-trip: layout restored"
+  ],
+  "reject": ["resize-round-trip: layout differs"]
+}

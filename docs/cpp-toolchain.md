@@ -7619,6 +7619,16 @@ repaints with nothing to answer, a self-triggering layout or a caret-style loop,
 The fixture is `resize-settle.js`: six 6-point paragraphs, wrapped and ellipsised, three of them at half the window.
 The unit half is `ResizeTextCostTest`, under *The cache*.
 
+**Round trip (#433).** `resize-round-trip.json` drags the window 800 → 500 → 800 over the core#58294 shape: a
+wrapped `flex: 1` Text in a row and a content-sized card around another. Through `onLayout`, the bundle records
+four layouts the first time the surface is 800 wide: the row, its text, the card and its text. The run must:
+
+- log that the layout changed during the drag, which proves the fixture is sensitive to width;
+- log that every later 800-wide layout equals the recorded one;
+- paint at most one frame per configure (`maxJournalledFrames: 14`, 13 configures plus the first commit).
+
+The unit tier is `LayoutWidthRoundTripTest` (#464).
+
 ### Screenshots
 
 The driver now compares as well as captures, which is a deliberate departure from the split *Window goldens* makes
