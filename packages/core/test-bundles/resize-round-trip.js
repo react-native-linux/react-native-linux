@@ -57,9 +57,20 @@ const describe = () =>
     })
     .join('; ');
 
-// Every node's topLayout for one commit arrives together, so the comparison waits for the batch to finish.
-const compareOnceSettled = () =>
+let comparisonPending = false;
+let restoredReported = false;
+
+// Every node's topLayout for one commit arrives together, so the comparison waits for the batch to finish. Any
+// tracked node's topLayout schedules one, so a late child layout at 800 is compared too, not only a width change.
+const compareOnceSettled = () => {
+  if (comparisonPending) {
+    return;
+  }
+
+  comparisonPending = true;
   setTimeout(() => {
+    comparisonPending = false;
+
     if (latest.size < 5) {
       return;
     }
@@ -79,14 +90,14 @@ const compareOnceSettled = () =>
     if (recordedAtOriginalWidth === null) {
       recordedAtOriginalWidth = now;
       console.log('resize-round-trip: layout at 800 recorded');
-    } else if (now === recordedAtOriginalWidth) {
-      console.log('resize-round-trip: layout restored');
-    } else {
+    } else if (now !== recordedAtOriginalWidth) {
       console.log('resize-round-trip: layout differs: ' + now + ' | was ' + recordedAtOriginalWidth);
+    } else if (relaidOut && !restoredReported) {
+      restoredReported = true;
+      console.log('resize-round-trip: layout restored');
     }
   }, 0);
-
-let lastSurfaceWidth = null;
+};
 
 fabric.registerEventHandler((instanceHandle, type, payload) => {
   if (type !== 'topLayout') {
@@ -94,11 +105,7 @@ fabric.registerEventHandler((instanceHandle, type, payload) => {
   }
 
   latest.set(instanceHandle.name, payload.layout);
-
-  if (instanceHandle.name === 'surface' && payload.layout.width !== lastSurfaceWidth) {
-    lastSurfaceWidth = payload.layout.width;
-    compareOnceSettled();
-  }
+  compareOnceSettled();
 });
 
 const rootChildren = fabric.createChildSet();
