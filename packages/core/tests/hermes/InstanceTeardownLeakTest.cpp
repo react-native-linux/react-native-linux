@@ -105,6 +105,8 @@ constexpr char kExpectedMountTree[] =
     "  </rn-view>\n"
     "</rn-rootview>\n";
 
+constexpr char kUnloadedMountTree[] = "<rn-rootview layoutMetrics-frame=\"{x:0,y:0,width:400,height:300}\" />\n";
+
 /**
  * Every thread alive in this process, which is what a leaked JavaScript thread, timer dispatch thread or decode
  * worker shows up as. Linux publishes one directory per thread under `/proc/self/task`, so this needs no
@@ -180,6 +182,15 @@ TEST(InstanceTeardownLeakTest, RepeatedFabricInstancesLeaveNoThreadOrFaultBehind
             // having been emptied rather than the fault sites having gone quiet.
             EXPECT_GE(recordedErrorCount(), kFaultsPerInstance)
                 << "instance " << instance << " did not record the fault the task provokes";
+
+            // The live-scene-node probe: the stop's empty commit has mounted, so the retained scene holds nothing
+            // of the unloaded tree while the Fabric host is still alive to be asked. That commit mounts
+            // synchronously on this thread, so this does not grade the JavaScript-thread drain that follows it;
+            // the sanitizer jobs do.
+            tester.stopSurface();
+
+            EXPECT_EQ(tester.mountTreeText(), kUnloadedMountTree)
+                << "instance " << instance << " left part of its tree in the scene after its surface stopped";
         }
 
         probes.push_back(probeAfterTeardown());
