@@ -15,6 +15,7 @@
 #include <ReactCommon/TurboModuleUtils.h>
 #include <array>
 #include <cstring>
+#include <cxxreact/ReactNativeVersion.h>
 #include <functional>
 #include <iostream>
 #include <jsi/JSIDynamic.h>
@@ -22,6 +23,7 @@
 #include <optional>
 #include <spawn.h>
 #include <string>
+#include <sys/utsname.h>
 #include <utility>
 #include <vector>
 
@@ -730,6 +732,48 @@ private:
 };
 
 /**
+ * `PlatformConstants` (#23), which `Platform.linux.ts` reads for `Platform.constants` and `Platform.Version`: the
+ * React Native version this host was compiled from, which a development bundle compares with its own and reports a
+ * mismatch against, and the kernel release as the OS version, which is what `uname -r` names on every distribution.
+ */
+class LinuxPlatformConstantsModule final : public facebook::react::TurboModule {
+public:
+    static constexpr std::string_view kModuleName = "PlatformConstants";
+
+    explicit LinuxPlatformConstantsModule(std::shared_ptr<facebook::react::CallInvoker> jsInvoker)
+        : TurboModule(std::string(kModuleName), std::move(jsInvoker)) {
+        methodMap_["getConstants"] = {
+            0,
+            [](facebook::jsi::Runtime& runtime, TurboModule& /*turboModule*/, const facebook::jsi::Value* /*arguments*/,
+               size_t /*count*/) -> facebook::jsi::Value {
+                constexpr facebook::react::ReactNativeVersionType kVersion = facebook::react::ReactNativeVersion;
+                facebook::jsi::Object version(runtime);
+                facebook::jsi::Object constants(runtime);
+                utsname system{};
+
+                version.setProperty(runtime, "major", kVersion.Major);
+                version.setProperty(runtime, "minor", kVersion.Minor);
+                version.setProperty(runtime, "patch", kVersion.Patch);
+                if constexpr (kVersion.Prerelease.empty()) {
+                    version.setProperty(runtime, "prerelease", facebook::jsi::Value::null());
+                } else {
+                    version.setProperty(
+                        runtime, "prerelease",
+                        facebook::jsi::String::createFromUtf8(runtime, std::string(kVersion.Prerelease)));
+                }
+                // A failed uname leaves the zeroed release, an empty string.
+                static_cast<void>(uname(&system));
+                constants.setProperty(runtime, "isTesting", false);
+                constants.setProperty(runtime, "reactNativeVersion", version);
+                constants.setProperty(runtime, "osVersion",
+                                      facebook::jsi::String::createFromUtf8(runtime, system.release));
+
+                return constants;
+            }};
+    }
+};
+
+/**
  * `PlatformColor('name')`, as the one host function a JavaScript `PlatformColorValueTypes.linux.js` needs.
  *
  * It is a global rather than a module method because `PlatformColor` has no TurboModule spec on any platform:
@@ -824,6 +868,8 @@ TurboModuleRegistry::TurboModuleRegistry(
     moduleFactories_.emplace(facebook::react::NativeMutationObserver::kModuleName, [jsInvoker]() {
         return std::make_shared<facebook::react::NativeMutationObserver>(jsInvoker);
     });
+    moduleFactories_.emplace(LinuxPlatformConstantsModule::kModuleName,
+                             [jsInvoker]() { return std::make_shared<LinuxPlatformConstantsModule>(jsInvoker); });
     // #79: `fetch` and `XMLHttpRequest` reach upstream's C++ Networking module, which this platform only supplies
     // the HTTP client for.
     moduleFactories_.emplace(facebook::react::NetworkingModule::kModuleName, [jsInvoker]() {

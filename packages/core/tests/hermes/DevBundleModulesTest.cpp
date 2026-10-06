@@ -2,16 +2,19 @@
 #include "ReactHost.h"
 
 #include <chrono>
+#include <cxxreact/ReactNativeVersion.h>
 #include <filesystem>
 #include <fstream>
 #include <future>
 #include <gtest/gtest.h>
 #include <jsi/jsi.h>
 #include <string>
+#include <sys/utsname.h>
 
 // #79: what a `dev=true` bundle needs from the host before it can render — `SourceCode` naming the bundle's URL,
-// a `DevSettings`, an `ImageLoader`, and the `hasComponent` global `UIManager.hasViewManagerConfig` answers
-// through. metro-golden.spec.ts renders a real `dev=true` bundle from Metro; this proves each piece on its own.
+// a `DevSettings`, a `PlatformConstants` whose version the bundle checks its own against (#23), an `ImageLoader`,
+// and the `hasComponent` global `UIManager.hasViewManagerConfig` answers through. metro-golden.spec.ts renders a
+// real `dev=true` bundle from Metro; this proves each piece on its own.
 
 namespace react_native_linux {
 namespace {
@@ -25,7 +28,10 @@ const nativeModule = (name) =>
 
 nativeModule('DevSettings').addMenuItem('ignored');
 
-globalThis.probe = { scriptURL: nativeModule('SourceCode').getConstants().scriptURL };
+globalThis.probe = {
+  scriptURL: nativeModule('SourceCode').getConstants().scriptURL,
+  platformConstants: nativeModule('PlatformConstants').getConstants(),
+};
 
 const keepAlive = setInterval(() => {}, 10);
 
@@ -62,8 +68,16 @@ TEST(DevBundleModulesTest, SourceCodeNamesTheLoadedBundleAndTheOtherDevModulesAn
     reactHost.loadBundle(bundlePath.string());
 
     EXPECT_TRUE(reactHost.runUntilQuiescent(kQuiescenceBudget)) << "the getSize promise never settled";
-    EXPECT_EQ(readProbe(reactHost), R"({"scriptURL":")" + bundlePath.string() +
-                                        R"(","getSize":"Failed to get image size: image loader is not available."})");
+    utsname system{};
+    ASSERT_EQ(uname(&system), 0);
+    constexpr facebook::react::ReactNativeVersionType kVersion = facebook::react::ReactNativeVersion;
+    const std::string platformConstants =
+        R"("platformConstants":{"isTesting":false,"reactNativeVersion":{"major":)" + std::to_string(kVersion.Major) +
+        R"(,"minor":)" + std::to_string(kVersion.Minor) + R"(,"patch":)" + std::to_string(kVersion.Patch) +
+        R"(,"prerelease":null},"osVersion":")" + system.release + R"("})";
+
+    EXPECT_EQ(readProbe(reactHost), R"({"scriptURL":")" + bundlePath.string() + R"(",)" + platformConstants +
+                                        R"(,"getSize":"Failed to get image size: image loader is not available."})");
     EXPECT_FALSE(reactHost.hasReportedFatalError());
 
     std::filesystem::remove(bundlePath);
