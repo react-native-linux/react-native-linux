@@ -35,14 +35,14 @@ uint64_t toNanosecondsSinceEpoch(std::chrono::steady_clock::time_point timePoint
 
 } // namespace
 
-WindowSession::WindowSession(const std::string& bundlePath, WindowSize size,
+WindowSession::WindowSession(const std::string& bundlePath, WindowSize size, double scale,
                              const std::string& asyncStorageDatabasePath,
                              std::optional<std::string> initialActivationUrl)
     : fabricHost_(std::make_unique<FabricHost>(reactHost_.reactInstance(), toSurfaceSize(size))),
       frameJournal_(kNominalVsyncNanoseconds, kHangThresholdVsyncCount * kNominalVsyncNanoseconds) {
     // Before the script, so the first `Dimensions.get` a bundle makes at module scope already answers with the
-    // window's requested size rather than with the pre-configure default.
-    configureDimensions(size);
+    // window's requested size and scale rather than with the pre-configure default.
+    resize(size, scale);
     seedColorScheme();
     reactHost_.keyValueStore().setDatabasePath(asyncStorageDatabasePath);
 
@@ -58,9 +58,9 @@ WindowSession::~WindowSession() noexcept {
     reactHost_.drainJavaScriptThread();
 }
 
-void WindowSession::resize(WindowSize size) {
-    fabricHost_->setSurfaceSize(toSurfaceSize(size));
-    configureDimensions(size);
+void WindowSession::resize(WindowSize size, double scale) {
+    fabricHost_->setSurfaceSize(toSurfaceSize(size), static_cast<facebook::react::Float>(scale));
+    reactHost_.dimensions().configure(static_cast<double>(size.width), static_cast<double>(size.height), scale);
 }
 
 void WindowSession::setTextInputFocusSink(TextInputFocusSink* textInputFocusSink) {
@@ -167,11 +167,6 @@ std::optional<FrameJournal::ClosedFrame> WindowSession::closeJournalFrame(uint64
 void WindowSession::reportJournalDiscontinuity() { frameJournal_.recordDiscontinuity(); }
 
 FrameJournal::Summary WindowSession::frameJournalSummary() const { return frameJournal_.summarise(); }
-
-void WindowSession::configureDimensions(WindowSize size) {
-    reactHost_.dimensions().configure(static_cast<double>(size.width), static_cast<double>(size.height),
-                                      DimensionsSource::kDefaultScale);
-}
 
 bool WindowSession::hasPendingWork() const { return fabricHost_->hasPendingWork() || reactHost_.hasPendingTimers(); }
 

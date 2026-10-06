@@ -219,7 +219,7 @@ FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::
 
     surfaceHandler_ = std::make_unique<facebook::react::SurfaceHandler>(moduleName, kSurfaceId);
     scheduler_->registerSurface(*surfaceHandler_);
-    setSurfaceSize(surfaceSize);
+    setSurfaceSize(surfaceSize, 1.0F);
     surfaceHandler_->start();
 }
 
@@ -231,11 +231,11 @@ FabricHost::~FabricHost() noexcept {
     scheduler_->unregisterSurface(*surfaceHandler_);
 }
 
-void FabricHost::setSurfaceSize(facebook::react::Size surfaceSize) {
+void FabricHost::setSurfaceSize(facebook::react::Size surfaceSize, facebook::react::Float pointScaleFactor) {
     surfaceHandler_->constraintLayout({.minimumSize = surfaceSize,
                                        .maximumSize = surfaceSize,
                                        .layoutDirection = facebook::react::LayoutDirection::LeftToRight},
-                                      {});
+                                      {.pointScaleFactor = pointScaleFactor});
 }
 
 void FabricHost::stopSurface() {

@@ -29,11 +29,10 @@
 // An `RCTSafeAreaViewComponentView`-style `1.0 / scale + 0.01` epsilon on top of this would be *finer* than the
 // grid the values already sit on, so it could only emit more events, never fewer.
 //
-// The scale these cases pass in `LayoutContext` is not the scale a running window uses: `FabricHost` commits
-// `LayoutContext{}`, so the shipped pixel grid is the logical one at 1.0 regardless of the Wayland output scale.
-// That is a coarser grid than the physical one, which can merge two frames that differ by less than a logical
-// pixel but can never split one — it cannot produce a redundant event. Where the output scale comes from is
-// #113; this file pins the grid behaviour so that plumbing it in later has to keep it.
+// The scale these cases pass in `LayoutContext` is the scale a running window uses: `FabricHost::setSurfaceSize`
+// commits `LayoutContext{.pointScaleFactor}` with the compositor's `wp_fractional_scale_v1` preferred scale (#51),
+// so the shipped pixel grid is the physical one, and `EveryFrameLandsOnThePixelGrid...` below is that grid at the
+// scales a desktop actually offers.
 //
 // The event-count case is bounded by what the unit tier can see: with no `jsi::Runtime`, the payload closure
 // that clears `isDispatching` never runs, so the emitter reports at most one in-flight `topLayout` per node. It

@@ -75,7 +75,8 @@ namespace react_native_linux {
  */
 class WindowSession final {
 public:
-    WindowSession(const std::string& bundlePath, WindowSize size, const std::string& asyncStorageDatabasePath,
+    WindowSession(const std::string& bundlePath, WindowSize size, double scale,
+                  const std::string& asyncStorageDatabasePath,
                   std::optional<std::string> initialActivationUrl = std::nullopt);
     WindowSession(const WindowSession&) = delete;
     WindowSession(WindowSession&&) = delete;
@@ -83,7 +84,8 @@ public:
     WindowSession& operator=(WindowSession&&) = delete;
     ~WindowSession() noexcept;
 
-    void resize(WindowSize size);
+    /** `size` in logical units; `scale` is the output scale Yoga rounds frames to and `Dimensions` reports. */
+    void resize(WindowSize size, double scale);
 
     /**
      * Registers the seat's `zwp_text_input_v3` with the focus model, so the compositor's text input is enabled
@@ -148,8 +150,6 @@ public:
     const FrameClock& frameClock() const noexcept;
 
 private:
-    void configureDimensions(WindowSize size);
-
     /**
      * Applies the portal's answer before the bundle runs, so a module-scope `Appearance.getColorScheme()` already
      * sees the desktop's scheme rather than `kFallbackColorScheme` followed by a change event one frame later.

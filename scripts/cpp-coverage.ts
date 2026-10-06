@@ -56,6 +56,7 @@ const scopedSourcePaths: readonly string[] = [
   "packages/core/src/LinuxAnimationChoreographer.cpp",
   "packages/core/src/LinuxMountingManager.cpp",
   "packages/core/src/MountTreeText.cpp",
+  "packages/core/src/OutputScale.cpp",
   "packages/core/src/PinnedFontFamilies.cpp",
   "packages/core/src/ParagraphAttributesSignature.cpp",
   "packages/core/src/ParagraphLayoutCache.cpp",

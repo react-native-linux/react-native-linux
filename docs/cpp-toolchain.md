@@ -938,12 +938,10 @@ of the same rule, with a `scale` parameter alongside `mode` and `isFullscreen`: 
 and then divides by scale, `logicalToSurface` multiplies by scale and then adds the bar back, and a zero
 component of the *logical* side is left at zero in the surface direction rather than inflated by the bar or the
 scale, mirroring `GetMaximumSizeForWindow`'s own rule so it cannot drift between the two directions the way it
-did across Electron's three bugs. `scale` is `1.0` at every call site today, the same way
-`DimensionsSource::configure`'s `scale` parameter is — neither `wp_fractional_scale_v1` nor
-`wl_surface.preferred_buffer_scale` is bound yet — so this pair is not wired into a production call site beyond
-`contentExtentOf` itself; it exists, fully tested including the round trip at scale 1, 1.25 and 1.5, so the day a
-size constraint or fractional scale lands is a call-site change here rather than a second design of this
-arithmetic.
+did across Electron's three bugs. `scale` is `1.0` at every call site today — the chrome is painted in logical
+units on a canvas already scaled to the output (see *Scale*) — so this pair is not wired into a production call
+site beyond `contentExtentOf` itself; it exists, fully tested including the round trip at scale 1, 1.25 and 1.5,
+so the day a size constraint lands is a call-site change here rather than a second design of this arithmetic.
 
 **The tiled predicate.** `ToplevelState` now decodes xdg-shell's four tiled-edge states (`TILED_LEFT` = 5 through
 `TILED_BOTTOM` = 8, added in the protocol's version 2) individually, and `isEffectivelyTiled` is the one
@@ -1336,11 +1334,33 @@ the equality explicitly. If `wl_output` is bound later, `screen` is the field th
 
 ### Scale
 
-`scale` is always 1. Neither `wp_fractional_scale_v1` nor `wl_surface.preferred_buffer_scale` is bound, so this
-client is told nothing about output scaling and 1 is the only honest answer; `fontScale` is 1 for the same
-reason, as nothing reads a desktop text-scaling setting yet. `DimensionsSource::configure` takes the scale as a
-parameter and stores whatever it is given, so binding the fractional-scale protocol is a call-site change rather
-than a redesign. Both are the output-scale follow-up #50 names as a dependency.
+`scale` is the compositor's preferred scale (#51, slice 1). `WaylandWindow` binds `wp_fractional_scale_manager_v1`
+and `wp_viewporter` when both are advertised, creates a `wp_fractional_scale_v1` and a `wp_viewport` for its
+surface, and keeps the scale exactly 1 when either is missing — fractional scale without a viewport has no way to
+map the buffer back onto the surface. `preferred_scale` arrives in units of 1/120 and is handled as a resize: it sets the
+same pending-resize flag a configure does, so the frame loop resizes the renderer and the session through the one
+existing path.
+
+- `WaylandWindow::size` stays in logical surface units and `wp_viewport.set_destination` is set to it whenever it
+  changes. `bufferSize` is `round(size * scale / 120)`, half away from zero as the protocol specifies for toplevels,
+  and is what both renderers allocate. The buffer scale stays 1; the viewport does the mapping.
+- `WindowMain` scales the canvas by the output scale before painting, so the scene, the placeholder and the drawn
+  title bar keep working in logical units. Scene damage is converted to buffer pixels on the way into the renderer
+  and back to logical units on the way into `paintScene`, both by `scaleDamageOutward`, which grows a fractional
+  edge outward so converted damage never covers less. The raster rung damages with `wl_surface.damage_buffer`;
+  the Vulkan WSI damages the buffer itself.
+- `WindowSession::resize` hands the scale to `FabricHost::setSurfaceSize`, which commits it as
+  `LayoutContext::pointScaleFactor`, so Yoga rounds frames onto the physical pixel grid, and to
+  `DimensionsSource::configure`, so `PixelRatio.get()` answers it. `BundleRunner` has no output and passes 1.
+- Input needs no scaling: `wl_pointer` and `wl_touch` coordinates are surface-local, which is logical units.
+
+The arithmetic is in `OutputScale.{h,cpp}`, pure and inside the coverage gate (`OutputScaleTest.cpp`); the
+layout grid at 1.25, 1.5 and 2 is `OnLayoutEmissionTest.cpp`'s `EveryFrameLandsOnThePixelGrid...`.
+
+Not done yet: `wl_output` enter/leave tracking (and so `screen` and a per-output refresh), re-hit-testing the
+pointer when a scale change moves content under a stationary cursor, a 1.5x golden, and an e2e that runs under a
+compositor configured at a fractional scale. `fontScale` stays 1, as nothing reads a desktop text-scaling setting
+yet.
 
 ### One change per frame, at most
 
@@ -7331,12 +7351,10 @@ width, driven through a configure, a five-step drag, maximize, unmaximize, fulls
 the `[rnl-geometry]` line of each and the `onLayout` the tree answers it with — and that the row returns to the
 extent it started at once the states are all cleared again.
 
-**What it does not drive, and why.** *Output scale is not drivable and no token pretends to be.* The window binds
-no `wl_output`, vendors neither `wp_fractional_scale_v1` nor `wp_viewporter`, and never calls
-`wl_surface.set_buffer_scale`; `WindowSession::configureDimensions` passes `DimensionsSource::kDefaultScale`
-unconditionally, because 1 is the only scale this client is ever told about. There is therefore no scale for a
-driver primitive to change — a token would have to invent the plumbing first, and that plumbing is #113's, with
-#51 owning what re-rasterisation has to prove once it exists. The same holds for the wire half of the states this
+**What it does not drive, and why.** *Output scale is not drivable and no token pretends to be.* The window follows
+`wp_fractional_scale_v1` through a `wp_viewport` (see *Scale*), but the scale is the compositor's to send, not a
+configure's, so an injected configure has no scale to replay; proving a fractional scale end to end needs a
+compositor running at one, which is #51's remaining e2e. The same holds for the wire half of the states this
 primitive replays: an injected configure acknowledges no serial, because none was sent, so #218's *event*
 contract is proved from the window's side only.
 
