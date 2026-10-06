@@ -135,9 +135,10 @@ TEST(BidiHitTestTest, EveryCharacterOfWrappedRightToLeftTextHitTestsBackToItsOff
 }
 
 TEST(BidiHitTestTest, EveryCharacterOfWrappedMixedDirectionTextHitTestsBackToItsOffset) {
-    const std::vector<std::string> mismatches =
-        mismatchesOf("גרסה 3.1 של React עובדת היטב today, וגם מחר.", facebook::react::WritingDirection::RightToLeft);
+    const std::string text = "גרסה 3.1 של React עובדת היטב today, וגם מחר.";
+    const std::vector<std::string> mismatches = mismatchesOf(text, facebook::react::WritingDirection::RightToLeft);
 
+    EXPECT_GE(lineCountOf(text), 3U);
     EXPECT_TRUE(mismatches.empty()) << joined(mismatches);
 }
 
