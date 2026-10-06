@@ -165,6 +165,7 @@ constexpr std::string_view kInjectProtocolErrorFlag = "--inject-protocol-error";
 constexpr std::string_view kInjectProtocolErrorAfterFrameFlag = "--inject-protocol-error-after-frame";
 constexpr std::string_view kInjectKeySequenceFlag = "--inject-key-sequence";
 constexpr std::string_view kInjectWindowSequenceFlag = "--inject-window-sequence";
+constexpr std::string_view kInjectRendererFailuresFlag = "--inject-renderer-failures";
 constexpr std::string_view kWindowErrorSource = "rnl-window";
 constexpr std::string_view kImeDebugSurroundingText = "react-native-linux";
 constexpr int32_t kImeDebugCursorX = 64;
@@ -227,6 +228,12 @@ constexpr uint64_t kNanosecondsPerSecond = 1'000'000'000;
  * sizes its only window to the output and honours neither `set_maximized` nor `set_fullscreen`, so a second
  * extent and a window state are two more things no scenario can obtain from the compositor itself.
  *
+ * `--inject-renderer-failures <count>` is #368's forced fallback: the first `count` rungs `bringUpRenderer`
+ * attempts fail as if their bring-up had thrown, so a machine whose Vulkan works can still prove the window lands
+ * on a lower rung and draws there. The renderer ladder record is neither read nor written under it, so a forced
+ * fallback cannot become the next ordinary launch's starting rung. See *The renderer ladder (#368)* in
+ * docs/cpp-toolchain.md.
+ *
  * `--transparent-background` is #328's composite-alpha and premultiplication proof: it clears the scene to
  * `SK_ColorTRANSPARENT` instead of `kSceneBackgroundColor`, so whatever the swapchain's chosen composite alpha
  * and Skia's premultiplied output do with a real alpha channel is visible rather than hidden behind an opaque
@@ -250,6 +257,7 @@ struct WindowArguments {
     bool injectProtocolErrorAfterFrame{false};
     std::optional<std::string> injectKeySequence;
     std::vector<react_native_linux::WindowControlStep> injectedWindowSteps;
+    uint32_t injectedRendererFailures{0};
     std::string error;
 };
 
@@ -266,6 +274,7 @@ struct WindowArguments {
 struct AutomationChannel {
     std::optional<react_native_linux::AutomationServer> server;
     std::optional<std::string> pendingScreenshotPath;
+    folly::dynamic rendererDescription;
 };
 
 /**
@@ -499,18 +508,22 @@ std::string describeMissingValue(std::string_view flag) {
         return "--title requires a window title";
     }
 
+    if (flag == kInjectRendererFailuresFlag) {
+        return "--inject-renderer-failures requires a positive rung count";
+    }
+
     return "--frames requires a positive frame count";
 }
 
-std::optional<uint32_t> parseFrameCount(std::string_view value) {
-    uint32_t frameCount = 0;
-    const std::from_chars_result parsed = std::from_chars(value.data(), value.data() + value.size(), frameCount);
+std::optional<uint32_t> parsePositiveCount(std::string_view value) {
+    uint32_t count = 0;
+    const std::from_chars_result parsed = std::from_chars(value.data(), value.data() + value.size(), count);
 
-    if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() || frameCount == 0) {
+    if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() || count == 0) {
         return std::nullopt;
     }
 
-    return frameCount;
+    return count;
 }
 
 WindowArguments parseArguments(std::span<char*> arguments) {
@@ -569,7 +582,7 @@ WindowArguments parseArguments(std::span<char*> arguments) {
 
         if (flag != kFabricFlag && flag != kScreenshotFlag && flag != kFramesFlag && flag != kFrameLogFlag &&
             flag != kRendererFlag && flag != kAppIdFlag && flag != kTitleFlag && flag != kInjectKeySequenceFlag &&
-            flag != kInjectWindowSequenceFlag) {
+            flag != kInjectWindowSequenceFlag && flag != kInjectRendererFailuresFlag) {
             // Not a flag at all: the desktop entry's `Exec=... %u` expansion for single-instance activation
             // (#363) hands this process a bare URL, with no `--` of its own. Nothing here consumes it — the
             // single-instance check reads the *original* argv directly, ahead of this parse — so it is not an
@@ -630,15 +643,15 @@ WindowArguments parseArguments(std::span<char*> arguments) {
         } else if (flag == kTitleFlag) {
             parsed.title = std::string(value);
         } else {
-            const std::optional<uint32_t> frameCount = parseFrameCount(value);
+            const std::optional<uint32_t> count = parsePositiveCount(value);
 
-            if (!frameCount.has_value()) {
+            if (!count.has_value()) {
                 parsed.error = describeMissingValue(flag);
 
                 return parsed;
             }
 
-            parsed.frameCount = frameCount.value();
+            (flag == kInjectRendererFailuresFlag ? parsed.injectedRendererFailures : parsed.frameCount) = count.value();
         }
     }
 
@@ -753,6 +766,13 @@ void answerAutomationRequest(AutomationChannel& automation, const react_native_l
     if (request.command == react_native_linux::AutomationCommand::ListErrors) {
         automation.server->sendResponse(react_native_linux::formatAutomationResponse(
             request.command, react_native_linux::describeErrors(react_native_linux::automationErrorLog().list())));
+
+        return;
+    }
+
+    if (request.command == react_native_linux::AutomationCommand::DescribeRenderer) {
+        automation.server->sendResponse(
+            react_native_linux::formatAutomationResponse(request.command, automation.rendererDescription));
 
         return;
     }
@@ -1068,6 +1088,7 @@ struct RendererBringUp {
     std::unique_ptr<react_native_linux::WindowRenderer> renderer;
     react_native_linux::SkiaVulkanRenderer* vulkanRenderer{nullptr};
     react_native_linux::RendererLadderRecord record;
+    std::string reason;
 };
 
 std::optional<std::string> ladderStatePath() {
@@ -1164,6 +1185,7 @@ RendererBringUp bringUpRenderer(react_native_linux::WaylandWindow& window, const
         react_native_linux::rendererStartRung(persisted, parsedArguments.forcedRung, driverIdentity);
     std::optional<react_native_linux::RendererRung> rung = start.rung;
     std::string lastFailure;
+    uint32_t injectedFailures = 0;
 
     if (parsedArguments.windowDebug) {
         std::cout << "[rnl-window] renderer ladder starts at " << react_native_linux::describeRendererRung(start.rung)
@@ -1177,9 +1199,17 @@ RendererBringUp bringUpRenderer(react_native_linux::WaylandWindow& window, const
         writeLadderRecord(statePath, attempt);
 
         try {
+            if (injectedFailures < parsedArguments.injectedRendererFailures) {
+                ++injectedFailures;
+                throw std::runtime_error("injected by --inject-renderer-failures");
+            }
+
             RendererBringUp broughtUp = createRenderer(window, rung.value());
 
             broughtUp.record = attempt;
+            broughtUp.reason = rung.value() == start.rung
+                                   ? std::string(react_native_linux::describeRendererStartReason(start.reason))
+                                   : "the rungs above it failed to come up; the last said: " + lastFailure;
 
             if (parsedArguments.windowDebug) {
                 std::cout << "[rnl-window] renderer rung " << react_native_linux::describeRendererRung(rung.value())
@@ -1252,7 +1282,8 @@ int main(int argc, char** argv) {
         // draining the display before the outer catch reports the symptom is what puts the structured line on
         // the trace ahead of it. See `WaylandWindow::reportPendingDisplayError`.
         try {
-            const std::optional<std::string> ladderPath = ladderStatePath();
+            const std::optional<std::string> ladderPath =
+                parsedArguments.injectedRendererFailures == 0 ? ladderStatePath() : std::nullopt;
             const std::string driverIdentity = react_native_linux::probeVulkanDriverIdentity();
             RendererBringUp broughtUp = bringUpRenderer(window, parsedArguments, ladderPath, driverIdentity);
             react_native_linux::WindowRenderer& renderer = *broughtUp.renderer;
@@ -1378,6 +1409,9 @@ int main(int argc, char** argv) {
             }
 
             AutomationChannel automation;
+
+            automation.rendererDescription = react_native_linux::describeRenderer(
+                react_native_linux::describeRendererRung(broughtUp.record.rung), broughtUp.reason);
 
             if (parsedArguments.automation) {
                 automation.server.emplace(react_native_linux::defaultAutomationSocketPath());

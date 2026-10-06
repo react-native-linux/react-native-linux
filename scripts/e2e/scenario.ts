@@ -55,13 +55,14 @@ interface ScreenshotComparison {
  * package's `e2e/goldens`/`e2e/snapshots` the committed and accessibility trees must match. `markTestPassed` requires
  * the bundle to have called `globalThis.__rnlMarkTestPassed()`. `accessibilityChanges` names the
  * `accessibilityState`/`accessibilityValue` changes (#264) `ListAccessibilityChanges` must have recorded by the time
- * the channel is asked.
+ * the channel is asked. `rendererRung` is the renderer ladder rung (#368) `DescribeRenderer` must answer.
  */
 interface ScenarioAutomation {
   readonly accessibilityChanges: ReturnType<typeof readAccessibilityChanges>;
   readonly accessibilityTreeSnapshot: string | null;
   readonly listErrorsMustBeEmpty: boolean;
   readonly markTestPassed: boolean;
+  readonly rendererRung: string | null;
   readonly visualTreeSnapshot: string | null;
 }
 
@@ -198,6 +199,7 @@ const readAutomation = (record: Record<string, unknown>, sourceName: string): Sc
     accessibilityTreeSnapshot: readSnapshotName(automation, "accessibilityTreeSnapshot", sourceName),
     listErrorsMustBeEmpty: readOptionalBoolean(automation, "listErrorsMustBeEmpty", sourceName),
     markTestPassed: readOptionalBoolean(automation, "markTestPassed", sourceName),
+    rendererRung: readOptionalString(automation, "rendererRung", sourceName),
     visualTreeSnapshot: readSnapshotName(automation, "visualTreeSnapshot", sourceName),
   };
 };

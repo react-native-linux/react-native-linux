@@ -255,6 +255,15 @@ up and what it said, and the device the rung that succeeded is running on. The V
 the injected swapchain loss and the four `SurfaceCommitFault` states — are skipped on the raster rung, which has
 neither a swapchain to lose nor a surface-commit state machine to fault.
 
+The automation channel's `DescribeRenderer` answers the rung the window is drawing on and why it was chosen: the
+start policy's own reason when the first rung attempted came up, otherwise that the rungs above it failed and what
+the last one said. `--inject-renderer-failures <count>` makes the first `count` attempts fail as if their bring-up
+had thrown, and neither reads nor writes the ladder record, so a forced fallback never becomes the next launch's
+start. `packages/core/e2e/renderer-fallback.json` uses both: with `--inject-renderer-failures 3` the three Vulkan
+rungs fail, the scenario's `automation.rendererRung: "raster"` fails the run unless `DescribeRenderer` names the
+raster rung (the driver prints the reason it gave), and the click on `pressable.js` is compared against the same
+`pressable-click.png` golden the Vulkan run of `pressable.json` is.
+
 The raster rung is deliberately the least clever code in the renderer. Two buffers alternate in one
 `wl_shm_pool`; `wl_buffer.release` says which is free and a frame that finds neither presents nothing rather than
 painting over pixels the compositor is reading; every frame repaints the whole surface, because with two buffers
@@ -7822,6 +7831,7 @@ line-delimited JSON request per line, one response per line, in order:
 | `{"command":"TakeScreenshot","path":"…"}` | `{"path":"…"}` |
 | `{"command":"HangForTesting","milliseconds":N}` | `{"milliseconds":N}`, after the block |
 | `{"command":"MarkTestPassed"}` | `{"passed":true\|false}` |
+| `{"command":"DescribeRenderer"}` | `{"rung":"preferred-vulkan"\|…\|"raster","reason":"…"}`; see *The renderer ladder (#368)* |
 
 A success is `{"ok":true,"command":"…","result":{…}}` and a refusal is `{"ok":false,"error":"…"}`. It is not
 JSON-RPC: react-native-windows needs the id-and-batching half because its channel is multiplexed over TCP with a
