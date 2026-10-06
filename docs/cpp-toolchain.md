@@ -8160,15 +8160,22 @@ compositor, so it lives here rather than in the window job; the unit, native and
 `node packages/test-harness/scripts/fantom.ts` runs upstream React Native's own `*-itest.js` files, unmodified, the
 way upstream does: through Fantom's in-runtime `describe`/`it`/`expect` (`private/react-native-fantom/runtime`, a
 sparse clone of the vendored tag in `build/fantom-source`), bundled by Metro for `linux` with the itest taken from
-the vendored tree and everything else from the one installed `react-native`, and run in `hello_react --fabric`.
+the vendored tree and everything else from the one installed `react-native`, and run in `hello_react --fantom`.
 Results come back through `NativeFantomCxx.reportTestSuiteResultsJSON`, in a small module in
 `TurboModuleRegistry.cpp`; upstream's `NativeCPUTime` is registered beside it. `packages/core/fantom-expectations.json`
 is the corpus: every suite it names runs, every failure it lists names the issue that owns it, and a new failure, a
 listed failure that passes, or a listed one that goes unreported fails the run. The first batch is #423's: 17 suites,
-200 passing assertions. `forceHighResTimeStamp` pins `HighResTimeStamp::now()` process-wide through upstream's own
-debug-build hook, exactly as Fantom's tester does, and an optimised build throws upstream's message for it. What
-still fails is Fantom's surface and timer-mock API (`startSurface`, `flushMessageQueue`, `setTimerMockEnabled`,
-`advanceTimers`), which this host does not implement yet, and `WebSocket` (#79).
+202 passing assertions.
+
+`--fantom` is `--fabric` with upstream's tester threading. `ReactHost` is built over a `StubMessageQueue` instead of
+a JavaScript thread of its own. That is a queue with no thread, flushed by the thread that owns the host, so the
+runtime runs on the main thread, and `NativeFantomCxx.flushMessageQueue` is that flush, run re-entrantly from
+inside the JavaScript call. `Fantom.runTask` and the work loop stand on it, as they do upstream. Every other host
+keeps its real JavaScript thread; the queue is a constructor argument nothing else passes.
+`forceHighResTimeStamp` pins `HighResTimeStamp::now()` process-wide through upstream's own debug-build hook, and an
+optimised build throws upstream's message for it. What still fails is Fantom's surface and timer-mock API
+(`startSurface`, `setTimerMockEnabled`, `advanceTimers`), a PerformanceObserver callback that is never called, and
+`WebSocket` (#79).
 
 ### The Hermes-linked binary (#228)
 

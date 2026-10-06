@@ -53,10 +53,15 @@ class LinuxLinkingModule;
  */
 class TurboModuleRegistry final {
 public:
+    /**
+     * `flushJavaScriptQueue` is what `NativeFantomCxx.flushMessageQueue` runs. Only an itest run has one — the
+     * `StubMessageQueue` its runtime runs on (#210) — and without one the method is absent, so an itest that needs
+     * it fails naming it.
+     */
     TurboModuleRegistry(
         std::shared_ptr<facebook::react::CallInvoker> jsInvoker,
         std::shared_ptr<facebook::react::NativeAnimatedNodesManagerProvider> animatedNodesManagerProvider,
-        facebook::react::JsErrorHandler::OnJsError onJsError);
+        facebook::react::JsErrorHandler::OnJsError onJsError, std::function<void()> flushJavaScriptQueue = {});
 
     DimensionsSource& dimensions() noexcept;
 

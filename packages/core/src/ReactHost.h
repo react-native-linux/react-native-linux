@@ -5,6 +5,7 @@
 #include "HermesJSRuntimeFactory.h"
 #include "HostTimerRegistry.h"
 #include "JsErrorReporter.h"
+#include "StubMessageQueue.h"
 #include "TurboModuleRegistry.h"
 
 #include <atomic>
@@ -16,7 +17,6 @@
 
 #include <react/runtime/ReactInstance.h>
 #include <react/runtime/TimerManager.h>
-#include <react/threading/MessageQueueThreadImpl.h>
 
 namespace facebook::react {
 
@@ -71,7 +71,12 @@ namespace react_native_linux {
  */
 class ReactHost final {
 public:
-    ReactHost();
+    /**
+     * `stubJavaScriptQueue` replaces the JavaScript thread for an itest run (#210): the runtime then runs on the
+     * thread that flushes the queue, which is this host's own thread, and `NativeFantomCxx.flushMessageQueue` is
+     * that flush. Without one the host owns a real JavaScript thread, as every other host does.
+     */
+    explicit ReactHost(std::shared_ptr<StubMessageQueue> stubJavaScriptQueue = nullptr);
     ReactHost(const ReactHost&) = delete;
     ReactHost(ReactHost&&) = delete;
     ReactHost& operator=(const ReactHost&) = delete;
@@ -158,7 +163,7 @@ public:
 
 private:
     const std::thread::id owningThread_{std::this_thread::get_id()};
-    std::shared_ptr<facebook::react::MessageQueueThreadImpl> javaScriptThread_;
+    std::shared_ptr<facebook::react::MessageQueueThread> javaScriptThread_;
     AnimationFrameQueue animationFrameQueue_;
     HostTimerRegistry* timerRegistry_{nullptr};
     std::shared_ptr<facebook::react::TimerManager> timerManager_;

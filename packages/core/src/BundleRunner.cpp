@@ -5,6 +5,7 @@
 #include "ImageContent.h"
 #include "InputPipeline.h"
 #include "ReactHost.h"
+#include "StubMessageQueue.h"
 
 #ifdef RNL_ENABLE_IMAGES
 #include "ImageDecoder.h"
@@ -245,6 +246,30 @@ std::unique_ptr<FabricHost> startFabricRun(ReactHost& reactHost, const std::stri
     return fabricHost;
 }
 
+/** Waits out the run's timers, tears down in `WindowSession`'s order, and reports whether the bundle failed. */
+int finishTimedFabricRun(ReactHost& reactHost, std::unique_ptr<FabricHost>& fabricHost) {
+    if (!reactHost.runUntilQuiescent(kQuiescenceBudget)) {
+        std::cerr << "[bundle-runner] gave up waiting for pending timers" << std::endl;
+    }
+
+    fabricHost->stopSurface();
+    reactHost.drainJavaScriptThread();
+    fabricHost.reset();
+
+    return reactHost.hasReportedFatalError() ? 1 : 0;
+}
+
+/**
+ * An upstream itest (#210). The suite runs inside the bundle and prints its own results; what is left here is to
+ * keep flushing until its timers are done and to tear down.
+ */
+int runFantomBundle(const std::string& bundlePath) {
+    ReactHost reactHost{std::make_shared<StubMessageQueue>()};
+    std::unique_ptr<FabricHost> fabricHost = startFabricRun(reactHost, bundlePath, kHeadlessSurfaceSize);
+
+    return finishTimedFabricRun(reactHost, fabricHost);
+}
+
 /**
  * A run that injects input, once its bundle has committed: the Fabric host, and whether there was a scene to
  * inject into at all.
@@ -415,15 +440,7 @@ int runResizedFabricBundle(const std::string& bundlePath, facebook::react::Size 
     configureDimensions(reactHost, resizedSurfaceSize);
     reactHost.publishPendingDimensions();
 
-    if (!reactHost.runUntilQuiescent(kQuiescenceBudget)) {
-        std::cerr << "[bundle-runner] gave up waiting for pending timers" << std::endl;
-    }
-
-    fabricHost->stopSurface();
-    reactHost.drainJavaScriptThread();
-    fabricHost.reset();
-
-    return reactHost.hasReportedFatalError() ? 1 : 0;
+    return finishTimedFabricRun(reactHost, fabricHost);
 }
 
 FabricFrameRunResult runFabricBundleAcrossFrames(const std::string& bundlePath, facebook::react::Size surfaceSize) {
@@ -765,6 +782,10 @@ FabricHitPaintRunResult runHitSampledFabricBundle(const std::string& bundlePath,
 }
 
 int runBundle(const std::optional<std::string>& bundlePath, BundleMode bundleMode) {
+    if (bundleMode == BundleMode::Fantom) {
+        return runFantomBundle(bundlePath.value());
+    }
+
     if (bundleMode == BundleMode::Fabric) {
         const FabricRunResult result = runFabricBundle(bundlePath, kHeadlessSurfaceSize);
 
