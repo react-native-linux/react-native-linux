@@ -287,6 +287,7 @@ describe("gradeAutomationChannel", () => {
         accessibilityTreeSnapshot: null,
         listErrorsMustBeEmpty: true,
         markTestPassed: false,
+        rendererRung: null,
         visualTreeSnapshot: null,
       },
     };

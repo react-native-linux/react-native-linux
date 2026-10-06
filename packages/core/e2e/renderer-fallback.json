@@ -1,0 +1,18 @@
+{
+  "name": "renderer-fallback",
+  "bundle": "pressable.js",
+  "ready": "pressable: committed surface 1",
+  "frames": 600,
+  "windowFlags": ["--no-decorations", "--inject-renderer-failures", "3"],
+  "steps": ["sleep 500", "move 200 140", "sleep 100", "click 200 140", "sleep 500"],
+  "automation": {
+    "listErrorsMustBeEmpty": true,
+    "rendererRung": "raster"
+  },
+  "screenshot": {
+    "golden": "pressable-click.png",
+    "maxDifferentPixels": 50,
+    "crop": { "left": 90, "top": 70, "width": 220, "height": 140 }
+  },
+  "expect": ["[rnl-automation] listening on", "pressable: topClick on box at 200,140"]
+}

@@ -31,7 +31,7 @@ struct CommandName {
 
 // Indexed by the enum's value, so describeAutomationCommand is total over the enum without a switch whose
 // implicit no-match branch could never be covered.
-constexpr std::array<CommandName, 7> kCommandNames{{
+constexpr std::array<CommandName, 8> kCommandNames{{
     {.name = "DumpAccessibilityTree", .command = AutomationCommand::DumpAccessibilityTree},
     {.name = "DumpVisualTree", .command = AutomationCommand::DumpVisualTree},
     {.name = "HangForTesting", .command = AutomationCommand::HangForTesting},
@@ -39,6 +39,7 @@ constexpr std::array<CommandName, 7> kCommandNames{{
     {.name = "ListErrors", .command = AutomationCommand::ListErrors},
     {.name = "MarkTestPassed", .command = AutomationCommand::MarkTestPassed},
     {.name = "TakeScreenshot", .command = AutomationCommand::TakeScreenshot},
+    {.name = "DescribeRenderer", .command = AutomationCommand::DescribeRenderer},
 }};
 
 std::string_view describeAutomationCommand(AutomationCommand command) {
@@ -385,6 +386,10 @@ folly::dynamic describeErrors(const std::vector<AutomationError>& errors) {
     }
 
     return folly::dynamic::object("errors", std::move(described));
+}
+
+folly::dynamic describeRenderer(std::string_view rung, std::string_view reason) {
+    return folly::dynamic::object("rung", rung)("reason", reason);
 }
 
 folly::dynamic describeVisualTree(const SceneNodes& nodes) {
