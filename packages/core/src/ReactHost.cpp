@@ -5,6 +5,12 @@
 #include "CurlHttpClient.h"
 #include "ReactNativeFeatureFlagsOverridesLinux.h"
 
+#ifdef RNL_ENABLE_TEXT_GEOMETRY
+#include "TextGeometry.h"
+
+#include <filesystem>
+#endif
+
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -229,6 +235,15 @@ void ReactHost::loadBundle(const std::string& location) {
 
 void ReactHost::loadScript(std::unique_ptr<const facebook::react::JSBigString> script, const std::string& sourceUrl) {
     react_native_assert(std::this_thread::get_id() == owningThread_);
+
+#ifdef RNL_ENABLE_TEXT_GEOMETRY
+    // The application's fonts live beside its bundle (#70). A URL, or a bundle without the directory, has none,
+    // and registering none clears whatever the previous source registered.
+    const std::filesystem::path applicationFonts = std::filesystem::path(sourceUrl).parent_path() / "assets" / "fonts";
+
+    registerApplicationFonts(std::filesystem::is_directory(applicationFonts) ? applicationFonts.string()
+                                                                             : std::string());
+#endif
 
     reactInstance_->loadScript(std::move(script), sourceUrl);
 }

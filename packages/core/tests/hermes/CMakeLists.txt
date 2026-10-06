@@ -143,10 +143,13 @@ target_compile_definitions(rnl_core_hermes_tests
     PRIVATE "RNL_WORKLETS_PACKAGE_JSON=\"${RNL_WORKLETS_DIR}/package.json\"")
 
 # Two things exist only where rnl_react_core links Skia, and the sanitizer presets build without it: the decoder
-# behind CrossThreadMountingStressTest's image-decode leg, and the text pipeline ResizeTextCostTest shapes through.
+# behind CrossThreadMountingStressTest's image-decode leg, and the text pipeline ResizeTextCostTest shapes through and
+# ApplicationFontsTest registers into.
 if(TARGET rnl_skia)
     target_compile_definitions(rnl_core_hermes_tests PRIVATE RNL_ENABLE_IMAGES)
-    target_sources(rnl_core_hermes_tests PRIVATE ResizeTextCostTest.cpp)
+    target_sources(rnl_core_hermes_tests PRIVATE ApplicationFontsTest.cpp ResizeTextCostTest.cpp)
+    target_compile_definitions(rnl_core_hermes_tests
+        PRIVATE "RNL_VENDORED_FONT_DIR=\"${CMAKE_SOURCE_DIR}/packages/core/fonts\"")
 endif()
 
 # Two upstream cases are not discovered in the TSan configure, and only there; both run in dev, in asan and

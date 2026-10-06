@@ -574,6 +574,9 @@ struct TextPipelineState {
     std::mutex mutex;
     sk_sp<skia::textlayout::FontCollection> fontCollection;
     sk_sp<SkUnicode> unicode;
+    // The application's own fonts (#70), the collection's dynamic manager: consulted ahead of the vendored faces
+    // and fontconfig, and null until a bundle loaded from a directory that has an `assets/fonts` beside it.
+    sk_sp<SkFontMgr> applicationFontManager;
     // The measure cache of #342, guarded by the same mutex the shape takes: one lock per lookup, and the
     // shapes it removes from that critical section are the point.
     ParagraphLayoutCache paragraphLayoutCache{512};
@@ -826,6 +829,36 @@ layoutParagraph(const facebook::react::AttributedString& attributedString,
 }
 
 uint64_t paragraphLayoutCount() { return paragraphLayoutCounter.load(std::memory_order_relaxed); }
+
+void registerApplicationFonts(const std::string& fontDirectory) {
+    TextPipelineState& state = textPipelineState();
+    const std::lock_guard<std::mutex> guard(state.mutex);
+
+    state.applicationFontManager =
+        fontDirectory.empty() ? nullptr : SkFontMgr_New_Custom_Directory(fontDirectory.c_str());
+    state.fontCollection->setDynamicFontManager(state.applicationFontManager);
+    state.fontCollection->clearCaches();
+    state.paragraphLayoutCache.clear();
+}
+
+std::vector<std::string> applicationFontFamilies() {
+    TextPipelineState& state = textPipelineState();
+    const std::lock_guard<std::mutex> guard(state.mutex);
+    std::vector<std::string> families;
+
+    if (state.applicationFontManager == nullptr) {
+        return families;
+    }
+
+    for (int index = 0; index < state.applicationFontManager->countFamilies(); ++index) {
+        SkString family;
+
+        state.applicationFontManager->getFamilyName(index, &family);
+        families.emplace_back(family.c_str());
+    }
+
+    return families;
+}
 
 std::unique_ptr<skia::textlayout::Paragraph>
 layoutEditorParagraph(const facebook::react::AttributedString& attributedString,
