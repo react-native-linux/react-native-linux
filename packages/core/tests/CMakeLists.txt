@@ -309,6 +309,9 @@ target_sources(rnl_core_tests PRIVATE CurlHttpClientTest.cpp ${CMAKE_CURRENT_SOU
 target_include_directories(rnl_core_tests PRIVATE ${REACT_CXX_PLATFORM_DIR})
 target_link_libraries(rnl_core_tests PRIVATE CURL::libcurl)
 
+# #79: the Boost.Beast WebSocket client, against a WebSocket server on loopback inside the test.
+target_sources(rnl_core_tests PRIVATE BeastWebSocketClientTest.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../src/BeastWebSocketClient.cpp)
+
 # #487: a real xkb_state under a US and a French keymap, the one input proof a pure function cannot give. The unit
 # tier links libxkbcommon for it rather than moving the case to the window job, because the case needs no
 # compositor, only the library and the xkeyboard-config data it reads.

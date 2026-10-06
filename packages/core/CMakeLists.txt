@@ -152,6 +152,7 @@ set(RNL_FOLLY_SOURCES
     folly/SharedMutex.cpp
     folly/String.cpp
     folly/Unicode.cpp
+    folly/Uri.cpp
     folly/concurrency/CacheLocality.cpp
     folly/container/detail/F14Table.cpp
     folly/detail/FileUtilDetail.cpp
@@ -845,6 +846,7 @@ add_library(rnl_react_core STATIC
     src/Appearance.cpp
     src/AsyncStorage.cpp
     src/AutomationProtocol.cpp
+    src/BeastWebSocketClient.cpp
     src/Clipboard.cpp
     src/ConsoleBinding.cpp
     src/CurlHttpClient.cpp
@@ -875,6 +877,8 @@ add_library(rnl_react_core STATIC
     # through react/io and react/http, whose globs also pull in the WebSocket, image-loader and resource modules.
     ${REACT_CXX_PLATFORM_DIR}/react/http/IHttpClient.cpp
     ${REACT_CXX_PLATFORM_DIR}/react/io/NetworkingModule.cpp
+    # #79: upstream's C++ WebSocket TurboModule; src/BeastWebSocketClient.cpp is the client it is built from.
+    ${REACT_CXX_PLATFORM_DIR}/react/io/WebSocketModule.cpp
     # #22: upstream's C++ ExceptionsManager, compiled on its own rather than through react/logging's glob.
     ${REACT_CXX_PLATFORM_DIR}/react/logging/NativeExceptionsManager.cpp)
 target_compile_options(rnl_react_core PRIVATE -Wall -Wextra)

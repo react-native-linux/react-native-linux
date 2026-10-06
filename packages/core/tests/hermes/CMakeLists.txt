@@ -105,6 +105,7 @@ add_executable(rnl_core_hermes_tests
     CxxModuleTypeSurfaceTest.cpp
     InstanceTeardownLeakTest.cpp
     ThreadAffinityTest.cpp
+    WebSocketModuleTest.cpp
     WorkletsVersionTest.cpp
     ${RNL_CXX_MODULE_EXAMPLE_DIR}/AppSpecsJSI.h
     ${RNL_CXX_MODULE_EXAMPLE_DIR}/NativeCxxModuleExample.cpp
