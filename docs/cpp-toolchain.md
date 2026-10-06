@@ -3060,7 +3060,8 @@ primitive by primitive. `view-props.png`'s nested-opacity box is the golden that
 
 What a layer per translucent node costs, measured rather than assumed (#105). `translucent-depth.json` nests
 sixteen views at opacity 0.95, each beside a translucent bordered leaf, which is 32 layers. A natively animated box
-at the bottom re-composites all of them every frame.
+at the bottom is enclosed by the sixteen nested ones, which therefore re-composite every frame; the sixteen leaves
+are repainted wherever its damage reaches them.
 
 | tree (lavapipe, Debug) | paint recording p50 / p95 | frame-time p95 | first frame |
 | --- | --- | --- | --- |

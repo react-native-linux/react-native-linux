@@ -1,7 +1,8 @@
 // Issue #105's perf criterion: a deep translucent tree's frame cost, as a number. Sixteen nested views at opacity
 // 0.95, each beside a translucent bordered leaf, so the walk opens 32 opacity layers (#526 composites each
-// translucent node once, through its own layer). The innermost box is moved every frame by the native driver, so
-// its damage re-composites every layer that encloses it — the worst case for a layer per translucent node.
+// translucent node once, through its own layer). The innermost box is moved every frame by the native driver.
+// Sixteen of the layers, the nested views, enclose it, so its damage re-composites each of them every frame; the
+// other sixteen, the sibling leaves, are painted again wherever that damage reaches them.
 
 const surfaceId = 1;
 const fabric = globalThis.nativeFabricUIManager;
