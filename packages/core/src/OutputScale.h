@@ -11,8 +11,8 @@ namespace react_native_linux {
 inline constexpr uint32_t kFractionalScaleDenominator = 120;
 
 /**
- * The buffer pixels a toplevel of `logicalExtent` surface units has at `preferredScale` (in units of 1/120), rounded half
- * away from zero as fractional-scale-v1 specifies for toplevel surfaces.
+ * The buffer pixels a toplevel of `logicalExtent` surface units has at `preferredScale` (in units of 1/120), rounded
+ * half away from zero as fractional-scale-v1 specifies for toplevel surfaces.
  *
  * Pure, and free of Skia and Wayland, so it sits inside the `rnl_core_tests` coverage gate. See *Scale* in
  * docs/cpp-toolchain.md.
