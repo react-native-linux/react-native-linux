@@ -1337,7 +1337,7 @@ the equality explicitly. If `wl_output` is bound later, `screen` is the field th
 `scale` is the compositor's preferred scale (#51, slice 1). `WaylandWindow` binds `wp_fractional_scale_manager_v1`
 and `wp_viewporter` when both are advertised, creates a `wp_fractional_scale_v1` and a `wp_viewport` for its
 surface, and keeps the scale exactly 1 when either is missing — fractional scale without a viewport has no way to
-map the buffer back onto the surface. `preferred_scale` arrives in 120ths and is handled as a resize: it sets the
+map the buffer back onto the surface. `preferred_scale` arrives in units of 1/120 and is handled as a resize: it sets the
 same pending-resize flag a configure does, so the frame loop resizes the renderer and the session through the one
 existing path.
 

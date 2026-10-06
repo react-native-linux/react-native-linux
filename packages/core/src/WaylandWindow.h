@@ -147,7 +147,7 @@ public:
      */
     wl_shm* sharedMemory() const noexcept;
     WindowSize size() const noexcept;
-    /** The compositor's preferred scale in 120ths, `kFractionalScaleDenominator` when none was ever sent. */
+    /** The compositor's preferred scale in units of 1/120, `kFractionalScaleDenominator` when none was ever sent. */
     uint32_t preferredScale() const noexcept;
     /** `size` in buffer pixels at `preferredScale`, rounded as fractional-scale-v1 specifies. */
     WindowSize bufferSize() const noexcept;

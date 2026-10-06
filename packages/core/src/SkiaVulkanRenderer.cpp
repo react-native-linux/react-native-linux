@@ -233,13 +233,14 @@ bool SkiaVulkanRenderer::drawFrame(WaylandWindow& window, const SceneDamage& fra
     // The four ways this window ends up mapped and never shown, asked as one question before a buffer is attached.
     // `takeContentUpdateDiscarded` is read unconditionally so a discard is never left pending behind a frame that
     // bailed out for a different reason and then re-presented for a stale one.
-    const SurfaceCommitState observedCommitState{.isConfigureAcknowledged = window.isConfigureAcknowledged(),
-                                                 .doesBufferExtentMatchConfigure =
-                                                     swapchainSize_.width == window.bufferSize().width &&
-                                                     swapchainSize_.height == window.bufferSize().height,
-                                                 .wasLastContentUpdateDiscarded = window.takeContentUpdateDiscarded(),
-                                                 .consecutiveAcquireStarvations = consecutiveAcquireStarvations_,
-                                                 .extraSwapchainImages = extraSwapchainImages_};
+    const SurfaceCommitState observedCommitState{
+        .isConfigureAcknowledged = window.isConfigureAcknowledged(),
+        .doesBufferExtentMatchConfigure =
+            swapchainSize_.width == std::min(window.bufferSize().width, maximumImageExtent_.width) &&
+            swapchainSize_.height == std::min(window.bufferSize().height, maximumImageExtent_.height),
+        .wasLastContentUpdateDiscarded = window.takeContentUpdateDiscarded(),
+        .consecutiveAcquireStarvations = consecutiveAcquireStarvations_,
+        .extraSwapchainImages = extraSwapchainImages_};
     const SurfaceCommitAction commitAction = surfaceCommitActionFor(applySurfaceCommitFault(
         observedCommitState, std::exchange(pendingSurfaceCommitFault_, SurfaceCommitFault::None)));
 
@@ -685,6 +686,8 @@ void SkiaVulkanRenderer::createSwapchain() {
     VkSurfaceCapabilitiesKHR capabilities{};
     checkVulkanResult(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice_, vulkanSurface_, &capabilities),
                       "vkGetPhysicalDeviceSurfaceCapabilitiesKHR");
+
+    maximumImageExtent_ = WindowSize{capabilities.maxImageExtent.width, capabilities.maxImageExtent.height};
 
     VkExtent2D extent = capabilities.currentExtent;
 

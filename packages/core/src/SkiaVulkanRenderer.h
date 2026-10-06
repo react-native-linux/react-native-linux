@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <limits>
 #include <optional>
 #include <string>
 #include <vector>
@@ -158,6 +159,12 @@ private:
     VkImageUsageFlags swapchainImageUsage_{0};
     WindowSize requestedSize_;
     WindowSize swapchainSize_;
+    /**
+     * The largest image the surface allows, read when the swapchain was created. A buffer scaled past it (#51) is
+     * clamped there, and the clamped extent is the one a configure is matched against, so an unattainable size
+     * presents the largest buffer the viewport can scale up rather than recreating the same swapchain forever.
+     */
+    WindowSize maximumImageExtent_{std::numeric_limits<uint32_t>::max(), std::numeric_limits<uint32_t>::max()};
     std::string pendingCapturePath_;
     std::vector<VkImage> images_;
     std::vector<sk_sp<SkSurface>> imageSurfaces_;
