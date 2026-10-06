@@ -1665,6 +1665,16 @@ Ordering matters in one direction only: a layout-affecting animated mutation tak
 commit carries `mountSynchronously = true`, so it relayouts *and* mounts on the calling thread. Ticking before
 `takeFrame` is what puts it in the snapshot the same frame paints instead of the next one.
 
+### A stalled JavaScript thread does not stall the animation (#19)
+
+Nothing in the tick waits on JavaScript: `tickAnimations` steps the drivers and writes the scene on the frame
+thread, and the only thing an animation hands back to JavaScript is its end callback, posted rather than awaited.
+`e2e/animated-stall.json` is the proof. `test-bundles/animated-stall.js` starts a half-second `scale` ramp and holds
+the JavaScript thread in a busy loop for a full second. When JavaScript runs again, the end callback has already
+reported a finished animation and the value it reads back is the end of the ramp, where a driver stepped by
+JavaScript would still be at the start. The scenario's frame budget (`maxHangs: 0`) is the other half: the window
+presented every frame of that second on time.
+
 ### The pending-work coupling
 
 `isActive()` is the fourth signal in `hasPendingWork` (see *Frame clock*), reached through
