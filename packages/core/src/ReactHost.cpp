@@ -217,6 +217,12 @@ KeyValueStore& ReactHost::keyValueStore() noexcept {
     return turboModuleRegistry_->keyValueStore();
 }
 
+I18nModel& ReactHost::i18n() noexcept {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    return turboModuleRegistry_->i18n();
+}
+
 void ReactHost::publishPendingDimensions() {
     react_native_assert(std::this_thread::get_id() == owningThread_);
 

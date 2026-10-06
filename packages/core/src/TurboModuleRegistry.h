@@ -23,6 +23,7 @@ class TurboModule;
 namespace react_native_linux {
 
 class HostTimerRegistry;
+class I18nModel;
 class KeyValueStore;
 class LinuxAppearanceModule;
 class LinuxDeviceInfoModule;
@@ -90,6 +91,9 @@ public:
     /** The store behind `RNAsyncStorage` (#23); `WindowSession` points it at the application's file. */
     KeyValueStore& keyValueStore() noexcept;
 
+    /** `I18nManager`'s choices (#72), which `WindowSession` restores before the bundle and applies every frame. */
+    I18nModel& i18n() noexcept;
+
     void install(facebook::jsi::Runtime& runtime);
 
     /**
@@ -110,6 +114,7 @@ private:
     std::shared_ptr<ActivationModel> activationModel_;
     std::shared_ptr<LinuxLinkingModule> linkingModule_;
     std::shared_ptr<KeyValueStore> keyValueStore_;
+    std::shared_ptr<I18nModel> i18nModel_;
     std::unordered_map<std::string_view, ModuleFactory> moduleFactories_;
 };
 

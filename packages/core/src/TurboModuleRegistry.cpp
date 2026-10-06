@@ -4,6 +4,7 @@
 #include "BeastWebSocketClient.h"
 #include "CurlHttpClient.h"
 #include "HostTimerRegistry.h"
+#include "I18n.h"
 #include "PlatformColor.h"
 
 #include <FBReactNativeSpec/FBReactNativeSpecJSI.h>
@@ -203,6 +204,40 @@ public:
 
 private:
     std::shared_ptr<ActivationModel> activationModel_;
+};
+
+/**
+ * `NativeI18nManager` (#72), over `I18nModel`. `getConstants` answers the direction the choices resolve to now, but
+ * React Native's `I18nManager.js` reads it once, so `I18nManager.isRTL` keeps its startup value until the bundle
+ * reloads, as upstream's does; the surface itself flips on the next frame, through `WindowSession`.
+ */
+class LinuxI18nManagerModule final : public facebook::react::NativeI18nManagerCxxSpec<LinuxI18nManagerModule> {
+public:
+    LinuxI18nManagerModule(std::shared_ptr<facebook::react::CallInvoker> jsInvoker,
+                           std::shared_ptr<I18nModel> i18nModel)
+        : NativeI18nManagerCxxSpec(std::move(jsInvoker)), i18nModel_(std::move(i18nModel)) {}
+
+    facebook::jsi::Object getConstants(facebook::jsi::Runtime& runtime) {
+        facebook::jsi::Object constants(runtime);
+
+        constants.setProperty(runtime, "isRTL", i18nModel_->isRightToLeft());
+        constants.setProperty(runtime, "doLeftAndRightSwapInRTL", i18nModel_->doesSwapLeftAndRightInRightToLeft());
+        constants.setProperty(runtime, "localeIdentifier",
+                              facebook::jsi::String::createFromUtf8(runtime, i18nModel_->localeIdentifier()));
+
+        return constants;
+    }
+
+    void allowRTL(facebook::jsi::Runtime& /*runtime*/, bool isAllowed) { i18nModel_->allowRightToLeft(isAllowed); }
+
+    void forceRTL(facebook::jsi::Runtime& /*runtime*/, bool isForced) { i18nModel_->forceRightToLeft(isForced); }
+
+    void swapLeftAndRightInRTL(facebook::jsi::Runtime& /*runtime*/, bool isSwapped) {
+        i18nModel_->swapLeftAndRightInRightToLeft(isSwapped);
+    }
+
+private:
+    std::shared_ptr<I18nModel> i18nModel_;
 };
 
 /**
@@ -619,7 +654,8 @@ TurboModuleRegistry::TurboModuleRegistry(
       appearanceModule_(std::make_shared<LinuxAppearanceModule>(jsInvoker, appearanceModel_)),
       activationModel_(std::make_shared<ActivationModel>()),
       linkingModule_(std::make_shared<LinuxLinkingModule>(jsInvoker, activationModel_)),
-      keyValueStore_(std::make_shared<KeyValueStore>()) {
+      keyValueStore_(std::make_shared<KeyValueStore>()),
+      i18nModel_(std::make_shared<I18nModel>(localeFromEnvironment(), keyValueStore_)) {
     appearanceModel_->setChangeListener([appearanceModule = appearanceModule_.get()](ColorScheme colorScheme) {
         appearanceModule->emitAppearanceChange(colorScheme);
     });
@@ -633,6 +669,9 @@ TurboModuleRegistry::TurboModuleRegistry(
                              [linkingModule = linkingModule_]() { return linkingModule; });
     moduleFactories_.emplace(LinuxAsyncStorageModule::kModuleName, [jsInvoker, keyValueStore = keyValueStore_]() {
         return std::make_shared<LinuxAsyncStorageModule>(jsInvoker, keyValueStore);
+    });
+    moduleFactories_.emplace(LinuxI18nManagerModule::kModuleName, [jsInvoker, i18nModel = i18nModel_]() {
+        return std::make_shared<LinuxI18nManagerModule>(jsInvoker, i18nModel);
     });
     moduleFactories_.emplace(LinuxFantomModule::kModuleName,
                              [jsInvoker, fantomRunControls = std::move(fantomRunControls)]() {
@@ -679,6 +718,8 @@ AppearanceModel& TurboModuleRegistry::appearance() noexcept { return *appearance
 ActivationModel& TurboModuleRegistry::activation() noexcept { return *activationModel_; }
 
 KeyValueStore& TurboModuleRegistry::keyValueStore() noexcept { return *keyValueStore_; }
+
+I18nModel& TurboModuleRegistry::i18n() noexcept { return *i18nModel_; }
 
 void TurboModuleRegistry::install(facebook::jsi::Runtime& runtime) {
     installPlatformColorBinding(runtime, appearanceModel_);

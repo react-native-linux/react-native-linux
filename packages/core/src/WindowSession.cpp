@@ -3,6 +3,7 @@
 #include "AsyncStorage.h"
 #include "DimensionsSource.h"
 #include "FrameProfiling.h"
+#include "I18n.h"
 
 #include <chrono>
 #include <memory>
@@ -46,6 +47,9 @@ WindowSession::WindowSession(const std::string& bundlePath, WindowSize size, dou
     resize(size, scale);
     seedColorScheme();
     reactHost_.keyValueStore().setDatabasePath(asyncStorageDatabasePath);
+    // After the store has its file and before the script, so the first layout already has the persisted direction.
+    reactHost_.i18n().restore();
+    applyLayoutDirectionChange();
 
     if (initialActivationUrl.has_value()) {
         deliverActivationUrl(initialActivationUrl.value());
@@ -90,6 +94,7 @@ void WindowSession::deliverInput(std::vector<InputEvent> events) {
     // Once per frame, whatever the compositor sent: this is what turns any number of configures since the last
     // frame into at most one `didUpdateDimensions`.
     reactHost_.publishPendingDimensions();
+    applyLayoutDirectionChange();
 
 #ifdef RNL_ENABLE_APPEARANCE_PORTAL
     appearancePortal_.processPendingSignals(reactHost_.appearance());
@@ -186,6 +191,14 @@ SceneFrame WindowSession::takeFrame() {
     ZoneScopedN("take frame");
 
     return fabricHost_->takeFrame();
+}
+
+void WindowSession::applyLayoutDirectionChange() {
+    const std::optional<LayoutDirectionRequest> change = reactHost_.i18n().takeLayoutDirectionChange();
+
+    if (change.has_value()) {
+        fabricHost_->setLayoutDirection(change.value());
+    }
 }
 
 bool WindowSession::hasReportedFatalError() const { return reactHost_.hasReportedFatalError(); }

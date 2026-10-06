@@ -1,0 +1,14 @@
+{
+  "name": "i18n-direction",
+  "bundle": "i18n-direction.js",
+  "ready": "i18n-direction: committed surface 1",
+  "frames": 240,
+  "windowFlags": ["--no-decorations", "--app-id", "org.reactnative.linux.e2e.i18n"],
+  "steps": ["sleep 1500"],
+  "expect": [
+    "i18n-direction: committed surface 1",
+    "i18n-direction: first child at x=0",
+    "i18n-direction: first child at x=300",
+    "i18n-direction: first child at x=0"
+  ]
+}

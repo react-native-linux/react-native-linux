@@ -37,6 +37,7 @@ const std::vector<ForeignThreadCall> kForeignThreadCalls{
     {"ReactHost::appearance", [](Hosts& hosts) { hosts.reactHost->appearance(); }},
     {"ReactHost::activation", [](Hosts& hosts) { hosts.reactHost->activation(); }},
     {"ReactHost::keyValueStore", [](Hosts& hosts) { hosts.reactHost->keyValueStore(); }},
+    {"ReactHost::i18n", [](Hosts& hosts) { hosts.reactHost->i18n(); }},
     {"ReactHost::publishPendingDimensions", [](Hosts& hosts) { hosts.reactHost->publishPendingDimensions(); }},
     {"ReactHost::loadScript",
      [](Hosts& hosts) {
@@ -55,6 +56,7 @@ const std::vector<ForeignThreadCall> kForeignThreadCalls{
     {"ReactHost::hasPendingTimers", [](Hosts& hosts) { hosts.reactHost->hasPendingTimers(); }},
     {"ReactHost::~ReactHost", [](Hosts& hosts) { hosts.reactHost.reset(); }},
     {"FabricHost::setSurfaceSize", [](Hosts& hosts) { hosts.fabricHost->setSurfaceSize(kSurfaceSize, 1.0F); }},
+    {"FabricHost::setLayoutDirection", [](Hosts& hosts) { hosts.fabricHost->setLayoutDirection({}); }},
     {"FabricHost::stopSurface", [](Hosts& hosts) { hosts.fabricHost->stopSurface(); }},
     {"FabricHost::setTextInputFocusSink", [](Hosts& hosts) { hosts.fabricHost->setTextInputFocusSink(nullptr); }},
     {"FabricHost::dispatchInput", [](Hosts& hosts) { hosts.fabricHost->dispatchInput({}); }},

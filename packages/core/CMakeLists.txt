@@ -856,6 +856,7 @@ add_library(rnl_react_core STATIC
     src/FocusModel.cpp
     src/HermesJSRuntimeFactory.cpp
     src/HostTimerRegistry.cpp
+    src/I18n.cpp
     src/ImageContent.cpp
     src/InputDispatcher.cpp
     src/InputPipeline.cpp

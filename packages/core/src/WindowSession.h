@@ -54,6 +54,11 @@ namespace react_native_linux {
  * callback runs on the frame thread and the unsynchronised `AppearanceModel` behind `Appearance.getColorScheme()`
  * has exactly one writer. See *Appearance and PlatformColor* in docs/cpp-toolchain.md.
  *
+ * `deliverInput` is also where an `I18nManager.forceRTL` or `allowRTL` reaches the surface (#72): the module only
+ * records the choice in `I18nModel` on the JavaScript thread, and the frame thread takes it here and relays the
+ * surface out, so the direction flips on the next frame without a reload and without the JavaScript thread ever
+ * touching `FabricHost`. The persisted choice is applied the same way once before the bundle loads.
+ *
  * `recordFrameTick` is a second, separate clock: `FrameClock` decides whether the *paint* — `takeFrame` plus the
  * renderer's present — happens at all this iteration, which `deliverInput`'s per-input frame timing does not need
  * to know about. See *Frame clock* in docs/cpp-toolchain.md for why the two are independent.
@@ -155,6 +160,9 @@ private:
      * sees the desktop's scheme rather than `kFallbackColorScheme` followed by a change event one frame later.
      */
     void seedColorScheme();
+
+    /** Lays the surface out in the direction `I18nManager`'s choices last asked for, if they changed (#72). */
+    void applyLayoutDirectionChange();
     double takeFrameMilliseconds();
     bool hasPendingWork() const;
 

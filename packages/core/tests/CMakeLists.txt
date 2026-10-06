@@ -322,8 +322,14 @@ pkg_check_modules(RNL_TEST_XKBCOMMON REQUIRED IMPORTED_TARGET xkbcommon)
 target_sources(rnl_core_tests PRIVATE KeymapLayoutTest.cpp)
 target_link_libraries(rnl_core_tests PRIVATE PkgConfig::RNL_TEST_XKBCOMMON)
 
-# #23: the SQLite store behind AsyncStorage, against files in the test's temporary directory.
-target_sources(rnl_core_tests PRIVATE AsyncStorageTest.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../src/AsyncStorage.cpp)
+# #23: the SQLite store behind AsyncStorage, against files in the test's temporary directory; #72's I18nManager
+# choices persist in it.
+target_sources(rnl_core_tests
+    PRIVATE
+        AsyncStorageTest.cpp
+        I18nTest.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src/AsyncStorage.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src/I18n.cpp)
 target_link_libraries(rnl_core_tests PRIVATE SQLite::SQLite3)
 target_compile_options(rnl_core_tests PRIVATE -Wall -Wextra -fexceptions -frtti)
 target_include_directories(rnl_core_tests
