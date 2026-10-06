@@ -33,16 +33,14 @@
     "Event Timing API durationThreshold option defaults to 104ms for event entries per W3C spec": "NativeFantom.startSurface is not implemented, so Fantom.createRoot cannot render (#210)"
   },
   "private/webapis/performance/__tests__/LongTasksAPI-itest.js": {
-    "LongTasks API does NOT report short tasks (under 50ms)": "NativeFantom.flushMessageQueue is not implemented, so Fantom.runTask cannot run (#210)",
-    "LongTasks API reports long tasks (over 50ms)": "the HighResTimeStamp mock the previous case installed is never uninstalled, because Fantom.runTask threw before it could be (#210)",
-    "LongTasks API tasks that yield should NOT be reported if they are longer than 50ms but had yielding opportunities in intervals shorter than 50ms": "the HighResTimeStamp mock the previous case installed is never uninstalled, because Fantom.runTask threw before it could be (#210)",
-    "LongTasks API tasks that yield should be reported if running for longer than 50ms between yielding opportunities": "the HighResTimeStamp mock the previous case installed is never uninstalled, because Fantom.runTask threw before it could be (#210)"
+    "LongTasks API reports long tasks (over 50ms)": "the PerformanceObserver callback is never called on this host; not yet diagnosed (#210)",
+    "LongTasks API tasks that yield should NOT be reported if they are longer than 50ms but had yielding opportunities in intervals shorter than 50ms": "the HighResTimeStamp mock the previous case installed is never uninstalled, because that case failed before it could be (#210)",
+    "LongTasks API tasks that yield should be reported if running for longer than 50ms between yielding opportunities": "the HighResTimeStamp mock the previous case installed is never uninstalled, because that case failed before it could be (#210)"
   },
   "private/webapis/performance/__tests__/Performance-itest.js": {},
   "private/webapis/performance/__tests__/PerformanceMemory-itest.js": {},
   "private/webapis/performance/__tests__/PerformanceObserver-itest.js": {
-    "PerformanceObserver receives notifications for marks and measures": "NativeFantom.flushMessageQueue is not implemented, so Fantom.runTask cannot run (#210)",
-    "PerformanceObserver takeRecords() provides all buffered events and clears the buffer": "NativeFantom.flushMessageQueue is not implemented, so Fantom.runTask cannot run (#210)"
+    "PerformanceObserver receives notifications for marks and measures": "the PerformanceObserver callback is never called on this host; not yet diagnosed (#210)"
   },
   "private/webapis/performance/__tests__/UserTiming-itest.js": {},
   "private/webapis/structuredClone/__tests__/structuredClone-itest.js": {

@@ -91,6 +91,7 @@ set(RNL_CORE_SCENE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ScrollEventCadence.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ScrollPhysics.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/SeededTestScheduler.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/StubMessageQueue.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/SingleInstanceActivation.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/SurfaceCommitGate.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/SurfacePresentationPolicy.cpp
@@ -182,6 +183,7 @@ add_executable(rnl_core_tests
     GpuResourceInvalidationTest.cpp
     OutputScaleTest.cpp
     SurfaceCommitGateTest.cpp
+    StubMessageQueueTest.cpp
     SurfacePresentationPolicyTest.cpp
     VulkanResultPolicyTest.cpp
     WaylandDispatchDiagnosticsTest.cpp
@@ -341,9 +343,11 @@ target_link_libraries(rnl_core_tests
 set_target_properties(rnl_core_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 # LLVM source-based coverage, scoped to this target so the profile carries the files the gate
-# scores and nothing else. scripts/cpp-coverage.ts reads what comes out of it.
+# scores and nothing else. scripts/cpp-coverage.ts reads what comes out of it. The counters are atomic
+# because some cases run scored code on several threads at once, and plain counters lose increments
+# under that race: StubMessageQueueTest's cross-thread case read a branch count of minus one.
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    target_compile_options(rnl_core_tests PRIVATE -fprofile-instr-generate -fcoverage-mapping)
+    target_compile_options(rnl_core_tests PRIVATE -fprofile-instr-generate -fcoverage-mapping -fprofile-update=atomic)
     target_link_options(rnl_core_tests PRIVATE -fprofile-instr-generate)
 endif()
 

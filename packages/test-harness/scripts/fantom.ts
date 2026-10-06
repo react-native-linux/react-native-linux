@@ -164,7 +164,7 @@ const runItest = async (relativePath: string): Promise<unknown> => {
   });
 
   // A spawn, not execFileSync: a fatal error after the suite reported must not lose the result.
-  const output = spawnSync(binaryPath, ["--fabric", bundlePath], { encoding: "utf8" }).stdout;
+  const output = spawnSync(binaryPath, ["--fantom", bundlePath], { encoding: "utf8" }).stdout;
   const resultLine = output.split("\n").find((line) => line.startsWith(resultPrefix)) ?? null;
 
   return resultLine === null

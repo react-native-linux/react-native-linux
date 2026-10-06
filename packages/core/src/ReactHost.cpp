@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <functional>
 #include <jsi/jsi.h>
 #include <memory>
 #include <string>
@@ -19,6 +20,7 @@
 #include <react/featureflags/ReactNativeFeatureFlags.h>
 #include <react/renderer/animated/NativeAnimatedNodesManagerProvider.h>
 #include <react/renderer/runtimescheduler/RuntimeSchedulerCallInvoker.h>
+#include <react/threading/MessageQueueThreadImpl.h>
 
 namespace react_native_linux {
 
@@ -109,7 +111,10 @@ void installAnimationFrameBinding(facebook::jsi::Runtime& runtime, AnimationFram
 
 } // namespace
 
-ReactHost::ReactHost() : javaScriptThread_(std::make_shared<facebook::react::MessageQueueThreadImpl>()) {
+ReactHost::ReactHost(std::shared_ptr<StubMessageQueue> stubJavaScriptQueue)
+    : javaScriptThread_(stubJavaScriptQueue != nullptr
+                            ? std::shared_ptr<facebook::react::MessageQueueThread>(stubJavaScriptQueue)
+                            : std::make_shared<facebook::react::MessageQueueThreadImpl>()) {
     facebook::react::ReactNativeFeatureFlags::override(std::make_unique<ReactNativeFeatureFlagsOverridesLinux>());
 
     std::unique_ptr<HostTimerRegistry> ownedTimerRegistry = std::make_unique<HostTimerRegistry>();
@@ -125,7 +130,10 @@ ReactHost::ReactHost() : javaScriptThread_(std::make_shared<facebook::react::Mes
     animatedNodesManagerProvider_ = std::make_shared<facebook::react::NativeAnimatedNodesManagerProvider>();
     turboModuleRegistry_ = std::make_unique<TurboModuleRegistry>(
         std::make_shared<facebook::react::RuntimeSchedulerCallInvoker>(reactInstance_->getRuntimeScheduler()),
-        animatedNodesManagerProvider_, errorReporter_.createHandler());
+        animatedNodesManagerProvider_, errorReporter_.createHandler(),
+        stubJavaScriptQueue != nullptr
+            ? std::function<void()>([stubJavaScriptQueue]() { stubJavaScriptQueue->flush(); })
+            : std::function<void()>());
 
     reactInstance_->initializeRuntime(
         {}, [registry = turboModuleRegistry_.get(), hasMarkedTestPassed = hasMarkedTestPassed_,
