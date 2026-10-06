@@ -8151,12 +8151,14 @@ compositor, so it lives here rather than in the window job; the unit, native and
 way upstream does: through Fantom's in-runtime `describe`/`it`/`expect` (`private/react-native-fantom/runtime`, a
 sparse clone of the vendored tag in `build/fantom-source`), bundled by Metro for `linux` with the itest taken from
 the vendored tree and everything else from the one installed `react-native`, and run in `hello_react --fabric`.
-Results come back through `NativeFantomCxx.reportTestSuiteResultsJSON`, a two-method module in
+Results come back through `NativeFantomCxx.reportTestSuiteResultsJSON`, in a small module in
 `TurboModuleRegistry.cpp`; upstream's `NativeCPUTime` is registered beside it. `packages/core/fantom-expectations.json`
 is the corpus: every suite it names runs, every failure it lists names the issue that owns it, and a new failure, a
 listed failure that passes, or a listed one that goes unreported fails the run. The first batch is #423's: 17 suites,
-166 passing assertions; what fails is Fantom's surface, timer-mock and timestamp API, which this host does not
-implement yet, and `WebSocket` (#79).
+200 passing assertions. `forceHighResTimeStamp` pins `HighResTimeStamp::now()` process-wide through upstream's own
+debug-build hook, exactly as Fantom's tester does, and an optimised build throws upstream's message for it. What
+still fails is Fantom's surface and timer-mock API (`startSurface`, `flushMessageQueue`, `setTimerMockEnabled`,
+`advanceTimers`), which this host does not implement yet, and `WebSocket` (#79).
 
 ### The Hermes-linked binary (#228)
 

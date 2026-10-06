@@ -27,6 +27,7 @@
 #include <react/nativemodule/defaults/DefaultTurboModules.h>
 #include <react/renderer/animated/AnimatedModule.h>
 #include <react/renderer/animated/NativeAnimatedNodesManagerProvider.h>
+#include <react/timing/primitives.h>
 
 extern char** environ;
 
@@ -454,11 +455,14 @@ private:
 };
 
 /**
- * `NativeFantomCxx` (#210, #423): the two methods upstream Fantom's in-runtime test harness
- * (`private/react-native-fantom/runtime/setup.js`) calls in a plain itest. `reportTestSuiteResultsJSON` prints the
+ * `NativeFantomCxx` (#210, #423): the methods upstream Fantom's in-runtime test harness
+ * (`private/react-native-fantom/runtime/setup.js`) and its itests call. `reportTestSuiteResultsJSON` prints the
  * suite's results on one `[fantom]` line for `scripts/fantom.ts` to read, and `validateEmptyMessageQueue` asks
- * nothing of a host whose queues drain on their own. Every other method of the spec drives a surface, an event or
- * a timer mock this runner does not provide yet, so it is absent and a test that calls one fails naming it.
+ * nothing of a host whose queues drain on their own. `forceHighResTimeStamp` pins `HighResTimeStamp::now()` for the
+ * whole process, or unpins it given no number, exactly as upstream's tester does; the hook exists only in a debug
+ * build, so an optimised one throws upstream's own message instead. Every other method of the spec drives a surface,
+ * an event or a timer mock this runner does not provide yet, so it is absent and a test that calls one fails naming
+ * it.
  */
 class LinuxFantomModule final : public facebook::react::TurboModule {
 public:
@@ -480,6 +484,32 @@ public:
                                                    [](facebook::jsi::Runtime& /*runtime*/, TurboModule& /*turboModule*/,
                                                       const facebook::jsi::Value* /*arguments*/,
                                                       size_t /*count*/) { return facebook::jsi::Value::undefined(); }};
+        methodMap_["forceHighResTimeStamp"] = {1, &forceHighResTimeStamp};
+    }
+
+private:
+    static facebook::jsi::Value forceHighResTimeStamp(facebook::jsi::Runtime& runtime, TurboModule& /*turboModule*/,
+                                                      const facebook::jsi::Value* arguments, size_t count) {
+#ifdef REACT_NATIVE_DEBUG
+        static_cast<void>(runtime);
+
+        if (count > 0 && arguments[0].isNumber()) {
+            const facebook::react::HighResTimeStamp now =
+                facebook::react::HighResTimeStamp::fromDOMHighResTimeStamp(arguments[0].getNumber());
+
+            facebook::react::HighResTimeStamp::setTimeStampProviderForTesting(
+                [now]() { return now.toChronoSteadyClockTimePoint(); });
+        } else {
+            facebook::react::HighResTimeStamp::setTimeStampProviderForTesting(nullptr);
+        }
+
+        return facebook::jsi::Value::undefined();
+#else
+        static_cast<void>(arguments);
+        static_cast<void>(count);
+
+        throw facebook::jsi::JSError(runtime, "Mocking timers is not supported in optimized builds");
+#endif
     }
 };
 
