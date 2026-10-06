@@ -21,7 +21,9 @@
 //  * Per-tag event queueing has no counterpart here and must not grow one. Android queues events because a view
 //    and its event emitter are registered separately across the bridge; in C++ Fabric the emitter rides on the
 //    committed `ShadowNode`, so `InputDispatcher` reads it off the target it just resolved and there is no window
-//    in which a tag exists without one. See `InputDispatcher`'s docblock.
+//    in which a tag exists without one. See `InputDispatcher`'s docblock. `e2e/press-during-mount.json` is the
+//    end-to-end proof: a target mounted by the pointer's first motion is clicked at once, and its down, up and
+//    click each arrive exactly once, in order.
 //  * The synchronous-props override is inverted here, deliberately. Android keeps a per-tag store so an
 //    animation beats a stale async batch; this platform writes animated props into the same `SceneNode` fields
 //    the commit path writes and lets the settling commit re-sync them, because the driver performs zero commits
