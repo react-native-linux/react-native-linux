@@ -3,9 +3,7 @@
   "private/setup/__tests__/setUpDefaultReactNativeEnvironment-ComponentSideEffects-itest.js": {},
   "private/setup/__tests__/setUpDefaultReactNativeEnvironment-FeatureFlags-itest.js": {},
   "private/setup/__tests__/setUpDefaultReactNativeEnvironment-Globals-IntersectionObserver-itest.js": {},
-  "private/setup/__tests__/setUpDefaultReactNativeEnvironment-Globals-itest.js": {
-    "setUpDefaultReactNativeEnvironment (globals) Web APIs Networking should provide WebSocket": "no WebSocket module is registered yet (#79)"
-  },
+  "private/setup/__tests__/setUpDefaultReactNativeEnvironment-Globals-itest.js": {},
   "private/setup/__tests__/setUpDefaultReactNativeEnvironment-Globals-MutationObserver-itest.js": {},
   "private/timers/__tests__/Timers-itest.js": {
     "setTimeout does not fire before the delay elapses": "NativeFantom.setTimerMockEnabled and advanceTimers are not implemented (#210)",
