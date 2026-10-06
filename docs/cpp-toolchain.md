@@ -7728,6 +7728,14 @@ four layouts the first time the surface is 800 wide: the row, its text, the card
 
 The unit tier is `LayoutWidthRoundTripTest` (#464).
 
+**onLayout under a drag (#435).** `onlayout-drag.json` drags 800 → 500 over three boxes. `half` takes half the
+window, `fixed` never changes, and `feedback`'s height is derived from `half`'s reported width and committed from
+inside its onLayout handler. That is the feedback case, a layout event that causes another commit. The run must
+log `half`'s and `feedback`'s values at each width once. The bundle rejects a second onLayout carrying a frame its
+node already reported, and any onLayout from `fixed` after its first. `maxJournalledFrames: 16` bounds the feedback
+at two painted frames per configure and proves nothing paints after the drag. The run journals 14. The unit tier is
+#472's.
+
 ### Screenshots
 
 The driver now compares as well as captures, which is a deliberate departure from the split *Window goldens* makes
