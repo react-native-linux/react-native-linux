@@ -3590,9 +3590,9 @@ for a family by name, and what supplies glyph fallback for codepoints the bundle
 
 **Goldens must stay inside the vendored fonts' coverage.** Anything that falls through to fontconfig — another
 family, a script neither vendored face carries — is not reproducible and must not go into a checked-in PNG. That
-is the honest reason `text.js` is ASCII, and the reason issue #14's RTL golden is deferred rather than
-approximated. Emoji were deferred for the same reason and are no longer: see *Colour emoji and the fallback chain
-(#249)* below.
+is the honest reason `text.js` is ASCII. Emoji and Arabic and Hebrew were deferred for the same reason and are
+no longer, because each now has a pinned face. See *Colour emoji and the fallback chain (#249)* below, and its
+*Right-to-left scripts (#72)* paragraph for `rtl-script.png`.
 
 The fonts are **Noto Sans**, hinted static Regular, Bold and Italic, and **Noto Color Emoji**, both under the
 **SIL Open Font License 1.1**, pinned by commit and sha256 in `scripts/fonts.lock.json` and fetched by
@@ -3629,7 +3629,8 @@ one differently:
 | Anything else | The name itself, then the #70 diagnostic if it substitutes | Covered by *An unresolvable fontFamily says so (#70)* already: the text still draws, substituted by the vendored Noto Sans or fontconfig's fallback, and the substitution is reported once per name — including for a family nobody registered at all, which stays loud under this rule exactly as it was before it. |
 
 The order every text run asks in is therefore: the requested family resolved per the table above (nothing, for
-the vendored-default row), `kBundledFontFamily`, `kEmojiFontFamily`, then skparagraph's own `DEFAULT_FONT_FAMILY`.
+the vendored-default row), `kBundledFontFamily`, Noto Sans Arabic, Noto Sans Hebrew, `kEmojiFontFamily`, then
+skparagraph's own `DEFAULT_FONT_FAMILY`.
 
 **Unit.** `DefaultFontFamilyTest.cpp` is a table test over `classifyFontFamilyRequest`: unset, `sans-serif` and
 `system-ui` classify as the vendored default; `serif`, `monospace`, `cursive` and `fantasy` as a fontconfig
@@ -3643,8 +3644,8 @@ diagnostic still fires for a made-up family exactly as it did before this rule e
 `monospace` are deliberately not in that picture: fontconfig's answer for them is whatever the host has
 installed — this repository's own dev container answers both with `Noto Naskh Arabic`, not a serif or a
 monospace face at all, which is itself a live instance of the bug this issue is about — so a checked-in golden of
-either would not be reproducible across hosts, the same reason RTL and Devanagari goldens are deferred rather than
-approximated. They are proved instead by `test-bundles/font-generics-fontconfig.js`, rendered proof-only by
+either would not be reproducible across hosts, the same reason a Devanagari golden is deferred rather than
+approximated. Arabic and Hebrew no longer are; see *Right-to-left scripts (#72)*. They are proved instead by `test-bundles/font-generics-fontconfig.js`, rendered proof-only by
 `golden.spec.ts`'s `proofOnlyFixtures`: the render must still succeed and `--text-fit-golden` still asserts every
 box holds the paragraph it was measured for, but there is no checked-in PNG for its pixels to match, because there
 is no host-independent answer to match them against.
@@ -3675,8 +3676,8 @@ containing one is not a golden: on a machine with no system emoji font it is a r
 the `ubuntu-24.04` runner would have drawn, since it installs no emoji font.
 
 `TextPipeline.cpp` therefore names the emoji face in the family list rather than leaving it to fallback. Every
-run asks for, in order: the bundle's own `fontFamily` if it set one, `Noto Sans`, `Noto Color Emoji`, and
-skparagraph's `DEFAULT_FONT_FAMILY`. `OneLineShaper::matchResolvedFonts` walks that list before it consults
+run asks for, in order: the bundle's own `fontFamily` if it set one, `Noto Sans`, `Noto Sans Arabic`,
+`Noto Sans Hebrew`, `Noto Color Emoji`, and skparagraph's `DEFAULT_FONT_FAMILY`. `OneLineShaper::matchResolvedFonts` walks that list before it consults
 either fallback function, so the emoji comes off the pinned file, and fontconfig still sits behind all of it for
 everything neither vendored face covers. This is the same list the `#70` diagnostic inspects, and it is
 unaffected: that check compares the *requested* family to the face it resolved to, and appending a face to the
@@ -3727,9 +3728,9 @@ holding a stale `.vendor-stamp.json` that predated the lock's `Noto Color Emoji`
 
 - **C++, at text-pipeline start.** `PinnedFontFamilies.h`/`.cpp` (Skia-free, table-tested against a fake
   resolution list) builds a fatal-diagnostic message naming every pinned family the asset font manager did not
-  resolve. `TextPipelineState`'s constructor calls `assetFontManager->matchFamily(...)` for `kBundledFontFamily`
-  and `kEmojiFontFamily` — the same two names `scripts/fonts.lock.json` pins — and aborts with that message,
-  naming `scripts/fonts.lock.json` and the vendor command, if either comes back empty.
+  resolve. `TextPipelineState`'s constructor calls `assetFontManager->matchFamily(...)` for `kBundledFontFamily`,
+  Noto Sans Arabic, Noto Sans Hebrew and `kEmojiFontFamily`, the families `scripts/fonts.lock.json` pins. If any
+  comes back empty, it aborts with that message, naming `scripts/fonts.lock.json` and the vendor command.
 - **TypeScript, in the golden rig.** `packages/core/goldens/fonts-vendored.ts`'s `checkFontsAreVendored` reads
   `scripts/fonts.lock.json`, confirms every pinned file exists under `packages/core/fonts`, and confirms
   `.vendor-stamp.json` matches the lock. `golden.spec.ts` calls it once, before any fixture runs, whenever the
