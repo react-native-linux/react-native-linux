@@ -69,7 +69,8 @@ public:
     FabricHost& operator=(FabricHost&&) = delete;
     ~FabricHost() noexcept;
 
-    void setSurfaceSize(facebook::react::Size surfaceSize);
+    /** `pointScaleFactor` is the output scale, so Yoga rounds every frame onto the physical pixel grid. */
+    void setSurfaceSize(facebook::react::Size surfaceSize, facebook::react::Float pointScaleFactor);
     void stopSurface();
 
     /**

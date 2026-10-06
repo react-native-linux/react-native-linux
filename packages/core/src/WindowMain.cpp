@@ -5,6 +5,7 @@
 #include "FrameTiming.h"
 #include "InputPipeline.h"
 #include "LinuxMountingManager.h"
+#include "OutputScale.h"
 #include "RendererLadder.h"
 #include "ResourceResolver.h"
 #include "RetainedScene.h"
@@ -1003,32 +1004,41 @@ routeDecorationInput(react_native_linux::WaylandWindow& window, WindowChrome& ch
     return contentEvents;
 }
 
+double outputScaleOf(const react_native_linux::WaylandWindow& window) {
+    return static_cast<double>(window.preferredScale()) / react_native_linux::kFractionalScaleDenominator;
+}
+
 /**
- * Runs `paint` with the canvas shifted below the bar, then draws the bar over it. The damage the scene produced
- * is in content coordinates and the damage the renderer accumulates is in surface ones, so it is shifted back by
- * the same offset on the way in — the one place, besides the canvas translate, where the two coordinate systems
+ * Runs `paint` with the canvas scaled to the output scale and shifted below the bar, then draws the bar over it.
+ * The damage the renderer accumulates is in buffer pixels, so it is scaled back to surface units and then shifted
+ * into content ones on the way in — the one place, besides the canvas transform, where the coordinate systems
  * meet.
  */
-void paintDecoratedFrame(SkCanvas& canvas, const WindowChrome& chrome, const std::string& title,
-                         const react_native_linux::SceneDamage& surfaceDamage,
+void paintDecoratedFrame(SkCanvas& canvas, const WindowChrome& chrome, const react_native_linux::WaylandWindow& window,
+                         const react_native_linux::SceneDamage& bufferDamage,
                          const std::function<void(SkCanvas&, const react_native_linux::SceneDamage&)>& paint) {
-    react_native_linux::SceneDamage contentDamage = surfaceDamage;
+    const auto scale = static_cast<SkScalar>(outputScaleOf(window));
+    react_native_linux::SceneDamage contentDamage = react_native_linux::scaleDamageOutward(
+        bufferDamage, react_native_linux::kFractionalScaleDenominator, window.preferredScale());
 
     for (facebook::react::Rect& rectangle : contentDamage) {
         rectangle.origin.y -= chrome.content.topOffset;
     }
 
     canvas.save();
+    canvas.scale(scale, scale);
+    canvas.save();
     canvas.translate(0.0F, chrome.content.topOffset);
     paint(canvas, contentDamage);
     canvas.restore();
 
-    if (!react_native_linux::isChromeActive(chrome.mode, chrome.isFullscreen)) {
-        return;
+    if (react_native_linux::isChromeActive(chrome.mode, chrome.isFullscreen)) {
+        react_native_linux::paintTitleBar(canvas,
+                                          react_native_linux::layoutTitleBar(chrome.content.width, chrome.metrics),
+                                          window.title(), chrome.wasActive);
     }
 
-    react_native_linux::paintTitleBar(canvas, react_native_linux::layoutTitleBar(chrome.content.width, chrome.metrics),
-                                      title, chrome.wasActive);
+    canvas.restore();
 }
 
 void paintPlaceholderFrame(SkCanvas& canvas, react_native_linux::WindowSize size,
@@ -1135,12 +1145,12 @@ void announceFirstPresentedFrameOnce(react_native_linux::WaylandWindow& window, 
 RendererBringUp createRenderer(react_native_linux::WaylandWindow& window, react_native_linux::RendererRung rung) {
     if (rung == react_native_linux::RendererRung::SharedMemoryRaster) {
         return RendererBringUp{.renderer = std::make_unique<react_native_linux::SharedMemoryRasterRenderer>(
-                                   window.sharedMemory(), window.surface(), window.size())};
+                                   window.sharedMemory(), window.surface(), window.bufferSize())};
     }
 
     std::unique_ptr<react_native_linux::SkiaVulkanRenderer> vulkanRenderer =
-        std::make_unique<react_native_linux::SkiaVulkanRenderer>(window.display(), window.surface(), window.size(),
-                                                                 rung);
+        std::make_unique<react_native_linux::SkiaVulkanRenderer>(window.display(), window.surface(),
+                                                                 window.bufferSize(), rung);
     react_native_linux::SkiaVulkanRenderer* borrowed = vulkanRenderer.get();
 
     return RendererBringUp{.renderer = std::move(vulkanRenderer), .vulkanRenderer = borrowed};
@@ -1257,7 +1267,7 @@ int main(int argc, char** argv) {
             const auto drawPlaceholder = [&chrome, &window](SkCanvas& canvas, react_native_linux::WindowSize /*size*/,
                                                             const react_native_linux::SceneDamage& surfaceDamage) {
                 paintDecoratedFrame(
-                    canvas, chrome, window.title(), surfaceDamage,
+                    canvas, chrome, window, surfaceDamage,
                     [&chrome](SkCanvas& contentCanvas, const react_native_linux::SceneDamage& contentDamage) {
                         paintPlaceholderFrame(
                             contentCanvas, react_native_linux::WindowSize{chrome.content.width, chrome.content.height},
@@ -1338,7 +1348,8 @@ int main(int argc, char** argv) {
             if (parsedArguments.bundlePath.has_value()) {
                 session.emplace(parsedArguments.bundlePath.value(),
                                 react_native_linux::WindowSize{chrome.content.width, chrome.content.height},
-                                asyncStorageDatabasePath(parsedArguments.applicationIdentifier), ownActivationUrl);
+                                outputScaleOf(window), asyncStorageDatabasePath(parsedArguments.applicationIdentifier),
+                                ownActivationUrl);
 
                 // --ime-debug owns the text input by hand, so focus must not also drive it: the two would race to
                 // enable and disable the same object. Without that flag, focus is the only thing that touches it.
@@ -1423,11 +1434,12 @@ int main(int argc, char** argv) {
                                                      chrome.content.height != previousChromeContent.height;
 
                 if (hasResized) {
-                    renderer.resize(window.size());
+                    renderer.resize(window.bufferSize());
                 }
 
                 if ((hasResized || hasContentExtentChanged) && session.has_value()) {
-                    session->resize(react_native_linux::WindowSize{chrome.content.width, chrome.content.height});
+                    session->resize(react_native_linux::WindowSize{chrome.content.width, chrome.content.height},
+                                    outputScaleOf(window));
                 }
 
                 announceKeyboardFocusOnce(window, keyboardFocusAnnounced);
@@ -1566,6 +1578,10 @@ int main(int argc, char** argv) {
                             for (facebook::react::Rect& rectangle : surfaceDamage) {
                                 rectangle.origin.y += chrome.content.topOffset;
                             }
+
+                            surfaceDamage =
+                                react_native_linux::scaleDamageOutward(surfaceDamage, window.preferredScale(),
+                                                                       react_native_linux::kFractionalScaleDenominator);
                         }
 
                         // The paint span the frame journal (#345) times is exactly the Skia work between them: not
@@ -1578,7 +1594,7 @@ int main(int argc, char** argv) {
                                                const react_native_linux::SceneDamage& imageDamage) {
                                 session->recordPaintStart(std::chrono::steady_clock::now());
                                 paintDecoratedFrame(
-                                    canvas, chrome, window.title(), imageDamage,
+                                    canvas, chrome, window, imageDamage,
                                     [&frame, &parsedArguments](SkCanvas& contentCanvas,
                                                                const react_native_linux::SceneDamage& contentDamage) {
                                         react_native_linux::paintScene(contentCanvas, frame.scene, contentDamage,

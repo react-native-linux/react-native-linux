@@ -126,7 +126,8 @@ bool SharedMemoryRasterRenderer::drawFrame(
     window.requestPresentationFeedback();
 
     wl_surface_attach(waylandSurface_, free->waylandBuffer, 0, 0);
-    wl_surface_damage(waylandSurface_, 0, 0, static_cast<int32_t>(size_.width), static_cast<int32_t>(size_.height));
+    wl_surface_damage_buffer(waylandSurface_, 0, 0, static_cast<int32_t>(size_.width),
+                             static_cast<int32_t>(size_.height));
     wl_surface_commit(waylandSurface_);
 
     free->isHeldByCompositor = true;

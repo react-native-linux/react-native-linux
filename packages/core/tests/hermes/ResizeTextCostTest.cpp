@@ -75,8 +75,10 @@ TEST(ResizeTextCostTest, AConfigureSequenceShapesOnlyResizedTextAndSettlesInOneF
     for (int configure = 1; configure <= kConfigureCount; ++configure) {
         const uint64_t configureShapesBefore = paragraphLayoutCount();
 
-        fabricHost->setSurfaceSize(facebook::react::Size{
-            .width = kInitialSize.width + (kWidthStep * static_cast<float>(configure)), .height = kInitialSize.height});
+        fabricHost->setSurfaceSize(
+            facebook::react::Size{.width = kInitialSize.width + (kWidthStep * static_cast<float>(configure)),
+                                  .height = kInitialSize.height},
+            1.0F);
         configuresLeavingWork += fabricHost->hasPendingWork() ? 1 : 0;
         static_cast<void>(fabricHost->takeFrame());
         mostShapesInOneConfigure = std::max(mostShapesInOneConfigure, paragraphLayoutCount() - configureShapesBefore);

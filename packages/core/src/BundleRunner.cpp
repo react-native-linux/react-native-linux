@@ -411,7 +411,7 @@ int runResizedFabricBundle(const std::string& bundlePath, facebook::react::Size 
 
     // The pair a window applies on `xdg_toplevel.configure`, in the same order: new layout constraints for Fabric,
     // the same extent for `Dimensions`, then the one change event the frame is allowed to emit.
-    fabricHost->setSurfaceSize(resizedSurfaceSize);
+    fabricHost->setSurfaceSize(resizedSurfaceSize, 1.0F);
     configureDimensions(reactHost, resizedSurfaceSize);
     reactHost.publishPendingDimensions();
 

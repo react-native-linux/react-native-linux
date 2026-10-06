@@ -996,6 +996,10 @@ if(RNL_ENABLE_WINDOW)
     # xdg-activation is still staging (see *Activation tokens (#336)* in docs/cpp-toolchain.md): the launcher's
     # token completes the shell's startup notification, and Linking.openURL hands one to the handler it opens.
     set(RNL_XDG_ACTIVATION_XML ${RNL_WAYLAND_PROTOCOLS_DIR}/staging/xdg-activation/xdg-activation-v1.xml)
+    # The output scale of #51: fractional-scale tells the window its preferred scale and viewporter maps the
+    # buffer rendered at that scale back onto the logical surface size. See *Scale* in docs/cpp-toolchain.md.
+    set(RNL_FRACTIONAL_SCALE_XML ${RNL_WAYLAND_PROTOCOLS_DIR}/staging/fractional-scale/fractional-scale-v1.xml)
+    set(RNL_VIEWPORTER_XML ${RNL_WAYLAND_PROTOCOLS_DIR}/stable/viewporter/viewporter.xml)
 
     if(NOT PkgConfig_FOUND)
         list(APPEND RNL_WINDOW_MISSING "pkg-config")
@@ -1033,6 +1037,14 @@ if(RNL_ENABLE_WINDOW)
 
     if(NOT RNL_WAYLAND_PROTOCOLS_DIR OR NOT EXISTS "${RNL_XDG_ACTIVATION_XML}")
         list(APPEND RNL_WINDOW_MISSING "wayland-protocols (staging/xdg-activation)")
+    endif()
+
+    if(NOT RNL_WAYLAND_PROTOCOLS_DIR OR NOT EXISTS "${RNL_FRACTIONAL_SCALE_XML}")
+        list(APPEND RNL_WINDOW_MISSING "wayland-protocols (staging/fractional-scale)")
+    endif()
+
+    if(NOT RNL_WAYLAND_PROTOCOLS_DIR OR NOT EXISTS "${RNL_VIEWPORTER_XML}")
+        list(APPEND RNL_WINDOW_MISSING "wayland-protocols (stable/viewporter)")
     endif()
 
     if(NOT Vulkan_FOUND)
@@ -1161,9 +1173,54 @@ elseif(RNL_ENABLE_WINDOW)
     target_include_directories(rnl_xdg_activation PUBLIC ${RNL_PROTOCOL_DIR})
     target_link_libraries(rnl_xdg_activation PUBLIC PkgConfig::RNL_WAYLAND_CLIENT)
 
+    add_custom_command(
+        OUTPUT ${RNL_PROTOCOL_DIR}/fractional-scale-v1-client-protocol.h
+        COMMAND ${RNL_WAYLAND_SCANNER} client-header ${RNL_FRACTIONAL_SCALE_XML}
+                ${RNL_PROTOCOL_DIR}/fractional-scale-v1-client-protocol.h
+        DEPENDS ${RNL_FRACTIONAL_SCALE_XML}
+        COMMENT "wayland-scanner client-header fractional-scale-v1"
+        VERBATIM)
+
+    add_custom_command(
+        OUTPUT ${RNL_PROTOCOL_DIR}/fractional-scale-v1-protocol.c
+        COMMAND ${RNL_WAYLAND_SCANNER} private-code ${RNL_FRACTIONAL_SCALE_XML}
+                ${RNL_PROTOCOL_DIR}/fractional-scale-v1-protocol.c
+        DEPENDS ${RNL_FRACTIONAL_SCALE_XML}
+        COMMENT "wayland-scanner private-code fractional-scale-v1"
+        VERBATIM)
+
+    add_library(rnl_fractional_scale STATIC
+        ${RNL_PROTOCOL_DIR}/fractional-scale-v1-protocol.c
+        ${RNL_PROTOCOL_DIR}/fractional-scale-v1-client-protocol.h)
+    target_include_directories(rnl_fractional_scale PUBLIC ${RNL_PROTOCOL_DIR})
+    target_link_libraries(rnl_fractional_scale PUBLIC PkgConfig::RNL_WAYLAND_CLIENT)
+
+    add_custom_command(
+        OUTPUT ${RNL_PROTOCOL_DIR}/viewporter-client-protocol.h
+        COMMAND ${RNL_WAYLAND_SCANNER} client-header ${RNL_VIEWPORTER_XML}
+                ${RNL_PROTOCOL_DIR}/viewporter-client-protocol.h
+        DEPENDS ${RNL_VIEWPORTER_XML}
+        COMMENT "wayland-scanner client-header viewporter"
+        VERBATIM)
+
+    add_custom_command(
+        OUTPUT ${RNL_PROTOCOL_DIR}/viewporter-protocol.c
+        COMMAND ${RNL_WAYLAND_SCANNER} private-code ${RNL_VIEWPORTER_XML}
+                ${RNL_PROTOCOL_DIR}/viewporter-protocol.c
+        DEPENDS ${RNL_VIEWPORTER_XML}
+        COMMENT "wayland-scanner private-code viewporter"
+        VERBATIM)
+
+    add_library(rnl_viewporter STATIC
+        ${RNL_PROTOCOL_DIR}/viewporter-protocol.c
+        ${RNL_PROTOCOL_DIR}/viewporter-client-protocol.h)
+    target_include_directories(rnl_viewporter PUBLIC ${RNL_PROTOCOL_DIR})
+    target_link_libraries(rnl_viewporter PUBLIC PkgConfig::RNL_WAYLAND_CLIENT)
+
     add_executable(rnl_window
         src/AutomationServer.cpp
         src/GpuResourceInvalidation.cpp
+        src/OutputScale.cpp
         src/RendererLadder.cpp
         src/SharedMemoryRasterRenderer.cpp
         src/SkiaVulkanRenderer.cpp
@@ -1223,6 +1280,8 @@ elseif(RNL_ENABLE_WINDOW)
             rnl_xdg_decoration
             rnl_text_input
             rnl_presentation_time
+            rnl_fractional_scale
+            rnl_viewporter
             rnl_skia
             Vulkan::Vulkan
             PkgConfig::RNL_XKBCOMMON

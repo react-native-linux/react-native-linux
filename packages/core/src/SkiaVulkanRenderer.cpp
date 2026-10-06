@@ -235,8 +235,8 @@ bool SkiaVulkanRenderer::drawFrame(WaylandWindow& window, const SceneDamage& fra
     // bailed out for a different reason and then re-presented for a stale one.
     const SurfaceCommitState observedCommitState{.isConfigureAcknowledged = window.isConfigureAcknowledged(),
                                                  .doesBufferExtentMatchConfigure =
-                                                     swapchainSize_.width == window.size().width &&
-                                                     swapchainSize_.height == window.size().height,
+                                                     swapchainSize_.width == window.bufferSize().width &&
+                                                     swapchainSize_.height == window.bufferSize().height,
                                                  .wasLastContentUpdateDiscarded = window.takeContentUpdateDiscarded(),
                                                  .consecutiveAcquireStarvations = consecutiveAcquireStarvations_,
                                                  .extraSwapchainImages = extraSwapchainImages_};
@@ -403,7 +403,7 @@ bool SkiaVulkanRenderer::applySurfaceCommitAction(SurfaceCommitAction action, co
     case SurfaceCommitAction::WaitForConfigure:
         return false;
     case SurfaceCommitAction::RecreateSwapchainAtConfiguredExtent:
-        requestedSize_ = window.size();
+        requestedSize_ = window.bufferSize();
         createSwapchain();
 
         return false;

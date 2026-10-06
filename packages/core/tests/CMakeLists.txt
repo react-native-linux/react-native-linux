@@ -77,6 +77,7 @@ set(RNL_CORE_SCENE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/LinuxAnimationChoreographer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/LinuxMountingManager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/MountTreeText.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/OutputScale.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/PinnedFontFamilies.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/PlatformColor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/RendererLadder.cpp
@@ -179,6 +180,7 @@ add_executable(rnl_core_tests
     TransformOriginTest.cpp
     UpstreamTestDriftOracleTest.cpp
     GpuResourceInvalidationTest.cpp
+    OutputScaleTest.cpp
     SurfaceCommitGateTest.cpp
     SurfacePresentationPolicyTest.cpp
     VulkanResultPolicyTest.cpp
