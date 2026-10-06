@@ -247,13 +247,21 @@ SceneTextContent resolveText(const SceneTextContent& text, const facebook::react
         .size = facebook::react::Size{.width = frame.size.width - contentInsets.left - contentInsets.right,
                                       .height = frame.size.height - contentInsets.top - contentInsets.bottom}};
 
-    for (facebook::react::AttributedString::Fragment& fragment : resolved.attributedString.getFragments()) {
+    if (opacity >= 1.0F) {
+        return resolved;
+    }
+
+    facebook::react::AttributedString faded = *text.attributedString;
+
+    for (facebook::react::AttributedString::Fragment& fragment : faded.getFragments()) {
         facebook::react::TextAttributes& attributes = fragment.textAttributes;
 
         attributes.foregroundColor = scaleColorAlpha(attributes.foregroundColor, opacity);
         attributes.backgroundColor = scaleColorAlpha(attributes.backgroundColor, opacity);
         attributes.textDecorationColor = scaleColorAlpha(attributes.textDecorationColor, opacity);
     }
+
+    resolved.attributedString = std::make_shared<const facebook::react::AttributedString>(std::move(faded));
 
     return resolved;
 }
@@ -600,7 +608,8 @@ void readTextContent(SceneNode& node, const facebook::react::ShadowView& shadowV
         return;
     }
 
-    node.text = SceneTextContent{.attributedString = paragraphState->getData().attributedString,
+    node.text = SceneTextContent{.attributedString = std::make_shared<const facebook::react::AttributedString>(
+                                     paragraphState->getData().attributedString),
                                  .paragraphAttributes = paragraphState->getData().paragraphAttributes};
 }
 
@@ -652,7 +661,8 @@ void readEditorContent(SceneNode& node, const facebook::react::ShadowView& shado
     }
 
     node.text =
-        SceneTextContent{.attributedString = displayed, .paragraphAttributes = textInputProps->paragraphAttributes};
+        SceneTextContent{.attributedString = std::make_shared<const facebook::react::AttributedString>(displayed),
+                         .paragraphAttributes = textInputProps->paragraphAttributes};
 
     const uint32_t authoredCaretColorArgb = toArgb(textInputProps->cursorColor, 1.0F);
     const uint32_t authoredSelectionColorArgb = toArgb(textInputProps->selectionColor, 1.0F);
@@ -1946,7 +1956,7 @@ void RetainedScene::appendNode(std::string& output, facebook::react::Tag tag, si
 
     if (node.text.has_value()) {
         output += " text=\"";
-        output += node.text.value().attributedString.getString();
+        output += node.text.value().attributedString->getString();
         output += '"';
     }
 

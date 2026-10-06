@@ -236,7 +236,7 @@ bool doesParagraphFitItsBox(const ScenePrimitive& primitive, const facebook::rea
     const float boxWidth = static_cast<float>(content.frame.size.width);
     const float boxHeight = static_cast<float>(content.frame.size.height);
     const ParagraphMetrics painted =
-        measureParagraphMetrics(content.attributedString, content.paragraphAttributes, boxWidth);
+        measureParagraphMetrics(*content.attributedString, content.paragraphAttributes, boxWidth);
     bool doesFit = true;
 
     if (painted.height > boxHeight + kTextFitTolerance || painted.longestLineWidth > boxWidth + kTextFitTolerance) {
@@ -252,7 +252,7 @@ bool doesParagraphFitItsBox(const ScenePrimitive& primitive, const facebook::rea
     const facebook::react::LayoutConstraints constraints{
         .maximumSize = facebook::react::Size{.width = content.frame.size.width,
                                              .height = std::numeric_limits<facebook::react::Float>::infinity()}};
-    const facebook::react::AttributedStringBox box{content.attributedString};
+    const facebook::react::AttributedStringBox box{*content.attributedString};
     const facebook::react::TextMeasurement first =
         layoutManager.measure(box, content.paragraphAttributes, {}, constraints);
     const facebook::react::TextMeasurement second =
@@ -293,7 +293,7 @@ bool doesParagraphFitItsBox(const ScenePrimitive& primitive, const facebook::rea
 bool doesMeasurementDependOnItsInputs(const ScenePrimitive& primitive,
                                       const facebook::react::TextLayoutManager& layoutManager) {
     const SceneTextContent& content = primitive.text.value();
-    const facebook::react::AttributedStringBox box{content.attributedString};
+    const facebook::react::AttributedStringBox box{*content.attributedString};
     const facebook::react::Size measured =
         layoutManager.measure(box, content.paragraphAttributes, {}, toConstraints(content.frame.size.width)).size;
     const facebook::react::Size unbounded =
@@ -307,7 +307,7 @@ bool doesMeasurementDependOnItsInputs(const ScenePrimitive& primitive,
         isDependent = false;
     }
 
-    facebook::react::AttributedString emptied = content.attributedString;
+    facebook::react::AttributedString emptied = *content.attributedString;
 
     emptied.getFragments().clear();
 
@@ -328,7 +328,7 @@ bool doesMeasurementDependOnItsInputs(const ScenePrimitive& primitive,
     // unambiguous consequence: a paragraph that wraps onto more than one line must measure strictly shorter when
     // it is limited to one. A cache that ignored the attributes would answer with the height it already had.
     // A paragraph that is already one line has nothing to truncate and is skipped rather than asserted about.
-    const ParagraphMetrics painted = measureParagraphMetrics(content.attributedString, content.paragraphAttributes,
+    const ParagraphMetrics painted = measureParagraphMetrics(*content.attributedString, content.paragraphAttributes,
                                                              static_cast<float>(content.frame.size.width));
 
     if (painted.lines.size() > 1) {
@@ -361,7 +361,7 @@ bool doesCaretMatchItsLine(const ScenePrimitive& primitive) {
     const SceneTextContent& content = primitive.text.value();
     const EditorGeometry geometry = measureEditorGeometry(content, primitive.editor.value());
     const ParagraphMetrics metrics =
-        measureParagraphMetrics(content.attributedString, content.paragraphAttributes, geometry.layoutWidth);
+        measureParagraphMetrics(*content.attributedString, content.paragraphAttributes, geometry.layoutWidth);
     const float caretMiddle = static_cast<float>(geometry.caret.origin.y + (geometry.caret.size.height / 2));
     float lineTop = 0.0F;
 
@@ -417,7 +417,7 @@ bool doesEveryTextInputAgreeWithACompanionText(const SceneSnapshot& scene) {
                 continue;
             }
 
-            if (field.text->attributedString.getString() != text.text->attributedString.getString()) {
+            if (field.text->attributedString->getString() != text.text->attributedString->getString()) {
                 continue;
             }
 
@@ -478,9 +478,9 @@ bool doParagraphsFitTheirBoxes(const SceneSnapshot& scene) {
 // be, not what a side channel had gotten around to publishing.
 float restingFirstLineTop(const SceneTextContent& text, bool isMultiline) {
     const EditorGeometryRequest endOfTextRequest{
-        .caretUtf16 = utf16LengthOfUtf8(text.attributedString.getString(), text.attributedString.getString().size()),
+        .caretUtf16 = utf16LengthOfUtf8(text.attributedString->getString(), text.attributedString->getString().size()),
         .isMultiline = isMultiline};
-    const EditorGeometry geometry = measureEditorGeometry(text.attributedString, text.paragraphAttributes,
+    const EditorGeometry geometry = measureEditorGeometry(*text.attributedString, text.paragraphAttributes,
                                                           static_cast<float>(text.frame.size.width), endOfTextRequest);
 
     if (!isMultiline) {
@@ -526,9 +526,9 @@ bool haveSameEditorGeometry(const ScenePrimitive& first, const ScenePrimitive& s
     }
 
     const ParagraphMetrics firstMetrics = measureParagraphMetrics(
-        first.text->attributedString, first.text->paragraphAttributes, firstGeometry.layoutWidth);
+        *first.text->attributedString, first.text->paragraphAttributes, firstGeometry.layoutWidth);
     const ParagraphMetrics settledMetrics = measureParagraphMetrics(
-        settled.text->attributedString, settled.text->paragraphAttributes, settledGeometry.layoutWidth);
+        *settled.text->attributedString, settled.text->paragraphAttributes, settledGeometry.layoutWidth);
 
     if (firstMetrics.lines.empty() != settledMetrics.lines.empty()) {
         return false;

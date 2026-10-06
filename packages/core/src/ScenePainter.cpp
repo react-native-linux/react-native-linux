@@ -414,7 +414,7 @@ void paintParagraph(SkCanvas& canvas, const SceneTextContent& text) {
     }
 
     const std::unique_ptr<skia::textlayout::Paragraph> paragraph =
-        layoutParagraph(text.attributedString, text.paragraphAttributes, static_cast<float>(text.frame.size.width));
+        layoutParagraph(*text.attributedString, text.paragraphAttributes, static_cast<float>(text.frame.size.width));
 
     paragraph->paint(&canvas, text.frame.origin.x, text.frame.origin.y);
 }
@@ -458,7 +458,7 @@ void paintEditor(SkCanvas& canvas, const SceneTextContent& text, const SceneEdit
     }
 
     const std::unique_ptr<skia::textlayout::Paragraph> paragraph =
-        layoutEditorParagraph(text.attributedString, text.paragraphAttributes, geometry.layoutWidth);
+        layoutEditorParagraph(*text.attributedString, text.paragraphAttributes, geometry.layoutWidth);
 
     paragraph->paint(&canvas, text.frame.origin.x, text.frame.origin.y);
 

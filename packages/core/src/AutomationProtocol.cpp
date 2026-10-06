@@ -92,7 +92,7 @@ void appendIfNotEmpty(folly::dynamic& node, const char* key, folly::dynamic valu
 }
 
 std::string paragraphText(const SceneNode& node) {
-    return node.text.has_value() ? node.text.value().attributedString.getString() : std::string{};
+    return node.text.has_value() ? node.text.value().attributedString->getString() : std::string{};
 }
 
 folly::dynamic describeFrame(const facebook::react::Rect& frame) {

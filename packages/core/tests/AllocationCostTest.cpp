@@ -466,6 +466,42 @@ TEST(MountingCostTest, AppendingOneViewCostsTheSameUnderTwoThousandViewsAsUnderT
     EXPECT_EQ(small.frame, large.frame);
 }
 
+// Issue #126, point 3: a snapshot must not re-copy the attributed string of every paragraph it passes. Text long
+// enough to leave the small-string buffer, so a copied fragment is an allocation the probe can see.
+constexpr size_t kFewParagraphs = 50;
+constexpr size_t kManyParagraphs = 200;
+
+size_t allocationsSnapshottingParagraphs(size_t paragraphCount) {
+    LinuxMountingManager mountingManager;
+    ShadowViewMutationList mutations;
+
+    startSurface(mountingManager);
+
+    for (size_t index = 0; index < paragraphCount; index++) {
+        const ShadowView paragraph = makeParagraph(
+            static_cast<Tag>(kFirstCostTag + index), makeRect(0, static_cast<float>(index) * 20.0F, 400, 18),
+            "A paragraph long enough to leave the small-string buffer behind it.");
+
+        mutations.push_back(ShadowViewMutation::CreateMutation(paragraph));
+        mutations.push_back(ShadowViewMutation::InsertMutation(kSurfaceTag, paragraph, static_cast<int>(index)));
+    }
+
+    mountingManager.executeMount(kSurfaceTag, transactionOf(std::move(mutations)));
+    mountingManager.takeFrame();
+
+    return allocationsDuringFrame([&]() { static_cast<void>(mountingManager.snapshotScene()); });
+}
+
+TEST(MountingCostTest, ASnapshotOfFourTimesTheParagraphsDoesNotCopyFourTimesTheText) {
+    const size_t few = allocationsSnapshottingParagraphs(kFewParagraphs);
+    const size_t many = allocationsSnapshottingParagraphs(kManyParagraphs);
+
+    std::cout << "[cost] text snapshot: " << few << " for " << kFewParagraphs << " paragraphs, " << many << " for "
+              << kManyParagraphs << std::endl;
+
+    EXPECT_EQ(few, many);
+}
+
 // Issue #36: the per-event cost of hover, which is a hit test per pointer motion. rn-macos#1861 is hover going slow
 // on long lists, so the assertion is that a motion's cost does not depend on how long the list is.
 

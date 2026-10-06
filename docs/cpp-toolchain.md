@@ -2364,6 +2364,7 @@ Two shapes of claim, because the two paths have two different costs, and the sec
 | The same snapshot at 500 versus 2000 nodes | 2 versus 2 | large ≤ 3 × small |
 | Mount and unmount 500 nodes, cycle over cycle | 5,522 then **5,522** | exactly equal |
 | Append one view under 20 versus 2000 mounted views (#126) | transaction 8 versus 8, frame 2 versus 2 | exactly equal |
+| Snapshot 50 versus 200 paragraphs (#126) | 2 versus 2, was 102 versus 402 | exactly equal |
 
 - **The mounting transaction is per node** and always will be: each mutation writes a node into the scene. A
   ceiling per node is what catches a new container per mounted view — the shape of core#56980.
@@ -3975,9 +3976,9 @@ Each is deliberate, and each is a thing to fix rather than a thing to argue abou
 - **`adjustsFontSizeToFit`, `textAlignVertical` and `textBreakStrategy` are ignored.** `textTransform`,
   `fontVariant`, `textDecorationStyle` and `textShadow*` are no longer on this list; see *The text-style matrix
   (#250)*. `fontVariant`'s sixteen stylistic-set bits still are.
-- **Every paint rebuilds the paragraph, and every snapshot copies the attributed string.** The damage walk runs
-  the same snapshot code over a subtree per mutation, so a text-heavy tree copies its strings more than it needs
-  to. Skia's shaped-run cache absorbs the layout half. Both are #20 concerns, not correctness ones.
+- **Every paint rebuilds the paragraph.** Skia's shaped-run cache absorbs the layout half; it is a #20 concern,
+  not a correctness one. A snapshot no longer copies the attributed string: `SceneTextContent` shares it, and only
+  an opacity below 1 copies it to rewrite the colours (#126).
 - **`<TextInput>` is a section of its own.** It has no `platform/cxx` upstream, so its descriptor, shadow node
   and props are ours; the caret, the selection, the composing run and the editing model are in *TextInput*. It
   lays its text out through this same `layoutParagraph`, which is what makes a caret land on the glyph it looks

@@ -996,7 +996,7 @@ TEST(RetainedSceneTextTest, ParagraphStateBecomesTheTextOnTheNode) {
 
     ASSERT_EQ(snapshot.size(), 1U);
     ASSERT_TRUE(snapshot[0].text.has_value());
-    EXPECT_EQ(snapshot[0].text.value().attributedString.getString(), "Hello Linux");
+    EXPECT_EQ(snapshot[0].text.value().attributedString->getString(), "Hello Linux");
     EXPECT_EQ(snapshot[0].text.value().paragraphAttributes.maximumNumberOfLines, 2);
     expectRect(snapshot[0].text.value().frame, makeRect(40, 60, 300, 48));
     expectPrimitive(snapshot[0], makeRect(40, 60, 300, 48), 0);
@@ -1052,7 +1052,7 @@ TEST(RetainedSceneTextTest, UpdateReplacesTheAttributedStringInPlace) {
 
     ASSERT_EQ(snapshot.size(), 1U);
     ASSERT_TRUE(snapshot[0].text.has_value());
-    EXPECT_EQ(snapshot[0].text.value().attributedString.getString(), "after");
+    EXPECT_EQ(snapshot[0].text.value().attributedString->getString(), "after");
 }
 
 /**
@@ -1083,7 +1083,7 @@ TEST(RetainedSceneTextTest, ATranslucentAncestorFadesTextAsALayerRatherThanThrou
     ASSERT_TRUE(snapshot[0].text.has_value());
 
     const facebook::react::AttributedString::Fragment& fragment =
-        snapshot[0].text.value().attributedString.getFragments().front();
+        snapshot[0].text.value().attributedString->getFragments().front();
 
     EXPECT_EQ(snapshot[0].opensLayers, std::vector<float>{0.5F});
     EXPECT_EQ(facebook::react::alphaFromColor(fragment.textAttributes.foregroundColor), 255U);
@@ -1847,7 +1847,7 @@ TEST(RetainedSceneTextInputTest, TheStateBecomesTheTextAndTheNodeBecomesAnEditor
 
     ASSERT_EQ(snapshot.size(), 1U);
     ASSERT_TRUE(snapshot[0].text.has_value());
-    EXPECT_EQ(snapshot[0].text.value().attributedString.getString(), "hi");
+    EXPECT_EQ(snapshot[0].text.value().attributedString->getString(), "hi");
     ASSERT_TRUE(snapshot[0].editor.has_value());
     EXPECT_FALSE(snapshot[0].editor.value().isPlaceholder);
     EXPECT_FALSE(snapshot[0].editor.value().isMultiline);
@@ -1869,7 +1869,7 @@ TEST(RetainedSceneTextInputTest, AnEmptyValueDrawsThePlaceholderInItsOwnColour) 
 
     ASSERT_EQ(snapshot.size(), 1U);
     ASSERT_TRUE(snapshot[0].text.has_value());
-    EXPECT_EQ(snapshot[0].text.value().attributedString.getString(), "Type here");
+    EXPECT_EQ(snapshot[0].text.value().attributedString->getString(), "Type here");
     EXPECT_TRUE(snapshot[0].editor.value().isPlaceholder);
 }
 
@@ -1877,7 +1877,7 @@ TEST(RetainedSceneTextInputTest, AnEmptyFieldWithNoPlaceholderIsStillPainted) {
     const SceneSnapshot snapshot = snapshotOfFieldWith({}, textInputProps());
 
     ASSERT_EQ(snapshot.size(), 1U);
-    EXPECT_EQ(snapshot[0].text.value().attributedString.getString(), "");
+    EXPECT_EQ(snapshot[0].text.value().attributedString->getString(), "");
     EXPECT_TRUE(snapshot[0].editor.value().isPlaceholder);
 }
 
@@ -1904,7 +1904,7 @@ TEST(RetainedSceneTextInputTest, ThePlaceholderIsPaintedWithTheFieldsOwnFontWeig
     ASSERT_EQ(snapshot.size(), 1U);
     ASSERT_TRUE(snapshot[0].text.has_value());
 
-    const auto& fragments = snapshot[0].text.value().attributedString.getFragments();
+    const auto& fragments = snapshot[0].text.value().attributedString->getFragments();
 
     ASSERT_EQ(fragments.size(), 1U);
 
@@ -1960,7 +1960,7 @@ TEST(RetainedSceneTextInputTest, AnUntouchedFieldsCaretIndexesThePlaceholdersFir
     const SceneSnapshot snapshot = snapshotOfFieldWith({}, withPlaceholder);
 
     ASSERT_EQ(snapshot.size(), 1U);
-    EXPECT_EQ(snapshot[0].text.value().attributedString.getString(), "Type here");
+    EXPECT_EQ(snapshot[0].text.value().attributedString->getString(), "Type here");
     EXPECT_EQ(snapshot[0].editor.value().state.caretUtf16, 0U);
 }
 
@@ -1985,7 +1985,7 @@ TEST(RetainedSceneTextInputTest, ThePlaceholderDisappearsOnTheFirstCharacterAndR
 
     ASSERT_EQ(afterFirstCharacter.size(), 1U);
     EXPECT_FALSE(afterFirstCharacter[0].editor.value().isPlaceholder);
-    EXPECT_EQ(afterFirstCharacter[0].text.value().attributedString.getString(), "h");
+    EXPECT_EQ(afterFirstCharacter[0].text.value().attributedString->getString(), "h");
 
     scene.updateNode(makeTextInput(2, textInputFrame(), {}, withPlaceholder));
 
@@ -1993,7 +1993,7 @@ TEST(RetainedSceneTextInputTest, ThePlaceholderDisappearsOnTheFirstCharacterAndR
 
     ASSERT_EQ(afterLastDeletion.size(), 1U);
     EXPECT_TRUE(afterLastDeletion[0].editor.value().isPlaceholder);
-    EXPECT_EQ(afterLastDeletion[0].text.value().attributedString.getString(), "Type here");
+    EXPECT_EQ(afterLastDeletion[0].text.value().attributedString->getString(), "Type here");
 }
 
 TEST(RetainedSceneTextInputTest, CursorAndSelectionColoursOverrideTheAccent) {
