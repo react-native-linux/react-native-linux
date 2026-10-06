@@ -234,12 +234,12 @@ void ReactHost::loadScript(std::unique_ptr<const facebook::react::JSBigString> s
     react_native_assert(std::this_thread::get_id() == owningThread_);
 
 #ifdef RNL_ENABLE_TEXT_GEOMETRY
-    // The application's fonts live beside its bundle (#70); a URL, or a bundle without the directory, has none.
+    // The application's fonts live beside its bundle (#70). A URL, or a bundle without the directory, has none,
+    // and registering none clears whatever the previous source registered.
     const std::filesystem::path applicationFonts = std::filesystem::path(sourceUrl).parent_path() / "assets" / "fonts";
 
-    if (std::filesystem::is_directory(applicationFonts)) {
-        registerApplicationFonts(applicationFonts.string());
-    }
+    registerApplicationFonts(std::filesystem::is_directory(applicationFonts) ? applicationFonts.string()
+                                                                             : std::string());
 #endif
 
     reactInstance_->loadScript(std::move(script), sourceUrl);

@@ -124,7 +124,8 @@ uint64_t paragraphLayoutCount();
 /**
  * Makes every font file in `fontDirectory` resolvable by family name ahead of the vendored faces and fontconfig:
  * the application's own fonts (#70), from the `assets/fonts` directory beside its bundle. `ReactHost::loadScript`
- * calls it when that directory exists. A second call replaces the first.
+ * calls it for every source: with that directory when it exists, and with an empty string, which clears the
+ * previous application's fonts, when it does not. Every cache shaped with the old fonts is cleared too.
  */
 void registerApplicationFonts(const std::string& fontDirectory);
 

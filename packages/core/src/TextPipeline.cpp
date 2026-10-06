@@ -834,9 +834,11 @@ void registerApplicationFonts(const std::string& fontDirectory) {
     TextPipelineState& state = textPipelineState();
     const std::lock_guard<std::mutex> guard(state.mutex);
 
-    state.applicationFontManager = SkFontMgr_New_Custom_Directory(fontDirectory.c_str());
+    state.applicationFontManager =
+        fontDirectory.empty() ? nullptr : SkFontMgr_New_Custom_Directory(fontDirectory.c_str());
     state.fontCollection->setDynamicFontManager(state.applicationFontManager);
     state.fontCollection->clearCaches();
+    state.paragraphLayoutCache.clear();
 }
 
 std::vector<std::string> applicationFontFamilies() {

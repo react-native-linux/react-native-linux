@@ -22,7 +22,7 @@ bool registers(const std::string& family) {
 /**
  * Issue #70, item 1, per the owner's decision: an application's fonts live in `assets/fonts` beside its bundle,
  * and loading the bundle makes them resolvable by family name ahead of the vendored faces and fontconfig. A source
- * that is a URL, or a bundle with no such directory, registers nothing.
+ * that is a URL, or a bundle with no such directory, registers nothing and clears what an earlier source registered.
  */
 TEST(ApplicationFontsTest, ABundleRegistersTheFontsBesideItAndAUrlRegistersNone) {
     const std::filesystem::path application =
@@ -43,11 +43,16 @@ TEST(ApplicationFontsTest, ABundleRegistersTheFontsBesideItAndAUrlRegistersNone)
                          (application / "index.linux.bundle").string());
     const bool registeredFromBundle = registers("Noto Sans Hebrew");
 
+    reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>("void 0;"),
+                         "http://127.0.0.1:8081/index.bundle?platform=linux");
+    const bool keptAfterAUrl = registers("Noto Sans Hebrew");
+
     reactHost.drainJavaScriptThread();
     std::filesystem::remove_all(application);
 
     EXPECT_FALSE(registeredFromUrl);
     EXPECT_TRUE(registeredFromBundle);
+    EXPECT_FALSE(keptAfterAUrl);
 }
 
 } // namespace
