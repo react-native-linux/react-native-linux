@@ -3058,6 +3058,23 @@ shadow, text, focus ring) that per-primitive alpha would blend into each other; 
 primitive by primitive. `view-props.png`'s nested-opacity box is the golden that changed:
 `0.5·background + 0.25·red + 0.25·white` rather than per-primitive alpha's `0.375 + 0.375 + 0.25`.
 
+What a layer per translucent node costs, measured rather than assumed (#105). `translucent-depth.json` nests
+sixteen views at opacity 0.95, each beside a translucent bordered leaf, which is 32 layers. A natively animated box
+at the bottom is enclosed by the sixteen nested ones, which therefore re-composite every frame; the sixteen leaves
+are repainted wherever its damage reaches them.
+
+| tree (lavapipe, Debug) | paint recording p50 / p95 | frame-time p95 | first frame |
+| --- | --- | --- | --- |
+| 32 opacity layers | 0.22 / 0.34 ms | 16.07–16.29 ms | 41–55 ms |
+| the same tree, opaque | 0.11–0.15 / 0.18–0.19 ms | 16.40–16.58 ms | 24–32 ms |
+
+The layers add about a tenth of a millisecond per frame and no measurable frame time. Limiting layers to subtrees
+whose descendants actually overlap would buy nothing a frame can show, so it is not done. The one cost the layers
+do have is warm-up. On CI the first three painted frames took 113, 40 and 34 ms while the layers were first set
+up, against a steady p95 of 16.58 ms. The scenario therefore gates on p95 and sets no `maxHangs`, because a hang
+cap here would only measure warm-up. The scenario holds the 17.5 ms p95
+budget so that a regression in layer cost has somewhere to fail.
+
 Known deviations from iOS and Android, all deliberate:
 
 - **`borderStyle` draws, and a ring with four different widths is the one case that does not** (#101). See
