@@ -116,7 +116,12 @@ struct SceneClip {
  * Skia and the scene does not link it.
  */
 struct SceneTextContent {
-    facebook::react::AttributedString attributedString;
+    /**
+     * Shared rather than copied: a committed string never changes, so every snapshot hands its primitive the node's
+     * own, and snapshotting a text-heavy tree copies no text (#126). Only an opacity below 1 makes a copy, because
+     * that rewrites the colours.
+     */
+    std::shared_ptr<const facebook::react::AttributedString> attributedString;
     facebook::react::ParagraphAttributes paragraphAttributes;
 
     /**

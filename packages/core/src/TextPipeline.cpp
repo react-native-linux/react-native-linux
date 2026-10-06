@@ -848,7 +848,7 @@ EditorGeometry measureEditorGeometry(const SceneTextContent& text, const SceneEd
                                         .compositionEndUtf16 = editor.state.compositionEndUtf16,
                                         .isMultiline = editor.isMultiline};
 
-    return measureEditorGeometry(text.attributedString, text.paragraphAttributes,
+    return measureEditorGeometry(*text.attributedString, text.paragraphAttributes,
                                  static_cast<float>(text.frame.size.width), request);
 }
 

@@ -138,7 +138,7 @@ TEST(RetainedSceneReuseTest, AParagraphReplacedByTheSameTagCarriesNoOldText) {
 
     ASSERT_EQ(snapshot.size(), 1U);
     ASSERT_TRUE(snapshot[0].text.has_value());
-    EXPECT_EQ(snapshot[0].text.value().attributedString.getString(), "new");
+    EXPECT_EQ(snapshot[0].text.value().attributedString->getString(), "new");
 }
 
 TEST(RetainedSceneReuseTest, AParagraphReplacedByAnEmptyOneCarriesNoOldTextEither) {
@@ -248,7 +248,7 @@ TEST(RetainedSceneReuseTest, ATextInputReplacedByTheSameTagStartsWithNoCaretSele
 
     ASSERT_EQ(snapshot.size(), 1U);
     ASSERT_TRUE(snapshot[0].text.has_value());
-    EXPECT_EQ(snapshot[0].text.value().attributedString.getString(), "");
+    EXPECT_EQ(snapshot[0].text.value().attributedString->getString(), "");
     ASSERT_TRUE(snapshot[0].editor.has_value());
 
     const SceneEditorState& state = snapshot[0].editor.value().state;
@@ -334,8 +334,8 @@ TEST(RetainedSceneReuseTest, TwoParagraphsWithIdenticalTextShareNoMutableAttribu
     const SceneSnapshot snapshot = scene.snapshot();
 
     ASSERT_EQ(snapshot.size(), 2U);
-    EXPECT_EQ(primitiveAtY(snapshot, 0).text.value().attributedString.getString(), "changed");
-    EXPECT_EQ(primitiveAtY(snapshot, 40).text.value().attributedString.getString(), "same");
+    EXPECT_EQ(primitiveAtY(snapshot, 0).text.value().attributedString->getString(), "changed");
+    EXPECT_EQ(primitiveAtY(snapshot, 40).text.value().attributedString->getString(), "same");
 }
 
 TEST(RetainedSceneReuseTest, TwoImagesWithTheSameUriShareNoMutableTint) {
