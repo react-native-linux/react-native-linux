@@ -1181,15 +1181,17 @@ response body, because Metro reports a build error as an HTTP 500 with the error
 (`packages/test-harness/scripts/serve.ts`) and requires the render from
 `index.bundle?platform=linux&dev=false&minify=false` to be identical to `test-harness-app.png`.
 
-`WebSocket` reaches upstream's C++ `WebSocketModule` over upstream's own `ws://` client
-(`react/http/platform/cxx/WebSocketClient.cpp`, Boost.Beast on one I/O thread per socket), both compiled into
-`rnl_react_core`; Beast is header-only, so the only addition to the build is `folly/Uri.cpp`, which the client
-parses its URL with. `WebSocketModuleTest` runs it against an echo server on loopback: a message sent on open
-comes back, a client close reaches the server as a close frame, a refused connection fails, and destroying the
-host with a socket open closes it.
+`WebSocket` reaches upstream's C++ `WebSocketModule` (compiled into `rnl_react_core` on its own), and this
+platform supplies the `IWebSocketClient` it is built from: `src/BeastWebSocketClient.cpp`, `ws://` over
+Boost.Beast on one I/O thread per socket, with its URL parsed by `folly/Uri.cpp`, the one source this added to the
+folly subset. Upstream's own cxx client was the first choice and was replaced for three defects a Metro HMR socket
+hits: a URL without a port resolved port 0, an unanswered close handshake blocked the JavaScript thread forever,
+and a close the server started was logged and never reported. Here the port defaults to 80, one handshake timeout
+bounds connecting and both handshakes, and every ending reaches `websocketClosed` exactly once.
+`BeastWebSocketClientTest` proves each against a server on loopback (`tests/LoopbackWebSocketServer.h`), and
+`WebSocketModuleTest` drives the module from JavaScript against the same server.
 
-Not yet: a `blob` request body (there is no Blob module), cookies, `wss://`, a server-initiated close (upstream's
-client logs the read error and never reports `websocketClosed`), and the rest of the Metro dev-server
+Not yet: a `blob` request body (there is no Blob module), cookies, `wss://`, and the rest of the Metro dev-server
 contract: `dev=true` bundles, HMR over the WebSocket, and symbolication.
 
 ## react-native-worklets (#134)
@@ -8544,7 +8546,7 @@ because it stops at the `ReactInstance` rather than the full fantom host:
 | fast_float | FetchContent at RN's pin | No Ubuntu package. |
 | folly | FetchContent at RN's pin, RN's subset source list | ReactCommon compiles every TU with `-DFOLLY_NO_CONFIG=1`, which is ABI-incompatible with a distribution folly built against `folly-config.h`. |
 | gflags | not used | Only fantom's own CLI needs it. |
-| nlohmann_json, OpenSSL | not used | Only `ReactCxxPlatform`'s HTTP client needs them; this build's HTTP client is `CurlHttpClient`, and upstream's `ws://` WebSocket client is Boost.Beast without TLS. |
+| nlohmann_json, OpenSSL | not used | Only `ReactCxxPlatform`'s HTTP client needs them; this build's HTTP and WebSocket clients are `CurlHttpClient` and `BeastWebSocketClient`. |
 
 Two flags fantom sets are deliberately dropped, because fantom targets the NDK and libc++ while this targets glibc
 and libstdc++: `FOLLY_USE_LIBCPP` (folly would include libc++'s `<__config>`) and `FOLLY_HAVE_XSI_STRERROR_R`

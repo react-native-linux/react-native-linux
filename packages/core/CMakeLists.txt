@@ -846,6 +846,7 @@ add_library(rnl_react_core STATIC
     src/Appearance.cpp
     src/AsyncStorage.cpp
     src/AutomationProtocol.cpp
+    src/BeastWebSocketClient.cpp
     src/Clipboard.cpp
     src/ConsoleBinding.cpp
     src/CurlHttpClient.cpp
@@ -876,10 +877,7 @@ add_library(rnl_react_core STATIC
     # through react/io and react/http, whose globs also pull in the WebSocket, image-loader and resource modules.
     ${REACT_CXX_PLATFORM_DIR}/react/http/IHttpClient.cpp
     ${REACT_CXX_PLATFORM_DIR}/react/io/NetworkingModule.cpp
-    # #79: upstream's C++ WebSocket TurboModule over upstream's Boost.Beast client, which `ws://` needs nothing more
-    # than the header-only Boost already here for. `wss://` is not supported by that client.
-    ${REACT_CXX_PLATFORM_DIR}/react/http/IWebSocketClient.cpp
-    ${REACT_CXX_PLATFORM_DIR}/react/http/platform/cxx/WebSocketClient.cpp
+    # #79: upstream's C++ WebSocket TurboModule; src/BeastWebSocketClient.cpp is the client it is built from.
     ${REACT_CXX_PLATFORM_DIR}/react/io/WebSocketModule.cpp
     # #22: upstream's C++ ExceptionsManager, compiled on its own rather than through react/logging's glob.
     ${REACT_CXX_PLATFORM_DIR}/react/logging/NativeExceptionsManager.cpp)

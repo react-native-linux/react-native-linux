@@ -38,6 +38,7 @@ const scopedSourcePaths: readonly string[] = [
   "packages/core/src/Appearance.cpp",
   "packages/core/src/AsyncStorage.cpp",
   "packages/core/src/AutomationProtocol.cpp",
+  "packages/core/src/BeastWebSocketClient.cpp",
   "packages/core/src/Clipboard.cpp",
   "packages/core/src/ColorStops.cpp",
   "packages/core/src/CurlHttpClient.cpp",

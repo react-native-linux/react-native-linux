@@ -1,6 +1,7 @@
 #include "TurboModuleRegistry.h"
 
 #include "AsyncStorage.h"
+#include "BeastWebSocketClient.h"
 #include "CurlHttpClient.h"
 #include "PlatformColor.h"
 
@@ -557,10 +558,10 @@ TurboModuleRegistry::TurboModuleRegistry(
         return std::make_shared<facebook::react::NetworkingModule>(jsInvoker,
                                                                    []() { return std::make_unique<CurlHttpClient>(); });
     });
-    // #79: `WebSocket` reaches upstream's C++ WebSocket module over upstream's own client.
+    // #79: `WebSocket` reaches upstream's C++ WebSocket module, which this platform supplies the client for.
     moduleFactories_.emplace(facebook::react::WebSocketModule::kModuleName, [jsInvoker]() {
-        return std::make_shared<facebook::react::WebSocketModule>(jsInvoker,
-                                                                  facebook::react::getWebSocketClientFactory());
+        return std::make_shared<facebook::react::WebSocketModule>(
+            jsInvoker, []() { return std::make_unique<BeastWebSocketClient>(); });
     });
     // #22: React Native's ExceptionsManager, upstream's C++ one, reporting through the host's own error handler —
     // the same one a fatal error reaches through JsErrorHandler, so both paths print and record alike.
