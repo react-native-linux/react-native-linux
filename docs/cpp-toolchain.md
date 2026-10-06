@@ -4024,7 +4024,18 @@ Each is deliberate, and each is a thing to fix rather than a thing to argue abou
     SkParagraph's bidi orders mixed-direction runs. Arabic and Hebrew shape through the pinned Noto Sans Arabic
     and Hebrew faces, and `rtl-script.png` is their golden (#72). `I18nManager.forceRTL` and `allowRTL` flip a
     running window's layout without a reload and persist across restarts; see *I18nManager (#72)*.
-  - **What is missing.** Bidi hit-testing, and caret and selection in visual runs (#72, #343).
+  - **Hit testing is bidi-correct, and proven (#72 item 3).** `BidiHitTestTest` round-trips every strong character
+    of wrapped right-to-left and mixed-direction paragraphs. Each paragraph wraps onto at least three lines, so the
+    trailing character of every wrapped line is included (react-native-windows#7792). A point a quarter of the way
+    into a character from the edge it starts at must hit-test back to that character's UTF-16 offset.
+    - **Character boxes** come from the selection geometry.
+    - **Starting edges** come from the script: the right edge for a Hebrew letter, the left for a Latin letter or
+      digit. Neutral characters take their context's direction, so they are not asked.
+    - **No fix was needed.** `utf16IndexAtPoint` is SkParagraph's `getGlyphPositionAtCoordinate`, which already
+      resolves bidi runs.
+  - **What is missing: caret and selection in visual runs (#72 item 4, #343).** The caret is not yet direction-aware.
+    For a right-to-left character, `measureEditorGeometry` puts the caret at its left edge instead of its right.
+    That is why the round trip cannot use the caret as its oracle.
 - **Emoji rasterize from bitmap and COLRv0 faces only, and a `fontFamily` is one name.** The pinned Noto Color
   Emoji is CBDT and draws; a COLRv1 face would not, because this Skia archive references no
   `FT_Get_Color_Glyph_Paint`. A `fontFamily` fallback *list* — react-native#48625 — is still one name plus the two
