@@ -126,20 +126,20 @@ size_t lineCountOf(const std::string& text) {
     return measureParagraphMetrics(attributedString, facebook::react::ParagraphAttributes{}, kWrapWidth).lines.size();
 }
 
-TEST(BidiHitTestTest, EveryCharacterOfWrappedRightToLeftTextHitTestsBackToItsOffset) {
-    const std::string text = "שלום עולם, זהו טקסט שנשבר בתוך תיבה צרה מאוד.";
+/** The fixture wraps onto at least three lines, and every strong character of it round-trips. */
+void expectWrappedTextHitTestsBack(const std::string& text) {
     const std::vector<std::string> mismatches = mismatchesOf(text, facebook::react::WritingDirection::RightToLeft);
 
     EXPECT_GE(lineCountOf(text), 3U);
     EXPECT_TRUE(mismatches.empty()) << joined(mismatches);
 }
 
-TEST(BidiHitTestTest, EveryCharacterOfWrappedMixedDirectionTextHitTestsBackToItsOffset) {
-    const std::string text = "גרסה 3.1 של React עובדת היטב today, וגם מחר.";
-    const std::vector<std::string> mismatches = mismatchesOf(text, facebook::react::WritingDirection::RightToLeft);
+TEST(BidiHitTestTest, EveryCharacterOfWrappedRightToLeftTextHitTestsBackToItsOffset) {
+    expectWrappedTextHitTestsBack("שלום עולם, זהו טקסט שנשבר בתוך תיבה צרה מאוד.");
+}
 
-    EXPECT_GE(lineCountOf(text), 3U);
-    EXPECT_TRUE(mismatches.empty()) << joined(mismatches);
+TEST(BidiHitTestTest, EveryCharacterOfWrappedMixedDirectionTextHitTestsBackToItsOffset) {
+    expectWrappedTextHitTestsBack("גרסה 3.1 של React עובדת היטב today, וגם מחר.");
 }
 
 } // namespace
