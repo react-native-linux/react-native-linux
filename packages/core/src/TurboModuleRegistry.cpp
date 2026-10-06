@@ -22,6 +22,7 @@
 
 #include <react/coremodules/DeviceInfoModule.h>
 #include <react/io/NetworkingModule.h>
+#include <react/io/WebSocketModule.h>
 #include <react/logging/NativeExceptionsManager.h>
 #include <react/nativemodule/cputime/NativeCPUTime.h>
 #include <react/nativemodule/defaults/DefaultTurboModules.h>
@@ -555,6 +556,11 @@ TurboModuleRegistry::TurboModuleRegistry(
     moduleFactories_.emplace(facebook::react::NetworkingModule::kModuleName, [jsInvoker]() {
         return std::make_shared<facebook::react::NetworkingModule>(jsInvoker,
                                                                    []() { return std::make_unique<CurlHttpClient>(); });
+    });
+    // #79: `WebSocket` reaches upstream's C++ WebSocket module over upstream's own client.
+    moduleFactories_.emplace(facebook::react::WebSocketModule::kModuleName, [jsInvoker]() {
+        return std::make_shared<facebook::react::WebSocketModule>(jsInvoker,
+                                                                  facebook::react::getWebSocketClientFactory());
     });
     // #22: React Native's ExceptionsManager, upstream's C++ one, reporting through the host's own error handler —
     // the same one a fatal error reaches through JsErrorHandler, so both paths print and record alike.
