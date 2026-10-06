@@ -64,6 +64,11 @@ constexpr char kBundledFontFamily[] = "Noto Sans";
 // by fontconfig from whatever the machine has installed. A named family goes through `matchFamily` instead,
 // which the asset manager does answer. See *Colour emoji and the fallback chain (#249)* in docs/cpp-toolchain.md.
 constexpr char kEmojiFontFamily[] = "Noto Color Emoji";
+// The right-to-left scripts the vendored Noto Sans does not carry, named for the same reason as the emoji face: a
+// codepoint resolved by fallback goes to fontconfig, and a system font makes an Arabic or Hebrew golden depend on
+// the machine (#72).
+constexpr char kArabicFontFamily[] = "Noto Sans Arabic";
+constexpr char kHebrewFontFamily[] = "Noto Sans Hebrew";
 constexpr char kFallbackFontFamily[] = DEFAULT_FONT_FAMILY;
 // The file `scripts/fonts.lock.json` pins for `kBundledFontFamily`'s regular weight — the face
 // `FontFamilyRequestKind::VendoredDefault` resolves to, and what the automation channel of #214 reports as its
@@ -206,7 +211,8 @@ std::vector<SkString> resolveNamedFamily(const facebook::react::TextAttributes& 
  * 1. The requested family, resolved per `classifyFontFamilyRequest`: nothing, for the vendored default (see
  *    below); fontconfig's own answer, logged once, for a CSS generic other than the default; or the name itself,
  *    diagnosed by #70 if it substitutes, for anything else.
- * 2. `kBundledFontFamily` (the vendored Noto Sans) and `kEmojiFontFamily` (the vendored Noto Color Emoji).
+ * 2. `kBundledFontFamily` (the vendored Noto Sans), the vendored Noto Sans Arabic and Hebrew, and `kEmojiFontFamily`
+ *    (the vendored Noto Color Emoji).
  * 3. `kFallbackFontFamily`, skparagraph's own default.
  *
  * An unset `fontFamily`, `sans-serif` and `system-ui` add nothing at step 1, so the vendored Noto Sans at step 2
@@ -229,6 +235,8 @@ std::vector<SkString> toFontFamilies(const facebook::react::TextAttributes& attr
     }
 
     families.emplace_back(kBundledFontFamily);
+    families.emplace_back(kArabicFontFamily);
+    families.emplace_back(kHebrewFontFamily);
     families.emplace_back(kEmojiFontFamily);
     families.emplace_back(kFallbackFontFamily);
 
@@ -518,6 +526,8 @@ void checkPinnedFontFamiliesResolve(SkFontMgr& assetFontManager) {
         {kBundledFontFamily, bundledFontFamilyResolvesPinnedFile(assetFontManager)},
         {"Noto Sans (bold)", bundledFontFamilyResolvesPinnedBoldFile(assetFontManager)},
         {"Noto Sans (italic)", bundledFontFamilyResolvesPinnedItalicFile(assetFontManager)},
+        {kArabicFontFamily, assetFontManager.matchFamily(kArabicFontFamily)->count() > 0},
+        {kHebrewFontFamily, assetFontManager.matchFamily(kHebrewFontFamily)->count() > 0},
         {kEmojiFontFamily, assetFontManager.matchFamily(kEmojiFontFamily)->count() > 0}};
 
     const std::optional<std::string> fatalMessage = pinnedFontFamiliesFatalMessage(resolutions);

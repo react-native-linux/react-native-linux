@@ -3744,6 +3744,13 @@ with `compareImages` like every other raster golden. The `tolerance` field, `com
 spec in `png-diff.spec.ts` stay: a real cross-FreeType rounding difference is still a category of drift this rig
 has no other answer for, and the mechanism is proven, just unused for now.
 
+
+**Right-to-left scripts (#72).** Arabic and Hebrew are codepoints Noto Sans lacks too, and they take the same
+named-family route for the same reason. `toFontFamilies` names Noto Sans Arabic and Noto Sans Hebrew, pinned in
+`scripts/fonts.lock.json` at the Noto Sans commit, between the bundled face and the emoji face. The startup check
+that aborts on a missing pinned face covers both. Without them, an Arabic glyph is resolved by fontconfig's
+character fallback, which is whatever this machine has installed. With them, `rtl-script.js` renders
+byte-identically when fontconfig can see no system font at all, which is how the golden was checked.
 ### The cache
 
 `TextLayoutManager` already owns `textMeasureCache_`, upstream's `TextMeasureCache`: a 1024-entry thread-safe LRU
@@ -3912,9 +3919,12 @@ Each is deliberate, and each is a thing to fix rather than a thing to argue abou
   them means adding methods to a vendored header, which is a different decision from swapping one source file.
 - **No prepared-layout path.** `prepareLayout`/`measurePreparedLayout` are absent for the same reason, so every
   measure lays out from scratch behind the measure cache.
-- **RTL is not handled.** The paragraph direction is hardcoded left-to-right. ICU is present and SkParagraph does
-  the bidi work, so mixed-direction runs inside a paragraph resolve correctly; what is missing is `writingDirection`
-  and an RTL base direction, and there is no golden for either.
+- **RTL is partly handled.**
+  - **What works.** The base direction comes from `writingDirection` or the layout direction (#530).
+    SkParagraph's bidi orders mixed-direction runs. Arabic and Hebrew shape through the pinned Noto Sans Arabic
+    and Hebrew faces, and `rtl-script.png` is their golden (#72).
+  - **What is missing.** `forceRTL` without a reload, bidi hit-testing, and caret and selection in visual runs
+    (#72, #343).
 - **Emoji rasterize from bitmap and COLRv0 faces only, and a `fontFamily` is one name.** The pinned Noto Color
   Emoji is CBDT and draws; a COLRv1 face would not, because this Skia archive references no
   `FT_Get_Color_Glyph_Paint`. A `fontFamily` fallback *list* — react-native#48625 — is still one name plus the two
