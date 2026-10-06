@@ -238,10 +238,18 @@ FabricHost::~FabricHost() noexcept {
 void FabricHost::setSurfaceSize(facebook::react::Size surfaceSize, facebook::react::Float pointScaleFactor) {
     react_native_assert(std::this_thread::get_id() == owningThread_);
 
-    surfaceHandler_->constraintLayout({.minimumSize = surfaceSize,
-                                       .maximumSize = surfaceSize,
-                                       .layoutDirection = facebook::react::LayoutDirection::LeftToRight},
-                                      {.pointScaleFactor = pointScaleFactor});
+    surfaceHandler_->constraintLayout(
+        {.minimumSize = surfaceSize, .maximumSize = surfaceSize, .layoutDirection = layoutDirection_.layoutDirection},
+        {.pointScaleFactor = pointScaleFactor,
+         .swapLeftAndRightInRTL = layoutDirection_.swapLeftAndRightInRightToLeft});
+}
+
+void FabricHost::setLayoutDirection(LayoutDirectionRequest request) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    layoutDirection_ = request;
+    setSurfaceSize(surfaceHandler_->getLayoutConstraints().maximumSize,
+                   surfaceHandler_->getLayoutContext().pointScaleFactor);
 }
 
 void FabricHost::stopSurface() {

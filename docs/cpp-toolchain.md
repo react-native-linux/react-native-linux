@@ -1319,6 +1319,23 @@ the database named by the empty string; `legacy_multiMerge` rejects, because no 
 `AsyncStorageTest` covers the store, including a batch that fails part-way and lands nothing, and
 `test-bundles/async-storage.js` is the end-to-end proof through the TurboModule.
 
+## I18nManager (#72)
+
+`I18nManager` is `NativeI18nManager` over `src/I18n.cpp`'s `I18nModel`. The surface is right to left when
+`forceRTL` is on, or when `allowRTL` is on (the default) and the locale's language is right to left; the locale is
+the first non-empty of `LC_ALL`, `LC_MESSAGES` and `LANG`, and the language list is the one documented in
+`I18n.h`. `left` and `right` swap to `start` and `end` only while the surface is right to left and
+`swapLeftAndRightInRTL` is on, which is the default. The three choices persist in the AsyncStorage file, in the
+reserved database `@react-native-linux/I18nManager`, so they survive a restart (react-native-windows#7070).
+
+A choice reaches the surface without a reload. The module runs on the JavaScript thread and only records the
+choice; `WindowSession::deliverInput` takes it on the frame thread and calls `FabricHost::setLayoutDirection`,
+which relays the surface out at its current size and scale. The persisted choice is applied the same way before
+the bundle loads. `I18nManager.isRTL` in JavaScript keeps its startup value until the next reload, as it does
+upstream, because `I18nManager.js` reads the constants once. A headless host never applies a choice.
+`I18nTest` covers the rule, the locale and the restart, and `e2e/i18n-direction.json` flips a running bundle's row
+to right to left and back.
+
 ## Dimensions and TurboModules (#50)
 
 `DeviceInfo` is the first TurboModule this platform registers, and registering it is what builds the TurboModule
@@ -4005,9 +4022,9 @@ Each is deliberate, and each is a thing to fix rather than a thing to argue abou
 - **RTL is partly handled.**
   - **What works.** The base direction comes from `writingDirection` or the layout direction (#530).
     SkParagraph's bidi orders mixed-direction runs. Arabic and Hebrew shape through the pinned Noto Sans Arabic
-    and Hebrew faces, and `rtl-script.png` is their golden (#72).
-  - **What is missing.** `forceRTL` without a reload, bidi hit-testing, and caret and selection in visual runs
-    (#72, #343).
+    and Hebrew faces, and `rtl-script.png` is their golden (#72). `I18nManager.forceRTL` and `allowRTL` flip a
+    running window's layout without a reload and persist across restarts; see *I18nManager (#72)*.
+  - **What is missing.** Bidi hit-testing, and caret and selection in visual runs (#72, #343).
 - **Emoji rasterize from bitmap and COLRv0 faces only, and a `fontFamily` is one name.** The pinned Noto Color
   Emoji is CBDT and draws; a COLRv1 face would not, because this Skia archive references no
   `FT_Get_Color_Glyph_Paint`. A `fontFamily` fallback *list* — react-native#48625 — is still one name plus the two

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "I18n.h"
 #include "InputDispatcher.h"
 #include "InputPipeline.h"
 #include "LinuxAnimationChoreographer.h"
@@ -37,10 +38,11 @@ namespace react_native_linux {
  *
  * Threading contract: construction and destruction happen on the thread that owns the process run loop, before
  * the JavaScript bundle is loaded and after the JavaScript thread has been drained. Everything Fabric does in
- * between happens on the JavaScript thread. `setSurfaceSize`, `takeFrame` and `snapshotScene` are the members that
- * may be called while the surface is running: `constraintLayout` commits on the calling thread and, because the
- * default commit options mount synchronously, mounts there as well, and the other two copy the scene — and, for
- * `takeFrame`, its accumulated damage — out under the mounting manager's mutex.
+ * between happens on the JavaScript thread. `setSurfaceSize`, `setLayoutDirection`, `takeFrame` and
+ * `snapshotScene` are the members that may be called while the surface is running: the first two commit through
+ * `constraintLayout` on the calling thread and, because the default commit options mount synchronously, mount there
+ * as well, and the other two copy the scene — and, for `takeFrame`, its accumulated damage — out under the mounting
+ * manager's mutex.
  *
  * Shutdown contract: stopSurface commits an empty tree and queues the resulting unmount onto the JavaScript
  * thread. The owner drains that thread before destroying the host, because the queued rendering update holds a
@@ -77,6 +79,13 @@ public:
 
     /** `pointScaleFactor` is the output scale, so Yoga rounds every frame onto the physical pixel grid. */
     void setSurfaceSize(facebook::react::Size surfaceSize, facebook::react::Float pointScaleFactor);
+
+    /**
+     * Relays the surface out in `request`'s direction at its current size and scale (#72): `I18nManager`'s
+     * `forceRTL` and `allowRTL` reach the surface through this, from the frame loop, with no bundle reload. The
+     * surface starts left to right.
+     */
+    void setLayoutDirection(LayoutDirectionRequest request);
     void stopSurface();
 
     /**
@@ -166,6 +175,7 @@ public:
 
 private:
     const std::thread::id owningThread_{std::this_thread::get_id()};
+    LayoutDirectionRequest layoutDirection_;
     std::shared_ptr<const facebook::react::ContextContainer> contextContainer_;
     std::shared_ptr<facebook::react::ComponentDescriptorProviderRegistry> componentDescriptorProviderRegistry_;
     std::shared_ptr<LinuxMountingManager> mountingManager_;
