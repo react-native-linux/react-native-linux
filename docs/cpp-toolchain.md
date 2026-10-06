@@ -8145,6 +8145,19 @@ and `"a"`, `code` is `"KeyQ"` both times, as a browser reports it. The case need
 compositor, so it lives here rather than in the window job; the unit, native and window jobs install
 `libxkbcommon-dev`, whose runtime brings the xkeyboard-config data the keymaps compile from.
 
+### Upstream itests through Fantom (#210, #423)
+
+`node packages/test-harness/scripts/fantom.ts` runs upstream React Native's own `*-itest.js` files, unmodified, the
+way upstream does: through Fantom's in-runtime `describe`/`it`/`expect` (`private/react-native-fantom/runtime`, a
+sparse clone of the vendored tag in `build/fantom-source`), bundled by Metro for `linux` with the itest taken from
+the vendored tree and everything else from the one installed `react-native`, and run in `hello_react --fabric`.
+Results come back through `NativeFantomCxx.reportTestSuiteResultsJSON`, a two-method module in
+`TurboModuleRegistry.cpp`; upstream's `NativeCPUTime` is registered beside it. `packages/core/fantom-expectations.json`
+is the corpus: every suite it names runs, every failure it lists names the issue that owns it, and a new failure, a
+listed failure that passes, or a listed one that goes unreported fails the run. The first batch is #423's: 17 suites,
+166 passing assertions; what fails is Fantom's surface, timer-mock and timestamp API, which this host does not
+implement yet, and `WebSocket` (#79).
+
 ### The Hermes-linked binary (#228)
 
 `rnl_core_tests` is Hermes-free by construction, so the upstream suites that construct a real
