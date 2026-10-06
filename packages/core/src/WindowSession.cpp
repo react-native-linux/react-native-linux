@@ -2,6 +2,7 @@
 
 #include "AsyncStorage.h"
 #include "DimensionsSource.h"
+#include "FrameProfiling.h"
 
 #include <chrono>
 #include <memory>
@@ -68,6 +69,7 @@ void WindowSession::setTextInputFocusSink(TextInputFocusSink* textInputFocusSink
 }
 
 void WindowSession::deliverInput(std::vector<InputEvent> events) {
+    ZoneScopedN("input and event beat");
     // One sample of the client clock for the whole batch: the mapper uses it to establish the compositor offset on
     // the first timed event and every later event is shifted by that same offset (#455).
     const facebook::react::HighResTimeStamp receivedAt = facebook::react::HighResTimeStamp::now();
@@ -104,6 +106,7 @@ void WindowSession::deliverInput(std::vector<InputEvent> events) {
 }
 
 void WindowSession::tickAnimations(std::chrono::steady_clock::time_point now) {
+    ZoneScopedN("animation tick");
     fabricHost_->tickAnimations(now);
 
     // The JavaScript half of the same frame: the native animation backend gets `now` directly, and the frame's
@@ -179,7 +182,11 @@ double WindowSession::takeFrameMilliseconds() {
     return elapsed;
 }
 
-SceneFrame WindowSession::takeFrame() { return fabricHost_->takeFrame(); }
+SceneFrame WindowSession::takeFrame() {
+    ZoneScopedN("take frame");
+
+    return fabricHost_->takeFrame();
+}
 
 bool WindowSession::hasReportedFatalError() const { return reactHost_.hasReportedFatalError(); }
 

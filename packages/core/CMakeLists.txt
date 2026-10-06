@@ -1269,6 +1269,21 @@ elseif(RNL_ENABLE_WINDOW)
     endif()
     target_compile_options(rnl_window PRIVATE -Wall -Wextra)
     target_include_directories(rnl_window PRIVATE src)
+
+    # The Tracy profiler (#20, owner-approved): off by default, so a normal build fetches and links nothing and
+    # FrameProfiling.h compiles every zone away. On, rnl_window names its frame phases and marks each frame for a
+    # Tracy viewer to capture. Pinned to v0.14.1 by commit, like every other fetched dependency.
+    option(RNL_ENABLE_TRACY "Link the Tracy profiler client into rnl_window" OFF)
+
+    if(RNL_ENABLE_TRACY)
+        FetchContent_Declare(tracy
+            GIT_REPOSITORY https://github.com/wolfpld/tracy.git
+            GIT_TAG 30997d5ca6bb632cc10807a1da8a6d3de0aeeb3c)
+        # TracyClient compiles as a no-op unless its own TRACY_ENABLE is on, and it came up off in this configure.
+        set(TRACY_ENABLE ON CACHE BOOL "Compile the Tracy client in rather than as no-ops" FORCE)
+        FetchContent_MakeAvailable(tracy)
+        target_link_libraries(rnl_window PRIVATE Tracy::TracyClient)
+    endif()
     # libskia.a is a single static archive built against system freetype and fontconfig, so those two
     # have to follow it on the link line rather than travel as usage requirements of the archive.
     target_link_libraries(rnl_window

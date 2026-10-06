@@ -2,6 +2,7 @@
 #include "AutomationServer.h"
 #include "FrameClock.h"
 #include "FrameJournal.h"
+#include "FrameProfiling.h"
 #include "FrameTiming.h"
 #include "InputPipeline.h"
 #include "LinuxMountingManager.h"
@@ -1592,6 +1593,7 @@ int main(int argc, char** argv) {
                             [&frame, &chrome, &window, &session,
                              &parsedArguments](SkCanvas& canvas, react_native_linux::WindowSize /*size*/,
                                                const react_native_linux::SceneDamage& imageDamage) {
+                                ZoneScopedN("paint");
                                 session->recordPaintStart(std::chrono::steady_clock::now());
                                 paintDecoratedFrame(
                                     canvas, chrome, window, imageDamage,
@@ -1606,6 +1608,8 @@ int main(int argc, char** argv) {
                 } else {
                     presented = renderer.drawFrame(window, {}, drawPlaceholder);
                 }
+
+                FrameMark;
 
                 if (parsedArguments.windowDebug && broughtUp.vulkanRenderer != nullptr) {
                     printSurfaceCommitOutcome(*broughtUp.vulkanRenderer, presented);

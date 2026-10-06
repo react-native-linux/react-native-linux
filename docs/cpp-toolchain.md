@@ -604,8 +604,26 @@ timeout does not move that reference at all, so the next real tick's delta is st
 arrive after one or more fallback-driven ticks is flagged `resumed`, exactly once, which is what a caller would use
 to detect "the frame source came back" rather than "vsync ticked again". Liveness is otherwise just counters:
 `callbackTicks`, `timerTicks`, `resumeTransitions` and `lastCallbackAt` — a frame source that has gone silent shows
-up as `timerTicks` climbing while `callbackTicks` stops. There is no Tracy integration yet; `WindowSession::frameClock()`
-is a plain getter until one exists.
+up as `timerTicks` climbing while `callbackTicks` stops. `WindowSession::frameClock()` is a plain getter; the
+per-frame timeline is Tracy's, below.
+
+**Tracy (#20).** `-DRNL_ENABLE_TRACY=ON` fetches TracyClient, pinned to v0.14.1 by commit, and links it into
+`rnl_window`. Run the window and attach a Tracy viewer to see each frame marked (`FrameMark` after the draw) and
+split into four named zones:
+
+| Zone | Where |
+| --- | --- |
+| `input and event beat` | `WindowSession::deliverInput` |
+| `animation tick` | `WindowSession::tickAnimations` |
+| `take frame` | `WindowSession::takeFrame` |
+| `paint` | the paint callback inside `drawFrame` |
+
+- **Off is the default.** A normal build fetches and links nothing, because `FrameProfiling.h` defines the two
+  macros away. A default `rnl_window` contains no Tracy symbol at all.
+- **A Tracy build is a profiling build.** The client's start-up and the cost of each zone are its own, so the e2e
+  frame budgets are not expected to hold under it.
+- **TracyClient's own `TRACY_ENABLE` is forced on.** It came up off in this configure, which compiles the client
+  as no-ops.
 
 `WindowSession` owns one `FrameClock`, separate from the `lastFrameTime_` clock `deliverInput` already uses for
 scroll physics and the caret blink — that clock paces *input*, once per loop iteration regardless of whether a
