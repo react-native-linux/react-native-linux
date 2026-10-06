@@ -17,10 +17,12 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
+#include <react/debug/react_native_assert.h>
 #include <react/renderer/componentregistry/ComponentDescriptorProviderRegistry.h>
 #include <react/renderer/components/FBReactNativeSpec/ComponentDescriptors.h>
 #include <react/renderer/components/image/ImageComponentDescriptor.h>
@@ -224,6 +226,8 @@ FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::
 }
 
 FabricHost::~FabricHost() noexcept {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
 #ifdef RNL_ENABLE_IMAGES
     setImageDecodeListener({});
 #endif
@@ -232,6 +236,8 @@ FabricHost::~FabricHost() noexcept {
 }
 
 void FabricHost::setSurfaceSize(facebook::react::Size surfaceSize, facebook::react::Float pointScaleFactor) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
     surfaceHandler_->constraintLayout({.minimumSize = surfaceSize,
                                        .maximumSize = surfaceSize,
                                        .layoutDirection = facebook::react::LayoutDirection::LeftToRight},
@@ -239,16 +245,22 @@ void FabricHost::setSurfaceSize(facebook::react::Size surfaceSize, facebook::rea
 }
 
 void FabricHost::stopSurface() {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
     if (surfaceHandler_->getStatus() == facebook::react::SurfaceHandler::Status::Running) {
         surfaceHandler_->stop();
     }
 }
 
 void FabricHost::setTextInputFocusSink(TextInputFocusSink* textInputFocusSink) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
     inputDispatcher_->setTextInputFocusSink(textInputFocusSink);
 }
 
 void FabricHost::dispatchInput(const std::vector<InputEvent>& events) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
     // Both see the whole frame: the scroll controller because a scroll is its event, the input dispatcher because
     // a scroll also ends any press it started under, and each ignores what the other owns.
     scrollController_->dispatch(events);
@@ -256,6 +268,8 @@ void FabricHost::dispatchInput(const std::vector<InputEvent>& events) {
 }
 
 void FabricHost::injectFocusCommand(facebook::react::Tag tag) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
     facebook::react::ShadowView syntheticFocusTarget;
 
     syntheticFocusTarget.tag = tag;
@@ -263,6 +277,8 @@ void FabricHost::injectFocusCommand(facebook::react::Tag tag) {
 }
 
 bool FabricHost::advanceScroll(double frameMilliseconds) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
     // The frame's commands first, so a `scrollTo` committed since the last frame is applied by this one rather
     // than by the one after it. Draining here rather than beside `takeFrame` is what keeps a programmatic scroll
     // one frame long: the queue is filled on the JavaScript thread under the mounting mutex and read here on the
@@ -312,39 +328,75 @@ bool FabricHost::advanceScroll(double frameMilliseconds) {
 }
 
 bool FabricHost::advanceCaretBlink(double frameMilliseconds) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
     return inputDispatcher_->advanceCaretBlink(frameMilliseconds);
 }
 
 bool FabricHost::advanceImageAnimations(double frameMilliseconds) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
     return mountingManager_->advanceImageAnimations(frameMilliseconds);
 }
 
 bool FabricHost::advanceControlAnimations(double frameMilliseconds) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
     return mountingManager_->advanceControlAnimations(frameMilliseconds);
 }
 
-void FabricHost::induceEventBeat() { eventBeatInducer_(); }
+void FabricHost::induceEventBeat() {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
 
-void FabricHost::tickAnimations(std::chrono::steady_clock::time_point now) { animationChoreographer_->tick(now); }
+    eventBeatInducer_();
+}
+
+void FabricHost::tickAnimations(std::chrono::steady_clock::time_point now) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    animationChoreographer_->tick(now);
+}
 
 bool FabricHost::hasPendingWork() const {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
     return mountingManager_->hasPendingDamage() || scrollController_->isScrollActive() ||
            animationChoreographer_->isActive();
 }
 
-SceneFrame FabricHost::takeFrame() { return mountingManager_->takeFrame(); }
+SceneFrame FabricHost::takeFrame() {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
 
-SceneSnapshot FabricHost::snapshotScene() const { return mountingManager_->snapshotScene(); }
+    return mountingManager_->takeFrame();
+}
+
+SceneSnapshot FabricHost::snapshotScene() const {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    return mountingManager_->snapshotScene();
+}
 
 SceneHit FabricHost::findNodeAtPoint(facebook::react::Point surfacePoint) const {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
     return mountingManager_->findNodeAtPoint(kSurfaceId, surfacePoint);
 }
 
-std::string FabricHost::dumpScene() const { return mountingManager_->dumpScene(); }
+std::string FabricHost::dumpScene() const {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
 
-SceneNodes FabricHost::visualTreeNodes() const { return mountingManager_->visualTreeNodes(); }
+    return mountingManager_->dumpScene();
+}
+
+SceneNodes FabricHost::visualTreeNodes() const {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    return mountingManager_->visualTreeNodes();
+}
 
 std::vector<AccessibilityChange> FabricHost::takeAccessibilityChanges() {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
     return mountingManager_->takeAccessibilityChanges();
 }
 

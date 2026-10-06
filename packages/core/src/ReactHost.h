@@ -12,6 +12,7 @@
 #include <cxxreact/JSBigString.h>
 #include <memory>
 #include <string>
+#include <thread>
 
 #include <react/runtime/ReactInstance.h>
 #include <react/runtime/TimerManager.h>
@@ -41,10 +42,12 @@ namespace react_native_linux {
  * alive for as long as the window is open.
  *
  * Threading contract: every member here is called from the thread that constructed the host — the process run
- * loop for the headless host, the platform frame thread for the window host. The JavaScript that the instance
- * runs never touches this object; it runs on the JavaScript thread this class owns. A TurboModule reaches the
- * runtime from any other thread only through the `RuntimeSchedulerCallInvoker` it is constructed with: an
- * `AsyncPromise` settled, and then released, on a worker thread while the frame thread runs is what
+ * loop for the headless host, the platform frame thread for the window host. A debug build holds every member to
+ * it, the destructor included: a call from any other thread fails `react_native_assert` before it touches the
+ * instance, which `ThreadAffinityTest` proves by calling each one from a foreign thread. The JavaScript that the
+ * instance runs never touches this object; it runs on the JavaScript thread this class owns. A TurboModule
+ * reaches the runtime from any other thread only through the `RuntimeSchedulerCallInvoker` it is constructed
+ * with: an `AsyncPromise` settled, and then released, on a worker thread while the frame thread runs is what
  * `CrossThreadPromiseStressTest` holds TSan-clean (#77).
  *
  * Shutdown contract: destruction quits the JavaScript thread synchronously, then releases the TurboModules, the
@@ -154,6 +157,7 @@ public:
     bool hasPendingTimers() const;
 
 private:
+    const std::thread::id owningThread_{std::this_thread::get_id()};
     std::shared_ptr<facebook::react::MessageQueueThreadImpl> javaScriptThread_;
     AnimationFrameQueue animationFrameQueue_;
     HostTimerRegistry* timerRegistry_{nullptr};

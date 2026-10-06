@@ -15,6 +15,7 @@
 #include <thread>
 #include <utility>
 
+#include <react/debug/react_native_assert.h>
 #include <react/featureflags/ReactNativeFeatureFlags.h>
 #include <react/renderer/animated/NativeAnimatedNodesManagerProvider.h>
 #include <react/renderer/runtimescheduler/RuntimeSchedulerCallInvoker.h>
@@ -137,6 +138,8 @@ ReactHost::ReactHost() : javaScriptThread_(std::make_shared<facebook::react::Mes
 }
 
 ReactHost::~ReactHost() noexcept {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
     javaScriptThread_->quitSynchronous();
     animationFrameQueue_.clear();
     turboModuleRegistry_.reset();
@@ -167,19 +170,45 @@ ReactHost::~ReactHost() noexcept {
     automationErrorLog().clear();
 }
 
-facebook::react::ReactInstance& ReactHost::reactInstance() noexcept { return *reactInstance_; }
+facebook::react::ReactInstance& ReactHost::reactInstance() noexcept {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
 
-DimensionsSource& ReactHost::dimensions() noexcept { return turboModuleRegistry_->dimensions(); }
+    return *reactInstance_;
+}
 
-AppearanceModel& ReactHost::appearance() noexcept { return turboModuleRegistry_->appearance(); }
+DimensionsSource& ReactHost::dimensions() noexcept {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
 
-ActivationModel& ReactHost::activation() noexcept { return turboModuleRegistry_->activation(); }
+    return turboModuleRegistry_->dimensions();
+}
 
-KeyValueStore& ReactHost::keyValueStore() noexcept { return turboModuleRegistry_->keyValueStore(); }
+AppearanceModel& ReactHost::appearance() noexcept {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
 
-void ReactHost::publishPendingDimensions() { turboModuleRegistry_->publishPendingDimensions(); }
+    return turboModuleRegistry_->appearance();
+}
+
+ActivationModel& ReactHost::activation() noexcept {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    return turboModuleRegistry_->activation();
+}
+
+KeyValueStore& ReactHost::keyValueStore() noexcept {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    return turboModuleRegistry_->keyValueStore();
+}
+
+void ReactHost::publishPendingDimensions() {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    turboModuleRegistry_->publishPendingDimensions();
+}
 
 void ReactHost::loadBundle(const std::string& location) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
     if (location.starts_with("http://") || location.starts_with("https://")) {
         loadScript(std::make_unique<facebook::react::JSBigStdString>(fetchBundle(location)), location);
     } else {
@@ -188,20 +217,32 @@ void ReactHost::loadBundle(const std::string& location) {
 }
 
 void ReactHost::loadScript(std::unique_ptr<const facebook::react::JSBigString> script, const std::string& sourceUrl) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
     reactInstance_->loadScript(std::move(script), sourceUrl);
 }
 
 void ReactHost::drainJavaScriptThread() {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
     javaScriptThread_->runOnQueueSync([]() {});
 }
 
 void ReactHost::blockJavaScriptThread(std::chrono::milliseconds duration) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
     javaScriptThread_->runOnQueueSync([duration]() { std::this_thread::sleep_for(duration); });
 }
 
-bool ReactHost::hasMarkedTestPassed() const { return hasMarkedTestPassed_->load(); }
+bool ReactHost::hasMarkedTestPassed() const {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    return hasMarkedTestPassed_->load();
+}
 
 bool ReactHost::runUntilQuiescent(std::chrono::milliseconds budget) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
     const std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::now() + budget;
 
     while (true) {
@@ -217,9 +258,15 @@ bool ReactHost::runUntilQuiescent(std::chrono::milliseconds budget) {
     }
 }
 
-bool ReactHost::hasReportedFatalError() const { return errorReporter_.hasReportedFatalError(); }
+bool ReactHost::hasReportedFatalError() const {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    return errorReporter_.hasReportedFatalError();
+}
 
 void ReactHost::dispatchAnimationFrames(std::chrono::steady_clock::time_point now) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
     if (!animationFrameQueue_.hasPendingRequests()) {
         return;
     }
@@ -233,6 +280,8 @@ void ReactHost::dispatchAnimationFrames(std::chrono::steady_clock::time_point no
 }
 
 bool ReactHost::hasPendingTimers() const {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
     return timerRegistry_->hasPendingTimers() || animationFrameQueue_.hasPendingRequests();
 }
 

@@ -11,6 +11,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <react/renderer/componentregistry/ComponentDescriptorProviderRegistry.h>
@@ -53,6 +54,11 @@ namespace react_native_linux {
  *
  * `CrossThreadMountingStressTest` runs this contract under TSan: commits and image decodes from their own threads
  * while the test thread makes every frame-thread call above, input included.
+ *
+ * Construction, destruction and every member above therefore happen on one thread — in both hosts the run loop's
+ * thread is the frame thread — and a debug build holds every public member to it, the destructor included: a call
+ * from any other thread fails `react_native_assert` before it touches the scene or the scheduler.
+ * `ThreadAffinityTest` proves it by calling each one from a foreign thread (#77).
  */
 class FabricHost final {
 public:
@@ -159,6 +165,7 @@ public:
     std::vector<AccessibilityChange> takeAccessibilityChanges();
 
 private:
+    const std::thread::id owningThread_{std::this_thread::get_id()};
     std::shared_ptr<const facebook::react::ContextContainer> contextContainer_;
     std::shared_ptr<facebook::react::ComponentDescriptorProviderRegistry> componentDescriptorProviderRegistry_;
     std::shared_ptr<LinuxMountingManager> mountingManager_;
