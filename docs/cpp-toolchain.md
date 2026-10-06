@@ -2342,16 +2342,20 @@ Two shapes of claim, because the two paths have two different costs, and the sec
 | What | Measured | Gate |
 | --- | --- | --- |
 | One mounting transaction, 2000 decorated nodes | 10,023 allocations, **5.01 per node** | ≤ 6 per node |
-| One snapshot of those 2000 primitives | **13 allocations, total** | ≤ 32 |
-| The same snapshot at 500 versus 2000 nodes | 11 versus 13 | large ≤ 3 × small |
+| One snapshot of those 2000 primitives | **2 allocations, total** | ≤ 4 |
+| The same snapshot at 500 versus 2000 nodes | 2 versus 2 | large ≤ 3 × small |
 | Mount and unmount 500 nodes, cycle over cycle | 5,522 then **5,522** | exactly equal |
+| Append one view under 20 versus 2000 mounted views (#126) | transaction 8 versus 8, frame 2 versus 2 | exactly equal |
 
 - **The mounting transaction is per node** and always will be: each mutation writes a node into the scene. A
   ceiling per node is what catches a new container per mounted view — the shape of core#56980.
 - **The snapshot is not per node**, and asserting a ceiling alone would not prove it: a per-primitive allocation
   hides under any ceiling at a small enough tree. The assertion that a four-times-larger tree does not cost four
-  times as much is what actually holds the line, and 11 against 13 is the growth of one vector from empty to 2048
-  rather than anything per primitive.
+  times as much is what actually holds the line. The snapshot list is reserved at the node count, so it is one
+  allocation whatever the size. Before #126 it grew from empty every frame: 11 allocations at 500 nodes and 13 at
+  2000. That was the one place a single appended view still cost more under a large tree than under a small one.
+- **Mounting is per mutation, not per tree** (#126). Appending one view costs the same transaction and the same
+  frame whether 20 views are mounted or 2000.
 - **The cycle is exact, not bounded.** Mounting and unmounting the same screen twice costs the same number of
   allocations both times, which is issue #106's second item —
   [core#57198](https://github.com/facebook/react-native/issues/57198), memory not reclaimed across repeated

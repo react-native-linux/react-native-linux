@@ -1752,6 +1752,11 @@ SceneSnapshot RetainedScene::snapshot() const {
     SceneSnapshot primitives;
     const ScenePaintState rootState{};
 
+    // One primitive per node at most, so the walk below never regrows the list: a frame's snapshot is one
+    // allocation whatever the tree's size, rather than the log2(nodes) doublings that made appending one view to a
+    // 2,000-view tree cost twice what it costs under 20 (#126).
+    primitives.reserve(nodes_.size());
+
     for (facebook::react::Tag tag : sortedRootTags()) {
         appendPrimitives(primitives, tag, rootState);
     }
