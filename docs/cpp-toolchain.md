@@ -3434,9 +3434,18 @@ Regular, Bold, Italic and Bold+Italic side by side against `goldens/text-style-m
 difference in letterforms (not just weight) between the bold and the regular runs is the proof the face changed,
 not just its weight flag.
 
-Still open, and not attempted in this slice: **item 1**, the application's own `assets/fonts/*.ttf` registered
-ahead of fontconfig — blocked on the asset convention issue #22 has not settled yet, and inventing a
-one-value config for it ahead of that would be the kind of scaffolding the Prime Directive rejects. **Item 4**,
+**Item 1, the application's own fonts**, follows the owner's decision: they live in an `assets/fonts` directory
+beside the JavaScript bundle, React Native's usual convention.
+
+- `ReactHost::loadScript` checks for that directory beside its source. When it exists, `registerApplicationFonts`
+  (`TextGeometry.h`) makes it the `FontCollection`'s dynamic font manager, which Skia consults ahead of the
+  vendored faces and fontconfig, so an app's `fontFamily` resolves to its own file.
+- A source that is a URL, such as a Metro dev server, has no such directory and registers nothing.
+- `ApplicationFontsTest` proves both cases.
+- Still open: the CLI copying a project's fonts into that directory when it packages the app, which is the CLI
+  lane's, and an icon-font golden, which needs a pinned icon font.
+
+Still open, and not attempted in this slice: **item 4**,
 an inspectable fallback chain (react-native#48625), and **variable-font weight/style selection** — no variable
 font is vendored, and vendoring one is its own decision about golden reproducibility, not a documentation gap.
 
