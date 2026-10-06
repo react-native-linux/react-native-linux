@@ -39,6 +39,7 @@ commit();
 // second event carrying the same frame for the same node is the redundant wake-up this issue is about.
 const seenFrames = new Map();
 let fixedLayouts = 0;
+let expectedFeedback = null;
 
 fabric.registerEventHandler((instanceHandle, type, payload) => {
   if (type !== 'topLayout') {
@@ -63,11 +64,17 @@ fabric.registerEventHandler((instanceHandle, type, payload) => {
   }
 
   if (instanceHandle.name === 'half') {
-    const derivedHeight = Math.round(width / 10);
-
-    feedback.stateNode.node = fabric.cloneNodeWithNewProps(feedback.stateNode.node, { height: derivedHeight });
+    expectedFeedback = { halfWidth: Math.round(width), height: Math.round(width / 10) };
+    feedback.stateNode.node = fabric.cloneNodeWithNewProps(feedback.stateNode.node, {
+      height: expectedFeedback.height,
+    });
     commit();
-    console.log('onlayout-drag: half ' + Math.round(width) + ' feedback ' + derivedHeight);
+  }
+
+  // The feedback commit counts only once its own layout comes back with the derived height.
+  if (instanceHandle.name === 'feedback' && expectedFeedback !== null && height === expectedFeedback.height) {
+    console.log('onlayout-drag: half ' + expectedFeedback.halfWidth + ' feedback ' + height);
+    expectedFeedback = null;
   }
 });
 
