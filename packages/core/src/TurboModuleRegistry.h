@@ -8,6 +8,7 @@
 #include <jserrorhandler/JsErrorHandler.h>
 #include <jsi/jsi.h>
 #include <memory>
+#include <optional>
 #include <string_view>
 #include <unordered_map>
 
@@ -21,6 +22,7 @@ class TurboModule;
 
 namespace react_native_linux {
 
+class HostTimerRegistry;
 class KeyValueStore;
 class LinuxAppearanceModule;
 class LinuxDeviceInfoModule;
@@ -51,17 +53,23 @@ class LinuxLinkingModule;
  * property access. `dimensions`, `publishPendingDimensions` and `appearance` run on the platform frame thread;
  * all three reach JavaScript only through `DimensionsSource`'s mutex and the modules' `CallInvoker`.
  */
+/**
+ * What an itest run (#210) lets `NativeFantomCxx` drive: the flush of the `StubMessageQueue` its runtime runs on,
+ * and the timer registry whose mock mode Fantom's timer mock turns on. No other host has them, and without them
+ * those methods are absent, so an itest that needs one fails naming it.
+ */
+struct FantomRunControls {
+    std::function<void()> flushMessageQueue;
+    HostTimerRegistry* timerRegistry{nullptr};
+};
+
 class TurboModuleRegistry final {
 public:
-    /**
-     * `flushJavaScriptQueue` is what `NativeFantomCxx.flushMessageQueue` runs. Only an itest run has one — the
-     * `StubMessageQueue` its runtime runs on (#210) — and without one the method is absent, so an itest that needs
-     * it fails naming it.
-     */
     TurboModuleRegistry(
         std::shared_ptr<facebook::react::CallInvoker> jsInvoker,
         std::shared_ptr<facebook::react::NativeAnimatedNodesManagerProvider> animatedNodesManagerProvider,
-        facebook::react::JsErrorHandler::OnJsError onJsError, std::function<void()> flushJavaScriptQueue = {});
+        facebook::react::JsErrorHandler::OnJsError onJsError,
+        std::optional<FantomRunControls> fantomRunControls = std::nullopt);
 
     DimensionsSource& dimensions() noexcept;
 

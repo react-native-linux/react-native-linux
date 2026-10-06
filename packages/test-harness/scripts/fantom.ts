@@ -67,7 +67,6 @@ const writeEntry = (testPath: string): string => {
         "jsHeapSnapshotOutputPathTemplate: '', jsHeapSnapshotOutputPathTemplateToken: '', jsTraceOutputPath: null, " +
         "hostPlatform: 'linux'});",
       `registerTest(() => require(${JSON.stringify(testPath)}), {updateSnapshot: 'none', data: {}});`,
-      "globalThis.$$RunTests$$();",
       "",
     ].join("\n"),
   );
