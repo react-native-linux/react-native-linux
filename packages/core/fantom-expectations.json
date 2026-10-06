@@ -5,22 +5,8 @@
   "private/setup/__tests__/setUpDefaultReactNativeEnvironment-Globals-IntersectionObserver-itest.js": {},
   "private/setup/__tests__/setUpDefaultReactNativeEnvironment-Globals-itest.js": {},
   "private/setup/__tests__/setUpDefaultReactNativeEnvironment-Globals-MutationObserver-itest.js": {},
-  "private/timers/__tests__/Timers-itest.js": {
-    "setTimeout does not fire before the delay elapses": "NativeFantom.setTimerMockEnabled and advanceTimers are not implemented (#210)",
-    "setTimeout fires once after the delay elapses": "NativeFantom.setTimerMockEnabled and advanceTimers are not implemented (#210)",
-    "setTimeout does not fire again after firing once": "NativeFantom.setTimerMockEnabled and advanceTimers are not implemented (#210)",
-    "setTimeout passes additional arguments to the callback": "NativeFantom.setTimerMockEnabled and advanceTimers are not implemented (#210)",
-    "setTimeout fires multiple timers in order of their due time": "NativeFantom.setTimerMockEnabled and advanceTimers are not implemented (#210)",
-    "setTimeout runs timers scheduled by other timers on the next advance": "NativeFantom.setTimerMockEnabled and advanceTimers are not implemented (#210)",
-    "clearTimeout prevents a pending timer from firing": "NativeFantom.setTimerMockEnabled and advanceTimers are not implemented (#210)",
-    "setInterval fires once per interval": "NativeFantom.setTimerMockEnabled and advanceTimers are not implemented (#210)",
-    "setInterval keeps firing across multiple advances until cleared": "NativeFantom.setTimerMockEnabled and advanceTimers are not implemented (#210)",
-    "clearInterval stops a recurring timer from firing again": "NativeFantom.setTimerMockEnabled and advanceTimers are not implemented (#210)"
-  },
-  "private/webapis/dom/abort-api/__tests__/AbortController-itest.js": {
-    "AbortController 'timeout' static method should abort after the timeout with a TimeoutError reason": "NativeFantom.setTimerMockEnabled and advanceTimers are not implemented (#210)",
-    "AbortController 'timeout' static method should throw a TypeError for a negative timeout": "NativeFantom.setTimerMockEnabled and advanceTimers are not implemented (#210)"
-  },
+  "private/timers/__tests__/Timers-itest.js": {},
+  "private/webapis/dom/abort-api/__tests__/AbortController-itest.js": {},
   "private/webapis/errors/__tests__/DOMException-itest.js": {},
   "private/webapis/geometry/__tests__/DOMRectList-itest.js": {},
   "private/webapis/performance/__tests__/EventTimingAPI-itest.js": {
@@ -32,16 +18,10 @@
     "Event Timing API durationThreshold option works when used with `type`": "NativeFantom.startSurface is not implemented, so Fantom.createRoot cannot render (#210)",
     "Event Timing API durationThreshold option defaults to 104ms for event entries per W3C spec": "NativeFantom.startSurface is not implemented, so Fantom.createRoot cannot render (#210)"
   },
-  "private/webapis/performance/__tests__/LongTasksAPI-itest.js": {
-    "LongTasks API reports long tasks (over 50ms)": "the PerformanceObserver callback is never called on this host; not yet diagnosed (#210)",
-    "LongTasks API tasks that yield should NOT be reported if they are longer than 50ms but had yielding opportunities in intervals shorter than 50ms": "the HighResTimeStamp mock the previous case installed is never uninstalled, because that case failed before it could be (#210)",
-    "LongTasks API tasks that yield should be reported if running for longer than 50ms between yielding opportunities": "the HighResTimeStamp mock the previous case installed is never uninstalled, because that case failed before it could be (#210)"
-  },
+  "private/webapis/performance/__tests__/LongTasksAPI-itest.js": {},
   "private/webapis/performance/__tests__/Performance-itest.js": {},
   "private/webapis/performance/__tests__/PerformanceMemory-itest.js": {},
-  "private/webapis/performance/__tests__/PerformanceObserver-itest.js": {
-    "PerformanceObserver receives notifications for marks and measures": "the PerformanceObserver callback is never called on this host; not yet diagnosed (#210)"
-  },
+  "private/webapis/performance/__tests__/PerformanceObserver-itest.js": {},
   "private/webapis/performance/__tests__/UserTiming-itest.js": {},
   "private/webapis/structuredClone/__tests__/structuredClone-itest.js": {
     "structuredClone platform objects non-serializable platform objects does NOT clone ReadOnlyNode": "NativeFantom.startSurface is not implemented, so Fantom.createRoot cannot render (#210)",

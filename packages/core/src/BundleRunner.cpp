@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <cxxreact/JSBigString.h>
 #include <iostream>
+#include <jsi/jsi.h>
 #include <memory>
 #include <optional>
 #include <string>
@@ -260,12 +261,22 @@ int finishTimedFabricRun(ReactHost& reactHost, std::unique_ptr<FabricHost>& fabr
 }
 
 /**
- * An upstream itest (#210). The suite runs inside the bundle and prints its own results; what is left here is to
- * keep flushing until its timers are done and to tear down.
+ * An upstream itest (#210): the bundle registers the suite, and `$$RunTests$$` runs it and prints its results.
+ *
+ * `$$RunTests$$` is called the way upstream's tester calls it: once the bundle has evaluated, directly on the
+ * runtime, from this thread, which the stub queue makes the runtime's thread. A suite run from inside a scheduler
+ * task, the bundle's own evaluation included, sees no timer fire. A fired timer's callback becomes a scheduler
+ * task of its own, and the work loop's flush runs it in a nested event loop under the task the suite is still in.
  */
 int runFantomBundle(const std::string& bundlePath) {
     ReactHost reactHost{std::make_shared<StubMessageQueue>()};
     std::unique_ptr<FabricHost> fabricHost = startFabricRun(reactHost, bundlePath, kHeadlessSurfaceSize);
+    facebook::jsi::Runtime* runtime = nullptr;
+
+    reactHost.reactInstance().getBufferedRuntimeExecutor()(
+        [&runtime](facebook::jsi::Runtime& executorRuntime) { runtime = &executorRuntime; });
+    reactHost.drainJavaScriptThread();
+    runtime->global().getPropertyAsFunction(*runtime, "$$RunTests$$").call(*runtime);
 
     return finishTimedFabricRun(reactHost, fabricHost);
 }

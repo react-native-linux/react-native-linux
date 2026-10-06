@@ -8194,17 +8194,26 @@ Results come back through `NativeFantomCxx.reportTestSuiteResultsJSON`, in a sma
 `TurboModuleRegistry.cpp`; upstream's `NativeCPUTime` is registered beside it. `packages/core/fantom-expectations.json`
 is the corpus: every suite it names runs, every failure it lists names the issue that owns it, and a new failure, a
 listed failure that passes, or a listed one that goes unreported fails the run. The first batch is #423's: 17 suites,
-202 passing assertions.
+219 passing assertions.
 
 `--fantom` is `--fabric` with upstream's tester threading. `ReactHost` is built over a `StubMessageQueue` instead of
 a JavaScript thread of its own. That is a queue with no thread, flushed by the thread that owns the host, so the
 runtime runs on the main thread, and `NativeFantomCxx.flushMessageQueue` is that flush, run re-entrantly from
 inside the JavaScript call. `Fantom.runTask` and the work loop stand on it, as they do upstream. Every other host
 keeps its real JavaScript thread; the queue is a constructor argument nothing else passes.
+
+The bundle only registers the suite. `hello_react` calls `$$RunTests$$` once the bundle has evaluated, directly on
+the runtime, as upstream's tester does. A suite run from inside a scheduler task, the bundle's own evaluation
+included, never sees a fired timer's callback or a PerformanceObserver notification: each becomes a scheduler task
+of its own, and the work loop's flush runs it in a nested event loop under the task the suite is still in.
+
+Fantom's timer mock (`setTimerMockEnabled`, `advanceTimers`, `runAllTimers`, `getPendingTimerCount`) is a mode of
+`HostTimerRegistry` with upstream `FantomTimerRegistry`'s semantics. While it is on, a new timer waits on a virtual
+clock and fires only when advanced: earliest due first, then the one created first, a recurring one re-armed each
+time. The mock's timers never count as pending work, so a mock left installed cannot hold a run open.
 `forceHighResTimeStamp` pins `HighResTimeStamp::now()` process-wide through upstream's own debug-build hook, and an
-optimised build throws upstream's message for it. What still fails is Fantom's surface and timer-mock API
-(`startSurface`, `setTimerMockEnabled`, `advanceTimers`), a PerformanceObserver callback that is never called, and
-`WebSocket` (#79).
+optimised build throws upstream's message for it. What still fails is Fantom's surface API (`startSurface`, which
+`Fantom.createRoot` needs).
 
 ### The Hermes-linked binary (#228)
 

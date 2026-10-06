@@ -3,6 +3,7 @@
 #include "AsyncStorage.h"
 #include "BeastWebSocketClient.h"
 #include "CurlHttpClient.h"
+#include "HostTimerRegistry.h"
 #include "PlatformColor.h"
 
 #include <FBReactNativeSpec/FBReactNativeSpecJSI.h>
@@ -463,7 +464,9 @@ private:
  * suite's results on one `[fantom]` line for `scripts/fantom.ts` to read, and `validateEmptyMessageQueue` asks
  * nothing of a host whose queues drain on their own. `flushMessageQueue` runs every task queued on the itest
  * runtime's `StubMessageQueue`, re-entrantly from inside the call, which is what `Fantom.runTask` and the work loop
- * stand on; it exists only where the registry was given that queue. `forceHighResTimeStamp` pins
+ * stand on, and `setTimerMockEnabled`, `advanceTimers`, `runAllTimers` and `getPendingTimerCount` are Fantom's timer
+ * mock over `HostTimerRegistry`'s mock mode; all five exist only where the registry was given an itest run's
+ * `FantomRunControls`. `forceHighResTimeStamp` pins
  * `HighResTimeStamp::now()` for the whole process, or unpins it given no number, exactly as upstream's tester does; the
  * hook exists only in a debug build, so an optimised one throws upstream's own message instead. Every other method of
  * the spec drives a surface, an event or a timer mock this runner does not provide yet, so it is absent and a test that
@@ -474,9 +477,9 @@ public:
     static constexpr std::string_view kModuleName = "NativeFantomCxx";
 
     LinuxFantomModule(std::shared_ptr<facebook::react::CallInvoker> jsInvoker,
-                      std::function<void()> flushJavaScriptQueue)
+                      std::optional<FantomRunControls> fantomRunControls)
         : TurboModule(std::string(kModuleName), std::move(jsInvoker)),
-          flushJavaScriptQueue_(std::move(flushJavaScriptQueue)) {
+          fantomRunControls_(std::move(fantomRunControls)) {
         methodMap_["reportTestSuiteResultsJSON"] = {1, [](facebook::jsi::Runtime& runtime, TurboModule& /*turboModule*/,
                                                           const facebook::jsi::Value* arguments, size_t count) {
                                                         if (count > 0 && arguments[0].isString()) {
@@ -493,17 +496,53 @@ public:
                                                       size_t /*count*/) { return facebook::jsi::Value::undefined(); }};
         methodMap_["forceHighResTimeStamp"] = {1, &forceHighResTimeStamp};
 
-        if (flushJavaScriptQueue_) {
+        if (fantomRunControls_.has_value()) {
             methodMap_["flushMessageQueue"] = {0, &flushMessageQueue};
+            methodMap_["setTimerMockEnabled"] = {1, &setTimerMockEnabled};
+            methodMap_["advanceTimers"] = {1, &advanceTimers};
+            methodMap_["runAllTimers"] = {0, &runAllTimers};
+            methodMap_["getPendingTimerCount"] = {0, &getPendingTimerCount};
         }
     }
 
 private:
+    static FantomRunControls& controlsOf(TurboModule& turboModule) {
+        return *static_cast<LinuxFantomModule&>(turboModule).fantomRunControls_;
+    }
+
     static facebook::jsi::Value flushMessageQueue(facebook::jsi::Runtime& /*runtime*/, TurboModule& turboModule,
                                                   const facebook::jsi::Value* /*arguments*/, size_t /*count*/) {
-        static_cast<LinuxFantomModule&>(turboModule).flushJavaScriptQueue_();
+        controlsOf(turboModule).flushMessageQueue();
 
         return facebook::jsi::Value::undefined();
+    }
+
+    static facebook::jsi::Value setTimerMockEnabled(facebook::jsi::Runtime& /*runtime*/, TurboModule& turboModule,
+                                                    const facebook::jsi::Value* arguments, size_t count) {
+        controlsOf(turboModule)
+            .timerRegistry->setMockEnabled(count > 0 && arguments[0].isBool() && arguments[0].getBool());
+
+        return facebook::jsi::Value::undefined();
+    }
+
+    static facebook::jsi::Value advanceTimers(facebook::jsi::Runtime& /*runtime*/, TurboModule& turboModule,
+                                              const facebook::jsi::Value* arguments, size_t count) {
+        controlsOf(turboModule)
+            .timerRegistry->advanceTimersByTime(count > 0 && arguments[0].isNumber() ? arguments[0].getNumber() : 0.0);
+
+        return facebook::jsi::Value::undefined();
+    }
+
+    static facebook::jsi::Value runAllTimers(facebook::jsi::Runtime& /*runtime*/, TurboModule& turboModule,
+                                             const facebook::jsi::Value* /*arguments*/, size_t /*count*/) {
+        controlsOf(turboModule).timerRegistry->runAllTimers();
+
+        return facebook::jsi::Value::undefined();
+    }
+
+    static facebook::jsi::Value getPendingTimerCount(facebook::jsi::Runtime& /*runtime*/, TurboModule& turboModule,
+                                                     const facebook::jsi::Value* /*arguments*/, size_t /*count*/) {
+        return {static_cast<double>(controlsOf(turboModule).timerRegistry->pendingMockTimerCount())};
     }
 
     static facebook::jsi::Value forceHighResTimeStamp(facebook::jsi::Runtime& runtime, TurboModule& /*turboModule*/,
@@ -530,7 +569,7 @@ private:
 #endif
     }
 
-    std::function<void()> flushJavaScriptQueue_;
+    std::optional<FantomRunControls> fantomRunControls_;
 };
 
 /**
@@ -573,7 +612,7 @@ void installPlatformColorBinding(facebook::jsi::Runtime& runtime, std::shared_pt
 TurboModuleRegistry::TurboModuleRegistry(
     std::shared_ptr<facebook::react::CallInvoker> jsInvoker,
     std::shared_ptr<facebook::react::NativeAnimatedNodesManagerProvider> animatedNodesManagerProvider,
-    facebook::react::JsErrorHandler::OnJsError onJsError, std::function<void()> flushJavaScriptQueue)
+    facebook::react::JsErrorHandler::OnJsError onJsError, std::optional<FantomRunControls> fantomRunControls)
     : jsInvoker_(jsInvoker), dimensionsSource_(std::make_shared<DimensionsSource>()),
       deviceInfoModule_(std::make_shared<LinuxDeviceInfoModule>(jsInvoker, dimensionsSource_)),
       appearanceModel_(std::make_shared<AppearanceModel>(kFallbackColorScheme)),
@@ -596,8 +635,8 @@ TurboModuleRegistry::TurboModuleRegistry(
         return std::make_shared<LinuxAsyncStorageModule>(jsInvoker, keyValueStore);
     });
     moduleFactories_.emplace(LinuxFantomModule::kModuleName,
-                             [jsInvoker, flushJavaScriptQueue = std::move(flushJavaScriptQueue)]() {
-                                 return std::make_shared<LinuxFantomModule>(jsInvoker, flushJavaScriptQueue);
+                             [jsInvoker, fantomRunControls = std::move(fantomRunControls)]() {
+                                 return std::make_shared<LinuxFantomModule>(jsInvoker, fantomRunControls);
                              });
     // Upstream's own CPU-time module, which Fantom's test runtime and the web-performance itests read.
     moduleFactories_.emplace(facebook::react::NativeCPUTime::kModuleName,

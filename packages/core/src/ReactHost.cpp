@@ -12,6 +12,7 @@
 #include <functional>
 #include <jsi/jsi.h>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <utility>
@@ -132,8 +133,10 @@ ReactHost::ReactHost(std::shared_ptr<StubMessageQueue> stubJavaScriptQueue)
         std::make_shared<facebook::react::RuntimeSchedulerCallInvoker>(reactInstance_->getRuntimeScheduler()),
         animatedNodesManagerProvider_, errorReporter_.createHandler(),
         stubJavaScriptQueue != nullptr
-            ? std::function<void()>([stubJavaScriptQueue]() { stubJavaScriptQueue->flush(); })
-            : std::function<void()>());
+            ? std::optional<FantomRunControls>(
+                  FantomRunControls{.flushMessageQueue = [stubJavaScriptQueue]() { stubJavaScriptQueue->flush(); },
+                                    .timerRegistry = timerRegistry_})
+            : std::nullopt);
 
     reactInstance_->initializeRuntime(
         {}, [registry = turboModuleRegistry_.get(), hasMarkedTestPassed = hasMarkedTestPassed_,
