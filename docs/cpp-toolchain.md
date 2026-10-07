@@ -8261,6 +8261,14 @@ is the corpus: every suite it names runs, every failure it lists names the issue
 listed failure that passes, or a listed one that goes unreported fails the run. The first batch is #423's: 17 suites,
 229 passing assertions, and no listed failure.
 
+The run takes its binary from `build/$RNL_PRESET/bin/hello_react`, `dev` by default. `RNL_PRESET=asan` or
+`RNL_PRESET=tsan` runs the corpus against a sanitizer build, as upstream's `FANTOM_ENABLE_ASAN` and
+`FANTOM_ENABLE_TSAN` do; both pass all 17 suites locally. A sanitizer report on the binary's standard error fails
+the suite it came from, even after the suite has reported, because LeakSanitizer reports only at exit. CI runs
+the corpus in its dev entry only. EventTimingAPI-itest's "durationThreshold option works when used with `type`"
+asserts that a click with no added delay finishes in under 50 ms of wall clock, and both sanitizer builds exceed
+that on CI's runners.
+
 `--fantom` is `--fabric` with upstream's tester threading. `ReactHost` is built over a `StubMessageQueue` instead of
 a JavaScript thread of its own. That is a queue with no thread, flushed by the thread that owns the host, so the
 runtime runs on the main thread, and `NativeFantomCxx.flushMessageQueue` is that flush, run re-entrantly from

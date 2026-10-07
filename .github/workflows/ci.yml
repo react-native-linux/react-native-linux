@@ -609,6 +609,10 @@ jobs:
 
       # #210/#423: upstream's own *-itest.js files, unmodified, through upstream Fantom's in-runtime harness in
       # hello_react. packages/core/fantom-expectations.json names the corpus and every known failure's issue.
+      # RNL_PRESET=asan or tsan runs it against a sanitizer build, as upstream's FANTOM_ENABLE_ASAN and
+      # FANTOM_ENABLE_TSAN do, and both pass locally. They do not run here: EventTimingAPI-itest's "durationThreshold
+      # option works when used with `type`" asserts that a click with no added delay finishes in under 50 ms of wall
+      # clock, and both sanitizer builds exceed that on these runners (run 37591874248).
       - name: Run the upstream itests through Fantom
         if: matrix.skia == 'ON'
         run: node packages/test-harness/scripts/fantom.ts
