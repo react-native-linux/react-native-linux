@@ -1,5 +1,6 @@
 #include "LinuxMountingManager.h"
 
+#include <functional>
 #include <glog/logging.h>
 #include <memory>
 #include <mutex>
@@ -214,8 +215,20 @@ void LinuxMountingManager::recordAccessibilityChangeIfAny(
         .tag = next.tag, .stateChanged = stateChanged, .valueChanged = valueChanged, .testId = nextProps->testId});
 }
 
-void LinuxMountingManager::executeMount(facebook::react::SurfaceId /*surfaceId*/,
+void LinuxMountingManager::executeMount(facebook::react::SurfaceId surfaceId,
                                         facebook::react::MountingTransaction&& mountingTransaction) {
+    applyTransaction(std::move(mountingTransaction));
+
+    if (onAfterMount_) {
+        onAfterMount_(surfaceId);
+    }
+}
+
+void LinuxMountingManager::setAfterMountCallback(std::function<void(facebook::react::SurfaceId)>&& onAfterMount) {
+    onAfterMount_ = std::move(onAfterMount);
+}
+
+void LinuxMountingManager::applyTransaction(facebook::react::MountingTransaction&& mountingTransaction) {
     const std::lock_guard<std::mutex> guard(sceneMutex_);
 
     lastTransactionNumber_ = mountingTransaction.getNumber();
