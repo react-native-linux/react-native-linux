@@ -100,6 +100,7 @@ endif()
 # rnl_window links.
 add_executable(rnl_core_hermes_tests
     AdditionalSurfaceTest.cpp
+    ClipboardModuleTest.cpp
     CrossThreadPromiseStressTest.cpp
     FantomTesterTest.cpp
     HermesRuntimeFactory.cpp

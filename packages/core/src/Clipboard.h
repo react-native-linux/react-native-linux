@@ -18,10 +18,10 @@ namespace react_native_linux {
  * `wl_data_device` — copy to and paste from other applications, plus the primary selection middle-click paste —
  * is issue #60, and it replaces the body of these two functions and nothing else.
  *
- * Threading contract: the frame thread owns the clipboard, as it owns everything else the input dispatcher
- * reaches. Nothing here is synchronised.
+ * Threading contract: the frame thread reads and writes it for the text field's shortcuts, and the JavaScript
+ * thread through the `RNCClipboard` module (#23), so both functions take one mutex and the text is copied out.
  */
-const std::string& clipboardText();
+std::string clipboardText();
 void setClipboardText(std::string text);
 
 } // namespace react_native_linux

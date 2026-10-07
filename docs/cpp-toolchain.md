@@ -6631,7 +6631,9 @@ what is left in them needs a `UIManager` and a committed tree, and `--type` is t
   negotiation and a file-descriptor transfer, all of which need a compositor and a second client to mean
   anything — and the rig for this component is `hello_react`, which has neither. The in-process version is
   behaviourally identical for everything the editing model can get wrong, and it is issue #60 to replace its two
-  functions. The primary selection and middle-click paste land with it.
+  functions. The primary selection and middle-click paste land with it. JavaScript reaches the same clipboard
+  through `RNCClipboard`, the module `@react-native-clipboard/clipboard` resolves (`getString`, `setString`,
+  `hasString`; #23), so it follows the replacement too.
 - **Undo and redo.** No stack, and Ctrl+Z is deliberately left unconsumed so the absence is visible.
 - **Vertical caret motion.** Up and Down do not move by line: that needs line geometry rather than the grapheme
   and word boundaries the editing model has. A multiline field scrolls to keep the caret visible now, so what is

@@ -2,6 +2,7 @@
 
 #include "AsyncStorage.h"
 #include "BeastWebSocketClient.h"
+#include "Clipboard.h"
 #include "CurlHttpClient.h"
 #include "HostTimerRegistry.h"
 #include "I18n.h"
@@ -732,6 +733,45 @@ private:
 };
 
 /**
+ * `RNCClipboard` (#23), the TurboModule `@react-native-clipboard/clipboard` resolves, since React Native itself no
+ * longer ships a clipboard: `getString`, `setString` and `hasString` over the clipboard the text field's shortcuts
+ * use, so text copied in a field pastes from JavaScript and the other way round. Its images, URL and number
+ * detection, and change events are absent until the system clipboard (#60) gives them something to answer.
+ */
+class LinuxClipboardModule final : public facebook::react::TurboModule {
+public:
+    static constexpr std::string_view kModuleName = "RNCClipboard";
+
+    explicit LinuxClipboardModule(std::shared_ptr<facebook::react::CallInvoker> jsInvoker)
+        : TurboModule(std::string(kModuleName), std::move(jsInvoker)) {
+        methodMap_["getString"] = {0, [](facebook::jsi::Runtime& runtime, TurboModule& /*turboModule*/,
+                                         const facebook::jsi::Value* /*arguments*/, size_t /*count*/) {
+                                       return resolved(runtime,
+                                                       facebook::jsi::String::createFromUtf8(runtime, clipboardText()));
+                                   }};
+        methodMap_["hasString"] = {0, [](facebook::jsi::Runtime& runtime, TurboModule& /*turboModule*/,
+                                         const facebook::jsi::Value* /*arguments*/, size_t /*count*/) {
+                                       return resolved(runtime, facebook::jsi::Value(!clipboardText().empty()));
+                                   }};
+        methodMap_["setString"] = {1, [](facebook::jsi::Runtime& runtime, TurboModule& /*turboModule*/,
+                                         const facebook::jsi::Value* arguments, size_t count) {
+                                       setClipboardText(count > 0 && arguments[0].isString()
+                                                            ? arguments[0].getString(runtime).utf8(runtime)
+                                                            : std::string());
+
+                                       return facebook::jsi::Value::undefined();
+                                   }};
+    }
+
+private:
+    static facebook::jsi::Value resolved(facebook::jsi::Runtime& runtime, facebook::jsi::Value value) {
+        return facebook::react::createPromiseAsJSIValue(
+            runtime, [&value](facebook::jsi::Runtime& /*promiseRuntime*/,
+                              const std::shared_ptr<facebook::react::Promise>& promise) { promise->resolve(value); });
+    }
+};
+
+/**
  * `PlatformConstants` (#23), which `Platform.linux.ts` reads for `Platform.constants` and `Platform.Version`: the
  * React Native version this host was compiled from, which a development bundle compares with its own and reports a
  * mismatch against, and the kernel release as the OS version, which is what `uname -r` names on every distribution.
@@ -868,6 +908,8 @@ TurboModuleRegistry::TurboModuleRegistry(
     moduleFactories_.emplace(facebook::react::NativeMutationObserver::kModuleName, [jsInvoker]() {
         return std::make_shared<facebook::react::NativeMutationObserver>(jsInvoker);
     });
+    moduleFactories_.emplace(LinuxClipboardModule::kModuleName,
+                             [jsInvoker]() { return std::make_shared<LinuxClipboardModule>(jsInvoker); });
     moduleFactories_.emplace(LinuxPlatformConstantsModule::kModuleName,
                              [jsInvoker]() { return std::make_shared<LinuxPlatformConstantsModule>(jsInvoker); });
     // #79: `fetch` and `XMLHttpRequest` reach upstream's C++ Networking module, which this platform only supplies

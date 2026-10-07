@@ -1,5 +1,6 @@
 #include "Clipboard.h"
 
+#include <mutex>
 #include <string>
 #include <utility>
 
@@ -7,16 +8,21 @@ namespace react_native_linux {
 
 namespace {
 
-std::string& clipboardStorage() {
-    static std::string storage;
-
-    return storage;
-}
+std::mutex clipboardMutex;
+std::string clipboardStorage;
 
 } // namespace
 
-const std::string& clipboardText() { return clipboardStorage(); }
+std::string clipboardText() {
+    const std::scoped_lock lock(clipboardMutex);
 
-void setClipboardText(std::string text) { clipboardStorage() = std::move(text); }
+    return clipboardStorage;
+}
+
+void setClipboardText(std::string text) {
+    const std::scoped_lock lock(clipboardMutex);
+
+    clipboardStorage = std::move(text);
+}
 
 } // namespace react_native_linux
