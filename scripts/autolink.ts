@@ -1,22 +1,23 @@
 import type { AutolinkedLibrary, CodegenLibrary } from "@react-native-linux/cli/linux-autolinking-types.ts";
 import {
-  autolinkingCacheKey,
-  generateAutolinkingCMake,
-  generateAutolinkingRegistration,
-  readCodegenConfig,
-} from "@react-native-linux/cli/autolinking-cmake.ts";
-import {
   discoverLinuxAutolinking,
   parseReactNativeConfig,
   readOptedOutDependencyNames,
 } from "@react-native-linux/cli/linux-autolinking.ts";
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import {
+  generateAutolinkingCMake,
+  generateAutolinkingRegistration,
+  readCodegenConfig,
+  syncGeneratedTree,
+  writeFileIfChanged,
+} from "@react-native-linux/cli/autolinking-cmake.ts";
 import { FlowParser } from "@react-native/codegen/lib/parsers/flow/parser.js";
 import type { SchemaType } from "@react-native/codegen/lib/CodegenSchema.js";
 import { TypeScriptParser } from "@react-native/codegen/lib/parsers/typescript/parser.js";
 import { generate } from "@react-native/codegen/lib/generators/RNCodegen.js";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 type ReactNativeConfig = ReturnType<typeof parseReactNativeConfig>;
 
@@ -148,35 +149,26 @@ const applicationConfigPath = path.join(config.root, "react-native.config.js");
 const codegenDirectory = path.resolve(outputDirectory, "codegen");
 const optedOutDependencyNames = readOptedOutDependencyNames(await importApplicationConfig(applicationConfigPath));
 
-const cmakePath = path.resolve(outputDirectory, "rnl_autolinking.cmake");
-const registrationPath = path.resolve(outputDirectory, "rnl_autolinking.cpp");
-const cacheKeyPath = path.resolve(outputDirectory, "autolinking.sha256");
-// The generator's own sources are inputs too, so a change to how the output is written regenerates it.
-const generatorPaths = [
-  import.meta.url,
-  import.meta.resolve("@react-native-linux/cli/autolinking-cmake.ts"),
-  import.meta.resolve("@react-native-linux/cli/linux-autolinking.ts"),
-].map((url) => fileURLToPath(url));
-const cacheKey = autolinkingCacheKey(
-  [
-    path.resolve(configPath),
-    applicationConfigPath,
-    ...config.dependencies.map(({ root }) => path.join(root, "package.json")),
-    ...generatorPaths,
-  ],
-  readFileOrNull,
+/*
+ * Codegen writes every file it generates on every run, so it writes into a staging directory and only what changed
+ * reaches the tree CMake reads: an unrelated edit leaves every output's mtime alone (#147).
+ */
+const stagingDirectory = path.resolve(outputDirectory, ".codegen-staging");
+
+rmSync(stagingDirectory, { force: true, recursive: true });
+mkdirSync(stagingDirectory, { recursive: true });
+
+const run = { applicationConfigPath, codegenDirectory: stagingDirectory, config, optedOutDependencyNames };
+const libraries = autolinkedLibraries(run);
+const codegen = codegenLibraries(run);
+
+syncGeneratedTree(stagingDirectory, codegenDirectory);
+rmSync(stagingDirectory, { force: true, recursive: true });
+writeFileIfChanged(
+  path.resolve(outputDirectory, "rnl_autolinking.cmake"),
+  generateAutolinkingCMake(libraries, codegen, codegenDirectory),
 );
-
-if (readFileOrNull(cacheKeyPath) === cacheKey && existsSync(cmakePath) && existsSync(registrationPath)) {
-  process.stdout.write(`autolinking: up to date (${cacheKey})\n`);
-} else {
-  mkdirSync(codegenDirectory, { recursive: true });
-
-  const run = { applicationConfigPath, codegenDirectory, config, optedOutDependencyNames };
-  const libraries = autolinkedLibraries(run);
-  const codegen = codegenLibraries(run);
-
-  writeFileSync(cmakePath, generateAutolinkingCMake(libraries, codegen, codegenDirectory));
-  writeFileSync(registrationPath, generateAutolinkingRegistration(libraries, codegen));
-  writeFileSync(cacheKeyPath, cacheKey);
-}
+writeFileIfChanged(
+  path.resolve(outputDirectory, "rnl_autolinking.cpp"),
+  generateAutolinkingRegistration(libraries, codegen),
+);

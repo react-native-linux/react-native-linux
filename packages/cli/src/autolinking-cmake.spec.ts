@@ -1,11 +1,15 @@
 import type { AutolinkedLibrary, CodegenLibrary } from "./linux-autolinking-types.ts";
+import { describe, expect, it } from "vitest";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import {
-  autolinkingCacheKey,
   generateAutolinkingCMake,
   generateAutolinkingRegistration,
   readCodegenConfig,
+  syncGeneratedTree,
+  writeFileIfChanged,
 } from "./autolinking-cmake.ts";
-import { describe, expect, it } from "vitest";
+import path from "node:path";
+import { tmpdir } from "node:os";
 
 const binaryDirectory = `$${"{"}CMAKE_BINARY_DIR}`;
 const moduleCodegen: CodegenLibrary = { components: [], name: "CppLibrarySpec" };
@@ -156,39 +160,71 @@ describe("readCodegenConfig", () => {
   });
 });
 
-const files: Readonly<Record<string, string>> = {
-  "/app/react-native.config.js": "export default {};",
-  "/library/package.json": '{"version":"1.0.0"}',
+const oldTime = new Date("2026-01-01T00:00:00Z");
+
+const withDirectories = (body: (staging: string, target: string) => void): void => {
+  const root = mkdtempSync(path.join(tmpdir(), "rnl-autolinking-sync-"));
+
+  try {
+    body(path.join(root, "staging"), path.join(root, "target"));
+  } finally {
+    rmSync(root, { force: true, recursive: true });
+  }
 };
 
-const readFixture = (filePath: string): string | null => files[filePath] ?? null;
-const readEmpty = (): string => "";
+const writeTree = (directory: string, files: Readonly<Record<string, string>>): void => {
+  for (const [relativePath, content] of Object.entries(files)) {
+    mkdirSync(path.dirname(path.join(directory, relativePath)), { recursive: true });
+    writeFileSync(path.join(directory, relativePath), content);
+  }
+};
 
-describe("autolinkingCacheKey", () => {
-  it("is the same for the same inputs", () => {
-    const inputs = ["/library/package.json", "/app/react-native.config.js"];
+describe("writeFileIfChanged", () => {
+  it("leaves a file with the same content untouched", () => {
+    withDirectories((_staging, target) => {
+      const filePath = path.join(target, "rnl_autolinking.cmake");
 
-    expect(autolinkingCacheKey(inputs, readFixture)).toBe(autolinkingCacheKey(inputs, readFixture));
+      writeTree(target, { "rnl_autolinking.cmake": "same" });
+      utimesSync(filePath, oldTime, oldTime);
+      writeFileIfChanged(filePath, "same");
+
+      expect(statSync(filePath).mtime).toStrictEqual(oldTime);
+    });
   });
 
-  it("changes when an input's content changes", () => {
-    const edited = (filePath: string): string | null =>
-      filePath === "/library/package.json" ? '{"version":"1.0.1"}' : readFixture(filePath);
+  it("writes a changed or missing file", () => {
+    withDirectories((_staging, target) => {
+      writeTree(target, { "changed.cmake": "before" });
+      writeFileIfChanged(path.join(target, "changed.cmake"), "after");
+      writeFileIfChanged(path.join(target, "new", "file.cpp"), "created");
 
-    expect(autolinkingCacheKey(["/library/package.json"], edited)).not.toBe(
-      autolinkingCacheKey(["/library/package.json"], readFixture),
-    );
+      expect(readFileSync(path.join(target, "changed.cmake"), "utf8")).toBe("after");
+      expect(readFileSync(path.join(target, "new", "file.cpp"), "utf8")).toBe("created");
+    });
+  });
+});
+
+describe("syncGeneratedTree", () => {
+  it("makes the target hold exactly the staged files, touching only what changed", () => {
+    withDirectories((staging, target) => {
+      writeTree(staging, { "Spec/changed.h": "after", "Spec/new.h": "new", "Spec/same.h": "same" });
+      writeTree(target, { "Gone/stale.h": "stale", "Spec/changed.h": "before", "Spec/same.h": "same" });
+      utimesSync(path.join(target, "Spec/same.h"), oldTime, oldTime);
+
+      syncGeneratedTree(staging, target);
+
+      expect(statSync(path.join(target, "Spec/same.h")).mtime).toStrictEqual(oldTime);
+      expect(readFileSync(path.join(target, "Spec/changed.h"), "utf8")).toBe("after");
+      expect(readFileSync(path.join(target, "Spec/new.h"), "utf8")).toBe("new");
+      expect(existsSync(path.join(target, "Gone/stale.h"))).toBe(false);
+    });
   });
 
-  it("tells an absent input from an empty one", () => {
-    expect(autolinkingCacheKey(["/absent.json"], readFixture)).not.toBe(
-      autolinkingCacheKey(["/absent.json"], readEmpty),
-    );
-  });
+  it("empties nothing and fails on nothing when neither directory exists", () => {
+    withDirectories((staging, target) => {
+      syncGeneratedTree(staging, target);
 
-  it("changes when an input moves", () => {
-    expect(autolinkingCacheKey(["/a/package.json"], readEmpty)).not.toBe(
-      autolinkingCacheKey(["/b/package.json"], readEmpty),
-    );
+      expect(existsSync(target)).toBe(false);
+    });
   });
 });
