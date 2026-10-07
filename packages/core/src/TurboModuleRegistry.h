@@ -14,6 +14,7 @@
 
 #include <react/renderer/core/ReactPrimitives.h>
 #include <react/renderer/graphics/Float.h>
+#include <react/renderer/graphics/Point.h>
 #include <react/renderer/graphics/Size.h>
 
 namespace facebook::react {
@@ -67,7 +68,9 @@ class LinuxLinkingModule;
 struct FantomRunControls {
     std::function<void()> flushMessageQueue;
     HostTimerRegistry* timerRegistry{nullptr};
-    std::function<void(facebook::react::SurfaceId, facebook::react::Size, facebook::react::Float)> startSurface;
+    std::function<void(facebook::react::SurfaceId, facebook::react::Size, facebook::react::Float,
+                       facebook::react::Point)>
+        startSurface;
     std::function<void(facebook::react::SurfaceId)> stopSurface;
     std::function<void()> flushEventQueue;
 };

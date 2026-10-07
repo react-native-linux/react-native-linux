@@ -61,7 +61,7 @@ const std::vector<ForeignThreadCall> kForeignThreadCalls{
     {"FabricHost::setLayoutDirection", [](Hosts& hosts) { hosts.fabricHost->setLayoutDirection({}); }},
     {"FabricHost::stopSurface", [](Hosts& hosts) { hosts.fabricHost->stopSurface(); }},
     {"FabricHost::startAdditionalSurface",
-     [](Hosts& hosts) { hosts.fabricHost->startAdditionalSurface(11, kSurfaceSize, 1.0F); }},
+     [](Hosts& hosts) { hosts.fabricHost->startAdditionalSurface(11, kSurfaceSize, 1.0F, {}); }},
     {"FabricHost::stopAdditionalSurface", [](Hosts& hosts) { hosts.fabricHost->stopAdditionalSurface(11); }},
     {"FabricHost::setTextInputFocusSink", [](Hosts& hosts) { hosts.fabricHost->setTextInputFocusSink(nullptr); }},
     {"FabricHost::dispatchInput", [](Hosts& hosts) { hosts.fabricHost->dispatchInput({}); }},

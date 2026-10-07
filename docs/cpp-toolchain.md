@@ -2109,16 +2109,33 @@ every frame, so the frame after the last one changes no answer.
 
 ### What `measure()` reports
 
-**Layout geometry, unscaled and un-animated** — the same answer `measure`, `measureInWindow` and `measureLayout`
-give when nothing is animating. This is a decision that needs no code: those APIs resolve through
-`UIManager::getRelativeLayoutMetrics` on the committed shadow tree, and the fast path writes only the scene, so
-the values are already the laid-out ones. It is recorded here so it is a contract rather than a side effect.
+**React Native's own answer, from the committed shadow tree, un-animated** (#115; the project owner decided on
+2026-10-06 that this platform matches React Native). `measure`, `measureInWindow` and `measureLayout` resolve
+through upstream's `dom::measure`, `dom::measureInWindow` and `dom::measureLayout` on the committed shadow tree,
+unpatched:
 
-The reasons it is the right answer rather than merely the cheap one:
+- `measure` and `measureInWindow` fold committed ancestor transforms in: a node under a `scale(2)` parent reports
+  doubled width, height and page position. That is upstream's behaviour on every platform, and
+  [core#54988](https://github.com/facebook/react-native/issues/54988) reports it as a bug; this platform keeps it
+  so it answers what React Native answers. A non-integer scale composes the same way, and a fractional output
+  scale is that case in practice.
+- `measureLayout` against an ancestor leaves transforms out, and it also leaves a ScrollView's content offset out.
+  So it equals the difference of the two `measureInWindow` rectangles only while every ScrollView between them is
+  unscrolled.
+- `measureInWindow` includes the content offset of every ScrollView above the node, as written back by this
+  platform's `ScrollController` state updates.
+- A clip does not shrink a frame. A node inside `overflow: hidden` reports its full rectangle.
+- A node Fabric flattens away is still measurable, because measuring reads the shadow tree rather than the mounted
+  views. That is the case [core#29712](https://github.com/facebook/react-native/issues/29712) reports broken on
+  Android's old architecture.
 
-- It is what #115 in this tracker asserts, and what
-  [core#54988](https://github.com/facebook/react-native/issues/54988) reports as a bug in the other direction:
-  `measure()` returning doubled values under a scaled parent is paint geometry leaking into a layout API.
+`MeasureGeometryTest` pins every one of these over one tree, before and after a real wheel scroll, and upstream's
+`ReactNativeElement-itest.js` runs in the Fantom corpus for `getBoundingClientRect`, the scroll, client and offset
+metrics, and the legacy measure callbacks.
+
+"Un-animated" is the part this platform decides. The native-driven fast path writes only the scene, never the
+shadow tree, so a running transform animation does not reach `measure`:
+
 - `measure` is what layout code reads to place things. A value that moved 60 times a second would make every
   consumer of it race the animation.
 - Hit testing is the one caller that must be paint-true, because it answers a question about pixels the user
@@ -8290,7 +8307,7 @@ Results come back through `NativeFantomCxx.reportTestSuiteResultsJSON`, in a sma
 `TurboModuleRegistry.cpp`; upstream's `NativeCPUTime` is registered beside it. `packages/core/fantom-expectations.json`
 is the corpus: every suite it names runs, every failure it lists names the issue that owns it, and a new failure, a
 listed failure that passes, or a listed one that goes unreported fails the run. The first batch is #423's: 17 suites,
-229 passing assertions, and no listed failure.
+270 passing assertions. #115 added `ReactNativeElement-itest.js`; its two TextInput cases are listed under #577.
 
 The run takes its binary from `build/$RNL_PRESET/bin/hello_react`, `dev` by default. `RNL_PRESET=asan` or
 `RNL_PRESET=tsan` runs the corpus against a sanitizer build, as upstream's `FANTOM_ENABLE_ASAN` and
@@ -8321,6 +8338,10 @@ optimised build throws upstream's message for it.
 `Fantom.createRoot`'s surfaces are `FabricHost::startAdditionalSurface` and `stopAdditionalSurface`, upstream's own
 `SurfaceManager` on the host's scheduler. Ids start at 11 and step by 10, as in upstream's tester, clear of the host's
 own surface 1. Each surface's root goes into the retained scene, so its tree mounts there; nothing paints it.
+The viewport offset `createRoot` is given goes into the surface's layout context, as upstream's tester applies it.
+`root.getRenderedOutput()` is `getRenderedOutput`: the surface's current shadow tree, flattened into a
+`StubViewTree` by upstream's `buildStubViewTreeWithoutUsingDifferentiator`, rendered by `FantomRenderOutput.cpp`,
+a port of the tester's `RenderOutput`.
 `NativeIntersectionObserver` and `NativeMutationObserver` are registered whatever the feature flags say, as upstream's
 C++ host (`ReactCxxTurboModuleProvider`) registers them. `Fantom.dispatchNativeEvent` is `enqueueNativeEvent`, which
 dispatches on the node's own event emitter, and `flushEventQueue`, which induces the host's event beat. An event

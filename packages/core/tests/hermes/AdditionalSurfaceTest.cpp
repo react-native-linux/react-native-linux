@@ -51,7 +51,7 @@ TEST(AdditionalSurfaceTest, ATreeCommittedToAnAdditionalSurfaceMountsUnderItsOwn
     ReactHost reactHost;
     auto fabricHost = std::make_unique<FabricHost>(reactHost.reactInstance(), kSurfaceSize);
 
-    fabricHost->startAdditionalSurface(kAdditionalSurfaceId, kSurfaceSize, 1.0F);
+    fabricHost->startAdditionalSurface(kAdditionalSurfaceId, kSurfaceSize, 1.0F, {});
     reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>(kCommitIntoAdditionalSurface),
                          "AdditionalSurfaceTest.js");
     reactHost.drainJavaScriptThread();
