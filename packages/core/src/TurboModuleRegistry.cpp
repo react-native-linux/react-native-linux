@@ -17,6 +17,7 @@
 #include <ReactCommon/TurboModuleBinding.h>
 #include <ReactCommon/TurboModuleUtils.h>
 #include <array>
+#include <atomic>
 #include <cstring>
 #include <cxxreact/ReactNativeVersion.h>
 #include <functional>
@@ -525,19 +526,25 @@ private:
  * so it is absent and a test that calls one fails naming it.
  */
 /**
- * `DevSettings` for a `dev=true` bundle, whose startup requires the module (#79). Every member is a no-op: reload
- * and Fast Refresh arrive with #81, and this platform has no dev menu, element inspector or debugger launcher to
- * toggle. Upstream's C++ `DevSettingsModule` is not used because it links `DevServerHelper`, which needs OpenSSL
- * and the inspector for its one call, `openDebugger`.
+ * `DevSettings` for a `dev=true` bundle, whose startup requires the module (#79). `reload` and `reloadWithReason` —
+ * which HMRClient calls when an edit reaches a module that is not a Fast Refresh boundary — only raise a flag the
+ * host polls (#81): the instance cannot tear itself down from inside its own JavaScript thread. Every other member is
+ * a no-op, because this platform has no dev menu, element inspector or debugger launcher to toggle. Upstream's C++
+ * `DevSettingsModule` is not used because it links `DevServerHelper`, which needs OpenSSL and the inspector for its
+ * one call, `openDebugger`.
  */
 class LinuxDevSettingsModule final : public facebook::react::NativeDevSettingsCxxSpec<LinuxDevSettingsModule> {
 public:
-    explicit LinuxDevSettingsModule(std::shared_ptr<facebook::react::CallInvoker> jsInvoker)
-        : NativeDevSettingsCxxSpec(std::move(jsInvoker)) {}
+    LinuxDevSettingsModule(std::shared_ptr<facebook::react::CallInvoker> jsInvoker,
+                           std::shared_ptr<std::atomic<bool>> reloadRequested)
+        : NativeDevSettingsCxxSpec(std::move(jsInvoker)), reloadRequested_(std::move(reloadRequested)) {}
 
-    void reload(facebook::jsi::Runtime& /*runtime*/) {}
+    void reload(facebook::jsi::Runtime& /*runtime*/) { reloadRequested_->store(true); }
 
-    void reloadWithReason(facebook::jsi::Runtime& /*runtime*/, const std::string& /*reason*/) {}
+    void reloadWithReason(facebook::jsi::Runtime& /*runtime*/, const std::string& reason) {
+        std::cerr << "[rnl-reload] requested: " << reason << std::endl;
+        reloadRequested_->store(true);
+    }
 
     void onFastRefresh(facebook::jsi::Runtime& /*runtime*/) {}
 
@@ -558,6 +565,9 @@ public:
     void addListener(facebook::jsi::Runtime& /*runtime*/, const std::string& /*eventName*/) {}
 
     void removeListeners(facebook::jsi::Runtime& /*runtime*/, double /*count*/) {}
+
+private:
+    std::shared_ptr<std::atomic<bool>> reloadRequested_;
 };
 
 class LinuxFantomModule final : public facebook::react::TurboModule {
@@ -907,7 +917,8 @@ TurboModuleRegistry::TurboModuleRegistry(
       linkingModule_(std::make_shared<LinuxLinkingModule>(jsInvoker, activationModel_)),
       keyValueStore_(std::make_shared<KeyValueStore>()),
       i18nModel_(std::make_shared<I18nModel>(localeFromEnvironment(), keyValueStore_)),
-      bundleUrl_(std::make_shared<std::string>()), workletsModule_(std::make_shared<LinuxWorkletsModule>(jsInvoker)) {
+      bundleUrl_(std::make_shared<std::string>()), workletsModule_(std::make_shared<LinuxWorkletsModule>(jsInvoker)),
+      reloadRequested_(std::make_shared<std::atomic<bool>>(false)) {
     appearanceModel_->setChangeListener([appearanceModule = appearanceModule_.get()](ColorScheme colorScheme) {
         appearanceModule->emitAppearanceChange(colorScheme);
     });
@@ -939,8 +950,9 @@ TurboModuleRegistry::TurboModuleRegistry(
     moduleFactories_.emplace(facebook::react::SourceCodeModule::kModuleName, [jsInvoker, bundleUrl = bundleUrl_]() {
         return std::make_shared<facebook::react::SourceCodeModule>(jsInvoker, *bundleUrl);
     });
-    moduleFactories_.emplace(LinuxDevSettingsModule::kModuleName,
-                             [jsInvoker]() { return std::make_shared<LinuxDevSettingsModule>(jsInvoker); });
+    moduleFactories_.emplace(LinuxDevSettingsModule::kModuleName, [jsInvoker, reloadRequested = reloadRequested_]() {
+        return std::make_shared<LinuxDevSettingsModule>(jsInvoker, reloadRequested);
+    });
     // `Image.android.js`, which LogBox loads in a `dev=true` bundle, requires `ImageLoader` as it is imported. With no
     // `IImageLoader` behind it, upstream's module rejects `getSize` and `prefetch`, which is the honest answer here.
     moduleFactories_.emplace(facebook::react::ImageLoaderModule::kModuleName,
@@ -997,6 +1009,8 @@ AppearanceModel& TurboModuleRegistry::appearance() noexcept { return *appearance
 ActivationModel& TurboModuleRegistry::activation() noexcept { return *activationModel_; }
 
 void TurboModuleRegistry::setBundleUrl(const std::string& bundleUrl) { *bundleUrl_ = bundleUrl; }
+
+bool TurboModuleRegistry::isReloadRequested() const noexcept { return reloadRequested_->load(); }
 
 KeyValueStore& TurboModuleRegistry::keyValueStore() noexcept { return *keyValueStore_; }
 

@@ -4,6 +4,7 @@
 #include "Appearance.h"
 #include "DimensionsSource.h"
 
+#include <atomic>
 #include <functional>
 #include <jserrorhandler/JsErrorHandler.h>
 #include <jsi/jsi.h>
@@ -106,6 +107,12 @@ public:
      */
     void setBundleUrl(const std::string& bundleUrl);
 
+    /**
+     * Whether JavaScript has asked `DevSettings` for a reload (#81). Raised on the JavaScript thread and read on the
+     * host's, so it is atomic; it is never lowered, because the host answers it by destroying this registry.
+     */
+    bool isReloadRequested() const noexcept;
+
     /** The store behind `RNAsyncStorage` (#23); `WindowSession` points it at the application's file. */
     KeyValueStore& keyValueStore() noexcept;
 
@@ -141,6 +148,7 @@ private:
     std::shared_ptr<I18nModel> i18nModel_;
     std::shared_ptr<std::string> bundleUrl_;
     std::shared_ptr<LinuxWorkletsModule> workletsModule_;
+    std::shared_ptr<std::atomic<bool>> reloadRequested_;
     std::unordered_map<std::string_view, ModuleFactory> moduleFactories_;
 };
 

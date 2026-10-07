@@ -118,6 +118,9 @@ public:
     SceneFrame takeFrame();
     bool hasReportedFatalError() const;
 
+    /** The bundle asked to be reloaded (#81); the window answers by replacing this session with a new one. */
+    bool isReloadRequested() const;
+
     /**
      * Brackets the paint span the caller runs between `takeFrame` and the renderer's present. Both are no-ops
      * when the frame journal has no open interval — a callback-driven draw of an unchanged picture still paints

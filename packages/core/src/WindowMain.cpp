@@ -1377,7 +1377,9 @@ int main(int argc, char** argv) {
                     ? std::optional<InjectedKeySequence>(InjectedKeySequence(parsedArguments.injectKeySequence.value()))
                     : std::nullopt;
 
-            if (parsedArguments.bundlePath.has_value()) {
+            // Run once at startup and again for every reload the bundle asks for (#81): a reload is a new session from
+            // the same bundle at the current size, built only after the old one is gone, so no two instances overlap.
+            const auto startSession = [&]() {
                 session.emplace(parsedArguments.bundlePath.value(),
                                 react_native_linux::WindowSize{chrome.content.width, chrome.content.height},
                                 outputScaleOf(window), asyncStorageDatabasePath(parsedArguments.applicationIdentifier),
@@ -1388,6 +1390,10 @@ int main(int argc, char** argv) {
                 if (!parsedArguments.imeDebug) {
                     session->setTextInputFocusSink(window.textInput());
                 }
+            };
+
+            if (parsedArguments.bundlePath.has_value()) {
+                startSession();
             }
 
             if (parsedArguments.imeDebug && window.textInput() == nullptr) {
@@ -1568,6 +1574,12 @@ int main(int argc, char** argv) {
                     }
                 }
 #endif
+
+                if (session.has_value() && session->isReloadRequested()) {
+                    session.reset();
+                    startSession();
+                    std::cout << "[rnl-reload] reloaded " << parsedArguments.bundlePath.value() << std::endl;
+                }
 
                 if (session.has_value()) {
                     // Input first, and unconditionally: the event beat is induced inside this call, and it is what

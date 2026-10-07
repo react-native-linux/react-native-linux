@@ -1,0 +1,15 @@
+{
+  "name": "reload",
+  "bundle": "reload.tsx",
+  "ready": "reload: title Before Reload",
+  "expect": ["[rnl-reload] reloaded", "reload: title After Reload"],
+  "frames": 1800,
+  "steps": ["sleep 100"],
+  "fastRefresh": {
+    "file": "packages/test-harness/test-bundles/reload-title.ts",
+    "find": "export const reloadTitle = \"Before Reload\";",
+    "replace": "export const reloadTitle = \"After Reload\";",
+    "expect": "reload: title After Reload",
+    "maxEditToVisibleMs": 30000
+  }
+}

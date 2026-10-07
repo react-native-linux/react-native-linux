@@ -153,6 +153,9 @@ public:
     bool runUntilQuiescent(std::chrono::milliseconds budget);
     bool hasReportedFatalError() const;
 
+    /** `TurboModuleRegistry::isReloadRequested`: the bundle asked `DevSettings` to reload it (#81). */
+    bool isReloadRequested() const;
+
     /**
      * Runs one frame's `requestAnimationFrame` callbacks, on the JavaScript thread, stamped with `now`.
      *

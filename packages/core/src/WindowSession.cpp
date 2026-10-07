@@ -204,6 +204,8 @@ void WindowSession::applyLayoutDirectionChange() {
 
 bool WindowSession::hasReportedFatalError() const { return reactHost_.hasReportedFatalError(); }
 
+bool WindowSession::isReloadRequested() const { return reactHost_.isReloadRequested(); }
+
 SceneNodes WindowSession::visualTreeNodes() const { return fabricHost_->visualTreeNodes(); }
 
 std::vector<AccessibilityChange> WindowSession::takeAccessibilityChanges() {
