@@ -92,8 +92,14 @@ Nothing in this bootstrap is headless-only. `hello_react` and `rnl_window` const
 same `FabricHost`; the headless host dumps the scene once the JavaScript thread goes quiet, and the window host
 draws it every frame. See *The retained scene, and the threads it crosses*.
 
-Not covered yet, each with an owning milestone: `Scheduler::reportMount` and mount-hook telemetry, multiple
-surfaces, and every component past `View`, `Paragraph`, `Image`, `ScrollView` and `TextInput`. Events are covered;
+Every applied transaction is reported to `Scheduler::reportMount` through upstream's
+`IMountingManager::setAfterMountCallback`, once the scene lock is released. That runs `UIManager`'s mount hooks
+as the other platforms' mounting layers do: Event Timing's report of an event whose update has mounted, and
+IntersectionObserver's recomputation. Additional surfaces exist for `Fantom.createRoot`; see *Upstream itests
+through Fantom*.
+
+Not covered yet, each with an owning milestone: every component past `View`, `Paragraph`, `Image`, `ScrollView`
+and `TextInput`. Events are covered;
 see *Input*. Scrolling is covered; see *ScrollView*. Text editing is covered; see *TextInput*.
 `dispatchCommand` is ordered and delivered but not yet executed against a component; see *Commit termination and
 mounting atomicity*.
@@ -8249,7 +8255,7 @@ Results come back through `NativeFantomCxx.reportTestSuiteResultsJSON`, in a sma
 `TurboModuleRegistry.cpp`; upstream's `NativeCPUTime` is registered beside it. `packages/core/fantom-expectations.json`
 is the corpus: every suite it names runs, every failure it lists names the issue that owns it, and a new failure, a
 listed failure that passes, or a listed one that goes unreported fails the run. The first batch is #423's: 17 suites,
-226 passing assertions.
+229 passing assertions, and no listed failure.
 
 `--fantom` is `--fabric` with upstream's tester threading. `ReactHost` is built over a `StubMessageQueue` instead of
 a JavaScript thread of its own. That is a queue with no thread, flushed by the thread that owns the host, so the
@@ -8274,9 +8280,8 @@ optimised build throws upstream's message for it.
 own surface 1. Each surface's root goes into the retained scene, so its tree mounts there; nothing paints it.
 `NativeIntersectionObserver` and `NativeMutationObserver` are registered whatever the feature flags say, as upstream's
 C++ host (`ReactCxxTurboModuleProvider`) registers them. `Fantom.dispatchNativeEvent` is `enqueueNativeEvent`, which
-dispatches on the node's own event emitter, and `flushEventQueue`, which induces the host's event beat. What still
-fails is three Event Timing cases: an event whose handler updates React state is never reported to the
-PerformanceObserver on this host, which is not yet diagnosed.
+dispatches on the node's own event emitter, and `flushEventQueue`, which induces the host's event beat. An event
+whose handler updates React state is reported once that update mounts, through the mount reporting above.
 
 ### The Hermes-linked binary (#228)
 

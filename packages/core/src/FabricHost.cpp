@@ -194,6 +194,8 @@ FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::
     schedulerDelegate_ = std::make_unique<facebook::react::SchedulerDelegateImpl>(mountingManager_);
     scheduler_ = std::make_unique<facebook::react::Scheduler>(schedulerToolbox, nullptr, schedulerDelegate_.get());
     schedulerDelegate_->setUIManager(scheduler_->getUIManager());
+    mountingManager_->setAfterMountCallback(
+        [scheduler = scheduler_.get()](facebook::react::SurfaceId surfaceId) { scheduler->reportMount(surfaceId); });
     additionalSurfaces_ = std::make_unique<facebook::react::SurfaceManager>(*scheduler_);
     // The `AnimationBackend` the Scheduler built over the choreographer above. It is held weakly for the same
     // reason `AnimationChoreographer` holds it weakly: the UIManager owns it, and this host outlives neither.

@@ -151,6 +151,7 @@ add_executable(rnl_core_tests
     LayoutWidthRoundTripTest.cpp
     LineBoxMetricsTest.cpp
     LinuxMountingManagerAccessibilityChangesTest.cpp
+    LinuxMountingManagerAfterMountTest.cpp
     LinuxMountingManagerDiagnosticsTest.cpp
     LinuxMountingManagerMaintainPositionTest.cpp
     LinuxMountingManagerPendingDamageTest.cpp

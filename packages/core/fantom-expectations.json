@@ -9,11 +9,7 @@
   "private/webapis/dom/abort-api/__tests__/AbortController-itest.js": {},
   "private/webapis/errors/__tests__/DOMException-itest.js": {},
   "private/webapis/geometry/__tests__/DOMRectList-itest.js": {},
-  "private/webapis/performance/__tests__/EventTimingAPI-itest.js": {
-    "Event Timing API reports events with updates": "an event whose handler updates React state is never reported to the PerformanceObserver on this host; not yet diagnosed (#210)",
-    "Event Timing API durationThreshold option works when used with `type`": "an event whose handler updates React state is never reported to the PerformanceObserver on this host; not yet diagnosed (#210)",
-    "Event Timing API durationThreshold option defaults to 104ms for event entries per W3C spec": "an event whose handler updates React state is never reported to the PerformanceObserver on this host; not yet diagnosed (#210)"
-  },
+  "private/webapis/performance/__tests__/EventTimingAPI-itest.js": {},
   "private/webapis/performance/__tests__/LongTasksAPI-itest.js": {},
   "private/webapis/performance/__tests__/Performance-itest.js": {},
   "private/webapis/performance/__tests__/PerformanceMemory-itest.js": {},
