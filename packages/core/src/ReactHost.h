@@ -111,6 +111,9 @@ public:
     /** `I18nManager`'s state (#72); see `TurboModuleRegistry::i18n`. */
     I18nModel& i18n() noexcept;
 
+    /** react-native-worklets' host (#136); see `TurboModuleRegistry::worklets`. */
+    LinuxWorkletsModule& worklets() noexcept;
+
     /**
      * Emits at most one `didUpdateDimensions` for everything configured since the last call, on the JavaScript
      * thread. Called once per frame by the window host, and once after the resize by the headless one.
@@ -158,12 +161,14 @@ public:
      * every callback of one frame sees one timestamp, and it is the same instant the frame clock measured and
      * `LinuxAnimationChoreographer::tick` hands the animation backend. See *requestAnimationFrame* in
      * docs/cpp-toolchain.md.
+     *
+     * The same frame ticks worklets (#136) here, on the frame thread itself, because that is worklets' UI thread.
      */
     void dispatchAnimationFrames(std::chrono::steady_clock::time_point now);
 
     /**
-     * Whether a JS timer or a `requestAnimationFrame` callback is outstanding, for the frame clock's
-     * fallback-timeout pending-work signal (see *Frame clock* in docs/cpp-toolchain.md). Both are timers in
+     * Whether a JS timer, a `requestAnimationFrame` callback or worklets' frame work is outstanding, for the frame
+     * clock's fallback-timeout pending-work signal (see *Frame clock* in docs/cpp-toolchain.md). Both are timers in
      * React Native's model — upstream's `TimerManager` installs `requestAnimationFrame` as a timer source of its
      * own — and both have the same consequence here: a window the compositor sends no `wl_surface.frame` to has
      * to draw on the fallback timeout, or the callback never runs.

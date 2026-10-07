@@ -14,6 +14,8 @@ void LinuxUIScheduler::scheduleOnUI(std::function<void()> job) {
     worklets::UIScheduler::scheduleOnUI(std::move(job));
 }
 
+bool LinuxUIScheduler::hasPendingJobs() const { return !uiJobs_.empty(); }
+
 bool LinuxUIScheduler::queryIsOnUIThread() const { return std::this_thread::get_id() == frameThread_; }
 
 } // namespace react_native_linux

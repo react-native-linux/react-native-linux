@@ -1271,6 +1271,27 @@ Worklets' UI thread is the frame thread (ADR-0003). `LinuxUIScheduler`, compiled
 the TSan proof that a job only ever runs on the frame thread. The worklet runtime that uses the scheduler, and the
 frame's one `triggerUI` call, arrive with the WorkletsModule host (#136).
 
+### The WorkletsModule host (#136)
+
+`LinuxWorkletsModule` (`src/WorkletsModule.*`) is the C++ counterpart of worklets' `WorkletsModule.mm` and Android
+`WorkletsModule.cpp`. `TurboModuleRegistry` constructs it on the frame thread, so its `LinuxUIScheduler` answers for
+that thread, and it is compiled into `rnl_worklets`, which `rnl_react_core` now links.
+
+- `installTurboModule` constructs the one `WorkletsModuleProxy`, which installs `globalThis.__workletsModuleProxy`,
+  and `start` initializes the UI worklet runtime. `isJavaScriptQueue` answers for the thread that called
+  `installTurboModule`, which is the JavaScript thread.
+- `requestAnimationFrame` is an `AnimationFrameQueue`. `ReactHost::dispatchAnimationFrames` ticks the module on the
+  frame thread every frame: first upstream's `triggerUI` runs the UI jobs that other threads queued, then the queue
+  fires with the frame's own timestamp. A callback registered while the queue fires waits for the next frame.
+  Pending UI jobs and frames count as pending work for the frame clock.
+- At teardown `ReactHost` marks `RNRuntimeStatus` dead and destroys the proxy on the JavaScript thread before it
+  quits that thread.
+- **Bundle Mode is off.** `installTurboModule(true)` throws. Bundle Mode changes how the bundle reaches the worklet
+  runtimes and is a separate decision. With it off, `nativeLoggingHook` is empty, as on iOS and Android.
+- The spec's three methods are registered by hand instead of from a generated `NativeWorkletsModuleCxxSpec`.
+  Generating library specs is the autolinking driver's job, which is #137. The worklets Babel plugin and Metro
+  resolution are #137 as well, so the `runOnUI`/`runOnJS` end-to-end test lands there.
+
 ## React Native bump procedure (#58)
 
 React Native's stability promise covers its JavaScript API, not its C++ or out-of-tree platforms, and this platform

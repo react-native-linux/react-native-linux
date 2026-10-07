@@ -33,6 +33,7 @@ class KeyValueStore;
 class LinuxAppearanceModule;
 class LinuxDeviceInfoModule;
 class LinuxLinkingModule;
+class LinuxWorkletsModule;
 
 /**
  * The TurboModules this platform registers, and the single `TurboModuleBinding` that exposes them to JavaScript
@@ -111,6 +112,12 @@ public:
     /** `I18nManager`'s choices (#72), which `WindowSession` restores before the bundle and applies every frame. */
     I18nModel& i18n() noexcept;
 
+    /**
+     * react-native-worklets' host (#136), constructed here on the frame thread because that thread is worklets' UI
+     * thread (ADR-0003). `ReactHost` ticks it every frame and invalidates it before the JavaScript thread quits.
+     */
+    LinuxWorkletsModule& worklets() noexcept;
+
     void install(facebook::jsi::Runtime& runtime);
 
     /**
@@ -133,6 +140,7 @@ private:
     std::shared_ptr<KeyValueStore> keyValueStore_;
     std::shared_ptr<I18nModel> i18nModel_;
     std::shared_ptr<std::string> bundleUrl_;
+    std::shared_ptr<LinuxWorkletsModule> workletsModule_;
     std::unordered_map<std::string_view, ModuleFactory> moduleFactories_;
 };
 

@@ -1415,7 +1415,8 @@ foreach(rnl_flag_index RANGE ${RNL_WORKLETS_LAST_STATIC_FLAG})
 endforeach()
 
 file(GLOB_RECURSE RNL_WORKLETS_SOURCES CONFIGURE_DEPENDS ${RNL_WORKLETS_DIR}/Common/cpp/worklets/*.cpp)
-add_library(rnl_worklets OBJECT ${RNL_WORKLETS_SOURCES} src/LinuxUIScheduler.cpp src/WorkletsPlatformLogger.cpp)
+add_library(rnl_worklets OBJECT ${RNL_WORKLETS_SOURCES} src/LinuxUIScheduler.cpp src/WorkletsModule.cpp
+    src/WorkletsPlatformLogger.cpp)
 target_include_directories(rnl_worklets PUBLIC ${RNL_WORKLETS_DIR}/Common/cpp)
 target_precompile_headers(rnl_worklets PRIVATE src/WorkletsLinuxPrefix.h)
 target_compile_definitions(rnl_worklets
@@ -1423,6 +1424,8 @@ target_compile_definitions(rnl_worklets
     PUBLIC "WORKLETS_FEATURE_FLAGS=${RNL_WORKLETS_FEATURE_FLAGS}")
 target_compile_reactnative_options(rnl_worklets PRIVATE)
 target_link_libraries(rnl_worklets PUBLIC hermesvm jsi folly_runtime ${RNL_REACT_COMMON_TARGETS})
+# #136: the WorkletsModule host is registered by TurboModuleRegistry, so the core library carries worklets.
+target_link_libraries(rnl_react_core PUBLIC rnl_worklets)
 
 # ---------------------------------------------------------------------------
 # Autolinking (#147)
