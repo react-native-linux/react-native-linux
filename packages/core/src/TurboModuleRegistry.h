@@ -60,15 +60,16 @@ class LinuxLinkingModule;
  */
 /**
  * What an itest run (#210) lets `NativeFantomCxx` drive: the flush of the `StubMessageQueue` its runtime runs on,
- * the timer registry whose mock mode Fantom's timer mock turns on, and the Fabric host's additional surfaces,
- * which `Fantom.createRoot` starts and stops. No other host has them, and without them those methods are absent,
- * so an itest that needs one fails naming it.
+ * the timer registry whose mock mode Fantom's timer mock turns on, the Fabric host's additional surfaces, which
+ * `Fantom.createRoot` starts and stops, and its event beat, which `Fantom.dispatchNativeEvent` induces. No other host
+ * has them, and without them those methods are absent, so an itest that needs one fails naming it.
  */
 struct FantomRunControls {
     std::function<void()> flushMessageQueue;
     HostTimerRegistry* timerRegistry{nullptr};
     std::function<void(facebook::react::SurfaceId, facebook::react::Size, facebook::react::Float)> startSurface;
     std::function<void(facebook::react::SurfaceId)> stopSurface;
+    std::function<void()> flushEventQueue;
 };
 
 class TurboModuleRegistry final {
