@@ -11,7 +11,8 @@
 #include <thread>
 #include <utility>
 
-// #79: a `dev=true` bundle loaded from a dev server gets `HMRClient.setup`, which is what connects it to Metro's
+// #79: a `dev=true` bundle loaded from a dev server gets `HMRClient.setup` from the window host, which is what connects
+// it to Metro's
 // `/hot` socket — the call upstream's cxx host makes through `DevServerHelper::setupHMRClient`. The bundle served
 // here registers a stand-in `HMRClient` that records what it was called with.
 
@@ -79,7 +80,10 @@ std::string recordedSetup(ReactHost& reactHost) {
 std::string setupAfterLoading(const LoopbackBundleServer& server, const std::string& query) {
     ReactHost reactHost;
 
-    reactHost.loadBundle("http://127.0.0.1:" + std::to_string(server.port()) + "/index.bundle?" + query);
+    const std::string location = "http://127.0.0.1:" + std::to_string(server.port()) + "/index.bundle?" + query;
+
+    reactHost.loadBundle(location);
+    reactHost.startHotModuleReplacement(location);
     reactHost.runUntilQuiescent(kQuiescenceBudget);
 
     return recordedSetup(reactHost);

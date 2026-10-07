@@ -9,8 +9,6 @@
 #include "TextGeometry.h"
 
 #include <filesystem>
-#include <folly/Uri.h>
-#include <folly/dynamic.h>
 #endif
 
 #include <algorithm>
@@ -18,6 +16,8 @@
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <folly/Uri.h>
+#include <folly/dynamic.h>
 #include <functional>
 #include <jsi/jsi.h>
 #include <memory>
@@ -266,6 +266,10 @@ void ReactHost::loadBundle(const std::string& location) {
     } else {
         loadScript(facebook::react::JSBigFileString::fromPath(location), location);
     }
+}
+
+void ReactHost::startHotModuleReplacement(const std::string& location) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
 
     if (std::optional<folly::dynamic> arguments = hotModuleReplacementArguments(location); arguments.has_value()) {
         reactInstance_->callFunctionOnModule("HMRClient", "setup", std::move(arguments.value()));

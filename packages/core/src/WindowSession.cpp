@@ -56,6 +56,7 @@ WindowSession::WindowSession(const std::string& bundlePath, WindowSize size, dou
     }
 
     reactHost_.loadBundle(bundlePath);
+    reactHost_.startHotModuleReplacement(bundlePath);
 }
 
 WindowSession::~WindowSession() noexcept {
