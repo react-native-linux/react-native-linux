@@ -1288,6 +1288,13 @@ A library that needs a different codegen name, spec directory or type on this pl
 `codegenConfig.linux`, which overrides the shared keys the way react-native-windows reads `codegenConfig.windows`
 (#21).
 
+Each run regenerates everything, codegen into a staging directory, and then writes only what changed
+(`syncGeneratedTree` and `writeFileIfChanged` in `packages/cli/src/autolinking-cmake.ts`). An output whose
+content is unchanged keeps its mtime, so an unrelated edit does not reconfigure or rebuild; a dependency, a spec, the
+output location or a deleted generated file all change or restore exactly the files they affect, and a file no
+longer generated is removed. A key over hand-picked inputs was tried first and rejected in review: it cannot see
+every file codegen and discovery read.
+
 Configure with `-DRNL_AUTOLINKING_CMAKE=<output directory>/rnl_autolinking.cmake`. Core then defines
 `reactnative`, the umbrella a `cpp-library` links beside `jsi` and its codegen target, includes the file, and
 compiles the registration source into `hello_react` and `rnl_window` — into the executables rather than into an

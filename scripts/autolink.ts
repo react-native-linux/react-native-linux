@@ -4,11 +4,13 @@ import {
   parseReactNativeConfig,
   readOptedOutDependencyNames,
 } from "@react-native-linux/cli/linux-autolinking.ts";
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import {
   generateAutolinkingCMake,
   generateAutolinkingRegistration,
   readCodegenConfig,
+  syncGeneratedTree,
+  writeFileIfChanged,
 } from "@react-native-linux/cli/autolinking-cmake.ts";
 import { FlowParser } from "@react-native/codegen/lib/parsers/flow/parser.js";
 import type { SchemaType } from "@react-native/codegen/lib/CodegenSchema.js";
@@ -147,17 +149,26 @@ const applicationConfigPath = path.join(config.root, "react-native.config.js");
 const codegenDirectory = path.resolve(outputDirectory, "codegen");
 const optedOutDependencyNames = readOptedOutDependencyNames(await importApplicationConfig(applicationConfigPath));
 
-mkdirSync(codegenDirectory, { recursive: true });
+/*
+ * Codegen writes every file it generates on every run, so it writes into a staging directory and only what changed
+ * reaches the tree CMake reads: an unrelated edit leaves every output's mtime alone (#147).
+ */
+const stagingDirectory = path.resolve(outputDirectory, ".codegen-staging");
 
-const run = { applicationConfigPath, codegenDirectory, config, optedOutDependencyNames };
+rmSync(stagingDirectory, { force: true, recursive: true });
+mkdirSync(stagingDirectory, { recursive: true });
+
+const run = { applicationConfigPath, codegenDirectory: stagingDirectory, config, optedOutDependencyNames };
 const libraries = autolinkedLibraries(run);
 const codegen = codegenLibraries(run);
 
-writeFileSync(
+syncGeneratedTree(stagingDirectory, codegenDirectory);
+rmSync(stagingDirectory, { force: true, recursive: true });
+writeFileIfChanged(
   path.resolve(outputDirectory, "rnl_autolinking.cmake"),
   generateAutolinkingCMake(libraries, codegen, codegenDirectory),
 );
-writeFileSync(
+writeFileIfChanged(
   path.resolve(outputDirectory, "rnl_autolinking.cpp"),
   generateAutolinkingRegistration(libraries, codegen),
 );
