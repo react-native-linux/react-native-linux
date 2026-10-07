@@ -8,6 +8,7 @@ import {
   forgetLinuxView,
   LinuxElement,
   LinuxView,
+  setLinuxGestureActive,
 } from './LinuxPointerRouter';
 import EventManager from './EventManager';
 
@@ -61,13 +62,26 @@ export class GestureHandlerLinuxDelegate
   }
 
   onBegin(): void {}
-  onActivate(): void {}
-  onEnd(): void {}
-  onCancel(): void {}
-  onFail(): void {}
+
+  onActivate(): void {
+    setLinuxGestureActive(this, true);
+  }
+
+  onEnd(): void {
+    setLinuxGestureActive(this, false);
+  }
+
+  onCancel(): void {
+    setLinuxGestureActive(this, false);
+  }
+
+  onFail(): void {
+    setLinuxGestureActive(this, false);
+  }
 
   destroy(): void {
     this.eventManagers.forEach((manager) => manager.unregisterListeners());
+    setLinuxGestureActive(this, false);
     forgetLinuxView(this.view);
   }
 }

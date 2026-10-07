@@ -1,0 +1,34 @@
+{
+  "name": "gesture-pan-over-pressable",
+  "bundle": "pan-over-pressable.tsx",
+  "ready": "ownership: committed",
+  "frames": 600,
+  "steps": [
+    "sleep 500",
+    "move 150 140",
+    "sleep 100",
+    "click 150 140",
+    "sleep 400",
+    "button left press",
+    "sleep 100",
+    "move 170 141",
+    "sleep 50",
+    "move 200 142",
+    "sleep 50",
+    "move 240 143",
+    "sleep 50",
+    "button left release",
+    "sleep 400"
+  ],
+  "expect": [
+    "ownership: committed",
+    "ownership: pressIn",
+    "ownership: press 1",
+    "ownership: pressOut",
+    "ownership: pressIn",
+    "ownership: pan start",
+    "ownership: pressOut",
+    "ownership: pan end success=true"
+  ],
+  "reject": ["ownership: press 2"]
+}

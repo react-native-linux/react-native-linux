@@ -3,6 +3,7 @@ import { PropsWithChildren } from 'react';
 import { View, ViewProps, StyleSheet } from 'react-native';
 import GestureHandlerRootViewContext from '../GestureHandlerRootViewContext';
 import {
+  isAnyLinuxGestureActive,
   RootPointerEvent,
   routeLinuxPointerEvent,
 } from '../web/tools/LinuxPointerRouter';
@@ -32,6 +33,8 @@ export default function GestureHandlerRootView({
         onPointerCancelCapture={(event: RootPointerEvent) =>
           routeLinuxPointerEvent('pointercancel', event)
         }
+        onMoveShouldSetResponderCapture={isAnyLinuxGestureActive}
+        onResponderTerminationRequest={() => false}
         {...rest}
       />
     </GestureHandlerRootViewContext.Provider>
