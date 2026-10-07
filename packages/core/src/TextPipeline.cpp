@@ -627,21 +627,26 @@ std::vector<skia::textlayout::TextBox> rangeBoxes(skia::textlayout::Paragraph& p
 facebook::react::Rect caretRectangle(skia::textlayout::Paragraph& paragraph, size_t caretUtf16, float emptyHeight) {
     const std::vector<skia::textlayout::TextBox> following = rangeBoxes(paragraph, caretUtf16, caretUtf16 + 1);
 
+    // A caret sits at the edge its neighbouring character starts or ends at, and which edge that is depends on the
+    // character's direction: the start of a right-to-left character is its right edge (#72 item 4).
     if (!following.empty()) {
-        const SkRect& rect = following.front().rect;
+        const skia::textlayout::TextBox& box = following.front();
+        const float startEdge =
+            box.direction == skia::textlayout::TextDirection::kRtl ? box.rect.fRight : box.rect.fLeft;
 
-        return facebook::react::Rect{.origin = facebook::react::Point{.x = rect.fLeft, .y = rect.fTop},
-                                     .size = facebook::react::Size{.width = kCaretWidth, .height = rect.height()}};
+        return facebook::react::Rect{.origin = facebook::react::Point{.x = startEdge, .y = box.rect.fTop},
+                                     .size = facebook::react::Size{.width = kCaretWidth, .height = box.rect.height()}};
     }
 
     const std::vector<skia::textlayout::TextBox> preceding =
         caretUtf16 == 0 ? std::vector<skia::textlayout::TextBox>{} : rangeBoxes(paragraph, caretUtf16 - 1, caretUtf16);
 
     if (!preceding.empty()) {
-        const SkRect& rect = preceding.back().rect;
+        const skia::textlayout::TextBox& box = preceding.back();
+        const float endEdge = box.direction == skia::textlayout::TextDirection::kRtl ? box.rect.fLeft : box.rect.fRight;
 
-        return facebook::react::Rect{.origin = facebook::react::Point{.x = rect.fRight, .y = rect.fTop},
-                                     .size = facebook::react::Size{.width = kCaretWidth, .height = rect.height()}};
+        return facebook::react::Rect{.origin = facebook::react::Point{.x = endEdge, .y = box.rect.fTop},
+                                     .size = facebook::react::Size{.width = kCaretWidth, .height = box.rect.height()}};
     }
 
     return facebook::react::Rect{.origin = facebook::react::Point{.x = 0, .y = 0},

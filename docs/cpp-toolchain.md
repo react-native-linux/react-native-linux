@@ -4045,9 +4045,15 @@ Each is deliberate, and each is a thing to fix rather than a thing to argue abou
       digit. Neutral characters take their context's direction, so they are not asked.
     - **No fix was needed.** `utf16IndexAtPoint` is SkParagraph's `getGlyphPositionAtCoordinate`, which already
       resolves bidi runs.
-  - **What is missing: caret and selection in visual runs (#72 item 4, #343).** The caret is not yet direction-aware.
-    For a right-to-left character, `measureEditorGeometry` puts the caret at its left edge instead of its right.
-    That is why the round trip cannot use the caret as its oracle.
+  - **The caret is direction-aware (#72 item 4).** `caretRectangle` reads the `TextBox` direction SkParagraph
+    reports for the neighbouring character:
+    - a caret before a right-to-left character sits at that character's right edge;
+    - a caret after the last right-to-left character sits at its left edge;
+    - left-to-right is unchanged.
+    `BidiHitTestTest` pins the edge for every strong
+    character of both fixtures, and hit-tests a point just inside it back to the same offset (#343's
+    position↔index round trip). Selection is already per visual run: `rangeBoxes` returns one rectangle per run, so
+    a bidirectional range draws as several. #343's tap e2e and selection golden are still open.
 - **Emoji rasterize from bitmap and COLRv0 faces only, and a `fontFamily` is one name.** The pinned Noto Color
   Emoji is CBDT and draws; a COLRv1 face would not, because this Skia archive references no
   `FT_Get_Color_Glyph_Paint`. A `fontFamily` fallback *list* — react-native#48625 — is still one name plus the two
