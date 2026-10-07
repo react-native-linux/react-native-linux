@@ -1310,6 +1310,12 @@ library's own C++, which is #150/#151's. The fixture's `CppLibraryView` is the C
 "`[component] 'CppLibraryView' has no native component registered`" line appears. The interop fallback would lay
 out and paint an unregistered name too, so the frame alone proves nothing.
 
+That line names the file that should have registered the component (#56). A build configured with
+`RNL_AUTOLINKING_CMAKE` passes the path of its `rnl_autolinking.cpp` into `rnl_react_core` as
+`RNL_AUTOLINKING_SOURCE`, and the line says the registration belongs there. A build configured without autolinking
+says so instead, and says which command produces the file. `FantomTesterTest` asserts the name of the generated file
+in either configuration.
+
 ## A React Native application (#22)
 
 `packages/test-harness` is an ordinary React Native 0.87.1 application — `react`, `react-native`, `@babel/runtime`,

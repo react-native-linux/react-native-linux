@@ -1439,6 +1439,8 @@ if(RNL_AUTOLINKING_CMAKE)
     add_library(reactnative INTERFACE)
     target_link_libraries(reactnative INTERFACE rnl_react_core)
     include(${RNL_AUTOLINKING_CMAKE})
+    # The file an unregistered component's warning names (#56).
+    target_compile_definitions(rnl_react_core PRIVATE "RNL_AUTOLINKING_SOURCE=\"${RNL_AUTOLINKING_SOURCES}\"")
 
     foreach(host hello_react rnl_window)
         if(TARGET ${host})
