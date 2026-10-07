@@ -24,6 +24,7 @@
       "project": ["src/**/*.tsx", "scripts/**/*.ts"],
       "ignoreDependencies": [
         "@babel/runtime",
+        "@react-native-linux/gesture-handler",
         "@react-native/babel-preset",
         "deep-equal",
         "jest-diff",
@@ -32,6 +33,11 @@
         "pretty-format",
         "tinybench"
       ]
+    },
+    "packages/gesture-handler": {
+      "project": ["src/**/*.ts"],
+      "ignore": ["upstream/**"],
+      "ignoreDependencies": ["@egjs/hammerjs", "hoist-non-react-statics", "invariant"]
     }
   }
 }

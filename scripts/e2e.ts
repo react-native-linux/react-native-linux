@@ -1,5 +1,5 @@
 import { argv, env, stderr, stdout } from "node:process";
-import { buildEnvironment, findExecutable, findLavapipeIcd } from "./window-golden.ts";
+import { buildEnvironment, findExecutable, findLavapipeIcd, resolveScenarioBundle } from "./window-golden.ts";
 import {
   describeTraceFailures,
   formatInjectorScript,
@@ -96,7 +96,7 @@ const startCompositor = (run: ScenarioRun, rig: Rig, workspace: Workspace): Comp
       "--",
       windowBinaryPath,
       "--fabric",
-      path.join(run.source.bundlesDirectory, run.scenario.bundle),
+      resolveScenarioBundle(run.source.bundlesDirectory, run.scenario),
       "--frames",
       String(run.scenario.frames),
       "--screenshot",
