@@ -22,6 +22,8 @@ const fixtures: readonly GoldenFixture[] = [
   // #72: a paragraph's base direction from writingDirection or the inherited layout direction, in Latin text.
   { bundleFileName: "rtl-text.js", goldenFileName: "rtl-text.png", renderArguments: [], renderFlag: "--golden" },
   { bundleFileName: "rtl-script.js", goldenFileName: "rtl-script.png", renderArguments: [], renderFlag: "--golden" },
+  // #253: each textAlign value in a left-to-right and a right-to-left paragraph; start and end follow the direction.
+  { bundleFileName: "text-align.js", goldenFileName: "text-align.png", renderArguments: [], renderFlag: "--golden" },
   // #104: a turn about each transformOrigin over the unturned frame, and what perspective reduces to.
   {
     bundleFileName: "transform-origin.js",
