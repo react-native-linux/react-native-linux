@@ -4042,6 +4042,9 @@ Each is deliberate, and each is a thing to fix rather than a thing to argue abou
     SkParagraph's bidi orders mixed-direction runs. Arabic and Hebrew shape through the pinned Noto Sans Arabic
     and Hebrew faces, and `rtl-script.png` is their golden (#72). `I18nManager.forceRTL` and `allowRTL` flip a
     running window's layout without a reload and persist across restarts; see *I18nManager (#72)*.
+  - **`textAlign` follows the paragraph's direction (#253).** `start` and `end` resolve against the base
+    direction, so a right-to-left paragraph aligns `start` to the right; `left`, `right` and `center` do not move,
+    and `justify` spreads every line but the last. `text-align.png` is the golden, both directions side by side.
   - **Hit testing is bidi-correct, and proven (#72 item 3).** `BidiHitTestTest` round-trips every strong character
     of wrapped right-to-left and mixed-direction paragraphs. Each paragraph wraps onto at least three lines, so the
     trailing character of every wrapped line is included (react-native-windows#7792). A point a quarter of the way
