@@ -4,6 +4,7 @@
 #include "BeastWebSocketClient.h"
 #include "Clipboard.h"
 #include "CurlHttpClient.h"
+#include "FantomRenderOutput.h"
 #include "HostTimerRegistry.h"
 #include "I18n.h"
 #include "PlatformColor.h"
@@ -43,6 +44,8 @@
 #include <react/renderer/bridging/bridging.h>
 #include <react/renderer/core/EventEmitter.h>
 #include <react/renderer/core/RawEvent.h>
+#include <react/renderer/mounting/stubs/stubs.h>
+#include <react/renderer/uimanager/UIManagerBinding.h>
 #include <react/timing/primitives.h>
 
 extern char** environ;
@@ -512,8 +515,9 @@ private:
  * runtime's `StubMessageQueue`, re-entrantly from inside the call, which is what `Fantom.runTask` and the work loop
  * stand on, and `setTimerMockEnabled`, `advanceTimers`, `runAllTimers` and `getPendingTimerCount` are Fantom's timer
  * mock over `HostTimerRegistry`'s mock mode, `startSurface` and `stopSurface` are `Fantom.createRoot`'s surfaces on
- * the Fabric host, and `enqueueNativeEvent` and `flushEventQueue` are `Fantom.dispatchNativeEvent`; all nine exist
- * only where the registry was given an itest run's `FantomRunControls`.
+ * the Fabric host, `enqueueNativeEvent` and `flushEventQueue` are `Fantom.dispatchNativeEvent`, and
+ * `getRenderedOutput` is `root.getRenderedOutput()`; all ten exist only where the registry was given an itest run's
+ * `FantomRunControls`.
  * `forceHighResTimeStamp` pins `HighResTimeStamp::now()` for the whole process, or unpins it given no number, exactly
  * as upstream's tester does; the hook exists only in a debug build, so an optimised one throws upstream's own message
  * instead. Every other method of the spec drives a surface, an event or a timer mock this runner does not provide yet,
@@ -589,6 +593,7 @@ public:
             methodMap_["stopSurface"] = {1, &stopSurface};
             methodMap_["enqueueNativeEvent"] = {5, &enqueueNativeEvent};
             methodMap_["flushEventQueue"] = {0, &flushEventQueue};
+            methodMap_["getRenderedOutput"] = {2, &getRenderedOutput};
         }
     }
 
@@ -630,7 +635,8 @@ private:
     /**
      * `startSurface(viewportWidth, viewportHeight, devicePixelRatio, viewportOffsetX, viewportOffsetY)`, answering
      * the new surface's id. Ids start at 11 and step by 10, as upstream's tester's do, which keeps them clear of the
-     * Fabric host's own surface 1. The viewport offset has no consumer on this host and is not applied.
+     * Fabric host's own surface 1. The viewport offset goes into the surface's layout context, as upstream's tester
+     * applies it.
      */
     static facebook::jsi::Value startSurface(facebook::jsi::Runtime& /*runtime*/, TurboModule& turboModule,
                                              const facebook::jsi::Value* arguments, size_t count) {
@@ -641,8 +647,10 @@ private:
             .height = static_cast<facebook::react::Float>(numberAt(arguments, count, 1))};
 
         module.nextSurfaceId_ += kSurfaceIdStep;
-        module.fantomRunControls_->startSurface(surfaceId, viewport,
-                                                static_cast<facebook::react::Float>(numberAt(arguments, count, 2)));
+        module.fantomRunControls_->startSurface(
+            surfaceId, viewport, static_cast<facebook::react::Float>(numberAt(arguments, count, 2)),
+            {.x = static_cast<facebook::react::Float>(numberAt(arguments, count, 3)),
+             .y = static_cast<facebook::react::Float>(numberAt(arguments, count, 4))});
 
         return {surfaceId};
     }
@@ -691,6 +699,42 @@ private:
         controlsOf(turboModule).flushEventQueue();
 
         return facebook::jsi::Value::undefined();
+    }
+
+    /**
+     * `getRenderedOutput(surfaceId, {includeRoot, includeLayoutMetrics})`: the surface's current tree, flattened into
+     * the view tree it mounts as, rendered the way upstream's tester renders it.
+     */
+    static facebook::jsi::Value getRenderedOutput(facebook::jsi::Runtime& runtime, TurboModule& /*turboModule*/,
+                                                  const facebook::jsi::Value* arguments, size_t count) {
+        const auto surfaceId = static_cast<facebook::react::SurfaceId>(numberAt(arguments, count, 0));
+        std::shared_ptr<const facebook::react::RootShadowNode> rootShadowNode;
+
+        facebook::react::UIManagerBinding::getBinding(runtime)->getUIManager().getShadowTreeRegistry().visit(
+            surfaceId, [&rootShadowNode](const facebook::react::ShadowTree& shadowTree) {
+                rootShadowNode = shadowTree.getCurrentRevision().rootShadowNode;
+            });
+
+        if (rootShadowNode == nullptr) {
+            throw facebook::jsi::JSError(runtime,
+                                         "getRenderedOutput: surface " + std::to_string(surfaceId) + " is not running");
+        }
+
+        return facebook::jsi::String::createFromUtf8(
+            runtime, renderFantomOutput(facebook::react::buildStubViewTreeWithoutUsingDifferentiator(*rootShadowNode),
+                                        optionAt(runtime, arguments, count, "includeRoot"),
+                                        optionAt(runtime, arguments, count, "includeLayoutMetrics")));
+    }
+
+    static bool optionAt(facebook::jsi::Runtime& runtime, const facebook::jsi::Value* arguments, size_t count,
+                         const char* name) {
+        if (count < 2 || !arguments[1].isObject()) {
+            return false;
+        }
+
+        const facebook::jsi::Value option = arguments[1].getObject(runtime).getProperty(runtime, name);
+
+        return option.isBool() && option.getBool();
     }
 
     static double numberAt(const facebook::jsi::Value* arguments, size_t count, size_t index) {

@@ -853,6 +853,7 @@ add_library(rnl_react_core STATIC
     src/DimensionsSource.cpp
     src/EditorModel.cpp
     src/FabricHost.cpp
+    src/FantomRenderOutput.cpp
     src/FocusModel.cpp
     src/HermesJSRuntimeFactory.cpp
     src/HostTimerRegistry.cpp

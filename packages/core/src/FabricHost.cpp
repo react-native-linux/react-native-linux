@@ -278,7 +278,8 @@ void FabricHost::stopSurface() {
 }
 
 void FabricHost::startAdditionalSurface(facebook::react::SurfaceId surfaceId, facebook::react::Size surfaceSize,
-                                        facebook::react::Float pointScaleFactor) {
+                                        facebook::react::Float pointScaleFactor,
+                                        facebook::react::Point viewportOffset) {
     react_native_assert(std::this_thread::get_id() == owningThread_);
 
     mountingManager_->startSurface(surfaceId, surfaceSize);
@@ -286,7 +287,7 @@ void FabricHost::startAdditionalSurface(facebook::react::SurfaceId surfaceId, fa
                                       {.minimumSize = surfaceSize,
                                        .maximumSize = surfaceSize,
                                        .layoutDirection = facebook::react::LayoutDirection::LeftToRight},
-                                      {.pointScaleFactor = pointScaleFactor});
+                                      {.pointScaleFactor = pointScaleFactor, .viewportOffset = viewportOffset});
 }
 
 void FabricHost::stopAdditionalSurface(facebook::react::SurfaceId surfaceId) {

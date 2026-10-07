@@ -273,8 +273,9 @@ int runFantomBundle(const std::string& bundlePath) {
     FantomRunControls fantomRunControls;
 
     fantomRunControls.startSurface = [&fabricHost](facebook::react::SurfaceId surfaceId, facebook::react::Size size,
-                                                   facebook::react::Float pointScaleFactor) {
-        fabricHost->startAdditionalSurface(surfaceId, size, pointScaleFactor);
+                                                   facebook::react::Float pointScaleFactor,
+                                                   facebook::react::Point viewportOffset) {
+        fabricHost->startAdditionalSurface(surfaceId, size, pointScaleFactor, viewportOffset);
     };
     fantomRunControls.stopSurface = [&fabricHost](facebook::react::SurfaceId surfaceId) {
         fabricHost->stopAdditionalSurface(surfaceId);

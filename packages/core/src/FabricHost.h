@@ -97,7 +97,7 @@ public:
      * scene before Fabric commits to it, so its tree mounts there like the window's; nothing paints it.
      */
     void startAdditionalSurface(facebook::react::SurfaceId surfaceId, facebook::react::Size surfaceSize,
-                                facebook::react::Float pointScaleFactor);
+                                facebook::react::Float pointScaleFactor, facebook::react::Point viewportOffset);
 
     /** Commits `surfaceId`'s tree empty and forgets the surface; one that is not running is left alone. */
     void stopAdditionalSurface(facebook::react::SurfaceId surfaceId);

@@ -1,6 +1,7 @@
 #include "FabricHost.h"
 #include "ImageDecoder.h"
 #include "InputPipeline.h"
+#include "OnJavaScriptThread.h"
 #include "ReactHost.h"
 
 #include <array>
@@ -50,15 +51,6 @@ globalThis.observe = (promise) => promise.then(
   (value) => { globalThis.resolvedSum += value; },
   () => { globalThis.rejectedCount += 1; });
 )JAVASCRIPT";
-
-template <typename Result> Result onJavaScriptThread(ReactHost& reactHost, std::function<Result(Runtime&)> work) {
-    std::promise<Result> result;
-
-    reactHost.reactInstance().getBufferedRuntimeExecutor()(
-        [&result, &work](Runtime& runtime) { result.set_value(work(runtime)); });
-
-    return result.get_future().get();
-}
 
 /**
  * Issue #77, the TurboModule promise leg of `ReactHost`'s threading contract: a module creates an
