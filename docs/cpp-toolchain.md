@@ -1258,6 +1258,19 @@ The one platform file `Common/cpp` needs, `PlatformLogger`, is `src/WorkletsPlat
 Build cost against #78: 39 s wall clock for the 30 translation units at `-j16` under the `tsan` preset on a 24-thread
 machine.
 
+### The UI scheduler (#135)
+
+Worklets' UI thread is the frame thread (ADR-0003). `LinuxUIScheduler`, compiled into `rnl_worklets`, answers
+`queryIsOnUIThread` for the thread that constructed it:
+
+- A job scheduled on that thread runs inline, as `IOSUIScheduler` does on the main thread.
+- A job scheduled from any other thread is queued, and runs once each when the frame thread calls upstream's own
+  `triggerUI`.
+
+`LinuxUISchedulerTest` proves both, and that queued jobs are destroyed unrun at teardown. Its many-thread case is
+the TSan proof that a job only ever runs on the frame thread. The worklet runtime that uses the scheduler, and the
+frame's one `triggerUI` call, arrive with the WorkletsModule host (#136).
+
 ## React Native bump procedure (#58)
 
 React Native's stability promise covers its JavaScript API, not its C++ or out-of-tree platforms, and this platform
