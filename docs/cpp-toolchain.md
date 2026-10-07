@@ -8249,7 +8249,7 @@ Results come back through `NativeFantomCxx.reportTestSuiteResultsJSON`, in a sma
 `TurboModuleRegistry.cpp`; upstream's `NativeCPUTime` is registered beside it. `packages/core/fantom-expectations.json`
 is the corpus: every suite it names runs, every failure it lists names the issue that owns it, and a new failure, a
 listed failure that passes, or a listed one that goes unreported fails the run. The first batch is #423's: 17 suites,
-219 passing assertions.
+222 passing assertions.
 
 `--fantom` is `--fabric` with upstream's tester threading. `ReactHost` is built over a `StubMessageQueue` instead of
 a JavaScript thread of its own. That is a queue with no thread, flushed by the thread that owns the host, so the
@@ -8267,8 +8267,14 @@ Fantom's timer mock (`setTimerMockEnabled`, `advanceTimers`, `runAllTimers`, `ge
 clock and fires only when advanced: earliest due first, then the one created first, a recurring one re-armed each
 time. The mock's timers never count as pending work, so a mock left installed cannot hold a run open.
 `forceHighResTimeStamp` pins `HighResTimeStamp::now()` process-wide through upstream's own debug-build hook, and an
-optimised build throws upstream's message for it. What still fails is Fantom's surface API (`startSurface`, which
-`Fantom.createRoot` needs).
+optimised build throws upstream's message for it.
+
+`Fantom.createRoot`'s surfaces are `FabricHost::startAdditionalSurface` and `stopAdditionalSurface`, upstream's own
+`SurfaceManager` on the host's scheduler. Ids start at 11 and step by 10, as in upstream's tester, clear of the host's
+own surface 1. Each surface's root goes into the retained scene, so its tree mounts there; nothing paints it.
+`NativeIntersectionObserver` and `NativeMutationObserver` are registered whatever the feature flags say, as upstream's
+C++ host (`ReactCxxTurboModuleProvider`) registers them. What still fails is `enqueueNativeEvent`, which
+`Fantom.dispatchNativeEvent` needs.
 
 ### The Hermes-linked binary (#228)
 

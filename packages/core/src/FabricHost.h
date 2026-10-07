@@ -20,6 +20,7 @@
 #include <react/renderer/scheduler/Scheduler.h>
 #include <react/renderer/scheduler/SchedulerDelegateImpl.h>
 #include <react/renderer/scheduler/SurfaceHandler.h>
+#include <react/renderer/scheduler/SurfaceManager.h>
 #include <react/renderer/uimanager/UIManagerAnimationBackend.h>
 #include <react/runtime/ReactInstance.h>
 #include <react/utils/ContextContainer.h>
@@ -86,7 +87,20 @@ public:
      * surface starts left to right.
      */
     void setLayoutDirection(LayoutDirectionRequest request);
+
+    /** Stops this host's surface and every additional one, each committing its empty tree. */
     void stopSurface();
+
+    /**
+     * Starts an empty surface under `surfaceId` beside this host's own, for `Fantom.createRoot` in an itest run
+     * (#210), through upstream's own `SurfaceManager` on this host's scheduler. Its root goes into the retained
+     * scene before Fabric commits to it, so its tree mounts there like the window's; nothing paints it.
+     */
+    void startAdditionalSurface(facebook::react::SurfaceId surfaceId, facebook::react::Size surfaceSize,
+                                facebook::react::Float pointScaleFactor);
+
+    /** Commits `surfaceId`'s tree empty and forgets the surface; one that is not running is left alone. */
+    void stopAdditionalSurface(facebook::react::SurfaceId surfaceId);
 
     /**
      * Registers the compositor's text input, which focus enables while a text component holds it. The sink is
@@ -184,6 +198,7 @@ private:
     std::function<void()> eventBeatInducer_;
     std::unique_ptr<facebook::react::SchedulerDelegateImpl> schedulerDelegate_;
     std::unique_ptr<facebook::react::Scheduler> scheduler_;
+    std::unique_ptr<facebook::react::SurfaceManager> additionalSurfaces_;
     std::unique_ptr<InputDispatcher> inputDispatcher_;
     std::unique_ptr<ScrollController> scrollController_;
     std::unique_ptr<facebook::react::SurfaceHandler> surfaceHandler_;

@@ -32,6 +32,8 @@
 #include <react/logging/NativeExceptionsManager.h>
 #include <react/nativemodule/cputime/NativeCPUTime.h>
 #include <react/nativemodule/defaults/DefaultTurboModules.h>
+#include <react/nativemodule/intersectionobserver/NativeIntersectionObserver.h>
+#include <react/nativemodule/mutationobserver/NativeMutationObserver.h>
 #include <react/renderer/animated/AnimatedModule.h>
 #include <react/renderer/animated/NativeAnimatedNodesManagerProvider.h>
 #include <react/timing/primitives.h>
@@ -502,12 +504,12 @@ private:
  * nothing of a host whose queues drain on their own. `flushMessageQueue` runs every task queued on the itest
  * runtime's `StubMessageQueue`, re-entrantly from inside the call, which is what `Fantom.runTask` and the work loop
  * stand on, and `setTimerMockEnabled`, `advanceTimers`, `runAllTimers` and `getPendingTimerCount` are Fantom's timer
- * mock over `HostTimerRegistry`'s mock mode; all five exist only where the registry was given an itest run's
- * `FantomRunControls`. `forceHighResTimeStamp` pins
- * `HighResTimeStamp::now()` for the whole process, or unpins it given no number, exactly as upstream's tester does; the
- * hook exists only in a debug build, so an optimised one throws upstream's own message instead. Every other method of
- * the spec drives a surface, an event or a timer mock this runner does not provide yet, so it is absent and a test that
- * calls one fails naming it.
+ * mock over `HostTimerRegistry`'s mock mode, and `startSurface` and `stopSurface` are `Fantom.createRoot`'s surfaces
+ * on the Fabric host; all seven exist only where the registry was given an itest run's `FantomRunControls`.
+ * `forceHighResTimeStamp` pins `HighResTimeStamp::now()` for the whole process, or unpins it given no number, exactly
+ * as upstream's tester does; the hook exists only in a debug build, so an optimised one throws upstream's own message
+ * instead. Every other method of the spec drives a surface, an event or a timer mock this runner does not provide yet,
+ * so it is absent and a test that calls one fails naming it.
  */
 /**
  * `DevSettings` for a `dev=true` bundle, whose startup requires the module (#79). Every member is a no-op: reload
@@ -575,6 +577,8 @@ public:
             methodMap_["advanceTimers"] = {1, &advanceTimers};
             methodMap_["runAllTimers"] = {0, &runAllTimers};
             methodMap_["getPendingTimerCount"] = {0, &getPendingTimerCount};
+            methodMap_["startSurface"] = {5, &startSurface};
+            methodMap_["stopSurface"] = {1, &stopSurface};
         }
     }
 
@@ -613,6 +617,37 @@ private:
         return facebook::jsi::Value::undefined();
     }
 
+    /**
+     * `startSurface(viewportWidth, viewportHeight, devicePixelRatio, viewportOffsetX, viewportOffsetY)`, answering
+     * the new surface's id. Ids start at 11 and step by 10, as upstream's tester's do, which keeps them clear of the
+     * Fabric host's own surface 1. The viewport offset has no consumer on this host and is not applied.
+     */
+    static facebook::jsi::Value startSurface(facebook::jsi::Runtime& /*runtime*/, TurboModule& turboModule,
+                                             const facebook::jsi::Value* arguments, size_t count) {
+        LinuxFantomModule& module = static_cast<LinuxFantomModule&>(turboModule);
+        const facebook::react::SurfaceId surfaceId = module.nextSurfaceId_;
+        const facebook::react::Size viewport{
+            .width = static_cast<facebook::react::Float>(numberAt(arguments, count, 0)),
+            .height = static_cast<facebook::react::Float>(numberAt(arguments, count, 1))};
+
+        module.nextSurfaceId_ += kSurfaceIdStep;
+        module.fantomRunControls_->startSurface(surfaceId, viewport,
+                                                static_cast<facebook::react::Float>(numberAt(arguments, count, 2)));
+
+        return {surfaceId};
+    }
+
+    static facebook::jsi::Value stopSurface(facebook::jsi::Runtime& /*runtime*/, TurboModule& turboModule,
+                                            const facebook::jsi::Value* arguments, size_t count) {
+        controlsOf(turboModule).stopSurface(static_cast<facebook::react::SurfaceId>(numberAt(arguments, count, 0)));
+
+        return facebook::jsi::Value::undefined();
+    }
+
+    static double numberAt(const facebook::jsi::Value* arguments, size_t count, size_t index) {
+        return index < count && arguments[index].isNumber() ? arguments[index].getNumber() : 0.0;
+    }
+
     static facebook::jsi::Value getPendingTimerCount(facebook::jsi::Runtime& /*runtime*/, TurboModule& turboModule,
                                                      const facebook::jsi::Value* /*arguments*/, size_t /*count*/) {
         return {static_cast<double>(controlsOf(turboModule).timerRegistry->pendingMockTimerCount())};
@@ -642,7 +677,10 @@ private:
 #endif
     }
 
+    static constexpr facebook::react::SurfaceId kSurfaceIdStep = 10;
+
     std::optional<FantomRunControls> fantomRunControls_;
+    facebook::react::SurfaceId nextSurfaceId_{11};
 };
 
 /**
@@ -730,6 +768,16 @@ TurboModuleRegistry::TurboModuleRegistry(
     // `IImageLoader` behind it, upstream's module rejects `getSize` and `prefetch`, which is the honest answer here.
     moduleFactories_.emplace(facebook::react::ImageLoaderModule::kModuleName,
                              [jsInvoker]() { return std::make_shared<facebook::react::ImageLoaderModule>(jsInvoker); });
+    // The two observer modules, registered whatever the flags say, as upstream's own C++ host registers them
+    // (ReactCxxPlatform's `ReactCxxTurboModuleProvider`). `DefaultTurboModules` serves them only behind
+    // `enableIntersectionObserverByDefault` and `enableMutationObserverByDefault`. JavaScript still installs the
+    // `IntersectionObserver` and `MutationObserver` globals only behind those flags.
+    moduleFactories_.emplace(facebook::react::NativeIntersectionObserver::kModuleName, [jsInvoker]() {
+        return std::make_shared<facebook::react::NativeIntersectionObserver>(jsInvoker);
+    });
+    moduleFactories_.emplace(facebook::react::NativeMutationObserver::kModuleName, [jsInvoker]() {
+        return std::make_shared<facebook::react::NativeMutationObserver>(jsInvoker);
+    });
     // #79: `fetch` and `XMLHttpRequest` reach upstream's C++ Networking module, which this platform only supplies
     // the HTTP client for.
     moduleFactories_.emplace(facebook::react::NetworkingModule::kModuleName, [jsInvoker]() {
