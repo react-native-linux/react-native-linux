@@ -1,0 +1,8 @@
+{
+  "name": "rtl-tap",
+  "bundle": "rtl-tap.js",
+  "ready": "rtl-tap: committed surface 1",
+  "frames": 300,
+  "steps": ["sleep 500", "click 58 62", "sleep 400", "click 51 62", "sleep 500"],
+  "expect": ["rtl-tap: committed surface 1", "rtl-tap: caret 3..3", "rtl-tap: caret 4..4"]
+}

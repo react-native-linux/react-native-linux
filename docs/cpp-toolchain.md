@@ -4053,7 +4053,11 @@ Each is deliberate, and each is a thing to fix rather than a thing to argue abou
     `BidiHitTestTest` pins the edge for every strong
     character of both fixtures, and hit-tests a point just inside it back to the same offset (#343's
     position↔index round trip). Selection is already per visual run: `rangeBoxes` returns one rectangle per run, so
-    a bidirectional range draws as several. #343's tap e2e and selection golden are still open.
+    a bidirectional range draws as several.
+  - **#343's end-to-end proof.** `e2e/rtl-tap.json` taps the visually leftmost glyph of a left-aligned Hebrew
+    word: the word's last letter. A tap in its right half reports caret 3 and a tap in its left half caret 4,
+    through `topSelectionChange`. `goldens/text-input-mixed-direction-selection.png` selects offsets 5..11 of
+    `Hi שלום you` across the direction boundary, and draws two rectangles with the unselected letters between.
 - **Emoji rasterize from bitmap and COLRv0 faces only, and a `fontFamily` is one name.** The pinned Noto Color
   Emoji is CBDT and draws; a COLRv1 face would not, because this Skia archive references no
   `FT_Get_Color_Glyph_Paint`. A `fontFamily` fallback *list* — react-native#48625 — is still one name plus the two

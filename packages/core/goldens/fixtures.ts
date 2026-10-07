@@ -199,6 +199,15 @@ const fixtures: readonly GoldenFixture[] = [
     renderArguments: ["Hello world{Ctrl+A}"],
     renderFlag: "--type",
   },
+  // Issue #343: a selection over mixed Latin and Hebrew that crosses the direction boundary.
+  // Offsets 5..11 hold the Hebrew word's last two letters, drawn at its left end, and " you".
+  // So the highlight is two rectangles, with the word's unselected first letters between them.
+  {
+    bundleFileName: "text-input.js",
+    goldenFileName: "text-input-mixed-direction-selection.png",
+    renderArguments: ["Hi שלום you{Shift+Left}{Shift+Left}{Shift+Left}{Shift+Left}{Shift+Left}{Shift+Left}"],
+    renderFlag: "--type",
+  },
   // Issue #53, case 3: seven Tabs reach a field four lines long in a two-line box, and its caret is below the box.
   {
     bundleFileName: "text-input.js",
