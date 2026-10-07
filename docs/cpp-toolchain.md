@@ -1276,6 +1276,9 @@ defines each library's `react_codegen_<codegenConfig.name>` target over module c
 directory, adds the library's own CMakeLists unchanged, and lists its target. `rnl_autolinking.cpp` registers each
 `cxxModuleHeaderName` class into upstream's `globalExportedCxxTurboModuleMap`, exactly as the `cpp-library`
 template's iOS `OnLoad.mm` does; `TurboModuleRegistry` serves every entry of that map it does not already serve.
+A library that needs a different codegen name, spec directory or type on this platform sets them under
+`codegenConfig.linux`, which overrides the shared keys the way react-native-windows reads `codegenConfig.windows`
+(#21).
 
 Configure with `-DRNL_AUTOLINKING_CMAKE=<output directory>/rnl_autolinking.cmake`. Core then defines
 `reactnative`, the umbrella a `cpp-library` links beside `jsi` and its codegen target, includes the file, and

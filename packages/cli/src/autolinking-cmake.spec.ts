@@ -123,8 +123,25 @@ describe("readCodegenConfig", () => {
     expect(readCodegenConfig(packageJson)).toStrictEqual({ jsSourceDirectory: "src", name: "CppLibrarySpec" });
   });
 
+  it("lets codegenConfig.linux override the shared keys", () => {
+    const packageJson = JSON.stringify({
+      codegenConfig: {
+        jsSrcsDir: "src",
+        linux: { jsSrcsDir: "src/linux", name: "LinuxSpec" },
+        name: "Spec",
+        type: "all",
+      },
+    });
+
+    expect(readCodegenConfig(packageJson)).toStrictEqual({ jsSourceDirectory: "src/linux", name: "LinuxSpec" });
+  });
+
   it.each([
     ["a package with no codegenConfig", {}],
+    [
+      "a linux override with an unknown type",
+      { codegenConfig: { jsSrcsDir: "src", linux: { type: "views" }, name: "Spec", type: "all" } },
+    ],
     ["a package.json that is not an object", []],
     ["an unknown codegen type", { codegenConfig: { jsSrcsDir: "src", name: "ViewSpec", type: "views" } }],
     ["a config without a name", { codegenConfig: { jsSrcsDir: "src", type: "all" } }],

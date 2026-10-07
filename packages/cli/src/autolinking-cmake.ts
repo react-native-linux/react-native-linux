@@ -13,13 +13,18 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 /**
  * A library's `codegenConfig`: its `name`, which is also the suffix of the `react_codegen_<name>` target the
  * library's own CMakeLists links, and the `jsSrcsDir` its module and component specs live in. `null` for a
- * library with no codegen.
+ * library with no codegen. Keys under `codegenConfig.linux` override the shared ones (#21), as react-native-windows
+ * reads `codegenConfig.windows`.
  */
 const readCodegenConfig = (
   packageJsonContents: string,
 ): { readonly jsSourceDirectory: string; readonly name: string } | null => {
   const packageJson: unknown = JSON.parse(packageJsonContents);
-  const codegenConfig = isRecord(packageJson) ? packageJson["codegenConfig"] : null;
+  const sharedConfig = isRecord(packageJson) ? packageJson["codegenConfig"] : null;
+  const codegenConfig =
+    isRecord(sharedConfig) && isRecord(sharedConfig["linux"])
+      ? { ...sharedConfig, ...sharedConfig["linux"] }
+      : sharedConfig;
 
   if (!isRecord(codegenConfig) || !codegenTypes.has(codegenConfig["type"])) {
     return null;
