@@ -506,6 +506,12 @@ jobs:
           grep -qF "CppLibraryView #4 frame=(24.00, 24.00, 120.00, 80.00)" /tmp/rnl-component.log
           if grep -q "\[component\] 'CppLibraryView'" /tmp/rnl-component.log; then exit 1; fi
 
+          # #23: PlatformConstants answers the vendored React Native version, so a dev bundle sees no mismatch.
+          version=$(jq -r .tag scripts/vendor.lock.json | sed 's/^v//')
+          "$binary" packages/core/test-bundles/platform-constants.js | tee /tmp/rnl-platform-constants.log
+          grep -q "platform-constants: reactNativeVersion $version prerelease=null" /tmp/rnl-platform-constants.log
+          grep -q "platform-constants: isTesting=false osVersion non-empty=true" /tmp/rnl-platform-constants.log
+
           "$binary" packages/core/test-bundles/hello.js | tee /tmp/rnl-hello.log
           grep -q "react-native-linux: timer fired" /tmp/rnl-hello.log
           grep -q "react-native-linux: nested timer fired" /tmp/rnl-hello.log

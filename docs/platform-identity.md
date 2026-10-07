@@ -16,8 +16,10 @@ document only records what actually landed and why, not the survey.
   TypeScript; only the `LinuxPlatform` variant is kept (the iOS/Android/Windows/macOS/Web variant shapes are not
   reproduced, since nothing in this repository consumes them and an unused export would fail `pnpm deadcode`).
 - `packages/core/src-linux/Libraries/Utilities/NativePlatformConstantsLinux.ts` — the TurboModule-shaped spec
-  (`PlatformConstantsLinux`, `NativePlatformConstantsLinuxSpec`) that a future native `PlatformConstants` module
-  (issue #23) will satisfy. No `TurboModuleRegistry` lookup is wired yet — see "Deferred: native constants" below.
+  (`PlatformConstantsLinux`, `NativePlatformConstantsLinuxSpec`) that the native `PlatformConstants` module
+  satisfies (#23). The host answers the React Native version it was compiled from and the kernel release, and
+  `readNativePlatformConstantsLinux` reaches it through `nativeModuleProxy` directly, so no import of
+  `TurboModuleRegistry` crosses the self-reference guard.
 - `packages/core/src-linux/Libraries/Utilities/Platform.linux.ts` — a derived override of upstream's
   `Platform.android.js`, adapted to the spec above. `Platform.OS` is the literal `'linux'`; `isTV` and `isVision`
   are always `false`; `constants`/`Version`/`isTesting`/`isDisableAnimations` read from
@@ -367,10 +369,6 @@ merge upstream changes into the three `derived` files and bump `baseVersion`.
 
 ## Deferred
 
-- **Native `PlatformConstants` module (issue #23).** `nativePlatformConstantsLinux` in `Platform.linux.ts` is a
-  hardcoded `null`; `resolveLinuxPlatformConstants` always takes the static-fallback branch today. Wiring the
-  real lookup requires both the native module landing and a decision on the self-reference guard above (since a
-  real lookup needs `TurboModuleRegistry`, which lives under `react-native/Libraries/TurboModule/...`).
 - **Metro registration end-to-end (issue #22).** There is no `metro.config.js` anywhere in this repository yet —
   no app package exists to hold one. `resolveLinuxOverlay`, `linuxOverlayIndex`, `resolvePlatformCandidates`,
   `resolveAgainstFilesystem`, `shouldUseJavaScriptFallback`, `resolveOriginAwareCandidates`,
