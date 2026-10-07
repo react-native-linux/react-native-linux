@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from
 import { gradeFantomRuns, readExpectations } from "@react-native-linux/cli/fantom-expectations.ts";
 import { harnessMetroConfig, repositoryRoot } from "./metro-config.ts";
 import Metro from "metro";
+import { env } from "node:process";
 import path from "node:path";
 
 /**
@@ -30,9 +31,11 @@ const bundledReactNative = realpathSync(
 const fantomSource = path.join(repositoryRoot, "build", "fantom-source");
 const fantomPackage = path.join(fantomSource, "private", "react-native-fantom");
 const workDirectory = path.join(repositoryRoot, "build", "fantom");
-const binaryPath = path.join(repositoryRoot, "build", "dev", "bin", "hello_react");
+// Upstream's FANTOM_ENABLE_ASAN and FANTOM_ENABLE_TSAN: RNL_PRESET names the build, as CI's native matrix does.
+const binaryPath = path.join(repositoryRoot, "build", env["RNL_PRESET"] ?? "dev", "bin", "hello_react");
 const expectationsPath = path.join(repositoryRoot, "packages", "core", "fantom-expectations.json");
 const resultPrefix = "[fantom] ";
+const sanitizerReportPattern = /ERROR: (?:Address|Leak)Sanitizer|WARNING: ThreadSanitizer|runtime error:/u;
 
 const cloneFantom = (tag: string): void => {
   if (existsSync(fantomPackage)) {
@@ -163,8 +166,14 @@ const runItest = async (relativePath: string): Promise<unknown> => {
   });
 
   // A spawn, not execFileSync: a fatal error after the suite reported must not lose the result.
-  const output = spawnSync(binaryPath, ["--fantom", bundlePath], { encoding: "utf8" }).stdout;
-  const resultLine = output.split("\n").find((line) => line.startsWith(resultPrefix)) ?? null;
+  // A sanitizer report fails the suite even after it reported, because a leak is reported only at exit.
+  const run = spawnSync(binaryPath, ["--fantom", bundlePath], { encoding: "utf8" });
+  const sanitizerReport = run.stderr.split("\n").find((line) => sanitizerReportPattern.test(line)) ?? null;
+  const resultLine = run.stdout.split("\n").find((line) => line.startsWith(resultPrefix)) ?? null;
+
+  if (sanitizerReport !== null) {
+    return { error: { message: `a sanitizer reported: ${sanitizerReport}` } };
+  }
 
   return resultLine === null
     ? { error: { message: "the suite reported no result" } }
