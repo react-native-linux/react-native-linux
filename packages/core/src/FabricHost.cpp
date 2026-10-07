@@ -194,6 +194,7 @@ FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::
     schedulerDelegate_ = std::make_unique<facebook::react::SchedulerDelegateImpl>(mountingManager_);
     scheduler_ = std::make_unique<facebook::react::Scheduler>(schedulerToolbox, nullptr, schedulerDelegate_.get());
     schedulerDelegate_->setUIManager(scheduler_->getUIManager());
+    additionalSurfaces_ = std::make_unique<facebook::react::SurfaceManager>(*scheduler_);
     // The `AnimationBackend` the Scheduler built over the choreographer above. It is held weakly for the same
     // reason `AnimationChoreographer` holds it weakly: the UIManager owns it, and this host outlives neither.
     animationBackend_ = scheduler_->getUIManager()->unstable_getAnimationBackend();
@@ -269,6 +270,29 @@ void FabricHost::stopSurface() {
 
     if (surfaceHandler_->getStatus() == facebook::react::SurfaceHandler::Status::Running) {
         surfaceHandler_->stop();
+    }
+
+    additionalSurfaces_->stopAllSurfaces();
+}
+
+void FabricHost::startAdditionalSurface(facebook::react::SurfaceId surfaceId, facebook::react::Size surfaceSize,
+                                        facebook::react::Float pointScaleFactor) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    mountingManager_->startSurface(surfaceId, surfaceSize);
+    additionalSurfaces_->startSurface(surfaceId, {}, folly::dynamic::object(),
+                                      {.minimumSize = surfaceSize,
+                                       .maximumSize = surfaceSize,
+                                       .layoutDirection = facebook::react::LayoutDirection::LeftToRight},
+                                      {.pointScaleFactor = pointScaleFactor});
+}
+
+void FabricHost::stopAdditionalSurface(facebook::react::SurfaceId surfaceId) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    // Upstream's `SurfaceManager::stopSurface` erases the end iterator for an id it does not hold.
+    if (additionalSurfaces_->isSurfaceRunning(surfaceId)) {
+        additionalSurfaces_->stopSurface(surfaceId);
     }
 }
 

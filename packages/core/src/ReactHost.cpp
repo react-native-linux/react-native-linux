@@ -118,7 +118,7 @@ void installAnimationFrameBinding(facebook::jsi::Runtime& runtime, AnimationFram
 
 } // namespace
 
-ReactHost::ReactHost(std::shared_ptr<StubMessageQueue> stubJavaScriptQueue)
+ReactHost::ReactHost(std::shared_ptr<StubMessageQueue> stubJavaScriptQueue, FantomRunControls fantomRunControls)
     : javaScriptThread_(stubJavaScriptQueue != nullptr
                             ? std::shared_ptr<facebook::react::MessageQueueThread>(stubJavaScriptQueue)
                             : std::make_shared<facebook::react::MessageQueueThreadImpl>()) {
@@ -135,14 +135,12 @@ ReactHost::ReactHost(std::shared_ptr<StubMessageQueue> stubJavaScriptQueue)
     timerManager_->setRuntimeExecutor(reactInstance_->getBufferedRuntimeExecutor());
 
     animatedNodesManagerProvider_ = std::make_shared<facebook::react::NativeAnimatedNodesManagerProvider>();
+    fantomRunControls.flushMessageQueue = [stubJavaScriptQueue]() { stubJavaScriptQueue->flush(); };
+    fantomRunControls.timerRegistry = timerRegistry_;
     turboModuleRegistry_ = std::make_unique<TurboModuleRegistry>(
         std::make_shared<facebook::react::RuntimeSchedulerCallInvoker>(reactInstance_->getRuntimeScheduler()),
         animatedNodesManagerProvider_, errorReporter_.createHandler(),
-        stubJavaScriptQueue != nullptr
-            ? std::optional<FantomRunControls>(
-                  FantomRunControls{.flushMessageQueue = [stubJavaScriptQueue]() { stubJavaScriptQueue->flush(); },
-                                    .timerRegistry = timerRegistry_})
-            : std::nullopt);
+        stubJavaScriptQueue != nullptr ? std::optional<FantomRunControls>(std::move(fantomRunControls)) : std::nullopt);
 
     reactInstance_->initializeRuntime(
         {}, [registry = turboModuleRegistry_.get(), hasMarkedTestPassed = hasMarkedTestPassed_,

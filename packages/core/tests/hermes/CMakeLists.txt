@@ -99,6 +99,7 @@ endif()
 # rather than linked from rnl_react_core because the runner exists only for tests, and rnl_react_core is what
 # rnl_window links.
 add_executable(rnl_core_hermes_tests
+    AdditionalSurfaceTest.cpp
     CrossThreadPromiseStressTest.cpp
     FantomTesterTest.cpp
     HermesRuntimeFactory.cpp

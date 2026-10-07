@@ -74,9 +74,12 @@ public:
     /**
      * `stubJavaScriptQueue` replaces the JavaScript thread for an itest run (#210): the runtime then runs on the
      * thread that flushes the queue, which is this host's own thread, and `NativeFantomCxx.flushMessageQueue` is
-     * that flush. Without one the host owns a real JavaScript thread, as every other host does.
+     * that flush. `fantomRunControls` carries what only the run's owner knows, the surfaces `Fantom.createRoot`
+     * starts; this host adds the flush and its timer registry. Without a queue the host owns a real JavaScript
+     * thread and `NativeFantomCxx` has none of these, as in every other host.
      */
-    explicit ReactHost(std::shared_ptr<StubMessageQueue> stubJavaScriptQueue = nullptr);
+    explicit ReactHost(std::shared_ptr<StubMessageQueue> stubJavaScriptQueue = nullptr,
+                       FantomRunControls fantomRunControls = {});
     ReactHost(const ReactHost&) = delete;
     ReactHost(ReactHost&&) = delete;
     ReactHost& operator=(const ReactHost&) = delete;

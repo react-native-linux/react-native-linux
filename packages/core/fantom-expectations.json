@@ -10,22 +10,18 @@
   "private/webapis/errors/__tests__/DOMException-itest.js": {},
   "private/webapis/geometry/__tests__/DOMRectList-itest.js": {},
   "private/webapis/performance/__tests__/EventTimingAPI-itest.js": {
-    "Event Timing API reports events without event handlers or updates": "NativeFantom.startSurface is not implemented, so Fantom.createRoot cannot render (#210)",
-    "Event Timing API reports events with handlers but no updates": "NativeFantom.startSurface is not implemented, so Fantom.createRoot cannot render (#210)",
-    "Event Timing API reports events with updates": "NativeFantom.startSurface is not implemented, so Fantom.createRoot cannot render (#210)",
-    "Event Timing API provides the event timeStamp as startTime": "NativeFantom.startSurface is not implemented, so Fantom.createRoot cannot render (#210)",
-    "Event Timing API reports number of dispatched events via performance.eventCounts": "NativeFantom.startSurface is not implemented, so Fantom.createRoot cannot render (#210)",
-    "Event Timing API durationThreshold option works when used with `type`": "NativeFantom.startSurface is not implemented, so Fantom.createRoot cannot render (#210)",
-    "Event Timing API durationThreshold option defaults to 104ms for event entries per W3C spec": "NativeFantom.startSurface is not implemented, so Fantom.createRoot cannot render (#210)"
+    "Event Timing API reports events without event handlers or updates": "NativeFantom.enqueueNativeEvent is not implemented, so Fantom.dispatchNativeEvent cannot run (#210)",
+    "Event Timing API reports events with handlers but no updates": "NativeFantom.enqueueNativeEvent is not implemented, so Fantom.dispatchNativeEvent cannot run (#210)",
+    "Event Timing API reports events with updates": "NativeFantom.enqueueNativeEvent is not implemented, so Fantom.dispatchNativeEvent cannot run (#210)",
+    "Event Timing API provides the event timeStamp as startTime": "NativeFantom.enqueueNativeEvent is not implemented, so Fantom.dispatchNativeEvent cannot run (#210)",
+    "Event Timing API reports number of dispatched events via performance.eventCounts": "NativeFantom.enqueueNativeEvent is not implemented, so Fantom.dispatchNativeEvent cannot run (#210)",
+    "Event Timing API durationThreshold option works when used with `type`": "NativeFantom.enqueueNativeEvent is not implemented, so Fantom.dispatchNativeEvent cannot run (#210)",
+    "Event Timing API durationThreshold option defaults to 104ms for event entries per W3C spec": "NativeFantom.enqueueNativeEvent is not implemented, so Fantom.dispatchNativeEvent cannot run (#210)"
   },
   "private/webapis/performance/__tests__/LongTasksAPI-itest.js": {},
   "private/webapis/performance/__tests__/Performance-itest.js": {},
   "private/webapis/performance/__tests__/PerformanceMemory-itest.js": {},
   "private/webapis/performance/__tests__/PerformanceObserver-itest.js": {},
   "private/webapis/performance/__tests__/UserTiming-itest.js": {},
-  "private/webapis/structuredClone/__tests__/structuredClone-itest.js": {
-    "structuredClone platform objects non-serializable platform objects does NOT clone ReadOnlyNode": "NativeFantom.startSurface is not implemented, so Fantom.createRoot cannot render (#210)",
-    "structuredClone platform objects non-serializable platform objects does NOT clone IntersectionObserverEntry": "NativeFantom.startSurface is not implemented, so Fantom.createRoot cannot render (#210)",
-    "structuredClone platform objects non-serializable platform objects does NOT clone MutationRecord": "NativeFantom.startSurface is not implemented, so Fantom.createRoot cannot render (#210)"
-  }
+  "private/webapis/structuredClone/__tests__/structuredClone-itest.js": {}
 }

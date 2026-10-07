@@ -269,8 +269,20 @@ int finishTimedFabricRun(ReactHost& reactHost, std::unique_ptr<FabricHost>& fabr
  * task of its own, and the work loop's flush runs it in a nested event loop under the task the suite is still in.
  */
 int runFantomBundle(const std::string& bundlePath) {
-    ReactHost reactHost{std::make_shared<StubMessageQueue>()};
-    std::unique_ptr<FabricHost> fabricHost = startFabricRun(reactHost, bundlePath, kHeadlessSurfaceSize);
+    std::unique_ptr<FabricHost> fabricHost;
+    FantomRunControls fantomRunControls;
+
+    fantomRunControls.startSurface = [&fabricHost](facebook::react::SurfaceId surfaceId, facebook::react::Size size,
+                                                   facebook::react::Float pointScaleFactor) {
+        fabricHost->startAdditionalSurface(surfaceId, size, pointScaleFactor);
+    };
+    fantomRunControls.stopSurface = [&fabricHost](facebook::react::SurfaceId surfaceId) {
+        fabricHost->stopAdditionalSurface(surfaceId);
+    };
+
+    ReactHost reactHost{std::make_shared<StubMessageQueue>(), std::move(fantomRunControls)};
+
+    fabricHost = startFabricRun(reactHost, bundlePath, kHeadlessSurfaceSize);
     facebook::jsi::Runtime* runtime = nullptr;
 
     reactHost.reactInstance().getBufferedRuntimeExecutor()(
