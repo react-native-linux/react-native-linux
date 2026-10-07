@@ -103,6 +103,7 @@ add_executable(rnl_core_hermes_tests
     FantomTesterTest.cpp
     HermesRuntimeFactory.cpp
     CxxModuleTypeSurfaceTest.cpp
+    DevBundleModulesTest.cpp
     InstanceTeardownLeakTest.cpp
     ThreadAffinityTest.cpp
     WebSocketModuleTest.cpp

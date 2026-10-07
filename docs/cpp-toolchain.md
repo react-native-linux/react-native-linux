@@ -1200,8 +1200,20 @@ bounds connecting and both handshakes, and every ending reaches `websocketClosed
 `BeastWebSocketClientTest` proves each against a server on loopback (`tests/LoopbackWebSocketServer.h`), and
 `WebSocketModuleTest` drives the module from JavaScript against the same server.
 
+A `dev=true` bundle needs four things a production one does not. `SourceCode` answers the URL `ReactHost::loadBundle`
+was given, which is how the bundle finds its dev server; it is upstream's module. `DevSettings` is a no-op of ours
+until reload and Fast Refresh land (#81), because upstream's links `DevServerHelper` and with it OpenSSL and the
+inspector. `ImageLoader` is upstream's module with no `IImageLoader` behind it, so `Image.getSize` and `prefetch`
+reject; LogBox requires it as `Image.android.js` loads. And `FabricHost` binds upstream's
+`__nativeComponentRegistry__hasComponent` to the components it registered, which `UIManager.hasViewManagerConfig`
+answers through when the app root asks about `DebuggingOverlay`. `DevBundleModulesTest` proves each, and
+`goldens/metro-golden.spec.ts` renders the test-harness app from Metro with `dev=false` and with `dev=true`,
+both identical to `test-harness-app.png`. The harness's `.babelrc` turns off the preset's deep-import warnings,
+which fire only because this monorepo's `src-linux` overlays are not under `node_modules`; in an installed app
+they are, and the preset never warns about them.
+
 Not yet: a `blob` request body (there is no Blob module), cookies, `wss://`, and the rest of the Metro dev-server
-contract: `dev=true` bundles, HMR over the WebSocket, and symbolication.
+contract: HMR over the WebSocket, reload, and symbolication.
 
 ## react-native-worklets (#134)
 

@@ -25,6 +25,8 @@
 #include <vector>
 
 #include <react/coremodules/DeviceInfoModule.h>
+#include <react/devsupport/SourceCodeModule.h>
+#include <react/io/ImageLoaderModule.h>
 #include <react/io/NetworkingModule.h>
 #include <react/io/WebSocketModule.h>
 #include <react/logging/NativeExceptionsManager.h>
@@ -507,6 +509,42 @@ private:
  * the spec drives a surface, an event or a timer mock this runner does not provide yet, so it is absent and a test that
  * calls one fails naming it.
  */
+/**
+ * `DevSettings` for a `dev=true` bundle, whose startup requires the module (#79). Every member is a no-op: reload
+ * and Fast Refresh arrive with #81, and this platform has no dev menu, element inspector or debugger launcher to
+ * toggle. Upstream's C++ `DevSettingsModule` is not used because it links `DevServerHelper`, which needs OpenSSL
+ * and the inspector for its one call, `openDebugger`.
+ */
+class LinuxDevSettingsModule final : public facebook::react::NativeDevSettingsCxxSpec<LinuxDevSettingsModule> {
+public:
+    explicit LinuxDevSettingsModule(std::shared_ptr<facebook::react::CallInvoker> jsInvoker)
+        : NativeDevSettingsCxxSpec(std::move(jsInvoker)) {}
+
+    void reload(facebook::jsi::Runtime& /*runtime*/) {}
+
+    void reloadWithReason(facebook::jsi::Runtime& /*runtime*/, const std::string& /*reason*/) {}
+
+    void onFastRefresh(facebook::jsi::Runtime& /*runtime*/) {}
+
+    void setHotLoadingEnabled(facebook::jsi::Runtime& /*runtime*/, bool /*isHotLoadingEnabled*/) {}
+
+    void setIsDebuggingRemotely(facebook::jsi::Runtime& /*runtime*/, bool /*isDebuggingRemotelyEnabled*/) {}
+
+    void setProfilingEnabled(facebook::jsi::Runtime& /*runtime*/, bool /*isProfilingEnabled*/) {}
+
+    void toggleElementInspector(facebook::jsi::Runtime& /*runtime*/) {}
+
+    void addMenuItem(facebook::jsi::Runtime& /*runtime*/, const std::string& /*title*/) {}
+
+    void setIsShakeToShowDevMenuEnabled(facebook::jsi::Runtime& /*runtime*/, bool /*enabled*/) {}
+
+    void openDebugger(facebook::jsi::Runtime& /*runtime*/) {}
+
+    void addListener(facebook::jsi::Runtime& /*runtime*/, const std::string& /*eventName*/) {}
+
+    void removeListeners(facebook::jsi::Runtime& /*runtime*/, double /*count*/) {}
+};
+
 class LinuxFantomModule final : public facebook::react::TurboModule {
 public:
     static constexpr std::string_view kModuleName = "NativeFantomCxx";
@@ -655,7 +693,8 @@ TurboModuleRegistry::TurboModuleRegistry(
       activationModel_(std::make_shared<ActivationModel>()),
       linkingModule_(std::make_shared<LinuxLinkingModule>(jsInvoker, activationModel_)),
       keyValueStore_(std::make_shared<KeyValueStore>()),
-      i18nModel_(std::make_shared<I18nModel>(localeFromEnvironment(), keyValueStore_)) {
+      i18nModel_(std::make_shared<I18nModel>(localeFromEnvironment(), keyValueStore_)),
+      bundleUrl_(std::make_shared<std::string>()) {
     appearanceModel_->setChangeListener([appearanceModule = appearanceModule_.get()](ColorScheme colorScheme) {
         appearanceModule->emitAppearanceChange(colorScheme);
     });
@@ -680,6 +719,17 @@ TurboModuleRegistry::TurboModuleRegistry(
     // Upstream's own CPU-time module, which Fantom's test runtime and the web-performance itests read.
     moduleFactories_.emplace(facebook::react::NativeCPUTime::kModuleName,
                              [jsInvoker]() { return std::make_shared<facebook::react::NativeCPUTime>(jsInvoker); });
+    // #79: the modules a `dev=true` bundle requires at startup. `SourceCode` answers the bundle URL, which is
+    // how the bundle finds its dev server.
+    moduleFactories_.emplace(facebook::react::SourceCodeModule::kModuleName, [jsInvoker, bundleUrl = bundleUrl_]() {
+        return std::make_shared<facebook::react::SourceCodeModule>(jsInvoker, *bundleUrl);
+    });
+    moduleFactories_.emplace(LinuxDevSettingsModule::kModuleName,
+                             [jsInvoker]() { return std::make_shared<LinuxDevSettingsModule>(jsInvoker); });
+    // `Image.android.js`, which LogBox loads in a `dev=true` bundle, requires `ImageLoader` as it is imported. With no
+    // `IImageLoader` behind it, upstream's module rejects `getSize` and `prefetch`, which is the honest answer here.
+    moduleFactories_.emplace(facebook::react::ImageLoaderModule::kModuleName,
+                             [jsInvoker]() { return std::make_shared<facebook::react::ImageLoaderModule>(jsInvoker); });
     // #79: `fetch` and `XMLHttpRequest` reach upstream's C++ Networking module, which this platform only supplies
     // the HTTP client for.
     moduleFactories_.emplace(facebook::react::NetworkingModule::kModuleName, [jsInvoker]() {
@@ -716,6 +766,8 @@ DimensionsSource& TurboModuleRegistry::dimensions() noexcept { return *dimension
 AppearanceModel& TurboModuleRegistry::appearance() noexcept { return *appearanceModel_; }
 
 ActivationModel& TurboModuleRegistry::activation() noexcept { return *activationModel_; }
+
+void TurboModuleRegistry::setBundleUrl(const std::string& bundleUrl) { *bundleUrl_ = bundleUrl; }
 
 KeyValueStore& TurboModuleRegistry::keyValueStore() noexcept { return *keyValueStore_; }
 

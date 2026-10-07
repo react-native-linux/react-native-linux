@@ -88,6 +88,12 @@ public:
      */
     ActivationModel& activation() noexcept;
 
+    /**
+     * The URL `SourceCode.getConstants().scriptURL` answers (#79), which a `dev=true` bundle reads to find its dev
+     * server. `ReactHost::loadBundle` sets it before the bundle runs, so before anything can construct the module.
+     */
+    void setBundleUrl(const std::string& bundleUrl);
+
     /** The store behind `RNAsyncStorage` (#23); `WindowSession` points it at the application's file. */
     KeyValueStore& keyValueStore() noexcept;
 
@@ -115,6 +121,7 @@ private:
     std::shared_ptr<LinuxLinkingModule> linkingModule_;
     std::shared_ptr<KeyValueStore> keyValueStore_;
     std::shared_ptr<I18nModel> i18nModel_;
+    std::shared_ptr<std::string> bundleUrl_;
     std::unordered_map<std::string_view, ModuleFactory> moduleFactories_;
 };
 

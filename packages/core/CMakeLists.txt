@@ -881,6 +881,12 @@ add_library(rnl_react_core STATIC
     ${REACT_CXX_PLATFORM_DIR}/react/io/NetworkingModule.cpp
     # #79: upstream's C++ WebSocket TurboModule; src/BeastWebSocketClient.cpp is the client it is built from.
     ${REACT_CXX_PLATFORM_DIR}/react/io/WebSocketModule.cpp
+    # #79: the `hasComponent` global `UIManager.hasViewManagerConfig` answers through, bound by FabricHost.
+    ${REACT_COMMON_DIR}/react/renderer/componentregistry/native/NativeComponentRegistryBinding.cpp
+    # #79: `SourceCode`, which a `dev=true` bundle reads its dev-server URL from, and `ImageLoader`, which it
+    # requires at startup.
+    ${REACT_CXX_PLATFORM_DIR}/react/devsupport/SourceCodeModule.cpp
+    ${REACT_CXX_PLATFORM_DIR}/react/io/ImageLoaderModule.cpp
     # #22: upstream's C++ ExceptionsManager, compiled on its own rather than through react/logging's glob.
     ${REACT_CXX_PLATFORM_DIR}/react/logging/NativeExceptionsManager.cpp)
 target_compile_options(rnl_react_core PRIVATE -Wall -Wextra)
