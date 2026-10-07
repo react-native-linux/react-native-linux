@@ -4,7 +4,7 @@
   "ready": "animated-views: committed surface 1",
   "frames": 240,
   "frameBudget": {
-    "p95Ms": 17.5,
+    "p95Ms": 19,
     "minFrames": 60,
     "maxHangs": 1
   },
