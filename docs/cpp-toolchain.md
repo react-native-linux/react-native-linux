@@ -5101,6 +5101,21 @@ wl_pointer / wl_keyboard ─▶ WaylandSeat ─▶ InputQueue ─┐        fram
                               PointerEventsProcessor ─▶ UIManagerBinding ─▶ RN$ event handler
 ```
 
+### The primary button is also a touch (#578)
+
+React's responder system reads only touch events, and every `Pressable`, `Touchable*` and `Text onPress` presses
+through it; Pressability ignores the pointer `click` on purpose, so a press never ran twice on the platforms that
+send both. Android sends touch events beside every pointer gesture, and react-native-windows synthesizes them from
+the mouse, so `InputDispatcher::dispatchTouch` does too:
+
+- A primary press sends `touchStart` to the node under it.
+- While the button is held, every motion sends `touchMove`, and the release sends `touchEnd`. Both go to that same
+  node, because a touch keeps its start node as its target where the pointer events retarget.
+- A pointer leave, or a wheel that scrolls during the press, sends `touchCancel`.
+
+`InputEventDispatchConformanceTest` pins the sequence, the targets and the categories. The `pressable-react` e2e
+runs a Metro-built application whose `Pressable` reports `press` for a click and none for a drag off it.
+
 ### The event beat, and why per-frame batching falls out of it
 
 Upstream requires every platform to subclass `EventBeat`, because only the host knows when a frame's events are
