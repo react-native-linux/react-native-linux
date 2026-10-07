@@ -40,7 +40,9 @@ TEST(ClipboardModuleTest, SharesTheTextFieldClipboardWithJavaScript) {
     reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>(kClipboardProbe), "ClipboardTest.js");
     EXPECT_TRUE(reactHost.runUntilQuiescent(kQuiescenceBudget));
     reactHost.reactInstance().getBufferedRuntimeExecutor()([&trace](facebook::jsi::Runtime& runtime) {
-        trace.set_value(runtime.global().getProperty(runtime, "clipboardTrace").getString(runtime).utf8(runtime));
+        const facebook::jsi::Value value = runtime.global().getProperty(runtime, "clipboardTrace");
+
+        trace.set_value(value.isString() ? value.getString(runtime).utf8(runtime) : "the probe never finished");
     });
 
     EXPECT_EQ(trace.get_future().get(), "copied in a field true false from JavaScript");
