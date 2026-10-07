@@ -24,6 +24,7 @@
 
 #include <react/debug/react_native_assert.h>
 #include <react/renderer/componentregistry/ComponentDescriptorProviderRegistry.h>
+#include <react/renderer/componentregistry/native/NativeComponentRegistryBinding.h>
 #include <react/renderer/components/FBReactNativeSpec/ComponentDescriptors.h>
 #include <react/renderer/components/image/ImageComponentDescriptor.h>
 #include <react/renderer/components/root/RootComponentDescriptor.h>
@@ -73,8 +74,8 @@ constexpr facebook::react::SurfaceId kSurfaceId = 1;
 // there is nothing to swap a source into. `src/TextInputComponent.h` therefore declares the descriptor, the
 // shadow node and the props on top of those base classes; see *TextInput* in docs/cpp-toolchain.md.
 facebook::react::ComponentRegistryFactory createComponentRegistryFactory(
-    const std::shared_ptr<facebook::react::ComponentDescriptorProviderRegistry>& providerRegistry) {
-    std::unordered_set<std::string> registeredNames;
+    const std::shared_ptr<facebook::react::ComponentDescriptorProviderRegistry>& providerRegistry,
+    std::unordered_set<std::string>& registeredNames) {
     const auto add = [&providerRegistry,
                       &registeredNames](const facebook::react::ComponentDescriptorProvider& provider) {
         if (!registeredNames.emplace(provider.name).second) {
@@ -170,7 +171,9 @@ FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::
     schedulerToolbox.contextContainer = contextContainer_;
     schedulerToolbox.runtimeExecutor = reactInstance.getBufferedRuntimeExecutor();
     schedulerToolbox.bridgelessBindingsExecutor = reactInstance.getUnbufferedRuntimeExecutor();
-    schedulerToolbox.componentRegistryFactory = createComponentRegistryFactory(componentDescriptorProviderRegistry_);
+    const auto registeredComponentNames = std::make_shared<std::unordered_set<std::string>>();
+    schedulerToolbox.componentRegistryFactory =
+        createComponentRegistryFactory(componentDescriptorProviderRegistry_, *registeredComponentNames);
     // `Scheduler`'s constructor reads `useSharedAnimatedBackend()` — true since #128 — and, when it is set, builds
     // an `AnimationBackend` over this choreographer and calls `setAnimationBackend` on it without a null check, so
     // a host that turns the flag on must supply one before the Scheduler exists. See *Animation choreographer* in
@@ -197,7 +200,16 @@ FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::
     inputDispatcher_ = std::make_unique<InputDispatcher>(scheduler_->getUIManager(), mountingManager_, kSurfaceId);
     scrollController_ = std::make_unique<ScrollController>(scheduler_->getUIManager(), kSurfaceId);
 
-    reactInstance.getUnbufferedRuntimeExecutor()(installStopSurfaceBinding);
+    // `UIManager.hasViewManagerConfig` answers through this global, and a `dev=true` bundle asks it about
+    // `DebuggingOverlay` while it mounts the app (#79); upstream's cxx host binds it the same way.
+    reactInstance.getUnbufferedRuntimeExecutor()(
+        [registeredComponentNames = std::shared_ptr<const std::unordered_set<std::string>>(registeredComponentNames)](
+            facebook::jsi::Runtime& runtime) {
+            installStopSurfaceBinding(runtime);
+            facebook::react::bindHasComponentProvider(runtime, [registeredComponentNames](const std::string& name) {
+                return registeredComponentNames->contains(name);
+            });
+        });
 
 #ifdef RNL_ENABLE_IMAGES
     // A finished decode changes the picture with no Fabric mutation behind it, so this is the only path that can

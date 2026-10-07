@@ -232,6 +232,8 @@ void ReactHost::publishPendingDimensions() {
 void ReactHost::loadBundle(const std::string& location) {
     react_native_assert(std::this_thread::get_id() == owningThread_);
 
+    turboModuleRegistry_->setBundleUrl(location);
+
     if (location.starts_with("http://") || location.starts_with("https://")) {
         loadScript(std::make_unique<facebook::react::JSBigStdString>(fetchBundle(location)), location);
     } else {
