@@ -17,6 +17,7 @@
 #include <cstring>
 #include <functional>
 #include <iostream>
+#include <jsi/JSIDynamic.h>
 #include <memory>
 #include <optional>
 #include <spawn.h>
@@ -36,6 +37,9 @@
 #include <react/nativemodule/mutationobserver/NativeMutationObserver.h>
 #include <react/renderer/animated/AnimatedModule.h>
 #include <react/renderer/animated/NativeAnimatedNodesManagerProvider.h>
+#include <react/renderer/bridging/bridging.h>
+#include <react/renderer/core/EventEmitter.h>
+#include <react/renderer/core/RawEvent.h>
 #include <react/timing/primitives.h>
 
 extern char** environ;
@@ -504,8 +508,9 @@ private:
  * nothing of a host whose queues drain on their own. `flushMessageQueue` runs every task queued on the itest
  * runtime's `StubMessageQueue`, re-entrantly from inside the call, which is what `Fantom.runTask` and the work loop
  * stand on, and `setTimerMockEnabled`, `advanceTimers`, `runAllTimers` and `getPendingTimerCount` are Fantom's timer
- * mock over `HostTimerRegistry`'s mock mode, and `startSurface` and `stopSurface` are `Fantom.createRoot`'s surfaces
- * on the Fabric host; all seven exist only where the registry was given an itest run's `FantomRunControls`.
+ * mock over `HostTimerRegistry`'s mock mode, `startSurface` and `stopSurface` are `Fantom.createRoot`'s surfaces on
+ * the Fabric host, and `enqueueNativeEvent` and `flushEventQueue` are `Fantom.dispatchNativeEvent`; all nine exist
+ * only where the registry was given an itest run's `FantomRunControls`.
  * `forceHighResTimeStamp` pins `HighResTimeStamp::now()` for the whole process, or unpins it given no number, exactly
  * as upstream's tester does; the hook exists only in a debug build, so an optimised one throws upstream's own message
  * instead. Every other method of the spec drives a surface, an event or a timer mock this runner does not provide yet,
@@ -579,6 +584,8 @@ public:
             methodMap_["getPendingTimerCount"] = {0, &getPendingTimerCount};
             methodMap_["startSurface"] = {5, &startSurface};
             methodMap_["stopSurface"] = {1, &stopSurface};
+            methodMap_["enqueueNativeEvent"] = {5, &enqueueNativeEvent};
+            methodMap_["flushEventQueue"] = {0, &flushEventQueue};
         }
     }
 
@@ -640,6 +647,45 @@ private:
     static facebook::jsi::Value stopSurface(facebook::jsi::Runtime& /*runtime*/, TurboModule& turboModule,
                                             const facebook::jsi::Value* arguments, size_t count) {
         controlsOf(turboModule).stopSurface(static_cast<facebook::react::SurfaceId>(numberAt(arguments, count, 0)));
+
+        return facebook::jsi::Value::undefined();
+    }
+
+    /**
+     * `enqueueNativeEvent(shadowNode, type, payload, category, isUnique)`, as upstream's tester answers it: the event
+     * goes to the node's own event emitter, and waits there for the beat `flushEventQueue` induces, as an event from
+     * the compositor waits for the frame's.
+     */
+    static facebook::jsi::Value enqueueNativeEvent(facebook::jsi::Runtime& runtime, TurboModule& /*turboModule*/,
+                                                   const facebook::jsi::Value* arguments, size_t count) {
+        if (count < 2) {
+            throw facebook::jsi::JSError(runtime, "enqueueNativeEvent expects a node and an event type");
+        }
+
+        const std::shared_ptr<const facebook::react::EventEmitter> eventEmitter =
+            facebook::react::Bridging<std::shared_ptr<const facebook::react::ShadowNode>>::fromJs(runtime, arguments[0])
+                ->getEventEmitter();
+        std::string type = arguments[1].getString(runtime).utf8(runtime);
+        folly::dynamic payload = count > 2 && arguments[2].isObject()
+                                     ? facebook::jsi::dynamicFromValue(runtime, arguments[2])
+                                     : folly::dynamic::object();
+
+        if (count > 4 && arguments[4].isBool() && arguments[4].getBool()) {
+            eventEmitter->dispatchUniqueEvent(std::move(type), std::move(payload));
+        } else {
+            eventEmitter->dispatchEvent(
+                std::move(type), std::move(payload),
+                count > 3 && arguments[3].isNumber()
+                    ? static_cast<facebook::react::RawEvent::Category>(static_cast<int>(arguments[3].getNumber()))
+                    : facebook::react::RawEvent::Category::Unspecified);
+        }
+
+        return facebook::jsi::Value::undefined();
+    }
+
+    static facebook::jsi::Value flushEventQueue(facebook::jsi::Runtime& /*runtime*/, TurboModule& turboModule,
+                                                const facebook::jsi::Value* /*arguments*/, size_t /*count*/) {
+        controlsOf(turboModule).flushEventQueue();
 
         return facebook::jsi::Value::undefined();
     }

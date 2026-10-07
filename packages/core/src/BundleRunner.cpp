@@ -279,6 +279,7 @@ int runFantomBundle(const std::string& bundlePath) {
     fantomRunControls.stopSurface = [&fabricHost](facebook::react::SurfaceId surfaceId) {
         fabricHost->stopAdditionalSurface(surfaceId);
     };
+    fantomRunControls.flushEventQueue = [&fabricHost]() { fabricHost->induceEventBeat(); };
 
     ReactHost reactHost{std::make_shared<StubMessageQueue>(), std::move(fantomRunControls)};
 
