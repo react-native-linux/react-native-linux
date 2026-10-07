@@ -8,6 +8,7 @@
 #include "HostTimerRegistry.h"
 #include "I18n.h"
 #include "PlatformColor.h"
+#include "WorkletsModule.h"
 
 #include <FBReactNativeSpec/FBReactNativeSpecJSI.h>
 #include <ReactCommon/CallInvoker.h>
@@ -906,7 +907,7 @@ TurboModuleRegistry::TurboModuleRegistry(
       linkingModule_(std::make_shared<LinuxLinkingModule>(jsInvoker, activationModel_)),
       keyValueStore_(std::make_shared<KeyValueStore>()),
       i18nModel_(std::make_shared<I18nModel>(localeFromEnvironment(), keyValueStore_)),
-      bundleUrl_(std::make_shared<std::string>()) {
+      bundleUrl_(std::make_shared<std::string>()), workletsModule_(std::make_shared<LinuxWorkletsModule>(jsInvoker)) {
     appearanceModel_->setChangeListener([appearanceModule = appearanceModule_.get()](ColorScheme colorScheme) {
         appearanceModule->emitAppearanceChange(colorScheme);
     });
@@ -918,6 +919,8 @@ TurboModuleRegistry::TurboModuleRegistry(
                              [appearanceModule = appearanceModule_]() { return appearanceModule; });
     moduleFactories_.emplace(LinuxLinkingModule::kModuleName,
                              [linkingModule = linkingModule_]() { return linkingModule; });
+    moduleFactories_.emplace(LinuxWorkletsModule::kModuleName,
+                             [workletsModule = workletsModule_]() { return workletsModule; });
     moduleFactories_.emplace(LinuxAsyncStorageModule::kModuleName, [jsInvoker, keyValueStore = keyValueStore_]() {
         return std::make_shared<LinuxAsyncStorageModule>(jsInvoker, keyValueStore);
     });
@@ -998,6 +1001,8 @@ void TurboModuleRegistry::setBundleUrl(const std::string& bundleUrl) { *bundleUr
 KeyValueStore& TurboModuleRegistry::keyValueStore() noexcept { return *keyValueStore_; }
 
 I18nModel& TurboModuleRegistry::i18n() noexcept { return *i18nModel_; }
+
+LinuxWorkletsModule& TurboModuleRegistry::worklets() noexcept { return *workletsModule_; }
 
 void TurboModuleRegistry::install(facebook::jsi::Runtime& runtime) {
     installPlatformColorBinding(runtime, appearanceModel_);

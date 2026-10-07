@@ -4,6 +4,7 @@
 #include "ConsoleBinding.h"
 #include "CurlHttpClient.h"
 #include "ReactNativeFeatureFlagsOverridesLinux.h"
+#include "WorkletsModule.h"
 
 #ifdef RNL_ENABLE_TEXT_GEOMETRY
 #include "TextGeometry.h"
@@ -184,6 +185,9 @@ ReactHost::ReactHost(std::shared_ptr<StubMessageQueue> stubJavaScriptQueue, Fant
 ReactHost::~ReactHost() noexcept {
     react_native_assert(std::this_thread::get_id() == owningThread_);
 
+    // #136: worklets' proxy and UI runtime go first, on the JavaScript thread while it still runs and while this
+    // frame thread runs no frame, so a worklet in flight finds the React Native runtime marked dead, not destroyed.
+    javaScriptThread_->runOnQueueSync([&worklets = turboModuleRegistry_->worklets()]() { worklets.invalidate(); });
     javaScriptThread_->quitSynchronous();
     animationFrameQueue_.clear();
     turboModuleRegistry_.reset();
@@ -242,6 +246,12 @@ KeyValueStore& ReactHost::keyValueStore() noexcept {
     react_native_assert(std::this_thread::get_id() == owningThread_);
 
     return turboModuleRegistry_->keyValueStore();
+}
+
+LinuxWorkletsModule& ReactHost::worklets() noexcept {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    return turboModuleRegistry_->worklets();
 }
 
 I18nModel& ReactHost::i18n() noexcept {
@@ -336,6 +346,8 @@ bool ReactHost::hasReportedFatalError() const {
 void ReactHost::dispatchAnimationFrames(std::chrono::steady_clock::time_point now) {
     react_native_assert(std::this_thread::get_id() == owningThread_);
 
+    turboModuleRegistry_->worklets().tick(now);
+
     if (!animationFrameQueue_.hasPendingRequests()) {
         return;
     }
@@ -351,7 +363,8 @@ void ReactHost::dispatchAnimationFrames(std::chrono::steady_clock::time_point no
 bool ReactHost::hasPendingTimers() const {
     react_native_assert(std::this_thread::get_id() == owningThread_);
 
-    return timerRegistry_->hasPendingTimers() || animationFrameQueue_.hasPendingRequests();
+    return timerRegistry_->hasPendingTimers() || animationFrameQueue_.hasPendingRequests() ||
+           turboModuleRegistry_->worklets().hasPendingWork();
 }
 
 } // namespace react_native_linux

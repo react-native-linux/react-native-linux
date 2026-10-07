@@ -111,6 +111,7 @@ add_executable(rnl_core_hermes_tests
     MeasureGeometryTest.cpp
     LinkingModuleTest.cpp
     LinuxUISchedulerTest.cpp
+    WorkletsModuleTest.cpp
     ThreadAffinityTest.cpp
     WebSocketModuleTest.cpp
     WorkletsVersionTest.cpp
@@ -141,7 +142,6 @@ target_link_libraries(rnl_core_hermes_tests
     PRIVATE
         rnl_hermes_googletest
         rnl_react_core
-        rnl_worklets
         react_renderer_element
         ${RNL_REACT_COMMON_TARGETS}
         atomic)
