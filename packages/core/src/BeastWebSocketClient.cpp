@@ -15,6 +15,8 @@ namespace react_native_linux {
 namespace {
 
 constexpr char kWebSocketScheme[] = "ws";
+// React Native's own clients take an `http://` URL for a socket too, and `HMRClient` opens Metro's `/hot` with one.
+constexpr char kPlainHttpScheme[] = "http";
 constexpr char kDefaultPort[] = "80";
 
 } // namespace
@@ -22,7 +24,7 @@ constexpr char kDefaultPort[] = "80";
 std::optional<WebSocketEndpoint> parseWebSocketUrl(const std::string& url) {
     const auto uri = folly::Uri::tryFromString(url);
 
-    if (!uri.hasValue() || uri->scheme() != kWebSocketScheme) {
+    if (!uri.hasValue() || (uri->scheme() != kWebSocketScheme && uri->scheme() != kPlainHttpScheme)) {
         return std::nullopt;
     }
 

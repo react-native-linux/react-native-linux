@@ -120,7 +120,8 @@ public:
 
     /**
      * Loads the bundle at `location`: an `http://` or `https://` URL is fetched (a Metro dev server, #79), anything
-     * else is a file path. `location` is also the source URL stack traces and source maps name.
+     * else is a file path. `location` is also the source URL stack traces and source maps name. A `dev=true` bundle
+     * from a dev server then gets `HMRClient.setup`, which connects it to Metro's `/hot` socket.
      */
     void loadBundle(const std::string& location);
     void drainJavaScriptThread();

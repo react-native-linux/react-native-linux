@@ -240,8 +240,17 @@ TEST(BeastWebSocketClientTest, AnExplicitPortPathAndQueryAreKept) {
     EXPECT_EQ(endpoint->resource, "/hot?bundleEntry=index");
 }
 
-TEST(BeastWebSocketClientTest, OnlyWsUrlsAreEndpoints) {
+TEST(BeastWebSocketClientTest, AnHttpUrlIsTheSameEndpointAsItsWsUrl) {
+    const std::optional<WebSocketEndpoint> endpoint = parseWebSocketUrl("http://127.0.0.1:8081/hot");
+
+    ASSERT_TRUE(endpoint.has_value());
+    EXPECT_EQ(endpoint->port, "8081");
+    EXPECT_EQ(endpoint->resource, "/hot");
+}
+
+TEST(BeastWebSocketClientTest, OnlyWsAndHttpUrlsAreEndpoints) {
     EXPECT_FALSE(parseWebSocketUrl("wss://localhost/").has_value());
+    EXPECT_FALSE(parseWebSocketUrl("https://localhost/").has_value());
     EXPECT_FALSE(parseWebSocketUrl("not a url").has_value());
 }
 

@@ -1218,8 +1218,13 @@ both identical to `test-harness-app.png`. The harness's `.babelrc` turns off the
 which fire only because this monorepo's `src-linux` overlays are not under `node_modules`; in an installed app
 they are, and the preset never warns about them.
 
+Once a `dev=true` bundle from a dev server has loaded, `ReactHost::loadBundle` calls `HMRClient.setup` with the
+arguments upstream's `DevServerHelper::setupHMRClient` passes, and the bundle opens Metro's `/hot` socket through
+`BeastWebSocketClient` — which takes the `http://` URL `HMRClient` builds, as React Native's own clients do.
+`HotModuleReplacementSetupTest` proves the call and its arguments; applying an edit is #81's Fast Refresh test.
+
 Not yet: a `blob` request body (there is no Blob module), cookies, `wss://`, and the rest of the Metro dev-server
-contract: HMR over the WebSocket, reload, and symbolication.
+contract: reload and symbolication.
 
 ## react-native-worklets (#134)
 
