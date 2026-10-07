@@ -103,6 +103,7 @@ add_executable(rnl_core_hermes_tests
     ClipboardModuleTest.cpp
     CrossThreadPromiseStressTest.cpp
     FantomTesterTest.cpp
+    HotModuleReplacementSetupTest.cpp
     HermesRuntimeFactory.cpp
     CxxModuleTypeSurfaceTest.cpp
     DevBundleModulesTest.cpp

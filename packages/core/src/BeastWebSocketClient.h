@@ -25,8 +25,9 @@ struct WebSocketEndpoint {
 };
 
 /**
- * `url` as a `ws://` endpoint, with port 80 when it names none (RFC 6455 §3). Empty for anything that is not a
- * `ws://` URL, `wss://` included: this client has no TLS.
+ * `url` as a `ws://` endpoint, with port 80 when it names none (RFC 6455 §3). An `http://` URL is the same endpoint,
+ * as it is to React Native's own clients. Empty for anything else, `wss://` and `https://` included: this client has
+ * no TLS.
  */
 std::optional<WebSocketEndpoint> parseWebSocketUrl(const std::string& url);
 

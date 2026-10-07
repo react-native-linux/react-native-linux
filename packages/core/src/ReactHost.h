@@ -123,6 +123,13 @@ public:
      * else is a file path. `location` is also the source URL stack traces and source maps name.
      */
     void loadBundle(const std::string& location);
+
+    /**
+     * Calls `HMRClient.setup` for a `dev=true` bundle loaded from a dev server (#79), which connects it to Metro's
+     * `/hot` socket; any other `location` is left alone. Only the window host calls it: the open socket and the
+     * client's heartbeat would keep a headless run from ever reaching quiescence.
+     */
+    void startHotModuleReplacement(const std::string& location);
     void drainJavaScriptThread();
 
     /**

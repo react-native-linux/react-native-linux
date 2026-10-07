@@ -11,10 +11,13 @@
 #include <filesystem>
 #endif
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <folly/Uri.h>
+#include <folly/dynamic.h>
 #include <functional>
 #include <jsi/jsi.h>
 #include <memory>
@@ -114,6 +117,32 @@ void installAnimationFrameBinding(facebook::jsi::Runtime& runtime, AnimationFram
 
                 return facebook::jsi::Value::undefined();
             }));
+}
+
+/**
+ * `HMRClient.setup`'s arguments for a `dev=true` bundle served over HTTP, or null for any other location. They are
+ * the ones upstream's `DevServerHelper::setupHMRClient` passes; the client reads the full bundle URL from
+ * `SourceCode` and opens Metro's `/hot` socket on the host and port named here.
+ */
+std::optional<folly::dynamic> hotModuleReplacementArguments(const std::string& location) {
+    const auto uri = folly::Uri::tryFromString(location);
+
+    if (!uri.hasValue() || (uri->scheme() != "http" && uri->scheme() != "https")) {
+        return std::nullopt;
+    }
+
+    folly::Uri bundleUri = uri.value();
+    const auto& queryParameters = bundleUri.getQueryParams();
+    const bool isDevelopmentBundle = std::ranges::any_of(
+        queryParameters, [](const auto& parameter) { return parameter.first == "dev" && parameter.second == "true"; });
+
+    if (!isDevelopmentBundle) {
+        return std::nullopt;
+    }
+
+    return folly::dynamic::array("linux", bundleUri.path().substr(1), bundleUri.host(),
+                                 bundleUri.port() == 0 ? folly::dynamic("") : folly::dynamic(bundleUri.port()), true,
+                                 bundleUri.scheme());
 }
 
 } // namespace
@@ -236,6 +265,14 @@ void ReactHost::loadBundle(const std::string& location) {
         loadScript(std::make_unique<facebook::react::JSBigStdString>(fetchBundle(location)), location);
     } else {
         loadScript(facebook::react::JSBigFileString::fromPath(location), location);
+    }
+}
+
+void ReactHost::startHotModuleReplacement(const std::string& location) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    if (std::optional<folly::dynamic> arguments = hotModuleReplacementArguments(location); arguments.has_value()) {
+        reactInstance_->callFunctionOnModule("HMRClient", "setup", std::move(arguments.value()));
     }
 }
 
