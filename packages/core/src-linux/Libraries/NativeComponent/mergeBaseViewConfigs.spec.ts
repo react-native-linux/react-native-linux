@@ -19,15 +19,23 @@ describe("mergeBaseViewConfigs", () => {
     expect(merged).toStrictEqual({
       bubblingEventTypes: { topPress: "android", topTouchStart: "ios" },
       directEventTypes: { topAccessibilityAction: "ios", topLayout: "android" },
-      validAttributes: { cursor: true, outlineColor: true, transform: "android" },
+      validAttributes: {
+        cursor: true,
+        onPointerDown: true,
+        onPointerDownCapture: true,
+        onPointerUp: true,
+        onPointerUpCapture: true,
+        outlineColor: true,
+        transform: "android",
+      },
     });
   });
 
-  it("merges configs that declare nothing", () => {
+  it("declares the press and release handlers even when neither half does", () => {
     expect(mergeBaseViewConfigs({}, {})).toStrictEqual({
       bubblingEventTypes: {},
       directEventTypes: {},
-      validAttributes: {},
+      validAttributes: { onPointerDown: true, onPointerDownCapture: true, onPointerUp: true, onPointerUpCapture: true },
     });
   });
 });
