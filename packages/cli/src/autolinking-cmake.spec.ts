@@ -1,6 +1,11 @@
 import type { AutolinkedLibrary, CodegenLibrary } from "./linux-autolinking-types.ts";
+import {
+  autolinkingCacheKey,
+  generateAutolinkingCMake,
+  generateAutolinkingRegistration,
+  readCodegenConfig,
+} from "./autolinking-cmake.ts";
 import { describe, expect, it } from "vitest";
-import { generateAutolinkingCMake, generateAutolinkingRegistration, readCodegenConfig } from "./autolinking-cmake.ts";
 
 const binaryDirectory = `$${"{"}CMAKE_BINARY_DIR}`;
 const moduleCodegen: CodegenLibrary = { components: [], name: "CppLibrarySpec" };
@@ -148,5 +153,42 @@ describe("readCodegenConfig", () => {
     ["a config without a spec directory", { codegenConfig: { name: "Spec", type: "all" } }],
   ])("answers null for %s", (_description, packageJson) => {
     expect(readCodegenConfig(JSON.stringify(packageJson))).toBeNull();
+  });
+});
+
+const files: Readonly<Record<string, string>> = {
+  "/app/react-native.config.js": "export default {};",
+  "/library/package.json": '{"version":"1.0.0"}',
+};
+
+const readFixture = (filePath: string): string | null => files[filePath] ?? null;
+const readEmpty = (): string => "";
+
+describe("autolinkingCacheKey", () => {
+  it("is the same for the same inputs", () => {
+    const inputs = ["/library/package.json", "/app/react-native.config.js"];
+
+    expect(autolinkingCacheKey(inputs, readFixture)).toBe(autolinkingCacheKey(inputs, readFixture));
+  });
+
+  it("changes when an input's content changes", () => {
+    const edited = (filePath: string): string | null =>
+      filePath === "/library/package.json" ? '{"version":"1.0.1"}' : readFixture(filePath);
+
+    expect(autolinkingCacheKey(["/library/package.json"], edited)).not.toBe(
+      autolinkingCacheKey(["/library/package.json"], readFixture),
+    );
+  });
+
+  it("tells an absent input from an empty one", () => {
+    expect(autolinkingCacheKey(["/absent.json"], readFixture)).not.toBe(
+      autolinkingCacheKey(["/absent.json"], readEmpty),
+    );
+  });
+
+  it("changes when an input moves", () => {
+    expect(autolinkingCacheKey(["/a/package.json"], readEmpty)).not.toBe(
+      autolinkingCacheKey(["/b/package.json"], readEmpty),
+    );
   });
 });

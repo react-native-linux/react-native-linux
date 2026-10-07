@@ -1288,6 +1288,12 @@ A library that needs a different codegen name, spec directory or type on this pl
 `codegenConfig.linux`, which overrides the shared keys the way react-native-windows reads `codegenConfig.windows`
 (#21).
 
+The run is keyed on a SHA-256 (`autolinkingCacheKey` in `packages/cli/src/autolinking-cmake.ts`) over the config JSON, the app's
+`react-native.config.js`, every dependency's `package.json` and the generator's own sources, written beside the two
+files as `autolinking.sha256`. When the key matches and both files exist, the script prints `autolinking: up to
+date` and writes nothing, codegen included, so an unrelated edit leaves the files' mtimes alone and does not
+reconfigure; a dependency added, removed or bumped regenerates. That is the Gradle settings plugin's precedent.
+
 Configure with `-DRNL_AUTOLINKING_CMAKE=<output directory>/rnl_autolinking.cmake`. Core then defines
 `reactnative`, the umbrella a `cpp-library` links beside `jsi` and its codegen target, includes the file, and
 compiles the registration source into `hello_react` and `rnl_window` — into the executables rather than into an
