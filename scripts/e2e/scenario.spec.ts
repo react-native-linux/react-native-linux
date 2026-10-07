@@ -26,6 +26,7 @@ describe("parseScenario, field by field", () => {
       expect: ["pressable: topClick on box at 200,140"],
       expectFailure: false,
       expectsExitAfter: null,
+      fastRefresh: null,
       frameBudget: null,
       frames: EXPLICIT_FRAME_COUNT,
       injectProtocolError: false,

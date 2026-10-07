@@ -36,6 +36,7 @@ const baseScenario: Scenario = {
   expect: ["pressable: topClick"],
   expectFailure: false,
   expectsExitAfter: null,
+  fastRefresh: null,
   frameBudget: null,
   frames: 600,
   injectProtocolError: false,
