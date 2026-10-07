@@ -7662,6 +7662,20 @@ the driver that touches the filesystem and is still covered, because a temporary
 The process side stays in `scripts/e2e.ts`, uncovered by Vitest for the reason `scripts/doctor.ts` is: it is
 spawns and sockets.
 
+### Fast Refresh (#81)
+
+A scenario with a `fastRefresh` block runs its window on a `dev=true` bundle from a watching Metro instead of a bundle
+file: `bundle` names an entry under `packages/test-harness` (Metro's project root), and `scripts/e2e-processes.ts`
+starts `packages/test-harness/scripts/serve.ts --watch`, requests the bundle once so the window's fetch is not the
+cold build, and hands the window its URL. The window host starts HMR itself (#79), so the bundle opens Metro's `/hot`
+socket. Once the scenario's `ready` line appears the driver rewrites `fastRefresh.file` in place (`find` to
+`replace`), waits for the `fastRefresh.expect` trace line the edited module prints when Fast Refresh runs it again,
+and reports `fast refresh: edit-to-visible <ms>` against `maxEditToVisibleMs`. The file is put back only after the
+window has closed, so its last-frame screenshot shows the refreshed render. `packages/test-harness/e2e/fast-refresh.json`
+edits `test-bundles/fast-refresh-app.tsx`, a module that exports only its component and so is a refresh boundary;
+an edit to a module that is not one asks for a full reload, which waits on reload support. Metro watches only when
+asked: the Metro goldens start it unwatched.
+
 ### Frame timing
 
 ADR-0001 decision 3 names three mechanisms and this is the one that **measures**. `wl_surface.frame` throttles and

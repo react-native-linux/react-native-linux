@@ -14,6 +14,7 @@ import {
 import type { Crop } from "./screenshot.ts";
 import path from "node:path";
 import { readAccessibilityChanges } from "./accessibility-changes.ts";
+import { readFastRefresh } from "./fast-refresh.ts";
 
 const DEFAULT_FRAME_COUNT = 600;
 const FRAME_LOG_FILE_NAME = "frames.jsonl";
@@ -78,6 +79,11 @@ interface Scenario {
   readonly expectFailure: boolean;
   /** `rnl_inject`'s exit status 1 is accepted once the trace also carries this substring; `null` never accepts it. */
   readonly expectsExitAfter: string | null;
+  /**
+   * #81: when set, `bundle` is an entry under `packages/test-harness` served as a `dev=true` bundle by a watching
+   * Metro, and the driver makes this edit once the window is ready. See `FastRefreshEdit`.
+   */
+  readonly fastRefresh: ReturnType<typeof readFastRefresh>;
   /** How long `rnl_window` runs before it captures its screenshot and exits. */
   readonly frames: number;
   readonly frameBudget: FrameBudget | null;
@@ -216,6 +222,7 @@ const parseScenario = (value: unknown, sourceName: string): Scenario => {
     expect: readStringArray(value["expect"], "expect", sourceName),
     expectFailure: readOptionalBoolean(value, "expectFailure", sourceName),
     expectsExitAfter: readOptionalString(value, "expectsExitAfter", sourceName),
+    fastRefresh: readFastRefresh(value, sourceName),
     frameBudget: readFrameBudget(value, sourceName),
     frames: readFrameCount(value, sourceName),
     injectProtocolError: readOptionalBoolean(value, "injectProtocolError", sourceName),
@@ -243,5 +250,6 @@ const resolveArtifactPaths = (artifactsRoot: string, scenarioName: string): Arti
 };
 
 export { describeTraceFailures, resolveExpectedOutcome } from "./trace-grading.ts";
+export { applyFastRefreshEdit, gradeEditToVisible } from "./fast-refresh.ts";
 export { formatInjectorScript, parseScenario, resolveArtifactPaths };
 export type { FrameBudget, Scenario, ScenarioAutomation };
