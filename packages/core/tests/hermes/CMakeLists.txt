@@ -106,6 +106,7 @@ add_executable(rnl_core_hermes_tests
     CxxModuleTypeSurfaceTest.cpp
     DevBundleModulesTest.cpp
     InstanceTeardownLeakTest.cpp
+    LinkingModuleTest.cpp
     ThreadAffinityTest.cpp
     WebSocketModuleTest.cpp
     WorkletsVersionTest.cpp
