@@ -2,12 +2,14 @@
 #include "ReactHost.h"
 
 #include <chrono>
+#include <cxxreact/JSBigString.h>
 #include <cxxreact/ReactNativeVersion.h>
 #include <filesystem>
 #include <fstream>
 #include <future>
 #include <gtest/gtest.h>
 #include <jsi/jsi.h>
+#include <memory>
 #include <string>
 #include <sys/utsname.h>
 
@@ -105,6 +107,24 @@ globalThis.nativeFabricUIManager.completeRoot(1, childSet);
     EXPECT_NE(tester.mountTreeText().find(R"(testID="View=true TextInput=true DebuggingOverlay=false")"),
               std::string::npos)
         << tester.mountTreeText();
+}
+
+TEST(DevBundleModulesTest, DevSettingsReloadRaisesTheFlagTheHostPolls) {
+    ReactHost reactHost;
+
+    EXPECT_FALSE(reactHost.isReloadRequested());
+
+    reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>(R"JAVASCRIPT(
+const turboModuleProxy = globalThis.__turboModuleProxy;
+const devSettings =
+  typeof turboModuleProxy === 'function' ? turboModuleProxy('DevSettings') : globalThis.nativeModuleProxy.DevSettings;
+
+devSettings.reloadWithReason('DevBundleModulesTest');
+)JAVASCRIPT"),
+                         "reload.js");
+    reactHost.drainJavaScriptThread();
+
+    EXPECT_TRUE(reactHost.isReloadRequested());
 }
 
 } // namespace

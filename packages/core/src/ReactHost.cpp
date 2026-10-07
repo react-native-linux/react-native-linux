@@ -343,6 +343,12 @@ bool ReactHost::hasReportedFatalError() const {
     return errorReporter_.hasReportedFatalError();
 }
 
+bool ReactHost::isReloadRequested() const {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    return turboModuleRegistry_->isReloadRequested();
+}
+
 void ReactHost::dispatchAnimationFrames(std::chrono::steady_clock::time_point now) {
     react_native_assert(std::this_thread::get_id() == owningThread_);
 

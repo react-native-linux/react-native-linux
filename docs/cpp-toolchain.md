@@ -7707,8 +7707,16 @@ socket. Once the scenario's `ready` line appears the driver rewrites `fastRefres
 and reports `fast refresh: edit-to-visible <ms>` against `maxEditToVisibleMs`. The file is put back only after the
 window has closed, so its last-frame screenshot shows the refreshed render. `packages/test-harness/e2e/fast-refresh.json`
 edits `test-bundles/fast-refresh-app.tsx`, a module that exports only its component and so is a refresh boundary;
-an edit to a module that is not one asks for a full reload, which waits on reload support. Metro watches only when
-asked: the Metro goldens start it unwatched.
+an edit to a module that is not one asks for a full reload. Metro watches only when asked: the Metro goldens start
+it unwatched.
+
+A reload is `DevSettings.reload`/`reloadWithReason`, which `LinuxDevSettingsModule` answers by raising a flag rather
+than acting: an instance cannot tear itself down from its own JavaScript thread. The window loop checks the flag at
+the top of each frame, destroys the `WindowSession` and starts a new one from the same bundle at the current size,
+and prints `[rnl-reload] reloaded <bundle>`; the old instance is gone before the new one exists. HMRClient asks for
+one when an edit reaches a module that is not a refresh boundary, which is how `packages/test-harness/e2e/reload.json`
+drives it: it edits `test-bundles/reload-title.ts`, a constants-only module, and requires the bundle to run again
+with the new value.
 
 ### Frame timing
 

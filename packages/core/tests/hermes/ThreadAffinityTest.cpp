@@ -44,6 +44,7 @@ const std::vector<ForeignThreadCall> kForeignThreadCalls{
          hosts.reactHost->loadScript(std::make_unique<facebook::react::JSBigStdString>("0;"), "affinity.js");
      }},
     {"ReactHost::loadBundle", [](Hosts& hosts) { hosts.reactHost->loadBundle("affinity.js"); }},
+    {"ReactHost::isReloadRequested", [](Hosts& hosts) { hosts.reactHost->isReloadRequested(); }},
     {"ReactHost::startHotModuleReplacement",
      [](Hosts& hosts) { hosts.reactHost->startHotModuleReplacement("affinity.js"); }},
     {"ReactHost::drainJavaScriptThread", [](Hosts& hosts) { hosts.reactHost->drainJavaScriptThread(); }},
