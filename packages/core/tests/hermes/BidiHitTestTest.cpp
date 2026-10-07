@@ -1,5 +1,6 @@
 #include "TextGeometry.h"
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -69,10 +70,13 @@ Strength strengthOf(char32_t codePoint) {
 }
 
 /**
- * Every strong character whose round trip disagrees, as `offset->hit`: the point a quarter of the way into the
- * character from the edge it starts at must hit-test back to its own offset. The character's box comes from the
- * selection geometry, and its starting edge from its script, never from the caret geometry, whose bidirectional
- * placement is #72's item 4.
+ * Every strong character that disagrees, as `offset:caretX/edgeX->hit`. Two things are asked of each, and the
+ * character's box comes from the selection geometry while the edge it starts at comes from its script — the right
+ * edge for a Hebrew letter, the left for a Latin letter or a digit — so neither answer is taken from the code under
+ * test:
+ *
+ * - a point a quarter of the way in from that edge hit-tests back to the character's own offset (#72 item 3);
+ * - the caret before the character sits at that edge (#72 item 4, #343's position-to-index round trip).
  */
 std::vector<std::string> mismatchesOf(const std::string& text, facebook::react::WritingDirection writingDirection) {
     const facebook::react::AttributedString attributedString = paragraphOf(text, writingDirection);
@@ -87,19 +91,22 @@ std::vector<std::string> mismatchesOf(const std::string& text, facebook::react::
             continue;
         }
 
-        const EditorGeometry box = measureEditorGeometry(
-            attributedString, paragraphAttributes, kWrapWidth,
-            EditorGeometryRequest{.selectionBeginUtf16 = offset, .selectionEndUtf16 = offset + 1, .isMultiline = true});
-        const facebook::react::Rect& glyph = box.selection.front();
-        const float quarter = glyph.size.width / 4.0F;
-        const facebook::react::Point probe{.x = strength == Strength::RightToLeft
-                                                    ? glyph.origin.x + glyph.size.width - quarter
-                                                    : glyph.origin.x + quarter,
+        const EditorGeometry geometry = measureEditorGeometry(attributedString, paragraphAttributes, kWrapWidth,
+                                                              EditorGeometryRequest{.caretUtf16 = offset,
+                                                                                    .selectionBeginUtf16 = offset,
+                                                                                    .selectionEndUtf16 = offset + 1,
+                                                                                    .isMultiline = true});
+        const facebook::react::Rect& glyph = geometry.selection.front();
+        const bool isRightToLeft = strength == Strength::RightToLeft;
+        const float leadingEdge = isRightToLeft ? glyph.origin.x + glyph.size.width : glyph.origin.x;
+        const facebook::react::Point probe{.x =
+                                               leadingEdge + ((isRightToLeft ? -1.0F : 1.0F) * glyph.size.width / 4.0F),
                                            .y = glyph.origin.y + (glyph.size.height / 2.0F)};
         const size_t hit = utf16IndexAtPoint(attributedString, paragraphAttributes, kWrapWidth, probe);
 
-        if (hit != offset) {
-            mismatches.push_back(std::to_string(offset) + "->" + std::to_string(hit));
+        if (hit != offset || std::abs(geometry.caret.origin.x - leadingEdge) > 1.0F) {
+            mismatches.push_back(std::to_string(offset) + ":" + std::to_string(geometry.caret.origin.x) + "/" +
+                                 std::to_string(leadingEdge) + "->" + std::to_string(hit));
         }
     }
 
@@ -126,7 +133,7 @@ size_t lineCountOf(const std::string& text) {
     return measureParagraphMetrics(attributedString, facebook::react::ParagraphAttributes{}, kWrapWidth).lines.size();
 }
 
-/** The fixture wraps onto at least three lines, and every strong character of it round-trips. */
+/** The fixture wraps onto at least three lines, and every strong character of it round-trips with its caret. */
 void expectWrappedTextHitTestsBack(const std::string& text) {
     const std::vector<std::string> mismatches = mismatchesOf(text, facebook::react::WritingDirection::RightToLeft);
 
