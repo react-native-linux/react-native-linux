@@ -5137,6 +5137,9 @@ the mouse, so `InputDispatcher::dispatchTouch` does too:
 - While the button is held, every motion sends `touchMove`, and the release sends `touchEnd`. Both go to that same
   node, because a touch keeps its start node as its target where the pointer events retarget.
 - A pointer leave, or a wheel that scrolls during the press, sends `touchCancel`.
+- Each step's touch event follows its pointer events, the order Android's `ReactRootView` sends them in. The move
+  that activates a gesture is therefore the move whose touch the gesture's root view claims (#168, see
+  `packages/gesture-handler/README.md`).
 
 `InputEventDispatchConformanceTest` pins the sequence, the targets and the categories. The `pressable-react` e2e
 runs a Metro-built application whose `Pressable` reports `press` for a click and none for a drag off it.

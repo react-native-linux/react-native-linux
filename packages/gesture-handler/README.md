@@ -29,6 +29,12 @@ that Linux runs that engine, so no fourth implementation exists. Linux supplies 
 - `attachHandlers` passes Linux the same callback ref as web, so a `runOnJS(true)` gesture's callbacks run straight
   from the engine.
 
+- A gesture that activates takes the pointer from React's responder: while any gesture is active, the root view
+  claims the responder in the capture phase, so a `Pressable` under it ends with `pressOut` and no `press`, as
+  RNGH cancels the JavaScript responder on Android and iOS. The platform sends each pointer event before the touch
+  event of the same step, so the move that activates a gesture is the move that takes the pointer
+  (`gesture-pan-over-pressable`).
+
 Recognition therefore runs on the JavaScript thread, the trade-off the decision accepted. Worklet callbacks
 (`REANIMATED_WORKLET`) are #95's.
 
@@ -51,3 +57,4 @@ pnpm upstream:check gesture-handler            # prove the vendored tree still m
 | Patch | What it changes | Deletion trigger |
 | --- | --- | --- |
 | `0001-linux-platform` | Adds the five Linux files above and takes the web branch of `attachHandlers` on Linux; skips `getViewManagerConfig('getConstants')`, which logs a new-architecture error | Upstream accepting a `linux` platform: the files are already in the shape of that contribution |
+| `0002-linux-pointer-ownership` | Tracks which gestures are active, and makes the Linux root view claim the responder while any is | The same as `0001` |

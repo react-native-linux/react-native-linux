@@ -61,6 +61,22 @@ export class LinuxView {
 }
 
 const views = new Set<LinuxView>();
+const activeGestures = new Set<unknown>();
+
+// A gesture that activates takes the pointer from React's responder: GestureHandlerRootView.linux claims the
+// responder while any gesture is active, so a Pressable under it ends with pressOut and no press, as RNGH cancels
+// the JavaScript responder on Android and iOS.
+export function setLinuxGestureActive(gesture: unknown, isActive: boolean): void {
+  if (isActive) {
+    activeGestures.add(gesture);
+  } else {
+    activeGestures.delete(gesture);
+  }
+}
+
+export function isAnyLinuxGestureActive(): boolean {
+  return activeGestures.size > 0;
+}
 const captures = new Map<number, LinuxView[]>();
 const capturedTarget = {
   tagName: 'VIEW',

@@ -215,7 +215,7 @@ TEST_F(InputEventDispatchConformanceTest, APressReachesOnlyTheDeepestNodeUnderTh
     pressAndRelease(100.0F, 100.0F);
 
     EXPECT_EQ(recordedTypes(),
-              (std::vector<std::string>{"topTouchStart", "topPointerDown", "topTouchEnd", "topPointerUp", "topClick"}));
+              (std::vector<std::string>{"topPointerDown", "topTouchStart", "topPointerUp", "topClick", "topTouchEnd"}));
 
     for (const RecordedRawEvent& recordedEvent : *recordedEvents_) {
         EXPECT_EQ(recordedEvent.tag, kChildTag) << recordedEvent.type << " was dispatched to the wrong node";
@@ -276,8 +276,8 @@ TEST_F(InputEventDispatchConformanceTest, OnlyTheMoveIsCoalescible) {
 TEST_F(InputEventDispatchConformanceTest, ADragOffThePressedNodeRetargetsAndTheReleaseIsNotAClick) {
     pressDragAndRelease(100.0F, 100.0F, 20.0F, 20.0F);
 
-    EXPECT_EQ(recordedTypes(), (std::vector<std::string>{"topTouchStart", "topPointerDown", "topTouchMove",
-                                                         "topPointerMove", "topTouchEnd", "topPointerUp"}));
+    EXPECT_EQ(recordedTypes(), (std::vector<std::string>{"topPointerDown", "topTouchStart", "topPointerMove",
+                                                         "topTouchMove", "topPointerUp", "topTouchEnd"}));
     EXPECT_EQ(recordedEventOfType("topPointerDown").tag, kChildTag);
     EXPECT_EQ(recordedEventOfType("topPointerMove").tag, kPanelTag);
     EXPECT_EQ(recordedEventOfType("topPointerUp").tag, kPanelTag);

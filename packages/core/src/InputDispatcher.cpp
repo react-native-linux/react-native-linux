@@ -476,19 +476,19 @@ void InputDispatcher::dispatchPointerEvent(const InputEvent& event) {
     }
 
     hoveredEmitter_ = isSurfaceRoot ? nullptr : emitter;
-    dispatchTouch(event, target, emitter);
+    if (emitter != nullptr) {
+        for (const PointerDispatch& pointerDispatch : dispatches) {
+            emitPointerDispatch(*emitter, pointerDispatch);
 
-    if (emitter == nullptr) {
-        return;
-    }
-
-    for (const PointerDispatch& pointerDispatch : dispatches) {
-        emitPointerDispatch(*emitter, pointerDispatch);
-
-        if (pointerDispatch.type == PointerDispatchType::Click) {
-            emitSwitchChange(*target.shadowNode);
+            if (pointerDispatch.type == PointerDispatchType::Click) {
+                emitSwitchChange(*target.shadowNode);
+            }
         }
     }
+
+    // After the pointer events, as Android's ReactRootView sends them: a gesture the pointer move activates has
+    // claimed the responder before the touch move that would otherwise keep a Pressable pressed (#168).
+    dispatchTouch(event, target, emitter);
 }
 
 void InputDispatcher::dispatchTouch(const InputEvent& event, const PointerTarget& target,
