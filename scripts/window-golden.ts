@@ -1,4 +1,4 @@
-import { argv, env, pid, stderr, stdout } from "node:process";
+import { argv, env, execPath, pid, stderr, stdout } from "node:process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
@@ -268,4 +268,31 @@ if (isMainModule()) {
   }
 }
 
-export { buildEnvironment, findExecutable, findLavapipeIcd, findLavapipeIcdManifestPath, findLavapipeLibraryPath };
+/**
+ * The bundle an e2e scenario runs. A React application entry (`.tsx`) is built by Metro first, through the harness
+ * app's config, so a library overlay runs the way an application imports it (#168); a `.js` bundle runs as it is.
+ */
+const resolveScenarioBundle = (scenarioBundles: string, scenario: { bundle: string; name: string }): string => {
+  const sourcePath = path.join(scenarioBundles, scenario.bundle);
+
+  if (!sourcePath.endsWith(".tsx")) {
+    return sourcePath;
+  }
+  const outputPath = path.join(repositoryRoot, "build", "e2e-bundles", `${scenario.name}.js`);
+  const bundler = path.join(repositoryRoot, "packages", "test-harness", "scripts", "bundle.ts");
+  mkdirSync(path.dirname(outputPath), { recursive: true });
+
+  if (spawnSync(execPath, [bundler, outputPath, sourcePath], { stdio: "inherit" }).status !== SUCCESSFUL_EXIT_STATUS) {
+    throw new Error(`Metro could not bundle ${sourcePath}`);
+  }
+  return outputPath;
+};
+
+export {
+  buildEnvironment,
+  findExecutable,
+  findLavapipeIcd,
+  findLavapipeIcdManifestPath,
+  findLavapipeLibraryPath,
+  resolveScenarioBundle,
+};

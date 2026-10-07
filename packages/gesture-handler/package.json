@@ -1,0 +1,19 @@
+{
+  "name": "@react-native-linux/gesture-handler",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./upstream/packages/react-native-gesture-handler/src/index.ts"
+  },
+  "dependencies": {
+    "@egjs/hammerjs": "2.0.17",
+    "hoist-non-react-statics": "3.3.2",
+    "invariant": "2.2.4"
+  },
+  "peerDependencies": {
+    "@react-native-linux/core": "workspace:*",
+    "react": "*",
+    "react-native": "*"
+  }
+}
