@@ -214,7 +214,8 @@ private:
 TEST_F(InputEventDispatchConformanceTest, APressReachesOnlyTheDeepestNodeUnderThePointAsDownUpAndClick) {
     pressAndRelease(100.0F, 100.0F);
 
-    EXPECT_EQ(recordedTypes(), (std::vector<std::string>{"topPointerDown", "topPointerUp", "topClick"}));
+    EXPECT_EQ(recordedTypes(),
+              (std::vector<std::string>{"topTouchStart", "topPointerDown", "topTouchEnd", "topPointerUp", "topClick"}));
 
     for (const RecordedRawEvent& recordedEvent : *recordedEvents_) {
         EXPECT_EQ(recordedEvent.tag, kChildTag) << recordedEvent.type << " was dispatched to the wrong node";
@@ -275,10 +276,62 @@ TEST_F(InputEventDispatchConformanceTest, OnlyTheMoveIsCoalescible) {
 TEST_F(InputEventDispatchConformanceTest, ADragOffThePressedNodeRetargetsAndTheReleaseIsNotAClick) {
     pressDragAndRelease(100.0F, 100.0F, 20.0F, 20.0F);
 
-    EXPECT_EQ(recordedTypes(), (std::vector<std::string>{"topPointerDown", "topPointerMove", "topPointerUp"}));
+    EXPECT_EQ(recordedTypes(), (std::vector<std::string>{"topTouchStart", "topPointerDown", "topTouchMove",
+                                                         "topPointerMove", "topTouchEnd", "topPointerUp"}));
     EXPECT_EQ(recordedEventOfType("topPointerDown").tag, kChildTag);
     EXPECT_EQ(recordedEventOfType("topPointerMove").tag, kPanelTag);
     EXPECT_EQ(recordedEventOfType("topPointerUp").tag, kPanelTag);
+}
+
+/**
+ * Issue #578: the touch the primary button is, beside the pointer events. React's responder system, which every
+ * `Pressable` presses through, reads nothing else, and a touch keeps the node it started on as its target: the
+ * drag that retargets the pointer events above sends every touch event to the child it began on, so Pressability
+ * sees the press leave its rect and answers `onPressOut` without `onPress`. The categories are the pointer
+ * gesture's own, and the move is the only coalescible touch event, as upstream's `TouchEventEmitter` makes it.
+ */
+TEST_F(InputEventDispatchConformanceTest, ATouchKeepsTheNodeItStartedOnAndIsBracketedLikeThePointer) {
+    pressDragAndRelease(100.0F, 100.0F, 20.0F, 20.0F);
+
+    for (const char* type : {"topTouchStart", "topTouchMove", "topTouchEnd"}) {
+        EXPECT_EQ(recordedEventOfType(type).tag, kChildTag) << type;
+    }
+
+    EXPECT_EQ(recordedEventOfType("topTouchStart").category, RawEvent::Category::ContinuousStart);
+    EXPECT_TRUE(recordedEventOfType("topTouchMove").isUnique);
+    EXPECT_EQ(recordedEventOfType("topTouchEnd").category, RawEvent::Category::ContinuousEnd);
+}
+
+/**
+ * Issue #578: a touch ends as a cancel when the pointer leaves the surface while the button is down, or when a
+ * wheel scrolls the press out from under it, so no responder is left granted. A wheel event that scrolls nothing
+ * cancels nothing, and only the primary button is a touch: a secondary press and its release send none.
+ */
+TEST_F(InputEventDispatchConformanceTest, ATouchCancelsOnLeaveAndScrollAndOnlyThePrimaryButtonTouches) {
+    const InputEvent press = pointerEvent(InputEventKind::PointerButtonPress, 100.0F, 100.0F);
+    InputEvent secondaryPress = press;
+    InputEvent secondaryRelease = pointerEvent(InputEventKind::PointerButtonRelease, 100.0F, 100.0F);
+    const InputEvent stillWheel{.kind = InputEventKind::PointerScrollDiscrete,
+                                .surfacePoint = {.x = 100.0F, .y = 100.0F}};
+    InputEvent wheel = stillWheel;
+
+    secondaryPress.button = 1;
+    secondaryRelease.button = 1;
+    wheel.scrollAmount = 1.0;
+
+    dispatcher_->dispatch({press, secondaryPress, secondaryRelease, stillWheel, wheel, press,
+                           pointerEvent(InputEventKind::PointerLeave, 100.0F, 100.0F)});
+
+    std::vector<std::string> touchTypes;
+
+    for (const std::string& type : recordedTypes()) {
+        if (type.starts_with("topTouch")) {
+            touchTypes.push_back(type);
+        }
+    }
+
+    EXPECT_EQ(touchTypes,
+              (std::vector<std::string>{"topTouchStart", "topTouchCancel", "topTouchStart", "topTouchCancel"}));
 }
 
 } // namespace

@@ -135,6 +135,9 @@ private:
     facebook::react::Point absoluteOrigin(const facebook::react::ShadowNode& shadowNode) const;
 
     void dispatchPointerEvent(const InputEvent& event);
+    void dispatchTouch(const InputEvent& event, const PointerTarget& target,
+                       const std::shared_ptr<const facebook::react::TouchEventEmitter>& emitter);
+    void cancelTouch(const InputEvent& event);
     void dispatchKeyEvent(const InputEvent& event);
     void emitKeyEvent(const InputEvent& event, bool isComposing) const;
     void emitActivation(const InputEvent& event) const;
@@ -170,6 +173,16 @@ private:
      * "the pointer left every React view" and answers with `pointerOut` and `pointerLeave` for the whole chain.
      */
     std::shared_ptr<const facebook::react::TouchEventEmitter> hoveredEmitter_;
+
+    /**
+     * The one touch the primary button is, from its press to its release (#578). React's responder system, and so
+     * every `Pressable`, presses only through touch events, which Android sends beside every pointer gesture. A
+     * touch keeps the node it started on as its target until it ends, so its moves and its end go to that node's
+     * emitter, with `touchOrigin_` the surface point of that node's origin for `locationX`/`locationY`.
+     */
+    std::shared_ptr<const facebook::react::TouchEventEmitter> touchEmitter_;
+    facebook::react::Tag touchTarget_{0};
+    facebook::react::Point touchOrigin_{};
 
     /**
      * The field tag and content purpose the last frame told the compositor's text input, so a trace line is
