@@ -52,6 +52,18 @@ namespace {
 
 constexpr facebook::react::SurfaceId kSurfaceId = 1;
 
+// #56: an unregistered component's warning names the file that should have registered it, which is the
+// `rnl_autolinking.cpp` scripts/autolink.ts generates for a build configured with RNL_AUTOLINKING_CMAKE.
+#ifdef RNL_AUTOLINKING_SOURCE
+constexpr char kUnregisteredComponentRemedy[] =
+    "its registration belongs in " RNL_AUTOLINKING_SOURCE ", which scripts/autolink.ts generates from every "
+    "library that autolinks for linux, so declare it in a *NativeComponent spec of one";
+#else
+constexpr char kUnregisteredComponentRemedy[] =
+    "this build was configured without autolinking (RNL_AUTOLINKING_CMAKE is empty), so no rnl_autolinking.cpp "
+    "registers any component; run scripts/autolink.ts and configure with the rnl_autolinking.cmake it writes";
+#endif
+
 // ComponentDescriptorRegistry keeps a reference to the provider registry that created it, so the provider
 // registry has to outlive the Scheduler rather than the factory call.
 //
@@ -114,7 +126,7 @@ facebook::react::ComponentRegistryFactory createComponentRegistryFactory(
     providerRegistry->setComponentDescriptorProviderRequest([](facebook::react::ComponentName componentName) {
         std::cerr << "[component] '" << componentName
                   << "' has no native component registered on react-native-linux and mounts as an empty view; "
-                     "declare it in a *NativeComponent spec of a library that autolinks for linux\n"
+                  << kUnregisteredComponentRemedy << "\n"
                   << std::flush;
     });
 

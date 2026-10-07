@@ -2,6 +2,7 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <string>
 
 namespace react_native_linux {
 namespace {
@@ -133,8 +134,11 @@ TEST(FantomTesterTest, NamesAComponentThatHasNoNativeRegistrationInsteadOfMounti
     testing::internal::CaptureStderr();
     tester.runTask("globalThis.commit([globalThis.createNode(2, 'RNSScreen', { collapsable: false })]);");
 
-    EXPECT_THAT(testing::internal::GetCapturedStderr(),
+    const std::string diagnostic = testing::internal::GetCapturedStderr();
+
+    EXPECT_THAT(diagnostic,
                 testing::HasSubstr("[component] 'RNSScreen' has no native component registered on react-native-linux"));
+    EXPECT_THAT(diagnostic, testing::HasSubstr("rnl_autolinking.cpp"));
     EXPECT_FALSE(tester.hasReportedFatalError());
 }
 
