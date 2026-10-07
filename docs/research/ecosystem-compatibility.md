@@ -86,6 +86,9 @@
 
 ## 1. The flagship's native dependency ledger
 
+The living ledger is `packages/cli/src/ecosystem-matrix.ts` (#87); this section is the research it was built from, at
+flagship v2.12.1.
+
 Read from `~/.t3/worktrees/suuudokuuu/t3code-c2e11773/packages/app/package.json` (v2.12.1) and the resolved
 tree in `~/suuudokuuu/node_modules` [V]. Import counts are from `packages/app/src` [V]; a dependency with no
 direct imports is reached transitively (through `@suuudokuuu/screen-chrome`, `@suuudokuuu/ui`, `expo-router`
