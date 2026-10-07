@@ -1415,7 +1415,7 @@ foreach(rnl_flag_index RANGE ${RNL_WORKLETS_LAST_STATIC_FLAG})
 endforeach()
 
 file(GLOB_RECURSE RNL_WORKLETS_SOURCES CONFIGURE_DEPENDS ${RNL_WORKLETS_DIR}/Common/cpp/worklets/*.cpp)
-add_library(rnl_worklets OBJECT ${RNL_WORKLETS_SOURCES} src/WorkletsPlatformLogger.cpp)
+add_library(rnl_worklets OBJECT ${RNL_WORKLETS_SOURCES} src/LinuxUIScheduler.cpp src/WorkletsPlatformLogger.cpp)
 target_include_directories(rnl_worklets PUBLIC ${RNL_WORKLETS_DIR}/Common/cpp)
 target_precompile_headers(rnl_worklets PRIVATE src/WorkletsLinuxPrefix.h)
 target_compile_definitions(rnl_worklets

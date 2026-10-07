@@ -110,6 +110,7 @@ add_executable(rnl_core_hermes_tests
     InstanceTeardownLeakTest.cpp
     MeasureGeometryTest.cpp
     LinkingModuleTest.cpp
+    LinuxUISchedulerTest.cpp
     ThreadAffinityTest.cpp
     WebSocketModuleTest.cpp
     WorkletsVersionTest.cpp
