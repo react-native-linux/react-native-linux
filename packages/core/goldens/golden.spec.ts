@@ -237,6 +237,14 @@ describe.skipIf(isWindowRigUnavailable)("window goldens", () => {
     expect(windowRig.status, `${windowRig.stdout}${windowRig.stderr}`).toBe(SUCCESSFUL_EXIT_STATUS);
   });
 
+  it("matches raster translucency to Vulkan through the window path", () => {
+    const renderDirectory = isRegenerating ? goldensDirectory : windowRenderDirectory;
+    const rasterPath = path.join(renderDirectory, "window-raster-translucent.png");
+    const vulkanPath = path.join(renderDirectory, "window-translucent.png");
+
+    expect(compareImagesPerceptually(decodePng(rasterPath), decodePng(vulkanPath))).toBeNull();
+  });
+
   for (const goldenFileName of windowGoldenFileNames) {
     it(`matches ${goldenFileName} through the window path`, () => {
       const goldenPath = path.join(goldensDirectory, goldenFileName);

@@ -10,14 +10,7 @@ const FIRST_FRAME_COUNT = "1";
 
 const clientDecorations = ["--app-id", "org.reactnative.linux.golden", "--force-client-decorations"];
 
-/**
- * The first-frame fixture takes no bundle and one frame: the placeholder paints synchronously, so this is the
- * first-buffer check the invisible-window bug (#328) fails and a 60-frame settle does not. See *Surface commit
- * ordering* in docs/cpp-toolchain.md. The decorations fixture is #329's drawn bar; the translucent one runs
- * `--transparent-background`, proving #328's composite-alpha selection; the raster one is #368's `wl_shm` bottom
- * rung, which has to draw what the Vulkan rung draws for the same bundle, translucency included (#519); the rest
- * are bare.
- */
+/** Window screenshots capture renderer buffers before composition; compositor blend proof remains on #328. */
 const defaultFixture = { extraArguments: ["--no-decorations"], frameCount: SCREENSHOT_FRAME_COUNT };
 
 const fixtures: readonly WindowFixture[] = [
