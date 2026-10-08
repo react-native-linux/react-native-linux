@@ -61,6 +61,17 @@ describe("minorsBehind", () => {
 });
 
 describe("countDiffLines", () => {
+  it("counts source lines resembling file headers across hunks", () => {
+    expect(countDiffLines("--- a\n+++ b\n@@ -1 +1 @@\n---source\n+++source\n@@ -4 +4 @@\n-old\n+new")).toStrictEqual({
+      addedLines: 2,
+      removedLines: 2,
+    });
+  });
+
+  it.each(["", "--- a\n+++ b"])("counts no changes without a hunk: %j", (diff) => {
+    expect(countDiffLines(diff)).toStrictEqual({ addedLines: 0, removedLines: 0 });
+  });
+
   it("counts added and removed lines without the file headers", () => {
     expect(countDiffLines("--- a\n+++ b\n@@ -1 +1,2 @@\n-old\n+new\n+more\n context")).toStrictEqual({
       addedLines: 2,
@@ -73,7 +84,12 @@ describe("renderOverrideReport", () => {
   it("lists every override with its size against upstream, its reason and the budget", () => {
     const rows = [
       { ...platform, ...countDiffLines("") },
-      { ...derived, ...countDiffLines(`${"+added\n".repeat(addedLineCount)}${"-removed\n".repeat(removedLineCount)}`) },
+      {
+        ...derived,
+        ...countDiffLines(
+          `@@ -1,70 +1,51 @@\n${"+added\n".repeat(addedLineCount)}${"-removed\n".repeat(removedLineCount)}`,
+        ),
+      },
     ];
 
     expect(renderOverrideReport(rows, "0.86.4", "v0.87.1")).toBe(

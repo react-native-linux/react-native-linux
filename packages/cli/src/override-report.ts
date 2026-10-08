@@ -18,6 +18,7 @@ interface OverrideReportRow extends OverrideEntry {
 /** ADR-0001's override budget. Raising it is a reviewed edit to this number, with the reason in the pull request. */
 const OVERRIDE_BUDGET = 13;
 const MINOR_INDEX = 1;
+const HUNK_NOT_FOUND = -1;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -56,13 +57,14 @@ const minorOf = (version: string): number => Number(version.replace(/^v/u, "").s
 const minorsBehind = (baseVersion: string, vendoredVersion: string): number =>
   minorOf(vendoredVersion) - minorOf(baseVersion);
 
-/** Counts the `+` and `-` lines of a unified diff, leaving out its `+++` and `---` file headers. */
 const countDiffLines = (diff: string): { readonly addedLines: number; readonly removedLines: number } => {
   const lines = diff.split("\n");
+  const hunkStart = lines.findIndex((line) => line.startsWith("@@"));
+  const changes = hunkStart === HUNK_NOT_FOUND ? [] : lines.slice(hunkStart);
 
   return {
-    addedLines: lines.filter((line) => line.startsWith("+") && !line.startsWith("+++")).length,
-    removedLines: lines.filter((line) => line.startsWith("-") && !line.startsWith("---")).length,
+    addedLines: changes.filter((line) => line.startsWith("+")).length,
+    removedLines: changes.filter((line) => line.startsWith("-")).length,
   };
 };
 
