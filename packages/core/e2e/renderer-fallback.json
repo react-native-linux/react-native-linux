@@ -15,7 +15,7 @@
     "crop": { "left": 90, "top": 70, "width": 220, "height": 140 }
   },
   "expect": [
-    "[rnl-window] raster format=xrgb8888 alpha=opaque",
+    "[rnl-raster] format=xrgb8888 alpha=opaque",
     "[rnl-automation] listening on",
     "pressable: topClick on box at 200,140"
   ]

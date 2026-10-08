@@ -168,7 +168,7 @@ void SharedMemoryRasterRenderer::createPool(WindowSize size) {
     const uint32_t format = transparentBackground_ ? WL_SHM_FORMAT_ARGB8888 : WL_SHM_FORMAT_XRGB8888;
     const SkImageInfo imageInfo = imageInfoFor(size, transparentBackground_);
 
-    std::cout << "[rnl-window] raster format=" << (format == WL_SHM_FORMAT_ARGB8888 ? "argb8888" : "xrgb8888")
+    std::cout << "[rnl-raster] format=" << (format == WL_SHM_FORMAT_ARGB8888 ? "argb8888" : "xrgb8888")
               << " alpha=" << (imageInfo.alphaType() == kPremul_SkAlphaType ? "pre-multiplied" : "opaque") << std::endl;
 
     for (size_t index = 0; index < buffers_.size(); ++index) {

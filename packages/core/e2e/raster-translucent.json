@@ -6,9 +6,9 @@
   "windowFlags": ["--no-decorations", "--transparent-background", "--renderer", "raster"],
   "steps": ["sleep 200"],
   "screenshot": {
-    "golden": "window-translucent.png",
+    "golden": "../../goldens/window-translucent.png",
     "maxDifferentPixels": 1,
     "crop": { "left": 0, "top": 0, "width": 800, "height": 600 }
   },
-  "expect": ["[rnl-window] raster format=argb8888 alpha=pre-multiplied"]
+  "expect": ["[rnl-raster] format=argb8888 alpha=pre-multiplied"]
 }
