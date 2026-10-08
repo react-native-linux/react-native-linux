@@ -1233,6 +1233,11 @@ The handler lives in `serve.ts` because starting Metro directly omits that CLI m
 continue to Metro. `metro-golden.spec.ts` verifies the status body, project identity and unrelated-route handling
 against the real server even when the native renderer is unavailable.
 
+The same suite posts a generated location from a `platform=linux&dev=true&minify=false` bundle to Metro's
+upstream `/symbolicate` endpoint. It asserts the original `index.ts` line and source code frame. No separate
+symbolication service is needed; this verifies the server contract, while automatically sending native error
+stacks to it remains open in #79.
+
 Not yet: a `blob` request body (there is no Blob module), cookies, `wss://`, and the rest of the Metro dev-server
 contract: reload and symbolication.
 
