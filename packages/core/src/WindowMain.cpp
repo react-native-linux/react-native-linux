@@ -1164,10 +1164,12 @@ void announceFirstPresentedFrameOnce(react_native_linux::WaylandWindow& window, 
     }
 }
 
-RendererBringUp createRenderer(react_native_linux::WaylandWindow& window, react_native_linux::RendererRung rung) {
+RendererBringUp createRenderer(react_native_linux::WaylandWindow& window, react_native_linux::RendererRung rung,
+                               bool transparentBackground) {
     if (rung == react_native_linux::RendererRung::SharedMemoryRaster) {
-        return RendererBringUp{.renderer = std::make_unique<react_native_linux::SharedMemoryRasterRenderer>(
-                                   window.sharedMemory(), window.surface(), window.bufferSize())};
+        return RendererBringUp{
+            .renderer = std::make_unique<react_native_linux::SharedMemoryRasterRenderer>(
+                window.sharedMemory(), window.surface(), window.bufferSize(), transparentBackground)};
     }
 
     std::unique_ptr<react_native_linux::SkiaVulkanRenderer> vulkanRenderer =
@@ -1204,7 +1206,7 @@ RendererBringUp bringUpRenderer(react_native_linux::WaylandWindow& window, const
                 throw std::runtime_error("injected by --inject-renderer-failures");
             }
 
-            RendererBringUp broughtUp = createRenderer(window, rung.value());
+            RendererBringUp broughtUp = createRenderer(window, rung.value(), parsedArguments.transparentBackground);
 
             broughtUp.record = attempt;
             broughtUp.reason = rung.value() == start.rung

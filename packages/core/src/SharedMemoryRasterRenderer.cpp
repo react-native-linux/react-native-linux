@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <iostream>
 #include <stdexcept>
 #include <string>
 #include <sys/mman.h>
@@ -28,9 +29,7 @@ namespace {
 
 constexpr size_t kBytesPerPixel = 4;
 
-// wl_shm's WL_SHM_FORMAT_ARGB8888 is a 32-bit little-endian word, which is the byte order Skia calls BGRA. ARGB,
-// premultiplied, as the Vulkan rungs' composite alpha is: an opaque app clears opaque and loses nothing, and a
-// transparent one stays transparent when the ladder falls back to this rung (#519).
+// wl_shm's ARGB8888 and XRGB8888 use the byte order Skia calls BGRA.
 constexpr SkColorType kBufferColorType = kBGRA_8888_SkColorType;
 
 void markBufferReleased(void* data, wl_buffer* /*waylandBuffer*/) { *static_cast<bool*>(data) = false; }
@@ -39,9 +38,9 @@ const wl_buffer_listener kBufferListener{.release = markBufferReleased};
 
 size_t rowBytesFor(WindowSize size) { return static_cast<size_t>(size.width) * kBytesPerPixel; }
 
-SkImageInfo imageInfoFor(WindowSize size) {
+SkImageInfo imageInfoFor(WindowSize size, bool transparentBackground) {
     return SkImageInfo::Make(static_cast<int>(size.width), static_cast<int>(size.height), kBufferColorType,
-                             kPremul_SkAlphaType);
+                             transparentBackground ? kPremul_SkAlphaType : kOpaque_SkAlphaType);
 }
 
 SceneDamage fullSurfaceDamage(WindowSize size) {
@@ -53,8 +52,9 @@ SceneDamage fullSurfaceDamage(WindowSize size) {
 } // namespace
 
 SharedMemoryRasterRenderer::SharedMemoryRasterRenderer(wl_shm* sharedMemory, wl_surface* waylandSurface,
-                                                       WindowSize initialSize)
-    : sharedMemory_(sharedMemory), waylandSurface_(waylandSurface), size_(initialSize) {
+                                                       WindowSize initialSize, bool transparentBackground)
+    : sharedMemory_(sharedMemory), waylandSurface_(waylandSurface), size_(initialSize),
+      transparentBackground_(transparentBackground) {
     if (sharedMemory_ == nullptr) {
         throw std::runtime_error("compositor does not advertise wl_shm");
     }
@@ -165,6 +165,11 @@ void SharedMemoryRasterRenderer::createPool(WindowSize size) {
     }
 
     pool_ = wl_shm_create_pool(sharedMemory_, poolFileDescriptor_, static_cast<int32_t>(poolSize_));
+    const uint32_t format = transparentBackground_ ? WL_SHM_FORMAT_ARGB8888 : WL_SHM_FORMAT_XRGB8888;
+    const SkImageInfo imageInfo = imageInfoFor(size, transparentBackground_);
+
+    std::cout << "[rnl-window] raster format=" << (format == WL_SHM_FORMAT_ARGB8888 ? "argb8888" : "xrgb8888")
+              << " alpha=" << (imageInfo.alphaType() == kPremul_SkAlphaType ? "pre-multiplied" : "opaque") << std::endl;
 
     for (size_t index = 0; index < buffers_.size(); ++index) {
         Buffer& buffer = buffers_[index];
@@ -173,10 +178,10 @@ void SharedMemoryRasterRenderer::createPool(WindowSize size) {
         buffer.isHeldByCompositor = false;
         buffer.waylandBuffer = wl_shm_pool_create_buffer(
             pool_, static_cast<int32_t>(index * bufferSize), static_cast<int32_t>(size.width),
-            static_cast<int32_t>(size.height), static_cast<int32_t>(rowBytesFor(size)), WL_SHM_FORMAT_ARGB8888);
+            static_cast<int32_t>(size.height), static_cast<int32_t>(rowBytesFor(size)), format);
         const SkSurfaceProps surfaceProps = skSurfacePropsFor(textRasterizationPolicy());
 
-        buffer.surface = SkSurfaces::WrapPixels(imageInfoFor(size), buffer.pixels, rowBytesFor(size), &surfaceProps);
+        buffer.surface = SkSurfaces::WrapPixels(imageInfo, buffer.pixels, rowBytesFor(size), &surfaceProps);
 
         wl_buffer_add_listener(buffer.waylandBuffer, &kBufferListener, &buffer.isHeldByCompositor);
     }
@@ -214,7 +219,7 @@ void SharedMemoryRasterRenderer::destroyPool() noexcept {
 }
 
 void SharedMemoryRasterRenderer::writeCapture(const Buffer& buffer) {
-    const SkImageInfo bufferInfo = imageInfoFor(size_);
+    const SkImageInfo bufferInfo = imageInfoFor(size_, transparentBackground_);
     const SkPixmap bufferPixels(bufferInfo, buffer.pixels, rowBytesFor(size_));
     std::vector<uint8_t> encodedBytes(rowBytesFor(size_) * size_.height);
     const SkPixmap encodedPixels(bufferInfo.makeColorType(kRGBA_8888_SkColorType), encodedBytes.data(),

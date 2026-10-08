@@ -1,0 +1,14 @@
+{
+  "name": "raster-translucent",
+  "bundle": "translucent-view.js",
+  "ready": "translucent-view: committed surface 1",
+  "frames": 60,
+  "windowFlags": ["--no-decorations", "--transparent-background", "--renderer", "raster"],
+  "steps": ["sleep 200"],
+  "screenshot": {
+    "golden": "window-translucent.png",
+    "maxDifferentPixels": 0,
+    "crop": { "left": 0, "top": 0, "width": 800, "height": 600 }
+  },
+  "expect": ["[rnl-window] raster format=argb8888 alpha=pre-multiplied"]
+}
