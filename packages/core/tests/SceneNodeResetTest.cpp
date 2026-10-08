@@ -207,6 +207,7 @@ void expectResetTo(const SceneNode& node, const SceneNode& reference) {
     EXPECT_EQ(node.switchControl.has_value(), reference.switchControl.has_value());
     EXPECT_EQ(node.activityIndicator.has_value(), reference.activityIndicator.has_value());
     EXPECT_EQ(node.scrollContentOffset.has_value(), reference.scrollContentOffset.has_value());
+    EXPECT_EQ(node.scrollIndicators.has_value(), reference.scrollIndicators.has_value());
     EXPECT_EQ(node.maintainedScroll.has_value(), reference.maintainedScroll.has_value());
 }
 
@@ -236,6 +237,7 @@ const std::vector<std::string>& comparedSceneNodeFields() {
                                                  "switchControl",
                                                  "activityIndicator",
                                                  "scrollContentOffset",
+                                                 "scrollIndicators",
                                                  "maintainedScroll"};
 
     return fields;
