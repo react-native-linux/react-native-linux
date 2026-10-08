@@ -1287,11 +1287,8 @@ std::vector<ScrollIndicatorGeometry> scrollIndicatorsOf(const SceneNode& node) {
     return geometries;
 }
 
-/**
- * A rounded bar inside `owner`'s frame, painted and hit-tested as `owner` itself: the same tag, matrix and inherited
- * clips, at the opacity it inherited.
- */
-ScenePrimitive barPrimitive(const ScenePrimitive& owner, const facebook::react::Rect& bar, float opacity) {
+ScenePrimitive barPrimitive(const ScenePrimitive& owner, const facebook::react::Rect& bar,
+                            const ScenePaintState& state) {
     constexpr uint32_t kIndicatorArgb = 0x99A0A6B0U;
     const facebook::react::Float radius = std::min(bar.size.width, bar.size.height) / 2;
     const facebook::react::CornerRadii corner{.vertical = radius, .horizontal = radius};
@@ -1300,9 +1297,10 @@ ScenePrimitive barPrimitive(const ScenePrimitive& owner, const facebook::react::
         .tag = owner.tag,
         .frame = facebook::react::Rect{.origin = owner.frame.origin + bar.origin, .size = bar.size},
         .matrix = owner.matrix,
-        .clips = owner.clips,
+        .clips = state.clips,
         .borderRadii = {.topLeft = corner, .topRight = corner, .bottomLeft = corner, .bottomRight = corner},
-        .backgroundColorArgb = scaleArgbAlpha(kIndicatorArgb, opacity)};
+        .backgroundColorArgb = scaleArgbAlpha(kIndicatorArgb, state.opacity),
+        .isScrollIndicator = true};
 }
 
 bool coversNode(const SceneNode& node, const SceneNodeGeometry& geometry, const std::vector<SceneClip>& clips,
@@ -1778,8 +1776,12 @@ SceneHit RetainedScene::findNodeAtPoint(facebook::react::Tag rootTag, facebook::
 std::optional<ScenePrimitiveDisplacement> findDisplacedPrimitive(const SceneSnapshot& before,
                                                                  const SceneSnapshot& after) {
     for (const ScenePrimitive& primitive : before) {
+        if (primitive.isScrollIndicator) {
+            continue;
+        }
+
         const auto painted = std::find_if(after.begin(), after.end(), [&primitive](const ScenePrimitive& candidate) {
-            return candidate.tag == primitive.tag;
+            return !candidate.isScrollIndicator && candidate.tag == primitive.tag;
         });
 
         if (painted == after.end()) {
@@ -1888,7 +1890,7 @@ void RetainedScene::appendPrimitives(SceneSnapshot& primitives, facebook::react:
     std::vector<ScenePrimitive> indicatorBars;
 
     for (const ScrollIndicatorGeometry& indicator : scrollIndicatorsOf(node)) {
-        indicatorBars.push_back(barPrimitive(visit.primitive, indicator.thumb, visit.childState.opacity));
+        indicatorBars.push_back(barPrimitive(visit.primitive, indicator.thumb, visit.childState));
     }
 
     if (isPrimitiveVisible(visit.primitive)) {

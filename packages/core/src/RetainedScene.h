@@ -372,6 +372,7 @@ struct ScenePrimitive {
      * node also damages its ring.
      */
     bool focusRing{false};
+    bool isScrollIndicator{false};
 
     /**
      * Group opacity (#105). The alphas of the translucent ancestors whose subtree this primitive is the first to

@@ -42,7 +42,7 @@ std::optional<ScrollIndicatorGeometry> verticalScrollIndicator(facebook::react::
                                                                facebook::react::Size content, Float offset) noexcept {
     const std::optional<AxisThumb> thumb = thumbAlong(viewport.height, content.height, offset);
 
-    if (!thumb.has_value()) {
+    if (!thumb.has_value() || viewport.width < kInset + kThickness) {
         return std::nullopt;
     }
 
@@ -58,7 +58,7 @@ std::optional<ScrollIndicatorGeometry> horizontalScrollIndicator(facebook::react
                                                                  facebook::react::Size content, Float offset) noexcept {
     const std::optional<AxisThumb> thumb = thumbAlong(viewport.width, content.width, offset);
 
-    if (!thumb.has_value()) {
+    if (!thumb.has_value() || viewport.height < kInset + kThickness) {
         return std::nullopt;
     }
 
