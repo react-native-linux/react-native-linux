@@ -351,6 +351,36 @@ TEST(CurlHttpClientTest, FollowsARedirectAndReportsOnlyTheFinalResponsesHeaders)
     EXPECT_EQ(recording.body, "arrived");
 }
 
+TEST(CurlHttpClientTest, SendsRedirectCookiesOnlyToTheirMatchingPathWithinOneRequest) {
+    LoopbackServer server([](const std::string& request, int socket) {
+        if (request.starts_with("GET /from ")) {
+            respond(socket, "302 Found",
+                    "Location: /to\r\nSet-Cookie: session=active; Path=/\r\n"
+                    "Set-Cookie: private=hidden; Path=/private\r\n",
+                    "");
+        } else {
+            respond(socket, "200 OK", "", "arrived");
+        }
+    });
+    CurlHttpClient client;
+    Recording redirected;
+
+    client.sendRequest(redirected.callbacks(), "GET", server.url("/from"), {}, {}, 0, std::nullopt);
+
+    ASSERT_TRUE(redirected.waitForCompletion());
+    EXPECT_EQ(redirected.error, "");
+    EXPECT_EQ(redirected.body, "arrived");
+    EXPECT_NE(server.lastRequest().find("Cookie: session=active\r\n"), std::string::npos);
+    EXPECT_EQ(server.lastRequest().find("private=hidden"), std::string::npos);
+
+    Recording independent;
+    client.sendRequest(independent.callbacks(), "GET", server.url("/to"), {}, {}, 0, std::nullopt);
+
+    ASSERT_TRUE(independent.waitForCompletion());
+    EXPECT_EQ(independent.error, "");
+    EXPECT_EQ(server.lastRequest().find("Cookie:"), std::string::npos);
+}
+
 TEST(CurlHttpClientTest, AnswersAHeadRequestAndAnEmptyBodyWithAnEmptyBody) {
     LoopbackServer server(
         [](const std::string& /*request*/, int socket) { respond(socket, "204 No Content", "", ""); });

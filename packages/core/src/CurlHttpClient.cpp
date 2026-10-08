@@ -238,6 +238,7 @@ void configure(CurlHttpClient::Transfer& transfer, const std::string& method, co
     curl_easy_setopt(easy, CURLOPT_CUSTOMREQUEST, method.c_str());
     curl_easy_setopt(easy, CURLOPT_NOBODY, method == "HEAD" ? 1L : 0L);
     curl_easy_setopt(easy, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(easy, CURLOPT_COOKIEFILE, "");
     curl_easy_setopt(easy, CURLOPT_MAXREDIRS, kMaximumRedirects);
     curl_easy_setopt(easy, CURLOPT_ACCEPT_ENCODING, "");
     curl_easy_setopt(easy, CURLOPT_TIMEOUT_MS, static_cast<long>(timeout));
