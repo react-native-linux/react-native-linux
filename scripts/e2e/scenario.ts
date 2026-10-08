@@ -14,6 +14,7 @@ import {
 import type { Crop } from "./screenshot.ts";
 import path from "node:path";
 import { readAccessibilityChanges } from "./accessibility-changes.ts";
+import { readFastRefresh } from "./fast-refresh.ts";
 
 const DEFAULT_FRAME_COUNT = 600;
 const FRAME_LOG_FILE_NAME = "frames.jsonl";
@@ -24,9 +25,12 @@ const PARENT_DIRECTORY = "..";
 /**
  * The perf gate of #7: `p95Ms`/`minFrames` bound the p95 `wp_presentation` frame time and the frames needed for
  * it to mean anything. `maxHangs` (#345) caps hang-thresholded frames; `null` opts out, `0` is a measured zero.
+ * `maxJournalledFrames` (#42) caps the frames that painted damage, which is how a scenario says nothing repaints
+ * once its input stops; `null` opts out.
  */
 interface FrameBudget {
   readonly maxHangs: number | null;
+  readonly maxJournalledFrames: number | null;
   readonly minFrames: number;
   readonly p95Ms: number;
 }
@@ -52,13 +56,14 @@ interface ScreenshotComparison {
  * package's `e2e/goldens`/`e2e/snapshots` the committed and accessibility trees must match. `markTestPassed` requires
  * the bundle to have called `globalThis.__rnlMarkTestPassed()`. `accessibilityChanges` names the
  * `accessibilityState`/`accessibilityValue` changes (#264) `ListAccessibilityChanges` must have recorded by the time
- * the channel is asked.
+ * the channel is asked. `rendererRung` is the renderer ladder rung (#368) `DescribeRenderer` must answer.
  */
 interface ScenarioAutomation {
   readonly accessibilityChanges: ReturnType<typeof readAccessibilityChanges>;
   readonly accessibilityTreeSnapshot: string | null;
   readonly listErrorsMustBeEmpty: boolean;
   readonly markTestPassed: boolean;
+  readonly rendererRung: string | null;
   readonly visualTreeSnapshot: string | null;
 }
 
@@ -74,6 +79,11 @@ interface Scenario {
   readonly expectFailure: boolean;
   /** `rnl_inject`'s exit status 1 is accepted once the trace also carries this substring; `null` never accepts it. */
   readonly expectsExitAfter: string | null;
+  /**
+   * #81: when set, `bundle` is an entry under `packages/test-harness` served as a `dev=true` bundle by a watching
+   * Metro, and the driver makes this edit once the window is ready. See `FastRefreshEdit`.
+   */
+  readonly fastRefresh: ReturnType<typeof readFastRefresh>;
   /** How long `rnl_window` runs before it captures its screenshot and exits. */
   readonly frames: number;
   readonly frameBudget: FrameBudget | null;
@@ -122,6 +132,10 @@ const readFrameBudget = (record: Record<string, unknown>, sourceName: string): F
   return {
     maxHangs:
       "maxHangs" in budget ? readNonNegativeInteger(budget["maxHangs"], "frameBudget.maxHangs", sourceName) : null,
+    maxJournalledFrames:
+      "maxJournalledFrames" in budget
+        ? readNonNegativeInteger(budget["maxJournalledFrames"], "frameBudget.maxJournalledFrames", sourceName)
+        : null,
     minFrames: readPositiveInteger(budget["minFrames"], "frameBudget.minFrames", sourceName),
     p95Ms: readPositiveNumber(budget["p95Ms"], "frameBudget.p95Ms", sourceName),
   };
@@ -191,6 +205,7 @@ const readAutomation = (record: Record<string, unknown>, sourceName: string): Sc
     accessibilityTreeSnapshot: readSnapshotName(automation, "accessibilityTreeSnapshot", sourceName),
     listErrorsMustBeEmpty: readOptionalBoolean(automation, "listErrorsMustBeEmpty", sourceName),
     markTestPassed: readOptionalBoolean(automation, "markTestPassed", sourceName),
+    rendererRung: readOptionalString(automation, "rendererRung", sourceName),
     visualTreeSnapshot: readSnapshotName(automation, "visualTreeSnapshot", sourceName),
   };
 };
@@ -207,6 +222,7 @@ const parseScenario = (value: unknown, sourceName: string): Scenario => {
     expect: readStringArray(value["expect"], "expect", sourceName),
     expectFailure: readOptionalBoolean(value, "expectFailure", sourceName),
     expectsExitAfter: readOptionalString(value, "expectsExitAfter", sourceName),
+    fastRefresh: readFastRefresh(value, sourceName),
     frameBudget: readFrameBudget(value, sourceName),
     frames: readFrameCount(value, sourceName),
     injectProtocolError: readOptionalBoolean(value, "injectProtocolError", sourceName),
@@ -234,5 +250,6 @@ const resolveArtifactPaths = (artifactsRoot: string, scenarioName: string): Arti
 };
 
 export { describeTraceFailures, resolveExpectedOutcome } from "./trace-grading.ts";
+export { applyFastRefreshEdit, gradeEditToVisible } from "./fast-refresh.ts";
 export { formatInjectorScript, parseScenario, resolveArtifactPaths };
 export type { FrameBudget, Scenario, ScenarioAutomation };

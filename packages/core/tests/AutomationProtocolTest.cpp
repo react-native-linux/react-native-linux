@@ -24,6 +24,7 @@ using react_native_linux::AutomationRequestParse;
 using react_native_linux::describeAccessibilityChanges;
 using react_native_linux::describeAccessibilityTree;
 using react_native_linux::describeErrors;
+using react_native_linux::describeRenderer;
 using react_native_linux::describeVisualTree;
 using react_native_linux::formatAutomationFailure;
 using react_native_linux::formatAutomationResponse;
@@ -116,6 +117,11 @@ TEST(AutomationProtocol, ParsesMarkTestPassedAndTheTwoTreeDumps) {
               AutomationCommand::DumpAccessibilityTree);
 }
 
+TEST(AutomationProtocol, ParsesDescribeRenderer) {
+    EXPECT_EQ(parseAutomationRequest(R"({"command":"DescribeRenderer"})").request.value().command,
+              AutomationCommand::DescribeRenderer);
+}
+
 TEST(AutomationProtocol, ParsesTakeScreenshotWithItsPath) {
     const AutomationRequestParse parsed =
         parseAutomationRequest(R"({"command":"TakeScreenshot","path":"/tmp/shot.png"})");
@@ -170,8 +176,9 @@ TEST(AutomationProtocol, FormatsOneResponsePerLine) {
 }
 
 TEST(AutomationProtocol, NamesEveryCommandInItsResponse) {
-    for (const std::string& name : {"DumpAccessibilityTree", "DumpVisualTree", "HangForTesting",
-                                    "ListAccessibilityChanges", "ListErrors", "MarkTestPassed", "TakeScreenshot"}) {
+    for (const std::string& name :
+         {"DumpAccessibilityTree", "DumpVisualTree", "HangForTesting", "ListAccessibilityChanges", "ListErrors",
+          "MarkTestPassed", "TakeScreenshot", "DescribeRenderer"}) {
         const AutomationCommand command =
             parseAutomationRequest(R"({"command":")" + name + R"(","path":"p","milliseconds":0})")
                 .request.value()
@@ -196,6 +203,18 @@ TEST(AutomationProtocol, DescribesTheErrorsTheRuntimeReported) {
     EXPECT_EQ(described["errors"][0]["source"].asString(), "javascript");
     EXPECT_EQ(described["errors"][0]["message"].asString(), "boom");
     EXPECT_EQ(described["errors"][1]["source"].asString(), "image");
+}
+
+TEST(AutomationProtocol, DescribesTheRendererRungAndWhyItWasChosenAsEscapedJson) {
+    const std::string line = formatAutomationResponse(
+        AutomationCommand::DescribeRenderer,
+        describeRenderer("raster", "the rungs above it failed; the last said: \"no device\"\n"));
+    const folly::dynamic response = parseLine(line);
+
+    EXPECT_EQ(line.find('\n'), line.size() - 1);
+    EXPECT_EQ(response["command"].asString(), "DescribeRenderer");
+    EXPECT_EQ(response["result"]["rung"].asString(), "raster");
+    EXPECT_EQ(response["result"]["reason"].asString(), "the rungs above it failed; the last said: \"no device\"\n");
 }
 
 TEST(AutomationProtocol, DescribesNoErrorsAsAnEmptyList) { EXPECT_TRUE(describeErrors({})["errors"].empty()); }

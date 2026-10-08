@@ -1,5 +1,6 @@
 #pragma once
 
+#include "I18n.h"
 #include "InputDispatcher.h"
 #include "InputPipeline.h"
 #include "LinuxAnimationChoreographer.h"
@@ -11,6 +12,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <react/renderer/componentregistry/ComponentDescriptorProviderRegistry.h>
@@ -18,6 +20,7 @@
 #include <react/renderer/scheduler/Scheduler.h>
 #include <react/renderer/scheduler/SchedulerDelegateImpl.h>
 #include <react/renderer/scheduler/SurfaceHandler.h>
+#include <react/renderer/scheduler/SurfaceManager.h>
 #include <react/renderer/uimanager/UIManagerAnimationBackend.h>
 #include <react/runtime/ReactInstance.h>
 #include <react/utils/ContextContainer.h>
@@ -36,10 +39,11 @@ namespace react_native_linux {
  *
  * Threading contract: construction and destruction happen on the thread that owns the process run loop, before
  * the JavaScript bundle is loaded and after the JavaScript thread has been drained. Everything Fabric does in
- * between happens on the JavaScript thread. `setSurfaceSize`, `takeFrame` and `snapshotScene` are the members that
- * may be called while the surface is running: `constraintLayout` commits on the calling thread and, because the
- * default commit options mount synchronously, mounts there as well, and the other two copy the scene — and, for
- * `takeFrame`, its accumulated damage — out under the mounting manager's mutex.
+ * between happens on the JavaScript thread. `setSurfaceSize`, `setLayoutDirection`, `takeFrame` and
+ * `snapshotScene` are the members that may be called while the surface is running: the first two commit through
+ * `constraintLayout` on the calling thread and, because the default commit options mount synchronously, mount there
+ * as well, and the other two copy the scene — and, for `takeFrame`, its accumulated damage — out under the mounting
+ * manager's mutex.
  *
  * Shutdown contract: stopSurface commits an empty tree and queues the resulting unmount onto the JavaScript
  * thread. The owner drains that thread before destroying the host, because the queued rendering update holds a
@@ -50,6 +54,14 @@ namespace react_native_linux {
  * through a state update, `induceEventBeat` releases everything the queue has accumulated onto the JavaScript
  * thread, and the frame loop calls them in that order once per frame — which is what makes event delivery
  * frame-paced rather than per raw compositor event. See *Input* and *ScrollView* in docs/cpp-toolchain.md.
+ *
+ * `CrossThreadMountingStressTest` runs this contract under TSan: commits and image decodes from their own threads
+ * while the test thread makes every frame-thread call above, input included.
+ *
+ * Construction, destruction and every member above therefore happen on one thread — in both hosts the run loop's
+ * thread is the frame thread — and a debug build holds every public member to it, the destructor included: a call
+ * from any other thread fails `react_native_assert` before it touches the scene or the scheduler.
+ * `ThreadAffinityTest` proves it by calling each one from a foreign thread (#77).
  */
 class FabricHost final {
 public:
@@ -66,8 +78,29 @@ public:
     FabricHost& operator=(FabricHost&&) = delete;
     ~FabricHost() noexcept;
 
-    void setSurfaceSize(facebook::react::Size surfaceSize);
+    /** `pointScaleFactor` is the output scale, so Yoga rounds every frame onto the physical pixel grid. */
+    void setSurfaceSize(facebook::react::Size surfaceSize, facebook::react::Float pointScaleFactor);
+
+    /**
+     * Relays the surface out in `request`'s direction at its current size and scale (#72): `I18nManager`'s
+     * `forceRTL` and `allowRTL` reach the surface through this, from the frame loop, with no bundle reload. The
+     * surface starts left to right.
+     */
+    void setLayoutDirection(LayoutDirectionRequest request);
+
+    /** Stops this host's surface and every additional one, each committing its empty tree. */
     void stopSurface();
+
+    /**
+     * Starts an empty surface under `surfaceId` beside this host's own, for `Fantom.createRoot` in an itest run
+     * (#210), through upstream's own `SurfaceManager` on this host's scheduler. Its root goes into the retained
+     * scene before Fabric commits to it, so its tree mounts there like the window's; nothing paints it.
+     */
+    void startAdditionalSurface(facebook::react::SurfaceId surfaceId, facebook::react::Size surfaceSize,
+                                facebook::react::Float pointScaleFactor, facebook::react::Point viewportOffset);
+
+    /** Commits `surfaceId`'s tree empty and forgets the surface; one that is not running is left alone. */
+    void stopAdditionalSurface(facebook::react::SurfaceId surfaceId);
 
     /**
      * Registers the compositor's text input, which focus enables while a text component holds it. The sink is
@@ -155,6 +188,8 @@ public:
     std::vector<AccessibilityChange> takeAccessibilityChanges();
 
 private:
+    const std::thread::id owningThread_{std::this_thread::get_id()};
+    LayoutDirectionRequest layoutDirection_;
     std::shared_ptr<const facebook::react::ContextContainer> contextContainer_;
     std::shared_ptr<facebook::react::ComponentDescriptorProviderRegistry> componentDescriptorProviderRegistry_;
     std::shared_ptr<LinuxMountingManager> mountingManager_;
@@ -163,6 +198,7 @@ private:
     std::function<void()> eventBeatInducer_;
     std::unique_ptr<facebook::react::SchedulerDelegateImpl> schedulerDelegate_;
     std::unique_ptr<facebook::react::Scheduler> scheduler_;
+    std::unique_ptr<facebook::react::SurfaceManager> additionalSurfaces_;
     std::unique_ptr<InputDispatcher> inputDispatcher_;
     std::unique_ptr<ScrollController> scrollController_;
     std::unique_ptr<facebook::react::SurfaceHandler> surfaceHandler_;

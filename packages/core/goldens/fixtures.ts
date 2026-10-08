@@ -19,8 +19,13 @@ interface GoldenFixture {
 const fixtures: readonly GoldenFixture[] = [
   { bundleFileName: "fabric-view.js", goldenFileName: "fabric-view.png", renderArguments: [], renderFlag: "--golden" },
   { bundleFileName: "view-props.js", goldenFileName: "view-props.png", renderArguments: [], renderFlag: "--golden" },
+  // #119: one card under direction ltr and rtl, its logical edges, row order and start radius resolved per side.
+  { bundleFileName: "rtl-layout.js", goldenFileName: "rtl-layout.png", renderArguments: [], renderFlag: "--golden" },
   // #72: a paragraph's base direction from writingDirection or the inherited layout direction, in Latin text.
   { bundleFileName: "rtl-text.js", goldenFileName: "rtl-text.png", renderArguments: [], renderFlag: "--golden" },
+  { bundleFileName: "rtl-script.js", goldenFileName: "rtl-script.png", renderArguments: [], renderFlag: "--golden" },
+  // #253: each textAlign value in a left-to-right and a right-to-left paragraph; start and end follow the direction.
+  { bundleFileName: "text-align.js", goldenFileName: "text-align.png", renderArguments: [], renderFlag: "--golden" },
   // #104: a turn about each transformOrigin over the unturned frame, and what perspective reduces to.
   {
     bundleFileName: "transform-origin.js",
@@ -196,6 +201,15 @@ const fixtures: readonly GoldenFixture[] = [
     bundleFileName: "text-input.js",
     goldenFileName: "text-input-selection.png",
     renderArguments: ["Hello world{Ctrl+A}"],
+    renderFlag: "--type",
+  },
+  // Issue #343: a selection over mixed Latin and Hebrew that crosses the direction boundary.
+  // Offsets 5..11 hold the Hebrew word's last two letters, drawn at its left end, and " you".
+  // So the highlight is two rectangles, with the word's unselected first letters between them.
+  {
+    bundleFileName: "text-input.js",
+    goldenFileName: "text-input-mixed-direction-selection.png",
+    renderArguments: ["Hi שלום you{Shift+Left}{Shift+Left}{Shift+Left}{Shift+Left}{Shift+Left}{Shift+Left}"],
     renderFlag: "--type",
   },
   // Issue #53, case 3: seven Tabs reach a field four lines long in a two-line box, and its caret is below the box.

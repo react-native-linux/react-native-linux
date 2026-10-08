@@ -13,9 +13,14 @@
 
 namespace react_native_linux {
 
+/**
+ * `Fantom` is `Fabric` for an upstream itest (#210): the runtime runs on a `StubMessageQueue` this thread flushes
+ * rather than on a JavaScript thread of its own, which is what `NativeFantomCxx.flushMessageQueue` needs.
+ */
 enum class BundleMode {
     Script,
     Fabric,
+    Fantom,
 };
 
 /**

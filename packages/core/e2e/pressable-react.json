@@ -1,0 +1,30 @@
+{
+  "name": "pressable-react",
+  "bundle": "pressable-react.tsx",
+  "ready": "pressable-react: committed",
+  "frames": 600,
+  "steps": [
+    "sleep 500",
+    "move 200 140",
+    "sleep 100",
+    "click 200 140",
+    "sleep 400",
+    "button left press",
+    "sleep 100",
+    "move 250 160",
+    "sleep 50",
+    "move 450 400",
+    "sleep 100",
+    "button left release",
+    "sleep 400"
+  ],
+  "expect": [
+    "pressable-react: committed",
+    "pressable-react: pressIn",
+    "pressable-react: press 1",
+    "pressable-react: pressOut",
+    "pressable-react: pressIn",
+    "pressable-react: pressOut"
+  ],
+  "reject": ["pressable-react: press 2"]
+}

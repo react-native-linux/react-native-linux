@@ -41,14 +41,10 @@
 //      needs one for is not read here — so `taggedRecordingEventDispatcher` below reads it off the same listener
 //      hook `RecordingEventDispatcher.h` already uses.
 //
-// The gap the acceptance table calls out separately — moving from a view onto the empty background never
-// produces `pointerOut` — cannot be reproduced by this file: it is specific to `UIManager::startEmptySurface`,
-// which gives the root shadow node no instance handle, so `PointerEventsProcessor::getShadowNodeFromEventTarget`
-// returns null on the real JS thread and the processor's hover tracking never runs for it — `docs/cpp-toolchain.md`
-// (*A root instance handle*) names both the cause and its owner ("belongs with React Native's JavaScript surface
-// registry rather than here"). A `ShadowTree` registered the ordinary way, as this file's fixture does, gives the
-// root a working emitter and does not hit the gap at all. `e2e/hover-chain.json`'s `onto-empty-root` steps pin it
-// instead, against the real `hello_react` surface `FabricHost` boots through `startEmptySurface`.
+// Case 3, moving from a view onto the empty background, is the one this platform has to help: the root has no
+// instance handle under `UIManager::startEmptySurface`, so its own events never reach the processor. This file
+// proves the raw half — the leave `InputDispatcher` sends through the node the pointer left — and
+// `e2e/hover-chain.json` the processor's answer to it, against the real `hello_react` surface.
 
 namespace {
 
@@ -220,12 +216,27 @@ TEST_F(HoverChainTest, MovingIntoTheNestedChildRawTargetsTheChildItself) {
     EXPECT_EQ(drain(), (std::vector<RecordedPointerEvent>{{kNestedChildTag, "topPointerMove"}}));
 }
 
-// Issue #36, case 3 (the documented, open gap) is not provable at this layer: this fixture registers its
-// `ShadowTree` the ordinary way, so its root has a working emitter and the gap does not reproduce here at all —
-// `UIManager::startEmptySurface`, the path `FabricHost` actually starts a surface through, is what gives the root
-// shadow node no instance handle (docs/cpp-toolchain.md, *A root instance handle*), and that is a property of
-// surface bootstrap this dispatcher-and-shadow-tree-only fixture never touches. `e2e/hover-chain.json`'s
-// `onto-empty-root` steps are where the real gap is pinned, against the real `hello_react` surface.
+// Issue #36, case 3: the surface root has no instance handle under `UIManager::startEmptySurface`, so an event
+// aimed at it never reaches `PointerEventsProcessor`. Moving onto the bare root therefore also sends a raw
+// `topPointerLeave` through the node the pointer left: the event upstream treats as "the pointer left every React
+// view" and answers with `pointerOut` and `pointerLeave` for the whole chain, which `e2e/hover-chain.json` asserts
+// against the real surface. The root's own move goes to the root's emitter, which this fixture does not record.
+// Only once: a second move over the root has no node left to leave.
+TEST_F(HoverChainTest, MovingOntoTheBareRootLeavesThroughTheNodeThePointerLeft) {
+    dispatcher_->dispatch({react_native_linux::InputEvent{.kind = react_native_linux::InputEventKind::PointerMotion,
+                                                          .surfacePoint = {.x = 50, .y = 50}}});
+    drain();
+
+    dispatcher_->dispatch({react_native_linux::InputEvent{.kind = react_native_linux::InputEventKind::PointerMotion,
+                                                          .surfacePoint = {.x = 50, .y = 300}}});
+
+    EXPECT_EQ(drain(), (std::vector<RecordedPointerEvent>{{kSiblingLeftTag, "topPointerLeave"}}));
+
+    dispatcher_->dispatch({react_native_linux::InputEvent{.kind = react_native_linux::InputEventKind::PointerMotion,
+                                                          .surfacePoint = {.x = 60, .y = 300}}});
+
+    EXPECT_TRUE(drain().empty());
+}
 
 /**
  * The upstream `PointerEventsProcessor` half of the table: given the raw targets a real hit test resolves (proved

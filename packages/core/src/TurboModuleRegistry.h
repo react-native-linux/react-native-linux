@@ -4,12 +4,19 @@
 #include "Appearance.h"
 #include "DimensionsSource.h"
 
+#include <atomic>
 #include <functional>
 #include <jserrorhandler/JsErrorHandler.h>
 #include <jsi/jsi.h>
 #include <memory>
+#include <optional>
 #include <string_view>
 #include <unordered_map>
+
+#include <react/renderer/core/ReactPrimitives.h>
+#include <react/renderer/graphics/Float.h>
+#include <react/renderer/graphics/Point.h>
+#include <react/renderer/graphics/Size.h>
 
 namespace facebook::react {
 
@@ -21,10 +28,13 @@ class TurboModule;
 
 namespace react_native_linux {
 
+class HostTimerRegistry;
+class I18nModel;
 class KeyValueStore;
 class LinuxAppearanceModule;
 class LinuxDeviceInfoModule;
 class LinuxLinkingModule;
+class LinuxWorkletsModule;
 
 /**
  * The TurboModules this platform registers, and the single `TurboModuleBinding` that exposes them to JavaScript
@@ -51,12 +61,29 @@ class LinuxLinkingModule;
  * property access. `dimensions`, `publishPendingDimensions` and `appearance` run on the platform frame thread;
  * all three reach JavaScript only through `DimensionsSource`'s mutex and the modules' `CallInvoker`.
  */
+/**
+ * What an itest run (#210) lets `NativeFantomCxx` drive: the flush of the `StubMessageQueue` its runtime runs on,
+ * the timer registry whose mock mode Fantom's timer mock turns on, the Fabric host's additional surfaces, which
+ * `Fantom.createRoot` starts and stops, and its event beat, which `Fantom.dispatchNativeEvent` induces. No other host
+ * has them, and without them those methods are absent, so an itest that needs one fails naming it.
+ */
+struct FantomRunControls {
+    std::function<void()> flushMessageQueue;
+    HostTimerRegistry* timerRegistry{nullptr};
+    std::function<void(facebook::react::SurfaceId, facebook::react::Size, facebook::react::Float,
+                       facebook::react::Point)>
+        startSurface;
+    std::function<void(facebook::react::SurfaceId)> stopSurface;
+    std::function<void()> flushEventQueue;
+};
+
 class TurboModuleRegistry final {
 public:
     TurboModuleRegistry(
         std::shared_ptr<facebook::react::CallInvoker> jsInvoker,
         std::shared_ptr<facebook::react::NativeAnimatedNodesManagerProvider> animatedNodesManagerProvider,
-        facebook::react::JsErrorHandler::OnJsError onJsError);
+        facebook::react::JsErrorHandler::OnJsError onJsError,
+        std::optional<FantomRunControls> fantomRunControls = std::nullopt);
 
     DimensionsSource& dimensions() noexcept;
 
@@ -74,8 +101,29 @@ public:
      */
     ActivationModel& activation() noexcept;
 
+    /**
+     * The URL `SourceCode.getConstants().scriptURL` answers (#79), which a `dev=true` bundle reads to find its dev
+     * server. `ReactHost::loadBundle` sets it before the bundle runs, so before anything can construct the module.
+     */
+    void setBundleUrl(const std::string& bundleUrl);
+
+    /**
+     * Whether JavaScript has asked `DevSettings` for a reload (#81). Raised on the JavaScript thread and read on the
+     * host's, so it is atomic; it is never lowered, because the host answers it by destroying this registry.
+     */
+    bool isReloadRequested() const noexcept;
+
     /** The store behind `RNAsyncStorage` (#23); `WindowSession` points it at the application's file. */
     KeyValueStore& keyValueStore() noexcept;
+
+    /** `I18nManager`'s choices (#72), which `WindowSession` restores before the bundle and applies every frame. */
+    I18nModel& i18n() noexcept;
+
+    /**
+     * react-native-worklets' host (#136), constructed here on the frame thread because that thread is worklets' UI
+     * thread (ADR-0003). `ReactHost` ticks it every frame and invalidates it before the JavaScript thread quits.
+     */
+    LinuxWorkletsModule& worklets() noexcept;
 
     void install(facebook::jsi::Runtime& runtime);
 
@@ -97,6 +145,10 @@ private:
     std::shared_ptr<ActivationModel> activationModel_;
     std::shared_ptr<LinuxLinkingModule> linkingModule_;
     std::shared_ptr<KeyValueStore> keyValueStore_;
+    std::shared_ptr<I18nModel> i18nModel_;
+    std::shared_ptr<std::string> bundleUrl_;
+    std::shared_ptr<LinuxWorkletsModule> workletsModule_;
+    std::shared_ptr<std::atomic<bool>> reloadRequested_;
     std::unordered_map<std::string_view, ModuleFactory> moduleFactories_;
 };
 

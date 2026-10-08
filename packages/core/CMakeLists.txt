@@ -152,6 +152,7 @@ set(RNL_FOLLY_SOURCES
     folly/SharedMutex.cpp
     folly/String.cpp
     folly/Unicode.cpp
+    folly/Uri.cpp
     folly/concurrency/CacheLocality.cpp
     folly/container/detail/F14Table.cpp
     folly/detail/FileUtilDetail.cpp
@@ -793,6 +794,7 @@ set(RNL_REACT_COMMON_NATIVEMODULE_SUBDIRS
     react/renderer/observers/intersection
     react/renderer/observers/mutation
     devtoolsruntimesettings
+    react/nativemodule/cputime
     react/nativemodule/defaults
     react/nativemodule/devtoolsruntimesettings
     react/nativemodule/dom
@@ -812,6 +814,7 @@ endforeach()
 # another OBJECT library's — the same reason RNL_REACT_COMMON_TARGETS lists its closure.
 set(RNL_REACT_COMMON_NATIVEMODULE_TARGETS
     devtoolsruntimesettings
+    react_nativemodule_cpu
     react_nativemodule_defaults
     react_nativemodule_devtoolsruntimesettings
     react_nativemodule_dom
@@ -843,15 +846,18 @@ add_library(rnl_react_core STATIC
     src/Appearance.cpp
     src/AsyncStorage.cpp
     src/AutomationProtocol.cpp
+    src/BeastWebSocketClient.cpp
     src/Clipboard.cpp
     src/ConsoleBinding.cpp
     src/CurlHttpClient.cpp
     src/DimensionsSource.cpp
     src/EditorModel.cpp
     src/FabricHost.cpp
+    src/FantomRenderOutput.cpp
     src/FocusModel.cpp
     src/HermesJSRuntimeFactory.cpp
     src/HostTimerRegistry.cpp
+    src/I18n.cpp
     src/ImageContent.cpp
     src/InputDispatcher.cpp
     src/InputPipeline.cpp
@@ -865,6 +871,7 @@ add_library(rnl_react_core STATIC
     src/ScrollController.cpp
     src/ScrollEventCadence.cpp
     src/ScrollPhysics.cpp
+    src/StubMessageQueue.cpp
     src/SwitchComponent.cpp
     src/SwitchContent.cpp
     src/TextInputComponent.cpp
@@ -874,6 +881,14 @@ add_library(rnl_react_core STATIC
     # through react/io and react/http, whose globs also pull in the WebSocket, image-loader and resource modules.
     ${REACT_CXX_PLATFORM_DIR}/react/http/IHttpClient.cpp
     ${REACT_CXX_PLATFORM_DIR}/react/io/NetworkingModule.cpp
+    # #79: upstream's C++ WebSocket TurboModule; src/BeastWebSocketClient.cpp is the client it is built from.
+    ${REACT_CXX_PLATFORM_DIR}/react/io/WebSocketModule.cpp
+    # #79: the `hasComponent` global `UIManager.hasViewManagerConfig` answers through, bound by FabricHost.
+    ${REACT_COMMON_DIR}/react/renderer/componentregistry/native/NativeComponentRegistryBinding.cpp
+    # #79: `SourceCode`, which a `dev=true` bundle reads its dev-server URL from, and `ImageLoader`, which it
+    # requires at startup.
+    ${REACT_CXX_PLATFORM_DIR}/react/devsupport/SourceCodeModule.cpp
+    ${REACT_CXX_PLATFORM_DIR}/react/io/ImageLoaderModule.cpp
     # #22: upstream's C++ ExceptionsManager, compiled on its own rather than through react/logging's glob.
     ${REACT_CXX_PLATFORM_DIR}/react/logging/NativeExceptionsManager.cpp)
 target_compile_options(rnl_react_core PRIVATE -Wall -Wextra)
@@ -997,6 +1012,10 @@ if(RNL_ENABLE_WINDOW)
     # xdg-activation is still staging (see *Activation tokens (#336)* in docs/cpp-toolchain.md): the launcher's
     # token completes the shell's startup notification, and Linking.openURL hands one to the handler it opens.
     set(RNL_XDG_ACTIVATION_XML ${RNL_WAYLAND_PROTOCOLS_DIR}/staging/xdg-activation/xdg-activation-v1.xml)
+    # The output scale of #51: fractional-scale tells the window its preferred scale and viewporter maps the
+    # buffer rendered at that scale back onto the logical surface size. See *Scale* in docs/cpp-toolchain.md.
+    set(RNL_FRACTIONAL_SCALE_XML ${RNL_WAYLAND_PROTOCOLS_DIR}/staging/fractional-scale/fractional-scale-v1.xml)
+    set(RNL_VIEWPORTER_XML ${RNL_WAYLAND_PROTOCOLS_DIR}/stable/viewporter/viewporter.xml)
 
     if(NOT PkgConfig_FOUND)
         list(APPEND RNL_WINDOW_MISSING "pkg-config")
@@ -1034,6 +1053,14 @@ if(RNL_ENABLE_WINDOW)
 
     if(NOT RNL_WAYLAND_PROTOCOLS_DIR OR NOT EXISTS "${RNL_XDG_ACTIVATION_XML}")
         list(APPEND RNL_WINDOW_MISSING "wayland-protocols (staging/xdg-activation)")
+    endif()
+
+    if(NOT RNL_WAYLAND_PROTOCOLS_DIR OR NOT EXISTS "${RNL_FRACTIONAL_SCALE_XML}")
+        list(APPEND RNL_WINDOW_MISSING "wayland-protocols (staging/fractional-scale)")
+    endif()
+
+    if(NOT RNL_WAYLAND_PROTOCOLS_DIR OR NOT EXISTS "${RNL_VIEWPORTER_XML}")
+        list(APPEND RNL_WINDOW_MISSING "wayland-protocols (stable/viewporter)")
     endif()
 
     if(NOT Vulkan_FOUND)
@@ -1162,9 +1189,54 @@ elseif(RNL_ENABLE_WINDOW)
     target_include_directories(rnl_xdg_activation PUBLIC ${RNL_PROTOCOL_DIR})
     target_link_libraries(rnl_xdg_activation PUBLIC PkgConfig::RNL_WAYLAND_CLIENT)
 
+    add_custom_command(
+        OUTPUT ${RNL_PROTOCOL_DIR}/fractional-scale-v1-client-protocol.h
+        COMMAND ${RNL_WAYLAND_SCANNER} client-header ${RNL_FRACTIONAL_SCALE_XML}
+                ${RNL_PROTOCOL_DIR}/fractional-scale-v1-client-protocol.h
+        DEPENDS ${RNL_FRACTIONAL_SCALE_XML}
+        COMMENT "wayland-scanner client-header fractional-scale-v1"
+        VERBATIM)
+
+    add_custom_command(
+        OUTPUT ${RNL_PROTOCOL_DIR}/fractional-scale-v1-protocol.c
+        COMMAND ${RNL_WAYLAND_SCANNER} private-code ${RNL_FRACTIONAL_SCALE_XML}
+                ${RNL_PROTOCOL_DIR}/fractional-scale-v1-protocol.c
+        DEPENDS ${RNL_FRACTIONAL_SCALE_XML}
+        COMMENT "wayland-scanner private-code fractional-scale-v1"
+        VERBATIM)
+
+    add_library(rnl_fractional_scale STATIC
+        ${RNL_PROTOCOL_DIR}/fractional-scale-v1-protocol.c
+        ${RNL_PROTOCOL_DIR}/fractional-scale-v1-client-protocol.h)
+    target_include_directories(rnl_fractional_scale PUBLIC ${RNL_PROTOCOL_DIR})
+    target_link_libraries(rnl_fractional_scale PUBLIC PkgConfig::RNL_WAYLAND_CLIENT)
+
+    add_custom_command(
+        OUTPUT ${RNL_PROTOCOL_DIR}/viewporter-client-protocol.h
+        COMMAND ${RNL_WAYLAND_SCANNER} client-header ${RNL_VIEWPORTER_XML}
+                ${RNL_PROTOCOL_DIR}/viewporter-client-protocol.h
+        DEPENDS ${RNL_VIEWPORTER_XML}
+        COMMENT "wayland-scanner client-header viewporter"
+        VERBATIM)
+
+    add_custom_command(
+        OUTPUT ${RNL_PROTOCOL_DIR}/viewporter-protocol.c
+        COMMAND ${RNL_WAYLAND_SCANNER} private-code ${RNL_VIEWPORTER_XML}
+                ${RNL_PROTOCOL_DIR}/viewporter-protocol.c
+        DEPENDS ${RNL_VIEWPORTER_XML}
+        COMMENT "wayland-scanner private-code viewporter"
+        VERBATIM)
+
+    add_library(rnl_viewporter STATIC
+        ${RNL_PROTOCOL_DIR}/viewporter-protocol.c
+        ${RNL_PROTOCOL_DIR}/viewporter-client-protocol.h)
+    target_include_directories(rnl_viewporter PUBLIC ${RNL_PROTOCOL_DIR})
+    target_link_libraries(rnl_viewporter PUBLIC PkgConfig::RNL_WAYLAND_CLIENT)
+
     add_executable(rnl_window
         src/AutomationServer.cpp
         src/GpuResourceInvalidation.cpp
+        src/OutputScale.cpp
         src/RendererLadder.cpp
         src/SharedMemoryRasterRenderer.cpp
         src/SkiaVulkanRenderer.cpp
@@ -1213,6 +1285,21 @@ elseif(RNL_ENABLE_WINDOW)
     endif()
     target_compile_options(rnl_window PRIVATE -Wall -Wextra)
     target_include_directories(rnl_window PRIVATE src)
+
+    # The Tracy profiler (#20, owner-approved): off by default, so a normal build fetches and links nothing and
+    # FrameProfiling.h compiles every zone away. On, rnl_window names its frame phases and marks each frame for a
+    # Tracy viewer to capture. Pinned to v0.14.1 by commit, like every other fetched dependency.
+    option(RNL_ENABLE_TRACY "Link the Tracy profiler client into rnl_window" OFF)
+
+    if(RNL_ENABLE_TRACY)
+        FetchContent_Declare(tracy
+            GIT_REPOSITORY https://github.com/wolfpld/tracy.git
+            GIT_TAG 30997d5ca6bb632cc10807a1da8a6d3de0aeeb3c)
+        # TracyClient compiles as a no-op unless its own TRACY_ENABLE is on, and it came up off in this configure.
+        set(TRACY_ENABLE ON CACHE BOOL "Compile the Tracy client in rather than as no-ops" FORCE)
+        FetchContent_MakeAvailable(tracy)
+        target_link_libraries(rnl_window PRIVATE Tracy::TracyClient)
+    endif()
     # libskia.a is a single static archive built against system freetype and fontconfig, so those two
     # have to follow it on the link line rather than travel as usage requirements of the archive.
     target_link_libraries(rnl_window
@@ -1224,6 +1311,8 @@ elseif(RNL_ENABLE_WINDOW)
             rnl_xdg_decoration
             rnl_text_input
             rnl_presentation_time
+            rnl_fractional_scale
+            rnl_viewporter
             rnl_skia
             Vulkan::Vulkan
             PkgConfig::RNL_XKBCOMMON
@@ -1327,7 +1416,8 @@ foreach(rnl_flag_index RANGE ${RNL_WORKLETS_LAST_STATIC_FLAG})
 endforeach()
 
 file(GLOB_RECURSE RNL_WORKLETS_SOURCES CONFIGURE_DEPENDS ${RNL_WORKLETS_DIR}/Common/cpp/worklets/*.cpp)
-add_library(rnl_worklets OBJECT ${RNL_WORKLETS_SOURCES} src/WorkletsPlatformLogger.cpp)
+add_library(rnl_worklets OBJECT ${RNL_WORKLETS_SOURCES} src/LinuxUIScheduler.cpp src/WorkletsModule.cpp
+    src/WorkletsPlatformLogger.cpp)
 target_include_directories(rnl_worklets PUBLIC ${RNL_WORKLETS_DIR}/Common/cpp)
 target_precompile_headers(rnl_worklets PRIVATE src/WorkletsLinuxPrefix.h)
 target_compile_definitions(rnl_worklets
@@ -1335,6 +1425,8 @@ target_compile_definitions(rnl_worklets
     PUBLIC "WORKLETS_FEATURE_FLAGS=${RNL_WORKLETS_FEATURE_FLAGS}")
 target_compile_reactnative_options(rnl_worklets PRIVATE)
 target_link_libraries(rnl_worklets PUBLIC hermesvm jsi folly_runtime ${RNL_REACT_COMMON_TARGETS})
+# #136: the WorkletsModule host is registered by TurboModuleRegistry, so the core library carries worklets.
+target_link_libraries(rnl_react_core PUBLIC rnl_worklets)
 
 # ---------------------------------------------------------------------------
 # Autolinking (#147)
@@ -1351,6 +1443,8 @@ if(RNL_AUTOLINKING_CMAKE)
     add_library(reactnative INTERFACE)
     target_link_libraries(reactnative INTERFACE rnl_react_core)
     include(${RNL_AUTOLINKING_CMAKE})
+    # The file an unregistered component's warning names (#56).
+    target_compile_definitions(rnl_react_core PRIVATE "RNL_AUTOLINKING_SOURCE=\"${RNL_AUTOLINKING_SOURCES}\"")
 
     foreach(host hello_react rnl_window)
         if(TARGET ${host})

@@ -1,0 +1,18 @@
+{
+  "name": "resize-settle",
+  "bundle": "resize-settle.js",
+  "ready": "resize-settle: committed surface 1",
+  "frames": 600,
+  "windowFlags": ["--no-decorations", "--inject-window-sequence", "{800x600}{Drag:800x600:1000x600:10}"],
+  "frameBudget": {
+    "p95Ms": 17.5,
+    "minFrames": 60,
+    "maxHangs": 1,
+    "maxJournalledFrames": 12
+  },
+  "steps": ["sleep 4000"],
+  "expect": [
+    "resize-settle: committed surface 1",
+    "[rnl-geometry] configure 1000x600 maximized=0 fullscreen=0 tiled=0 resizing=0"
+  ]
+}

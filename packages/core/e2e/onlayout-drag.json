@@ -1,0 +1,23 @@
+{
+  "name": "onlayout-drag",
+  "bundle": "onlayout-drag.js",
+  "ready": "onlayout-drag: committed surface 1",
+  "frames": 600,
+  "windowFlags": ["--no-decorations", "--inject-window-sequence", "{800x600}{Drag:800x600:500x600:6}"],
+  "frameBudget": {
+    "p95Ms": 17.5,
+    "minFrames": 60,
+    "maxJournalledFrames": 16
+  },
+  "steps": ["sleep 4000"],
+  "expect": [
+    "onlayout-drag: committed surface 1",
+    "onlayout-drag: half 400 feedback 40",
+    "onlayout-drag: half 370 feedback 37",
+    "onlayout-drag: half 340 feedback 34",
+    "onlayout-drag: half 310 feedback 31",
+    "onlayout-drag: half 280 feedback 28",
+    "onlayout-drag: half 250 feedback 25"
+  ],
+  "reject": ["onlayout-drag: redundant onLayout", "onlayout-drag: unchanged node relaid out"]
+}

@@ -13,10 +13,10 @@
 namespace react_native_linux {
 
 /**
- * The five commands of the automation channel (#214), the out-of-process assertion surface react-native-windows
+ * The commands of the automation channel (#214), the out-of-process assertion surface react-native-windows
  * calls its automation channel. Each one answers a question about the running app that a screenshot cannot:
- * what the runtime reported as an error, what the committed tree actually is, and whether the bundle itself says
- * the test passed.
+ * what the runtime reported as an error, what the committed tree actually is, which renderer rung drew it and
+ * why (#368), and whether the bundle itself says the test passed.
  *
  * The wire format is line-delimited JSON over a `SOCK_STREAM` Unix socket: one request object per line, one
  * response object per line, in order. It is not JSON-RPC — react-native-windows needs the id-and-batching half
@@ -36,6 +36,7 @@ enum class AutomationCommand : uint8_t {
     ListErrors = 4,
     MarkTestPassed = 5,
     TakeScreenshot = 6,
+    DescribeRenderer = 7,
 };
 
 /**
@@ -91,7 +92,7 @@ struct AutomationError {
 
 /**
  * The most a request may buffer before the channel gives up on the client that sent it. A request is one line of
- * JSON naming one of five commands and at most a path, so the real ones are a few dozen bytes; this is the
+ * JSON naming one command and at most a path, so the real ones are a few dozen bytes; this is the
  * bound that stops a client which never sends a newline from growing the buffer for as long as the window runs.
  */
 inline constexpr size_t kMaxRequestBytes = 64 * 1024;
@@ -127,6 +128,9 @@ std::string formatAutomationResponse(AutomationCommand command, const folly::dyn
 std::string formatAutomationFailure(const std::string& reason);
 
 folly::dynamic describeErrors(const std::vector<AutomationError>& errors);
+
+/** `{"rung":"...","reason":"..."}`: the renderer ladder rung the window drew on (#368) and why it was chosen. */
+folly::dynamic describeRenderer(std::string_view rung, std::string_view reason);
 
 /**
  * `{"roots":[node,...]}`, where a node carries its tag, component name, absolute-in-parent frame, and the props

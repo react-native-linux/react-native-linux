@@ -92,8 +92,14 @@ Nothing in this bootstrap is headless-only. `hello_react` and `rnl_window` const
 same `FabricHost`; the headless host dumps the scene once the JavaScript thread goes quiet, and the window host
 draws it every frame. See *The retained scene, and the threads it crosses*.
 
-Not covered yet, each with an owning milestone: `Scheduler::reportMount` and mount-hook telemetry, multiple
-surfaces, and every component past `View`, `Paragraph`, `Image`, `ScrollView` and `TextInput`. Events are covered;
+Every applied transaction is reported to `Scheduler::reportMount` through upstream's
+`IMountingManager::setAfterMountCallback`, once the scene lock is released. That runs `UIManager`'s mount hooks
+as the other platforms' mounting layers do: Event Timing's report of an event whose update has mounted, and
+IntersectionObserver's recomputation. Additional surfaces exist for `Fantom.createRoot`; see *Upstream itests
+through Fantom*.
+
+Not covered yet, each with an owning milestone: every component past `View`, `Paragraph`, `Image`, `ScrollView`
+and `TextInput`. Events are covered;
 see *Input*. Scrolling is covered; see *ScrollView*. Text editing is covered; see *TextInput*.
 `dispatchCommand` is ordered and delivered but not yet executed against a component; see *Commit termination and
 mounting atomicity*.
@@ -254,6 +260,15 @@ handles in it, and it is table-tested at the 100 % gate:
 up and what it said, and the device the rung that succeeded is running on. The Vulkan-only parts of that flag —
 the injected swapchain loss and the four `SurfaceCommitFault` states — are skipped on the raster rung, which has
 neither a swapchain to lose nor a surface-commit state machine to fault.
+
+The automation channel's `DescribeRenderer` answers the rung the window is drawing on and why it was chosen: the
+start policy's own reason when the first rung attempted came up, otherwise that the rungs above it failed and what
+the last one said. `--inject-renderer-failures <count>` makes the first `count` attempts fail as if their bring-up
+had thrown, and neither reads nor writes the ladder record, so a forced fallback never becomes the next launch's
+start. `packages/core/e2e/renderer-fallback.json` uses both: with `--inject-renderer-failures 3` the three Vulkan
+rungs fail, the scenario's `automation.rendererRung: "raster"` fails the run unless `DescribeRenderer` names the
+raster rung (the driver prints the reason it gave), and the click on `pressable.js` is compared against the same
+`pressable-click.png` golden the Vulkan run of `pressable.json` is.
 
 The raster rung is deliberately the least clever code in the renderer. Two buffers alternate in one
 `wl_shm_pool`; `wl_buffer.release` says which is free and a frame that finds neither presents nothing rather than
@@ -604,8 +619,26 @@ timeout does not move that reference at all, so the next real tick's delta is st
 arrive after one or more fallback-driven ticks is flagged `resumed`, exactly once, which is what a caller would use
 to detect "the frame source came back" rather than "vsync ticked again". Liveness is otherwise just counters:
 `callbackTicks`, `timerTicks`, `resumeTransitions` and `lastCallbackAt` — a frame source that has gone silent shows
-up as `timerTicks` climbing while `callbackTicks` stops. There is no Tracy integration yet; `WindowSession::frameClock()`
-is a plain getter until one exists.
+up as `timerTicks` climbing while `callbackTicks` stops. `WindowSession::frameClock()` is a plain getter; the
+per-frame timeline is Tracy's, below.
+
+**Tracy (#20).** `-DRNL_ENABLE_TRACY=ON` fetches TracyClient, pinned to v0.14.1 by commit, and links it into
+`rnl_window`. Run the window and attach a Tracy viewer to see each frame marked (`FrameMark` after the draw) and
+split into four named zones:
+
+| Zone | Where |
+| --- | --- |
+| `input and event beat` | `WindowSession::deliverInput` |
+| `animation tick` | `WindowSession::tickAnimations` |
+| `take frame` | `WindowSession::takeFrame` |
+| `paint` | the paint callback inside `drawFrame` |
+
+- **Off is the default.** A normal build fetches and links nothing, because `FrameProfiling.h` defines the two
+  macros away. A default `rnl_window` contains no Tracy symbol at all.
+- **A Tracy build is a profiling build.** The client's start-up and the cost of each zone are its own, so the e2e
+  frame budgets are not expected to hold under it.
+- **TracyClient's own `TRACY_ENABLE` is forced on.** It came up off in this configure, which compiles the client
+  as no-ops.
 
 `WindowSession` owns one `FrameClock`, separate from the `lastFrameTime_` clock `deliverInput` already uses for
 scroll physics and the caret blink — that clock paces *input*, once per loop iteration regardless of whether a
@@ -938,12 +971,10 @@ of the same rule, with a `scale` parameter alongside `mode` and `isFullscreen`: 
 and then divides by scale, `logicalToSurface` multiplies by scale and then adds the bar back, and a zero
 component of the *logical* side is left at zero in the surface direction rather than inflated by the bar or the
 scale, mirroring `GetMaximumSizeForWindow`'s own rule so it cannot drift between the two directions the way it
-did across Electron's three bugs. `scale` is `1.0` at every call site today, the same way
-`DimensionsSource::configure`'s `scale` parameter is — neither `wp_fractional_scale_v1` nor
-`wl_surface.preferred_buffer_scale` is bound yet — so this pair is not wired into a production call site beyond
-`contentExtentOf` itself; it exists, fully tested including the round trip at scale 1, 1.25 and 1.5, so the day a
-size constraint or fractional scale lands is a call-site change here rather than a second design of this
-arithmetic.
+did across Electron's three bugs. `scale` is `1.0` at every call site today — the chrome is painted in logical
+units on a canvas already scaled to the output (see *Scale*) — so this pair is not wired into a production call
+site beyond `contentExtentOf` itself; it exists, fully tested including the round trip at scale 1, 1.25 and 1.5,
+so the day a size constraint lands is a call-site change here rather than a second design of this arithmetic.
 
 **The tiled predicate.** `ToplevelState` now decodes xdg-shell's four tiled-edge states (`TILED_LEFT` = 5 through
 `TILED_BOTTOM` = 8, added in the protocol's version 2) individually, and `isEffectivelyTiled` is the one
@@ -1163,9 +1194,40 @@ a file part. `test-bundles/networking.js` is the end-to-end proof through the Tu
 response body, because Metro reports a build error as an HTTP 500 with the error as JSON.
 `goldens/metro-golden.spec.ts` serves the test-harness app from a real Metro
 (`packages/test-harness/scripts/serve.ts`) and requires the render from
-`index.bundle?platform=linux&dev=false&minify=false` to be identical to `test-harness-app.png`. Not yet: a `blob` request
-body (there is no Blob module), cookies, WebSocket, and the rest of the Metro dev-server contract: `dev=true`
-bundles, HMR over the WebSocket, and symbolication.
+`index.bundle?platform=linux&dev=false&minify=false` to be identical to `test-harness-app.png`.
+
+`WebSocket` reaches upstream's C++ `WebSocketModule` (compiled into `rnl_react_core` on its own), and this
+platform supplies the `IWebSocketClient` it is built from: `src/BeastWebSocketClient.cpp`, `ws://` over
+Boost.Beast on one I/O thread per socket, with its URL parsed by `folly/Uri.cpp`, the one source this added to the
+folly subset. Upstream's own cxx client was the first choice and was replaced for three defects a Metro HMR socket
+hits: a URL without a port resolved port 0, an unanswered close handshake blocked the JavaScript thread forever,
+and a close the server started was logged and never reported. Here the port defaults to 80, one handshake timeout
+bounds connecting and both handshakes, and every ending reaches `websocketClosed` exactly once.
+`BeastWebSocketClientTest` proves each against a server on loopback (`tests/LoopbackWebSocketServer.h`), and
+`WebSocketModuleTest` drives the module from JavaScript against the same server.
+
+A `dev=true` bundle needs four things a production one does not. `SourceCode` answers the URL `ReactHost::loadBundle`
+was given, which is how the bundle finds its dev server; it is upstream's module. `DevSettings` is a no-op of ours
+until reload and Fast Refresh land (#81), because upstream's links `DevServerHelper` and with it OpenSSL and the
+inspector. `ImageLoader` is upstream's module with no `IImageLoader` behind it, so `Image.getSize` and `prefetch`
+reject; LogBox requires it as `Image.android.js` loads. And `FabricHost` binds upstream's
+`__nativeComponentRegistry__hasComponent` to the components it registered, which `UIManager.hasViewManagerConfig`
+answers through when the app root asks about `DebuggingOverlay`. `DevBundleModulesTest` proves each, and
+`goldens/metro-golden.spec.ts` renders the test-harness app from Metro with `dev=false` and with `dev=true`,
+both identical to `test-harness-app.png`. The harness's `.babelrc` turns off the preset's deep-import warnings,
+which fire only because this monorepo's `src-linux` overlays are not under `node_modules`; in an installed app
+they are, and the preset never warns about them.
+
+Once a `dev=true` bundle from a dev server has loaded, `WindowSession` has `ReactHost::startHotModuleReplacement`
+call `HMRClient.setup` with the
+arguments upstream's `DevServerHelper::setupHMRClient` passes, and the bundle opens Metro's `/hot` socket through
+`BeastWebSocketClient` — which takes the `http://` URL `HMRClient` builds, as React Native's own clients do.
+The headless runner does not, because the open socket and the client's heartbeat would keep it from ever
+reaching quiescence. `HotModuleReplacementSetupTest` proves the call and its arguments; applying an edit is #81's
+Fast Refresh test.
+
+Not yet: a `blob` request body (there is no Blob module), cookies, `wss://`, and the rest of the Metro dev-server
+contract: reload and symbolication.
 
 ## react-native-worklets (#134)
 
@@ -1196,7 +1258,58 @@ The one platform file `Common/cpp` needs, `PlatformLogger`, is `src/WorkletsPlat
 Build cost against #78: 39 s wall clock for the 30 translation units at `-j16` under the `tsan` preset on a 24-thread
 machine.
 
-## Autolinking (#146, #147)
+### The UI scheduler (#135)
+
+Worklets' UI thread is the frame thread (ADR-0003). `LinuxUIScheduler`, compiled into `rnl_worklets`, answers
+`queryIsOnUIThread` for the thread that constructed it:
+
+- A job scheduled on that thread runs inline, as `IOSUIScheduler` does on the main thread.
+- A job scheduled from any other thread is queued, and runs once each when the frame thread calls upstream's own
+  `triggerUI`.
+
+`LinuxUISchedulerTest` proves both, and that queued jobs are destroyed unrun at teardown. Its many-thread case is
+the TSan proof that a job only ever runs on the frame thread. The worklet runtime that uses the scheduler, and the
+frame's one `triggerUI` call, arrive with the WorkletsModule host (#136).
+
+### The WorkletsModule host (#136)
+
+`LinuxWorkletsModule` (`src/WorkletsModule.*`) is the C++ counterpart of worklets' `WorkletsModule.mm` and Android
+`WorkletsModule.cpp`. `TurboModuleRegistry` constructs it on the frame thread, so its `LinuxUIScheduler` answers for
+that thread, and it is compiled into `rnl_worklets`, which `rnl_react_core` now links.
+
+- `installTurboModule` constructs the one `WorkletsModuleProxy`, which installs `globalThis.__workletsModuleProxy`,
+  and `start` initializes the UI worklet runtime. `isJavaScriptQueue` answers for the thread that called
+  `installTurboModule`, which is the JavaScript thread.
+- `requestAnimationFrame` is an `AnimationFrameQueue`. `ReactHost::dispatchAnimationFrames` ticks the module on the
+  frame thread every frame: first upstream's `triggerUI` runs the UI jobs that other threads queued, then the queue
+  fires with the frame's own timestamp. A callback registered while the queue fires waits for the next frame.
+  Pending UI jobs and frames count as pending work for the frame clock.
+- At teardown `ReactHost` marks `RNRuntimeStatus` dead and destroys the proxy on the JavaScript thread before it
+  quits that thread.
+- **Bundle Mode is off.** `installTurboModule(true)` throws. Bundle Mode changes how the bundle reaches the worklet
+  runtimes and is a separate decision. With it off, `nativeLoggingHook` is empty, as on iOS and Android.
+- The spec's three methods are registered by hand instead of from a generated `NativeWorkletsModuleCxxSpec`.
+  Generating library specs is the autolinking driver's job, which is #137. The worklets Babel plugin and Metro
+  resolution are #137 as well, so the `runOnUI`/`runOnJS` end-to-end test lands there.
+
+## React Native bump procedure (#58)
+
+React Native's stability promise covers its JavaScript API, not its C++ or out-of-tree platforms, and this platform
+sits behind upstream on purpose. The oracle for "did this still work" is `pnpm conformance`: every golden image
+(headless, plus the window goldens when weston and lavapipe are present) and every e2e scenario with its event
+trace and frame-timing budget, run against the vendored pin. A bump is:
+
+1. Move `tag` in `scripts/vendor.lock.json`, then run `node scripts/vendor-react-native.ts` and `pnpm codegen`.
+2. Build and run `pnpm conformance` before writing any adaptation code.
+3. Triage every difference. A golden that changed is a behaviour change to explain in the pull request, not a golden
+   to regenerate: regenerating one because it failed deletes the test.
+4. Only then adapt, each change citing the difference it answers.
+
+`.github/workflows/next-minor.yml` does steps 1 and 2 weekly against the minor after the pinned one (its newest
+release, or newest release candidate), building `hello_react` and comparing the goldens. It is a signal, not a
+gate: a red run is the list the next bump will have to explain, known before anyone starts on it.
+
+## Autolinking (#146, #147, #149)
 
 `node scripts/autolink.ts <react-native config JSON> <output directory>` reads the dependency tree the community
 CLI's `react-native config` prints, gives every dependency one verdict (`packages/cli/src/linux-autolinking.ts`,
@@ -1205,6 +1318,16 @@ defines each library's `react_codegen_<codegenConfig.name>` target over module c
 directory, adds the library's own CMakeLists unchanged, and lists its target. `rnl_autolinking.cpp` registers each
 `cxxModuleHeaderName` class into upstream's `globalExportedCxxTurboModuleMap`, exactly as the `cpp-library`
 template's iOS `OnLoad.mm` does; `TurboModuleRegistry` serves every entry of that map it does not already serve.
+A library that needs a different codegen name, spec directory or type on this platform sets them under
+`codegenConfig.linux`, which overrides the shared keys the way react-native-windows reads `codegenConfig.windows`
+(#21).
+
+Each run regenerates everything, codegen into a staging directory, and then writes only what changed
+(`syncGeneratedTree` and `writeFileIfChanged` in `packages/cli/src/autolinking-cmake.ts`). An output whose
+content is unchanged keeps its mtime, so an unrelated edit does not reconfigure or rebuild; a dependency, a spec, the
+output location or a deleted generated file all change or restore exactly the files they affect, and a file no
+longer generated is removed. A key over hand-picked inputs was tried first and rejected in review: it cannot see
+every file codegen and discovery read.
 
 Configure with `-DRNL_AUTOLINKING_CMAKE=<output directory>/rnl_autolinking.cmake`. Core then defines
 `reactnative`, the umbrella a `cpp-library` links beside `jsi` and its codegen target, includes the file, and
@@ -1214,6 +1337,25 @@ unmodified `create-react-native-library` 0.63 template, and calls it from `test-
 
 Our C++ ABI toward a library is the vendored React Native pin's; what a library may assume beyond that is #89's
 question, not this generator's.
+
+**Components (#149).** Every dependency with a `codegenConfig`, whether its native code is linked or not, has its
+specs run through `@react-native/codegen`: `modulesCxx` for module specs, and `componentsIOS`, upstream's generator
+for the shared C++ props, shadow nodes, event emitters, states and descriptors, for component specs (core's own
+components use it too). A library with components gets a static `react_codegen_<name>` that the host links, and
+`rnl_autolinking.cpp` appends each component that is not `interfaceOnly` to `autolinkedComponentDescriptorProviders()`
+(`src/AutolinkedComponents.h`). `FabricHost` adds those after the built-ins and refuses a name that is already
+registered, a built-in's or another library's, rather than letting one descriptor replace another. Such a component
+paints as a `View` because its props derive from `ViewProps`. An `interfaceOnly` component's descriptor is the
+library's own C++, which is #150/#151's. The fixture's `CppLibraryView` is the CI proof
+(`test-bundles/autolinked-component.js`). It is registered when the mount tree names it with its frame, and no
+"`[component] 'CppLibraryView' has no native component registered`" line appears. The interop fallback would lay
+out and paint an unregistered name too, so the frame alone proves nothing.
+
+That line names the file that should have registered the component (#56). A build configured with
+`RNL_AUTOLINKING_CMAKE` passes the path of its `rnl_autolinking.cpp` into `rnl_react_core` as
+`RNL_AUTOLINKING_SOURCE`, and the line says the registration belongs there. A build configured without autolinking
+says so instead, and says which command produces the file. `FantomTesterTest` asserts the name of the generated file
+in either configuration.
 
 ## A React Native application (#22)
 
@@ -1252,6 +1394,23 @@ and never writes into the user's home. `set` and `remove` are one transaction ea
 the database named by the empty string; `legacy_multiMerge` rejects, because no 3.x code path calls it.
 `AsyncStorageTest` covers the store, including a batch that fails part-way and lands nothing, and
 `test-bundles/async-storage.js` is the end-to-end proof through the TurboModule.
+
+## I18nManager (#72)
+
+`I18nManager` is `NativeI18nManager` over `src/I18n.cpp`'s `I18nModel`. The surface is right to left when
+`forceRTL` is on, or when `allowRTL` is on (the default) and the locale's language is right to left; the locale is
+the first non-empty of `LC_ALL`, `LC_MESSAGES` and `LANG`, and the language list is the one documented in
+`I18n.h`. `left` and `right` swap to `start` and `end` only while the surface is right to left and
+`swapLeftAndRightInRTL` is on, which is the default. The three choices persist in the AsyncStorage file, in the
+reserved database `@react-native-linux/I18nManager`, so they survive a restart (react-native-windows#7070).
+
+A choice reaches the surface without a reload. The module runs on the JavaScript thread and only records the
+choice; `WindowSession::deliverInput` takes it on the frame thread and calls `FabricHost::setLayoutDirection`,
+which relays the surface out at its current size and scale. The persisted choice is applied the same way before
+the bundle loads. `I18nManager.isRTL` in JavaScript keeps its startup value until the next reload, as it does
+upstream, because `I18nManager.js` reads the constants once. A headless host never applies a choice.
+`I18nTest` covers the rule, the locale and the restart, and `e2e/i18n-direction.json` flips a running bundle's row
+to right to left and back.
 
 ## Dimensions and TurboModules (#50)
 
@@ -1306,11 +1465,33 @@ the equality explicitly. If `wl_output` is bound later, `screen` is the field th
 
 ### Scale
 
-`scale` is always 1. Neither `wp_fractional_scale_v1` nor `wl_surface.preferred_buffer_scale` is bound, so this
-client is told nothing about output scaling and 1 is the only honest answer; `fontScale` is 1 for the same
-reason, as nothing reads a desktop text-scaling setting yet. `DimensionsSource::configure` takes the scale as a
-parameter and stores whatever it is given, so binding the fractional-scale protocol is a call-site change rather
-than a redesign. Both are the output-scale follow-up #50 names as a dependency.
+`scale` is the compositor's preferred scale (#51, slice 1). `WaylandWindow` binds `wp_fractional_scale_manager_v1`
+and `wp_viewporter` when both are advertised, creates a `wp_fractional_scale_v1` and a `wp_viewport` for its
+surface, and keeps the scale exactly 1 when either is missing — fractional scale without a viewport has no way to
+map the buffer back onto the surface. `preferred_scale` arrives in units of 1/120 and is handled as a resize: it sets the
+same pending-resize flag a configure does, so the frame loop resizes the renderer and the session through the one
+existing path.
+
+- `WaylandWindow::size` stays in logical surface units and `wp_viewport.set_destination` is set to it whenever it
+  changes. `bufferSize` is `round(size * scale / 120)`, half away from zero as the protocol specifies for toplevels,
+  and is what both renderers allocate. The buffer scale stays 1; the viewport does the mapping.
+- `WindowMain` scales the canvas by the output scale before painting, so the scene, the placeholder and the drawn
+  title bar keep working in logical units. Scene damage is converted to buffer pixels on the way into the renderer
+  and back to logical units on the way into `paintScene`, both by `scaleDamageOutward`, which grows a fractional
+  edge outward so converted damage never covers less. The raster rung damages with `wl_surface.damage_buffer`;
+  the Vulkan WSI damages the buffer itself.
+- `WindowSession::resize` hands the scale to `FabricHost::setSurfaceSize`, which commits it as
+  `LayoutContext::pointScaleFactor`, so Yoga rounds frames onto the physical pixel grid, and to
+  `DimensionsSource::configure`, so `PixelRatio.get()` answers it. `BundleRunner` has no output and passes 1.
+- Input needs no scaling: `wl_pointer` and `wl_touch` coordinates are surface-local, which is logical units.
+
+The arithmetic is in `OutputScale.{h,cpp}`, pure and inside the coverage gate (`OutputScaleTest.cpp`); the
+layout grid at 1.25, 1.5 and 2 is `OnLayoutEmissionTest.cpp`'s `EveryFrameLandsOnThePixelGrid...`.
+
+Not done yet: `wl_output` enter/leave tracking (and so `screen` and a per-output refresh), re-hit-testing the
+pointer when a scale change moves content under a stationary cursor, a 1.5x golden, and an e2e that runs under a
+compositor configured at a fractional scale. `fontScale` stays 1, as nothing reads a desktop text-scaling setting
+yet.
 
 ### One change per frame, at most
 
@@ -1596,6 +1777,16 @@ scene is taken:
 Ordering matters in one direction only: a layout-affecting animated mutation takes the Fabric-commit path, and that
 commit carries `mountSynchronously = true`, so it relayouts *and* mounts on the calling thread. Ticking before
 `takeFrame` is what puts it in the snapshot the same frame paints instead of the next one.
+
+### A stalled JavaScript thread does not stall the animation (#19)
+
+Nothing in the tick waits on JavaScript: `tickAnimations` steps the drivers and writes the scene on the frame
+thread, and the only thing an animation hands back to JavaScript is its end callback, posted rather than awaited.
+`e2e/animated-stall.json` is the proof. `test-bundles/animated-stall.js` starts a half-second `scale` ramp and holds
+the JavaScript thread in a busy loop for a full second. When JavaScript runs again, the end callback has already
+reported a finished animation and the value it reads back is the end of the ramp, where a driver stepped by
+JavaScript would still be at the start. The scenario's frame budget (`maxHangs: 0`) is the other half: the window
+presented every frame of that second on time.
 
 ### The pending-work coupling
 
@@ -1907,7 +2098,11 @@ tag and the shadow tree is searched for that tag, so the node React is told abou
 
 `hitTestNode` is a pre-order walk carrying a `ScenePaintState`, the same struct the snapshot walk carries:
 
-1. Visit the node with `visitNode`, producing the primitive it would paint and the state its children inherit.
+1. Compute the node's geometry with `nodeGeometry` — its composed frame and matrix — the same function
+   `visitNode` paints from. The state its children inherit (`childPaintState`, which copies the clip list) is
+   built only when there are children to recurse into, and no primitive is built at all: a pointer motion over a
+   list costs two allocations whether the list has 50 rows or 500 (#36, `HoverCostTest`), where building each
+   row's primitive cost two per row.
 2. If the node's `pointerEvents` allows children to be targets (`auto` or `box-none`), recurse into `childTags`
    **backwards**. Child order is mount order is paint order, so the last sibling painted is the one on top, and
    the first hit found front-to-back wins.
@@ -1961,16 +2156,33 @@ every frame, so the frame after the last one changes no answer.
 
 ### What `measure()` reports
 
-**Layout geometry, unscaled and un-animated** — the same answer `measure`, `measureInWindow` and `measureLayout`
-give when nothing is animating. This is a decision that needs no code: those APIs resolve through
-`UIManager::getRelativeLayoutMetrics` on the committed shadow tree, and the fast path writes only the scene, so
-the values are already the laid-out ones. It is recorded here so it is a contract rather than a side effect.
+**React Native's own answer, from the committed shadow tree, un-animated** (#115; the project owner decided on
+2026-10-06 that this platform matches React Native). `measure`, `measureInWindow` and `measureLayout` resolve
+through upstream's `dom::measure`, `dom::measureInWindow` and `dom::measureLayout` on the committed shadow tree,
+unpatched:
 
-The reasons it is the right answer rather than merely the cheap one:
+- `measure` and `measureInWindow` fold committed ancestor transforms in: a node under a `scale(2)` parent reports
+  doubled width, height and page position. That is upstream's behaviour on every platform, and
+  [core#54988](https://github.com/facebook/react-native/issues/54988) reports it as a bug; this platform keeps it
+  so it answers what React Native answers. A non-integer scale composes the same way, and a fractional output
+  scale is that case in practice.
+- `measureLayout` against an ancestor leaves transforms out, and it also leaves a ScrollView's content offset out.
+  So it equals the difference of the two `measureInWindow` rectangles only while every ScrollView between them is
+  unscrolled.
+- `measureInWindow` includes the content offset of every ScrollView above the node, as written back by this
+  platform's `ScrollController` state updates.
+- A clip does not shrink a frame. A node inside `overflow: hidden` reports its full rectangle.
+- A node Fabric flattens away is still measurable, because measuring reads the shadow tree rather than the mounted
+  views. That is the case [core#29712](https://github.com/facebook/react-native/issues/29712) reports broken on
+  Android's old architecture.
 
-- It is what #115 in this tracker asserts, and what
-  [core#54988](https://github.com/facebook/react-native/issues/54988) reports as a bug in the other direction:
-  `measure()` returning doubled values under a scaled parent is paint geometry leaking into a layout API.
+`MeasureGeometryTest` pins every one of these over one tree, before and after a real wheel scroll, and upstream's
+`ReactNativeElement-itest.js` runs in the Fantom corpus for `getBoundingClientRect`, the scroll, client and offset
+metrics, and the legacy measure callbacks.
+
+"Un-animated" is the part this platform decides. The native-driven fast path writes only the scene, never the
+shadow tree, so a running transform animation does not reach `measure`:
+
 - `measure` is what layout code reads to place things. A value that moved 60 times a second would make every
   consumer of it race the animation.
 - Hit testing is the one caller that must be paint-true, because it answers a question about pixels the user
@@ -2235,16 +2447,38 @@ down: the parse is upstream's, and matching it exactly is the point of the equal
 ### What the perf and e2e half still owes
 
 The `animated-frames.json` p95 gate already exists in the e2e driver — `animated.js` for 240 frames at
-`{"p95Ms": 17.5, "minFrames": 60}`, see *E2E driver* for why 17.5 ms and not the gospel's 8.33 ms. That covers
-#124's "a simple continuously animating view is in the gate permanently" criterion, which is
-[core#50716](https://github.com/facebook/react-native/issues/50716)'s shape. Still open, all of them still #124:
+`{"p95Ms": 17.5, "minFrames": 60}`, see *E2E driver* for why 17.5 ms and not the gospel's 8.33 ms. `animated.js`
+drives a value node no view is connected to, though, so it is not
+[core#50716](https://github.com/facebook/react-native/issues/50716)'s shape. `animated-views.js` is, and both of
+the scenarios below run it under the same budget, with `"maxHangs": 1`:
 
-- **N concurrent animated nodes.** #124 asks for a stated N and for predictable degradation past it. Neither the
-  scenario nor the number exists; the unit half above says the per-node cost is constant, not what N nodes cost.
-- **Animating while a list scrolls.** The
+- **`animated-views.json`: N = 32 views animating continuously.** Each view has its own value, transform, style
+  and props nodes and an endless `frames` animation (`iterations: -1`, what `Animated.loop` hands the native
+  driver) on `translateX`.
+- **`animated-views-scrolling.json`: the same, while a 50-row ScrollView is wheeled.** This is the
   [core#34583](https://github.com/facebook/react-native/issues/34583)/[core#38470](https://github.com/facebook/react-native/issues/38470)
-  combination, which is the shape that freezes rather than merely stutters. Needs a fixture bundle that has both,
-  and inherits the animated-fixture problem *Hit-testing under animation* already names.
+  combination, the shape that freezes rather than merely stutters.
+
+What N costs, measured on this rig with a probe around the frame loop's phases (Debug build, lavapipe; p50/p95 in
+ms; the probe is not in the tree):
+
+| scenario | input + scroll | animation step | take | draw | frame-thread total |
+| --- | --- | --- | --- | --- | --- |
+| scrolling, no animations | 0.15 / 0.23 | 0 | 0.10 / 0.14 | 2.31 / 3.10 | — |
+| 32 views | 0.04 / 0.06 | 1.54 / 1.92 | 0.08 / 0.12 | 0.67 / 1.07 | 2.34 / 2.97 |
+| 32 views, scrolling | 1.30–1.56 / 2.07 | 0.89–1.03 / 1.68 | 0.07 / 0.12 | 4.05–4.30 / 6.63 | 6.38–7.01 / 9.62 |
+| 64 views, scrolling | 2.09 / 3.29 | 1.96 / 2.83 | 0.09 / 0.14 | 7.01 / 10.57 | 11.41 / 15.31 |
+
+The step costs about 50 µs per animated view per frame in this Debug build, and degrades linearly. Scrolling
+under animation costs more than either alone for two reasons:
+
+- **Input.** Each scroll commit carries the animated nodes' props with it.
+- **Draw.** The frame's damage spans the list and the animated grid.
+
+N = 32 is the stated N because it keeps the scrolling scenario's frame-thread work near half a 60 Hz frame on
+this rig. That margin survives a slower CI runner, while a regression of core#50716's size, 20x, still misses
+every frame. N = 64 measured 15.3 ms at p95, a vsync's width from flaking.
+
 - **The animation step's own budget, separately from the frame's.** Measured with `wp_presentation` feedback at
   60 Hz and 120 Hz, per #20's harness. Today the driver asserts the frame, not the step inside it.
 - **CI artifact trend.** `build/e2e` is uploaded on every run, but nothing reads yesterday's numbers, so a
@@ -2266,16 +2500,21 @@ Two shapes of claim, because the two paths have two different costs, and the sec
 | What | Measured | Gate |
 | --- | --- | --- |
 | One mounting transaction, 2000 decorated nodes | 10,023 allocations, **5.01 per node** | ≤ 6 per node |
-| One snapshot of those 2000 primitives | **13 allocations, total** | ≤ 32 |
-| The same snapshot at 500 versus 2000 nodes | 11 versus 13 | large ≤ 3 × small |
+| One snapshot of those 2000 primitives | **2 allocations, total** | ≤ 4 |
+| The same snapshot at 500 versus 2000 nodes | 2 versus 2 | large ≤ 3 × small |
 | Mount and unmount 500 nodes, cycle over cycle | 5,522 then **5,522** | exactly equal |
+| Append one view under 20 versus 2000 mounted views (#126) | transaction 8 versus 8, frame 2 versus 2 | exactly equal |
+| Snapshot 50 versus 200 paragraphs (#126) | 2 versus 2, was 102 versus 402 | exactly equal |
 
 - **The mounting transaction is per node** and always will be: each mutation writes a node into the scene. A
   ceiling per node is what catches a new container per mounted view — the shape of core#56980.
 - **The snapshot is not per node**, and asserting a ceiling alone would not prove it: a per-primitive allocation
   hides under any ceiling at a small enough tree. The assertion that a four-times-larger tree does not cost four
-  times as much is what actually holds the line, and 11 against 13 is the growth of one vector from empty to 2048
-  rather than anything per primitive.
+  times as much is what actually holds the line. The snapshot list is reserved at the node count, so it is one
+  allocation whatever the size. Before #126 it grew from empty every frame: 11 allocations at 500 nodes and 13 at
+  2000. That was the one place a single appended view still cost more under a large tree than under a small one.
+- **Mounting is per mutation, not per tree** (#126). Appending one view costs the same transaction and the same
+  frame whether 20 views are mounted or 2000.
 - **The cycle is exact, not bounded.** Mounting and unmounting the same screen twice costs the same number of
   allocations both times, which is issue #106's second item —
   [core#57198](https://github.com/facebook/react-native/issues/57198), memory not reclaimed across repeated
@@ -2993,11 +3232,34 @@ The picture is the sixth row of `border-matrix.png`, which is why that golden is
   changes nothing about that, which is
   [core#49606](https://github.com/facebook/react-native/issues/49606).
 
+**Group opacity (#105).** A translucent node composites itself and its subtree as one layer, as React Native
+does: the snapshot marks the first primitive the subtree paints with `opensLayers` (the alpha, outermost first) and
+the last with `closesLayers`, and `paintScene` wraps them in `saveLayerAlphaf`. That node's opacity is then left
+out of every colour beneath it, text included, so overlapping descendants no longer blend against each other.
+A translucent leaf is a layer too, because it paints overlapping operations of its own (background, border,
+shadow, text, focus ring) that per-primitive alpha would blend into each other; a node at `opacity: 0` is dropped
+primitive by primitive. `view-props.png`'s nested-opacity box is the golden that changed:
+`0.5·background + 0.25·red + 0.25·white` rather than per-primitive alpha's `0.375 + 0.375 + 0.25`.
+
+What a layer per translucent node costs, measured rather than assumed (#105). `translucent-depth.json` nests
+sixteen views at opacity 0.95, each beside a translucent bordered leaf, which is 32 layers. A natively animated box
+at the bottom is enclosed by the sixteen nested ones, which therefore re-composite every frame; the sixteen leaves
+are repainted wherever its damage reaches them.
+
+| tree (lavapipe, Debug) | paint recording p50 / p95 | frame-time p95 | first frame |
+| --- | --- | --- | --- |
+| 32 opacity layers | 0.22 / 0.34 ms | 16.07–16.29 ms | 41–55 ms |
+| the same tree, opaque | 0.11–0.15 / 0.18–0.19 ms | 16.40–16.58 ms | 24–32 ms |
+
+The layers add about a tenth of a millisecond per frame and no measurable frame time. Limiting layers to subtrees
+whose descendants actually overlap would buy nothing a frame can show, so it is not done. The one cost the layers
+do have is warm-up. On CI the first three painted frames took 113, 40 and 34 ms while the layers were first set
+up, against a steady p95 of 16.58 ms. The scenario therefore gates on p95 and sets no `maxHangs`, because a hang
+cap here would only measure warm-up. The scenario holds the 17.5 ms p95
+budget so that a regression in layer cost has somewhere to fail.
+
 Known deviations from iOS and Android, all deliberate:
 
-- **Opacity is per-primitive, not group opacity.** React Native composites a translucent subtree as one layer; we
-  multiply the alpha of each primitive instead. Overlapping descendants of a translucent ancestor therefore blend
-  against each other where the real thing would not. Fixing it means `saveLayerAlphaf` per stacking context.
 - **`borderStyle` draws, and a ring with four different widths is the one case that does not** (#101). See
   *Dashed and dotted borders* below.
 - **`borderCurve` is ignored.** Corners are always circular, never iOS' `continuous` squircle.
@@ -3282,9 +3544,18 @@ Regular, Bold, Italic and Bold+Italic side by side against `goldens/text-style-m
 difference in letterforms (not just weight) between the bold and the regular runs is the proof the face changed,
 not just its weight flag.
 
-Still open, and not attempted in this slice: **item 1**, the application's own `assets/fonts/*.ttf` registered
-ahead of fontconfig — blocked on the asset convention issue #22 has not settled yet, and inventing a
-one-value config for it ahead of that would be the kind of scaffolding the Prime Directive rejects. **Item 4**,
+**Item 1, the application's own fonts**, follows the owner's decision: they live in an `assets/fonts` directory
+beside the JavaScript bundle, React Native's usual convention.
+
+- `ReactHost::loadScript` checks for that directory beside its source. When it exists, `registerApplicationFonts`
+  (`TextGeometry.h`) makes it the `FontCollection`'s dynamic font manager, which Skia consults ahead of the
+  vendored faces and fontconfig, so an app's `fontFamily` resolves to its own file.
+- A source that is a URL, such as a Metro dev server, has no such directory and registers nothing.
+- `ApplicationFontsTest` proves both cases.
+- Still open: the CLI copying a project's fonts into that directory when it packages the app, which is the CLI
+  lane's, and an icon-font golden, which needs a pinned icon font.
+
+Still open, and not attempted in this slice: **item 4**,
 an inspectable fallback chain (react-native#48625), and **variable-font weight/style selection** — no variable
 font is vendored, and vendoring one is its own decision about golden reproducibility, not a documentation gap.
 
@@ -3511,9 +3782,9 @@ for a family by name, and what supplies glyph fallback for codepoints the bundle
 
 **Goldens must stay inside the vendored fonts' coverage.** Anything that falls through to fontconfig — another
 family, a script neither vendored face carries — is not reproducible and must not go into a checked-in PNG. That
-is the honest reason `text.js` is ASCII, and the reason issue #14's RTL golden is deferred rather than
-approximated. Emoji were deferred for the same reason and are no longer: see *Colour emoji and the fallback chain
-(#249)* below.
+is the honest reason `text.js` is ASCII. Emoji and Arabic and Hebrew were deferred for the same reason and are
+no longer, because each now has a pinned face. See *Colour emoji and the fallback chain (#249)* below, and its
+*Right-to-left scripts (#72)* paragraph for `rtl-script.png`.
 
 The fonts are **Noto Sans**, hinted static Regular, Bold and Italic, and **Noto Color Emoji**, both under the
 **SIL Open Font License 1.1**, pinned by commit and sha256 in `scripts/fonts.lock.json` and fetched by
@@ -3550,7 +3821,8 @@ one differently:
 | Anything else | The name itself, then the #70 diagnostic if it substitutes | Covered by *An unresolvable fontFamily says so (#70)* already: the text still draws, substituted by the vendored Noto Sans or fontconfig's fallback, and the substitution is reported once per name — including for a family nobody registered at all, which stays loud under this rule exactly as it was before it. |
 
 The order every text run asks in is therefore: the requested family resolved per the table above (nothing, for
-the vendored-default row), `kBundledFontFamily`, `kEmojiFontFamily`, then skparagraph's own `DEFAULT_FONT_FAMILY`.
+the vendored-default row), `kBundledFontFamily`, Noto Sans Arabic, Noto Sans Hebrew, `kEmojiFontFamily`, then
+skparagraph's own `DEFAULT_FONT_FAMILY`.
 
 **Unit.** `DefaultFontFamilyTest.cpp` is a table test over `classifyFontFamilyRequest`: unset, `sans-serif` and
 `system-ui` classify as the vendored default; `serif`, `monospace`, `cursive` and `fantasy` as a fontconfig
@@ -3564,8 +3836,8 @@ diagnostic still fires for a made-up family exactly as it did before this rule e
 `monospace` are deliberately not in that picture: fontconfig's answer for them is whatever the host has
 installed — this repository's own dev container answers both with `Noto Naskh Arabic`, not a serif or a
 monospace face at all, which is itself a live instance of the bug this issue is about — so a checked-in golden of
-either would not be reproducible across hosts, the same reason RTL and Devanagari goldens are deferred rather than
-approximated. They are proved instead by `test-bundles/font-generics-fontconfig.js`, rendered proof-only by
+either would not be reproducible across hosts, the same reason a Devanagari golden is deferred rather than
+approximated. Arabic and Hebrew no longer are; see *Right-to-left scripts (#72)*. They are proved instead by `test-bundles/font-generics-fontconfig.js`, rendered proof-only by
 `golden.spec.ts`'s `proofOnlyFixtures`: the render must still succeed and `--text-fit-golden` still asserts every
 box holds the paragraph it was measured for, but there is no checked-in PNG for its pixels to match, because there
 is no host-independent answer to match them against.
@@ -3596,8 +3868,8 @@ containing one is not a golden: on a machine with no system emoji font it is a r
 the `ubuntu-24.04` runner would have drawn, since it installs no emoji font.
 
 `TextPipeline.cpp` therefore names the emoji face in the family list rather than leaving it to fallback. Every
-run asks for, in order: the bundle's own `fontFamily` if it set one, `Noto Sans`, `Noto Color Emoji`, and
-skparagraph's `DEFAULT_FONT_FAMILY`. `OneLineShaper::matchResolvedFonts` walks that list before it consults
+run asks for, in order: the bundle's own `fontFamily` if it set one, `Noto Sans`, `Noto Sans Arabic`,
+`Noto Sans Hebrew`, `Noto Color Emoji`, and skparagraph's `DEFAULT_FONT_FAMILY`. `OneLineShaper::matchResolvedFonts` walks that list before it consults
 either fallback function, so the emoji comes off the pinned file, and fontconfig still sits behind all of it for
 everything neither vendored face covers. This is the same list the `#70` diagnostic inspects, and it is
 unaffected: that check compares the *requested* family to the face it resolved to, and appending a face to the
@@ -3648,9 +3920,9 @@ holding a stale `.vendor-stamp.json` that predated the lock's `Noto Color Emoji`
 
 - **C++, at text-pipeline start.** `PinnedFontFamilies.h`/`.cpp` (Skia-free, table-tested against a fake
   resolution list) builds a fatal-diagnostic message naming every pinned family the asset font manager did not
-  resolve. `TextPipelineState`'s constructor calls `assetFontManager->matchFamily(...)` for `kBundledFontFamily`
-  and `kEmojiFontFamily` — the same two names `scripts/fonts.lock.json` pins — and aborts with that message,
-  naming `scripts/fonts.lock.json` and the vendor command, if either comes back empty.
+  resolve. `TextPipelineState`'s constructor calls `assetFontManager->matchFamily(...)` for `kBundledFontFamily`,
+  Noto Sans Arabic, Noto Sans Hebrew and `kEmojiFontFamily`, the families `scripts/fonts.lock.json` pins. If any
+  comes back empty, it aborts with that message, naming `scripts/fonts.lock.json` and the vendor command.
 - **TypeScript, in the golden rig.** `packages/core/goldens/fonts-vendored.ts`'s `checkFontsAreVendored` reads
   `scripts/fonts.lock.json`, confirms every pinned file exists under `packages/core/fonts`, and confirms
   `.vendor-stamp.json` matches the lock. `golden.spec.ts` calls it once, before any fixture runs, whenever the
@@ -3665,6 +3937,13 @@ with `compareImages` like every other raster golden. The `tolerance` field, `com
 spec in `png-diff.spec.ts` stay: a real cross-FreeType rounding difference is still a category of drift this rig
 has no other answer for, and the mechanism is proven, just unused for now.
 
+
+**Right-to-left scripts (#72).** Arabic and Hebrew are codepoints Noto Sans lacks too, and they take the same
+named-family route for the same reason. `toFontFamilies` names Noto Sans Arabic and Noto Sans Hebrew, pinned in
+`scripts/fonts.lock.json` at the Noto Sans commit, between the bundled face and the emoji face. The startup check
+that aborts on a missing pinned face covers both. Without them, an Arabic glyph is resolved by fontconfig's
+character fallback, which is whatever this machine has installed. With them, `rtl-script.js` renders
+byte-identically when fontconfig can see no system font at all, which is how the golden was checked.
 ### The cache
 
 `TextLayoutManager` already owns `textMeasureCache_`, upstream's `TextMeasureCache`: a 1024-entry thread-safe LRU
@@ -3674,7 +3953,21 @@ nothing else caches anything, because a paragraph cache keyed on the same inputs
 own `ParagraphCache`, inside the `FontCollection`, caches shaped runs underneath both.
 
 What is **not** implemented is issue #14's measurable hit-rate probe. Instrumenting it belongs with the frame-time
-work in #20, where there is somewhere to report a number to.
+work in #20, where there is somewhere to report a number to. What is counted is the shape behind every miss:
+`paragraphLayoutCount()` (`TextGeometry.h`) is how many paragraphs `layoutParagraph` has built in the process.
+
+`ResizeTextCostTest` (#42) drags a surface through 20 configures over six 6-point paragraphs, all wrapped or
+ellipsised in boxes narrower than their text. Three are a fixed width and three take half the window. It asserts:
+
+- each configure shapes at most the three resized paragraphs;
+- each configure leaves exactly one frame of work;
+- once the drag stops, nothing asks for another frame.
+
+It measures 60 shapes over 20 configures: the three resized paragraphs once each per configure, and the fixed
+ones never again. Yoga does not re-measure a node whose constraints did not change, so those never reach this cache
+at all. The test is compiled only where Skia is, because the sanitizer presets have no text pipeline.
+`ParagraphLayoutCache` (#342) is not on this path. It serves `measureParagraphMetrics`, the golden renderer's
+diagnostics, and nothing calls its `endFrame`.
 
 ### Threading
 
@@ -3819,9 +4112,36 @@ Each is deliberate, and each is a thing to fix rather than a thing to argue abou
   them means adding methods to a vendored header, which is a different decision from swapping one source file.
 - **No prepared-layout path.** `prepareLayout`/`measurePreparedLayout` are absent for the same reason, so every
   measure lays out from scratch behind the measure cache.
-- **RTL is not handled.** The paragraph direction is hardcoded left-to-right. ICU is present and SkParagraph does
-  the bidi work, so mixed-direction runs inside a paragraph resolve correctly; what is missing is `writingDirection`
-  and an RTL base direction, and there is no golden for either.
+- **RTL is partly handled.**
+  - **What works.** The base direction comes from `writingDirection` or the layout direction (#530).
+    SkParagraph's bidi orders mixed-direction runs. Arabic and Hebrew shape through the pinned Noto Sans Arabic
+    and Hebrew faces, and `rtl-script.png` is their golden (#72). `I18nManager.forceRTL` and `allowRTL` flip a
+    running window's layout without a reload and persist across restarts; see *I18nManager (#72)*.
+  - **`textAlign` follows the paragraph's direction (#253).** `start` and `end` resolve against the base
+    direction, so a right-to-left paragraph aligns `start` to the right; `left`, `right` and `center` do not move,
+    and `justify` spreads every line but the last. `text-align.png` is the golden, both directions side by side.
+  - **Hit testing is bidi-correct, and proven (#72 item 3).** `BidiHitTestTest` round-trips every strong character
+    of wrapped right-to-left and mixed-direction paragraphs. Each paragraph wraps onto at least three lines, so the
+    trailing character of every wrapped line is included (react-native-windows#7792). A point a quarter of the way
+    into a character from the edge it starts at must hit-test back to that character's UTF-16 offset.
+    - **Character boxes** come from the selection geometry.
+    - **Starting edges** come from the script: the right edge for a Hebrew letter, the left for a Latin letter or
+      digit. Neutral characters take their context's direction, so they are not asked.
+    - **No fix was needed.** `utf16IndexAtPoint` is SkParagraph's `getGlyphPositionAtCoordinate`, which already
+      resolves bidi runs.
+  - **The caret is direction-aware (#72 item 4).** `caretRectangle` reads the `TextBox` direction SkParagraph
+    reports for the neighbouring character:
+    - a caret before a right-to-left character sits at that character's right edge;
+    - a caret after the last right-to-left character sits at its left edge;
+    - left-to-right is unchanged.
+    `BidiHitTestTest` pins the edge for every strong
+    character of both fixtures, and hit-tests a point just inside it back to the same offset (#343's
+    position↔index round trip). Selection is already per visual run: `rangeBoxes` returns one rectangle per run, so
+    a bidirectional range draws as several.
+  - **#343's end-to-end proof.** `e2e/rtl-tap.json` taps the visually leftmost glyph of a left-aligned Hebrew
+    word: the word's last letter. A tap in its right half reports caret 3 and a tap in its left half caret 4,
+    through `topSelectionChange`. `goldens/text-input-mixed-direction-selection.png` selects offsets 5..11 of
+    `Hi שלום you` across the direction boundary, and draws two rectangles with the unselected letters between.
 - **Emoji rasterize from bitmap and COLRv0 faces only, and a `fontFamily` is one name.** The pinned Noto Color
   Emoji is CBDT and draws; a COLRv1 face would not, because this Skia archive references no
   `FT_Get_Color_Glyph_Paint`. A `fontFamily` fallback *list* — react-native#48625 — is still one name plus the two
@@ -3829,11 +4149,9 @@ Each is deliberate, and each is a thing to fix rather than a thing to argue abou
 - **`adjustsFontSizeToFit`, `textAlignVertical` and `textBreakStrategy` are ignored.** `textTransform`,
   `fontVariant`, `textDecorationStyle` and `textShadow*` are no longer on this list; see *The text-style matrix
   (#250)*. `fontVariant`'s sixteen stylistic-set bits still are.
-- **Group opacity applies to text the same way it applies to views**: per-fragment alpha, not a composited layer.
-  Overlapping translucent text blends against itself. Same deviation, same fix, as *View props fidelity*.
-- **Every paint rebuilds the paragraph, and every snapshot copies the attributed string.** The damage walk runs
-  the same snapshot code over a subtree per mutation, so a text-heavy tree copies its strings more than it needs
-  to. Skia's shaped-run cache absorbs the layout half. Both are #20 concerns, not correctness ones.
+- **Every paint rebuilds the paragraph.** Skia's shaped-run cache absorbs the layout half; it is a #20 concern,
+  not a correctness one. A snapshot no longer copies the attributed string: `SceneTextContent` shares it, and only
+  an opacity below 1 copies it to rewrite the colours (#126).
 - **`<TextInput>` is a section of its own.** It has no `platform/cxx` upstream, so its descriptor, shadow node
   and props are ours; the caret, the selection, the composing run and the editing model are in *TextInput*. It
   lays its text out through this same `layoutParagraph`, which is what makes a caret land on the glyph it looks
@@ -4861,6 +5179,24 @@ wl_pointer / wl_keyboard ─▶ WaylandSeat ─▶ InputQueue ─┐        fram
                               PointerEventsProcessor ─▶ UIManagerBinding ─▶ RN$ event handler
 ```
 
+### The primary button is also a touch (#578)
+
+React's responder system reads only touch events, and every `Pressable`, `Touchable*` and `Text onPress` presses
+through it; Pressability ignores the pointer `click` on purpose, so a press never ran twice on the platforms that
+send both. Android sends touch events beside every pointer gesture, and react-native-windows synthesizes them from
+the mouse, so `InputDispatcher::dispatchTouch` does too:
+
+- A primary press sends `touchStart` to the node under it.
+- While the button is held, every motion sends `touchMove`, and the release sends `touchEnd`. Both go to that same
+  node, because a touch keeps its start node as its target where the pointer events retarget.
+- A pointer leave, or a wheel that scrolls during the press, sends `touchCancel`.
+- Each step's touch event follows its pointer events, the order Android's `ReactRootView` sends them in. The move
+  that activates a gesture is therefore the move whose touch the gesture's root view claims (#168, see
+  `packages/gesture-handler/README.md`).
+
+`InputEventDispatchConformanceTest` pins the sequence, the targets and the categories. The `pressable-react` e2e
+runs a Metro-built application whose `Pressable` reports `press` for a click and none for a drag off it.
+
 ### The event beat, and why per-frame batching falls out of it
 
 Upstream requires every platform to subclass `EventBeat`, because only the host knows when a frame's events are
@@ -5211,11 +5547,12 @@ order.
 - **Focus traversal** is no longer a deferral. Tab order, the focus ring, `onFocus`/`onBlur` and Enter/Space
   activation are issues #37 and #38 and are implemented; *Focus and keyboard* below is the contract and its own
   deferral list.
-- **A root instance handle.** `UIManager::startEmptySurface` does not give the root shadow node one, and
-  `PointerEventsProcessor::getShadowNodeFromEventTarget` returns null without it, so an event whose target is only
-  the root is dropped before the hover chain runs. The consequence is visible: moving off a view onto the
-  background does not currently produce `pointerOut`. Fixing it means giving the root a fiber-shaped handle, which
-  belongs with React Native's JavaScript surface registry rather than here.
+- **A root instance handle** is no longer a deferral for hover. `UIManager::startEmptySurface` still gives the root
+  shadow node none, so an event aimed at the root is still dropped by
+  `PointerEventsProcessor::getShadowNodeFromEventTarget`; instead, `InputDispatcher` keeps the emitter of the last
+  node a pointer event reached, and an event that resolves to the root is also sent through it as a
+  `topPointerLeave` — upstream's "the pointer left every React view", which the processor answers with
+  `pointerOut` and `pointerLeave` for the whole chain (#36, case 3; `HoverChainTest` and `e2e/hover-chain.json`).
 - **IME.** `zwp_text_input_v3` is issue #26 and is implemented; see *IME* below. Pre-edit rendering is no longer
   deferred either — the field of *TextInput* draws it. What is still missing is xkbcommon compose sequences and
   dead keys, which are a keyboard concern rather than an input-method one.
@@ -5408,8 +5745,8 @@ is how a handler tells a real Enter from the Enter that commits an IME candidate
 ### Routing, and the unhandled-key policy
 
 Key *events* go to the focused node and to nothing else. A key pressed with nothing focused reaches **no node**,
-and that is a policy rather than an omission: the surface root has no instance handle — see the deferral in
-*Input* — so it cannot be an event target, and on Wayland a key that reached this client is a key the compositor
+and that is a policy rather than an omission: the surface root has no instance handle — see *Input* — so it
+cannot be an event target, and on Wayland a key that reached this client is a key the compositor
 already routed here, so there is nothing to escape to. react-native-macos#683 is what a platform that passes
 unconsumed keys back to the system sounds like. Such a key can still **scroll**, which is a platform action and
 not a delivered event; see *Keyboard scrolling* below.
@@ -6393,7 +6730,9 @@ what is left in them needs a `UIManager` and a committed tree, and `--type` is t
   negotiation and a file-descriptor transfer, all of which need a compositor and a second client to mean
   anything — and the rig for this component is `hello_react`, which has neither. The in-process version is
   behaviourally identical for everything the editing model can get wrong, and it is issue #60 to replace its two
-  functions. The primary selection and middle-click paste land with it.
+  functions. The primary selection and middle-click paste land with it. JavaScript reaches the same clipboard
+  through `RNCClipboard`, the module `@react-native-clipboard/clipboard` resolves (`getString`, `setString`,
+  `hasString`; #23), so it follows the replacement too.
 - **Undo and redo.** No stack, and Ctrl+Z is deliberately left unconsumed so the absence is visible.
 - **Vertical caret motion.** Up and Down do not move by line: that needs line geometry rather than the grapheme
   and word boundaries the editing model has. A multiline field scrolls to keep the caret visible now, so what is
@@ -7245,12 +7584,10 @@ width, driven through a configure, a five-step drag, maximize, unmaximize, fulls
 the `[rnl-geometry]` line of each and the `onLayout` the tree answers it with — and that the row returns to the
 extent it started at once the states are all cleared again.
 
-**What it does not drive, and why.** *Output scale is not drivable and no token pretends to be.* The window binds
-no `wl_output`, vendors neither `wp_fractional_scale_v1` nor `wp_viewporter`, and never calls
-`wl_surface.set_buffer_scale`; `WindowSession::configureDimensions` passes `DimensionsSource::kDefaultScale`
-unconditionally, because 1 is the only scale this client is ever told about. There is therefore no scale for a
-driver primitive to change — a token would have to invent the plumbing first, and that plumbing is #113's, with
-#51 owning what re-rasterisation has to prove once it exists. The same holds for the wire half of the states this
+**What it does not drive, and why.** *Output scale is not drivable and no token pretends to be.* The window follows
+`wp_fractional_scale_v1` through a `wp_viewport` (see *Scale*), but the scale is the compositor's to send, not a
+configure's, so an injected configure has no scale to replay; proving a fractional scale end to end needs a
+compositor running at one, which is #51's remaining e2e. The same holds for the wire half of the states this
 primitive replays: an injected configure acknowledges no serial, because none was sent, so #218's *event*
 contract is proved from the window's side only.
 
@@ -7364,6 +7701,28 @@ naming — and `scripts/e2e/scenario.spec.ts` covers it at the repository's 100%
 the driver that touches the filesystem and is still covered, because a temporary directory is all its tests need.
 The process side stays in `scripts/e2e.ts`, uncovered by Vitest for the reason `scripts/doctor.ts` is: it is
 spawns and sockets.
+
+### Fast Refresh (#81)
+
+A scenario with a `fastRefresh` block runs its window on a `dev=true` bundle from a watching Metro instead of a bundle
+file: `bundle` names an entry under `packages/test-harness` (Metro's project root), and `scripts/e2e-processes.ts`
+starts `packages/test-harness/scripts/serve.ts --watch`, requests the bundle once so the window's fetch is not the
+cold build, and hands the window its URL. The window host starts HMR itself (#79), so the bundle opens Metro's `/hot`
+socket. Once the scenario's `ready` line appears the driver rewrites `fastRefresh.file` in place (`find` to
+`replace`), waits for the `fastRefresh.expect` trace line the edited module prints when Fast Refresh runs it again,
+and reports `fast refresh: edit-to-visible <ms>` against `maxEditToVisibleMs`. The file is put back only after the
+window has closed, so its last-frame screenshot shows the refreshed render. `packages/test-harness/e2e/fast-refresh.json`
+edits `test-bundles/fast-refresh-app.tsx`, a module that exports only its component and so is a refresh boundary;
+an edit to a module that is not one asks for a full reload. Metro watches only when asked: the Metro goldens start
+it unwatched.
+
+A reload is `DevSettings.reload`/`reloadWithReason`, which `LinuxDevSettingsModule` answers by raising a flag rather
+than acting: an instance cannot tear itself down from its own JavaScript thread. The window loop checks the flag at
+the top of each frame, destroys the `WindowSession` and starts a new one from the same bundle at the current size,
+and prints `[rnl-reload] reloaded <bundle>`; the old instance is gone before the new one exists. HMRClient asks for
+one when an edit reaches a module that is not a refresh boundary, which is how `packages/test-harness/e2e/reload.json`
+drives it: it edits `test-bundles/reload-title.ts`, a constants-only module, and requires the bundle to run again
+with the new value.
 
 ### Frame timing
 
@@ -7541,6 +7900,33 @@ refuses to pretend a frame answered. The gate fails
 closed — a log without the journal's summary is the same failure a missing `FrameTiming` summary is, and a
 journal that closed no input-answering frame means the injection never reached light.
 
+**Settling (#42).** `frameBudget.maxJournalledFrames` caps the journalled frames, the ones that painted damage.
+`resize-settle.json` sets it to 12. The window sequence is the first configure plus a 10-step drag, 11 configures
+that each paint exactly once, and the bundle's first commit is the twelfth. Locally that commit shares the first
+configure's frame, giving 11; on CI it painted a frame of its own. Then the window sits for about 500 frames that
+must paint nothing. A window that
+repaints with nothing to answer, a self-triggering layout or a caret-style loop, fails this by hundreds of frames.
+The fixture is `resize-settle.js`: six 6-point paragraphs, wrapped and ellipsised, three of them at half the window.
+The unit half is `ResizeTextCostTest`, under *The cache*.
+
+**Round trip (#433).** `resize-round-trip.json` drags the window 800 → 500 → 800 over the core#58294 shape: a
+wrapped `flex: 1` Text in a row and a content-sized card around another. Through `onLayout`, the bundle records
+four layouts the first time the surface is 800 wide: the row, its text, the card and its text. The run must:
+
+- log that the layout changed during the drag, which proves the fixture is sensitive to width;
+- log that every later 800-wide layout equals the recorded one;
+- paint at most one frame per configure (`maxJournalledFrames: 14`, 13 configures plus the first commit).
+
+The unit tier is `LayoutWidthRoundTripTest` (#464).
+
+**onLayout under a drag (#435).** `onlayout-drag.json` drags 800 → 500 over three boxes. `half` takes half the
+window, `fixed` never changes, and `feedback`'s height is derived from `half`'s reported width and committed from
+inside its onLayout handler. That is the feedback case, a layout event that causes another commit. The run must
+log `half`'s and `feedback`'s values at each width once. The bundle rejects a second onLayout carrying a frame its
+node already reported, and any onLayout from `fixed` after its first. `maxJournalledFrames: 16` bounds the feedback
+at two painted frames per configure and proves nothing paints after the drag. The run journals 14. The unit tier is
+#472's.
+
 ### Screenshots
 
 The driver now compares as well as captures, which is a deliberate departure from the split *Window goldens* makes
@@ -7655,6 +8041,7 @@ line-delimited JSON request per line, one response per line, in order:
 | `{"command":"TakeScreenshot","path":"…"}` | `{"path":"…"}` |
 | `{"command":"HangForTesting","milliseconds":N}` | `{"milliseconds":N}`, after the block |
 | `{"command":"MarkTestPassed"}` | `{"passed":true\|false}` |
+| `{"command":"DescribeRenderer"}` | `{"rung":"preferred-vulkan"\|…\|"raster","reason":"…"}`; see *The renderer ladder (#368)* |
 
 A success is `{"ok":true,"command":"…","result":{…}}` and a refusal is `{"ok":false,"error":"…"}`. It is not
 JSON-RPC: react-native-windows needs the id-and-batching half because its channel is multiplexed over TCP with a
@@ -7988,6 +8375,56 @@ and `"a"`, `code` is `"KeyQ"` both times, as a browser reports it. The case need
 compositor, so it lives here rather than in the window job; the unit, native and window jobs install
 `libxkbcommon-dev`, whose runtime brings the xkeyboard-config data the keymaps compile from.
 
+### Upstream itests through Fantom (#210, #423)
+
+`node packages/test-harness/scripts/fantom.ts` runs upstream React Native's own `*-itest.js` files, unmodified, the
+way upstream does: through Fantom's in-runtime `describe`/`it`/`expect` (`private/react-native-fantom/runtime`, a
+sparse clone of the vendored tag in `build/fantom-source`), bundled by Metro for `linux` with the itest taken from
+the vendored tree and everything else from the one installed `react-native`, and run in `hello_react --fantom`.
+Results come back through `NativeFantomCxx.reportTestSuiteResultsJSON`, in a small module in
+`TurboModuleRegistry.cpp`; upstream's `NativeCPUTime` is registered beside it. `packages/core/fantom-expectations.json`
+is the corpus: every suite it names runs, every failure it lists names the issue that owns it, and a new failure, a
+listed failure that passes, or a listed one that goes unreported fails the run. The first batch is #423's: 17 suites,
+270 passing assertions. #115 added `ReactNativeElement-itest.js`; its two TextInput cases are listed under #577.
+
+The run takes its binary from `build/$RNL_PRESET/bin/hello_react`, `dev` by default. `RNL_PRESET=asan` or
+`RNL_PRESET=tsan` runs the corpus against a sanitizer build, as upstream's `FANTOM_ENABLE_ASAN` and
+`FANTOM_ENABLE_TSAN` do; both pass all 17 suites locally. A sanitizer report on the binary's standard error fails
+the suite it came from, even after the suite has reported, because LeakSanitizer reports only at exit. CI runs
+the corpus in its dev entry only. EventTimingAPI-itest's "durationThreshold option works when used with `type`"
+asserts that a click with no added delay finishes in under 50 ms of wall clock, and both sanitizer builds exceed
+that on CI's runners.
+
+`--fantom` is `--fabric` with upstream's tester threading. `ReactHost` is built over a `StubMessageQueue` instead of
+a JavaScript thread of its own. That is a queue with no thread, flushed by the thread that owns the host, so the
+runtime runs on the main thread, and `NativeFantomCxx.flushMessageQueue` is that flush, run re-entrantly from
+inside the JavaScript call. `Fantom.runTask` and the work loop stand on it, as they do upstream. Every other host
+keeps its real JavaScript thread; the queue is a constructor argument nothing else passes.
+
+The bundle only registers the suite. `hello_react` calls `$$RunTests$$` once the bundle has evaluated, directly on
+the runtime, as upstream's tester does. A suite run from inside a scheduler task, the bundle's own evaluation
+included, never sees a fired timer's callback or a PerformanceObserver notification: each becomes a scheduler task
+of its own, and the work loop's flush runs it in a nested event loop under the task the suite is still in.
+
+Fantom's timer mock (`setTimerMockEnabled`, `advanceTimers`, `runAllTimers`, `getPendingTimerCount`) is a mode of
+`HostTimerRegistry` with upstream `FantomTimerRegistry`'s semantics. While it is on, a new timer waits on a virtual
+clock and fires only when advanced: earliest due first, then the one created first, a recurring one re-armed each
+time. The mock's timers never count as pending work, so a mock left installed cannot hold a run open.
+`forceHighResTimeStamp` pins `HighResTimeStamp::now()` process-wide through upstream's own debug-build hook, and an
+optimised build throws upstream's message for it.
+
+`Fantom.createRoot`'s surfaces are `FabricHost::startAdditionalSurface` and `stopAdditionalSurface`, upstream's own
+`SurfaceManager` on the host's scheduler. Ids start at 11 and step by 10, as in upstream's tester, clear of the host's
+own surface 1. Each surface's root goes into the retained scene, so its tree mounts there; nothing paints it.
+The viewport offset `createRoot` is given goes into the surface's layout context, as upstream's tester applies it.
+`root.getRenderedOutput()` is `getRenderedOutput`: the surface's current shadow tree, flattened into a
+`StubViewTree` by upstream's `buildStubViewTreeWithoutUsingDifferentiator`, rendered by `FantomRenderOutput.cpp`,
+a port of the tester's `RenderOutput`.
+`NativeIntersectionObserver` and `NativeMutationObserver` are registered whatever the feature flags say, as upstream's
+C++ host (`ReactCxxTurboModuleProvider`) registers them. `Fantom.dispatchNativeEvent` is `enqueueNativeEvent`, which
+dispatches on the node's own event emitter, and `flushEventQueue`, which induces the host's event beat. An event
+whose handler updates React state is reported once that update mounts, through the mount reporting above.
+
 ### The Hermes-linked binary (#228)
 
 `rnl_core_tests` is Hermes-free by construction, so the upstream suites that construct a real
@@ -8003,6 +8440,17 @@ cmake --preset dev
 cmake --build build/dev --target rnl_core_hermes_tests
 ctest --preset dev
 ```
+
+**The module type surface (#85).** rn-tester's `NativeCxxModuleExample` is upstream's C++ TurboModule over the
+whole module type surface: int, string and memberless enums, unions, nested and recursive objects, maps, sets,
+ArrayBuffers, host objects, callbacks, subscriptions, promises, event emitters and device events. Its spec,
+implementation and GoogleTest suite are outside the sparse checkout, so `tests/hermes/CMakeLists.txt` downloads
+the four files at the vendored tag, pinned by SHA-256; a React Native bump fails at configure until the hashes are
+re-read. `scripts/codegen-cxx-module.ts` turns the spec into `AppSpecsJSI.h` at build time, so the generated
+bindings always come from the pinned `@react-native/codegen`. Upstream's suite calls the C++ methods directly;
+`CxxModuleTypeSurfaceTest` calls every method from JavaScript, so each type crosses JSI in both directions under
+ASan and TSan. It leaves out two ArrayBuffer methods that settle on a detached thread, which
+`TestCallInvoker`'s unsynchronised queue cannot host, and three that `react_native_assert`, which aborts by design.
 
 The `dev`, `asan` and `tsan` test presets set `execution.timeout` to 300 seconds, which is a diagnosis tool
 rather than a budget: every case in either binary finishes in under two seconds in every configure, so a test
@@ -8344,7 +8792,7 @@ because it stops at the `ReactInstance` rather than the full fantom host:
 | fast_float | FetchContent at RN's pin | No Ubuntu package. |
 | folly | FetchContent at RN's pin, RN's subset source list | ReactCommon compiles every TU with `-DFOLLY_NO_CONFIG=1`, which is ABI-incompatible with a distribution folly built against `folly-config.h`. |
 | gflags | not used | Only fantom's own CLI needs it. |
-| nlohmann_json, OpenSSL | not used | Only `ReactCxxPlatform`'s HTTP/WebSocket clients need them, and only `react/threading` is linked from that tree. They arrive with the Metro dev server and the inspector. |
+| nlohmann_json, OpenSSL | not used | Only `ReactCxxPlatform`'s HTTP client needs them; this build's HTTP and WebSocket clients are `CurlHttpClient` and `BeastWebSocketClient`. |
 
 Two flags fantom sets are deliberately dropped, because fantom targets the NDK and libc++ while this targets glibc
 and libstdc++: `FOLLY_USE_LIBCPP` (folly would include libc++'s `<__config>`) and `FOLLY_HAVE_XSI_STRERROR_R`

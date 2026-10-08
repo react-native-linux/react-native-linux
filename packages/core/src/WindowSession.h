@@ -54,6 +54,11 @@ namespace react_native_linux {
  * callback runs on the frame thread and the unsynchronised `AppearanceModel` behind `Appearance.getColorScheme()`
  * has exactly one writer. See *Appearance and PlatformColor* in docs/cpp-toolchain.md.
  *
+ * `deliverInput` is also where an `I18nManager.forceRTL` or `allowRTL` reaches the surface (#72): the module only
+ * records the choice in `I18nModel` on the JavaScript thread, and the frame thread takes it here and relays the
+ * surface out, so the direction flips on the next frame without a reload and without the JavaScript thread ever
+ * touching `FabricHost`. The persisted choice is applied the same way once before the bundle loads.
+ *
  * `recordFrameTick` is a second, separate clock: `FrameClock` decides whether the *paint* — `takeFrame` plus the
  * renderer's present — happens at all this iteration, which `deliverInput`'s per-input frame timing does not need
  * to know about. See *Frame clock* in docs/cpp-toolchain.md for why the two are independent.
@@ -75,7 +80,8 @@ namespace react_native_linux {
  */
 class WindowSession final {
 public:
-    WindowSession(const std::string& bundlePath, WindowSize size, const std::string& asyncStorageDatabasePath,
+    WindowSession(const std::string& bundlePath, WindowSize size, double scale,
+                  const std::string& asyncStorageDatabasePath,
                   std::optional<std::string> initialActivationUrl = std::nullopt);
     WindowSession(const WindowSession&) = delete;
     WindowSession(WindowSession&&) = delete;
@@ -83,7 +89,8 @@ public:
     WindowSession& operator=(WindowSession&&) = delete;
     ~WindowSession() noexcept;
 
-    void resize(WindowSize size);
+    /** `size` in logical units; `scale` is the output scale Yoga rounds frames to and `Dimensions` reports. */
+    void resize(WindowSize size, double scale);
 
     /**
      * Registers the seat's `zwp_text_input_v3` with the focus model, so the compositor's text input is enabled
@@ -110,6 +117,9 @@ public:
     FrameClock::Tick recordFrameTick(FrameClock::Source source, std::chrono::steady_clock::time_point now);
     SceneFrame takeFrame();
     bool hasReportedFatalError() const;
+
+    /** The bundle asked to be reloaded (#81); the window answers by replacing this session with a new one. */
+    bool isReloadRequested() const;
 
     /**
      * Brackets the paint span the caller runs between `takeFrame` and the renderer's present. Both are no-ops
@@ -148,13 +158,14 @@ public:
     const FrameClock& frameClock() const noexcept;
 
 private:
-    void configureDimensions(WindowSize size);
-
     /**
      * Applies the portal's answer before the bundle runs, so a module-scope `Appearance.getColorScheme()` already
      * sees the desktop's scheme rather than `kFallbackColorScheme` followed by a change event one frame later.
      */
     void seedColorScheme();
+
+    /** Lays the surface out in the direction `I18nManager`'s choices last asked for, if they changed (#72). */
+    void applyLayoutDirectionChange();
     double takeFrameMilliseconds();
     bool hasPendingWork() const;
 

@@ -248,13 +248,21 @@ SceneTextContent resolveText(const SceneTextContent& text, const facebook::react
         .size = facebook::react::Size{.width = frame.size.width - contentInsets.left - contentInsets.right,
                                       .height = frame.size.height - contentInsets.top - contentInsets.bottom}};
 
-    for (facebook::react::AttributedString::Fragment& fragment : resolved.attributedString.getFragments()) {
+    if (opacity >= 1.0F) {
+        return resolved;
+    }
+
+    facebook::react::AttributedString faded = *text.attributedString;
+
+    for (facebook::react::AttributedString::Fragment& fragment : faded.getFragments()) {
         facebook::react::TextAttributes& attributes = fragment.textAttributes;
 
         attributes.foregroundColor = scaleColorAlpha(attributes.foregroundColor, opacity);
         attributes.backgroundColor = scaleColorAlpha(attributes.backgroundColor, opacity);
         attributes.textDecorationColor = scaleColorAlpha(attributes.textDecorationColor, opacity);
     }
+
+    resolved.attributedString = std::make_shared<const facebook::react::AttributedString>(std::move(faded));
 
     return resolved;
 }
@@ -601,7 +609,8 @@ void readTextContent(SceneNode& node, const facebook::react::ShadowView& shadowV
         return;
     }
 
-    node.text = SceneTextContent{.attributedString = paragraphState->getData().attributedString,
+    node.text = SceneTextContent{.attributedString = std::make_shared<const facebook::react::AttributedString>(
+                                     paragraphState->getData().attributedString),
                                  .paragraphAttributes = paragraphState->getData().paragraphAttributes};
 }
 
@@ -653,7 +662,8 @@ void readEditorContent(SceneNode& node, const facebook::react::ShadowView& shado
     }
 
     node.text =
-        SceneTextContent{.attributedString = displayed, .paragraphAttributes = textInputProps->paragraphAttributes};
+        SceneTextContent{.attributedString = std::make_shared<const facebook::react::AttributedString>(displayed),
+                         .paragraphAttributes = textInputProps->paragraphAttributes};
 
     const uint32_t authoredCaretColorArgb = toArgb(textInputProps->cursorColor, 1.0F);
     const uint32_t authoredSelectionColorArgb = toArgb(textInputProps->selectionColor, 1.0F);
@@ -1049,11 +1059,53 @@ facebook::react::Point contentOrigin(const SceneNode& node, facebook::react::Poi
     return origin - node.scrollContentOffset.value();
 }
 
-SceneVisit visitNode(const SceneNode& node, const ScenePaintState& state) {
+/**
+ * Whether a node composites as one layer (#105): translucent and not invisible. A leaf as well as a parent, because
+ * a leaf paints overlapping operations of its own (background, border, shadow, text, focus ring) that per-primitive
+ * alpha would blend into each other where CSS fades the node as a whole. A fully transparent node is dropped
+ * primitive by primitive instead, and a node that paints nothing opens no layer at all.
+ */
+bool opensOpacityLayer(const SceneNode& node) { return node.opacity > 0.0F && node.opacity < 1.0F; }
+
+/** Where a node paints: its absolute frame and the matrix it is drawn with, as both painting and hit testing see it. */
+struct SceneNodeGeometry {
+    facebook::react::Rect frame;
+    SceneMatrix matrix;
+};
+
+SceneNodeGeometry nodeGeometry(const SceneNode& node, const ScenePaintState& state) {
     const facebook::react::Rect frame{.origin = state.origin + node.layoutMetrics.frame.origin,
                                       .size = node.layoutMetrics.frame.size};
-    const SceneMatrix matrix = composeMatrices(state.matrix, matrixAboutCenter(node.transform, frame.getCenter()));
-    const float opacity = state.opacity * node.opacity;
+
+    return SceneNodeGeometry{
+        .frame = frame, .matrix = composeMatrices(state.matrix, matrixAboutCenter(node.transform, frame.getCenter()))};
+}
+
+/** What a node's children inherit: its content origin, its matrix, `opacity`, and its clips plus its own. */
+ScenePaintState childPaintState(const SceneNode& node, const ScenePaintState& state, const SceneNodeGeometry& geometry,
+                                float opacity) {
+    ScenePaintState childState{.origin = contentOrigin(node, geometry.frame.origin),
+                               .matrix = geometry.matrix,
+                               .opacity = opacity,
+                               .clips = state.clips};
+
+    if (node.clipsChildren) {
+        childState.clips.push_back(SceneClip{
+            .frame = geometry.frame, .borderRadii = node.borderMetrics.borderRadii, .matrix = geometry.matrix});
+    }
+
+    return childState;
+}
+
+/**
+ * `isOpacityLayer` is `opensOpacityLayer`'s answer when the walk paints: the node's own opacity is then applied by
+ * the painter's layer, so it is left out of every colour here and out of what its children inherit.
+ */
+SceneVisit visitNode(const SceneNode& node, const ScenePaintState& state, bool isOpacityLayer = false) {
+    const SceneNodeGeometry geometry = nodeGeometry(node, state);
+    const facebook::react::Rect& frame = geometry.frame;
+    const SceneMatrix& matrix = geometry.matrix;
+    const float opacity = state.opacity * (isOpacityLayer ? 1.0F : node.opacity);
     SceneVisit visit{
         .primitive =
             ScenePrimitive{.tag = node.tag,
@@ -1088,13 +1140,7 @@ SceneVisit visitNode(const SceneNode& node, const ScenePaintState& state) {
                                    ? std::optional<SceneActivityIndicatorContent>{resolveActivityIndicator(
                                          node.activityIndicator.value(), opacity)}
                                    : std::nullopt},
-        .childState = ScenePaintState{
-            .origin = contentOrigin(node, frame.origin), .matrix = matrix, .opacity = opacity, .clips = state.clips}};
-
-    if (node.clipsChildren) {
-        visit.childState.clips.push_back(
-            SceneClip{.frame = frame, .borderRadii = node.borderMetrics.borderRadii, .matrix = matrix});
-    }
+        .childState = childPaintState(node, state, geometry, opacity)};
 
     return visit;
 }
@@ -1217,18 +1263,6 @@ bool coversSurfacePoint(const SceneRoundedBox& box, const SceneMatrix& matrix, f
     return roundedBoxContainsPoint(box, untransformedPoint.value());
 }
 
-/**
- * Whether the point lands on this primitive as it was painted: inside its own transformed rounded border box, and
- * inside the rounded border box of every `overflow: hidden` ancestor that cut it.
- *
- * Both boxes come from `roundedBorderBox`, which is the box the painter fills and clips to, so the corner a press
- * misses is exactly the corner no pixel was painted in. Upstream's shadow-tree hit test ignores radii and presses
- * the whole bounding rectangle; issue #99 is the decision not to.
- */
-/**
- * The overlay indicators a `<ScrollView>` shows (#49), in its own coordinates, for the offset it is at: one per axis
- * it overflows on and allows. See `ScrollIndicator.h`.
- */
 std::vector<ScrollIndicatorGeometry> scrollIndicatorsOf(const SceneNode& node) {
     std::vector<ScrollIndicatorGeometry> geometries;
 
@@ -1271,14 +1305,16 @@ ScenePrimitive barPrimitive(const ScenePrimitive& owner, const facebook::react::
         .backgroundColorArgb = scaleArgbAlpha(kIndicatorArgb, opacity)};
 }
 
-bool coversPrimitive(const ScenePrimitive& primitive, facebook::react::Point surfacePoint) {
-    for (const SceneClip& clip : primitive.clips) {
+bool coversNode(const SceneNode& node, const SceneNodeGeometry& geometry, const std::vector<SceneClip>& clips,
+                facebook::react::Point surfacePoint) {
+    for (const SceneClip& clip : clips) {
         if (!coversSurfacePoint(roundedBorderBox(clip.frame, clip.borderRadii), clip.matrix, surfacePoint)) {
             return false;
         }
     }
 
-    return coversSurfacePoint(roundedBorderBox(primitive.frame, primitive.borderRadii), primitive.matrix, surfacePoint);
+    return coversSurfacePoint(roundedBorderBox(geometry.frame, node.borderMetrics.borderRadii), geometry.matrix,
+                              surfacePoint);
 }
 
 bool isPointerTarget(const SceneNode& node) {
@@ -1764,6 +1800,11 @@ SceneSnapshot RetainedScene::snapshot() const {
     SceneSnapshot primitives;
     const ScenePaintState rootState{};
 
+    // One primitive per node at most, so the walk below never regrows the list: a frame's snapshot is one
+    // allocation whatever the tree's size, rather than the log2(nodes) doublings that made appending one view to a
+    // 2,000-view tree cost twice what it costs under 20 (#126).
+    primitives.reserve(nodes_.size());
+
     for (facebook::react::Tag tag : sortedRootTags()) {
         appendPrimitives(primitives, tag, rootState);
     }
@@ -1829,7 +1870,9 @@ void RetainedScene::appendPrimitives(SceneSnapshot& primitives, facebook::react:
     }
 
     const SceneNode& node = entry->second;
-    SceneVisit visit = visitNode(node, state);
+    const bool isOpacityLayer = opensOpacityLayer(node);
+    const size_t firstPrimitive = primitives.size();
+    SceneVisit visit = visitNode(node, state, isOpacityLayer);
 
     visit.primitive.focusRing = isFocusVisible_ && tag == focusedTag_;
 
@@ -1857,6 +1900,14 @@ void RetainedScene::appendPrimitives(SceneSnapshot& primitives, facebook::react:
     }
 
     primitives.insert(primitives.end(), indicatorBars.begin(), indicatorBars.end());
+
+    // Inner layers were attached while the children were appended, so this one goes in front: outermost first.
+    if (isOpacityLayer && primitives.size() > firstPrimitive) {
+        std::vector<float>& opens = primitives[firstPrimitive].opensLayers;
+
+        opens.insert(opens.begin(), node.opacity);
+        primitives.back().closesLayers += 1;
+    }
 }
 
 SceneHit RetainedScene::hitTestNode(facebook::react::Tag tag, facebook::react::Point surfacePoint,
@@ -1869,29 +1920,30 @@ SceneHit RetainedScene::hitTestNode(facebook::react::Tag tag, facebook::react::P
 
     const SceneNode& node = entry->second;
 
-    // The same visit `appendPrimitives` makes, so the frame, the matrix and the clips a hit is decided against are
-    // the ones the next snapshot paints. Changing either half alone changes both answers, which is what issue #97
-    // asks a platform to guarantee.
-    const SceneVisit visit = visitNode(node, state);
+    const SceneNodeGeometry geometry = nodeGeometry(node, state);
     const SceneHit nodeHit{.tag = tag,
-                           .origin = mapPoint(visit.primitive.matrix, visit.primitive.frame.origin),
-                           .matrix = visit.primitive.matrix,
-                           .frameOrigin = visit.primitive.frame.origin};
+                           .origin = mapPoint(geometry.matrix, geometry.frame.origin),
+                           .matrix = geometry.matrix,
+                           .frameOrigin = geometry.frame.origin};
 
-    // #49: a press on an indicator's track belongs to the scroll view, never to the content painted beneath it
-    // (rn-macos#629).
-    if (isPointerTarget(node)) {
+    if (node.scrollIndicators.has_value() && isPointerTarget(node) &&
+        coversNode(node, geometry, state.clips, surfacePoint)) {
         for (const ScrollIndicatorGeometry& indicator : scrollIndicatorsOf(node)) {
-            if (coversPrimitive(barPrimitive(visit.primitive, indicator.track, 1.0F), surfacePoint)) {
+            const facebook::react::Rect track{.origin = geometry.frame.origin + indicator.track.origin,
+                                              .size = indicator.track.size};
+
+            if (coversSurfacePoint(roundedBorderBox(track, {}), geometry.matrix, surfacePoint)) {
                 return nodeHit;
             }
         }
     }
 
-    if (arePointerChildrenTargets(node)) {
+    if (arePointerChildrenTargets(node) && !node.childTags.empty()) {
+        const ScenePaintState childState = childPaintState(node, state, geometry, state.opacity * node.opacity);
+
         // Backwards, because child order is paint order and the last sibling painted is the one on top.
         for (size_t position = node.childTags.size(); position > 0; --position) {
-            const SceneHit hit = hitTestNode(node.childTags[position - 1], surfacePoint, visit.childState);
+            const SceneHit hit = hitTestNode(node.childTags[position - 1], surfacePoint, childState);
 
             if (hit.tag != 0) {
                 return hit;
@@ -1899,7 +1951,7 @@ SceneHit RetainedScene::hitTestNode(facebook::react::Tag tag, facebook::react::P
         }
     }
 
-    if (!isPointerTarget(node) || !coversPrimitive(visit.primitive, surfacePoint)) {
+    if (!isPointerTarget(node) || !coversNode(node, geometry, state.clips, surfacePoint)) {
         return SceneHit{};
     }
 
@@ -1961,7 +2013,7 @@ void RetainedScene::appendNode(std::string& output, facebook::react::Tag tag, si
 
     if (node.text.has_value()) {
         output += " text=\"";
-        output += node.text.value().attributedString.getString();
+        output += node.text.value().attributedString->getString();
         output += '"';
     }
 

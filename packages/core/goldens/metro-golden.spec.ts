@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { PNG } from "pngjs";
@@ -17,12 +17,12 @@ const harnessGoldenPath = path.join(import.meta.dirname, "test-harness-app.png")
 const harnessServeScriptPath = path.join(repositoryRoot, "packages", "test-harness", "scripts", "serve.ts");
 const metroListeningPattern = /metro listening on (?<port>\d+)/u;
 
-/** Reads serve.ts's output, Metro's banner first, up to its listening line, and answers the app's bundle URL. */
-const readMetroBundleUrl = async (output: AsyncIterator<unknown>, seen: string): Promise<string> => {
+/** Reads serve.ts's output, Metro's banner first, up to its listening line, and answers the server's origin. */
+const readMetroOrigin = async (output: AsyncIterator<unknown>, seen: string): Promise<string> => {
   const port = metroListeningPattern.exec(seen)?.groups?.["port"] ?? null;
 
   if (port !== null) {
-    return `http://127.0.0.1:${port}/index.bundle?platform=linux&dev=false&minify=false`;
+    return `http://127.0.0.1:${port}`;
   }
 
   const chunk = await output.next();
@@ -31,45 +31,56 @@ const readMetroBundleUrl = async (output: AsyncIterator<unknown>, seen: string):
     throw new Error(`Metro exited before it was listening:\n${seen}`);
   }
 
-  return readMetroBundleUrl(output, seen + String(chunk.value));
+  return readMetroOrigin(output, seen + String(chunk.value));
+};
+
+const renderHarnessApp = (bundleUrl: string, outputPath: string): void => {
+  execFileSync(binaryPath, ["--app-golden", "TestHarness", bundleUrl, outputPath], {
+    stdio: ["ignore", "ignore", "inherit"],
+    timeout: RENDER_PROCESS_TIMEOUT_MS,
+  });
 };
 
 /**
- * #79: the test-harness app loaded by URL from a running Metro dev server rather than from a bundle file. `next()`
- * alone never closes the pipe, and `resume` keeps draining it, so Metro never dies of EPIPE mid-request.
+ * #79: the test-harness app loaded by URL from a running Metro dev server rather than from a bundle file, once as a
+ * production bundle and once as a `dev=true` one, which also runs LogBox, the dev-only modules and the version
+ * check. `next()` alone never closes the pipe, and `resume` keeps draining it, so Metro never dies of EPIPE
+ * mid-request.
  */
-const renderHarnessAppFromMetro = async (outputPath: string): Promise<void> => {
-  const metro = spawn(execPath, [harnessServeScriptPath], { stdio: ["ignore", "pipe", "inherit"] });
-
-  // Killing Metro ends its stdout, which is what turns a server that never listens into a named failure.
-  const startupDeadline = setTimeout(() => metro.kill(), METRO_STARTUP_TIMEOUT_MS);
-
-  try {
-    const bundleUrl = await readMetroBundleUrl(metro.stdout[Symbol.asyncIterator](), "");
-
-    clearTimeout(startupDeadline);
-    metro.stdout.resume();
-    execFileSync(binaryPath, ["--app-golden", "TestHarness", bundleUrl, outputPath], {
-      stdio: ["ignore", "ignore", "inherit"],
-      timeout: RENDER_PROCESS_TIMEOUT_MS,
-    });
-  } finally {
-    clearTimeout(startupDeadline);
-    metro.kill();
-  }
-};
-
 describe.skipIf(!existsSync(binaryPath))("application golden from a Metro dev server", () => {
-  it(
-    "renders the test-harness app served by Metro exactly as test-harness-app.png",
+  let metro: ReturnType<typeof spawn> | null = null;
+  let origin = "";
+
+  beforeAll(async () => {
+    const server = spawn(execPath, [harnessServeScriptPath], { stdio: ["ignore", "pipe", "inherit"] });
+
+    metro = server;
+
+    // Killing Metro ends its stdout, which is what turns a server that never listens into a named failure.
+    const startupDeadline = setTimeout(() => server.kill(), METRO_STARTUP_TIMEOUT_MS);
+
+    try {
+      origin = await readMetroOrigin(server.stdout[Symbol.asyncIterator](), "");
+      server.stdout.resume();
+    } finally {
+      clearTimeout(startupDeadline);
+    }
+  }, METRO_STARTUP_TIMEOUT_MS);
+
+  afterAll(() => {
+    metro?.kill();
+  });
+
+  it.each(["false", "true"])(
+    "renders the test-harness app served by Metro with dev=%s exactly as test-harness-app.png",
     { timeout: RENDER_TIMEOUT_MS },
-    async () => {
+    (dev) => {
       const scratchDirectory = mkdtempSync(path.join(tmpdir(), "rnl-golden-metro-"));
 
       try {
         const renderedPath = path.join(scratchDirectory, "app.png");
 
-        await renderHarnessAppFromMetro(renderedPath);
+        renderHarnessApp(`${origin}/index.bundle?platform=linux&dev=${dev}&minify=false`, renderedPath);
 
         const rendered = PNG.sync.read(readFileSync(renderedPath));
         const golden = PNG.sync.read(readFileSync(harnessGoldenPath));

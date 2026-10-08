@@ -86,6 +86,20 @@ TEST(ScrollIndicatorSceneTest, TheIndicatorIsPaintedAboveTheContentAsARoundedBar
     EXPECT_FLOAT_EQ(snapshot[1].borderRadii.topLeft.horizontal, 3);
 }
 
+TEST(ScrollIndicatorSceneTest, TheIndicatorClosesTheScrollViewsOpacityLayerAfterTheContent) {
+    const auto props = std::make_shared<facebook::react::ScrollViewProps>();
+
+    props->opacity = 0.5F;
+
+    const SceneSnapshot snapshot = sceneWithScrollView(props).snapshot();
+
+    ASSERT_EQ(snapshot.size(), 2U);
+    EXPECT_EQ(snapshot[0].opensLayers, std::vector<float>{0.5F});
+    EXPECT_EQ(snapshot[0].closesLayers, 0U);
+    EXPECT_EQ(snapshot[1].backgroundColorArgb, 0x99A0A6B0U);
+    EXPECT_EQ(snapshot[1].closesLayers, 1U);
+}
+
 TEST(ScrollIndicatorSceneTest, ShowsVerticalScrollIndicatorFalseHidesIt) {
     const auto props = std::make_shared<facebook::react::ScrollViewProps>();
 
@@ -100,6 +114,7 @@ TEST(ScrollIndicatorSceneTest, APressOnTheIndicatorTrackReachesTheScrollViewAndN
 
     EXPECT_EQ(scene.findNodeAtPoint(kSurfaceTag, Point{.x = 195, .y = 90}).tag, kScrollTag);
     EXPECT_EQ(scene.findNodeAtPoint(kSurfaceTag, Point{.x = 100, .y = 50}).tag, kRowTag);
+    EXPECT_NE(scene.findNodeAtPoint(kSurfaceTag, Point{.x = 195, .y = 105}).tag, kScrollTag);
 }
 
 TEST(ScrollIndicatorSceneTest, AScrollViewThatTakesNoPointerEventsLetsTheTrackPassThrough) {

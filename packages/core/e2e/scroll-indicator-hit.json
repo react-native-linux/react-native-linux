@@ -1,0 +1,13 @@
+{
+  "name": "scroll-indicator-hit",
+  "bundle": "press-cancelled-by-scroll.js",
+  "ready": "press-scroll: committed surface 1",
+  "frames": 600,
+  "steps": ["sleep 500", "click 255 70", "sleep 100", "click 255 190", "sleep 500"],
+  "expect": ["press-scroll: committed surface 1"],
+  "reject": [
+    "press-scroll: topPointerDown on row",
+    "press-scroll: topPointerUp on row",
+    "press-scroll: topClick on row"
+  ]
+}

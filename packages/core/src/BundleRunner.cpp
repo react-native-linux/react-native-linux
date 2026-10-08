@@ -5,6 +5,7 @@
 #include "ImageContent.h"
 #include "InputPipeline.h"
 #include "ReactHost.h"
+#include "StubMessageQueue.h"
 
 #ifdef RNL_ENABLE_IMAGES
 #include "ImageDecoder.h"
@@ -14,6 +15,7 @@
 #include <cstddef>
 #include <cxxreact/JSBigString.h>
 #include <iostream>
+#include <jsi/jsi.h>
 #include <memory>
 #include <optional>
 #include <string>
@@ -245,6 +247,54 @@ std::unique_ptr<FabricHost> startFabricRun(ReactHost& reactHost, const std::stri
     return fabricHost;
 }
 
+/** Waits out the run's timers, tears down in `WindowSession`'s order, and reports whether the bundle failed. */
+int finishTimedFabricRun(ReactHost& reactHost, std::unique_ptr<FabricHost>& fabricHost) {
+    if (!reactHost.runUntilQuiescent(kQuiescenceBudget)) {
+        std::cerr << "[bundle-runner] gave up waiting for pending timers" << std::endl;
+    }
+
+    fabricHost->stopSurface();
+    reactHost.drainJavaScriptThread();
+    fabricHost.reset();
+
+    return reactHost.hasReportedFatalError() ? 1 : 0;
+}
+
+/**
+ * An upstream itest (#210): the bundle registers the suite, and `$$RunTests$$` runs it and prints its results.
+ *
+ * `$$RunTests$$` is called the way upstream's tester calls it: once the bundle has evaluated, directly on the
+ * runtime, from this thread, which the stub queue makes the runtime's thread. A suite run from inside a scheduler
+ * task, the bundle's own evaluation included, sees no timer fire. A fired timer's callback becomes a scheduler
+ * task of its own, and the work loop's flush runs it in a nested event loop under the task the suite is still in.
+ */
+int runFantomBundle(const std::string& bundlePath) {
+    std::unique_ptr<FabricHost> fabricHost;
+    FantomRunControls fantomRunControls;
+
+    fantomRunControls.startSurface = [&fabricHost](facebook::react::SurfaceId surfaceId, facebook::react::Size size,
+                                                   facebook::react::Float pointScaleFactor,
+                                                   facebook::react::Point viewportOffset) {
+        fabricHost->startAdditionalSurface(surfaceId, size, pointScaleFactor, viewportOffset);
+    };
+    fantomRunControls.stopSurface = [&fabricHost](facebook::react::SurfaceId surfaceId) {
+        fabricHost->stopAdditionalSurface(surfaceId);
+    };
+    fantomRunControls.flushEventQueue = [&fabricHost]() { fabricHost->induceEventBeat(); };
+
+    ReactHost reactHost{std::make_shared<StubMessageQueue>(), std::move(fantomRunControls)};
+
+    fabricHost = startFabricRun(reactHost, bundlePath, kHeadlessSurfaceSize);
+    facebook::jsi::Runtime* runtime = nullptr;
+
+    reactHost.reactInstance().getBufferedRuntimeExecutor()(
+        [&runtime](facebook::jsi::Runtime& executorRuntime) { runtime = &executorRuntime; });
+    reactHost.drainJavaScriptThread();
+    runtime->global().getPropertyAsFunction(*runtime, "$$RunTests$$").call(*runtime);
+
+    return finishTimedFabricRun(reactHost, fabricHost);
+}
+
 /**
  * A run that injects input, once its bundle has committed: the Fabric host, and whether there was a scene to
  * inject into at all.
@@ -411,19 +461,11 @@ int runResizedFabricBundle(const std::string& bundlePath, facebook::react::Size 
 
     // The pair a window applies on `xdg_toplevel.configure`, in the same order: new layout constraints for Fabric,
     // the same extent for `Dimensions`, then the one change event the frame is allowed to emit.
-    fabricHost->setSurfaceSize(resizedSurfaceSize);
+    fabricHost->setSurfaceSize(resizedSurfaceSize, 1.0F);
     configureDimensions(reactHost, resizedSurfaceSize);
     reactHost.publishPendingDimensions();
 
-    if (!reactHost.runUntilQuiescent(kQuiescenceBudget)) {
-        std::cerr << "[bundle-runner] gave up waiting for pending timers" << std::endl;
-    }
-
-    fabricHost->stopSurface();
-    reactHost.drainJavaScriptThread();
-    fabricHost.reset();
-
-    return reactHost.hasReportedFatalError() ? 1 : 0;
+    return finishTimedFabricRun(reactHost, fabricHost);
 }
 
 FabricFrameRunResult runFabricBundleAcrossFrames(const std::string& bundlePath, facebook::react::Size surfaceSize) {
@@ -765,6 +807,10 @@ FabricHitPaintRunResult runHitSampledFabricBundle(const std::string& bundlePath,
 }
 
 int runBundle(const std::optional<std::string>& bundlePath, BundleMode bundleMode) {
+    if (bundleMode == BundleMode::Fantom) {
+        return runFantomBundle(bundlePath.value());
+    }
+
     if (bundleMode == BundleMode::Fabric) {
         const FabricRunResult result = runFabricBundle(bundlePath, kHeadlessSurfaceSize);
 

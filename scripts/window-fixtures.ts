@@ -10,12 +10,7 @@ const FIRST_FRAME_COUNT = "1";
 
 const clientDecorations = ["--app-id", "org.reactnative.linux.golden", "--force-client-decorations"];
 
-/**
- * The first-frame fixture takes no bundle and one frame: the placeholder paints synchronously, so this is the
- * first-buffer check the invisible-window bug (#328) fails and a 60-frame settle does not. See *Surface commit
- * ordering* in docs/cpp-toolchain.md. The decorations fixture is #329's drawn bar; the translucent one runs
- * `--transparent-background`, proving #328's composite-alpha selection; the rest are bare.
- */
+/** Window screenshots capture renderer buffers before composition; compositor blend proof remains on #328. */
 const defaultFixture = { extraArguments: ["--no-decorations"], frameCount: SCREENSHOT_FRAME_COUNT };
 
 const fixtures: readonly WindowFixture[] = [
@@ -33,6 +28,18 @@ const fixtures: readonly WindowFixture[] = [
     bundleFileName: "translucent-view.js",
     extraArguments: [...defaultFixture.extraArguments, "--transparent-background"],
     goldenFileName: "window-translucent.png",
+  },
+  {
+    ...defaultFixture,
+    bundleFileName: "fabric-view.js",
+    extraArguments: [...defaultFixture.extraArguments, "--renderer", "raster"],
+    goldenFileName: "window-raster-fabric-view.png",
+  },
+  {
+    ...defaultFixture,
+    bundleFileName: "translucent-view.js",
+    extraArguments: [...defaultFixture.extraArguments, "--transparent-background", "--renderer", "raster"],
+    goldenFileName: "window-raster-translucent.png",
   },
 ];
 

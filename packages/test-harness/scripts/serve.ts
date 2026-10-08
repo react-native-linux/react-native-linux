@@ -1,11 +1,13 @@
 import Metro from "metro";
+import { argv } from "node:process";
 import { harnessMetroConfig } from "./metro-config.ts";
 
 const EPHEMERAL_PORT = 0;
 
 const { httpServer } = await Metro.runServer(await Metro.loadConfig({ port: EPHEMERAL_PORT }, harnessMetroConfig), {
   host: "127.0.0.1",
-  watch: false,
+  // #81: Fast Refresh needs Metro to see edits; a golden run leaves the tree unwatched.
+  watch: argv.includes("--watch"),
 });
 const address = httpServer.address();
 

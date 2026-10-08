@@ -26,11 +26,11 @@ namespace react_native_linux {
  * timer either of them armed have run on the JavaScript thread, so an assertion that follows it reads a tree
  * nothing is still writing to.
  *
- * Shutdown contract: the surface is stopped and the JavaScript thread drained before the Fabric host is
- * destroyed, because stopping the surface queues the resulting unmount onto that thread and the queued update
- * holds a raw pointer to the scheduler delegate. `ReactHost` is destroyed after it, by member order, and hands
- * back the platform's feature-flag overrides on its way out — which is what lets one binary build one tester
- * after another. See the shutdown contract in ReactHost.h.
+ * Shutdown contract: `stopSurface` stops the surface and drains the JavaScript thread, and the destructor does the
+ * same before the Fabric host is destroyed, because stopping the surface queues the resulting unmount onto that thread
+ * and the queued update holds a raw pointer to the scheduler delegate. `ReactHost` is destroyed after it, by member
+ * order, and hands back the platform's feature-flag overrides on its way out — which is what lets one binary build one
+ * tester after another. See the shutdown contract in ReactHost.h.
  */
 class FantomTester final {
 public:
@@ -48,6 +48,12 @@ public:
     std::string mountTreeText() const;
 
     bool hasReportedFatalError() const;
+
+    /**
+     * The first half of the destructor, callable on its own so a case can assert what the unload left mounted
+     * while the Fabric host is still alive to answer. Returns once the JavaScript thread has run what the stop queued.
+     */
+    void stopSurface();
 
 private:
     ReactHost reactHost_;

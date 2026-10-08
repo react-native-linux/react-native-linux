@@ -2,9 +2,11 @@
 #include "AutomationServer.h"
 #include "FrameClock.h"
 #include "FrameJournal.h"
+#include "FrameProfiling.h"
 #include "FrameTiming.h"
 #include "InputPipeline.h"
 #include "LinuxMountingManager.h"
+#include "OutputScale.h"
 #include "RendererLadder.h"
 #include "ResourceResolver.h"
 #include "RetainedScene.h"
@@ -163,6 +165,7 @@ constexpr std::string_view kInjectProtocolErrorFlag = "--inject-protocol-error";
 constexpr std::string_view kInjectProtocolErrorAfterFrameFlag = "--inject-protocol-error-after-frame";
 constexpr std::string_view kInjectKeySequenceFlag = "--inject-key-sequence";
 constexpr std::string_view kInjectWindowSequenceFlag = "--inject-window-sequence";
+constexpr std::string_view kInjectRendererFailuresFlag = "--inject-renderer-failures";
 constexpr std::string_view kWindowErrorSource = "rnl-window";
 constexpr std::string_view kImeDebugSurroundingText = "react-native-linux";
 constexpr int32_t kImeDebugCursorX = 64;
@@ -225,6 +228,12 @@ constexpr uint64_t kNanosecondsPerSecond = 1'000'000'000;
  * sizes its only window to the output and honours neither `set_maximized` nor `set_fullscreen`, so a second
  * extent and a window state are two more things no scenario can obtain from the compositor itself.
  *
+ * `--inject-renderer-failures <count>` is #368's forced fallback: the first `count` rungs `bringUpRenderer`
+ * attempts fail as if their bring-up had thrown, so a machine whose Vulkan works can still prove the window lands
+ * on a lower rung and draws there. The renderer ladder record is neither read nor written under it, so a forced
+ * fallback cannot become the next ordinary launch's starting rung. See *The renderer ladder (#368)* in
+ * docs/cpp-toolchain.md.
+ *
  * `--transparent-background` is #328's composite-alpha and premultiplication proof: it clears the scene to
  * `SK_ColorTRANSPARENT` instead of `kSceneBackgroundColor`, so whatever the swapchain's chosen composite alpha
  * and Skia's premultiplied output do with a real alpha channel is visible rather than hidden behind an opaque
@@ -248,6 +257,7 @@ struct WindowArguments {
     bool injectProtocolErrorAfterFrame{false};
     std::optional<std::string> injectKeySequence;
     std::vector<react_native_linux::WindowControlStep> injectedWindowSteps;
+    uint32_t injectedRendererFailures{0};
     std::string error;
 };
 
@@ -264,6 +274,7 @@ struct WindowArguments {
 struct AutomationChannel {
     std::optional<react_native_linux::AutomationServer> server;
     std::optional<std::string> pendingScreenshotPath;
+    folly::dynamic rendererDescription;
 };
 
 /**
@@ -497,18 +508,22 @@ std::string describeMissingValue(std::string_view flag) {
         return "--title requires a window title";
     }
 
+    if (flag == kInjectRendererFailuresFlag) {
+        return "--inject-renderer-failures requires a positive rung count";
+    }
+
     return "--frames requires a positive frame count";
 }
 
-std::optional<uint32_t> parseFrameCount(std::string_view value) {
-    uint32_t frameCount = 0;
-    const std::from_chars_result parsed = std::from_chars(value.data(), value.data() + value.size(), frameCount);
+std::optional<uint32_t> parsePositiveCount(std::string_view value) {
+    uint32_t count = 0;
+    const std::from_chars_result parsed = std::from_chars(value.data(), value.data() + value.size(), count);
 
-    if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() || frameCount == 0) {
+    if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() || count == 0) {
         return std::nullopt;
     }
 
-    return frameCount;
+    return count;
 }
 
 WindowArguments parseArguments(std::span<char*> arguments) {
@@ -567,7 +582,7 @@ WindowArguments parseArguments(std::span<char*> arguments) {
 
         if (flag != kFabricFlag && flag != kScreenshotFlag && flag != kFramesFlag && flag != kFrameLogFlag &&
             flag != kRendererFlag && flag != kAppIdFlag && flag != kTitleFlag && flag != kInjectKeySequenceFlag &&
-            flag != kInjectWindowSequenceFlag) {
+            flag != kInjectWindowSequenceFlag && flag != kInjectRendererFailuresFlag) {
             // Not a flag at all: the desktop entry's `Exec=... %u` expansion for single-instance activation
             // (#363) hands this process a bare URL, with no `--` of its own. Nothing here consumes it — the
             // single-instance check reads the *original* argv directly, ahead of this parse — so it is not an
@@ -628,15 +643,15 @@ WindowArguments parseArguments(std::span<char*> arguments) {
         } else if (flag == kTitleFlag) {
             parsed.title = std::string(value);
         } else {
-            const std::optional<uint32_t> frameCount = parseFrameCount(value);
+            const std::optional<uint32_t> count = parsePositiveCount(value);
 
-            if (!frameCount.has_value()) {
+            if (!count.has_value()) {
                 parsed.error = describeMissingValue(flag);
 
                 return parsed;
             }
 
-            parsed.frameCount = frameCount.value();
+            (flag == kInjectRendererFailuresFlag ? parsed.injectedRendererFailures : parsed.frameCount) = count.value();
         }
     }
 
@@ -751,6 +766,13 @@ void answerAutomationRequest(AutomationChannel& automation, const react_native_l
     if (request.command == react_native_linux::AutomationCommand::ListErrors) {
         automation.server->sendResponse(react_native_linux::formatAutomationResponse(
             request.command, react_native_linux::describeErrors(react_native_linux::automationErrorLog().list())));
+
+        return;
+    }
+
+    if (request.command == react_native_linux::AutomationCommand::DescribeRenderer) {
+        automation.server->sendResponse(
+            react_native_linux::formatAutomationResponse(request.command, automation.rendererDescription));
 
         return;
     }
@@ -1003,32 +1025,41 @@ routeDecorationInput(react_native_linux::WaylandWindow& window, WindowChrome& ch
     return contentEvents;
 }
 
+double outputScaleOf(const react_native_linux::WaylandWindow& window) {
+    return static_cast<double>(window.preferredScale()) / react_native_linux::kFractionalScaleDenominator;
+}
+
 /**
- * Runs `paint` with the canvas shifted below the bar, then draws the bar over it. The damage the scene produced
- * is in content coordinates and the damage the renderer accumulates is in surface ones, so it is shifted back by
- * the same offset on the way in — the one place, besides the canvas translate, where the two coordinate systems
+ * Runs `paint` with the canvas scaled to the output scale and shifted below the bar, then draws the bar over it.
+ * The damage the renderer accumulates is in buffer pixels, so it is scaled back to surface units and then shifted
+ * into content ones on the way in — the one place, besides the canvas transform, where the coordinate systems
  * meet.
  */
-void paintDecoratedFrame(SkCanvas& canvas, const WindowChrome& chrome, const std::string& title,
-                         const react_native_linux::SceneDamage& surfaceDamage,
+void paintDecoratedFrame(SkCanvas& canvas, const WindowChrome& chrome, const react_native_linux::WaylandWindow& window,
+                         const react_native_linux::SceneDamage& bufferDamage,
                          const std::function<void(SkCanvas&, const react_native_linux::SceneDamage&)>& paint) {
-    react_native_linux::SceneDamage contentDamage = surfaceDamage;
+    const auto scale = static_cast<SkScalar>(outputScaleOf(window));
+    react_native_linux::SceneDamage contentDamage = react_native_linux::scaleDamageOutward(
+        bufferDamage, react_native_linux::kFractionalScaleDenominator, window.preferredScale());
 
     for (facebook::react::Rect& rectangle : contentDamage) {
         rectangle.origin.y -= chrome.content.topOffset;
     }
 
     canvas.save();
+    canvas.scale(scale, scale);
+    canvas.save();
     canvas.translate(0.0F, chrome.content.topOffset);
     paint(canvas, contentDamage);
     canvas.restore();
 
-    if (!react_native_linux::isChromeActive(chrome.mode, chrome.isFullscreen)) {
-        return;
+    if (react_native_linux::isChromeActive(chrome.mode, chrome.isFullscreen)) {
+        react_native_linux::paintTitleBar(canvas,
+                                          react_native_linux::layoutTitleBar(chrome.content.width, chrome.metrics),
+                                          window.title(), chrome.wasActive);
     }
 
-    react_native_linux::paintTitleBar(canvas, react_native_linux::layoutTitleBar(chrome.content.width, chrome.metrics),
-                                      title, chrome.wasActive);
+    canvas.restore();
 }
 
 void paintPlaceholderFrame(SkCanvas& canvas, react_native_linux::WindowSize size,
@@ -1057,6 +1088,7 @@ struct RendererBringUp {
     std::unique_ptr<react_native_linux::WindowRenderer> renderer;
     react_native_linux::SkiaVulkanRenderer* vulkanRenderer{nullptr};
     react_native_linux::RendererLadderRecord record;
+    std::string reason;
 };
 
 std::optional<std::string> ladderStatePath() {
@@ -1132,15 +1164,17 @@ void announceFirstPresentedFrameOnce(react_native_linux::WaylandWindow& window, 
     }
 }
 
-RendererBringUp createRenderer(react_native_linux::WaylandWindow& window, react_native_linux::RendererRung rung) {
+RendererBringUp createRenderer(react_native_linux::WaylandWindow& window, react_native_linux::RendererRung rung,
+                               bool transparentBackground) {
     if (rung == react_native_linux::RendererRung::SharedMemoryRaster) {
-        return RendererBringUp{.renderer = std::make_unique<react_native_linux::SharedMemoryRasterRenderer>(
-                                   window.sharedMemory(), window.surface(), window.size())};
+        return RendererBringUp{
+            .renderer = std::make_unique<react_native_linux::SharedMemoryRasterRenderer>(
+                window.sharedMemory(), window.surface(), window.bufferSize(), transparentBackground)};
     }
 
     std::unique_ptr<react_native_linux::SkiaVulkanRenderer> vulkanRenderer =
-        std::make_unique<react_native_linux::SkiaVulkanRenderer>(window.display(), window.surface(), window.size(),
-                                                                 rung);
+        std::make_unique<react_native_linux::SkiaVulkanRenderer>(window.display(), window.surface(),
+                                                                 window.bufferSize(), rung);
     react_native_linux::SkiaVulkanRenderer* borrowed = vulkanRenderer.get();
 
     return RendererBringUp{.renderer = std::move(vulkanRenderer), .vulkanRenderer = borrowed};
@@ -1153,6 +1187,7 @@ RendererBringUp bringUpRenderer(react_native_linux::WaylandWindow& window, const
         react_native_linux::rendererStartRung(persisted, parsedArguments.forcedRung, driverIdentity);
     std::optional<react_native_linux::RendererRung> rung = start.rung;
     std::string lastFailure;
+    uint32_t injectedFailures = 0;
 
     if (parsedArguments.windowDebug) {
         std::cout << "[rnl-window] renderer ladder starts at " << react_native_linux::describeRendererRung(start.rung)
@@ -1166,9 +1201,17 @@ RendererBringUp bringUpRenderer(react_native_linux::WaylandWindow& window, const
         writeLadderRecord(statePath, attempt);
 
         try {
-            RendererBringUp broughtUp = createRenderer(window, rung.value());
+            if (injectedFailures < parsedArguments.injectedRendererFailures) {
+                ++injectedFailures;
+                throw std::runtime_error("injected by --inject-renderer-failures");
+            }
+
+            RendererBringUp broughtUp = createRenderer(window, rung.value(), parsedArguments.transparentBackground);
 
             broughtUp.record = attempt;
+            broughtUp.reason = rung.value() == start.rung
+                                   ? std::string(react_native_linux::describeRendererStartReason(start.reason))
+                                   : "the rungs above it failed to come up; the last said: " + lastFailure;
 
             if (parsedArguments.windowDebug) {
                 std::cout << "[rnl-window] renderer rung " << react_native_linux::describeRendererRung(rung.value())
@@ -1241,7 +1284,10 @@ int main(int argc, char** argv) {
         // draining the display before the outer catch reports the symptom is what puts the structured line on
         // the trace ahead of it. See `WaylandWindow::reportPendingDisplayError`.
         try {
-            const std::optional<std::string> ladderPath = ladderStatePath();
+            const std::optional<std::string> ladderPath =
+                parsedArguments.forcedRung.has_value() || parsedArguments.injectedRendererFailures != 0
+                    ? std::nullopt
+                    : ladderStatePath();
             const std::string driverIdentity = react_native_linux::probeVulkanDriverIdentity();
             RendererBringUp broughtUp = bringUpRenderer(window, parsedArguments, ladderPath, driverIdentity);
             react_native_linux::WindowRenderer& renderer = *broughtUp.renderer;
@@ -1257,7 +1303,7 @@ int main(int argc, char** argv) {
             const auto drawPlaceholder = [&chrome, &window](SkCanvas& canvas, react_native_linux::WindowSize /*size*/,
                                                             const react_native_linux::SceneDamage& surfaceDamage) {
                 paintDecoratedFrame(
-                    canvas, chrome, window.title(), surfaceDamage,
+                    canvas, chrome, window, surfaceDamage,
                     [&chrome](SkCanvas& contentCanvas, const react_native_linux::SceneDamage& contentDamage) {
                         paintPlaceholderFrame(
                             contentCanvas, react_native_linux::WindowSize{chrome.content.width, chrome.content.height},
@@ -1335,16 +1381,23 @@ int main(int argc, char** argv) {
                     ? std::optional<InjectedKeySequence>(InjectedKeySequence(parsedArguments.injectKeySequence.value()))
                     : std::nullopt;
 
-            if (parsedArguments.bundlePath.has_value()) {
+            // Run once at startup and again for every reload the bundle asks for (#81): a reload is a new session from
+            // the same bundle at the current size, built only after the old one is gone, so no two instances overlap.
+            const auto startSession = [&]() {
                 session.emplace(parsedArguments.bundlePath.value(),
                                 react_native_linux::WindowSize{chrome.content.width, chrome.content.height},
-                                asyncStorageDatabasePath(parsedArguments.applicationIdentifier), ownActivationUrl);
+                                outputScaleOf(window), asyncStorageDatabasePath(parsedArguments.applicationIdentifier),
+                                ownActivationUrl);
 
                 // --ime-debug owns the text input by hand, so focus must not also drive it: the two would race to
                 // enable and disable the same object. Without that flag, focus is the only thing that touches it.
                 if (!parsedArguments.imeDebug) {
                     session->setTextInputFocusSink(window.textInput());
                 }
+            };
+
+            if (parsedArguments.bundlePath.has_value()) {
+                startSession();
             }
 
             if (parsedArguments.imeDebug && window.textInput() == nullptr) {
@@ -1366,6 +1419,9 @@ int main(int argc, char** argv) {
             }
 
             AutomationChannel automation;
+
+            automation.rendererDescription = react_native_linux::describeRenderer(
+                react_native_linux::describeRendererRung(broughtUp.record.rung), broughtUp.reason);
 
             if (parsedArguments.automation) {
                 automation.server.emplace(react_native_linux::defaultAutomationSocketPath());
@@ -1423,11 +1479,12 @@ int main(int argc, char** argv) {
                                                      chrome.content.height != previousChromeContent.height;
 
                 if (hasResized) {
-                    renderer.resize(window.size());
+                    renderer.resize(window.bufferSize());
                 }
 
                 if ((hasResized || hasContentExtentChanged) && session.has_value()) {
-                    session->resize(react_native_linux::WindowSize{chrome.content.width, chrome.content.height});
+                    session->resize(react_native_linux::WindowSize{chrome.content.width, chrome.content.height},
+                                    outputScaleOf(window));
                 }
 
                 announceKeyboardFocusOnce(window, keyboardFocusAnnounced);
@@ -1522,6 +1579,12 @@ int main(int argc, char** argv) {
                 }
 #endif
 
+                if (session.has_value() && session->isReloadRequested()) {
+                    session.reset();
+                    startSession();
+                    std::cout << "[rnl-reload] reloaded " << parsedArguments.bundlePath.value() << std::endl;
+                }
+
                 if (session.has_value()) {
                     // Input first, and unconditionally: the event beat is induced inside this call, and it is what
                     // releases everything Fabric has queued since the last frame onto the JavaScript thread.
@@ -1566,6 +1629,10 @@ int main(int argc, char** argv) {
                             for (facebook::react::Rect& rectangle : surfaceDamage) {
                                 rectangle.origin.y += chrome.content.topOffset;
                             }
+
+                            surfaceDamage =
+                                react_native_linux::scaleDamageOutward(surfaceDamage, window.preferredScale(),
+                                                                       react_native_linux::kFractionalScaleDenominator);
                         }
 
                         // The paint span the frame journal (#345) times is exactly the Skia work between them: not
@@ -1576,9 +1643,10 @@ int main(int argc, char** argv) {
                             [&frame, &chrome, &window, &session,
                              &parsedArguments](SkCanvas& canvas, react_native_linux::WindowSize /*size*/,
                                                const react_native_linux::SceneDamage& imageDamage) {
+                                ZoneScopedN("paint");
                                 session->recordPaintStart(std::chrono::steady_clock::now());
                                 paintDecoratedFrame(
-                                    canvas, chrome, window.title(), imageDamage,
+                                    canvas, chrome, window, imageDamage,
                                     [&frame, &parsedArguments](SkCanvas& contentCanvas,
                                                                const react_native_linux::SceneDamage& contentDamage) {
                                         react_native_linux::paintScene(contentCanvas, frame.scene, contentDamage,
@@ -1590,6 +1658,8 @@ int main(int argc, char** argv) {
                 } else {
                     presented = renderer.drawFrame(window, {}, drawPlaceholder);
                 }
+
+                FrameMark;
 
                 if (parsedArguments.windowDebug && broughtUp.vulkanRenderer != nullptr) {
                     printSurfaceCommitOutcome(*broughtUp.vulkanRenderer, presented);
