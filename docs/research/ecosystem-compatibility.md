@@ -635,3 +635,24 @@ Primary sources read on this machine or through `gh api` / the npm registry on 2
 - `docs/adr/0001-gpu-first-out-of-tree-react-native-platform-for-linux.md` (M4 scope, accepted risks),
   `docs/research/prior-art.md`, `docs/research/codegen-and-oot-platform-tooling.md`,
   `docs/research/animation-on-linux.md` — the prior record this report builds on and does not restate.
+
+## Checked flagship discovery verdicts
+
+`packages/cli/src/fixtures/flagship-react-native-config.json` captures the discovery-relevant fields from
+Suuudokuuu 2.18.1 at `17357d6d9188fc15eddfe0969ccf179ec75c1f99`, resolved by
+`expo-modules-autolinking react-native-config --platform android --json`. Machine-specific paths are normalized
+to `/flagship`; the fixture records resolved package versions. The colocated `flagship-autolinking-verdicts.json`
+is replayed by `flagship-autolinking.spec.ts` through the production classifier, so a changed verdict fails validation.
+Regenerate explicitly with `pnpm exec vitest run packages/cli/src/flagship-autolinking.spec.ts --update` and review
+both the input and verdict diff.
+
+This input contains 13 dependencies. Expo's published 58.0.2 `expo-module.config.json` supplies the Expo verdict;
+the other resolved packages have neither a published `nitro.json` nor `expo-module.config.json`. Published config
+files were checked at the recorded versions. Android descriptors without the portable `cxxModule*` keys match
+neither native linking rule. `no-native-code` here means no native build discovered for Linux, not that the
+package has no native implementation on other platforms.
+
+This is the native-config subset, not the complete Expo application graph: Expo resolves its other modules
+separately (#155). Packaged Nitro libraries without `nitro.json` still need the detection owned by #153.
+The conformance-kit cross-check remains on #157; it must reuse this classifier rather than duplicate its rules.
+Issue #146 remains open for these outstanding integration criteria.

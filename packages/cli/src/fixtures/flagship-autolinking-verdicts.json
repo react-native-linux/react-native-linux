@@ -1,0 +1,67 @@
+[
+  {
+    "kind": "no-native-code",
+    "message": "@op-engineering/op-sqlite: no native code for Linux; nothing to link",
+    "packageName": "@op-engineering/op-sqlite"
+  },
+  {
+    "kind": "no-native-code",
+    "message": "@react-native-masked-view/masked-view: no native code for Linux; nothing to link",
+    "packageName": "@react-native-masked-view/masked-view"
+  },
+  {
+    "kind": "no-native-code",
+    "message": "@shopify/react-native-skia: no native code for Linux; nothing to link",
+    "packageName": "@shopify/react-native-skia"
+  },
+  {
+    "kind": "expo-module",
+    "message": "expo: not linked, /flagship/node_modules/expo/expo-module.config.json does not list linux; Expo modules are not supported on Linux yet",
+    "packageName": "expo"
+  },
+  {
+    "kind": "no-native-code",
+    "message": "react-native-gesture-handler: no native code for Linux; nothing to link",
+    "packageName": "react-native-gesture-handler"
+  },
+  {
+    "kind": "no-native-code",
+    "message": "react-native-nitro-modules: no native code for Linux; nothing to link",
+    "packageName": "react-native-nitro-modules"
+  },
+  {
+    "kind": "no-native-code",
+    "message": "react-native-reanimated: no native code for Linux; nothing to link",
+    "packageName": "react-native-reanimated"
+  },
+  {
+    "kind": "no-native-code",
+    "message": "react-native-safe-area-context: no native code for Linux; nothing to link",
+    "packageName": "react-native-safe-area-context"
+  },
+  {
+    "kind": "no-native-code",
+    "message": "react-native-screens: no native code for Linux; nothing to link",
+    "packageName": "react-native-screens"
+  },
+  {
+    "kind": "no-native-code",
+    "message": "react-native-share: no native code for Linux; nothing to link",
+    "packageName": "react-native-share"
+  },
+  {
+    "kind": "no-native-code",
+    "message": "react-native-svg: no native code for Linux; nothing to link",
+    "packageName": "react-native-svg"
+  },
+  {
+    "kind": "no-native-code",
+    "message": "react-native-unistyles: no native code for Linux; nothing to link",
+    "packageName": "react-native-unistyles"
+  },
+  {
+    "kind": "no-native-code",
+    "message": "react-native-worklets: no native code for Linux; nothing to link",
+    "packageName": "react-native-worklets"
+  }
+]
