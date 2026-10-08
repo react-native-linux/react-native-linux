@@ -1,0 +1,182 @@
+{
+  "source": {
+    "repository": "https://github.com/vitalyiegorov/suuudokuuu",
+    "commit": "17357d6d9188fc15eddfe0969ccf179ec75c1f99",
+    "version": "2.18.1",
+    "command": "expo-modules-autolinking react-native-config --platform android --json",
+    "resolvedVersions": {
+      "@op-engineering/op-sqlite": "18.2.5",
+      "@react-native-masked-view/masked-view": "0.3.2",
+      "@shopify/react-native-skia": "2.13.1",
+      "expo": "58.0.2",
+      "react-native-gesture-handler": "3.2.1",
+      "react-native-nitro-modules": "0.37.1",
+      "react-native-reanimated": "4.7.0",
+      "react-native-safe-area-context": "5.9.1",
+      "react-native-screens": "4.28.0",
+      "react-native-share": "12.3.1",
+      "react-native-svg": "15.15.5",
+      "react-native-unistyles": "3.3.0",
+      "react-native-worklets": "0.13.0"
+    }
+  },
+  "root": "/flagship/packages/app",
+  "dependencies": {
+    "@op-engineering/op-sqlite": {
+      "root": "/flagship/node_modules/@op-engineering/op-sqlite",
+      "platforms": {
+        "android": {
+          "sourceDir": "/flagship/node_modules/@op-engineering/op-sqlite/android",
+          "cmakeListsPath": "/flagship/node_modules/@op-engineering/op-sqlite/android/build/generated/source/codegen/jni/CMakeLists.txt",
+          "cxxModuleCMakeListsModuleName": null,
+          "cxxModuleCMakeListsPath": null,
+          "cxxModuleHeaderName": null
+        }
+      }
+    },
+    "@react-native-masked-view/masked-view": {
+      "root": "/flagship/node_modules/@react-native-masked-view/masked-view",
+      "platforms": {
+        "android": {
+          "sourceDir": "/flagship/node_modules/@react-native-masked-view/masked-view/android",
+          "cmakeListsPath": "/flagship/node_modules/@react-native-masked-view/masked-view/android/build/generated/source/codegen/jni/CMakeLists.txt",
+          "cxxModuleCMakeListsModuleName": null,
+          "cxxModuleCMakeListsPath": null,
+          "cxxModuleHeaderName": null
+        }
+      }
+    },
+    "@shopify/react-native-skia": {
+      "root": "/flagship/node_modules/@shopify/react-native-skia",
+      "platforms": {
+        "android": {
+          "sourceDir": "/flagship/node_modules/@shopify/react-native-skia/android",
+          "cmakeListsPath": "/flagship/node_modules/@shopify/react-native-skia/android/build/generated/source/codegen/jni/CMakeLists.txt",
+          "cxxModuleCMakeListsModuleName": null,
+          "cxxModuleCMakeListsPath": null,
+          "cxxModuleHeaderName": null
+        }
+      }
+    },
+    "expo": {
+      "root": "/flagship/node_modules/expo",
+      "platforms": {
+        "android": {
+          "sourceDir": "/flagship/node_modules/expo/android",
+          "cmakeListsPath": "/flagship/node_modules/expo/android/build/generated/source/codegen/jni/CMakeLists.txt",
+          "cxxModuleCMakeListsModuleName": null,
+          "cxxModuleCMakeListsPath": null,
+          "cxxModuleHeaderName": null
+        }
+      }
+    },
+    "react-native-gesture-handler": {
+      "root": "/flagship/node_modules/react-native-gesture-handler",
+      "platforms": {
+        "android": {
+          "sourceDir": "/flagship/node_modules/react-native-gesture-handler/android",
+          "cmakeListsPath": "/flagship/node_modules/react-native-gesture-handler/android/CMakeLists.txt",
+          "cxxModuleCMakeListsModuleName": null,
+          "cxxModuleCMakeListsPath": null,
+          "cxxModuleHeaderName": null
+        }
+      }
+    },
+    "react-native-nitro-modules": {
+      "root": "/flagship/node_modules/react-native-nitro-modules",
+      "platforms": {
+        "android": {
+          "sourceDir": "/flagship/node_modules/react-native-nitro-modules/android",
+          "cmakeListsPath": "/flagship/node_modules/react-native-nitro-modules/android/build/generated/source/codegen/jni/CMakeLists.txt",
+          "cxxModuleCMakeListsModuleName": null,
+          "cxxModuleCMakeListsPath": null,
+          "cxxModuleHeaderName": null
+        }
+      }
+    },
+    "react-native-reanimated": {
+      "root": "/flagship/node_modules/react-native-reanimated",
+      "platforms": {
+        "android": {
+          "sourceDir": "/flagship/node_modules/react-native-reanimated/android",
+          "cmakeListsPath": "/flagship/node_modules/react-native-reanimated/Common/NativeView/CMakeLists.txt",
+          "cxxModuleCMakeListsModuleName": null,
+          "cxxModuleCMakeListsPath": null,
+          "cxxModuleHeaderName": null
+        }
+      }
+    },
+    "react-native-safe-area-context": {
+      "root": "/flagship/node_modules/react-native-safe-area-context",
+      "platforms": {
+        "android": {
+          "sourceDir": "/flagship/node_modules/react-native-safe-area-context/android",
+          "cmakeListsPath": "/flagship/node_modules/react-native-safe-area-context/android/src/main/jni/CMakeLists.txt",
+          "cxxModuleCMakeListsModuleName": null,
+          "cxxModuleCMakeListsPath": null,
+          "cxxModuleHeaderName": null
+        }
+      }
+    },
+    "react-native-screens": {
+      "root": "/flagship/node_modules/react-native-screens",
+      "platforms": {
+        "android": {
+          "sourceDir": "/flagship/node_modules/react-native-screens/android",
+          "cmakeListsPath": "/flagship/node_modules/react-native-screens/android/src/main/jni/CMakeLists.txt",
+          "cxxModuleCMakeListsModuleName": null,
+          "cxxModuleCMakeListsPath": null,
+          "cxxModuleHeaderName": null
+        }
+      }
+    },
+    "react-native-share": {
+      "root": "/flagship/node_modules/react-native-share",
+      "platforms": {
+        "android": {
+          "sourceDir": "/flagship/node_modules/react-native-share/android",
+          "cmakeListsPath": "/flagship/node_modules/react-native-share/android/build/generated/source/codegen/jni/CMakeLists.txt",
+          "cxxModuleCMakeListsModuleName": null,
+          "cxxModuleCMakeListsPath": null,
+          "cxxModuleHeaderName": null
+        }
+      }
+    },
+    "react-native-svg": {
+      "root": "/flagship/node_modules/react-native-svg",
+      "platforms": {
+        "android": {
+          "sourceDir": "/flagship/node_modules/react-native-svg/android",
+          "cmakeListsPath": "/flagship/node_modules/react-native-svg/android/src/main/jni/CMakeLists.txt",
+          "cxxModuleCMakeListsModuleName": null,
+          "cxxModuleCMakeListsPath": null,
+          "cxxModuleHeaderName": null
+        }
+      }
+    },
+    "react-native-unistyles": {
+      "root": "/flagship/node_modules/react-native-unistyles",
+      "platforms": {
+        "android": {
+          "sourceDir": "/flagship/node_modules/react-native-unistyles/android",
+          "cmakeListsPath": "/flagship/node_modules/react-native-unistyles/android/build/generated/source/codegen/jni/CMakeLists.txt",
+          "cxxModuleCMakeListsModuleName": null,
+          "cxxModuleCMakeListsPath": null,
+          "cxxModuleHeaderName": null
+        }
+      }
+    },
+    "react-native-worklets": {
+      "root": "/flagship/node_modules/react-native-worklets",
+      "platforms": {
+        "android": {
+          "sourceDir": "/flagship/node_modules/react-native-worklets/android",
+          "cmakeListsPath": "/flagship/node_modules/react-native-worklets/android/build/generated/source/codegen/jni/CMakeLists.txt",
+          "cxxModuleCMakeListsModuleName": null,
+          "cxxModuleCMakeListsPath": null,
+          "cxxModuleHeaderName": null
+        }
+      }
+    }
+  }
+}
