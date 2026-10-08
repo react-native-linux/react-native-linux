@@ -1,0 +1,411 @@
+diff --git a/packages/react-native-gesture-handler/src/RNGestureHandlerModule.linux.ts b/packages/react-native-gesture-handler/src/RNGestureHandlerModule.linux.ts
+new file mode 100644
+index 0000000..357876a
+--- /dev/null
++++ b/packages/react-native-gesture-handler/src/RNGestureHandlerModule.linux.ts
+@@ -0,0 +1,57 @@
++import type { ActionType } from './ActionType';
++import { Gestures } from './web/Gestures';
++import type { Config } from './web/interfaces';
++import InteractionManager from './web/tools/InteractionManager';
++import NodeManager from './web/tools/NodeManager';
++import { GestureHandlerLinuxDelegate } from './web/tools/GestureHandlerLinuxDelegate';
++
++// Linux runs the library's own JavaScript engine (src/web) with GestureHandlerLinuxDelegate in place of the DOM
++// delegate: recognition happens on the JavaScript thread, fed by GestureHandlerRootView.linux.
++export default {
++  handleSetJSResponder(_tag: number, _blockNativeResponder: boolean) {},
++  handleClearJSResponder() {},
++  createGestureHandler<T>(
++    handlerName: keyof typeof Gestures,
++    handlerTag: number,
++    config: T
++  ) {
++    if (!(handlerName in Gestures)) {
++      throw new Error(
++        `react-native-gesture-handler: ${handlerName} is not supported on linux.`
++      );
++    }
++
++    const GestureClass = Gestures[handlerName];
++    NodeManager.createGestureHandler(
++      handlerTag,
++      new GestureClass(new GestureHandlerLinuxDelegate())
++    );
++    this.updateGestureHandler(handlerTag, config as unknown as Config);
++  },
++  attachGestureHandler(
++    handlerTag: number,
++    newView: unknown,
++    _actionType: ActionType,
++    propsRef: React.RefObject<unknown>
++  ) {
++    // @ts-ignore The view is the React Native element findNodeHandle.linux returns.
++    NodeManager.getHandler(handlerTag).init(newView, propsRef);
++  },
++  updateGestureHandler(handlerTag: number, newConfig: Config) {
++    NodeManager.getHandler(handlerTag).updateGestureConfig(newConfig);
++    InteractionManager.instance.configureInteractions(
++      NodeManager.getHandler(handlerTag),
++      newConfig
++    );
++  },
++  getGestureHandlerNode(handlerTag: number) {
++    return NodeManager.getHandler(handlerTag);
++  },
++  dropGestureHandler(handlerTag: number) {
++    NodeManager.dropGestureHandler(handlerTag);
++  },
++  install() {
++    return true;
++  },
++  flushOperations() {},
++};
+diff --git a/packages/react-native-gesture-handler/src/components/GestureHandlerRootView.linux.tsx b/packages/react-native-gesture-handler/src/components/GestureHandlerRootView.linux.tsx
+new file mode 100644
+index 0000000..50c6247
+--- /dev/null
++++ b/packages/react-native-gesture-handler/src/components/GestureHandlerRootView.linux.tsx
+@@ -0,0 +1,43 @@
++import * as React from 'react';
++import { PropsWithChildren } from 'react';
++import { View, ViewProps, StyleSheet } from 'react-native';
++import GestureHandlerRootViewContext from '../GestureHandlerRootViewContext';
++import {
++  RootPointerEvent,
++  routeLinuxPointerEvent,
++} from '../web/tools/LinuxPointerRouter';
++
++export interface GestureHandlerRootViewProps
++  extends PropsWithChildren<ViewProps> {}
++
++// The capture phase sees every pointer event under the root before any child handles it, which is where the web
++// engine's views would have received theirs.
++export default function GestureHandlerRootView({
++  style,
++  ...rest
++}: GestureHandlerRootViewProps) {
++  return (
++    <GestureHandlerRootViewContext.Provider value>
++      <View
++        style={style ?? styles.container}
++        onPointerDownCapture={(event: RootPointerEvent) =>
++          routeLinuxPointerEvent('pointerdown', event)
++        }
++        onPointerMoveCapture={(event: RootPointerEvent) =>
++          routeLinuxPointerEvent('pointermove', event)
++        }
++        onPointerUpCapture={(event: RootPointerEvent) =>
++          routeLinuxPointerEvent('pointerup', event)
++        }
++        onPointerCancelCapture={(event: RootPointerEvent) =>
++          routeLinuxPointerEvent('pointercancel', event)
++        }
++        {...rest}
++      />
++    </GestureHandlerRootViewContext.Provider>
++  );
++}
++
++const styles = StyleSheet.create({
++  container: { flex: 1 },
++});
+diff --git a/packages/react-native-gesture-handler/src/findNodeHandle.linux.ts b/packages/react-native-gesture-handler/src/findNodeHandle.linux.ts
+new file mode 100644
+index 0000000..bf293e2
+--- /dev/null
++++ b/packages/react-native-gesture-handler/src/findNodeHandle.linux.ts
+@@ -0,0 +1,12 @@
++// @ts-ignore React Native ships no types for its renderer proxy.
++import { findHostInstance_DEPRECATED } from 'react-native/Libraries/ReactNative/RendererProxy';
++
++// The React Native element itself, as findNodeHandle.web answers the DOM element: Linux's gesture delegate measures
++// and hit-tests the element rather than a numeric tag.
++export default function findNodeHandle(viewRef: any): any {
++  if (viewRef?.viewTag !== undefined) {
++    return findNodeHandle(viewRef.viewTag);
++  }
++
++  return viewRef ? findHostInstance_DEPRECATED(viewRef) : null;
++}
+diff --git a/packages/react-native-gesture-handler/src/handlers/createHandler.tsx b/packages/react-native-gesture-handler/src/handlers/createHandler.tsx
+index 19831a8..ded48f5 100644
+--- a/packages/react-native-gesture-handler/src/handlers/createHandler.tsx
++++ b/packages/react-native-gesture-handler/src/handlers/createHandler.tsx
+@@ -78,7 +78,11 @@ UIManagerAny.genericDirectEventTypes = {
+   ...customGHEventsConfig,
+ };
+ 
+-const UIManagerConstants = UIManagerAny.getViewManagerConfig?.('getConstants');
++// Linux has no view manager to ask, and asking logs a new-architecture error.
++const UIManagerConstants =
++  Platform.OS === ('linux' as string)
++    ? undefined
++    : UIManagerAny.getViewManagerConfig?.('getConstants');
+ 
+ if (UIManagerConstants) {
+   UIManagerConstants.genericDirectEventTypes = {
+diff --git a/packages/react-native-gesture-handler/src/handlers/gestures/GestureDetector/attachHandlers.ts b/packages/react-native-gesture-handler/src/handlers/gestures/GestureDetector/attachHandlers.ts
+index 4af2b57..d6e138a 100644
+--- a/packages/react-native-gesture-handler/src/handlers/gestures/GestureDetector/attachHandlers.ts
++++ b/packages/react-native-gesture-handler/src/handlers/gestures/GestureDetector/attachHandlers.ts
+@@ -78,7 +78,7 @@ export function attachHandlers({
+       ? ActionType.REANIMATED_WORKLET
+       : ActionType.JS_FUNCTION_NEW_API;
+ 
+-    if (Platform.OS === 'web') {
++    if (Platform.OS === 'web' || Platform.OS === ('linux' as string)) {
+       (
+         RNGestureHandlerModule.attachGestureHandler as typeof RNGestureHandlerModuleWeb.attachGestureHandler
+       )(
+diff --git a/packages/react-native-gesture-handler/src/web/tools/GestureHandlerLinuxDelegate.ts b/packages/react-native-gesture-handler/src/web/tools/GestureHandlerLinuxDelegate.ts
+new file mode 100644
+index 0000000..47d5a32
+--- /dev/null
++++ b/packages/react-native-gesture-handler/src/web/tools/GestureHandlerLinuxDelegate.ts
+@@ -0,0 +1,73 @@
++import type IGestureHandler from '../handlers/IGestureHandler';
++import {
++  GestureHandlerDelegate,
++  MeasureResult,
++} from './GestureHandlerDelegate';
++import LinuxPointerEventManager from './LinuxPointerEventManager';
++import {
++  forgetLinuxView,
++  LinuxElement,
++  LinuxView,
++} from './LinuxPointerRouter';
++import EventManager from './EventManager';
++
++// The web delegate's job on a React Native element: the bounds come from the element's own
++// getBoundingClientRect, and the pointer events from LinuxPointerRouter rather than from DOM listeners.
++export class GestureHandlerLinuxDelegate
++  implements GestureHandlerDelegate<LinuxView, IGestureHandler>
++{
++  public view!: LinuxView;
++  private eventManagers: EventManager<unknown>[] = [];
++
++  init(viewRef: number, handler: IGestureHandler): void {
++    if (!viewRef) {
++      throw new Error(
++        `Cannot find the view for handler ${handler.handlerTag}`
++      );
++    }
++
++    this.view = new LinuxView(viewRef as unknown as LinuxElement);
++    this.eventManagers = [
++      new LinuxPointerEventManager(this.view as unknown as HTMLElement),
++    ];
++    this.eventManagers.forEach((manager) => handler.attachEventManager(manager));
++  }
++
++  isPointerInBounds({ x, y }: { x: number; y: number }): boolean {
++    const rect = this.view.getBoundingClientRect();
++
++    return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
++  }
++
++  measureView(): MeasureResult {
++    const rect = this.view.getBoundingClientRect();
++
++    return {
++      pageX: rect.left,
++      pageY: rect.top,
++      width: rect.right - rect.left,
++      height: rect.bottom - rect.top,
++    };
++  }
++
++  reset(): void {
++    this.eventManagers.forEach((manager) => manager.resetManager());
++  }
++
++  onEnabledChange(enabled: boolean): void {
++    this.eventManagers.forEach((manager) =>
++      enabled ? manager.registerListeners() : manager.unregisterListeners()
++    );
++  }
++
++  onBegin(): void {}
++  onActivate(): void {}
++  onEnd(): void {}
++  onCancel(): void {}
++  onFail(): void {}
++
++  destroy(): void {
++    this.eventManagers.forEach((manager) => manager.unregisterListeners());
++    forgetLinuxView(this.view);
++  }
++}
+diff --git a/packages/react-native-gesture-handler/src/web/tools/LinuxPointerEventManager.ts b/packages/react-native-gesture-handler/src/web/tools/LinuxPointerEventManager.ts
+new file mode 100644
+index 0000000..777691a
+--- /dev/null
++++ b/packages/react-native-gesture-handler/src/web/tools/LinuxPointerEventManager.ts
+@@ -0,0 +1,36 @@
++import PointerEventManager from './PointerEventManager';
++import { AdaptedEvent, EventTypes } from '../interfaces';
++import { PointerTypeMapping } from '../utils';
++import { PointerType } from '../../PointerType';
++import { MouseButton } from '../../handlers/gestureHandlerCommon';
++import type { LinuxPointerEvent, LinuxView } from './LinuxPointerRouter';
++
++const mouseButtons = [
++  MouseButton.LEFT,
++  MouseButton.MIDDLE,
++  MouseButton.RIGHT,
++  MouseButton.BUTTON_4,
++  MouseButton.BUTTON_5,
++];
++
++// The web manager unchanged, except that a React Native view has no computed style to read a CSS scale from:
++// its bounding rectangle already carries every transform, so offsets come from it alone.
++export default class LinuxPointerEventManager extends PointerEventManager {
++  protected mapEvent(event: PointerEvent, eventType: EventTypes): AdaptedEvent {
++    const linuxEvent = event as unknown as LinuxPointerEvent;
++    const rect = (this.view as unknown as LinuxView).getBoundingClientRect();
++
++    return {
++      x: linuxEvent.clientX,
++      y: linuxEvent.clientY,
++      offsetX: linuxEvent.clientX - rect.left,
++      offsetY: linuxEvent.clientY - rect.top,
++      pointerId: linuxEvent.pointerId,
++      eventType,
++      pointerType:
++        PointerTypeMapping.get(linuxEvent.pointerType) ?? PointerType.OTHER,
++      button: mouseButtons[linuxEvent.button],
++      time: linuxEvent.timeStamp,
++    };
++  }
++}
+diff --git a/packages/react-native-gesture-handler/src/web/tools/LinuxPointerRouter.ts b/packages/react-native-gesture-handler/src/web/tools/LinuxPointerRouter.ts
+new file mode 100644
+index 0000000..49b1e17
+--- /dev/null
++++ b/packages/react-native-gesture-handler/src/web/tools/LinuxPointerRouter.ts
+@@ -0,0 +1,124 @@
++// Linux has no DOM, so a view cannot listen for pointer events itself. GestureHandlerRootView.linux captures every
++// pointer event under it and this router hands each one to the views that would have received it on web: a down
++// to every attached view containing its target, and every later event for that pointer to the views that took
++// the down, which is what setPointerCapture gives a web view.
++
++type PointerListener = (event: LinuxPointerEvent) => void;
++
++export interface LinuxElement {
++  contains(other: LinuxElement): boolean;
++  getBoundingClientRect(): {
++    left: number;
++    top: number;
++    right: number;
++    bottom: number;
++  };
++}
++
++export interface LinuxPointerEvent {
++  clientX: number;
++  clientY: number;
++  x: number;
++  y: number;
++  pointerId: number;
++  pointerType: string;
++  button: number;
++  timeStamp: number;
++  tiltX: number;
++  tiltY: number;
++  target: {
++    tagName: string;
++    setPointerCapture(pointerId: number): void;
++    releasePointerCapture(pointerId: number): void;
++    hasPointerCapture(pointerId: number): boolean;
++  };
++}
++
++export class LinuxView {
++  private readonly listeners = new Map<string, Set<PointerListener>>();
++
++  constructor(public readonly element: LinuxElement) {}
++
++  addEventListener(type: string, listener: PointerListener): void {
++    if (!this.listeners.has(type)) {
++      this.listeners.set(type, new Set());
++    }
++    this.listeners.get(type)!.add(listener);
++    views.add(this);
++  }
++
++  removeEventListener(type: string, listener: PointerListener): void {
++    this.listeners.get(type)?.delete(listener);
++  }
++
++  getBoundingClientRect() {
++    return this.element.getBoundingClientRect();
++  }
++
++  dispatch(type: string, event: LinuxPointerEvent): void {
++    this.listeners.get(type)?.forEach((listener) => listener(event));
++  }
++}
++
++const views = new Set<LinuxView>();
++const captures = new Map<number, LinuxView[]>();
++const capturedTarget = {
++  tagName: 'VIEW',
++  setPointerCapture() {},
++  releasePointerCapture() {},
++  hasPointerCapture: () => true,
++};
++
++export function forgetLinuxView(view: LinuxView): void {
++  views.delete(view);
++}
++
++export interface RootPointerEvent {
++  target: unknown;
++  nativeEvent: {
++    clientX: number;
++    clientY: number;
++    pointerId: number;
++    pointerType?: string;
++    button?: number;
++    tiltX?: number;
++    tiltY?: number;
++  };
++  timeStamp: number;
++}
++
++export function routeLinuxPointerEvent(
++  type: 'pointerdown' | 'pointermove' | 'pointerup' | 'pointercancel',
++  rootEvent: RootPointerEvent
++): void {
++  const { nativeEvent } = rootEvent;
++  const event: LinuxPointerEvent = {
++    clientX: nativeEvent.clientX,
++    clientY: nativeEvent.clientY,
++    x: nativeEvent.clientX,
++    y: nativeEvent.clientY,
++    pointerId: nativeEvent.pointerId,
++    pointerType: nativeEvent.pointerType ?? 'mouse',
++    button: nativeEvent.button ?? 0,
++    timeStamp: rootEvent.timeStamp,
++    tiltX: nativeEvent.tiltX ?? 0,
++    tiltY: nativeEvent.tiltY ?? 0,
++    target: capturedTarget,
++  };
++
++  if (type === 'pointerdown') {
++    const target = rootEvent.target as LinuxElement;
++    const receivers = [...views].filter((view) =>
++      view.element.contains(target)
++    );
++    captures.set(event.pointerId, receivers);
++    receivers.forEach((view) => view.dispatch(type, event));
++    return;
++  }
++
++  const receivers = captures.get(event.pointerId) ?? [];
++  if (type !== 'pointermove') {
++    captures.delete(event.pointerId);
++  }
++  receivers.forEach((view) => view.dispatch(type, event));
++}

@@ -33,6 +33,18 @@
       "issue": 505
     },
     {
+      "type": "platform",
+      "file": "src-linux/Libraries/StyleSheet/normalize-colors.d.ts",
+      "issue": 112
+    },
+    {
+      "type": "derived",
+      "file": "src-linux/Libraries/StyleSheet/processColor.linux.ts",
+      "baseFile": "packages/react-native/Libraries/StyleSheet/processColor.js",
+      "baseHash": "162bbf9f993cedaf6e6ac89f1435b2ca61658035",
+      "issue": 112
+    },
+    {
       "type": "derived",
       "file": "src-linux/Libraries/Utilities/NativePlatformConstantsLinux.ts",
       "baseFile": "packages/react-native/src/private/specs_DEPRECATED/modules/NativePlatformConstantsAndroid.js",

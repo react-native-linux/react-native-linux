@@ -42,6 +42,7 @@ const EXPOSED_NODE = { name: "Send", role: "button", tag: 3 };
  * simulated, because the client's only evidence of a hang is a deadline that passed.
  */
 const healthyAnswers: Answers = {
+  DescribeRenderer: okLine("DescribeRenderer", { reason: "no persisted decision", rung: "raster" }),
   DumpAccessibilityTree: okLine("DumpAccessibilityTree", { nodes: [EXPOSED_NODE] }),
   DumpVisualTree: okLine("DumpVisualTree", { roots: [{ children: [MOUNTED_CHILD], componentName: "RootView" }] }),
   ListAccessibilityChanges: okLine("ListAccessibilityChanges", { changes: [{ state: true, testID: "toggle" }] }),
@@ -55,6 +56,7 @@ const EVERY_COMMAND: ScenarioAutomation = {
   accessibilityTreeSnapshot: ACCESSIBILITY_SNAPSHOT_NAME,
   listErrorsMustBeEmpty: true,
   markTestPassed: true,
+  rendererRung: "raster",
   visualTreeSnapshot: SNAPSHOT_NAME,
 };
 
@@ -63,6 +65,7 @@ const CHANNEL_ONLY: ScenarioAutomation = {
   accessibilityTreeSnapshot: null,
   listErrorsMustBeEmpty: false,
   markTestPassed: false,
+  rendererRung: null,
   visualTreeSnapshot: null,
 };
 
@@ -143,18 +146,6 @@ describe("one request, one answer", () => {
     const answer = await requestAutomation(socketPath, { command: "ListErrors" }, CONNECT_TIMEOUT_MS);
 
     expect(answer.failure).toContain("ListErrors did not answer");
-  });
-
-  it("fails a run whose window never printed the socket path", async () => {
-    const failures = await gradeAutomation({
-      artifactsDirectory: directory,
-      automation: EVERY_COMMAND,
-      goldensDirectory: directory,
-      snapshotsDirectory: directory,
-      trace: "boot\n",
-    });
-
-    expect(failures).toEqual(["the window never printed the automation socket path"]);
   });
 });
 

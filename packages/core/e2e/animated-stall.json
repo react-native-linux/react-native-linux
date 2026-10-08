@@ -1,0 +1,9 @@
+{
+  "name": "animated-stall",
+  "bundle": "animated-stall.js",
+  "ready": "animated-stall: started",
+  "frames": 240,
+  "frameBudget": { "p95Ms": 17.5, "minFrames": 60, "maxHangs": 0 },
+  "steps": ["sleep 1500"],
+  "expect": ["animated-stall: started", "animated-stall: finished true", "animated-stall: value after the stall 1"]
+}

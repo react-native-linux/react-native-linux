@@ -10,7 +10,7 @@ const validScenario = {
 };
 
 describe("parseScenario automation", () => {
-  it("reads the four things the channel is asked to prove", () => {
+  it("reads the five things the channel is asked to prove", () => {
     const scenario = parseScenario(
       {
         ...validScenario,
@@ -18,6 +18,7 @@ describe("parseScenario automation", () => {
           accessibilityTreeSnapshot: "a11y.json",
           listErrorsMustBeEmpty: true,
           markTestPassed: true,
+          rendererRung: "raster",
           visualTreeSnapshot: "tree.json",
         },
       },
@@ -29,6 +30,7 @@ describe("parseScenario automation", () => {
       accessibilityTreeSnapshot: "a11y.json",
       listErrorsMustBeEmpty: true,
       markTestPassed: true,
+      rendererRung: "raster",
       visualTreeSnapshot: "tree.json",
     });
   });
@@ -39,6 +41,7 @@ describe("parseScenario automation", () => {
       accessibilityTreeSnapshot: null,
       listErrorsMustBeEmpty: false,
       markTestPassed: false,
+      rendererRung: null,
       visualTreeSnapshot: null,
     });
   });

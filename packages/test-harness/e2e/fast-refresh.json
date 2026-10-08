@@ -1,0 +1,15 @@
+{
+  "name": "fast-refresh",
+  "bundle": "fast-refresh.ts",
+  "ready": "fast-refresh: title Before Fast Refresh",
+  "expect": ["fast-refresh: title After Fast Refresh"],
+  "frames": 1800,
+  "steps": ["sleep 100"],
+  "fastRefresh": {
+    "file": "packages/test-harness/test-bundles/fast-refresh-app.tsx",
+    "find": "const title = \"Before Fast Refresh\";",
+    "replace": "const title = \"After Fast Refresh\";",
+    "expect": "fast-refresh: title After Fast Refresh",
+    "maxEditToVisibleMs": 15000
+  }
+}

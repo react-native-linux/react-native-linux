@@ -16,6 +16,7 @@
 #include <react/renderer/components/FBReactNativeSpec/Props.h>
 #include <react/renderer/components/scrollview/ScrollViewShadowNode.h>
 #include <react/renderer/components/scrollview/ScrollViewState.h>
+#include <react/renderer/components/view/TouchEvent.h>
 #include <react/renderer/components/view/TouchEventEmitter.h>
 #include <react/renderer/components/view/ViewEventEmitter.h>
 #include <react/renderer/components/view/ViewProps.h>
@@ -266,6 +267,31 @@ PointerTargetTransform identityTransformAt(facebook::react::Point origin) {
     return PointerTargetTransform{.translateX = origin.x, .translateY = origin.y};
 }
 
+constexpr int kTouchButton = 0;
+
+/** The primary button's touch at `event`'s point: `changedTouches` always, and `touches` while it is still down. */
+facebook::react::TouchEvent touchEventAt(const InputEvent& event, facebook::react::Tag target,
+                                         facebook::react::Point origin, bool isDown) {
+    facebook::react::Touch touch{};
+
+    touch.pagePoint = event.surfacePoint;
+    touch.screenPoint = event.surfacePoint;
+    touch.offsetPoint = {.x = event.surfacePoint.x - origin.x, .y = event.surfacePoint.y - origin.y};
+    touch.target = target;
+    touch.timeStamp = event.eventTime.value_or(facebook::react::HighResTimeStamp::now());
+
+    facebook::react::TouchEvent touchEvent{};
+
+    touchEvent.changedTouches.insert(touch);
+
+    if (isDown) {
+        touchEvent.touches.insert(touch);
+        touchEvent.targetTouches.insert(touch);
+    }
+
+    return touchEvent;
+}
+
 void emitPointerDispatch(const facebook::react::TouchEventEmitter& emitter, const PointerDispatch& dispatch) {
     switch (dispatch.type) {
     case PointerDispatchType::Move:
@@ -317,6 +343,7 @@ void InputDispatcher::dispatch(const std::vector<InputEvent>& events) {
         // see *Inner scrolling* in docs/cpp-toolchain.md.
         if (isScrollEvent(event)) {
             router_.cancelPressForScroll(event);
+            cancelTouch(event);
             textInputController_.handleScroll(event);
 
             continue;
@@ -442,18 +469,61 @@ void InputDispatcher::dispatchPointerEvent(const InputEvent& event) {
 
     const std::shared_ptr<const facebook::react::TouchEventEmitter> emitter =
         std::dynamic_pointer_cast<const facebook::react::TouchEventEmitter>(target.shadowNode->getEventEmitter());
+    const bool isSurfaceRoot = target.shadowNode->getTag() == surfaceId_;
 
-    if (emitter == nullptr) {
+    if (isSurfaceRoot && hoveredEmitter_ != nullptr) {
+        hoveredEmitter_->onPointerLeave(dispatches.front().event);
+    }
+
+    hoveredEmitter_ = isSurfaceRoot ? nullptr : emitter;
+    if (emitter != nullptr) {
+        for (const PointerDispatch& pointerDispatch : dispatches) {
+            emitPointerDispatch(*emitter, pointerDispatch);
+
+            if (pointerDispatch.type == PointerDispatchType::Click) {
+                emitSwitchChange(*target.shadowNode);
+            }
+        }
+    }
+
+    // After the pointer events, as Android's ReactRootView sends them: a gesture the pointer move activates has
+    // claimed the responder before the touch move that would otherwise keep a Pressable pressed (#168).
+    dispatchTouch(event, target, emitter);
+}
+
+void InputDispatcher::dispatchTouch(const InputEvent& event, const PointerTarget& target,
+                                    const std::shared_ptr<const facebook::react::TouchEventEmitter>& emitter) {
+    if (event.kind == InputEventKind::PointerButtonPress && event.button == kTouchButton && emitter != nullptr) {
+        touchEmitter_ = emitter;
+        touchTarget_ = target.shadowNode->getTag();
+        touchOrigin_ = {.x = event.surfacePoint.x - target.offset.x, .y = event.surfacePoint.y - target.offset.y};
+        touchEmitter_->onTouchStart(touchEventAt(event, touchTarget_, touchOrigin_, true));
+
         return;
     }
 
-    for (const PointerDispatch& pointerDispatch : dispatches) {
-        emitPointerDispatch(*emitter, pointerDispatch);
-
-        if (pointerDispatch.type == PointerDispatchType::Click) {
-            emitSwitchChange(*target.shadowNode);
-        }
+    if (touchEmitter_ == nullptr) {
+        return;
     }
+
+    if (event.kind == InputEventKind::PointerMotion) {
+        touchEmitter_->onTouchMove(touchEventAt(event, touchTarget_, touchOrigin_, true));
+    } else if (event.kind == InputEventKind::PointerButtonRelease && event.button == kTouchButton) {
+        touchEmitter_->onTouchEnd(touchEventAt(event, touchTarget_, touchOrigin_, false));
+        touchEmitter_ = nullptr;
+    } else if (event.kind == InputEventKind::PointerLeave) {
+        cancelTouch(event);
+    }
+}
+
+/** A touch the pointer left the surface during, or a wheel scrolled out from under, ends as a cancel (#578). */
+void InputDispatcher::cancelTouch(const InputEvent& event) {
+    if (touchEmitter_ == nullptr || (isScrollEvent(event) && event.scrollAmount == 0.0)) {
+        return;
+    }
+
+    touchEmitter_->onTouchCancel(touchEventAt(event, touchTarget_, touchOrigin_, false));
+    touchEmitter_ = nullptr;
 }
 
 void InputDispatcher::dispatchKeyEvent(const InputEvent& event) {

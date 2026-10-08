@@ -58,6 +58,7 @@ set(RNL_CORE_SCENE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/Appearance.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/AutomationProtocol.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/Clipboard.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ColorStops.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/DefaultFontFamily.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/DimensionsSource.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/EditorModel.cpp
@@ -76,10 +77,12 @@ set(RNL_CORE_SCENE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/LinuxAnimationChoreographer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/LinuxMountingManager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/MountTreeText.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/OutputScale.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/PinnedFontFamilies.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/PlatformColor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/RendererLadder.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ParagraphAttributesSignature.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextDirection.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ParagraphLayoutCache.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ResourceResolver.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/StartupActivationToken.cpp
@@ -88,6 +91,7 @@ set(RNL_CORE_SCENE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ScrollEventCadence.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ScrollPhysics.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/SeededTestScheduler.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/StubMessageQueue.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/SingleInstanceActivation.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/SurfaceCommitGate.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/SurfacePresentationPolicy.cpp
@@ -117,6 +121,7 @@ add_executable(rnl_core_tests
     AnimationChoreographerTest.cpp
     AppearanceTest.cpp
     BorderGeometryTest.cpp
+    ColorStopTest.cpp
     DefaultFontFamilyTest.cpp
     DimensionsTest.cpp
     SceneNodeResetTest.cpp
@@ -146,6 +151,7 @@ add_executable(rnl_core_tests
     LayoutWidthRoundTripTest.cpp
     LineBoxMetricsTest.cpp
     LinuxMountingManagerAccessibilityChangesTest.cpp
+    LinuxMountingManagerAfterMountTest.cpp
     LinuxMountingManagerDiagnosticsTest.cpp
     LinuxMountingManagerMaintainPositionTest.cpp
     LinuxMountingManagerPendingDamageTest.cpp
@@ -167,14 +173,18 @@ add_executable(rnl_core_tests
     SingleInstanceActivationTest.cpp
     TextLayoutManagerStubTest.cpp
     TextRasterizationPolicyTest.cpp
+    TextDirectionTest.cpp
     TextTransformTest.cpp
     ThreadingConformanceTest.cpp
     TextInputControllerTest.cpp
     TextInputSessionTest.cpp
     ToplevelStateTest.cpp
+    TransformOriginTest.cpp
     UpstreamTestDriftOracleTest.cpp
     GpuResourceInvalidationTest.cpp
+    OutputScaleTest.cpp
     SurfaceCommitGateTest.cpp
+    StubMessageQueueTest.cpp
     SurfacePresentationPolicyTest.cpp
     VulkanResultPolicyTest.cpp
     WaylandDispatchDiagnosticsTest.cpp
@@ -302,8 +312,25 @@ target_sources(rnl_core_tests PRIVATE CurlHttpClientTest.cpp ${CMAKE_CURRENT_SOU
 target_include_directories(rnl_core_tests PRIVATE ${REACT_CXX_PLATFORM_DIR})
 target_link_libraries(rnl_core_tests PRIVATE CURL::libcurl)
 
-# #23: the SQLite store behind AsyncStorage, against files in the test's temporary directory.
-target_sources(rnl_core_tests PRIVATE AsyncStorageTest.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../src/AsyncStorage.cpp)
+# #79: the Boost.Beast WebSocket client, against a WebSocket server on loopback inside the test.
+target_sources(rnl_core_tests PRIVATE BeastWebSocketClientTest.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../src/BeastWebSocketClient.cpp)
+
+# #487: a real xkb_state under a US and a French keymap, the one input proof a pure function cannot give. The unit
+# tier links libxkbcommon for it rather than moving the case to the window job, because the case needs no
+# compositor, only the library and the xkeyboard-config data it reads.
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(RNL_TEST_XKBCOMMON REQUIRED IMPORTED_TARGET xkbcommon)
+target_sources(rnl_core_tests PRIVATE KeymapLayoutTest.cpp)
+target_link_libraries(rnl_core_tests PRIVATE PkgConfig::RNL_TEST_XKBCOMMON)
+
+# #23: the SQLite store behind AsyncStorage, against files in the test's temporary directory; #72's I18nManager
+# choices persist in it.
+target_sources(rnl_core_tests
+    PRIVATE
+        AsyncStorageTest.cpp
+        I18nTest.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src/AsyncStorage.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src/I18n.cpp)
 target_link_libraries(rnl_core_tests PRIVATE SQLite::SQLite3)
 target_compile_options(rnl_core_tests PRIVATE -Wall -Wextra -fexceptions -frtti)
 target_include_directories(rnl_core_tests
@@ -323,9 +350,11 @@ target_link_libraries(rnl_core_tests
 set_target_properties(rnl_core_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 # LLVM source-based coverage, scoped to this target so the profile carries the files the gate
-# scores and nothing else. scripts/cpp-coverage.ts reads what comes out of it.
+# scores and nothing else. scripts/cpp-coverage.ts reads what comes out of it. The counters are atomic
+# because some cases run scored code on several threads at once, and plain counters lose increments
+# under that race: StubMessageQueueTest's cross-thread case read a branch count of minus one.
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    target_compile_options(rnl_core_tests PRIVATE -fprofile-instr-generate -fcoverage-mapping)
+    target_compile_options(rnl_core_tests PRIVATE -fprofile-instr-generate -fcoverage-mapping -fprofile-update=atomic)
     target_link_options(rnl_core_tests PRIVATE -fprofile-instr-generate)
 endif()
 

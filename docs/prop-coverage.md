@@ -58,19 +58,19 @@ assertion and not an implementation.
 | Component | Props | Implemented | Deviating | Not implemented |
 | --- | --- | --- | --- | --- |
 | View | 35 | 14 | 5 | 16 |
-| Text | 45 | 20 | 6 | 19 |
+| Text | 45 | 22 | 6 | 17 |
 | Image | 14 | 7 | 3 | 4 |
 | ScrollView | 39 | 10 | 2 | 27 |
 | TextInput | 24 | 13 | 0 | 11 |
 | Switch | 8 | 5 | 3 | 0 |
 | ActivityIndicator | 4 | 4 | 0 | 0 |
-| **Total** | 169 | 73 | 19 | 77 |
+| **Total** | 169 | 75 | 19 | 75 |
 
 ## View
 
 | Prop | Declared at | State | Proof, reason or owner |
 | --- | --- | --- | --- |
-| `opacity` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:46` | implemented | `RetainedSceneTest, OpacityMultipliesDownTheTree` |
+| `opacity` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:46` | implemented | `RetainedSceneTest, ATranslucentParentAndATranslucentLeafEachCompositeAsALayer` |
 | `backgroundColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:47` | implemented | `RetainedSceneTest, UpdateReplacesFrameAndBackgroundColorInPlace` |
 | `borderRadii` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:50` | implemented | `BorderGeometryTest, TheHitRegionIsTheSameRoundedBoxTheSnapshotIsPaintedWith` |
 | `borderColors` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:51` | implemented | `border-matrix.png` |
@@ -113,8 +113,8 @@ assertion and not an implementation.
 | `paragraphAttributes` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/text/BaseParagraphProps.h:43` | implemented | `RetainedSceneTextTest, ParagraphStateBecomesTheTextOnTheNode` |
 | `isSelectable` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/text/BaseParagraphProps.h:48` | not-implemented | #43 |
 | `onTextLayout` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/text/BaseParagraphProps.h:50` | not-implemented | #111 |
-| `textAttributes` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/text/BaseTextProps.h:31` | implemented | `RetainedSceneTextTest, OpacityMultipliesIntoTheFragmentColors` |
-| `foregroundColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:50` | implemented | `RetainedSceneTextTest, OpacityMultipliesIntoTheFragmentColors` |
+| `textAttributes` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/text/BaseTextProps.h:31` | implemented | `RetainedSceneTextTest, ATranslucentAncestorFadesTextAsALayerRatherThanThroughItsFragmentColors` |
+| `foregroundColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:50` | implemented | `RetainedSceneTextTest, ATranslucentAncestorFadesTextAsALayerRatherThanThroughItsFragmentColors` |
 | `backgroundColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:51` | implemented | `text-metrics.png` |
 | `opacity` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:52` | not-implemented | #69 |
 | `fontFamily` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:55` | not-implemented | #70 |
@@ -130,7 +130,7 @@ assertion and not an implementation.
 | `textTransform` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:65` | implemented | `TextTransformTest` |
 | `lineHeight` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:68` | implemented | `LineBoxMetricsTest, ConvertsLineHeightPointsToAMultipleOfTheFontSize` |
 | `alignment` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:69` | implemented | `text.png` |
-| `baseWritingDirection` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:70` | not-implemented | #72 |
+| `baseWritingDirection` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:70` | implemented | `TextDirectionTest, AnExplicitWritingDirectionWinsAndANaturalOneFollowsTheLayout` |
 | `lineBreakStrategy` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:71` | not-implemented | #69 |
 | `lineBreakMode` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:72` | not-implemented | #69 |
 | `textDecorationColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:75` | implemented | `text-style-matrix.png` |
@@ -141,7 +141,7 @@ assertion and not an implementation.
 | `textShadowColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:83` | implemented | `text-style-matrix.png` |
 | `isHighlighted` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:86` | not-implemented | #43 |
 | `isPressable` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:87` | not-implemented | #43 |
-| `layoutDirection` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:93` | not-implemented | #119 |
+| `layoutDirection` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:93` | implemented | `rtl-text.png` |
 | `accessibilityRole` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:94` | not-implemented | #61 |
 | `role` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:95` | not-implemented | #61 |
 | `textEffects` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:98` | not-implemented | #69 |
@@ -166,7 +166,7 @@ assertion and not an implementation.
 | `resizeMode` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:31` | implemented | `RetainedSceneImageTest, EveryResizeModeMapsOntoASceneResizeMode` |
 | `blurRadius` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:32` | implemented | `RetainedSceneImageTest, BlurRadiusTravelsFromPropsToTheSnapshotUnaffectedByInheritedOpacity` |
 | `capInsets` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:33` | implemented | `RetainedSceneImageTest, CapInsetsTravelFromPropsToTheSnapshot` |
-| `tintColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:34` | implemented | `RetainedSceneImageTest, OpacityMultipliesIntoTheTintAlphaAndTheImageAlpha` |
+| `tintColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:34` | implemented | `RetainedSceneImageTest, ATranslucentAncestorFadesAnImageAsALayerRatherThanThroughItsTint` |
 | `internal_analyticTag` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:35` | not-implemented | #69 |
 | `resizeMethod` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:36` | not-implemented | #44 |
 | `resizeMultiplier` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:37` | not-implemented | #44 |

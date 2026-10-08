@@ -36,6 +36,7 @@ const baseScenario: Scenario = {
   expect: ["pressable: topClick"],
   expectFailure: false,
   expectsExitAfter: null,
+  fastRefresh: null,
   frameBudget: null,
   frames: 600,
   injectProtocolError: false,
@@ -136,7 +137,7 @@ describe("gradeArtifacts frame timing", () => {
 
     const scenario = {
       ...baseScenario,
-      frameBudget: { maxHangs: null, minFrames: MINIMUM_FRAMES, p95Ms: BUDGET_P95_MS },
+      frameBudget: { maxHangs: null, maxJournalledFrames: null, minFrames: MINIMUM_FRAMES, p95Ms: BUDGET_P95_MS },
     };
 
     expect(gradeArtifacts(inputsFor(scenario)).failures).toEqual([]);
@@ -145,7 +146,7 @@ describe("gradeArtifacts frame timing", () => {
   it("fails a run whose frame log never appeared", () => {
     const scenario = {
       ...baseScenario,
-      frameBudget: { maxHangs: null, minFrames: MINIMUM_FRAMES, p95Ms: BUDGET_P95_MS },
+      frameBudget: { maxHangs: null, maxJournalledFrames: null, minFrames: MINIMUM_FRAMES, p95Ms: BUDGET_P95_MS },
     };
 
     expect(gradeArtifacts(inputsFor(scenario)).failures).toEqual([
@@ -287,6 +288,7 @@ describe("gradeAutomationChannel", () => {
         accessibilityTreeSnapshot: null,
         listErrorsMustBeEmpty: true,
         markTestPassed: false,
+        rendererRung: null,
         visualTreeSnapshot: null,
       },
     };

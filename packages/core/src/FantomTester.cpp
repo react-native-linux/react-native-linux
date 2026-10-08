@@ -24,8 +24,7 @@ FantomTester::FantomTester(facebook::react::Size surfaceSize)
 }
 
 FantomTester::~FantomTester() noexcept {
-    fabricHost_->stopSurface();
-    reactHost_.drainJavaScriptThread();
+    stopSurface();
     fabricHost_.reset();
 }
 
@@ -42,5 +41,10 @@ void FantomTester::runTask(const std::string& script) {
 std::string FantomTester::mountTreeText() const { return renderMountTree(fabricHost_->visualTreeNodes()); }
 
 bool FantomTester::hasReportedFatalError() const { return reactHost_.hasReportedFatalError(); }
+
+void FantomTester::stopSurface() {
+    fabricHost_->stopSurface();
+    reactHost_.drainJavaScriptThread();
+}
 
 } // namespace react_native_linux

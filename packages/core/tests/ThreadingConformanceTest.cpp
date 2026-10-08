@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <functional>
 #include <future>
 #include <gtest/gtest.h>
 #include <memory>
@@ -142,6 +143,103 @@ TEST_F(TimerSeamTest, TimersCreatedFromTwoThreadsAllLandAndTheRegistrySettles) {
     registry.deleteTimer(2);
 
     EXPECT_TRUE(registry.waitUntilIdle(std::chrono::milliseconds(100)));
+}
+
+/**
+ * Issue #210, Fantom's timer mock: while it is enabled, a timer waits on a virtual clock and fires only when the
+ * clock is advanced. Upstream's `Timers-itest.js` grades the firing order through JavaScript in the Fantom run;
+ * these grade what JavaScript cannot see. A fire is counted at the `TimerManager`'s runtime executor, which is where
+ * `callTimer` hands the callback on, so no runtime is needed to observe one.
+ */
+class TimerMockTest : public ::testing::Test {
+protected:
+    TimerMockTest() {
+        timerManager->setRuntimeExecutor(
+            [this](std::function<void(facebook::jsi::Runtime&)>&& /*callback*/) { ++firedCount; });
+        registry.setTimerManager(timerManager);
+        registry.setMockEnabled(true);
+    }
+
+    std::shared_ptr<facebook::react::TimerManager> timerManager =
+        std::make_shared<facebook::react::TimerManager>(std::make_unique<RecordingRegistry>());
+    HostTimerRegistry registry;
+    int firedCount{0};
+};
+
+TEST_F(TimerMockTest, ATimerFiresOnceWhenTheClockReachesItAndNotBefore) {
+    registry.createTimer(1, 100.0);
+    registry.advanceTimersByTime(99.0);
+
+    EXPECT_EQ(firedCount, 0);
+    EXPECT_EQ(registry.pendingMockTimerCount(), 1U);
+
+    registry.advanceTimersByTime(1.0);
+    registry.advanceTimersByTime(1000.0);
+
+    EXPECT_EQ(firedCount, 1);
+    EXPECT_EQ(registry.pendingMockTimerCount(), 0U);
+}
+
+TEST_F(TimerMockTest, ARecurringTimerFiresOncePerElapsedIntervalUntilDeleted) {
+    registry.createRecurringTimer(1, 50.0);
+    registry.advanceTimersByTime(120.0);
+
+    EXPECT_EQ(firedCount, 2);
+    EXPECT_EQ(registry.pendingMockTimerCount(), 1U);
+
+    registry.deleteTimer(1);
+    registry.advanceTimersByTime(100.0);
+
+    EXPECT_EQ(firedCount, 2);
+    EXPECT_EQ(registry.pendingMockTimerCount(), 0U);
+}
+
+TEST_F(TimerMockTest, RunAllTimersFiresEveryPendingTimerWhateverItsDelay) {
+    registry.createTimer(1, 100.0);
+    registry.createTimer(2, 60000.0);
+    registry.runAllTimers();
+
+    EXPECT_EQ(firedCount, 2);
+    EXPECT_EQ(registry.pendingMockTimerCount(), 0U);
+}
+
+/** Upstream's bound: a zero-interval `setInterval` is due again the instant it fires, and must not spin forever. */
+TEST_F(TimerMockTest, AZeroIntervalRecurringTimerStopsAtTheFireBoundInsteadOfSpinning) {
+    registry.createRecurringTimer(1, 0.0);
+    registry.advanceTimersByTime(0.0);
+
+    EXPECT_GT(firedCount, 0);
+    EXPECT_EQ(registry.pendingMockTimerCount(), 1U);
+}
+
+/**
+ * A mock left installed must not hold a run open: the frame clock and the headless runners wait on
+ * `hasPendingTimers` and `waitUntilIdle`, and a virtual timer only fires if it is advanced. Disabling the mock drops
+ * what it holds, because nothing could fire those timers any more.
+ */
+TEST_F(TimerMockTest, VirtualTimersNeverHoldTheRegistryBusyAndDisablingTheMockDropsThem) {
+    registry.createTimer(1, 100.0);
+
+    EXPECT_FALSE(registry.hasPendingTimers());
+    EXPECT_TRUE(registry.waitUntilIdle(std::chrono::milliseconds(0)));
+
+    registry.setMockEnabled(false);
+    registry.advanceTimersByTime(1000.0);
+
+    EXPECT_EQ(firedCount, 0);
+    EXPECT_EQ(registry.pendingMockTimerCount(), 0U);
+}
+
+TEST_F(TimerMockTest, WithTheMockOffATimerGoesToTheDispatchThreadAsBefore) {
+    registry.setMockEnabled(false);
+    registry.createTimer(1, 60000.0);
+
+    EXPECT_TRUE(registry.hasPendingTimers());
+    EXPECT_EQ(registry.pendingMockTimerCount(), 0U);
+
+    registry.deleteTimer(1);
+
+    EXPECT_FALSE(registry.hasPendingTimers());
 }
 
 /**

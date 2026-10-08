@@ -13,7 +13,7 @@ import type { FrameBudget } from "./scenario.ts";
 const FRAME_LOG_PATH = "build/e2e/animated-frames/frames.jsonl";
 const BOTH_FAILURES = 2;
 
-const budget: FrameBudget = { maxHangs: null, minFrames: 60, p95Ms: 17.5 };
+const budget: FrameBudget = { maxHangs: null, maxJournalledFrames: null, minFrames: 60, p95Ms: 17.5 };
 
 const summaryLine = (fields: string): string => `{"summary":true,${fields}}`;
 const journalSummaryLine = (fields: string): string => `{"journalSummary":true,${fields}}`;

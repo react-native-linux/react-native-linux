@@ -16,8 +16,10 @@ document only records what actually landed and why, not the survey.
   TypeScript; only the `LinuxPlatform` variant is kept (the iOS/Android/Windows/macOS/Web variant shapes are not
   reproduced, since nothing in this repository consumes them and an unused export would fail `pnpm deadcode`).
 - `packages/core/src-linux/Libraries/Utilities/NativePlatformConstantsLinux.ts` — the TurboModule-shaped spec
-  (`PlatformConstantsLinux`, `NativePlatformConstantsLinuxSpec`) that a future native `PlatformConstants` module
-  (issue #23) will satisfy. No `TurboModuleRegistry` lookup is wired yet — see "Deferred: native constants" below.
+  (`PlatformConstantsLinux`, `NativePlatformConstantsLinuxSpec`) that the native `PlatformConstants` module
+  satisfies (#23). The host answers the React Native version it was compiled from and the kernel release, and
+  `readNativePlatformConstantsLinux` reaches it through `nativeModuleProxy` directly, so no import of
+  `TurboModuleRegistry` crosses the self-reference guard.
 - `packages/core/src-linux/Libraries/Utilities/Platform.linux.ts` — a derived override of upstream's
   `Platform.android.js`, adapted to the spec above. `Platform.OS` is the literal `'linux'`; `isTV` and `isVision`
   are always `false`; `constants`/`Version`/`isTesting`/`isDisableAnimations` read from
@@ -346,7 +348,8 @@ derives `NativePlatformConstantsWindows.js` from).
 `validateManifest` against the *vendored* React Native tag (so a bump PR reports every override whose upstream file
 moved), requires every entry to name its issue, holds the count to the override budget (#86), and fails when
 `docs/override-report.md` is stale; `pnpm override:report` regenerates that report, which lists each override's
-size against upstream and its age in React Native minors.
+size against upstream and its age in React Native minors. The report pins Git's `myers` diff algorithm so local
+Git preferences cannot change the line counts checked by CI.
 
 `validate` checks that every file matching `includePatterns` is listed, and that `derived`/`patch` entries'
 `baseHash` still matches what `add`/`upgrade` would compute. It needs network access to GitHub to fetch base
@@ -366,10 +369,6 @@ merge upstream changes into the three `derived` files and bump `baseVersion`.
 
 ## Deferred
 
-- **Native `PlatformConstants` module (issue #23).** `nativePlatformConstantsLinux` in `Platform.linux.ts` is a
-  hardcoded `null`; `resolveLinuxPlatformConstants` always takes the static-fallback branch today. Wiring the
-  real lookup requires both the native module landing and a decision on the self-reference guard above (since a
-  real lookup needs `TurboModuleRegistry`, which lives under `react-native/Libraries/TurboModule/...`).
 - **Metro registration end-to-end (issue #22).** There is no `metro.config.js` anywhere in this repository yet —
   no app package exists to hold one. `resolveLinuxOverlay`, `linuxOverlayIndex`, `resolvePlatformCandidates`,
   `resolveAgainstFilesystem`, `shouldUseJavaScriptFallback`, `resolveOriginAwareCandidates`,
@@ -385,4 +384,3 @@ merge upstream changes into the three `derived` files and bump `baseVersion`.
 - **The full-package vendoring step.** RNW's `generate.js`-style copy of the rest of upstream `Libraries/**` into
   `src-linux` before publish is not built. `@react-native-linux/core` is not yet a complete drop-in `react-native`
   replacement, and is not claimed to be one; see "What this is not" above.
-

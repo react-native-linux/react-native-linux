@@ -61,10 +61,6 @@ constexpr float kQuarterTurnRadians = 0.78539816F;
 
 namespace yoga = facebook::yoga;
 
-constexpr uint32_t kHalfBlueArgb = 0x803366CCU;
-constexpr uint32_t kHalfRedArgb = 0x80CC3333U;
-constexpr uint32_t kQuarterRedArgb = 0x40CC3333U;
-
 SharedColor invisibleBlue() { return facebook::react::colorFromRGBA(51, 102, 204, 0); }
 
 /**
@@ -482,7 +478,7 @@ TEST(RetainedSceneTest, ANodeWithoutATransformCarriesTheIdentityMatrixAndNoClips
     EXPECT_TRUE(snapshot[0].clips.empty());
 }
 
-TEST(RetainedSceneTest, OpacityMultipliesDownTheTree) {
+TEST(RetainedSceneTest, ATranslucentParentAndATranslucentLeafEachCompositeAsALayer) {
     RetainedScene scene;
     const std::shared_ptr<ViewProps> parentProps = propsWithBackground(blue());
     const std::shared_ptr<ViewProps> childProps = propsWithBackground(red());
@@ -497,8 +493,57 @@ TEST(RetainedSceneTest, OpacityMultipliesDownTheTree) {
     const SceneSnapshot snapshot = scene.snapshot();
 
     ASSERT_EQ(snapshot.size(), 2U);
-    EXPECT_EQ(snapshot[0].backgroundColorArgb, kHalfBlueArgb);
-    EXPECT_EQ(snapshot[1].backgroundColorArgb, kQuarterRedArgb);
+    EXPECT_EQ(snapshot[0].backgroundColorArgb, kBlueArgb);
+    EXPECT_EQ(snapshot[0].opensLayers, std::vector<float>{0.5F});
+    EXPECT_EQ(snapshot[0].closesLayers, 0U);
+    EXPECT_EQ(snapshot[1].backgroundColorArgb, kRedArgb);
+    EXPECT_EQ(snapshot[1].opensLayers, std::vector<float>{0.5F});
+    EXPECT_EQ(snapshot[1].closesLayers, 2U);
+}
+
+TEST(RetainedSceneTest, NestedTranslucentSubtreesOpenOutermostFirstAndCloseTogether) {
+    RetainedScene scene;
+    const std::shared_ptr<ViewProps> outer = std::make_shared<ViewProps>();
+    const std::shared_ptr<ViewProps> inner = std::make_shared<ViewProps>();
+
+    outer->opacity = 0.5;
+    inner->opacity = 0.25;
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, makeStyledView(2, makeRect(0, 0, 200, 200), outer));
+    addChild(scene, 2, makeStyledView(3, makeRect(0, 0, 100, 100), inner));
+    addChild(scene, 3, makeStyledView(4, makeRect(0, 0, 50, 50), propsWithBackground(red())));
+
+    const SceneSnapshot snapshot = scene.snapshot();
+
+    ASSERT_EQ(snapshot.size(), 1U);
+    EXPECT_EQ(snapshot[0].backgroundColorArgb, kRedArgb);
+    EXPECT_EQ(snapshot[0].opensLayers, (std::vector<float>{0.5F, 0.25F}));
+    EXPECT_EQ(snapshot[0].closesLayers, 2U);
+}
+
+TEST(RetainedSceneTest, NoLayerOpensForASubtreeThatPaintsNothingOrForAnInvisibleOrOpaqueParent) {
+    RetainedScene scene;
+    const std::shared_ptr<ViewProps> translucent = std::make_shared<ViewProps>();
+    const std::shared_ptr<ViewProps> invisible = std::make_shared<ViewProps>();
+
+    translucent->opacity = 0.5;
+    invisible->opacity = 0.0;
+
+    scene.createSurfaceRoot(kSurfaceTag, Size{.width = 800, .height = 600});
+    addChild(scene, kSurfaceTag, makeStyledView(2, makeRect(0, 0, 100, 100), translucent));
+    addChild(scene, 2, makeStyledView(3, makeRect(0, 0, 50, 50), std::make_shared<ViewProps>()));
+    addChild(scene, kSurfaceTag, makeStyledView(4, makeRect(0, 0, 100, 100), invisible));
+    addChild(scene, 4, makeStyledView(5, makeRect(0, 0, 50, 50), propsWithBackground(red())));
+    addChild(scene, kSurfaceTag, makeStyledView(6, makeRect(0, 0, 100, 100), propsWithBackground(blue())));
+    addChild(scene, 6, makeStyledView(7, makeRect(0, 0, 50, 50), propsWithBackground(red())));
+
+    const SceneSnapshot snapshot = scene.snapshot();
+
+    ASSERT_EQ(snapshot.size(), 2U);
+    EXPECT_EQ(snapshot[0].tag, 6);
+    EXPECT_TRUE(snapshot[0].opensLayers.empty());
+    EXPECT_EQ(snapshot[1].closesLayers, 0U);
 }
 
 TEST(RetainedSceneTest, AZeroOpacitySubtreePaintsNothing) {
@@ -566,7 +611,7 @@ TEST(RetainedSceneTest, BorderWidthsAndColorsAreReadPerSide) {
     EXPECT_EQ(snapshot[0].borderColorsArgb.bottom, 0U);
 }
 
-TEST(RetainedSceneTest, BorderOpacityFollowsTheInheritedOpacity) {
+TEST(RetainedSceneTest, ATranslucentNodePaintsItsBorderInsideItsOpacityLayer) {
     const std::shared_ptr<ViewProps> viewProps = std::make_shared<ViewProps>();
 
     viewProps->opacity = 0.5;
@@ -577,7 +622,8 @@ TEST(RetainedSceneTest, BorderOpacityFollowsTheInheritedOpacity) {
 
     ASSERT_EQ(snapshot.size(), 1U);
     EXPECT_EQ(snapshot[0].backgroundColorArgb, 0U);
-    EXPECT_EQ(snapshot[0].borderColorsArgb.left, kHalfBlueArgb);
+    EXPECT_EQ(snapshot[0].borderColorsArgb.left, kBlueArgb);
+    EXPECT_EQ(snapshot[0].opensLayers, std::vector<float>{0.5F});
 }
 
 TEST(RetainedSceneTest, EachBorderSideAloneIsEnoughToPaintANode) {
@@ -615,7 +661,8 @@ TEST(RetainedSceneTest, ABackgroundImageGradientTravelsToThePrimitiveWithTheInhe
     ASSERT_EQ(snapshot.size(), 1U);
     ASSERT_EQ(snapshot[0].backgroundImage.size(), 1U);
     EXPECT_TRUE(snapshot[0].backgroundImage.front() == facebook::react::BackgroundImage{blueToRedGradient()});
-    EXPECT_FLOAT_EQ(snapshot[0].backgroundImageOpacity, 0.5F);
+    EXPECT_FLOAT_EQ(snapshot[0].backgroundImageOpacity, 1.0F);
+    EXPECT_EQ(snapshot[0].opensLayers, std::vector<float>{0.5F});
     EXPECT_EQ(snapshot[0].backgroundColorArgb, 0U);
 }
 
@@ -949,7 +996,7 @@ TEST(RetainedSceneTextTest, ParagraphStateBecomesTheTextOnTheNode) {
 
     ASSERT_EQ(snapshot.size(), 1U);
     ASSERT_TRUE(snapshot[0].text.has_value());
-    EXPECT_EQ(snapshot[0].text.value().attributedString.getString(), "Hello Linux");
+    EXPECT_EQ(snapshot[0].text.value().attributedString->getString(), "Hello Linux");
     EXPECT_EQ(snapshot[0].text.value().paragraphAttributes.maximumNumberOfLines, 2);
     expectRect(snapshot[0].text.value().frame, makeRect(40, 60, 300, 48));
     expectPrimitive(snapshot[0], makeRect(40, 60, 300, 48), 0);
@@ -1005,7 +1052,7 @@ TEST(RetainedSceneTextTest, UpdateReplacesTheAttributedStringInPlace) {
 
     ASSERT_EQ(snapshot.size(), 1U);
     ASSERT_TRUE(snapshot[0].text.has_value());
-    EXPECT_EQ(snapshot[0].text.value().attributedString.getString(), "after");
+    EXPECT_EQ(snapshot[0].text.value().attributedString->getString(), "after");
 }
 
 /**
@@ -1025,7 +1072,7 @@ RetainedScene sceneWithTranslucentParent() {
     return scene;
 }
 
-TEST(RetainedSceneTextTest, OpacityMultipliesIntoTheFragmentColors) {
+TEST(RetainedSceneTextTest, ATranslucentAncestorFadesTextAsALayerRatherThanThroughItsFragmentColors) {
     RetainedScene scene = sceneWithTranslucentParent();
 
     addChild(scene, 2, makeParagraph(3, makeRect(0, 0, 400, 40), "faded", 0));
@@ -1036,9 +1083,10 @@ TEST(RetainedSceneTextTest, OpacityMultipliesIntoTheFragmentColors) {
     ASSERT_TRUE(snapshot[0].text.has_value());
 
     const facebook::react::AttributedString::Fragment& fragment =
-        snapshot[0].text.value().attributedString.getFragments().front();
+        snapshot[0].text.value().attributedString->getFragments().front();
 
-    EXPECT_EQ(facebook::react::alphaFromColor(fragment.textAttributes.foregroundColor), 128U);
+    EXPECT_EQ(snapshot[0].opensLayers, std::vector<float>{0.5F});
+    EXPECT_EQ(facebook::react::alphaFromColor(fragment.textAttributes.foregroundColor), 255U);
     EXPECT_EQ(facebook::react::redFromColor(fragment.textAttributes.foregroundColor), 0U);
     EXPECT_FALSE(facebook::react::isColorMeaningful(fragment.textAttributes.backgroundColor));
 }
@@ -1133,7 +1181,7 @@ TEST(RetainedSceneImageTest, AnUnrequestedSourcePaintsNothing) {
     EXPECT_TRUE(sceneWithTile(makeTile(2, makeRect(0, 0, 64, 48), "")).snapshot().empty());
 }
 
-TEST(RetainedSceneImageTest, OpacityMultipliesIntoTheTintAlphaAndTheImageAlpha) {
+TEST(RetainedSceneImageTest, ATranslucentAncestorFadesAnImageAsALayerRatherThanThroughItsTint) {
     RetainedScene scene = sceneWithTranslucentParent();
 
     addChild(scene, 2,
@@ -1143,8 +1191,9 @@ TEST(RetainedSceneImageTest, OpacityMultipliesIntoTheTintAlphaAndTheImageAlpha) 
 
     ASSERT_EQ(snapshot.size(), 1U);
     ASSERT_TRUE(snapshot[0].image.has_value());
-    EXPECT_EQ(snapshot[0].image.value().tintColorArgb, kHalfRedArgb);
-    EXPECT_FLOAT_EQ(snapshot[0].image.value().opacity, 0.5F);
+    EXPECT_EQ(snapshot[0].opensLayers, std::vector<float>{0.5F});
+    EXPECT_EQ(snapshot[0].image.value().tintColorArgb, kRedArgb);
+    EXPECT_FLOAT_EQ(snapshot[0].image.value().opacity, 1.0F);
 }
 
 TEST(RetainedSceneImageTest, ADecodedSourceDamagesEveryNodeDrawingIt) {
@@ -1798,7 +1847,7 @@ TEST(RetainedSceneTextInputTest, TheStateBecomesTheTextAndTheNodeBecomesAnEditor
 
     ASSERT_EQ(snapshot.size(), 1U);
     ASSERT_TRUE(snapshot[0].text.has_value());
-    EXPECT_EQ(snapshot[0].text.value().attributedString.getString(), "hi");
+    EXPECT_EQ(snapshot[0].text.value().attributedString->getString(), "hi");
     ASSERT_TRUE(snapshot[0].editor.has_value());
     EXPECT_FALSE(snapshot[0].editor.value().isPlaceholder);
     EXPECT_FALSE(snapshot[0].editor.value().isMultiline);
@@ -1820,7 +1869,7 @@ TEST(RetainedSceneTextInputTest, AnEmptyValueDrawsThePlaceholderInItsOwnColour) 
 
     ASSERT_EQ(snapshot.size(), 1U);
     ASSERT_TRUE(snapshot[0].text.has_value());
-    EXPECT_EQ(snapshot[0].text.value().attributedString.getString(), "Type here");
+    EXPECT_EQ(snapshot[0].text.value().attributedString->getString(), "Type here");
     EXPECT_TRUE(snapshot[0].editor.value().isPlaceholder);
 }
 
@@ -1828,7 +1877,7 @@ TEST(RetainedSceneTextInputTest, AnEmptyFieldWithNoPlaceholderIsStillPainted) {
     const SceneSnapshot snapshot = snapshotOfFieldWith({}, textInputProps());
 
     ASSERT_EQ(snapshot.size(), 1U);
-    EXPECT_EQ(snapshot[0].text.value().attributedString.getString(), "");
+    EXPECT_EQ(snapshot[0].text.value().attributedString->getString(), "");
     EXPECT_TRUE(snapshot[0].editor.value().isPlaceholder);
 }
 
@@ -1855,7 +1904,7 @@ TEST(RetainedSceneTextInputTest, ThePlaceholderIsPaintedWithTheFieldsOwnFontWeig
     ASSERT_EQ(snapshot.size(), 1U);
     ASSERT_TRUE(snapshot[0].text.has_value());
 
-    const auto& fragments = snapshot[0].text.value().attributedString.getFragments();
+    const auto& fragments = snapshot[0].text.value().attributedString->getFragments();
 
     ASSERT_EQ(fragments.size(), 1U);
 
@@ -1911,7 +1960,7 @@ TEST(RetainedSceneTextInputTest, AnUntouchedFieldsCaretIndexesThePlaceholdersFir
     const SceneSnapshot snapshot = snapshotOfFieldWith({}, withPlaceholder);
 
     ASSERT_EQ(snapshot.size(), 1U);
-    EXPECT_EQ(snapshot[0].text.value().attributedString.getString(), "Type here");
+    EXPECT_EQ(snapshot[0].text.value().attributedString->getString(), "Type here");
     EXPECT_EQ(snapshot[0].editor.value().state.caretUtf16, 0U);
 }
 
@@ -1936,7 +1985,7 @@ TEST(RetainedSceneTextInputTest, ThePlaceholderDisappearsOnTheFirstCharacterAndR
 
     ASSERT_EQ(afterFirstCharacter.size(), 1U);
     EXPECT_FALSE(afterFirstCharacter[0].editor.value().isPlaceholder);
-    EXPECT_EQ(afterFirstCharacter[0].text.value().attributedString.getString(), "h");
+    EXPECT_EQ(afterFirstCharacter[0].text.value().attributedString->getString(), "h");
 
     scene.updateNode(makeTextInput(2, textInputFrame(), {}, withPlaceholder));
 
@@ -1944,7 +1993,7 @@ TEST(RetainedSceneTextInputTest, ThePlaceholderDisappearsOnTheFirstCharacterAndR
 
     ASSERT_EQ(afterLastDeletion.size(), 1U);
     EXPECT_TRUE(afterLastDeletion[0].editor.value().isPlaceholder);
-    EXPECT_EQ(afterLastDeletion[0].text.value().attributedString.getString(), "Type here");
+    EXPECT_EQ(afterLastDeletion[0].text.value().attributedString->getString(), "Type here");
 }
 
 TEST(RetainedSceneTextInputTest, CursorAndSelectionColoursOverrideTheAccent) {

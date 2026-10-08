@@ -139,7 +139,7 @@ TEST(ShadowResolutionTest, AQuartetWithNoOpacityCastsNothingAndSoDoesOneWithNoCo
     EXPECT_TRUE(snapshotOf(opaque)[0].shadows.empty());
 }
 
-TEST(ShadowResolutionTest, TheInheritedOpacityFoldsIntoTheShadowColourLikeEveryOtherColour) {
+TEST(ShadowResolutionTest, ATranslucentNodePaintsItsShadowInsideItsOpacityLayer) {
     const std::shared_ptr<ViewProps> viewProps = propsWithBackground(blue());
 
     viewProps->opacity = 0.5;
@@ -149,7 +149,8 @@ TEST(ShadowResolutionTest, TheInheritedOpacityFoldsIntoTheShadowColourLikeEveryO
     const SceneSnapshot snapshot = snapshotOf(viewProps);
 
     ASSERT_EQ(snapshot.size(), 1U);
-    EXPECT_EQ(snapshot[0].shadows[0].colorArgb, 0x80CC3333U);
+    EXPECT_EQ(snapshot[0].shadows[0].colorArgb, 0xFFCC3333U);
+    EXPECT_EQ(snapshot[0].opensLayers, std::vector<float>{0.5F});
 }
 
 Rect boundsOf(const SceneDamage& damage) {

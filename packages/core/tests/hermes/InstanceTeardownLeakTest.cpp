@@ -2,13 +2,15 @@
 #include "FantomTester.h"
 #include "ReactHost.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstddef>
 #include <cxxreact/JSBigString.h>
 #include <filesystem>
+#include <fstream>
 #include <gtest/gtest.h>
-#include <iterator>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -105,14 +107,55 @@ constexpr char kExpectedMountTree[] =
     "  </rn-view>\n"
     "</rn-rootview>\n";
 
+constexpr char kUnloadedMountTree[] = "<rn-rootview layoutMetrics-frame=\"{x:0,y:0,width:400,height:300}\" />\n";
+
+// PF_EXITING from include/linux/sched.h. `do_exit` sets it before `exit_mm` clears the thread's `clear_child_tid`
+// futex, which is the wake `pthread_join` returns on, so a thread its owner has joined stays listed under
+// `/proc/self/task` until the kernel reaps it a moment later:
+// https://github.com/torvalds/linux/blob/v6.12/kernel/exit.c (`do_exit`) and
+// https://github.com/torvalds/linux/blob/v6.12/kernel/fork.c (`mm_release`).
+constexpr unsigned long kExitingTaskFlag = 0x4;
+
+// proc_pid_stat(5): state, ppid, pgrp, session, tty_nr and tpgid come between the command name and the flags.
+constexpr int kStatFieldsBeforeFlags = 6;
+
+/** Whether `task` has begun exiting; one that is already gone by the time it is read has finished. */
+bool hasBegunExiting(const std::filesystem::path& task) {
+    std::ifstream stat(task / "stat");
+    std::string line;
+
+    if (!std::getline(stat, line)) {
+        return true;
+    }
+
+    // The command name is parenthesised and may itself hold spaces or parentheses, so fields count from its last ')'.
+    std::istringstream fields(line.substr(line.rfind(')') + 1));
+    std::string skippedField;
+    unsigned long flags = 0;
+
+    for (int field = 0; field < kStatFieldsBeforeFlags; ++field) {
+        fields >> skippedField;
+    }
+
+    fields >> flags;
+
+    return (flags & kExitingTaskFlag) != 0;
+}
+
 /**
  * Every thread alive in this process, which is what a leaked JavaScript thread, timer dispatch thread or decode
  * worker shows up as. Linux publishes one directory per thread under `/proc/self/task`, so this needs no
  * bookkeeping of ours and therefore cannot agree with a buggy teardown about what was started.
+ *
+ * A thread that has begun exiting is not counted. The JavaScript thread `ReactHost` quits and Hermes' `hades`
+ * collector are both joined during teardown, and on a loaded machine either can still be listed, flagged as
+ * exiting, when this reads — on either side of the steady-state comparison below. A leaked thread never sets the
+ * flag, so it is still counted.
  */
 size_t liveThreadCount() {
     return static_cast<size_t>(
-        std::distance(std::filesystem::directory_iterator{"/proc/self/task"}, std::filesystem::directory_iterator{}));
+        std::count_if(std::filesystem::directory_iterator{"/proc/self/task"}, std::filesystem::directory_iterator{},
+                      [](const std::filesystem::directory_entry& task) { return !hasBegunExiting(task.path()); }));
 }
 
 /**
@@ -180,6 +223,15 @@ TEST(InstanceTeardownLeakTest, RepeatedFabricInstancesLeaveNoThreadOrFaultBehind
             // having been emptied rather than the fault sites having gone quiet.
             EXPECT_GE(recordedErrorCount(), kFaultsPerInstance)
                 << "instance " << instance << " did not record the fault the task provokes";
+
+            // The live-scene-node probe: the stop's empty commit has mounted, so the retained scene holds nothing
+            // of the unloaded tree while the Fabric host is still alive to be asked. That commit mounts
+            // synchronously on this thread, so this does not grade the JavaScript-thread drain that follows it;
+            // the sanitizer jobs do.
+            tester.stopSurface();
+
+            EXPECT_EQ(tester.mountTreeText(), kUnloadedMountTree)
+                << "instance " << instance << " left part of its tree in the scene after its surface stopped";
         }
 
         probes.push_back(probeAfterTeardown());

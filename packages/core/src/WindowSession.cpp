@@ -2,6 +2,8 @@
 
 #include "AsyncStorage.h"
 #include "DimensionsSource.h"
+#include "FrameProfiling.h"
+#include "I18n.h"
 
 #include <chrono>
 #include <memory>
@@ -35,22 +37,26 @@ uint64_t toNanosecondsSinceEpoch(std::chrono::steady_clock::time_point timePoint
 
 } // namespace
 
-WindowSession::WindowSession(const std::string& bundlePath, WindowSize size,
+WindowSession::WindowSession(const std::string& bundlePath, WindowSize size, double scale,
                              const std::string& asyncStorageDatabasePath,
                              std::optional<std::string> initialActivationUrl)
     : fabricHost_(std::make_unique<FabricHost>(reactHost_.reactInstance(), toSurfaceSize(size))),
       frameJournal_(kNominalVsyncNanoseconds, kHangThresholdVsyncCount * kNominalVsyncNanoseconds) {
     // Before the script, so the first `Dimensions.get` a bundle makes at module scope already answers with the
-    // window's requested size rather than with the pre-configure default.
-    configureDimensions(size);
+    // window's requested size and scale rather than with the pre-configure default.
+    resize(size, scale);
     seedColorScheme();
     reactHost_.keyValueStore().setDatabasePath(asyncStorageDatabasePath);
+    // After the store has its file and before the script, so the first layout already has the persisted direction.
+    reactHost_.i18n().restore();
+    applyLayoutDirectionChange();
 
     if (initialActivationUrl.has_value()) {
         deliverActivationUrl(initialActivationUrl.value());
     }
 
     reactHost_.loadBundle(bundlePath);
+    reactHost_.startHotModuleReplacement(bundlePath);
 }
 
 WindowSession::~WindowSession() noexcept {
@@ -58,9 +64,9 @@ WindowSession::~WindowSession() noexcept {
     reactHost_.drainJavaScriptThread();
 }
 
-void WindowSession::resize(WindowSize size) {
-    fabricHost_->setSurfaceSize(toSurfaceSize(size));
-    configureDimensions(size);
+void WindowSession::resize(WindowSize size, double scale) {
+    fabricHost_->setSurfaceSize(toSurfaceSize(size), static_cast<facebook::react::Float>(scale));
+    reactHost_.dimensions().configure(static_cast<double>(size.width), static_cast<double>(size.height), scale);
 }
 
 void WindowSession::setTextInputFocusSink(TextInputFocusSink* textInputFocusSink) {
@@ -68,6 +74,7 @@ void WindowSession::setTextInputFocusSink(TextInputFocusSink* textInputFocusSink
 }
 
 void WindowSession::deliverInput(std::vector<InputEvent> events) {
+    ZoneScopedN("input and event beat");
     // One sample of the client clock for the whole batch: the mapper uses it to establish the compositor offset on
     // the first timed event and every later event is shifted by that same offset (#455).
     const facebook::react::HighResTimeStamp receivedAt = facebook::react::HighResTimeStamp::now();
@@ -88,6 +95,7 @@ void WindowSession::deliverInput(std::vector<InputEvent> events) {
     // Once per frame, whatever the compositor sent: this is what turns any number of configures since the last
     // frame into at most one `didUpdateDimensions`.
     reactHost_.publishPendingDimensions();
+    applyLayoutDirectionChange();
 
 #ifdef RNL_ENABLE_APPEARANCE_PORTAL
     appearancePortal_.processPendingSignals(reactHost_.appearance());
@@ -104,6 +112,7 @@ void WindowSession::deliverInput(std::vector<InputEvent> events) {
 }
 
 void WindowSession::tickAnimations(std::chrono::steady_clock::time_point now) {
+    ZoneScopedN("animation tick");
     fabricHost_->tickAnimations(now);
 
     // The JavaScript half of the same frame: the native animation backend gets `now` directly, and the frame's
@@ -168,11 +177,6 @@ void WindowSession::reportJournalDiscontinuity() { frameJournal_.recordDiscontin
 
 FrameJournal::Summary WindowSession::frameJournalSummary() const { return frameJournal_.summarise(); }
 
-void WindowSession::configureDimensions(WindowSize size) {
-    reactHost_.dimensions().configure(static_cast<double>(size.width), static_cast<double>(size.height),
-                                      DimensionsSource::kDefaultScale);
-}
-
 bool WindowSession::hasPendingWork() const { return fabricHost_->hasPendingWork() || reactHost_.hasPendingTimers(); }
 
 double WindowSession::takeFrameMilliseconds() {
@@ -184,9 +188,23 @@ double WindowSession::takeFrameMilliseconds() {
     return elapsed;
 }
 
-SceneFrame WindowSession::takeFrame() { return fabricHost_->takeFrame(); }
+SceneFrame WindowSession::takeFrame() {
+    ZoneScopedN("take frame");
+
+    return fabricHost_->takeFrame();
+}
+
+void WindowSession::applyLayoutDirectionChange() {
+    const std::optional<LayoutDirectionRequest> change = reactHost_.i18n().takeLayoutDirectionChange();
+
+    if (change.has_value()) {
+        fabricHost_->setLayoutDirection(change.value());
+    }
+}
 
 bool WindowSession::hasReportedFatalError() const { return reactHost_.hasReportedFatalError(); }
+
+bool WindowSession::isReloadRequested() const { return reactHost_.isReloadRequested(); }
 
 SceneNodes WindowSession::visualTreeNodes() const { return fabricHost_->visualTreeNodes(); }
 

@@ -2,6 +2,7 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "workspaces": {
     ".": {
+      "entry": ["scripts/codegen-cxx-module.ts"],
       "project": ["*.ts", "scripts/**/*.ts"],
       "ignoreBinaries": ["cmake", "ctest", "readelf"],
       "ignoreDependencies": ["react-native-worklets"]
@@ -21,7 +22,22 @@
     "packages/test-harness": {
       "entry": ["index.ts", "scripts/*.ts"],
       "project": ["src/**/*.tsx", "scripts/**/*.ts"],
-      "ignoreDependencies": ["@babel/runtime", "@react-native/babel-preset"]
+      "ignoreDependencies": [
+        "@babel/runtime",
+        "@react-native-linux/gesture-handler",
+        "@react-native/babel-preset",
+        "deep-equal",
+        "jest-diff",
+        "metro-symbolicate",
+        "nullthrows",
+        "pretty-format",
+        "tinybench"
+      ]
+    },
+    "packages/gesture-handler": {
+      "project": ["src/**/*.ts"],
+      "ignore": ["upstream/**"],
+      "ignoreDependencies": ["@egjs/hammerjs", "hoist-non-react-statics", "invariant"]
     }
   }
 }

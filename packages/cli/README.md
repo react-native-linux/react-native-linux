@@ -81,3 +81,11 @@ schema this is read from, so identity is invented once rather than at every poin
     #25 packages against). This is also the direct fix for tauri#10031 (an AppImage bundler spelling `aarch64`
     where the convention is `arm64`) and tauri#12073 (a `.deb` name that is allowed to contain uppercase letters):
     each format's case and architecture spelling live in exactly one place.
+
+## Ecosystem matrix (#87)
+
+`src/ecosystem-matrix.ts` is the flagship's native dependency ledger: every dependency of Suuudokuuu that needs a
+Linux implementation, the range the flagship declares, and where it stands — `works` or `shimmed` (naming the
+test that proves it), `in progress` or `blocked` (naming the owning issue), or `declined` (naming the substitute).
+M4 is measured against it, so a row changes in the same PR as the work it records. `ecosystem-matrix.spec.ts`
+fails on a duplicate row, a `works`/`shimmed` row whose test file does not exist, or an open row with no issue.

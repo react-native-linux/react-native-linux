@@ -2,6 +2,7 @@
 
 #include "FrameTiming.h"
 #include "InputPipeline.h"
+#include "OutputScale.h"
 #include "ToplevelState.h"
 #include "WaylandDispatchDiagnostics.h"
 #include "WaylandSeat.h"
@@ -27,10 +28,15 @@ struct wl_seat;
 struct wl_shm;
 struct wl_surface;
 struct wl_surface_listener;
+struct wp_fractional_scale_manager_v1;
+struct wp_fractional_scale_v1;
+struct wp_fractional_scale_v1_listener;
 struct wp_presentation;
 struct wp_presentation_feedback;
 struct wp_presentation_feedback_listener;
 struct wp_presentation_listener;
+struct wp_viewport;
+struct wp_viewporter;
 struct xdg_surface;
 struct xdg_surface_listener;
 struct xdg_toplevel;
@@ -111,6 +117,12 @@ struct WindowIdentity {
  * inventing one is out of this issue's scope — so today they are observable only at this seam and in a caller
  * that polls it, exactly as `takePendingResize` is. See *Window host* in docs/cpp-toolchain.md.
  *
+ * Output scale (#51) follows `wp_fractional_scale_v1`, and only with `wp_viewporter` beside it, because the
+ * viewport is what maps a buffer drawn at that scale back onto the logical surface: `size` stays in logical surface
+ * units, `bufferSize` is what the renderers allocate, and the buffer scale stays 1. A `preferred_scale` change is
+ * reported through `takePendingResize` like any other change of buffer extent. Without either protocol the scale
+ * stays exactly 1. See *Scale* in docs/cpp-toolchain.md.
+ *
  * Threading contract: every member runs on the thread that constructed the window, which is the thread that owns
  * the process run loop. The Wayland connection is never touched from another thread. The Vulkan WSI dispatches the
  * same connection on its own private event queue, which is why this class uses the prepare-read/read-events
@@ -135,6 +147,10 @@ public:
      */
     wl_shm* sharedMemory() const noexcept;
     WindowSize size() const noexcept;
+    /** The compositor's preferred scale in units of 1/120, `kFractionalScaleDenominator` when none was ever sent. */
+    uint32_t preferredScale() const noexcept;
+    /** `size` in buffer pixels at `preferredScale`, rounded as fractional-scale-v1 specifies. */
+    WindowSize bufferSize() const noexcept;
     bool isClosed() const noexcept;
     bool takePendingResize() noexcept;
 
@@ -320,6 +336,7 @@ private:
     /** The one body a configure takes, whether it arrived on the wire or through `injectConfigure`. */
     void applyConfigure(int32_t width, int32_t height, ToplevelState decoded) noexcept;
     void negotiateDecorations();
+    void attachOutputScale();
     void destroyFrameCallback() noexcept;
 
     static void handleRegistryGlobal(void* data, wl_registry* registry, uint32_t name, const char* interfaceName,
@@ -337,6 +354,7 @@ private:
     static void handleToplevelWmCapabilities(void* data, xdg_toplevel* toplevel, wl_array* capabilities);
     static void handleDecorationConfigure(void* data, zxdg_toplevel_decoration_v1* decoration, uint32_t mode);
     static void handleFrameDone(void* data, wl_callback* callback, uint32_t time);
+    static void handlePreferredScale(void* data, wp_fractional_scale_v1* fractionalScale, uint32_t scale);
     // presentation-time's generated header declares a *function* named wp_presentation_feedback, which hides the
     // struct of the same name in C++, so the type needs its elaborated spelling everywhere it is named.
     static void handlePresentationClockId(void* data, wp_presentation* presentation, uint32_t clockId);
@@ -353,6 +371,7 @@ private:
     static const xdg_toplevel_listener kToplevelListener;
     static const zxdg_toplevel_decoration_v1_listener kDecorationListener;
     static const wl_callback_listener kFrameCallbackListener;
+    static const wp_fractional_scale_v1_listener kFractionalScaleListener;
     static const wp_presentation_listener kPresentationListener;
     static const wp_presentation_feedback_listener kPresentationFeedbackListener;
 
@@ -368,6 +387,10 @@ private:
     std::optional<std::string> requestedActivationToken_;
     zxdg_toplevel_decoration_v1* toplevelDecoration_{nullptr};
     wp_presentation* presentation_{nullptr};
+    wp_viewporter* viewporter_{nullptr};
+    wp_fractional_scale_manager_v1* fractionalScaleManager_{nullptr};
+    wp_viewport* viewport_{nullptr};
+    wp_fractional_scale_v1* fractionalScale_{nullptr};
     xdg_wm_base* wmBase_{nullptr};
     wl_surface* surface_{nullptr};
     xdg_surface* xdgSurface_{nullptr};
@@ -377,6 +400,7 @@ private:
     std::vector<PresentationEvent> presentationEvents_;
     std::optional<uint32_t> presentationClockId_;
     WindowSize size_;
+    uint32_t preferredScale_{kFractionalScaleDenominator};
     std::string title_;
     bool forceClientDecorations_{false};
     bool noDecorations_{false};

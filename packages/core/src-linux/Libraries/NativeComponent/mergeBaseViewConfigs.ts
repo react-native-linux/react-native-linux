@@ -11,10 +11,23 @@ interface PartialViewConfig {
  * because a prop missing from `validAttributes` is dropped by the diff before it reaches the native side. Where
  * both declare a key, Android's wins: this platform's C++ props are the `platform/cxx` ones Android shares.
  */
+/**
+ * The press and release handlers neither half carries for this platform: Android's never lists them, and iOS's
+ * wraps its event props in `ConditionallyIgnoredEventHandlers`, which drops them everywhere but iOS. Without them
+ * React never sets the `events` bits upstream's `PointerEventsProcessor` filters `topPointerDown` and `topPointerUp`
+ * by, so no React view would see a press (#168).
+ */
+const pointerButtonAttributes = {
+  onPointerDown: true,
+  onPointerDownCapture: true,
+  onPointerUp: true,
+  onPointerUpCapture: true,
+};
+
 const mergeBaseViewConfigs = (android: PartialViewConfig, ios: PartialViewConfig): PartialViewConfig => ({
   bubblingEventTypes: { ...ios.bubblingEventTypes, ...android.bubblingEventTypes },
   directEventTypes: { ...ios.directEventTypes, ...android.directEventTypes },
-  validAttributes: { ...ios.validAttributes, ...android.validAttributes },
+  validAttributes: { ...ios.validAttributes, ...android.validAttributes, ...pointerButtonAttributes },
 });
 
 export { mergeBaseViewConfigs };

@@ -31,9 +31,8 @@ struct DisplayMetrics {
  * `wl_surface.enter` this platform does not track yet, and reporting a made-up number would be worse than
  * reporting the one extent that is true. See *Dimensions and TurboModules* in docs/cpp-toolchain.md.
  *
- * `scale` is always `kDefaultScale`: neither `wp_fractional_scale_v1` nor `wl_surface.preferred_buffer_scale` is
- * bound yet, so this client is told nothing about output scaling and 1 is the only honest answer. The parameter
- * exists so the day that changes is a call-site change and not a redesign.
+ * `scale` is the compositor's `wp_fractional_scale_v1` preferred scale, and `kDefaultScale` until one arrives or
+ * where none ever can. See *Scale* in docs/cpp-toolchain.md.
  *
  * `takeChangeIfAny` is the coalescing half: any number of `configure` calls between two takes produce at most one
  * change, so a `useWindowDimensions` consumer cannot be re-rendered per compositor event (rn-macos#2083). A
