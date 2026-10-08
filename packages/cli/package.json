@@ -9,6 +9,7 @@
     "./autolinking-cmake.ts": "./src/autolinking-cmake.ts",
     "./dependency-floor.ts": "./src/dependency-floor.ts",
     "./desktop-entry.ts": "./src/desktop-entry.ts",
+    "./fantom-expectations.ts": "./src/fantom-expectations.ts",
     "./hicolor-icon-tree.ts": "./src/hicolor-icon-tree.ts",
     "./linux-autolinking-types.ts": "./src/linux-autolinking-types.ts",
     "./linux-autolinking.ts": "./src/linux-autolinking.ts",

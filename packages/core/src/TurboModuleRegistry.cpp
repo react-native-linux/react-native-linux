@@ -1,8 +1,14 @@
 #include "TurboModuleRegistry.h"
 
 #include "AsyncStorage.h"
+#include "BeastWebSocketClient.h"
+#include "Clipboard.h"
 #include "CurlHttpClient.h"
+#include "FantomRenderOutput.h"
+#include "HostTimerRegistry.h"
+#include "I18n.h"
 #include "PlatformColor.h"
+#include "WorkletsModule.h"
 
 #include <FBReactNativeSpec/FBReactNativeSpecJSI.h>
 #include <ReactCommon/CallInvoker.h>
@@ -11,20 +17,38 @@
 #include <ReactCommon/TurboModuleBinding.h>
 #include <ReactCommon/TurboModuleUtils.h>
 #include <array>
+#include <atomic>
 #include <cstring>
+#include <cxxreact/ReactNativeVersion.h>
+#include <functional>
+#include <iostream>
+#include <jsi/JSIDynamic.h>
 #include <memory>
 #include <optional>
 #include <spawn.h>
 #include <string>
+#include <sys/utsname.h>
 #include <utility>
 #include <vector>
 
 #include <react/coremodules/DeviceInfoModule.h>
+#include <react/devsupport/SourceCodeModule.h>
+#include <react/io/ImageLoaderModule.h>
 #include <react/io/NetworkingModule.h>
+#include <react/io/WebSocketModule.h>
 #include <react/logging/NativeExceptionsManager.h>
+#include <react/nativemodule/cputime/NativeCPUTime.h>
 #include <react/nativemodule/defaults/DefaultTurboModules.h>
+#include <react/nativemodule/intersectionobserver/NativeIntersectionObserver.h>
+#include <react/nativemodule/mutationobserver/NativeMutationObserver.h>
 #include <react/renderer/animated/AnimatedModule.h>
 #include <react/renderer/animated/NativeAnimatedNodesManagerProvider.h>
+#include <react/renderer/bridging/bridging.h>
+#include <react/renderer/core/EventEmitter.h>
+#include <react/renderer/core/RawEvent.h>
+#include <react/renderer/mounting/stubs/stubs.h>
+#include <react/renderer/uimanager/UIManagerBinding.h>
+#include <react/timing/primitives.h>
 
 extern char** environ;
 
@@ -196,6 +220,40 @@ public:
 
 private:
     std::shared_ptr<ActivationModel> activationModel_;
+};
+
+/**
+ * `NativeI18nManager` (#72), over `I18nModel`. `getConstants` answers the direction the choices resolve to now, but
+ * React Native's `I18nManager.js` reads it once, so `I18nManager.isRTL` keeps its startup value until the bundle
+ * reloads, as upstream's does; the surface itself flips on the next frame, through `WindowSession`.
+ */
+class LinuxI18nManagerModule final : public facebook::react::NativeI18nManagerCxxSpec<LinuxI18nManagerModule> {
+public:
+    LinuxI18nManagerModule(std::shared_ptr<facebook::react::CallInvoker> jsInvoker,
+                           std::shared_ptr<I18nModel> i18nModel)
+        : NativeI18nManagerCxxSpec(std::move(jsInvoker)), i18nModel_(std::move(i18nModel)) {}
+
+    facebook::jsi::Object getConstants(facebook::jsi::Runtime& runtime) {
+        facebook::jsi::Object constants(runtime);
+
+        constants.setProperty(runtime, "isRTL", i18nModel_->isRightToLeft());
+        constants.setProperty(runtime, "doLeftAndRightSwapInRTL", i18nModel_->doesSwapLeftAndRightInRightToLeft());
+        constants.setProperty(runtime, "localeIdentifier",
+                              facebook::jsi::String::createFromUtf8(runtime, i18nModel_->localeIdentifier()));
+
+        return constants;
+    }
+
+    void allowRTL(facebook::jsi::Runtime& /*runtime*/, bool isAllowed) { i18nModel_->allowRightToLeft(isAllowed); }
+
+    void forceRTL(facebook::jsi::Runtime& /*runtime*/, bool isForced) { i18nModel_->forceRightToLeft(isForced); }
+
+    void swapLeftAndRightInRTL(facebook::jsi::Runtime& /*runtime*/, bool isSwapped) {
+        i18nModel_->swapLeftAndRightInRightToLeft(isSwapped);
+    }
+
+private:
+    std::shared_ptr<I18nModel> i18nModel_;
 };
 
 /**
@@ -452,6 +510,365 @@ private:
 };
 
 /**
+ * `NativeFantomCxx` (#210, #423): the methods upstream Fantom's in-runtime test harness
+ * (`private/react-native-fantom/runtime/setup.js`) and its itests call. `reportTestSuiteResultsJSON` prints the
+ * suite's results on one `[fantom]` line for `scripts/fantom.ts` to read, and `validateEmptyMessageQueue` asks
+ * nothing of a host whose queues drain on their own. `flushMessageQueue` runs every task queued on the itest
+ * runtime's `StubMessageQueue`, re-entrantly from inside the call, which is what `Fantom.runTask` and the work loop
+ * stand on, and `setTimerMockEnabled`, `advanceTimers`, `runAllTimers` and `getPendingTimerCount` are Fantom's timer
+ * mock over `HostTimerRegistry`'s mock mode, `startSurface` and `stopSurface` are `Fantom.createRoot`'s surfaces on
+ * the Fabric host, `enqueueNativeEvent` and `flushEventQueue` are `Fantom.dispatchNativeEvent`, and
+ * `getRenderedOutput` is `root.getRenderedOutput()`; all ten exist only where the registry was given an itest run's
+ * `FantomRunControls`.
+ * `forceHighResTimeStamp` pins `HighResTimeStamp::now()` for the whole process, or unpins it given no number, exactly
+ * as upstream's tester does; the hook exists only in a debug build, so an optimised one throws upstream's own message
+ * instead. Every other method of the spec drives a surface, an event or a timer mock this runner does not provide yet,
+ * so it is absent and a test that calls one fails naming it.
+ */
+/**
+ * `DevSettings` for a `dev=true` bundle, whose startup requires the module (#79). `reload` and `reloadWithReason` —
+ * which HMRClient calls when an edit reaches a module that is not a Fast Refresh boundary — only raise a flag the
+ * host polls (#81): the instance cannot tear itself down from inside its own JavaScript thread. Every other member is
+ * a no-op, because this platform has no dev menu, element inspector or debugger launcher to toggle. Upstream's C++
+ * `DevSettingsModule` is not used because it links `DevServerHelper`, which needs OpenSSL and the inspector for its
+ * one call, `openDebugger`.
+ */
+class LinuxDevSettingsModule final : public facebook::react::NativeDevSettingsCxxSpec<LinuxDevSettingsModule> {
+public:
+    LinuxDevSettingsModule(std::shared_ptr<facebook::react::CallInvoker> jsInvoker,
+                           std::shared_ptr<std::atomic<bool>> reloadRequested)
+        : NativeDevSettingsCxxSpec(std::move(jsInvoker)), reloadRequested_(std::move(reloadRequested)) {}
+
+    void reload(facebook::jsi::Runtime& /*runtime*/) { reloadRequested_->store(true); }
+
+    void reloadWithReason(facebook::jsi::Runtime& /*runtime*/, const std::string& reason) {
+        std::cerr << "[rnl-reload] requested: " << reason << std::endl;
+        reloadRequested_->store(true);
+    }
+
+    void onFastRefresh(facebook::jsi::Runtime& /*runtime*/) {}
+
+    void setHotLoadingEnabled(facebook::jsi::Runtime& /*runtime*/, bool /*isHotLoadingEnabled*/) {}
+
+    void setIsDebuggingRemotely(facebook::jsi::Runtime& /*runtime*/, bool /*isDebuggingRemotelyEnabled*/) {}
+
+    void setProfilingEnabled(facebook::jsi::Runtime& /*runtime*/, bool /*isProfilingEnabled*/) {}
+
+    void toggleElementInspector(facebook::jsi::Runtime& /*runtime*/) {}
+
+    void addMenuItem(facebook::jsi::Runtime& /*runtime*/, const std::string& /*title*/) {}
+
+    void setIsShakeToShowDevMenuEnabled(facebook::jsi::Runtime& /*runtime*/, bool /*enabled*/) {}
+
+    void openDebugger(facebook::jsi::Runtime& /*runtime*/) {}
+
+    void addListener(facebook::jsi::Runtime& /*runtime*/, const std::string& /*eventName*/) {}
+
+    void removeListeners(facebook::jsi::Runtime& /*runtime*/, double /*count*/) {}
+
+private:
+    std::shared_ptr<std::atomic<bool>> reloadRequested_;
+};
+
+class LinuxFantomModule final : public facebook::react::TurboModule {
+public:
+    static constexpr std::string_view kModuleName = "NativeFantomCxx";
+
+    LinuxFantomModule(std::shared_ptr<facebook::react::CallInvoker> jsInvoker,
+                      std::optional<FantomRunControls> fantomRunControls)
+        : TurboModule(std::string(kModuleName), std::move(jsInvoker)),
+          fantomRunControls_(std::move(fantomRunControls)) {
+        methodMap_["reportTestSuiteResultsJSON"] = {1, [](facebook::jsi::Runtime& runtime, TurboModule& /*turboModule*/,
+                                                          const facebook::jsi::Value* arguments, size_t count) {
+                                                        if (count > 0 && arguments[0].isString()) {
+                                                            std::cout << "[fantom] "
+                                                                      << arguments[0].getString(runtime).utf8(runtime)
+                                                                      << std::endl;
+                                                        }
+
+                                                        return facebook::jsi::Value::undefined();
+                                                    }};
+        methodMap_["validateEmptyMessageQueue"] = {0,
+                                                   [](facebook::jsi::Runtime& /*runtime*/, TurboModule& /*turboModule*/,
+                                                      const facebook::jsi::Value* /*arguments*/,
+                                                      size_t /*count*/) { return facebook::jsi::Value::undefined(); }};
+        methodMap_["forceHighResTimeStamp"] = {1, &forceHighResTimeStamp};
+
+        if (fantomRunControls_.has_value()) {
+            methodMap_["flushMessageQueue"] = {0, &flushMessageQueue};
+            methodMap_["setTimerMockEnabled"] = {1, &setTimerMockEnabled};
+            methodMap_["advanceTimers"] = {1, &advanceTimers};
+            methodMap_["runAllTimers"] = {0, &runAllTimers};
+            methodMap_["getPendingTimerCount"] = {0, &getPendingTimerCount};
+            methodMap_["startSurface"] = {5, &startSurface};
+            methodMap_["stopSurface"] = {1, &stopSurface};
+            methodMap_["enqueueNativeEvent"] = {5, &enqueueNativeEvent};
+            methodMap_["flushEventQueue"] = {0, &flushEventQueue};
+            methodMap_["getRenderedOutput"] = {2, &getRenderedOutput};
+        }
+    }
+
+private:
+    static FantomRunControls& controlsOf(TurboModule& turboModule) {
+        return *static_cast<LinuxFantomModule&>(turboModule).fantomRunControls_;
+    }
+
+    static facebook::jsi::Value flushMessageQueue(facebook::jsi::Runtime& /*runtime*/, TurboModule& turboModule,
+                                                  const facebook::jsi::Value* /*arguments*/, size_t /*count*/) {
+        controlsOf(turboModule).flushMessageQueue();
+
+        return facebook::jsi::Value::undefined();
+    }
+
+    static facebook::jsi::Value setTimerMockEnabled(facebook::jsi::Runtime& /*runtime*/, TurboModule& turboModule,
+                                                    const facebook::jsi::Value* arguments, size_t count) {
+        controlsOf(turboModule)
+            .timerRegistry->setMockEnabled(count > 0 && arguments[0].isBool() && arguments[0].getBool());
+
+        return facebook::jsi::Value::undefined();
+    }
+
+    static facebook::jsi::Value advanceTimers(facebook::jsi::Runtime& /*runtime*/, TurboModule& turboModule,
+                                              const facebook::jsi::Value* arguments, size_t count) {
+        controlsOf(turboModule)
+            .timerRegistry->advanceTimersByTime(count > 0 && arguments[0].isNumber() ? arguments[0].getNumber() : 0.0);
+
+        return facebook::jsi::Value::undefined();
+    }
+
+    static facebook::jsi::Value runAllTimers(facebook::jsi::Runtime& /*runtime*/, TurboModule& turboModule,
+                                             const facebook::jsi::Value* /*arguments*/, size_t /*count*/) {
+        controlsOf(turboModule).timerRegistry->runAllTimers();
+
+        return facebook::jsi::Value::undefined();
+    }
+
+    /**
+     * `startSurface(viewportWidth, viewportHeight, devicePixelRatio, viewportOffsetX, viewportOffsetY)`, answering
+     * the new surface's id. Ids start at 11 and step by 10, as upstream's tester's do, which keeps them clear of the
+     * Fabric host's own surface 1. The viewport offset goes into the surface's layout context, as upstream's tester
+     * applies it.
+     */
+    static facebook::jsi::Value startSurface(facebook::jsi::Runtime& /*runtime*/, TurboModule& turboModule,
+                                             const facebook::jsi::Value* arguments, size_t count) {
+        LinuxFantomModule& module = static_cast<LinuxFantomModule&>(turboModule);
+        const facebook::react::SurfaceId surfaceId = module.nextSurfaceId_;
+        const facebook::react::Size viewport{
+            .width = static_cast<facebook::react::Float>(numberAt(arguments, count, 0)),
+            .height = static_cast<facebook::react::Float>(numberAt(arguments, count, 1))};
+
+        module.nextSurfaceId_ += kSurfaceIdStep;
+        module.fantomRunControls_->startSurface(
+            surfaceId, viewport, static_cast<facebook::react::Float>(numberAt(arguments, count, 2)),
+            {.x = static_cast<facebook::react::Float>(numberAt(arguments, count, 3)),
+             .y = static_cast<facebook::react::Float>(numberAt(arguments, count, 4))});
+
+        return {surfaceId};
+    }
+
+    static facebook::jsi::Value stopSurface(facebook::jsi::Runtime& /*runtime*/, TurboModule& turboModule,
+                                            const facebook::jsi::Value* arguments, size_t count) {
+        controlsOf(turboModule).stopSurface(static_cast<facebook::react::SurfaceId>(numberAt(arguments, count, 0)));
+
+        return facebook::jsi::Value::undefined();
+    }
+
+    /**
+     * `enqueueNativeEvent(shadowNode, type, payload, category, isUnique)`, as upstream's tester answers it: the event
+     * goes to the node's own event emitter, and waits there for the beat `flushEventQueue` induces, as an event from
+     * the compositor waits for the frame's.
+     */
+    static facebook::jsi::Value enqueueNativeEvent(facebook::jsi::Runtime& runtime, TurboModule& /*turboModule*/,
+                                                   const facebook::jsi::Value* arguments, size_t count) {
+        if (count < 2) {
+            throw facebook::jsi::JSError(runtime, "enqueueNativeEvent expects a node and an event type");
+        }
+
+        const std::shared_ptr<const facebook::react::EventEmitter> eventEmitter =
+            facebook::react::Bridging<std::shared_ptr<const facebook::react::ShadowNode>>::fromJs(runtime, arguments[0])
+                ->getEventEmitter();
+        std::string type = arguments[1].getString(runtime).utf8(runtime);
+        folly::dynamic payload = count > 2 && arguments[2].isObject()
+                                     ? facebook::jsi::dynamicFromValue(runtime, arguments[2])
+                                     : folly::dynamic::object();
+
+        if (count > 4 && arguments[4].isBool() && arguments[4].getBool()) {
+            eventEmitter->dispatchUniqueEvent(std::move(type), std::move(payload));
+        } else {
+            eventEmitter->dispatchEvent(
+                std::move(type), std::move(payload),
+                count > 3 && arguments[3].isNumber()
+                    ? static_cast<facebook::react::RawEvent::Category>(static_cast<int>(arguments[3].getNumber()))
+                    : facebook::react::RawEvent::Category::Unspecified);
+        }
+
+        return facebook::jsi::Value::undefined();
+    }
+
+    static facebook::jsi::Value flushEventQueue(facebook::jsi::Runtime& /*runtime*/, TurboModule& turboModule,
+                                                const facebook::jsi::Value* /*arguments*/, size_t /*count*/) {
+        controlsOf(turboModule).flushEventQueue();
+
+        return facebook::jsi::Value::undefined();
+    }
+
+    /**
+     * `getRenderedOutput(surfaceId, {includeRoot, includeLayoutMetrics})`: the surface's current tree, flattened into
+     * the view tree it mounts as, rendered the way upstream's tester renders it.
+     */
+    static facebook::jsi::Value getRenderedOutput(facebook::jsi::Runtime& runtime, TurboModule& /*turboModule*/,
+                                                  const facebook::jsi::Value* arguments, size_t count) {
+        const auto surfaceId = static_cast<facebook::react::SurfaceId>(numberAt(arguments, count, 0));
+        std::shared_ptr<const facebook::react::RootShadowNode> rootShadowNode;
+
+        facebook::react::UIManagerBinding::getBinding(runtime)->getUIManager().getShadowTreeRegistry().visit(
+            surfaceId, [&rootShadowNode](const facebook::react::ShadowTree& shadowTree) {
+                rootShadowNode = shadowTree.getCurrentRevision().rootShadowNode;
+            });
+
+        if (rootShadowNode == nullptr) {
+            throw facebook::jsi::JSError(runtime,
+                                         "getRenderedOutput: surface " + std::to_string(surfaceId) + " is not running");
+        }
+
+        return facebook::jsi::String::createFromUtf8(
+            runtime, renderFantomOutput(facebook::react::buildStubViewTreeWithoutUsingDifferentiator(*rootShadowNode),
+                                        optionAt(runtime, arguments, count, "includeRoot"),
+                                        optionAt(runtime, arguments, count, "includeLayoutMetrics")));
+    }
+
+    static bool optionAt(facebook::jsi::Runtime& runtime, const facebook::jsi::Value* arguments, size_t count,
+                         const char* name) {
+        if (count < 2 || !arguments[1].isObject()) {
+            return false;
+        }
+
+        const facebook::jsi::Value option = arguments[1].getObject(runtime).getProperty(runtime, name);
+
+        return option.isBool() && option.getBool();
+    }
+
+    static double numberAt(const facebook::jsi::Value* arguments, size_t count, size_t index) {
+        return index < count && arguments[index].isNumber() ? arguments[index].getNumber() : 0.0;
+    }
+
+    static facebook::jsi::Value getPendingTimerCount(facebook::jsi::Runtime& /*runtime*/, TurboModule& turboModule,
+                                                     const facebook::jsi::Value* /*arguments*/, size_t /*count*/) {
+        return {static_cast<double>(controlsOf(turboModule).timerRegistry->pendingMockTimerCount())};
+    }
+
+    static facebook::jsi::Value forceHighResTimeStamp(facebook::jsi::Runtime& runtime, TurboModule& /*turboModule*/,
+                                                      const facebook::jsi::Value* arguments, size_t count) {
+#ifdef REACT_NATIVE_DEBUG
+        static_cast<void>(runtime);
+
+        if (count > 0 && arguments[0].isNumber()) {
+            const facebook::react::HighResTimeStamp now =
+                facebook::react::HighResTimeStamp::fromDOMHighResTimeStamp(arguments[0].getNumber());
+
+            facebook::react::HighResTimeStamp::setTimeStampProviderForTesting(
+                [now]() { return now.toChronoSteadyClockTimePoint(); });
+        } else {
+            facebook::react::HighResTimeStamp::setTimeStampProviderForTesting(nullptr);
+        }
+
+        return facebook::jsi::Value::undefined();
+#else
+        static_cast<void>(arguments);
+        static_cast<void>(count);
+
+        throw facebook::jsi::JSError(runtime, "Mocking timers is not supported in optimized builds");
+#endif
+    }
+
+    static constexpr facebook::react::SurfaceId kSurfaceIdStep = 10;
+
+    std::optional<FantomRunControls> fantomRunControls_;
+    facebook::react::SurfaceId nextSurfaceId_{11};
+};
+
+/**
+ * `RNCClipboard` (#23), the TurboModule `@react-native-clipboard/clipboard` resolves, since React Native itself no
+ * longer ships a clipboard: `getString`, `setString` and `hasString` over the clipboard the text field's shortcuts
+ * use, so text copied in a field pastes from JavaScript and the other way round. Its images, URL and number
+ * detection, and change events are absent until the system clipboard (#60) gives them something to answer.
+ */
+class LinuxClipboardModule final : public facebook::react::TurboModule {
+public:
+    static constexpr std::string_view kModuleName = "RNCClipboard";
+
+    explicit LinuxClipboardModule(std::shared_ptr<facebook::react::CallInvoker> jsInvoker)
+        : TurboModule(std::string(kModuleName), std::move(jsInvoker)) {
+        methodMap_["getString"] = {0, [](facebook::jsi::Runtime& runtime, TurboModule& /*turboModule*/,
+                                         const facebook::jsi::Value* /*arguments*/, size_t /*count*/) {
+                                       return resolved(runtime,
+                                                       facebook::jsi::String::createFromUtf8(runtime, clipboardText()));
+                                   }};
+        methodMap_["hasString"] = {0, [](facebook::jsi::Runtime& runtime, TurboModule& /*turboModule*/,
+                                         const facebook::jsi::Value* /*arguments*/, size_t /*count*/) {
+                                       return resolved(runtime, facebook::jsi::Value(!clipboardText().empty()));
+                                   }};
+        methodMap_["setString"] = {1, [](facebook::jsi::Runtime& runtime, TurboModule& /*turboModule*/,
+                                         const facebook::jsi::Value* arguments, size_t count) {
+                                       setClipboardText(count > 0 && arguments[0].isString()
+                                                            ? arguments[0].getString(runtime).utf8(runtime)
+                                                            : std::string());
+
+                                       return facebook::jsi::Value::undefined();
+                                   }};
+    }
+
+private:
+    static facebook::jsi::Value resolved(facebook::jsi::Runtime& runtime, facebook::jsi::Value value) {
+        return facebook::react::createPromiseAsJSIValue(
+            runtime, [&value](facebook::jsi::Runtime& /*promiseRuntime*/,
+                              const std::shared_ptr<facebook::react::Promise>& promise) { promise->resolve(value); });
+    }
+};
+
+/**
+ * `PlatformConstants` (#23), which `Platform.linux.ts` reads for `Platform.constants` and `Platform.Version`: the
+ * React Native version this host was compiled from, which a development bundle compares with its own and reports a
+ * mismatch against, and the kernel release as the OS version, which is what `uname -r` names on every distribution.
+ */
+class LinuxPlatformConstantsModule final : public facebook::react::TurboModule {
+public:
+    static constexpr std::string_view kModuleName = "PlatformConstants";
+
+    explicit LinuxPlatformConstantsModule(std::shared_ptr<facebook::react::CallInvoker> jsInvoker)
+        : TurboModule(std::string(kModuleName), std::move(jsInvoker)) {
+        methodMap_["getConstants"] = {
+            0,
+            [](facebook::jsi::Runtime& runtime, TurboModule& /*turboModule*/, const facebook::jsi::Value* /*arguments*/,
+               size_t /*count*/) -> facebook::jsi::Value {
+                constexpr facebook::react::ReactNativeVersionType kVersion = facebook::react::ReactNativeVersion;
+                facebook::jsi::Object version(runtime);
+                facebook::jsi::Object constants(runtime);
+                utsname system{};
+
+                version.setProperty(runtime, "major", kVersion.Major);
+                version.setProperty(runtime, "minor", kVersion.Minor);
+                version.setProperty(runtime, "patch", kVersion.Patch);
+                if constexpr (kVersion.Prerelease.empty()) {
+                    version.setProperty(runtime, "prerelease", facebook::jsi::Value::null());
+                } else {
+                    version.setProperty(
+                        runtime, "prerelease",
+                        facebook::jsi::String::createFromUtf8(runtime, std::string(kVersion.Prerelease)));
+                }
+                // A failed uname leaves the zeroed release, an empty string.
+                static_cast<void>(uname(&system));
+                constants.setProperty(runtime, "isTesting", false);
+                constants.setProperty(runtime, "reactNativeVersion", version);
+                constants.setProperty(runtime, "osVersion",
+                                      facebook::jsi::String::createFromUtf8(runtime, system.release));
+
+                return constants;
+            }};
+    }
+};
+
+/**
  * `PlatformColor('name')`, as the one host function a JavaScript `PlatformColorValueTypes.linux.js` needs.
  *
  * It is a global rather than a module method because `PlatformColor` has no TurboModule spec on any platform:
@@ -491,14 +908,17 @@ void installPlatformColorBinding(facebook::jsi::Runtime& runtime, std::shared_pt
 TurboModuleRegistry::TurboModuleRegistry(
     std::shared_ptr<facebook::react::CallInvoker> jsInvoker,
     std::shared_ptr<facebook::react::NativeAnimatedNodesManagerProvider> animatedNodesManagerProvider,
-    facebook::react::JsErrorHandler::OnJsError onJsError)
+    facebook::react::JsErrorHandler::OnJsError onJsError, std::optional<FantomRunControls> fantomRunControls)
     : jsInvoker_(jsInvoker), dimensionsSource_(std::make_shared<DimensionsSource>()),
       deviceInfoModule_(std::make_shared<LinuxDeviceInfoModule>(jsInvoker, dimensionsSource_)),
       appearanceModel_(std::make_shared<AppearanceModel>(kFallbackColorScheme)),
       appearanceModule_(std::make_shared<LinuxAppearanceModule>(jsInvoker, appearanceModel_)),
       activationModel_(std::make_shared<ActivationModel>()),
       linkingModule_(std::make_shared<LinuxLinkingModule>(jsInvoker, activationModel_)),
-      keyValueStore_(std::make_shared<KeyValueStore>()) {
+      keyValueStore_(std::make_shared<KeyValueStore>()),
+      i18nModel_(std::make_shared<I18nModel>(localeFromEnvironment(), keyValueStore_)),
+      bundleUrl_(std::make_shared<std::string>()), workletsModule_(std::make_shared<LinuxWorkletsModule>(jsInvoker)),
+      reloadRequested_(std::make_shared<std::atomic<bool>>(false)) {
     appearanceModel_->setChangeListener([appearanceModule = appearanceModule_.get()](ColorScheme colorScheme) {
         appearanceModule->emitAppearanceChange(colorScheme);
     });
@@ -510,14 +930,57 @@ TurboModuleRegistry::TurboModuleRegistry(
                              [appearanceModule = appearanceModule_]() { return appearanceModule; });
     moduleFactories_.emplace(LinuxLinkingModule::kModuleName,
                              [linkingModule = linkingModule_]() { return linkingModule; });
+    moduleFactories_.emplace(LinuxWorkletsModule::kModuleName,
+                             [workletsModule = workletsModule_]() { return workletsModule; });
     moduleFactories_.emplace(LinuxAsyncStorageModule::kModuleName, [jsInvoker, keyValueStore = keyValueStore_]() {
         return std::make_shared<LinuxAsyncStorageModule>(jsInvoker, keyValueStore);
     });
+    moduleFactories_.emplace(LinuxI18nManagerModule::kModuleName, [jsInvoker, i18nModel = i18nModel_]() {
+        return std::make_shared<LinuxI18nManagerModule>(jsInvoker, i18nModel);
+    });
+    moduleFactories_.emplace(LinuxFantomModule::kModuleName,
+                             [jsInvoker, fantomRunControls = std::move(fantomRunControls)]() {
+                                 return std::make_shared<LinuxFantomModule>(jsInvoker, fantomRunControls);
+                             });
+    // Upstream's own CPU-time module, which Fantom's test runtime and the web-performance itests read.
+    moduleFactories_.emplace(facebook::react::NativeCPUTime::kModuleName,
+                             [jsInvoker]() { return std::make_shared<facebook::react::NativeCPUTime>(jsInvoker); });
+    // #79: the modules a `dev=true` bundle requires at startup. `SourceCode` answers the bundle URL, which is
+    // how the bundle finds its dev server.
+    moduleFactories_.emplace(facebook::react::SourceCodeModule::kModuleName, [jsInvoker, bundleUrl = bundleUrl_]() {
+        return std::make_shared<facebook::react::SourceCodeModule>(jsInvoker, *bundleUrl);
+    });
+    moduleFactories_.emplace(LinuxDevSettingsModule::kModuleName, [jsInvoker, reloadRequested = reloadRequested_]() {
+        return std::make_shared<LinuxDevSettingsModule>(jsInvoker, reloadRequested);
+    });
+    // `Image.android.js`, which LogBox loads in a `dev=true` bundle, requires `ImageLoader` as it is imported. With no
+    // `IImageLoader` behind it, upstream's module rejects `getSize` and `prefetch`, which is the honest answer here.
+    moduleFactories_.emplace(facebook::react::ImageLoaderModule::kModuleName,
+                             [jsInvoker]() { return std::make_shared<facebook::react::ImageLoaderModule>(jsInvoker); });
+    // The two observer modules, registered whatever the flags say, as upstream's own C++ host registers them
+    // (ReactCxxPlatform's `ReactCxxTurboModuleProvider`). `DefaultTurboModules` serves them only behind
+    // `enableIntersectionObserverByDefault` and `enableMutationObserverByDefault`. JavaScript still installs the
+    // `IntersectionObserver` and `MutationObserver` globals only behind those flags.
+    moduleFactories_.emplace(facebook::react::NativeIntersectionObserver::kModuleName, [jsInvoker]() {
+        return std::make_shared<facebook::react::NativeIntersectionObserver>(jsInvoker);
+    });
+    moduleFactories_.emplace(facebook::react::NativeMutationObserver::kModuleName, [jsInvoker]() {
+        return std::make_shared<facebook::react::NativeMutationObserver>(jsInvoker);
+    });
+    moduleFactories_.emplace(LinuxClipboardModule::kModuleName,
+                             [jsInvoker]() { return std::make_shared<LinuxClipboardModule>(jsInvoker); });
+    moduleFactories_.emplace(LinuxPlatformConstantsModule::kModuleName,
+                             [jsInvoker]() { return std::make_shared<LinuxPlatformConstantsModule>(jsInvoker); });
     // #79: `fetch` and `XMLHttpRequest` reach upstream's C++ Networking module, which this platform only supplies
     // the HTTP client for.
     moduleFactories_.emplace(facebook::react::NetworkingModule::kModuleName, [jsInvoker]() {
         return std::make_shared<facebook::react::NetworkingModule>(jsInvoker,
                                                                    []() { return std::make_unique<CurlHttpClient>(); });
+    });
+    // #79: `WebSocket` reaches upstream's C++ WebSocket module, which this platform supplies the client for.
+    moduleFactories_.emplace(facebook::react::WebSocketModule::kModuleName, [jsInvoker]() {
+        return std::make_shared<facebook::react::WebSocketModule>(
+            jsInvoker, []() { return std::make_unique<BeastWebSocketClient>(); });
     });
     // #22: React Native's ExceptionsManager, upstream's C++ one, reporting through the host's own error handler —
     // the same one a fatal error reaches through JsErrorHandler, so both paths print and record alike.
@@ -545,7 +1008,15 @@ AppearanceModel& TurboModuleRegistry::appearance() noexcept { return *appearance
 
 ActivationModel& TurboModuleRegistry::activation() noexcept { return *activationModel_; }
 
+void TurboModuleRegistry::setBundleUrl(const std::string& bundleUrl) { *bundleUrl_ = bundleUrl; }
+
+bool TurboModuleRegistry::isReloadRequested() const noexcept { return reloadRequested_->load(); }
+
 KeyValueStore& TurboModuleRegistry::keyValueStore() noexcept { return *keyValueStore_; }
+
+I18nModel& TurboModuleRegistry::i18n() noexcept { return *i18nModel_; }
+
+LinuxWorkletsModule& TurboModuleRegistry::worklets() noexcept { return *workletsModule_; }
 
 void TurboModuleRegistry::install(facebook::jsi::Runtime& runtime) {
     installPlatformColorBinding(runtime, appearanceModel_);

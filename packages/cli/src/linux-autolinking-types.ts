@@ -43,8 +43,22 @@ interface VerdictMessage {
   readonly packageName: string;
 }
 
-type AutolinkedLibrary = Extract<AutolinkingVerdict, { readonly kind: "linked" }> & {
-  readonly codegenName: string | null;
-};
+type AutolinkedLibrary = Extract<AutolinkingVerdict, { readonly kind: "linked" }>;
 
-export type { AutolinkedLibrary, AutolinkingDependency, AutolinkingRequest, AutolinkingVerdict, NativeBuildDescriptor };
+/**
+ * A dependency's codegen output: its `codegenConfig.name`, and the components whose shadow node and descriptor
+ * codegen generated (every component spec that is not `interfaceOnly`), which the host registers (#149).
+ */
+interface CodegenLibrary {
+  readonly components: readonly string[];
+  readonly name: string;
+}
+
+export type {
+  AutolinkedLibrary,
+  AutolinkingDependency,
+  CodegenLibrary,
+  AutolinkingRequest,
+  AutolinkingVerdict,
+  NativeBuildDescriptor,
+};

@@ -1,6 +1,9 @@
 {
   "View": {
-    "opacity": { "state": "implemented", "test": "RetainedSceneTest, OpacityMultipliesDownTheTree" },
+    "opacity": {
+      "state": "implemented",
+      "test": "RetainedSceneTest, ATranslucentParentAndATranslucentLeafEachCompositeAsALayer"
+    },
     "backgroundColor": {
       "state": "implemented",
       "test": "RetainedSceneTest, UpdateReplacesFrameAndBackgroundColorInPlace"
@@ -78,11 +81,11 @@
     "onTextLayout": { "state": "not-implemented", "issue": "#111" },
     "textAttributes": {
       "state": "implemented",
-      "test": "RetainedSceneTextTest, OpacityMultipliesIntoTheFragmentColors"
+      "test": "RetainedSceneTextTest, ATranslucentAncestorFadesTextAsALayerRatherThanThroughItsFragmentColors"
     },
     "foregroundColor": {
       "state": "implemented",
-      "test": "RetainedSceneTextTest, OpacityMultipliesIntoTheFragmentColors"
+      "test": "RetainedSceneTextTest, ATranslucentAncestorFadesTextAsALayerRatherThanThroughItsFragmentColors"
     },
     "backgroundColor": { "state": "implemented", "test": "text-metrics.png" },
     "opacity": { "state": "not-implemented", "issue": "#69" },
@@ -102,7 +105,10 @@
       "test": "LineBoxMetricsTest, ConvertsLineHeightPointsToAMultipleOfTheFontSize"
     },
     "alignment": { "state": "implemented", "test": "text.png" },
-    "baseWritingDirection": { "state": "not-implemented", "issue": "#72" },
+    "baseWritingDirection": {
+      "state": "implemented",
+      "test": "TextDirectionTest, AnExplicitWritingDirectionWinsAndANaturalOneFollowsTheLayout"
+    },
     "lineBreakStrategy": { "state": "not-implemented", "issue": "#69" },
     "lineBreakMode": { "state": "not-implemented", "issue": "#69" },
     "textDecorationColor": { "state": "implemented", "test": "text-style-matrix.png" },
@@ -113,7 +119,7 @@
     "textShadowColor": { "state": "implemented", "test": "text-style-matrix.png" },
     "isHighlighted": { "state": "not-implemented", "issue": "#43" },
     "isPressable": { "state": "not-implemented", "issue": "#43" },
-    "layoutDirection": { "state": "not-implemented", "issue": "#119" },
+    "layoutDirection": { "state": "implemented", "test": "rtl-text.png" },
     "accessibilityRole": { "state": "not-implemented", "issue": "#61" },
     "role": { "state": "not-implemented", "issue": "#61" },
     "textEffects": { "state": "not-implemented", "issue": "#69" },
@@ -167,7 +173,7 @@
     },
     "tintColor": {
       "state": "implemented",
-      "test": "RetainedSceneImageTest, OpacityMultipliesIntoTheTintAlphaAndTheImageAlpha"
+      "test": "RetainedSceneImageTest, ATranslucentAncestorFadesAnImageAsALayerRatherThanThroughItsTint"
     },
     "internal_analyticTag": { "state": "not-implemented", "issue": "#69" },
     "resizeMethod": { "state": "not-implemented", "issue": "#44" },

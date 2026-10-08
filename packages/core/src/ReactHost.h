@@ -5,6 +5,7 @@
 #include "HermesJSRuntimeFactory.h"
 #include "HostTimerRegistry.h"
 #include "JsErrorReporter.h"
+#include "StubMessageQueue.h"
 #include "TurboModuleRegistry.h"
 
 #include <atomic>
@@ -12,10 +13,10 @@
 #include <cxxreact/JSBigString.h>
 #include <memory>
 #include <string>
+#include <thread>
 
 #include <react/runtime/ReactInstance.h>
 #include <react/runtime/TimerManager.h>
-#include <react/threading/MessageQueueThreadImpl.h>
 
 namespace facebook::react {
 
@@ -41,10 +42,12 @@ namespace react_native_linux {
  * alive for as long as the window is open.
  *
  * Threading contract: every member here is called from the thread that constructed the host — the process run
- * loop for the headless host, the platform frame thread for the window host. The JavaScript that the instance
- * runs never touches this object; it runs on the JavaScript thread this class owns. A TurboModule reaches the
- * runtime from any other thread only through the `RuntimeSchedulerCallInvoker` it is constructed with: an
- * `AsyncPromise` settled, and then released, on a worker thread while the frame thread runs is what
+ * loop for the headless host, the platform frame thread for the window host. A debug build holds every member to
+ * it, the destructor included: a call from any other thread fails `react_native_assert` before it touches the
+ * instance, which `ThreadAffinityTest` proves by calling each one from a foreign thread. The JavaScript that the
+ * instance runs never touches this object; it runs on the JavaScript thread this class owns. A TurboModule
+ * reaches the runtime from any other thread only through the `RuntimeSchedulerCallInvoker` it is constructed
+ * with: an `AsyncPromise` settled, and then released, on a worker thread while the frame thread runs is what
  * `CrossThreadPromiseStressTest` holds TSan-clean (#77).
  *
  * Shutdown contract: destruction quits the JavaScript thread synchronously, then releases the TurboModules, the
@@ -68,7 +71,15 @@ namespace react_native_linux {
  */
 class ReactHost final {
 public:
-    ReactHost();
+    /**
+     * `stubJavaScriptQueue` replaces the JavaScript thread for an itest run (#210): the runtime then runs on the
+     * thread that flushes the queue, which is this host's own thread, and `NativeFantomCxx.flushMessageQueue` is
+     * that flush. `fantomRunControls` carries what only the run's owner knows, the surfaces `Fantom.createRoot`
+     * starts; this host adds the flush and its timer registry. Without a queue the host owns a real JavaScript
+     * thread and `NativeFantomCxx` has none of these, as in every other host.
+     */
+    explicit ReactHost(std::shared_ptr<StubMessageQueue> stubJavaScriptQueue = nullptr,
+                       FantomRunControls fantomRunControls = {});
     ReactHost(const ReactHost&) = delete;
     ReactHost(ReactHost&&) = delete;
     ReactHost& operator=(const ReactHost&) = delete;
@@ -97,6 +108,12 @@ public:
     /** `RNAsyncStorage`'s store (#23), which `WindowSession` points at the application's file. */
     KeyValueStore& keyValueStore() noexcept;
 
+    /** `I18nManager`'s state (#72); see `TurboModuleRegistry::i18n`. */
+    I18nModel& i18n() noexcept;
+
+    /** react-native-worklets' host (#136); see `TurboModuleRegistry::worklets`. */
+    LinuxWorkletsModule& worklets() noexcept;
+
     /**
      * Emits at most one `didUpdateDimensions` for everything configured since the last call, on the JavaScript
      * thread. Called once per frame by the window host, and once after the resize by the headless one.
@@ -109,6 +126,13 @@ public:
      * else is a file path. `location` is also the source URL stack traces and source maps name.
      */
     void loadBundle(const std::string& location);
+
+    /**
+     * Calls `HMRClient.setup` for a `dev=true` bundle loaded from a dev server (#79), which connects it to Metro's
+     * `/hot` socket; any other `location` is left alone. Only the window host calls it: the open socket and the
+     * client's heartbeat would keep a headless run from ever reaching quiescence.
+     */
+    void startHotModuleReplacement(const std::string& location);
     void drainJavaScriptThread();
 
     /**
@@ -129,6 +153,9 @@ public:
     bool runUntilQuiescent(std::chrono::milliseconds budget);
     bool hasReportedFatalError() const;
 
+    /** `TurboModuleRegistry::isReloadRequested`: the bundle asked `DevSettings` to reload it (#81). */
+    bool isReloadRequested() const;
+
     /**
      * Runs one frame's `requestAnimationFrame` callbacks, on the JavaScript thread, stamped with `now`.
      *
@@ -137,12 +164,14 @@ public:
      * every callback of one frame sees one timestamp, and it is the same instant the frame clock measured and
      * `LinuxAnimationChoreographer::tick` hands the animation backend. See *requestAnimationFrame* in
      * docs/cpp-toolchain.md.
+     *
+     * The same frame ticks worklets (#136) here, on the frame thread itself, because that is worklets' UI thread.
      */
     void dispatchAnimationFrames(std::chrono::steady_clock::time_point now);
 
     /**
-     * Whether a JS timer or a `requestAnimationFrame` callback is outstanding, for the frame clock's
-     * fallback-timeout pending-work signal (see *Frame clock* in docs/cpp-toolchain.md). Both are timers in
+     * Whether a JS timer, a `requestAnimationFrame` callback or worklets' frame work is outstanding, for the frame
+     * clock's fallback-timeout pending-work signal (see *Frame clock* in docs/cpp-toolchain.md). Both are timers in
      * React Native's model — upstream's `TimerManager` installs `requestAnimationFrame` as a timer source of its
      * own — and both have the same consequence here: a window the compositor sends no `wl_surface.frame` to has
      * to draw on the fallback timeout, or the callback never runs.
@@ -154,7 +183,8 @@ public:
     bool hasPendingTimers() const;
 
 private:
-    std::shared_ptr<facebook::react::MessageQueueThreadImpl> javaScriptThread_;
+    const std::thread::id owningThread_{std::this_thread::get_id()};
+    std::shared_ptr<facebook::react::MessageQueueThread> javaScriptThread_;
     AnimationFrameQueue animationFrameQueue_;
     HostTimerRegistry* timerRegistry_{nullptr};
     std::shared_ptr<facebook::react::TimerManager> timerManager_;

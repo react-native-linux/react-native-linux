@@ -22,6 +22,16 @@
           "sha256": "467e3f89eeca4108bb8710a2b9e0cf2281ac56d5b0609211a83776d0505eecb5"
         },
         {
+          "path": "fonts/NotoSansArabic/hinted/ttf/NotoSansArabic-Regular.ttf",
+          "name": "NotoSansArabic-Regular.ttf",
+          "sha256": "bdff3e5659d67e67def05b33f749683b9376ae819d65d3dd62ac4640b3aaef48"
+        },
+        {
+          "path": "fonts/NotoSansHebrew/hinted/ttf/NotoSansHebrew-Regular.ttf",
+          "name": "NotoSansHebrew-Regular.ttf",
+          "sha256": "cdefaf8efd47045f6820928eba84db5bed7557539328952b5f828315485e02ee"
+        },
+        {
           "path": "fonts/LICENSE",
           "name": "LICENSE-NotoSans",
           "sha256": "f2095b08bed08b23a6fe26112fcd679a2bee3f002eef077eb05d215ed1051bd8"

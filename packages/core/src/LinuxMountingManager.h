@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <folly/dynamic.h>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <string_view>
@@ -222,6 +223,15 @@ public:
 
     void executeMount(facebook::react::SurfaceId surfaceId,
                       facebook::react::MountingTransaction&& mountingTransaction) override;
+
+    /**
+     * Upstream's after-mount hook, run once a transaction has been applied, after the scene lock is released, on
+     * the thread that mounted. `FabricHost` points it at `Scheduler::reportMount`, which runs `UIManager`'s mount
+     * hooks as every other platform's mounting layer does after it applies a transaction. That is when Event Timing
+     * reports an event whose update has now mounted, and when IntersectionObserver recomputes. Set once, before the
+     * first mount.
+     */
+    void setAfterMountCallback(std::function<void(facebook::react::SurfaceId)>&& onAfterMount) override;
     void dispatchCommand(const facebook::react::ShadowView& shadowView, const std::string& commandName,
                          const folly::dynamic& args) override;
 
@@ -238,6 +248,7 @@ public:
     void synchronouslyUpdateViewOnUIThread(facebook::react::Tag tag, const folly::dynamic& props) override;
 
 private:
+    void applyTransaction(facebook::react::MountingTransaction&& mountingTransaction);
     bool verifyTagIsKnown(std::string_view operation, facebook::react::Tag tag);
     void reportRejectedAnimatedProp(const RejectedAnimatedProp& rejectedProp);
     void reportRejectedNonFiniteProp(const RejectedNonFiniteProp& rejectedProp);
@@ -259,6 +270,7 @@ private:
     MountDiagnostics diagnostics_;
     facebook::react::MountingTransaction::Number lastTransactionNumber_{0};
     bool hasPendingDamage_{false};
+    std::function<void(facebook::react::SurfaceId)> onAfterMount_;
 };
 
 } // namespace react_native_linux

@@ -23,6 +23,7 @@
 namespace {
 
 constexpr std::string_view kFabricFlag = "--fabric";
+constexpr std::string_view kFantomFlag = "--fantom";
 constexpr std::string_view kGoldenFlag = "--golden";
 constexpr std::string_view kDamageGoldenFlag = "--damage-golden";
 constexpr std::string_view kHitPaintGoldenFlag = "--hit-paint-golden";
@@ -468,6 +469,7 @@ int main(int argc, char** argv) {
     const bool isTextFitGoldenRequested = arguments.size() > 1 && kTextFitGoldenFlag == arguments[1];
     const bool isFirstFrameGoldenRequested = arguments.size() > 1 && kFirstFrameGoldenFlag == arguments[1];
     const bool isFabricRequested = arguments.size() > 1 && kFabricFlag == arguments[1];
+    const bool isFantomRequested = arguments.size() > 1 && kFantomFlag == arguments[1];
     const bool isInjectPointerRequested = arguments.size() > 1 && kInjectPointerFlag == arguments[1];
     const bool isResizeRequested = arguments.size() > 1 && kResizeFlag == arguments[1];
     const bool isScrollToRequested = arguments.size() > 1 && kScrollToFlag == arguments[1];
@@ -482,8 +484,8 @@ int main(int argc, char** argv) {
     const bool isAnimationFrameTraceRequested = arguments.size() > 1 && kAnimationFrameTraceFlag == arguments[1];
     const bool isAppearanceGoldenRequested = arguments.size() > 1 && kAppearanceGoldenFlag == arguments[1];
 
-    if (isFabricRequested && arguments.size() < 3) {
-        std::cerr << "[hello_react] " << kFabricFlag << " requires a bundle path" << std::endl;
+    if ((isFabricRequested || isFantomRequested) && arguments.size() < 3) {
+        std::cerr << "[hello_react] " << arguments[1] << " requires a bundle path" << std::endl;
 
         return 1;
     }
@@ -616,8 +618,9 @@ int main(int argc, char** argv) {
         std::optional<std::string> bundlePath;
         react_native_linux::BundleMode bundleMode = react_native_linux::BundleMode::Script;
 
-        if (isFabricRequested) {
-            bundleMode = react_native_linux::BundleMode::Fabric;
+        if (isFabricRequested || isFantomRequested) {
+            bundleMode =
+                isFantomRequested ? react_native_linux::BundleMode::Fantom : react_native_linux::BundleMode::Fabric;
             bundlePath = std::string(arguments[2]);
         } else if (arguments.size() > 1) {
             bundlePath = std::string(arguments[1]);

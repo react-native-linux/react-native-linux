@@ -1,0 +1,91 @@
+diff --git a/packages/react-native-gesture-handler/src/components/GestureHandlerRootView.linux.tsx b/packages/react-native-gesture-handler/src/components/GestureHandlerRootView.linux.tsx
+index 50c6247..d284df4 100644
+--- a/packages/react-native-gesture-handler/src/components/GestureHandlerRootView.linux.tsx
++++ b/packages/react-native-gesture-handler/src/components/GestureHandlerRootView.linux.tsx
+@@ -3,6 +3,7 @@ import { PropsWithChildren } from 'react';
+ import { View, ViewProps, StyleSheet } from 'react-native';
+ import GestureHandlerRootViewContext from '../GestureHandlerRootViewContext';
+ import {
++  isAnyLinuxGestureActive,
+   RootPointerEvent,
+   routeLinuxPointerEvent,
+ } from '../web/tools/LinuxPointerRouter';
+@@ -32,6 +33,8 @@ export default function GestureHandlerRootView({
+         onPointerCancelCapture={(event: RootPointerEvent) =>
+           routeLinuxPointerEvent('pointercancel', event)
+         }
++        onMoveShouldSetResponderCapture={isAnyLinuxGestureActive}
++        onResponderTerminationRequest={() => false}
+         {...rest}
+       />
+     </GestureHandlerRootViewContext.Provider>
+diff --git a/packages/react-native-gesture-handler/src/web/tools/GestureHandlerLinuxDelegate.ts b/packages/react-native-gesture-handler/src/web/tools/GestureHandlerLinuxDelegate.ts
+index 47d5a32..a185df5 100644
+--- a/packages/react-native-gesture-handler/src/web/tools/GestureHandlerLinuxDelegate.ts
++++ b/packages/react-native-gesture-handler/src/web/tools/GestureHandlerLinuxDelegate.ts
+@@ -8,6 +8,7 @@ import {
+   forgetLinuxView,
+   LinuxElement,
+   LinuxView,
++  setLinuxGestureActive,
+ } from './LinuxPointerRouter';
+ import EventManager from './EventManager';
+ 
+@@ -61,13 +62,26 @@ export class GestureHandlerLinuxDelegate
+   }
+ 
+   onBegin(): void {}
+-  onActivate(): void {}
+-  onEnd(): void {}
+-  onCancel(): void {}
+-  onFail(): void {}
++
++  onActivate(): void {
++    setLinuxGestureActive(this, true);
++  }
++
++  onEnd(): void {
++    setLinuxGestureActive(this, false);
++  }
++
++  onCancel(): void {
++    setLinuxGestureActive(this, false);
++  }
++
++  onFail(): void {
++    setLinuxGestureActive(this, false);
++  }
+ 
+   destroy(): void {
+     this.eventManagers.forEach((manager) => manager.unregisterListeners());
++    setLinuxGestureActive(this, false);
+     forgetLinuxView(this.view);
+   }
+ }
+diff --git a/packages/react-native-gesture-handler/src/web/tools/LinuxPointerRouter.ts b/packages/react-native-gesture-handler/src/web/tools/LinuxPointerRouter.ts
+index 49b1e17..ba4989c 100644
+--- a/packages/react-native-gesture-handler/src/web/tools/LinuxPointerRouter.ts
++++ b/packages/react-native-gesture-handler/src/web/tools/LinuxPointerRouter.ts
+@@ -61,6 +61,22 @@ export class LinuxView {
+ }
+ 
+ const views = new Set<LinuxView>();
++const activeGestures = new Set<unknown>();
++
++// A gesture that activates takes the pointer from React's responder: GestureHandlerRootView.linux claims the
++// responder while any gesture is active, so a Pressable under it ends with pressOut and no press, as RNGH cancels
++// the JavaScript responder on Android and iOS.
++export function setLinuxGestureActive(gesture: unknown, isActive: boolean): void {
++  if (isActive) {
++    activeGestures.add(gesture);
++  } else {
++    activeGestures.delete(gesture);
++  }
++}
++
++export function isAnyLinuxGestureActive(): boolean {
++  return activeGestures.size > 0;
++}
+ const captures = new Map<number, LinuxView[]>();
+ const capturedTarget = {
+   tagName: 'VIEW',

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { findAccessibilityNodes, findAutomationSocketPath, findSurfaceChildren, readAnswer } from "./automation.ts";
+import {
+  findAccessibilityNodes,
+  findAutomationSocketPath,
+  findSurfaceChildren,
+  gradeAutomation,
+  readAnswer,
+} from "./automation.ts";
 
 const SOCKET_PATH = "/run/user/1000/rnl-automation-9.sock";
 
@@ -76,5 +82,26 @@ describe("findAccessibilityNodes", () => {
 
   it("takes nothing from an answer whose nodes are not a list", () => {
     expect(findAccessibilityNodes({})).toBeNull();
+  });
+});
+
+describe("gradeAutomation", () => {
+  it("fails a run whose window never printed the socket path", async () => {
+    const failures = await gradeAutomation({
+      artifactsDirectory: "artifacts",
+      automation: {
+        accessibilityChanges: null,
+        accessibilityTreeSnapshot: "a11y.json",
+        listErrorsMustBeEmpty: true,
+        markTestPassed: true,
+        rendererRung: "raster",
+        visualTreeSnapshot: "tree.json",
+      },
+      goldensDirectory: "goldens",
+      snapshotsDirectory: "snapshots",
+      trace: "boot\n",
+    });
+
+    expect(failures).toEqual(["the window never printed the automation socket path"]);
   });
 });

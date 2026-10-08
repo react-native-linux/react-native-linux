@@ -1,0 +1,30 @@
+{
+  "name": "gesture-tap-pan-race",
+  "bundle": "tap-pan-race.tsx",
+  "ready": "gestures: committed",
+  "frames": 600,
+  "steps": [
+    "sleep 500",
+    "move 200 140",
+    "sleep 100",
+    "click 200 140",
+    "sleep 400",
+    "move 150 140",
+    "button left press",
+    "sleep 50",
+    "move 170 141",
+    "sleep 50",
+    "move 200 142",
+    "sleep 50",
+    "move 260 143",
+    "sleep 50",
+    "button left release",
+    "sleep 500"
+  ],
+  "expect": [
+    "gestures: committed",
+    "gestures: tap end x=100 success=true",
+    "gestures: pan start x=70",
+    "gestures: pan end x=160 translationX=90 success=true"
+  ]
+}

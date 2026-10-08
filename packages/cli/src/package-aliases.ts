@@ -15,12 +15,13 @@ interface PackageAliasRequest {
 
 /**
  * The overlay packages a `linux` bundle resolves instead of their upstream originals, decided in issue #96 and
- * shaped by issue #180. `packages/reanimated` (issue #181) is the first entry; `react-native-worklets` is not
- * aliased because no overlay package vendors it yet. An alias whose package is not installed would rewrite a
+ * shaped by issue #180: `packages/gesture-handler` (#168) and `packages/reanimated` (#181). `react-native-worklets`
+ * is not aliased because no overlay package vendors it yet. An alias whose package is not installed would rewrite a
  * working upstream import into an unresolvable one, which is why the rule also asks whether the linux package
  * resolves before it rewrites anything.
  */
 const packageAliases: readonly PackageAlias[] = [
+  { linux: "@react-native-linux/gesture-handler", upstream: "react-native-gesture-handler" },
   { linux: "@react-native-linux/reanimated", upstream: "react-native-reanimated" },
 ];
 

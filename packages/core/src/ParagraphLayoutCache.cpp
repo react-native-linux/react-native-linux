@@ -72,6 +72,13 @@ void ParagraphLayoutCache::endFrame() {
     previousFrame_.swap(currentFrame_);
 }
 
+void ParagraphLayoutCache::clear() {
+    const std::lock_guard<std::mutex> guard(mutex_);
+
+    currentFrame_.clear();
+    previousFrame_.clear();
+}
+
 void ParagraphLayoutCache::insertBounded(Entry entry) {
     // The oldest entry leaves when a frame is at capacity, so a miss is always cached rather than silently
     // dropped once the capacity is reached, and the frame never grows past it.

@@ -1,5 +1,6 @@
 #include "GradientShader.h"
 
+#include "ColorStops.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPoint.h"
@@ -33,8 +34,8 @@ constexpr float kFullTurnDegrees = 360.0F;
 // A radial gradient of zero radius is a division by zero inside Skia, and CSS says such a gradient paints the
 // last stop's colour everywhere. The smallest positive radius does exactly that.
 constexpr float kSmallestRadius = 0.00001F;
+
 // The reference length that makes ValueUnit::resolve turn a percentage into the 0..1 fraction Skia wants.
-constexpr float kFractionReference = 1.0F;
 
 struct GradientRamp {
     std::vector<SkColor4f> colors;
@@ -55,80 +56,11 @@ float toDegrees(float radians) { return radians * kHalfTurnDegrees / std::number
 
 float toRadians(float degrees) { return degrees * std::numbers::pi_v<float> / kHalfTurnDegrees; }
 
-/**
- * Where one authored colour stop sits on the gradient line, as a fraction of it. A percentage is that fraction
- * directly; a length is a distance along a line whose length only the caller knows; an unset position is left for
- * the fix-up below to distribute.
- */
-std::optional<float> resolveStopPosition(const facebook::react::ValueUnit& position, float gradientLineLength) {
-    if (position.unit == facebook::react::UnitType::Percent) {
-        return position.resolve(kFractionReference);
-    }
-
-    if (position.unit == facebook::react::UnitType::Point) {
-        return gradientLineLength > 0 ? position.value / gradientLineLength : 0.0F;
-    }
-
-    return std::nullopt;
-}
-
-/**
- * The CSS colour-stop fix-up: https://drafts.csswg.org/css-images-4/#coloring-gradient-line. An unpositioned first
- * stop sits at 0 and an unpositioned last stop at 1, a position never moves backwards past the largest one before
- * it, and each run of unpositioned stops is spread evenly between the two positioned stops around it.
- */
-std::vector<facebook::react::ProcessedColorStop>
-fixedColorStops(const std::vector<facebook::react::ColorStop>& colorStops, float gradientLineLength) {
-    std::vector<facebook::react::ProcessedColorStop> fixed(colorStops.size());
-    float largestPositionSoFar = resolveStopPosition(colorStops.front().position, gradientLineLength).value_or(0.0F);
-
-    for (size_t index = 0; index < colorStops.size(); index++) {
-        std::optional<float> position = resolveStopPosition(colorStops[index].position, gradientLineLength);
-
-        if (!position.has_value() && index == 0) {
-            position = 0.0F;
-        }
-
-        if (!position.has_value() && index + 1 == colorStops.size()) {
-            position = 1.0F;
-        }
-
-        if (position.has_value()) {
-            largestPositionSoFar = std::max(position.value(), largestPositionSoFar);
-            fixed[index] =
-                facebook::react::ProcessedColorStop{.color = colorStops[index].color, .position = largestPositionSoFar};
-        }
-    }
-
-    size_t lastPositionedIndex = 0;
-
-    for (size_t index = 1; index < fixed.size(); index++) {
-        if (!fixed[index].position.has_value()) {
-            continue;
-        }
-
-        const size_t unpositionedCount = index - lastPositionedIndex - 1;
-        const float startPosition = fixed[lastPositionedIndex].position.value();
-        const float increment =
-            (fixed[index].position.value() - startPosition) / static_cast<float>(unpositionedCount + 1);
-
-        for (size_t offset = 1; offset <= unpositionedCount; offset++) {
-            fixed[lastPositionedIndex + offset] = facebook::react::ProcessedColorStop{
-                .color = colorStops[lastPositionedIndex + offset].color,
-                .position = startPosition + (increment * static_cast<float>(offset))};
-        }
-
-        lastPositionedIndex = index;
-    }
-
-    return fixed;
-}
-
 GradientRamp toGradientRamp(const std::vector<facebook::react::ColorStop>& colorStops, float gradientLineLength) {
     GradientRamp ramp;
 
     for (const facebook::react::ProcessedColorStop& stop : fixedColorStops(colorStops, gradientLineLength)) {
-        if (!stop.position.has_value()) {
+        if (!stop.position.has_value() || !stop.color) {
             continue;
         }
 

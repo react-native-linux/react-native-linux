@@ -36,6 +36,20 @@ TEST(ParagraphLayoutCacheTest, AHitInTheCurrentFrameDoesNotShapeAgain) {
     EXPECT_EQ(cache.missCount(), 1U);
 }
 
+TEST(ParagraphLayoutCacheTest, ClearingShapesEveryKeyAgainBecauseTheFontsChanged) {
+    ParagraphLayoutCache cache(4);
+    int calls = 0;
+
+    (void)cache.lookup(kKey, [&calls] { return countingShape(calls); });
+    cache.endFrame();
+    (void)cache.lookup(kKey, [&calls] { return countingShape(calls); });
+    cache.clear();
+    (void)cache.lookup(kKey, [&calls] { return countingShape(calls); });
+
+    EXPECT_EQ(calls, 2);
+    EXPECT_EQ(cache.currentFrameEntryCount(), 1U);
+}
+
 TEST(ParagraphLayoutCacheTest, AHitPromotedFromThePreviousFrameSurvivesTheNextSwap) {
     ParagraphLayoutCache cache(8);
     int calls = 0;

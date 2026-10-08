@@ -64,6 +64,8 @@ public:
 
     /** Swaps current to previous and clears current, dropping every entry that just went unused. */
     void endFrame();
+    /** Drops every entry, because the fonts the metrics were shaped with changed (#70). */
+    void clear();
 
     [[nodiscard]] size_t currentFrameEntryCount() const;
     [[nodiscard]] uint64_t hitCount() const;

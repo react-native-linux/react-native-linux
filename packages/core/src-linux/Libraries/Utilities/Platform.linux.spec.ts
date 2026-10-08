@@ -1,11 +1,12 @@
 import {
   Platform,
+  readNativePlatformConstantsLinux,
   resolveIsDisableAnimations,
   resolveLinuxPlatformConstants,
   selectLinuxPlatform,
 } from "./Platform.linux.ts";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 describe("Platform.linux", () => {
   it("reports the linux platform identifier", () => {
@@ -88,5 +89,32 @@ describe("selectLinuxPlatform", () => {
 
   it("falls back to the default value when neither linux nor native is specified", () => {
     expect(selectLinuxPlatform({ default: "default" })).toBe("default");
+  });
+});
+
+describe("readNativePlatformConstantsLinux", () => {
+  afterEach(() => {
+    Reflect.deleteProperty(globalThis, "nativeModuleProxy");
+  });
+
+  it("reads the PlatformConstants module the host registers", () => {
+    const module = { getConstants: (): null => null };
+
+    Reflect.set(globalThis, "nativeModuleProxy", { PlatformConstants: module });
+
+    expect(readNativePlatformConstantsLinux()).toBe(module);
+  });
+
+  it.each([[null], [{}], [{ getConstants: "not a function" }]])(
+    "answers null for a host that serves %j instead",
+    (module) => {
+      Reflect.set(globalThis, "nativeModuleProxy", { PlatformConstants: module });
+
+      expect(readNativePlatformConstantsLinux()).toBeNull();
+    },
+  );
+
+  it("answers null where no host installed the module proxy", () => {
+    expect(readNativePlatformConstantsLinux()).toBeNull();
   });
 });

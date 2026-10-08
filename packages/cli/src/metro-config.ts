@@ -24,6 +24,12 @@ const linuxOverlayIndex: Readonly<Record<string, string>> = {
     "StyleSheet",
     "PlatformColorValueTypes.linux.ts",
   ),
+  "Libraries/StyleSheet/processColor": path.join(
+    coreLinuxUtilitiesDirectory,
+    "..",
+    "StyleSheet",
+    "processColor.linux.ts",
+  ),
   "Libraries/Utilities/Platform": path.join(coreLinuxUtilitiesDirectory, "Platform.linux.ts"),
   "Libraries/Utilities/PlatformTypes": path.join(coreLinuxUtilitiesDirectory, "PlatformTypes.ts"),
 };
@@ -80,8 +86,12 @@ const linuxUpstreamVariantIndex: Readonly<Record<string, "android" | "ios">> = {
   "Libraries/Settings/Settings": "ios",
   // A desktop has no hardware back button, and the iOS variant is the one without one.
   "Libraries/Utilities/BackHandler": "ios",
+  // No base file at all, only the pair, and a development bundle requires it. Android's reads an optional module.
+  // The iOS one reaches NativeSettingsManager through getEnforcing, which throws on a platform that does not serve it.
+  "src/private/devsupport/rndevtools/ReactDevToolsSettingsManager": "android",
 };
 
+const NOT_FOUND = -1;
 const reactNativePackageSegment = `${path.sep}react-native${path.sep}`;
 const sourceFileExtensionPattern = /\.(?:js|jsx|ts|tsx)$/u;
 
@@ -115,12 +125,52 @@ interface SourceFileResolution {
 }
 
 interface LinuxResolutionContext<Resolution> {
+  readonly originModulePath?: string;
   readonly resolveRequest: (
     context: LinuxResolutionContext<Resolution>,
     moduleName: string,
     platform: string | null,
   ) => Resolution | SourceFileResolution;
 }
+
+/**
+ * An upstream pair with no base file cannot resolve at all for `linux`, so the substitution above never sees it: a
+ * relative specifier from inside `react-native` that names one is retried as its variant, `<specifier>.<variant>`.
+ */
+const baselessVariantSpecifier = (
+  moduleName: string,
+  originModulePath: string | null,
+  platform: string | null,
+): string | null => {
+  if (platform !== linuxPlatform || originModulePath === null || !moduleName.startsWith(".")) {
+    return null;
+  }
+
+  const target = path.resolve(path.dirname(originModulePath), moduleName);
+  const segmentIndex = target.lastIndexOf(reactNativePackageSegment);
+  const variant =
+    segmentIndex === NOT_FOUND
+      ? null
+      : (linuxUpstreamVariantIndex[target.slice(segmentIndex + reactNativePackageSegment.length)] ?? null);
+
+  return variant === null ? null : `${moduleName}.${variant}`;
+};
+
+const resolveWithBaselessVariant = <Resolution>(
+  resolve: (specifier: string) => Resolution,
+  specifier: string,
+  variantSpecifier: string | null,
+): Resolution => {
+  try {
+    return resolve(specifier);
+  } catch (error) {
+    if (variantSpecifier === null) {
+      throw error;
+    }
+
+    return resolve(variantSpecifier);
+  }
+};
 
 /**
  * The Metro `resolveRequest` of a linux bundle: the specifier rewrites of `resolveLinuxModuleName` first, Metro's
@@ -134,10 +184,10 @@ const createLinuxResolveRequest =
     moduleName: string,
     platform: string | null,
   ): Resolution | SourceFileResolution => {
-    const resolution = context.resolveRequest(
-      context,
+    const resolution = resolveWithBaselessVariant(
+      (specifier) => context.resolveRequest(context, specifier, platform),
       resolveLinuxModuleName(moduleName, platform, isPackageResolvable) ?? moduleName,
-      platform,
+      baselessVariantSpecifier(moduleName, context.originModulePath ?? null, platform),
     );
     const overlayPath =
       typeof resolution === "object" &&

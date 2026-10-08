@@ -1,5 +1,6 @@
 #include "FabricHost.h"
 
+#include "AutolinkedComponents.h"
 #include "SwitchComponent.h"
 #include "TextInputComponent.h"
 
@@ -14,11 +15,16 @@
 #include <iostream>
 #include <jsi/jsi.h>
 #include <memory>
+#include <stdexcept>
 #include <string>
+#include <thread>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
+#include <react/debug/react_native_assert.h>
 #include <react/renderer/componentregistry/ComponentDescriptorProviderRegistry.h>
+#include <react/renderer/componentregistry/native/NativeComponentRegistryBinding.h>
 #include <react/renderer/components/FBReactNativeSpec/ComponentDescriptors.h>
 #include <react/renderer/components/image/ImageComponentDescriptor.h>
 #include <react/renderer/components/root/RootComponentDescriptor.h>
@@ -36,9 +42,27 @@
 
 namespace react_native_linux {
 
+std::vector<facebook::react::ComponentDescriptorProvider>& autolinkedComponentDescriptorProviders() {
+    static std::vector<facebook::react::ComponentDescriptorProvider> providers;
+
+    return providers;
+}
+
 namespace {
 
 constexpr facebook::react::SurfaceId kSurfaceId = 1;
+
+// #56: an unregistered component's warning names the file that should have registered it, which is the
+// `rnl_autolinking.cpp` scripts/autolink.ts generates for a build configured with RNL_AUTOLINKING_CMAKE.
+#ifdef RNL_AUTOLINKING_SOURCE
+constexpr char kUnregisteredComponentRemedy[] =
+    "its registration belongs in " RNL_AUTOLINKING_SOURCE ", which scripts/autolink.ts generates from every "
+    "library that autolinks for linux, so declare it in a *NativeComponent spec of one";
+#else
+constexpr char kUnregisteredComponentRemedy[] =
+    "this build was configured without autolinking (RNL_AUTOLINKING_CMAKE is empty), so no rnl_autolinking.cpp "
+    "registers any component; run scripts/autolink.ts and configure with the rnl_autolinking.cmake it writes";
+#endif
 
 // ComponentDescriptorRegistry keeps a reference to the provider registry that created it, so the provider
 // registry has to outlive the Scheduler rather than the factory call.
@@ -62,30 +86,38 @@ constexpr facebook::react::SurfaceId kSurfaceId = 1;
 // there is nothing to swap a source into. `src/TextInputComponent.h` therefore declares the descriptor, the
 // shadow node and the props on top of those base classes; see *TextInput* in docs/cpp-toolchain.md.
 facebook::react::ComponentRegistryFactory createComponentRegistryFactory(
-    const std::shared_ptr<facebook::react::ComponentDescriptorProviderRegistry>& providerRegistry) {
-    providerRegistry->add(
-        facebook::react::concreteComponentDescriptorProvider<facebook::react::RootComponentDescriptor>());
-    providerRegistry->add(
-        facebook::react::concreteComponentDescriptorProvider<facebook::react::ViewComponentDescriptor>());
-    providerRegistry->add(
-        facebook::react::concreteComponentDescriptorProvider<facebook::react::ImageComponentDescriptor>());
-    providerRegistry->add(
-        facebook::react::concreteComponentDescriptorProvider<facebook::react::ScrollViewComponentDescriptor>());
-    providerRegistry->add(
-        facebook::react::concreteComponentDescriptorProvider<facebook::react::ParagraphComponentDescriptor>());
-    providerRegistry->add(
-        facebook::react::concreteComponentDescriptorProvider<facebook::react::TextComponentDescriptor>());
-    providerRegistry->add(
-        facebook::react::concreteComponentDescriptorProvider<facebook::react::RawTextComponentDescriptor>());
-    providerRegistry->add(facebook::react::concreteComponentDescriptorProvider<TextInputComponentDescriptor>());
+    const std::shared_ptr<facebook::react::ComponentDescriptorProviderRegistry>& providerRegistry,
+    std::unordered_set<std::string>& registeredNames) {
+    const auto add = [&providerRegistry,
+                      &registeredNames](const facebook::react::ComponentDescriptorProvider& provider) {
+        if (!registeredNames.emplace(provider.name).second) {
+            throw std::logic_error(std::string("an autolinked library registers the component '") + provider.name +
+                                   "', which is already registered");
+        }
+
+        providerRegistry->add(provider);
+    };
+
+    add(facebook::react::concreteComponentDescriptorProvider<facebook::react::RootComponentDescriptor>());
+    add(facebook::react::concreteComponentDescriptorProvider<facebook::react::ViewComponentDescriptor>());
+    add(facebook::react::concreteComponentDescriptorProvider<facebook::react::ImageComponentDescriptor>());
+    add(facebook::react::concreteComponentDescriptorProvider<facebook::react::ScrollViewComponentDescriptor>());
+    add(facebook::react::concreteComponentDescriptorProvider<facebook::react::ParagraphComponentDescriptor>());
+    add(facebook::react::concreteComponentDescriptorProvider<facebook::react::TextComponentDescriptor>());
+    add(facebook::react::concreteComponentDescriptorProvider<facebook::react::RawTextComponentDescriptor>());
+    add(facebook::react::concreteComponentDescriptorProvider<TextInputComponentDescriptor>());
 
     // `ActivityIndicatorView` is upstream's own generated descriptor, unchanged: its spec is not `interfaceOnly`,
     // so codegen produced the props, the shadow node and the descriptor and there is nothing platform-specific
     // about any of them. `Switch` is `interfaceOnly` and stops at the props and the emitter, which is why
     // `src/SwitchComponent.h` supplies the rest.
-    providerRegistry->add(facebook::react::concreteComponentDescriptorProvider<
-                          facebook::react::ActivityIndicatorViewComponentDescriptor>());
-    providerRegistry->add(facebook::react::concreteComponentDescriptorProvider<SwitchComponentDescriptor>());
+    add(facebook::react::concreteComponentDescriptorProvider<
+        facebook::react::ActivityIndicatorViewComponentDescriptor>());
+    add(facebook::react::concreteComponentDescriptorProvider<SwitchComponentDescriptor>());
+
+    for (const facebook::react::ComponentDescriptorProvider& provider : autolinkedComponentDescriptorProviders()) {
+        add(provider);
+    }
 
     // Upstream's `useFabricInterop` default turns a name with no descriptor into an empty legacy-interop view, so
     // a component that was never registered mounts as nothing and says nothing: react-native-windows#7566. This
@@ -94,7 +126,7 @@ facebook::react::ComponentRegistryFactory createComponentRegistryFactory(
     providerRegistry->setComponentDescriptorProviderRequest([](facebook::react::ComponentName componentName) {
         std::cerr << "[component] '" << componentName
                   << "' has no native component registered on react-native-linux and mounts as an empty view; "
-                     "declare it in a *NativeComponent spec of a library that autolinks for linux\n"
+                  << kUnregisteredComponentRemedy << "\n"
                   << std::flush;
     });
 
@@ -151,7 +183,9 @@ FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::
     schedulerToolbox.contextContainer = contextContainer_;
     schedulerToolbox.runtimeExecutor = reactInstance.getBufferedRuntimeExecutor();
     schedulerToolbox.bridgelessBindingsExecutor = reactInstance.getUnbufferedRuntimeExecutor();
-    schedulerToolbox.componentRegistryFactory = createComponentRegistryFactory(componentDescriptorProviderRegistry_);
+    const auto registeredComponentNames = std::make_shared<std::unordered_set<std::string>>();
+    schedulerToolbox.componentRegistryFactory =
+        createComponentRegistryFactory(componentDescriptorProviderRegistry_, *registeredComponentNames);
     // `Scheduler`'s constructor reads `useSharedAnimatedBackend()` — true since #128 — and, when it is set, builds
     // an `AnimationBackend` over this choreographer and calls `setAnimationBackend` on it without a null check, so
     // a host that turns the flag on must supply one before the Scheduler exists. See *Animation choreographer* in
@@ -172,13 +206,25 @@ FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::
     schedulerDelegate_ = std::make_unique<facebook::react::SchedulerDelegateImpl>(mountingManager_);
     scheduler_ = std::make_unique<facebook::react::Scheduler>(schedulerToolbox, nullptr, schedulerDelegate_.get());
     schedulerDelegate_->setUIManager(scheduler_->getUIManager());
+    mountingManager_->setAfterMountCallback(
+        [scheduler = scheduler_.get()](facebook::react::SurfaceId surfaceId) { scheduler->reportMount(surfaceId); });
+    additionalSurfaces_ = std::make_unique<facebook::react::SurfaceManager>(*scheduler_);
     // The `AnimationBackend` the Scheduler built over the choreographer above. It is held weakly for the same
     // reason `AnimationChoreographer` holds it weakly: the UIManager owns it, and this host outlives neither.
     animationBackend_ = scheduler_->getUIManager()->unstable_getAnimationBackend();
     inputDispatcher_ = std::make_unique<InputDispatcher>(scheduler_->getUIManager(), mountingManager_, kSurfaceId);
     scrollController_ = std::make_unique<ScrollController>(scheduler_->getUIManager(), kSurfaceId);
 
-    reactInstance.getUnbufferedRuntimeExecutor()(installStopSurfaceBinding);
+    // `UIManager.hasViewManagerConfig` answers through this global, and a `dev=true` bundle asks it about
+    // `DebuggingOverlay` while it mounts the app (#79); upstream's cxx host binds it the same way.
+    reactInstance.getUnbufferedRuntimeExecutor()(
+        [registeredComponentNames = std::shared_ptr<const std::unordered_set<std::string>>(registeredComponentNames)](
+            facebook::jsi::Runtime& runtime) {
+            installStopSurfaceBinding(runtime);
+            facebook::react::bindHasComponentProvider(runtime, [registeredComponentNames](const std::string& name) {
+                return registeredComponentNames->contains(name);
+            });
+        });
 
 #ifdef RNL_ENABLE_IMAGES
     // A finished decode changes the picture with no Fabric mutation behind it, so this is the only path that can
@@ -202,11 +248,13 @@ FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::
 
     surfaceHandler_ = std::make_unique<facebook::react::SurfaceHandler>(moduleName, kSurfaceId);
     scheduler_->registerSurface(*surfaceHandler_);
-    setSurfaceSize(surfaceSize);
+    setSurfaceSize(surfaceSize, 1.0F);
     surfaceHandler_->start();
 }
 
 FabricHost::~FabricHost() noexcept {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
 #ifdef RNL_ENABLE_IMAGES
     setImageDecodeListener({});
 #endif
@@ -214,24 +262,64 @@ FabricHost::~FabricHost() noexcept {
     scheduler_->unregisterSurface(*surfaceHandler_);
 }
 
-void FabricHost::setSurfaceSize(facebook::react::Size surfaceSize) {
-    surfaceHandler_->constraintLayout({.minimumSize = surfaceSize,
-                                       .maximumSize = surfaceSize,
-                                       .layoutDirection = facebook::react::LayoutDirection::LeftToRight},
-                                      {});
+void FabricHost::setSurfaceSize(facebook::react::Size surfaceSize, facebook::react::Float pointScaleFactor) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    surfaceHandler_->constraintLayout(
+        {.minimumSize = surfaceSize, .maximumSize = surfaceSize, .layoutDirection = layoutDirection_.layoutDirection},
+        {.pointScaleFactor = pointScaleFactor,
+         .swapLeftAndRightInRTL = layoutDirection_.swapLeftAndRightInRightToLeft});
+}
+
+void FabricHost::setLayoutDirection(LayoutDirectionRequest request) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    layoutDirection_ = request;
+    setSurfaceSize(surfaceHandler_->getLayoutConstraints().maximumSize,
+                   surfaceHandler_->getLayoutContext().pointScaleFactor);
 }
 
 void FabricHost::stopSurface() {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
     if (surfaceHandler_->getStatus() == facebook::react::SurfaceHandler::Status::Running) {
         surfaceHandler_->stop();
+    }
+
+    additionalSurfaces_->stopAllSurfaces();
+}
+
+void FabricHost::startAdditionalSurface(facebook::react::SurfaceId surfaceId, facebook::react::Size surfaceSize,
+                                        facebook::react::Float pointScaleFactor,
+                                        facebook::react::Point viewportOffset) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    mountingManager_->startSurface(surfaceId, surfaceSize);
+    additionalSurfaces_->startSurface(surfaceId, {}, folly::dynamic::object(),
+                                      {.minimumSize = surfaceSize,
+                                       .maximumSize = surfaceSize,
+                                       .layoutDirection = facebook::react::LayoutDirection::LeftToRight},
+                                      {.pointScaleFactor = pointScaleFactor, .viewportOffset = viewportOffset});
+}
+
+void FabricHost::stopAdditionalSurface(facebook::react::SurfaceId surfaceId) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    // Upstream's `SurfaceManager::stopSurface` erases the end iterator for an id it does not hold.
+    if (additionalSurfaces_->isSurfaceRunning(surfaceId)) {
+        additionalSurfaces_->stopSurface(surfaceId);
     }
 }
 
 void FabricHost::setTextInputFocusSink(TextInputFocusSink* textInputFocusSink) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
     inputDispatcher_->setTextInputFocusSink(textInputFocusSink);
 }
 
 void FabricHost::dispatchInput(const std::vector<InputEvent>& events) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
     // Both see the whole frame: the scroll controller because a scroll is its event, the input dispatcher because
     // a scroll also ends any press it started under, and each ignores what the other owns.
     scrollController_->dispatch(events);
@@ -239,6 +327,8 @@ void FabricHost::dispatchInput(const std::vector<InputEvent>& events) {
 }
 
 void FabricHost::injectFocusCommand(facebook::react::Tag tag) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
     facebook::react::ShadowView syntheticFocusTarget;
 
     syntheticFocusTarget.tag = tag;
@@ -246,6 +336,8 @@ void FabricHost::injectFocusCommand(facebook::react::Tag tag) {
 }
 
 bool FabricHost::advanceScroll(double frameMilliseconds) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
     // The frame's commands first, so a `scrollTo` committed since the last frame is applied by this one rather
     // than by the one after it. Draining here rather than beside `takeFrame` is what keeps a programmatic scroll
     // one frame long: the queue is filled on the JavaScript thread under the mounting mutex and read here on the
@@ -295,39 +387,75 @@ bool FabricHost::advanceScroll(double frameMilliseconds) {
 }
 
 bool FabricHost::advanceCaretBlink(double frameMilliseconds) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
     return inputDispatcher_->advanceCaretBlink(frameMilliseconds);
 }
 
 bool FabricHost::advanceImageAnimations(double frameMilliseconds) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
     return mountingManager_->advanceImageAnimations(frameMilliseconds);
 }
 
 bool FabricHost::advanceControlAnimations(double frameMilliseconds) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
     return mountingManager_->advanceControlAnimations(frameMilliseconds);
 }
 
-void FabricHost::induceEventBeat() { eventBeatInducer_(); }
+void FabricHost::induceEventBeat() {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
 
-void FabricHost::tickAnimations(std::chrono::steady_clock::time_point now) { animationChoreographer_->tick(now); }
+    eventBeatInducer_();
+}
+
+void FabricHost::tickAnimations(std::chrono::steady_clock::time_point now) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    animationChoreographer_->tick(now);
+}
 
 bool FabricHost::hasPendingWork() const {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
     return mountingManager_->hasPendingDamage() || scrollController_->isScrollActive() ||
            animationChoreographer_->isActive();
 }
 
-SceneFrame FabricHost::takeFrame() { return mountingManager_->takeFrame(); }
+SceneFrame FabricHost::takeFrame() {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
 
-SceneSnapshot FabricHost::snapshotScene() const { return mountingManager_->snapshotScene(); }
+    return mountingManager_->takeFrame();
+}
+
+SceneSnapshot FabricHost::snapshotScene() const {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    return mountingManager_->snapshotScene();
+}
 
 SceneHit FabricHost::findNodeAtPoint(facebook::react::Point surfacePoint) const {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
     return mountingManager_->findNodeAtPoint(kSurfaceId, surfacePoint);
 }
 
-std::string FabricHost::dumpScene() const { return mountingManager_->dumpScene(); }
+std::string FabricHost::dumpScene() const {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
 
-SceneNodes FabricHost::visualTreeNodes() const { return mountingManager_->visualTreeNodes(); }
+    return mountingManager_->dumpScene();
+}
+
+SceneNodes FabricHost::visualTreeNodes() const {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    return mountingManager_->visualTreeNodes();
+}
 
 std::vector<AccessibilityChange> FabricHost::takeAccessibilityChanges() {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
     return mountingManager_->takeAccessibilityChanges();
 }
 

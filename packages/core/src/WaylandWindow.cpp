@@ -2,8 +2,10 @@
 
 #include "AutomationProtocol.h"
 #include "WaylandDispatchDiagnostics.h"
+#include "fractional-scale-v1-client-protocol.h"
 #include "presentation-time-client-protocol.h"
 #include "text-input-unstable-v3-client-protocol.h"
+#include "viewporter-client-protocol.h"
 #include "xdg-activation-v1-client-protocol.h"
 #include "xdg-decoration-unstable-v1-client-protocol.h"
 #include "xdg-shell-client-protocol.h"
@@ -81,6 +83,10 @@ const wl_callback_listener WaylandWindow::kFrameCallbackListener{
     .done = WaylandWindow::handleFrameDone,
 };
 
+const wp_fractional_scale_v1_listener WaylandWindow::kFractionalScaleListener{
+    .preferred_scale = WaylandWindow::handlePreferredScale,
+};
+
 const wp_presentation_listener WaylandWindow::kPresentationListener{
     .clock_id = WaylandWindow::handlePresentationClockId,
 };
@@ -127,6 +133,7 @@ WaylandWindow::WaylandWindow(const WindowIdentity& identity, WindowSize initialS
     // and it has to equal the installed desktop file's name. See zed#53962 and zed#33897.
     xdg_toplevel_set_app_id(toplevel_, identity.applicationIdentifier.c_str());
     negotiateDecorations();
+    attachOutputScale();
 
     wl_surface_commit(surface_);
 
@@ -153,6 +160,22 @@ WaylandWindow::~WaylandWindow() noexcept {
 
     if (toplevelDecoration_ != nullptr) {
         zxdg_toplevel_decoration_v1_destroy(toplevelDecoration_);
+    }
+
+    if (fractionalScale_ != nullptr) {
+        wp_fractional_scale_v1_destroy(fractionalScale_);
+    }
+
+    if (viewport_ != nullptr) {
+        wp_viewport_destroy(viewport_);
+    }
+
+    if (fractionalScaleManager_ != nullptr) {
+        wp_fractional_scale_manager_v1_destroy(fractionalScaleManager_);
+    }
+
+    if (viewporter_ != nullptr) {
+        wp_viewporter_destroy(viewporter_);
     }
 
     if (decorationManager_ != nullptr) {
@@ -203,6 +226,12 @@ wl_surface* WaylandWindow::surface() const noexcept { return surface_; }
 wl_shm* WaylandWindow::sharedMemory() const noexcept { return sharedMemory_; }
 
 WindowSize WaylandWindow::size() const noexcept { return size_; }
+
+uint32_t WaylandWindow::preferredScale() const noexcept { return preferredScale_; }
+
+WindowSize WaylandWindow::bufferSize() const noexcept {
+    return WindowSize{bufferExtentOf(size_.width, preferredScale_), bufferExtentOf(size_.height, preferredScale_)};
+}
 
 bool WaylandWindow::isClosed() const noexcept { return closed_; }
 
@@ -399,6 +428,11 @@ void WaylandWindow::bindGlobal(wl_registry* registry, uint32_t name, const char*
                                        std::min(version, kMaximumPresentationVersion));
         presentation_ = static_cast<wp_presentation*>(bound);
         wp_presentation_add_listener(presentation_, &kPresentationListener, this);
+    } else if (std::strcmp(interfaceName, wp_viewporter_interface.name) == 0) {
+        viewporter_ = static_cast<wp_viewporter*>(wl_registry_bind(registry, name, &wp_viewporter_interface, 1));
+    } else if (std::strcmp(interfaceName, wp_fractional_scale_manager_v1_interface.name) == 0) {
+        void* bound = wl_registry_bind(registry, name, &wp_fractional_scale_manager_v1_interface, 1);
+        fractionalScaleManager_ = static_cast<wp_fractional_scale_manager_v1*>(bound);
     }
 }
 
@@ -551,6 +585,10 @@ void WaylandWindow::applyConfigure(int32_t width, int32_t height, ToplevelState 
     if (configuredSize.width != size_.width || configuredSize.height != size_.height) {
         size_ = configuredSize;
         pendingResize_ = true;
+
+        if (viewport_ != nullptr) {
+            wp_viewport_set_destination(viewport_, width, height);
+        }
     }
 }
 
@@ -566,6 +604,19 @@ void WaylandWindow::negotiateDecorations() {
     toplevelDecoration_ = zxdg_decoration_manager_v1_get_toplevel_decoration(decorationManager_, toplevel_);
     zxdg_toplevel_decoration_v1_add_listener(toplevelDecoration_, &kDecorationListener, this);
     zxdg_toplevel_decoration_v1_set_mode(toplevelDecoration_, ZXDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+}
+
+// fractional-scale-v1 requires the viewport: a buffer drawn at the preferred scale only maps back onto the logical
+// surface through `wp_viewport.set_destination`, so a compositor missing either leaves the window at scale 1.
+void WaylandWindow::attachOutputScale() {
+    if (viewporter_ == nullptr || fractionalScaleManager_ == nullptr) {
+        return;
+    }
+
+    viewport_ = wp_viewporter_get_viewport(viewporter_, surface_);
+    wp_viewport_set_destination(viewport_, static_cast<int32_t>(size_.width), static_cast<int32_t>(size_.height));
+    fractionalScale_ = wp_fractional_scale_manager_v1_get_fractional_scale(fractionalScaleManager_, surface_);
+    wp_fractional_scale_v1_add_listener(fractionalScale_, &kFractionalScaleListener, this);
 }
 
 void WaylandWindow::destroyFrameCallback() noexcept {
@@ -637,6 +688,17 @@ void WaylandWindow::handleFrameDone(void* data, wl_callback* callback, uint32_t 
     if (window->presentation_ == nullptr) {
         window->presentedFirstFrame_ = true;
     }
+}
+
+void WaylandWindow::handlePreferredScale(void* data, wp_fractional_scale_v1* /*fractionalScale*/, uint32_t scale) {
+    WaylandWindow* window = static_cast<WaylandWindow*>(data);
+
+    if (scale == 0 || scale == window->preferredScale_) {
+        return;
+    }
+
+    window->preferredScale_ = scale;
+    window->pendingResize_ = true;
 }
 
 // The presentation clock is whatever clock_id names, and it is retained rather than dropped: `FrameTiming` only

@@ -4,20 +4,34 @@
 #include "ConsoleBinding.h"
 #include "CurlHttpClient.h"
 #include "ReactNativeFeatureFlagsOverridesLinux.h"
+#include "WorkletsModule.h"
 
+#ifdef RNL_ENABLE_TEXT_GEOMETRY
+#include "TextGeometry.h"
+
+#include <filesystem>
+#endif
+
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <folly/Uri.h>
+#include <folly/dynamic.h>
+#include <functional>
 #include <jsi/jsi.h>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <utility>
 
+#include <react/debug/react_native_assert.h>
 #include <react/featureflags/ReactNativeFeatureFlags.h>
 #include <react/renderer/animated/NativeAnimatedNodesManagerProvider.h>
 #include <react/renderer/runtimescheduler/RuntimeSchedulerCallInvoker.h>
+#include <react/threading/MessageQueueThreadImpl.h>
 
 namespace react_native_linux {
 
@@ -106,9 +120,38 @@ void installAnimationFrameBinding(facebook::jsi::Runtime& runtime, AnimationFram
             }));
 }
 
+/**
+ * `HMRClient.setup`'s arguments for a `dev=true` bundle served over HTTP, or null for any other location. They are
+ * the ones upstream's `DevServerHelper::setupHMRClient` passes; the client reads the full bundle URL from
+ * `SourceCode` and opens Metro's `/hot` socket on the host and port named here.
+ */
+std::optional<folly::dynamic> hotModuleReplacementArguments(const std::string& location) {
+    const auto uri = folly::Uri::tryFromString(location);
+
+    if (!uri.hasValue() || (uri->scheme() != "http" && uri->scheme() != "https")) {
+        return std::nullopt;
+    }
+
+    folly::Uri bundleUri = uri.value();
+    const auto& queryParameters = bundleUri.getQueryParams();
+    const bool isDevelopmentBundle = std::ranges::any_of(
+        queryParameters, [](const auto& parameter) { return parameter.first == "dev" && parameter.second == "true"; });
+
+    if (!isDevelopmentBundle) {
+        return std::nullopt;
+    }
+
+    return folly::dynamic::array("linux", bundleUri.path().substr(1), bundleUri.host(),
+                                 bundleUri.port() == 0 ? folly::dynamic("") : folly::dynamic(bundleUri.port()), true,
+                                 bundleUri.scheme());
+}
+
 } // namespace
 
-ReactHost::ReactHost() : javaScriptThread_(std::make_shared<facebook::react::MessageQueueThreadImpl>()) {
+ReactHost::ReactHost(std::shared_ptr<StubMessageQueue> stubJavaScriptQueue, FantomRunControls fantomRunControls)
+    : javaScriptThread_(stubJavaScriptQueue != nullptr
+                            ? std::shared_ptr<facebook::react::MessageQueueThread>(stubJavaScriptQueue)
+                            : std::make_shared<facebook::react::MessageQueueThreadImpl>()) {
     facebook::react::ReactNativeFeatureFlags::override(std::make_unique<ReactNativeFeatureFlagsOverridesLinux>());
 
     std::unique_ptr<HostTimerRegistry> ownedTimerRegistry = std::make_unique<HostTimerRegistry>();
@@ -122,9 +165,12 @@ ReactHost::ReactHost() : javaScriptThread_(std::make_shared<facebook::react::Mes
     timerManager_->setRuntimeExecutor(reactInstance_->getBufferedRuntimeExecutor());
 
     animatedNodesManagerProvider_ = std::make_shared<facebook::react::NativeAnimatedNodesManagerProvider>();
+    fantomRunControls.flushMessageQueue = [stubJavaScriptQueue]() { stubJavaScriptQueue->flush(); };
+    fantomRunControls.timerRegistry = timerRegistry_;
     turboModuleRegistry_ = std::make_unique<TurboModuleRegistry>(
         std::make_shared<facebook::react::RuntimeSchedulerCallInvoker>(reactInstance_->getRuntimeScheduler()),
-        animatedNodesManagerProvider_, errorReporter_.createHandler());
+        animatedNodesManagerProvider_, errorReporter_.createHandler(),
+        stubJavaScriptQueue != nullptr ? std::optional<FantomRunControls>(std::move(fantomRunControls)) : std::nullopt);
 
     reactInstance_->initializeRuntime(
         {}, [registry = turboModuleRegistry_.get(), hasMarkedTestPassed = hasMarkedTestPassed_,
@@ -137,6 +183,11 @@ ReactHost::ReactHost() : javaScriptThread_(std::make_shared<facebook::react::Mes
 }
 
 ReactHost::~ReactHost() noexcept {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    // #136: worklets' proxy and UI runtime go first, on the JavaScript thread while it still runs and while this
+    // frame thread runs no frame, so a worklet in flight finds the React Native runtime marked dead, not destroyed.
+    javaScriptThread_->runOnQueueSync([&worklets = turboModuleRegistry_->worklets()]() { worklets.invalidate(); });
     javaScriptThread_->quitSynchronous();
     animationFrameQueue_.clear();
     turboModuleRegistry_.reset();
@@ -167,19 +218,59 @@ ReactHost::~ReactHost() noexcept {
     automationErrorLog().clear();
 }
 
-facebook::react::ReactInstance& ReactHost::reactInstance() noexcept { return *reactInstance_; }
+facebook::react::ReactInstance& ReactHost::reactInstance() noexcept {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
 
-DimensionsSource& ReactHost::dimensions() noexcept { return turboModuleRegistry_->dimensions(); }
+    return *reactInstance_;
+}
 
-AppearanceModel& ReactHost::appearance() noexcept { return turboModuleRegistry_->appearance(); }
+DimensionsSource& ReactHost::dimensions() noexcept {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
 
-ActivationModel& ReactHost::activation() noexcept { return turboModuleRegistry_->activation(); }
+    return turboModuleRegistry_->dimensions();
+}
 
-KeyValueStore& ReactHost::keyValueStore() noexcept { return turboModuleRegistry_->keyValueStore(); }
+AppearanceModel& ReactHost::appearance() noexcept {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
 
-void ReactHost::publishPendingDimensions() { turboModuleRegistry_->publishPendingDimensions(); }
+    return turboModuleRegistry_->appearance();
+}
+
+ActivationModel& ReactHost::activation() noexcept {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    return turboModuleRegistry_->activation();
+}
+
+KeyValueStore& ReactHost::keyValueStore() noexcept {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    return turboModuleRegistry_->keyValueStore();
+}
+
+LinuxWorkletsModule& ReactHost::worklets() noexcept {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    return turboModuleRegistry_->worklets();
+}
+
+I18nModel& ReactHost::i18n() noexcept {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    return turboModuleRegistry_->i18n();
+}
+
+void ReactHost::publishPendingDimensions() {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    turboModuleRegistry_->publishPendingDimensions();
+}
 
 void ReactHost::loadBundle(const std::string& location) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    turboModuleRegistry_->setBundleUrl(location);
+
     if (location.starts_with("http://") || location.starts_with("https://")) {
         loadScript(std::make_unique<facebook::react::JSBigStdString>(fetchBundle(location)), location);
     } else {
@@ -187,21 +278,50 @@ void ReactHost::loadBundle(const std::string& location) {
     }
 }
 
+void ReactHost::startHotModuleReplacement(const std::string& location) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    if (std::optional<folly::dynamic> arguments = hotModuleReplacementArguments(location); arguments.has_value()) {
+        reactInstance_->callFunctionOnModule("HMRClient", "setup", std::move(arguments.value()));
+    }
+}
+
 void ReactHost::loadScript(std::unique_ptr<const facebook::react::JSBigString> script, const std::string& sourceUrl) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+#ifdef RNL_ENABLE_TEXT_GEOMETRY
+    // The application's fonts live beside its bundle (#70). A URL, or a bundle without the directory, has none,
+    // and registering none clears whatever the previous source registered.
+    const std::filesystem::path applicationFonts = std::filesystem::path(sourceUrl).parent_path() / "assets" / "fonts";
+
+    registerApplicationFonts(std::filesystem::is_directory(applicationFonts) ? applicationFonts.string()
+                                                                             : std::string());
+#endif
+
     reactInstance_->loadScript(std::move(script), sourceUrl);
 }
 
 void ReactHost::drainJavaScriptThread() {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
     javaScriptThread_->runOnQueueSync([]() {});
 }
 
 void ReactHost::blockJavaScriptThread(std::chrono::milliseconds duration) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
     javaScriptThread_->runOnQueueSync([duration]() { std::this_thread::sleep_for(duration); });
 }
 
-bool ReactHost::hasMarkedTestPassed() const { return hasMarkedTestPassed_->load(); }
+bool ReactHost::hasMarkedTestPassed() const {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    return hasMarkedTestPassed_->load();
+}
 
 bool ReactHost::runUntilQuiescent(std::chrono::milliseconds budget) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
     const std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::now() + budget;
 
     while (true) {
@@ -217,9 +337,23 @@ bool ReactHost::runUntilQuiescent(std::chrono::milliseconds budget) {
     }
 }
 
-bool ReactHost::hasReportedFatalError() const { return errorReporter_.hasReportedFatalError(); }
+bool ReactHost::hasReportedFatalError() const {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    return errorReporter_.hasReportedFatalError();
+}
+
+bool ReactHost::isReloadRequested() const {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    return turboModuleRegistry_->isReloadRequested();
+}
 
 void ReactHost::dispatchAnimationFrames(std::chrono::steady_clock::time_point now) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    turboModuleRegistry_->worklets().tick(now);
+
     if (!animationFrameQueue_.hasPendingRequests()) {
         return;
     }
@@ -233,7 +367,10 @@ void ReactHost::dispatchAnimationFrames(std::chrono::steady_clock::time_point no
 }
 
 bool ReactHost::hasPendingTimers() const {
-    return timerRegistry_->hasPendingTimers() || animationFrameQueue_.hasPendingRequests();
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    return timerRegistry_->hasPendingTimers() || animationFrameQueue_.hasPendingRequests() ||
+           turboModuleRegistry_->worklets().hasPendingWork();
 }
 
 } // namespace react_native_linux

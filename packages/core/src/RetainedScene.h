@@ -49,6 +49,9 @@ struct SceneMatrix {
     float translateY{0.0F};
 };
 
+/** Where `matrix` moves `point`: the affine the painter hands to `SkMatrix`, applied to one point. */
+facebook::react::Point mapPoint(const SceneMatrix& matrix, facebook::react::Point point);
+
 /**
  * One rounded box, in the untransformed coordinates the frame it came from is written in.
  *
@@ -113,7 +116,12 @@ struct SceneClip {
  * Skia and the scene does not link it.
  */
 struct SceneTextContent {
-    facebook::react::AttributedString attributedString;
+    /**
+     * Shared rather than copied: a committed string never changes, so every snapshot hands its primitive the node's
+     * own, and snapshotting a text-heavy tree copies no text (#126). Only an opacity below 1 makes a copy, because
+     * that rewrites the colours.
+     */
+    std::shared_ptr<const facebook::react::AttributedString> attributedString;
     facebook::react::ParagraphAttributes paragraphAttributes;
 
     /**
@@ -364,6 +372,17 @@ struct ScenePrimitive {
      * node also damages its ring.
      */
     bool focusRing{false};
+
+    /**
+     * Group opacity (#105). The alphas of the translucent ancestors whose subtree this primitive is the first to
+     * paint, outermost first: the painter opens one layer per entry before painting it. Those ancestors' opacity is
+     * not folded into the colours of anything they contain; the layer applies it once, to the composited subtree,
+     * so overlapping descendants do not blend against each other the way per-primitive alpha makes them.
+     */
+    std::vector<float> opensLayers;
+
+    /** How many of those layers end after this primitive, the last one their subtrees paint. */
+    uint32_t closesLayers{0};
 };
 
 using SceneSnapshot = std::vector<ScenePrimitive>;

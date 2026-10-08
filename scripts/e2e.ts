@@ -1,13 +1,19 @@
 import { argv, env, stderr, stdout } from "node:process";
-import { buildEnvironment, findExecutable, findLavapipeIcd } from "./window-golden.ts";
 import {
-  describeTraceFailures,
-  formatInjectorScript,
-  resolveArtifactPaths,
-  resolveExpectedOutcome,
-} from "./e2e/scenario.ts";
+  attachTrace,
+  editAndAwaitRefresh,
+  injectSteps,
+  injectorBinaryPath,
+  startCompositor,
+  stopCompositor,
+  waitForSocketName,
+  windowBinaryPath,
+  withDevServer,
+} from "./e2e-processes.ts";
+import { describeTraceFailures, resolveArtifactPaths, resolveExpectedOutcome } from "./e2e/scenario.ts";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { gradeArtifacts, gradeAutomationChannel, injectAndResolveFailure, resolveWindowFlags } from "./e2e/grade.ts";
+import { findExecutable, findLavapipeIcd, resolveScenarioBundle } from "./window-golden.ts";
+import { gradeArtifacts, gradeAutomationChannel, injectAndResolveFailure } from "./e2e/grade.ts";
 import {
   isKeyboardFocused,
   planRuns,
@@ -15,34 +21,25 @@ import {
   waitForWindowReadyFailures,
   waitUntil,
 } from "./e2e/discovery.ts";
-import { spawn, spawnSync } from "node:child_process";
-import { setTimeout as delay } from "node:timers/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 
 const FAILURE_EXIT_STATUS = 1;
 const UNAVAILABLE_EXIT_STATUS = 2;
-const SUCCESSFUL_EXIT_STATUS = 0;
 const EMPTY_LENGTH = 0;
-const SOCKET_TIMEOUT_MS = 15_000;
 const READY_TIMEOUT_MS = 60_000;
 const RUN_TIMEOUT_MS = 120_000;
-const INJECT_TIMEOUT_MS = 60_000;
-const COMPOSITOR_STOP_GRACE_MS = 250;
 
 /** Cage: weston only offers weston-test, shipped nowhere. See *E2E driver (#7)* in docs/cpp-toolchain.md. */
 const COMPOSITOR_NAME = "cage";
-const SOCKET_PATTERN = /^wayland-\d+$/u;
 
 const repositoryRoot = path.resolve(import.meta.dirname, "..");
 const packagesDirectory = path.join(repositoryRoot, "packages");
-const windowBinaryPath = path.join(repositoryRoot, "build", "dev", "bin", "rnl_window");
-const injectorBinaryPath = path.join(repositoryRoot, "build", "dev", "bin", "rnl_inject");
 const artifactsRoot = path.join(repositoryRoot, "build", "e2e");
 
 type ScenarioRun = ReturnType<typeof readRequestedScenarios>[number];
 type Artifacts = ReturnType<typeof resolveArtifactPaths>;
-type Compositor = ReturnType<typeof spawn>;
+type Compositor = ReturnType<typeof startCompositor>;
 
 interface TraceSink {
   /** Set once the compositor's stdio has closed, which is later than its exit. */
@@ -81,98 +78,6 @@ const createWorkspace = (artifacts: Artifacts): Workspace => {
   };
 };
 
-/**
- * The headless wlroots backend needs no DRM device and no seat, and the pixman renderer needs no GPU at all: the
- * compositor only has to accept the client's buffers, because the screenshot comes out of the client's own
- * swapchain. cage runs the window as its child and terminates when it exits, so the two are one process tree.
- */
-const startCompositor = (run: ScenarioRun, rig: Rig, workspace: Workspace): Compositor =>
-  spawn(
-    rig.compositorPath,
-    [
-      "--",
-      windowBinaryPath,
-      "--fabric",
-      path.join(run.source.bundlesDirectory, run.scenario.bundle),
-      "--frames",
-      String(run.scenario.frames),
-      "--screenshot",
-      workspace.screenshotPath,
-      "--frame-log",
-      workspace.frameLogPath,
-      ...(run.scenario.automation === null ? [] : ["--automation"]),
-      ...resolveWindowFlags(run.scenario.windowFlags),
-      ...(run.scenario.injectProtocolError ? ["--inject-protocol-error"] : []),
-    ],
-    {
-      env: buildEnvironment({
-        VK_ICD_FILENAMES: rig.lavapipeIcdPath,
-        WLR_BACKENDS: "headless",
-        WLR_LIBINPUT_NO_DEVICES: "1",
-        WLR_RENDERER: "pixman",
-        XDG_DATA_HOME: path.join(workspace.runtimeDirectory, "data"),
-        XDG_RUNTIME_DIR: workspace.runtimeDirectory,
-        XDG_STATE_HOME: path.join(workspace.runtimeDirectory, "state"),
-        XKB_DEFAULT_LAYOUT: "us",
-      }),
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  );
-
-/** The event trace is the bundle's own `console.log` output, passed through by cage; the fixtures are the format. */
-const attachTrace = (compositor: Compositor, sink: TraceSink): void => {
-  const record = (chunk: Buffer): void => {
-    sink.text += chunk.toString();
-  };
-
-  compositor.stdout?.on("data", record);
-  compositor.stderr?.on("data", record);
-  compositor.on("close", () => {
-    sink.isClosed = true;
-  });
-  compositor.on("error", (error: Error) => {
-    sink.text += `${error.message}\n`;
-  });
-};
-
-const findSocketName = (runtimeDirectory: string): string | null =>
-  readdirSync(runtimeDirectory).find((entry) => SOCKET_PATTERN.test(entry)) ?? null;
-
-const waitForSocketName = async (runtimeDirectory: string): Promise<string | null> => {
-  await waitUntil(() => findSocketName(runtimeDirectory) !== null, SOCKET_TIMEOUT_MS);
-
-  return findSocketName(runtimeDirectory);
-};
-
-const stopCompositor = async (compositor: Compositor): Promise<void> => {
-  compositor.kill("SIGTERM");
-  await delay(COMPOSITOR_STOP_GRACE_MS);
-  compositor.kill("SIGKILL");
-};
-
-const injectSteps = (
-  steps: readonly string[],
-  runtimeDirectory: string,
-  socketName: string,
-): { failure: string | null; status: number | null } => {
-  const injection = spawnSync(injectorBinaryPath, [], {
-    encoding: "utf8",
-    env: buildEnvironment({
-      WAYLAND_DISPLAY: socketName,
-      XDG_RUNTIME_DIR: runtimeDirectory,
-      XKB_DEFAULT_LAYOUT: "us",
-    }),
-    input: formatInjectorScript(steps),
-    timeout: INJECT_TIMEOUT_MS,
-  });
-
-  const failure =
-    injection.status === SUCCESSFUL_EXIT_STATUS
-      ? null
-      : `rnl_inject exited with status ${String(injection.status)}:\n${injection.stdout}${injection.stderr}`;
-  return { failure, status: injection.status };
-};
-
 const driveScenario = async (run: ScenarioRun, workspace: Workspace): Promise<readonly string[]> => {
   const { scenario } = run;
   const socketName = await waitForSocketName(workspace.runtimeDirectory);
@@ -197,6 +102,7 @@ const driveScenario = async (run: ScenarioRun, workspace: Workspace): Promise<re
       waitUntil(() => workspace.trace.text.includes(scenario.expectsExitAfter ?? ""), READY_TIMEOUT_MS),
     waitForKeyboardFocus: () => waitUntil(() => isKeyboardFocused(workspace.trace.text), READY_TIMEOUT_MS),
   });
+  const refreshFailures = await editAndAwaitRefresh(scenario, workspace.trace);
   const automationFailures = await gradeAutomationChannel({
     artifactsDirectory: workspace.artifactsDirectory,
     goldensDirectory: run.source.goldensDirectory,
@@ -211,7 +117,7 @@ const driveScenario = async (run: ScenarioRun, workspace: Workspace): Promise<re
    */
   await waitUntil(() => workspace.trace.isClosed, RUN_TIMEOUT_MS);
 
-  return injectionFailure === null ? automationFailures : [injectionFailure, ...automationFailures];
+  return [...(injectionFailure === null ? [] : [injectionFailure]), ...refreshFailures, ...automationFailures];
 };
 
 const collectArtifacts = (tracePath: string, workspace: Workspace): void => {
@@ -231,14 +137,42 @@ const driveAndStop = async (
   }
 };
 
-const runScenario = async (run: ScenarioRun, rig: Rig, attemptKey: string): Promise<readonly string[]> => {
-  const artifacts = resolveArtifactPaths(artifactsRoot, attemptKey);
-  const workspace = createWorkspace(artifacts);
-  const compositor = startCompositor(run, rig, workspace);
+interface WindowRun {
+  readonly failures: readonly string[];
+  readonly signal: NodeJS.Signals | null;
+}
+
+interface WindowLaunch {
+  readonly bundle: string;
+  readonly rig: Rig;
+  readonly run: ScenarioRun;
+  readonly workspace: Workspace;
+}
+
+const runCompositor = async ({ bundle, rig, run, workspace }: WindowLaunch): Promise<WindowRun> => {
+  const compositor = startCompositor({ ...workspace, bundle, rig, scenario: run.scenario });
 
   attachTrace(compositor, workspace.trace);
 
-  const runFailures = await driveAndStop(run, compositor, workspace);
+  const failures = await driveAndStop(run, compositor, workspace);
+
+  return { failures, signal: compositor.signalCode };
+};
+
+/** A `fastRefresh` scenario's window runs its bundle from a watching Metro; see `withDevServer`. */
+const runWindow = (run: ScenarioRun, rig: Rig, workspace: Workspace): Promise<WindowRun> => {
+  const { fastRefresh } = run.scenario;
+  const entryPath = path.join(run.source.bundlesDirectory, run.scenario.bundle);
+
+  return fastRefresh === null
+    ? runCompositor({ bundle: resolveScenarioBundle(run.source.bundlesDirectory, run.scenario), rig, run, workspace })
+    : withDevServer(entryPath, fastRefresh, (bundle) => runCompositor({ bundle, rig, run, workspace }));
+};
+
+const runScenario = async (run: ScenarioRun, rig: Rig, attemptKey: string): Promise<readonly string[]> => {
+  const artifacts = resolveArtifactPaths(artifactsRoot, attemptKey);
+  const workspace = createWorkspace(artifacts);
+  const { failures: runFailures, signal } = await runWindow(run, rig, workspace);
 
   collectArtifacts(artifacts.tracePath, workspace);
 
@@ -253,7 +187,7 @@ const runScenario = async (run: ScenarioRun, rig: Rig, attemptKey: string): Prom
 
   const failures = [...runFailures, ...describeTraceFailures(run.scenario, workspace.trace.text), ...grade.failures];
 
-  return resolveExpectedOutcome(run.scenario, failures, { signal: compositor.signalCode, trace: workspace.trace.text });
+  return resolveExpectedOutcome(run.scenario, failures, { signal, trace: workspace.trace.text });
 };
 
 const reportScenario = (failures: readonly string[], attemptKey: string): void => {
