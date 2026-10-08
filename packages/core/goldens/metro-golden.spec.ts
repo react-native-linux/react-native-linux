@@ -7,6 +7,8 @@ import { execPath } from "node:process";
 import path from "node:path";
 import { tmpdir } from "node:os";
 
+const HTTP_OK = 200;
+const HTTP_NOT_FOUND = 404;
 const RENDER_TIMEOUT_MS = 120_000;
 const METRO_STARTUP_TIMEOUT_MS = 45_000;
 const RENDER_PROCESS_TIMEOUT_MS = 45_000;
@@ -41,13 +43,30 @@ const renderHarnessApp = (bundleUrl: string, outputPath: string): void => {
   });
 };
 
+const assertHarnessGolden = (bundleUrl: string): void => {
+  const scratchDirectory = mkdtempSync(path.join(tmpdir(), "rnl-golden-metro-"));
+
+  try {
+    const renderedPath = path.join(scratchDirectory, "app.png");
+
+    renderHarnessApp(bundleUrl, renderedPath);
+
+    const rendered = PNG.sync.read(readFileSync(renderedPath));
+    const golden = PNG.sync.read(readFileSync(harnessGoldenPath));
+
+    expect(compareImages(rendered, golden)).toBeNull();
+  } finally {
+    rmSync(scratchDirectory, { force: true, recursive: true });
+  }
+};
+
 /**
  * #79: the test-harness app loaded by URL from a running Metro dev server rather than from a bundle file, once as a
  * production bundle and once as a `dev=true` one, which also runs LogBox, the dev-only modules and the version
  * check. `next()` alone never closes the pipe, and `resume` keeps draining it, so Metro never dies of EPIPE
  * mid-request.
  */
-describe.skipIf(!existsSync(binaryPath))("application golden from a Metro dev server", () => {
+describe("application golden from a Metro dev server", () => {
   let metro: ReturnType<typeof spawn> | null = null;
   let origin = "";
 
@@ -71,24 +90,28 @@ describe.skipIf(!existsSync(binaryPath))("application golden from a Metro dev se
     metro?.kill();
   });
 
-  it.each(["false", "true"])(
+  it.each(["/status", "/status?probe=1"])("serves the React Native status contract at %s", async (endpoint) => {
+    const response = await fetch(`${origin}${endpoint}`);
+
+    expect(response.status).toBe(HTTP_OK);
+    expect(response.headers.get("X-React-Native-Project-Root")).toBe(
+      path.join(repositoryRoot, "packages", "test-harness"),
+    );
+    expect(await response.text()).toBe("packager-status:running");
+  });
+
+  it("passes other requests to Metro", async () => {
+    const response = await fetch(`${origin}/missing`);
+
+    expect(response.status).toBe(HTTP_NOT_FOUND);
+    expect(response.headers.get("X-React-Native-Project-Root")).toBeNull();
+  });
+
+  it.skipIf(!existsSync(binaryPath)).each(["false", "true"])(
     "renders the test-harness app served by Metro with dev=%s exactly as test-harness-app.png",
     { timeout: RENDER_TIMEOUT_MS },
     (dev) => {
-      const scratchDirectory = mkdtempSync(path.join(tmpdir(), "rnl-golden-metro-"));
-
-      try {
-        const renderedPath = path.join(scratchDirectory, "app.png");
-
-        renderHarnessApp(`${origin}/index.bundle?platform=linux&dev=${dev}&minify=false`, renderedPath);
-
-        const rendered = PNG.sync.read(readFileSync(renderedPath));
-        const golden = PNG.sync.read(readFileSync(harnessGoldenPath));
-
-        expect(compareImages(rendered, golden)).toBeNull();
-      } finally {
-        rmSync(scratchDirectory, { force: true, recursive: true });
-      }
+      assertHarnessGolden(`${origin}/index.bundle?platform=linux&dev=${dev}&minify=false`);
     },
   );
 });
