@@ -1226,6 +1226,13 @@ The headless runner does not, because the open socket and the client's heartbeat
 reaching quiescence. `HotModuleReplacementSetupTest` proves the call and its arguments; applying an edit is #81's
 Fast Refresh test.
 
+The harness Metro server answers `/status` with `packager-status:running` and the
+`X-React-Native-Project-Root` header, following the community CLI's
+[status middleware](https://github.com/react-native-community/cli/blob/main/packages/cli-server-api/src/statusPageMiddleware.ts).
+The handler lives in `serve.ts` because starting Metro directly omits that CLI middleware; all other requests
+continue to Metro. `metro-golden.spec.ts` verifies the status body, project identity and unrelated-route handling
+against the real server even when the native renderer is unavailable.
+
 Not yet: a `blob` request body (there is no Blob module), cookies, `wss://`, and the rest of the Metro dev-server
 contract: reload and symbolication.
 
