@@ -12,6 +12,9 @@ const HTTP_NOT_FOUND = 404;
 const RENDER_TIMEOUT_MS = 120_000;
 const METRO_STARTUP_TIMEOUT_MS = 45_000;
 const RENDER_PROCESS_TIMEOUT_MS = 45_000;
+const SOURCE_ENTRY_LINE = 4;
+const LINE_NUMBER_OFFSET = 1;
+const NO_MATCH = -1;
 
 const repositoryRoot = path.join(import.meta.dirname, "..", "..", "..");
 const binaryPath = path.join(repositoryRoot, "build", "dev", "bin", "hello_react");
@@ -60,6 +63,46 @@ const assertHarnessGolden = (bundleUrl: string): void => {
   }
 };
 
+const fetchGeneratedFrame = async (
+  origin: string,
+): Promise<{ column: number; file: string; lineNumber: number; methodName: string }> => {
+  const bundleUrl = `${origin}/index.bundle?platform=linux&dev=true&minify=false`;
+  const bundleResponse = await fetch(bundleUrl);
+
+  expect(bundleResponse.status).toBe(HTTP_OK);
+
+  const bundle = await bundleResponse.text();
+  const generatedLines = bundle.split("\n");
+  const generatedLineIndex = generatedLines.findIndex((line) => /registerComponent\(["']TestHarness["']/u.test(line));
+  const generatedColumn = (generatedLines[generatedLineIndex] ?? "").indexOf("registerComponent");
+
+  expect(generatedLineIndex).toBeGreaterThan(NO_MATCH);
+  expect(generatedColumn).toBeGreaterThan(NO_MATCH);
+
+  return {
+    column: generatedColumn,
+    file: bundleUrl,
+    lineNumber: generatedLineIndex + LINE_NUMBER_OFFSET,
+    methodName: "registerComponent",
+  };
+};
+
+const assertMetroSymbolication = async (origin: string): Promise<void> => {
+  const frame = await fetchGeneratedFrame(origin);
+  const response = await fetch(`${origin}/symbolicate`, {
+    body: JSON.stringify({ stack: [frame] }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+  const symbolicated: unknown = await response.json();
+
+  expect(response.status).toBe(HTTP_OK);
+  expect(symbolicated).toMatchObject({
+    codeFrame: { content: expect.stringMatching(/registerComponent\(.*TestHarness/u) },
+    stack: [{ file: path.join(repositoryRoot, "packages", "test-harness", "index.ts"), lineNumber: SOURCE_ENTRY_LINE }],
+  });
+};
+
 /**
  * #79: the test-harness app loaded by URL from a running Metro dev server rather than from a bundle file, once as a
  * production bundle and once as a `dev=true` one, which also runs LogBox, the dev-only modules and the version
@@ -86,9 +129,11 @@ describe("application golden from a Metro dev server", () => {
     }
   }, METRO_STARTUP_TIMEOUT_MS);
 
-  afterAll(() => {
-    metro?.kill();
-  });
+  afterAll(() => metro?.kill());
+
+  it("maps a Linux bundle location back to TypeScript through /symbolicate", { timeout: RENDER_TIMEOUT_MS }, () =>
+    assertMetroSymbolication(origin),
+  );
 
   it.each(["/status", "/status?probe=1"])("serves the React Native status contract at %s", async (endpoint) => {
     const response = await fetch(`${origin}${endpoint}`);
@@ -110,8 +155,6 @@ describe("application golden from a Metro dev server", () => {
   it.skipIf(!existsSync(binaryPath)).each(["false", "true"])(
     "renders the test-harness app served by Metro with dev=%s exactly as test-harness-app.png",
     { timeout: RENDER_TIMEOUT_MS },
-    (dev) => {
-      assertHarnessGolden(`${origin}/index.bundle?platform=linux&dev=${dev}&minify=false`);
-    },
+    (dev) => assertHarnessGolden(`${origin}/index.bundle?platform=linux&dev=${dev}&minify=false`),
   );
 });
