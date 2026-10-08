@@ -38,7 +38,8 @@ namespace react_native_linux {
  */
 class SharedMemoryRasterRenderer final : public WindowRenderer {
 public:
-    SharedMemoryRasterRenderer(wl_shm* sharedMemory, wl_surface* waylandSurface, WindowSize initialSize);
+    SharedMemoryRasterRenderer(wl_shm* sharedMemory, wl_surface* waylandSurface, WindowSize initialSize,
+                               bool transparentBackground);
     SharedMemoryRasterRenderer(const SharedMemoryRasterRenderer&) = delete;
     SharedMemoryRasterRenderer(SharedMemoryRasterRenderer&&) = delete;
     SharedMemoryRasterRenderer& operator=(const SharedMemoryRasterRenderer&) = delete;
@@ -70,6 +71,7 @@ private:
     size_t poolSize_{0};
     int poolFileDescriptor_{-1};
     WindowSize size_;
+    bool transparentBackground_;
     std::array<Buffer, 2> buffers_;
     std::string pendingCapturePath_;
 };

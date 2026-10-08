@@ -14,5 +14,9 @@
     "maxDifferentPixels": 50,
     "crop": { "left": 90, "top": 70, "width": 220, "height": 140 }
   },
-  "expect": ["[rnl-automation] listening on", "pressable: topClick on box at 200,140"]
+  "expect": [
+    "[rnl-raster] format=xrgb8888 alpha=opaque",
+    "[rnl-automation] listening on",
+    "pressable: topClick on box at 200,140"
+  ]
 }

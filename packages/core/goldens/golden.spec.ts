@@ -204,6 +204,9 @@ const windowGoldenFileNames = [
   "window-view-props.png",
   "window-first-frame.png",
   "window-decorations.png",
+  "window-translucent.png",
+  "window-raster-fabric-view.png",
+  "window-raster-translucent.png",
 ];
 
 /**
@@ -232,6 +235,14 @@ const buildMissingWindowGoldenMessage = (goldenPath: string): string =>
 describe.skipIf(isWindowRigUnavailable)("window goldens", () => {
   it("renders every fixture through the window path", () => {
     expect(windowRig.status, `${windowRig.stdout}${windowRig.stderr}`).toBe(SUCCESSFUL_EXIT_STATUS);
+  });
+
+  it("matches raster translucency to Vulkan through the window path", () => {
+    const renderDirectory = isRegenerating ? goldensDirectory : windowRenderDirectory;
+    const rasterPath = path.join(renderDirectory, "window-raster-translucent.png");
+    const vulkanPath = path.join(renderDirectory, "window-translucent.png");
+
+    expect(compareImagesPerceptually(decodePng(rasterPath), decodePng(vulkanPath))).toBeNull();
   });
 
   for (const goldenFileName of windowGoldenFileNames) {
