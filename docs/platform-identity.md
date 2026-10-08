@@ -334,23 +334,22 @@ react-native-platform-override version`). Added to the `catalog:` in `pnpm-works
 `Libraries/Utilities/Platform.android.js` at `v0.87.1` with this exact algorithm reproduces
 `react-native-windows`'s own recorded `baseHash` for that same file
 (`6497ec623691b34885e226e4d05bc55ba582a135`) byte-for-byte — the file has not changed between their pinned
-nightly and `v0.87.1`. All three `baseHash` values in `packages/core/overrides.json` were computed this way
+nightly and `v0.87.1`. All six `baseHash` values in `packages/core/overrides.json` were computed this way
 against `v0.87.1`, not left as placeholders.
 
 **Manifest** (`packages/core/overrides.json`): `baseVersion: "0.87.1"`, `includePatterns: ["src-linux/**",
-"index.ts"]`. Four entries: `index.ts` as `platform` (no upstream counterpart, given the scoping above),
-`Platform.linux.ts` and `PlatformTypes.ts` as `derived` from their Android/shared upstream counterparts, and
-`NativePlatformConstantsLinux.ts` as `derived` from
-`src/private/specs_DEPRECATED/modules/NativePlatformConstantsAndroid.js` (matching the exact base file RNW itself
-derives `NativePlatformConstantsWindows.js` from).
+"index.ts"]`, excluding `**/*.spec.ts`. Ten entries: six `derived` overrides (`BaseViewConfig.linux.ts`,
+`PlatformColorValueTypes.linux.ts`, `processColor.linux.ts`, `NativePlatformConstantsLinux.ts`,
+`Platform.linux.ts`, and `PlatformTypes.ts`) and four `platform` entries (`index.ts`, `mergeBaseViewConfigs.ts`,
+`upstream-view-configs.d.ts`, and `normalize-colors.d.ts`). The [override report](override-report.md) lists their
+full paths and owning issues; the manifest records each derived override's upstream file and hash.
 
-**Commands the coordinator runs**, in `packages/core`, after `pnpm install` at the repo root (the tool itself is
-not installed until then):
-
-```bash
-pnpm install
-pnpm --filter @react-native-linux/core override:validate   # react-native-platform-override validate
-```
+**Commands.** `pnpm override:check`, part of `pnpm validate`, runs `react-native-platform-override`'s
+`validateManifest` against the *vendored* React Native tag (so a bump PR reports every override whose upstream file
+moved), requires every entry to name its issue, holds the count to the override budget (#86), and fails when
+`docs/override-report.md` is stale; `pnpm override:report` regenerates that report, which lists each override's
+size against upstream and its age in React Native minors. The report pins Git's `myers` diff algorithm so local
+Git preferences cannot change the line counts checked by CI.
 
 `validate` checks that every file matching `includePatterns` is listed, and that `derived`/`patch` entries'
 `baseHash` still matches what `add`/`upgrade` would compute. It needs network access to GitHub to fetch base
@@ -362,10 +361,11 @@ repository instead:
 
 ```bash
 mkdir -p ~/.cache/react-native-linux-tmp
-TMPDIR=~/.cache/react-native-linux-tmp pnpm --filter @react-native-linux/core override:validate
-``` When React
-Native is upgraded past `0.87.1`, run `react-native-platform-override upgrade` from `packages/core` to
-merge upstream changes into the three `derived` files and bump `baseVersion`.
+TMPDIR=~/.cache/react-native-linux-tmp pnpm override:check
+```
+
+When React Native is upgraded past `0.87.1`, run `react-native-platform-override upgrade` from `packages/core` to
+merge upstream changes into the six `derived` files and bump `baseVersion`.
 
 ## Deferred
 
@@ -384,4 +384,3 @@ merge upstream changes into the three `derived` files and bump `baseVersion`.
 - **The full-package vendoring step.** RNW's `generate.js`-style copy of the rest of upstream `Libraries/**` into
   `src-linux` before publish is not built. `@react-native-linux/core` is not yet a complete drop-in `react-native`
   replacement, and is not claimed to be one; see "What this is not" above.
-

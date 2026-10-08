@@ -15,6 +15,7 @@
     "./linux-autolinking.ts": "./src/linux-autolinking.ts",
     "./linux-bundle-manifest.ts": "./src/linux-bundle-manifest.ts",
     "./linux-package-format-names.ts": "./src/linux-package-format-names.ts",
+    "./override-report.ts": "./src/override-report.ts",
     "./manifest-schema-drift.ts": "./src/manifest-schema-drift.ts",
     "./metro-config.ts": "./src/metro-config.ts"
   },
