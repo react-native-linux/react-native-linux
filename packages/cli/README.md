@@ -86,6 +86,15 @@ schema this is read from, so identity is invented once rather than at every poin
 
 `src/ecosystem-matrix.ts` is the flagship's native dependency ledger: every dependency of Suuudokuuu that needs a
 Linux implementation, the range the flagship declares, and where it stands — `works` or `shimmed` (naming the
-test that proves it), `in progress` or `blocked` (naming the owning issue), or `declined` (naming the substitute).
+test that proves it), `in progress` or `blocked` (naming the owning issue), or `declined` (naming the decision issue
+and substitute).
 M4 is measured against it, so a row changes in the same PR as the work it records. `ecosystem-matrix.spec.ts`
-fails on a duplicate row, a `works`/`shimmed` row whose test file does not exist, or an open row with no issue.
+fails on a duplicate row, a `works`/`shimmed` row whose test file does not exist, or an open/declined row with no
+issue. Runtime dependencies added to the harness must have a row, using the existing package aliases to identify
+Linux overlays; React, React Native and Babel's runtime are the infrastructure exceptions. The flagship's full
+dependency inventory still comes from its recorded source revision; this gate covers additions to the harness.
+
+The Reanimated port decision is already recorded in
+[ADR-0002](../../docs/adr/0002-cpp-first-compatibility-layer-and-fork-and-overlay-packages.md), with the worklet
+runtime's frame-thread contract in [ADR-0003](../../docs/adr/0003-worklets-ui-runtime-on-the-frame-thread.md).
+These decisions do not promote a library to `works`; its pinned version still needs conformance evidence.

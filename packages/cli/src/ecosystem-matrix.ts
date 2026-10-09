@@ -13,12 +13,12 @@
 /**
  * `works` and `shimmed` name the test that proves it, a path from the repository root. `in progress` and `blocked`
  * name the issue that owns the work: `blocked` when that issue is waiting on another decision or issue, `in
- * progress` otherwise. `declined` names what the flagship uses on Linux instead.
+ * progress` otherwise. `declined` names the decision issue and what the flagship uses on Linux instead.
  */
 type EcosystemStanding =
   | { readonly state: "works" | "shimmed"; readonly test: string }
   | { readonly state: "in progress" | "blocked"; readonly issue: number }
-  | { readonly state: "declined"; readonly substitute: string };
+  | { readonly state: "declined"; readonly issue: number; readonly substitute: string };
 
 type EcosystemRow = EcosystemStanding & {
   readonly packageName: string;
@@ -52,12 +52,14 @@ const ecosystemMatrix: readonly EcosystemRow[] = [
   { flagshipVersion: "~58.0.5", issue: 156, packageName: "expo-system-ui", state: "blocked" },
   {
     flagshipVersion: "~58.0.13",
+    issue: 360,
     packageName: "expo-updates",
     state: "declined",
     substitute: "the distribution's package manager delivers updates (#360)",
   },
   {
     flagshipVersion: "~58.0.11",
+    issue: 87,
     packageName: "@expo/ui",
     state: "declined",
     substitute: "the flagship's own bottom sheet built from core components",
