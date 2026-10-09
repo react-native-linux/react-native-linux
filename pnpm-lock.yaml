@@ -185,9 +185,15 @@ importers:
       '@types/react':
         specifier: ^19.1.1
         version: 19.3.0
+      babel-plugin-transform-flow-enums:
+        specifier: 0.0.2
+        version: 0.0.2(@babel/core@7.29.7(supports-color@8.1.1))
       deep-equal:
         specifier: 1.1.1
         version: 1.1.1
+      flow-enums-runtime:
+        specifier: 0.0.6
+        version: 0.0.6
       jest-diff:
         specifier: 29.7.0
         version: 29.7.0
