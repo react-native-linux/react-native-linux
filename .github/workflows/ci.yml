@@ -606,7 +606,10 @@ jobs:
       - name: Call the freshly scaffolded C++ module
         run: |
           set -euo pipefail
-          printf '%s\n' 'console.log("scaffolded autolinking:", globalThis.__turboModuleProxy("CppSmoke").multiply(3, 4));' > build/scaffolded-autolinking.js
+          printf '%s\n' \
+            'const proxy = globalThis.__turboModuleProxy;' \
+            'const module = typeof proxy === "function" ? proxy("CppSmoke") : globalThis.nativeModuleProxy.CppSmoke;' \
+            'console.log("scaffolded autolinking:", module.multiply(3, 4));' > build/scaffolded-autolinking.js
           "build/$RNL_PRESET/bin/hello_react" build/scaffolded-autolinking.js | tee /tmp/rnl-scaffolded-autolinking.log
           grep -q "scaffolded autolinking: 12" /tmp/rnl-scaffolded-autolinking.log
 
