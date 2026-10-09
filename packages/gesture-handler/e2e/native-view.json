@@ -2,7 +2,7 @@
   "name": "gesture-native-view",
   "bundle": "native-view.tsx",
   "ready": "native-view: committed",
-  "frames": 600,
+  "frames": 900,
   "steps": [
     "sleep 500",
     "move 200 140",
@@ -45,14 +45,14 @@
     "move 200 440",
     "wheel down 3",
     "sleep 400",
-    "wheel up 3",
-    "sleep 400",
+    "wheel up 6",
+    "sleep 1500",
     "click 200 440",
     "sleep 400",
     "wheel down 3",
     "sleep 400",
-    "wheel up 3",
-    "sleep 400"
+    "wheel up 6",
+    "sleep 1500"
   ],
   "expect": [
     "native-view: pressIn",
