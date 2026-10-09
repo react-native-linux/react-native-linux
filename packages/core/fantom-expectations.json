@@ -19,10 +19,7 @@
   "private/webapis/dom/events/__tests__/Event-itest.js": {},
   "private/webapis/dom/events/__tests__/EventHandlerAttributes-itest.js": {},
   "private/webapis/dom/events/__tests__/EventTarget-itest.js": {},
-  "private/webapis/dom/nodes/__tests__/ReactNativeElement-itest.js": {
-    "ReactNativeElement legacy methods blur blur() invokes TextInputState": "<TextInput> renders nothing on Linux: upstream TextInput.js picks a native component only for iOS and Android, so the ref is null (#577)",
-    "ReactNativeElement legacy methods focus focus() invokes TextInputState": "<TextInput> renders nothing on Linux: upstream TextInput.js picks a native component only for iOS and Android, so the ref is null (#577)"
-  },
+  "private/webapis/dom/nodes/__tests__/ReactNativeElement-itest.js": {},
   "private/webapis/errors/__tests__/DOMException-itest.js": {},
   "private/webapis/geometry/__tests__/DOMRectList-itest.js": {},
   "private/webapis/performance/__tests__/EventTimingAPI-itest.js": {},
