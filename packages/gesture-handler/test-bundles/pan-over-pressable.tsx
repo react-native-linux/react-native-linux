@@ -2,11 +2,12 @@
 // the pan never activates; a drag that activates the pan takes the pointer, so the Pressable reports pressOut and
 // no second press, as RNGH cancels the JavaScript responder on Android and iOS.
 import { AppRegistry, Pressable, StyleSheet, View } from "react-native";
-import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
+import { Gesture, GestureDetector, GestureHandlerRootView, PointerType } from "react-native-gesture-handler";
 import { useEffect } from "react";
 
 const activeOffsetX = 10;
 let presses = 0;
+let panBegins = 0;
 
 const styles = StyleSheet.create({
   button: { backgroundColor: "#3b82f6", height: 80, width: 200 },
@@ -21,8 +22,12 @@ const log = (line: string): void => {
 const pan = Gesture.Pan()
   .runOnJS(true)
   .activeOffsetX([-activeOffsetX, activeOffsetX])
-  .onStart(() => {
-    log("pan start");
+  .onBegin(() => {
+    panBegins += 1;
+    log(`pan begin ${panBegins}`);
+  })
+  .onStart((event) => {
+    log(`pan start mouse=${String(event.pointerType === PointerType.MOUSE)}`);
   })
   .onEnd((_event, success) => {
     log(`pan end success=${String(success)}`);

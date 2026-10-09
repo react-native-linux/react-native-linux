@@ -7,8 +7,14 @@
     "sleep 500",
     "move 150 140",
     "sleep 100",
+    "wheel down 3",
+    "wheel up 3",
+    "sleep 200",
     "click 150 140",
     "sleep 400",
+    "wheel down 3",
+    "wheel up 3",
+    "sleep 200",
     "button left press",
     "sleep 100",
     "move 170 141",
@@ -22,13 +28,15 @@
   ],
   "expect": [
     "ownership: committed",
+    "ownership: pan begin 1",
     "ownership: pressIn",
     "ownership: press 1",
     "ownership: pressOut",
+    "ownership: pan begin 2",
     "ownership: pressIn",
-    "ownership: pan start",
+    "ownership: pan start mouse=true",
     "ownership: pressOut",
     "ownership: pan end success=true"
   ],
-  "reject": ["ownership: press 2"]
+  "reject": ["ownership: press 2", "ownership: pan begin 3", "ownership: pan start mouse=false"]
 }

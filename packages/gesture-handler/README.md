@@ -38,6 +38,10 @@ that Linux runs that engine, so no fourth implementation exists. Linux supplies 
 Recognition therefore runs on the JavaScript thread, the trade-off the decision accepted. Worklet callbacks
 (`REANIMATED_WORKLET`) are #95's.
 
+The `gesture-pan-over-pressable` e2e verifies mouse drags report upstream `PointerType.MOUSE`. Wheel input before
+and between pointer presses must not begin Pan recognition or create another press. Touchpad and touchscreen
+runtime source distinctions remain acceptance work on #168.
+
 The `gesture-long-press` e2e exercises the upstream LongPress recognizer through the Linux pointer delegate:
 a short primary-button click and movement beyond `maxDistance` fail, while a hold beyond `minDuration` activates
 and ends successfully. Recognition uses the existing JavaScript engine and its timers.
