@@ -17,9 +17,15 @@
     "sleep 500"
   ],
   "expect": [
+    "native-view: pressIn",
     "native-view: finalize 1 success=false",
+    "native-view: press 1",
+    "native-view: pressOut",
+    "native-view: pressIn",
     "native-view: active",
+    "native-view: pressOut",
     "native-view: end success=true",
     "native-view: finalize 2 success=true"
-  ]
+  ],
+  "reject": ["native-view: press 2"]
 }
