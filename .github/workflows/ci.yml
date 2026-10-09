@@ -404,17 +404,32 @@ jobs:
       # packages/cli/test-fixtures/cpp-library) is autolinked into every host this configure builds. The JSON is
       # the shape `react-native config` prints, with the Android descriptor the template's react-native.config.js
       # declares; the library itself carries no Linux file.
-      - name: Generate autolinking for the cpp-library fixture
+      - name: Scaffold and autolink the C++ libraries
         run: |
           set -euo pipefail
           library="$GITHUB_WORKSPACE/packages/cli/test-fixtures/cpp-library"
+          scaffolded_library="$GITHUB_WORKSPACE/build/scaffolded-cpp-library"
+          pnpm dlx create-react-native-library@0.63.0 react-native-cpp-smoke \
+            --directory "$scaffolded_library" --slug react-native-cpp-smoke \
+            --description "C++ autolinking smoke test" --no-local --no-interactive \
+            --type turbo-module --languages cpp --tools jest \
+            --author-name "React Native Linux" --author-email "maintainers@react-native-linux.org" \
+            --author-url "https://github.com/react-native-linux" \
+            --repo-url "https://github.com/react-native-linux/react-native-linux" \
+            --react-native-version "$(jq -r .tag scripts/vendor.lock.json | sed 's/^v//')"
+          test ! -e "$scaffolded_library/linux"
           cat > /tmp/rnl-autolink-config.json <<EOF
           {"root": "$GITHUB_WORKSPACE/build/autolink-app", "dependencies": {"react-native-cpp-library": {
             "root": "$library", "platforms": {"linux": null, "android": {
               "cmakeListsPath": "$library/android/generated/jni/CMakeLists.txt",
               "cxxModuleCMakeListsModuleName": "react-native-cpp-library",
               "cxxModuleCMakeListsPath": "$library/android/CMakeLists.txt",
-              "cxxModuleHeaderName": "CppLibraryImpl"}}}}}
+              "cxxModuleHeaderName": "CppLibraryImpl"}}}, "react-native-cpp-smoke": {
+            "root": "$scaffolded_library", "platforms": {"linux": null, "android": {
+              "cmakeListsPath": "$scaffolded_library/android/generated/jni/CMakeLists.txt",
+              "cxxModuleCMakeListsModuleName": "react-native-cpp-smoke",
+              "cxxModuleCMakeListsPath": "$scaffolded_library/android/CMakeLists.txt",
+              "cxxModuleHeaderName": "CppSmokeImpl"}}}}}
           EOF
           node scripts/autolink.ts /tmp/rnl-autolink-config.json "build/autolinking-$RNL_PRESET"
 
@@ -587,6 +602,13 @@ jobs:
           if grep 'animated-scroll: offset' /tmp/rnl-animated-scroll.log \
             | grep -vqE 'animated-scroll: offset ([0-9]+\.[0-9]{2}) value \1'; then exit 1; fi
           grep -q "animated-scroll: offset 120.00 value 120.00" /tmp/rnl-animated-scroll.log
+
+      - name: Call the freshly scaffolded C++ module
+        run: |
+          set -euo pipefail
+          printf '%s\n' 'console.log("scaffolded autolinking:", globalThis.__turboModuleProxy("CppSmoke").multiply(3, 4));' > build/scaffolded-autolinking.js
+          "build/$RNL_PRESET/bin/hello_react" build/scaffolded-autolinking.js | tee /tmp/rnl-scaffolded-autolinking.log
+          grep -q "scaffolded autolinking: 12" /tmp/rnl-scaffolded-autolinking.log
 
       # Only the Skia entry has a TextLayoutManager behind Yoga; with -DRNL_ENABLE_SKIA=OFF the upstream stub is
       # still compiled in and every paragraph measures as zero, so this assertion belongs to the dev entry alone.
