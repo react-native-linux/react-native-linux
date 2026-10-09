@@ -1,0 +1,31 @@
+{
+  "name": "gesture-compositions",
+  "bundle": "compositions.tsx",
+  "ready": "compositions: committed",
+  "frames": 600,
+  "steps": [
+    "sleep 500",
+    "move 200 140",
+    "button left press",
+    "sleep 100",
+    "move 260 140",
+    "sleep 100",
+    "button left release",
+    "sleep 400",
+    "click 200 290",
+    "sleep 600",
+    "click 200 290",
+    "sleep 100",
+    "click 200 290",
+    "sleep 600"
+  ],
+  "expect": [
+    "compositions: active pans=1",
+    "compositions: active pans=2",
+    "compositions: completed pans=1",
+    "compositions: completed pans=2",
+    "compositions: single taps=1 double taps=0",
+    "compositions: double taps=1 single taps=1"
+  ],
+  "reject": ["compositions: single taps=2", "compositions: double taps=2"]
+}

@@ -47,6 +47,11 @@ a click without movement fails recognition; movement activates it and releasing 
 and attribute access. This covers recognizer attachment and events; native-control arbitration, Android's
 `shouldActivateOnStart` option, touchpad input and the flagship board remain acceptance work on #168.
 
+The `gesture-compositions` e2e proves two upstream Pan recognizers activate and end successfully on the same
+mouse drag under `Simultaneous`. An `Exclusive` double/single Tap pair allows a single tap after the double tap
+fails, and recognizes a double tap without also delivering the lower-priority single tap. No Linux-specific
+composition algorithm is added; this exercises upstream orchestration through the Linux pointer delegate.
+
 ## Upstream
 
 | Field | Value |
