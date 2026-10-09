@@ -17,6 +17,12 @@
     "click 200 290",
     "sleep 100",
     "click 200 290",
+    "sleep 600",
+    "click 200 440",
+    "sleep 600",
+    "click 200 440",
+    "sleep 100",
+    "click 200 440",
     "sleep 600"
   ],
   "expect": [
@@ -25,7 +31,15 @@
     "compositions: completed pans=1",
     "compositions: completed pans=2",
     "compositions: single taps=1 double taps=0",
-    "compositions: double taps=1 single taps=1"
+    "compositions: double taps=1 single taps=1",
+    "external: awaiting outer taps=0",
+    "external: outer taps=1 inner double taps=0",
+    "external: inner double taps=1 outer taps=1"
   ],
-  "reject": ["compositions: single taps=2", "compositions: double taps=2"]
+  "reject": [
+    "compositions: single taps=2",
+    "compositions: double taps=2",
+    "external: outer taps=2",
+    "external: inner double taps=2"
+  ]
 }
