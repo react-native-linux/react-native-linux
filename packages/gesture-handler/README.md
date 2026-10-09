@@ -52,7 +52,8 @@ activates Native, cancels the press through responder capture and releasing ends
 Leaving the view cancels an active Native gesture without another press; a subsequent click proves pointer ownership
 is released. The trace distinguishes failed, ended and cancelled final states. Linux skips browser style and attribute
 access. A Native recognizer attached directly to TextInput preserves click focus and typing, completes a mouse drag,
-and leaves keyboard editing functional afterwards. Other native controls, Android's `shouldActivateOnStart` option,
+and leaves keyboard editing functional afterwards. A Native recognizer attached to ScrollView preserves wheel
+scrolling before and after a click; wheel events never begin or activate the recognizer. Other native controls, Android's `shouldActivateOnStart` option,
 touchpad input and the flagship board remain acceptance work on #168.
 
 The `gesture-compositions` e2e proves two upstream Pan recognizers activate and end successfully on the same

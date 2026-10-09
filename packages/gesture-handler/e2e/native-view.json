@@ -2,7 +2,7 @@
   "name": "gesture-native-view",
   "bundle": "native-view.tsx",
   "ready": "native-view: committed",
-  "frames": 600,
+  "frames": 900,
   "steps": [
     "sleep 500",
     "move 200 140",
@@ -41,7 +41,18 @@
     "key End press",
     "key End release",
     "type There",
-    "sleep 400"
+    "sleep 400",
+    "move 200 440",
+    "wheel down 3",
+    "sleep 400",
+    "wheel up 6",
+    "sleep 1500",
+    "click 200 440",
+    "sleep 400",
+    "wheel down 3",
+    "sleep 400",
+    "wheel up 6",
+    "sleep 1500"
   ],
   "expect": [
     "native-view: pressIn",
@@ -67,7 +78,13 @@
     "native-input: text=Hi",
     "native-input: active",
     "native-input: finalize state=5 success=true",
-    "native-input: text=HiThere"
+    "native-input: text=HiThere",
+    "native-scroll: scrolled=true",
+    "native-scroll: scrolled=false",
+    "native-scroll: begin 1",
+    "native-scroll: finalize state=1 success=false",
+    "native-scroll: scrolled=true",
+    "native-scroll: scrolled=false"
   ],
-  "reject": ["native-view: press 3"]
+  "reject": ["native-view: press 3", "native-scroll: begin 2", "native-scroll: active"]
 }
