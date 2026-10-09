@@ -1,0 +1,25 @@
+{
+  "name": "gesture-native-view",
+  "bundle": "native-view.tsx",
+  "ready": "native-view: committed",
+  "frames": 600,
+  "steps": [
+    "sleep 500",
+    "move 200 140",
+    "sleep 100",
+    "click 200 140",
+    "sleep 200",
+    "button left press",
+    "sleep 50",
+    "move 250 140",
+    "sleep 50",
+    "button left release",
+    "sleep 500"
+  ],
+  "expect": [
+    "native-view: finalize 1 success=false",
+    "native-view: active",
+    "native-view: end success=true",
+    "native-view: finalize 2 success=true"
+  ]
+}

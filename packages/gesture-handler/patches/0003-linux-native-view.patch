@@ -1,0 +1,31 @@
+diff --git a/packages/react-native-gesture-handler/src/web/handlers/NativeViewGestureHandler.ts b/packages/react-native-gesture-handler/src/web/handlers/NativeViewGestureHandler.ts
+index 8c67321..a2a0bd7 100644
+--- a/packages/react-native-gesture-handler/src/web/handlers/NativeViewGestureHandler.ts
++++ b/packages/react-native-gesture-handler/src/web/handlers/NativeViewGestureHandler.ts
+@@ -6,7 +6,7 @@ import { AdaptedEvent, Config } from '../interfaces';
+ import GestureHandler from './GestureHandler';
+ import IGestureHandler from './IGestureHandler';
+ export default class NativeViewGestureHandler extends GestureHandler {
+-  private buttonRole!: boolean;
++  private buttonRole = false;
+ 
+   // TODO: Implement logic for activation on start
+   // @ts-ignore Logic yet to be implemented
+@@ -47,7 +47,7 @@ export default class NativeViewGestureHandler extends GestureHandler {
+   }
+ 
+   private restoreViewStyles(view: HTMLElement) {
+-    if (!view) {
++    if (Platform.OS !== 'web' || !view) {
+       return;
+     }
+ 
+@@ -82,7 +82,7 @@ export default class NativeViewGestureHandler extends GestureHandler {
+     this.begin();
+ 
+     const view = this.delegate.view as HTMLElement;
+-    const isRNGHText = view.hasAttribute('rnghtext');
++    const isRNGHText = Platform.OS === 'web' && view.hasAttribute('rnghtext');
+ 
+     if (this.buttonRole || isRNGHText) {
+       this.activate();

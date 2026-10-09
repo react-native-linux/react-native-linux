@@ -42,6 +42,11 @@ The `gesture-long-press` e2e exercises the upstream LongPress recognizer through
 a short primary-button click and movement beyond `maxDistance` fail, while a hold beyond `minDuration` activates
 and ends successfully. Recognition uses the existing JavaScript engine and its timers.
 
+The `gesture-native-view` e2e covers the upstream Native recognizer's default pointer lifecycle on a Linux View:
+a click without movement fails recognition; movement activates it and releasing ends it. Linux skips browser style
+and attribute access. This covers recognizer attachment and events; native-control arbitration, Android's
+`shouldActivateOnStart` option, touchpad input and the flagship board remain acceptance work on #168.
+
 ## Upstream
 
 | Field | Value |
@@ -62,3 +67,4 @@ pnpm upstream:check gesture-handler            # prove the vendored tree still m
 | --- | --- | --- |
 | `0001-linux-platform` | Adds the five Linux files above and takes the web branch of `attachHandlers` on Linux; skips `getViewManagerConfig('getConstants')`, which logs a new-architecture error | Upstream accepting a `linux` platform: the files are already in the shape of that contribution |
 | `0002-linux-pointer-ownership` | Tracks which gestures are active, and makes the Linux root view claim the responder while any is | The same as `0001` |
+| `0003-linux-native-view` | Skips browser style and attribute access for a Native recognizer on a Linux view | The same as `0001` |

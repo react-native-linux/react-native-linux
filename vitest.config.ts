@@ -4,6 +4,8 @@ export default defineConfig({
   test: {
     coverage: {
       exclude: [
+        // #168 trusts the upstream engine; repository coverage excludes vendored source.
+        "packages/*/upstream/**",
         "packages/*/src/**/*.spec.ts",
         "packages/core/goldens/*.spec.ts",
         "packages/core/src-linux/**/*.spec.ts",
