@@ -12,9 +12,9 @@ const nativeView = Gesture.Native()
   .onEnd((_event, success) => {
     console.log(`native-view: end success=${String(success)}`);
   })
-  .onFinalize((_event, success) => {
+  .onFinalize((event, success) => {
     completedGestures += 1;
-    console.log(`native-view: finalize ${completedGestures} success=${String(success)}`);
+    console.log(`native-view: finalize ${completedGestures} success=${String(success)} state=${event.state}`);
   });
 
 const NativeViewApp = (): React.JSX.Element => (

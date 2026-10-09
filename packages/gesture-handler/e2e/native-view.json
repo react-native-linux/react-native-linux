@@ -14,18 +14,39 @@
     "move 250 140",
     "sleep 200",
     "button left release",
-    "sleep 500"
+    "sleep 500",
+    "move 200 140",
+    "button left press",
+    "sleep 200",
+    "move 250 140",
+    "sleep 200",
+    "move 250 220",
+    "sleep 200",
+    "button left release",
+    "sleep 400",
+    "move 200 140",
+    "click 200 140",
+    "sleep 400"
   ],
   "expect": [
     "native-view: pressIn",
-    "native-view: finalize 1 success=false",
+    "native-view: finalize 1 success=false state=1",
     "native-view: press 1",
     "native-view: pressOut",
     "native-view: pressIn",
     "native-view: active",
     "native-view: pressOut",
     "native-view: end success=true",
-    "native-view: finalize 2 success=true"
+    "native-view: finalize 2 success=true state=5",
+    "native-view: pressIn",
+    "native-view: active",
+    "native-view: pressOut",
+    "native-view: end success=false",
+    "native-view: finalize 3 success=false state=3",
+    "native-view: pressIn",
+    "native-view: finalize 4 success=false state=1",
+    "native-view: press 2",
+    "native-view: pressOut"
   ],
-  "reject": ["native-view: press 2"]
+  "reject": ["native-view: press 3"]
 }
