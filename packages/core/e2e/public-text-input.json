@@ -22,6 +22,8 @@
     "click 140 250",
     "sleep 400",
     "type X",
+    "sleep 400",
+    "click 240 250",
     "sleep 400"
   ],
   "expect": [
@@ -31,7 +33,8 @@
     "public-text-input: focus",
     "public-text-input: text=There",
     "public-text-input: focus",
-    "public-text-input: text=Xere"
+    "public-text-input: text=Xere",
+    "public-text-input: blur"
   ],
   "screenshot": {
     "golden": "public-text-input.png",
