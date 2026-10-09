@@ -14,6 +14,7 @@
 
 namespace {
 
+using facebook::react::HighResDuration;
 using facebook::react::HighResTimeStamp;
 using facebook::react::Point;
 using facebook::react::Tag;
@@ -398,6 +399,18 @@ TEST(PointerRouterTest, CarriesTheMappedEventTimeRatherThanTheRouteTime) {
 
     ASSERT_EQ(dispatches.size(), 1U);
     EXPECT_DOUBLE_EQ(dispatches[0].event.timeStamp.toDOMHighResTimeStamp(), mapped.toDOMHighResTimeStamp());
+}
+
+TEST(EventTimeTest, PreservesNanosecondsThroughJavaScriptTimestampAndDurationConversions) {
+    for (const int64_t nanoseconds : {1LL, 999999LL, 1000001LL, 12345678901LL, 547691327827LL, 536956329511LL,
+                                      537648854729250LL, -536956329511LL}) {
+        const auto timestamp = HighResTimeStamp::fromChronoSteadyClockTimePoint(
+            std::chrono::steady_clock::time_point(std::chrono::nanoseconds(nanoseconds)));
+        const auto duration = HighResDuration::fromNanoseconds(nanoseconds);
+
+        EXPECT_EQ(HighResTimeStamp::fromDOMHighResTimeStamp(timestamp.toDOMHighResTimeStamp()), timestamp);
+        EXPECT_EQ(HighResDuration::fromDOMHighResTimeStamp(duration.toDOMHighResTimeStamp()), duration);
+    }
 }
 
 TEST(KeyEventTest, NamedKeysBecomeTheirDomNamesRatherThanTheirControlCharacters) {
