@@ -8408,9 +8408,23 @@ is the corpus: every suite it names runs, every failure it lists names the issue
 listed failure that passes, or a listed one that goes unreported fails the run. The first batch is #423's: 17 suites,
 270 passing assertions. #115 added `ReactNativeElement-itest.js`; its two TextInput cases are listed under #577.
 
+#421 added the layer where this platform's hit-test result becomes a DOM event, which is the only statement of what
+the Wayland input path must produce. It consists of `renderer/core`'s `EventDispatching`, `EventTargetDispatching`
+and `ResponderEventTarget`, and of `dom/events`' `Event`, `EventTarget`, `EventHandlerAttributes` and `CustomEvent`.
+All 52 `dom/events` cases pass. Seven of `EventDispatching`'s 11 cases pass. The other four assert React's event
+priority under the suite's `@fantom_flags fixMappingOfEventPrioritiesBetweenFabricAndReact:true`. The runner does
+not apply pragmas yet, so those four are listed under #424; with the flag on, all 11 pass.
+`EventTargetDispatching` and `ResponderEventTarget` are `describe.skip` whenever `isOSS` is set, because the OSS React
+renderer has not been synced with what they test. Their 68 cases report pending here, exactly as in upstream's own
+OSS run, and they start running on the React Native bump that drops the skip.
+
+`Fantom.NativeEventCategory` is a Flow `enum`, so the harness's `.babelrc` names `babel-plugin-transform-flow-enums`
+ahead of the preset, as upstream's root and RNTester `.babelrc` files do. Inside `@react-native/babel-preset` the Flow
+type stripper visits the declaration first and deletes an `export enum` outright, which leaves the export undefined.
+
 The run takes its binary from `build/$RNL_PRESET/bin/hello_react`, `dev` by default. `RNL_PRESET=asan` or
 `RNL_PRESET=tsan` runs the corpus against a sanitizer build, as upstream's `FANTOM_ENABLE_ASAN` and
-`FANTOM_ENABLE_TSAN` do; both pass all 17 suites locally. A sanitizer report on the binary's standard error fails
+`FANTOM_ENABLE_TSAN` do; both passed the first batch's 17 suites locally. A sanitizer report on the binary's standard error fails
 the suite it came from, even after the suite has reported, because LeakSanitizer reports only at exit. CI runs
 the corpus in its dev entry only. EventTimingAPI-itest's "durationThreshold option works when used with `type`"
 asserts that a click with no added delay finishes in under 50 ms of wall clock, and both sanitizer builds exceed
@@ -8603,10 +8617,8 @@ The ASan and TSan switches upstream spells `FANTOM_ENABLE_ASAN` and `FANTOM_ENAB
 `tsan` presets here, which sanitize the whole build including this binary; there is no per-target switch and no
 reason for one.
 
-Not yet delivered, and tracked on #210: upstream's `*-itest.js` corpus does not run against this. The corpus
-lives under `private/react-native-fantom/`, which `scripts/vendor.lock.json` does not fetch, and each file
-needs `NativeFantom`'s JavaScript surface — `createRoot`, `dispatchNativeEvent`, `installTimerMock` — plus a
-jest runner pointed at the binary. The runner and the assertion surface are the half that had to exist first.
+Upstream's `*-itest.js` corpus does not run against this tester; it runs in `hello_react --fantom`, under
+*Upstream itests through Fantom*.
 
 ## Seeded interleaving (#346)
 

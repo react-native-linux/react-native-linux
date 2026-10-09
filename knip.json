@@ -25,8 +25,8 @@
       "ignoreDependencies": [
         "@babel/runtime",
         "@react-native-linux/gesture-handler",
-        "@react-native/babel-preset",
         "deep-equal",
+        "flow-enums-runtime",
         "jest-diff",
         "metro-symbolicate",
         "nullthrows",
