@@ -155,6 +155,9 @@ set(RNL_FOLLY_SOURCES
     folly/Uri.cpp
     folly/concurrency/CacheLocality.cpp
     folly/container/detail/F14Table.cpp
+    folly/detail/base64_detail/Base64Api.cpp
+    folly/detail/base64_detail/Base64SWAR.cpp
+    folly/detail/base64_detail/Base64_SSE4_2.cpp
     folly/detail/FileUtilDetail.cpp
     folly/detail/Futex.cpp
     folly/detail/SplitStringSimd.cpp

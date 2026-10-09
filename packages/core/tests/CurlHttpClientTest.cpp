@@ -330,6 +330,22 @@ TEST(CurlHttpClientTest, FailsARequestWhoseBodyCannotBeSentWithoutContactingTheS
     EXPECT_EQ(missingFile.error, "the form-data file /nonexistent/rnl/file cannot be read");
 }
 
+TEST(CurlHttpClientTest, RejectsMalformedBase64BodiesBeforeContactingTheServer) {
+    LoopbackServer server([](const std::string&, int socket) { respond(socket, "200 OK", "", ""); });
+    CurlHttpClient client;
+
+    for (const std::string& malformed : {"A", "YQ==junk", "aGk=*"}) {
+        Recording recording;
+        client.sendRequest(recording.callbacks(), "POST", server.url("/base64"), {}, {.base64 = malformed}, 0,
+                           std::nullopt);
+
+        ASSERT_TRUE(recording.waitForCompletion());
+        EXPECT_EQ(recording.error, "the base64 request body is not valid base64") << malformed;
+    }
+
+    EXPECT_TRUE(server.lastRequest().empty());
+}
+
 TEST(CurlHttpClientTest, FollowsARedirectAndReportsOnlyTheFinalResponsesHeaders) {
     std::string target;
     LoopbackServer server([&target](const std::string& request, int socket) {
@@ -524,9 +540,15 @@ TEST(CurlHttpClientTest, FetchesABundleAndFailsOnABuildErrorARedirectOrNoServerN
 TEST(CurlHttpClientTest, DecodesBase64WithAndWithoutPaddingAndRejectsForeignCharacters) {
     EXPECT_EQ(decodeBase64("aGk="), "hi");
     EXPECT_EQ(decodeBase64("aGk"), "hi");
+    EXPECT_EQ(decodeBase64("YQ=="), "a");
+    EXPECT_EQ(decodeBase64("YQ"), "a");
+    EXPECT_EQ(decodeBase64("YWJj"), "abc");
+    EXPECT_EQ(decodeBase64("AA=="), std::string(1, '\0'));
     EXPECT_EQ(decodeBase64("+/8="), std::string("\xfb\xff", 2));
     EXPECT_EQ(decodeBase64(""), "");
-    EXPECT_EQ(decodeBase64("a-b"), std::nullopt);
+    for (const std::string& malformed : {"a-b", "A", "=", "====", "Y=Q=", "YQ=", "YQ===", "YQ==junk", "aGk=*"}) {
+        EXPECT_EQ(decodeBase64(malformed), std::nullopt) << malformed;
+    }
 }
 
 } // namespace
