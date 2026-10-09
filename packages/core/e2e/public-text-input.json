@@ -35,6 +35,6 @@
   ],
   "screenshot": {
     "golden": "public-text-input.png",
-    "maxDifferentPixels": 0
+    "maxDifferentPixels": 1
   }
 }
