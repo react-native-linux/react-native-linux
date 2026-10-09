@@ -17,6 +17,13 @@ const coreLinuxUtilitiesDirectory = path.join(
 const coreLinuxNativeComponentDirectory = path.join(coreLinuxUtilitiesDirectory, "..", "NativeComponent");
 
 const linuxOverlayIndex: Readonly<Record<string, string>> = {
+  "Libraries/Components/TextInput/LinuxTextInputNativeComponent": path.join(
+    coreLinuxUtilitiesDirectory,
+    "..",
+    "Components",
+    "TextInput",
+    "LinuxTextInputNativeComponent.linux.ts",
+  ),
   "Libraries/NativeComponent/BaseViewConfig": path.join(coreLinuxNativeComponentDirectory, "BaseViewConfig.linux.ts"),
   "Libraries/StyleSheet/PlatformColorValueTypes": path.join(
     coreLinuxUtilitiesDirectory,

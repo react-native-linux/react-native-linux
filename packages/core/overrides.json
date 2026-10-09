@@ -64,6 +64,16 @@
       "baseFile": "packages/react-native/Libraries/Utilities/PlatformTypes.js",
       "baseHash": "933ac7f586871c9de39fc0d84aa4c3b68997f34d",
       "issue": 29
+    },
+    {
+      "type": "platform",
+      "file": "src-linux/Libraries/Components/TextInput/LinuxTextInputNativeComponent.linux.ts",
+      "issue": 577
+    },
+    {
+      "type": "platform",
+      "file": "src-linux/Libraries/Components/TextInput/upstream-text-input.d.ts",
+      "issue": 577
     }
   ]
 }

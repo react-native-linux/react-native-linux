@@ -1,0 +1,49 @@
+diff --git a/Libraries/Components/TextInput/TextInput.js b/Libraries/Components/TextInput/TextInput.js
+index 2854f5e53cc0d297c9647d09c4560bc71666a3f6..d7041d6e50c672be9c8e9bf121699cdcc7117a84 100644
+--- a/Libraries/Components/TextInput/TextInput.js
++++ b/Libraries/Components/TextInput/TextInput.js
+@@ -71,7 +71,12 @@ let RCTSinglelineTextInputNativeCommands;
+ let RCTMultilineTextInputView;
+ let RCTMultilineTextInputNativeCommands;
+ 
+-if (Platform.OS === 'android') {
++if (Platform.OS === 'linux') {
++  AndroidTextInput =
++    require('react-native/Libraries/Components/TextInput/LinuxTextInputNativeComponent').default;
++  AndroidTextInputCommands =
++    require('./AndroidTextInputNativeComponent').Commands;
++} else if (Platform.OS === 'android') {
+   AndroidTextInput = require('./AndroidTextInputNativeComponent').default;
+   AndroidTextInputCommands =
+     require('./AndroidTextInputNativeComponent').Commands;
+@@ -614,7 +619,7 @@ function InternalTextInput(props: TextInputProps): React.Node {
+         text={text}
+       />
+     );
+-  } else if (Platform.OS === 'android') {
++  } else if (Platform.OS === 'android' || Platform.OS === 'linux') {
+     const autoCapitalize = props.autoCapitalize || 'sentences';
+     const _accessibilityLabelledBy =
+       props?.['aria-labelledby'] ?? props?.accessibilityLabelledBy;
+diff --git a/Libraries/Components/TextInput/TextInputState.js b/Libraries/Components/TextInput/TextInputState.js
+index 9ef598defeeaf109527f39b48f77564eba80129a..b2722ec8b8f7d5b9c6f37553bc0551aa4aced819 100644
+--- a/Libraries/Components/TextInput/TextInputState.js
++++ b/Libraries/Components/TextInput/TextInputState.js
+@@ -102,7 +102,7 @@ function focusTextInput(textField: ?HostInstance) {
+       // and multiline text inputs. Ideally we'll merge them into one component
+       // in the future.
+       iOSTextInputCommands.focus(textField);
+-    } else if (Platform.OS === 'android') {
++    } else if (Platform.OS === 'android' || Platform.OS === 'linux') {
+       AndroidTextInputCommands.focus(textField);
+     }
+   }
+@@ -133,7 +133,7 @@ function blurTextInput(textField: ?HostInstance) {
+       // and multiline text inputs. Ideally we'll merge them into one component
+       // in the future.
+       iOSTextInputCommands.blur(textField);
+-    } else if (Platform.OS === 'android') {
++    } else if (Platform.OS === 'android' || Platform.OS === 'linux') {
+       AndroidTextInputCommands.blur(textField);
+     }
+   }

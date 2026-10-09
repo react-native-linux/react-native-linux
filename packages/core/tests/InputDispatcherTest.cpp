@@ -131,6 +131,19 @@ TEST_F(InputDispatcherTest, FocusingTheSameFieldAgainProducesNoSecondCall) {
     EXPECT_EQ(sink_.calls.size(), 1U);
 }
 
+TEST_F(InputDispatcherTest, BlurCommandOnlyClearsTheFieldThatOwnsFocus) {
+    focus(kFieldAlphaTag);
+    dispatcher_->dispatchCommands({{.tag = kFieldBetaTag, .name = "blur", .args = folly::dynamic::array()}});
+    ASSERT_EQ(sink_.calls.size(), 1U);
+
+    dispatcher_->dispatchCommands({{.tag = kFieldAlphaTag, .name = "blur", .args = folly::dynamic::array()}});
+    ASSERT_EQ(sink_.calls.size(), 2U);
+    EXPECT_FALSE(sink_.calls.back().isFocus);
+
+    dispatcher_->dispatchCommands({{.tag = kFieldAlphaTag, .name = "blur", .args = folly::dynamic::array()}});
+    EXPECT_EQ(sink_.calls.size(), 2U);
+}
+
 /**
  * A second regression on the same cache: a field focused while no sink is installed still writes
  * `reportedTextInputField_`, because `updateTextInput()` runs every frame regardless of whether there is anyone to

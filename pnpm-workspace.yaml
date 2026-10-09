@@ -25,3 +25,6 @@ minimumReleaseAgeExclude:
   - jscpd-windows-x64-msvc@5.1.1
   - jscpd@5.1.1
   - knip@6.34.0
+
+patchedDependencies:
+  react-native@0.87.1: patches/react-native@0.87.1.patch

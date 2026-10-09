@@ -119,6 +119,53 @@ TEST_F(TextInputControllerTest, EnterOnADefaultSingleLineFieldSubmitsAndBlurs) {
     EXPECT_EQ(result, TextInputKeyResult::ConsumedAndBlurred);
 }
 
+TEST_F(TextInputControllerTest, ProgrammaticTextChangesDoNotEchoChangeEventsAndStaleCommandsAreIgnored) {
+    commitTextInput(folly::dynamic::object());
+    controller_->synchronize();
+    recordedEventTypes_->clear();
+
+    controller_->dispatchCommand(
+        {.tag = kFieldTag, .name = "setTextAndSelection", .args = folly::dynamic::array(0, "Hello", 0, 5)});
+    EXPECT_EQ(countRecorded(kChangeEvent), 0U);
+    EXPECT_EQ(countRecorded(kSelectionChangeEvent), 1U);
+
+    type("X");
+    controller_->synchronize();
+    EXPECT_EQ(countRecorded(kChangeEvent), 1U);
+    recordedEventTypes_->clear();
+
+    controller_->dispatchCommand(
+        {.tag = kFieldTag, .name = "setTextAndSelection", .args = folly::dynamic::array(0, "stale", 0, 5)});
+    EXPECT_TRUE(recordedEventTypes_->empty());
+
+    controller_->dispatchCommand(
+        {.tag = kFieldTag, .name = "setTextAndSelection", .args = folly::dynamic::array(1, nullptr, 0, 1)});
+    EXPECT_EQ(countRecorded(kSelectionChangeEvent), 1U);
+    EXPECT_EQ(countRecorded(kChangeEvent), 0U);
+}
+
+TEST_F(TextInputControllerTest, InvalidCommandsAndUnmountedTargetsCannotChangeAField) {
+    commitTextInput(folly::dynamic::object());
+    controller_->synchronize();
+    recordedEventTypes_->clear();
+
+    for (const auto& arguments : std::vector<folly::dynamic>{
+             folly::dynamic::object(), folly::dynamic::array(), folly::dynamic::array("count", "text", 0, 0),
+             folly::dynamic::array(0, false, 0, 0), folly::dynamic::array(0, "text", "start", 0),
+             folly::dynamic::array(0, "text", 0, "end")}) {
+        controller_->dispatchCommand({.tag = kFieldTag, .name = "setTextAndSelection", .args = arguments});
+    }
+
+    controller_->dispatchCommand(
+        {.tag = 999, .name = "setTextAndSelection", .args = folly::dynamic::array(0, "text", 0, 0)});
+    controller_->dispatchCommand({.tag = kFieldTag, .name = "unrelated", .args = folly::dynamic::array()});
+    EXPECT_TRUE(recordedEventTypes_->empty());
+
+    controller_->dispatchCommand(
+        {.tag = kFieldTag, .name = "setTextAndSelection", .args = folly::dynamic::array(0, nullptr, -1, -1)});
+    EXPECT_TRUE(recordedEventTypes_->empty());
+}
+
 TEST_F(TextInputControllerTest, CoreIssue1082EnterWithSubmitBehaviorFiresAndNeverBlurs) {
     commitTextInput(folly::dynamic::object("submitBehavior", "submit"));
 

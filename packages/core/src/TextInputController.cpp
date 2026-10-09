@@ -412,6 +412,38 @@ void TextInputController::placeCaretAtPoint(TextInputField& /*field*/, const fac
 
 #endif
 
+void TextInputController::dispatchCommand(const SceneCommand& command) {
+    if (command.name != "setTextAndSelection" || !command.args.isArray() || command.args.size() != 4 ||
+        !command.args[0].isInt() || (!command.args[1].isString() && !command.args[1].isNull()) ||
+        !command.args[2].isInt() || !command.args[3].isInt()) {
+        return;
+    }
+
+    const auto found = fields_.find(command.tag);
+
+    if (found == fields_.end() || command.args[0].asInt() < found->second.editor.mostRecentEventCount()) {
+        return;
+    }
+
+    TextInputField& field = found->second;
+
+    if (command.args[1].isString()) {
+        field.editor.setText(command.args[1].asString());
+        field.emittedText = field.editor.text();
+        field.writtenEventCount = -1;
+    }
+
+    const int64_t start = command.args[2].asInt();
+    const int64_t end = command.args[3].asInt();
+
+    if (start >= 0 && end >= 0) {
+        field.editor.setSelectionRange(utf8OffsetForUtf16Index(field.editor.text(), static_cast<size_t>(start)),
+                                       utf8OffsetForUtf16Index(field.editor.text(), static_cast<size_t>(end)));
+    }
+
+    publish(field);
+}
+
 void TextInputController::synchronize() {
     for (auto& entry : fields_) {
         // The newest clone rather than the node the commit walk handed over: a state write this loop made last
