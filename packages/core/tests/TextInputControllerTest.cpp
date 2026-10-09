@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <folly/dynamic.h>
 #include <gtest/gtest.h>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -164,6 +165,33 @@ TEST_F(TextInputControllerTest, InvalidCommandsAndUnmountedTargetsCannotChangeAF
 
     controller_->dispatchCommand(
         {.tag = kFieldTag, .name = "setTextAndSelection", .args = folly::dynamic::array(0, nullptr, -1, -1)});
+    EXPECT_TRUE(recordedEventTypes_->empty());
+}
+
+TEST_F(TextInputControllerTest, NonFiniteCommandArgumentsLeaveTextAndSelectionUnchanged) {
+    commitTextInput(folly::dynamic::object("text", "Hello"));
+    controller_->synchronize();
+    controller_->dispatchCommand(
+        {.tag = kFieldTag, .name = "setTextAndSelection", .args = folly::dynamic::array(0, nullptr, 1, 3)});
+    recordedEventTypes_->clear();
+    const auto initialState = uiManager_->getNewestCloneOfShadowNode(*mountedField_)->getState();
+
+    for (const double value : {std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity(),
+                               -std::numeric_limits<double>::infinity()}) {
+        for (const size_t argumentIndex : {0U, 2U, 3U}) {
+            SCOPED_TRACE(argumentIndex);
+            SCOPED_TRACE(value);
+            auto arguments = folly::dynamic::array(0, "changed", 0, 0);
+            arguments[argumentIndex] = value;
+            controller_->dispatchCommand({.tag = kFieldTag, .name = "setTextAndSelection", .args = arguments});
+
+            EXPECT_TRUE(recordedEventTypes_->empty());
+            EXPECT_EQ(uiManager_->getNewestCloneOfShadowNode(*mountedField_)->getState(), initialState);
+        }
+    }
+
+    controller_->dispatchCommand(
+        {.tag = kFieldTag, .name = "setTextAndSelection", .args = folly::dynamic::array(0, nullptr, 1, 3)});
     EXPECT_TRUE(recordedEventTypes_->empty());
 }
 
