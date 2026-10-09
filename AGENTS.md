@@ -84,6 +84,12 @@ Conventional Commits for commit messages and PR titles: `type(scope): short desc
 
 Never mention AI tools, bots, generated output, co-authors, or automation services in commits, PR titles, or PR descriptions.
 
+After opening a PR, review the complete diff and iterate on this instruction:
+
+> Ensure all overengineering is removed, reduce complexity, and use a state-of-the-art solution with the minimal code possible while following all repository standards.
+
+Fix every vital improvement to correctness, simplicity, repository consistency and required test coverage in the same PR. Repeat the review after each revision until no vital improvements remain. Prefer proven upstream and existing repository approaches; keep the declared scope and file-ownership rules. Test each changed result and run `pnpm validate` before finishing.
+
 ## Issue Tracking
 
 Work is tracked as GitHub issues under milestone labels `M0`–`M5` (roadmap in ADR-0001), linked as sub-issues of the founding epic. New work gets an issue before a branch. Issues state acceptance criteria including the required test layers.
@@ -192,4 +198,3 @@ matters which model wrote what.
 The lane table is the default split; the `Files:` line of a claim is the exact one. Two agents may hold issues
 that touch one file only if both claim comments say so and agree the split. When in doubt the rule is: the agent
 whose lane owns the file owns the edit, and the other one asks in the issue.
-
