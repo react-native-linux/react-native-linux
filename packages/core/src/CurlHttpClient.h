@@ -28,6 +28,8 @@ namespace react_native_linux {
  * block. Every callback runs on the one worker thread this client owns, which drives libcurl's multi interface. A
  * cancelled request, and every request still in flight when the client is destroyed, completes with no further
  * callback. The destructor joins the worker, so no callback runs after it returns; a token may outlive the client.
+ * Cookies are shared by this client's requests, only on the worker thread. Completed handles detach before a
+ * callback; teardown detaches remaining handles after joining, so tokens may outlive the cookie store as well.
  */
 class CurlHttpClient final : public facebook::react::IHttpClient {
 public:
@@ -52,6 +54,7 @@ private:
     std::mutex mutex_;
     std::vector<std::shared_ptr<Transfer>> pending_;
     std::atomic<bool> stopping_{false};
+    std::unique_ptr<CURLSH, decltype(&curl_share_cleanup)> cookieStore_;
     std::vector<std::shared_ptr<Transfer>> active_;
     std::unique_ptr<CURLM, decltype(&curl_multi_cleanup)> multi_;
     std::thread worker_;

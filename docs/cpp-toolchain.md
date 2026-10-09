@@ -1238,13 +1238,17 @@ upstream `/symbolicate` endpoint. It asserts the original `index.ts` line and so
 symbolication service is needed; this verifies the server contract, while automatically sending native error
 stacks to it remains open in #79.
 
-The HTTP client's [libcurl cookie engine](https://curl.se/libcurl/c/CURLOPT_COOKIEFILE.html) is enabled in memory
-for each request, so a redirect can set a cookie for a later hop. Libcurl applies the cookie's domain and path
-rules. `CurlHttpClientTest` proves a redirect's eligible cookie is sent, an unrelated-path cookie is withheld,
-and an independent request starts without those cookies. No cookie file or shared store is used.
+The HTTP client's [libcurl cookie engine](https://curl.se/libcurl/c/CURLOPT_COOKIEFILE.html) is enabled in memory.
+A [libcurl share handle](https://curl.se/libcurl/c/CURLOPT_SHARE.html) retains cookies between requests on the
+same client. Only its worker accesses the shared store; completed transfers detach before callbacks, and teardown
+joins the worker before detaching in-flight transfers. A request token can outlive either path. Libcurl applies
+cookie domain, path and expiry rules. `CurlHttpClientTest` proves redirect and subsequent-request delivery,
+unrelated-path exclusion, isolation between clients, server-driven expiry and completed-token teardown. No cookie
+file is used.
 
-Not yet: a `blob` request body (there is no Blob module), cookies shared across separate requests, `wss://`, and the rest of the Metro dev-server
-contract: reload and symbolication.
+Not yet: explicit cookie clearing (upstream's `NetworkingModule::clearCookies` is a stub), a `blob` request body
+(there is no Blob module), `wss://`, and the rest of the Metro dev-server contract: reload and automatic native
+error-stack symbolication.
 
 ## react-native-worklets (#134)
 
