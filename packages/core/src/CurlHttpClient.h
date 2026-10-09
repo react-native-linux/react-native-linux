@@ -69,7 +69,7 @@ private:
  */
 std::string fetchBundle(const std::string& url);
 
-/** Decodes standard base64, ignoring padding; `std::nullopt` for any character outside the alphabet. */
+/** Decodes padded or unpadded standard base64; `std::nullopt` for malformed input. */
 std::optional<std::string> decodeBase64(const std::string& encoded);
 
 } // namespace react_native_linux

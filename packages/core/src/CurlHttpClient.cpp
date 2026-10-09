@@ -5,6 +5,7 @@
 #include <cctype>
 #include <chrono>
 #include <cstddef>
+#include <folly/base64.h>
 #include <folly/io/IOBuf.h>
 #include <stdexcept>
 #include <string_view>
@@ -398,35 +399,17 @@ std::string fetchBundle(const std::string& url) {
 }
 
 std::optional<std::string> decodeBase64(const std::string& encoded) {
-    constexpr std::string_view kAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    constexpr int kBitsPerCharacter = 6;
-    constexpr int kBitsPerByte = 8;
-    constexpr unsigned int kByteMask = 0xFFU;
-    std::string decoded;
-    unsigned int accumulator = 0;
-    int bits = 0;
-
-    for (const char character : encoded) {
-        if (character == '=') {
-            break;
-        }
-
-        const size_t value = kAlphabet.find(character);
-
-        if (value == std::string_view::npos) {
-            return std::nullopt;
-        }
-
-        accumulator = (accumulator << kBitsPerCharacter) | static_cast<unsigned int>(value);
-        bits += kBitsPerCharacter;
-
-        if (bits >= kBitsPerByte) {
-            bits -= kBitsPerByte;
-            decoded.push_back(static_cast<char>((accumulator >> bits) & kByteMask));
-        }
+    constexpr size_t kBase64BlockSize = 4;
+    std::string padded = encoded;
+    if (padded.find('=') == std::string::npos) {
+        padded.append((kBase64BlockSize - padded.size() % kBase64BlockSize) % kBase64BlockSize, '=');
     }
 
-    return decoded;
+    try {
+        return folly::base64Decode(padded);
+    } catch (const folly::base64_decode_error&) {
+        return std::nullopt;
+    }
 }
 
 } // namespace react_native_linux
