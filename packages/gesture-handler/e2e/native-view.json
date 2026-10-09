@@ -26,6 +26,21 @@
     "sleep 400",
     "move 200 140",
     "click 200 140",
+    "sleep 400",
+    "move 200 300",
+    "click 200 300",
+    "sleep 400",
+    "type Hi",
+    "sleep 300",
+    "button left press",
+    "sleep 200",
+    "move 250 300",
+    "sleep 200",
+    "button left release",
+    "sleep 400",
+    "key End press",
+    "key End release",
+    "type There",
     "sleep 400"
   ],
   "expect": [
@@ -46,7 +61,13 @@
     "native-view: pressIn",
     "native-view: finalize 4 success=false state=1",
     "native-view: press 2",
-    "native-view: pressOut"
+    "native-view: pressOut",
+    "native-input: focus",
+    "native-input: finalize state=1 success=false",
+    "native-input: text=Hi",
+    "native-input: active",
+    "native-input: finalize state=5 success=true",
+    "native-input: text=HiThere"
   ],
   "reject": ["native-view: press 3"]
 }

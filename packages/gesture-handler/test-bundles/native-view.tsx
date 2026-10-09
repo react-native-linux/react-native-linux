@@ -1,4 +1,4 @@
-import { AppRegistry, Pressable, View } from "react-native";
+import { AppRegistry, Pressable, TextInput, View } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 
 let completedGestures = 0;
@@ -17,6 +17,15 @@ const nativeView = Gesture.Native()
     console.log(`native-view: finalize ${completedGestures} success=${String(success)} state=${event.state}`);
   });
 
+const nativeInput = Gesture.Native()
+  .runOnJS(true)
+  .onStart(() => {
+    console.log("native-input: active");
+  })
+  .onFinalize((event, success) => {
+    console.log(`native-input: finalize state=${event.state} success=${String(success)}`);
+  });
+
 const NativeViewApp = (): React.JSX.Element => (
   <GestureHandlerRootView onLayout={() => console.log("native-view: committed")} style={{ flex: 1 }}>
     <GestureDetector gesture={nativeView}>
@@ -31,6 +40,13 @@ const NativeViewApp = (): React.JSX.Element => (
           style={{ backgroundColor: "#3b82f6", height: 80, width: 200 }}
         />
       </View>
+    </GestureDetector>
+    <GestureDetector gesture={nativeInput}>
+      <TextInput
+        onChangeText={(text) => console.log(`native-input: text=${text}`)}
+        onFocus={() => console.log("native-input: focus")}
+        style={{ backgroundColor: "#e2e8f0", height: 80, left: 100, position: "absolute", top: 260, width: 400 }}
+      />
     </GestureDetector>
   </GestureHandlerRootView>
 );
