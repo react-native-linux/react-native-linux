@@ -268,8 +268,8 @@ private:
 } // namespace
 
 CurlHttpClient::CurlHttpClient()
-    : multi_((curl_global_init(CURL_GLOBAL_DEFAULT), curl_multi_init()), &curl_multi_cleanup),
-      worker_([this]() { run(); }) {}
+    : cookieStore_((curl_global_init(CURL_GLOBAL_DEFAULT), curl_share_init()), &curl_share_cleanup),
+      multi_(curl_multi_init(), &curl_multi_cleanup), worker_([this]() { run(); }) {}
 
 CurlHttpClient::~CurlHttpClient() {
     stopping_.store(true);
@@ -278,6 +278,7 @@ CurlHttpClient::~CurlHttpClient() {
 
     for (const std::shared_ptr<Transfer>& transfer : active_) {
         curl_multi_remove_handle(multi_.get(), transfer->easy.get());
+        curl_easy_setopt(transfer->easy.get(), CURLOPT_SHARE, nullptr);
     }
 }
 
@@ -316,12 +317,15 @@ void CurlHttpClient::adoptPendingTransfers() {
             continue;
         }
 
+        curl_easy_setopt(transfer->easy.get(), CURLOPT_SHARE, cookieStore_.get());
         curl_multi_add_handle(multi_.get(), transfer->easy.get());
         active_.push_back(std::move(transfer));
     }
 }
 
 void CurlHttpClient::run() {
+    curl_share_setopt(cookieStore_.get(), CURLSHOPT_SHARE, CURL_LOCK_DATA_COOKIE);
+
     while (!stopping_.load()) {
         adoptPendingTransfers();
 
@@ -340,6 +344,7 @@ void CurlHttpClient::run() {
 
             active_.erase(owner);
             curl_multi_remove_handle(multi_.get(), transfer->easy.get());
+            curl_easy_setopt(transfer->easy.get(), CURLOPT_SHARE, nullptr);
 
             if (!transfer->cancelled.load()) {
                 transfer->complete(result);

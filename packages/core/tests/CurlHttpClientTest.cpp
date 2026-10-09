@@ -351,7 +351,7 @@ TEST(CurlHttpClientTest, FollowsARedirectAndReportsOnlyTheFinalResponsesHeaders)
     EXPECT_EQ(recording.body, "arrived");
 }
 
-TEST(CurlHttpClientTest, SendsRedirectCookiesOnlyToTheirMatchingPathWithinOneRequest) {
+TEST(CurlHttpClientTest, SharesRedirectCookiesWithMatchingRequestsOnOnlyTheSameClient) {
     LoopbackServer server([](const std::string& request, int socket) {
         if (request.starts_with("GET /from ")) {
             respond(socket, "302 Found",
@@ -378,7 +378,46 @@ TEST(CurlHttpClientTest, SendsRedirectCookiesOnlyToTheirMatchingPathWithinOneReq
 
     ASSERT_TRUE(independent.waitForCompletion());
     EXPECT_EQ(independent.error, "");
+    EXPECT_NE(server.lastRequest().find("Cookie: session=active\r\n"), std::string::npos);
+    EXPECT_EQ(server.lastRequest().find("private=hidden"), std::string::npos);
+
+    CurlHttpClient separateClient;
+    Recording separate;
+    separateClient.sendRequest(separate.callbacks(), "GET", server.url("/to"), {}, {}, 0, std::nullopt);
+
+    ASSERT_TRUE(separate.waitForCompletion());
+    EXPECT_EQ(separate.error, "");
     EXPECT_EQ(server.lastRequest().find("Cookie:"), std::string::npos);
+}
+
+TEST(CurlHttpClientTest, AServerCanExpireACookieAndACompletedTokenCanOutliveTheClient) {
+    LoopbackServer server([](const std::string& request, int socket) {
+        if (request.starts_with("GET /set ")) {
+            respond(socket, "200 OK", "Set-Cookie: session=active; Path=/\r\n", "");
+        } else {
+            respond(socket, "200 OK", "Set-Cookie: session=; Path=/; Max-Age=0\r\n", "");
+        }
+    });
+    std::unique_ptr<http::IRequestToken> token;
+
+    {
+        CurlHttpClient client;
+        Recording setting;
+        token = client.sendRequest(setting.callbacks(), "GET", server.url("/set"), {}, {}, 0, std::nullopt);
+        ASSERT_TRUE(setting.waitForCompletion());
+
+        Recording expiring;
+        client.sendRequest(expiring.callbacks(), "GET", server.url("/expire"), {}, {}, 0, std::nullopt);
+        ASSERT_TRUE(expiring.waitForCompletion());
+        EXPECT_NE(server.lastRequest().find("Cookie: session=active\r\n"), std::string::npos);
+
+        Recording expired;
+        client.sendRequest(expired.callbacks(), "GET", server.url("/expired"), {}, {}, 0, std::nullopt);
+        ASSERT_TRUE(expired.waitForCompletion());
+        EXPECT_EQ(server.lastRequest().find("Cookie:"), std::string::npos);
+    }
+
+    token->cancel();
 }
 
 TEST(CurlHttpClientTest, AnswersAHeadRequestAndAnEmptyBodyWithAnEmptyBody) {
