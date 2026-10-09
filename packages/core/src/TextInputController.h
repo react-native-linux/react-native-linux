@@ -119,6 +119,8 @@ public:
      */
     void synchronize();
 
+    void dispatchCommand(const SceneCommand& command);
+
     /**
      * Advances the caret blink by one frame, and reports whether the caret changed phase.
      *

@@ -27,6 +27,15 @@ const resolveWith = (
 };
 
 describe("resolveLinuxOverlayForResolvedFile", () => {
+  it("resolves the Linux TextInput host only for the Linux platform", () => {
+    const modulePath = upstreamFile("Components/TextInput/LinuxTextInputNativeComponent.js");
+
+    expect(resolveLinuxOverlayForResolvedFile(modulePath, "linux")).toBe(
+      linuxOverlayIndex["Libraries/Components/TextInput/LinuxTextInputNativeComponent"],
+    );
+    expect(resolveLinuxOverlayForResolvedFile(modulePath, "android")).toBeNull();
+    expect(resolveLinuxOverlayForResolvedFile(modulePath, "ios")).toBeNull();
+  });
   it("replaces an upstream file that has a linux overlay, whatever specifier reached it", () => {
     expect(resolveLinuxOverlayForResolvedFile(upstreamFile("Utilities/Platform.js"), "linux")).toBe(
       linuxOverlayIndex["Libraries/Utilities/Platform"],

@@ -1,0 +1,43 @@
+{
+  "name": "public-text-input",
+  "bundle": "public-text-input.tsx",
+  "ready": "public-text-input: committed",
+  "frames": 600,
+  "steps": [
+    "sleep 500",
+    "click 140 250",
+    "sleep 400",
+    "type Hi",
+    "sleep 400",
+    "click 240 250",
+    "sleep 400",
+    "click 340 250",
+    "sleep 400",
+    "click 140 250",
+    "sleep 400",
+    "type There",
+    "sleep 400",
+    "click 440 250",
+    "sleep 400",
+    "click 140 250",
+    "sleep 400",
+    "type X",
+    "sleep 400",
+    "click 240 250",
+    "sleep 400"
+  ],
+  "expect": [
+    "public-text-input: focus",
+    "public-text-input: text=HelloHi",
+    "public-text-input: blur",
+    "public-text-input: focus",
+    "public-text-input: text=There",
+    "public-text-input: focus",
+    "public-text-input: text=Xere",
+    "public-text-input: blur"
+  ],
+  "screenshot": {
+    "golden": "public-text-input.png",
+    "maxDifferentPixels": 1
+  }
+}

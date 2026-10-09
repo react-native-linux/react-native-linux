@@ -368,7 +368,16 @@ void InputDispatcher::dispatch(const std::vector<InputEvent>& events) {
 
 void InputDispatcher::dispatchCommands(const std::vector<SceneCommand>& commands) {
     for (const SceneCommand& command : commands) {
+        if (command.name == "blur") {
+            if (focusModel_.focusedTag() == command.tag) {
+                applyFocusTransition(focusModel_.focusTag(0, FocusOrigin::Keyboard), true);
+            }
+
+            continue;
+        }
+
         if (command.name != kFocusCommandName) {
+            textInputController_.dispatchCommand(command);
             continue;
         }
 

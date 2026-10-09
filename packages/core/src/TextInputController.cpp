@@ -8,6 +8,7 @@
 #endif
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -411,6 +412,47 @@ void TextInputController::placeCaretAtPoint(TextInputField& /*field*/, const fac
                                             facebook::react::Point /*surfacePoint*/, bool /*isExtending*/) {}
 
 #endif
+
+void TextInputController::dispatchCommand(const SceneCommand& command) {
+    if (command.name != "setTextAndSelection" || !command.args.isArray() || command.args.size() != 4 ||
+        !command.args[0].isNumber() || (!command.args[1].isString() && !command.args[1].isNull()) ||
+        !command.args[2].isNumber() || !command.args[3].isNumber()) {
+        return;
+    }
+
+    const double eventCount = command.args[0].asDouble();
+    const double start = command.args[2].asDouble();
+    const double end = command.args[3].asDouble();
+
+    if (!std::isfinite(eventCount) || eventCount != std::trunc(eventCount) || !std::isfinite(start) ||
+        start != std::trunc(start) || !std::isfinite(end) || end != std::trunc(end)) {
+        return;
+    }
+
+    const auto found = fields_.find(command.tag);
+
+    if (found == fields_.end() || eventCount < found->second.editor.mostRecentEventCount()) {
+        return;
+    }
+
+    TextInputField& field = found->second;
+
+    if (command.args[1].isString()) {
+        field.editor.setText(command.args[1].asString());
+        field.emittedText = field.editor.text();
+        field.writtenEventCount = -1;
+    }
+
+    if (start >= 0 && end >= 0) {
+        const double maximumOffset = static_cast<double>(field.editor.text().size());
+
+        field.editor.setSelectionRange(
+            utf8OffsetForUtf16Index(field.editor.text(), static_cast<size_t>(std::min(start, maximumOffset))),
+            utf8OffsetForUtf16Index(field.editor.text(), static_cast<size_t>(std::min(end, maximumOffset))));
+    }
+
+    publish(field);
+}
 
 void TextInputController::synchronize() {
     for (auto& entry : fields_) {
