@@ -125,7 +125,7 @@ TEST_F(TextInputControllerTest, ProgrammaticTextChangesDoNotEchoChangeEventsAndS
     recordedEventTypes_->clear();
 
     controller_->dispatchCommand(
-        {.tag = kFieldTag, .name = "setTextAndSelection", .args = folly::dynamic::array(0, "Hello", 0, 5)});
+        {.tag = kFieldTag, .name = "setTextAndSelection", .args = folly::dynamic::array(0.0, "Hello", 0.0, 5.0)});
     EXPECT_EQ(countRecorded(kChangeEvent), 0U);
     EXPECT_EQ(countRecorded(kSelectionChangeEvent), 1U);
 
@@ -152,7 +152,8 @@ TEST_F(TextInputControllerTest, InvalidCommandsAndUnmountedTargetsCannotChangeAF
     for (const auto& arguments : std::vector<folly::dynamic>{
              folly::dynamic::object(), folly::dynamic::array(), folly::dynamic::array("count", "text", 0, 0),
              folly::dynamic::array(0, false, 0, 0), folly::dynamic::array(0, "text", "start", 0),
-             folly::dynamic::array(0, "text", 0, "end")}) {
+             folly::dynamic::array(0, "text", 0, "end"), folly::dynamic::array(0.5, "text", 0, 0),
+             folly::dynamic::array(0, "text", 0.5, 0), folly::dynamic::array(0, "text", 0, 0.5)}) {
         controller_->dispatchCommand({.tag = kFieldTag, .name = "setTextAndSelection", .args = arguments});
     }
 

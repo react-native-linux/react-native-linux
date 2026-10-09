@@ -8,6 +8,7 @@
 #endif
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -414,14 +415,23 @@ void TextInputController::placeCaretAtPoint(TextInputField& /*field*/, const fac
 
 void TextInputController::dispatchCommand(const SceneCommand& command) {
     if (command.name != "setTextAndSelection" || !command.args.isArray() || command.args.size() != 4 ||
-        !command.args[0].isInt() || (!command.args[1].isString() && !command.args[1].isNull()) ||
-        !command.args[2].isInt() || !command.args[3].isInt()) {
+        !command.args[0].isNumber() || (!command.args[1].isString() && !command.args[1].isNull()) ||
+        !command.args[2].isNumber() || !command.args[3].isNumber()) {
+        return;
+    }
+
+    const double eventCount = command.args[0].asDouble();
+    const double start = command.args[2].asDouble();
+    const double end = command.args[3].asDouble();
+
+    if (!std::isfinite(eventCount) || eventCount != std::trunc(eventCount) || !std::isfinite(start) ||
+        start != std::trunc(start) || !std::isfinite(end) || end != std::trunc(end)) {
         return;
     }
 
     const auto found = fields_.find(command.tag);
 
-    if (found == fields_.end() || command.args[0].asInt() < found->second.editor.mostRecentEventCount()) {
+    if (found == fields_.end() || eventCount < found->second.editor.mostRecentEventCount()) {
         return;
     }
 
@@ -433,12 +443,12 @@ void TextInputController::dispatchCommand(const SceneCommand& command) {
         field.writtenEventCount = -1;
     }
 
-    const int64_t start = command.args[2].asInt();
-    const int64_t end = command.args[3].asInt();
-
     if (start >= 0 && end >= 0) {
-        field.editor.setSelectionRange(utf8OffsetForUtf16Index(field.editor.text(), static_cast<size_t>(start)),
-                                       utf8OffsetForUtf16Index(field.editor.text(), static_cast<size_t>(end)));
+        const double maximumOffset = static_cast<double>(field.editor.text().size());
+
+        field.editor.setSelectionRange(
+            utf8OffsetForUtf16Index(field.editor.text(), static_cast<size_t>(std::min(start, maximumOffset))),
+            utf8OffsetForUtf16Index(field.editor.text(), static_cast<size_t>(std::min(end, maximumOffset))));
     }
 
     publish(field);
