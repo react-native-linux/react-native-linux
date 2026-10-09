@@ -1,0 +1,31 @@
+{
+  "name": "gesture-long-press",
+  "bundle": "long-press.tsx",
+  "ready": "long-press: committed",
+  "frames": 600,
+  "steps": [
+    "sleep 500",
+    "move 200 140",
+    "sleep 100",
+    "click 200 140",
+    "sleep 200",
+    "button left press",
+    "sleep 50",
+    "move 250 140",
+    "sleep 50",
+    "button left release",
+    "sleep 200",
+    "move 200 140",
+    "button left press",
+    "sleep 1200",
+    "button left release",
+    "sleep 500"
+  ],
+  "expect": [
+    "long-press: finalize 1 success=false",
+    "long-press: finalize 2 success=false",
+    "long-press: active",
+    "long-press: end success=true",
+    "long-press: finalize 3 success=true"
+  ]
+}
