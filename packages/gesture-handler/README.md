@@ -45,7 +45,9 @@ and ends successfully. Recognition uses the existing JavaScript engine and its t
 The `gesture-native-view` e2e covers the upstream Native recognizer's default pointer lifecycle around a Linux
 Pressable. A click without movement fails recognition and delivers one press. Movement inside the Pressable
 activates Native, cancels the press through responder capture and releasing ends the gesture without another press.
-Linux skips browser style and attribute access. Other native controls, Android's `shouldActivateOnStart` option,
+Leaving the view cancels an active Native gesture without another press; a subsequent click proves pointer ownership
+is released. The trace distinguishes failed, ended and cancelled final states. Linux skips browser style and attribute
+access. Other native controls, Android's `shouldActivateOnStart` option,
 touchpad input and the flagship board remain acceptance work on #168.
 
 The `gesture-compositions` e2e proves two upstream Pan recognizers activate and end successfully on the same
