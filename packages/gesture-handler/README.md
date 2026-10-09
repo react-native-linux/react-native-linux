@@ -53,8 +53,10 @@ Leaving the view cancels an active Native gesture without another press; a subse
 is released. The trace distinguishes failed, ended and cancelled final states. Linux skips browser style and attribute
 access. A Native recognizer attached directly to TextInput preserves click focus and typing, completes a mouse drag,
 and leaves keyboard editing functional afterwards. A Native recognizer attached to ScrollView preserves wheel
-scrolling before and after a click; wheel events never begin or activate the recognizer. Other native controls, Android's `shouldActivateOnStart` option,
-touchpad input and the flagship board remain acceptance work on #168.
+scrolling before and after a click; wheel events never begin or activate the recognizer. The same scenario sends
+continuous touchpad-style axis deltas and an axis stop, proving native scrolling without another pointer gesture.
+This is virtual Wayland protocol coverage; physical touchpad and touchscreen source verification remain on #168.
+Other native controls, Android's `shouldActivateOnStart` option and the flagship board remain acceptance work on #168.
 
 The `gesture-compositions` e2e proves two upstream Pan recognizers activate and end successfully on the same
 mouse drag under `Simultaneous`. An `Exclusive` double/single Tap pair allows a single tap after the double tap
