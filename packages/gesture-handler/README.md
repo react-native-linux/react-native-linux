@@ -51,6 +51,9 @@ The `gesture-compositions` e2e proves two upstream Pan recognizers activate and 
 mouse drag under `Simultaneous`. An `Exclusive` double/single Tap pair allows a single tap after the double tap
 fails, and recognizes a double tap without also delivering the lower-priority single tap. No Linux-specific
 composition algorithm is added; this exercises upstream orchestration through the Linux pointer delegate.
+The same scenario covers `requireExternalGestureToFail` between nested views: the outer tap remains pending
+before the inner double tap's failure deadline, succeeds after that deadline, and stays suppressed when the
+inner double tap succeeds.
 
 ## Upstream
 

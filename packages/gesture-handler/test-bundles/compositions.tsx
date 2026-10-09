@@ -4,10 +4,13 @@ import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-g
 const simultaneousPanCount = 2;
 const doubleTapCount = 2;
 const doubleTapDelay = 250;
+const failureCheckpointDelay = 100;
 let activePans = 0;
 let completedPans = 0;
 let singleTaps = 0;
 let doubleTaps = 0;
+let outerTaps = 0;
+let innerDoubleTaps = 0;
 
 const simultaneous = Gesture.Simultaneous(
   ...Array.from({ length: simultaneousPanCount }, () =>
@@ -45,6 +48,31 @@ const singleTap = Gesture.Tap()
   });
 const exclusive = Gesture.Exclusive(doubleTap, singleTap);
 
+const innerDoubleTap = Gesture.Tap()
+  .runOnJS(true)
+  .numberOfTaps(doubleTapCount)
+  .maxDelay(doubleTapDelay)
+  .onTouchesUp(() => {
+    setTimeout(() => {
+      console.log(`external: awaiting outer taps=${outerTaps}`);
+    }, failureCheckpointDelay);
+  })
+  .onEnd((_event, success) => {
+    if (success) {
+      innerDoubleTaps += 1;
+      console.log(`external: inner double taps=${innerDoubleTaps} outer taps=${outerTaps}`);
+    }
+  });
+const outerTap = Gesture.Tap()
+  .runOnJS(true)
+  .requireExternalGestureToFail(innerDoubleTap)
+  .onEnd((_event, success) => {
+    if (success) {
+      outerTaps += 1;
+      console.log(`external: outer taps=${outerTaps} inner double taps=${innerDoubleTaps}`);
+    }
+  });
+
 const CompositionsApp = (): React.JSX.Element => (
   <GestureHandlerRootView onLayout={() => console.log("compositions: committed")} style={{ flex: 1 }}>
     <GestureDetector gesture={simultaneous}>
@@ -52,6 +80,13 @@ const CompositionsApp = (): React.JSX.Element => (
     </GestureDetector>
     <GestureDetector gesture={exclusive}>
       <View style={{ backgroundColor: "#22c55e", height: 80, left: 100, position: "absolute", top: 250, width: 400 }} />
+    </GestureDetector>
+    <GestureDetector gesture={outerTap}>
+      <View style={{ height: 80, left: 100, position: "absolute", top: 400, width: 400 }}>
+        <GestureDetector gesture={innerDoubleTap}>
+          <View style={{ backgroundColor: "#f59e0b", height: 80, width: 200 }} />
+        </GestureDetector>
+      </View>
     </GestureDetector>
   </GestureHandlerRootView>
 );
