@@ -2,7 +2,7 @@
   "name": "gesture-native-view",
   "bundle": "native-view.tsx",
   "ready": "native-view: committed",
-  "frames": 900,
+  "frames": 1200,
   "steps": [
     "sleep 500",
     "move 200 140",
