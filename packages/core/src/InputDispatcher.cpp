@@ -608,7 +608,8 @@ void InputDispatcher::emitActivation(const InputEvent& event) const {
         return;
     }
 
-    emitPointerDispatch(*emitter, makeActivationDispatch(event, absoluteOrigin(*focusedNode_)));
+    emitter->dispatchEvent("click", makeActivationPayload(event, absoluteOrigin(*focusedNode_)),
+                           facebook::react::RawEvent::Category::Discrete);
 
     // The same click a press produces, and therefore the same toggle: Space and Enter on a focused switch go
     // through one emission rather than through a keyboard path of their own.

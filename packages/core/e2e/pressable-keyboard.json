@@ -1,0 +1,30 @@
+{
+  "name": "pressable-react-pointer-keyboard-activation",
+  "bundle": "pressable-react.tsx",
+  "ready": "pressable-react: committed",
+  "frames": 600,
+  "steps": [
+    "sleep 500",
+    "click 200 140",
+    "sleep 400",
+    "click 450 400",
+    "sleep 150",
+    "key Tab press",
+    "key Tab release",
+    "sleep 150",
+    "key Return press",
+    "key Return release",
+    "sleep 400",
+    "key space press",
+    "key space release",
+    "sleep 400"
+  ],
+  "expect": [
+    "pressable-react: pressIn",
+    "pressable-react: press 1",
+    "pressable-react: pressOut",
+    "pressable-react: press 2",
+    "pressable-react: press 3"
+  ],
+  "reject": ["pressable-react: press 4"]
+}

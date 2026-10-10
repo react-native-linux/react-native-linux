@@ -713,17 +713,16 @@ uint32_t KeyRepeat::advance(uint64_t nowMilliseconds) {
     return repeats;
 }
 
-PointerDispatch makeActivationDispatch(const InputEvent& event, facebook::react::Point targetOrigin) {
-    InputEvent activation = event;
+folly::dynamic makeActivationPayload(const InputEvent& event, facebook::react::Point targetOrigin) {
+    folly::dynamic payload = folly::dynamic::object("detail", kClickDetail)("button", kPrimaryButton)(
+        "buttons", kNoButtonsBits)("clientX", targetOrigin.x)("clientY", targetOrigin.y)("offsetX", 0)("offsetY", 0);
 
-    activation.surfacePoint = targetOrigin;
+    payload["ctrlKey"] = event.modifiers.control;
+    payload["shiftKey"] = event.modifiers.shift;
+    payload["altKey"] = event.modifiers.alt;
+    payload["metaKey"] = event.modifiers.meta;
 
-    // The offset is zero rather than derived from `targetOrigin`, because a keyboard activation has no press
-    // point of its own to place inside the target's box — it is reported at the target's own origin, which is
-    // zero offset by definition, in every coordinate space this platform's transforms can put the target in.
-    return PointerDispatch{
-        .type = PointerDispatchType::Click,
-        .event = makePointerEvent(activation, facebook::react::Point{}, kPrimaryButton, kClickDetail, kNoButtonsBits)};
+    return payload;
 }
 
 bool isScrollEvent(const InputEvent& event) {
