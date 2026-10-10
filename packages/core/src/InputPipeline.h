@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <folly/dynamic.h>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -375,13 +376,10 @@ private:
 /**
  * The click a key activation produces on the focused node.
  *
- * It is deliberately the same synthetic `click` a press and a release on one target produce, built by the same
- * code, so `Pressability` turns Enter and Space into `onPressIn`, `onPressOut` and `onPress` with no keyboard
- * path of its own — which is what react-native-macos#1622 was missing. The coordinates are the target's own
- * origin rather than wherever the pointer happens to be resting, so the offset inside the target is zero and no
- * handler can mistake the activation for a click somewhere else.
+ * `Pressability` ignores clicks carrying `pointerType` to avoid duplicate pointer presses:
+ * https://github.com/facebook/react-native/blob/v0.87.1/packages/react-native/Libraries/Pressability/Pressability.js
  */
-PointerDispatch makeActivationDispatch(const InputEvent& event, facebook::react::Point targetOrigin);
+folly::dynamic makeActivationPayload(const InputEvent& event, facebook::react::Point targetOrigin);
 
 /**
  * Whatever owns the text cursor, from the platform's side of `zwp_text_input_v3`.

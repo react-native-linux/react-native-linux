@@ -32,7 +32,7 @@ using react_native_linux::isTextKey;
 using react_native_linux::KeyRepeat;
 using react_native_linux::keySequenceTokens;
 using react_native_linux::kInputQueueCapacity;
-using react_native_linux::makeActivationDispatch;
+using react_native_linux::makeActivationPayload;
 using react_native_linux::notchesForValue120;
 using react_native_linux::parseKeySequence;
 using react_native_linux::PointerDispatch;
@@ -464,31 +464,32 @@ TEST(KeyEventTest, CodeIsThePhysicalKeyRatherThanTheKeymapOnTopOfIt) {
     EXPECT_EQ(domKeyCode(kEvdevUnassigned), "Unidentified");
 }
 
-TEST(KeyEventTest, ActivationIsTheSameClickThePointerPathProduces) {
+TEST(KeyEventTest, ActivationIsANonPointerClickAtTheTargetsOrigin) {
     const InputEvent activationKey{
         .kind = InputEventKind::KeyPress, .surfacePoint = makePoint(700, 500), .key = std::string(" ")};
-    const PointerDispatch dispatch = makeActivationDispatch(activationKey, makePoint(100, 80));
+    const folly::dynamic payload = makeActivationPayload(activationKey, makePoint(100, 80));
 
-    EXPECT_EQ(dispatch.type, PointerDispatchType::Click);
-    EXPECT_EQ(dispatch.event.detail, 1);
-    EXPECT_EQ(dispatch.event.button, 0);
-    EXPECT_EQ(dispatch.event.buttons, 0);
-    EXPECT_FLOAT_EQ(dispatch.event.clientPoint.x, 100);
-    EXPECT_FLOAT_EQ(dispatch.event.clientPoint.y, 80);
-    EXPECT_FLOAT_EQ(dispatch.event.offsetPoint.x, 0);
-    EXPECT_FLOAT_EQ(dispatch.event.offsetPoint.y, 0);
+    EXPECT_EQ(payload["detail"].asInt(), 1);
+    EXPECT_EQ(payload["button"].asInt(), 0);
+    EXPECT_EQ(payload["buttons"].asInt(), 0);
+    EXPECT_DOUBLE_EQ(payload["clientX"].asDouble(), 100);
+    EXPECT_DOUBLE_EQ(payload["clientY"].asDouble(), 80);
+    EXPECT_EQ(payload["offsetX"].asInt(), 0);
+    EXPECT_EQ(payload["offsetY"].asInt(), 0);
+    EXPECT_EQ(payload.get_ptr("pointerType"), nullptr);
 }
 
 TEST(KeyEventTest, ActivationCarriesTheModifiersTheKeyWasPressedWith) {
     InputEvent activationKey{.kind = InputEventKind::KeyPress, .key = std::string("Enter")};
 
-    activationKey.modifiers = InputModifiers{.control = true, .shift = false, .alt = false, .meta = true};
+    activationKey.modifiers = InputModifiers{.control = true, .shift = false, .alt = true, .meta = true};
 
-    const PointerDispatch dispatch = makeActivationDispatch(activationKey, makePoint(0, 0));
+    const folly::dynamic payload = makeActivationPayload(activationKey, makePoint(0, 0));
 
-    EXPECT_TRUE(dispatch.event.ctrlKey);
-    EXPECT_FALSE(dispatch.event.shiftKey);
-    EXPECT_TRUE(dispatch.event.metaKey);
+    EXPECT_TRUE(payload["ctrlKey"].asBool());
+    EXPECT_FALSE(payload["shiftKey"].asBool());
+    EXPECT_TRUE(payload["altKey"].asBool());
+    EXPECT_TRUE(payload["metaKey"].asBool());
 }
 
 TEST(PointerRouterTest, BatchesAFullFrameInQueueOrder) {
