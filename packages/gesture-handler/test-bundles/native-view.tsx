@@ -6,6 +6,7 @@ let completedGestures = 0;
 let presses = 0;
 let scrollBegins = 0;
 let switchBegins = 0;
+let inputPanBegins = 0;
 
 const nativeView = Gesture.Native()
   .runOnJS(true)
@@ -21,12 +22,25 @@ const nativeView = Gesture.Native()
   });
 
 const nativeInput = Gesture.Native()
+  .disallowInterruption(true)
   .runOnJS(true)
   .onStart(() => {
     console.log("native-input: active");
   })
   .onFinalize((event, success) => {
     console.log(`native-input: finalize state=${event.state} success=${String(success)}`);
+  });
+
+const inputPan = Gesture.Pan()
+  .runOnJS(true)
+  .minDistance(40)
+  .onBegin(() => {
+    inputPanBegins += 1;
+    console.log(`native-input-pan: begin ${inputPanBegins}`);
+  })
+  .onStart(() => console.log("native-input-pan: active"))
+  .onFinalize((event, success) => {
+    console.log(`native-input-pan: finalize ${inputPanBegins} state=${event.state} success=${String(success)}`);
   });
 
 const nativeScroll = Gesture.Native()
@@ -82,12 +96,16 @@ const NativeViewApp = (): React.JSX.Element => (
         />
       </View>
     </GestureDetector>
-    <GestureDetector gesture={nativeInput}>
-      <TextInput
-        onChangeText={(text) => console.log(`native-input: text=${text}`)}
-        onFocus={() => console.log("native-input: focus")}
-        style={{ backgroundColor: "#e2e8f0", height: 80, left: 100, position: "absolute", top: 260, width: 400 }}
-      />
+    <GestureDetector gesture={inputPan}>
+      <View style={{ height: 80, left: 100, position: "absolute", top: 260, width: 400 }}>
+        <GestureDetector gesture={nativeInput}>
+          <TextInput
+            onChangeText={(text) => console.log(`native-input: text=${text}`)}
+            onFocus={() => console.log("native-input: focus")}
+            style={{ backgroundColor: "#e2e8f0", height: 80, width: 400 }}
+          />
+        </GestureDetector>
+      </View>
     </GestureDetector>
     <GestureDetector gesture={nativeScroll}>
       <ScrollView
