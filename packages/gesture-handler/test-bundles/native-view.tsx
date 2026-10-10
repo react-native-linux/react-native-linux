@@ -62,6 +62,7 @@ const NativeViewApp = (): React.JSX.Element => (
     </GestureDetector>
     <GestureDetector gesture={nativeScroll}>
       <ScrollView
+        contentContainerStyle={{ width: 800 }}
         onScroll={(event) => {
           console.log(`native-scroll: scrolled=${String(event.nativeEvent.contentOffset.y > 0)}`);
           if (event.nativeEvent.contentOffset.x > 0) {
@@ -71,7 +72,7 @@ const NativeViewApp = (): React.JSX.Element => (
         scrollEventThrottle={16}
         style={{ height: 160, left: 100, position: "absolute", top: 380, width: 400 }}
       >
-        <View style={{ backgroundColor: "#3b82f6", height: 600, width: 800 }} />
+        <View style={{ backgroundColor: "#3b82f6", height: 600 }} />
       </ScrollView>
     </GestureDetector>
   </GestureHandlerRootView>
