@@ -1,9 +1,11 @@
-import { AppRegistry, Pressable, ScrollView, TextInput, View } from "react-native";
+import { useState } from "react";
+import { AppRegistry, Pressable, ScrollView, Switch, TextInput, View } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 
 let completedGestures = 0;
 let presses = 0;
 let scrollBegins = 0;
+let switchBegins = 0;
 
 const nativeView = Gesture.Native()
   .runOnJS(true)
@@ -37,6 +39,33 @@ const nativeScroll = Gesture.Native()
   .onFinalize((event, success) => {
     console.log(`native-scroll: finalize state=${event.state} success=${String(success)}`);
   });
+
+const nativeSwitch = Gesture.Native()
+  .runOnJS(true)
+  .onBegin(() => {
+    switchBegins += 1;
+    console.log(`native-switch: begin ${switchBegins}`);
+  })
+  .onStart(() => console.log("native-switch: active"))
+  .onFinalize((event, success) => {
+    console.log(`native-switch: finalize state=${event.state} success=${String(success)}`);
+  });
+
+const NativeSwitch = (): React.JSX.Element => {
+  const [value, setValue] = useState(false);
+  return (
+    <GestureDetector gesture={nativeSwitch}>
+      <Switch
+        onValueChange={(nextValue) => {
+          console.log(`native-switch: value=${String(nextValue)}`);
+          setValue(nextValue);
+        }}
+        style={{ left: 100, position: "absolute", top: 580 }}
+        value={value}
+      />
+    </GestureDetector>
+  );
+};
 
 const NativeViewApp = (): React.JSX.Element => (
   <GestureHandlerRootView onLayout={() => console.log("native-view: committed")} style={{ flex: 1 }}>
@@ -75,6 +104,7 @@ const NativeViewApp = (): React.JSX.Element => (
         <View style={{ backgroundColor: "#3b82f6", height: 600 }} />
       </ScrollView>
     </GestureDetector>
+    <NativeSwitch />
   </GestureHandlerRootView>
 );
 

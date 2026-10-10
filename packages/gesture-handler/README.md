@@ -57,6 +57,8 @@ scrolling before and after a click; wheel events never begin or activate the rec
 continuous touchpad-style axis deltas, then changes axis after a stop. Horizontal movement after vertical scrolling
 requires the axis lock to reset, while neither continuous gesture starts another pointer recognizer.
 This is virtual Wayland protocol coverage; physical touchpad and touchscreen source verification remain on #168.
+A Native recognizer attached directly to a controlled public Switch preserves click toggling and focused keyboard
+Space toggling; keyboard input never begins or activates another pointer recognizer.
 Other native controls, Android's `shouldActivateOnStart` option and the flagship board remain acceptance work on #168.
 
 The `gesture-compositions` e2e proves two upstream Pan recognizers activate and end successfully on the same
