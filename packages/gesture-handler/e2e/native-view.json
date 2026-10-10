@@ -34,6 +34,8 @@
     "sleep 300",
     "button left press",
     "sleep 200",
+    "move 220 300",
+    "sleep 100",
     "move 250 300",
     "sleep 200",
     "button left release",
@@ -92,6 +94,8 @@
     "native-input: focus",
     "native-input: finalize state=1 success=false",
     "native-input: text=Hi",
+    "native-input-pan: begin 2",
+    "native-input-pan: finalize 2 state=3 success=false",
     "native-input: active",
     "native-input: finalize state=5 success=true",
     "native-input: text=HiThere",
@@ -114,6 +118,8 @@
     "native-scroll: begin 2",
     "native-scroll: active",
     "native-switch: begin 2",
-    "native-switch: active"
+    "native-switch: active",
+    "native-input-pan: active",
+    "native-input-pan: begin 3"
   ]
 }

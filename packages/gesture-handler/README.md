@@ -52,8 +52,9 @@ activates Native, cancels the press through responder capture and releasing ends
 Leaving the view cancels an active Native gesture without another press; a subsequent click proves pointer ownership
 is released. The trace distinguishes failed, ended and cancelled final states. Linux skips browser style and attribute
 access. A Native recognizer attached directly to TextInput preserves click focus and typing, completes a mouse drag,
-and leaves keyboard editing functional afterwards. A Native recognizer attached to ScrollView preserves wheel
-scrolling before and after a click; wheel events never begin or activate the recognizer. The same scenario sends
+and leaves keyboard editing functional afterwards. With `disallowInterruption(true)`, its activation cancels an
+enclosing Pan before that contender reaches its movement threshold; the Native drag still ends successfully.
+A Native recognizer attached to ScrollView preserves wheel scrolling before and after a click; wheel events never begin or activate the recognizer. The same scenario sends
 continuous touchpad-style axis deltas, then changes axis after a stop. Horizontal movement after vertical scrolling
 requires the axis lock to reset, while neither continuous gesture starts another pointer recognizer.
 This is virtual Wayland protocol coverage; physical touchpad and touchscreen source verification remain on #168.
