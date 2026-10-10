@@ -52,7 +52,17 @@
     "wheel down 3",
     "sleep 400",
     "wheel up 6",
-    "sleep 1500"
+    "sleep 1500",
+    "pan 0 40",
+    "sleep 150",
+    "pan 0 40",
+    "sleep 150",
+    "pan 0 -160",
+    "pan_stop",
+    "pan 40 0",
+    "sleep 150",
+    "pan_stop",
+    "sleep 800"
   ],
   "expect": [
     "native-view: pressIn",
@@ -84,7 +94,10 @@
     "native-scroll: begin 1",
     "native-scroll: finalize state=1 success=false",
     "native-scroll: scrolled=true",
-    "native-scroll: scrolled=false"
+    "native-scroll: scrolled=false",
+    "native-scroll: scrolled=true",
+    "native-scroll: scrolled=false",
+    "native-scroll: horizontal"
   ],
   "reject": ["native-view: press 3", "native-scroll: begin 2", "native-scroll: active"]
 }
