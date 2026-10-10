@@ -1,0 +1,28 @@
+{
+  "name": "focus-remount",
+  "bundle": "focus-remount.tsx",
+  "ready": "focus-remount: mounted=0",
+  "frames": 600,
+  "steps": [
+    "sleep 500",
+    "click 140 250",
+    "sleep 400",
+    "type First",
+    "sleep 400",
+    "click 240 250",
+    "sleep 400",
+    "click 140 250",
+    "sleep 400",
+    "type Second",
+    "sleep 400"
+  ],
+  "expect": [
+    "focus-remount: requested=0",
+    "focus-remount: focused=0",
+    "focus-remount: text=First generation=0",
+    "focus-remount: mounted=1",
+    "focus-remount: requested=1",
+    "focus-remount: focused=1",
+    "focus-remount: text=Second generation=1"
+  ]
+}
