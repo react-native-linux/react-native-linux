@@ -22,7 +22,7 @@ const App = (): React.JSX.Element => {
         data={["first", "second", "third"]}
         keyExtractor={(name) => name}
         renderItem={({ item }) => <Control name={item} />}
-        style={{ height: 150, flexGrow: 0, marginBottom: 10 }}
+        style={{ height: 130, flexGrow: 0, marginBottom: 10 }}
       />
       <Control name="after" />
     </View>
