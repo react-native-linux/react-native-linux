@@ -1,18 +1,14 @@
 import { packageAliases, resolveLinuxPackageAlias } from "./package-aliases.ts";
+import { createRequire } from "node:module";
 import path from "node:path";
 
 const reactNativeModulePrefix = "react-native/";
 const linuxPlatform = "linux";
 
-const coreLinuxUtilitiesDirectory = path.join(
-  import.meta.dirname,
-  "..",
-  "..",
-  "core",
-  "src-linux",
-  "Libraries",
-  "Utilities",
-);
+// Resolved as a dependency rather than as a sibling directory, so a packed copy finds it inside node_modules.
+const coreDirectory = path.dirname(createRequire(import.meta.url).resolve("@react-native-linux/core/package.json"));
+
+const coreLinuxUtilitiesDirectory = path.join(coreDirectory, "src-linux", "Libraries", "Utilities");
 
 const coreLinuxNativeComponentDirectory = path.join(coreLinuxUtilitiesDirectory, "..", "NativeComponent");
 

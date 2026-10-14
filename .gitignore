@@ -7,3 +7,5 @@ packages/core/fonts/
 compile_commands.json
 .DS_Store
 *.profraw
+packages/cli/dist/
+packages/core/bin/

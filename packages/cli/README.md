@@ -3,6 +3,23 @@
 Metro platform registration (`platform-config.ts`, `metro-config.ts`) and the packaging generators that turn a
 Linux bundle manifest into installable artefacts. Tracks issue #356 (and its merged duplicate #366) under #176.
 
+## Packing for an application (#626)
+
+There is no npm publication yet (ADR-0001 §10), so an application installs this package and
+`@react-native-linux/core` from local tarballs. `pnpm pack:local [build-directory]` (default `build/release`)
+writes both into `build/pack`:
+
+- `@react-native-linux/cli` is compiled to JavaScript in `dist/`, because Node does not strip types inside
+  `node_modules`. `publishConfig.exports` points every export there. Core is a peer dependency, found by package
+  resolution rather than by a sibling path.
+- `@react-native-linux/core` carries `bin/rnl_window` (declared as the package's `bin`, so it stays executable),
+  `libhermesvm.so` and `libjsi.so` found through the binary's `$ORIGIN` runpath, the vendored fonts, and a
+  `portable.marker` so `ResourceResolver` reads the fonts from beside the binary (#361).
+
+The binary links the build host's system libraries, so it runs on the distribution it was built on; the portable
+floor is #357. An application's Metro config takes its `resolver` section from
+`linuxResolverConfig(projectRoot)` in `linux-resolver-config.ts`.
+
 ## Desktop entry and hicolor icon tree (#356)
 
 Wayland gives an application no way to set its own name or icon; both come from an installed `.desktop` entry
