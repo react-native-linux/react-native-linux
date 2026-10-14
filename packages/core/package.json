@@ -2,8 +2,19 @@
   "name": "@react-native-linux/core",
   "version": "0.0.0",
   "private": true,
+  "files": [
+    "index.ts",
+    "src-linux",
+    "!**/*.spec.ts",
+    "bin"
+  ],
   "type": "module",
   "main": "./index.ts",
+  "publishConfig": {
+    "bin": {
+      "rnl_window": "bin/rnl_window"
+    }
+  },
   "scripts": {
     "assets:test-animation": "node scripts/make-test-animation.ts",
     "assets:test-image": "node scripts/make-test-image.ts",

@@ -40,6 +40,8 @@
     "scripts/e2e.ts",
     "scripts/format-cpp/**/*.ts",
     "scripts/format-cpp.ts",
+    "scripts/pack-local/**/*.ts",
+    "scripts/pack-local.ts",
     "scripts/prop-coverage/**/*.ts",
     "scripts/prop-coverage.ts",
     "scripts/upstream/**/*.ts",

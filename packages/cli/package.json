@@ -2,6 +2,9 @@
   "name": "@react-native-linux/cli",
   "version": "0.0.0",
   "private": true,
+  "files": [
+    "dist"
+  ],
   "type": "module",
   "exports": {
     ".": "./src/platform-config.ts",
@@ -17,7 +20,27 @@
     "./linux-package-format-names.ts": "./src/linux-package-format-names.ts",
     "./override-report.ts": "./src/override-report.ts",
     "./manifest-schema-drift.ts": "./src/manifest-schema-drift.ts",
-    "./metro-config.ts": "./src/metro-config.ts"
+    "./metro-config.ts": "./src/metro-config.ts",
+    "./linux-resolver-config.ts": "./src/linux-resolver-config.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": "./dist/platform-config.js",
+      "./animation-rung.ts": "./dist/animation-rung.js",
+      "./autolinking-cmake.ts": "./dist/autolinking-cmake.js",
+      "./dependency-floor.ts": "./dist/dependency-floor.js",
+      "./desktop-entry.ts": "./dist/desktop-entry.js",
+      "./fantom-expectations.ts": "./dist/fantom-expectations.js",
+      "./hicolor-icon-tree.ts": "./dist/hicolor-icon-tree.js",
+      "./linux-autolinking-types.ts": "./dist/linux-autolinking-types.js",
+      "./linux-autolinking.ts": "./dist/linux-autolinking.js",
+      "./linux-bundle-manifest.ts": "./dist/linux-bundle-manifest.js",
+      "./linux-package-format-names.ts": "./dist/linux-package-format-names.js",
+      "./override-report.ts": "./dist/override-report.js",
+      "./manifest-schema-drift.ts": "./dist/manifest-schema-drift.js",
+      "./metro-config.ts": "./dist/metro-config.js",
+      "./linux-resolver-config.ts": "./dist/linux-resolver-config.js"
+    }
   },
   "dependencies": {
     "pngjs": "catalog:"
@@ -26,5 +49,8 @@
     "@types/node": "catalog:",
     "@types/pngjs": "catalog:",
     "vitest": "catalog:"
+  },
+  "peerDependencies": {
+    "@react-native-linux/core": "workspace:*"
   }
 }

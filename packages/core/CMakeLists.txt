@@ -1328,7 +1328,10 @@ elseif(RNL_ENABLE_WINDOW)
     # definition is one: there is no asset packaging yet.
     target_compile_definitions(rnl_window
         PRIVATE "RNL_BUNDLED_FONT_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/fonts\"")
-    set_target_properties(rnl_window PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+    # `$ORIGIN` first, so a packed copy finds the Hermes and JSI shared objects shipped beside it (#626); CMake
+    # appends the build tree's own directories after it.
+    set_target_properties(rnl_window PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+                                                BUILD_RPATH "\$ORIGIN")
 
     # Neither virtual-input protocol is part of wayland-protocols, and Ubuntu ships no wlr-protocols package, so
     # both XML files are vendored under protocols/ from wlroots 0.17.4 — the wlroots the CI compositor (cage)

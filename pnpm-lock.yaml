@@ -95,6 +95,9 @@ importers:
 
   packages/cli:
     dependencies:
+      '@react-native-linux/core':
+        specifier: workspace:*
+        version: link:../core
       pngjs:
         specifier: 'catalog:'
         version: 7.0.0

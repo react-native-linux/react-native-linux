@@ -274,5 +274,6 @@ export {
   olderThan,
   parseNeededLibraries,
   parseSymbolVersions,
+  shippedLibraries,
   symbolFloor,
 };

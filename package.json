@@ -22,6 +22,7 @@
     "manifest-schema:check": "node scripts/linux-bundle-manifest-schema.ts check",
     "manifest-schema:generate": "node scripts/linux-bundle-manifest-schema.ts generate",
     "focus-traversal:check": "node scripts/focus-traversal.ts",
+    "pack:local": "node scripts/pack-local.ts",
     "prop-coverage:check": "node scripts/prop-coverage.ts check",
     "prop-coverage:report": "node scripts/prop-coverage.ts report",
     "test": "vitest run --coverage",
