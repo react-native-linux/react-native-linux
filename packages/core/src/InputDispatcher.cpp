@@ -129,22 +129,26 @@ bool isImeEvent(const InputEvent& event) {
 }
 
 /**
+ * Whether Yoga took a node off screen. Its descendants keep their own `display`, so they answer `Flex` here even
+ * though Yoga zeroed their layout along with it: the caller carries the answer down the subtree.
+ */
+bool isDisplayNone(const facebook::react::ShadowNode& shadowNode) {
+    const facebook::react::LayoutableShadowNode* layoutable =
+        dynamic_cast<const facebook::react::LayoutableShadowNode*>(&shadowNode);
+
+    return layoutable != nullptr && layoutable->getLayoutMetrics().displayType == facebook::react::DisplayType::None;
+}
+
+/**
  * Whether a node can hold focus.
  *
  * The `cxx` platform has no `focusable` prop — Android and tvOS add one on their own `HostPlatformViewProps` and
  * the shared `BaseViewProps` has none — so the signal is `accessible`, which is the prop `Pressable` already sets
  * on every control it renders and the one an out-of-tree platform can read without forking a vendored header.
- * `accessibilityState.disabled` removes it again, which is react-native-macos#1655, and a `display: none` node is
- * skipped because Yoga has already decided it is not on screen.
+ * `accessibilityState.disabled` removes it again, which is react-native-macos#1655. A `display: none` subtree is
+ * `isDisplayNone`'s, because the rule is about ancestors and this function sees one node.
  */
 bool isFocusableNode(const facebook::react::ShadowNode& shadowNode) {
-    const facebook::react::LayoutableShadowNode* layoutable =
-        dynamic_cast<const facebook::react::LayoutableShadowNode*>(&shadowNode);
-
-    if (layoutable != nullptr && layoutable->getLayoutMetrics().displayType == facebook::react::DisplayType::None) {
-        return false;
-    }
-
     // A `<Switch>` is focusable because it is a control, not because the app remembered to say so: `Switch.js`
     // sets `accessibilityRole` and never `accessible`, so the prop this function otherwise reads is false on
     // every switch React Native itself renders. `disabled` takes it back out, which is the same rule
@@ -676,7 +680,7 @@ void InputDispatcher::syncFocusables() {
     textInputNodes_.clear();
 
     if (root != nullptr) {
-        collectFocusables(*root);
+        collectFocusables(*root, false);
     }
 
     // Before the focus transition below, so a commit that dropped the focused field finds the new field set
@@ -706,9 +710,11 @@ void InputDispatcher::syncFocusables() {
     }
 }
 
-void InputDispatcher::collectFocusables(const facebook::react::ShadowNode& shadowNode) {
+void InputDispatcher::collectFocusables(const facebook::react::ShadowNode& shadowNode, bool isHidden) {
     for (const std::shared_ptr<const facebook::react::ShadowNode>& child : shadowNode.getChildren()) {
-        if (isFocusableNode(*child)) {
+        const bool isChildHidden = isHidden || isDisplayNone(*child);
+
+        if (!isChildHidden && isFocusableNode(*child)) {
             focusableNodes_.push_back(child);
         }
 
@@ -719,7 +725,7 @@ void InputDispatcher::collectFocusables(const facebook::react::ShadowNode& shado
             textInputNodes_.push_back(textInput);
         }
 
-        collectFocusables(*child);
+        collectFocusables(*child, isChildHidden);
     }
 }
 

@@ -22,6 +22,7 @@ using react_native_linux::TextInputFocusSink;
 constexpr Tag kFieldAlphaTag = 20;
 constexpr Tag kFieldBetaTag = 21;
 constexpr Tag kFieldGammaTag = 22;
+constexpr Tag kContainerTag = 23;
 constexpr char kFocusCommandName[] = "focus";
 
 using ChildList = std::vector<std::shared_ptr<const ShadowNode>>;
@@ -93,6 +94,15 @@ protected:
         react_native_linux::commitChildren(*shadowTree_, std::make_shared<const ChildList>(std::move(fields)));
     }
 
+    /** Replaces the tree with one container of the given `display` holding the gamma field. */
+    void commitFieldInsideContainer(const std::string& display) {
+        const std::shared_ptr<const ShadowNode> container = react_native_linux::makeConfiguredShadowNode(
+            viewDescriptor_, kContainerTag, kSurfaceId, contextContainer_, folly::dynamic::object("display", display),
+            std::make_shared<const ChildList>(ChildList{makeAccessibleField(kFieldGammaTag)}));
+
+        react_native_linux::commitChildren(*shadowTree_, std::make_shared<const ChildList>(ChildList{container}));
+    }
+
     void focus(Tag tag) {
         dispatcher_->dispatchCommands({{.tag = tag, .name = kFocusCommandName, .args = folly::dynamic::object()}});
     }
@@ -108,6 +118,8 @@ protected:
     RecordingTextInputFocusSink sink_;
 
 private:
+    facebook::react::ViewComponentDescriptor viewDescriptor_ = makeViewComponentDescriptor(contextContainer_);
+
     std::shared_ptr<const ShadowNode> makeAccessibleField(Tag tag) {
         folly::dynamic props = folly::dynamic::object("accessible", true);
         props["width"] = 200;
@@ -144,6 +156,27 @@ TEST_F(InputDispatcherTest, FocusCommandReachesANodeCommittedSinceTheLastFrame) 
 
     ASSERT_EQ(sink_.calls.size(), 2U);
     expectFocusFieldCall(sink_.calls[1], kFieldGammaTag);
+}
+
+/**
+ * Yoga zeroes a `display: none` node's descendants but leaves each one's own `display` alone, so a control inside
+ * a hidden container reads as visible on its own and stayed reachable by Tab while nothing of it was on screen.
+ */
+TEST_F(InputDispatcherTest, AFieldInsideAHiddenContainerCannotTakeFocus) {
+    commitFieldInsideContainer("none");
+
+    focus(kFieldGammaTag);
+
+    EXPECT_TRUE(sink_.calls.empty());
+}
+
+TEST_F(InputDispatcherTest, AFieldInsideAVisibleContainerTakesFocus) {
+    commitFieldInsideContainer("flex");
+
+    focus(kFieldGammaTag);
+
+    ASSERT_EQ(sink_.calls.size(), 1U);
+    expectFocusFieldCall(sink_.calls[0], kFieldGammaTag);
 }
 
 TEST_F(InputDispatcherTest, FocusingTheSameFieldAgainProducesNoSecondCall) {
