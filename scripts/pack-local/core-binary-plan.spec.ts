@@ -3,11 +3,11 @@ import { planCoreBinary } from "./core-binary-plan.ts";
 
 const LDD_OUTPUT = `	linux-vdso.so.1 (0x00007ffd)
 	libhermesvm.so => /build/release/_deps/hermes-build/lib/libhermesvm.so (0x00007f5b)
-	libfmt.so.12 => /usr/lib/libfmt.so.12 (0x00007f5c)
+	libfmt.so.10 => /usr/lib/x86_64-linux-gnu/libfmt.so.10 (0x00007f5c)
 	/lib64/ld-linux-x86-64.so.2 (0x00007f5d)`;
 
 describe("planCoreBinary", () => {
-  it("stages the binary, each shipped library from where ldd resolved it, and the fonts, flat in bin", () => {
+  it("stages the binary, each shipped library at the soname this host linked, and the fonts, flat in bin", () => {
     expect(
       planCoreBinary({
         binDirectory: "/core/bin",
@@ -19,7 +19,7 @@ describe("planCoreBinary", () => {
     ).toStrictEqual([
       { from: "/build/release/bin/rnl_window", to: "/core/bin/rnl_window" },
       { from: "/build/release/_deps/hermes-build/lib/libhermesvm.so", to: "/core/bin/libhermesvm.so" },
-      { from: "/usr/lib/libfmt.so.12", to: "/core/bin/libfmt.so.12" },
+      { from: "/usr/lib/x86_64-linux-gnu/libfmt.so.10", to: "/core/bin/libfmt.so.10" },
       { from: "/core/fonts", to: "/core/bin/fonts" },
     ]);
   });
