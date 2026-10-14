@@ -367,6 +367,8 @@ void InputDispatcher::dispatch(const std::vector<InputEvent>& events) {
 }
 
 void InputDispatcher::dispatchCommands(const std::vector<SceneCommand>& commands) {
+    syncFocusables();
+
     for (const SceneCommand& command : commands) {
         if (command.name == "blur") {
             if (focusModel_.focusedTag() == command.tag) {

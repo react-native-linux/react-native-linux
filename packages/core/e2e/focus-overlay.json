@@ -1,0 +1,36 @@
+{
+  "name": "focus-overlay-returns-to-invoker",
+  "bundle": "focus-overlay.tsx",
+  "ready": "focus-overlay: committed",
+  "frames": 600,
+  "steps": [
+    "sleep 500",
+    "key Tab press",
+    "key Tab release",
+    "sleep 150",
+    "key space press",
+    "key space release",
+    "sleep 300",
+    "key Tab press",
+    "key Tab release",
+    "sleep 150",
+    "key space press",
+    "key space release",
+    "sleep 300",
+    "key Tab press",
+    "key Tab release",
+    "sleep 500"
+  ],
+  "expect": [
+    "focus-overlay: focus open",
+    "focus-overlay: press open",
+    "focus-overlay: blur open",
+    "focus-overlay: focus inside",
+    "focus-overlay: blur inside",
+    "focus-overlay: focus close",
+    "focus-overlay: press close",
+    "focus-overlay: focus open",
+    "focus-overlay: blur open",
+    "focus-overlay: focus next"
+  ]
+}

@@ -35,6 +35,10 @@ TEST_F(FeatureFlagsTest, EnablesTheSharedAnimationBackend) {
     EXPECT_TRUE(facebook::react::ReactNativeFeatureFlags::useSharedAnimatedBackend());
 }
 
+TEST_F(FeatureFlagsTest, EnablesImperativeFocusOnEveryView) {
+    EXPECT_TRUE(facebook::react::ReactNativeFeatureFlags::enableImperativeFocus());
+}
+
 TEST_F(FeatureFlagsTest, LeavesOptimizedAnimatedPropUpdatesOff) {
     EXPECT_FALSE(facebook::react::ReactNativeFeatureFlags::optimizedAnimatedPropUpdates());
 }

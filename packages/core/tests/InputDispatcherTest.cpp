@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -20,6 +21,7 @@ using react_native_linux::TextInputFocusSink;
 
 constexpr Tag kFieldAlphaTag = 20;
 constexpr Tag kFieldBetaTag = 21;
+constexpr Tag kFieldGammaTag = 22;
 constexpr char kFocusCommandName[] = "focus";
 
 using ChildList = std::vector<std::shared_ptr<const ShadowNode>>;
@@ -72,15 +74,23 @@ protected:
     void SetUp() override {
         TextInputFieldFixture::SetUp();
 
-        react_native_linux::commitChildren(
-            *shadowTree_, std::make_shared<const ChildList>(
-                              ChildList{makeAccessibleField(kFieldAlphaTag), makeAccessibleField(kFieldBetaTag)}));
+        commitFields({kFieldAlphaTag, kFieldBetaTag});
 
         dispatcher_ = std::make_unique<InputDispatcher>(uiManager_, mountingManager_, kSurfaceId);
         dispatcher_->setTextInputFocusSink(&sink_);
 
         // Picks up the two fields just committed; neither is focused yet, so this produces no sink call.
         dispatcher_->dispatch({});
+    }
+
+    void commitFields(const std::vector<Tag>& tags) {
+        ChildList fields;
+
+        for (const Tag tag : tags) {
+            fields.push_back(makeAccessibleField(tag));
+        }
+
+        react_native_linux::commitChildren(*shadowTree_, std::make_shared<const ChildList>(std::move(fields)));
     }
 
     void focus(Tag tag) {
@@ -119,6 +129,21 @@ TEST_F(InputDispatcherTest, FocusMovingBetweenTwoFieldsOfTheSamePurposeStillCall
     // happened", because both fields are `Normal` — this second `focusField` call never reached the sink at all.
     ASSERT_EQ(sink_.calls.size(), 2U);
     expectFocusFieldCall(sink_.calls[1], kFieldBetaTag);
+}
+
+/**
+ * A `focus()` from the effect that runs right after a node mounts reaches the frame before any `dispatch` has
+ * seen that commit, because the frame drains commands first. Without re-reading the tree the node is not in the
+ * focusable set yet, and the command clears focus instead of moving it.
+ */
+TEST_F(InputDispatcherTest, FocusCommandReachesANodeCommittedSinceTheLastFrame) {
+    focus(kFieldAlphaTag);
+    commitFields({kFieldAlphaTag, kFieldBetaTag, kFieldGammaTag});
+
+    focus(kFieldGammaTag);
+
+    ASSERT_EQ(sink_.calls.size(), 2U);
+    expectFocusFieldCall(sink_.calls[1], kFieldGammaTag);
 }
 
 TEST_F(InputDispatcherTest, FocusingTheSameFieldAgainProducesNoSecondCall) {

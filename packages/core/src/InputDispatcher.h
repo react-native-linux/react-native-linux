@@ -116,7 +116,9 @@ public:
      * `focus({ preventScroll, focusVisible })` — `preventScroll` true skips the scroll-into-view every other focus
      * change gets, and `focusVisible`, when named explicitly, decides the ring instead of the ordinary
      * keyboard-visible default a bare `focus()` gets. `blur` clears focus only when its tag owns it.
-     * `setTextAndSelection` reaches the text-input controller; unrelated commands are ignored.
+     * `setTextAndSelection` reaches the text-input controller; unrelated commands are ignored. The focusable set
+     * is re-read from the committed tree first, because the frame drains commands before it dispatches input: a
+     * `focus()` from an effect targets a node committed since the last frame, which the set otherwise lacks.
      */
     void dispatchCommands(const std::vector<SceneCommand>& commands);
 

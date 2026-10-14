@@ -5,13 +5,14 @@
 namespace react_native_linux {
 
 /**
- * The feature flags this platform runs with: upstream's OSS-stable set plus the two that turn on the C++ Native
- * Animated driver (#128).
+ * The feature flags this platform runs with: upstream's OSS-stable set, the two that turn on the C++ Native
+ * Animated driver (#128), and `enableImperativeFocus`, without which a `<View>` or `<Pressable>` ref's `focus()`
+ * and `blur()` never leave JavaScript and only a `<TextInput>` can be focused programmatically (#91).
  *
- * `ReactNativeFeatureFlagsDefaults` answers false to all three flags below, and
+ * `ReactNativeFeatureFlagsDefaults` answers false to all four flags below, and
  * `ReactNativeFeatureFlagsOverridesOSSCanary` — the upstream class that turns `cxxNativeAnimatedEnabled` on — is
  * `@generated` and carries four unrelated experiments, so this subclasses OSS-stable instead of adopting it.
- * `packages/core/tests/FeatureFlagsTest.cpp` asserts all three values, so a default that changes on the next React
+ * `packages/core/tests/FeatureFlagsTest.cpp` asserts all four values, so a default that changes on the next React
  * Native bump is a test failure rather than a behaviour change nobody notices.
  *
  * `optimizedAnimatedPropUpdates` stays off deliberately: its documentation describes Android JNI batching and an
@@ -26,6 +27,8 @@ public:
     bool cxxNativeAnimatedEnabled() override { return true; }
 
     bool useSharedAnimatedBackend() override { return true; }
+
+    bool enableImperativeFocus() override { return true; }
 };
 
 } // namespace react_native_linux
