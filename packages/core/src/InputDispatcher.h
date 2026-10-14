@@ -146,7 +146,7 @@ private:
     void emitSwitchChange(const facebook::react::ShadowNode& shadowNode) const;
 
     void syncFocusables();
-    void collectFocusables(const facebook::react::ShadowNode& shadowNode);
+    void collectFocusables(const facebook::react::ShadowNode& shadowNode, bool isHidden);
     void applyFocusTransition(const FocusTransition& transition, bool preventScroll = false);
     void updateTextInput();
     void scrollFocusedNodeIntoView() const;
