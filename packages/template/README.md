@@ -24,3 +24,9 @@ the build host's system libraries, so build it on the distribution the applicati
 `template.config.js` and `metro.config.js` are plain JavaScript because the community CLI and Metro load them
 that way; AGENTS.md names this as the one exception to the TypeScript rule. `packages/cli/src/init-template.spec.ts` pins the
 template's dependencies to the versions the harness app is tested with.
+
+`pnpm test:fresh-project [build-directory]` is this whole flow as CI runs it in the `window` job (#57): it packs,
+initialises an app from this template outside the checkout, installs the tarballs, bundles, and renders the app's
+first screen with the packed `rnl_window` into `build/fresh-project/fresh-project.png`, which
+`packages/core/goldens/fresh-project.spec.ts` compares against the committed golden. `--update` writes the golden
+instead; review the image before committing it.

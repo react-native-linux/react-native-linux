@@ -3,7 +3,7 @@ import { execPath, stdout } from "node:process";
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import type { FastRefreshEdit } from "./e2e/fast-refresh.ts";
-import { buildEnvironment } from "./window-golden.ts";
+import { buildEnvironment } from "./headless-compositor.ts";
 import { setTimeout as delay } from "node:timers/promises";
 import path from "node:path";
 import { resolveWindowFlags } from "./e2e/grade.ts";

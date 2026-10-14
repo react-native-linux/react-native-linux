@@ -1,10 +1,10 @@
-import { argv, env, execPath, pid, stderr, stdout } from "node:process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { spawn, spawnSync } from "node:child_process";
-import { setTimeout as delay } from "node:timers/promises";
+import { argv, env, execPath, stderr, stdout } from "node:process";
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { fixtures } from "./window-fixtures.ts";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { runUnderCompositor } from "./headless-compositor.ts";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 
 const FAILURE_EXIT_STATUS = 1;
@@ -13,12 +13,7 @@ const SUCCESSFUL_EXIT_STATUS = 0;
 const NOT_FOUND_INDEX = -1;
 const NEXT_ARGUMENT = 1;
 const FIRST_MATCH = 0;
-const SOCKET_TIMEOUT_MS = 15_000;
-const SOCKET_POLL_INTERVAL_MS = 50;
-const COMPOSITOR_STOP_GRACE_MS = 250;
 const RENDER_TIMEOUT_MS = 120_000;
-const WINDOW_WIDTH = "800";
-const WINDOW_HEIGHT = "600";
 
 const COMPOSITOR_NAME = "weston";
 const OUTPUT_FLAG = "--output";
@@ -29,9 +24,6 @@ const lavapipeLibraryDirectories = ["/usr/lib/x86_64-linux-gnu", "/usr/lib64", "
 const lavapipeLibraryName = "libvulkan_lvp.so";
 const lavapipeOverrideName = "RNL_LAVAPIPE_ICD";
 const generatedManifestName = "rnl-lvp_icd.generated.json";
-
-/** Every variable that could point the client at the developer's own session or driver; dropped, not overwritten. */
-const overriddenEnvironmentNames = new Set(["DISPLAY", "WAYLAND_DISPLAY", "VK_DRIVER_FILES", "VK_ICD_FILENAMES"]);
 
 const repositoryRoot = path.resolve(import.meta.dirname, "..");
 const packageDirectory = path.join(repositoryRoot, "packages", "core");
@@ -107,14 +99,6 @@ const findLavapipeIcd = (): string | null => {
   return libraryPath === null ? null : writeGeneratedManifest(libraryPath);
 };
 
-const buildEnvironment = (overrides: Record<string, string>): Record<string, string | undefined> => {
-  const inherited = Object.fromEntries(
-    Object.entries(env).filter(([variableName]) => !overriddenEnvironmentNames.has(variableName)),
-  );
-
-  return { ...inherited, ...overrides };
-};
-
 const readOutputDirectory = (): string => {
   const flagIndex = argv.indexOf(OUTPUT_FLAG);
 
@@ -123,59 +107,6 @@ const readOutputDirectory = (): string => {
   }
 
   return argv[flagIndex + NEXT_ARGUMENT] ?? defaultOutputDirectory;
-};
-
-let compositorLog = "";
-
-/** No DRM device, seat or display needed, so this runs unattended in CI; `--no-config` ignores a developer's `weston.ini`. */
-const startCompositor = (
-  compositorPath: string,
-  runtimeDirectory: string,
-  socketName: string,
-): ReturnType<typeof spawn> => {
-  const compositor = spawn(
-    compositorPath,
-    [
-      "--backend=headless",
-      "--no-config",
-      `--socket=${socketName}`,
-      `--width=${WINDOW_WIDTH}`,
-      `--height=${WINDOW_HEIGHT}`,
-      "--idle-time=0",
-    ],
-    { env: buildEnvironment({ XDG_RUNTIME_DIR: runtimeDirectory }), stdio: ["ignore", "pipe", "pipe"] },
-  );
-
-  const recordCompositorOutput = (chunk: Buffer): void => {
-    compositorLog += chunk.toString();
-  };
-
-  compositor.stdout?.on("data", recordCompositorOutput);
-  compositor.stderr?.on("data", recordCompositorOutput);
-  compositor.on("error", (error: Error) => {
-    compositorLog += error.message;
-  });
-
-  return compositor;
-};
-
-const waitForCompositorSocket = async (compositor: ReturnType<typeof spawn>, socketPath: string): Promise<void> => {
-  const deadline = Date.now() + SOCKET_TIMEOUT_MS;
-
-  while (!existsSync(socketPath)) {
-    if (compositor.exitCode !== null || Date.now() > deadline) {
-      throw new Error(`${COMPOSITOR_NAME} never created ${socketPath}:\n${compositorLog}`);
-    }
-
-    await delay(SOCKET_POLL_INTERVAL_MS);
-  }
-};
-
-const stopCompositor = async (compositor: ReturnType<typeof spawn>, runtimeDirectory: string): Promise<void> => {
-  compositor.kill("SIGTERM");
-  await delay(COMPOSITOR_STOP_GRACE_MS);
-  compositor.kill("SIGKILL");
-  rmSync(runtimeDirectory, { force: true, recursive: true });
 };
 
 const renderFixture = (
@@ -194,38 +125,11 @@ const renderFixture = (
   if (render.status !== SUCCESSFUL_EXIT_STATUS || !existsSync(outputPath)) {
     throw new Error(
       `rnl_window --screenshot exited with status ${String(render.status)} for ${fixture.goldenFileName}:\n` +
-        `${render.stdout}${render.stderr}\n${COMPOSITOR_NAME}:\n${compositorLog}`,
+        `${render.stdout}${render.stderr}`,
     );
   }
 
   stdout.write(`rendered ${outputPath}\n`);
-};
-
-const renderFixtures = async (
-  compositorPath: string,
-  lavapipeIcdPath: string,
-  outputDirectory: string,
-): Promise<void> => {
-  const runtimeDirectory = mkdtempSync(path.join(tmpdir(), "rnl-window-golden-"));
-  const socketName = `rnl-window-golden-${String(pid)}`;
-  const compositor = startCompositor(compositorPath, runtimeDirectory, socketName);
-  const clientEnvironment = buildEnvironment({
-    VK_ICD_FILENAMES: lavapipeIcdPath,
-    WAYLAND_DISPLAY: socketName,
-    XDG_DATA_HOME: path.join(runtimeDirectory, "data"),
-    XDG_RUNTIME_DIR: runtimeDirectory,
-    XDG_STATE_HOME: path.join(runtimeDirectory, "state"),
-  });
-
-  try {
-    await waitForCompositorSocket(compositor, path.join(runtimeDirectory, socketName));
-
-    for (const fixture of fixtures) {
-      renderFixture(fixture, path.join(outputDirectory, fixture.goldenFileName), clientEnvironment);
-    }
-  } finally {
-    await stopCompositor(compositor, runtimeDirectory);
-  }
 };
 
 const isMainModule = (): boolean => {
@@ -256,7 +160,11 @@ if (isMainModule()) {
     mkdirSync(outputDirectory, { recursive: true });
 
     try {
-      await renderFixtures(compositorPath, lavapipeIcdPath, outputDirectory);
+      await runUnderCompositor(compositorPath, lavapipeIcdPath, (clientEnvironment) => {
+        for (const fixture of fixtures) {
+          renderFixture(fixture, path.join(outputDirectory, fixture.goldenFileName), clientEnvironment);
+        }
+      });
     } catch (error) {
       stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
       process.exitCode = FAILURE_EXIT_STATUS;
@@ -290,11 +198,4 @@ const resolveScenarioBundle = (scenarioBundles: string, scenario: { bundle: stri
   return outputPath;
 };
 
-export {
-  buildEnvironment,
-  findExecutable,
-  findLavapipeIcd,
-  findLavapipeIcdManifestPath,
-  findLavapipeLibraryPath,
-  resolveScenarioBundle,
-};
+export { findExecutable, findLavapipeIcd, findLavapipeIcdManifestPath, findLavapipeLibraryPath, resolveScenarioBundle };

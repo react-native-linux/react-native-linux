@@ -809,6 +809,23 @@ jobs:
           path: build/window-goldens/*.png
           if-no-files-found: warn
 
+      # #57: a project created from packages/template outside the checkout, installing the pack:local tarballs of this
+      # build, bundled by Metro and run by the packed rnl_window, must render the committed first screen. The script
+      # fails rather than skips when weston or the lavapipe ICD is missing, so the comparison after it always runs.
+      - name: Run the fresh-project smoke test
+        run: |
+          set -euo pipefail
+          pnpm test:fresh-project build/dev
+          pnpm exec vitest run packages/core/goldens/fresh-project.spec.ts
+
+      - name: Upload the fresh-project render
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fresh-project
+          path: build/fresh-project
+          if-no-files-found: warn
+
       # The e2e driver of #7 needs a compositor that implements the virtual pointer and virtual keyboard
       # protocols, and weston implements neither: its only injection surface is the weston-test plugin, which
       # upstream builds with install: false and no distribution ships. cage is wlroots, runs headless through
