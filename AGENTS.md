@@ -64,7 +64,7 @@ See the `testing-gospel` skill for the harness architecture and commands.
 
 ## Toolchain
 
-Package manager is **pnpm** (workspaces, `catalog:` version pinning, version locked via corepack `packageManager` field). pnpm's strict symlinked layout makes phantom dependencies impossible — do not weaken it with global hoisting; if Metro ever chokes on symlinks in the test-harness app, scope `node-linker=hoisted` to that package only. Everything JS-side is **TypeScript** — CLI, codegen driver, harness, and all repo scripts (run via `tsx`); no plain JavaScript files.
+Package manager is **pnpm** (workspaces, `catalog:` version pinning, version locked via corepack `packageManager` field). pnpm's strict symlinked layout makes phantom dependencies impossible — do not weaken it with global hoisting; if Metro ever chokes on symlinks in the test-harness app, scope `node-linker=hoisted` to that package only. Everything JS-side is **TypeScript** — CLI, codegen driver, harness, and all repo scripts (run via `tsx`); no plain JavaScript files. The one exception is the init template (`packages/template`): `template.config.js` and the scaffolded app's `metro.config.js`, which `@react-native-community/cli` and Metro load as plain JavaScript (#22).
 
 One entry point mirrors CI exactly: `pnpm validate` (format check, typecheck, lint, deadcode, duplication, meta-file checks). Agents run it before finishing any change; if it passes locally it passes in CI. Individual commands:
 
