@@ -118,8 +118,7 @@ protected:
     RecordingTextInputFocusSink sink_;
 
 private:
-    facebook::react::ViewComponentDescriptor viewDescriptor_ =
-        react_native_linux::makeViewComponentDescriptor(contextContainer_);
+    facebook::react::ViewComponentDescriptor viewDescriptor_ = makeViewComponentDescriptor(contextContainer_);
 
     std::shared_ptr<const ShadowNode> makeAccessibleField(Tag tag) {
         folly::dynamic props = folly::dynamic::object("accessible", true);
