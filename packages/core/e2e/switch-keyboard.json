@@ -1,0 +1,28 @@
+{
+  "name": "switch-keyboard",
+  "bundle": "switch.js",
+  "ready": "switch: committed surface 1",
+  "frames": 600,
+  "steps": [
+    "sleep 500",
+    "key Tab press",
+    "key Tab release",
+    "sleep 150",
+    "key Tab press",
+    "key Tab release",
+    "sleep 150",
+    "key Tab press",
+    "key Tab release",
+    "sleep 150",
+    "key Tab press",
+    "key Tab release",
+    "sleep 150",
+    "key Tab press",
+    "key Tab release",
+    "sleep 150",
+    "key space press",
+    "key space release",
+    "sleep 500"
+  ],
+  "expect": ["switch: topChange value=true", "switch: onValueChange true"]
+}
