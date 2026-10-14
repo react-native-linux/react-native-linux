@@ -1,0 +1,21 @@
+{
+  "name": "HelloWorld",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "bundle:linux": "mkdir -p build && metro build index.tsx --platform linux --out build/index.linux.bundle.js",
+    "linux": "pnpm bundle:linux && rnl_window --fabric build/index.linux.bundle.js"
+  },
+  "dependencies": {
+    "@babel/runtime": "7.29.2",
+    "flow-enums-runtime": "0.0.6",
+    "react": "19.2.8",
+    "react-native": "0.87.1"
+  },
+  "devDependencies": {
+    "@react-native/babel-preset": "0.87.1",
+    "@react-native/metro-config": "0.87.1",
+    "babel-plugin-transform-flow-enums": "0.0.2",
+    "metro": "0.87.1"
+  }
+}
