@@ -1,5 +1,5 @@
 import { argv, execPath } from "node:process";
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { findExecutable, findLavapipeIcd } from "./window-golden.ts";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
@@ -58,6 +58,10 @@ const renderApplication = async (applicationDirectory: string): Promise<void> =>
       ],
       { env: clientEnvironment, stdio: "inherit", timeout: RENDER_TIMEOUT_MS },
     );
+
+    if (!existsSync(renderedPath)) {
+      throw new Error(`rnl_window exited without writing ${renderedPath}`);
+    }
   });
 };
 

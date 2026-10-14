@@ -815,15 +815,17 @@ jobs:
       - name: Run the fresh-project smoke test
         run: |
           set -euo pipefail
-          pnpm test:fresh-project build/dev
-          pnpm exec vitest run packages/core/goldens/fresh-project.spec.ts
+          pnpm test:fresh-project build/dev 2>&1 | tee build/fresh-project.log
+          pnpm exec vitest run packages/core/goldens/fresh-project.spec.ts 2>&1 | tee -a build/fresh-project.log
 
       - name: Upload the fresh-project render
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: fresh-project
-          path: build/fresh-project
+          path: |
+            build/fresh-project
+            build/fresh-project.log
           if-no-files-found: warn
 
       # The e2e driver of #7 needs a compositor that implements the virtual pointer and virtual keyboard
