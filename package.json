@@ -21,6 +21,7 @@
     "override:report": "node scripts/override-report.ts",
     "manifest-schema:check": "node scripts/linux-bundle-manifest-schema.ts check",
     "manifest-schema:generate": "node scripts/linux-bundle-manifest-schema.ts generate",
+    "focus-traversal:check": "node scripts/focus-traversal.ts",
     "prop-coverage:check": "node scripts/prop-coverage.ts check",
     "prop-coverage:report": "node scripts/prop-coverage.ts report",
     "test": "vitest run --coverage",
@@ -35,7 +36,7 @@
     "upstream:check": "node scripts/upstream.ts check",
     "upstream:patch": "node scripts/upstream.ts patch",
     "upstream:vendor": "node scripts/upstream.ts vendor",
-    "validate": "pnpm format:check && pnpm format:cpp:check && pnpm ts && pnpm lint && pnpm deadcode && pnpm cpd && pnpm test && pnpm manifest-schema:check && pnpm override:check && pnpm validate:meta",
+    "validate": "pnpm format:check && pnpm format:cpp:check && pnpm ts && pnpm lint && pnpm deadcode && pnpm cpd && pnpm test && pnpm manifest-schema:check && pnpm override:check && pnpm focus-traversal:check && pnpm validate:meta",
     "validate:meta": "node scripts/validate-meta.ts"
   },
   "devDependencies": {

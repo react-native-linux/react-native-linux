@@ -1,0 +1,18 @@
+{
+  "Root": { "state": "not-interactive", "reason": "The surface itself; focus never lands on it." },
+  "View": { "state": "traversed", "scenario": "focus-containers.json" },
+  "Image": {
+    "state": "not-interactive",
+    "reason": "Has no press handler of its own; a pressable image is a Pressable (a View) around it."
+  },
+  "ScrollView": { "state": "traversed", "scenario": "focus-tab-scroll.json" },
+  "Paragraph": { "state": "not-traversed", "issue": "#624" },
+  "Text": {
+    "state": "not-interactive",
+    "reason": "A virtual fragment inside a Paragraph with no host view; focusable link fragments are #266."
+  },
+  "RawText": { "state": "not-interactive", "reason": "A string leaf inside a Paragraph with no host view." },
+  "TextInput": { "state": "traversed", "scenario": "text-input.json" },
+  "ActivityIndicatorView": { "state": "not-interactive", "reason": "Display only; it has no press or value handler." },
+  "Switch": { "state": "traversed", "scenario": "switch-keyboard.json" }
+}
