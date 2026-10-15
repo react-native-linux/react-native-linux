@@ -40,6 +40,8 @@
     "scripts/e2e.ts",
     "scripts/format-cpp/**/*.ts",
     "scripts/format-cpp.ts",
+    "scripts/fresh-project.ts",
+    "scripts/headless-compositor.ts",
     "scripts/pack-local/**/*.ts",
     "scripts/pack-local.ts",
     "scripts/prop-coverage/**/*.ts",
