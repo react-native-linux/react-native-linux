@@ -6181,7 +6181,9 @@ fixture of one field and one focusable node that is not a field, and the `text-i
 the same three lines across a Tab into the field, a click on the button and a Tab back.
 
 The composition e2e is `text-input-compose`, driven by `rnl_window --inject-key-sequence`: the key-sequence
-grammar `parseKeySequence` already speaks, paced one token per interval across the frame loop. Where the
+grammar `parseKeySequence` already speaks, paced one token per interval across the frame loop. Pacing starts at
+the bundle's first commit rather than at window creation, because a token that lands before the tree exists, such
+as a Tab with no field to focus, is lost (#631). Where the
 compositor advertises `zwp_text_input_manager_v3`, `{Preedit:...}` and `{Commit:...}` route through the session —
 the same `preedit_string`/`commit_string`+`done` pair the wire carries, so the teardown and the serial gating are
 exercised and not only the editor the run lands in — and `{SessionLeave}`/`{SessionEnter}` replay the keyboard
@@ -7753,7 +7755,9 @@ unlocked, and counts what is left, so a texture an unloaded instance still
 references survives and shows up. That is the still-reachable leak ASan cannot see. `packages/core/e2e/teardown-reload.json`
 runs `test-bundles/teardown-reload.js`, which paints an image, a paragraph and a view whose `opacity` a
 native-driven animation loops forever, and reloads itself through `DevSettings.reload` until it has run as four
-instances. Every teardown therefore stops a running animation. Instance 1 reloads after everything is drawn, so the first probe
+instances. Every teardown therefore stops a running animation. Instance 1 also
+reloads with a composition open: the scenario's `--inject-key-sequence {Tab}{Preedit:ni}` focuses its text field and
+sends a pre-edit that is never committed, and the trace has to show `teardown: composing "ni"` before the first probe. Instance 1 reloads after everything is drawn, so the first probe
 already holds every one-time GPU allocation; reloading it before its first draw makes the first probe 0 and fails
 the gate. Every later instance reloads as soon as it commits, racing a cold decode. The race usually leaves the
 decode in flight, but the probe doesn't record whether it did. The decoded-image cache is process-wide and keyed by
