@@ -6181,7 +6181,9 @@ fixture of one field and one focusable node that is not a field, and the `text-i
 the same three lines across a Tab into the field, a click on the button and a Tab back.
 
 The composition e2e is `text-input-compose`, driven by `rnl_window --inject-key-sequence`: the key-sequence
-grammar `parseKeySequence` already speaks, paced one token per interval across the frame loop. Where the
+grammar `parseKeySequence` already speaks, paced one token per interval across the frame loop. Pacing starts at
+the bundle's first commit rather than at window creation, because a token that lands before the tree exists, such
+as a Tab with no field to focus, is lost (#631). Where the
 compositor advertises `zwp_text_input_manager_v3`, `{Preedit:...}` and `{Commit:...}` route through the session —
 the same `preedit_string`/`commit_string`+`done` pair the wire carries, so the teardown and the serial gating are
 exercised and not only the editor the run lands in — and `{SessionLeave}`/`{SessionEnter}` replay the keyboard

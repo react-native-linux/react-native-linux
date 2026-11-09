@@ -1376,10 +1376,7 @@ int main(int argc, char** argv) {
                 unsetenv(react_native_linux::kStartupActivationTokenVariable);
             }
 
-            std::optional<InjectedKeySequence> injectedSequence =
-                parsedArguments.injectKeySequence.has_value()
-                    ? std::optional<InjectedKeySequence>(InjectedKeySequence(parsedArguments.injectKeySequence.value()))
-                    : std::nullopt;
+            std::optional<InjectedKeySequence> injectedSequence;
 
             // Run once at startup and again for every reload the bundle asks for (#81): a reload is a new session from
             // the same bundle at the current size, built only after the old one is gone, so no two instances overlap.
@@ -1522,6 +1519,13 @@ int main(int argc, char** argv) {
                 // wire's preedit_string/commit_string+done pair would take — and falls back to the editor-level
                 // events where it does not (cage advertises no manager), which is that delivery minus the
                 // session. Either way the editor sees one composition, never two.
+                // Paced from the bundle's first commit rather than from window creation: a token that lands before the
+                // tree exists, a Tab with no field to focus, is lost. A bare surface holds only its root node.
+                if (!injectedSequence.has_value() && parsedArguments.injectKeySequence.has_value() &&
+                    session.has_value() && session->visualTreeNodes().size() > 1) {
+                    injectedSequence.emplace(parsedArguments.injectKeySequence.value());
+                }
+
                 if (injectedSequence.has_value()) {
                     const std::optional<InjectedKeySequence::Step> step =
                         injectedSequence->take(std::chrono::steady_clock::now());
