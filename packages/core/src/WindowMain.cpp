@@ -1581,6 +1581,17 @@ int main(int argc, char** argv) {
 
                 if (session.has_value() && session->isReloadRequested()) {
                     session.reset();
+
+                    // Between the unloaded instance and the next one (#76): the e2e grader requires every reload
+                    // to print the same line, and counts the live Wayland objects at it from WAYLAND_DEBUG.
+                    if (broughtUp.vulkanRenderer != nullptr) {
+                        const react_native_linux::RetainedGpuResources retained =
+                            broughtUp.vulkanRenderer->purgeAndMeasureRetainedResources();
+
+                        std::cout << "[rnl-teardown] gpu-resources=" << retained.resourceCount
+                                  << " gpu-bytes=" << retained.resourceBytes << std::endl;
+                    }
+
                     startSession();
                     std::cout << "[rnl-reload] reloaded " << parsedArguments.bundlePath.value() << std::endl;
                 }
