@@ -938,7 +938,8 @@ EditorGeometry measureEditorGeometry(const facebook::react::AttributedString& at
     const float unwrappedWidth = request.isMultiline ? maximumWidth : kUnlimitedLayoutWidth;
     const std::unique_ptr<skia::textlayout::Paragraph> paragraph =
         layoutEditorParagraph(attributedString, paragraphAttributes, unwrappedWidth);
-    const float contentWidth = paragraph->getLongestLine();
+    // SkParagraph's longest line is the lowest float when the paragraph has no lines, which an empty field is.
+    const float contentWidth = std::max(paragraph->getLongestLine(), 0.0F);
     float layoutWidth = unwrappedWidth;
 
     if (!request.isMultiline && contentWidth <= maximumWidth) {

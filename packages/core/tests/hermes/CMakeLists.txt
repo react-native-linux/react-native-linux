@@ -154,7 +154,8 @@ target_compile_definitions(rnl_core_hermes_tests
 # ApplicationFontsTest registers into.
 if(TARGET rnl_skia)
     target_compile_definitions(rnl_core_hermes_tests PRIVATE RNL_ENABLE_IMAGES)
-    target_sources(rnl_core_hermes_tests PRIVATE ApplicationFontsTest.cpp BidiHitTestTest.cpp ResizeTextCostTest.cpp)
+    target_sources(rnl_core_hermes_tests PRIVATE ApplicationFontsTest.cpp BidiHitTestTest.cpp EditorGeometryTest.cpp
+                   ResizeTextCostTest.cpp)
     target_compile_definitions(rnl_core_hermes_tests
         PRIVATE "RNL_VENDORED_FONT_DIR=\"${CMAKE_SOURCE_DIR}/packages/core/fonts\"")
 endif()
