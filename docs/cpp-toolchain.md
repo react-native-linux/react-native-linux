@@ -7751,8 +7751,10 @@ second instance. Between destroying the old session and starting the new one, th
 for submitted GPU work, so no frame in flight still holds anything, purges every resource Skia's cache holds
 unlocked, and counts what is left, so a texture an unloaded instance still
 references survives and shows up. That is the still-reachable leak ASan cannot see. `packages/core/e2e/teardown-reload.json`
-runs `test-bundles/teardown-reload.js`, which paints an image, a paragraph and a view and reloads itself through
-`DevSettings.reload` until it has run as four instances. It keeps its instance number in AsyncStorage, under the
+runs `test-bundles/teardown-reload.js`, which paints an image, a paragraph and a view whose `translateX` a
+native-driven animation loops forever, and reloads itself through `DevSettings.reload` until it has run as four
+instances. Every teardown therefore stops a running animation. Odd instances reload once their image has decoded,
+and even ones reload as soon as they commit, while the decode is still in flight. It keeps its instance number in AsyncStorage, under the
 fresh `XDG_DATA_HOME` the driver gives every run. The scenario sets `steadyAcrossReloads`, which runs the window
 under `WAYLAND_DEBUG=client`. `scripts/e2e/reload-counters.ts` replays that request log, which arrives in write order
 with the probe line (#512), and counts the live client-created objects at each probe: a `new id` adds one, and a
