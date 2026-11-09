@@ -2,7 +2,8 @@
 // INSTANCE_COUNT instances, through DevSettings.reload as Fast Refresh's full reload does. Every instance paints
 // an image, a paragraph and a view whose opacity a native-driven animation loops forever, so each teardown
 // has glyphs, scene nodes and a running animation to give back. Instance 1 reloads once everything is drawn, so
-// the first probe holds every one-time GPU allocation. Every later instance reloads as soon as it commits, racing
+// the first probe holds every one-time GPU allocation, and with a composition open in its text field: the
+// scenario's injected key sequence focuses the field and sends a pre-edit that is never committed. Every later instance reloads as soon as it commits, racing
 // a cold decode: the decoded-image cache is process-wide and keyed by URI, so each instance names the same asset
 // through a different number of `./` segments.
 //
@@ -15,7 +16,7 @@
 // which the e2e driver keeps in a fresh XDG_DATA_HOME per run.
 
 const INSTANCE_COUNT = 4;
-const DRAWN_RELOAD_DELAY_MS = 300;
+const DRAWN_RELOAD_DELAY_MS = 1000;
 const COLD_DECODE_RELOAD_DELAY_MS = 0;
 const IMAGE_ASSET = 'rnl-test-image.png';
 const animationFrames = [1, 0.5, 0.2, 0.5, 1];
@@ -79,6 +80,19 @@ const render = (instance) => {
       source: { uri: './'.repeat(instance) + IMAGE_ASSET },
     }),
   );
+  fabric.appendChildToSet(
+    rootChildren,
+    create('TextInput', {
+      position: 'absolute',
+      left: 40,
+      top: 280,
+      width: 320,
+      height: 48,
+      fontSize: 18,
+      accessible: true,
+    }),
+  );
+
   const view = create('View', {
     position: 'absolute',
     left: 280,
@@ -92,6 +106,12 @@ const render = (instance) => {
   fabric.completeRoot(surfaceId, rootChildren);
   animate(view, nextTag);
 };
+
+fabric.registerEventHandler((instanceHandle, type, payload) => {
+  if (type === 'topChange') {
+    console.log(`teardown: composing "${payload.text}"`);
+  }
+});
 
 const run = async () => {
   const [entry] = await storage.getValues('teardown', ['instance']);

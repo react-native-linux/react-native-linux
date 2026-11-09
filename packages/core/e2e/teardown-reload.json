@@ -5,7 +5,10 @@
   "frames": 900,
   "steps": ["sleep 100"],
   "steadyAcrossReloads": true,
+  "windowFlags": ["--no-decorations", "--inject-key-sequence", "{Tab}{Preedit:ni}"],
   "expect": [
+    "[rnl-ime] field focused",
+    "teardown: composing \"ni\"",
     "[rnl-teardown]",
     "teardown: instance 2 committed",
     "[rnl-teardown]",
