@@ -1,6 +1,6 @@
 // The instance teardown gate of #76, in the real window: this bundle reloads itself until it has run as
 // INSTANCE_COUNT instances, through DevSettings.reload as Fast Refresh's full reload does. Every instance paints
-// an image, a paragraph and a view whose translateX a native-driven animation loops forever, so each teardown
+// an image, a paragraph and a view whose opacity a native-driven animation loops forever, so each teardown
 // has glyphs, scene nodes and a running animation to give back. Instance 1 reloads once everything is drawn, so
 // the first probe holds every one-time GPU allocation. Every later instance reloads as soon as it commits, racing
 // a cold decode: the decoded-image cache is process-wide and keyed by URI, so each instance names the same asset
@@ -18,7 +18,7 @@ const INSTANCE_COUNT = 4;
 const DRAWN_RELOAD_DELAY_MS = 300;
 const COLD_DECODE_RELOAD_DELAY_MS = 0;
 const IMAGE_ASSET = 'rnl-test-image.png';
-const animationFrames = [0, 0.5, 1, 0.5, 0];
+const animationFrames = [1, 0.5, 0.2, 0.5, 1];
 const surfaceId = 1;
 const fabric = globalThis.nativeFabricUIManager;
 const turboModuleProxy = globalThis.__turboModuleProxy;
@@ -47,22 +47,17 @@ const create = (viewName, props) => {
 };
 
 const animate = (view, viewTag) => {
-  const [valueTag, transformTag, styleTag, propsTag] = [1000, 1001, 1002, 1003];
+  const [valueTag, styleTag, propsTag] = [1000, 1001, 1002];
 
   animated.startOperationBatch();
-  animated.createAnimatedNode(valueTag, { type: 'value', value: 0, offset: 0 });
-  animated.createAnimatedNode(transformTag, {
-    type: 'transform',
-    transforms: [{ type: 'animated', property: 'translateX', nodeTag: valueTag }],
-  });
-  animated.createAnimatedNode(styleTag, { type: 'style', style: { transform: transformTag } });
+  animated.createAnimatedNode(valueTag, { type: 'value', value: 1, offset: 0 });
+  animated.createAnimatedNode(styleTag, { type: 'style', style: { opacity: valueTag } });
   animated.createAnimatedNode(propsTag, { type: 'props', props: { style: styleTag } });
-  animated.connectAnimatedNodes(valueTag, transformTag);
-  animated.connectAnimatedNodes(transformTag, styleTag);
+  animated.connectAnimatedNodes(valueTag, styleTag);
   animated.connectAnimatedNodes(styleTag, propsTag);
   animated.connectAnimatedNodeToView(propsTag, viewTag);
   animated.connectAnimatedNodeToShadowNodeFamily(propsTag, view);
-  animated.startAnimatingNode(1, valueTag, { type: 'frames', frames: animationFrames, toValue: 40, iterations: -1 }, () => {});
+  animated.startAnimatingNode(1, valueTag, { type: 'frames', frames: animationFrames, toValue: 1, iterations: -1 }, () => {});
   animated.finishOperationBatch();
 };
 

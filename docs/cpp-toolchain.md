@@ -7751,7 +7751,7 @@ second instance. Between destroying the old session and starting the new one, th
 for submitted GPU work, so no frame in flight still holds anything, purges every resource Skia's cache holds
 unlocked, and counts what is left, so a texture an unloaded instance still
 references survives and shows up. That is the still-reachable leak ASan cannot see. `packages/core/e2e/teardown-reload.json`
-runs `test-bundles/teardown-reload.js`, which paints an image, a paragraph and a view whose `translateX` a
+runs `test-bundles/teardown-reload.js`, which paints an image, a paragraph and a view whose `opacity` a
 native-driven animation loops forever, and reloads itself through `DevSettings.reload` until it has run as four
 instances. Every teardown therefore stops a running animation. Instance 1 reloads after everything is drawn, so the first probe
 already holds every one-time GPU allocation; reloading it before its first draw makes the first probe 0 and fails
