@@ -4,9 +4,11 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 
 import { PNG } from "pngjs";
 
-import type { Scenario } from "./scenario.ts";
+import { parseScenario } from "./scenario.ts";
 import path from "node:path";
 import { tmpdir } from "node:os";
+
+type Scenario = ReturnType<typeof parseScenario>;
 
 interface GradeInputs {
   readonly frameLogPath: string;
@@ -30,22 +32,16 @@ const BUDGET_P95_MS = 16.7;
 const GOLDEN_NAME = "pressable-click.png";
 
 const baseScenario: Scenario = {
-  allowErrors: false,
-  automation: null,
-  bundle: "pressable.js",
-  expect: ["pressable: topClick"],
-  expectFailure: false,
-  expectsExitAfter: null,
-  fastRefresh: null,
-  frameBudget: null,
-  frames: 600,
-  injectProtocolError: false,
-  inputTrace: false,
-  name: "pressable-click",
-  ready: "pressable: committed surface 1",
-  reject: [],
-  screenshot: null,
-  steps: ["sleep 500"],
+  ...parseScenario(
+    {
+      bundle: "pressable.js",
+      expect: ["pressable: topClick"],
+      name: "pressable-click",
+      ready: "pressable: committed surface 1",
+      steps: ["sleep 500"],
+    },
+    "fixture.json",
+  ),
   windowFlags: [],
 };
 

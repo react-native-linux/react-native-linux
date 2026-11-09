@@ -1,0 +1,16 @@
+{
+  "name": "teardown-reload",
+  "bundle": "teardown-reload.js",
+  "ready": "teardown: instance 1 committed",
+  "frames": 900,
+  "steps": ["sleep 100"],
+  "steadyAcrossReloads": true,
+  "expect": [
+    "[rnl-teardown]",
+    "teardown: instance 2 committed",
+    "[rnl-teardown]",
+    "teardown: instance 3 committed",
+    "[rnl-teardown]",
+    "teardown: instance 4 committed"
+  ]
+}

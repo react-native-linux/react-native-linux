@@ -1,4 +1,5 @@
 import type { Scenario } from "./scenario.ts";
+import { describeReloadCounterFailures } from "./reload-counters.ts";
 
 const EMPTY_LENGTH = 0;
 const NOT_FOUND_INDEX = -1;
@@ -47,9 +48,12 @@ const findRejectedMatches = (traceLines: readonly string[], rejections: readonly
  */
 const describeTraceFailures = (scenario: Scenario, trace: string): readonly string[] => {
   const traceLines = trace.split("\n");
-  const missing = findMissingExpectations(traceLines, scenario.expect).map(
-    (expectation) => `the trace never produced "${expectation}"`,
-  );
+  const missing = [
+    ...findMissingExpectations(traceLines, scenario.expect).map(
+      (expectation) => `the trace never produced "${expectation}"`,
+    ),
+    ...(scenario.steadyAcrossReloads ? describeReloadCounterFailures(traceLines) : []),
+  ];
 
   if (scenario.allowErrors) {
     return missing;

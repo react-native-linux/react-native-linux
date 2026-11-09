@@ -33,6 +33,7 @@ const baseScenario: Scenario = {
   ready: "pressable: committed surface 1",
   reject: [],
   screenshot: null,
+  steadyAcrossReloads: false,
   steps: ["sleep 500"],
   windowFlags: [],
 };

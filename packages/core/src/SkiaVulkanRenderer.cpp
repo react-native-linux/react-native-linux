@@ -214,6 +214,16 @@ void SkiaVulkanRenderer::resize(WindowSize size) {
 
 const std::string& SkiaVulkanRenderer::driverIdentity() const noexcept { return driverIdentity_; }
 
+RetainedGpuResources SkiaVulkanRenderer::purgeAndMeasureRetainedResources() {
+    RetainedGpuResources retained;
+
+    directContext_->flushAndSubmit(GrSyncCpu::kYes);
+    directContext_->purgeUnlockedResources(GrPurgeResourceOptions::kAllResources);
+    directContext_->getResourceCacheUsage(&retained.resourceCount, &retained.resourceBytes);
+
+    return retained;
+}
+
 void SkiaVulkanRenderer::captureNextFrame(std::string outputPath) { pendingCapturePath_ = std::move(outputPath); }
 
 bool SkiaVulkanRenderer::hasPendingCapture() const noexcept { return !pendingCapturePath_.empty(); }

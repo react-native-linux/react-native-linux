@@ -103,6 +103,11 @@ interface Scenario {
   readonly screenshot: ScreenshotComparison | null;
   /** `rnl_inject` script lines. */
   readonly steps: readonly string[];
+  /**
+   * #76: runs the window under `WAYLAND_DEBUG=client` and requires every `[rnl-teardown]` line a reload prints to
+   * find the same retained GPU resources and the same live Wayland objects. See `describeReloadCounterFailures`.
+   */
+  readonly steadyAcrossReloads: boolean;
   /** Extra `rnl_window` flags. `resolveWindowFlags` in grade.ts turns omission, `[]` and a list into three cases. */
   readonly windowFlags: readonly string[] | undefined;
 }
@@ -231,6 +236,7 @@ const parseScenario = (value: unknown, sourceName: string): Scenario => {
     ready: readString(value["ready"], "ready", sourceName),
     reject: readOptionalStringArray(value, "reject", sourceName) ?? [],
     screenshot: readScreenshotComparison(value, sourceName),
+    steadyAcrossReloads: readOptionalBoolean(value, "steadyAcrossReloads", sourceName),
     steps: readStringArray(value["steps"], "steps", sourceName),
     windowFlags: readOptionalStringArray(value, "windowFlags", sourceName),
   };

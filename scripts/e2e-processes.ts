@@ -48,6 +48,7 @@ interface LaunchedScenario {
   readonly frames: number;
   readonly injectProtocolError: boolean;
   readonly name: string;
+  readonly steadyAcrossReloads: boolean;
   readonly windowFlags: readonly string[] | undefined;
 }
 
@@ -96,6 +97,7 @@ const startCompositor = (launch: WindowLaunch): Compositor =>
         XDG_RUNTIME_DIR: launch.runtimeDirectory,
         XDG_STATE_HOME: path.join(launch.runtimeDirectory, "state"),
         XKB_DEFAULT_LAYOUT: "us",
+        ...(launch.scenario.steadyAcrossReloads ? { WAYLAND_DEBUG: "client" } : {}),
       }),
       stdio: ["ignore", "pipe", "pipe"],
     },

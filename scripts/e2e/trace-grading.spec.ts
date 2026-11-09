@@ -78,6 +78,12 @@ describe("describeTraceFailures", () => {
     ]);
   });
 
+  it("grades the reload counters only for a scenario that asks for them", () => {
+    expect(describeTraceFailures({ ...scenario, steadyAcrossReloads: true }, passingTrace)).toEqual([
+      'steadyAcrossReloads needs at least 2 "[rnl-teardown]" lines',
+    ]);
+  });
+
   it("reports a logged error line", () => {
     const trace = `${passingTrace}\n[js-error] fatal Error: intentional bundle failure`;
 

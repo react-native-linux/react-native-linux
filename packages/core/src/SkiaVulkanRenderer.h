@@ -12,6 +12,7 @@
 #include "include/gpu/ganesh/GrDirectContext.h"
 #include "include/gpu/vk/VulkanExtensions.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <deque>
 #include <functional>
@@ -24,6 +25,12 @@
 class SkCanvas;
 
 namespace react_native_linux {
+
+/** What Skia still holds on the GPU once every resource nothing references has been purged. */
+struct RetainedGpuResources {
+    int resourceCount{0};
+    size_t resourceBytes{0};
+};
 
 /**
  * The Ganesh Vulkan half of the window: one `VkInstance`, one `VkDevice`, one FIFO swapchain on a
@@ -110,6 +117,15 @@ public:
 
     /** What `surfaceCommitActionFor` returned on the most recent `drawFrame`, for the `--window-debug` trace. */
     SurfaceCommitAction lastSurfaceCommitAction() const noexcept;
+
+    /**
+     * The teardown probe of #76: waits for submitted GPU work, purges every resource Skia's cache holds unlocked,
+     * then reports what is left. A texture an unloaded instance still references survives the purge, which is the
+     * still-reachable leak ASan cannot see. Without the wait, a frame still in flight holds its resources and the
+     * count depends on timing. The wait and the cache refill cost a frame, so this runs only where an instance has
+     * just been unloaded.
+     */
+    RetainedGpuResources purgeAndMeasureRetainedResources();
     void captureNextFrame(std::string outputPath) override;
     [[nodiscard]] bool hasPendingCapture() const noexcept override;
     bool drawFrame(WaylandWindow& window, const SceneDamage& frameDamage,
