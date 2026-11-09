@@ -1,8 +1,10 @@
 // The instance teardown gate of #76, in the real window: this bundle reloads itself until it has run as
 // INSTANCE_COUNT instances, through DevSettings.reload as Fast Refresh's full reload does. Every instance paints
 // an image, a paragraph and a view whose translateX a native-driven animation loops forever, so each teardown
-// has glyphs, scene nodes and a running animation to give back. Odd instances reload once their image has
-// decoded and leave a texture behind them; even ones reload as soon as they commit, with the decode in flight.
+// has glyphs, scene nodes and a running animation to give back. Instance 1 reloads once everything is drawn, so
+// the first probe holds every one-time GPU allocation. Every later instance reloads as soon as it commits, racing
+// a cold decode: the decoded-image cache is process-wide and keyed by URI, so each instance names the same asset
+// through a different number of `./` segments.
 //
 // rnl_window --fabric packages/core/test-bundles/teardown-reload.js --frames 900
 //
@@ -13,9 +15,9 @@
 // which the e2e driver keeps in a fresh XDG_DATA_HOME per run.
 
 const INSTANCE_COUNT = 4;
-const DECODED_RELOAD_DELAY_MS = 300;
-const IN_FLIGHT_RELOAD_DELAY_MS = 0;
-const ANIMATED_VIEW_TAG = 100;
+const DRAWN_RELOAD_DELAY_MS = 300;
+const COLD_DECODE_RELOAD_DELAY_MS = 0;
+const IMAGE_ASSET = 'rnl-test-image.png';
 const animationFrames = [0, 0.5, 1, 0.5, 0];
 const surfaceId = 1;
 const fabric = globalThis.nativeFabricUIManager;
@@ -35,16 +37,16 @@ const animated = nativeModule('NativeAnimatedModule');
 const handles = [];
 let nextTag = 2;
 
-const create = (viewName, props, tag = nextTag + 1) => {
+const create = (viewName, props) => {
   const handle = {};
 
   handles.push(handle);
-  nextTag = Math.max(nextTag, tag);
+  nextTag += 1;
 
-  return fabric.createNode(tag, viewName, surfaceId, props, handle);
+  return fabric.createNode(nextTag, viewName, surfaceId, props, handle);
 };
 
-const animate = (view) => {
+const animate = (view, viewTag) => {
   const [valueTag, transformTag, styleTag, propsTag] = [1000, 1001, 1002, 1003];
 
   animated.startOperationBatch();
@@ -58,7 +60,7 @@ const animate = (view) => {
   animated.connectAnimatedNodes(valueTag, transformTag);
   animated.connectAnimatedNodes(transformTag, styleTag);
   animated.connectAnimatedNodes(styleTag, propsTag);
-  animated.connectAnimatedNodeToView(propsTag, ANIMATED_VIEW_TAG);
+  animated.connectAnimatedNodeToView(propsTag, viewTag);
   animated.connectAnimatedNodeToShadowNodeFamily(propsTag, view);
   animated.startAnimatingNode(1, valueTag, { type: 'frames', frames: animationFrames, toValue: 40, iterations: -1 }, () => {});
   animated.finishOperationBatch();
@@ -79,18 +81,21 @@ const render = (instance) => {
       width: 200,
       height: 150,
       resizeMode: 'cover',
-      source: { uri: 'rnl-test-image.png' },
+      source: { uri: './'.repeat(instance) + IMAGE_ASSET },
     }),
   );
-  const view = create(
-    'View',
-    { position: 'absolute', left: 280, top: 100, width: 160, height: 150, backgroundColor: 0xff3366cc | 0 },
-    ANIMATED_VIEW_TAG,
-  );
+  const view = create('View', {
+    position: 'absolute',
+    left: 280,
+    top: 100,
+    width: 160,
+    height: 150,
+    backgroundColor: 0xff3366cc | 0,
+  });
 
   fabric.appendChildToSet(rootChildren, view);
   fabric.completeRoot(surfaceId, rootChildren);
-  animate(view);
+  animate(view, nextTag);
 };
 
 const run = async () => {
@@ -104,7 +109,7 @@ const run = async () => {
   if (instance < INSTANCE_COUNT) {
     setTimeout(
       () => devSettings.reload(),
-      instance % 2 === 1 ? DECODED_RELOAD_DELAY_MS : IN_FLIGHT_RELOAD_DELAY_MS,
+      instance === 1 ? DRAWN_RELOAD_DELAY_MS : COLD_DECODE_RELOAD_DELAY_MS,
     );
   }
 };

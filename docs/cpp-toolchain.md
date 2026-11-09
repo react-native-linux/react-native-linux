@@ -7753,8 +7753,11 @@ unlocked, and counts what is left, so a texture an unloaded instance still
 references survives and shows up. That is the still-reachable leak ASan cannot see. `packages/core/e2e/teardown-reload.json`
 runs `test-bundles/teardown-reload.js`, which paints an image, a paragraph and a view whose `translateX` a
 native-driven animation loops forever, and reloads itself through `DevSettings.reload` until it has run as four
-instances. Every teardown therefore stops a running animation. Odd instances reload once their image has decoded,
-and even ones reload as soon as they commit, while the decode is still in flight. It keeps its instance number in AsyncStorage, under the
+instances. Every teardown therefore stops a running animation. Instance 1 reloads after everything is drawn, so the first probe
+already holds every one-time GPU allocation; reloading it before its first draw makes the first probe 0 and fails
+the gate. Every later instance reloads as soon as it commits, racing a cold decode. The race usually leaves the
+decode in flight, but the probe doesn't record whether it did. The decoded-image cache is process-wide and keyed by
+URI, so each instance names the same asset through a different number of `./` segments. It keeps its instance number in AsyncStorage, under the
 fresh `XDG_DATA_HOME` the driver gives every run. The scenario sets `steadyAcrossReloads`, which runs the window
 under `WAYLAND_DEBUG=client`. `scripts/e2e/reload-counters.ts` replays that request log, which arrives in write order
 with the probe line (#512), and counts the live client-created objects at each probe: a `new id` adds one, and a
