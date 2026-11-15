@@ -35,6 +35,7 @@ class LinuxAppearanceModule;
 class LinuxDeviceInfoModule;
 class LinuxLinkingModule;
 class LinuxWorkletsModule;
+class SQLiteDatabases;
 
 /**
  * The TurboModules this platform registers, and the single `TurboModuleBinding` that exposes them to JavaScript
@@ -84,6 +85,11 @@ public:
         std::shared_ptr<facebook::react::NativeAnimatedNodesManagerProvider> animatedNodesManagerProvider,
         facebook::react::JsErrorHandler::OnJsError onJsError,
         std::optional<FantomRunControls> fantomRunControls = std::nullopt);
+    TurboModuleRegistry(const TurboModuleRegistry&) = delete;
+    TurboModuleRegistry(TurboModuleRegistry&&) = delete;
+    TurboModuleRegistry& operator=(const TurboModuleRegistry&) = delete;
+    TurboModuleRegistry& operator=(TurboModuleRegistry&&) = delete;
+    ~TurboModuleRegistry() noexcept;
 
     DimensionsSource& dimensions() noexcept;
 
@@ -116,6 +122,9 @@ public:
     /** The store behind `RNAsyncStorage` (#23); `WindowSession` points it at the application's file. */
     KeyValueStore& keyValueStore() noexcept;
 
+    /** The connections behind `ExpoSQLite` (#638); `WindowSession` gives them the application's directory. */
+    SQLiteDatabases& sqliteDatabases() noexcept;
+
     /** `I18nManager`'s choices (#72), which `WindowSession` restores before the bundle and applies every frame. */
     I18nModel& i18n() noexcept;
 
@@ -145,6 +154,7 @@ private:
     std::shared_ptr<ActivationModel> activationModel_;
     std::shared_ptr<LinuxLinkingModule> linkingModule_;
     std::shared_ptr<KeyValueStore> keyValueStore_;
+    std::unique_ptr<SQLiteDatabases> sqliteDatabases_;
     std::shared_ptr<I18nModel> i18nModel_;
     std::shared_ptr<std::string> bundleUrl_;
     std::shared_ptr<LinuxWorkletsModule> workletsModule_;

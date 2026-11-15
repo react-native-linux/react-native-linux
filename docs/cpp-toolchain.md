@@ -1458,6 +1458,40 @@ the database named by the empty string; `legacy_multiMerge` rejects, because no 
 `AsyncStorageTest` covers the store, including a batch that fails part-way and lands nothing, and
 `test-bundles/async-storage.js` is the end-to-end proof through the TurboModule.
 
+## expo-sqlite (#638)
+
+Expo on Linux runs Expo's own JavaScript over the native-module seam: upstream expo-sqlite calls
+`requireNativeModule('ExpoSQLite')`, and expo-modules-core falls back to `TurboModuleRegistry.get` and
+`createTurboModuleToExpoProxy`, which copies the module's methods and spreads `getConstants()` onto it.
+`src/ExpoSQLiteModule.cpp` serves `ExpoSQLite` over `src/ExpoSQLite.cpp`; as ADR-0004 (#657) places every Expo module,
+the class lives in its own file and `TurboModuleRegistry.cpp` holds only its factory line. Like the registry, the
+module file is outside the coverage gate's scoped list: `SQLiteModuleTest` drives it from JavaScript instead.
+
+- `getConstants()` answers `defaultDatabaseDirectory`, which is `$XDG_DATA_HOME/<app-id>/SQLite` in `rnl_window` and
+  `null` in a headless host, so upstream's own error names the missing directory. It also answers an empty
+  `bundledExtensions` and the classes `NativeDatabase` and `NativeStatement`.
+- `ensureDatabasePathExistsAsync` creates the database's directory.
+- Only the asynchronous half of `NativeDatabase` and `NativeStatement` exists: init, close, exec,
+  `isInTransaction` and prepare, then run, step, get all, reset, column names and finalize. This is what
+  `openDatabaseAsync`, `execAsync`, `runAsync`, `getFirstAsync`, `getAllAsync` and the two transaction helpers
+  reach. They follow the semantics of upstream's Android `NativeStatement.kt`.
+- Upstream's classes are Expo `SharedObject`s. Nothing in expo-sqlite's JavaScript uses that API, so each instance
+  here is a plain object that carries its handle as JSI native state, with its methods on the class prototype.
+  Hermes cannot `new` a host function, so each constructor is a two-line JavaScript function that hands `this` to
+  a host initializer.
+
+Every call posts its work to `SQLiteDatabases`' one worker thread and settles its promise through the call invoker.
+A reload drains queued writes before the old instance goes. Each `NativeDatabase` is its own connection: upstream's
+Android cache, which shares one connection per path, is not reproduced. One worker serializes every connection, so
+a write while another connection holds a transaction fails with "database is locked" instead of waiting. BLOB
+values, the synchronous API, sessions, serialization, backups, deletion, extensions and the change listener are not
+implemented. A `NativeDatabase` constructed with serialized bytes (`deserializeDatabaseAsync`) or with an enabled open
+option other than `useNewConnection` and `finalizeUnusedStatementsBeforeClosing` throws an error naming it.
+
+`ExpoSQLiteTest` covers the store. `SQLiteModuleTest` drives the module from JavaScript with upstream's exact call
+sequence, and reloads into a second host that reads the rows back. The `expo-sqlite-reload` e2e writes inside an
+exclusive transaction in `rnl_window`, reloads through `DevSettings`, and reads the row back from the file.
+
 ## I18nManager (#72)
 
 `I18nManager` is `NativeI18nManager` over `src/I18n.cpp`'s `I18nModel`. The surface is right to left when

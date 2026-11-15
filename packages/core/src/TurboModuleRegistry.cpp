@@ -4,6 +4,7 @@
 #include "BeastWebSocketClient.h"
 #include "Clipboard.h"
 #include "CurlHttpClient.h"
+#include "ExpoSQLite.h"
 #include "FantomRenderOutput.h"
 #include "HostTimerRegistry.h"
 #include "I18n.h"
@@ -32,6 +33,7 @@
 #include <sys/utsname.h>
 #include <unistd.h>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <react/coremodules/DeviceInfoModule.h>
@@ -1001,7 +1003,7 @@ TurboModuleRegistry::TurboModuleRegistry(
       appearanceModule_(std::make_shared<LinuxAppearanceModule>(jsInvoker, appearanceModel_)),
       activationModel_(std::make_shared<ActivationModel>()),
       linkingModule_(std::make_shared<LinuxLinkingModule>(jsInvoker, activationModel_)),
-      keyValueStore_(std::make_shared<KeyValueStore>()),
+      keyValueStore_(std::make_shared<KeyValueStore>()), sqliteDatabases_(std::make_unique<SQLiteDatabases>()),
       i18nModel_(std::make_shared<I18nModel>(localeFromEnvironment(), keyValueStore_)),
       bundleUrl_(std::make_shared<std::string>()), workletsModule_(std::make_shared<LinuxWorkletsModule>(jsInvoker)),
       reloadRequested_(std::make_shared<std::atomic<bool>>(false)) {
@@ -1020,6 +1022,9 @@ TurboModuleRegistry::TurboModuleRegistry(
                              [workletsModule = workletsModule_]() { return workletsModule; });
     moduleFactories_.emplace(LinuxAsyncStorageModule::kModuleName, [jsInvoker, keyValueStore = keyValueStore_]() {
         return std::make_shared<LinuxAsyncStorageModule>(jsInvoker, keyValueStore);
+    });
+    moduleFactories_.emplace("ExpoSQLite", [jsInvoker, &databases = *sqliteDatabases_]() {
+        return makeExpoSQLiteModule(jsInvoker, databases);
     });
     moduleFactories_.emplace(LinuxI18nManagerModule::kModuleName, [jsInvoker, i18nModel = i18nModel_]() {
         return std::make_shared<LinuxI18nManagerModule>(jsInvoker, i18nModel);
@@ -1090,6 +1095,8 @@ TurboModuleRegistry::TurboModuleRegistry(
     }
 }
 
+TurboModuleRegistry::~TurboModuleRegistry() noexcept = default;
+
 DimensionsSource& TurboModuleRegistry::dimensions() noexcept { return *dimensionsSource_; }
 
 AppearanceModel& TurboModuleRegistry::appearance() noexcept { return *appearanceModel_; }
@@ -1101,6 +1108,8 @@ void TurboModuleRegistry::setBundleUrl(const std::string& bundleUrl) { *bundleUr
 bool TurboModuleRegistry::isReloadRequested() const noexcept { return reloadRequested_->load(); }
 
 KeyValueStore& TurboModuleRegistry::keyValueStore() noexcept { return *keyValueStore_; }
+
+SQLiteDatabases& TurboModuleRegistry::sqliteDatabases() noexcept { return *sqliteDatabases_; }
 
 I18nModel& TurboModuleRegistry::i18n() noexcept { return *i18nModel_; }
 

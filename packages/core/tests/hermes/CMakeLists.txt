@@ -112,6 +112,7 @@ add_executable(rnl_core_hermes_tests
     MeasureGeometryTest.cpp
     LinkingModuleTest.cpp
     LinuxUISchedulerTest.cpp
+    SQLiteModuleTest.cpp
     WorkletsModuleTest.cpp
     ThreadAffinityTest.cpp
     WebSocketModuleTest.cpp
