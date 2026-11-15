@@ -337,13 +337,14 @@ const DiffRow = memo(function DiffRow(props: DiffRowProps) {
   );
 });
 
-interface ReviewDiffListProps extends Omit<FlatListProps<number>, "renderItem" | "onScroll"> {
+interface ReviewDiffListProps extends Omit<FlatListProps<number>, "renderItem" | "onScroll" | "onMomentumScrollEnd"> {
   readonly listRef: RefObject<FlatList<number> | null>;
   readonly renderRow: (item: number, index: number, offset: ScrollOffset) => ReactElement | null;
+  readonly onScrollSettled: (contentOffsetX: number) => void;
 }
 
 // Keyed by contentResetKey: new content starts the list and its anchored chrome at x 0 together.
-function ReviewDiffList({ listRef, renderRow, ...listProps }: ReviewDiffListProps) {
+function ReviewDiffList({ listRef, renderRow, onScrollSettled, ...listProps }: ReviewDiffListProps) {
   const [offset] = useState(createScrollOffset);
   const renderItem = useCallback(
     ({ item, index }: ListRenderItemInfo<number>) => renderRow(item, index, offset),
@@ -354,6 +355,13 @@ function ReviewDiffList({ listRef, renderRow, ...listProps }: ReviewDiffListProp
     ref: listRef,
     renderItem,
     onScroll: (event: NativeSyntheticEvent<NativeScrollEvent>) => offset.set(event.nativeEvent.contentOffset.x),
+    onMomentumScrollEnd: (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const { x } = event.nativeEvent.contentOffset;
+      offset.set(x);
+      // A later task: React commits the anchored chrome at x in this one, and the platform mounts a commit as its
+      // task ends, so input sent after the report hits the chrome where it is drawn.
+      setTimeout(() => onScrollSettled(x), 0);
+    },
   });
 }
 
@@ -565,6 +573,7 @@ function LinuxReviewDiffView(props: NativeReviewDiffViewProps) {
       data: visible.indexes,
       keyExtractor: (item: number) => rows[item]?.id ?? String(item),
       renderRow,
+      onScrollSettled: (contentOffsetX: number) => report({ message: "scroll-settled", contentOffsetX }),
       getItemLayout: (_data: unknown, index: number) => ({
         index,
         length: visible.heights[index] ?? 0,

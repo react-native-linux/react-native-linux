@@ -45,11 +45,11 @@ const isKeyboardFocused = (trace: string): boolean => trace.includes(KEYBOARD_FO
  */
 const runKeyboardAwareInjection = async (
   steps: readonly string[],
-  inject: (subset: readonly string[]) => string | null,
+  inject: (subset: readonly string[]) => Promise<string | null>,
   waitForKeyboardFocus: () => Promise<boolean>,
 ): Promise<string | null> => {
   const { afterFocus, beforeFocus } = splitStepsAtKeyboardFocus(steps);
-  const beforeFocusFailure = inject(beforeFocus);
+  const beforeFocusFailure = await inject(beforeFocus);
 
   if (beforeFocusFailure !== null || afterFocus.length === EMPTY_LENGTH) {
     return beforeFocusFailure;

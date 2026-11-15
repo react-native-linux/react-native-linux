@@ -23,7 +23,7 @@
     "sleep 16",
     "pan 150 0",
     "pan_stop",
-    "sleep 5000",
+    "await t3-review-diff: review scroll settled",
     "move 1258 84",
     "click 1258 84",
     "sleep 1000",
@@ -38,7 +38,7 @@
     "sleep 16",
     "pan 150 0",
     "pan_stop",
-    "sleep 5000",
+    "await t3-review-diff: source scroll settled",
     "move 1258 552",
     "click 1258 552",
     "sleep 1500"

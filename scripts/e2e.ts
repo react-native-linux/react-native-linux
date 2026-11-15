@@ -2,9 +2,9 @@ import { argv, env, stderr, stdout } from "node:process";
 import {
   attachTrace,
   editAndAwaitRefresh,
-  injectSteps,
   injectorBinaryPath,
   startCompositor,
+  startInjector,
   stopCompositor,
   waitForSocketName,
   windowBinaryPath,
@@ -78,7 +78,11 @@ const createWorkspace = (artifacts: Artifacts): Workspace => {
   };
 };
 
-const driveScenario = async (run: ScenarioRun, workspace: Workspace): Promise<readonly string[]> => {
+const driveScenario = async (
+  run: ScenarioRun,
+  workspace: Workspace,
+  endWindow: () => Promise<boolean>,
+): Promise<readonly string[]> => {
   const { scenario } = run;
   const socketName = await waitForSocketName(workspace.runtimeDirectory);
   // A missing socket short-circuits the ready wait; both bail-outs share the check below (#373).
@@ -96,8 +100,12 @@ const driveScenario = async (run: ScenarioRun, workspace: Workspace): Promise<re
   }
 
   const injectionFailure = await injectAndResolveFailure({
-    inject: (steps) => injectSteps(steps, workspace.runtimeDirectory, socketName),
     scenario,
+    startInjector: () => startInjector(workspace.runtimeDirectory, socketName),
+    trace: {
+      read: () => workspace.trace.text,
+      waitFor: (isSatisfied) => waitUntil(() => isSatisfied(workspace.trace.text), READY_TIMEOUT_MS),
+    },
     waitForExpectedClose: () =>
       waitUntil(() => workspace.trace.text.includes(scenario.expectsExitAfter ?? ""), READY_TIMEOUT_MS),
     waitForKeyboardFocus: () => waitUntil(() => isKeyboardFocused(workspace.trace.text), READY_TIMEOUT_MS),
@@ -112,10 +120,11 @@ const driveScenario = async (run: ScenarioRun, workspace: Workspace): Promise<re
   });
 
   /*
-   * The window exits on its own once it has captured the frame its budget names. The wait is for the streams to
-   * close, not the exit code: a process can exit with its last lines still in flight, and #233's gate needs them.
+   * The window exits on its own once it has captured the frame its budget names, and not before `endWindow` closes
+   * its stdin (#719). The wait is for the streams to close, not the exit code: a process can exit with its last lines still
+   * in flight, and #233's gate needs them.
    */
-  await waitUntil(() => workspace.trace.isClosed, RUN_TIMEOUT_MS);
+  await endWindow();
 
   return [...(injectionFailure === null ? [] : [injectionFailure]), ...refreshFailures, ...automationFailures];
 };
@@ -131,7 +140,11 @@ const driveAndStop = async (
   workspace: Workspace,
 ): Promise<readonly string[]> => {
   try {
-    return await driveScenario(run, workspace);
+    return await driveScenario(run, workspace, () => {
+      compositor.stdin?.end();
+
+      return waitUntil(() => workspace.trace.isClosed, RUN_TIMEOUT_MS);
+    });
   } finally {
     await stopCompositor(compositor);
   }

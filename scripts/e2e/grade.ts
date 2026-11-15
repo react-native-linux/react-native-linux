@@ -15,6 +15,7 @@ import { gradeAutomation } from "./automation.ts";
 import path from "node:path";
 import { runKeyboardAwareInjection } from "./keyboard-focus.ts";
 import { scalePointerSteps } from "./pointer-scale.ts";
+import { sendAwaitingTrace } from "./trace-await.ts";
 
 const NO_TEXT = "";
 const CROPPED_ARTIFACT_NAME = "screenshot-cropped.png";
@@ -244,29 +245,40 @@ const resolveInjectionFailure = async (
   return (await waitForExpectedClose()) ? null : outcome.failure;
 };
 
+/** A running `rnl_inject`: `send` queues script lines it executes as they arrive, `finish` ends the script. */
+interface Injector {
+  readonly finish: () => Promise<InjectionOutcome>;
+  readonly send: (steps: readonly string[]) => void;
+}
+
 interface InjectionRun {
   readonly scenario: Scenario;
-  readonly inject: (subset: readonly string[]) => InjectionOutcome;
+  readonly startInjector: () => Injector;
+  readonly trace: Parameters<typeof sendAwaitingTrace>[number]["trace"];
   readonly waitForKeyboardFocus: () => Promise<boolean>;
   readonly waitForExpectedClose: () => Promise<boolean>;
 }
 
 /**
- * Runs `run.scenario.steps` through `run.inject`, threading its exit status to `resolveInjectionFailure` above.
+ * Runs `run.scenario.steps` through `rnl_inject`, threading its exit status to `resolveInjectionFailure` above.
  * `scalePointerSteps` converts every `move`/`click` line's coordinates from the logical pixels a scenario is
  * authored in to `rnl_inject`'s own surface pixels first, so the same rounding rule #374 gave the surface side
- * carries the injected coordinate rather than the raw logical one.
+ * carries the injected coordinate rather than the raw logical one. Each side of the keyboard split is one injector,
+ * fed its steps around their `await` steps.
  */
 const injectAndResolveFailure = async (run: InjectionRun): Promise<string | null> => {
   let status: number | null = null;
+  const injectOnce = async (steps: readonly string[]): Promise<string | null> => {
+    const injector = run.startInjector();
+    const awaitFailure = await sendAwaitingTrace({ send: injector.send, steps, trace: run.trace });
+    const outcome = await injector.finish();
+    ({ status } = outcome);
+
+    return outcome.failure ?? awaitFailure;
+  };
   const failure = await runKeyboardAwareInjection(
     scalePointerSteps(run.scenario.steps),
-    (steps) => {
-      const outcome = run.inject(steps);
-      ({ status } = outcome);
-
-      return outcome.failure;
-    },
+    injectOnce,
     run.waitForKeyboardFocus,
   );
 
