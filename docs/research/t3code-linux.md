@@ -57,14 +57,14 @@ Expo's Metro config turns `inlineRequires` off.
 | `ExpoFontLoader` | `expo-font` | throws: its `typeof window === 'undefined'` guard is false under React Native, which defines `window`; #156 |
 | `ExpoClipboard` | `expo-clipboard` | throws; #278 |
 | `ExpoCrypto`, `ExpoCryptoAES` | `expo-crypto` | throws; #276 |
-| `FileSystem` | `expo-file-system` | throws; #269 |
+| `FileSystem` | `expo-file-system` | registered (#676) |
 | `ExpoImage` | `expo-image` | throws; #273 |
 | `ExponentImagePicker` | `expo-image-picker` | throws; #275 |
 | `ExpoImageManipulator`, `ExpoDocumentPicker` | `expo-image-manipulator`, `expo-document-picker` | throws; #650. `expo-document-picker` is imported lazily, so not at startup |
 | twelve `Expo*` notification modules | `expo-notifications` | throws; #274 |
 | `ExpoSecureStore` | `expo-secure-store` | throws; #270 |
 | `ExpoSharing` | `expo-sharing` | throws; #156 |
-| `ExpoSQLite` | `expo-sqlite` | throws; #638 |
+| `ExpoSQLite` | `expo-sqlite` | registered (#665) |
 | `ExpoWebBrowser` | `expo-web-browser` | throws; #271 |
 | `ExpoAudio`, `ExpoCamera`, `ExpoObserve`, `ExpoAppMetrics`, the `expo-sensors` modules, `SymbolModule`, `ExpoUpdates`, `ExpoVideo`, `ExpoWidgets` | `expo-audio`, `expo-camera`, `expo-observe`, `expo-app-metrics`, `expo-sensors`, `expo-symbols`, `expo-updates`, `expo-video`, `expo-widgets` | throws; left out or replaced by the feature profile (§2), so #641's Linux entry cuts the import |
 
