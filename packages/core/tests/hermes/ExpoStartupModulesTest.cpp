@@ -68,13 +68,11 @@ folly::dynamic shellOutput(const std::string& command) {
     return output.empty() ? folly::dynamic(nullptr) : folly::dynamic(output);
 }
 
-/** `ExpoDevice.getConstants()` over `dmiRoot` and `osReleaseRoots`, through `JSON.stringify` and back. */
-folly::dynamic deviceConstants(const std::filesystem::path& dmiRoot,
-                               const std::vector<std::filesystem::path>& osReleaseRoots) {
+/** `device.getConstants()`, through `JSON.stringify` and back. */
+folly::dynamic deviceConstants(facebook::react::TurboModule& device) {
     const std::shared_ptr<facebook::jsi::Runtime> runtime = facebook::hermes::makeHermesRuntime();
-    const std::shared_ptr<facebook::react::TurboModule> device = makeExpoDeviceModule(nullptr, dmiRoot, osReleaseRoots);
     const facebook::jsi::Value constants =
-        device->get(*runtime, facebook::jsi::PropNameID::forAscii(*runtime, "getConstants"))
+        device.get(*runtime, facebook::jsi::PropNameID::forAscii(*runtime, "getConstants"))
             .asObject(*runtime)
             .asFunction(*runtime)
             .call(*runtime);
@@ -98,9 +96,11 @@ protected:
         std::ofstream(root_ / relativePath) << contents;
     }
 
-    [[nodiscard]] folly::dynamic constants() const {
-        return deviceConstants(root_ / "dmi", {root_ / "etc", root_ / "usr/lib"});
+    [[nodiscard]] std::shared_ptr<facebook::react::TurboModule> device() const {
+        return makeExpoDeviceModule(nullptr, root_ / "dmi", {root_ / "etc", root_ / "usr/lib"});
     }
+
+    [[nodiscard]] folly::dynamic constants() const { return deviceConstants(*device()); }
 
 private:
     std::filesystem::path root_ =
@@ -156,6 +156,24 @@ TEST_F(ExpoStartupModulesDeviceTest, OsReleaseValuesWithoutMatchingQuotesAreLite
     EXPECT_EQ(answered["osName"], "\"Half");
     EXPECT_EQ(answered["osVersion"], "2.2");
     EXPECT_EQ(answered["osBuildId"], "'mixed\"");
+}
+
+/** The machine is read once, as the module is made, and `getConstants` serializes that reading however often it runs.
+ */
+TEST_F(ExpoStartupModulesDeviceTest, TheMachineIsReadOnceAsTheModuleIsMade) {
+    write("dmi/sys_vendor", "Before\n");
+    write("etc/os-release", "NAME=Before\n");
+
+    const std::shared_ptr<facebook::react::TurboModule> madeBefore = device();
+
+    write("dmi/sys_vendor", "After\n");
+    write("etc/os-release", "NAME=After\n");
+
+    const folly::dynamic first = deviceConstants(*madeBefore);
+
+    EXPECT_EQ(first["manufacturer"], "Before");
+    EXPECT_EQ(first["osName"], "Before");
+    EXPECT_EQ(deviceConstants(*madeBefore), first);
 }
 
 /** DMI strings reach JavaScript verbatim, a quote and a backslash included. */
