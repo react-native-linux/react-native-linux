@@ -6485,8 +6485,10 @@ When an update is ignored the platform writes its own buffer back into the state
 picture never shows a value React proposed and the platform rejected. `EditorModel::reconcileProps` owns the
 count half and is unit-tested against both; `TextInputController::reconcile` owns the changed half.
 
-`mostRecentEventCount` is incremented by an edit and by nothing else. A pre-edit is not an edit — the value React
-owns has not changed until the commit arrives — so composing does not move it.
+`mostRecentEventCount` is incremented by an edit and by a pre-edit that changes the buffer, which is how iOS and
+Android count marked text. A controlled field echoes each pre-edit back as its `value`: the echo of the current one
+equals the buffer and changes nothing, and a late echo of an earlier one carries an old count and is dropped, so
+neither ends the composition.
 
 ### The editing model
 

@@ -354,6 +354,10 @@ bool EditorModel::applyPreedit(const std::string& preedit, int32_t cursorBegin, 
     const size_t begin = isComposing_ ? compositionBeginByte_ : selectionBeginByte();
     const size_t end = isComposing_ ? compositionEndByte() : selectionEndByte();
 
+    if (text_.compare(begin, end - begin, preedit) != 0) {
+        ++mostRecentEventCount_;
+    }
+
     text_.replace(begin, end - begin, preedit);
     resegment();
 
