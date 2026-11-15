@@ -354,6 +354,10 @@ bool EditorModel::applyPreedit(const std::string& preedit, int32_t cursorBegin, 
     const size_t begin = isComposing_ ? compositionBeginByte_ : selectionBeginByte();
     const size_t end = isComposing_ ? compositionEndByte() : selectionEndByte();
 
+    if (text_.compare(begin, end - begin, preedit) != 0) {
+        ++mostRecentEventCount_;
+    }
+
     text_.replace(begin, end - begin, preedit);
     resegment();
 
@@ -407,7 +411,7 @@ bool EditorModel::deleteSurrounding(uint32_t beforeLength, uint32_t afterLength)
 }
 
 bool EditorModel::reconcileProps(const std::string& propsText, int propsMostRecentEventCount) {
-    if (propsMostRecentEventCount != mostRecentEventCount_) {
+    if (propsMostRecentEventCount != mostRecentEventCount_ || propsText == text_) {
         return false;
     }
 
@@ -568,13 +572,16 @@ std::string EditorModel::normalizeInsertion(const std::string& insertion) const 
 }
 
 bool EditorModel::replaceRange(size_t beginByte, size_t endByte, const std::string& replacement) {
+    if (text_.compare(beginByte, endByte - beginByte, replacement) != 0) {
+        ++mostRecentEventCount_;
+    }
+
     text_.replace(beginByte, endByte - beginByte, replacement);
     compositionBeginByte_ = 0;
     compositionLength_ = 0;
     isComposing_ = false;
     resegment();
     collapseCaretTo(beginByte + replacement.size());
-    ++mostRecentEventCount_;
 
     return true;
 }

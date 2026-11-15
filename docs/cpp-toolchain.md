@@ -1453,6 +1453,18 @@ the fixture beside the `cpp-library` one and calls it from `packages/test-harnes
 Its unit tests are `tests/DpopKeysTest.cpp`, which the coverage gate scores, and the Hermes test is
 `tests/hermes/T3NativeControlsModuleTest.cpp`.
 
+A module whose view this platform already ships needs no `linux/` directory and no config entry. T3 Code's
+composer (`modules/t3-composer-editor`, #683) is this platform's `TextInput`, selected by a
+`T3ComposerEditor.linux.tsx` beside the app's `.native.tsx`. Metro resolves `.linux` before `.native`. The variant is
+`packages/test-harness/modules/t3-composer-editor/src/native/T3ComposerEditor.linux.tsx`, and T3 Code copies it to
+`apps/mobile/src/native/`. The `src/lib` and `src/features` files beside it stand in for T3 Code's own, and the file
+is written in T3 Code's style, so this repo's oxlint and oxfmt skip `modules/t3-composer-editor/src`. Return and its
+chords use `onKeyDown`, with the Android view's `returnSubmission` rules: in send mode only a bare Return and
+Ctrl+Return send, every other chord inserts a newline, and a repeat never sends. This platform sends every key to
+the focused field's React handler, with its modifiers and `isComposing`, before the field edits, and delivers an
+earlier edit in the same frame as `onChange` first. `submitBehavior` keeps a sending Return out of the text. The
+e2e `packages/test-harness/e2e/t3-composer-editor.json` drives it under cage.
+
 Our C++ ABI toward a library is the vendored React Native pin's; what a library may assume beyond that is #89's
 question, not this generator's.
 
@@ -6479,8 +6491,13 @@ When an update is ignored the platform writes its own buffer back into the state
 picture never shows a value React proposed and the platform rejected. `EditorModel::reconcileProps` owns the
 count half and is unit-tested against both; `TextInputController::reconcile` owns the changed half.
 
-`mostRecentEventCount` is incremented by an edit and by nothing else. A pre-edit is not an edit — the value React
-owns has not changed until the commit arrives — so composing does not move it.
+`mostRecentEventCount` is incremented by an edit and by a pre-edit that changes the buffer, which is how iOS and
+Android count marked text. An edit that leaves the buffer as it was, such as committing the pre-edit already shown,
+moves nothing, as on Android, so it raises no `onChange` of its own. Edits that move the count but leave the buffer
+where it was by the end of a frame, such as a pre-edit and its cancellation, still raise one with the unchanged
+text: it is the only event that hands JavaScript the count, and without it every later `value` would be stale. A controlled field echoes each pre-edit back as its `value`: the echo of the current one
+equals the buffer and changes nothing, and a late echo of an earlier one carries an old count and is dropped, so
+neither ends the composition.
 
 ### The editing model
 
@@ -6741,7 +6758,7 @@ Through upstream's `TextInputEventEmitter`, so the payloads are the ones `TextIn
 
 | Event | When | Payload |
 | --- | --- | --- |
-| `change` | the buffer differs from what was last reported | the **unmasked** text, the selection, the event count |
+| `change` | the buffer or the event count differs from what was last reported | the **unmasked** text, the selection, the event count |
 | `selectionChange` | the selection differs from what was last reported | the same shape |
 | `keyPress` | before the edit a key makes | the key, as upstream's own mapping of the text — an empty string is `Backspace`, a line feed is `Enter` |
 | `submitEditing`, `endEditing` | Enter, per the table above | text and event count |

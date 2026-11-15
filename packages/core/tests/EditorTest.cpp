@@ -412,8 +412,12 @@ TEST(EditorModelTest, APreeditIsInsertedAtTheCaretAndReplacedByTheNextOne) {
     EXPECT_EQ(model.text(), "abni");
     EXPECT_EQ(model.compositionEndByte(), 4U);
 
-    // A pre-edit is not an edit: React's value has not changed until the commit arrives.
-    EXPECT_EQ(model.mostRecentEventCount(), 0);
+    // Each pre-edit that changes the buffer is a change event, as marked text is on iOS and Android.
+    EXPECT_EQ(model.mostRecentEventCount(), 2);
+
+    // A pre-edit that only moves its cursor leaves the buffer, and so the count, alone.
+    EXPECT_TRUE(model.applyPreedit("ni", 1, 1));
+    EXPECT_EQ(model.mostRecentEventCount(), 2);
 }
 
 TEST(EditorModelTest, AHiddenPreeditCursorPutsTheCaretAtTheEndOfTheRun) {
@@ -502,6 +506,18 @@ TEST(EditorModelTest, ACommitReplacesTheComposingRunAndCountsAsAnEdit) {
     EXPECT_TRUE(model.insertText("\xE4\xBD\xA0\xE5\xA5\xBD"));
     EXPECT_EQ(model.text(), "\xE4\xBD\xA0\xE5\xA5\xBD");
     EXPECT_FALSE(model.isComposing());
+    EXPECT_EQ(model.mostRecentEventCount(), 2);
+}
+
+// #683: no `onChange` reports a commit of the pre-edit already shown, so a count it moved would never reach React.
+TEST(EditorModelTest, ACommitOfThePreeditAlreadyShownEndsTheCompositionWithoutMovingTheCount) {
+    EditorModel model;
+
+    model.applyPreedit("a", 1, 1);
+
+    EXPECT_TRUE(model.insertText("a"));
+    EXPECT_EQ(model.text(), "a");
+    EXPECT_FALSE(model.isComposing());
     EXPECT_EQ(model.mostRecentEventCount(), 1);
 }
 
@@ -543,7 +559,7 @@ TEST(EditorModelTest, DeleteSurroundingOfNothingStillEndsAnOpenComposition) {
     EXPECT_TRUE(model.deleteSurrounding(0, 0));
     EXPECT_EQ(model.text(), "");
     EXPECT_FALSE(model.isComposing());
-    EXPECT_EQ(model.mostRecentEventCount(), 1);
+    EXPECT_EQ(model.mostRecentEventCount(), 2);
 }
 
 TEST(EditorModelTest, ATypedKeyDuringACompositionReplacesTheComposingRun) {
@@ -565,6 +581,37 @@ TEST(EditorModelTest, AControlledValueIsAdoptedWhenTheEventCountMatches) {
 
     // Applying the same value twice is not a change, which is what stops the caret from jumping on every render.
     EXPECT_FALSE(model.reconcileProps("from react", 0));
+}
+
+// #683: a controlled field echoes the pre-edit back with the count it carried. Adopting that echo would end the
+// composition and keep the pre-edit as text.
+TEST(EditorModelTest, AControlledEchoOfAPreeditLeavesTheCompositionRunning) {
+    EditorModel model = modelWith("hi");
+
+    model.applyPreedit("e", 1, 1);
+
+    EXPECT_FALSE(model.reconcileProps("hie", model.mostRecentEventCount()));
+    EXPECT_TRUE(model.isComposing());
+
+    model.insertText("\u00e9");
+
+    EXPECT_EQ(model.text(), "hi\u00e9");
+}
+
+// #683: an echo of an earlier pre-edit arrives after the next one. It differs from the buffer, so only its old
+// count stops it from ending the composition and dropping the newer pre-edit.
+TEST(EditorModelTest, ALateEchoOfAnEarlierPreeditIsStaleAndLeavesTheCompositionRunning) {
+    EditorModel model = modelWith("hi");
+
+    model.applyPreedit("e", 1, 1);
+
+    const int firstPreeditCount = model.mostRecentEventCount();
+
+    model.applyPreedit("ex", 2, 2);
+
+    EXPECT_FALSE(model.reconcileProps("hie", firstPreeditCount));
+    EXPECT_TRUE(model.isComposing());
+    EXPECT_EQ(model.text(), "hiex");
 }
 
 TEST(EditorModelTest, AControlledValueIsIgnoredWhileAnEditIsInFlight) {
