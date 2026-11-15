@@ -27,7 +27,8 @@ using SharedObjectMembers = std::vector<std::pair<std::string, facebook::jsi::Ho
  * `getters` go on the prototype, with `release()`, which drops the state and so frees it now rather than when the
  * instance is collected; a later call on the instance throws.
  *
- * Threading contract: the JavaScript thread, like every JSI call.
+ * Threading contract: the JavaScript thread, like every JSI call. A state never released is destroyed on Hermes' JSI
+ * finalizer thread once the instance is collected, so its destructor touches nothing owned by the JavaScript thread.
  */
 facebook::jsi::Function makeSharedObjectClass(facebook::jsi::Runtime& runtime, SharedObjectInitializer initialize,
                                               const SharedObjectMembers& methods, const SharedObjectMembers& getters);
