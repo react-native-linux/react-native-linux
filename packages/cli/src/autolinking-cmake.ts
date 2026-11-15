@@ -36,6 +36,45 @@ const readCodegenConfig = (
   return typeof name === "string" && typeof jsSrcsDir === "string" ? { jsSourceDirectory: jsSrcsDir, name } : null;
 };
 
+const definesType = (headerContents: string, typeName: string): boolean =>
+  new RegExp(String.raw`\b(?:(?:class|struct)\s+${typeName}\b(?!\s*;)|using\s+${typeName}\s*=)`, "u").test(
+    headerContents,
+  );
+
+/**
+ * #150: which of the descriptors a library declares in react-native.config.js its `common/cpp` headers define, as a
+ * class or as a `using` alias (react-native-svg keeps 27 aliases in one `RNSVGComponentDescriptors.h`), and the
+ * headers that define them. A declared descriptor codegen generates needs no header; one that neither defines, an
+ * Android-only one for instance, is returned as `undefinedDescriptors` so the caller can say it was skipped.
+ */
+const selectSharedComponentDescriptors = (
+  declaredDescriptors: readonly string[],
+  generatedDescriptors: readonly string[],
+  headerContents: Readonly<Record<string, string>>,
+): {
+  readonly descriptors: readonly string[];
+  readonly headers: readonly string[];
+  readonly undefinedDescriptors: readonly string[];
+} => {
+  const sharedDescriptors = declaredDescriptors
+    .filter((descriptor) => !generatedDescriptors.includes(descriptor))
+    .map((descriptor) => ({
+      descriptor,
+      headers: Object.entries(headerContents)
+        .filter(([, contents]) => definesType(contents, descriptor))
+        .map(([header]) => header),
+    }));
+  const defined = sharedDescriptors.filter(({ headers }) => headers.length > NO_COMPONENTS);
+
+  return {
+    descriptors: [...new Set([...generatedDescriptors, ...defined.map(({ descriptor }) => descriptor)])],
+    headers: [...new Set(defined.flatMap(({ headers }) => headers))].toSorted(),
+    undefinedDescriptors: sharedDescriptors
+      .filter(({ headers }) => headers.length === NO_COMPONENTS)
+      .map(({ descriptor }) => descriptor),
+  };
+};
+
 const moduleTargetLines = (name: string, includeDirectory: string): readonly string[] => [
   `add_library(react_codegen_${name} INTERFACE)`,
   `target_include_directories(react_codegen_${name} INTERFACE "${includeDirectory}")`,
@@ -63,7 +102,7 @@ const componentTargetLines = (
     `add_library(react_codegen_${name} STATIC ${cmakeVariable(`RNL_CODEGEN_${name}_SOURCES`)})`,
     `target_include_directories(react_codegen_${name} PUBLIC ${sourceDirectories.map((directory) => `"${directory}"`).join(" ")})`,
     `target_compile_options(react_codegen_${name} PRIVATE -fexceptions -frtti)`,
-    `target_link_libraries(react_codegen_${name} PUBLIC jsi react_nativemodule_core react_renderer_componentregistry react_renderer_core react_renderer_graphics rrc_view)`,
+    `target_link_libraries(react_codegen_${name} PUBLIC jsi react_nativemodule_core react_renderer_componentregistry react_renderer_core react_renderer_graphics react_renderer_imagemanager rrc_image rrc_view)`,
     `list(APPEND RNL_AUTOLINKED_TARGETS react_codegen_${name})`,
   ];
 };
@@ -240,6 +279,7 @@ export {
   generateAutolinkingCMake,
   generateAutolinkingRegistration,
   readCodegenConfig,
+  selectSharedComponentDescriptors,
   syncGeneratedTree,
   writeFileIfChanged,
 };

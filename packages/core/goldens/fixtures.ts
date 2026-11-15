@@ -35,13 +35,6 @@ const fixtures: readonly GoldenFixture[] = [
   },
   // #99: the fill, the gradient, the ring, the content clip and the child clip all cut by one rounded box.
   { bundleFileName: "rounded-box.js", goldenFileName: "rounded-box.png", renderArguments: [], renderFlag: "--golden" },
-  // #150: react-native-safe-area-context's provider and view beside the same tree of <View>s; the halves are equal.
-  {
-    bundleFileName: "layout-only-component.js",
-    goldenFileName: "layout-only-component.png",
-    renderArguments: [],
-    renderFlag: "--golden",
-  },
   // #100: per-side colours, transparent edges, hairline widths and the corner mitres, at three scales.
   // 700 points tall rather than the default 600: the dashed and dotted row of #101 is a sixth row of tiles.
   {

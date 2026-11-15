@@ -403,20 +403,33 @@ jobs:
       # #147: an unmodified create-react-native-library `cpp-library` (the rendered template in
       # packages/cli/test-fixtures/cpp-library) is autolinked into every host this configure builds. The JSON is
       # the shape `react-native config` prints, with the Android descriptor the template's react-native.config.js
-      # declares; the library itself carries no Linux file. #150: react-native-safe-area-context too, from the
-      # registry tarball as an app installs it, so its own `common/cpp` descriptor is registered unmodified.
+      # declares; the library itself carries no Linux file. #150: react-native-safe-area-context,
+      # react-native-svg and react-native-screens too, from the registry tarballs as an app installs them, so the
+      # descriptors in their own `common/cpp` compile and register unmodified. Their `componentDescriptors` are the
+      # ones each library's react-native.config.js declares for Android, as `react-native config` prints them.
       - name: Scaffold and autolink the C++ libraries
         run: |
           set -euo pipefail
           library="$GITHUB_WORKSPACE/packages/cli/test-fixtures/cpp-library"
           scaffolded_library="$GITHUB_WORKSPACE/build/scaffolded-cpp-library"
-          safe_area_context="$GITHUB_WORKSPACE/build/react-native-safe-area-context"
-          curl -sSfL -o /tmp/rnl-safe-area-context.tgz \
-            https://registry.npmjs.org/react-native-safe-area-context/-/react-native-safe-area-context-5.11.1.tgz
-          echo "ddf7446e0b7a6c2bc453ab8e87a258338c6126bd61a694fc0fc869ee4460d7a1  /tmp/rnl-safe-area-context.tgz" \
-            | sha256sum -c -
-          mkdir -p "$safe_area_context"
-          tar -xzf /tmp/rnl-safe-area-context.tgz -C "$safe_area_context" --strip-components=1
+          registry_library() {
+            local name=$1 version=$2 sha256=$3 directory="$GITHUB_WORKSPACE/build/$1"
+            curl -sSfL -o "/tmp/rnl-$name.tgz" "https://registry.npmjs.org/$name/-/$name-$version.tgz"
+            echo "$sha256  /tmp/rnl-$name.tgz" | sha256sum -c - >&2
+            mkdir -p "$directory"
+            tar -xzf "/tmp/rnl-$name.tgz" -C "$directory" --strip-components=1
+            node -e 'const { dependency } = require(process.argv[1]); const android = dependency.platforms.android;
+              console.log(JSON.stringify({ root: process.argv[2], platforms: { linux: null, android: {
+                cmakeListsPath: require("node:path").resolve(process.argv[2], "android", android.cmakeListsPath),
+                componentDescriptors: android.componentDescriptors } } }));' \
+              "$directory/react-native.config.js" "$directory"
+          }
+          safe_area_context=$(registry_library react-native-safe-area-context 5.11.1 \
+            ddf7446e0b7a6c2bc453ab8e87a258338c6126bd61a694fc0fc869ee4460d7a1)
+          svg=$(registry_library react-native-svg 15.16.1 \
+            6142083abdb5772be857ff2ad196488a032591aeb956750ff9bf0ea52bae77e1)
+          screens=$(registry_library react-native-screens 4.30.1 \
+            04593f281d706615907e8df114288daa5145c4f5360c4743356dd460e979d23a)
           pnpm dlx create-react-native-library@0.63.0 react-native-cpp-smoke \
             --directory "$scaffolded_library" --slug react-native-cpp-smoke \
             --description "C++ autolinking smoke test" --no-local --no-interactive \
@@ -437,11 +450,9 @@ jobs:
               "cmakeListsPath": "$scaffolded_library/android/generated/jni/CMakeLists.txt",
               "cxxModuleCMakeListsModuleName": "react-native-cpp-smoke",
               "cxxModuleCMakeListsPath": "$scaffolded_library/android/CMakeLists.txt",
-              "cxxModuleHeaderName": "CppSmokeImpl"}}}, "react-native-safe-area-context": {
-            "root": "$safe_area_context", "platforms": {"linux": null, "android": {
-              "cmakeListsPath": "$safe_area_context/android/src/main/jni/CMakeLists.txt",
-              "componentDescriptors": ["RNCSafeAreaProviderComponentDescriptor",
-                                       "RNCSafeAreaViewComponentDescriptor"]}}}}}
+              "cxxModuleHeaderName": "CppSmokeImpl"}}},
+            "react-native-safe-area-context": $safe_area_context, "react-native-svg": $svg,
+            "react-native-screens": $screens}}
           EOF
           node scripts/autolink.ts /tmp/rnl-autolink-config.json "build/autolinking-$RNL_PRESET"
 
@@ -534,13 +545,19 @@ jobs:
           if grep -q "\[component\] 'CppLibraryView'" /tmp/rnl-component.log; then exit 1; fi
 
           # #150: react-native-safe-area-context's RNCSafeAreaProvider (codegen's descriptor) and RNCSafeAreaView
-          # (the library's own common/cpp one) mount and lay out their children as Views, and neither is reported
-          # unregistered or as props the scene cannot paint.
+          # (the library's own common/cpp one) mount and lay out their children as Views. Neither is reported
+          # unregistered, which is what an interop fallback would print, or as props the scene cannot paint.
+          # react-native-screens' RNSScreenStackHeaderConfig is created without the "RCTImageLoader" its descriptor
+          # reads aborting the run, and sits at its state's origin rather than below the provider, where Yoga put
+          # it: only screens' own RNSScreenStackHeaderConfigShadowNode::layout moves it there.
           "$binary" --fabric packages/core/test-bundles/layout-only-component.js 2>&1 | tee /tmp/rnl-layout-only.log
-          grep -qF "RNCSafeAreaProvider #20 frame=(400.00, 0.00, 400.00, 600.00)" /tmp/rnl-layout-only.log
-          grep -qF "RNCSafeAreaView #22 frame=(24.00, 24.00, 352.00, 552.00)" /tmp/rnl-layout-only.log
-          grep -qF "View #24 frame=(22.00, 22.00, 308.00, 120.00)" /tmp/rnl-layout-only.log
-          if grep -qE "\[component\] 'RNCSafeArea|\[mounting\]" /tmp/rnl-layout-only.log; then exit 1; fi
+          grep -qF "RNCSafeAreaProvider #2 frame=(0.00, 0.00, 800.00, 544.00)" /tmp/rnl-layout-only.log
+          grep -qF "RNCSafeAreaView #4 frame=(24.00, 24.00, 752.00, 496.00)" /tmp/rnl-layout-only.log
+          grep -qF "View #6 frame=(16.00, 16.00, 720.00, 120.00)" /tmp/rnl-layout-only.log
+          grep -qF "RNSScreenStackHeaderConfig #8 frame=(0.00, 0.00, 800.00, 56.00)" /tmp/rnl-layout-only.log
+          if grep -qE "\[component\] '(RNCSafeArea|RNSScreenStackHeaderConfig)|\[mounting\]" /tmp/rnl-layout-only.log; then
+            exit 1
+          fi
 
           # #23: PlatformConstants answers the vendored React Native version, so a dev bundle sees no mismatch.
           version=$(jq -r .tag scripts/vendor.lock.json | sed 's/^v//')

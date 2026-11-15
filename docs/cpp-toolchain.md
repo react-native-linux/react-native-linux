@@ -1369,11 +1369,15 @@ registered, a built-in's or another library's, rather than letting one descripto
 paints as a `View` because its props derive from `ViewProps`; `LinuxMountingManager` names one whose props do not
 in its diagnostics (#150). An `interfaceOnly` component's descriptor is the library's own C++, in the
 `common/cpp/react/renderer/components/<name>` its podspec and Android CMakeLists compile: its `.cpp` files join
-`react_codegen_<name>`, its `*ComponentDescriptor.h` headers are included, and the descriptors its
-react-native.config.js lists under Android's `componentDescriptors` are appended too. CI autolinks
-react-native-safe-area-context 5.11.1 from its registry tarball and mounts `RNCSafeAreaProvider` and
-`RNCSafeAreaView` (`test-bundles/layout-only-component.js`, golden `layout-only-component.png`, whose two halves a
-`<View>` tree and the library's tree paint identically). The fixture's `CppLibraryView` is the CI proof
+`react_codegen_<name>`, and each descriptor its react-native.config.js lists under Android's `componentDescriptors`
+is appended when codegen generates it or a header there defines it, as a class or a `using` alias; that header is
+included. A declared name nothing defines is skipped with a printed line. Specs are found as upstream codegen finds
+them, in `jsSrcsDir` and its subdirectories. CI autolinks react-native-safe-area-context 5.11.1,
+react-native-svg 15.16.1 and react-native-screens 4.30.1 from their registry tarballs into every host, and mounts
+`RNCSafeAreaProvider`, `RNCSafeAreaView` and screens' `RNSScreenStackHeaderConfig`
+(`test-bundles/layout-only-component.js`). `FabricHost` puts an empty `std::shared_ptr<void>` under
+`"RCTImageLoader"` in its `ContextContainer`, because that descriptor and screens' tabs host read the key in
+`adopt` off Android and only store the pointer. The fixture's `CppLibraryView` is the CI proof
 (`test-bundles/autolinked-component.js`). It is registered when the mount tree names it with its frame, and no
 "`[component] 'CppLibraryView' has no native component registered`" line appears. The interop fallback would lay
 out and paint an unregistered name too, so the frame alone proves nothing.

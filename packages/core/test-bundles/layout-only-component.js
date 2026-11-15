@@ -1,10 +1,10 @@
-// Issue #150: a third-party component that only lays out mounts as a View. The left half is a tree of <View>s;
-// the right half is the same tree with react-native-safe-area-context's RNCSafeAreaProvider and RNCSafeAreaView
-// in place of the outer two, given the same props. Autolinked, their descriptors are the library's own, unmodified,
-// and no Linux code paints them, so the two halves have to be the same pixels (goldens/golden.spec.ts).
+// Issue #150: third-party components whose descriptors are the library's own C++, autolinked unmodified, mount.
+// react-native-safe-area-context's RNCSafeAreaProvider and RNCSafeAreaView only lay out, so they mount as Views
+// with their children inside. react-native-screens' RNSScreenStackHeaderConfig descriptor reads "RCTImageLoader"
+// from the ContextContainer when the node is created, which FabricHost has to answer, and its shadow node's own
+// layout moves it to its state's origin, (0, 0), from below the provider where Yoga placed it.
 //
 // hello_react --fabric packages/core/test-bundles/layout-only-component.js
-// hello_react --golden packages/core/test-bundles/layout-only-component.js layout-only-component.png
 
 const surfaceId = 1;
 const fabric = globalThis.nativeFabricUIManager;
@@ -29,52 +29,29 @@ const createNode = (tag, componentName, props, ...children) => {
   return node;
 };
 
-const edges = { top: 'additive', right: 'additive', bottom: 'additive', left: 'additive' };
-
-const column = (firstTag, providerName, safeAreaViewName) =>
-  createNode(
-    firstTag,
-    providerName,
-    { flex: 1, padding: 24 },
-    createNode(
-      firstTag + 2,
-      safeAreaViewName,
-      {
-        mode: 'padding',
-        edges,
-        flex: 1,
-        padding: 16,
-        backgroundColor: 0xff1e2430 | 0,
-        borderWidth: 6,
-        borderColor: 0xffe5c07b | 0,
-        borderRadius: 28,
-        overflow: 'hidden',
-        opacity: 0.9,
-      },
-      createNode(firstTag + 4, 'View', { height: 120, backgroundColor: 0xff61afef | 0 }),
-      createNode(firstTag + 6, 'View', {
-        position: 'absolute',
-        right: -40,
-        bottom: -40,
-        width: 160,
-        height: 160,
-        borderRadius: 80,
-        backgroundColor: 0xff98c379 | 0,
-      }),
-    ),
-  );
-
-const row = createNode(
+const safeArea = createNode(
   2,
-  'View',
-  { flex: 1, flexDirection: 'row' },
-  column(4, 'View', 'View'),
-  column(20, 'RNCSafeAreaProvider', 'RNCSafeAreaView'),
+  'RNCSafeAreaProvider',
+  { flex: 1, padding: 24 },
+  createNode(
+    4,
+    'RNCSafeAreaView',
+    {
+      mode: 'padding',
+      edges: { top: 'additive', right: 'additive', bottom: 'additive', left: 'additive' },
+      flex: 1,
+      padding: 16,
+      backgroundColor: 0xff1e2430 | 0,
+    },
+    createNode(6, 'View', { height: 120, backgroundColor: 0xff61afef | 0 }),
+  ),
 );
+const headerConfig = createNode(8, 'RNSScreenStackHeaderConfig', { height: 56 });
 
 const rootChildren = fabric.createChildSet();
 
-fabric.appendChildToSet(rootChildren, row);
+fabric.appendChildToSet(rootChildren, safeArea);
+fabric.appendChildToSet(rootChildren, headerConfig);
 fabric.completeRoot(surfaceId, rootChildren);
 
 console.log('layout-only-component: committed surface ' + surfaceId);

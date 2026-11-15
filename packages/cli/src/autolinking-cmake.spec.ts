@@ -5,6 +5,7 @@ import {
   generateAutolinkingCMake,
   generateAutolinkingRegistration,
   readCodegenConfig,
+  selectSharedComponentDescriptors,
   syncGeneratedTree,
   writeFileIfChanged,
 } from "./autolinking-cmake.ts";
@@ -76,7 +77,7 @@ describe("generateAutolinkingCMake", () => {
         `add_library(react_codegen_FixtureSpec STATIC $${"{"}RNL_CODEGEN_FixtureSpec_SOURCES})`,
         'target_include_directories(react_codegen_FixtureSpec PUBLIC "/app/build/autolinking/codegen/FixtureSpec")',
         "target_compile_options(react_codegen_FixtureSpec PRIVATE -fexceptions -frtti)",
-        "target_link_libraries(react_codegen_FixtureSpec PUBLIC jsi react_nativemodule_core react_renderer_componentregistry react_renderer_core react_renderer_graphics rrc_view)",
+        "target_link_libraries(react_codegen_FixtureSpec PUBLIC jsi react_nativemodule_core react_renderer_componentregistry react_renderer_core react_renderer_graphics react_renderer_imagemanager rrc_image rrc_view)",
         "list(APPEND RNL_AUTOLINKED_TARGETS react_codegen_FixtureSpec)",
         "",
         "# codegen: shared",
@@ -84,7 +85,7 @@ describe("generateAutolinkingCMake", () => {
         `add_library(react_codegen_shared STATIC $${"{"}RNL_CODEGEN_shared_SOURCES})`,
         'target_include_directories(react_codegen_shared PUBLIC "/app/build/autolinking/codegen/shared" "/node_modules/shared/common/cpp")',
         "target_compile_options(react_codegen_shared PRIVATE -fexceptions -frtti)",
-        "target_link_libraries(react_codegen_shared PUBLIC jsi react_nativemodule_core react_renderer_componentregistry react_renderer_core react_renderer_graphics rrc_view)",
+        "target_link_libraries(react_codegen_shared PUBLIC jsi react_nativemodule_core react_renderer_componentregistry react_renderer_core react_renderer_graphics react_renderer_imagemanager rrc_image rrc_view)",
         "list(APPEND RNL_AUTOLINKED_TARGETS react_codegen_shared)",
         "",
         "# @scope/explicit: explicit",
@@ -162,6 +163,34 @@ describe("generateAutolinkingRegistration for a library with its own common/cpp"
         registrationLine("SharedViewComponentDescriptor"),
       ]),
     );
+  });
+});
+
+describe("selectSharedComponentDescriptors", () => {
+  it("includes the headers that define a declared descriptor as a class or an alias, whatever their names", () => {
+    expect(
+      selectSharedComponentDescriptors(
+        ["CircleComponentDescriptor", "ImageComponentDescriptor", "GeneratedComponentDescriptor"],
+        ["GeneratedComponentDescriptor"],
+        {
+          "ComponentDescriptors.h": "using CircleComponentDescriptor =\n    Concrete<CircleShadowNode>;",
+          "ImageComponentDescriptor.h": "class ImageComponentDescriptor final\n    : public Concrete",
+          "ShadowNodes.h": "class CircleComponentDescriptor;\nclass ImageShadowNode;",
+        },
+      ),
+    ).toEqual({
+      descriptors: ["GeneratedComponentDescriptor", "CircleComponentDescriptor", "ImageComponentDescriptor"],
+      headers: ["ComponentDescriptors.h", "ImageComponentDescriptor.h"],
+      undefinedDescriptors: [],
+    });
+  });
+
+  it("returns a declared descriptor that no header defines instead of registering it", () => {
+    expect(
+      selectSharedComponentDescriptors(["SvgViewAndroidComponentDescriptor"], [], {
+        "ComponentDescriptors.h": "using SvgViewAndroidComponentDescriptorBase = Base;",
+      }),
+    ).toEqual({ descriptors: [], headers: [], undefinedDescriptors: ["SvgViewAndroidComponentDescriptor"] });
   });
 });
 

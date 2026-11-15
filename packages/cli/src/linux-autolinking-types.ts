@@ -49,9 +49,9 @@ type AutolinkedLibrary = Extract<AutolinkingVerdict, { readonly kind: "linked" }
 /**
  * A dependency's codegen output: its `codegenConfig.name`, and the component descriptors the host registers —
  * those codegen generated, for every component spec that is not `interfaceOnly` (#149), and, when the library ships
- * its own component C++ in `common/cpp`, the ones its react-native.config.js lists as Android's
- * `componentDescriptors` (#150). `sharedSourceDirectory` is that `common/cpp`, and `sharedDescriptorHeaders` the
- * headers in its `react/renderer/components/<name>` that declare a descriptor.
+ * its own component C++ in `common/cpp`, the ones its react-native.config.js lists as `componentDescriptors` that
+ * a header there defines (#150). `sharedSourceDirectory` is that `common/cpp`, and `sharedDescriptorHeaders` the
+ * headers in its `react/renderer/components/<name>` that define them.
  */
 interface CodegenLibrary {
   readonly componentDescriptors: readonly string[];

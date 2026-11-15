@@ -70,7 +70,9 @@ background, borders, radius, opacity, transform, clipping, hit testing and `poin
 `View`'s, with no Linux code ([#150](https://github.com/react-native-linux/react-native-linux/issues/150)).
 Autolinking compiles `common/cpp/react/renderer/components/<codegenConfig.name>/` into
 `react_codegen_<name>` and registers the descriptors codegen generated plus the ones your
-`react-native.config.js` lists under Android's `componentDescriptors`. A component whose props do not
+`react-native.config.js` lists under Android's `componentDescriptors` that a header in that directory
+defines, as a class or a `using` alias. A declared name nothing defines is skipped, and autolinking
+prints a line saying so. A component whose props do not
 extend `ViewProps` mounts as nothing, and a `[mounting]` log line names it. One that paints something a
 `View` cannot — shapes, masks, blurs — is Tier B, and its paint is ours
 ([#151](https://github.com/react-native-linux/react-native-linux/issues/151)).

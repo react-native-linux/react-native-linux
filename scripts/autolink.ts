@@ -13,17 +13,19 @@ import {
   generateAutolinkingCMake,
   generateAutolinkingRegistration,
   readCodegenConfig,
+  selectSharedComponentDescriptors,
   syncGeneratedTree,
   writeFileIfChanged,
 } from "@react-native-linux/cli/autolinking-cmake.ts";
 import { FlowParser } from "@react-native/codegen/lib/parsers/flow/parser.js";
-import type { SchemaType } from "@react-native/codegen/lib/CodegenSchema.js";
 import { TypeScriptParser } from "@react-native/codegen/lib/parsers/typescript/parser.js";
+import { collectSpecFilePaths } from "./codegen-core/generate-core-artifacts.ts";
 import { generate } from "@react-native/codegen/lib/generators/RNCodegen.js";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 type ReactNativeConfig = ReturnType<typeof parseReactNativeConfig>;
+type SpecModules = ReturnType<FlowParser["parseFile"]>["modules"];
 
 interface AutolinkingRun {
   readonly applicationConfigPath: string;
@@ -35,7 +37,6 @@ interface AutolinkingRun {
 const COMMAND_ARGUMENTS_START = 2;
 const NO_COMPONENTS = 0;
 const sourceFilePattern = /\.(?:c|cc|cpp|cxx|h|hpp|m|mm)$/u;
-const specFilePattern = /^(?:Native\w+|\w+NativeComponent)\.(?:js|ts|tsx)$/u;
 const flowParser = new FlowParser();
 const typeScriptParser = new TypeScriptParser();
 
@@ -59,20 +60,28 @@ const importApplicationConfig = async (applicationConfigPath: string): Promise<u
   return typeof module === "object" && module !== null && "default" in module ? module.default : null;
 };
 
-const readSpecModules = (specDirectory: string): SchemaType["modules"] => {
-  const modules: SchemaType["modules"] = {};
-  const specNames = readdirSync(specDirectory).filter((name) => specFilePattern.test(name));
+/** Upstream codegen's discovery: every spec under the library's `jsSrcsDir`, its subdirectories included. */
+const readSpecModules = (specDirectory: string): SpecModules => {
+  const modules: SpecModules = {};
+  const specPaths = collectSpecFilePaths(specDirectory, {
+    listDirectory: (directoryPath) =>
+      readdirSync(directoryPath, { withFileTypes: true }).map((entry) => ({
+        isDirectory: entry.isDirectory(),
+        name: entry.name,
+      })),
+    readFile: (filePath) => readFileSync(filePath, "utf8"),
+  });
 
-  for (const specName of specNames.toSorted()) {
-    const parser = specName.endsWith(".js") ? flowParser : typeScriptParser;
+  for (const specPath of specPaths) {
+    const parser = specPath.endsWith(".js") ? flowParser : typeScriptParser;
 
-    Object.assign(modules, parser.parseFile(path.join(specDirectory, specName)).modules);
+    Object.assign(modules, parser.parseFile(specPath).modules);
   }
 
   return modules;
 };
 
-type Schema = SchemaType["modules"][string];
+type Schema = SpecModules[string];
 
 const generatedComponentDescriptors = (schemas: readonly Schema[]): readonly string[] =>
   schemas.flatMap((schema) =>
@@ -90,12 +99,13 @@ const generatorsFor = (schemas: readonly Schema[]): ("componentsIOS" | "modulesC
 
 /**
  * #150: the component C++ a library ships for every platform — `RNCSafeAreaViewShadowNode` and its descriptor,
- * react-native-screens' and react-native-keyboard-controller's — lives in `common/cpp`, the directory their iOS
- * podspecs and Android CMakeLists both compile. Its descriptors are the ones the library's react-native.config.js
- * lists (under `linux`, else `android`), because a header's name need not be its class's.
+ * react-native-svg's and react-native-screens' — lives in `common/cpp`, the directory their iOS podspecs and
+ * Android CMakeLists both compile. The descriptors registered are the ones its react-native.config.js declares (under
+ * `linux`, else `android`) that codegen generates or one of that directory's headers defines; header names are not
+ * class names, so each header's text decides.
  */
 const sharedComponentSources = (
-  { platforms: { android = null, linux = null }, root }: AutolinkingDependency,
+  { name: packageName, platforms: { android = null, linux = null }, root }: AutolinkingDependency,
   name: string,
   generatedDescriptors: readonly string[],
 ): CodegenLibrary => {
@@ -111,16 +121,24 @@ const sharedComponentSources = (
     };
   }
 
-  const declaredDescriptors = linux?.componentDescriptors ?? android?.componentDescriptors ?? [];
+  const headerContents = Object.fromEntries(
+    readdirSync(sharedComponentDirectory)
+      .filter((fileName) => fileName.endsWith(".h"))
+      .map((fileName) => [fileName, readFileSync(path.join(sharedComponentDirectory, fileName), "utf8")]),
+  );
+  const { descriptors, headers, undefinedDescriptors } = selectSharedComponentDescriptors(
+    linux?.componentDescriptors ?? android?.componentDescriptors ?? [],
+    generatedDescriptors,
+    headerContents,
+  );
 
-  return {
-    componentDescriptors: [...new Set([...generatedDescriptors, ...declaredDescriptors])],
-    name,
-    sharedDescriptorHeaders: readdirSync(sharedComponentDirectory)
-      .filter((fileName) => fileName.endsWith("ComponentDescriptor.h"))
-      .toSorted(),
-    sharedSourceDirectory,
-  };
+  for (const descriptor of undefinedDescriptors) {
+    process.stdout.write(
+      `${packageName}: ${descriptor} skipped: neither codegen nor a header in ${sharedComponentDirectory} defines it\n`,
+    );
+  }
+
+  return { componentDescriptors: descriptors, name, sharedDescriptorHeaders: headers, sharedSourceDirectory };
 };
 
 /**
