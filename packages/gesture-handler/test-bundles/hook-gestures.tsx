@@ -1,13 +1,16 @@
 import { useState } from "react";
 import { AppRegistry, ScrollView, View } from "react-native";
 import {
+  Gesture,
   GestureDetector,
   GestureHandlerRootView,
+  InterceptingGestureDetector,
   useExclusiveGestures,
   useNativeGesture,
   usePanGesture,
   useTapGesture,
 } from "react-native-gesture-handler";
+import { scheduleOnRN } from "react-native-worklets";
 
 const doubleTapCount = 2;
 const doubleTapDelay = 250;
@@ -97,11 +100,46 @@ const NativeScroll = (): React.JSX.Element => {
   );
 };
 
+const report = (message: string): void => {
+  console.log(message);
+};
+
+// No runOnJS: the callback is a worklet on the UI runtime, reached through the Reanimated handler that
+// InterceptingGestureDetector composes and routes by event name.
+const InterceptedPan = (): React.JSX.Element => {
+  const pan = usePanGesture({
+    onDeactivate: (event) => {
+      scheduleOnRN(report, `intercept-pan: end translationX=${String(Math.round(event.translationX))}`);
+    },
+  });
+
+  return (
+    <InterceptingGestureDetector gesture={pan}>
+      <View style={{ backgroundColor: "#a855f7", height: 80, left: 550, position: "absolute", top: 100, width: 200 }} />
+    </InterceptingGestureDetector>
+  );
+};
+
+// A zero-size view is not a display: contents detector: a tap on the child it overflows into is outside its bounds.
+const anchorTap = Gesture.Tap()
+  .runOnJS(true)
+  .onEnd(() => console.log("anchor-tap: tapped"));
+
+const ZeroSizeAnchor = (): React.JSX.Element => (
+  <GestureDetector gesture={anchorTap}>
+    <View style={{ height: 0, left: 550, position: "absolute", top: 250, width: 0 }}>
+      <View style={{ backgroundColor: "#ef4444", height: 80, left: 0, position: "absolute", top: 0, width: 200 }} />
+    </View>
+  </GestureDetector>
+);
+
 const HookGesturesApp = (): React.JSX.Element => (
   <GestureHandlerRootView onLayout={() => console.log("hook-gestures: committed")} style={{ flex: 1 }}>
     <PannedBox />
     <TappedBox />
     <NativeScroll />
+    <InterceptedPan />
+    <ZeroSizeAnchor />
   </GestureHandlerRootView>
 );
 

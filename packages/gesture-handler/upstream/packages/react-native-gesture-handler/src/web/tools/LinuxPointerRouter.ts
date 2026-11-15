@@ -40,7 +40,10 @@ export interface LinuxPointerEvent {
 export class LinuxView {
   private readonly listeners = new Map<string, Set<PointerListener>>();
 
-  constructor(public readonly element: LinuxElement) {}
+  constructor(
+    public readonly element: LinuxElement,
+    private readonly isContents: boolean
+  ) {}
 
   addEventListener(type: string, listener: PointerListener): void {
     if (!this.listeners.has(type)) {
@@ -55,7 +58,9 @@ export class LinuxView {
   }
 
   getBoundingClientRect(): LinuxRect {
-    return effectiveBoundingRect(this.element);
+    return this.isContents
+      ? contentsBoundingRect(this.element)
+      : this.element.getBoundingClientRect();
   }
 
   getAttribute(_name: string): string | null {
@@ -72,15 +77,12 @@ const hasBox = ({ left, top, right, bottom }: LinuxRect) =>
 
 // The hook API's detector is a display: contents view, which has no box of its own: its bounds are its children's,
 // as the web engine's getEffectiveBoundingRect derives them.
-function effectiveBoundingRect(element: LinuxElement): LinuxRect {
-  const rect = element.getBoundingClientRect();
-  if (hasBox(rect)) {
-    return rect;
-  }
-
-  const childRects = Array.from(element.children ?? [], effectiveBoundingRect).filter(hasBox);
+function contentsBoundingRect(element: LinuxElement): LinuxRect {
+  const childRects = Array.from(element.children ?? [], (child) =>
+    child.getBoundingClientRect()
+  ).filter(hasBox);
   if (childRects.length === 0) {
-    return rect;
+    return element.getBoundingClientRect();
   }
 
   return {

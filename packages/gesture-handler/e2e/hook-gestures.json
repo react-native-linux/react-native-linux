@@ -28,6 +28,19 @@
     "click 200 460",
     "sleep 400",
     "wheel up 6",
+    "sleep 400",
+    "move 600 140",
+    "button left press",
+    "sleep 50",
+    "move 620 141",
+    "sleep 50",
+    "move 650 142",
+    "sleep 50",
+    "move 700 143",
+    "sleep 50",
+    "button left release",
+    "sleep 400",
+    "click 650 290",
     "sleep 1000"
   ],
   "expect": [
@@ -39,7 +52,14 @@
     "hook-tap: double taps=1 single taps=1",
     "hook-scroll: scrolled=true",
     "hook-scroll: begin 1",
-    "hook-scroll: scrolled=false"
+    "hook-scroll: scrolled=false",
+    "intercept-pan: end translationX="
   ],
-  "reject": ["hook-tap: single taps=2", "hook-tap: double taps=2", "hook-scroll: begin 2", "hook-scroll: active"]
+  "reject": [
+    "hook-tap: single taps=2",
+    "hook-tap: double taps=2",
+    "hook-scroll: begin 2",
+    "hook-scroll: active",
+    "anchor-tap: tapped"
+  ]
 }

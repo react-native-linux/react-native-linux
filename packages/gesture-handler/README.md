@@ -44,21 +44,27 @@ callbacks (`REANIMATED_WORKLET`) are #95's; the hook API's run as described belo
 (`usePanGesture`, `useNativeGesture`, …, and `ReanimatedSwipeable`, which is built on it) renders through
 `HostGestureDetector`, a native component on Android and iOS. On Linux, `HostGestureDetector.linux.tsx` is the web
 detector, a `display: contents` view that attaches the handlers to itself (or, for a Native gesture, to its child).
-That view has no box of its own, so `LinuxPointerRouter` bounds a boxless view by its children, as the web engine's
-`getEffectiveBoundingRect` does.
+That view has no box of its own, so `GestureHandlerLinuxDelegate` marks a handler attached to its own detector view,
+and `LinuxPointerRouter` bounds that view by its children, as the web engine's `getEffectiveBoundingRect` does. Any
+other view keeps its own bounds, even an empty one.
 
 A hook gesture with worklet callbacks renders through `ReanimatedNativeDetector`. On Android and iOS, Reanimated
 registers its worklet handler with the native detector view. `ReanimatedNativeDetector.linux.tsx` instead schedules
-each event the engine sends onto the UI runtime, with a copy of the event: the engine reuses an activation's
-state-change event for the update after it. A SharedValue in a hook gesture's config is pushed from the UI runtime,
+each event the engine sends onto the UI runtime, flattened and named as Reanimated's web `jsListener` sends it
+(`{ ...nativeEvent, eventName }`). The hooks key each gesture's last update by the event's `handlerTag`, and the
+composed handler of `InterceptingGestureDetector` routes by `eventName`. The flat event is also a copy, which matters
+because the engine reuses an activation's state-change event for the update after it. A SharedValue in a hook gesture's config is pushed from the UI runtime,
 where Android and iOS answer with a JSI host function; `NativeProxy.linux.ts` sends that update back to the React
 Native runtime, where the Linux module lives.
 
 The `gesture-hook-api` e2e drives `usePanGesture` through began, active and end, and moves its view with the
 translation. A `useExclusiveGestures` double/single tap pair arbitrates as the builder pair does, and
-`useNativeGesture` over a `ScrollView` begins on a click while the wheel keeps scrolling. In
-`gesture-reanimated-swipeable`, a drag on a `ReanimatedSwipeable` row (the subpath T3 Code imports) runs its worklets
-on the UI runtime, and the row springs open on its right actions.
+`useNativeGesture` over a `ScrollView` begins on a click while the wheel keeps scrolling. An
+`InterceptingGestureDetector`'s worklet pan ends on the UI runtime, and a builder tap on a zero-size view rejects a
+click on the child it overflows into. In `gesture-reanimated-swipeable`, a `ReanimatedSwipeable` row (the subpath T3
+Code imports) sits in a `ScrollView` under a `useNativeGesture` detector, as in T3 Code's thread list, and a drag
+springs it open on its right actions. Beside it, a toast-like worklet pan with `activeOffsetX` and `failOffsetY`
+fails on a vertical drag and ends on a horizontal one.
 
 The `gesture-pan-over-pressable` e2e verifies mouse drags report upstream `PointerType.MOUSE`. Wheel input before
 and between pointer presses must not begin Pan recognition or create another press. Touchpad and touchscreen
@@ -114,4 +120,4 @@ pnpm upstream:check gesture-handler            # prove the vendored tree still m
 | `0002-linux-pointer-ownership` | Tracks which gestures are active, and makes the Linux root view claim the responder while any is | The same as `0001` |
 | `0003-linux-native-view` | Skips the `rnghtext` attribute and the DOM lifecycle events for a Native recognizer on a Linux view | The same as `0001` |
 | `0004-linux-shared-value-config` | Adds `NativeProxy.linux.ts`: the web proxy, with SharedValue config updates scheduled back onto the React Native runtime | The same as `0001` |
-| `0005-linux-hook-detectors` | Adds `HostGestureDetector.linux.tsx` and `ReanimatedNativeDetector.linux.tsx` for the hook API, and bounds a boxless view by its children | The same as `0001` |
+| `0005-linux-hook-detectors` | Adds `HostGestureDetector.linux.tsx` and `ReanimatedNativeDetector.linux.tsx` for the hook API, and bounds a detector's own `display: contents` view by its children | The same as `0001` |

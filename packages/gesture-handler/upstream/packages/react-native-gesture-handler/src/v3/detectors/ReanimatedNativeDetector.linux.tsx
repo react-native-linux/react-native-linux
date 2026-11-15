@@ -6,9 +6,10 @@ import HostGestureDetector, {
 } from './HostGestureDetector';
 
 // Linux recognizes on the React Native runtime, so no native view exists for Reanimated to register the worklet
-// handler with. The detector schedules each event onto the UI runtime instead, where a native view's event would
-// have reached it. The UI runtime reads the event later, and the engine reuses an activation's state-change event
-// for the update that follows it, clearing its oldState, so each event is copied when it is sent.
+// handler with. The detector schedules each event onto the UI runtime instead, flattened and named the way
+// Reanimated's web jsListener hands a native view's event to the worklet: the handlers read handlerTag at the top
+// level, and a composed handler routes by eventName. The flattening also copies the event, which the UI runtime
+// reads later: the engine reuses an activation's state-change event for the update after it, clearing its oldState.
 export function ReanimatedNativeDetector({
   onGestureHandlerReanimatedEvent,
   ...props
@@ -16,17 +17,26 @@ export function ReanimatedNativeDetector({
   const { workletEventHandler } = onGestureHandlerReanimatedEvent as unknown as {
     workletEventHandler: { worklet: (event: object) => void };
   };
-  const dispatch = ({ nativeEvent }: { nativeEvent: object }) =>
-    Worklets?.scheduleOnUI(workletEventHandler.worklet, {
-      nativeEvent: { ...nativeEvent },
-    });
+  const dispatch =
+    (eventName: string) =>
+    ({ nativeEvent }: { nativeEvent: object }) =>
+      Worklets?.scheduleOnUI(workletEventHandler.worklet, {
+        ...nativeEvent,
+        eventName,
+      });
 
   return (
     <HostGestureDetector
       {...props}
-      onGestureHandlerReanimatedEvent={dispatch}
-      onGestureHandlerReanimatedStateChange={dispatch}
-      onGestureHandlerReanimatedTouchEvent={dispatch}
+      onGestureHandlerReanimatedEvent={dispatch(
+        'onGestureHandlerReanimatedEvent'
+      )}
+      onGestureHandlerReanimatedStateChange={dispatch(
+        'onGestureHandlerReanimatedStateChange'
+      )}
+      onGestureHandlerReanimatedTouchEvent={dispatch(
+        'onGestureHandlerReanimatedTouchEvent'
+      )}
     />
   );
 }
