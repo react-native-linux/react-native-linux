@@ -1064,10 +1064,11 @@ inline bool MutationNode::isMutationNode() {
 void LayoutAnimationsProxy_Legacy::startSurface(const ShadowTree &shadowTree) {
   const auto surfaceId = shadowTree.getSurfaceId();
   const auto mountingCoordinator = shadowTree.getMountingCoordinator();
+  // Read before `mutex`: pullTransaction holds the coordinator's lock while it takes `mutex`.
+  const auto baseRevision = mountingCoordinator->getBaseRevision();
   {
     auto lock = std::unique_lock<std::recursive_mutex>(mutex);
     surfaceContext_.try_emplace(surfaceId);
-    const auto baseRevision = mountingCoordinator->getBaseRevision();
     if (baseRevision.rootShadowNode) {
       const auto &size = baseRevision.rootShadowNode->getLayoutMetrics().frame.size;
       surfaceManager.updateWindow(surfaceId, size.width, size.height);

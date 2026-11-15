@@ -42,6 +42,7 @@ accident. A patch that upstream merges is deleted on the bump that first contain
 | Patch | What it changes | Upstream ask | Deletion trigger |
 | --- | --- | --- | --- |
 | `0001-generic-platform-synchronous-props` | On a platform that is neither Android nor Apple, `SynchronouslyUpdateUIPropsFunction` takes Apple's `(int, const folly::dynamic&)` shape and `applySynchronousUpdates` calls it the Apple way. Without it `PlatformDepMethodsHolder.h` does not compile, and the synchronous props batch would be dropped. | RFC ask 1 (`docs/research/animation-on-linux.md`, appendix A) | The bump to a release whose `PlatformDepMethodsHolder.h` has an `#else` branch. |
+| `0002-layout-animations-start-surface-lock-order` | `LayoutAnimationsProxy_Legacy::startSurface` reads the mounting coordinator's base revision before it takes its own mutex. `pullTransaction` takes the two in the other order, so a surface the commit hook first sees while that surface mounts on another thread could deadlock; TSan reports the inversion when the proxy attaches to a running surface (#140). | Upstream issue to file: the same order inversion exists on every platform. | The bump to a release whose `startSurface` no longer calls into the coordinator under `mutex`. |
 
 ## Conformance
 

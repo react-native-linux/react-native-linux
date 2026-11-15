@@ -175,6 +175,7 @@ protected:
             return true;
         });
         uiRuntime_.reset();
+        fabricHost_->stopSurface();
         reactHost_.drainJavaScriptThread();
         fabricHost_.reset();
         reactHost_.drainJavaScriptThread();
