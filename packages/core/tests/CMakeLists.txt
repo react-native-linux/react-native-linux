@@ -334,6 +334,10 @@ target_sources(rnl_core_tests
         ${CMAKE_CURRENT_SOURCE_DIR}/../src/AsyncStorage.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../src/I18n.cpp)
 target_link_libraries(rnl_core_tests PRIVATE SQLite::SQLite3)
+# #139: Reanimated's platform contract on Linux, against the vendored header it fills.
+target_sources(rnl_core_tests PRIVATE ReanimatedPlatformTest.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../src/ReanimatedPlatform.cpp)
+target_include_directories(rnl_core_tests
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../reanimated/upstream/packages/react-native-reanimated/Common/cpp)
 target_compile_options(rnl_core_tests PRIVATE -Wall -Wextra -fexceptions -frtti)
 target_include_directories(rnl_core_tests
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src ${RNL_UPSTREAM_ANIMATED_TESTS_DIR})

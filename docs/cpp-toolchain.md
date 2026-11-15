@@ -1319,6 +1319,32 @@ that thread, and it is compiled into `rnl_worklets`, which `rnl_react_core` now 
   Generating library specs is the autolinking driver's job, which is #137. The worklets Babel plugin and Metro
   resolution are #137 as well, so the `runOnUI`/`runOnJS` end-to-end test lands there.
 
+## react-native-reanimated (#139)
+
+`rnl_reanimated` compiles Reanimated's shared C++ (`Common/cpp/reanimated`, 104 translation units at `4.6.0`) from
+the vendored `packages/reanimated/upstream`, with that package's patch queue applied, plus `src/ReanimatedPlatform.cpp`.
+It is built like `rnl_worklets`: `target_compile_reactnative_options` (`-Wall -Werror`, clean), `REANIMATED_VERSION`
+and `REANIMATED_FEATURE_FLAGS` from the vendored `package.json` and `src/featureFlags/staticFlags.json`, and
+`REACT_NATIVE_VERSION_MINOR`/`_PATCH` from `scripts/vendor.lock.json`, because `Common/cpp` switches to React Native's
+animation backend on them. The shared-transition boundary's codegen props, which the layout animations include,
+are generated from the vendored spec at build time by `scripts/codegen-spec.ts`.
+
+**The compile-only guard.** Linux defines neither `ANDROID` nor `__APPLE__`, so building `rnl_reanimated` is the
+guard: the native job's `dev` entry builds it on every pull request, React Native and Reanimated bumps included, and
+`next-minor.yml` builds it against the next React Native minor. An upstream two-way platform `#ifdef` fails the
+build instead of an animation. Nothing links the target yet; the module proxy host (#140) will.
+
+**Patches:** one, listed with its upstream ask in `packages/reanimated/README.md`. On a platform that is neither
+Android nor Apple, `SynchronouslyUpdateUIPropsFunction` takes Apple's `(int, const folly::dynamic&)` shape, which is
+`IMountingManager::synchronouslyUpdateViewOnUIThread`'s, and `applySynchronousUpdates` hands it the batch the Apple
+way instead of dropping it.
+
+`makePlatformDepMethodsHolder` (`src/ReanimatedPlatform.*`) fills the platform contract. Its docblock is the one
+table of which members are real (`requestRender` on the frame queue, `getAnimationTimestamp` on `steady_clock`,
+synchronous props to the mounting manager, `maybeFlushUIUpdatesQueue` as a frame request) and which are stubs that
+throw an error naming themselves. `ReanimatedPlatformTest` in `rnl_core_tests` covers every member, inside the
+coverage gate.
+
 ## React Native bump procedure (#58)
 
 React Native's stability promise covers its JavaScript API, not its C++ or out-of-tree platforms, and this platform
@@ -8534,7 +8560,7 @@ whole module type surface: int, string and memberless enums, unions, nested and 
 ArrayBuffers, host objects, callbacks, subscriptions, promises, event emitters and device events. Its spec,
 implementation and GoogleTest suite are outside the sparse checkout, so `tests/hermes/CMakeLists.txt` downloads
 the four files at the vendored tag, pinned by SHA-256; a React Native bump fails at configure until the hashes are
-re-read. `scripts/codegen-cxx-module.ts` turns the spec into `AppSpecsJSI.h` at build time, so the generated
+re-read. `scripts/codegen-spec.ts` turns the spec into `AppSpecsJSI.h` at build time, so the generated
 bindings always come from the pinned `@react-native/codegen`. Upstream's suite calls the C++ methods directly;
 `CxxModuleTypeSurfaceTest` calls every method from JavaScript, so each type crosses JSI in both directions under
 ASan and TSan. It leaves out two ArrayBuffer methods that settle on a detached thread, which

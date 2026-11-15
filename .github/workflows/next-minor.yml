@@ -108,6 +108,11 @@ jobs:
         if: steps.next.outputs.tag != ''
         run: cmake --build build/dev --target hello_react
 
+      # #139: Reanimated's Common/cpp against the next minor, the compile-only guard on the bump path.
+      - name: Build rnl_reanimated
+        if: steps.next.outputs.tag != ''
+        run: cmake --build build/dev --target rnl_reanimated
+
       - name: Compare golden images
         if: steps.next.outputs.tag != ''
         run: pnpm test:golden
