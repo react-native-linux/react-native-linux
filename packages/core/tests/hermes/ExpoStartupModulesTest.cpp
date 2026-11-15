@@ -55,13 +55,11 @@ std::string settledTrace(const std::string& probe) {
 folly::dynamic shellOutput(const std::string& command) {
     std::array<char, PATH_MAX> buffer{};
     std::string output;
-    FILE* pipe = popen(command.c_str(), "r");
+    const std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(command.c_str(), "r"), &pclose);
 
-    while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+    while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
         output += buffer.data();
     }
-
-    pclose(pipe);
 
     if (!output.empty() && output.back() == '\n') {
         output.pop_back();
@@ -246,7 +244,8 @@ TEST(ExpoStartupModulesTest, DeviceAnswersTheMachine) {
     static_cast<void>(gethostname(hostName.data(), hostName.size() - 1));
     static_cast<void>(uname(&system));
 
-    const std::string osRelease = "{ . /etc/os-release 2>/dev/null || . /usr/lib/os-release; } && printf '%s' \"$";
+    const std::string osRelease = "{ unset NAME VERSION_ID BUILD_ID; "
+                                  ". /etc/os-release 2>/dev/null || . /usr/lib/os-release; } && printf '%s' \"$";
     const folly::dynamic osName = shellOutput(osRelease + "NAME\"");
     const folly::dynamic expected = folly::dynamic::object(
         "methods",
