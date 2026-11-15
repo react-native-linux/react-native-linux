@@ -9,6 +9,7 @@
 #include "HostTimerRegistry.h"
 #include "I18n.h"
 #include "PlatformColor.h"
+#include "ReanimatedModule.h"
 #include "WorkletsModule.h"
 
 #include <FBReactNativeSpec/FBReactNativeSpecJSI.h>
@@ -1006,6 +1007,7 @@ TurboModuleRegistry::TurboModuleRegistry(
       keyValueStore_(std::make_shared<KeyValueStore>()), sqliteDatabases_(std::make_unique<SQLiteDatabases>()),
       i18nModel_(std::make_shared<I18nModel>(localeFromEnvironment(), keyValueStore_)),
       bundleUrl_(std::make_shared<std::string>()), workletsModule_(std::make_shared<LinuxWorkletsModule>(jsInvoker)),
+      reanimatedModule_(std::make_shared<LinuxReanimatedModule>(jsInvoker, workletsModule_)),
       reloadRequested_(std::make_shared<std::atomic<bool>>(false)) {
     appearanceModel_->setChangeListener([appearanceModule = appearanceModule_.get()](ColorScheme colorScheme) {
         appearanceModule->emitAppearanceChange(colorScheme);
@@ -1020,6 +1022,8 @@ TurboModuleRegistry::TurboModuleRegistry(
                              [linkingModule = linkingModule_]() { return linkingModule; });
     moduleFactories_.emplace(LinuxWorkletsModule::kModuleName,
                              [workletsModule = workletsModule_]() { return workletsModule; });
+    moduleFactories_.emplace(LinuxReanimatedModule::kModuleName,
+                             [reanimatedModule = reanimatedModule_]() { return reanimatedModule; });
     moduleFactories_.emplace(LinuxAsyncStorageModule::kModuleName, [jsInvoker, keyValueStore = keyValueStore_]() {
         return std::make_shared<LinuxAsyncStorageModule>(jsInvoker, keyValueStore);
     });
@@ -1114,6 +1118,8 @@ SQLiteDatabases& TurboModuleRegistry::sqliteDatabases() noexcept { return *sqlit
 I18nModel& TurboModuleRegistry::i18n() noexcept { return *i18nModel_; }
 
 LinuxWorkletsModule& TurboModuleRegistry::worklets() noexcept { return *workletsModule_; }
+
+LinuxReanimatedModule& TurboModuleRegistry::reanimated() noexcept { return *reanimatedModule_; }
 
 void TurboModuleRegistry::install(facebook::jsi::Runtime& runtime) {
     installPlatformColorBinding(runtime, appearanceModel_);

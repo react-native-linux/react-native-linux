@@ -279,6 +279,12 @@
     "packages/react-native-reanimated/mock.js": "4c5ed9593d8b629c9ed34326799c24c2135a7bf68d0e391f771bd31a8aed72a8",
     "packages/react-native-reanimated/package.json": "c72988f5c566bbc6bd5e26cd5429fed4f8a03a87335819e401a5b32fda979ace",
     "packages/react-native-reanimated/react-native.config.js": "1b770d521d51e573e4913b70581938b59078abe0b6145224039a4552b1089aec",
+    "packages/react-native-reanimated/scripts/reanimated_utils.rb": "eb3cfbaee798ffda6e6f9179f02b1d1b6970fd232593a65d9bc431f46b77ca13",
+    "packages/react-native-reanimated/scripts/set-version.js": "f9c7ac7257d0c2fb447a17799b03038fa0a0b00e2acc2b87c107dac26e535127",
+    "packages/react-native-reanimated/scripts/validate-react-native-version.js": "77727dbb05e272a0085a96fc6d581ab7a444212531658b24b97302e201494c6c",
+    "packages/react-native-reanimated/scripts/validate-worklets-build.js": "1e3ccbf8b7a4dffd4ccebcc5e7d2d35b1dc1fa409914e48c15bab4f18de1c3cc",
+    "packages/react-native-reanimated/scripts/validate-worklets-includes.sh": "6d4166e17ce6c9544f2a7dd2523bd19af5906e9dc1c6cbd95b7fcdb55760004f",
+    "packages/react-native-reanimated/scripts/validate-worklets-version.js": "15ab16a9498bc13eb817aa6c7dbc271a41db72203216404513f7c5e3b4644dc1",
     "packages/react-native-reanimated/src/Animated.ts": "8e177f962e01b5137bc1fc0dce47c0f2100de21c64a3ddfb91b77b5bd57239a3",
     "packages/react-native-reanimated/src/Bezier.ts": "fbba9328f1910ef1ca120f61ac5229a415b4418cb213cd6aa14b751fa6c01d4d",
     "packages/react-native-reanimated/src/Colors.ts": "336e9ac99deb62d47035c5eec76eba57636a1f24069fc0a96665d10938a53969",
@@ -779,7 +785,8 @@
   },
   "sparsePaths": [
     "packages/react-native-reanimated/Common/cpp",
-    "packages/react-native-reanimated/src"
+    "packages/react-native-reanimated/src",
+    "packages/react-native-reanimated/scripts"
   ],
   "tag": "4.6.0"
 }

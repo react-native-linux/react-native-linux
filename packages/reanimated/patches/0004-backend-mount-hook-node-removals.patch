@@ -1,0 +1,15 @@
+diff --git a/packages/react-native-reanimated/Common/cpp/reanimated/Fabric/ReanimatedMountHook.cpp b/packages/react-native-reanimated/Common/cpp/reanimated/Fabric/ReanimatedMountHook.cpp
+index c040bf1..5874396 100644
+--- a/packages/react-native-reanimated/Common/cpp/reanimated/Fabric/ReanimatedMountHook.cpp
++++ b/packages/react-native-reanimated/Common/cpp/reanimated/Fabric/ReanimatedMountHook.cpp
+@@ -31,7 +31,9 @@ void ReanimatedMountHook::shadowTreeDidMount(
+   ReanimatedSystraceSection s("ReanimatedMountHook::shadowTreeDidMount");
+ 
+   if constexpr (StaticFeatureFlags::getFlag("USE_ANIMATION_BACKEND")) {
+-    // With the animation backend this hook only tracks surface unmounts.
++    // With the animation backend this hook only drains removed nodes and tracks surface unmounts.
++    auto lock = updatesRegistryManager_->lock();
++    updatesRegistryManager_->handleNodeRemovals(*rootShadowNode);
+     return;
+   }
+ 

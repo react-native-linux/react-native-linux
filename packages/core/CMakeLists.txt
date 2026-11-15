@@ -1449,8 +1449,9 @@ target_link_libraries(rnl_react_core PUBLIC rnl_worklets)
 # rnl_reanimated (#139)
 #
 # react-native-reanimated's shared C++, compiled from the vendored packages/reanimated/upstream with its patch queue
-# applied, plus our PlatformDepMethodsHolder. Linux defines neither ANDROID nor __APPLE__, so building this target
-# on every PR is the compile-only guard of #139: an upstream bump that adds a two-way platform #ifdef fails here.
+# applied, plus our PlatformDepMethodsHolder and ReanimatedModule host. Linux defines neither ANDROID nor __APPLE__,
+# so building this target on every PR is the compile-only guard of #139: an upstream bump that adds a two-way
+# platform #ifdef fails here.
 # The version and the static feature flags come from the vendored package.json and staticFlags.json, and the React
 # Native version from scripts/vendor.lock.json, because Common/cpp gates the animation backend on it.
 # ---------------------------------------------------------------------------
@@ -1459,6 +1460,10 @@ set(RNL_REANIMATED_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../reanimated/upstream/packag
 file(READ ${RNL_REANIMATED_DIR}/package.json RNL_REANIMATED_PACKAGE_JSON)
 string(JSON RNL_REANIMATED_VERSION GET ${RNL_REANIMATED_PACKAGE_JSON} version)
 rnl_static_feature_flags(${RNL_REANIMATED_DIR}/src/featureFlags/staticFlags.json RNL_REANIMATED_FEATURE_FLAGS)
+# #140: Reanimated rides React Native's shared animation backend. An app opts in through its package.json upstream;
+# on Linux it is the platform's choice, and ReanimatedModule.cpp static_asserts it.
+string(REPLACE "[USE_ANIMATION_BACKEND:false]" "[USE_ANIMATION_BACKEND:true]" RNL_REANIMATED_FEATURE_FLAGS
+    "${RNL_REANIMATED_FEATURE_FLAGS}")
 file(READ ${CMAKE_SOURCE_DIR}/scripts/vendor.lock.json RNL_REANIMATED_VENDOR_LOCK)
 string(JSON RNL_REANIMATED_REACT_NATIVE_TAG GET "${RNL_REANIMATED_VENDOR_LOCK}" tag)
 string(REGEX MATCH "^v0\\.([0-9]+)\\.([0-9]+)" rnl_react_native_version_match ${RNL_REANIMATED_REACT_NATIVE_TAG})
@@ -1478,7 +1483,7 @@ add_custom_command(
 
 file(GLOB_RECURSE RNL_REANIMATED_SOURCES CONFIGURE_DEPENDS ${RNL_REANIMATED_DIR}/Common/cpp/reanimated/*.cpp)
 add_library(rnl_reanimated OBJECT ${RNL_REANIMATED_SOURCES} ${RNL_REANIMATED_PROPS_DIR}/Props.h
-    ${RNL_REANIMATED_PROPS_DIR}/Props.cpp src/ReanimatedPlatform.cpp)
+    ${RNL_REANIMATED_PROPS_DIR}/Props.cpp src/ReanimatedModule.cpp src/ReanimatedPlatform.cpp)
 target_include_directories(rnl_reanimated PUBLIC ${RNL_REANIMATED_DIR}/Common/cpp ${RNL_REANIMATED_CODEGEN_DIR})
 target_precompile_headers(rnl_reanimated PRIVATE src/WorkletsLinuxPrefix.h)
 target_compile_definitions(rnl_reanimated
@@ -1487,6 +1492,8 @@ target_compile_definitions(rnl_reanimated
         REACT_NATIVE_VERSION_MINOR=${CMAKE_MATCH_1} REACT_NATIVE_VERSION_PATCH=${CMAKE_MATCH_2})
 target_compile_reactnative_options(rnl_reanimated PRIVATE)
 target_link_libraries(rnl_reanimated PUBLIC rnl_worklets)
+# #140: the ReanimatedModule host is registered by TurboModuleRegistry, so the core library carries Reanimated.
+target_link_libraries(rnl_react_core PUBLIC rnl_reanimated)
 
 # ---------------------------------------------------------------------------
 # Autolinking (#147)
