@@ -44,6 +44,9 @@ namespace {
 constexpr size_t kImageCacheByteCapacity = 64UL * 1024UL * 1024UL;
 constexpr uint16_t kStatusClassDivisor = 100;
 constexpr uint16_t kSuccessStatusClass = 2;
+// NSURLRequest's default. Without one, a server that stops answering on an open connection would keep the source
+// pending, and its `onError` unsent, for the life of the process.
+constexpr uint32_t kDownloadTimeoutMilliseconds = 60'000;
 
 // Only the three formats the pinned Skia archive was built with; its release name carries `jpegd`, libpng is
 // compiled into the archive, and the GIF decoder is the one Skia vendors. Passing the decoder list
@@ -140,24 +143,29 @@ std::shared_ptr<const DecodedImageFrames> decodeAnimatedImage(SkCodec& codec) {
 }
 
 /**
- * One source the worker owes a decode: its URI, and what it resolved to. A remote source is queued only once its
- * download has finished, as the `Data` bytes it downloaded or as the `failure` that ended the download.
+ * One source the worker owes a decode. A local one is just its URI, resolved on the worker; a remote one is queued
+ * only once its download has finished, as the bytes it downloaded or as the failure that ended it.
  */
 struct QueuedDecode {
     std::string uri;
-    ResolvedImageSource source;
+    std::optional<std::vector<uint8_t>> downloaded;
     std::optional<std::string> failure;
 };
 
-std::shared_ptr<const DecodedImageFrames> decodeImageSource(const QueuedDecode& queued) {
+std::shared_ptr<const DecodedImageFrames> decodeImageSource(QueuedDecode& queued) {
     const std::string& uri = queued.uri;
-    const ResolvedImageSource& source = queued.source;
 
     if (queued.failure.has_value()) {
         reportNativeError("image", "could not download " + uri + ": " + queued.failure.value());
 
         return nullptr;
     }
+
+    const ResolvedImageSource source = queued.downloaded.has_value()
+                                           ? ResolvedImageSource{.kind = ImageSourceKind::Data,
+                                                                 .filePath = {},
+                                                                 .bytes = std::move(queued.downloaded.value())}
+                                           : resolveImageSource(uri, RNL_BUNDLED_ASSET_DIR);
 
     if (source.kind == ImageSourceKind::Unsupported) {
         reportNativeError("image", "unsupported source " + uri);
@@ -269,7 +277,7 @@ struct ImagePipelineState {
         };
         callbacks.onBody = [response](std::unique_ptr<folly::IOBuf> body) { response->body = std::move(body); };
         callbacks.onResponseComplete = [this, uri, response](const std::string& error, bool /*timeoutError*/) {
-            QueuedDecode decode{.uri = uri, .source = {}, .failure = std::nullopt};
+            QueuedDecode decode{.uri = uri, .downloaded = std::nullopt, .failure = std::nullopt};
 
             if (!error.empty()) {
                 decode.failure = error;
@@ -278,14 +286,13 @@ struct ImagePipelineState {
             } else {
                 const folly::ByteRange bytes = response->body->coalesce();
 
-                decode.source = ResolvedImageSource{
-                    .kind = ImageSourceKind::Data, .filePath = {}, .bytes = {bytes.begin(), bytes.end()}};
+                decode.downloaded = std::vector<uint8_t>(bytes.begin(), bytes.end());
             }
 
             enqueue(std::move(decode));
         };
 
-        httpClient->sendRequest(std::move(callbacks), "GET", uri, {}, {}, 0, std::nullopt);
+        httpClient->sendRequest(std::move(callbacks), "GET", uri, {}, {}, kDownloadTimeoutMilliseconds, std::nullopt);
     }
 
     void runWorker() {
@@ -388,15 +395,13 @@ void requestImageDecode(const std::string& uri, ImageDecodeCompletion completion
             // insert above and this line (#296).
             state.pendingDecodes.noteRequested();
 
-            ResolvedImageSource source = resolveImageSource(uri, RNL_BUNDLED_ASSET_DIR);
-
-            isRemote = source.kind == ImageSourceKind::Remote;
+            isRemote = isRemoteImageSource(uri);
 
             if (isRemote && state.httpClient == nullptr) {
                 state.httpClient = std::make_unique<CurlHttpClient>();
             } else if (!isRemote) {
                 state.queuedDecodes.push_back(
-                    QueuedDecode{.uri = uri, .source = std::move(source), .failure = std::nullopt});
+                    QueuedDecode{.uri = uri, .downloaded = std::nullopt, .failure = std::nullopt});
             }
         }
     }

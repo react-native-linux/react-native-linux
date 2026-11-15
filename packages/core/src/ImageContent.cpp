@@ -158,10 +158,6 @@ ResolvedImageSource resolveImageSource(const std::string& uri, const std::string
             .kind = ImageSourceKind::File, .filePath = uri.substr(kFileScheme.size()), .bytes = {}};
     }
 
-    if (startsWith(uri, kHttpScheme) || startsWith(uri, kHttpsScheme)) {
-        return ResolvedImageSource{.kind = ImageSourceKind::Remote, .filePath = {}, .bytes = {}};
-    }
-
     if (uri.find(kSchemeSeparator) != std::string::npos) {
         return {};
     }
@@ -171,6 +167,10 @@ ResolvedImageSource resolveImageSource(const std::string& uri, const std::string
     }
 
     return ResolvedImageSource{.kind = ImageSourceKind::File, .filePath = assetDirectory + "/" + uri, .bytes = {}};
+}
+
+bool isRemoteImageSource(const std::string& uri) {
+    return startsWith(uri, kHttpScheme) || startsWith(uri, kHttpsScheme);
 }
 
 facebook::react::Rect imagePlacement(SceneImageResizeMode resizeMode, const facebook::react::Rect& frame,

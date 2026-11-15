@@ -4385,7 +4385,9 @@ it. A transfer error or a status other than 2xx fails the source, which reaches 
 from a `dev=true` bundle, where Metro serves each asset at an `http://` URL. `RemoteImageTest` proves a download,
 a 404 and a stalled server against a loopback server (`tests/LoopbackHttpServer.h`). The `dev-image` e2e scenario
 loads an asset from a real Metro and swaps it with a Fast Refresh edit. There is no HTTP cache yet: a source the
-decoded-image cache evicted is downloaded again.
+decoded-image cache evicted is downloaded again. A download that takes longer than 60 seconds (NSURLRequest's
+default) fails. A source's `headers` are not sent, and the client's cookie jar is its own rather than `fetch`'s,
+so an image behind a session cookie or an `Authorization` header fails with its HTTP status.
 
 `RNL_BUNDLED_ASSET_DIR` is the same placeholder `RNL_BUNDLED_FONT_DIR` is, for the same reason: there is no asset
 packaging, and inventing one before the CLI exists is the kind of scaffolding the Prime Directive rejects. Real

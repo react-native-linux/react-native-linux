@@ -21,16 +21,15 @@
 namespace react_native_linux {
 
 /**
- * What a source URI turned out to be. `Remote` is `http` and `https`, which the pipeline downloads before it
- * decodes. `Unsupported` covers everything this platform declines to fetch: any other scheme, and a malformed
- * `data:` URI — a decode that was never attempted, not one that failed.
+ * What a source URI turned out to be. `Unsupported` covers everything this platform declines to open: any scheme
+ * but `file`, `data` and the two `isRemoteImageSource` names, and a malformed `data:` URI — a decode that was never
+ * attempted, not one that failed.
  */
-enum class ImageSourceKind : uint8_t { File, Data, Remote, Unsupported };
+enum class ImageSourceKind : uint8_t { File, Data, Unsupported };
 
 /**
  * A source URI reduced to the one thing a decoder can open: a filesystem path, or the bytes a `data:` URI carried.
- * At most one of the two members is filled, chosen by `kind`; a `Remote` source fills neither, because its URI is
- * already the URL to download.
+ * Exactly one of the two members is filled, chosen by `kind`.
  */
 struct ResolvedImageSource {
     ImageSourceKind kind{ImageSourceKind::Unsupported};
@@ -48,6 +47,12 @@ struct ResolvedImageSource {
  * Native's own tooling emits.
  */
 ResolvedImageSource resolveImageSource(const std::string& uri, const std::string& assetDirectory);
+
+/**
+ * Whether `uri` is `http` or `https`, which the pipeline downloads and then decodes as bytes rather than resolving.
+ * Only a prefix test, because it runs under the pipeline's mutex on the committing thread.
+ */
+bool isRemoteImageSource(const std::string& uri);
 
 /**
  * Where a decoded image of `imageSize` is drawn inside `frame` under one `resizeMode`.
