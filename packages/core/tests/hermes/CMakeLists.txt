@@ -185,6 +185,24 @@ endif()
 #        covered through JSI by CxxModuleTypeSurfaceTest.
 #
 # All are vendored and none is reachable from anything this platform calls.
+# #640: the T3NativeControls fixture module, called from JavaScript as an autolinked C++ TurboModule. Every
+# application configure reaches this file, so a machine without libcrypto's headers skips the one suite rather than
+# failing; CI installs them, and the coverage configure requires them for the module's unit tests.
+find_package(OpenSSL 3 COMPONENTS Crypto)
+
+if(TARGET OpenSSL::Crypto)
+    set(RNL_T3_NATIVE_CONTROLS_DIR ${CMAKE_SOURCE_DIR}/packages/test-harness/modules/t3-native-controls/linux)
+    target_sources(rnl_core_hermes_tests
+        PRIVATE
+            T3NativeControlsModuleTest.cpp
+            ${RNL_T3_NATIVE_CONTROLS_DIR}/DpopKeys.cpp
+            ${RNL_T3_NATIVE_CONTROLS_DIR}/T3NativeControls.cpp)
+    target_include_directories(rnl_core_hermes_tests PRIVATE ${RNL_T3_NATIVE_CONTROLS_DIR})
+    target_link_libraries(rnl_core_hermes_tests PRIVATE OpenSSL::Crypto)
+else()
+    message(STATUS "T3NativeControlsModuleTest is skipped: libcrypto's headers (libssl-dev) are missing")
+endif()
+
 set(RNL_HERMES_TESTS_FILTER
     "-BridgingTest.highResTimeStampTest:UseModernRuntimeScheduler/RuntimeSchedulerTest.*TaskYieldsToSynchronousAccess/*:NativeCxxModuleExampleTests.VoidFunEmitsEvents")
 

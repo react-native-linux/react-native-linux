@@ -336,6 +336,13 @@ target_sources(rnl_core_tests
         ${CMAKE_CURRENT_SOURCE_DIR}/../src/ExpoSQLite.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../src/I18n.cpp)
 target_link_libraries(rnl_core_tests PRIVATE SQLite::SQLite3)
+# #640: the DPoP keys of the T3NativeControls fixture, an application's own Expo module whose Linux code lives in its
+# linux/ directory, over the system libcrypto.
+set(RNL_T3_NATIVE_CONTROLS_DIR ${CMAKE_SOURCE_DIR}/packages/test-harness/modules/t3-native-controls/linux)
+find_package(OpenSSL 3 REQUIRED COMPONENTS Crypto)
+target_sources(rnl_core_tests PRIVATE DpopKeysTest.cpp ${RNL_T3_NATIVE_CONTROLS_DIR}/DpopKeys.cpp)
+target_include_directories(rnl_core_tests PRIVATE ${RNL_T3_NATIVE_CONTROLS_DIR})
+target_link_libraries(rnl_core_tests PRIVATE OpenSSL::Crypto)
 # #139: Reanimated's platform contract on Linux, against the vendored header it fills.
 target_sources(rnl_core_tests PRIVATE ReanimatedPlatformTest.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../src/ReanimatedPlatform.cpp)
 target_include_directories(rnl_core_tests
