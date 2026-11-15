@@ -154,3 +154,20 @@ describe("describeForeignCheckout", () => {
     expect(describeForeignCheckout(sibling, fixtureDirectory)).toContain("outside");
   });
 });
+
+describe("describeForeignCheckout around the overlay directory", () => {
+  it("refuses a checkout nested in the overlay directory, and a symlink that resolves into it", () => {
+    const temporaryDirectory = realpathSync(tmpdir());
+    const workspace = mkdtempSync(path.join(temporaryDirectory, "rnl-t3code-overlays-"));
+    const fixtureDirectory = path.join(workspace, "build", "t3code");
+    const nested = path.join(fixtureDirectory, OVERLAY_DIRECTORY_NAME, "checkout");
+    const link = path.join(fixtureDirectory, "checkout");
+
+    mkdirSync(nested, { recursive: true });
+    symlinkSync(nested, link);
+
+    expect(describeForeignCheckout(nested, fixtureDirectory)).toContain("inside the overlay directory");
+    expect(describeForeignCheckout(link, fixtureDirectory)).toContain("inside the overlay directory");
+    rmSync(workspace, { force: true, recursive: true });
+  });
+});
