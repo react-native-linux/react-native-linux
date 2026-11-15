@@ -1,0 +1,8 @@
+{
+  "name": "expo-constants",
+  "bundle": "expo-constants.tsx",
+  "ready": "expo-constants: bare=true appOwnership=null statusBarHeight=0 expoConfig=null session=true",
+  "frames": 120,
+  "steps": ["sleep 100"],
+  "expect": ["expo-constants: bare=true appOwnership=null statusBarHeight=0 expoConfig=null session=true"]
+}

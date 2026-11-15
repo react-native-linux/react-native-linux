@@ -70,6 +70,12 @@
       }
     },
     {
+      "files": ["packages/expo/src/*.linux.ts"],
+      "rules": {
+        "import/no-default-export": "off"
+      }
+    },
+    {
       "files": ["packages/*/src/index.ts"],
       "rules": {
         "import/no-relative-parent-imports": "off"
