@@ -9,6 +9,7 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <unistd.h>
 
 namespace react_native_linux {
 namespace {
@@ -127,6 +128,12 @@ finish(async () => {
   await recordRejection(statement.stepAsync(database));
   await recordRejection(Promise.resolve().then(() => database.prepareAsync({}, 'SELECT 1')));
   await recordRejection(Promise.resolve().then(() => new ExpoSQLite.NativeDatabase()));
+  await recordRejection(Promise.resolve().then(() => new ExpoSQLite.NativeDatabase(':memory:', {}, new Uint8Array(1))));
+  await recordRejection(Promise.resolve().then(
+    () => new ExpoSQLite.NativeDatabase(':memory:', { enableChangeListener: true })));
+  await recordRejection(Promise.resolve().then(() => new ExpoSQLite.NativeDatabase(
+    ':memory:', { useNewConnection: true, finalizeUnusedStatementsBeforeClosing: true, enableChangeListener: false,
+                  libSQLOptions: null }, undefined)));
   await database.closeAsync();
   await recordRejection(database.execAsync('SELECT 1'));
 });
@@ -176,11 +183,13 @@ void loadProbe(ReactHost& reactHost, const char* probe, const char* name) {
  * #638: `ExpoSQLite` driven exactly as upstream expo-sqlite's JavaScript drives it. Two transactions on their own
  * connection, one committed and one rolled back by a failed insert, rows composed from column names and values, the
  * first row of a match and of no match, and rejections for a value of an unsupported type and a BLOB, a reset that
- * resolves, a finalized statement, an object that is not a statement, a constructor without its path and a closed
- * database. A second host on the same directory, which is what a reload is, reads back what the first committed.
+ * resolves, a finalized statement, an object that is not a statement, a constructor without its path, serialized
+ * bytes to deserialize, an enabled open option it does not support, and a closed database. A second host on the same
+ * directory, which is what a reload is, reads back what the first committed.
  */
 TEST(SQLiteModuleTest, UpstreamsCallsWriteInTransactionsAndTheNextInstanceReadsThemBack) {
-    const std::filesystem::path directory = std::filesystem::temp_directory_path() / "rnl-sqlite-module-test";
+    const std::filesystem::path directory =
+        std::filesystem::temp_directory_path() / ("rnl-sqlite-module-test-" + std::to_string(::getpid()));
 
     std::filesystem::remove_all(directory);
 
@@ -199,6 +208,9 @@ TEST(SQLiteModuleTest, UpstreamsCallsWriteInTransactionsAndTheNextInstanceReadsT
                   "ExpoSQLite: the statement is finalized | "
                   "Exception in HostFunction: ExpoSQLite: not a NativeDatabase or a NativeStatement | "
                   "Exception in HostFunction: ExpoSQLite: argument 0 is missing | "
+                  "Exception in HostFunction: ExpoSQLite: deserializing a database is not supported on Linux | "
+                  "Exception in HostFunction: ExpoSQLite: the open option enableChangeListener is not supported on "
+                  "Linux | resolved | "
                   "ExpoSQLite: the database is closed");
         EXPECT_FALSE(reactHost.hasReportedFatalError());
     }

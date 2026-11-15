@@ -1427,7 +1427,9 @@ the database named by the empty string; `legacy_multiMerge` rejects, because no 
 Expo on Linux runs Expo's own JavaScript over the native-module seam: upstream expo-sqlite calls
 `requireNativeModule('ExpoSQLite')`, and expo-modules-core falls back to `TurboModuleRegistry.get` and
 `createTurboModuleToExpoProxy`, which copies the module's methods and spreads `getConstants()` onto it.
-`TurboModuleRegistry.cpp` serves `ExpoSQLite` over `src/ExpoSQLite.cpp`:
+`src/ExpoSQLiteModule.cpp` serves `ExpoSQLite` over `src/ExpoSQLite.cpp`; as ADR-0004 (#657) places every Expo module,
+the class lives in its own file and `TurboModuleRegistry.cpp` holds only its factory line. Like the registry, the
+module file is outside the coverage gate's scoped list: `SQLiteModuleTest` drives it from JavaScript instead.
 
 - `getConstants()` answers `defaultDatabaseDirectory`, which is `$XDG_DATA_HOME/<app-id>/SQLite` in `rnl_window` and
   `null` in a headless host, so upstream's own error names the missing directory. It also answers an empty
@@ -1447,7 +1449,8 @@ A reload drains queued writes before the old instance goes. Each `NativeDatabase
 Android cache, which shares one connection per path, is not reproduced. One worker serializes every connection, so
 a write while another connection holds a transaction fails with "database is locked" instead of waiting. BLOB
 values, the synchronous API, sessions, serialization, backups, deletion, extensions and the change listener are not
-implemented.
+implemented. A `NativeDatabase` constructed with serialized bytes (`deserializeDatabaseAsync`) or with an enabled open
+option other than `useNewConnection` and `finalizeUnusedStatementsBeforeClosing` throws an error naming it.
 
 `ExpoSQLiteTest` covers the store. `SQLiteModuleTest` drives the module from JavaScript with upstream's exact call
 sequence, and reloads into a second host that reads the rows back. The `expo-sqlite-reload` e2e writes inside an

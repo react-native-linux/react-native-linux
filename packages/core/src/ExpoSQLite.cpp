@@ -97,8 +97,6 @@ void SQLiteDatabases::StatementFinalizer::operator()(sqlite3_stmt* statement) co
     sqlite3_finalize(statement);
 }
 
-SQLiteDatabases::SQLiteDatabases() : worker_([this] { runTasks(); }) {}
-
 SQLiteDatabases::~SQLiteDatabases() noexcept {
     {
         const std::lock_guard<std::mutex> lock(mutex_);
@@ -106,7 +104,10 @@ SQLiteDatabases::~SQLiteDatabases() noexcept {
     }
 
     wake_.notify_one();
-    worker_.join();
+
+    if (worker_.joinable()) {
+        worker_.join();
+    }
 }
 
 void SQLiteDatabases::setDirectory(std::string directory) { directory_ = std::move(directory); }
@@ -117,6 +118,10 @@ void SQLiteDatabases::post(Task task) {
     {
         const std::lock_guard<std::mutex> lock(mutex_);
         tasks_.push_back(std::move(task));
+
+        if (!worker_.joinable()) {
+            worker_ = std::thread([this] { runTasks(); });
+        }
     }
 
     wake_.notify_one();

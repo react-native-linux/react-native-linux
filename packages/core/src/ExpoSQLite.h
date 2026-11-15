@@ -18,6 +18,11 @@
 struct sqlite3;
 struct sqlite3_stmt;
 
+namespace facebook::react {
+class CallInvoker;
+class TurboModule;
+} // namespace facebook::react
+
 namespace react_native_linux {
 
 /** A bound parameter or a column value as JavaScript sees it: SQLite's INTEGER and REAL are both a number. */
@@ -50,20 +55,21 @@ struct SQLiteRunResult {
  * directory is `<files>/SQLite`. A host that sets no directory answers none, so upstream's own error names it.
  *
  * Threading contract: `post` and `reserveHandle` may be called from any thread and never wait on SQLite. Every task
- * runs on the one worker thread this object owns, in the order it was posted, and must not throw. The methods from
+ * runs on the one worker thread this object owns, which the first `post` starts, in the order it was posted, and
+ * must not throw. The methods from
  * `ensureDirectoryExists` down touch the connections, so only a posted task calls them, or a thread that posts
  * nothing. `setDirectory` runs before the bundle does, on the thread that then hands the runtime to the JavaScript
  * thread, which is the only one that reads `directory`.
- * The destructor runs every task already posted, so a queued write still lands, then joins the worker and closes
- * every connection still open. One worker serializes every connection, so a write on one connection while another
- * holds a transaction fails with SQLite's "database is locked" rather than waiting for a commit that the waiting
- * worker would never run.
+ * The destructor runs every task already posted, so a queued write still lands, then joins the worker if one started
+ * and closes every connection still open. One worker serializes every connection, so a write on one connection while
+ * another holds a transaction fails with SQLite's "database is locked" rather than waiting for a commit that the
+ * waiting worker would never run.
  */
 class SQLiteDatabases final {
 public:
     using Task = std::function<void(SQLiteDatabases&)>;
 
-    SQLiteDatabases();
+    SQLiteDatabases() = default;
     SQLiteDatabases(const SQLiteDatabases&) = delete;
     SQLiteDatabases(SQLiteDatabases&&) = delete;
     SQLiteDatabases& operator=(const SQLiteDatabases&) = delete;
@@ -121,5 +127,12 @@ private:
     bool stopping_{false};
     std::thread worker_;
 };
+
+/**
+ * The `ExpoSQLite` TurboModule upstream expo-sqlite's JavaScript requires, over `databases`, which must outlive it
+ * (`src/ExpoSQLiteModule.cpp`).
+ */
+std::shared_ptr<facebook::react::TurboModule>
+makeExpoSQLiteModule(std::shared_ptr<facebook::react::CallInvoker> jsInvoker, SQLiteDatabases& databases);
 
 } // namespace react_native_linux
