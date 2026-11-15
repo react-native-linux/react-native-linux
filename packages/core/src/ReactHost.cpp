@@ -10,8 +10,6 @@
 
 #ifdef RNL_ENABLE_TEXT_GEOMETRY
 #include "TextGeometry.h"
-
-#include <filesystem>
 #endif
 
 #include <algorithm>
@@ -19,6 +17,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <filesystem>
 #include <folly/Uri.h>
 #include <folly/dynamic.h>
 #include <functional>
