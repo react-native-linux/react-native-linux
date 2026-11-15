@@ -42,11 +42,6 @@ std::optional<std::string> decodeDataUrl(const std::string& url) {
 
 } // namespace
 
-std::filesystem::path expoAssetDirectory(const std::filesystem::path& cacheDirectory,
-                                         const std::string& applicationIdentifier) {
-    return cacheDirectory / applicationIdentifier / "expo-asset";
-}
-
 void publishAsset(const std::filesystem::path& localPath, const std::string& contents) {
     static std::atomic<uint64_t> nextTemporaryFile{0};
     const std::filesystem::path temporaryPath = localPath.string() + "." + std::to_string(::getpid()) + "-" +

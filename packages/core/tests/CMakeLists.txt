@@ -342,6 +342,15 @@ target_link_libraries(rnl_core_tests PRIVATE SQLite::SQLite3)
 target_sources(rnl_core_tests PRIVATE ReanimatedPlatformTest.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../src/ReanimatedPlatform.cpp)
 target_include_directories(rnl_core_tests
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../reanimated/upstream/packages/react-native-reanimated/Common/cpp)
+
+# #663: expo-file-system's file operations, against the test's temporary directory, and the worker thread it shares
+# with expo-sqlite.
+target_sources(rnl_core_tests
+    PRIVATE
+        ExpoFileSystemTest.cpp
+        SerialWorkerTest.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src/ExpoFileSystem.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src/SerialWorker.cpp)
 target_compile_options(rnl_core_tests PRIVATE -Wall -Wextra -fexceptions -frtti)
 target_include_directories(rnl_core_tests
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src ${RNL_UPSTREAM_ANIMATED_TESTS_DIR})

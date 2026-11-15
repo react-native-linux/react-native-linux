@@ -859,8 +859,11 @@ add_library(rnl_react_core STATIC
     src/EditorModel.cpp
     src/ExpoAsset.cpp
     src/ExpoAssetModule.cpp
+    src/ExpoFileSystem.cpp
+    src/ExpoFileSystemModule.cpp
     src/ExpoSQLite.cpp
     src/ExpoSQLiteModule.cpp
+    src/ExpoSharedObject.cpp
     src/FabricHost.cpp
     src/FantomRenderOutput.cpp
     src/FocusModel.cpp
@@ -880,6 +883,7 @@ add_library(rnl_react_core STATIC
     src/ScrollController.cpp
     src/ScrollEventCadence.cpp
     src/ScrollPhysics.cpp
+    src/SerialWorker.cpp
     src/StubMessageQueue.cpp
     src/SwitchComponent.cpp
     src/SwitchContent.cpp

@@ -96,6 +96,7 @@ const startCompositor = (launch: WindowLaunch): Compositor =>
         WLR_BACKENDS: "headless",
         WLR_LIBINPUT_NO_DEVICES: "1",
         WLR_RENDERER: "pixman",
+        XDG_CACHE_HOME: path.join(launch.runtimeDirectory, "cache"),
         XDG_DATA_HOME: path.join(launch.runtimeDirectory, "data"),
         XDG_RUNTIME_DIR: launch.runtimeDirectory,
         XDG_STATE_HOME: path.join(launch.runtimeDirectory, "state"),

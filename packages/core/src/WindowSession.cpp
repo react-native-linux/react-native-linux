@@ -3,11 +3,13 @@
 #include "AsyncStorage.h"
 #include "DimensionsSource.h"
 #include "ExpoAsset.h"
+#include "ExpoFileSystem.h"
 #include "ExpoSQLite.h"
 #include "FrameProfiling.h"
 #include "I18n.h"
 
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -41,7 +43,7 @@ uint64_t toNanosecondsSinceEpoch(std::chrono::steady_clock::time_point timePoint
 } // namespace
 
 WindowSession::WindowSession(const std::string& bundlePath, WindowSize size, double scale,
-                             const std::string& asyncStorageDatabasePath, const std::string& expoAssetDirectory,
+                             const std::string& asyncStorageDatabasePath,
                              std::optional<std::string> initialActivationUrl)
     : fabricHost_(std::make_unique<FabricHost>(reactHost_.reactInstance(), toSurfaceSize(size))),
       frameJournal_(kNominalVsyncNanoseconds, kHangThresholdVsyncCount * kNominalVsyncNanoseconds) {
@@ -49,10 +51,19 @@ WindowSession::WindowSession(const std::string& bundlePath, WindowSize size, dou
     // window's requested size and scale rather than with the pre-configure default.
     resize(size, scale);
     seedColorScheme();
+    const std::filesystem::path applicationDirectory = std::filesystem::path(asyncStorageDatabasePath).parent_path();
+    const char* home = std::getenv("HOME");
+    const std::optional<std::filesystem::path> cacheDirectory =
+        fileSystemDirectories(applicationDirectory, std::getenv("XDG_CACHE_HOME"), home == nullptr ? "" : home).cache;
+
     reactHost_.keyValueStore().setDatabasePath(asyncStorageDatabasePath);
-    reactHost_.sqliteDatabases().setDirectory(
-        (std::filesystem::path(asyncStorageDatabasePath).parent_path() / "SQLite").string());
-    reactHost_.expoAssetDownloads().setDirectory(expoAssetDirectory);
+    reactHost_.sqliteDatabases().setDirectory((applicationDirectory / "SQLite").string());
+    reactHost_.fileSystem().applicationDirectory = applicationDirectory;
+
+    if (cacheDirectory.has_value()) {
+        reactHost_.expoAssetDownloads().setDirectory(cacheDirectory.value() / "expo-asset");
+    }
+
     // After the store has its file and before the script, so the first layout already has the persisted direction.
     reactHost_.i18n().restore();
     applyLayoutDirectionChange();

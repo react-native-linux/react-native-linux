@@ -1,6 +1,5 @@
 #include "AutomationProtocol.h"
 #include "AutomationServer.h"
-#include "ExpoAsset.h"
 #include "FrameClock.h"
 #include "FrameJournal.h"
 #include "FrameProfiling.h"
@@ -1116,18 +1115,6 @@ std::string asyncStorageDatabasePath(const std::string& applicationIdentifier) {
     return (dataDirectory / applicationIdentifier / "async-storage.sqlite").string();
 }
 
-/** `$XDG_CACHE_HOME/<app-id>/expo-asset`, where `ExpoAsset` keeps the application's downloaded assets (#156). */
-std::string expoAssetDirectory(const std::string& applicationIdentifier) {
-    const char* cacheHome = std::getenv("XDG_CACHE_HOME");
-    const char* home = std::getenv("HOME");
-
-    return react_native_linux::expoAssetDirectory(
-               react_native_linux::ResourceResolver::writableDirectory(
-                   cacheHome == nullptr ? "" : cacheHome, cacheHome != nullptr, home == nullptr ? "" : home, ".cache"),
-               applicationIdentifier)
-        .string();
-}
-
 std::optional<react_native_linux::RendererLadderRecord> readLadderRecord(const std::optional<std::string>& path) {
     if (!path.has_value()) {
         return std::nullopt;
@@ -1403,7 +1390,7 @@ int main(int argc, char** argv) {
                 session.emplace(parsedArguments.bundlePath.value(),
                                 react_native_linux::WindowSize{chrome.content.width, chrome.content.height},
                                 outputScaleOf(window), asyncStorageDatabasePath(parsedArguments.applicationIdentifier),
-                                expoAssetDirectory(parsedArguments.applicationIdentifier), ownActivationUrl);
+                                ownActivationUrl);
 
                 // --ime-debug owns the text input by hand, so focus must not also drive it: the two would race to
                 // enable and disable the same object. Without that flag, focus is the only thing that touches it.

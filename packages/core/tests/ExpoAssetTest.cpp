@@ -168,12 +168,6 @@ TEST_F(ExpoAssetTest, RejectsWhenTheCacheCannotBeWritten) {
     EXPECT_EQ(settle(server_.url("/image.png"), "beef", "png"), "rejected: Unable to save asset to directory: ''");
 }
 
-/** Every application has its own directory, so two dev apps serving different bytes at one URL never collide. */
-TEST_F(ExpoAssetTest, KeepsEachApplicationInItsOwnDirectory) {
-    EXPECT_EQ(expoAssetDirectory("/cache", "com.example.first").string(), "/cache/com.example.first/expo-asset");
-    EXPECT_EQ(expoAssetDirectory("/cache", "com.example.second").string(), "/cache/com.example.second/expo-asset");
-}
-
 /**
  * Writers in one process or several publish to one path through temporary files of their own, so each publish
  * succeeds and a reader only ever sees one writer's whole file.

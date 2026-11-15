@@ -265,6 +265,12 @@ ExpoAssetDownloads& ReactHost::expoAssetDownloads() noexcept {
     return turboModuleRegistry_->expoAssetDownloads();
 }
 
+FileSystemHost& ReactHost::fileSystem() noexcept {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    return turboModuleRegistry_->fileSystem();
+}
+
 LinuxWorkletsModule& ReactHost::worklets() noexcept {
     react_native_assert(std::this_thread::get_id() == owningThread_);
 

@@ -39,7 +39,7 @@
     },
     "packages/expo": {
       "project": ["src/**/*.ts"],
-      "ignoreDependencies": ["expo-asset", "expo-modules-core"]
+      "ignoreDependencies": ["expo-asset", "expo-file-system", "expo-modules-core", "whatwg-url-minimum"]
     },
     "packages/gesture-handler": {
       "project": ["src/**/*.ts"],

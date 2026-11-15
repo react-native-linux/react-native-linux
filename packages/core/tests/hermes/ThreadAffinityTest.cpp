@@ -37,6 +37,7 @@ const std::vector<ForeignThreadCall> kForeignThreadCalls{
     {"ReactHost::appearance", [](Hosts& hosts) { hosts.reactHost->appearance(); }},
     {"ReactHost::activation", [](Hosts& hosts) { hosts.reactHost->activation(); }},
     {"ReactHost::keyValueStore", [](Hosts& hosts) { hosts.reactHost->keyValueStore(); }},
+    {"ReactHost::fileSystem", [](Hosts& hosts) { hosts.reactHost->fileSystem(); }},
     {"ReactHost::i18n", [](Hosts& hosts) { hosts.reactHost->i18n(); }},
     {"ReactHost::publishPendingDimensions", [](Hosts& hosts) { hosts.reactHost->publishPendingDimensions(); }},
     {"ReactHost::loadScript",
