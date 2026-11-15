@@ -107,6 +107,7 @@ add_executable(rnl_core_hermes_tests
     HermesRuntimeFactory.cpp
     CxxModuleTypeSurfaceTest.cpp
     DevBundleModulesTest.cpp
+    FeatureFlagsResetListener.cpp
     InstanceTeardownLeakTest.cpp
     MeasureGeometryTest.cpp
     LinkingModuleTest.cpp
@@ -182,7 +183,8 @@ endif()
 #        onClick to AsyncEventEmitter<std::string>, which UBSan reports as an invalid downcast. What it checks is
 #        covered through JSI by CxxModuleTypeSurfaceTest.
 #
-# All are vendored and none is reachable from anything this platform calls.
+# All are vendored and none is reachable from anything this platform calls. The dev entry of ci.yml repeats the
+# non-TSan filter for its single-process run (#643); change both together.
 set(RNL_HERMES_TESTS_FILTER
     "-BridgingTest.highResTimeStampTest:UseModernRuntimeScheduler/RuntimeSchedulerTest.*TaskYieldsToSynchronousAccess/*:NativeCxxModuleExampleTests.VoidFunEmitsEvents")
 

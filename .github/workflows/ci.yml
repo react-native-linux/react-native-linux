@@ -468,6 +468,15 @@ jobs:
       - name: Run rnl_core_hermes_tests under ctest
         run: ctest --preset "$RNL_PRESET"
 
+      # #643: ctest gives every case its own process, which hides a case that leaves process-wide state behind for
+      # the next. One shuffled process makes a new order dependency fail the pull request that adds it. The filter
+      # is RNL_HERMES_TESTS_FILTER from packages/core/tests/hermes/CMakeLists.txt.
+      - name: Run rnl_core_hermes_tests in one shuffled process
+        if: matrix.preset == 'dev'
+        run: |
+          "build/$RNL_PRESET/bin/rnl_core_hermes_tests" --gtest_shuffle \
+            --gtest_filter='-BridgingTest.highResTimeStampTest:UseModernRuntimeScheduler/RuntimeSchedulerTest.*TaskYieldsToSynchronousAccess/*:NativeCxxModuleExampleTests.VoidFunEmitsEvents'
+
       # #407: rnl_core_tests — the Hermes-free GoogleTest suite for RetainedScene and LinuxMountingManager —
       # never ran under a sanitizer: only the test preset configured it. The asan-tests/tsan-tests presets
       # reuse this entry's sanitizer flags with RNL_BUILD_TESTS=ON, in their own build directory
