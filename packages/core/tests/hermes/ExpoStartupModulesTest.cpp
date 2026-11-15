@@ -135,6 +135,29 @@ TEST_F(ExpoStartupModulesDeviceTest, EmptyOsReleaseValuesAreNull) {
     EXPECT_EQ(answered["osBuildId"], nullptr);
 }
 
+/** Values decode as the shell that sources os-release reads them, without running one. */
+TEST_F(ExpoStartupModulesDeviceTest, OsReleaseValuesDecodeTheirQuoting) {
+    write("etc/os-release", "NAME=\"Acme \\\"Linux\\\" \\\\ \\$HOME \\`id\\` C:\\x\"\n"
+                            "VERSION_ID='$(id) \\\" literal'\nBUILD_ID=\"trailing\\\"\n");
+
+    const folly::dynamic answered = constants();
+
+    EXPECT_EQ(answered["osName"], "Acme \"Linux\" \\ $HOME `id` C:\\x");
+    EXPECT_EQ(answered["osVersion"], "$(id) \\\" literal");
+    EXPECT_EQ(answered["osBuildId"], "trailing\\");
+}
+
+/** A value whose ends are not one matching pair of quotes is taken as written. */
+TEST_F(ExpoStartupModulesDeviceTest, OsReleaseValuesWithoutMatchingQuotesAreLiteral) {
+    write("etc/os-release", "NAME=\"Half\nVERSION_ID=2.2\nBUILD_ID='mixed\"\n");
+
+    const folly::dynamic answered = constants();
+
+    EXPECT_EQ(answered["osName"], "\"Half");
+    EXPECT_EQ(answered["osVersion"], "2.2");
+    EXPECT_EQ(answered["osBuildId"], "'mixed\"");
+}
+
 /** DMI strings reach JavaScript verbatim, a quote and a backslash included. */
 TEST_F(ExpoStartupModulesDeviceTest, DmiStringsKeepQuotesAndBackslashes) {
     write("dmi/sys_vendor", "Vendor \"Q\" \\ Co\n");
@@ -223,12 +246,10 @@ TEST(ExpoStartupModulesTest, DeviceAnswersTheMachine) {
     static_cast<void>(gethostname(hostName.data(), hostName.size() - 1));
     static_cast<void>(uname(&system));
 
-    const std::string osRelease = "{ unset NAME VERSION_ID BUILD_ID; "
-                                  ". /etc/os-release 2>/dev/null || . /usr/lib/os-release; } && printf '%s' \"$";
+    const std::string osRelease = "unset NAME VERSION_ID BUILD_ID; if [ -r /etc/os-release ]; then . /etc/os-release; "
+                                  "else . /usr/lib/os-release; fi && printf '%s' \"$";
     const folly::dynamic osName = shellOutput(osRelease + "NAME\"");
-    const folly::dynamic expected = folly::dynamic::object(
-        "methods",
-        folly::dynamic::array("getConstants", "getDeviceTypeAsync", "getUptimeAsync", "isRootedExperimentalAsync"))(
+    const folly::dynamic expected = folly::dynamic::object("methods", folly::dynamic::array("getConstants"))(
         "constants",
         folly::dynamic::object("isDevice", true)("brand", nullptr)(
             "manufacturer", shellOutput("cat /sys/class/dmi/id/sys_vendor 2>/dev/null"))("modelId", nullptr)(
@@ -236,22 +257,15 @@ TEST(ExpoStartupModulesTest, DeviceAnswersTheMachine) {
             "totalMemory", true)("osName", osName.isNull() ? folly::dynamic(system.sysname) : osName)(
             "osVersion", shellOutput(osRelease + "VERSION_ID\""))("osBuildId", shellOutput(osRelease + "BUILD_ID\""))(
             "osInternalBuildId", system.release)("deviceName", hostName.data())("deviceType", 3)(
-            "supportedCpuArchitectures", folly::dynamic::array(system.machine)))("deviceType", 3)("uptime", true)(
-        "rooted", geteuid() == 0);
+            "supportedCpuArchitectures", folly::dynamic::array(system.machine)));
 
     EXPECT_EQ(folly::parseJson(settledTrace(R"JAVASCRIPT(
 const device = globalThis.nativeModuleProxy.ExpoDevice;
-(async () => {
-  const constants = device.getConstants();
-  const uptime = await device.getUptimeAsync();
-  globalThis.trace = JSON.stringify({
-    methods: Object.keys(Object.getPrototypeOf(device)).sort(),
-    constants: { ...constants, totalMemory: constants.totalMemory > 0 },
-    deviceType: await device.getDeviceTypeAsync(),
-    uptime: uptime > 0,
-    rooted: await device.isRootedExperimentalAsync(),
-  });
-})();
+const constants = device.getConstants();
+globalThis.trace = JSON.stringify({
+  methods: Object.keys(Object.getPrototypeOf(device)).sort(),
+  constants: { ...constants, totalMemory: constants.totalMemory > 0 },
+});
 )JAVASCRIPT")),
               expected);
 }

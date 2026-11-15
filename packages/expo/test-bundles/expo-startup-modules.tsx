@@ -31,7 +31,7 @@ const describeDevice = async (): Promise<string> =>
     Device.isDevice,
     typeof Device.osName === "string" && Device.osName.length > 0,
     Device.supportedCpuArchitectures?.length,
-    (await Device.getUptimeAsync()) > 0,
+    await errorCode(Device.getUptimeAsync),
     await errorCode(Device.getMaxMemoryAsync),
   ].join(",");
 

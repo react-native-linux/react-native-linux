@@ -10,6 +10,6 @@
   },
   "expect": [
     "Running \"main\"",
-    "expo-startup-modules: rendered linking=null application=null,null,null,null,ERR_UNAVAILABLE device=true,true,true,1,true,ERR_UNAVAILABLE network={\"type\":\"UNKNOWN\"},ERR_UNAVAILABLE"
+    "expo-startup-modules: rendered linking=null application=null,null,null,null,ERR_UNAVAILABLE device=true,true,true,1,ERR_UNAVAILABLE,ERR_UNAVAILABLE network={\"type\":\"UNKNOWN\"},ERR_UNAVAILABLE"
   ]
 }
