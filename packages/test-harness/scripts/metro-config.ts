@@ -1,5 +1,6 @@
 import { getDefaultConfig, mergeConfig } from "@react-native/metro-config";
 import { FileStore } from "metro-cache";
+import { babelCacheVersion } from "@react-native-linux/cli/babel-cache-version.ts";
 import { linuxResolverConfig } from "@react-native-linux/cli/linux-resolver-config.ts";
 import path from "node:path";
 
@@ -10,6 +11,7 @@ const repositoryRoot = path.resolve(projectRoot, "..", "..");
 const harnessMetroConfig = mergeConfig(getDefaultConfig(projectRoot), {
   // Off /tmp, whose per-user quota this machine's other work shares.
   cacheStores: [new FileStore({ root: path.join(repositoryRoot, "build", "metro-cache") })],
+  cacheVersion: babelCacheVersion(projectRoot),
   resolver: linuxResolverConfig(projectRoot),
   watchFolders: [repositoryRoot],
 });
