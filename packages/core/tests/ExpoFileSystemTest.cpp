@@ -87,11 +87,11 @@ TEST(ExpoFileSystemBase64Test, EncodesAndDecodesEveryPaddingLength) {
 
     EXPECT_EQ(encodeBase64(""), "");
     EXPECT_EQ(encodeBase64("f"), "Zg==");
-    EXPECT_EQ(encodeBase64("fo"), "Zm8=");
+    EXPECT_EQ(encodeBase64("hi"), "aGk=");
     EXPECT_EQ(encodeBase64("foo"), "Zm9v");
     EXPECT_EQ(encodeBase64(std::string("\xFF\x00\xFE", 3)), "/wD+");
     EXPECT_EQ(decodeBase64("Zg=="), "f");
-    EXPECT_EQ(decodeBase64("Zm8="), "fo");
+    EXPECT_EQ(decodeBase64("aGk="), "hi");
     EXPECT_EQ(decodeBase64("/wD+"), std::string("\xFF\x00\xFE", 3));
     EXPECT_THROW(static_cast<void>(decodeBase64("Zm9")), std::invalid_argument);
     EXPECT_THROW(static_cast<void>(decodeBase64("Z===")), std::invalid_argument);
