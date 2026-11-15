@@ -1415,9 +1415,10 @@ no discovery code of ours and no fork. The CMakeLists can rely on the `jsi` and 
 lives in `facebook::react`, because the generated registration names it there.
 
 `packages/test-harness/modules/t3-native-controls` is the fixture and T3 Code's template. Its `linux/` directory
-answers the DPoP functions over the system libcrypto, so building it needs `libssl-dev`. CI autolinks the fixture
-beside the `cpp-library` one and calls it from `packages/test-harness/test-bundles/t3-native-controls.js`. Its
-unit tests are `tests/DpopKeysTest.cpp`, which the coverage gate scores, and the Hermes test is
+answers the DPoP functions over the system libcrypto, so building it needs `libssl-dev`, and so does every test
+configure (`test`, `asan-tests`, `tsan-tests` and `coverage`), because the module's unit tests link it. CI autolinks
+the fixture beside the `cpp-library` one and calls it from `packages/test-harness/test-bundles/t3-native-controls.js`.
+Its unit tests are `tests/DpopKeysTest.cpp`, which the coverage gate scores, and the Hermes test is
 `tests/hermes/T3NativeControlsModuleTest.cpp`.
 
 Our C++ ABI toward a library is the vendored React Native pin's; what a library may assume beyond that is #89's
@@ -2920,7 +2921,7 @@ support:
 sudo apt-get install -y build-essential git cmake ninja-build ccache python3 pkg-config \
   clang-18 clang-tools-18 libclang-rt-18-dev llvm-18 \
   libboost-dev libdouble-conversion-dev libfmt-dev libgoogle-glog-dev libicu-dev \
-  libfreetype-dev libfontconfig-dev
+  libfreetype-dev libfontconfig-dev libssl-dev
 ```
 
 `pkg-config`, `libfreetype-dev` and `libfontconfig-dev` are what `RNL_ENABLE_SKIA` probes for; without them

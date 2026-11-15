@@ -79,11 +79,15 @@ Owned<EVP_PKEY> keyFromScalar(ByteView privateKey) {
     return owned(key);
 }
 
-Bytes publicPoint(const EVP_PKEY& key) {
+/** The uncompressed point, asked for by name: OpenSSL 3.0.0 to 3.0.7 export `OSSL_PKEY_PARAM_PUB_KEY` compressed. */
+Bytes publicPoint(EVP_PKEY& key) {
     Bytes point(kPublicPointBytes);
     std::size_t length = 0;
 
-    ensure(EVP_PKEY_get_octet_string_param(&key, OSSL_PKEY_PARAM_PUB_KEY, point.data(), point.size(), &length) == 1);
+    ensure(EVP_PKEY_set_utf8_string_param(&key, OSSL_PKEY_PARAM_EC_POINT_CONVERSION_FORMAT,
+                                          OSSL_PKEY_EC_POINT_CONVERSION_FORMAT_UNCOMPRESSED) == 1);
+    ensure(EVP_PKEY_get_octet_string_param(&key, OSSL_PKEY_PARAM_ENCODED_PUBLIC_KEY, point.data(), point.size(),
+                                           &length) == 1);
     ensure(length == kPublicPointBytes);
 
     return point;
@@ -104,13 +108,11 @@ Bytes DpopKeys::generate() {
     ensure(EVP_PKEY_get_bn_param(key.get(), OSSL_PKEY_PARAM_PRIV_KEY, &scalar) == 1);
 
     const Owned<BIGNUM> ownedScalar = owned(scalar);
-    Bytes output;
-
-    appendScalar(output, *ownedScalar);
-
     const Bytes point = publicPoint(*key);
+    Bytes output(kScalarBytes + kPublicPointBytes);
 
-    output.insert(output.end(), point.begin(), point.end());
+    std::ranges::copy(point, output.begin() + kScalarBytes);
+    ensure(BN_bn2binpad(ownedScalar.get(), output.data(), kScalarBytes) == static_cast<int>(kScalarBytes));
 
     return output;
 }

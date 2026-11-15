@@ -187,7 +187,8 @@ endif()
 # All are vendored and none is reachable from anything this platform calls.
 # #640: the T3NativeControls fixture module, called from JavaScript as an autolinked C++ TurboModule. Every
 # application configure reaches this file, so a machine without libcrypto's headers skips the one suite rather than
-# failing; CI installs them, and the coverage configure requires them for the module's unit tests.
+# failing. CI installs them, and every test configure (test, asan-tests, tsan-tests and coverage) requires them for the
+# module's unit tests.
 find_package(OpenSSL 3 COMPONENTS Crypto)
 
 if(TARGET OpenSSL::Crypto)

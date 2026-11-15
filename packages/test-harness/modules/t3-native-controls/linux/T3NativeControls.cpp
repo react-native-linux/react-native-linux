@@ -4,6 +4,7 @@
 
 #include <ReactCommon/TurboModuleUtils.h>
 #include <algorithm>
+#include <openssl/crypto.h>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -34,6 +35,20 @@ Bytes bytesOf(jsi::Runtime& runtime, const jsi::Value* arguments, std::size_t co
     return {begin, begin + static_cast<std::size_t>(length)};
 }
 
+/** A copy of a private key, wiped when it goes out of scope, on the exception path too. */
+struct WipedBytes {
+    Bytes bytes;
+
+    explicit WipedBytes(Bytes value) : bytes(std::move(value)) {}
+
+    WipedBytes(const WipedBytes&) = delete;
+    WipedBytes& operator=(const WipedBytes&) = delete;
+    WipedBytes(WipedBytes&&) = delete;
+    WipedBytes& operator=(WipedBytes&&) = delete;
+
+    ~WipedBytes() { OPENSSL_cleanse(bytes.data(), bytes.size()); }
+};
+
 jsi::Value uint8ArrayOf(jsi::Runtime& runtime, const Bytes& bytes) {
     jsi::Object array = runtime.global()
                             .getPropertyAsFunction(runtime, "Uint8Array")
@@ -56,6 +71,25 @@ template <typename Operation> jsi::Value settle(jsi::Runtime& runtime, Operation
     });
 }
 
+jsi::Value keyMatches(jsi::Runtime& /*runtime*/, const Bytes& privateKey, const Bytes& publicKey) {
+    return {DpopKeys::matches(privateKey, publicKey)};
+}
+
+jsi::Value signature(jsi::Runtime& runtime, const Bytes& privateKey, const Bytes& signingInput) {
+    return uint8ArrayOf(runtime, DpopKeys::sign(privateKey, signingInput));
+}
+
+/** A method whose first argument is a private key, which is wiped once `operation` is done with it. */
+template <jsi::Value (*operation)(jsi::Runtime&, const Bytes&, const Bytes&)>
+jsi::Value withPrivateKey(jsi::Runtime& runtime, TurboModule& /*turboModule*/, const jsi::Value* arguments,
+                          std::size_t count) {
+    return settle(runtime, [&](jsi::Runtime& promiseRuntime) {
+        const WipedBytes privateKey{bytesOf(promiseRuntime, arguments, count, 0)};
+
+        return operation(promiseRuntime, privateKey.bytes, bytesOf(promiseRuntime, arguments, count, 1));
+    });
+}
+
 } // namespace
 
 T3NativeControls::T3NativeControls(std::shared_ptr<CallInvoker> jsInvoker)
@@ -63,23 +97,13 @@ T3NativeControls::T3NativeControls(std::shared_ptr<CallInvoker> jsInvoker)
     methodMap_["generateDpopKey"] = {
         0, [](jsi::Runtime& runtime, TurboModule& /*turboModule*/, const jsi::Value* /*arguments*/, std::size_t) {
             return settle(runtime, [](jsi::Runtime& promiseRuntime) {
-                return uint8ArrayOf(promiseRuntime, DpopKeys::generate());
+                const WipedBytes keyPair{DpopKeys::generate()};
+
+                return uint8ArrayOf(promiseRuntime, keyPair.bytes);
             });
         }};
-    methodMap_["dpopKeyMatches"] = {
-        2, [](jsi::Runtime& runtime, TurboModule& /*turboModule*/, const jsi::Value* arguments, std::size_t count) {
-            return settle(runtime, [&](jsi::Runtime& promiseRuntime) {
-                return jsi::Value(DpopKeys::matches(bytesOf(promiseRuntime, arguments, count, 0),
-                                                    bytesOf(promiseRuntime, arguments, count, 1)));
-            });
-        }};
-    methodMap_["signDpop"] = {
-        2, [](jsi::Runtime& runtime, TurboModule& /*turboModule*/, const jsi::Value* arguments, std::size_t count) {
-            return settle(runtime, [&](jsi::Runtime& promiseRuntime) {
-                return uint8ArrayOf(promiseRuntime, DpopKeys::sign(bytesOf(promiseRuntime, arguments, count, 0),
-                                                                   bytesOf(promiseRuntime, arguments, count, 1)));
-            });
-        }};
+    methodMap_["dpopKeyMatches"] = {2, withPrivateKey<keyMatches>};
+    methodMap_["signDpop"] = {2, withPrivateKey<signature>};
 }
 
 } // namespace facebook::react
