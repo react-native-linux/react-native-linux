@@ -23,7 +23,8 @@ namespace react_native_linux {
  * The Networking module is a streaming contract, which is the lesson of react-native-windows#9510, #10036,
  * #11439 and #2460. A request with `sendIncrementalUpdates` delivers every received chunk to `onBodyIncremental`
  * as it arrives and is never buffered; any other request is buffered without a ceiling and delivered once to
- * `onBody`, with `onBodyProgress` per chunk when `sendProgressUpdates` asks for it.
+ * `onBody`, with `onBodyProgress` per chunk when `sendProgressUpdates` asks for it. `onResponse` runs as the final
+ * response's headers end, before its first body byte.
  *
  * Threading contract: `sendRequest`, and `cancel` on the token it returns, may be called from any thread and never
  * block. Every callback runs on the one worker thread this client owns, which drives libcurl's multi interface. A

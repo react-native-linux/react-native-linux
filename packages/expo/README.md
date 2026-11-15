@@ -20,5 +20,9 @@ upstream file, would be the escape hatch for a module whose JavaScript has to di
 | `expo-linking` | 58.0.16 | seam | `ExpoLinking` | `getLinkingURL` is the URL that last activated the app, the state React Native's `Linking` reads; `onURLReceived` delivers a later activation as `{ url }`; `clearInitialURL` is not answered, so it is the no-op it is on web; `createURL` answers from the embedded app config's `scheme`, so it throws for a bundle Metro serves until #696 |
 | `expo-network` | 58.0.4 | seam | `ExpoNetwork` | `getNetworkStateAsync` resolves `{ type: 'UNKNOWN' }` until the NetworkMonitor portal is read (#648); a listener subscribes and is never called while the state stays unknown; the IP-address and airplane-mode queries reject with `ERR_UNAVAILABLE` |
 
+Bundle an Expo app with `expo/metro-config`, which installs Expo's `ReadableStream` polyfill, or set
+`EXPO_PUBLIC_USE_RN_FETCH=1`; otherwise `ReadableStream` is missing for `response.body`, `response.clone()` and
+`FormData` request bodies (#687).
+
 `src/` holds each module's required-field list, typed against upstream's declarations. `test-bundles/` and `e2e/`
 are the scenarios `pnpm e2e` discovers; each installs the real upstream package.

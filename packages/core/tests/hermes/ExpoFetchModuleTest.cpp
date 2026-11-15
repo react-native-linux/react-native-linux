@@ -37,7 +37,7 @@ class FetchResponse extends NativeResponse {
     return this.startStreaming();
   }
 }
-// No parameter defaults: an async arrow function with one drops what it awaits in this Hermes.
+// No parameter defaults: an async arrow function with one drops what it awaits in this Hermes (#728).
 const send = async (url, options) => {
   const { method = 'GET', headers = [], redirect = 'follow', body = null } = options ?? {};
   const response = new FetchResponse();
@@ -46,6 +46,9 @@ const send = async (url, options) => {
   return { request, response };
 };
 const failure = (work) => work().then(() => 'resolved', (error) => `rejected:${error.message}`);
+const until = async (done) => {
+  while (!done()) await new Promise((resolve) => setTimeout(resolve, 1));
+};
 )JAVASCRIPT";
 
 /** The probes run against `expoFetchProbeRoutes`, whose gate the test opens. */
@@ -63,7 +66,7 @@ protected:
 
     std::promise<void> gate_;
     std::shared_future<void> opened_ = gate_.get_future().share();
-    LoopbackHttpServer server_{expoFetchProbeRoutes(opened_)};
+    LoopbackHttpServer server_{expoFetchProbeRoutes(opened_, [] {})};
 };
 
 /**
@@ -155,6 +158,49 @@ TEST_F(ExpoFetchModuleTest, StreamsChunksAsTheyArriveWithoutBlockingTheJavaScrip
     EXPECT_FALSE(reactHost.hasReportedFatalError());
 }
 
+/**
+ * #673: `await fetch()` resolves once the final response's headers have arrived, before any body byte: the server
+ * sends the body only once JavaScript has read the status, so the probe never finishes otherwise.
+ */
+TEST_F(ExpoFetchModuleTest, StartResolvesBeforeTheBodyArrives) {
+    ReactHost reactHost;
+
+    load(reactHost, R"JAVASCRIPT(
+(async () => {
+  const { response } = await send(')JAVASCRIPT" +
+                        url("/headers") + R"JAVASCRIPT(');
+  globalThis.expoFetchStatus = String(response.status);
+  globalThis.expoFetchTrace = JSON.stringify({ text: await response.text(), trace: response.trace });
+})().catch((error) => { globalThis.expoFetchTrace = `failed: ${error.message}`; });
+)JAVASCRIPT");
+
+    ASSERT_EQ(awaitGlobalString(reactHost, "expoFetchStatus"), "200");
+    gate_.set_value();
+    gate_ = {};
+
+    EXPECT_EQ(awaitGlobalString(reactHost, "expoFetchTrace"), R"({"text":"body","trace":["ready"]})");
+    EXPECT_FALSE(reactHost.hasReportedFatalError());
+}
+
+/** #673: a first body read after the transfer failed rejects with the failure, which upstream's stream pull awaits. */
+TEST_F(ExpoFetchModuleTest, AFailureBeforeTheFirstReadRejectsIt) {
+    ReactHost reactHost;
+
+    load(reactHost, R"JAVASCRIPT(
+(async () => {
+  const { response } = await send(')JAVASCRIPT" +
+                        url("/truncated") + R"JAVASCRIPT(');
+  await until(() => response.trace.includes('ready'));
+  const read = await failure(async () => response.stream());
+  globalThis.expoFetchTrace = JSON.stringify({ read, trace: response.trace });
+})().catch((error) => { globalThis.expoFetchTrace = `failed: ${error.message}`; });
+)JAVASCRIPT");
+
+    EXPECT_EQ(awaitGlobalString(reactHost, "expoFetchTrace"),
+              R"({"read":"rejected:Transferred a partial file","trace":["ready"]})");
+    EXPECT_FALSE(reactHost.hasReportedFatalError());
+}
+
 /** `cancel()`, which an `AbortSignal` calls, fails the stream with upstream's message and rejects a body read. */
 TEST_F(ExpoFetchModuleTest, CancelFailsTheStreamAndTheBodyRead) {
     ReactHost reactHost;
@@ -164,7 +210,7 @@ TEST_F(ExpoFetchModuleTest, CancelFailsTheStreamAndTheBodyRead) {
   const { request, response } = await send(')JAVASCRIPT" +
                         url("/trickle") + R"JAVASCRIPT(');
   await response.stream();
-  while (!response.trace.includes('data:first')) await new Promise((resolve) => setTimeout(resolve, 1));
+  await until(() => response.trace.includes('data:first'));
   request.cancel();
   globalThis.expoFetchTrace = JSON.stringify({ trace: response.trace, text: await failure(() => response.text()) });
 })().catch((error) => { globalThis.expoFetchTrace = `failed: ${error.message}`; });

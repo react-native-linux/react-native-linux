@@ -15,6 +15,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <unistd.h>
 #include <utility>
@@ -123,8 +124,8 @@ protected:
         return queue_.runUntil([this, &entry] { return std::ranges::find(log_, entry) != log_.end(); });
     }
 
-    /** Lets `/trickle` send the rest and runs the JavaScript thread until the response is finalized. */
-    std::vector<std::string> finishTrickle() {
+    /** Lets the gated route send the rest and runs the JavaScript thread until the response is finalized. */
+    std::vector<std::string> finishGatedRoute() {
         gate_.set_value();
         gate_ = {};
         EXPECT_TRUE(logs("ready"));
@@ -152,7 +153,8 @@ protected:
         std::filesystem::temp_directory_path() / ("rnl-expo-fetch-" + std::to_string(::getpid()));
     std::promise<void> gate_;
     std::shared_future<void> opened_ = gate_.get_future().share();
-    LoopbackHttpServer server_{expoFetchProbeRoutes(opened_)};
+    std::promise<void> peerClosed_;
+    LoopbackHttpServer server_{expoFetchProbeRoutes(opened_, [this] { peerClosed_.set_value(); })};
     JavaScriptQueue queue_;
     CurlHttpClient client_;
     std::vector<std::string> log_;
@@ -169,8 +171,45 @@ TEST_F(ExpoFetchTest, StreamsEachChunkAsItArrives) {
     EXPECT_EQ(response->startStreaming(), std::nullopt);
     EXPECT_EQ(std::ranges::find(log_, "complete"), log_.end());
 
-    EXPECT_EQ(finishTrickle(),
+    EXPECT_EQ(finishGatedRoute(),
               (std::vector<std::string>{"resolved", "data:first", "data:second", "complete", "ready"}));
+}
+
+/**
+ * The request resolves once the final response's headers end, before any body byte, skipping the interim 103
+ * response: a stream whose server flushes its headers and then waits must not leave `await fetch()` pending.
+ */
+TEST_F(ExpoFetchTest, ResolvesOnceTheFinalResponsesHeadersEnd) {
+    const std::shared_ptr<ExpoFetchResponse> response = makeResponse();
+
+    start(*response, get("/headers"));
+    ASSERT_TRUE(logs("resolved"));
+    EXPECT_EQ(log_, std::vector<std::string>{"resolved"});
+    EXPECT_EQ(response->head().status, 200);
+    EXPECT_EQ(response->head().headers,
+              (facebook::react::http::Headers{{"Content-Length", "4"}, {"Connection", "close"}, {"X-Final", "yes"}}));
+    readBody(*response);
+
+    EXPECT_EQ(finishGatedRoute(), (std::vector<std::string>{"resolved", "body:body", "ready"}));
+}
+
+/** A failure after the response but before the first read makes that read throw its message, not wait forever. */
+TEST_F(ExpoFetchTest, AFailureBeforeTheFirstReadFailsThatRead) {
+    const std::shared_ptr<ExpoFetchResponse> response = makeResponse();
+    const auto failureOfFirstRead = [&response]() -> std::string {
+        try {
+            response->startStreaming();
+        } catch (const std::runtime_error& failure) {
+            return failure.what();
+        }
+
+        return "no failure";
+    };
+
+    start(*response, get("/truncated"));
+    ASSERT_TRUE(logs("ready"));
+    EXPECT_EQ(log_, (std::vector<std::string>{"resolved", "ready"}));
+    EXPECT_EQ(failureOfFirstRead(), "Transferred a partial file");
 }
 
 /** A body read once it has completed is handed over whole, by `startStreaming` or by `readBody`, and only once. */
@@ -207,7 +246,7 @@ TEST_F(ExpoFetchTest, TheFirstReadEmitsWhatArrivedBeforeIt) {
     EXPECT_EQ(response->startStreaming(), std::nullopt);
     EXPECT_EQ(log_, (std::vector<std::string>{"resolved", "data:first"}));
 
-    EXPECT_EQ(finishTrickle(),
+    EXPECT_EQ(finishGatedRoute(),
               (std::vector<std::string>{"resolved", "data:first", "data:second", "complete", "ready"}));
 }
 
@@ -372,13 +411,20 @@ TEST_F(ExpoFetchTest, CancelStreamingDropsLaterChunks) {
     EXPECT_EQ(log_, (std::vector<std::string>{"resolved", "data:first", "body:", "ready"}));
 }
 
-/** A response JavaScript has dropped settles nothing: what the worker posts finds it gone. */
-TEST_F(ExpoFetchTest, ADroppedResponseSettlesNothing) {
+/**
+ * A response JavaScript has dropped settles nothing, as what the worker posts finds it gone, and cancels its transfer,
+ * so an abandoned stream closes its connection rather than holding it open and posting chunks forever; one dropped
+ * before it started has nothing to cancel.
+ */
+TEST_F(ExpoFetchTest, ADroppedResponseSettlesNothingAndClosesItsConnection) {
     std::shared_ptr<ExpoFetchResponse> response = makeResponse();
+    std::shared_ptr<ExpoFetchResponse> unstarted = makeResponse();
 
-    start(*response, get("/text"));
-    ASSERT_TRUE(queue_.waitForQueued(4));
+    unstarted.reset();
+    start(*response, get("/held"));
+    ASSERT_TRUE(queue_.waitForQueued(3));
     response.reset();
+    EXPECT_EQ(peerClosed_.get_future().wait_for(kBudget), std::future_status::ready);
     queue_.runQueued();
     EXPECT_TRUE(log_.empty());
 }

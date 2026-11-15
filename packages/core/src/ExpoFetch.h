@@ -69,6 +69,12 @@ public:
     using ResolveBody = std::function<void(std::string body)>;
 
     explicit ExpoFetchResponse(Post post);
+    ExpoFetchResponse(const ExpoFetchResponse&) = delete;
+    ExpoFetchResponse(ExpoFetchResponse&&) = delete;
+    ExpoFetchResponse& operator=(const ExpoFetchResponse&) = delete;
+    ExpoFetchResponse& operator=(ExpoFetchResponse&&) = delete;
+    /** Cancels the transfer, so a response JavaScript dropped mid-stream closes its connection. */
+    ~ExpoFetchResponse();
 
     void setEvents(FetchResponseEvents events);
 
@@ -76,7 +82,11 @@ public:
     void start(CurlHttpClient& client, const FetchRequest& request, Resolve resolve, Reject reject);
     void cancel();
 
-    /** The whole body when it has already completed, which only the first call takes; otherwise empty. */
+    /**
+     * The whole body when it has already completed, which only the first call takes; otherwise empty. Throws
+     * `std::runtime_error` with the failure's message once the response has failed, so a first read after a failure
+     * rejects rather than waits for chunks that will never come.
+     */
     std::optional<std::string> startStreaming();
     void cancelStreaming();
 

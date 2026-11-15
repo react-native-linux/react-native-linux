@@ -9,6 +9,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <utility>
 
@@ -181,7 +182,13 @@ SharedObjectMembers responseMethods(const std::shared_ptr<Context>& context) {
 
     addMember(methods, "startStreaming",
               [](jsi::Runtime& runtime, ExpoFetchResponse& response, const jsi::Value*, size_t) {
-                  std::optional<std::string> body = response.startStreaming();
+                  std::optional<std::string> body;
+
+                  try {
+                      body = response.startStreaming();
+                  } catch (const std::runtime_error& failure) {
+                      throw jsi::JSError(runtime, failure.what());
+                  }
 
                   return body.has_value() ? uint8ArrayOf(runtime, std::move(body.value())) : jsi::Value::null();
               });
@@ -247,9 +254,10 @@ SharedObjectMembers responseGetters() {
  * Threading contract: every method and getter runs on the JavaScript thread, and so does everything that touches an
  * `ExpoFetchResponse`. The module's `CurlHttpClient` runs the transfers on its worker, which hands each callback to the
  * call invoker; the response emits its events on the JavaScript thread from there, and settles its promises through
- * the call invoker. A transfer holds the response weakly, so one whose response JavaScript has dropped settles nothing.
- * The client lives as long as the classes' methods, which the runtime destroys on the JavaScript thread; its
- * destructor joins the worker, so no callback is posted after it returns.
+ * the call invoker. A transfer holds the response weakly, so one whose response JavaScript has dropped settles nothing,
+ * and that response cancels the transfer as it is destroyed. The client lives as long as the classes' methods, which
+ * the runtime destroys on the JavaScript thread; its destructor joins the worker, so no callback is posted after it
+ * returns.
  */
 class LinuxExpoFetchModule final : public facebook::react::TurboModule {
 public:

@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <folly/io/IOBuf.h>
+#include <stdexcept>
 #include <string_view>
 #include <utility>
 
@@ -27,6 +28,12 @@ constexpr std::array<std::string_view, 3> kMethodsRequiringBody{"POST", "PUT", "
 } // namespace
 
 ExpoFetchResponse::ExpoFetchResponse(Post post) : post_(std::move(post)) {}
+
+ExpoFetchResponse::~ExpoFetchResponse() {
+    if (token_) {
+        token_->cancel();
+    }
+}
 
 void ExpoFetchResponse::setEvents(FetchResponseEvents events) { events_ = std::move(events); }
 
@@ -99,6 +106,10 @@ void ExpoFetchResponse::cancel() {
 }
 
 std::optional<std::string> ExpoFetchResponse::startStreaming() {
+    if (phase_ == Phase::ErrorReceived) {
+        throw std::runtime_error(error_);
+    }
+
     if (phase_ == Phase::BodyCompleted) {
         return std::exchange(body_, {});
     }

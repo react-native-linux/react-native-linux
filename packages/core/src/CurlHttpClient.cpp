@@ -65,6 +65,7 @@ struct CurlHttpClient::Transfer {
 
     http::NetworkCallbacks callbacks;
     OnResponseUrl onResponseUrl;
+    bool followsRedirects{true};
     HeaderList requestHeaders{nullptr, &curl_slist_free_all};
     MimeHandle mime{nullptr, &curl_mime_free};
     std::string requestBody;
@@ -105,6 +106,26 @@ struct CurlHttpClient::Transfer {
         curl_easy_getinfo(easy.get(), CURLINFO_CONTENT_LENGTH_DOWNLOAD_T, &length);
 
         return length;
+    }
+
+    /**
+     * A response's headers have ended, at the blank line, the one line without a colon libcurl hands the header
+     * callback besides a status line. The response is delivered if it is the final one: neither an interim 1xx
+     * response, a proxy's CONNECT answer (whose response code is 0) nor a redirect libcurl is about to follow.
+     * Delivering the response here rather than at the first body byte is what lets a stream whose server flushes its
+     * headers and then waits resolve its request.
+     */
+    void endHeaders() {
+        constexpr long kFirstFinalStatus = 200;
+        constexpr long kStatusClassDivisor = 100;
+        constexpr long kRedirectStatusClass = 3;
+        long statusCode = 0;
+        curl_easy_getinfo(easy.get(), CURLINFO_RESPONSE_CODE, &statusCode);
+
+        if (statusCode >= kFirstFinalStatus &&
+            !(followsRedirects && statusCode / kStatusClassDivisor == kRedirectStatusClass)) {
+            deliverResponseOnce();
+        }
     }
 
     void receive(const char* data, size_t size) {
@@ -155,6 +176,8 @@ size_t onHeaderLine(char* data, size_t size, size_t count, void* userData) {
         transfer.responseHeaders.clear();
     } else if (const size_t colon = line.find(':'); colon != std::string_view::npos) {
         transfer.responseHeaders.emplace_back(trim(line.substr(0, colon)), trim(line.substr(colon + 1)));
+    } else {
+        transfer.endHeaders();
     }
 
     return size * count;
@@ -312,6 +335,7 @@ std::unique_ptr<http::IRequestToken> CurlHttpClient::sendFetchRequest(http::Netw
     std::shared_ptr<Transfer> transfer = std::make_shared<Transfer>();
     transfer->callbacks = std::move(callbacks);
     transfer->onResponseUrl = std::move(onResponseUrl);
+    transfer->followsRedirects = followRedirects;
     configure(*transfer, method, url, headers, 0);
     curl_easy_setopt(transfer->easy.get(), CURLOPT_FOLLOWLOCATION, followRedirects ? 1L : 0L);
 
