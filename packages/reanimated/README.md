@@ -43,14 +43,11 @@ accident. A patch that upstream merges is deleted on the bump that first contain
 | _none yet_ | | |
 
 The queue is empty on purpose at `4.6.0`. Issue #181 planned `0001` as a flip of Reanimated's `SHOULD_BE_USE_WEB`
-disjunction — the runtime branch the resolver shim of #178 cannot reach. That constant was deleted in `4.6.0`:
-`src/common/constants/platform.ts` still exports `IS_WINDOWS`, but nothing consumes it, and the web/native split is
-now 38 `.native.*` files under `src/` against two in `4.5.0`. A file-suffix split is exactly what
-`shouldUseJavaScriptFallback` in `packages/cli/src/metro-config.ts` already steers, so at this tag the bring-up rung
-needs no upstream deviation at all. The queue's first entry is expected to be the `react-native-web` import that
-`src/ReanimatedModule/js-reanimated/webUtils.ts` performs at module scope, captured with `pnpm upstream:patch` once
-a `linux` bundle can prove it; the deletion trigger for the rung as a whole stays #136/#138, and the upstream ask
-that would retire our shim is #145.
+disjunction. That constant was deleted in `4.6.0`: `src/common/constants/platform.ts` still exports `IS_WINDOWS`,
+but nothing consumes it, and the web/native split is now 38 `.native.*` files under `src/` against two in `4.5.0`.
+Metro picks between those by file suffix, and a `linux` bundle takes the `.native` side like any other package's
+(`docs/platform-identity.md`, "Reanimated and Worklets"); that side needs Reanimated's native module (#139), not an
+upstream deviation.
 
 ## Conformance
 

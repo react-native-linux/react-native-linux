@@ -34,9 +34,6 @@ document only records what actually landed and why, not the survey.
   `resolveAgainstFilesystem(candidates, exists)`, the pure functions for Metro's platform-extension fallback chain
   (issue #55) — see "Resolution order" below. Both are 100%-covered in `packages/cli/src/metro-config.spec.ts`,
   the latter against a committed fixture tree under `packages/cli/test-fixtures/resolution/`.
-- `packages/cli/src/metro-config.ts` also carries the Reanimated bring-up rung's resolver shim —
-  `shouldUseJavaScriptFallback(request)` and `resolveOriginAwareCandidates(request, sourceExts)` — see
-  "Reanimated bring-up rung" below.
 - `packages/cli/src/animation-rung.ts` — `describeAnimationRung()`, the single startup warning string the app
   template prints once. A pure export with no process-level side effects; nothing in this repository writes it to a
   stream yet, because nothing boots a JavaScript app yet.
@@ -126,150 +123,31 @@ The three-files-progressively-removed scenario from the issue's acceptance crite
 separate fixtures (`foo`, `bar`, `baz`) rather than one fixture mutated between test runs, so the committed
 fixture tree stays static and every assertion stays independent and order-independent.
 
-## Reanimated bring-up rung: `.linux` → default, no `.native`, inside two packages
+## Reanimated and Worklets: the ordinary chain, `.native` included
 
-Tracks issue #178. The decision is #133's, recorded there verbatim: *"the JavaScript fallback is a bring-up rung
-only — shipped internally so the flagship's Reanimated files run on Linux during development, keyed on our own Metro
-resolver shim for linux, and deleted once Phase 2's native worklets runtime lands […]. Not a supported degraded
-mode."* Animations on this rung run on the JavaScript thread, which ADR-0001 decision 6 promises they never will;
-that promise is temporarily and explicitly untrue for as long as this shim exists, and the amendment recording it
-rides with #135.
+Tracks issue #178. A linux bundle resolves `react-native-worklets` and `react-native-reanimated` exactly like every
+other package: `createLinuxResolveRequest` has no package-specific rule, so a relative import inside either package
+walks the `.linux` → `.native` → default chain above and takes the `.native` file wherever one exists.
 
-### The upstream rule, quoted
+- `react-native-worklets/src` ships 24 `.native.ts` files (`runtimes`, `threads`, all of `memory/**`,
+  `WorkletsModule/NativeWorklets.native.ts`, …). On linux they talk to core's `WorkletsModule` host (#136), which
+  the `worklets-round-trip` e2e scenario exercises through `runOnUI`/`runOnJS`.
+- `react-native-reanimated` at `4.6.0`, the tag `packages/reanimated` pins, splits web from native by file suffix
+  (38 `.native.*` files under `src/`); its native side needs Reanimated's own native module (#139).
 
-`react-native-windows` has no native Reanimated port; it runs the JavaScript (web) implementation, restored by
-[software-mansion/react-native-reanimated#10117](https://github.com/software-mansion/react-native-reanimated/pull/10117),
-merged 2026-09-02. Its own description states the rule in prose:
-
-> This PR therefore extends `wrapWithReanimatedMetroConfig` so that internal relative imports from Reanimated and
-> Worklets do not prefer `.native` files on Windows.
-
-and in code, in `packages/react-native-reanimated/metro-config/index.js`:
-
-```js
-const WINDOWS_JS_FALLBACK_PACKAGE_ROOTS = [
-  path.dirname(__dirname),
-  path.dirname(require.resolve('react-native-worklets/package.json')),
-];
-
-function shouldUseWindowsJsFallback(context, moduleName, platform) {
-  return (
-    platform === 'windows' &&
-    moduleName.startsWith('.') &&
-    WINDOWS_JS_FALLBACK_PACKAGE_ROOTS.some((packageRoot) =>
-      context.originModulePath.startsWith(`${packageRoot}${path.sep}`)
-    )
-  );
-}
-```
-
-```js
-// Keep `.windows` resolution, but skip unsupported `.native` modules.
-const resolutionContext = shouldUseWindowsJsFallback(context, moduleName, platform)
-  ? { ...context, preferNativePlatform: false }
-  : context;
-```
-
-Three conditions, joined by `&&`: the active platform, a **relative** module name, and an origin module inside one
-of the two package roots. `preferNativePlatform: false` is Metro's own switch for "do not try the `.native`
-suffix"; it does not touch the platform suffix, which is what upstream's comment means by "Keep `.windows`
-resolution".
-
-### The same rule, keyed on `linux`
-
-`shouldUseJavaScriptFallback(request)` in `packages/cli/src/metro-config.ts` reproduces those three conditions with
-`windows` replaced by `linux`, and `resolveOriginAwareCandidates(request, sourceExts)` applies the consequence by
-building the candidate list without the `.native` step:
-
-```ts
-resolveOriginAwareCandidates(
-  {
-    moduleName: "./mutables",
-    originModulePath: "<...>/react-native-reanimated/src/index.ts",
-    platform: "linux",
-  },
-  ["ts", "js"],
-);
-// → ["<...>/mutables.linux.ts", "<...>/mutables.ts", "<...>/mutables.linux.js", "<...>/mutables.js"]
-```
-
-Worklets has left the rule: since core registers the `WorkletsModule` host (#136), its `.native` files talk to a
-real native module, so a linux bundle takes them like any other package's. Only Reanimated still skips `.native`,
-until its own native module exists (#139).
-
-Every other request — a different platform, a package (non-relative) import, or any origin outside those two
-packages — falls through to `resolvePlatformCandidates` and keeps the ordinary `.linux` → `.native` → default chain
-documented above. `resolveOriginAwareCandidates` is where the `resolveRequest` composition of #22 calls into the
-chain; `resolveLinuxOverlay` still runs before it and still short-circuits.
-
-One deliberate difference from upstream: we detect the two package roots by path **segment**
-(`react-native-reanimated` or `react-native-worklets` appearing in `originModulePath`) rather than by
-`require.resolve('<package>/package.json')`, because this repository depends on neither package and cannot resolve
-them. The observable rule is the same for any layout where the package lives in a directory named after itself.
-
-### Why the `.native` step has to go
-
-Verified against the versions on disk in the flagship's install (`~/suuudokuuu/node_modules`), Reanimated `4.5.0`
-and Worklets `0.10.0`:
-
-- `react-native-worklets/src` ships **24** `.native.ts` files (`runtimes`, `threads`, all of `memory/**`,
-  `WorkletsModule/NativeWorklets.native.ts`, …) beside unsuffixed siblings that are the JavaScript implementation.
-  The published `lib/module/**` has the same split in `.js`. Metro treats `linux` as a native platform, so without
-  the shim every one of those 24 resolves to the native file, which needed a Worklets JSI host that Linux did not
-  have until #136.
-- `react-native-reanimated/src` ships exactly **one** `.native.ts`
-  (`specs/SharedTransitionBoundaryProvider.native.ts`); Reanimated's own web/native split is a runtime branch, not
-  a file suffix — see the next subsection.
-- Both packages declare `"react-native": "src/index"`, so on a native platform Metro resolves their TypeScript
-  sources and origin module paths land under `<package>/src/**`.
-
-### What the shim does and does not reach, by version
-
-This paragraph is version-specific, and the version we pin changed the answer.
-
-**Reanimated 4.5.x** branched at runtime on `SHOULD_BE_USE_WEB = IS_JEST || IS_WEB || IS_WINDOWS`
-(`src/common/constants/platform.ts`), consumed by 23 files — `export const makeMutable = SHOULD_BE_USE_WEB ?
-makeMutableWeb : makeMutableNative` in `src/mutables.ts`, the `if (!SHOULD_BE_USE_WEB)` native initialisation in
-`src/initializers.ts`, and so on. On `linux` that constant is `false`, so a file-suffix shim alone could not have
-reached it, and the rung would have needed a patch.
-
-**Reanimated 4.6.0 — the tag `packages/reanimated` pins — deleted that constant.** The runtime branch was replaced
-by a file-suffix split: the tree went from 2 `.native.*` files at 4.5.0 to 38 at 4.6.0 (`mutables.native.ts`,
-`ReanimatedModule/index.native.ts`, `useAnimatedStyle.native.ts`, …), and `grep SHOULD_BE_USE_WEB` over the
-published 4.6.0 package returns nothing. `IS_WINDOWS` survives only as a `@knipIgnore`'d export with no consumers.
-A file-suffix split is precisely what this shim steers, so at 4.6.0 the rung is the shim and nothing else — the
-package's patch queue is empty for that reason.
-
-`react-native-worklets` still carries its own split (24 `.native.ts` files), and on linux it now takes the native
-side, served by core's `WorkletsModule` host.
-
-Upstream's own Windows fallback (`shouldUseWindowsJsFallback` in `metro-config/index.js`, PR #10117) merged after
-4.6.0 was cut and first ships in 4.7.0. Ask 5 of the RFC in `docs/research/animation-on-linux.md` Appendix A (#145)
-still stands: key that fallback on "this platform has no native Worklets module" rather than on a hardcoded
-platform name, so the shim can be deleted rather than maintained.
-
-### How the shim is exercised today
-
-Unit only, against a committed fixture tree at `packages/cli/test-fixtures/reanimated-fallback/`, exercised in
-`packages/cli/src/metro-config.spec.ts`. Fixture file names are kebab-cased to satisfy the repository's
-`unicorn/filename-case` lint; the directory names are the real package names, which is what the rule keys on.
-
-| Origin module | Request | Resolves to | Proves |
-| --- | --- | --- | --- |
-| `react-native-worklets/src/index.ts` | `./worklets-module/native-worklets` | `native-worklets.native.ts` | Worklets keeps `.native`: core serves its native module |
-| `react-native-reanimated/src/index.ts` | `./hook/use-animated-style` | `use-animated-style.ts` | the same inside Reanimated |
-| `react-native-reanimated/src/index.ts` | `./hook/use-shared-value` | `use-shared-value.linux.ts` | `.linux` still wins — upstream's "Keep `.windows` resolution" |
-| `react-native-gesture-handler/src/index.ts` | `./gesture` | `gesture.native.ts` | every other package keeps preferring `.native` |
-| `react-native-reanimated/src/index.ts` | `react-native-worklets` (package import) | `.linux` → `.native` → default | package imports are untouched, as upstream |
-| `react-native-reanimated/src/index.ts` on `android` | `./hook/use-animated-style` | `.android` → `.native` → default | the rule is keyed on `linux`, nothing else |
+`react-native-windows` does the opposite: upstream's `shouldUseWindowsJsFallback` in
+`react-native-reanimated/metro-config/index.js`
+([software-mansion/react-native-reanimated#10117](https://github.com/software-mansion/react-native-reanimated/pull/10117),
+first shipped in `4.7.0`) skips `.native` for relative imports inside both packages on `windows`, because Windows has
+no native Worklets module. Linux has one, so it keeps the ordinary chain.
 
 ### What waits for Metro: the runtime smoke bundle (#178 item 2)
 
 Item 2 of #178 — a bundle proving `useSharedValue` + `withTiming` + `useAnimatedStyle` actually move a view on the
 JS thread — is **not** in this repository yet, and is deliberately not faked. The e2e rig runs hand-written
 bundles (`packages/core/test-bundles/*.js`, scenarios in `packages/core/e2e/*.json`); a hand-written bundle cannot
-exercise Reanimated at all, because there is no Metro to run the resolver shim, no `react-native-reanimated`
-dependency to bundle, and no Worklets Babel plugin (#137) to compile worklets. A hand-written stand-in would assert
+exercise Reanimated at all, because it bypasses Metro and the Worklets Babel plugin (#137), and this repository has
+no `react-native-reanimated` dependency to bundle. A hand-written stand-in would assert
 our own JavaScript, not Reanimated's, and would prove nothing about the rung.
 
 It unblocks when the app template and Metro wiring land (#22 for the resolver composition, #79/M3 for the dev
@@ -290,13 +168,11 @@ what the JS thread actually costs (the measurement #133's acceptance criteria as
 #134–#138"*. It is a pure export with a unit test and no process-level side effects; the single call site arrives
 with the template (#22).
 
-**Deletion trigger.** The shim, the fixture tree, and `describeAnimationRung()` are deleted — not demoted to a
-supported degraded mode — once the native worklets runtime replaces them: #136 (the `WorkletsModule` host, JSI
-bindings, `requestAnimationFrame` on the FrameClock) landing green together with #138 (worklets conformance:
-serialization, `runOnUI`/`runOnJS` round trips, runtime-per-thread). #133 states the same criterion as "#135/#136
+**Deletion trigger.** `describeAnimationRung()` is deleted — not demoted to a supported degraded mode — once the
+native worklets runtime replaces it: #136 (the `WorkletsModule` host, JSI bindings, `requestAnimationFrame` on the
+FrameClock) landing green together with #138 (worklets conformance: serialization, `runOnUI`/`runOnJS` round trips, runtime-per-thread). #133 states the same criterion as "#135/#136
 green with the flagship's animations on the worklets runtime"; #135 (the UI scheduler) is #136's prerequisite, so
-the trigger to watch is the pair #136/#138. If ask 5 of #145 is accepted upstream first, the shim is deleted
-earlier and the rung continues on upstream's own capability check.
+the trigger to watch is the pair #136/#138.
 
 ## What this is not (and the real reason why)
 
@@ -374,12 +250,9 @@ merge upstream changes into the six `derived` files and bump `baseVersion`.
 
 - **Metro registration end-to-end (issue #22).** There is no `metro.config.js` anywhere in this repository yet —
   no app package exists to hold one. `resolveLinuxOverlay`, `linuxOverlayIndex`, `resolvePlatformCandidates`,
-  `resolveAgainstFilesystem`, `shouldUseJavaScriptFallback`, `resolveOriginAwareCandidates`,
-  `resolveLinuxPackageAlias` and `resolveLinuxModuleName` are written and
-  100%-tested as pure functions; composing them with
-  `reactNativePlatformResolver` into an actual `resolver.resolveRequest` (including the origin-aware guard
-  described above, honouring a user-supplied `resolver.resolveRequest` instead of replacing it, and adapting to
-  Metro's real `CustomResolver`/`Resolution` types and its own `sourceExts` config, none of which are a dependency
+  `resolveAgainstFilesystem`, `resolveLinuxPackageAlias` and `resolveLinuxModuleName` are written and 100%-tested
+  as pure functions; composing them with `reactNativePlatformResolver` into an actual `resolver.resolveRequest`
+  (honouring a user-supplied `resolver.resolveRequest` instead of replacing it, and adapting to Metro's real `CustomResolver`/`Resolution` types and its own `sourceExts` config, none of which are a dependency
   of this repo yet) is that issue's job, not this one's.
 - **The remaining ~11 core JS overrides.** Land with the component/API issue that needs them (e.g. `BaseViewConfig`
   with the first Fabric component that needs prop parity), each adding one more `overrides.json` entry and one

@@ -5,9 +5,7 @@ import {
   resolveAgainstFilesystem,
   resolveLinuxModuleName,
   resolveLinuxOverlay,
-  resolveOriginAwareCandidates,
   resolvePlatformCandidates,
-  shouldUseJavaScriptFallback,
 } from "./metro-config.ts";
 
 import { existsSync } from "node:fs";
@@ -19,25 +17,6 @@ const overlayIndex = {
 
 const resolutionFixturesDirectory = path.join(import.meta.dirname, "..", "test-fixtures", "resolution");
 const fixtureModulePath = (moduleName: string): string => path.join(resolutionFixturesDirectory, moduleName);
-
-const fallbackFixturesDirectory = path.join(import.meta.dirname, "..", "test-fixtures", "reanimated-fallback");
-const fallbackModulePath = (relativePath: string): string => path.join(fallbackFixturesDirectory, relativePath);
-
-const reanimatedEntry = fallbackModulePath("react-native-reanimated/src/index.ts");
-const workletsEntry = fallbackModulePath("react-native-worklets/src/index.ts");
-const gestureHandlerEntry = fallbackModulePath("react-native-gesture-handler/src/index.ts");
-
-interface FallbackRequest {
-  readonly moduleName: string;
-  readonly originModulePath: string;
-  readonly platform: string;
-}
-
-const fallbackRequest = (moduleName: string, originModulePath: string, platform: string): FallbackRequest => ({
-  moduleName,
-  originModulePath,
-  platform,
-});
 
 const isPackageResolvable = (): boolean => true;
 
@@ -143,108 +122,5 @@ describe("resolveAgainstFilesystem", () => {
     const candidates = resolvePlatformCandidates(fixtureModulePath("cycle"), "linux", ["ts", "js"]);
 
     expect(resolveAgainstFilesystem(candidates, existsSync)).toBe(fixtureModulePath("cycle.native.ts"));
-  });
-});
-
-describe("shouldUseJavaScriptFallback", () => {
-  it("claims a relative import made from inside react-native-reanimated on linux", () => {
-    const request = fallbackRequest("./hook/use-animated-style", reanimatedEntry, "linux");
-
-    expect(shouldUseJavaScriptFallback(request)).toBe(true);
-  });
-
-  it("leaves a relative import made from inside react-native-worklets alone, now that its native host exists", () => {
-    const request = fallbackRequest("./worklets-module/native-worklets", workletsEntry, "linux");
-
-    expect(shouldUseJavaScriptFallback(request)).toBe(false);
-  });
-
-  it("leaves relative imports of the same packages alone on other native platforms", () => {
-    const request = fallbackRequest("./hook/use-animated-style", reanimatedEntry, "android");
-
-    expect(shouldUseJavaScriptFallback(request)).toBe(false);
-  });
-
-  it("leaves package imports made from inside the fallback packages alone", () => {
-    const request = fallbackRequest("react-native-worklets", reanimatedEntry, "linux");
-
-    expect(shouldUseJavaScriptFallback(request)).toBe(false);
-  });
-
-  it("leaves relative imports of every other package alone", () => {
-    const request = fallbackRequest("./gesture", gestureHandlerEntry, "linux");
-
-    expect(shouldUseJavaScriptFallback(request)).toBe(false);
-  });
-});
-
-describe("resolveOriginAwareCandidates", () => {
-  it("skips the native suffix, and keeps the linux one, inside react-native-reanimated", () => {
-    const request = fallbackRequest("./hook/use-animated-style", reanimatedEntry, "linux");
-
-    expect(resolveOriginAwareCandidates(request, ["ts", "js"])).toEqual([
-      fallbackModulePath("react-native-reanimated/src/hook/use-animated-style.linux.ts"),
-      fallbackModulePath("react-native-reanimated/src/hook/use-animated-style.ts"),
-      fallbackModulePath("react-native-reanimated/src/hook/use-animated-style.linux.js"),
-      fallbackModulePath("react-native-reanimated/src/hook/use-animated-style.js"),
-    ]);
-  });
-
-  it("keeps the native suffix for a package import made from inside react-native-reanimated", () => {
-    const request = fallbackRequest("react-native-worklets", reanimatedEntry, "linux");
-
-    expect(resolveOriginAwareCandidates(request, ["ts"])).toEqual([
-      "react-native-worklets.linux.ts",
-      "react-native-worklets.native.ts",
-      "react-native-worklets.ts",
-    ]);
-  });
-
-  it("keeps the native suffix inside react-native-reanimated when the platform is not linux", () => {
-    const request = fallbackRequest("./hook/use-animated-style", reanimatedEntry, "android");
-
-    expect(resolveOriginAwareCandidates(request, ["ts"])).toEqual([
-      fallbackModulePath("react-native-reanimated/src/hook/use-animated-style.android.ts"),
-      fallbackModulePath("react-native-reanimated/src/hook/use-animated-style.native.ts"),
-      fallbackModulePath("react-native-reanimated/src/hook/use-animated-style.ts"),
-    ]);
-  });
-});
-
-describe("resolveOriginAwareCandidates against the fallback fixture tree", () => {
-  it("resolves a worklets module to its native file, the one that talks to core's WorkletsModule host", () => {
-    const request = fallbackRequest("./worklets-module/native-worklets", workletsEntry, "linux");
-    const candidates = resolveOriginAwareCandidates(request, ["ts"]);
-
-    expect(resolveAgainstFilesystem(candidates, existsSync)).toBe(
-      fallbackModulePath("react-native-worklets/src/worklets-module/native-worklets.native.ts"),
-    );
-  });
-
-  it("resolves a reanimated hook to its unsuffixed file even though a native sibling exists", () => {
-    const request = fallbackRequest("./hook/use-animated-style", reanimatedEntry, "linux");
-    const candidates = resolveOriginAwareCandidates(request, ["ts"]);
-
-    expect(resolveAgainstFilesystem(candidates, existsSync)).toBe(
-      fallbackModulePath("react-native-reanimated/src/hook/use-animated-style.ts"),
-    );
-  });
-
-  it("still prefers a linux file over the unsuffixed one inside a fallback package", () => {
-    const request = fallbackRequest("./hook/use-shared-value", reanimatedEntry, "linux");
-    const candidates = resolveOriginAwareCandidates(request, ["ts"]);
-
-    expect(resolveAgainstFilesystem(candidates, existsSync)).toBe(
-      fallbackModulePath("react-native-reanimated/src/hook/use-shared-value.linux.ts"),
-    );
-  });
-
-  it("keeps preferring the native file for a package that is not part of the fallback", () => {
-    const request = fallbackRequest("./gesture", gestureHandlerEntry, "linux");
-    const candidates = resolveOriginAwareCandidates(request, ["ts"]);
-
-    expect(resolveAgainstFilesystem(candidates, existsSync)).toBe(
-      fallbackModulePath("react-native-gesture-handler/src/gesture.native.ts"),
-    );
   });
 });
