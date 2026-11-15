@@ -3,28 +3,15 @@ import {
   buildPairingLink,
   describeForeignCheckout,
   gradeWindowRun,
-  overlayInstallArguments,
-  overlayPackArguments,
   readPairingUrl,
   tailLines,
 } from "./e2e/t3code.ts";
 import { argv, env, execPath, stderr, stdout } from "node:process";
 import { attachTrace, startCompositor, stopCompositor, waitForSocketName, windowBinaryPath } from "./e2e-processes.ts";
-import {
-  closeSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  openSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { embedExpoAppAssets, installOverlays } from "./t3code-app.ts";
 import { findExecutable, findLavapipeIcd } from "./window-golden.ts";
 import { spawn, spawnSync } from "node:child_process";
-import { embedExpoAppAssets } from "@react-native-linux/cli/expo-app-assets.ts";
-import { packageAliases } from "@react-native-linux/cli/package-aliases.ts";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { waitUntil } from "./e2e/discovery.ts";
@@ -90,26 +77,6 @@ const describeUnavailable = (compositorPath: string | null, lavapipeIcdPath: str
 const fail = (message: string): void => {
   stderr.write(`e2e ${SCENARIO_NAME}: failed\n${message}\nartifacts: ${artifactsDirectory}\n`);
   process.exitCode = FAILURE_EXIT_STATUS;
-};
-
-/** The output of pnpm run in `directory` when it fails, or null when it succeeds. */
-const runPnpm = (pnpmArguments: readonly string[], directory: string): string | null => {
-  const run = spawnSync("pnpm", pnpmArguments, { cwd: directory, encoding: "utf8" });
-
-  return run.status === SUCCESSFUL_EXIT_STATUS ? null : `${run.stdout}${run.stderr}`;
-};
-
-/** Every overlay package the alias table names, packed and added to the mobile app; the failure, or null. */
-const installOverlays = (): string | null => {
-  rmSync(overlayDirectory, { force: true, recursive: true });
-
-  return (
-    runPnpm(overlayPackArguments(packageAliases, overlayDirectory), repositoryRoot) ??
-    runPnpm(
-      overlayInstallArguments(readdirSync(overlayDirectory).map((name) => path.join(overlayDirectory, name))),
-      checkout,
-    )
-  );
 };
 
 const buildBundle = (): boolean => {
@@ -265,7 +232,7 @@ const runAgainstServer = async (rig: Rig): Promise<void> => {
 };
 
 const runOnOwnCheckout = async (rig: Rig): Promise<void> => {
-  const overlayFailure = installOverlays();
+  const overlayFailure = installOverlays(repositoryRoot, overlayDirectory, checkout);
 
   if (overlayFailure !== null) {
     fail(`the overlay packages could not be packed and added to T3 Code\n${tailLines(overlayFailure)}`);
