@@ -7849,17 +7849,37 @@ disabling the output first takes it out of the layout. CI installs `wlr-randr` b
 scenario names a rate and `wlr-randr` is not on `PATH`, the driver exits 2, like any other missing rig piece.
 
 `animated-views-120hz.json` is the 120 Hz gate: `animated-views.js`, 32 views animating through the native driver,
-for 480 frames at `{"p95Ms": 12.5, "minFrames": 240}`. The headless output is not a vblank. Its frame timer
-re-arms for a whole number of milliseconds (`1000000 / refresh`, with the refresh in mHz: 8 ms at 120 Hz) **after** each output
-commit, so an output frame is 8 ms plus cage's pixman composite, and the presented intervals sit on that grid.
-Four local runs measured p50 8.02–8.04 ms and p95 8.44–9.54 ms. The client cannot do better than the grid, and it
-cannot land between two grid points: a frame it misses reads at least 16 ms. 12.5 ms is halfway between one 120 Hz
-interval and two. It fails a client that drops more than one frame in twenty, and it does not fail on cage's
-composite jitter. The same scenario at cage's 60 Hz reads p95 16.52 ms and fails it, which proves the gate
-measures the mode change. A p95 under 8.33 ms cannot be measured on this rig, because the grid itself is 8 ms
-plus a composite. That number still belongs to real hardware.
+for 480 frames at `{"p50Ms": 8.5, "p95Ms": 12.5, "minFrames": 240, "maxHangs": 1}`. The headless output is not a
+vblank, and its intervals are not a grid. wlroots 0.17 re-arms the headless frame timer, a whole number of
+milliseconds (8 ms at 120 Hz), only on an output commit, and a client buffer that lands while the output is idle is
+presented as soon as it lands. So a client that keeps up presents every 8 ms plus cage's composite, and a client
+that does not presents at its own frame cost: a slow client reads 10 or 13 ms, not 16, and its p95 can stay under
+12.5 ms. The median is what moves, so `p50Ms` is the bound that catches it, and `p95Ms` only bounds the tail.
+Measured locally (#654), with a temporary busy-wait at the top of `SkiaVulkanRenderer::drawFrame` standing in for a
+slower client, at load averages of 9 to 21 on 24 cores:
 
-The demo for the real-hardware number is the same bundle, run on a 120 Hz output under Hyprland:
+| Client | p50 | p95 |
+| --- | --- | --- |
+| unmodified, 19 runs | 8.02–8.13 ms | 8.50–13.98 ms |
+| +5 ms per frame, 2 runs | 8.29–9.72 ms | 9.96–13.52 ms |
+| +6 ms per frame, 2 runs | 9.37–10.33 ms | 10.91–12.66 ms |
+| +7 ms per frame, 2 runs | 10.28–10.39 ms | 11.62–12.01 ms |
+| +10 ms per frame, 6 runs | 13.15–14.19 ms | 14.57–15.87 ms |
+| unmodified at cage's 60 Hz | | 16.52 ms |
+
+8.5 ms sits 0.37 ms above the worst clean median and 4.65 ms under the best +10 ms one, and it fails every +6 ms
+run, which is a client presenting at about 107 fps or slower. The p95 bound alone passed +7 ms, a client at about
+97 fps. The same 10 ms of busy work in the bundle's JavaScript, in a `requestAnimationFrame` loop, changes nothing
+(p50 8.03–8.05 ms, p95 8.68–8.96 ms over 4 runs), because native-driver animation does not wait for the JavaScript
+thread. The tail is sensitive to host load in a way the median is not. One clean run in 19 failed `p95Ms` and
+`maxHangs` at a load average of 21, and at a load of 66 a clean run read p50 10.20 ms and p95 19.03 ms. The 60 Hz
+scenarios share that sensitivity. What the gate proves is that on a 120 Hz headless output the renderer presents
+at least half its frames within 8.5 ms and 95 % within 12.5 ms, with at most one hang. It does not prove that
+every frame lands on a vblank, and it measures nothing under 8.33 ms, since an output frame here is 8 ms plus a composite. 120 fps on real
+hardware is still open on #20.
+
+The recipe for the real-hardware number is the same bundle on a 120 Hz output under Hyprland. **It has never been
+run.** Its measurement is tracked on #20.
 
 ```sh
 build/dev/bin/rnl_window --fabric packages/core/test-bundles/animated-views.js --frames 1200 \
@@ -7867,7 +7887,6 @@ build/dev/bin/rnl_window --fabric packages/core/test-bundles/animated-views.js -
 ```
 
 The last line of the log is the summary, and `refreshNs` on each record is the compositor's own refresh hint.
-Nobody has run that command on hardware and recorded the result yet.
 
 ### Frame journal (#345)
 
@@ -8296,9 +8315,9 @@ Named here so they are not mistaken for oversights, all of them still #7:
   carry the same per-channel tolerance for the same reason, because oxlint forbids the root script importing the
   package one. Moving the shared half into a package both can depend on is the fix, and it is not worth a package
   for one function yet.
-- **The 8.33 ms budget.** `animated-views-120hz.json` gates presenting every 120 Hz frame on the headless rig, but
-  that rig's output frames are 8 ms plus a composite, so the gospel's own number needs real hardware and a place
-  to record the result over time; neither exists yet.
+- **The 8.33 ms budget.** `animated-views-120hz.json` gates the renderer staying inside a 120 Hz headless output's
+  8 ms frame timer, but that rig's output frames are 8 ms plus a composite, so the gospel's own number needs real
+  hardware and a place to record the result over time; neither exists yet.
 
 ## Unit tests and coverage
 

@@ -4,7 +4,7 @@
   "outputRefreshHz": 120,
   "ready": "animated-views: committed surface 1",
   "frames": 480,
-  "frameBudget": { "p95Ms": 12.5, "minFrames": 240 },
+  "frameBudget": { "p50Ms": 8.5, "p95Ms": 12.5, "minFrames": 240, "maxHangs": 1 },
   "steps": ["sleep 1000"],
   "expect": ["animated-views: committed surface 1", "animated-views: all 32 moving"]
 }
