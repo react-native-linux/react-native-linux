@@ -3,14 +3,18 @@
 #include "CurlHttpClient.h"
 
 #include <atomic>
+#include <boost/uuid/detail/md5.hpp>
 #include <cstdint>
 #include <exception>
 #include <filesystem>
 #include <folly/io/IOBuf.h>
 #include <fstream>
 #include <functional>
+#include <iomanip>
+#include <iterator>
 #include <memory>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -38,6 +42,25 @@ std::optional<std::string> decodeDataUrl(const std::string& url) {
     }
 
     return decodeBase64(url.substr(comma + 1));
+}
+
+std::string contentMd5(const std::filesystem::path& path) {
+    std::ifstream stream(path, std::ios::binary);
+    const std::string contents{std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
+    boost::uuids::detail::md5 hash;
+    boost::uuids::detail::md5::digest_type digest{};
+    std::ostringstream hex;
+
+    hash.process_bytes(contents.data(), contents.size());
+    hash.get_digest(digest);
+
+    hex << std::hex << std::setfill('0');
+
+    for (const auto word : digest) {
+        hex << std::setw(static_cast<int>(sizeof(word) * 2)) << static_cast<uint32_t>(word);
+    }
+
+    return hex.str();
 }
 
 } // namespace
@@ -81,6 +104,13 @@ void ExpoAssetDownloads::download(const std::string& url, const std::optional<st
         return;
     }
 
+    worker_.post([this, url, md5Hash, type, resolve = std::move(resolve), reject = std::move(reject)]() {
+        downloadOnWorker(url, md5Hash, type, resolve, reject);
+    });
+}
+
+void ExpoAssetDownloads::downloadOnWorker(const std::string& url, const std::optional<std::string>& md5Hash,
+                                          const std::string& type, const Resolve& resolve, const Reject& reject) {
     if (directory_.empty()) {
         reject("Unable to save asset to directory: ''");
         return;
@@ -90,7 +120,10 @@ void ExpoAssetDownloads::download(const std::string& url, const std::optional<st
     const std::filesystem::path localPath = directory_ / ("ExponentAsset-" + cacheFileId + "." + type);
     const std::string fileUrl = std::string(kFileScheme) + localPath.string();
 
-    if (std::filesystem::exists(localPath)) {
+    std::error_code ignored;
+
+    if (std::filesystem::exists(localPath, ignored) &&
+        (!md5Hash.has_value() || contentMd5(localPath) == md5Hash.value())) {
         resolve(fileUrl);
         return;
     }

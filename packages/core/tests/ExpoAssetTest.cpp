@@ -15,6 +15,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <unistd.h>
 #include <vector>
@@ -23,6 +24,7 @@ namespace react_native_linux {
 namespace {
 
 constexpr std::chrono::seconds kSettleBudget{10};
+constexpr std::string_view kAssetMd5 = "1df8978624f56fb1c8290351ca43b3d0";
 
 std::string readFile(const std::filesystem::path& path) {
     std::ifstream stream(path, std::ios::binary);
@@ -100,13 +102,52 @@ protected:
 TEST_F(ExpoAssetTest, DownloadsARemoteAssetOnceAndReusesIt) {
     const std::string hashed = server_.url("/hashed.png");
     const std::string unhashed = server_.url("/unhashed.ttf");
+    const std::string hashedName = "ExponentAsset-" + std::string(kAssetMd5) + ".png";
 
     EXPECT_EQ(settle("file:///proc/self/comm", std::nullopt, ""), "file:///proc/self/comm");
-    EXPECT_EQ(settle(hashed, "0123abcd", "png"), fileUrl("ExponentAsset-0123abcd.png"));
-    EXPECT_EQ(settle(hashed, "0123abcd", "png"), fileUrl("ExponentAsset-0123abcd.png"));
+    EXPECT_EQ(settle(hashed, std::string(kAssetMd5), "png"), fileUrl(hashedName));
+    EXPECT_EQ(settle(hashed, std::string(kAssetMd5), "png"), fileUrl(hashedName));
+    EXPECT_EQ(settle(unhashed, std::nullopt, "ttf"), fileUrl("ExponentAsset-" + urlHash(unhashed) + ".ttf"));
     EXPECT_EQ(settle(unhashed, std::nullopt, "ttf"), fileUrl("ExponentAsset-" + urlHash(unhashed) + ".ttf"));
     EXPECT_EQ(served_.load(), 2);
-    EXPECT_EQ(readFile(directory_ / "ExponentAsset-0123abcd.png"), "asset bytes");
+    EXPECT_EQ(readFile(directory_ / hashedName), "asset bytes");
+}
+
+/**
+ * As upstream's iOS and Android modules do, a cached file whose contents no longer match its MD5, say one a crash
+ * truncated, is downloaded again, while one without an MD5 is reused as it is.
+ */
+TEST_F(ExpoAssetTest, DownloadsAgainWhenTheCachedFileNoLongerMatchesItsMd5) {
+    const std::string unhashed = server_.url("/unhashed.ttf");
+    const std::filesystem::path hashedPath = directory_ / ("ExponentAsset-" + std::string(kAssetMd5) + ".png");
+    const std::filesystem::path unhashedPath = directory_ / ("ExponentAsset-" + urlHash(unhashed) + ".ttf");
+
+    std::filesystem::create_directories(directory_);
+    std::ofstream(hashedPath) << "truncated";
+    std::ofstream(unhashedPath) << "stale";
+
+    EXPECT_EQ(settle(server_.url("/asset.png"), std::string(kAssetMd5), "png"), "file://" + hashedPath.string());
+    EXPECT_EQ(readFile(hashedPath), "asset bytes");
+    EXPECT_EQ(settle(unhashed, std::nullopt, "ttf"), "file://" + unhashedPath.string());
+    EXPECT_EQ(readFile(unhashedPath), "stale");
+    EXPECT_EQ(served_.load(), 1);
+}
+
+/** Checking and hashing a cached file is disk work, so even a cache hit settles off the calling thread. */
+TEST_F(ExpoAssetTest, SettlesACachedAssetOffTheCallingThread) {
+    const auto settledOn = std::make_shared<std::promise<std::thread::id>>();
+    std::future<std::thread::id> settled = settledOn->get_future();
+
+    std::filesystem::create_directories(directory_);
+    std::ofstream(directory_ / ("ExponentAsset-" + std::string(kAssetMd5) + ".bin")) << "asset bytes";
+    downloads_.download(
+        server_.url("/cached.bin"), std::string(kAssetMd5), "bin",
+        [settledOn](const std::string&) { settledOn->set_value(std::this_thread::get_id()); },
+        [settledOn](const std::string&) { settledOn->set_value(std::this_thread::get_id()); });
+
+    ASSERT_EQ(settled.wait_for(kSettleBudget), std::future_status::ready);
+    EXPECT_NE(settled.get(), std::this_thread::get_id());
+    EXPECT_EQ(served_.load(), 0);
 }
 
 TEST_F(ExpoAssetTest, RejectsAFailedDownload) {

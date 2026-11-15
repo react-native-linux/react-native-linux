@@ -10,7 +10,7 @@ namespace react_native_linux {
 
 /**
  * One thread that runs posted tasks in order, for a module whose asynchronous methods must not do their work on the
- * JavaScript thread: `ExpoSQLite`'s `SQLiteDatabases` and `FileSystem`'s `FileSystemHost`.
+ * JavaScript thread: `ExpoSQLite`'s `SQLiteDatabases`, `FileSystem`'s `FileSystemHost` and `ExpoAssetDownloads`.
  *
  * Threading contract: `post` may be called from any thread and never waits on a task. Tasks run on the one thread
  * this object owns, which the first `post` starts, in the order they were posted, and must not throw. The destructor

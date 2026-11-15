@@ -19,9 +19,9 @@ constexpr size_t kDownloadArgumentCount = 3;
 
 /**
  * Threading contract: `downloadAsync` reads its arguments on the JavaScript thread and hands them to
- * `ExpoAssetDownloads`, which settles the `AsyncPromise` from the JavaScript thread or its HTTP client's worker; the
- * promise reaches JavaScript through the call invoker either way. `TurboModuleRegistry` owns the downloads and
- * destroys them only after the JavaScript thread has quit, so the reference outlives every call.
+ * `ExpoAssetDownloads`, which settles the `AsyncPromise` from the JavaScript thread for a `file://` URL and from one
+ * of its workers otherwise; the promise reaches JavaScript through the call invoker either way. `TurboModuleRegistry`
+ * owns the downloads and destroys them only after the JavaScript thread has quit, so the reference outlives every call.
  */
 class ExpoAssetModule final : public facebook::react::TurboModule {
 public:
