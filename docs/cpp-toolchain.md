@@ -1415,9 +1415,10 @@ installed. Every upstream change that needed a local edit:
 | Three new upstream tests in directories already linked (`TextAttributesHashTest`, `AccessibilityPropsTest`, `MountingTransactionTest`) and two new `tests/` directories | The drift oracle's file lists; the new files compile through the existing globs and pass. The two new directories are excluded with reasons |
 | Codegen drops `NativeModalManager` and adds `NativeResizeObserver` | `pnpm codegen`; nothing here used the dropped spec |
 | `TextAttributes::fontVariationSettings` | Ledgered not-implemented in `docs/prop-coverage.json`, owned by #655 |
-| Three derived overrides' bases moved: `BaseViewConfig.android.js` (unprefixed `background*` attributes, which arrive through the import), `PlatformTypes.js` (formatting), `PlatformColorValueTypes.android.js` (a trailing `{fallback}` argument) | New `baseHash` values. The `{fallback}` argument is not ported; #656 owns it |
+| Three derived overrides' bases moved: `BaseViewConfig.android.js` (unprefixed `background*` attributes, which arrive through the import), `PlatformTypes.js` (formatting), `PlatformColorValueTypes.android.js` (a trailing `{fallback}` argument) | New `baseHash` values. `PlatformColorValueTypes.linux.ts` ports the `{fallback}` argument (#656): a trailing object with a string `fallback` is kept beside the names and processed as a colour when none resolves; one anywhere else is ignored, as upstream ignores it |
 | react/react-native#57975, the nanosecond round trip `scripts/react-native-timing.patch` carried, is in the release | The patch and the code that applied it are deleted |
 | `RuntimeSchedulerCallInvoker` is `[[deprecated]]`, and `enableBufferedCallInvoker` defaults on, so upstream hosts order async TurboModule calls against buffered `callFunctionOnModule` calls through `ReactInstance::createJSCallInvoker()` | Not yet: `ReactHost` still builds a `RuntimeSchedulerCallInvoker`, which keeps 0.87's ordering and prints a deprecation warning. #674 owns the switch |
+| Hermes ships `TextDecoder` as a contrib extension (`API/hermes/extensions/contrib`), on by default and installed into every runtime `makeHermesRuntime` builds | `HERMES_ENABLE_CONTRIB_EXTENSIONS` is set `ON` explicitly beside the other Hermes options, because T3 Code's bundle constructs a `TextDecoder` at startup (#641); `TextDecoderTest` decodes multibyte UTF-8, a sequence split across streamed chunks and a fatal error through `HermesJSRuntimeFactory` |
 | react-native-worklets `0.12.2` declares React Native `0.83 - 0.87` | The root `package.json` names `react-native` so the peer is the one patched copy; see *react-native-worklets* below. #651 owns the move to the 0.88 line |
 
 ## Autolinking (#146, #147, #149)
@@ -1802,7 +1803,8 @@ macOS and iOS expose the whole `NSColor`/`UIColor` catalogue and then spend issu
 wired up (rn-macos#2736, rn-macos#1846); Linux has no system catalogue to mirror, because the portal publishes a
 colour *scheme* rather than a palette, so a hundred names would be a hundred invented colours. An unrecognised
 name resolves to nothing, which is what lets the JavaScript side throw something readable instead of putting an
-undefined colour into a prop — rn-macos#413 is the version where it does not.
+undefined colour into a prop — rn-macos#413 is the version where it does not. A trailing `{fallback}` argument,
+React Native 0.88's `PlatformColor('labelColor', {fallback: '#333'})`, is drawn instead of throwing (#656).
 
 It reaches JavaScript as one host function, `globalThis.__rnlPlatformColor(name)`, installed beside the
 TurboModule binding. A global rather than a module method because `PlatformColor` has no TurboModule spec on any
