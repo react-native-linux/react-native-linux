@@ -82,6 +82,7 @@ describe("nativeEventOf", () => {
     event.stopPropagation();
     event.persist();
     expect([event.isDefaultPrevented(), event.isPropagationStopped()]).toStrictEqual([true, true]);
+    expect(event.defaultPrevented).toBe(true);
   });
 });
 
@@ -89,7 +90,12 @@ describe("readTokens", () => {
   it("reads a token map, with absent colors and styles, and reads anything else as no tokens", () => {
     const tokens = { line: [{ color: "#fff", content: "x", fontStyle: BOLD }, { content: "y" }] };
 
-    expect(readTokens(JSON.stringify(tokens))).toStrictEqual(tokens);
+    expect(readTokens(JSON.stringify(tokens))).toStrictEqual({
+      line: [
+        { color: "#fff", content: "x", fontStyle: BOLD },
+        { color: null, content: "y", fontStyle: null },
+      ],
+    });
     expect(readTokens("[]")).toStrictEqual({});
     expect(readTokens(JSON.stringify({ line: "x" }))).toStrictEqual({});
     expect(readTokens(JSON.stringify({ line: [{ color: 1, content: "x" }] }))).toStrictEqual({});

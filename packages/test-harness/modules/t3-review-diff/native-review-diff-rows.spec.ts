@@ -268,6 +268,12 @@ describe("readTokenPatch", () => {
       delivery: { chunkIndex: CHUNK, message: "tokens-patch-failed", resetKey: "k" },
       tokensByRowId: {},
     });
+    expect(
+      readTokenPatch(JSON.stringify({ chunkIndex: CHUNK, resetKey: "k", tokensByRowId: null }), "k"),
+    ).toStrictEqual({
+      delivery: { chunkIndex: CHUNK, message: "tokens-patch-failed", resetKey: "k" },
+      tokensByRowId: {},
+    });
     expect(readTokenPatch("null", "k")).toStrictEqual({ delivery: null, tokensByRowId: {} });
     expect(readTokenPatch(JSON.stringify({ chunkIndex: "0", resetKey: 1 }), "k")).toStrictEqual({
       delivery: null,

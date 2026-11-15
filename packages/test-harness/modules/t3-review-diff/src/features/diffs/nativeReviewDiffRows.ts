@@ -90,17 +90,27 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isToken(value: unknown): value is NativeReviewDiffToken {
-  return (
-    isRecord(value) &&
-    typeof value["content"] === "string" &&
-    (value["color"] == null || typeof value["color"] === "string") &&
-    (value["fontStyle"] == null || typeof value["fontStyle"] === "number")
-  );
+/** A token as the highlighter sends it; color and fontStyle may be left out, and read as null. */
+function tokenOf(value: unknown): NativeReviewDiffToken | null {
+  if (!isRecord(value) || typeof value["content"] !== "string") return null;
+  const color = value["color"] ?? null;
+  const fontStyle = value["fontStyle"] ?? null;
+  if ((color !== null && typeof color !== "string") || (fontStyle !== null && typeof fontStyle !== "number")) {
+    return null;
+  }
+  return { content: value["content"], color, fontStyle };
 }
 
-function isTokenMap(value: unknown): value is NativeReviewDiffTokens {
-  return isRecord(value) && Object.values(value).every((tokens) => Array.isArray(tokens) && tokens.every(isToken));
+function tokenMapOf(value: unknown): NativeReviewDiffTokens | null {
+  if (!isRecord(value)) return null;
+  const tokens: Record<string, ReadonlyArray<NativeReviewDiffToken>> = {};
+  for (const [rowId, row] of Object.entries(value)) {
+    if (!Array.isArray(row)) return null;
+    const rowTokens = row.map(tokenOf);
+    if (!rowTokens.every((token) => token !== null)) return null;
+    tokens[rowId] = rowTokens;
+  }
+  return tokens;
 }
 
 export function parseIds(json: string | undefined): ReadonlySet<string> {
@@ -114,8 +124,7 @@ export function parseIds(json: string | undefined): ReadonlySet<string> {
 
 /** A tokensJson map, or none when it is not one: a malformed map draws plain text rather than failing the view. */
 export function readTokens(json: string): NativeReviewDiffTokens {
-  const tokens: unknown = JSON.parse(json);
-  return isTokenMap(tokens) ? tokens : {};
+  return tokenMapOf(JSON.parse(json)) ?? {};
 }
 
 /** A whole synthetic event for a callback the variant calls itself, as a native view's event arrives. */
@@ -126,7 +135,9 @@ export function nativeEventOf<T>(registrationName: string, payload: T): NativeSy
     bubbles: false,
     cancelable: false,
     currentTarget: 0,
-    defaultPrevented: false,
+    get defaultPrevented() {
+      return defaultPrevented;
+    },
     dispatchConfig: { registrationName },
     eventPhase: EVENT_PHASE_AT_TARGET,
     preventDefault: () => {
@@ -300,8 +311,8 @@ export function readTokenPatch(patchJson: string, resetKey: string | undefined):
   const parsed: unknown = JSON.parse(patchJson);
   const patch = isRecord(parsed) ? parsed : {};
   const patchResetKey = typeof patch["resetKey"] === "string" ? patch["resetKey"] : undefined;
-  const received = patch["tokensByRowId"] ?? {};
-  const tokens = isTokenMap(received) && (!patchResetKey || patchResetKey === resetKey) ? received : null;
+  const received = "tokensByRowId" in patch ? tokenMapOf(patch["tokensByRowId"]) : {};
+  const tokens = received !== null && (!patchResetKey || patchResetKey === resetKey) ? received : null;
   return {
     tokensByRowId: tokens ?? {},
     delivery:
