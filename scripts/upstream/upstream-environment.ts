@@ -51,6 +51,7 @@ const createUpstreamEnvironment = (): UpstreamEnvironment => ({
     cpSync(sourceDirectory, targetDirectory, {
       filter: (sourcePath) => path.basename(sourcePath) !== GIT_DIRECTORY_NAME,
       recursive: true,
+      verbatimSymlinks: true,
     });
   },
   createTemporaryDirectory: () => mkdtempSync(path.join(tmpdir(), TEMPORARY_DIRECTORY_PREFIX)),

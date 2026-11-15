@@ -13,6 +13,7 @@ import {
 } from "./upstream-test-fixtures.ts";
 import { afterAll, beforeEach, expect, it } from "vitest";
 
+import { readlinkSync, symlinkSync } from "node:fs";
 import type { CommandResult } from "./upstream-types.ts";
 import path from "node:path";
 
@@ -42,6 +43,18 @@ it("vendors the locked tag with the patch queue applied and without the clone's 
   expect(readTree(fixture, GREETING_PATH)).toBe(GREETING_PATCHED);
   expect(readTree(fixture, "README.md")).toBe("widget\n");
   expect(fixture.environment.pathExists(gitDirectory)).toBe(false);
+});
+
+it("copies a relative symbolic link as it is, rather than pointing it into the clone it came from", () => {
+  const { environment } = fixture;
+  const source = path.join(fixture.temporaryRoot, "linked");
+  const copy = path.join(fixture.temporaryRoot, "linked-copy");
+
+  environment.writeTextFile(path.join(source, "AGENTS.md"), "agents\n");
+  symlinkSync("AGENTS.md", path.join(source, "CLAUDE.md"));
+  environment.copyDirectory(source, copy);
+
+  expect(readlinkSync(path.join(copy, "CLAUDE.md"))).toBe("AGENTS.md");
 });
 
 it("refuses to vendor when the locked digests no longer describe the tag", () => {
