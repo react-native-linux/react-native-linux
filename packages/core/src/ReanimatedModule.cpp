@@ -8,6 +8,7 @@
 #include <reanimated/Tools/FeatureFlags.h>
 #include <string>
 #include <utility>
+#include <worklets/WorkletRuntime/WorkletRuntime.h>
 
 #include <react/renderer/scheduler/Scheduler.h>
 #include <react/renderer/uimanager/IMountingManager.h>
@@ -49,8 +50,9 @@ bool LinuxReanimatedModule::installProxy(facebook::jsi::Runtime& runtime) {
     proxy_ = std::make_shared<reanimated::ReanimatedModuleProxy>(uiRuntime, worklets_->uiScheduler(), runtime,
                                                                  jsInvoker_, platform, false);
     // Fabric first and the UI runtime's bindings last, so no worklet can reach the proxy before it has a UIManager.
+    // The bindings go in under one hold of the UI runtime's lock, so a frame running worklets sees all or none.
     proxy_->initializeFabric(dynamic_cast<facebook::react::Scheduler&>(*uiManager.getDelegate()).getUIManager());
-    proxy_->init(platform);
+    uiRuntime->runSync([this, &platform](facebook::jsi::Runtime& /*uiJavaScriptRuntime*/) { proxy_->init(platform); });
     reanimated::RNRuntimeDecorator::decorate(runtime, worklets::getJSIRuntimeFromWorkletRuntime(uiRuntime), proxy_);
 
     return true;

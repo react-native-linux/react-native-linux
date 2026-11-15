@@ -1,16 +1,15 @@
 #include "FabricHost.h"
 #include "OnJavaScriptThread.h"
 #include "ReactHost.h"
-#include "ReanimatedPlatform.h"
 #include "WorkletsModule.h"
 
 #include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cxxreact/JSBigString.h>
-#include <functional>
 #include <future>
 #include <gtest/gtest.h>
+#include <jsi/instrumentation.h>
 #include <jsi/jsi.h>
 #include <memory>
 #include <string>
@@ -32,13 +31,16 @@ constexpr std::chrono::milliseconds kFrameInterval{16};
 constexpr size_t kConcurrentFrames = 200;
 
 // Worklets' six unpackers are stubs, as in WorkletsModuleTest: this suite proves the hosts, not worklets' bundle.
-constexpr char kInstall[] = R"JAVASCRIPT(
+constexpr char kStartWorklets[] = R"JAVASCRIPT(
 const worklets = globalThis.nativeModuleProxy.WorkletsModule;
 const stub = ['(function () {})', 'stub.js', ''];
 const registry = ['(function () { globalThis.__customSerializationRegistry = []; })', 'registry.js', ''];
 worklets.installTurboModule(false);
 globalThis.__workletsModuleProxy.loadUnpackersWithCode(...registry, ...stub, ...stub, ...stub, ...stub, ...stub);
 worklets.start();
+)JAVASCRIPT";
+
+constexpr char kInstallReanimated[] = R"JAVASCRIPT(
 globalThis.installed = globalThis.nativeModuleProxy.ReanimatedModule.installTurboModule();
 globalThis.reanimatedTrace = JSON.stringify({
   installed: globalThis.installed,
@@ -53,11 +55,12 @@ constexpr char kTree[] = R"JAVASCRIPT(
 const fabric = globalThis.nativeFabricUIManager;
 const box = { collapsable: false, position: 'absolute', left: 10, top: 10, width: 50, height: 50,
   backgroundColor: 0xff38bdf8 };
-const commit = (node) => {
+globalThis.commitChildren = (nodes) => {
   const childSet = fabric.createChildSet();
-  fabric.appendChildToSet(childSet, node);
+  nodes.forEach((node) => fabric.appendChildToSet(childSet, node));
   fabric.completeRoot(1, childSet);
 };
+const commit = (node) => globalThis.commitChildren([node]);
 globalThis.instanceHandle = {};
 globalThis.animatedNode = fabric.createNode(2, 'View', 1, box, globalThis.instanceHandle);
 commit(globalThis.animatedNode);
@@ -76,6 +79,45 @@ globalThis.animateTranslateX = (translateX) => __nativeRequestAnimationFrame((ti
   globalThis.frameTimestamps.push(timestamp);
   _updateProps([{ shadowNodeWrapper: globalThis.animatedNode, updates: { transform: [{ translateX }] } }]);
 });
+)JAVASCRIPT";
+
+// What worklets' own frame loop does on the UI runtime once its bundle is loaded: run JavaScript every frame. Each
+// frame also checks that Reanimated's UI bindings are all there or all absent, `_updateProps` being the first that
+// `UIRuntimeDecorator::decorate` installs and `_maybeFlushUIUpdatesQueue` the last.
+constexpr char kUILoop[] = R"JAVASCRIPT(
+globalThis.uiFrames = 0;
+globalThis.halfDecoratedFrames = 0;
+const loop = () => {
+  globalThis.uiFrames += 1;
+  if (typeof _updateProps !== typeof _maybeFlushUIUpdatesQueue) {
+    globalThis.halfDecoratedFrames += 1;
+  }
+  __nativeRequestAnimationFrame(loop);
+};
+__nativeRequestAnimationFrame(loop);
+)JAVASCRIPT";
+
+// What Reanimated's JavaScript does while a view is mounted: write its registry entries under the manager's lock.
+constexpr char kTouchRegistries[] = R"JAVASCRIPT(
+globalThis.touchRegistries = () => {
+  globalThis.__reanimatedModuleProxy.markNodeAsRemovable(globalThis.animatedNode);
+  globalThis.__reanimatedModuleProxy.unmarkNodeAsRemovable(2);
+};
+)JAVASCRIPT";
+
+// A second view, mounted beside the animated one, that Reanimated's JavaScript has static props for.
+constexpr char kMountRemovable[] = R"JAVASCRIPT(
+globalThis.removable = globalThis.nativeFabricUIManager.createNode(3, 'View', 1,
+  { collapsable: false, position: 'absolute', left: 100, top: 10, width: 20, height: 20 }, {});
+globalThis.commitChildren([globalThis.animatedNode, globalThis.removable]);
+globalThis.__reanimatedModuleProxy.setViewStyle(3, { opacity: 0.5 });
+)JAVASCRIPT";
+
+// What an `Animated` component does as it unmounts: mark its node removable, and React commits the tree without it.
+constexpr char kUnmountRemovable[] = R"JAVASCRIPT(
+globalThis.__reanimatedModuleProxy.markNodeAsRemovable(globalThis.removable);
+globalThis.removable = undefined;
+globalThis.commitChildren([globalThis.animatedNode]);
 )JAVASCRIPT";
 
 class CommitCounter final : public facebook::react::UIManagerCommitHook {
@@ -104,21 +146,35 @@ void evaluate(ReactHost& reactHost, const char* source, const char* sourceUrl) {
     reactHost.drainJavaScriptThread();
 }
 
+void install(ReactHost& reactHost) {
+    evaluate(reactHost, kStartWorklets, "worklets.js");
+    evaluate(reactHost, kInstallReanimated, "reanimated.js");
+}
+
+std::shared_ptr<const facebook::react::ShadowNode> shadowNodeOf(ReactHost& reactHost, const char* global) {
+    return onJavaScriptThread<std::shared_ptr<const facebook::react::ShadowNode>>(
+        reactHost, [global](facebook::jsi::Runtime& runtime) -> std::shared_ptr<const facebook::react::ShadowNode> {
+            return facebook::react::Bridging<std::shared_ptr<const facebook::react::ShadowNode>>::fromJs(
+                runtime, runtime.global().getProperty(runtime, global));
+        });
+}
+
+void evaluateOnTheUIRuntime(worklets::WorkletRuntime& uiRuntime, const char* source) {
+    uiRuntime.runSync([source](facebook::jsi::Runtime& runtime) {
+        runtime.evaluateJavaScript(std::make_shared<facebook::jsi::StringBuffer>(source), "ui.js");
+    });
+}
+
+/** Both hosts tick as `WindowSession::tickAnimations` ticks them: worklets' frame work, then the animation backend. */
+void tick(ReactHost& reactHost, FabricHost& fabricHost, std::chrono::steady_clock::time_point now) {
+    reactHost.dispatchAnimationFrames(now);
+    fabricHost.tickAnimations(now);
+}
+
 std::string reanimatedTrace(ReactHost& reactHost) {
     return onJavaScriptThread<std::string>(reactHost, [](facebook::jsi::Runtime& runtime) {
         return runtime.global().getProperty(runtime, "reanimatedTrace").getString(runtime).utf8(runtime);
     });
-}
-
-/** `executor` rather than the host, because work from a thread other than the host's is the point of one case. */
-void onRuntime(const facebook::react::RuntimeExecutor& executor, const std::function<void()>& work) {
-    std::promise<void> done;
-
-    executor([&done, &work](facebook::jsi::Runtime& /*runtime*/) {
-        work();
-        done.set_value();
-    });
-    done.get_future().get();
 }
 
 void reRender(const facebook::react::RuntimeExecutor& executor) {
@@ -151,15 +207,13 @@ protected:
     void SetUp() override {
         fabricHost_ = std::make_unique<FabricHost>(reactHost_.reactInstance(), kSurfaceSize);
         evaluate(reactHost_, kTree, "tree.js");
-        evaluate(reactHost_, kInstall, "install.js");
-
-        const auto animatedNode = onJavaScriptThread<std::shared_ptr<const facebook::react::ShadowNode>>(
-            reactHost_, [this](facebook::jsi::Runtime& runtime) -> std::shared_ptr<const facebook::react::ShadowNode> {
-                facebook::react::UIManagerBinding::getBinding(runtime)->getUIManager().registerCommitHook(
-                    commitCounter_);
-                return facebook::react::Bridging<std::shared_ptr<const facebook::react::ShadowNode>>::fromJs(
-                    runtime, runtime.global().getProperty(runtime, "animatedNode"));
-            });
+        install(reactHost_);
+        onJavaScriptThread<bool>(reactHost_, [this](facebook::jsi::Runtime& runtime) -> bool {
+            facebook::react::UIManagerBinding::getBinding(runtime)->getUIManager().registerCommitHook(commitCounter_);
+            return true;
+        });
+        const std::shared_ptr<const facebook::react::ShadowNode> animatedNode =
+            shadowNodeOf(reactHost_, "animatedNode");
 
         uiRuntime_ = reactHost_.worklets().uiWorkletRuntime();
         uiRuntime_->runSync([&animatedNode](facebook::jsi::Runtime& runtime) {
@@ -187,11 +241,9 @@ protected:
         });
     }
 
-    /** One frame as `WindowSession::tickAnimations` runs it: the animation backend, then worklets' frame work. */
     void tick() {
         now_ += kFrameInterval;
-        fabricHost_->tickAnimations(now_);
-        reactHost_.dispatchAnimationFrames(now_);
+        react_native_linux::tick(reactHost_, *fabricHost_, now_);
     }
 
     std::string frameTimestamps() {
@@ -264,7 +316,11 @@ TEST_F(ReanimatedModuleTest, AReactReRenderDuringAnAnimationKeepsTheAnimatedTran
     EXPECT_FLOAT_EQ(animatedPrimitive(*fabricHost_).matrix.translateX, restingTranslateX + 30.0F);
 }
 
-/** #140: with nothing left to animate, Reanimated leaves the backend, and the frame clock may go idle. */
+/**
+ * #140: with nothing left to animate, Reanimated's `stopBackendIfIdle` leaves the backend. The UI runtime here runs
+ * no frame loop of its own, so this proves the backend side only, not that a stock UI runtime ever idles: worklets'
+ * loaded bundle re-requests a frame from inside every frame, which #671 owns.
+ */
 TEST_F(ReanimatedModuleTest, AnIdleAnimationLeavesTheBackend) {
     animateTranslateXOnTheNextFrame(20);
     tick();
@@ -276,42 +332,102 @@ TEST_F(ReanimatedModuleTest, AnIdleAnimationLeavesTheBackend) {
 }
 
 /**
- * #140, run under TSan: on the JavaScript thread React commits and the platform's `requestRender` is called, as
- * Reanimated's operations loop calls it when JavaScript schedules a CSS animation, while the frame thread runs an
- * animation that writes the same view every frame and dispatches those renders. Every render lands, and the
- * instance is torn down with the animation still running.
+ * #140, run under TSan: on the JavaScript thread React commits, and Reanimated's JavaScript writes the view's
+ * registry entries through `__reanimatedModuleProxy` under the registry manager's lock, while the frame thread runs
+ * an animation that writes the same view every frame through the backend callback, which takes that lock too. The
+ * last frame's transform lands, and the instance is torn down with the animation still running.
  */
-TEST_F(ReanimatedModuleTest, ReactCommitsAndRenderRequestsDuringFramesAreRaceFree) {
-    const reanimated::PlatformDepMethodsHolder platform =
-        makePlatformDepMethodsHolder(reactHost_.worklets().animationFrames(), nullptr);
-    std::atomic<size_t> renders{0};
-    std::thread javaScriptWork(
-        [executor = reactHost_.reactInstance().getBufferedRuntimeExecutor(), &platform, &renders]() {
-            for (size_t commit = 0; commit < kConcurrentFrames; ++commit) {
-                reRender(executor);
-                onRuntime(executor, [&platform, &renders]() {
-                    platform.requestRender([&renders](double /*timestamp*/) { renders++; });
-                });
-            }
-        });
+TEST_F(ReanimatedModuleTest, ReactCommitsAndRegistryWritesDuringFramesAreRaceFree) {
+    const float restingTranslateX = animatedPrimitive(*fabricHost_).matrix.translateX;
+    evaluate(reactHost_, kTouchRegistries, "registries.js");
+    std::thread javaScriptWork([executor = reactHost_.reactInstance().getBufferedRuntimeExecutor()]() {
+        for (size_t commit = 0; commit < kConcurrentFrames; ++commit) {
+            reRender(executor);
+            executor([](facebook::jsi::Runtime& runtime) {
+                runtime.global().getPropertyAsFunction(runtime, "touchRegistries").call(runtime);
+            });
+        }
+    });
 
-    for (size_t frame = 0; frame < kConcurrentFrames; ++frame) {
+    for (size_t frame = 1; frame <= kConcurrentFrames; ++frame) {
         animateTranslateXOnTheNextFrame(static_cast<double>(frame));
         tick();
     }
 
     javaScriptWork.join();
-    tick();
+    reactHost_.drainJavaScriptThread();
+    EXPECT_FLOAT_EQ(animatedPrimitive(*fabricHost_).matrix.translateX,
+                    restingTranslateX + static_cast<float>(kConcurrentFrames));
     animateTranslateXOnTheNextFrame(1);
-    EXPECT_EQ(renders.load(), kConcurrentFrames);
     EXPECT_FALSE(reactHost_.hasReportedFatalError());
+}
+
+/**
+ * #140: an unmounted view leaves nothing behind in Reanimated. On the animation backend path upstream's mount hook
+ * returns before `handleNodeRemovals`, so every node Reanimated's JavaScript marks removable stayed in its registries
+ * for the proxy's lifetime, with the node's `ShadowNodeFamily`; patch 0004 drains them. The family is the observable
+ * part: `handleNodeRemovals` drops the view's entry from every registry in the step that drops the family.
+ */
+TEST_F(ReanimatedModuleTest, AnUnmountedViewLeavesNothingInTheRegistries) {
+    evaluate(reactHost_, kMountRemovable, "mount.js");
+    const std::weak_ptr<const facebook::react::ShadowNodeFamily> family =
+        shadowNodeOf(reactHost_, "removable")->getFamilyShared();
+
+    evaluate(reactHost_, kUnmountRemovable, "unmount.js");
+    onJavaScriptThread<bool>(reactHost_, [](facebook::jsi::Runtime& runtime) -> bool {
+        runtime.instrumentation().collectGarbage("unmounted");
+        return true;
+    });
+    tick();
+    fabricHost_->takeFrame();
+
+    EXPECT_TRUE(family.expired());
+}
+
+double uiGlobal(worklets::WorkletRuntime& uiRuntime, const char* name) {
+    return uiRuntime.runSync(
+        [name](facebook::jsi::Runtime& runtime) { return runtime.global().getProperty(runtime, name).asNumber(); });
+}
+
+/**
+ * #140: JavaScript installs Reanimated while the frame thread runs worklets on the UI runtime every frame, as it does
+ * once worklets' bundle is loaded. Every JSI call on that runtime takes its lock, but a frame could still run between
+ * two of the install's calls and find half of Reanimated's bindings; the install holds the lock for all of them, so
+ * no frame does. Run under TSan as well.
+ */
+TEST(ReanimatedModuleInstallTest, NoUIRuntimeFrameSeesAHalfInstalledReanimated) {
+    ReactHost reactHost;
+    auto fabricHost = std::make_unique<FabricHost>(reactHost.reactInstance(), kSurfaceSize);
+    evaluate(reactHost, kTree, "tree.js");
+    evaluate(reactHost, kStartWorklets, "worklets.js");
+    std::shared_ptr<worklets::WorkletRuntime> uiRuntime = reactHost.worklets().uiWorkletRuntime();
+    evaluateOnTheUIRuntime(*uiRuntime, kUILoop);
+    std::atomic<bool> installed{false};
+    std::chrono::steady_clock::time_point now{std::chrono::seconds(1)};
+
+    reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>(kInstallReanimated), "reanimated.js");
+    reactHost.reactInstance().getBufferedRuntimeExecutor()(
+        [&installed](facebook::jsi::Runtime& /*runtime*/) { installed = true; });
+    while (!installed) {
+        now += kFrameInterval;
+        tick(reactHost, *fabricHost, now);
+    }
+
+    EXPECT_EQ(reanimatedTrace(reactHost), R"({"installed":true,"proxy":"object","animationBackend":true})");
+    EXPECT_GT(uiGlobal(*uiRuntime, "uiFrames"), 0);
+    EXPECT_EQ(uiGlobal(*uiRuntime, "halfDecoratedFrames"), 0);
+    uiRuntime.reset();
+    fabricHost->stopSurface();
+    reactHost.drainJavaScriptThread();
+    fabricHost.reset();
+    reactHost.drainJavaScriptThread();
 }
 
 /** #140: without a Fabric surface there is no UIManager to attach to, and Reanimated installs its dummy proxy. */
 TEST(ReanimatedModuleWithoutFabricTest, InstallAnswersFalse) {
     ReactHost reactHost;
 
-    evaluate(reactHost, kInstall, "install.js");
+    install(reactHost);
 
     EXPECT_EQ(reanimatedTrace(reactHost), R"({"installed":false,"proxy":"undefined","animationBackend":false})");
 }

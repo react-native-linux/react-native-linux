@@ -1359,12 +1359,14 @@ frame, the backend applies the props it returns, and that callback is the frame'
 `performOperations` on this path, so the host never calls it. On this path Reanimated's commit hook passes commits
 through and React Native's `AnimationBackendCommitHook` re-applies animated props to a React commit, so the two hooks
 never both write one tree. `ReanimatedModuleTest` in `rnl_core_hermes_tests` covers install, a transform reaching the
-scene with no commit, a React re-render during an animation, the backend going idle, and React commits racing the
-frame thread under TSan. The `reanimated-timing` e2e scenario runs a stock `useSharedValue` + `withTiming` while the
-JavaScript thread is held.
+scene with no commit, a React re-render during an animation, Reanimated leaving the backend when no UI-runtime loop
+re-arms it, an unmounted view's registry entries being freed, React commits and registry writes from JavaScript
+racing the frame thread under TSan, and an install that no UI-runtime frame sees half done. The `reanimated-timing`
+e2e scenario runs a stock `useSharedValue` + `withTiming` while the JavaScript thread is held, and compares the
+final frame against a golden.
 
 Worklets' UI runtime requests an animation frame from inside every frame it runs, by upstream design, so once
-Reanimated is installed its backend callback never goes idle and the frame clock ticks every frame.
+Reanimated is installed its backend callback never goes idle and the frame clock ticks every frame. #671 owns that.
 
 ## React Native bump procedure (#58)
 

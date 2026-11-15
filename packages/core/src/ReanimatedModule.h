@@ -40,6 +40,9 @@ inline constexpr char kMountingManagerContextKey[] = "react_native_linux::IMount
  *
  * Threading contract: `installTurboModule` and `invalidate` run on the JavaScript thread. The proxy's frame work,
  * and every member of the platform contract, run on the frame thread, which is worklets' UI thread (ADR-0003).
+ * `installTurboModule` installs the UI runtime's bindings under one hold of that runtime's lock. Each JSI call takes
+ * the lock on its own, so without the hold a frame running worklets could run between two calls and find only some
+ * of the bindings.
  * `ReactHost` calls `invalidate` before it invalidates worklets, while the frame thread runs no frame, so the proxy
  * releases its UI-runtime values while that runtime is alive.
  */
