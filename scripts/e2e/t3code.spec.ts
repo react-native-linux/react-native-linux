@@ -1,5 +1,13 @@
-import { buildPairingLink, gradeWindowRun, readPairingUrl, tailLines } from "./t3code.ts";
+import {
+  buildPairingLink,
+  gradeWindowRun,
+  overlayInstallArguments,
+  overlayPackArguments,
+  readPairingUrl,
+  tailLines,
+} from "./t3code.ts";
 import { describe, expect, it } from "vitest";
+import { packageAliases } from "@react-native-linux/cli/package-aliases.ts";
 
 const TAIL_LINE_COUNT = 40;
 const pairingUrl = "http://127.0.0.1:38731/pair#token=pairing-token";
@@ -57,5 +65,36 @@ describe("tailLines", () => {
     const kept = Array.from({ length: TAIL_LINE_COUNT }, () => "kept").join("\n");
 
     expect(tailLines(`dropped\n${kept}\n`)).toBe(kept);
+  });
+});
+
+describe("overlayPackArguments", () => {
+  it("packs every overlay package the alias table names, and nothing else", () => {
+    expect(overlayPackArguments(packageAliases, "/build/t3code/overlays")).toStrictEqual([
+      "--filter",
+      "@react-native-linux/enriched-markdown",
+      "--filter",
+      "@react-native-linux/gesture-handler",
+      "--filter",
+      "@react-native-linux/reanimated",
+      "pack",
+      "--pack-destination",
+      "/build/t3code/overlays",
+    ]);
+  });
+});
+
+describe("overlayInstallArguments", () => {
+  it("adds the tarballs to the mobile app without install scripts or the unpublished core peer", () => {
+    expect(overlayInstallArguments(["/overlays/a.tgz", "/overlays/b.tgz"])).toStrictEqual([
+      "--filter",
+      "@t3tools/mobile",
+      "add",
+      "/overlays/a.tgz",
+      "/overlays/b.tgz",
+      "--ignore-scripts",
+      "--config.auto-install-peers=false",
+      "--config.strict-peer-dependencies=false",
+    ]);
   });
 });

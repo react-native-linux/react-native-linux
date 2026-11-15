@@ -22,6 +22,7 @@
     "./override-report.ts": "./src/override-report.ts",
     "./manifest-schema-drift.ts": "./src/manifest-schema-drift.ts",
     "./metro-config.ts": "./src/metro-config.ts",
+    "./package-aliases.ts": "./src/package-aliases.ts",
     "./linux-resolver-config.ts": "./src/linux-resolver-config.ts"
   },
   "publishConfig": {
@@ -41,6 +42,7 @@
       "./override-report.ts": "./dist/override-report.js",
       "./manifest-schema-drift.ts": "./dist/manifest-schema-drift.js",
       "./metro-config.ts": "./dist/metro-config.js",
+      "./package-aliases.ts": "./dist/package-aliases.js",
       "./linux-resolver-config.ts": "./dist/linux-resolver-config.js"
     }
   },

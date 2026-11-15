@@ -2,6 +2,7 @@
   "name": "@react-native-linux/gesture-handler",
   "version": "0.0.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "exports": {
     ".": "./upstream/packages/react-native-gesture-handler/src/index.ts",

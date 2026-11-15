@@ -1,9 +1,28 @@
-import { T3CODE_REVISION, buildPairingLink, gradeWindowRun, readPairingUrl, tailLines } from "./e2e/t3code.ts";
+import {
+  T3CODE_REVISION,
+  buildPairingLink,
+  gradeWindowRun,
+  overlayInstallArguments,
+  overlayPackArguments,
+  readPairingUrl,
+  tailLines,
+} from "./e2e/t3code.ts";
 import { argv, env, execPath, stderr, stdout } from "node:process";
 import { attachTrace, startCompositor, stopCompositor, waitForSocketName, windowBinaryPath } from "./e2e-processes.ts";
-import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { findExecutable, findLavapipeIcd } from "./window-golden.ts";
 import { spawn, spawnSync } from "node:child_process";
+import { packageAliases } from "@react-native-linux/cli/package-aliases.ts";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { waitUntil } from "./e2e/discovery.ts";
@@ -14,9 +33,11 @@ import { waitUntil } from "./e2e/discovery.ts";
  *
  *   node scripts/t3code-fixture.ts <checkout>   (or T3CODE_ROOT=<checkout>)
  *
- * The checkout is T3 Code at T3CODE_REVISION with the mobile app's and the server's dependencies installed. The run
- * passes once the window presents a frame and exits cleanly with startup throwing nothing; until then it names where
- * startup stopped. The main screen's accessibility tree and golden join it once the screen renders.
+ * The checkout is the fixture's own copy of T3 Code at T3CODE_REVISION, such as build/t3code/checkout, with the mobile
+ * app's and the server's dependencies installed. The fixture packs this platform's overlay packages and adds them to
+ * the mobile app, which rewrites its package.json and lockfile, so the alias table resolves them as it would for an
+ * application that installed them from a registry. The run passes once the window presents a frame and exits cleanly
+ * with startup throwing nothing; until then it names where startup stopped. The main screen's accessibility tree and golden join it once the screen renders.
  */
 
 const SUCCESSFUL_EXIT_STATUS = 0;
@@ -33,6 +54,7 @@ const RUN_TIMEOUT_MS = 180_000;
 const repositoryRoot = path.resolve(import.meta.dirname, "..");
 const artifactsDirectory = path.join(repositoryRoot, "build", "e2e", SCENARIO_NAME);
 const bundlePath = path.join(repositoryRoot, "build", "t3code", "index.linux.bundle.js");
+const overlayDirectory = path.join(repositoryRoot, "build", "t3code", "overlays");
 const checkout = path.resolve(argv[CHECKOUT_ARGUMENT_INDEX] ?? env["T3CODE_ROOT"] ?? "");
 const serverEntry = path.join(checkout, "apps", "server", "src", "bin.ts");
 const serverLogPath = path.join(artifactsDirectory, "server.log");
@@ -50,7 +72,7 @@ const describeUnavailable = (compositorPath: string | null, lavapipeIcdPath: str
   ...(["mobile", "server"].every((app) => existsSync(path.join(checkout, "apps", app, "node_modules")))
     ? []
     : [
-        `${checkout} is not an installed T3 Code checkout: clone https://github.com/pingdotgg/t3code at ${T3CODE_REVISION} and run "corepack pnpm install --frozen-lockfile --ignore-scripts --filter '@t3tools/mobile...' --filter 't3...'" in it`,
+        `${checkout} is not an installed T3 Code checkout: clone https://github.com/pingdotgg/t3code at ${T3CODE_REVISION} into a copy the fixture may modify and run "corepack pnpm install --frozen-lockfile --ignore-scripts --filter '@t3tools/mobile...' --filter 't3...'" in it`,
       ]),
   ...(spawnSync("git", ["-C", checkout, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim() === T3CODE_REVISION
     ? []
@@ -63,6 +85,26 @@ const describeUnavailable = (compositorPath: string | null, lavapipeIcdPath: str
 const fail = (message: string): void => {
   stderr.write(`e2e ${SCENARIO_NAME}: failed\n${message}\nartifacts: ${artifactsDirectory}\n`);
   process.exitCode = FAILURE_EXIT_STATUS;
+};
+
+/** The output of pnpm run in `directory` when it fails, or null when it succeeds. */
+const runPnpm = (pnpmArguments: readonly string[], directory: string): string | null => {
+  const run = spawnSync("pnpm", pnpmArguments, { cwd: directory, encoding: "utf8" });
+
+  return run.status === SUCCESSFUL_EXIT_STATUS ? null : `${run.stdout}${run.stderr}`;
+};
+
+/** Every overlay package the alias table names, packed and added to the mobile app; the failure, or null. */
+const installOverlays = (): string | null => {
+  rmSync(overlayDirectory, { force: true, recursive: true });
+
+  return (
+    runPnpm(overlayPackArguments(packageAliases, overlayDirectory), repositoryRoot) ??
+    runPnpm(
+      overlayInstallArguments(readdirSync(overlayDirectory).map((name) => path.join(overlayDirectory, name))),
+      checkout,
+    )
+  );
 };
 
 const buildBundle = (): boolean => {
@@ -219,7 +261,11 @@ const runAgainstServer = async (rig: Rig): Promise<void> => {
 const runFixture = async (rig: Rig): Promise<void> => {
   mkdirSync(artifactsDirectory, { recursive: true });
 
-  if (buildBundle()) {
+  const overlayFailure = installOverlays();
+
+  if (overlayFailure !== null) {
+    fail(`the overlay packages could not be packed and added to T3 Code\n${tailLines(overlayFailure)}`);
+  } else if (buildBundle()) {
     await runAgainstServer(rig);
   } else {
     fail("Metro could not bundle T3 Code");
