@@ -311,16 +311,30 @@ void ReactHost::startHotModuleReplacement(const std::string& location) {
     }
 }
 
+void ReactHost::setAssetsDirectory(std::string assetsDirectory) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    assetsDirectory_ = std::move(assetsDirectory);
+}
+
 void ReactHost::loadScript(std::unique_ptr<const facebook::react::JSBigString> script, const std::string& sourceUrl) {
     react_native_assert(std::this_thread::get_id() == owningThread_);
 
-#ifdef RNL_ENABLE_TEXT_GEOMETRY
-    // The application's fonts live beside its bundle (#70). A URL, or a bundle without the directory, has none,
-    // and registering none clears whatever the previous source registered.
-    const std::filesystem::path applicationFonts = std::filesystem::path(sourceUrl).parent_path() / "assets" / "fonts";
+    std::filesystem::path assetsDirectory(assetsDirectory_);
 
-    registerApplicationFonts(std::filesystem::is_directory(applicationFonts) ? applicationFonts.string()
-                                                                             : std::string());
+    if (assetsDirectory.empty() && sourceUrl.find("://") == std::string::npos) {
+        assetsDirectory = std::filesystem::path(sourceUrl).parent_path() / "assets";
+    }
+
+    turboModuleRegistry_->setAssetsDirectory(assetsDirectory.string());
+
+#ifdef RNL_ENABLE_TEXT_GEOMETRY
+    // A source without the directory has no fonts, and registering none clears whatever the previous one registered.
+    const std::filesystem::path applicationFonts = assetsDirectory / "fonts";
+
+    registerApplicationFonts(!assetsDirectory.empty() && std::filesystem::is_directory(applicationFonts)
+                                 ? applicationFonts.string()
+                                 : std::string());
 #endif
 
     reactInstance_->loadScript(std::move(script), sourceUrl);

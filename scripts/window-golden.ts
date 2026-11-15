@@ -1,6 +1,6 @@
 import { argv, env, execPath, stderr, stdout } from "node:process";
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
+import { embedExpoAppAssets } from "@react-native-linux/cli/expo-app-assets.ts";
 import { fixtures } from "./window-fixtures.ts";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -179,30 +179,6 @@ if (isMainModule()) {
   }
 }
 
-/**
- * The app config a linux build embeds beside its bundle, where `ExponentConstants` serves it as `manifest` (#156): a
- * scenario package with an `app.json` is an Expo project, and upstream's own `expo-constants/scripts/getAppConfig.js`
- * evaluates it with `@expo/config`, as Android's Gradle step does into the APK's `assets/app.config`.
- */
-const embedAppConfig = (projectRoot: string, bundleDirectory: string): void => {
-  if (!existsSync(path.join(projectRoot, "app.json"))) {
-    return;
-  }
-  const constantsPackage = createRequire(path.join(projectRoot, "package.json")).resolve("expo-constants/package.json");
-  const script = path.join(path.dirname(constantsPackage), "scripts", "getAppConfig.js");
-  const assetsDirectory = path.join(bundleDirectory, "assets");
-  mkdirSync(assetsDirectory, { recursive: true });
-
-  const evaluation = spawnSync(execPath, [script, projectRoot, assetsDirectory], {
-    env: { ...env, NODE_ENV: "production" },
-    stdio: "inherit",
-  });
-
-  if (evaluation.status !== SUCCESSFUL_EXIT_STATUS) {
-    throw new Error(`expo-constants could not evaluate the app config of ${projectRoot}`);
-  }
-};
-
 const bundleWithMetro = (sourcePath: string, outputPath: string): void => {
   const bundler = path.join(repositoryRoot, "packages", "test-harness", "scripts", "bundle.ts");
   rmSync(path.dirname(outputPath), { force: true, recursive: true });
@@ -213,21 +189,46 @@ const bundleWithMetro = (sourcePath: string, outputPath: string): void => {
   }
 };
 
+const scenarioBundleDirectory = (scenarioName: string): string =>
+  path.join(repositoryRoot, "build", "e2e-bundles", scenarioName);
+
+/**
+ * The assets the CLI's linux build step writes for the scenario package (#696), in the scenario's own directory under
+ * `build/e2e-bundles`: `assets` beside its bundle file, and what `--assets` names for a bundle a dev server serves.
+ */
+const embedScenarioAssets = async (scenarioBundles: string, scenarioName: string): Promise<string> => {
+  const assetsDirectory = path.join(scenarioBundleDirectory(scenarioName), "assets");
+
+  await embedExpoAppAssets(path.dirname(scenarioBundles), assetsDirectory);
+
+  return assetsDirectory;
+};
+
 /**
  * The bundle an e2e scenario runs. A React application entry (`.tsx`) is built by Metro first, through the harness
  * app's config, so a library overlay runs the way an application imports it (#168), into a directory of its own,
- * beside the app config `embedAppConfig` writes; a `.js` bundle runs as it is.
+ * beside the assets `embedScenarioAssets` writes; a `.js` bundle runs as it is.
  */
-const resolveScenarioBundle = (scenarioBundles: string, scenario: { bundle: string; name: string }): string => {
+const resolveScenarioBundle = async (
+  scenarioBundles: string,
+  scenario: { bundle: string; name: string },
+): Promise<string> => {
   const sourcePath = path.join(scenarioBundles, scenario.bundle);
 
   if (!sourcePath.endsWith(".tsx")) {
     return sourcePath;
   }
-  const outputPath = path.join(repositoryRoot, "build", "e2e-bundles", scenario.name, `${scenario.name}.js`);
+  const outputPath = path.join(scenarioBundleDirectory(scenario.name), `${scenario.name}.js`);
   bundleWithMetro(sourcePath, outputPath);
-  embedAppConfig(path.dirname(scenarioBundles), path.dirname(outputPath));
+  await embedScenarioAssets(scenarioBundles, scenario.name);
   return outputPath;
 };
 
-export { findExecutable, findLavapipeIcd, findLavapipeIcdManifestPath, findLavapipeLibraryPath, resolveScenarioBundle };
+export {
+  embedScenarioAssets,
+  findExecutable,
+  findLavapipeIcd,
+  findLavapipeIcdManifestPath,
+  findLavapipeLibraryPath,
+  resolveScenarioBundle,
+};
