@@ -4004,7 +4004,7 @@ one differently:
 | Request | Source | Why |
 | --- | --- | --- |
 | Unset, `sans-serif`, `system-ui` | The vendored Noto Sans (`kBundledFontFamily`), asked for directly | These are React Native's own unspecified default and the two CSS spellings of "the platform's interface font." Asking fontconfig for `sans-serif` is exactly the query electron/electron#53499 got wrong, so this rule never asks it: the name is not put in `toFontFamilies`' request list at all, and the vendored face — already first in that list for `kEmojiFontFamily`'s sake, see *Colour emoji and the fallback chain* below — is what resolves. A golden built against it is reproducible on any host. |
-| `serif`, `monospace`, `cursive`, `fantasy` | Fontconfig's own answer | There is no vendored serif or monospace face, and resolving a generic to a real face of that kind is the point of asking for one — the same exemption `classifyFontFamilyRequest` keeps from the #70 diagnostic. The resolved family is logged once per name, the same log-once discipline #70 uses, so a broken host answer (this repository's own `dev` container resolves both `serif` and `monospace` to `Noto Naskh Arabic` — the only face installed) is visible without being treated as a failure. |
+| `serif`, `monospace`, `cursive`, `fantasy` | Fontconfig's own answer | There is no vendored serif or monospace face, and resolving a generic to a real face of that kind is the point of asking for one — the same exemption `classifyFontFamilyRequest` keeps from the #70 diagnostic. The resolved family is logged once per name, the same log-once discipline #70 uses, as an `[rnl-text]` line that the e2e trace grading does not count as an error, so a broken host answer (this repository's own `dev` container resolves both `serif` and `monospace` to `Noto Naskh Arabic` — the only face installed) is visible without being treated as a failure. |
 | Anything else | The name itself, then the #70 diagnostic if it substitutes | Covered by *An unresolvable fontFamily says so (#70)* already: the text still draws, substituted by the vendored Noto Sans or fontconfig's fallback, and the substitution is reported once per name — including for a family nobody registered at all, which stays loud under this rule exactly as it was before it. |
 
 The order every text run asks in is therefore: the requested family resolved per the table above (nothing, for
@@ -8064,15 +8064,44 @@ hardware is still open on #20.
 
 `t3-review-diff-120hz.json` (#685) scrolls T3 Code's review diff, 5,098 lines in 42 files with token patches
 arriving as the visible range moves, through `nativeReviewDiffSurface.linux.ts`: React Native rows in a `FlatList`.
-It gates `{"p50Ms": 9.5, "p95Ms": 12.5, "minFrames": 2400, "maxHangs": 6}` on the Debug build CI runs, where five
-runs at load averages of 10 to 27 on 24 cores read p50 8.03–8.07 ms, p95 8.70–9.74 ms and 1 to 5 hangs: the first
-mount, the first token patch, and the paint of freshly colored rows. **The Debug pass flatters the scroll.** Debug
-Hermes delivers each token patch seconds late, so most rows paint as plain text. The same scenario on a Release
-`rnl_window`, where the JavaScript keeps up (first commit 0.28 s, a patch every 25 ms), reads p95 17–44 ms with
-16 to 89 hangs, while `animated-views-120hz` passes beside it at p95 8.9 ms. It is paint: mounted once, with every
-row colored and nothing committed during the scroll, each wheel notch still paints for 13.7 ms (p50) on lavapipe.
-A native view would draw the same glyphs through the same Skia, so #685 keeps the JavaScript view and the paint
-cost is the renderer's to cut.
+Every frame of a run is measured, startup included, and the window exits on its frame count, taking cage and the
+injector with it, so `frames` has to cover the slowest startup plus every step. The scenario therefore spends its
+frames on scrolling: 6,400 frames, of which 1,050 to 2,450 are startup (the bundle, the first mount of 5,307 rows,
+the first token patch; the high end at a load average of 34), about 3,100 (half the run) are 231 wheel notches
+played four times in four orders, and the rest is a tail that only absorbs a slower startup. It gates
+`{"p50Ms": 9.5, "p95Ms": 12.5, "minFrames": 5800, "maxHangs": 20}` on the Debug build CI runs. Five runs on
+this repository's shared 24-core host at load averages of 7 to 18 read p50 8.44–8.93 ms, p95 9.23–11.12 ms and 8
+to 12 hangs, with the scroll steps 48–53 % of each run, so the budget is 0.6 ms over the worst median, 1.4 ms over
+the worst p95 and 8 hangs over the worst count. The tail follows host load and the median does not: five runs at
+18 to 30 read p95 9.53–14.92 ms and 13 to 25 hangs, and three failed. CI's runner has no neighbours; the
+scenario's first version read p95 8.62 ms with 1 hang there. The hangs are the first mount, the first token
+patch, rows mounting during the scroll and late patches repainting rows.
+
+**What it proves:** a Debug build keeps this list scrolling on a 120 Hz output with the variant's per-row work
+(rows mounting and unmounting, monospace text, the anchored gutter and headers), and a change that adds work to
+every scrolled frame fails it. Native-driven `Animated` transforms on every mounted row for the anchored chrome
+read p50 37.8 ms and p95 121 ms over the scroll steps, and the variant counter-translates from React state, which
+a vertical scroll never changes. **What it does not prove:** 120 fps with highlighted rows. Debug Hermes delivers
+each token patch seconds late, so most rows the scroll passes paint as plain text. That gate needs a Release
+build, and #705 owns it. On a Release `rnl_window`, where the JavaScript keeps up (first commit 0.28 s, a patch
+every 25 ms), the scenario as first written, in a proportional face and without the anchored chrome, read p95
+17–44 ms with 16 to 89 hangs, while `animated-views-120hz` passed beside it at p95 8.9 ms. Mounted once, with
+every row colored and nothing committed during the scroll, each wheel notch still painted for 13.7 ms (p50) on
+lavapipe. That is evidence of a paint bottleneck in the current implementation, not proof that a native view would
+cost the same: #685 keeps the JavaScript view provisionally, and revisits a native view if #705's profile shows
+per-node overhead.
+
+The variant reads `codeFontWeight`, `lineNumberFontWeight` and `hunkFontWeight` as `T3ReviewDiffView` does, and
+draws code, line numbers and hunk headers in fontconfig's `monospace`, which is DejaVu Sans Mono on Ubuntu 24.04,
+where fontconfig's own configuration prefers it, so the `t3-review-diff` golden depends on that answer. A sideways
+scroll moves the `FlatList` itself: this platform scrolls both axes of any ScrollView whose content is wider than
+it, as iOS does, and a horizontal ScrollView around the list would never receive a sideways pan, because a scroll
+goes to the innermost ScrollView under the pointer. The content is as wide as the longest line or hunk header in monospace
+plus the chrome, capped at `contentWidth`, as `contentWidthsByFileId` measures it on iOS; SourceFileSurface's
+32,000 and ReviewCommentCard's 2,800 now mean the longest line instead. `styleJson`'s `wordWrap` is not read:
+lines never wrap, tracked on #712. The golden is the review diff scrolled to its right edge and back to the top,
+headers and gutter still in place, above a five-line source file mid pull-to-refresh, whose `refreshing` draws a
+2-point bar along the top.
 
 The recipe for the real-hardware number is the same bundle on a 120 Hz output under Hyprland. **It has never been
 run.** Its measurement is tracked on #20.

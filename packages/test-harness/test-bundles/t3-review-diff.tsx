@@ -9,6 +9,7 @@ import {
 // #685: T3 Code's review sheet over a large diff. The rows, theme and style are the payloads ReviewSheet hands the
 // native view (nativeReviewDiffAdapter's shapes, MOBILE_CODE_SURFACE sizes, the dark diff colors), and tokens arrive as
 // the highlighter sends them: patches around each visible range, the next one only after the last is acknowledged.
+// Below it, SourceFileSurface's use of the same view: a short file, contentWidth 32,000, mid pull-to-refresh.
 
 type Token = readonly [content: string, color: string, fontStyle: number];
 type Change = "add" | "context" | "delete";
@@ -19,6 +20,8 @@ interface VisibleRange {
 }
 
 const ROW_HEIGHT = 22;
+const SOURCE_FILE_HEIGHT = 140;
+const SOURCE_CONTENT_WIDTH = 32_000;
 const LARGE_FILE_COUNT = 41;
 const LARGE_FILE_HUNKS = 4;
 const HUNK_SHAPE: readonly (readonly [Change, number])[] = [
@@ -78,6 +81,7 @@ const theme = {
 const style = {
   changeBarWidth: 4,
   codeFontSize: 12,
+  codeFontWeight: "regular",
   codePadding: 7,
   fileHeaderFontSize: 11,
   fileHeaderHeight: 56,
@@ -86,10 +90,21 @@ const style = {
   fileHeaderSubtextFontSize: 11,
   gutterWidth: 46,
   hunkFontSize: 11,
+  hunkFontWeight: "medium",
   lineNumberFontSize: 11,
+  lineNumberFontWeight: "regular",
   rowHeight: ROW_HEIGHT,
 };
 
+const sourceStyle = { ...style, changeBarWidth: 0 };
+
+const sourceLines: readonly (readonly Token[])[] = [
+  [["import ", KEYWORD, 0], ["{ useState }", FOREGROUND, 0], [" from ", KEYWORD, 0], ['"react"', STRING, 0], [";", FOREGROUND, 0]],
+  [],
+  [["export function ", KEYWORD, 0], ["SourceFile", FUNCTION_NAME, 0], ["(): void {", FOREGROUND, 0]],
+  [["  const ", KEYWORD, 0], ["[path]", FOREGROUND, 0], [" = ", FOREGROUND, 0], ["useState", FUNCTION_NAME, 0], ["(", FOREGROUND, 0], ['"README.md"', STRING, 0], [");", FOREGROUND, 0]],
+  [["}", FOREGROUND, 0]],
+];
 const lineTokens = (file: number, line: number, change: Change): readonly Token[] => {
   const name = change === "add" ? "computeNext" : "compute";
   switch (line % 6) {
@@ -144,6 +159,18 @@ const lineTokens = (file: number, line: number, change: Change): readonly Token[
 };
 
 const textOf = (tokens: readonly Token[]): string => tokens.map(([content]) => content).join("");
+
+const sourceRowsJson = JSON.stringify(
+  sourceLines.map((tokens, index) => ({
+    change: "context",
+    content: textOf(tokens),
+    fileId: "source-file",
+    id: `source-line:${String(index)}`,
+    kind: "line",
+    newLineNumber: index + 1,
+  })),
+);
+
 
 // T3 Code drops a word diff that covers most of the line (NATIVE_REVIEW_MAX_WORD_DIFF_COVERAGE).
 const MAX_WORD_DIFF_COVERAGE = 0.45;
@@ -236,6 +263,10 @@ const report = (line: string): void => {
 
 const nativeTokens = (tokens: readonly Token[]): NativeReviewDiffToken[] =>
   tokens.map(([content, color, fontStyle]) => ({ color, content, fontStyle }));
+
+const sourceTokensJson = JSON.stringify(
+  Object.fromEntries(sourceLines.map((tokens, index) => [`source-line:${String(index)}`, nativeTokens(tokens)])),
+);
 
 const patchFor = (range: VisibleRange, sent: Set<string>): Record<string, NativeReviewDiffToken[]> => {
   const patch: Record<string, NativeReviewDiffToken[]> = {};
@@ -333,6 +364,18 @@ const ReviewSheet = (): React.JSX.Element => {
         themeJson={JSON.stringify(theme)}
         tokensPatchJson={tokensPatchJson}
         tokensResetKey={RESET_KEY}
+      />
+      <ReviewDiffView
+        appearanceScheme="dark"
+        contentResetKey="source:README.md"
+        contentWidth={SOURCE_CONTENT_WIDTH}
+        refreshing
+        rowHeight={ROW_HEIGHT}
+        rowsJson={sourceRowsJson}
+        style={{ borderColor: theme.border, borderTopWidth: 1, height: SOURCE_FILE_HEIGHT }}
+        styleJson={JSON.stringify(sourceStyle)}
+        themeJson={JSON.stringify(theme)}
+        tokensJson={sourceTokensJson}
       />
     </View>
   );

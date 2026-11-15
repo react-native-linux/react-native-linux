@@ -13,15 +13,16 @@ import {
 import {
   FlatList,
   Pressable,
-  ScrollView,
   Text,
   View,
   type LayoutChangeEvent,
+  type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from "react-native";
 
 import {
   codeRuns,
+  contentWidthOf,
   layoutOf,
   parseIds,
   readTokenPatch,
@@ -38,7 +39,8 @@ import type {
 } from "./nativeReviewDiffSurface";
 
 // Linux has no T3ReviewDiffView. Metro resolves this file before nativeReviewDiffSurface.ts, so the review
-// sheet gets the same props and events, drawn by React Native rows in a FlatList.
+// sheet gets the same props and events, drawn by React Native rows in a FlatList. styleJson's wordWrap is not
+// read: lines never wrap (react-native-linux/react-native-linux#712).
 
 interface RowHandlers {
   readonly press: (row: NativeReviewDiffRow, gesture: "tap" | "longPress") => void;
@@ -46,6 +48,8 @@ interface RowHandlers {
 }
 
 const SELECTED_BAR_ALPHA = "f2";
+const MONOSPACE = "monospace";
+const REFRESH_BAR_HEIGHT = 2;
 
 function nativeEvent<T>(payload: T): NativeSyntheticEvent<T> {
   return { nativeEvent: payload } as unknown as NativeSyntheticEvent<T>;
@@ -58,13 +62,14 @@ interface DiffRowProps {
   readonly collapsed: boolean;
   readonly viewed: boolean;
   readonly selected: boolean;
-  readonly headerWidth: number;
+  readonly viewportWidth: number;
+  readonly scrollX: number;
   readonly layout: Layout;
   readonly theme: NativeReviewDiffTheme;
   readonly handlers: RowHandlers;
 }
 
-function FileHeaderRow({ row, height, collapsed, viewed, headerWidth, layout, theme, handlers }: DiffRowProps) {
+function FileHeaderRow({ row, height, collapsed, viewed, layout, theme, handlers }: DiffRowProps) {
   const path =
     row.previousPath && row.previousPath !== row.filePath
       ? `${row.previousPath} -> ${row.filePath ?? ""}`
@@ -74,7 +79,6 @@ function FileHeaderRow({ row, height, collapsed, viewed, headerWidth, layout, th
     View,
     {
       style: {
-        width: headerWidth,
         height,
         flexDirection: "row",
         alignItems: "center",
@@ -130,9 +134,11 @@ function FileHeaderRow({ row, height, collapsed, viewed, headerWidth, layout, th
   );
 }
 
-function LineRow({ row, height, tokens, selected, layout, theme, handlers }: DiffRowProps) {
+function LineRow({ row, height, tokens, selected, scrollX, layout, theme, handlers }: DiffRowProps) {
   const change = row.change ?? "context";
   const lineNumber = row.newLineNumber ?? row.oldLineNumber;
+  const background =
+    change === "add" ? theme.addBackground : change === "delete" ? theme.deleteBackground : theme.background;
   const bar = selected
     ? `${theme.hunkText}${SELECTED_BAR_ALPHA}`
     : change === "add"
@@ -145,33 +151,20 @@ function LineRow({ row, height, tokens, selected, layout, theme, handlers }: Dif
     {
       onPress: () => handlers.press(row, "tap"),
       onLongPress: () => handlers.press(row, "longPress"),
-      style: {
-        height,
-        flexDirection: "row",
-        backgroundColor:
-          change === "add" ? theme.addBackground : change === "delete" ? theme.deleteBackground : theme.background,
-      },
+      style: { height, backgroundColor: background },
     },
-    createElement(View, { style: { width: layout.changeBarWidth, backgroundColor: bar } }),
-    createElement(
-      Text,
-      {
-        style: {
-          width: layout.gutterWidth,
-          paddingRight: layout.codePadding,
-          textAlign: "right",
-          lineHeight: height,
-          fontSize: layout.lineNumberFontSize,
-          color: change === "add" ? theme.addText : change === "delete" ? theme.deleteText : theme.mutedText,
-        },
-      },
-      lineNumber == null ? "" : String(lineNumber),
-    ),
     createElement(
       Text,
       {
         numberOfLines: 1,
-        style: { flex: 1, paddingLeft: layout.codePadding, lineHeight: height, fontSize: layout.codeFontSize, color: theme.text },
+        style: {
+          paddingLeft: layout.changeBarWidth + layout.gutterWidth + layout.codePadding,
+          lineHeight: height,
+          fontFamily: MONOSPACE,
+          fontSize: layout.codeFontSize,
+          fontWeight: layout.codeFontWeight,
+          color: theme.text,
+        },
       },
       codeRuns(row, tokens, theme).map((run, index) =>
         createElement(
@@ -181,13 +174,45 @@ function LineRow({ row, height, tokens, selected, layout, theme, handlers }: Dif
             style: {
               color: run.color,
               backgroundColor: run.background,
-              fontWeight: run.fontStyle & 2 ? "700" : "400",
+              fontWeight: run.fontStyle & 2 ? "700" : layout.codeFontWeight,
               fontStyle: run.fontStyle & 1 ? "italic" : "normal",
               textDecorationLine: run.fontStyle & 4 ? "underline" : "none",
             },
           },
           run.content,
         ),
+      ),
+    ),
+    createElement(
+      View,
+      {
+        style: {
+          position: "absolute",
+          top: 0,
+          bottom: 0,
+          left: 0,
+          width: layout.changeBarWidth + layout.gutterWidth,
+          flexDirection: "row",
+          backgroundColor: background,
+          transform: [{ translateX: scrollX }],
+        },
+      },
+      createElement(View, { style: { width: layout.changeBarWidth, backgroundColor: bar } }),
+      createElement(
+        Text,
+        {
+          style: {
+            flex: 1,
+            paddingRight: layout.codePadding,
+            textAlign: "right",
+            lineHeight: height,
+            fontFamily: MONOSPACE,
+            fontSize: layout.lineNumberFontSize,
+            fontWeight: layout.lineNumberFontWeight,
+            color: change === "add" ? theme.addText : change === "delete" ? theme.deleteText : theme.mutedText,
+          },
+        },
+        lineNumber == null ? "" : String(lineNumber),
       ),
     ),
   );
@@ -203,8 +228,9 @@ function HunkRow({ row, height, layout, theme }: DiffRowProps) {
         numberOfLines: 1,
         style: {
           paddingLeft: layout.changeBarWidth + layout.gutterWidth + layout.codePadding,
+          fontFamily: MONOSPACE,
           fontSize: layout.hunkFontSize,
-          fontWeight: "500",
+          fontWeight: layout.hunkFontWeight,
           color: theme.hunkText,
         },
       },
@@ -213,7 +239,7 @@ function HunkRow({ row, height, layout, theme }: DiffRowProps) {
   );
 }
 
-function NoticeRow({ row, height, headerWidth, layout, theme, handlers }: DiffRowProps) {
+function NoticeRow({ row, height, layout, theme, handlers }: DiffRowProps) {
   const warning = row.tone === "warning";
   return createElement(
     Pressable,
@@ -221,7 +247,6 @@ function NoticeRow({ row, height, headerWidth, layout, theme, handlers }: DiffRo
       disabled: !row.actionable,
       onPress: () => handlers.press(row, "tap"),
       style: {
-        width: headerWidth,
         height,
         justifyContent: "center",
         paddingHorizontal: layout.fileHeaderHorizontalPadding,
@@ -241,7 +266,7 @@ function NoticeRow({ row, height, headerWidth, layout, theme, handlers }: DiffRo
   );
 }
 
-function CommentRow({ row, height, collapsed, headerWidth, layout, theme, handlers }: DiffRowProps) {
+function CommentRow({ row, height, collapsed, layout, theme, handlers }: DiffRowProps) {
   const subtext = { fontSize: layout.fileHeaderSubtextFontSize, fontWeight: "500" } as const;
   return createElement(
     Pressable,
@@ -249,7 +274,7 @@ function CommentRow({ row, height, collapsed, headerWidth, layout, theme, handle
       accessibilityRole: "button",
       accessibilityState: { expanded: !collapsed },
       onPress: () => handlers.press(row, "tap"),
-      style: { width: headerWidth, height, paddingHorizontal: 8, paddingVertical: 5, backgroundColor: theme.background },
+      style: { height, paddingHorizontal: 8, paddingVertical: 5, backgroundColor: theme.background },
     },
     createElement(
       View,
@@ -280,19 +305,19 @@ function CommentRow({ row, height, collapsed, headerWidth, layout, theme, handle
   );
 }
 
+const ANCHORED_ROWS = { file: FileHeaderRow, notice: NoticeRow, comment: CommentRow } as const;
+
+// Headers, notices and comments span the viewport and the gutter stays at its left edge while the code scrolls
+// sideways under them, as T3ReviewDiffView draws them.
 const DiffRow = memo(function DiffRow(props: DiffRowProps) {
-  switch (props.row.kind) {
-    case "file":
-      return createElement(FileHeaderRow, props);
-    case "hunk":
-      return createElement(HunkRow, props);
-    case "notice":
-      return createElement(NoticeRow, props);
-    case "comment":
-      return createElement(CommentRow, props);
-    default:
-      return createElement(LineRow, props);
-  }
+  const { kind } = props.row;
+  if (kind === "line") return createElement(LineRow, props);
+  if (kind === "hunk") return createElement(HunkRow, props);
+  return createElement(
+    View,
+    { style: { width: props.viewportWidth, transform: [{ translateX: props.scrollX }] } },
+    createElement(ANCHORED_ROWS[kind], props),
+  );
 });
 
 function useTokens(
@@ -340,6 +365,7 @@ function LinuxReviewDiffView(props: NativeReviewDiffViewProps) {
     nativeViewRef,
     scrollEnabled,
     bounces,
+    refreshing,
     style,
   } = props;
   const rows = useMemo(() => JSON.parse(rowsJson) as NativeReviewDiffRow[], [rowsJson]);
@@ -353,6 +379,14 @@ function LinuxReviewDiffView(props: NativeReviewDiffViewProps) {
   const selectedRowIds = useMemo(() => parseIds(selectedRowIdsJson), [selectedRowIdsJson]);
   const collapsedCommentIds = useMemo(() => parseIds(collapsedCommentIdsJson), [collapsedCommentIdsJson]);
   const [viewportWidth, setViewportWidth] = useState(0);
+  // Native-driven Animated transforms on every mounted row read p50 37.8 ms over t3-review-diff-120hz's scroll
+  // steps. A vertical scroll leaves x unchanged, so this state re-renders the rows only while code scrolls sideways.
+  const [scrollX, setScrollX] = useState(0);
+  const onScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => setScrollX(event.nativeEvent.contentOffset.x),
+    [],
+  );
+  const width = useMemo(() => contentWidthOf(rows, layout, contentWidth), [rows, layout, contentWidth]);
 
   // The highlighter reads row indexes of the full payload, including the rows of collapsed files.
   const visible = useMemo(
@@ -449,11 +483,9 @@ function LinuxReviewDiffView(props: NativeReviewDiffViewProps) {
         : rowIndex >= (initialRowIndex ?? 0),
     );
     return index > 0 ? index : undefined;
-    // Only the first layout of each content scrolls to the initial row.
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [contentResetKey]);
+  }, [visible, rows, initialFileId, initialRowIndex]);
 
-  const headerWidth = viewportWidth || contentWidth;
+  const rowViewportWidth = viewportWidth || width;
   const renderItem = useCallback(
     ({ item, index }: { item: number; index: number }) => {
       const row = rows[item];
@@ -466,24 +498,21 @@ function LinuxReviewDiffView(props: NativeReviewDiffViewProps) {
         collapsed: row.kind === "comment" ? collapsedCommentIds.has(row.id) : collapsedFileIds.has(fileId),
         viewed: viewedFileIds.has(fileId),
         selected: selectedRowIds.has(row.id),
-        headerWidth,
+        viewportWidth: rowViewportWidth,
+        scrollX,
         layout,
         theme,
         handlers,
       });
     },
-    [rows, visible, tokens, collapsedCommentIds, collapsedFileIds, viewedFileIds, selectedRowIds, headerWidth, layout, theme, handlers],
+    [rows, visible, tokens, collapsedCommentIds, collapsedFileIds, viewedFileIds, selectedRowIds, rowViewportWidth, scrollX, layout, theme, handlers],
   );
 
   return createElement(
-    ScrollView,
+    View,
     {
-      horizontal: true,
-      bounces: false,
-      showsHorizontalScrollIndicator: false,
       onLayout: (event: LayoutChangeEvent) => setViewportWidth(event.nativeEvent.layout.width),
       style: [style, { backgroundColor: theme.background }],
-      contentContainerStyle: { minWidth: "100%" },
     },
     createElement(FlatList<number>, {
       key: contentResetKey,
@@ -498,15 +527,34 @@ function LinuxReviewDiffView(props: NativeReviewDiffViewProps) {
       }),
       initialScrollIndex,
       onViewableItemsChanged,
+      onScroll,
       viewabilityConfig: { itemVisiblePercentThreshold: 1 },
       scrollEnabled,
       bounces,
+      showsHorizontalScrollIndicator: false,
       windowSize: 3,
       maxToRenderPerBatch: 40,
       initialNumToRender: 40,
-      contentContainerStyle: { paddingTop: contentInsetTop, paddingBottom: contentInsetBottom },
-      style: { width: Math.max(contentWidth, viewportWidth) },
+      contentContainerStyle: {
+        width: Math.max(width, viewportWidth),
+        paddingTop: contentInsetTop,
+        paddingBottom: contentInsetBottom,
+      },
+      style: { flex: 1 },
     }),
+    refreshing
+      ? createElement(View, {
+          accessibilityRole: "progressbar",
+          style: {
+            position: "absolute",
+            top: contentInsetTop,
+            left: 0,
+            right: 0,
+            height: REFRESH_BAR_HEIGHT,
+            backgroundColor: theme.hunkText,
+          },
+        })
+      : null,
   );
 }
 

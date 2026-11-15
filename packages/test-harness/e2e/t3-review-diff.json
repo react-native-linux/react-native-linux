@@ -13,7 +13,21 @@
     "sleep 600",
     "move 300 28",
     "click 300 28",
-    "sleep 1500"
+    "sleep 1500",
+    "move 640 300",
+    "pan 150 0",
+    "sleep 16",
+    "pan 150 0",
+    "sleep 16",
+    "pan 150 0",
+    "sleep 16",
+    "pan 150 0",
+    "pan_stop",
+    "sleep 600",
+    "wheel down 20",
+    "sleep 700",
+    "wheel up 40",
+    "sleep 1200"
   ],
   "expect": [
     "t3-review-diff: committed 42 files, 5098 lines, 5307 rows",

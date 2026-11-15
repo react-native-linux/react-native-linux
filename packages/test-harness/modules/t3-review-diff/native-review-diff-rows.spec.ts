@@ -1,6 +1,7 @@
 import type { NativeReviewDiffRow, NativeReviewDiffViewProps } from "./src/features/diffs/nativeReviewDiffSurface.ts";
 import {
   codeRuns,
+  contentWidthOf,
   layoutOf,
   parseIds,
   readTokenPatch,
@@ -17,6 +18,12 @@ const COLLAPSED_COMMENT_HEIGHT = 44;
 const EXPANDED_COMMENT_HEIGHT = 124;
 const CODE_FONT_SIZE = 14;
 const GUTTER_WIDTH = 52;
+const HUNK_FONT_SIZE = 20;
+const DEJAVU_SANS_MONO_ADVANCE = 1233;
+const DEJAVU_SANS_MONO_UNITS_PER_EM = 2048;
+const MONOSPACE_ADVANCE_PER_EM = DEJAVU_SANS_MONO_ADVANCE / DEJAVU_SANS_MONO_UNITS_PER_EM;
+const SOURCE_FILE_CONTENT_WIDTH = 32_000;
+const REVIEW_CONTENT_WIDTH = 2800;
 const BOLD = 2;
 const CHUNK = 3;
 const FIRST_CHUNK = 0;
@@ -79,6 +86,62 @@ describe("parseIds and layoutOf", () => {
       gutterWidth: GUTTER_WIDTH,
     });
     expect(layout.fileHeaderHeight).toBe(HEADER_HEIGHT);
+  });
+});
+
+describe("layoutOf font weights", () => {
+  it("maps T3ReviewDiffView's weight names to CSS weights, and anything else to bold as UIFont does", () => {
+    const weights = layoutOf(
+      { codeFontWeight: "Regular", hunkFontWeight: "semi-bold", lineNumberFontWeight: "ultralight" },
+      ROW_HEIGHT,
+    );
+
+    expect([weights.codeFontWeight, weights.hunkFontWeight, weights.lineNumberFontWeight]).toStrictEqual([
+      "400",
+      "600",
+      "200",
+    ]);
+    expect([layout.codeFontWeight, layoutOf({ codeFontWeight: "condensed" }, ROW_HEIGHT).codeFontWeight]).toStrictEqual(
+      ["700", "700"],
+    );
+  });
+});
+
+describe("contentWidthOf", () => {
+  const chrome = layout.changeBarWidth + layout.gutterWidth + layout.codePadding + layout.codePadding;
+  const hunkLayout = layoutOf({ codeFontSize: CODE_FONT_SIZE, hunkFontSize: HUNK_FONT_SIZE }, ROW_HEIGHT);
+  const widthOf = (text: string, fontSize: number): number =>
+    chrome + Math.ceil(text.length * fontSize * MONOSPACE_ADVANCE_PER_EM);
+
+  it("measures the longest line in the code font and adds the chrome, as contentWidthsByFileId does", () => {
+    const shortRows: readonly NativeReviewDiffRow[] = [
+      { content: "abc", id: "l1", kind: "line" },
+      { content: "abcdefghij", id: "l2", kind: "line" },
+      { id: "l3", kind: "line" },
+      { id: "h", kind: "file" },
+    ];
+
+    expect(contentWidthOf(shortRows, layout, SOURCE_FILE_CONTENT_WIDTH)).toBe(
+      widthOf("abcdefghij", layout.codeFontSize),
+    );
+  });
+
+  it("measures a hunk header, from its text or its content, in the hunk font", () => {
+    expect(contentWidthOf([{ id: "h", kind: "hunk", text: "@@ -1 +1 @@" }], hunkLayout, REVIEW_CONTENT_WIDTH)).toBe(
+      widthOf("@@ -1 +1 @@", HUNK_FONT_SIZE),
+    );
+    expect(contentWidthOf([{ content: "@@ x", id: "h", kind: "hunk" }], hunkLayout, REVIEW_CONTENT_WIDTH)).toBe(
+      widthOf("@@ x", HUNK_FONT_SIZE),
+    );
+    expect(contentWidthOf([{ id: "h", kind: "hunk" }], hunkLayout, REVIEW_CONTENT_WIDTH)).toBe(chrome);
+  });
+
+  it("never exceeds the contentWidth the caller passes", () => {
+    const longLine = "x".repeat(REVIEW_CONTENT_WIDTH);
+
+    expect(contentWidthOf([{ content: longLine, id: "l", kind: "line" }], layout, REVIEW_CONTENT_WIDTH)).toBe(
+      REVIEW_CONTENT_WIDTH,
+    );
   });
 });
 
