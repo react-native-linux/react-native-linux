@@ -1,7 +1,10 @@
 import { packageAliases, resolveLinuxPackageAlias } from "./package-aliases.ts";
+import {
+  resolveLinuxPackageSubstituteForResolvedFile,
+  resolveLinuxPackageVariantForResolvedFile,
+} from "./package-variants.ts";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { resolveLinuxPackageVariantForResolvedFile } from "./package-variants.ts";
 
 const reactNativeModulePrefix = "react-native/";
 const linuxPlatform = "linux";
@@ -180,7 +183,8 @@ const resolveWithBaselessVariant = <Resolution>(
  * The Metro `resolveRequest` of a linux bundle: the specifier rewrites of `resolveLinuxModuleName` first, Metro's
  * own resolution — whose `linux`, `native`, default extension chain is `resolvePlatformCandidates` — next, and the
  * overlay substitution of `resolveLinuxOverlayForResolvedFile`, or else the package variant of
- * `resolveLinuxPackageVariantForResolvedFile`, on whatever file that produced.
+ * `resolveLinuxPackageVariantForResolvedFile`, on whatever file that produced. A file
+ * `resolveLinuxPackageSubstituteForResolvedFile` names is resolved again, as its linux package's specifier.
  */
 const createLinuxResolveRequest =
   (isPackageResolvable: (packageName: string) => boolean) =>
@@ -194,14 +198,25 @@ const createLinuxResolveRequest =
       resolveLinuxModuleName(moduleName, platform, isPackageResolvable) ?? moduleName,
       baselessVariantSpecifier(moduleName, context.originModulePath ?? null, platform),
     );
-    const overlayPath =
+    const filePath =
       typeof resolution === "object" &&
       resolution !== null &&
       "filePath" in resolution &&
       typeof resolution.filePath === "string"
-        ? (resolveLinuxOverlayForResolvedFile(resolution.filePath, platform) ??
-          resolveLinuxPackageVariantForResolvedFile(resolution.filePath, platform))
+        ? resolution.filePath
         : null;
+    const substitute =
+      filePath === null ? null : resolveLinuxPackageSubstituteForResolvedFile(filePath, platform, isPackageResolvable);
+
+    if (substitute !== null) {
+      return context.resolveRequest(context, substitute, platform);
+    }
+
+    const overlayPath =
+      filePath === null
+        ? null
+        : (resolveLinuxOverlayForResolvedFile(filePath, platform) ??
+          resolveLinuxPackageVariantForResolvedFile(filePath, platform));
 
     return overlayPath === null ? resolution : { filePath: overlayPath, type: "sourceFile" };
   };
