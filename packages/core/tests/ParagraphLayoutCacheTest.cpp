@@ -50,6 +50,26 @@ TEST(ParagraphLayoutCacheTest, ClearingShapesEveryKeyAgainBecauseTheFontsChanged
     EXPECT_EQ(cache.currentFrameEntryCount(), 1U);
 }
 
+/**
+ * A miss that was still shaping with the old fonts when another thread registered a font and cleared the cache
+ * returns its metrics but does not insert them, so the next lookup shapes with the new fonts.
+ */
+TEST(ParagraphLayoutCacheTest, AMissShapingAcrossAClearDoesNotRepopulateTheCache) {
+    ParagraphLayoutCache cache(4);
+    int calls = 0;
+
+    const ParagraphLayoutCache::Metrics stale = cache.lookup(kKey, [&] {
+        std::thread([&cache] { cache.clear(); }).join();
+
+        return countingShape(calls);
+    });
+
+    EXPECT_EQ(stale.longestLineWidth, 1.0F);
+    EXPECT_EQ(cache.currentFrameEntryCount(), 0U);
+    EXPECT_EQ(cache.lookup(kKey, [&calls] { return countingShape(calls); }).longestLineWidth, 2.0F);
+    EXPECT_EQ(cache.currentFrameEntryCount(), 1U);
+}
+
 TEST(ParagraphLayoutCacheTest, AHitPromotedFromThePreviousFrameSurvivesTheNextSwap) {
     ParagraphLayoutCache cache(8);
     int calls = 0;
