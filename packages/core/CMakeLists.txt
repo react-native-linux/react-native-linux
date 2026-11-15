@@ -64,7 +64,7 @@ find_package(fmt CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 # #79: libcurl is the HTTP client behind upstream's NetworkingModule; see src/CurlHttpClient.h.
 find_package(CURL REQUIRED)
-# #23: SQLite is the store behind AsyncStorage; see src/AsyncStorage.h.
+# #23: SQLite is the store behind AsyncStorage (src/AsyncStorage.h) and #638's expo-sqlite (src/ExpoSQLite.h).
 find_package(SQLite3 REQUIRED)
 
 add_library(double-conversion INTERFACE)
@@ -857,6 +857,8 @@ add_library(rnl_react_core STATIC
     src/CurlHttpClient.cpp
     src/DimensionsSource.cpp
     src/EditorModel.cpp
+    src/ExpoSQLite.cpp
+    src/ExpoSQLiteModule.cpp
     src/FabricHost.cpp
     src/FantomRenderOutput.cpp
     src/FocusModel.cpp
@@ -1407,21 +1409,28 @@ endif()
 
 file(READ ${RNL_WORKLETS_DIR}/package.json RNL_WORKLETS_PACKAGE_JSON)
 string(JSON RNL_WORKLETS_VERSION GET ${RNL_WORKLETS_PACKAGE_JSON} version)
-file(READ ${RNL_WORKLETS_DIR}/src/featureFlags/staticFlags.json RNL_WORKLETS_STATIC_FLAGS)
-string(JSON RNL_WORKLETS_STATIC_FLAG_COUNT LENGTH ${RNL_WORKLETS_STATIC_FLAGS})
-math(EXPR RNL_WORKLETS_LAST_STATIC_FLAG "${RNL_WORKLETS_STATIC_FLAG_COUNT} - 1")
-set(RNL_WORKLETS_FEATURE_FLAGS "")
+# Software Mansion's static feature flags, as their build scripts serialize staticFlags.json: "[NAME:true]…".
+function(rnl_static_feature_flags static_flags_file output_variable)
+    file(READ ${static_flags_file} static_flags)
+    string(JSON flag_count LENGTH ${static_flags})
+    math(EXPR last_flag "${flag_count} - 1")
+    set(feature_flags "")
 
-foreach(rnl_flag_index RANGE ${RNL_WORKLETS_LAST_STATIC_FLAG})
-    string(JSON rnl_flag_name MEMBER ${RNL_WORKLETS_STATIC_FLAGS} ${rnl_flag_index})
-    string(JSON rnl_flag_value GET ${RNL_WORKLETS_STATIC_FLAGS} ${rnl_flag_name})
+    foreach(flag_index RANGE ${last_flag})
+        string(JSON flag_name MEMBER ${static_flags} ${flag_index})
+        string(JSON flag_value GET ${static_flags} ${flag_name})
 
-    if(rnl_flag_value)
-        string(APPEND RNL_WORKLETS_FEATURE_FLAGS "[${rnl_flag_name}:true]")
-    else()
-        string(APPEND RNL_WORKLETS_FEATURE_FLAGS "[${rnl_flag_name}:false]")
-    endif()
-endforeach()
+        if(flag_value)
+            string(APPEND feature_flags "[${flag_name}:true]")
+        else()
+            string(APPEND feature_flags "[${flag_name}:false]")
+        endif()
+    endforeach()
+
+    set(${output_variable} "${feature_flags}" PARENT_SCOPE)
+endfunction()
+
+rnl_static_feature_flags(${RNL_WORKLETS_DIR}/src/featureFlags/staticFlags.json RNL_WORKLETS_FEATURE_FLAGS)
 
 file(GLOB_RECURSE RNL_WORKLETS_SOURCES CONFIGURE_DEPENDS ${RNL_WORKLETS_DIR}/Common/cpp/worklets/*.cpp)
 add_library(rnl_worklets OBJECT ${RNL_WORKLETS_SOURCES} src/LinuxUIScheduler.cpp src/WorkletsModule.cpp
@@ -1435,6 +1444,49 @@ target_compile_reactnative_options(rnl_worklets PRIVATE)
 target_link_libraries(rnl_worklets PUBLIC hermesvm jsi folly_runtime ${RNL_REACT_COMMON_TARGETS})
 # #136: the WorkletsModule host is registered by TurboModuleRegistry, so the core library carries worklets.
 target_link_libraries(rnl_react_core PUBLIC rnl_worklets)
+
+# ---------------------------------------------------------------------------
+# rnl_reanimated (#139)
+#
+# react-native-reanimated's shared C++, compiled from the vendored packages/reanimated/upstream with its patch queue
+# applied, plus our PlatformDepMethodsHolder. Linux defines neither ANDROID nor __APPLE__, so building this target
+# on every PR is the compile-only guard of #139: an upstream bump that adds a two-way platform #ifdef fails here.
+# The version and the static feature flags come from the vendored package.json and staticFlags.json, and the React
+# Native version from scripts/vendor.lock.json, because Common/cpp gates the animation backend on it.
+# ---------------------------------------------------------------------------
+
+set(RNL_REANIMATED_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../reanimated/upstream/packages/react-native-reanimated)
+file(READ ${RNL_REANIMATED_DIR}/package.json RNL_REANIMATED_PACKAGE_JSON)
+string(JSON RNL_REANIMATED_VERSION GET ${RNL_REANIMATED_PACKAGE_JSON} version)
+rnl_static_feature_flags(${RNL_REANIMATED_DIR}/src/featureFlags/staticFlags.json RNL_REANIMATED_FEATURE_FLAGS)
+file(READ ${CMAKE_SOURCE_DIR}/scripts/vendor.lock.json RNL_REANIMATED_VENDOR_LOCK)
+string(JSON RNL_REANIMATED_REACT_NATIVE_TAG GET "${RNL_REANIMATED_VENDOR_LOCK}" tag)
+string(REGEX MATCH "^v0\\.([0-9]+)\\.([0-9]+)" rnl_react_native_version_match ${RNL_REANIMATED_REACT_NATIVE_TAG})
+
+# Layout animations include the shared-transition boundary's codegen props, generated from the vendored spec.
+set(RNL_REANIMATED_CODEGEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/reanimated-codegen)
+set(RNL_REANIMATED_PROPS_DIR ${RNL_REANIMATED_CODEGEN_DIR}/react/renderer/components/rnreanimated)
+set(RNL_REANIMATED_BOUNDARY_SPEC ${RNL_REANIMATED_DIR}/src/specs/SharedTransitionBoundaryNativeComponent.ts)
+find_program(RNL_NODE node REQUIRED)
+add_custom_command(
+    OUTPUT ${RNL_REANIMATED_PROPS_DIR}/Props.h ${RNL_REANIMATED_PROPS_DIR}/Props.cpp
+    COMMAND ${RNL_NODE} ${CMAKE_SOURCE_DIR}/scripts/codegen-spec.ts
+        ${RNL_REANIMATED_BOUNDARY_SPEC} rnreanimated ${RNL_REANIMATED_CODEGEN_DIR} componentsIOS
+    DEPENDS ${CMAKE_SOURCE_DIR}/scripts/codegen-spec.ts ${RNL_REANIMATED_BOUNDARY_SPEC}
+    COMMENT "Generating Reanimated's rnreanimated component props"
+    VERBATIM)
+
+file(GLOB_RECURSE RNL_REANIMATED_SOURCES CONFIGURE_DEPENDS ${RNL_REANIMATED_DIR}/Common/cpp/reanimated/*.cpp)
+add_library(rnl_reanimated OBJECT ${RNL_REANIMATED_SOURCES} ${RNL_REANIMATED_PROPS_DIR}/Props.h
+    ${RNL_REANIMATED_PROPS_DIR}/Props.cpp src/ReanimatedPlatform.cpp)
+target_include_directories(rnl_reanimated PUBLIC ${RNL_REANIMATED_DIR}/Common/cpp ${RNL_REANIMATED_CODEGEN_DIR})
+target_precompile_headers(rnl_reanimated PRIVATE src/WorkletsLinuxPrefix.h)
+target_compile_definitions(rnl_reanimated
+    PRIVATE REANIMATED_VERSION=${RNL_REANIMATED_VERSION}
+    PUBLIC "REANIMATED_FEATURE_FLAGS=${RNL_REANIMATED_FEATURE_FLAGS}"
+        REACT_NATIVE_VERSION_MINOR=${CMAKE_MATCH_1} REACT_NATIVE_VERSION_PATCH=${CMAKE_MATCH_2})
+target_compile_reactnative_options(rnl_reanimated PRIVATE)
+target_link_libraries(rnl_reanimated PUBLIC rnl_worklets)
 
 # ---------------------------------------------------------------------------
 # Autolinking (#147)

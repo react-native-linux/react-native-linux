@@ -219,13 +219,24 @@ const toDescriptor = (value: unknown): NativeBuildDescriptor | null => {
     return null;
   }
 
-  return Object.fromEntries(
-    descriptorKeys.flatMap((key) => {
-      const field = value[key];
+  const { componentDescriptors } = value;
 
-      return typeof field === "string" ? [[key, field]] : [];
-    }),
-  );
+  return {
+    ...Object.fromEntries(
+      descriptorKeys.flatMap((key) => {
+        const field = value[key];
+
+        return typeof field === "string" ? [[key, field]] : [];
+      }),
+    ),
+    ...(Array.isArray(componentDescriptors)
+      ? {
+          componentDescriptors: componentDescriptors.filter(
+            (name: unknown): name is string => typeof name === "string",
+          ),
+        }
+      : {}),
+  };
 };
 
 const toDependency = ([name, value]: readonly [string, unknown]): readonly AutolinkingDependency[] => {

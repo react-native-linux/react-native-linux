@@ -2,7 +2,7 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "workspaces": {
     ".": {
-      "entry": ["scripts/codegen-cxx-module.ts"],
+      "entry": ["scripts/codegen-spec.ts"],
       "project": ["*.ts", "scripts/**/*.ts"],
       "ignoreBinaries": ["cmake", "ctest", "ldd", "readelf"],
       "ignoreDependencies": ["react-native-worklets"]
@@ -33,6 +33,10 @@
         "pretty-format",
         "tinybench"
       ]
+    },
+    "packages/expo": {
+      "project": ["src/**/*.ts"],
+      "ignoreDependencies": ["expo-modules-core"]
     },
     "packages/gesture-handler": {
       "project": ["src/**/*.ts"],

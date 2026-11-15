@@ -75,9 +75,9 @@ endforeach()
 find_program(RNL_NODE node REQUIRED)
 add_custom_command(
     OUTPUT ${RNL_CXX_MODULE_EXAMPLE_DIR}/AppSpecsJSI.h
-    COMMAND ${RNL_NODE} ${CMAKE_SOURCE_DIR}/scripts/codegen-cxx-module.ts
-        ${RNL_CXX_MODULE_EXAMPLE_DIR}/NativeCxxModuleExample.js AppSpecs ${RNL_CXX_MODULE_EXAMPLE_DIR}
-    DEPENDS ${CMAKE_SOURCE_DIR}/scripts/codegen-cxx-module.ts ${RNL_CXX_MODULE_EXAMPLE_DIR}/NativeCxxModuleExample.js
+    COMMAND ${RNL_NODE} ${CMAKE_SOURCE_DIR}/scripts/codegen-spec.ts
+        ${RNL_CXX_MODULE_EXAMPLE_DIR}/NativeCxxModuleExample.js AppSpecs ${RNL_CXX_MODULE_EXAMPLE_DIR} modulesCxx
+    DEPENDS ${CMAKE_SOURCE_DIR}/scripts/codegen-spec.ts ${RNL_CXX_MODULE_EXAMPLE_DIR}/NativeCxxModuleExample.js
     COMMENT "Generating AppSpecsJSI.h from rn-tester's NativeCxxModuleExample spec"
     VERBATIM)
 
@@ -107,10 +107,12 @@ add_executable(rnl_core_hermes_tests
     HermesRuntimeFactory.cpp
     CxxModuleTypeSurfaceTest.cpp
     DevBundleModulesTest.cpp
+    ExponentConstantsModuleTest.cpp
     InstanceTeardownLeakTest.cpp
     MeasureGeometryTest.cpp
     LinkingModuleTest.cpp
     LinuxUISchedulerTest.cpp
+    SQLiteModuleTest.cpp
     WorkletsModuleTest.cpp
     ThreadAffinityTest.cpp
     WebSocketModuleTest.cpp
