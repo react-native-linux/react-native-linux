@@ -288,5 +288,86 @@ globalThis.trace = JSON.stringify({
               expected);
 }
 
+/**
+ * #276: `ExpoCrypto` answers the calls upstream's `expo-crypto` makes for T3 Code, through the module registry
+ * `requireNativeModule` falls back to. `digest` honours the input view's byte offset and, as Android does, writes at
+ * most the output's length; `digestStringAsync` defaults to hex and rejects an algorithm it has not; and
+ * `getRandomValues` fills exactly the view it is given and returns it.
+ */
+TEST(ExpoStartupModulesTest, CryptoAnswersDigestsRandomBytesAndUuids) {
+    EXPECT_EQ(settledTrace(R"JAVASCRIPT(
+const crypto = globalThis.nativeModuleProxy.ExpoCrypto;
+const hex = (bytes) => Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+const rejection = (promise) => promise.then(() => 'resolved', (error) => error.message);
+const padded = new Uint8Array([0, 0x61, 0x62, 0x63, 0]);
+const sha256 = new Uint8Array(32);
+const truncated = new Uint8Array(4);
+const random = new Uint8Array(40);
+const window = random.subarray(4, 36);
+
+crypto.digest('SHA-256', sha256, padded.subarray(1, 4));
+crypto.digest('SHA-1', truncated, padded.subarray(1, 4));
+globalThis.trace = [
+  Object.keys(Object.getPrototypeOf(crypto)).sort().join(','),
+  hex(sha256),
+  hex(truncated),
+  await crypto.digestStringAsync('MD5', 'abc'),
+  await crypto.digestStringAsync('SHA-256', 'abc', { encoding: 'base64' }),
+  await rejection(crypto.digestStringAsync('MD4', 'abc', { encoding: 'hex' })),
+  await rejection(crypto.digestStringAsync('SHA-256', 'abc', { encoding: 'base32' })),
+  crypto.getRandomValues(window) === window,
+  window.some((byte) => byte !== 0),
+  random.subarray(0, 4).every((byte) => byte === 0) && random.subarray(36).every((byte) => byte === 0),
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(crypto.randomUUID()),
+  crypto.randomUUID() !== crypto.randomUUID(),
+].join(' | ');
+)JAVASCRIPT"),
+              "digest,digestStringAsync,getRandomValues,randomUUID"
+              " | ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+              " | a9993e36"
+              " | 900150983cd24fb0d6963f7d28e17f72"
+              " | ungWv48Bz+pBQUDeXa4iI7ADYaOWF3qctBD/YfIAFa0="
+              " | expo-crypto on Linux has no digest algorithm 'MD4'"
+              " | expo-crypto has no digest encoding 'base32'"
+              " | true | true | true | true | true");
+}
+
+/** A call without the arguments it needs throws to JavaScript, never reads past them. */
+TEST(ExpoStartupModulesTest, CryptoThrowsForMissingArguments) {
+    EXPECT_EQ(settledTrace(R"JAVASCRIPT(
+const crypto = globalThis.nativeModuleProxy.ExpoCrypto;
+const thrown = (call) => { try { call(); return 'returned'; } catch (error) { return error.message.includes('missing argument'); } };
+globalThis.trace = [
+  thrown(() => crypto.digest('SHA-256', new Uint8Array(32))),
+  thrown(() => crypto.getRandomValues()),
+  await crypto.digestStringAsync('SHA-256').then(() => 'resolved', (error) => error.message),
+].join(' | ');
+)JAVASCRIPT"),
+              "true | true | ExpoCrypto: missing argument 1");
+}
+
+/**
+ * `expo-crypto`'s entry extends `ExpoCryptoAES`'s `EncryptionKey` and `SealedData` as it is imported, so both are
+ * `SharedObject` classes a subclass can extend; T3 Code calls no AES, so constructing one throws and the module has
+ * no methods.
+ */
+TEST(ExpoStartupModulesTest, CryptoAesOffersOnlyTheClassesTheEntryExtends) {
+    EXPECT_EQ(settledTrace(R"JAVASCRIPT(
+globalThis.expo = { SharedObject: class SharedObject {} };
+const aes = globalThis.nativeModuleProxy.ExpoCryptoAES;
+const { EncryptionKey, SealedData } = aes.getConstants();
+class AESEncryptionKey extends EncryptionKey {}
+class AESSealedData extends SealedData {}
+const constructed = (Class) => { try { new Class(); return 'constructed'; } catch (error) { return error.message; } };
+globalThis.trace = [
+  Object.keys(Object.getPrototypeOf(aes)).sort().join(','),
+  EncryptionKey.prototype instanceof globalThis.expo.SharedObject,
+  constructed(AESEncryptionKey).includes("expo-crypto's AES is not available on Linux"),
+  constructed(AESSealedData).includes("expo-crypto's AES is not available on Linux"),
+].join(' | ');
+)JAVASCRIPT"),
+              "getConstants | true | true | true");
+}
+
 } // namespace
 } // namespace react_native_linux

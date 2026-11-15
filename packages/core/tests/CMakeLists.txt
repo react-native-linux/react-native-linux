@@ -350,6 +350,8 @@ find_package(OpenSSL 3 REQUIRED COMPONENTS Crypto)
 target_sources(rnl_core_tests PRIVATE DpopKeysTest.cpp ${RNL_T3_NATIVE_CONTROLS_DIR}/DpopKeys.cpp)
 target_include_directories(rnl_core_tests PRIVATE ${RNL_T3_NATIVE_CONTROLS_DIR})
 target_link_libraries(rnl_core_tests PRIVATE OpenSSL::Crypto)
+# #276: expo-crypto's digests, random bytes and UUIDs over the same libcrypto, against RFC 1321 and FIPS 180-2.
+target_sources(rnl_core_tests PRIVATE ExpoCryptoTest.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../src/ExpoCrypto.cpp)
 # #139: Reanimated's platform contract on Linux, against the vendored header it fills.
 target_sources(rnl_core_tests PRIVATE ReanimatedPlatformTest.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../src/ReanimatedPlatform.cpp)
 target_include_directories(rnl_core_tests

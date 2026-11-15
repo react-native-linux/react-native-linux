@@ -56,7 +56,7 @@ Expo's Metro config turns `inlineRequires` off.
 | `ExpoApplication`, `ExpoDevice`, `ExpoLinking`, `ExpoNetwork` | `expo-application`, `expo-device`, `expo-linking`, `expo-network` | registered; the `expo-startup-modules` e2e imports all four through `expo` |
 | `ExpoFontLoader` | `expo-font` | registered: its `typeof window === 'undefined'` guard is false under React Native, which defines `window`, so it needs the module; the `expo-font` e2e draws a face `useFonts` loaded |
 | `ExpoClipboard` | `expo-clipboard` | throws; #278 |
-| `ExpoCrypto`, `ExpoCryptoAES` | `expo-crypto` | throws; #276 |
+| `ExpoCrypto`, `ExpoCryptoAES` | `expo-crypto` | registered (#276): digests, random bytes and UUIDs over libcrypto; `ExpoCryptoAES` only has the two classes `expo-crypto`'s entry extends, because T3 Code calls no AES |
 | `FileSystem` | `expo-file-system` | registered (#676) |
 | `ExpoImage` | `expo-image` | throws; #273 |
 | `ExponentImagePicker` | `expo-image-picker` | throws; #275 |
@@ -195,7 +195,7 @@ transitive package.
 | `expo-image` | `~58.0.18` | tracked | #273 | 14 files |
 | `expo-notifications` | `~58.1.8` | tracked | #274 | agent-awareness notifications |
 | `expo-image-picker` | `~58.0.10` | tracked | #275 | composer photos |
-| `expo-crypto` | `~58.0.7` | tracked | #276 | DPoP proofs |
+| `expo-crypto` | `~58.0.7` | works | `packages/expo/e2e/expo-startup-modules.json` | DPoP proofs, share fingerprints and UUIDs: `digest`, `digestStringAsync`, `getRandomBytes` and `randomUUID` |
 | `expo-device` | `~58.0.5` | works | `packages/expo/e2e/expo-startup-modules.json` | appearance defaults; `ExpoDevice` answers the machine |
 | `expo-clipboard` | `~58.0.4` | tracked | #278 | 8 files |
 | `react-native-keyboard-controller` | `1.23.0` | tracked | #279 | KeyboardProvider at the root |

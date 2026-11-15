@@ -6,6 +6,7 @@
 #include "CurlHttpClient.h"
 #include "ExpoApplicationModule.h"
 #include "ExpoAsset.h"
+#include "ExpoCryptoModule.h"
 #include "ExpoDeviceModule.h"
 #include "ExpoFileSystem.h"
 #include "ExpoFontLoaderModule.h"
@@ -1106,6 +1107,8 @@ TurboModuleRegistry::TurboModuleRegistry(
     moduleFactories_.emplace(
         "FileSystem", [jsInvoker, &host = *fileSystemHost_]() { return makeExpoFileSystemModule(jsInvoker, host); });
     moduleFactories_.emplace("ExpoApplication", [jsInvoker]() { return makeExpoApplicationModule(jsInvoker); });
+    moduleFactories_.emplace("ExpoCrypto", [jsInvoker]() { return makeExpoCryptoModule(jsInvoker); });
+    moduleFactories_.emplace("ExpoCryptoAES", [jsInvoker]() { return makeExpoCryptoAESModule(jsInvoker); });
     moduleFactories_.emplace("ExpoDevice", [jsInvoker]() { return makeExpoDeviceModule(jsInvoker); });
     moduleFactories_.emplace("ExpoLinking", [jsInvoker, activationModel = activationModel_]() {
         return makeExpoLinkingModule(jsInvoker, activationModel);
