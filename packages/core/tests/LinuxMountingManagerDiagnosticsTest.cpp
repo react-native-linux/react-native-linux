@@ -3,9 +3,12 @@
 
 #include <folly/dynamic.h>
 #include <gtest/gtest.h>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include <react/renderer/core/Props.h>
 
 // Issue #125: a mounting instruction that names a tag the scene does not hold used to be a silent skip, and
 // `dispatchCommand` used to be empty. Both are contracts now — see *Commit termination and mounting atomicity* in
@@ -18,6 +21,7 @@ using react_native_linux::MountDiagnostics;
 using react_native_linux::SceneCommand;
 
 constexpr Tag kMountedTag = 2;
+constexpr Tag kSecondMountedTag = 3;
 constexpr Tag kUnknownTag = 404;
 constexpr Tag kOtherUnknownTag = 505;
 constexpr MountingTransaction::Number kMountTransaction = 7;
@@ -84,6 +88,8 @@ TEST(LinuxMountingManagerDiagnosticsTest, AFreshManagerHasNothingToReport) {
     EXPECT_EQ(diagnostics.firstUnknownOperation, "");
     EXPECT_EQ(diagnostics.firstUnknownTag, 0);
     EXPECT_EQ(diagnostics.firstUnknownTransactionNumber, 0);
+    EXPECT_EQ(diagnostics.componentsWithoutViewProps, 0U);
+    EXPECT_EQ(diagnostics.firstComponentWithoutViewProps, "");
 }
 
 TEST(LinuxMountingManagerDiagnosticsTest, AWellFormedTransactionReportsNothing) {
@@ -98,6 +104,7 @@ TEST(LinuxMountingManagerDiagnosticsTest, AWellFormedTransactionReportsNothing) 
     mountingManager.executeMount(kSurfaceTag, numberedTransactionOf(kLaterTransaction, std::move(mutations)));
 
     EXPECT_EQ(mountingManager.mountDiagnostics().unknownTagOperations, 0U);
+    EXPECT_EQ(mountingManager.mountDiagnostics().componentsWithoutViewProps, 0U);
     EXPECT_TRUE(mountingManager.snapshotScene().empty());
 }
 
@@ -159,6 +166,34 @@ TEST(LinuxMountingManagerDiagnosticsTest, AnUnknownTagNeverStopsTheRestOfTheTran
 
     EXPECT_EQ(mountingManager.mountDiagnostics().unknownTagOperations, 1U);
     EXPECT_EQ(mountingManager.snapshotScene().size(), 1U);
+}
+
+// #150: every component is painted from its `ViewProps`, so one whose props do not derive from them would mount as
+// a blank box. It is counted and the first one named instead, and the transaction still applies.
+TEST(LinuxMountingManagerDiagnosticsTest, AComponentWhosePropsAreNotViewPropsIsCountedAndTheFirstNamed) {
+    LinuxMountingManager mountingManager;
+    ShadowViewMutationList mutations;
+
+    mountingManager.startSurface(kSurfaceTag, Size{.width = 800, .height = 600});
+
+    for (const auto& [tag, componentName] :
+         {std::pair{kMountedTag, "FirstPlainPropsView"}, std::pair{kSecondMountedTag, "SecondPlainPropsView"}}) {
+        ShadowView shadowView = makeView(tag, makeRect(0, 0, 10, 10));
+
+        shadowView.componentName = componentName;
+        shadowView.props = std::make_shared<const facebook::react::Props>();
+        mutations.push_back(ShadowViewMutation::CreateMutation(shadowView));
+        mutations.push_back(ShadowViewMutation::InsertMutation(kSurfaceTag, shadowView, 0));
+    }
+
+    mountingManager.executeMount(kSurfaceTag, numberedTransactionOf(kLaterTransaction, std::move(mutations)));
+
+    const MountDiagnostics diagnostics = mountingManager.mountDiagnostics();
+
+    EXPECT_EQ(diagnostics.componentsWithoutViewProps, 2U);
+    EXPECT_EQ(diagnostics.firstComponentWithoutViewProps, "FirstPlainPropsView");
+    EXPECT_EQ(diagnostics.unknownTagOperations, 0U);
+    EXPECT_NE(mountingManager.dumpScene().find("SecondPlainPropsView"), std::string::npos);
 }
 
 TEST(LinuxMountingManagerCommandTest, ACommandForAKnownTagIsQueuedWithItsArgumentsAndReportsNothing) {

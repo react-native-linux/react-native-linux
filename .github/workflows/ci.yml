@@ -403,12 +403,20 @@ jobs:
       # #147: an unmodified create-react-native-library `cpp-library` (the rendered template in
       # packages/cli/test-fixtures/cpp-library) is autolinked into every host this configure builds. The JSON is
       # the shape `react-native config` prints, with the Android descriptor the template's react-native.config.js
-      # declares; the library itself carries no Linux file.
+      # declares; the library itself carries no Linux file. #150: react-native-safe-area-context too, from the
+      # registry tarball as an app installs it, so its own `common/cpp` descriptor is registered unmodified.
       - name: Scaffold and autolink the C++ libraries
         run: |
           set -euo pipefail
           library="$GITHUB_WORKSPACE/packages/cli/test-fixtures/cpp-library"
           scaffolded_library="$GITHUB_WORKSPACE/build/scaffolded-cpp-library"
+          safe_area_context="$GITHUB_WORKSPACE/build/react-native-safe-area-context"
+          curl -sSfL -o /tmp/rnl-safe-area-context.tgz \
+            https://registry.npmjs.org/react-native-safe-area-context/-/react-native-safe-area-context-5.11.1.tgz
+          echo "ddf7446e0b7a6c2bc453ab8e87a258338c6126bd61a694fc0fc869ee4460d7a1  /tmp/rnl-safe-area-context.tgz" \
+            | sha256sum -c -
+          mkdir -p "$safe_area_context"
+          tar -xzf /tmp/rnl-safe-area-context.tgz -C "$safe_area_context" --strip-components=1
           pnpm dlx create-react-native-library@0.63.0 react-native-cpp-smoke \
             --directory "$scaffolded_library" --slug react-native-cpp-smoke \
             --description "C++ autolinking smoke test" --no-local --no-interactive \
@@ -429,7 +437,11 @@ jobs:
               "cmakeListsPath": "$scaffolded_library/android/generated/jni/CMakeLists.txt",
               "cxxModuleCMakeListsModuleName": "react-native-cpp-smoke",
               "cxxModuleCMakeListsPath": "$scaffolded_library/android/CMakeLists.txt",
-              "cxxModuleHeaderName": "CppSmokeImpl"}}}}}
+              "cxxModuleHeaderName": "CppSmokeImpl"}}}, "react-native-safe-area-context": {
+            "root": "$safe_area_context", "platforms": {"linux": null, "android": {
+              "cmakeListsPath": "$safe_area_context/android/src/main/jni/CMakeLists.txt",
+              "componentDescriptors": ["RNCSafeAreaProviderComponentDescriptor",
+                                       "RNCSafeAreaViewComponentDescriptor"]}}}}}
           EOF
           node scripts/autolink.ts /tmp/rnl-autolink-config.json "build/autolinking-$RNL_PRESET"
 
@@ -520,6 +532,15 @@ jobs:
           "$binary" --fabric packages/core/test-bundles/autolinked-component.js 2>&1 | tee /tmp/rnl-component.log
           grep -qF "CppLibraryView #4 frame=(24.00, 24.00, 120.00, 80.00)" /tmp/rnl-component.log
           if grep -q "\[component\] 'CppLibraryView'" /tmp/rnl-component.log; then exit 1; fi
+
+          # #150: react-native-safe-area-context's RNCSafeAreaProvider (codegen's descriptor) and RNCSafeAreaView
+          # (the library's own common/cpp one) mount and lay out their children as Views, and neither is reported
+          # unregistered or as props the scene cannot paint.
+          "$binary" --fabric packages/core/test-bundles/layout-only-component.js 2>&1 | tee /tmp/rnl-layout-only.log
+          grep -qF "RNCSafeAreaProvider #20 frame=(400.00, 0.00, 400.00, 600.00)" /tmp/rnl-layout-only.log
+          grep -qF "RNCSafeAreaView #22 frame=(24.00, 24.00, 352.00, 552.00)" /tmp/rnl-layout-only.log
+          grep -qF "View #24 frame=(22.00, 22.00, 308.00, 120.00)" /tmp/rnl-layout-only.log
+          if grep -qE "\[component\] 'RNCSafeArea|\[mounting\]" /tmp/rnl-layout-only.log; then exit 1; fi
 
           # #23: PlatformConstants answers the vendored React Native version, so a dev bundle sees no mismatch.
           version=$(jq -r .tag scripts/vendor.lock.json | sed 's/^v//')

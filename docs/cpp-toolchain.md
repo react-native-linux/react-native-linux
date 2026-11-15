@@ -1366,8 +1366,14 @@ components use it too). A library with components gets a static `react_codegen_<
 `rnl_autolinking.cpp` appends each component that is not `interfaceOnly` to `autolinkedComponentDescriptorProviders()`
 (`src/AutolinkedComponents.h`). `FabricHost` adds those after the built-ins and refuses a name that is already
 registered, a built-in's or another library's, rather than letting one descriptor replace another. Such a component
-paints as a `View` because its props derive from `ViewProps`. An `interfaceOnly` component's descriptor is the
-library's own C++, which is #150/#151's. The fixture's `CppLibraryView` is the CI proof
+paints as a `View` because its props derive from `ViewProps`; `LinuxMountingManager` names one whose props do not
+in its diagnostics (#150). An `interfaceOnly` component's descriptor is the library's own C++, in the
+`common/cpp/react/renderer/components/<name>` its podspec and Android CMakeLists compile: its `.cpp` files join
+`react_codegen_<name>`, its `*ComponentDescriptor.h` headers are included, and the descriptors its
+react-native.config.js lists under Android's `componentDescriptors` are appended too. CI autolinks
+react-native-safe-area-context 5.11.1 from its registry tarball and mounts `RNCSafeAreaProvider` and
+`RNCSafeAreaView` (`test-bundles/layout-only-component.js`, golden `layout-only-component.png`, whose two halves a
+`<View>` tree and the library's tree paint identically). The fixture's `CppLibraryView` is the CI proof
 (`test-bundles/autolinked-component.js`). It is registered when the mount tree names it with its frame, and no
 "`[component] 'CppLibraryView' has no native component registered`" line appears. The interop fallback would lay
 out and paint an unregistered name too, so the frame alone proves nothing.

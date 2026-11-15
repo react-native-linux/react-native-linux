@@ -42,23 +42,41 @@ const moduleTargetLines = (name: string, includeDirectory: string): readonly str
   `target_link_libraries(react_codegen_${name} INTERFACE jsi react_nativemodule_core)`,
 ];
 
-/** The generated props, shadow nodes, event emitters, states and descriptors compile against core's renderer. */
-const componentTargetLines = (name: string, includeDirectory: string): readonly string[] => [
-  `file(GLOB RNL_CODEGEN_${name}_SOURCES "${path.join(includeDirectory, "react", "renderer", "components", name)}/*.cpp")`,
-  `add_library(react_codegen_${name} STATIC ${cmakeVariable(`RNL_CODEGEN_${name}_SOURCES`)})`,
-  `target_include_directories(react_codegen_${name} PUBLIC "${includeDirectory}")`,
-  `target_compile_options(react_codegen_${name} PRIVATE -fexceptions -frtti)`,
-  `target_link_libraries(react_codegen_${name} PUBLIC jsi react_nativemodule_core react_renderer_componentregistry react_renderer_core react_renderer_graphics rrc_view)`,
-  `list(APPEND RNL_AUTOLINKED_TARGETS react_codegen_${name})`,
-];
+/**
+ * The generated props, shadow nodes, event emitters, states and descriptors compile against core's renderer, with
+ * the library's own component C++ from `common/cpp` beside them when it ships some (#150), as its Android
+ * CMakeLists compiles the two into one `react_codegen_<name>`.
+ */
+const componentTargetLines = (
+  name: string,
+  includeDirectory: string,
+  sharedSourceDirectory: string | null,
+): readonly string[] => {
+  const sourceDirectories =
+    sharedSourceDirectory === null ? [includeDirectory] : [includeDirectory, sharedSourceDirectory];
+  const sourcePatterns = sourceDirectories.map(
+    (directory) => `"${path.join(directory, "react", "renderer", "components", name)}/*.cpp"`,
+  );
 
-const codegenTargetLines = ({ components, name }: CodegenLibrary, codegenDirectory: string): readonly string[] => [
+  return [
+    `file(GLOB RNL_CODEGEN_${name}_SOURCES ${sourcePatterns.join(" ")})`,
+    `add_library(react_codegen_${name} STATIC ${cmakeVariable(`RNL_CODEGEN_${name}_SOURCES`)})`,
+    `target_include_directories(react_codegen_${name} PUBLIC ${sourceDirectories.map((directory) => `"${directory}"`).join(" ")})`,
+    `target_compile_options(react_codegen_${name} PRIVATE -fexceptions -frtti)`,
+    `target_link_libraries(react_codegen_${name} PUBLIC jsi react_nativemodule_core react_renderer_componentregistry react_renderer_core react_renderer_graphics rrc_view)`,
+    `list(APPEND RNL_AUTOLINKED_TARGETS react_codegen_${name})`,
+  ];
+};
+
+const codegenTargetLines = (
+  { componentDescriptors, name, sharedSourceDirectory }: CodegenLibrary,
+  codegenDirectory: string,
+): readonly string[] => [
   "",
   `# codegen: ${name}`,
-  ...(components.length === NO_COMPONENTS ? moduleTargetLines : componentTargetLines)(
-    name,
-    path.join(codegenDirectory, name),
-  ),
+  ...(componentDescriptors.length === NO_COMPONENTS
+    ? moduleTargetLines(name, path.join(codegenDirectory, name))
+    : componentTargetLines(name, path.join(codegenDirectory, name), sharedSourceDirectory)),
 ];
 
 const libraryLines = (library: AutolinkedLibrary): readonly string[] => [
@@ -121,7 +139,7 @@ const duplicateGuardLines: readonly string[] = [
  * it runs before `main` and so before `TurboModuleRegistry` copies the map. A name two libraries both register
  * aborts at startup naming the second package, rather than one module silently replacing the other (#148). Each
  * codegen-generated component descriptor joins core's autolinked provider list the same way, before `FabricHost`
- * reads it (#149).
+ * reads it (#149), and so does each descriptor of the library's own C++ (#150).
  */
 const generateAutolinkingRegistration = (
   libraries: readonly AutolinkedLibrary[],
@@ -130,7 +148,9 @@ const generateAutolinkingRegistration = (
   const modules = libraries.flatMap(({ moduleHeaderName, packageName }) =>
     moduleHeaderName === null ? [] : [{ moduleHeaderName, packageName }],
   );
-  const componentLibraries = codegenLibraries.filter(({ components }) => components.length > NO_COMPONENTS);
+  const componentLibraries = codegenLibraries.filter(
+    ({ componentDescriptors }) => componentDescriptors.length > NO_COMPONENTS,
+  );
 
   return [
     `// ${generatedNotice}`,
@@ -138,7 +158,11 @@ const generateAutolinkingRegistration = (
     "#include <ReactCommon/CxxTurboModuleUtils.h>",
     "",
     ...modules.map(({ moduleHeaderName }) => `#include <${moduleHeaderName}.h>`),
-    ...componentLibraries.map(({ name }) => `#include <react/renderer/components/${name}/ComponentDescriptors.h>`),
+    ...componentLibraries.flatMap(({ name, sharedDescriptorHeaders }) =>
+      ["ComponentDescriptors.h", ...sharedDescriptorHeaders].map(
+        (header) => `#include <react/renderer/components/${name}/${header}>`,
+      ),
+    ),
     "",
     "#include <cstdlib>",
     "#include <functional>",
@@ -153,10 +177,10 @@ const generateAutolinkingRegistration = (
     ...duplicateGuardLines,
     "const bool autolinkedModulesRegistered = [] {",
     ...modules.flatMap((module) => registrationLines(module)),
-    ...componentLibraries.flatMap(({ components }) =>
-      components.map(
-        (component) =>
-          `    react_native_linux::autolinkedComponentDescriptorProviders().push_back(concreteComponentDescriptorProvider<${component}ComponentDescriptor>());`,
+    ...componentLibraries.flatMap(({ componentDescriptors }) =>
+      componentDescriptors.map(
+        (descriptor) =>
+          `    react_native_linux::autolinkedComponentDescriptorProviders().push_back(concreteComponentDescriptorProvider<${descriptor}>());`,
       ),
     ),
     "    return true;",

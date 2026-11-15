@@ -1,4 +1,8 @@
-import type { AutolinkedLibrary, CodegenLibrary } from "@react-native-linux/cli/linux-autolinking-types.ts";
+import type {
+  AutolinkedLibrary,
+  AutolinkingDependency,
+  CodegenLibrary,
+} from "@react-native-linux/cli/linux-autolinking-types.ts";
 import {
   discoverLinuxAutolinking,
   parseReactNativeConfig,
@@ -70,11 +74,11 @@ const readSpecModules = (specDirectory: string): SchemaType["modules"] => {
 
 type Schema = SchemaType["modules"][string];
 
-const registrableComponents = (schemas: readonly Schema[]): readonly string[] =>
+const generatedComponentDescriptors = (schemas: readonly Schema[]): readonly string[] =>
   schemas.flatMap((schema) =>
     schema.type === "Component"
       ? Object.entries(schema.components).flatMap(([component, shape]) =>
-          shape.interfaceOnly === true ? [] : [component],
+          shape.interfaceOnly === true ? [] : [`${component}ComponentDescriptor`],
         )
       : [],
   );
@@ -85,11 +89,46 @@ const generatorsFor = (schemas: readonly Schema[]): ("componentsIOS" | "modulesC
 ];
 
 /**
+ * #150: the component C++ a library ships for every platform — `RNCSafeAreaViewShadowNode` and its descriptor,
+ * react-native-screens' and react-native-keyboard-controller's — lives in `common/cpp`, the directory their iOS
+ * podspecs and Android CMakeLists both compile. Its descriptors are the ones the library's react-native.config.js
+ * lists (under `linux`, else `android`), because a header's name need not be its class's.
+ */
+const sharedComponentSources = (
+  { platforms: { android = null, linux = null }, root }: AutolinkingDependency,
+  name: string,
+  generatedDescriptors: readonly string[],
+): CodegenLibrary => {
+  const sharedSourceDirectory = path.join(root, "common", "cpp");
+  const sharedComponentDirectory = path.join(sharedSourceDirectory, "react", "renderer", "components", name);
+
+  if (!existsSync(sharedComponentDirectory)) {
+    return {
+      componentDescriptors: generatedDescriptors,
+      name,
+      sharedDescriptorHeaders: [],
+      sharedSourceDirectory: null,
+    };
+  }
+
+  const declaredDescriptors = linux?.componentDescriptors ?? android?.componentDescriptors ?? [];
+
+  return {
+    componentDescriptors: [...new Set([...generatedDescriptors, ...declaredDescriptors])],
+    name,
+    sharedDescriptorHeaders: readdirSync(sharedComponentDirectory)
+      .filter((fileName) => fileName.endsWith("ComponentDescriptor.h"))
+      .toSorted(),
+    sharedSourceDirectory,
+  };
+};
+
+/**
  * #149: `componentsIOS` is upstream's generator for the shared C++ props, shadow nodes, event emitters, states and
  * descriptors (core's own components use it too); a component that is not `interfaceOnly` gets a descriptor.
  */
-const generateCodegen = (packageRoot: string, codegenDirectory: string): CodegenLibrary | null => {
-  const packageJson = readFileOrNull(path.join(packageRoot, "package.json"));
+const generateCodegen = (dependency: AutolinkingDependency, codegenDirectory: string): CodegenLibrary | null => {
+  const packageJson = readFileOrNull(path.join(dependency.root, "package.json"));
   const codegenConfig = packageJson === null ? null : readCodegenConfig(packageJson);
 
   if (codegenConfig === null) {
@@ -97,7 +136,7 @@ const generateCodegen = (packageRoot: string, codegenDirectory: string): Codegen
   }
 
   const { jsSourceDirectory, name } = codegenConfig;
-  const modules = readSpecModules(path.join(packageRoot, jsSourceDirectory));
+  const modules = readSpecModules(path.join(dependency.root, jsSourceDirectory));
   const schemas = Object.values(modules);
 
   generate(
@@ -111,7 +150,7 @@ const generateCodegen = (packageRoot: string, codegenDirectory: string): Codegen
     { generators: generatorsFor(schemas) },
   );
 
-  return { components: registrableComponents(schemas), name };
+  return sharedComponentSources(dependency, name, generatedComponentDescriptors(schemas));
 };
 
 const autolinkedLibraries = (run: AutolinkingRun): readonly AutolinkedLibrary[] =>
@@ -128,11 +167,15 @@ const autolinkedLibraries = (run: AutolinkingRun): readonly AutolinkedLibrary[] 
   });
 
 const codegenLibraries = (run: AutolinkingRun): readonly CodegenLibrary[] =>
-  run.config.dependencies.flatMap(({ name, root }) => {
-    const codegen = run.optedOutDependencyNames.has(name) ? null : generateCodegen(root, run.codegenDirectory);
+  run.config.dependencies.flatMap((dependency) => {
+    const codegen = run.optedOutDependencyNames.has(dependency.name)
+      ? null
+      : generateCodegen(dependency, run.codegenDirectory);
 
-    if (codegen !== null && codegen.components.length > NO_COMPONENTS) {
-      process.stdout.write(`${name}: components linked by codegen: ${codegen.components.join(", ")}\n`);
+    if (codegen !== null && codegen.componentDescriptors.length > NO_COMPONENTS) {
+      process.stdout.write(
+        `${dependency.name}: component descriptors registered: ${codegen.componentDescriptors.join(", ")}\n`,
+      );
     }
 
     return codegen === null ? [] : [codegen];

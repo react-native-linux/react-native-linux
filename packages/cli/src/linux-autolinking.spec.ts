@@ -243,7 +243,7 @@ describe("parseReactNativeConfig", () => {
         broken: "not an object",
         lib: {
           platforms: {
-            android: { cxxModuleCMakeListsPath: "/lib/android/CMakeLists.txt", javaPackageName: 1 },
+            android: { componentDescriptors: ["LibView", null], cxxModuleCMakeListsPath: "/lib/c", javaPackageName: 1 },
             ios: {},
           },
           root: "/lib",
@@ -258,7 +258,7 @@ describe("parseReactNativeConfig", () => {
       dependencies: [
         {
           name: "lib",
-          platforms: { android: { cxxModuleCMakeListsPath: "/lib/android/CMakeLists.txt" }, linux: null },
+          platforms: { android: { componentDescriptors: ["LibView"], cxxModuleCMakeListsPath: "/lib/c" }, linux: null },
           root: "/lib",
         },
         { name: "unplatformed", platforms: { android: null, linux: null }, root: "/unplatformed" },

@@ -137,6 +137,29 @@ describe.skipIf(!hasBinary || isRegenerating)("golden images from release byteco
   }
 });
 
+const BYTES_PER_PIXEL = 4;
+const HALF = 2;
+
+/**
+ * #150: the right half of `layout-only-component.png` is a third-party component that only lays out, and the left
+ * half the same tree of <View>s. Read off the checked-in golden, which the fixture above holds the render to.
+ */
+describe("a layout-only component", () => {
+  it("paints exactly the pixels a <View> with the same props paints", () => {
+    const { data, height, width } = decodePng(path.join(goldensDirectory, "layout-only-component.png"));
+    const rowBytes = width * BYTES_PER_PIXEL;
+    const halfRowBytes = rowBytes / HALF;
+    const rowsThatDiffer = Array.from({ length: height }, (_unused, row) => row).filter((row) => {
+      const rowStart = row * rowBytes;
+      const left = Buffer.from(data.subarray(rowStart, rowStart + halfRowBytes));
+
+      return !left.equals(data.subarray(rowStart + halfRowBytes, rowStart + rowBytes));
+    });
+
+    expect(rowsThatDiffer).toStrictEqual([]);
+  });
+});
+
 const harnessBundleScriptPath = path.join(repositoryRoot, "packages", "test-harness", "scripts", "bundle.ts");
 const harnessGoldenPath = path.join(goldensDirectory, "test-harness-app.png");
 
