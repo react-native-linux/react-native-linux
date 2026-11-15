@@ -157,11 +157,12 @@ export function routeLinuxPointerEvent(
     target: capturedTarget,
   };
 
+  // The web orchestrator resets finished handlers in a microtask, which a browser runs between two pointer events.
+  // React Native dispatches every event of one batch in a single task, so without this a press would find its own
+  // handler still finished, and a gesture activating after an active Native handler ended would be cancelled by it.
+  GestureHandlerOrchestrator.instance.cleanupFinishedHandlers();
+
   if (type === 'pointerdown') {
-    // The web orchestrator resets finished handlers in a microtask, which a browser runs between two pointer events.
-    // React Native dispatches every event of one batch in a single task, so a press that arrives with the release
-    // or failure before it would find its handler still finished, and the whole gesture would be dropped.
-    GestureHandlerOrchestrator.instance.cleanupFinishedHandlers();
     const target = rootEvent.target as LinuxElement;
     const receivers = [...views].filter((view) =>
       view.element.contains(target)
