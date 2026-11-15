@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { execPath } from "node:process";
 import path from "node:path";
@@ -48,9 +48,6 @@ const declaredFonts = (appConfig: unknown): readonly string[] => {
   });
 };
 
-const resolvePackageDirectory = (projectRoot: string, packageName: string): string =>
-  path.dirname(createRequire(path.join(projectRoot, "package.json")).resolve(`${packageName}/package.json`));
-
 /**
  * The package installed in a `node_modules` at or above `directory`, where expo-modules-autolinking looks for it: not
  * through `require.resolve`, which also searches `NODE_PATH`, and pnpm puts its whole store there for every script.
@@ -65,16 +62,45 @@ const findInstalledPackage = (directory: string, packageName: string): string | 
   return path.dirname(directory) === directory ? null : findInstalledPackage(path.dirname(directory), packageName);
 };
 
-/** Copies the declared fonts as `expo-font`'s own `resolveFontPaths` resolves them: a file, a directory or a module. */
-const embedFonts = async (projectRoot: string, fontsDirectory: string, fonts: readonly string[]): Promise<void> => {
-  rmSync(fontsDirectory, { force: true, recursive: true });
+/** The package `expo` itself depends on, found from expo's real directory as autolinking follows the dependency graph. */
+const resolveExpoDependency = (expoDirectory: string, packageName: string): string => {
+  const directory = findInstalledPackage(expoDirectory, packageName);
 
-  if (fonts.length === NO_FONTS) {
-    return;
+  if (directory === null) {
+    throw new Error(`${expoDirectory} has no ${packageName} installed`);
   }
 
-  const utilities = path.join(resolvePackageDirectory(projectRoot, "expo-font"), "plugin", "build", "utils.js");
-  const fontPaths = readStrings(await requireFunction(utilities, "resolveFontPaths")(fonts, projectRoot));
+  return directory;
+};
+
+/**
+ * The declared fonts and the project's own `assets/fonts`, as `expo-font`'s `resolveFontPaths` resolves them: a file, a
+ * directory or a module.
+ */
+const resolveFonts = async (
+  expoDirectory: string,
+  projectRoot: string,
+  declared: readonly string[],
+): Promise<readonly string[]> => {
+  const projectFonts = path.join(projectRoot, "assets", "fonts");
+  const fonts = existsSync(projectFonts) ? [...declared, projectFonts] : declared;
+
+  if (fonts.length === NO_FONTS) {
+    return [];
+  }
+
+  const utilities = path.join(resolveExpoDependency(expoDirectory, "expo-font"), "plugin", "build", "utils.js");
+
+  return readStrings(await requireFunction(utilities, "resolveFontPaths")(fonts, projectRoot));
+};
+
+/** Replaces `fontsDirectory` with copies of `fontPaths`, so a font an earlier build embedded does not linger. */
+const embedFonts = (fontsDirectory: string, fontPaths: readonly string[]): void => {
+  rmSync(fontsDirectory, { force: true, recursive: true });
+
+  if (fontPaths.length === NO_FONTS) {
+    return;
+  }
 
   mkdirSync(fontsDirectory, { recursive: true });
 
@@ -102,22 +128,28 @@ const writeAppConfig = (constantsDirectory: string, projectRoot: string, assetsD
 
 /**
  * The linux build step for an Expo app (#696): the app config and fonts its native builds embed, written to
- * `assetsDirectory`, which `rnl_window` reads beside a bundle file or from `--assets` (ADR-0004). An app with
- * `expo-constants` gets `app.config` from upstream's unmodified `expo-constants/scripts/getAppConfig.js`, the script
- * Android's Gradle step runs into the APK's assets, and the files `expo-font`'s config plugin declares in `fonts/`. A
- * project without `expo-constants` gets nothing, as on Android and iOS.
+ * `assetsDirectory`, which `rnl_window` reads beside a bundle file or from `--assets` (ADR-0004). An app with `expo`
+ * gets `app.config` from upstream's unmodified `expo-constants/scripts/getAppConfig.js`, the script Android's Gradle
+ * step runs into the APK's assets, and in `fonts/` the files `expo-font`'s config plugin declares and the project's
+ * `assets/fonts`. `expo` depends on both packages, so a project without it gets nothing, as on Android and iOS.
  */
 const embedExpoAppAssets = async (projectDirectory: string, assetsDirectory: string): Promise<void> => {
   const projectRoot = path.resolve(projectDirectory);
-  const constantsDirectory = findInstalledPackage(projectRoot, "expo-constants");
+  const destination = path.resolve(assetsDirectory);
+  const installedExpo = findInstalledPackage(projectRoot, "expo");
 
-  if (constantsDirectory === null) {
+  if (installedExpo === null) {
     return;
   }
 
-  const appConfig = writeAppConfig(constantsDirectory, projectRoot, assetsDirectory);
+  if (destination === path.join(projectRoot, "assets")) {
+    throw new Error(`${destination} is the project's own assets directory, whose fonts the build would replace`);
+  }
 
-  await embedFonts(projectRoot, path.join(assetsDirectory, "fonts"), declaredFonts(appConfig));
+  const expoDirectory = realpathSync(installedExpo);
+  const appConfig = writeAppConfig(resolveExpoDependency(expoDirectory, "expo-constants"), projectRoot, destination);
+
+  embedFonts(path.join(destination, "fonts"), await resolveFonts(expoDirectory, projectRoot, declaredFonts(appConfig)));
 };
 
 export { declaredFonts, embedExpoAppAssets, requireFunction };

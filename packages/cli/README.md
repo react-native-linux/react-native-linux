@@ -24,9 +24,11 @@ floor is #357. An application's Metro config takes its `resolver` section from
 
 `embedExpoAppAssets(projectRoot, assetsDirectory)` in `src/expo-app-assets.ts` is the linux build step for an Expo
 app. It writes `app.config` with upstream's `expo-constants/scripts/getAppConfig.js`, as Android's Gradle step does,
-and copies the font files `expo-font`'s config plugin declares for iOS into `fonts/`. A project without
-`expo-constants` gets nothing. Write it to `assets` beside the bundle file, or pass the directory to `rnl_window`
-with `--assets` when Metro serves the bundle:
+and copies into `fonts/` the font files `expo-font`'s config plugin declares for iOS and the project's own
+`assets/fonts`. It takes `expo-constants` and `expo-font` from the ones `expo` depends on, so a project without `expo`
+gets nothing. Write it to `assets` beside the bundle file in a build directory (it refuses the project's own `assets`,
+whose fonts it would replace), or pass the directory to `rnl_window` with `--assets` when Metro serves the bundle (a
+command that runs the step is [#723](https://github.com/react-native-linux/react-native-linux/issues/723)):
 
 ```bash
 rnl_window --fabric build/index.linux.bundle.js                     # reads build/assets

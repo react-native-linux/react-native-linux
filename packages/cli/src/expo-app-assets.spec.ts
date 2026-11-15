@@ -65,14 +65,18 @@ afterEach(() => {
   }
 });
 
-describe("embedExpoAppAssets", () => {
-  it("writes upstream's app config and copies the fonts expo-font declares for iOS, from a relative root", async () => {
+describe("embedExpoAppAssets, the app config and fonts", () => {
+  it("writes upstream's app config and copies expo-font's iOS fonts and assets/fonts, from a relative root", async () => {
     const projectRoot = makeProject(fontsAppJson);
     const assetsDirectory = path.join(projectRoot, "build", "assets");
 
-    writeFont(path.join(projectRoot, "fonts", "Shared.ttf"));
-    writeFont(path.join(projectRoot, "fonts", "family", "Face-Bold.otf"));
-    writeFont(path.join(projectRoot, "fonts", "family", "LICENSE.txt"));
+    for (const font of ["fonts/Shared.ttf", "fonts/family/Face-Bold.otf", "fonts/family/LICENSE.txt"]) {
+      writeFont(path.join(projectRoot, font));
+    }
+
+    for (const font of ["Own.woff2", "README.md"]) {
+      writeFont(path.join(projectRoot, "assets", "fonts", font));
+    }
 
     await embedExpoAppAssets(path.relative(process.cwd(), projectRoot), assetsDirectory);
 
@@ -82,7 +86,11 @@ describe("embedExpoAppAssets", () => {
       name: "probe",
       scheme: "probe",
     });
-    expect(readdirSync(path.join(assetsDirectory, "fonts")).toSorted()).toStrictEqual(["Face-Bold.otf", "Shared.ttf"]);
+    expect(readdirSync(path.join(assetsDirectory, "fonts")).toSorted()).toStrictEqual([
+      "Face-Bold.otf",
+      "Own.woff2",
+      "Shared.ttf",
+    ]);
   });
 
   it("writes the app config and no fonts for an app that declares none, clearing an earlier build's", async () => {
@@ -97,7 +105,31 @@ describe("embedExpoAppAssets", () => {
     expect(existsSync(path.join(assetsDirectory, "fonts"))).toBe(false);
   });
 
-  it("writes nothing for a project without expo-constants", async () => {
+  it("fails with upstream's message when the app config does not evaluate", async () => {
+    const projectRoot = makeProject('{"expo": ');
+
+    await expect(embedExpoAppAssets(projectRoot, path.join(projectRoot, "assets-out"))).rejects.toThrow(
+      /expo-constants could not evaluate the app config of .*JsonFileError: Error parsing JSON/su,
+    );
+  });
+});
+
+describe("embedExpoAppAssets, where expo-constants comes from", () => {
+  it("finds expo-constants through expo's own dependencies, as a pnpm app that lists only expo installs it", async () => {
+    const projectRoot = makeProject(null);
+
+    mkdirSync(path.join(projectRoot, "node_modules"));
+    symlinkSync(path.join(expoModules, "expo"), path.join(projectRoot, "node_modules", "expo"));
+    writeFileSync(path.join(projectRoot, "app.json"), '{"expo":{"name":"probe","slug":"probe"}}');
+    writeFont(path.join(projectRoot, "assets", "fonts", "Own.ttf"));
+
+    await embedExpoAppAssets(projectRoot, path.join(projectRoot, "build"));
+
+    expect(existsSync(path.join(projectRoot, "build", "app.config"))).toBe(true);
+    expect(readdirSync(path.join(projectRoot, "build", "fonts"))).toStrictEqual(["Own.ttf"]);
+  });
+
+  it("writes nothing for a project without expo", async () => {
     const projectRoot = makeProject(null);
     const assetsDirectory = path.join(projectRoot, "assets-out");
 
@@ -106,12 +138,46 @@ describe("embedExpoAppAssets", () => {
     expect(existsSync(assetsDirectory)).toBe(false);
   });
 
-  it("fails with upstream's message when the app config does not evaluate", async () => {
-    const projectRoot = makeProject('{"expo": ');
+  it("fails when expo's own expo-constants is missing", async () => {
+    const projectRoot = makeProject(null);
 
-    await expect(embedExpoAppAssets(projectRoot, path.join(projectRoot, "assets-out"))).rejects.toThrow(
-      /expo-constants could not evaluate the app config of .*JsonFileError: Error parsing JSON/su,
+    mkdirSync(path.join(projectRoot, "node_modules", "expo"), { recursive: true });
+    writeFileSync(path.join(projectRoot, "node_modules", "expo", "package.json"), '{"name":"expo"}');
+
+    await expect(embedExpoAppAssets(projectRoot, path.join(projectRoot, "build"))).rejects.toThrow(
+      "has no expo-constants installed",
     );
+  });
+});
+
+describe("embedExpoAppAssets, the assets directory", () => {
+  it("writes a relative assets directory against the working directory, not the project root", async () => {
+    const projectRoot = makeProject('{"expo":{"name":"probe","slug":"probe"}}');
+    const workingDirectory = makeProject(null);
+    const previousDirectory = process.cwd();
+
+    process.chdir(workingDirectory);
+
+    try {
+      await embedExpoAppAssets(projectRoot, "out");
+    } finally {
+      process.chdir(previousDirectory);
+    }
+
+    expect(existsSync(path.join(workingDirectory, "out", "app.config"))).toBe(true);
+  });
+
+  it("refuses to write into the project's own assets, whose fonts it would wipe", async () => {
+    const projectRoot = makeProject('{"expo":{"name":"probe","slug":"probe"}}');
+    const ownFont = path.join(projectRoot, "assets", "fonts", "Own.ttf");
+
+    writeFont(ownFont);
+
+    await expect(embedExpoAppAssets(projectRoot, path.join(projectRoot, "assets"))).rejects.toThrow(
+      "is the project's own assets directory",
+    );
+    expect(existsSync(ownFont)).toBe(true);
+    expect(existsSync(path.join(projectRoot, "assets", "app.config"))).toBe(false);
   });
 });
 
