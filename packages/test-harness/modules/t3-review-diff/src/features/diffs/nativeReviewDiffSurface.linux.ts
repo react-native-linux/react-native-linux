@@ -8,26 +8,37 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ComponentType,
+  type ReactElement,
+  type ReactNode,
+  type RefObject,
 } from "react";
 import {
   FlatList,
   Pressable,
   Text,
   View,
+  type FlatListProps,
   type LayoutChangeEvent,
+  type ListRenderItemInfo,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  type ViewStyle,
 } from "react-native";
 
 import {
   codeRuns,
   contentWidthOf,
+  createScrollOffset,
   layoutOf,
+  nativeEventOf,
   parseIds,
   readTokenPatch,
+  readTokens,
   visibleRowsOf,
   type NativeReviewDiffLayout as Layout,
+  type NativeReviewDiffScrollOffset as ScrollOffset,
   type NativeReviewDiffTokens as Tokens,
 } from "./nativeReviewDiffRows";
 import type {
@@ -51,10 +62,6 @@ const SELECTED_BAR_ALPHA = "f2";
 const MONOSPACE = "monospace";
 const REFRESH_BAR_HEIGHT = 2;
 
-function nativeEvent<T>(payload: T): NativeSyntheticEvent<T> {
-  return { nativeEvent: payload } as unknown as NativeSyntheticEvent<T>;
-}
-
 interface DiffRowProps {
   readonly row: NativeReviewDiffRow;
   readonly height: number;
@@ -63,7 +70,7 @@ interface DiffRowProps {
   readonly viewed: boolean;
   readonly selected: boolean;
   readonly viewportWidth: number;
-  readonly scrollX: number;
+  readonly offset: ScrollOffset;
   readonly layout: Layout;
   readonly theme: NativeReviewDiffTheme;
   readonly handlers: RowHandlers;
@@ -134,7 +141,7 @@ function FileHeaderRow({ row, height, collapsed, viewed, layout, theme, handlers
   );
 }
 
-function LineRow({ row, height, tokens, selected, scrollX, layout, theme, handlers }: DiffRowProps) {
+function LineRow({ row, height, tokens, selected, offset, layout, theme, handlers }: DiffRowProps) {
   const change = row.change ?? "context";
   const lineNumber = row.newLineNumber ?? row.oldLineNumber;
   const background =
@@ -184,8 +191,9 @@ function LineRow({ row, height, tokens, selected, scrollX, layout, theme, handle
       ),
     ),
     createElement(
-      View,
+      Anchored,
       {
+        offset,
         style: {
           position: "absolute",
           top: 0,
@@ -194,7 +202,6 @@ function LineRow({ row, height, tokens, selected, scrollX, layout, theme, handle
           width: layout.changeBarWidth + layout.gutterWidth,
           flexDirection: "row",
           backgroundColor: background,
-          transform: [{ translateX: scrollX }],
         },
       },
       createElement(View, { style: { width: layout.changeBarWidth, backgroundColor: bar } }),
@@ -308,17 +315,44 @@ function CommentRow({ row, height, collapsed, layout, theme, handlers }: DiffRow
 const ANCHORED_ROWS = { file: FileHeaderRow, notice: NoticeRow, comment: CommentRow } as const;
 
 // Headers, notices and comments span the viewport and the gutter stays at its left edge while the code scrolls
-// sideways under them, as T3ReviewDiffView draws them.
+// sideways under them, as T3ReviewDiffView draws them. Only this view re-renders on a sideways scroll: its children
+// are the elements its row made, so the code and its token runs keep their last render. Native-driven Animated
+// transforms on every mounted row instead read p50 37.8 ms over t3-review-diff-120hz's scroll steps.
+function Anchored({ offset, style, children }: { readonly offset: ScrollOffset; readonly style: ViewStyle; readonly children: ReactNode }) {
+  const x = useSyncExternalStore(offset.subscribe, offset.current);
+  return createElement(View, { style: [style, { transform: [{ translateX: x }] }] }, children);
+}
+
 const DiffRow = memo(function DiffRow(props: DiffRowProps) {
   const { kind } = props.row;
   if (kind === "line") return createElement(LineRow, props);
   if (kind === "hunk") return createElement(HunkRow, props);
   return createElement(
-    View,
-    { style: { width: props.viewportWidth, transform: [{ translateX: props.scrollX }] } },
+    Anchored,
+    { offset: props.offset, style: { width: props.viewportWidth } },
     createElement(ANCHORED_ROWS[kind], props),
   );
 });
+
+interface ReviewDiffListProps extends Omit<FlatListProps<number>, "renderItem" | "onScroll"> {
+  readonly listRef: RefObject<FlatList<number> | null>;
+  readonly renderRow: (item: number, index: number, offset: ScrollOffset) => ReactElement | null;
+}
+
+// Keyed by contentResetKey: new content starts the list and its anchored chrome at x 0 together.
+function ReviewDiffList({ listRef, renderRow, ...listProps }: ReviewDiffListProps) {
+  const [offset] = useState(createScrollOffset);
+  const renderItem = useCallback(
+    ({ item, index }: ListRenderItemInfo<number>) => renderRow(item, index, offset),
+    [renderRow, offset],
+  );
+  return createElement(FlatList<number>, {
+    ...listProps,
+    ref: listRef,
+    renderItem,
+    onScroll: (event: NativeSyntheticEvent<NativeScrollEvent>) => offset.set(event.nativeEvent.contentOffset.x),
+  });
+}
 
 function useTokens(
   props: NativeReviewDiffViewProps,
@@ -334,7 +368,7 @@ function useTokens(
   }, [tokensResetKey]);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- tokensJson replaces the whole token map, as setTokensJson does
   useEffect(() => {
-    if (tokensJson !== undefined) setTokens(JSON.parse(tokensJson) as Tokens);
+    if (tokensJson !== undefined) setTokens(readTokens(tokensJson));
   }, [tokensJson]);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- merges a highlighter patch and acknowledges it, as setTokensPatchJson does
   useEffect(() => {
@@ -367,6 +401,19 @@ function LinuxReviewDiffView(props: NativeReviewDiffViewProps) {
     bounces,
     refreshing,
     style,
+    tokensJson,
+    tokensPatchJson,
+    tokensResetKey,
+    appearanceScheme,
+    onPullToRefresh,
+    onDebug,
+    onVisibleFileChange,
+    onToggleFile,
+    onToggleViewedFile,
+    onPressLine,
+    onToggleComment,
+    onPressNotice,
+    ...viewProps
   } = props;
   const rows = useMemo(() => JSON.parse(rowsJson) as NativeReviewDiffRow[], [rowsJson]);
   const theme = useMemo(() => JSON.parse(themeJson) as NativeReviewDiffTheme, [themeJson]);
@@ -379,13 +426,6 @@ function LinuxReviewDiffView(props: NativeReviewDiffViewProps) {
   const selectedRowIds = useMemo(() => parseIds(selectedRowIdsJson), [selectedRowIdsJson]);
   const collapsedCommentIds = useMemo(() => parseIds(collapsedCommentIdsJson), [collapsedCommentIdsJson]);
   const [viewportWidth, setViewportWidth] = useState(0);
-  // Native-driven Animated transforms on every mounted row read p50 37.8 ms over t3-review-diff-120hz's scroll
-  // steps. A vertical scroll leaves x unchanged, so this state re-renders the rows only while code scrolls sideways.
-  const [scrollX, setScrollX] = useState(0);
-  const onScroll = useCallback(
-    (event: NativeSyntheticEvent<NativeScrollEvent>) => setScrollX(event.nativeEvent.contentOffset.x),
-    [],
-  );
   const width = useMemo(() => contentWidthOf(rows, layout, contentWidth), [rows, layout, contentWidth]);
 
   // The highlighter reads row indexes of the full payload, including the rows of collapsed files.
@@ -399,7 +439,7 @@ function LinuxReviewDiffView(props: NativeReviewDiffViewProps) {
     latest.current = { props, rows, visible };
   });
   const report = useCallback(
-    (payload: Record<string, unknown>) => latest.current.props.onDebug?.(nativeEvent(payload)),
+    (payload: Record<string, unknown>) => latest.current.props.onDebug?.(nativeEventOf("onDebug", payload)),
     [],
   );
   const tokens = useTokens(props, report);
@@ -410,14 +450,14 @@ function LinuxReviewDiffView(props: NativeReviewDiffViewProps) {
         const current = latest.current.props;
         const fileId = row.fileId ?? "";
         if (row.kind === "file") {
-          if (gesture === "tap") current.onToggleFile?.(nativeEvent({ fileId }));
+          if (gesture === "tap") current.onToggleFile?.(nativeEventOf("onToggleFile", { fileId }));
         } else if (row.kind === "comment") {
-          current.onToggleComment?.(nativeEvent({ commentId: row.id }));
+          current.onToggleComment?.(nativeEventOf("onToggleComment", { commentId: row.id }));
         } else if (row.kind === "notice") {
-          if (gesture === "tap" && row.actionable) current.onPressNotice?.(nativeEvent({ rowId: row.id, fileId }));
+          if (gesture === "tap" && row.actionable) current.onPressNotice?.(nativeEventOf("onPressNotice", { rowId: row.id, fileId }));
         } else if (row.kind === "line") {
           current.onPressLine?.(
-            nativeEvent({
+            nativeEventOf("onPressLine", {
               rowId: row.id,
               fileId,
               gesture,
@@ -428,7 +468,7 @@ function LinuxReviewDiffView(props: NativeReviewDiffViewProps) {
           );
         }
       },
-      toggleViewed: (row) => latest.current.props.onToggleViewedFile?.(nativeEvent({ fileId: row.fileId ?? "" })),
+      toggleViewed: (row) => latest.current.props.onToggleViewedFile?.(nativeEventOf("onToggleViewedFile", { fileId: row.fileId ?? "" })),
     }),
     [],
   );
@@ -448,7 +488,7 @@ function LinuxReviewDiffView(props: NativeReviewDiffViewProps) {
     const fileId = allRows[firstRowIndex]?.fileId;
     if (fileId && fileId !== lastVisibleFileId.current) {
       lastVisibleFileId.current = fileId;
-      current.onVisibleFileChange?.(nativeEvent({ fileId }));
+      current.onVisibleFileChange?.(nativeEventOf("onVisibleFileChange", { fileId }));
     }
   }, [report]);
 
@@ -486,8 +526,8 @@ function LinuxReviewDiffView(props: NativeReviewDiffViewProps) {
   }, [visible, rows, initialFileId, initialRowIndex]);
 
   const rowViewportWidth = viewportWidth || width;
-  const renderItem = useCallback(
-    ({ item, index }: { item: number; index: number }) => {
+  const renderRow = useCallback(
+    (item: number, index: number, offset: ScrollOffset) => {
       const row = rows[item];
       if (!row) return null;
       const fileId = row.fileId ?? "";
@@ -499,27 +539,31 @@ function LinuxReviewDiffView(props: NativeReviewDiffViewProps) {
         viewed: viewedFileIds.has(fileId),
         selected: selectedRowIds.has(row.id),
         viewportWidth: rowViewportWidth,
-        scrollX,
+        offset,
         layout,
         theme,
         handlers,
       });
     },
-    [rows, visible, tokens, collapsedCommentIds, collapsedFileIds, viewedFileIds, selectedRowIds, rowViewportWidth, scrollX, layout, theme, handlers],
+    [rows, visible, tokens, collapsedCommentIds, collapsedFileIds, viewedFileIds, selectedRowIds, rowViewportWidth, layout, theme, handlers],
   );
 
   return createElement(
     View,
     {
-      onLayout: (event: LayoutChangeEvent) => setViewportWidth(event.nativeEvent.layout.width),
+      ...viewProps,
+      onLayout: (event: LayoutChangeEvent) => {
+        setViewportWidth(event.nativeEvent.layout.width);
+        viewProps.onLayout?.(event);
+      },
       style: [style, { backgroundColor: theme.background }],
     },
-    createElement(FlatList<number>, {
+    createElement(ReviewDiffList, {
       key: contentResetKey,
-      ref: listRef,
+      listRef,
       data: visible.indexes,
       keyExtractor: (item: number) => rows[item]?.id ?? String(item),
-      renderItem,
+      renderRow,
       getItemLayout: (_data: unknown, index: number) => ({
         index,
         length: visible.heights[index] ?? 0,
@@ -527,7 +571,6 @@ function LinuxReviewDiffView(props: NativeReviewDiffViewProps) {
       }),
       initialScrollIndex,
       onViewableItemsChanged,
-      onScroll,
       viewabilityConfig: { itemVisiblePercentThreshold: 1 },
       scrollEnabled,
       bounces,

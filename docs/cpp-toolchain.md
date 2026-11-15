@@ -8068,20 +8068,27 @@ Every frame of a run is measured, startup included, and the window exits on its 
 injector with it, so `frames` has to cover the slowest startup plus every step. The scenario therefore spends its
 frames on scrolling: 6,400 frames, of which 1,050 to 2,450 are startup (the bundle, the first mount of 5,307 rows,
 the first token patch; the high end at a load average of 34), about 3,100 (half the run) are 231 wheel notches
-played four times in four orders, and the rest is a tail that only absorbs a slower startup. It gates
+played four times in four orders after one sideways pan across the highlighted first screen and back, and the rest
+is a tail that only absorbs a slower startup. It gates
 `{"p50Ms": 9.5, "p95Ms": 12.5, "minFrames": 5800, "maxHangs": 20}` on the Debug build CI runs. Five runs on
 this repository's shared 24-core host at load averages of 7 to 18 read p50 8.44–8.93 ms, p95 9.23–11.12 ms and 8
 to 12 hangs, with the scroll steps 48–53 % of each run, so the budget is 0.6 ms over the worst median, 1.4 ms over
 the worst p95 and 8 hangs over the worst count. The tail follows host load and the median does not: five runs at
 18 to 30 read p95 9.53–14.92 ms and 13 to 25 hangs, and three failed. CI's runner has no neighbours; the
 scenario's first version read p95 8.62 ms with 1 hang there. The hangs are the first mount, the first token
-patch, rows mounting during the scroll and late patches repainting rows.
+patch, rows mounting during the scroll and late patches repainting rows. With the sideways pan added, three runs
+at load averages of 11 to 12 read p50 8.46–8.57 ms, p95 9.03–9.37 ms and 7 to 13 hangs.
 
 **What it proves:** a Debug build keeps this list scrolling on a 120 Hz output with the variant's per-row work
 (rows mounting and unmounting, monospace text, the anchored gutter and headers), and a change that adds work to
 every scrolled frame fails it. Native-driven `Animated` transforms on every mounted row for the anchored chrome
-read p50 37.8 ms and p95 121 ms over the scroll steps, and the variant counter-translates from React state, which
-a vertical scroll never changes. **What it does not prove:** 120 fps with highlighted rows. Debug Hermes delivers
+read p50 37.8 ms and p95 121 ms over the scroll steps. The variant keeps the list's x offset in a small store
+that only the anchored views subscribe to, so a sideways pan re-renders the gutter and header wrappers and none of
+the code or its token runs, and a vertical scroll re-renders nothing. Two right-and-left pans over the highlighted
+first screen, measured from the first frame that answered a pan to the last, took 452–453 frames with the store
+against 623–664 when every row re-rendered from React state, and the slowest pan reached the screen after 1.5–1.6 s
+against 2.9–3.4 s (two runs each, load 12 to 16, Debug), the backlog of a Debug JavaScript thread re-rendering
+every row per scroll event. **What it does not prove:** 120 fps with highlighted rows. Debug Hermes delivers
 each token patch seconds late, so most rows the scroll passes paint as plain text. That gate needs a Release
 build, and #705 owns it. On a Release `rnl_window`, where the JavaScript keeps up (first commit 0.28 s, a patch
 every 25 ms), the scenario as first written, in a proportional face and without the anchored chrome, read p95
@@ -8096,12 +8103,17 @@ draws code, line numbers and hunk headers in fontconfig's `monospace`, which is 
 where fontconfig's own configuration prefers it, so the `t3-review-diff` golden depends on that answer. A sideways
 scroll moves the `FlatList` itself: this platform scrolls both axes of any ScrollView whose content is wider than
 it, as iOS does, and a horizontal ScrollView around the list would never receive a sideways pan, because a scroll
-goes to the innermost ScrollView under the pointer. The content is as wide as the longest line or hunk header in monospace
+goes to the innermost ScrollView under the pointer. The content is as wide as the longest line or hunk header in monospace cells,
+counted as wcwidth does (an East Asian Wide or Fullwidth code point is two cells, a surrogate pair one code point),
 plus the chrome, capped at `contentWidth`, as `contentWidthsByFileId` measures it on iOS; SourceFileSurface's
 32,000 and ReviewCommentCard's 2,800 now mean the longest line instead. `styleJson`'s `wordWrap` is not read:
 lines never wrap, tracked on #712. The golden is the review diff scrolled to its right edge and back to the top,
-headers and gutter still in place, above a five-line source file mid pull-to-refresh, whose `refreshing` draws a
-2-point bar along the top.
+headers and gutter still in place and `file-1` marked viewed by a click on its translated checkbox, above a source
+file mid pull-to-refresh, whose `refreshing` draws a 2-point bar along the top, panned sideways and then reloaded
+under a new `contentResetKey`: list, header and gutter all back at x 0. No CJK face ships in the CI image, so the
+wide-character rule is proved by the unit test rather than the golden. A click on a line or a header path after a
+sideways pan scrolls the list back to x 0 or 10: pointer focus reveals the pressed control by its untransformed
+layout box (#715), so the scenario presses the checkboxes, which stay inside the viewport.
 
 The recipe for the real-hardware number is the same bundle on a 120 Hz output under Hyprland. **It has never been
 run.** Its measurement is tracked on #20.

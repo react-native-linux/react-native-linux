@@ -9,7 +9,8 @@ import {
 // #685: T3 Code's review sheet over a large diff. The rows, theme and style are the payloads ReviewSheet hands the
 // native view (nativeReviewDiffAdapter's shapes, MOBILE_CODE_SURFACE sizes, the dark diff colors), and tokens arrive as
 // the highlighter sends them: patches around each visible range, the next one only after the last is acknowledged.
-// Below it, SourceFileSurface's use of the same view: a short file, contentWidth 32,000, mid pull-to-refresh.
+// Below it, SourceFileSurface's use of the same view: a short file, contentWidth 32,000, mid pull-to-refresh, with a
+// header whose checkbox reloads the file under a new contentResetKey, so a reload after a sideways pan shows at x 0.
 
 type Token = readonly [content: string, color: string, fontStyle: number];
 type Change = "add" | "context" | "delete";
@@ -20,7 +21,7 @@ interface VisibleRange {
 }
 
 const ROW_HEIGHT = 22;
-const SOURCE_FILE_HEIGHT = 140;
+const SOURCE_FILE_HEIGHT = 196;
 const SOURCE_CONTENT_WIDTH = 32_000;
 const LARGE_FILE_COUNT = 41;
 const LARGE_FILE_HUNKS = 4;
@@ -104,6 +105,7 @@ const sourceLines: readonly (readonly Token[])[] = [
   [["export function ", KEYWORD, 0], ["SourceFile", FUNCTION_NAME, 0], ["(): void {", FOREGROUND, 0]],
   [["  const ", KEYWORD, 0], ["[path]", FOREGROUND, 0], [" = ", FOREGROUND, 0], ["useState", FUNCTION_NAME, 0], ["(", FOREGROUND, 0], ['"README.md"', STRING, 0], [");", FOREGROUND, 0]],
   [["}", FOREGROUND, 0]],
+  [["// SourceFileSurface scrolls sideways only as far as its longest line: this one, which runs well past the right edge of the window so a pan moves the code under a header and gutter that stay put, and ends here: END", COMMENT, ITALIC]],
 ];
 const lineTokens = (file: number, line: number, change: Change): readonly Token[] => {
   const name = change === "add" ? "computeNext" : "compute";
@@ -160,8 +162,9 @@ const lineTokens = (file: number, line: number, change: Change): readonly Token[
 
 const textOf = (tokens: readonly Token[]): string => tokens.map(([content]) => content).join("");
 
-const sourceRowsJson = JSON.stringify(
-  sourceLines.map((tokens, index) => ({
+const sourceRowsJson = JSON.stringify([
+  { fileId: "source-file", filePath: "apps/mobile/src/features/files/SourceFile.tsx", id: "source-file:header", kind: "file" },
+  ...sourceLines.map((tokens, index) => ({
     change: "context",
     content: textOf(tokens),
     fileId: "source-file",
@@ -169,7 +172,7 @@ const sourceRowsJson = JSON.stringify(
     kind: "line",
     newLineNumber: index + 1,
   })),
-);
+]);
 
 
 // T3 Code drops a word diff that covers most of the line (NATIVE_REVIEW_MAX_WORD_DIFF_COVERAGE).
@@ -289,6 +292,9 @@ const ReviewDiffView = resolveNativeReviewDiffView();
 
 const ReviewSheet = (): React.JSX.Element => {
   const [collapsedFileIds, setCollapsedFileIds] = useState<readonly string[]>(["file-1"]);
+  const [viewedFileIds, setViewedFileIds] = useState<readonly string[]>([]);
+  const [sourceRevision, setSourceRevision] = useState(0);
+  const sheetWidth = useRef(0);
   const [tokensPatchJson, setTokensPatchJson] = useState<string>();
   const sent = useRef(new Set<string>());
   const wanted = useRef<VisibleRange | null>(null);
@@ -343,6 +349,9 @@ const ReviewSheet = (): React.JSX.Element => {
         contentResetKey={RESET_KEY}
         contentWidth={2800}
         onDebug={onDebug}
+        onLayout={({ nativeEvent: { layout } }) => {
+          sheetWidth.current = layout.width;
+        }}
         onPressLine={({ nativeEvent }) => {
           report(
             `pressLine ${nativeEvent.gesture ?? ""} row=${nativeEvent.rowId ?? ""} change=${nativeEvent.change ?? ""} new=${String(nativeEvent.newLineNumber)}`,
@@ -354,6 +363,10 @@ const ReviewSheet = (): React.JSX.Element => {
             current.includes(fileId) ? current.filter((id) => id !== fileId) : [...current, fileId],
           );
         }}
+        onToggleViewedFile={({ nativeEvent: { fileId = "" } }) => {
+          report(`toggleViewed ${fileId} in a sheet ${String(sheetWidth.current)} wide`);
+          setViewedFileIds((current) => [...current, fileId]);
+        }}
         onVisibleFileChange={({ nativeEvent: { fileId } }) => {
           report(`visible file ${fileId ?? ""}`);
         }}
@@ -364,10 +377,15 @@ const ReviewSheet = (): React.JSX.Element => {
         themeJson={JSON.stringify(theme)}
         tokensPatchJson={tokensPatchJson}
         tokensResetKey={RESET_KEY}
+        viewedFileIdsJson={JSON.stringify(viewedFileIds)}
       />
       <ReviewDiffView
         appearanceScheme="dark"
-        contentResetKey="source:README.md"
+        contentResetKey={`source:${String(sourceRevision)}`}
+        onToggleViewedFile={() => {
+          report(`reload source-file ${String(sourceRevision + 1)}`);
+          setSourceRevision(sourceRevision + 1);
+        }}
         contentWidth={SOURCE_CONTENT_WIDTH}
         refreshing
         rowHeight={ROW_HEIGHT}

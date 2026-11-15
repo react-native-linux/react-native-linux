@@ -79,6 +79,11 @@ describe("parseIds and layoutOf", () => {
     expect(parseIds(withoutCollapsedFiles.collapsedFileIdsJson).size).toBe(FIRST_CHUNK);
   });
 
+  it("refuses JSON that is not an array of id strings, rather than reading a string as its characters", () => {
+    expect(() => parseIds('"ab"')).toThrow('expected a JSON array of ids, got "ab"');
+    expect(() => parseIds('["a",1]')).toThrow("expected a JSON array of ids");
+  });
+
   it("takes the style's sizes and falls back to the mobile code surface's", () => {
     expect(layoutOf({ codeFontSize: CODE_FONT_SIZE, gutterWidth: GUTTER_WIDTH }, ROW_HEIGHT)).toStrictEqual({
       ...layout,
@@ -254,5 +259,19 @@ describe("readTokenPatch", () => {
   it("acknowledges nothing for a patch without a chunk index, and reads a patch without tokens as empty", () => {
     expect(readTokenPatch(JSON.stringify({ tokensByRowId }), "k")).toStrictEqual({ delivery: null, tokensByRowId });
     expect(readTokenPatch(JSON.stringify({ resetKey: "k" }), "k")).toStrictEqual({ delivery: null, tokensByRowId: {} });
+  });
+
+  it("fails a chunk whose tokens are not a token map, and reads a patch that is not an object as empty", () => {
+    expect(
+      readTokenPatch(JSON.stringify({ chunkIndex: CHUNK, resetKey: "k", tokensByRowId: { line: [null] } }), "k"),
+    ).toStrictEqual({
+      delivery: { chunkIndex: CHUNK, message: "tokens-patch-failed", resetKey: "k" },
+      tokensByRowId: {},
+    });
+    expect(readTokenPatch("null", "k")).toStrictEqual({ delivery: null, tokensByRowId: {} });
+    expect(readTokenPatch(JSON.stringify({ chunkIndex: "0", resetKey: 1 }), "k")).toStrictEqual({
+      delivery: null,
+      tokensByRowId: {},
+    });
   });
 });

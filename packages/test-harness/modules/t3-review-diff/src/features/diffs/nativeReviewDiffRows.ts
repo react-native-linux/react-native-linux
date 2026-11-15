@@ -1,3 +1,5 @@
+import type { NativeSyntheticEvent } from "react-native";
+
 import type {
   NativeReviewDiffRow,
   NativeReviewDiffStyle,
@@ -41,6 +43,13 @@ export interface NativeReviewDiffCodeRun {
   readonly background: string | undefined;
 }
 
+/** The list's horizontal offset, which only the anchored chrome subscribes to. */
+export interface NativeReviewDiffScrollOffset {
+  readonly current: () => number;
+  readonly set: (x: number) => void;
+  readonly subscribe: (listener: () => void) => () => void;
+}
+
 export interface NativeReviewDiffTokenPatch {
   readonly tokensByRowId: NativeReviewDiffTokens;
   readonly delivery: Readonly<Record<string, unknown>> | null;
@@ -50,9 +59,14 @@ const COLLAPSED_COMMENT_HEIGHT = 44;
 const EXPANDED_COMMENT_HEIGHT = 124;
 const MINIMUM_NOTICE_HEIGHT = 44;
 const WORD_DIFF_ALPHA = "47";
+const EVENT_PHASE_AT_TARGET = 2;
 // fontconfig's `monospace` on Ubuntu is DejaVu Sans Mono, 1233 units wide on a 2048-unit em; Menlo and SF Mono are
 // within a percent of it.
 const MONOSPACE_ADVANCE_PER_EM = 1233 / 2048;
+// wcwidth's East Asian Wide and Fullwidth ranges, with the emoji blocks Unicode 9 made wide: two cells each.
+const WIDE_CHARACTER =
+  /[\u1100-\u115f\u2329\u232a\u2e80-\u303e\u3040-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe10-\ufe19\ufe30-\ufe6f\uff00-\uff60\uffe0-\uffe6\u{1f300}-\u{1f64f}\u{1f900}-\u{1f9ff}\u{20000}-\u{2fffd}\u{30000}-\u{3fffd}]/gu;
+const SURROGATE_PAIR = /[\ud800-\udbff][\udc00-\udfff]/g;
 const FONT_WEIGHTS: Readonly<Record<string, NativeReviewDiffFontWeight>> = {
   thin: "100",
   ultralight: "200",
@@ -72,8 +86,64 @@ function fontWeightOf(name: string | undefined): NativeReviewDiffFontWeight {
   return FONT_WEIGHTS[name?.toLowerCase() ?? ""] ?? "700";
 }
 
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isToken(value: unknown): value is NativeReviewDiffToken {
+  return (
+    isRecord(value) &&
+    typeof value["content"] === "string" &&
+    (value["color"] == null || typeof value["color"] === "string") &&
+    (value["fontStyle"] == null || typeof value["fontStyle"] === "number")
+  );
+}
+
+function isTokenMap(value: unknown): value is NativeReviewDiffTokens {
+  return isRecord(value) && Object.values(value).every((tokens) => Array.isArray(tokens) && tokens.every(isToken));
+}
+
 export function parseIds(json: string | undefined): ReadonlySet<string> {
-  return new Set(json ? (JSON.parse(json) as string[]) : []);
+  if (!json) return new Set();
+  const ids: unknown = JSON.parse(json);
+  if (!Array.isArray(ids) || !ids.every((id) => typeof id === "string")) {
+    throw new TypeError(`expected a JSON array of ids, got ${json}`);
+  }
+  return new Set(ids);
+}
+
+/** A tokensJson map, or none when it is not one: a malformed map draws plain text rather than failing the view. */
+export function readTokens(json: string): NativeReviewDiffTokens {
+  const tokens: unknown = JSON.parse(json);
+  return isTokenMap(tokens) ? tokens : {};
+}
+
+/** A whole synthetic event for a callback the variant calls itself, as a native view's event arrives. */
+export function nativeEventOf<T>(registrationName: string, payload: T): NativeSyntheticEvent<T> {
+  let defaultPrevented = false;
+  let propagationStopped = false;
+  return {
+    bubbles: false,
+    cancelable: false,
+    currentTarget: 0,
+    defaultPrevented: false,
+    dispatchConfig: { registrationName },
+    eventPhase: EVENT_PHASE_AT_TARGET,
+    preventDefault: () => {
+      defaultPrevented = true;
+    },
+    isDefaultPrevented: () => defaultPrevented,
+    stopPropagation: () => {
+      propagationStopped = true;
+    },
+    isPropagationStopped: () => propagationStopped,
+    isTrusted: true,
+    nativeEvent: payload,
+    persist: () => undefined,
+    target: undefined,
+    timeStamp: Date.now(),
+    type: undefined,
+  };
 }
 
 export function layoutOf(style: NativeReviewDiffStyle, rowHeight: number): NativeReviewDiffLayout {
@@ -138,6 +208,11 @@ export function visibleRowsOf(
   return { indexes, offsets, heights };
 }
 
+/** Monospace cells, as wcwidth counts them: one per code point, two for an East Asian Wide or Fullwidth one. */
+export function cellsOf(text: string): number {
+  return text.length - (text.match(SURROGATE_PAIR)?.length ?? 0) + (text.match(WIDE_CHARACTER)?.length ?? 0);
+}
+
 /**
  * The width the rows scroll over: the chrome, the longest line or hunk header in monospace, and the code padding on
  * both sides, as T3ReviewDiffView's contentWidthsByFileId measures it, but never wider than `contentWidth`.
@@ -149,11 +224,31 @@ export function contentWidthOf(
 ): number {
   let codeWidth = 0;
   for (const row of rows) {
-    if (row.kind === "line") codeWidth = Math.max(codeWidth, (row.content ?? "").length * layout.codeFontSize);
-    else if (row.kind === "hunk") codeWidth = Math.max(codeWidth, (row.text || row.content || "").length * layout.hunkFontSize);
+    if (row.kind === "line") codeWidth = Math.max(codeWidth, cellsOf(row.content ?? "") * layout.codeFontSize);
+    else if (row.kind === "hunk") codeWidth = Math.max(codeWidth, cellsOf(row.text || row.content || "") * layout.hunkFontSize);
   }
   const chrome = layout.changeBarWidth + layout.gutterWidth + layout.codePadding * 2;
   return Math.min(contentWidth, chrome + Math.ceil(codeWidth * MONOSPACE_ADVANCE_PER_EM));
+}
+
+/** A store for `useSyncExternalStore` that tells its listeners only when x changes, not on a vertical scroll. */
+export function createScrollOffset(): NativeReviewDiffScrollOffset {
+  let x = 0;
+  const listeners = new Set<() => void>();
+  return {
+    current: () => x,
+    set: (next) => {
+      if (next === x) return;
+      x = next;
+      for (const listener of listeners) listener();
+    },
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+  };
 }
 
 /** Splits a line's tokens where a word-diff range or a cut line's note starts or ends. */
@@ -198,25 +293,24 @@ export function codeRuns(
 }
 
 /**
- * Reads a highlighter patch as setTokensPatchJson does: a patch for another reset key adds no tokens, and a
- * chunk is acknowledged through `delivery` so the highlighter sends the next one.
+ * Reads a highlighter patch as setTokensPatchJson does: a patch for another reset key, or one that is not a token
+ * map, adds no tokens, and a chunk is acknowledged through `delivery` so the highlighter sends the next one.
  */
 export function readTokenPatch(patchJson: string, resetKey: string | undefined): NativeReviewDiffTokenPatch {
-  const patch = JSON.parse(patchJson) as {
-    readonly resetKey?: string;
-    readonly chunkIndex?: number;
-    readonly tokensByRowId?: NativeReviewDiffTokens;
-  };
-  const accepted = !patch.resetKey || patch.resetKey === resetKey;
+  const parsed: unknown = JSON.parse(patchJson);
+  const patch = isRecord(parsed) ? parsed : {};
+  const patchResetKey = typeof patch["resetKey"] === "string" ? patch["resetKey"] : undefined;
+  const received = patch["tokensByRowId"] ?? {};
+  const tokens = isTokenMap(received) && (!patchResetKey || patchResetKey === resetKey) ? received : null;
   return {
-    tokensByRowId: accepted ? (patch.tokensByRowId ?? {}) : {},
+    tokensByRowId: tokens ?? {},
     delivery:
-      patch.chunkIndex === undefined
-        ? null
-        : {
-            message: accepted ? "tokens-patch-delivered" : "tokens-patch-failed",
-            resetKey: patch.resetKey,
-            chunkIndex: patch.chunkIndex,
-          },
+      typeof patch["chunkIndex"] === "number"
+        ? {
+            message: tokens ? "tokens-patch-delivered" : "tokens-patch-failed",
+            resetKey: patchResetKey,
+            chunkIndex: patch["chunkIndex"],
+          }
+        : null,
   };
 }
