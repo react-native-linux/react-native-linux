@@ -105,7 +105,11 @@ const metaChecks: readonly MetaCheck[] = [
   },
   {
     binaryName: "gitleaks",
-    buildArguments: () => ["detect", "--source", ".", "--no-banner", "--redact"],
+    /**
+     * Scans HEAD's history only. Without --log-opts gitleaks runs `git log --all`, and CI's full-depth checkout
+     * fetches every branch, so one unmerged branch's finding would fail every other branch's run.
+     */
+    buildArguments: () => ["detect", "--source", ".", "--no-banner", "--redact", "--log-opts=--full-history HEAD"],
     toolName: "gitleaks",
   },
 ];
