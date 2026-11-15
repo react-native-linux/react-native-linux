@@ -64,7 +64,10 @@ translation. A `useExclusiveGestures` double/single tap pair arbitrates as the b
 click on the child it overflows into. In `gesture-reanimated-swipeable`, a `ReanimatedSwipeable` row (the subpath T3
 Code imports) sits in a `ScrollView` under a `useNativeGesture` detector, as in T3 Code's thread list, and a drag
 springs it open on its right actions. Beside it, a toast-like worklet pan with `activeOffsetX` and `failOffsetY`
-fails on a vertical drag and ends on a horizontal one.
+fails on a vertical drag and ends on a horizontal one. It does both again when the two drags reach the app in one
+batch, as a busy JavaScript thread receives them: the web orchestrator resets finished handlers in a microtask, which a
+browser runs between two events and React Native only after the whole batch, so `LinuxPointerRouter` resets them
+before it routes each press.
 
 The `gesture-pan-over-pressable` e2e verifies mouse drags report upstream `PointerType.MOUSE`. Wheel input before
 and between pointer presses must not begin Pan recognition or create another press. Touchpad and touchscreen

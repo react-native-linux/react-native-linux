@@ -55,7 +55,7 @@ export default class GestureHandlerOrchestrator {
     }
   }
 
-  private cleanupFinishedHandlers(): void {
+  public cleanupFinishedHandlers(): void {
     const handlersToRemove = new Set<IGestureHandler>();
 
     for (let i = this.gestureHandlers.length - 1; i >= 0; --i) {

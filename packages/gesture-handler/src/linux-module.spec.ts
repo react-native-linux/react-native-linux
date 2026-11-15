@@ -28,6 +28,7 @@ const configuredHandlerTag = 5;
 const draggedHandlerTag = 6;
 const contentsHandlerTag = 7;
 const anchoredHandlerTag = 8;
+const toastHandlerTag = 9;
 const dragDistance = 50;
 const movesBeforeDetach = 1;
 const rect = { bottom: 100, left: 0, right: 100, top: 0 };
@@ -224,33 +225,76 @@ const zeroSizeParent = (): TestElement => {
   return parent;
 };
 
-const dragOnChild = async (
-  handlerTag: number,
-  parent: TestElement,
-  hostDetector: unknown,
+type RoutedPointer = readonly [string, unknown];
+
+interface PanTarget {
+  readonly config?: object;
+  readonly element: TestElement;
+  readonly handlerTag: number;
+  readonly hostDetector?: unknown;
+}
+
+const routeToPan = async (
+  { config = {}, element: attached, handlerTag, hostDetector = null }: PanTarget,
+  pointers: readonly RoutedPointer[],
 ): Promise<StateChangeMock> => {
   const gestureModule = await loadGestureModule();
   const route = await loadRoute();
   const stateChange = vi.fn();
   const propsRef = { current: { onGestureHandlerEvent: vi.fn(), onGestureHandlerStateChange: stateChange } };
   methodOf(gestureModule, "createGestureHandler")("PanGestureHandler", handlerTag, {});
-  methodOf(gestureModule, "attachGestureHandler")(handlerTag, parent, jsFunctionNewApi, propsRef, hostDetector);
-  route("pointerdown", { ...dragStart, target: boxedChild });
-  route("pointermove", { ...dragEnd, target: boxedChild });
-  route("pointerup", { ...dragEnd, target: boxedChild });
+  methodOf(gestureModule, "attachGestureHandler")(handlerTag, attached, jsFunctionNewApi, propsRef, hostDetector);
+  methodOf(gestureModule, "updateGestureHandlerConfig")(handlerTag, config);
+  for (const [type, event] of pointers) {
+    route(type, event);
+  }
 
   return stateChange;
 };
 
+const childDrag: readonly RoutedPointer[] = [
+  ["pointerdown", { ...dragStart, target: boxedChild }],
+  ["pointermove", { ...dragEnd, target: boxedChild }],
+  ["pointerup", { ...dragEnd, target: boxedChild }],
+];
+
 it("bounds a display: contents detector by its children, so a drag on its child is recognized", async () => {
-  const contentsElement = zeroSizeParent();
-  const stateChange = await dragOnChild(contentsHandlerTag, contentsElement, { current: contentsElement });
+  const contents = zeroSizeParent();
+  const stateChange = await routeToPan(
+    { element: contents, handlerTag: contentsHandlerTag, hostDetector: { current: contents } },
+    childDrag,
+  );
 
   expect(statesOf(stateChange)).toStrictEqual([stateBegan, stateActive, stateEnd]);
 });
 
 it("keeps a zero-size view's own bounds when it is not its detector, so a drag on its child is not recognized", async () => {
-  const stateChange = await dragOnChild(anchoredHandlerTag, zeroSizeParent(), null);
+  const stateChange = await routeToPan({ element: zeroSizeParent(), handlerTag: anchoredHandlerTag }, childDrag);
 
   expect(stateChange).not.toHaveBeenCalled();
+});
+
+const toastElement = createElement();
+const toastConfig = { activeOffsetXEnd: 10, activeOffsetXStart: -10, failOffsetYEnd: 12, failOffsetYStart: -12 };
+const pressPoint = { clientX: 10, clientY: 10 };
+const verticalPoint = { clientX: 11, clientY: 40 };
+const crossingPoint = { clientX: 40, clientY: 11 };
+const releasePoint = { clientX: 80, clientY: 13 };
+const toastPointer = (type: string, point: typeof pressPoint): RoutedPointer => [
+  type,
+  { nativeEvent: { ...point, pointerId: 1 }, target: toastElement, timeStamp: 1 },
+];
+
+it("begins a press that arrives in the same batch as the failure before it, as a busy JavaScript thread receives them", async () => {
+  const stateChange = await routeToPan({ config: toastConfig, element: toastElement, handlerTag: toastHandlerTag }, [
+    toastPointer("pointerdown", pressPoint),
+    toastPointer("pointermove", verticalPoint),
+    toastPointer("pointerup", verticalPoint),
+    toastPointer("pointerdown", pressPoint),
+    toastPointer("pointermove", crossingPoint),
+    toastPointer("pointermove", releasePoint),
+    toastPointer("pointerup", releasePoint),
+  ]);
+
+  expect(statesOf(stateChange)).toStrictEqual([stateBegan, stateFailed, stateBegan, stateActive, stateEnd]);
 });

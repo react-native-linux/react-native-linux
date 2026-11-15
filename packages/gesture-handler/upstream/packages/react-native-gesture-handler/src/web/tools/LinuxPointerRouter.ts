@@ -3,6 +3,8 @@
 // to every attached view containing its target, and every later event for that pointer to the views that took
 // the down, which is what setPointerCapture gives a web view.
 
+import GestureHandlerOrchestrator from './GestureHandlerOrchestrator';
+
 type PointerListener = (event: LinuxPointerEvent) => void;
 
 interface LinuxRect {
@@ -156,6 +158,10 @@ export function routeLinuxPointerEvent(
   };
 
   if (type === 'pointerdown') {
+    // The web orchestrator resets finished handlers in a microtask, which a browser runs between two pointer events.
+    // React Native dispatches every event of one batch in a single task, so a press that arrives with the release
+    // or failure before it would find its handler still finished, and the whole gesture would be dropped.
+    GestureHandlerOrchestrator.instance.cleanupFinishedHandlers();
     const target = rootEvent.target as LinuxElement;
     const receivers = [...views].filter((view) =>
       view.element.contains(target)
