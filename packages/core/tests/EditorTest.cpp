@@ -567,6 +567,21 @@ TEST(EditorModelTest, AControlledValueIsAdoptedWhenTheEventCountMatches) {
     EXPECT_FALSE(model.reconcileProps("from react", 0));
 }
 
+// #683: a pre-edit is not an edit, so it leaves the count alone, and a controlled field echoes it back with the
+// count it already had. Adopting that echo would end the composition and keep the pre-edit as text.
+TEST(EditorModelTest, AControlledEchoOfAPreeditLeavesTheCompositionRunning) {
+    EditorModel model = modelWith("hi");
+
+    model.applyPreedit("e", 1, 1);
+
+    EXPECT_FALSE(model.reconcileProps("hie", model.mostRecentEventCount()));
+    EXPECT_TRUE(model.isComposing());
+
+    model.insertText("\u00e9");
+
+    EXPECT_EQ(model.text(), "hi\u00e9");
+}
+
 TEST(EditorModelTest, AControlledValueIsIgnoredWhileAnEditIsInFlight) {
     EditorModel model;
 

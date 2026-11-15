@@ -221,6 +221,8 @@ public:
      * An update whose echoed count is not the current one describes a buffer that has already moved on, and is
      * dropped — that is the whole of the contract, and applying it anyway is react-native-macos#2066 in the
      * other direction: the caret jumping back to where JavaScript last saw it while the user is still typing.
+     * A value equal to the buffer is an echo and changes nothing, so a controlled field's echo of a pre-edit
+     * leaves the composition running (#683).
      */
     bool reconcileProps(const std::string& propsText, int propsMostRecentEventCount);
 

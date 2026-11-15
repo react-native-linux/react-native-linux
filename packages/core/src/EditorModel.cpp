@@ -407,7 +407,7 @@ bool EditorModel::deleteSurrounding(uint32_t beforeLength, uint32_t afterLength)
 }
 
 bool EditorModel::reconcileProps(const std::string& propsText, int propsMostRecentEventCount) {
-    if (propsMostRecentEventCount != mostRecentEventCount_) {
+    if (propsMostRecentEventCount != mostRecentEventCount_ || propsText == text_) {
         return false;
     }
 
