@@ -4,6 +4,7 @@
 #include "BeastWebSocketClient.h"
 #include "Clipboard.h"
 #include "CurlHttpClient.h"
+#include "ExpoFileSystem.h"
 #include "ExpoSQLite.h"
 #include "FantomRenderOutput.h"
 #include "HostTimerRegistry.h"
@@ -1068,6 +1069,9 @@ TurboModuleRegistry::TurboModuleRegistry(
                              [jsInvoker]() { return std::make_shared<LinuxPlatformConstantsModule>(jsInvoker); });
     moduleFactories_.emplace(LinuxExponentConstantsModule::kModuleName,
                              [jsInvoker]() { return std::make_shared<LinuxExponentConstantsModule>(jsInvoker); });
+    moduleFactories_.emplace("FileSystem", [jsInvoker, keyValueStore = keyValueStore_]() {
+        return makeExpoFileSystemModule(jsInvoker, keyValueStore);
+    });
     // #79: `fetch` and `XMLHttpRequest` reach upstream's C++ Networking module, which this platform only supplies
     // the HTTP client for.
     moduleFactories_.emplace(facebook::react::NetworkingModule::kModuleName, [jsInvoker]() {

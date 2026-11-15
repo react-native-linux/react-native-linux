@@ -94,8 +94,8 @@ patched when its first consumer lands:
 
 ### Known gaps
 
-The seam was not proved for two shapes the flagship uses. Each is tracked, and neither is claimed to work until its
-issue lands.
+Two shapes the flagship uses needed more than the seam above. Each is tracked, and each is claimed only as far as
+its issue proved it.
 
 1. **Native views: the first break. Resolved by
    [#662](https://github.com/react-native-linux/react-native-linux/issues/662).** In bridgeless mode
@@ -114,15 +114,33 @@ issue lands.
    - Proved by `packages/core/src-linux/expo-modules-core/polyfill/index.linux.spec.ts` and the `expo-native-view`
      e2e, which renders T3 Code's `FrostedCutout` call through upstream's unmodified `requireNativeViewManager` and
      compares the frame, the child painted inside the fallback view, against a checked-in golden.
-2. **Constructor-backed modules.** `expo-file-system`'s `File.ts` declares
-   `class File extends ExpoFileSystem.FileSystemFile` and passes its instances back into native code; `expo-audio`'s
-   `AudioPlayer` and `expo-video`'s players follow the same pattern. `createTurboModuleToExpoProxy` copies only a
-   TurboModule's prototype methods and `getConstants()` values, so there is no native class to extend, and the
-   polyfill's `SharedObject.release()` is a no-op. The candidate approach is a class from `getConstants()` that
-   extends `globalThis.expo.SharedObject`, each instance keyed by an id the native module owns. It is unproven until
-   a constructor-and-release probe over a TurboModule passes
-   ([#663](https://github.com/react-native-linux/react-native-linux/issues/663)); these three modules are the known
-   first hits of the revisit trigger below.
+2. **Constructor-backed modules: proved for `expo-file-system`.** `expo-file-system`'s `File.ts` declares
+   `class File extends ExpoFileSystem.FileSystemFile` and passes its instances back into native code;
+   `expo-audio`'s `AudioPlayer` and `expo-video`'s players follow the same pattern. `createTurboModuleToExpoProxy`
+   copies only a TurboModule's prototype methods and `getConstants()` values, and the polyfill's
+   `SharedObject.release()` is a no-op, so the module has to supply both the class and the release
+   ([#663](https://github.com/react-native-linux/react-native-linux/issues/663)). It does, with
+   `makeSharedObjectClass` in `packages/core/src/ExpoSharedObject.h`:
+   - `getConstants()` returns a constructor that extends `globalThis.expo.SharedObject`, read when the module is
+     first required, after `expo-modules-core` installed the polyfill. Hermes cannot `new` a host function, so the
+     constructor is a small evaluated JavaScript function, as #665's `ExpoSQLite` builds `NativeDatabase`; it builds the
+     instance from `new.target`, so a subclass's `super(...)` gets the subclass's prototype.
+   - Each instance carries a JSI native state, and a native method resolves an instance passed back to it by that
+     state, so identity crosses the boundary without a table the module owns.
+   - `release()` frees the state at once; an instance never released frees it when Hermes collects it. Hermes keeps
+     a replaced native state until it collects the object, so the native state is a handle whose state `release()`
+     resets, rather than a state that `release()` replaces.
+
+   `packages/core/tests/hermes/ExpoSharedObjectTest.cpp` is the constructor-and-release probe, and the `FileSystem`
+   module (`packages/core/src/ExpoFileSystemModule.cpp`) is its first consumer: upstream's `File`, `Directory` and
+   `Paths`, unmodified, write, read, list, copy, move and delete in the XDG directories in the `expo-file-system` e2e.
+   Every state the module and the probe hold lives on the JavaScript thread, so nothing crosses threads.
+
+   One thing an app supplies, not the module: a WHATWG `URL`. Upstream's `Paths.join` assigns `pathname` on a `URL`,
+   which React Native's own `URL` silently ignores, so `new File(Paths.document, 'name')` names the document
+   directory itself. `expo`'s runtime (`expo/src/winter`) installs `whatwg-url-minimum`'s `URL` in every app that
+   imports `expo`, as the flagship does; the e2e, which does not import `expo`, installs the same `URL` itself.
+   `expo-audio` and `expo-video` reuse `makeSharedObjectClass` when they land.
 
 ### The module registry
 
@@ -220,9 +238,9 @@ reads it. The Linux equivalent, the native module reading the app config a `linu
 Any one of these reopens the question in a new ADR:
 
 - **A flagship module whose JavaScript needs the native object model**: a `SharedObject` whose identity crosses the
-  native boundary, a `SharedRef` handed to a native view, or worklets through `installOnUIRuntime`. That is the half
-  of (a) that `common/cpp` already holds. `expo-file-system`, `expo-audio` and `expo-video` are its known first
-  hits, unless the #663 probe proves the candidate approach.
+  native boundary that `makeSharedObjectClass` cannot carry (#663 carries `expo-file-system`'s), a `SharedRef`
+  handed to a native view, or worklets through `installOnUIRuntime`. That is the half of (a) that `common/cpp`
+  already holds.
 - **The polyfill moves or changes shape.** The resolver rule keys on deep paths: `build/index.js` importing
   `./polyfill`, `build/polyfill/index.js`, and the public `src/polyfill/dangerous-internal` export with its
   `installExpoGlobalPolyfill`. An SDK that moves or reshapes them breaks the rule, and the `expo-constants` e2e fails
