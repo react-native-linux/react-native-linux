@@ -152,6 +152,9 @@ describe("readRows", () => {
       { ...LINE_ROW, wordDiffRanges: [{ start: 0 }] },
       { ...LINE_ROW, tone: "error" },
       { ...LINE_ROW, actionable: "yes" },
+      { ...LINE_ROW, changeType: 42 },
+      { ...LINE_ROW, changeType: "moved" },
+      { ...LINE_ROW, commentSectionTitle: 1 },
       "row",
     ];
 

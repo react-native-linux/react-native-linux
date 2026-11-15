@@ -124,10 +124,13 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
 }
 
 /** The optional row fields the variant reads, each with the check its declared type needs. */
+const CHANGE_TYPES: ReadonlySet<unknown> = new Set(["modified", "new", "deleted", "renamed", "rename-pure", "rename-changed"]);
+
 const ROW_FIELDS = {
   fileId: isString,
   filePath: isString,
   previousPath: (value) => value === null || isString(value),
+  changeType: (value) => CHANGE_TYPES.has(value),
   additions: isNumber,
   deletions: isNumber,
   text: isString,
@@ -139,6 +142,7 @@ const ROW_FIELDS = {
     Array.isArray(value) && value.every((range) => isRecord(range) && isNumber(range["start"]) && isNumber(range["end"])),
   commentText: isString,
   commentRangeLabel: isString,
+  commentSectionTitle: isString,
   tone: (value) => value === "warning",
   actionable: (value) => typeof value === "boolean",
   noteStart: isNumber,
