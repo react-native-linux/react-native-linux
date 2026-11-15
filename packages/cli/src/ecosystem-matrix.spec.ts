@@ -64,3 +64,41 @@ describe("the flagship's native dependency ledger (#87)", () => {
     expect(withoutIssue).toStrictEqual([]);
   });
 });
+
+describe("T3 Code's rows in the ledger (#635)", () => {
+  const ledgerStatesByStatus = new Map([
+    ["supported", ["works", "shimmed"]],
+    ["tracked", ["in progress", "blocked"]],
+    ["stub-on-desktop", ["declined"]],
+    ["replace", ["declined"]],
+    ["declined", ["declined"]],
+  ]);
+  const researchNote = readFileSync(path.join(repositoryRoot, "docs", "research", "t3code-linux.md"), "utf8");
+  const noteRows = [
+    ...researchNote.matchAll(/^\| `(?<packageName>[^`]+)` \| `[^`]+` \| (?<status>[a-z-]+) \| (?<owners>[^|]+) \|/gmu),
+  ].map(({ groups }) => ({
+    owners: (groups?.["owners"] ?? "").trim().split(", "),
+    packageName: groups?.["packageName"] ?? "",
+    status: groups?.["status"] ?? "",
+  }));
+
+  it("reads T3 Code's packages from the research note", () => {
+    expect(noteRows).not.toStrictEqual([]);
+  });
+
+  it("agrees with the research note on each package's state and owner", () => {
+    const disagreements = noteRows.flatMap(({ owners, packageName, status }) => {
+      const row = ecosystemMatrix.find((candidate) => candidate.packageName === packageName);
+
+      if (!row) {
+        return [packageName];
+      }
+
+      const owner = "issue" in row ? `#${row.issue}` : `\`${row.test}\``;
+
+      return owners.includes(owner) && ledgerStatesByStatus.get(status)?.includes(row.state) ? [] : [packageName];
+    });
+
+    expect(disagreements).toStrictEqual([]);
+  });
+});
