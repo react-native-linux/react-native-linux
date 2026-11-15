@@ -1453,6 +1453,18 @@ the fixture beside the `cpp-library` one and calls it from `packages/test-harnes
 Its unit tests are `tests/DpopKeysTest.cpp`, which the coverage gate scores, and the Hermes test is
 `tests/hermes/T3NativeControlsModuleTest.cpp`.
 
+A module whose view this platform already ships needs no `linux/` directory and no config entry. T3 Code's
+composer (`modules/t3-composer-editor`, #683) is this platform's `TextInput`, selected by a
+`T3ComposerEditor.linux.tsx` beside the app's `.native.tsx`. Metro resolves `.linux` before `.native`. The variant is
+`packages/test-harness/modules/t3-composer-editor/src/native/T3ComposerEditor.linux.tsx`, and T3 Code copies it to
+`apps/mobile/src/native/`. The `src/lib` and `src/features` files beside it stand in for T3 Code's own, and the file
+is written in T3 Code's style, so this repo's oxlint and oxfmt skip `modules/t3-composer-editor/src`. Return and its
+chords use `onKeyDown`, with the Android view's `returnSubmission` rules: in send mode only a bare Return and
+Ctrl+Return send, every other chord inserts a newline, and a repeat never sends. This platform sends every key to
+the focused field's React handler, with its modifiers and `isComposing`, before the field edits, and delivers an
+earlier edit in the same frame as `onChange` first. `submitBehavior` keeps a sending Return out of the text. The
+e2e `packages/test-harness/e2e/t3-composer-editor.json` drives it under cage.
+
 Our C++ ABI toward a library is the vendored React Native pin's; what a library may assume beyond that is #89's
 question, not this generator's.
 
@@ -6479,8 +6491,13 @@ When an update is ignored the platform writes its own buffer back into the state
 picture never shows a value React proposed and the platform rejected. `EditorModel::reconcileProps` owns the
 count half and is unit-tested against both; `TextInputController::reconcile` owns the changed half.
 
-`mostRecentEventCount` is incremented by an edit and by nothing else. A pre-edit is not an edit — the value React
-owns has not changed until the commit arrives — so composing does not move it.
+`mostRecentEventCount` is incremented by an edit and by a pre-edit that changes the buffer, which is how iOS and
+Android count marked text. An edit that leaves the buffer as it was, such as committing the pre-edit already shown,
+moves nothing, as on Android, so it raises no `onChange` of its own. Edits that move the count but leave the buffer
+where it was by the end of a frame, such as a pre-edit and its cancellation, still raise one with the unchanged
+text: it is the only event that hands JavaScript the count, and without it every later `value` would be stale. A controlled field echoes each pre-edit back as its `value`: the echo of the current one
+equals the buffer and changes nothing, and a late echo of an earlier one carries an old count and is dropped, so
+neither ends the composition.
 
 ### The editing model
 
@@ -6741,7 +6758,7 @@ Through upstream's `TextInputEventEmitter`, so the payloads are the ones `TextIn
 
 | Event | When | Payload |
 | --- | --- | --- |
-| `change` | the buffer differs from what was last reported | the **unmasked** text, the selection, the event count |
+| `change` | the buffer or the event count differs from what was last reported | the **unmasked** text, the selection, the event count |
 | `selectionChange` | the selection differs from what was last reported | the same shape |
 | `keyPress` | before the edit a key makes | the key, as upstream's own mapping of the text — an empty string is `Backspace`, a line feed is `Enter` |
 | `submitEditing`, `endEditing` | Enter, per the table above | text and event count |
@@ -7800,6 +7817,21 @@ with `WLR_BACKENDS=headless`, `WLR_RENDERER=pixman`, `WLR_LIBINPUT_NO_DEVICES=1`
 lavapipe ICD pinned by the same discovery `scripts/window-golden.ts` exports, waits for the wayland socket to
 appear in that directory, waits for both the scenario's `ready` line and the window's first-presented-frame line
 on the window's stdout (#373, below), and then injects.
+
+**The shader cache (#704).** lavapipe compiles every shader it meets, and Mesa caches the result under
+`XDG_CACHE_HOME`, which the driver points at the scenario's private directory so a bundle never writes into the
+developer's cache (#676). That left every run with a cold cache: the first frames after mount compiled shaders
+inside `vkQueuePresentKHR`, 86–137 ms for the first and 34–51 ms for the next in `animated-views-120hz`, so
+both crossed the frame journal's 33.3 ms hang threshold and the scenario failed 14 runs in 20. `buildEnvironment`
+in `scripts/headless-compositor.ts` therefore sets `MESA_SHADER_CACHE_DIR` to `build/mesa-shader-cache`, a cache
+that outlives the run and is shared by the window goldens, the fresh-project smoke test and every scenario. CI
+restores it in the `window` job from the newest main run with the same `mesa-vulkan-drivers` version, falling back
+to any earlier version's cache, and main saves it after the e2e step. Mesa addresses each entry by a hash of the
+shader, its own build and the CPU's features, so a stale entry can only miss: a restored cache never satisfies a
+shader a change adds or alters, and that change still pays its compile in the run that introduces it. When no
+cache is restored at all, the job first runs every hang-gated scenario once, untimed, to fill it, so the measured
+pass never depends on a cache existing. What the cache hides is the compile cost of shaders that already shipped,
+which is the CPU rasterizer's cost and not the renderer's.
 
 **Keyboard-focus wait (#304).** A scenario's steps are split at the first `key`/`type` step:
 `scripts/e2e/keyboard-focus.ts`'s `runKeyboardAwareInjection` runs everything before that step through one

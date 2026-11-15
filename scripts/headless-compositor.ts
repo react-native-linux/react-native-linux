@@ -14,12 +14,18 @@ const WINDOW_HEIGHT = "600";
 /** Every variable that could point the client at the developer's own session or driver; dropped, not overwritten. */
 const overriddenEnvironmentNames = new Set(["DISPLAY", "WAYLAND_DISPLAY", "VK_DRIVER_FILES", "VK_ICD_FILENAMES"]);
 
+/**
+ * Mesa keeps lavapipe's compiled shaders under `XDG_CACHE_HOME`, which every run points at a fresh directory, so
+ * without a cache that outlives the run each window compiles them again in its first frames after mount (#704).
+ */
+const mesaShaderCacheDirectory = path.resolve(import.meta.dirname, "..", "build", "mesa-shader-cache");
+
 const buildEnvironment = (overrides: Record<string, string>): Record<string, string | undefined> => {
   const inherited = Object.fromEntries(
     Object.entries(env).filter(([variableName]) => !overriddenEnvironmentNames.has(variableName)),
   );
 
-  return { ...inherited, ...overrides };
+  return { ...inherited, MESA_SHADER_CACHE_DIR: mesaShaderCacheDirectory, ...overrides };
 };
 
 interface Compositor {
