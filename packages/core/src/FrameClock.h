@@ -46,6 +46,13 @@ public:
     Tick onFallbackTimeout(std::chrono::steady_clock::time_point now, bool hasPendingWork);
 
     /**
+     * Whether the draw a tick asked for presented. One that did not (a recoverable image-acquire failure) has already
+     * taken the damage that woke the window and armed no callback, so every later tick counts as pending work until a
+     * draw presents: otherwise an idle window skips forever and the update stays invisible (#703).
+     */
+    void recordDrawOutcome(bool presented) noexcept;
+
+    /**
      * How long the fallback timeout waits when the compositor is not pacing the window (#335): a deactivated or
      * occluded window stretches the interval rather than burning the GPU at full rate, and a serious or critical
      * thermal state caps the interval at one 60 Hz frame — the machine is telling us to stop chasing the display,
@@ -89,6 +96,7 @@ private:
     uint64_t timerTicks_{0};
     uint64_t resumeTransitions_{0};
     uint32_t settleCallbacks_{kSettleCallbacks};
+    bool isRetryPending_{false};
     std::optional<std::chrono::steady_clock::time_point> lastCallbackAt_;
 };
 

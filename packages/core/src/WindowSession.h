@@ -114,6 +114,9 @@ public:
      * the caller only has to say which frame source woke it.
      */
     FrameClock::Tick recordFrameTick(FrameClock::Source source, std::chrono::steady_clock::time_point now);
+
+    /** Delegates to `FrameClock::recordDrawOutcome` after every draw `recordFrameTick` asked for. */
+    void recordDrawOutcome(bool presented) noexcept;
     SceneFrame takeFrame();
     bool hasReportedFatalError() const;
 

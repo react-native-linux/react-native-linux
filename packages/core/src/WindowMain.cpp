@@ -1683,6 +1683,7 @@ int main(int argc, char** argv) {
                                     });
                                 session->recordPaintEnd(std::chrono::steady_clock::now());
                             });
+                        session->recordDrawOutcome(presented);
                     }
                 } else {
                     presented = renderer.drawFrame(window, {}, drawPlaceholder);

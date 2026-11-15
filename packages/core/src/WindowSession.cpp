@@ -147,6 +147,8 @@ void WindowSession::tickAnimations(std::chrono::steady_clock::time_point now) {
     }
 }
 
+void WindowSession::recordDrawOutcome(bool presented) noexcept { frameClock_.recordDrawOutcome(presented); }
+
 FrameClock::Tick WindowSession::recordFrameTick(FrameClock::Source source, std::chrono::steady_clock::time_point now) {
     const bool hasPending = hasPendingWork();
 

@@ -53,6 +53,35 @@ TEST(IdleWakeTest, AJavaScriptCommitWakesAnIdleWindow) {
                                    [&] { commitOneView(mountingManager); });
 }
 
+/**
+ * The draw a commit wakes takes its damage before it knows whether it presents. When it presents nothing (a
+ * recoverable image-acquire failure) and arms no callback, the next tick still draws, or the commit would stay
+ * invisible on an idle window (#703).
+ */
+TEST(IdleWakeTest, ACommitWhoseDrawPresentedNothingIsDrawnAgainOnTheNextTick) {
+    react_native_linux::LinuxMountingManager mountingManager;
+    FrameClock clock;
+    const auto drawsAt = [&](int milliseconds) {
+        return clock
+            .onFallbackTimeout(std::chrono::steady_clock::time_point{} + std::chrono::milliseconds(milliseconds),
+                               mountingManager.hasPendingDamage())
+            .shouldDraw;
+    };
+
+    std::thread([&] { commitOneView(mountingManager); }).join();
+
+    ASSERT_TRUE(drawsAt(16));
+    mountingManager.takeFrame();
+    clock.recordDrawOutcome(false);
+
+    ASSERT_FALSE(mountingManager.hasPendingDamage());
+    EXPECT_TRUE(drawsAt(32));
+
+    clock.recordDrawOutcome(true);
+
+    EXPECT_FALSE(drawsAt(48));
+}
+
 TEST(IdleWakeTest, AnImageDecodeWakesAnIdleWindow) {
     react_native_linux::LinuxMountingManager mountingManager;
 

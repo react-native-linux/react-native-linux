@@ -57,6 +57,23 @@ TEST(FrameClockTest, IdleCallbacksSettleThenSkipAndTheNextWakeMeasuresFromTheLas
     EXPECT_FALSE(clock.onFrameCallback(timeAt(80), false).shouldDraw);
 }
 
+/**
+ * #703: a draw that presented nothing is owed another one even on a settled clock, from either frame source, and the
+ * next draw that presents ends the retry.
+ */
+TEST(FrameClockTest, ADrawThatPresentedNothingIsRetriedUntilOnePresents) {
+    FrameClock clock;
+
+    clock.recordDrawOutcome(false);
+
+    EXPECT_TRUE(clock.onFrameCallback(timeAt(0), false).shouldDraw);
+    EXPECT_TRUE(clock.onFallbackTimeout(timeAt(16), false).shouldDraw);
+
+    clock.recordDrawOutcome(true);
+
+    EXPECT_FALSE(clock.onFallbackTimeout(timeAt(32), false).shouldDraw);
+}
+
 TEST(FrameClockTest, AClockThatNeverHadWorkIsAlreadySettled) {
     FrameClock clock;
 

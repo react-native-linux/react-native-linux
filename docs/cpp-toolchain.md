@@ -626,7 +626,8 @@ Two inputs, one flag, and both draw only if `hasPendingWork` is true:
   a producer: `HostTimerRegistry` fires it on its own thread and what it changes arrives as a commit, so an app
   holding a 60 s interval still goes idle. Input needs no signal: the loop takes it on every iteration, drawn or
   not, and input arriving while no callback is armed ends the wait at once. A resize, a chrome change, a pending
-  capture and a discarded content update draw regardless. `IdleWakeTest` proves each producer wakes an idle clock
+  capture and a discarded content update draw regardless, and so does every tick after a draw that presented
+  nothing (`FrameClock::recordDrawOutcome`): that draw already took the damage and armed no callback. `IdleWakeTest` proves each producer wakes an idle clock
   from another thread and that a pending timer or an unchanged editor state does not, and the `idle-wake` and
   `text-input-typing` scenarios prove the window presents nothing while idle. The frame presented after a skip
   starts a new `FrameTiming` run, also when the first update after the skip is discarded, so the idle span is not

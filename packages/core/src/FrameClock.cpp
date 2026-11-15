@@ -58,7 +58,7 @@ std::chrono::nanoseconds FrameClock::pacingPeriod(bool hasDrawn,
 }
 
 FrameClock::Tick FrameClock::onFrameCallback(std::chrono::steady_clock::time_point now, bool hasPendingWork) {
-    if (hasPendingWork) {
+    if (hasPendingWork || isRetryPending_) {
         settleCallbacks_ = 0;
     } else if (settleCallbacks_ < kSettleCallbacks) {
         ++settleCallbacks_;
@@ -75,7 +75,7 @@ FrameClock::Tick FrameClock::onFrameCallback(std::chrono::steady_clock::time_poi
 }
 
 FrameClock::Tick FrameClock::onFallbackTimeout(std::chrono::steady_clock::time_point now, bool hasPendingWork) {
-    if (!hasPendingWork) {
+    if (!hasPendingWork && !isRetryPending_) {
         return Tick{.shouldDraw = false, .deltaMilliseconds = 0.0, .source = Source::Timer, .resumed = false};
     }
 
@@ -86,6 +86,8 @@ FrameClock::Tick FrameClock::onFallbackTimeout(std::chrono::steady_clock::time_p
 
     return tick;
 }
+
+void FrameClock::recordDrawOutcome(bool presented) noexcept { isRetryPending_ = !presented; }
 
 uint64_t FrameClock::callbackTicks() const noexcept { return callbackTicks_; }
 
