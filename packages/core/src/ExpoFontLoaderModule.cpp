@@ -1,5 +1,6 @@
 #include "ExpoFontLoaderModule.h"
 
+#include "ExpoFileSystem.h"
 #include "TextGeometry.h"
 
 #include <ReactCommon/CallInvoker.h>
@@ -30,13 +31,14 @@ void registerFontFiles(const std::string& fontFamily, const std::vector<std::str
     std::vector<std::string> fontPaths;
 
     for (const std::string& localUri : localUris) {
-        std::string fontPath = localUri.starts_with(kFileScheme) ? localUri.substr(kFileScheme.size()) : localUri;
+        const std::filesystem::path fontPath =
+            localUri.starts_with(kFileScheme) ? pathFromFileUri(localUri) : std::filesystem::path(localUri);
 
         if (!std::filesystem::is_regular_file(fontPath)) {
             throw std::runtime_error("Font file '" + localUri + "' doesn't exist");
         }
 
-        fontPaths.push_back(std::move(fontPath));
+        fontPaths.push_back(fontPath.string());
     }
 
     if (!registerApplicationFont(fontFamily, fontPaths)) {

@@ -60,6 +60,27 @@ TEST(ExpoFontLoaderModuleTest, LoadAsyncRegistersAFontFileUnderItsFontFamily) {
         R"([[],"resolved","resolved",["Probe Brand","Probe Path Brand"]])");
 }
 
+/** A `file://` URL is percent-decoded, as `expo-asset` encodes a path with a space; a plain path is not. */
+TEST(ExpoFontLoaderModuleTest, LoadAsyncDecodesAFileUrl) {
+    const std::filesystem::path spacedFont =
+        std::filesystem::temp_directory_path() / ("rnl expo font " + std::to_string(::getpid()) + ".ttf");
+    std::string encodedPath = spacedFont.string();
+
+    for (size_t space = encodedPath.find(' '); space != std::string::npos; space = encodedPath.find(' ', space)) {
+        encodedPath.replace(space, 1, "%20");
+    }
+
+    std::filesystem::copy_file(kItalicFont, spacedFont);
+
+    const std::string trace =
+        fontLoaderTrace("[await settle(fontLoader.loadAsync('Probe Spaced', 'file://" + encodedPath +
+                        "')), await settle(fontLoader.loadAsync('Probe Encoded Path', '" + encodedPath + "'))]");
+
+    std::filesystem::remove(spacedFont);
+
+    EXPECT_EQ(trace, "[\"resolved\",\"rejected: Font file '" + encodedPath + "' doesn't exist\"]");
+}
+
 /** `loadFontFamilyAsync(fontFamily, faces)` registers every face's file under the one `fontFamily`. */
 TEST(ExpoFontLoaderModuleTest, LoadFontFamilyAsyncRegistersEveryFace) {
     EXPECT_EQ(fontLoaderTrace("[await settle(fontLoader.loadFontFamilyAsync('Probe Family', [{ localUri: 'file://" +
