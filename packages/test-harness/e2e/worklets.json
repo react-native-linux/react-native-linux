@@ -3,7 +3,7 @@
   "bundle": "worklets.tsx",
   "ready": "worklets: started",
   "frames": 480,
-  "frameBudget": { "p95Ms": 17.5, "minFrames": 60, "maxJournalledFrames": 40 },
+  "frameBudget": { "p95Ms": 17.5, "minFrames": 60, "maxJournalledFrames": 28 },
   "steps": ["sleep 2000", "click 200 140", "sleep 2000"],
   "expect": [
     "worklets: UI runtime true computed 42, reported on the RN runtime true",

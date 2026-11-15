@@ -1278,7 +1278,7 @@ native frame is requested only by `requestAnimationFrame` (which worklets' `setT
 `setInterval` polyfills are built on), `requestAnimationFrameFinalizer` or `queueMicrotask`. The upstream ask is
 software-mansion/react-native-reanimated#11237 (issue #10845), whose worklets half the patch is; it is deleted on
 the bump that contains it. The `worklets-round-trip` scenario's `maxJournalledFrames` is its proof: an idle window
-journals no frames, and a UI-runtime `setTimeout` started from idle still fires.
+caps the run at 28 journalled frames (measured 20–22, against 388 unpatched), and a UI-runtime `setTimeout` started from idle still fires. pnpm applies `patchedDependencies` only in the workspace that declares it, so an app outside this repository must carry the same patch (pnpm `patchedDependencies` or patch-package) until the upstream ask ships; #681 owns delivering it to apps.
 
 No C++ is patched. Where `Common/cpp` does not build on a third platform, `src/WorkletsLinuxPrefix.h` — the
 counterpart of the package's Android `WorkletsPCH.h`, compiled in as a precompiled prefix — makes up the
