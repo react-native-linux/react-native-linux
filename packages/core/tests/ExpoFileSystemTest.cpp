@@ -1,10 +1,15 @@
 #include "ExpoFileSystem.h"
 
+#include <cmath>
 #include <filesystem>
+#include <future>
 #include <gtest/gtest.h>
+#include <limits>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <thread>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -32,11 +37,27 @@ TEST(ExpoFileSystemPathsTest, TheDocumentDirectoryIsInsideTheApplicationDirector
     const auto set = react_native_linux::fileSystemDirectories("/data/org.example.app", "/cache", "/home/user");
     const auto unset = react_native_linux::fileSystemDirectories("/data/org.example.app", nullptr, "/home/user");
     const auto relative = react_native_linux::fileSystemDirectories("/data/org.example.app", "cache", "/home/user");
+    const auto homeless = react_native_linux::fileSystemDirectories("/data/org.example.app", nullptr, "");
 
     EXPECT_EQ(set.document, fs::path("/data/org.example.app/Documents"));
     EXPECT_EQ(set.cache, fs::path("/cache/org.example.app"));
     EXPECT_EQ(unset.cache, fs::path("/home/user/.cache/org.example.app"));
     EXPECT_EQ(relative.cache, fs::path("/home/user/.cache/org.example.app"));
+    EXPECT_EQ(homeless.document, fs::path("/data/org.example.app/Documents"));
+    EXPECT_EQ(homeless.cache, std::nullopt);
+}
+
+TEST(ExpoFileSystemByteViewTest, AViewsRangeMustBeWholeNonnegativeAndInsideItsBuffer) {
+    using react_native_linux::byteViewRange;
+    constexpr double kInfinity = std::numeric_limits<double>::infinity();
+
+    EXPECT_EQ(byteViewRange(2, 3, 8), std::make_pair(size_t{2}, size_t{3}));
+    EXPECT_EQ(byteViewRange(8, 0, 8), std::make_pair(size_t{8}, size_t{0}));
+    for (const auto& [offset, length] : std::vector<std::pair<double, double>>{
+             {-1, 1}, {1.5, 1}, {std::nan(""), 1}, {kInfinity, 0}, {9, 0}, {0, -1}, {0, 0.5}, {0, kInfinity}, {2, 7}}) {
+        EXPECT_THROW(static_cast<void>(byteViewRange(offset, length, 8)), std::invalid_argument)
+            << offset << ", " << length;
+    }
 }
 
 TEST(ExpoFileSystemPathsTest, FileUrisAndAbsolutePathsNameTheDecodedNormalizedPath) {
@@ -98,11 +119,34 @@ TEST_F(ExpoFileSystemTest, AFileIsCreatedWrittenAppendedReadAndDeleted) {
     react_native_linux::createFile(file, false, true);
     EXPECT_EQ(react_native_linux::readFileBytes(file), "");
 
-    react_native_linux::removeEntry(file);
-    EXPECT_THROW(react_native_linux::removeEntry(file), std::runtime_error);
+    react_native_linux::removeEntry(file, FileSystemEntryKind::File);
+    EXPECT_THROW(react_native_linux::removeEntry(file, FileSystemEntryKind::File), std::runtime_error);
     EXPECT_THROW(static_cast<void>(react_native_linux::readFileBytes(file)), std::runtime_error);
     EXPECT_THROW(static_cast<void>(react_native_linux::readFileBytes(root_)), std::runtime_error);
     EXPECT_THROW(react_native_linux::writeFileBytes(root_ / "missing" / "note.txt", "x", false), std::runtime_error);
+}
+
+TEST_F(ExpoFileSystemTest, AWriteThatDoesNotReachTheFileFails) {
+    EXPECT_THROW(react_native_linux::writeFileBytes("/dev/full", "x", false), std::runtime_error);
+}
+
+TEST_F(ExpoFileSystemTest, AnOperationRechecksWhatIsAtItsPathNow) {
+    const fs::path path = root_ / "entry";
+
+    fs::create_directories(path / "kept");
+    EXPECT_THROW(react_native_linux::removeEntry(path, FileSystemEntryKind::File), std::invalid_argument);
+    EXPECT_THROW(react_native_linux::createFile(path, false, true), std::invalid_argument);
+    EXPECT_TRUE(fs::is_directory(path / "kept"));
+
+    fs::remove_all(path);
+    react_native_linux::writeFileBytes(path, "kept", false);
+    EXPECT_THROW(react_native_linux::removeEntry(path, FileSystemEntryKind::Directory), std::invalid_argument);
+    EXPECT_THROW(react_native_linux::createDirectory(path, false, true, false), std::invalid_argument);
+    react_native_linux::writeFileBytes(root_ / "source.txt", "source", false);
+    EXPECT_THROW(react_native_linux::relocateEntry(root_ / "source.txt", FileSystemEntryKind::File, path,
+                                                   FileSystemEntryKind::Directory, true, true),
+                 std::invalid_argument);
+    EXPECT_EQ(react_native_linux::readFileBytes(path), "kept");
 }
 
 TEST_F(ExpoFileSystemTest, ADirectoryIsCreatedIdempotentlyOverwrittenListedAndDeleted) {
@@ -127,7 +171,7 @@ TEST_F(ExpoFileSystemTest, ADirectoryIsCreatedIdempotentlyOverwrittenListedAndDe
     react_native_linux::createDirectory(directory, false, true, false);
     EXPECT_TRUE(react_native_linux::listDirectory(directory).empty());
 
-    react_native_linux::removeEntry(root_ / "a");
+    react_native_linux::removeEntry(root_ / "a", FileSystemEntryKind::Directory);
     EXPECT_FALSE(react_native_linux::entryExists(directory, FileSystemEntryKind::Directory));
 }
 
@@ -173,6 +217,102 @@ TEST_F(ExpoFileSystemTest, CopyAndMoveLandInADirectoryOrOnAFileAndReplaceOnlyWit
                             false, false),
               root_ / "copy" / "folder");
     EXPECT_EQ(react_native_linux::readFileBytes(root_ / "copy" / "folder" / "source.txt"), "data");
+
+    react_native_linux::writeFileBytes(root_ / "fresh.txt", "fresh", false);
+    relocateEntry(root_ / "fresh.txt", FileSystemEntryKind::File, root_ / "moved.txt", FileSystemEntryKind::File, true,
+                  false);
+    EXPECT_EQ(react_native_linux::readFileBytes(root_ / "moved.txt"), "fresh");
+}
+
+TEST_F(ExpoFileSystemTest, ADirectoryBecomesAnAbsentDestinationAndReplacesAnExistingOneOnlyWithOverwrite) {
+    using react_native_linux::relocateEntry;
+    const fs::path folder = root_ / "folder";
+
+    react_native_linux::createDirectory(folder / "inner", true, false, false);
+    react_native_linux::writeFileBytes(folder / "inner" / "a.txt", "a", false);
+
+    EXPECT_EQ(relocateEntry(folder, FileSystemEntryKind::Directory, root_ / "copied", FileSystemEntryKind::Directory,
+                            false, false),
+              root_ / "copied");
+    EXPECT_EQ(react_native_linux::readFileBytes(root_ / "copied" / "inner" / "a.txt"), "a");
+    EXPECT_EQ(relocateEntry(root_ / "copied", FileSystemEntryKind::Directory, root_ / "renamed",
+                            FileSystemEntryKind::Directory, false, true),
+              root_ / "renamed");
+    EXPECT_FALSE(fs::exists(root_ / "copied"));
+    EXPECT_EQ(react_native_linux::readFileBytes(root_ / "renamed" / "inner" / "a.txt"), "a");
+
+    react_native_linux::writeFileBytes(root_ / "renamed" / "inner" / "stale.txt", "stale", false);
+    EXPECT_THROW(relocateEntry(folder / "inner", FileSystemEntryKind::Directory, root_ / "renamed",
+                               FileSystemEntryKind::Directory, false, false),
+                 std::runtime_error);
+    relocateEntry(folder / "inner", FileSystemEntryKind::Directory, root_, FileSystemEntryKind::Directory, false,
+                  false);
+    react_native_linux::writeFileBytes(folder / "inner" / "a.txt", "replaced", false);
+    EXPECT_EQ(relocateEntry(folder / "inner", FileSystemEntryKind::Directory, root_ / "renamed",
+                            FileSystemEntryKind::Directory, true, false),
+              root_ / "renamed" / "inner");
+    EXPECT_EQ(react_native_linux::readFileBytes(root_ / "renamed" / "inner" / "a.txt"), "replaced");
+    EXPECT_FALSE(fs::exists(root_ / "renamed" / "inner" / "stale.txt"));
+    EXPECT_EQ(relocateEntry(root_ / "inner", FileSystemEntryKind::Directory, root_ / "renamed",
+                            FileSystemEntryKind::Directory, true, true),
+              root_ / "renamed" / "inner");
+    EXPECT_EQ(react_native_linux::readFileBytes(root_ / "renamed" / "inner" / "a.txt"), "a");
+}
+
+TEST_F(ExpoFileSystemTest, AFailedOrSelfReplacementLeavesWhatWasThereIntact) {
+    using react_native_linux::relocateEntry;
+    const fs::path file = root_ / "file.txt";
+    const fs::path outer = root_ / "outer";
+
+    react_native_linux::writeFileBytes(file, "file", false);
+    fs::create_hard_link(file, root_ / "alias.txt");
+    fs::create_directories(outer / "outer");
+    fs::create_directories(root_ / "folder" / "file.txt");
+    react_native_linux::writeFileBytes(root_ / "folder" / "file.txt" / "kept.txt", "kept", false);
+    react_native_linux::writeFileBytes(root_ / "folder" / "outer", "kept", false);
+
+    for (const bool move : {false, true}) {
+        EXPECT_THROW(relocateEntry(file, FileSystemEntryKind::File, file, FileSystemEntryKind::File, true, move),
+                     std::invalid_argument);
+        EXPECT_THROW(
+            relocateEntry(file, FileSystemEntryKind::File, root_ / "alias.txt", FileSystemEntryKind::File, true, move),
+            std::invalid_argument);
+        EXPECT_THROW(relocateEntry(outer / "outer", FileSystemEntryKind::Directory, root_,
+                                   FileSystemEntryKind::Directory, true, move),
+                     std::invalid_argument);
+        EXPECT_THROW(relocateEntry(file, FileSystemEntryKind::File, root_ / "folder", FileSystemEntryKind::Directory,
+                                   true, move),
+                     fs::filesystem_error);
+        EXPECT_THROW(relocateEntry(outer, FileSystemEntryKind::Directory, root_ / "folder",
+                                   FileSystemEntryKind::Directory, true, move),
+                     fs::filesystem_error);
+    }
+
+    EXPECT_EQ(react_native_linux::readFileBytes(file), "file");
+    EXPECT_TRUE(fs::is_directory(outer / "outer"));
+    EXPECT_EQ(react_native_linux::readFileBytes(root_ / "folder" / "file.txt" / "kept.txt"), "kept");
+    EXPECT_EQ(react_native_linux::readFileBytes(root_ / "folder" / "outer"), "kept");
+}
+
+TEST(FileSystemWorkerTest, TasksRunInOrderOffTheCallingThreadAndTheDestructorRunsThoseStillQueued) {
+    std::vector<int> order;
+    std::promise<std::thread::id> firstRan;
+    std::future<std::thread::id> firstThread = firstRan.get_future();
+    { react_native_linux::FileSystemWorker idle; }
+    {
+        react_native_linux::FileSystemWorker worker;
+
+        worker.post([&] {
+            order.push_back(1);
+            firstRan.set_value(std::this_thread::get_id());
+        });
+        EXPECT_NE(firstThread.get(), std::this_thread::get_id());
+        for (int task = 2; task <= 4; ++task) {
+            worker.post([&order, task] { order.push_back(task); });
+        }
+    }
+
+    EXPECT_EQ(order, (std::vector<int>{1, 2, 3, 4}));
 }
 
 } // namespace

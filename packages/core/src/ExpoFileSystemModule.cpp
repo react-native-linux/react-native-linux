@@ -4,7 +4,6 @@
 
 #include <ReactCommon/CallInvoker.h>
 #include <ReactCommon/TurboModule.h>
-#include <ReactCommon/TurboModuleUtils.h>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -17,6 +16,9 @@
 #include <string>
 #include <utility>
 #include <vector>
+
+#include <react/bridging/Bridging.h>
+#include <react/bridging/Promise.h>
 
 namespace react_native_linux {
 
@@ -46,9 +48,68 @@ private:
     std::string bytes_;
 };
 
+/** What an operation that answers nothing settles with. */
+struct Completed {};
+
+/** What `bytes()` settles with: a `Uint8Array` over the bytes read, without copying them. */
+struct FileBytes {
+    std::shared_ptr<ByteBuffer> buffer;
+};
+
+/** What `move()` settles with: settling it points the moved object at its new path, on the JavaScript thread. */
+struct MovedEntry {
+    std::shared_ptr<EntryState> entry;
+    std::filesystem::path target;
+};
+
+} // namespace
+
+} // namespace react_native_linux
+
+template <> struct facebook::react::Bridging<react_native_linux::Completed> {
+    static facebook::jsi::Value toJs(facebook::jsi::Runtime&, const react_native_linux::Completed&) {
+        return facebook::jsi::Value::undefined();
+    }
+};
+
+template <> struct facebook::react::Bridging<react_native_linux::FileBytes> {
+    static facebook::jsi::Value toJs(facebook::jsi::Runtime& runtime, const react_native_linux::FileBytes& bytes) {
+        return runtime.global()
+            .getPropertyAsFunction(runtime, "Uint8Array")
+            .callAsConstructor(runtime, facebook::jsi::ArrayBuffer(runtime, bytes.buffer));
+    }
+};
+
+template <> struct facebook::react::Bridging<react_native_linux::MovedEntry> {
+    static facebook::jsi::Value toJs(facebook::jsi::Runtime&, const react_native_linux::MovedEntry& moved) {
+        moved.entry->path = moved.target;
+
+        return facebook::jsi::Value::undefined();
+    }
+};
+
+namespace react_native_linux {
+
+namespace {
+
+/** The work an asynchronous method hands the worker: native values only, never a JSI one. */
+template <typename Result> using Operation = std::function<Result()>;
+
+/** Reads a call's arguments on the JavaScript thread into the operation that does its file work. */
+template <typename Result>
+using Prepare = std::function<Operation<Result>(Runtime&, const std::shared_ptr<EntryState>&, const Value*, size_t)>;
+
 using Method = std::function<Value(Runtime&, EntryState&, const Value*, size_t)>;
 
-EntryState& entryOf(Runtime& runtime, const Value& value) { return *sharedObjectState<EntryState>(runtime, value); }
+struct Context {
+    std::shared_ptr<facebook::react::CallInvoker> jsInvoker;
+    FileSystemWorker& worker;
+};
+
+/** The instance's state, which the caller holds for the whole call: a getter it runs may `release()` the instance. */
+std::shared_ptr<EntryState> entryOf(Runtime& runtime, const Value& value) {
+    return sharedObjectState<EntryState>(runtime, value);
+}
 
 const Value& argument(const Value* arguments, size_t count, size_t index) {
     static const Value kUndefined;
@@ -84,56 +145,84 @@ std::string contentOf(Runtime& runtime, const Value* arguments, size_t count) {
         return {reinterpret_cast<const char*>(buffer.data(runtime)), buffer.size(runtime)};
     }
 
+    const double byteOffset = object.getProperty(runtime, "byteOffset").asNumber();
+    const double byteLength = object.getProperty(runtime, "byteLength").asNumber();
     facebook::jsi::ArrayBuffer buffer = object.getPropertyAsObject(runtime, "buffer").getArrayBuffer(runtime);
-    const auto offset = static_cast<size_t>(object.getProperty(runtime, "byteOffset").asNumber());
-    const auto length = static_cast<size_t>(object.getProperty(runtime, "byteLength").asNumber());
+    const auto [offset, length] = byteViewRange(byteOffset, byteLength, buffer.size(runtime));
 
     return {reinterpret_cast<const char*>(buffer.data(runtime)) + offset, length};
 }
 
-Value relocate(Runtime& runtime, EntryState& entry, const Value* arguments, size_t count, bool move) {
-    const EntryState& destination = entryOf(runtime, argument(arguments, count, 0));
-    std::filesystem::path target = relocateEntry(entry.path, entry.kind, destination.path, destination.kind,
-                                                 option(runtime, arguments, count, 1, "overwrite"), move);
+/** `copy(destination, options)` and `move(destination, options)`, read before a getter can release the destination. */
+struct Relocation {
+    std::filesystem::path source;
+    FileSystemEntryKind sourceKind;
+    std::filesystem::path destination;
+    FileSystemEntryKind destinationKind;
+    bool overwrite;
 
-    if (move) {
-        entry.path = std::move(target);
+    [[nodiscard]] std::filesystem::path apply(bool move) const {
+        return relocateEntry(source, sourceKind, destination, destinationKind, overwrite, move);
     }
+};
 
-    return Value::undefined();
-}
+Relocation relocationOf(Runtime& runtime, const EntryState& entry, const Value* arguments, size_t count) {
+    const std::shared_ptr<EntryState> destination = entryOf(runtime, argument(arguments, count, 0));
 
-Value bytesOf(Runtime& runtime, const EntryState& entry) {
-    const facebook::jsi::ArrayBuffer buffer(runtime, std::make_shared<ByteBuffer>(readFileBytes(entry.path)));
-
-    return runtime.global().getPropertyAsFunction(runtime, "Uint8Array").callAsConstructor(runtime, buffer);
+    return {.source = entry.path,
+            .sourceKind = entry.kind,
+            .destination = destination->path,
+            .destinationKind = destination->kind,
+            .overwrite = option(runtime, arguments, count, 1, "overwrite")};
 }
 
 void addMethod(SharedObjectMembers& members, const std::string& name, const Method& method) {
     members.emplace_back(name,
                          [method](Runtime& runtime, const Value& thisValue, const Value* arguments, size_t count) {
-                             return method(runtime, entryOf(runtime, thisValue), arguments, count);
+                             const std::shared_ptr<EntryState> entry = entryOf(runtime, thisValue);
+
+                             return method(runtime, *entry, arguments, count);
                          });
 }
 
-/** A method and its asynchronous twin, which settles with what the method returns or rejects with its error. */
-void addSyncAndAsync(SharedObjectMembers& members, const std::string& asyncName, const std::string& syncName,
-                     const Method& method) {
-    addMethod(members, syncName, method);
+/**
+ * A method and its asynchronous twin. The twin reads its arguments on the JavaScript thread, does the file work on
+ * the worker, and settles through an `AsyncPromise`, which hands the result back to the JavaScript thread (#77); an
+ * argument it cannot read rejects the promise.
+ */
+template <typename Result>
+void addSyncAndAsync(SharedObjectMembers& members, const Context& context, const std::string& asyncName,
+                     const std::string& syncName, const Prepare<Result>& prepare) {
+    members.emplace_back(syncName, [prepare](Runtime& runtime, const Value& thisValue, const Value* arguments,
+                                             size_t count) {
+        const std::shared_ptr<EntryState> entry = entryOf(runtime, thisValue);
+
+        return Value(runtime, facebook::react::bridging::toJs(runtime, prepare(runtime, entry, arguments, count)()));
+    });
     members.emplace_back(
-        asyncName, [method](Runtime& runtime, const Value& thisValue, const Value* arguments, size_t count) {
-            return facebook::react::createPromiseAsJSIValue(
-                runtime, [&](Runtime& promiseRuntime, const std::shared_ptr<facebook::react::Promise>& promise) {
+        asyncName, [prepare, context](Runtime& runtime, const Value& thisValue, const Value* arguments, size_t count) {
+            facebook::react::AsyncPromise<Result> promise(runtime, context.jsInvoker);
+            Value promiseObject = promise.get(runtime);
+
+            try {
+                const std::shared_ptr<EntryState> entry = entryOf(runtime, thisValue);
+
+                context.worker.post([promise, operation = prepare(runtime, entry, arguments, count)]() mutable {
                     try {
-                        promise->resolve(method(promiseRuntime, entryOf(promiseRuntime, thisValue), arguments, count));
+                        promise.resolve(operation());
                     } catch (const std::exception& error) {
-                        promise->reject(error.what());
+                        promise.reject(facebook::react::Error(error.what()));
                     }
                 });
+            } catch (const std::exception& error) {
+                promise.reject(facebook::react::Error(error.what()));
+            }
+
+            return promiseObject;
         });
 }
 
-SharedObjectMembers commonMethods() {
+SharedObjectMembers commonMethods(const Context& context) {
     SharedObjectMembers methods;
 
     addMethod(methods, "validatePath", [](Runtime&, EntryState& entry, const Value*, size_t) {
@@ -141,49 +230,65 @@ SharedObjectMembers commonMethods() {
         return Value::undefined();
     });
     addMethod(methods, "delete", [](Runtime&, EntryState& entry, const Value*, size_t) {
-        removeEntry(entry.path);
+        removeEntry(entry.path, entry.kind);
         return Value::undefined();
     });
-    addSyncAndAsync(methods, "copy", "copySync",
-                    [](Runtime& runtime, EntryState& entry, const Value* arguments, size_t count) {
-                        return relocate(runtime, entry, arguments, count, false);
-                    });
-    addSyncAndAsync(methods, "move", "moveSync",
-                    [](Runtime& runtime, EntryState& entry, const Value* arguments, size_t count) {
-                        return relocate(runtime, entry, arguments, count, true);
-                    });
+    addSyncAndAsync<Completed>(
+        methods, context, "copy", "copySync",
+        [](Runtime& runtime, const std::shared_ptr<EntryState>& entry, const Value* arguments, size_t count) {
+            return [relocation = relocationOf(runtime, *entry, arguments, count)] {
+                static_cast<void>(relocation.apply(false));
+                return Completed{};
+            };
+        });
+    addSyncAndAsync<MovedEntry>(
+        methods, context, "move", "moveSync",
+        [](Runtime& runtime, const std::shared_ptr<EntryState>& entry, const Value* arguments, size_t count) {
+            return [entry, relocation = relocationOf(runtime, *entry, arguments, count)] {
+                return MovedEntry{.entry = entry, .target = relocation.apply(true)};
+            };
+        });
 
     return methods;
 }
 
-SharedObjectMembers fileMethods() {
-    SharedObjectMembers methods = commonMethods();
+SharedObjectMembers fileMethods(const Context& context) {
+    SharedObjectMembers methods = commonMethods(context);
 
     addMethod(methods, "create", [](Runtime& runtime, EntryState& entry, const Value* arguments, size_t count) {
         createFile(entry.path, option(runtime, arguments, count, 0, "intermediates"),
                    option(runtime, arguments, count, 0, "overwrite"));
         return Value::undefined();
     });
-    addSyncAndAsync(methods, "text", "textSync", [](Runtime& runtime, EntryState& entry, const Value*, size_t) {
-        return Value(facebook::jsi::String::createFromUtf8(runtime, readFileBytes(entry.path)));
-    });
-    addSyncAndAsync(methods, "base64", "base64Sync", [](Runtime& runtime, EntryState& entry, const Value*, size_t) {
-        return Value(facebook::jsi::String::createFromAscii(runtime, encodeBase64(readFileBytes(entry.path))));
-    });
-    addSyncAndAsync(methods, "bytes", "bytesSync",
-                    [](Runtime& runtime, EntryState& entry, const Value*, size_t) { return bytesOf(runtime, entry); });
-    addSyncAndAsync(methods, "write", "writeSync",
-                    [](Runtime& runtime, EntryState& entry, const Value* arguments, size_t count) {
-                        writeFileBytes(entry.path, contentOf(runtime, arguments, count),
-                                       option(runtime, arguments, count, 1, "append"));
-                        return Value::undefined();
-                    });
+    addSyncAndAsync<std::string>(methods, context, "text", "textSync",
+                                 [](Runtime&, const std::shared_ptr<EntryState>& entry, const Value*, size_t) {
+                                     return [path = entry->path] { return readFileBytes(path); };
+                                 });
+    addSyncAndAsync<std::string>(methods, context, "base64", "base64Sync",
+                                 [](Runtime&, const std::shared_ptr<EntryState>& entry, const Value*, size_t) {
+                                     return [path = entry->path] { return encodeBase64(readFileBytes(path)); };
+                                 });
+    addSyncAndAsync<FileBytes>(methods, context, "bytes", "bytesSync",
+                               [](Runtime&, const std::shared_ptr<EntryState>& entry, const Value*, size_t) {
+                                   return [path = entry->path] {
+                                       return FileBytes{.buffer = std::make_shared<ByteBuffer>(readFileBytes(path))};
+                                   };
+                               });
+    addSyncAndAsync<Completed>(
+        methods, context, "write", "writeSync",
+        [](Runtime& runtime, const std::shared_ptr<EntryState>& entry, const Value* arguments, size_t count) {
+            return [path = entry->path, bytes = contentOf(runtime, arguments, count),
+                    append = option(runtime, arguments, count, 1, "append")] {
+                writeFileBytes(path, bytes, append);
+                return Completed{};
+            };
+        });
 
     return methods;
 }
 
-SharedObjectMembers directoryMethods() {
-    SharedObjectMembers methods = commonMethods();
+SharedObjectMembers directoryMethods(const Context& context) {
+    SharedObjectMembers methods = commonMethods(context);
 
     addMethod(methods, "create", [](Runtime& runtime, EntryState& entry, const Value* arguments, size_t count) {
         createDirectory(entry.path, option(runtime, arguments, count, 0, "intermediates"),
@@ -247,20 +352,25 @@ SharedObjectInitializer initializer(FileSystemEntryKind kind) {
  * `requireNativeModule` (#663, ADR-0004). Its constants are the classes `File` and `Directory` extend, built by
  * `makeSharedObjectClass`, and `documentDirectory` and `cacheDirectory`: `Documents` inside the application directory
  * that holds AsyncStorage's file, `$XDG_DATA_HOME/<app-id>`, and `$XDG_CACHE_HOME/<app-id>`, both created on first
- * use. A headless runtime, whose AsyncStorage is `:memory:`, has neither.
+ * use. A headless runtime, whose AsyncStorage is `:memory:`, has neither, and a process with no absolute cache home
+ * has no `cacheDirectory`.
  *
  * The surface is the part T3 Code calls: existence, size, create, delete, read and write as text, base64 and bytes,
  * copy, move and listing. File handles, downloads, uploads, watching, digests, pickers and previews are absent, so a
  * call to one fails as a call to an undefined function.
  *
- * Threading contract: the JavaScript thread. Every method, the asynchronous ones included, does its file work
- * before it returns; an asynchronous method returns a promise already settled with the result.
+ * Threading contract: every method runs on the JavaScript thread and reads its arguments there. A synchronous method
+ * does its file work before it returns. An asynchronous one copies what it read into native values, posts the work
+ * to `worker`, and returns a pending promise; the worker settles it through the call invoker, and a `move` updates
+ * the instance's path only then, on the JavaScript thread, so no `EntryState` is touched off it. The methods hold
+ * the worker by reference because `TurboModuleRegistry` owns it and destroys it only after the JavaScript thread has
+ * quit, which runs the work still queued.
  */
 class LinuxFileSystemModule final : public facebook::react::TurboModule {
 public:
     LinuxFileSystemModule(std::shared_ptr<facebook::react::CallInvoker> jsInvoker,
-                          std::shared_ptr<KeyValueStore> keyValueStore)
-        : TurboModule("FileSystem", std::move(jsInvoker)), keyValueStore_(std::move(keyValueStore)) {
+                          std::shared_ptr<KeyValueStore> keyValueStore, FileSystemWorker& worker)
+        : TurboModule("FileSystem", std::move(jsInvoker)), keyValueStore_(std::move(keyValueStore)), worker_(worker) {
         methodMap_["getConstants"] = {0, [](Runtime& runtime, TurboModule& turboModule, const Value*, size_t) {
                                           return static_cast<LinuxFileSystemModule&>(turboModule).constants(runtime);
                                       }};
@@ -270,13 +380,15 @@ private:
     Value constants(Runtime& runtime) {
         facebook::jsi::Object constants(runtime);
         const std::filesystem::path databasePath(keyValueStore_->databasePath());
+        const Context context{.jsInvoker = jsInvoker_, .worker = worker_};
 
         constants.setProperty(runtime, "FileSystemFile",
-                              makeSharedObjectClass(runtime, initializer(FileSystemEntryKind::File), fileMethods(),
-                                                    getters(FileSystemEntryKind::File)));
+                              makeSharedObjectClass(runtime, initializer(FileSystemEntryKind::File),
+                                                    fileMethods(context), getters(FileSystemEntryKind::File)));
         constants.setProperty(runtime, "FileSystemDirectory",
                               makeSharedObjectClass(runtime, initializer(FileSystemEntryKind::Directory),
-                                                    directoryMethods(), getters(FileSystemEntryKind::Directory)));
+                                                    directoryMethods(context),
+                                                    getters(FileSystemEntryKind::Directory)));
 
         if (databasePath.is_absolute()) {
             const char* home = std::getenv("HOME");
@@ -284,27 +396,32 @@ private:
                 databasePath.parent_path(), std::getenv("XDG_CACHE_HOME"), home == nullptr ? "" : home);
 
             std::filesystem::create_directories(directories.document);
-            std::filesystem::create_directories(directories.cache);
             constants.setProperty(runtime, "documentDirectory",
                                   facebook::jsi::String::createFromUtf8(
                                       runtime, fileUriFromPath(directories.document, FileSystemEntryKind::Directory)));
-            constants.setProperty(runtime, "cacheDirectory",
-                                  facebook::jsi::String::createFromUtf8(
-                                      runtime, fileUriFromPath(directories.cache, FileSystemEntryKind::Directory)));
+
+            if (directories.cache.has_value()) {
+                std::filesystem::create_directories(directories.cache.value());
+                constants.setProperty(
+                    runtime, "cacheDirectory",
+                    facebook::jsi::String::createFromUtf8(
+                        runtime, fileUriFromPath(directories.cache.value(), FileSystemEntryKind::Directory)));
+            }
         }
 
         return constants;
     }
 
     std::shared_ptr<KeyValueStore> keyValueStore_;
+    FileSystemWorker& worker_;
 };
 
 } // namespace
 
 std::shared_ptr<facebook::react::TurboModule>
 makeExpoFileSystemModule(std::shared_ptr<facebook::react::CallInvoker> jsInvoker,
-                         std::shared_ptr<KeyValueStore> keyValueStore) {
-    return std::make_shared<LinuxFileSystemModule>(std::move(jsInvoker), std::move(keyValueStore));
+                         std::shared_ptr<KeyValueStore> keyValueStore, FileSystemWorker& worker) {
+    return std::make_shared<LinuxFileSystemModule>(std::move(jsInvoker), std::move(keyValueStore), worker);
 }
 
 } // namespace react_native_linux

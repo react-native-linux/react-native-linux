@@ -2,9 +2,9 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <fstream>
 #include <ios>
-#include <iterator>
 #include <stdexcept>
 
 namespace react_native_linux {
@@ -25,6 +25,10 @@ constexpr int kNotAHexDigit = -1;
 constexpr int kDecimalDigitCount = 10;
 
 std::string describe(const std::filesystem::path& path) { return "'" + path.string() + "'"; }
+
+bool isWithin(const std::filesystem::path& directory, const std::filesystem::path& path) {
+    return std::mismatch(directory.begin(), directory.end(), path.begin(), path.end()).first == directory.end();
+}
 
 int hexValue(char character) {
     if (character >= '0' && character <= '9') {
@@ -70,7 +74,10 @@ FileSystemDirectories fileSystemDirectories(const std::filesystem::path& applica
     const std::filesystem::path cacheDirectory =
         configuredCacheHome.is_absolute() ? configuredCacheHome : home / ".cache";
 
-    return {.document = applicationDirectory / "Documents", .cache = cacheDirectory / applicationDirectory.filename()};
+    return {.document = applicationDirectory / "Documents",
+            .cache = cacheDirectory.is_absolute()
+                         ? std::optional<std::filesystem::path>(cacheDirectory / applicationDirectory.filename())
+                         : std::nullopt};
 }
 
 std::filesystem::path pathFromFileUri(std::string_view uri) {
@@ -169,6 +176,17 @@ std::string decodeBase64(std::string_view text) {
     return decoded;
 }
 
+std::pair<size_t, size_t> byteViewRange(double byteOffset, double byteLength, size_t bufferSize) {
+    const auto size = static_cast<double>(bufferSize);
+    const auto isIndex = [size](double value) { return value >= 0 && value <= size && std::trunc(value) == value; };
+
+    if (!isIndex(byteOffset) || !isIndex(byteLength) || byteLength > size - byteOffset) {
+        throw std::invalid_argument("the byte view's offset and length do not lie inside its buffer");
+    }
+
+    return {static_cast<size_t>(byteOffset), static_cast<size_t>(byteLength)};
+}
+
 void validateEntryPath(const std::filesystem::path& path, FileSystemEntryKind kind) {
     if (entryExists(path,
                     kind == FileSystemEntryKind::File ? FileSystemEntryKind::Directory : FileSystemEntryKind::File)) {
@@ -192,6 +210,8 @@ std::optional<std::uintmax_t> fileSize(const std::filesystem::path& path) {
 }
 
 void createFile(const std::filesystem::path& path, bool intermediates, bool overwrite) {
+    validateEntryPath(path, FileSystemEntryKind::File);
+
     if (!overwrite && std::filesystem::exists(path)) {
         throw std::runtime_error("cannot create " + describe(path) + ": it already exists");
     }
@@ -204,6 +224,8 @@ void createFile(const std::filesystem::path& path, bool intermediates, bool over
 }
 
 void createDirectory(const std::filesystem::path& path, bool intermediates, bool overwrite, bool idempotent) {
+    validateEntryPath(path, FileSystemEntryKind::Directory);
+
     if (idempotent && std::filesystem::is_directory(path)) {
         return;
     }
@@ -223,7 +245,9 @@ void createDirectory(const std::filesystem::path& path, bool intermediates, bool
     }
 }
 
-void removeEntry(const std::filesystem::path& path) {
+void removeEntry(const std::filesystem::path& path, FileSystemEntryKind kind) {
+    validateEntryPath(path, kind);
+
     if (std::filesystem::remove_all(path) == 0) {
         throw std::runtime_error("cannot delete " + describe(path) + ": it does not exist");
     }
@@ -236,44 +260,62 @@ std::string readFileBytes(const std::filesystem::path& path) {
         throw std::runtime_error("cannot read " + describe(path) + ": it is not a readable file");
     }
 
-    return {std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
+    std::string bytes(std::filesystem::file_size(path), '\0');
+
+    stream.read(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    bytes.resize(static_cast<size_t>(stream.gcount()));
+
+    return bytes;
 }
 
 void writeFileBytes(const std::filesystem::path& path, std::string_view bytes, bool append) {
     std::ofstream stream(path, std::ios::binary | (append ? std::ios::app : std::ios::trunc));
 
-    if (!stream.is_open()) {
-        throw std::runtime_error("cannot write " + describe(path) + ": it cannot be opened for writing");
-    }
-
     stream.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    stream.close();
+
+    if (stream.fail()) {
+        throw std::runtime_error("cannot write " + describe(path) + ": not every byte reached it");
+    }
 }
 
 std::filesystem::path relocateEntry(const std::filesystem::path& source, FileSystemEntryKind sourceKind,
                                     const std::filesystem::path& destination, FileSystemEntryKind destinationKind,
                                     bool overwrite, bool move) {
-    const std::filesystem::path target =
-        destinationKind == FileSystemEntryKind::Directory ? destination / source.filename() : destination;
-
     if (!entryExists(source, sourceKind)) {
         throw std::runtime_error("cannot relocate " + describe(source) + ": it does not exist");
     }
+
+    validateEntryPath(destination, destinationKind);
 
     if (sourceKind == FileSystemEntryKind::Directory && destinationKind == FileSystemEntryKind::File) {
         throw std::invalid_argument("cannot relocate the directory " + describe(source) + " onto a file");
     }
 
+    const bool intoDestination =
+        destinationKind == FileSystemEntryKind::Directory &&
+        (sourceKind == FileSystemEntryKind::File || std::filesystem::is_directory(destination));
+    const std::filesystem::path target = intoDestination ? destination / source.filename() : destination;
+
     if (std::filesystem::exists(target)) {
+        if (std::filesystem::equivalent(source, target) || isWithin(target, source)) {
+            throw std::invalid_argument("cannot relocate " + describe(source) + " onto itself or what contains it");
+        }
+
         if (!overwrite) {
             throw std::runtime_error("cannot relocate " + describe(source) + ": " + describe(target) +
                                      " already exists");
         }
 
-        std::filesystem::remove_all(target);
+        if (sourceKind == FileSystemEntryKind::Directory && std::filesystem::is_directory(target)) {
+            std::filesystem::remove_all(target);
+        }
     }
 
     if (move) {
         std::filesystem::rename(source, target);
+    } else if (sourceKind == FileSystemEntryKind::File) {
+        std::filesystem::copy_file(source, target, std::filesystem::copy_options::overwrite_existing);
     } else {
         std::filesystem::copy(source, target, std::filesystem::copy_options::recursive);
     }
@@ -291,6 +333,51 @@ std::vector<FileSystemRecord> listDirectory(const std::filesystem::path& path) {
     std::ranges::sort(records, {}, &FileSystemRecord::path);
 
     return records;
+}
+
+FileSystemWorker::~FileSystemWorker() noexcept {
+    {
+        const std::lock_guard<std::mutex> lock(mutex_);
+        stopping_ = true;
+    }
+
+    wake_.notify_one();
+
+    if (thread_.joinable()) {
+        thread_.join();
+    }
+}
+
+void FileSystemWorker::post(Task task) {
+    {
+        const std::lock_guard<std::mutex> lock(mutex_);
+        tasks_.push_back(std::move(task));
+
+        if (!thread_.joinable()) {
+            thread_ = std::thread([this] { runTasks(); });
+        }
+    }
+
+    wake_.notify_one();
+}
+
+void FileSystemWorker::runTasks() {
+    std::unique_lock<std::mutex> lock(mutex_);
+
+    while (true) {
+        wake_.wait(lock, [this] { return stopping_ || !tasks_.empty(); });
+
+        if (tasks_.empty()) {
+            return;
+        }
+
+        const Task task = std::move(tasks_.front());
+
+        tasks_.pop_front();
+        lock.unlock();
+        task();
+        lock.lock();
+    }
 }
 
 } // namespace react_native_linux

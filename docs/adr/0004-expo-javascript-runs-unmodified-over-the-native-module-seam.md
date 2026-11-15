@@ -148,7 +148,9 @@ A native module of ours is a C++ TurboModule registered under the Expo native-mo
 `ExpoHaptics`, `FileSystem`, `ExpoSQLite`, …). Only its factory line goes in `packages/core/src/TurboModuleRegistry.cpp`;
 from the second Expo module on, each module's class lives in its own `packages/core/src/Expo<Name>Module.cpp`, so
 parallel work on two modules does not collide in one file. Upstream reaches it through `createTurboModuleToExpoProxy`,
-so its constants come from `getConstants()` and its functions are its methods.
+so its constants come from `getConstants()` and its functions are its methods. A module whose asynchronous methods do
+their work off the JavaScript thread also gets that thread's owner there: the registry owns `FileSystem`'s
+`FileSystemWorker` and destroys it only after the JavaScript thread has quit, so a method can hold it by reference.
 
 An event is a method of the event's name that takes the listener, which is what the proxy's `addListener` calls, and
 it returns an `EventSubscription`, the shape of React Native's C++ event emitter. The proxy has no `removeListener`,

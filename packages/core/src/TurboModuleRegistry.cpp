@@ -1006,6 +1006,7 @@ TurboModuleRegistry::TurboModuleRegistry(
       activationModel_(std::make_shared<ActivationModel>()),
       linkingModule_(std::make_shared<LinuxLinkingModule>(jsInvoker, activationModel_)),
       keyValueStore_(std::make_shared<KeyValueStore>()), sqliteDatabases_(std::make_unique<SQLiteDatabases>()),
+      fileSystemWorker_(std::make_unique<FileSystemWorker>()),
       i18nModel_(std::make_shared<I18nModel>(localeFromEnvironment(), keyValueStore_)),
       bundleUrl_(std::make_shared<std::string>()), workletsModule_(std::make_shared<LinuxWorkletsModule>(jsInvoker)),
       reanimatedModule_(std::make_shared<LinuxReanimatedModule>(jsInvoker, workletsModule_)),
@@ -1069,8 +1070,8 @@ TurboModuleRegistry::TurboModuleRegistry(
                              [jsInvoker]() { return std::make_shared<LinuxPlatformConstantsModule>(jsInvoker); });
     moduleFactories_.emplace(LinuxExponentConstantsModule::kModuleName,
                              [jsInvoker]() { return std::make_shared<LinuxExponentConstantsModule>(jsInvoker); });
-    moduleFactories_.emplace("FileSystem", [jsInvoker, keyValueStore = keyValueStore_]() {
-        return makeExpoFileSystemModule(jsInvoker, keyValueStore);
+    moduleFactories_.emplace("FileSystem", [jsInvoker, keyValueStore = keyValueStore_, &worker = *fileSystemWorker_]() {
+        return makeExpoFileSystemModule(jsInvoker, keyValueStore, worker);
     });
     // #79: `fetch` and `XMLHttpRequest` reach upstream's C++ Networking module, which this platform only supplies
     // the HTTP client for.

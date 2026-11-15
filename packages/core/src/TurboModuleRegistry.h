@@ -28,6 +28,7 @@ class TurboModule;
 
 namespace react_native_linux {
 
+class FileSystemWorker;
 class HostTimerRegistry;
 class I18nModel;
 class KeyValueStore;
@@ -159,6 +160,7 @@ private:
     std::shared_ptr<LinuxLinkingModule> linkingModule_;
     std::shared_ptr<KeyValueStore> keyValueStore_;
     std::unique_ptr<SQLiteDatabases> sqliteDatabases_;
+    std::unique_ptr<FileSystemWorker> fileSystemWorker_;
     std::shared_ptr<I18nModel> i18nModel_;
     std::shared_ptr<std::string> bundleUrl_;
     std::shared_ptr<LinuxWorkletsModule> workletsModule_;
