@@ -548,9 +548,11 @@ void InputDispatcher::dispatchKeyEvent(const InputEvent& event) {
     // swallowed by the platform, and a composing key is visible with `isComposing` set — react-native-windows
     // #5821 needs a handler to tell a real Enter from the one that commits an IME candidate. There is no return
     // channel from JavaScript on this path, so nothing can cancel what follows; that is the `preventDefault`
-    // deferral in docs/cpp-toolchain.md. An edit earlier in this frame reaches React first, so a handler that
-    // reads its draft on this key sees the change.
-    textInputController_.publishPendingChange();
+    // deferral in docs/cpp-toolchain.md. An edit earlier in this frame reaches React before the next keyDown, so a
+    // handler that reads its draft on that key sees the change; a keyUp drives nothing and keeps the frame's order.
+    if (event.kind == InputEventKind::KeyPress) {
+        textInputController_.publishPendingChange();
+    }
     emitKeyEvent(event, isComposing);
 
     // A composing key is not editor input: the commit is the text, and letting the key edit the buffer too would
