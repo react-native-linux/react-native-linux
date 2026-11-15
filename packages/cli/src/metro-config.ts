@@ -176,31 +176,45 @@ const resolveWithBaselessVariant = <Resolution>(
  * The Metro `resolveRequest` of a linux bundle: the specifier rewrites of `resolveLinuxModuleName` first, Metro's
  * own resolution — whose `linux`, `native`, default extension chain is `resolvePlatformCandidates` — next, and the
  * overlay substitution of `resolveLinuxOverlayForResolvedFile`, or else the package overlay of
- * `resolveLinuxPackageOverlayForResolvedFile`, on whatever file that produced.
+ * `resolveLinuxPackageOverlayForResolvedFile`, on whatever file that produced. A package overlay lives in
+ * `@react-native-linux/core`, so its own imports resolve from the file it replaced, as the package's would, rather
+ * than from core's install location, where pnpm's strict layout holds no copy of the package.
  */
-const createLinuxResolveRequest =
-  (isPackageResolvable: (packageName: string) => boolean) =>
-  <Resolution>(
+const createLinuxResolveRequest = (isPackageResolvable: (packageName: string) => boolean) => {
+  const replacedFileByPackageOverlay = new Map<string, string>();
+
+  return <Resolution>(
     context: LinuxResolutionContext<Resolution>,
     moduleName: string,
     platform: string | null,
   ): Resolution | SourceFileResolution => {
+    const replacedFile = replacedFileByPackageOverlay.get(context.originModulePath ?? "") ?? null;
+    const originContext = replacedFile === null ? context : { ...context, originModulePath: replacedFile };
     const resolution = resolveWithBaselessVariant(
-      (specifier) => context.resolveRequest(context, specifier, platform),
+      (specifier) => context.resolveRequest(originContext, specifier, platform),
       resolveLinuxModuleName(moduleName, platform, isPackageResolvable) ?? moduleName,
       baselessVariantSpecifier(moduleName, context.originModulePath ?? null, platform),
     );
-    const overlayPath =
+    const resolvedFile =
       typeof resolution === "object" &&
       resolution !== null &&
       "filePath" in resolution &&
       typeof resolution.filePath === "string"
-        ? (resolveLinuxOverlayForResolvedFile(resolution.filePath, platform) ??
-          resolveLinuxPackageOverlayForResolvedFile(resolution.filePath, platform))
+        ? resolution.filePath
         : null;
+    const packageOverlayPath =
+      resolvedFile === null ? null : resolveLinuxPackageOverlayForResolvedFile(resolvedFile, platform);
+
+    if (resolvedFile !== null && packageOverlayPath !== null) {
+      replacedFileByPackageOverlay.set(packageOverlayPath, resolvedFile);
+    }
+
+    const overlayPath =
+      resolvedFile === null ? null : (resolveLinuxOverlayForResolvedFile(resolvedFile, platform) ?? packageOverlayPath);
 
     return overlayPath === null ? resolution : { filePath: overlayPath, type: "sourceFile" };
   };
+};
 
 const nativePlatformExtension = "native";
 

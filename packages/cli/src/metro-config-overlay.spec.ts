@@ -110,6 +110,30 @@ describe("createLinuxResolveRequest", () => {
   });
 });
 
+describe("createLinuxResolveRequest for a package overlay's own imports", () => {
+  it("resolves a package overlay's own imports from the file it replaced", () => {
+    const overlayPath = linuxPackageOverlayIndex["expo-modules-core/build/polyfill/index"] ?? "";
+    const origins: unknown[] = [];
+    const context = {
+      resolveRequest: (requestContext: { readonly originModulePath?: string }, name: string): unknown => {
+        origins.push(requestContext.originModulePath);
+
+        return { filePath: name === "./polyfill" ? expoPolyfill("index.js") : name, type: "sourceFile" };
+      },
+    };
+    const resolveRequest = createLinuxResolveRequest(() => false);
+
+    resolveRequest({ ...context, originModulePath: expoPolyfill("../index.js") }, "./polyfill", "linux");
+    resolveRequest(
+      { ...context, originModulePath: overlayPath },
+      "expo-modules-core/src/polyfill/dangerous-internal",
+      "linux",
+    );
+
+    expect(origins).toStrictEqual([expoPolyfill("../index.js"), expoPolyfill("index.js")]);
+  });
+});
+
 const devToolsOrigin = path.join("/app", "node_modules", "react-native", "Libraries", "Core", "setUpReactDevTools.js");
 const devToolsSpecifier = "../../src/private/devsupport/rndevtools/ReactDevToolsSettingsManager";
 

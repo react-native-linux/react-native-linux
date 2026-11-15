@@ -5,13 +5,7 @@
  */
 declare global {
   var expo: {
-    getViewConfig: (
-      moduleName: string,
-      viewName?: string,
-    ) => {
-      readonly directEventTypes: Readonly<Record<string, { readonly registrationName: string }>>;
-      readonly validAttributes: Readonly<Record<string, unknown>>;
-    } | null;
+    getViewConfig: (moduleName: string, viewName?: string) => null;
   };
 }
 

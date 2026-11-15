@@ -74,7 +74,9 @@ resolves `expo-modules-core/build/polyfill/index` in a `linux` bundle to
 `installExpoGlobalPolyfill` (the package's public `src/polyfill/dangerous-internal` export, the call its `index.web`
 variant makes) and then patches the global as below. It is the mechanism `linuxOverlayIndex` uses for
 `react-native`'s own overridden files, and the overlay sits beside those in `@react-native-linux/core`, which declares
-`expo-modules-core` an optional peer. The polyfill then installs when
+`expo-modules-core` an optional peer. `createLinuxResolveRequest` resolves the overlay's own imports from the file it
+replaced, so `expo-modules-core` comes from the app's install as upstream's polyfill would, not from core's, where a
+pnpm install holds no copy of it. The polyfill then installs when
 `expo-modules-core`'s index first evaluates, as on web, before any of its modules reads the global; no entry point
 changes. Without the rule, the `expo-constants` e2e fails with upstream's own
 `TypeError: Cannot read property 'EventEmitter' of undefined`.
@@ -100,22 +102,18 @@ issue lands.
    `requireNativeView` (`requireNativeViewManager`) calls `NativeComponentRegistry.get`, whose view-config provider
    calls `globalThis.expo.getViewConfig`, and the web polyfill threw, so every `requireNativeView` crashed on first
    render: T3 Code's `FrostedCutout`, `SegmentedControl`, `NativePresentation` and `T3ComposerEditor`, and upstream's
-   `expo-image` and `expo-blur`. The patched `getViewConfig` asks the Fabric component registry, through upstream's
-   `__nativeComponentRegistry__hasComponent` that `FabricHost` already binds for `UIManager.hasViewManagerConfig`,
-   whether a component is registered under the host name `requireNativeView` builds,
-   `ViewManagerAdapter_<Module>_<View>`. It is one source of truth for built-in components and autolinked ones
-   alike, and no table to keep beside it.
-   - **Registered**: the answer is an empty view config, so the view takes the base View attributes
-     `createViewConfig` composes in and mounts on its own component. A view's own props and events reach native
-     once its view config names them; that lands with the first registered view that has any (#165's `expo-blur`
-     and `expo-linear-gradient`).
-   - **Not registered**: `null`, which is what upstream's native `getViewConfig` answers for a view that is not
-     linked. Upstream's adapter warns `Unable to get the view config for <View> from module <Module>`, and the
-     view mounts as an empty view that lays out like a View with its children, after the `[component]` line
-     `FabricHost` prints for any name with no component. T3 Code's own views take this path until each has a
-     Linux component.
+   `expo-image` and `expo-blur`. The patched `getViewConfig` answers `null`, which is what upstream's native
+   `getViewConfig` answers for a view that is not linked. Upstream's adapter warns
+   `Unable to get the view config for <View> from module <Module>`, and the view mounts as an empty view that lays out
+   and paints like a View with its children, after the `[component]` line `FabricHost` prints for any name with no
+   component. Every Expo view takes this path today, since none is registered.
+   - **Registered**: the registered answer, with real `validAttributes` and `directEventTypes` from a source that
+     knows the props, lands with #165's first registered Expo view. An empty config would compose only the base View
+     attributes and silently drop every prop of the view's own (`intensity`, `tint`, `source`), which this ADR exists
+     to prevent.
    - Proved by `packages/core/src-linux/expo-modules-core/polyfill/index.linux.spec.ts` and the `expo-native-view`
-     e2e, which renders T3 Code's `FrostedCutout` call through upstream's unmodified `requireNativeViewManager`.
+     e2e, which renders T3 Code's `FrostedCutout` call through upstream's unmodified `requireNativeViewManager` and
+     compares the frame, the child painted inside the fallback view, against a checked-in golden.
 2. **Constructor-backed modules.** `expo-file-system`'s `File.ts` declares
    `class File extends ExpoFileSystem.FileSystemFile` and passes its instances back into native code; `expo-audio`'s
    `AudioPlayer` and `expo-video`'s players follow the same pattern. `createTurboModuleToExpoProxy` copies only a

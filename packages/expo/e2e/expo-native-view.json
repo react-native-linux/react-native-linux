@@ -4,6 +4,11 @@
   "ready": "expo-native-view: child layout",
   "frames": 600,
   "steps": ["sleep 100"],
+  "screenshot": {
+    "golden": "expo-native-view.png",
+    "maxDifferentPixels": 50,
+    "crop": { "left": 10, "top": 10, "width": 140, "height": 100 }
+  },
   "expect": [
     "expo-native-view: hasViewManagerConfig View=true FrostedCutout=false getViewConfig FrostedCutout=null",
     "'Unable to get the view config for %s from module %s', 'FrostedCutout', 'T3NativeControls'",

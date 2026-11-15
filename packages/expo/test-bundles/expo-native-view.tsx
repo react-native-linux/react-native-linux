@@ -21,7 +21,7 @@ const ExpoNativeViewApp = (): React.JSX.Element => {
 
   return (
     <View style={{ flex: 1, padding: 20 }}>
-      <FrostedCutout onLayout={logLayout("FrostedCutout")} style={{ height: 80, padding: 10, width: 120 }}>
+      <FrostedCutout onLayout={logLayout("FrostedCutout")} style={{ backgroundColor: "#3e4451", height: 80, padding: 10, width: 120 }}>
         <View onLayout={logLayout("child")} style={{ backgroundColor: "#61afef", height: 30, width: 40 }} />
       </FrostedCutout>
     </View>
