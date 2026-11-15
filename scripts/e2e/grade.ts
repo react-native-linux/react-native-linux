@@ -199,6 +199,22 @@ const gradeAutomationChannel = (inputs: AutomationChannelInputs): Promise<readon
 /** Omission becomes `--no-decorations`, since cage and weston have no decoration manager; `[]` or a list stands. */
 const resolveWindowFlags = (windowFlags?: readonly string[]): readonly string[] => windowFlags ?? ["--no-decorations"];
 
+/**
+ * Headless wlroots starts its output at 60 Hz and cage takes no mode flag, so a scenario naming `outputRefreshHz`
+ * starts the window behind `wlr-randr`, which sets a 1280x720 custom mode over wlr-output-management first. `--off`
+ * goes first because noble's cage aborts when a configuration re-enables an output still in its layout; see *At
+ * 120 Hz* in docs/cpp-toolchain.md.
+ */
+const resolveCompositorChild = (outputRefreshHz: number | null, windowCommand: readonly string[]): readonly string[] =>
+  outputRefreshHz === null
+    ? windowCommand
+    : [
+        "sh",
+        "-c",
+        `wlr-randr --output HEADLESS-1 --off && wlr-randr --output HEADLESS-1 --on --custom-mode 1280x720@${String(outputRefreshHz)}Hz && exec "$0" "$@"`,
+        ...windowCommand,
+      ];
+
 /** `rnl_inject`'s own exit status for a clean run cut short by the socket disappearing under it. */
 const EXPECTED_CLOSE_STATUS = 1;
 
@@ -257,4 +273,11 @@ const injectAndResolveFailure = async (run: InjectionRun): Promise<string | null
   return resolveInjectionFailure({ failure, status }, run.scenario.expectsExitAfter, run.waitForExpectedClose);
 };
 
-export { gradeArtifacts, gradeAutomationChannel, injectAndResolveFailure, resolveInjectionFailure, resolveWindowFlags };
+export {
+  gradeArtifacts,
+  gradeAutomationChannel,
+  injectAndResolveFailure,
+  resolveCompositorChild,
+  resolveInjectionFailure,
+  resolveWindowFlags,
+};
