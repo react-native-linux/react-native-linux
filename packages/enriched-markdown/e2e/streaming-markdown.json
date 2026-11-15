@@ -3,15 +3,15 @@
   "bundle": "streaming-markdown.tsx",
   "outputRefreshHz": 120,
   "ready": "streaming-markdown: committed",
-  "frames": 960,
+  "frames": 1200,
   "frameBudget": {
     "p50Ms": 8.5,
     "p95Ms": 12.5,
-    "minFrames": 480,
+    "minFrames": 600,
     "maxHangs": 1
   },
-  "steps": ["sleep 6500"],
-  "expect": ["streaming-markdown: rendered 4941 characters"],
+  "steps": ["sleep 8500"],
+  "expect": ["streaming-markdown: rendered 5819 characters, 9 links", "streaming-markdown: kept pace"],
   "screenshot": {
     "golden": "streaming-markdown.png",
     "maxDifferentPixels": 1

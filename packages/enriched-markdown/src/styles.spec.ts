@@ -1,4 +1,4 @@
-import { boxOf, headingElement, resolveStyle, textOf } from "./styles.ts";
+import { boxOf, headingElement, resolveStyle, restyle, spanStyles, textOf } from "./styles.ts";
 import { describe, expect, it } from "vitest";
 
 const FIRST_DEPTH = 1;
@@ -50,5 +50,26 @@ describe("textOf and boxOf", () => {
       marginBottom: 16,
       padding: 16,
     });
+  });
+});
+
+describe("spanStyles", () => {
+  it("styles each inline span from its element, a link underlined unless its style says not", () => {
+    const spans = spanStyles(resolveStyle({}));
+
+    expect(spans["link_open"]).toMatchObject({ color: "#2563EB", textDecorationLine: "underline" });
+    expect(spans["s_open"]).toStrictEqual({ color: "#9CA3AF", textDecorationLine: "line-through" });
+    expect(spanStyles(resolveStyle({ link: { underline: false } }))["link_open"]).toMatchObject({
+      textDecorationLine: "none",
+    });
+  });
+});
+
+describe("restyle", () => {
+  it("keeps the resolved style while a new style object resolves to the same fields", () => {
+    const previous = resolveStyle({ link: { color: "#2563EB" } });
+
+    expect(restyle(previous, { link: { color: "#2563EB" } })).toBe(previous);
+    expect(restyle(previous, { link: { color: "#DC2626" } }).link).toMatchObject({ color: "#DC2626" });
   });
 });

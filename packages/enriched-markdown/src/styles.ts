@@ -87,7 +87,7 @@ const defaultStyle: ResolvedStyle = {
   strikethrough: { color: "#9CA3AF" },
   strong: { fontWeight: "bold" },
   table: { ...bodyText, borderColor: "#E5E7EB", borderWidth: 1, fontSize: 14, lineHeight: 22 },
-  thematicBreak: { backgroundColor: "#E5E7EB", height: 1, marginBottom: 24, marginTop: 24 },
+  thematicBreak: { color: "#E5E7EB", height: 1, marginBottom: 24, marginTop: 24 },
 };
 
 /** Shared, so an omitted `markdownStyle` never invalidates the memoised blocks on the next append. */
@@ -104,6 +104,16 @@ const resolveStyle = (markdownStyle: MarkdownStyle): ResolvedStyle => {
   }
 
   return resolved;
+};
+
+/**
+ * `previous` again when `markdownStyle` resolves to the same fields, so a parent that builds its style object afresh
+ * each render does not re-render every block; otherwise the new resolved style.
+ */
+const restyle = (previous: ResolvedStyle, markdownStyle: MarkdownStyle): ResolvedStyle => {
+  const resolved = resolveStyle(markdownStyle);
+
+  return JSON.stringify(resolved) === JSON.stringify(previous) ? previous : resolved;
 };
 
 /** A heading's element by its ATX depth; markdown has six levels, so anything deeper reads as the last. */
@@ -138,4 +148,17 @@ const boxOf = ({
   padding,
 });
 
-export { boxOf, headingElement, noMarkdownStyle, resolveStyle, textOf };
+/** The span style of each inline token that opens one, read from the resolved markdown style. */
+const spanStyles = ({ code, em, link, strikethrough, strong }: ResolvedStyle): Readonly<Record<string, object>> => ({
+  code_inline: { ...textOf(code), backgroundColor: code.backgroundColor },
+  em_open: textOf(em),
+  link_open: {
+    color: link.color,
+    fontFamily: link.fontFamily,
+    textDecorationLine: link.underline === false ? "none" : "underline",
+  },
+  s_open: { color: strikethrough.color, textDecorationLine: "line-through" },
+  strong_open: textOf(strong),
+});
+
+export { boxOf, headingElement, noMarkdownStyle, resolveStyle, restyle, spanStyles, textOf };

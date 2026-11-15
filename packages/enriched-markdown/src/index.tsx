@@ -1,23 +1,28 @@
 import { Text, View } from "react-native";
-import { boxOf, headingElement, noMarkdownStyle, resolveStyle, textOf } from "./styles.ts";
-import { lexAppended, nothingLexed } from "./lex.ts";
-import { memo, useMemo, useState } from "react";
+import { boxOf, headingElement, noMarkdownStyle, resolveStyle, restyle, spanStyles, textOf } from "./styles.ts";
+import { lexAppended, linksOf, nothingLexed } from "./lex.ts";
+import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 type MarkdownStyle = typeof noMarkdownStyle;
 type ResolvedStyle = ReturnType<typeof resolveStyle>;
-type MarkdownNode = ReturnType<typeof lexAppended>["blocks"][number]["node"];
+type LexedMarkdown = ReturnType<typeof lexAppended>;
+type MarkdownNode = LexedMarkdown["blocks"][number]["node"];
 type LinkPressHandler = (event: { readonly url: string }) => void;
+type LinksChangeHandler = (links: ReturnType<typeof linksOf>) => void;
 
 interface EnrichedMarkdownTextProps {
   readonly containerStyle?: React.ComponentProps<typeof View>["style"];
   readonly markdown: string;
   readonly markdownStyle?: MarkdownStyle;
+  readonly md4cFlags?: { readonly hardSoftBreaks?: boolean };
   readonly onLinkPress?: LinkPressHandler;
+  readonly onLinksChange?: LinksChangeHandler;
   readonly selectable?: boolean;
 }
 
 interface RenderContext {
-  readonly onLinkPress: LinkPressHandler | null;
+  readonly breaks: Readonly<Record<string, string>>;
+  readonly onLinkPress: LinkPressHandler;
   readonly selectable: boolean;
   readonly spans: ReturnType<typeof spanStyles>;
   readonly style: ResolvedStyle;
@@ -28,20 +33,6 @@ type RenderChildren = (nodes: readonly MarkdownNode[], context: RenderContext) =
 const NO_CHILDREN = 0;
 const FIRST_ORDINAL = 1;
 const HEADING_LEVEL_OFFSET = "h".length;
-const breaks: Readonly<Record<string, string>> = { hardbreak: "\n", softbreak: " " };
-
-/** The span style of each inline token that opens one, read from the resolved markdown style. */
-const spanStyles = ({ code, em, link, strikethrough, strong }: ResolvedStyle): Readonly<Record<string, object>> => ({
-  code_inline: { ...textOf(code), backgroundColor: code.backgroundColor },
-  em_open: textOf(em),
-  link_open: {
-    color: link.color,
-    fontFamily: link.fontFamily,
-    textDecorationLine: link.underline === false ? "none" : "underline",
-  },
-  s_open: { color: strikethrough.color, textDecorationLine: "line-through" },
-  strong_open: textOf(strong),
-});
 
 const renderInline = (nodes: readonly MarkdownNode[], context: RenderContext): React.ReactNode =>
   nodes.map(({ children, token }, index) => {
@@ -52,14 +43,14 @@ const renderInline = (nodes: readonly MarkdownNode[], context: RenderContext): R
 
     if (href !== null) {
       return (
-        <Text key={key} onPress={(): void => context.onLinkPress?.({ url: String(href) })} style={spanStyle}>
+        <Text key={key} onPress={(): void => context.onLinkPress({ url: String(href) })} style={spanStyle}>
           {content}
         </Text>
       );
     }
 
     return (
-      breaks[token.type] ??
+      context.breaks[token.type] ??
       (spanStyle ? (
         <Text key={key} style={spanStyle}>
           {content}
@@ -186,7 +177,12 @@ const renderBlock = (node: MarkdownNode, context: RenderContext): React.ReactNod
       return renderCode(node, context);
     }
     case "hr": {
-      return <View style={context.style.thematicBreak} />;
+      const { color, height, marginBottom, marginTop } = context.style.thematicBreak;
+
+      return <View style={{ backgroundColor: color, height, marginBottom, marginTop }} />;
+    }
+    case "reference_definition": {
+      return null;
     }
     default: {
       return renderParagraph(node, context);
@@ -208,6 +204,55 @@ const BlockView = ({
  */
 const Block = memo(BlockView);
 
+/** The latest `value`, read when a handler fires, so a parent's new function each render changes nothing drawn. */
+const useLatest = <Value,>(value: Value): { readonly current: Value } => {
+  const latest = useRef(value);
+
+  useLayoutEffect(() => {
+    latest.current = value;
+  });
+  return latest;
+};
+
+/** The resolved style, the same object while `markdownStyle` resolves to the same fields. */
+const useResolvedStyle = (markdownStyle: MarkdownStyle): ResolvedStyle => {
+  const [style, setStyle] = useState(() => resolveStyle(markdownStyle));
+  const next = restyle(style, markdownStyle);
+
+  if (next !== style) {
+    setStyle(next);
+  }
+  return next;
+};
+
+/** The markdown, lexed by its tail as it streams in. */
+const useLexed = (markdown: string): LexedMarkdown => {
+  const [lexed, setLexed] = useState({ markdown: "", tokens: nothingLexed });
+  const current = lexed.markdown === markdown ? lexed : { markdown, tokens: lexAppended(lexed.tokens, markdown) };
+
+  if (current !== lexed) {
+    setLexed(current);
+  }
+  return current.tokens;
+};
+
+/** Reports the links after a commit and only when they differ from the last report, as the library does. */
+const useLinksChange = (lexed: LexedMarkdown, onLinksChange: LinksChangeHandler | null): void => {
+  const handler = useLatest(onLinksChange);
+  const reported = useRef("");
+  const reports = onLinksChange !== null;
+
+  useLayoutEffect(() => {
+    const links = reports ? linksOf(lexed) : null;
+    const key = JSON.stringify(links);
+
+    if (links !== null && key !== reported.current) {
+      handler.current?.(links);
+    }
+    reported.current = key;
+  }, [handler, lexed, reports]);
+};
+
 /**
  * The Linux `EnrichedMarkdownText` (#639): the library's markdown drawn as React Native `Text` and `View`, so it lays
  * out and paints through the platform's own paragraph pipeline rather than a second native text stack.
@@ -216,24 +261,31 @@ export const EnrichedMarkdownText = ({
   containerStyle,
   markdown,
   markdownStyle = noMarkdownStyle,
+  md4cFlags,
   onLinkPress,
+  onLinksChange,
   selectable = false,
 }: EnrichedMarkdownTextProps): React.ReactNode => {
-  const context = useMemo(() => {
-    const style = resolveStyle(markdownStyle);
+  const linkPress = useLatest(onLinkPress);
+  const style = useResolvedStyle(markdownStyle);
+  const hardSoftBreaks = md4cFlags?.hardSoftBreaks === true;
+  const context = useMemo(
+    () => ({
+      breaks: { hardbreak: "\n", softbreak: hardSoftBreaks ? "\n" : " " },
+      onLinkPress: (event: { readonly url: string }): void => linkPress.current?.(event),
+      selectable,
+      spans: spanStyles(style),
+      style,
+    }),
+    [hardSoftBreaks, linkPress, selectable, style],
+  );
+  const lexed = useLexed(markdown);
 
-    return { onLinkPress: onLinkPress ?? null, selectable, spans: spanStyles(style), style };
-  }, [markdownStyle, onLinkPress, selectable]);
-  const [lexed, setLexed] = useState({ markdown: "", tokens: nothingLexed });
-  const current = lexed.markdown === markdown ? lexed : { markdown, tokens: lexAppended(lexed.tokens, markdown) };
-
-  if (current !== lexed) {
-    setLexed(current);
-  }
+  useLinksChange(lexed, onLinksChange ?? null);
 
   return (
     <View style={containerStyle}>
-      {current.tokens.blocks.map(({ node }, index) => (
+      {lexed.blocks.map(({ node }, index) => (
         // oxlint-disable-next-line react/no-array-index-key -- a streamed block keeps its index; blocks never reorder
         <Block context={context} key={String(index)} node={node} />
       ))}
