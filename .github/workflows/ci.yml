@@ -852,20 +852,23 @@ jobs:
 
       # lavapipe's compiled shaders, which scripts/headless-compositor.ts keeps in build/mesa-shader-cache. A scene's
       # first run in a job compiles them in its first frames after mount, which the frame journal counts as hangs
-      # (#704). The key names the lavapipe build and the Skia that generates every shader. Mesa addresses each entry
-      # by a hash of the shader and its own build, so a shader a change adds or alters is never found in a restored
-      # cache and still compiles in the run that introduces it.
+      # (#704). Mesa addresses each entry by a hash of the shader, its own build and the CPU's features, so a stale
+      # entry can only miss, never be wrong: a shader a change adds or alters still compiles in the run that
+      # introduces it. The last restore key lets a Mesa update start from the previous version's cache.
       - name: Read the lavapipe version
         id: lavapipe
         run: |
           echo "version=$(dpkg -s mesa-vulkan-drivers | sed -n 's/^Version: //p')" >> "$GITHUB_OUTPUT"
 
       - name: Restore the Mesa shader cache
+        id: mesa-shader-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: build/mesa-shader-cache
-          key: rnl-mesa-shader-cache-${{ steps.lavapipe.outputs.version }}-${{ hashFiles('scripts/skia.lock.json') }}-${{ github.run_id }}
-          restore-keys: rnl-mesa-shader-cache-${{ steps.lavapipe.outputs.version }}-${{ hashFiles('scripts/skia.lock.json') }}-
+          key: rnl-mesa-shader-cache-${{ steps.lavapipe.outputs.version }}-${{ github.run_id }}
+          restore-keys: |
+            rnl-mesa-shader-cache-${{ steps.lavapipe.outputs.version }}-
+            rnl-mesa-shader-cache-
 
       # The spec skips itself when weston, lavapipe or the binary is missing, so on a runner the assertion that it
       # did *not* skip is what proves the rig ran at all. Without it an incomplete apt list would pass silently.
@@ -913,6 +916,17 @@ jobs:
       - name: Build rnl_inject
         run: cmake --build build/dev --target rnl_inject
 
+      # When no cache was restored at all, one untimed pass of every hang-gated scenario compiles their shaders, so
+      # the measured pass below never depends on whether a cache existed. Its verdicts and artifacts are discarded.
+      - name: Warm a cold Mesa shader cache
+        if: steps.mesa-shader-cache.outputs.cache-matched-key == ''
+        run: |
+          echo "::notice::No Mesa shader cache was restored; warming it with one untimed pass of the hang-gated scenarios"
+          for scenario in $(jq -r 'select(.frameBudget.maxHangs != null) | .name' packages/*/e2e/*.json); do
+            pnpm e2e --scenario "$scenario" || true
+          done
+          rm -rf build/e2e
+
       # pnpm e2e exits 2 when the compositor, the lavapipe ICD or a binary is missing, so an incomplete apt list
       # fails the job here rather than passing as a silent skip.
       - name: Run the e2e scenarios
@@ -930,8 +944,8 @@ jobs:
           if-no-files-found: warn
 
       - name: Save the Mesa shader cache
-        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: always() && steps.lavapipe.outcome == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: build/mesa-shader-cache
-          key: rnl-mesa-shader-cache-${{ steps.lavapipe.outputs.version }}-${{ hashFiles('scripts/skia.lock.json') }}-${{ github.run_id }}
+          key: rnl-mesa-shader-cache-${{ steps.lavapipe.outputs.version }}-${{ github.run_id }}

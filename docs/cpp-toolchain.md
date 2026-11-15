@@ -7808,11 +7808,13 @@ inside `vkQueuePresentKHR`, 86–137 ms for the first and 34–51 ms for the nex
 both crossed the frame journal's 33.3 ms hang threshold and the scenario failed 14 runs in 20. `buildEnvironment`
 in `scripts/headless-compositor.ts` therefore sets `MESA_SHADER_CACHE_DIR` to `build/mesa-shader-cache`, a cache
 that outlives the run and is shared by the window goldens, the fresh-project smoke test and every scenario. CI
-restores it in the `window` job from the newest main run with the same `mesa-vulkan-drivers` version and
-`scripts/skia.lock.json`, and main saves it after the e2e step. Mesa addresses each entry by a hash of the shader
-and its own build, so a restored cache never satisfies a shader a change adds or alters: that change still pays
-its compile in the run that introduces it. What the cache hides is the compile cost of shaders that already
-shipped, which is the CPU rasterizer's cost and not the renderer's.
+restores it in the `window` job from the newest main run with the same `mesa-vulkan-drivers` version, falling back
+to any earlier version's cache, and main saves it after the e2e step. Mesa addresses each entry by a hash of the
+shader, its own build and the CPU's features, so a stale entry can only miss: a restored cache never satisfies a
+shader a change adds or alters, and that change still pays its compile in the run that introduces it. When no
+cache is restored at all, the job first runs every hang-gated scenario once, untimed, to fill it, so the measured
+pass never depends on a cache existing. What the cache hides is the compile cost of shaders that already shipped,
+which is the CPU rasterizer's cost and not the renderer's.
 
 **Keyboard-focus wait (#304).** A scenario's steps are split at the first `key`/`type` step:
 `scripts/e2e/keyboard-focus.ts`'s `runKeyboardAwareInjection` runs everything before that step through one
