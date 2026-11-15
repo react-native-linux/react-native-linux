@@ -104,9 +104,11 @@ struct EditorSelection {
  * `TextSegmenter`; without one, the code-point fallback above is used.
  *
  * `mostRecentEventCount` is the reconciliation counter React Native's controlled-value contract is built on. It
- * is incremented by every edit this object makes on the user's behalf and never by a props update, and
- * `reconcileProps` applies a `value` from JavaScript only when the count JavaScript echoed back matches the
- * current one — which is exactly what says that JavaScript has seen every edit so far and that its value is
+ * is incremented by every edit this object makes on the user's behalf that changes the text, and never by a props
+ * update. An edit that leaves the text as it was, such as a commit of the pre-edit already shown, does not move it,
+ * as Android's `ReactTextInputTextWatcher` does not: a moved count would need an `onChange` of unchanged text to
+ * reach JavaScript (#683). `reconcileProps` applies a `value` from JavaScript only when the count JavaScript echoed
+ * back matches the current one, which says that JavaScript has seen every edit so far and that its value is
  * therefore not stale. See *TextInput* in docs/cpp-toolchain.md.
  *
  * Threading contract: the frame thread owns this object, like everything else the input dispatcher reaches.
@@ -203,8 +205,8 @@ public:
      * cursor pair is a byte range inside the pre-edit with `-1, -1` meaning the input method wants no cursor
      * shown — in which case the caret goes to the end of the run, which is where every toolkit puts it.
      *
-     * A pre-edit is not an edit: it never moves the event count, because the text JavaScript owns has not
-     * changed until the commit arrives.
+     * A pre-edit that changes the buffer moves the event count, as marked text does on iOS and Android, so a
+     * controlled field's late echo of an earlier pre-edit is stale and dropped rather than adopted.
      */
     bool applyPreedit(const std::string& preedit, int32_t cursorBegin, int32_t cursorEnd);
 
@@ -221,6 +223,8 @@ public:
      * An update whose echoed count is not the current one describes a buffer that has already moved on, and is
      * dropped — that is the whole of the contract, and applying it anyway is react-native-macos#2066 in the
      * other direction: the caret jumping back to where JavaScript last saw it while the user is still typing.
+     * A value equal to the buffer is an echo and changes nothing, so a controlled field's echo of the current
+     * pre-edit leaves the composition running (#683).
      */
     bool reconcileProps(const std::string& propsText, int propsMostRecentEventCount);
 

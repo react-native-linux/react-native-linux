@@ -66,6 +66,8 @@ find_package(Threads REQUIRED)
 find_package(CURL REQUIRED)
 # #23: SQLite is the store behind AsyncStorage (src/AsyncStorage.h) and #638's expo-sqlite (src/ExpoSQLite.h).
 find_package(SQLite3 REQUIRED)
+# #83: Intl is built on the system ICU, the one Hermes' platform_unicode already links; see src/Intl.h.
+find_package(ICU 74 REQUIRED COMPONENTS uc i18n)
 
 add_library(double-conversion INTERFACE)
 target_link_libraries(double-conversion INTERFACE double-conversion::double-conversion)
@@ -875,6 +877,8 @@ add_library(rnl_react_core STATIC
     src/HostTimerRegistry.cpp
     src/I18n.cpp
     src/ImageContent.cpp
+    src/Intl.cpp
+    src/IntlBinding.cpp
     src/InputDispatcher.cpp
     src/InputPipeline.cpp
     src/JsErrorReporter.cpp
@@ -915,6 +919,8 @@ target_link_libraries(rnl_react_core
     PUBLIC
         CURL::libcurl
         SQLite::SQLite3
+        ICU::uc
+        ICU::i18n
         hermesvm
         jsi
         rnl_jsidynamic
