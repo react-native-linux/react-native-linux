@@ -2,17 +2,13 @@
 
 #include <chrono>
 #include <stdexcept>
-#include <string>
-#include <string_view>
 #include <utility>
 
 namespace react_native_linux {
 
 namespace {
 
-[[noreturn]] void throwUnsupported(std::string_view member) {
-    throw std::runtime_error("[Reanimated] " + std::string(member) + " is not supported on Linux yet.");
-}
+constexpr int kUnavailable = -1;
 
 } // namespace
 
@@ -30,20 +26,15 @@ makePlatformDepMethodsHolder(AnimationFrameQueue& frames,
                 return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch())
                     .count();
             },
-        .registerSensor = [](int, int, int, std::function<void(double[], int)>) -> int {
-            throwUnsupported("registerSensor");
-        },
-        .unregisterSensor = [](int) { throwUnsupported("unregisterSensor"); },
-        .setGestureStateFunction = [](int, int) { throwUnsupported("setGestureState"); },
-        .subscribeForKeyboardEvents = [](std::function<void(int, int)>, bool, bool) -> int {
-            throwUnsupported("subscribeForKeyboardEvents");
-        },
-        .unsubscribeFromKeyboardEvents = [](int) { throwUnsupported("unsubscribeFromKeyboardEvents"); },
+        .registerSensor = [](int, int, int, std::function<void(double[], int)>) { return kUnavailable; },
+        .unregisterSensor = [](int) {},
+        .setGestureStateFunction =
+            [](int, int) { throw std::runtime_error("[Reanimated] setGestureState is not supported on Linux yet."); },
+        .subscribeForKeyboardEvents = [](std::function<void(int, int)>, bool, bool) { return kUnavailable; },
+        .unsubscribeFromKeyboardEvents = [](int) {},
         .maybeFlushUIUpdatesQueueFunction = [&frames] { frames.request([](double) {}); },
-        .attachPseudoSelector = [](facebook::react::Tag, reanimated::PseudoSelector,
-                                   std::function<void(bool)>) { throwUnsupported("attachPseudoSelector"); },
-        .detachPseudoSelector = [](facebook::react::Tag,
-                                   reanimated::PseudoSelector) { throwUnsupported("detachPseudoSelector"); },
+        .attachPseudoSelector = [](facebook::react::Tag, reanimated::PseudoSelector, std::function<void(bool)>) {},
+        .detachPseudoSelector = [](facebook::react::Tag, reanimated::PseudoSelector) {},
         .cssCanRouteProperty = {},
         .cssApplyTransition = {},
         .cssRemoveTransition = {},

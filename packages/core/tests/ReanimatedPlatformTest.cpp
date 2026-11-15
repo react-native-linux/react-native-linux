@@ -15,7 +15,8 @@
 
 // Issue #139: Reanimated's platform contract, filled for Linux. Each case drives a member the way
 // ReanimatedModuleProxy does and asserts on what it reaches: the frame queue worklets' UI thread dispatches, the
-// retained scene behind the mounting manager, or the named error a stub throws.
+// retained scene behind the mounting manager, the unavailable answer a desktop gives, or the named error
+// setGestureState throws.
 
 namespace {
 
@@ -28,15 +29,6 @@ constexpr double kSecondFrameTimestamp = 24.0;
 
 reanimated::PlatformDepMethodsHolder holderOver(AnimationFrameQueue& frames) {
     return makePlatformDepMethodsHolder(frames, std::make_shared<react_native_linux::LinuxMountingManager>());
-}
-
-void expectUnsupported(const std::function<void()>& callMember, const std::string& member) {
-    try {
-        callMember();
-        ADD_FAILURE() << member << " did not throw";
-    } catch (const std::runtime_error& error) {
-        EXPECT_EQ(std::string(error.what()), "[Reanimated] " + member + " is not supported on Linux yet.");
-    }
 }
 
 TEST(ReanimatedPlatformTest, RequestRenderDeliversEachTickItsOwnTimestamp) {
@@ -94,21 +86,36 @@ TEST(ReanimatedPlatformTest, MaybeFlushUIUpdatesQueueRequestsAFrame) {
     EXPECT_EQ(frames.dispatchFrame(kFirstFrameTimestamp), 1U);
 }
 
-TEST(ReanimatedPlatformTest, UnimplementedMembersThrowAnErrorNamingThemselves) {
+TEST(ReanimatedPlatformTest, SensorsAndKeyboardReportUnavailableWithoutThrowing) {
     AnimationFrameQueue frames;
     const auto holder = holderOver(frames);
 
-    expectUnsupported([&holder] { holder.registerSensor(0, 0, 0, [](double[], int) {}); }, "registerSensor");
-    expectUnsupported([&holder] { holder.unregisterSensor(0); }, "unregisterSensor");
-    expectUnsupported([&holder] { holder.setGestureStateFunction(0, 0); }, "setGestureState");
-    expectUnsupported([&holder] { holder.subscribeForKeyboardEvents([](int, int) {}, false, false); },
-                      "subscribeForKeyboardEvents");
-    expectUnsupported([&holder] { holder.unsubscribeFromKeyboardEvents(0); }, "unsubscribeFromKeyboardEvents");
-    expectUnsupported(
-        [&holder] { holder.attachPseudoSelector(kAnimatedTag, reanimated::PseudoSelector::Hover, [](bool) {}); },
-        "attachPseudoSelector");
-    expectUnsupported([&holder] { holder.detachPseudoSelector(kAnimatedTag, reanimated::PseudoSelector::Hover); },
-                      "detachPseudoSelector");
+    EXPECT_EQ(holder.registerSensor(0, 0, 0, [](double[], int) { ADD_FAILURE() << "sensor fired"; }), -1);
+    EXPECT_NO_THROW(holder.unregisterSensor(-1));
+    EXPECT_EQ(holder.subscribeForKeyboardEvents([](int, int) { ADD_FAILURE() << "keyboard fired"; }, false, false), -1);
+    EXPECT_NO_THROW(holder.unsubscribeFromKeyboardEvents(-1));
+}
+
+TEST(ReanimatedPlatformTest, PseudoSelectorsAttachAndDetachWithoutEverReportingHover) {
+    AnimationFrameQueue frames;
+    const auto holder = holderOver(frames);
+
+    EXPECT_NO_THROW(holder.attachPseudoSelector(kAnimatedTag, reanimated::PseudoSelector::Hover,
+                                                [](bool) { ADD_FAILURE() << "hover reported"; }));
+    EXPECT_NO_THROW(holder.detachPseudoSelector(kAnimatedTag, reanimated::PseudoSelector::Hover));
+    EXPECT_FALSE(frames.hasPendingRequests());
+}
+
+TEST(ReanimatedPlatformTest, SetGestureStateThrowsAnErrorNamingItself) {
+    AnimationFrameQueue frames;
+    const auto holder = holderOver(frames);
+
+    try {
+        holder.setGestureStateFunction(0, 0);
+        ADD_FAILURE() << "setGestureState did not throw";
+    } catch (const std::runtime_error& error) {
+        EXPECT_EQ(std::string(error.what()), "[Reanimated] setGestureState is not supported on Linux yet.");
+    }
 }
 
 TEST(ReanimatedPlatformTest, CssRoutingMembersAreEmptySoUpstreamRunsEveryAnimationOnItsLoop) {
