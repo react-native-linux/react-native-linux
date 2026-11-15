@@ -18,6 +18,7 @@
 #include <ReactCommon/TurboModuleUtils.h>
 #include <array>
 #include <atomic>
+#include <climits>
 #include <cstring>
 #include <cxxreact/ReactNativeVersion.h>
 #include <functional>
@@ -25,9 +26,11 @@
 #include <jsi/JSIDynamic.h>
 #include <memory>
 #include <optional>
+#include <random>
 #include <spawn.h>
 #include <string>
 #include <sys/utsname.h>
+#include <unistd.h>
 #include <utility>
 #include <vector>
 
@@ -869,6 +872,89 @@ public:
 };
 
 /**
+ * `ExponentConstants` (ADR-0004), the native module upstream's unmodified `expo-constants` finds through
+ * `requireOptionalNativeModule`'s TurboModule fallback, answered as a bare desktop app: no status bar, no manifest
+ * until a linux build embeds the app config, the host name as the device name, and no web view, so the user agent
+ * resolves `null`. `debugMode` is the native build configuration, as iOS reports it. Every field `NativeConstants`
+ * requires in SDK 58 is present except `name`, which upstream's `Constants.ts` strips on every platform.
+ */
+class LinuxExponentConstantsModule final : public facebook::react::TurboModule {
+public:
+    static constexpr std::string_view kModuleName = "ExponentConstants";
+
+    explicit LinuxExponentConstantsModule(std::shared_ptr<facebook::react::CallInvoker> jsInvoker)
+        : TurboModule(std::string(kModuleName), std::move(jsInvoker)), sessionId_(randomUuid()) {
+        methodMap_["getConstants"] = {0, [](facebook::jsi::Runtime& runtime, TurboModule& turboModule,
+                                            const facebook::jsi::Value* /*arguments*/, size_t /*count*/) {
+                                          return constants(runtime,
+                                                           static_cast<LinuxExponentConstantsModule&>(turboModule));
+                                      }};
+        methodMap_["getWebViewUserAgentAsync"] = {0, [](facebook::jsi::Runtime& runtime, TurboModule& /*turboModule*/,
+                                                        const facebook::jsi::Value* /*arguments*/, size_t /*count*/) {
+                                                      return facebook::react::createPromiseAsJSIValue(
+                                                          runtime,
+                                                          [](facebook::jsi::Runtime& /*promiseRuntime*/,
+                                                             const std::shared_ptr<facebook::react::Promise>& promise) {
+                                                              promise->resolve(facebook::jsi::Value::null());
+                                                          });
+                                                  }};
+    }
+
+private:
+#ifdef NDEBUG
+    static constexpr bool kDebugMode = false;
+#else
+    static constexpr bool kDebugMode = true;
+#endif
+
+    static std::string randomUuid() {
+        constexpr std::string_view kHexDigits = "0123456789abcdef";
+        constexpr int kLastHexDigit = 15;
+        constexpr int kVariantDigitCount = 4;
+        constexpr int kFirstVariantDigit = 8;
+        std::random_device randomDevice;
+        std::uniform_int_distribution<int> hexDigit(0, kLastHexDigit);
+        std::string uuid = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx";
+
+        for (char& character : uuid) {
+            if (character == 'x') {
+                character = kHexDigits[hexDigit(randomDevice)];
+            } else if (character == 'y') {
+                character = kHexDigits[kFirstVariantDigit + (hexDigit(randomDevice) % kVariantDigitCount)];
+            }
+        }
+
+        return uuid;
+    }
+
+    static facebook::jsi::Value constants(facebook::jsi::Runtime& runtime, LinuxExponentConstantsModule& module) {
+        std::array<char, HOST_NAME_MAX + 1> hostName{};
+        facebook::jsi::Object constants(runtime);
+
+        // A failed gethostname leaves the zeroed name, an empty string; the size leaves room for the terminator.
+        static_cast<void>(gethostname(hostName.data(), hostName.size() - 1));
+        constants.setProperty(runtime, "appOwnership", facebook::jsi::Value::null());
+        constants.setProperty(runtime, "debugMode", kDebugMode);
+        constants.setProperty(runtime, "deviceName", facebook::jsi::String::createFromUtf8(runtime, hostName.data()));
+        constants.setProperty(runtime, "deviceYearClass", facebook::jsi::Value::null());
+        constants.setProperty(runtime, "executionEnvironment", facebook::jsi::String::createFromAscii(runtime, "bare"));
+        constants.setProperty(runtime, "experienceUrl", facebook::jsi::String::createFromAscii(runtime, ""));
+        constants.setProperty(runtime, "expoRuntimeVersion", facebook::jsi::Value::null());
+        constants.setProperty(runtime, "expoVersion", facebook::jsi::Value::null());
+        constants.setProperty(runtime, "isHeadless", false);
+        constants.setProperty(runtime, "linkingUri", facebook::jsi::String::createFromAscii(runtime, ""));
+        constants.setProperty(runtime, "manifest", facebook::jsi::Value::null());
+        constants.setProperty(runtime, "sessionId", facebook::jsi::String::createFromAscii(runtime, module.sessionId_));
+        constants.setProperty(runtime, "statusBarHeight", 0);
+        constants.setProperty(runtime, "systemFonts", facebook::jsi::Array(runtime, 0));
+
+        return constants;
+    }
+
+    std::string sessionId_;
+};
+
+/**
  * `PlatformColor('name')`, as the one host function a JavaScript `PlatformColorValueTypes.linux.js` needs.
  *
  * It is a global rather than a module method because `PlatformColor` has no TurboModule spec on any platform:
@@ -971,6 +1057,8 @@ TurboModuleRegistry::TurboModuleRegistry(
                              [jsInvoker]() { return std::make_shared<LinuxClipboardModule>(jsInvoker); });
     moduleFactories_.emplace(LinuxPlatformConstantsModule::kModuleName,
                              [jsInvoker]() { return std::make_shared<LinuxPlatformConstantsModule>(jsInvoker); });
+    moduleFactories_.emplace(LinuxExponentConstantsModule::kModuleName,
+                             [jsInvoker]() { return std::make_shared<LinuxExponentConstantsModule>(jsInvoker); });
     // #79: `fetch` and `XMLHttpRequest` reach upstream's C++ Networking module, which this platform only supplies
     // the HTTP client for.
     moduleFactories_.emplace(facebook::react::NetworkingModule::kModuleName, [jsInvoker]() {

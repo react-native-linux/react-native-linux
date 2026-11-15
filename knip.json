@@ -34,6 +34,10 @@
         "tinybench"
       ]
     },
+    "packages/expo": {
+      "project": ["src/**/*.ts"],
+      "ignoreDependencies": ["expo-modules-core"]
+    },
     "packages/gesture-handler": {
       "project": ["src/**/*.ts"],
       "ignore": ["upstream/**"],
