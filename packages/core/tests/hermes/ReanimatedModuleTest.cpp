@@ -318,8 +318,8 @@ TEST_F(ReanimatedModuleTest, AReactReRenderDuringAnAnimationKeepsTheAnimatedTran
 
 /**
  * #140: with nothing left to animate, Reanimated's `stopBackendIfIdle` leaves the backend. The UI runtime here runs
- * no frame loop of its own, so this proves the backend side only, not that a stock UI runtime ever idles: worklets'
- * loaded bundle re-requests a frame from inside every frame, which #671 owns.
+ * no frame loop of its own, so this proves the backend side only. That the UI runtime idles too comes from the worklets
+ * idle patch and reanimated's patch 0005, proved end to end by the reanimated-timing e2e's journalled-frame budget.
  */
 TEST_F(ReanimatedModuleTest, AnIdleAnimationLeavesTheBackend) {
     animateTranslateXOnTheNextFrame(20);
