@@ -10,20 +10,35 @@ import HostGestureDetector, {
 // Reanimated's web jsListener hands a native view's event to the worklet: the handlers read handlerTag at the top
 // level, and a composed handler routes by eventName. The flattening also copies the event, which the UI runtime
 // reads later: the engine reuses an activation's state-change event for the update after it, clearing its oldState.
+// useEvent hands the detector a handler object whose workletEventHandler.worklet is the worklet to run. It is passed
+// on as it is, because the UI runtime runs a worklet by its identity.
+function isWorklet(value: unknown): value is (event: object) => void {
+  return typeof value === 'function';
+}
+
+function workletOf(handler: unknown): ((event: object) => void) | null {
+  if (typeof handler !== 'object' || handler === null || !('workletEventHandler' in handler)) {
+    return null;
+  }
+  const eventHandler: unknown = handler.workletEventHandler;
+  if (typeof eventHandler !== 'object' || eventHandler === null || !('worklet' in eventHandler)) {
+    return null;
+  }
+  return isWorklet(eventHandler.worklet) ? eventHandler.worklet : null;
+}
+
 export function ReanimatedNativeDetector({
   onGestureHandlerReanimatedEvent,
   ...props
 }: RNGestureHandlerDetectorNativeComponentProps) {
-  const { workletEventHandler } = onGestureHandlerReanimatedEvent as unknown as {
-    workletEventHandler: { worklet: (event: object) => void };
-  };
+  const worklet = workletOf(onGestureHandlerReanimatedEvent);
   const dispatch =
     (eventName: string) =>
-    ({ nativeEvent }: { nativeEvent: object }) =>
-      Worklets?.scheduleOnUI(workletEventHandler.worklet, {
-        ...nativeEvent,
-        eventName,
-      });
+    ({ nativeEvent }: { nativeEvent: object }) => {
+      if (worklet) {
+        Worklets?.scheduleOnUI(worklet, { ...nativeEvent, eventName });
+      }
+    };
 
   return (
     <HostGestureDetector
