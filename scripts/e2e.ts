@@ -13,7 +13,8 @@ import {
 import { describeTraceFailures, resolveArtifactPaths, resolveExpectedOutcome } from "./e2e/scenario.ts";
 import { embedScenarioAssets, findExecutable, findLavapipeIcd, resolveScenarioBundle } from "./window-golden.ts";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { gradeArtifacts, gradeAutomationChannel, injectAndResolveFailure, resolveWindowFlags } from "./e2e/grade.ts";
+import { gradeArtifacts, gradeAutomationChannel } from "./e2e/grade.ts";
+import { injectAndResolveFailure, resolveWindowFlags } from "./e2e/drive.ts";
 import {
   isKeyboardFocused,
   planRuns,

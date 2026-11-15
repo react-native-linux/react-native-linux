@@ -1,4 +1,4 @@
-import type { FrameBudget } from "./scenario.ts";
+import type { FrameBudget } from "./frame-budget.ts";
 
 const NANOSECONDS_PER_MILLISECOND = 1_000_000;
 const MILLISECOND_DECIMALS = 2;

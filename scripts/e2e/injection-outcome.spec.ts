@@ -4,7 +4,7 @@ import {
   resolveCompositorChild,
   resolveInjectionFailure,
   resolveWindowFlags,
-} from "./grade.ts";
+} from "./drive.ts";
 import { parseScenario } from "./scenario.ts";
 
 const EXPECTED_CLOSE_STATUS = 1;

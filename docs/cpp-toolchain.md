@@ -8094,7 +8094,7 @@ is measured on real hardware, not here.
 
 **At 120 Hz (#20).** A scenario may name `"outputRefreshHz"`, in whole hertz. cage takes no mode flag and wlroots'
 headless output starts at 60 Hz, but cage implements wlr-output-management, so `resolveCompositorChild` in
-`scripts/e2e/grade.ts` starts the window behind `wlr-randr`, which gives the output a 1280x720 custom mode at that
+`scripts/e2e/drive.ts` starts the window behind `wlr-randr`, which gives the output a 1280x720 custom mode at that
 rate before the window connects. It takes two calls, `--off` and then `--on --custom-mode`. The cage that noble
 ships (0.1.5+20240127, on wlroots 0.17) aborts with `wlr_scene_output_layout_add_output: Assertion
 'solo->scene_output != so' failed` when a configuration re-enables an output that is already in its layout, and

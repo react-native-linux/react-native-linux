@@ -8,7 +8,7 @@ import {
   parseFrameLogSummary,
 } from "./frame-log.ts";
 
-import type { FrameBudget } from "./scenario.ts";
+import type { FrameBudget } from "./frame-budget.ts";
 
 const FRAME_LOG_PATH = "build/e2e/animated-frames/frames.jsonl";
 const BOTH_FAILURES = 2;
