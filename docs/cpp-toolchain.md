@@ -8062,6 +8062,18 @@ at least half its frames within 8.5 ms and 95 % within 12.5 ms, with at most one
 every frame lands on a vblank, and it measures nothing under 8.33 ms, since an output frame here is 8 ms plus a composite. 120 fps on real
 hardware is still open on #20.
 
+`t3-review-diff-120hz.json` (#685) scrolls T3 Code's review diff, 5,098 lines in 42 files with token patches
+arriving as the visible range moves, through `nativeReviewDiffSurface.linux.ts`: React Native rows in a `FlatList`.
+It gates `{"p50Ms": 9.5, "p95Ms": 12.5, "minFrames": 2400, "maxHangs": 6}` on the Debug build CI runs, where five
+runs at load averages of 10 to 27 on 24 cores read p50 8.03–8.07 ms, p95 8.70–9.74 ms and 1 to 5 hangs: the first
+mount, the first token patch, and the paint of freshly colored rows. **The Debug pass flatters the scroll.** Debug
+Hermes delivers each token patch seconds late, so most rows paint as plain text. The same scenario on a Release
+`rnl_window`, where the JavaScript keeps up (first commit 0.28 s, a patch every 25 ms), reads p95 17–44 ms with
+16 to 89 hangs, while `animated-views-120hz` passes beside it at p95 8.9 ms. It is paint: mounted once, with every
+row colored and nothing committed during the scroll, each wheel notch still paints for 13.7 ms (p50) on lavapipe.
+A native view would draw the same glyphs through the same Skia, so #685 keeps the JavaScript view and the paint
+cost is the renderer's to cut.
+
 The recipe for the real-hardware number is the same bundle on a 120 Hz output under Hyprland. **It has never been
 run.** Its measurement is tracked on #20.
 
