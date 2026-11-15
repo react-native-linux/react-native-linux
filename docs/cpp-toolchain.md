@@ -998,9 +998,15 @@ in the unit gate; the tiled predicate's own table, including the GNOME all-edges
 `decoration-content-point.json` reuses the `pointer-offset` fixture under `--force-client-decorations`, clicking
 32 surface points below each of that fixture's original content points, and asserts the same content-relative
 `clientX`/`clientY` the un-decorated scenario asserts — proving the bar's inset reaches the pointer pipeline
-exactly once rather than zero or twice. A golden for the drawn gutter appearing and disappearing with tiling is
-not part of this fix: there is no drawn gutter to diff, per the decision above, so nothing about tiling changes a
-pixel this platform paints.
+exactly once rather than zero or twice. `decoration-inset-client.json` and `decoration-inset-bare.json` replay a
+floating `800x600` configure and then a tiled `960x700` one through `--inject-window-sequence`, and assert on the
+`decorations-target` fixture's trace that the content view's layout and the `didUpdateDimensions` window size
+both settle on the configure minus the bar under client decorations (`800x568`, `960x668`) and on the configure
+itself without them (`800x600`, `960x700`). Each ends with a press two points inside the tiled window's left
+edge, which reaches the content (at `2,268` and `2,300`) and never issues a resize, while
+`window-decorations-requests.json` is the floating counterpart that does. A golden for the drawn gutter appearing
+and disappearing with tiling is not part of this fix: there is no drawn gutter to diff, per the decision above,
+so nothing about tiling changes a pixel this platform paints.
 
 ### The retained scene, and the threads it crosses
 

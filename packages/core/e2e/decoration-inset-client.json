@@ -1,0 +1,17 @@
+{
+  "name": "decoration-inset-client",
+  "bundle": "decorations-target.js",
+  "ready": "decorations-target: committed surface 1",
+  "frames": 600,
+  "windowFlags": ["--force-client-decorations", "--inject-window-sequence", "{800x600}{Tiled:960x700}"],
+  "steps": ["sleep 1500", "click 2 300", "sleep 500"],
+  "expect": [
+    "[rnl-decorations] mode=client",
+    "[rnl-geometry] configure 800x600 maximized=0 fullscreen=0 tiled=0 resizing=0",
+    "decorations-target: layout 800x568 window 800x568",
+    "[rnl-geometry] configure 960x700 maximized=0 fullscreen=0 tiled=1 resizing=0",
+    "decorations-target: layout 960x668 window 960x668",
+    "decorations-target: topPointerDown on content at 2,268"
+  ],
+  "reject": ["[rnl-decorations] resize"]
+}
