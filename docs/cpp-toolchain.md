@@ -1271,9 +1271,18 @@ both come from the installed files at configure time, a bump cannot leave a stal
 reads `package.json` again at test time, so a bump without a reconfigure fails there instead of in worklets' own
 runtime version check. `WORKLETS_FETCH_PREVIEW_ENABLED` is left undefined, as the package's flag file also sets it.
 
-**Patch policy: none.** Nothing under `node_modules` is edited. Where `Common/cpp` does not build on a third
-platform, `src/WorkletsLinuxPrefix.h` — the counterpart of the package's Android `WorkletsPCH.h`, compiled in as a
-precompiled prefix — makes up the difference, and each entry is an upstream ask:
+**Patch policy: one JavaScript patch.** `patches/react-native-worklets@0.12.2.patch`, applied by pnpm's
+`patchedDependencies`, makes the UI runtime's frame loop demand-driven (#671). Stock `nativeFlushQueue` requests the
+next native frame after every frame, so the frame clock never idles once the UI runtime starts. With the patch, a
+native frame is requested only by `requestAnimationFrame` (which worklets' `setTimeout`, `setImmediate` and
+`setInterval` polyfills are built on), `requestAnimationFrameFinalizer` or `queueMicrotask`. The upstream ask is
+software-mansion/react-native-reanimated#11237 (issue #10845), whose worklets half the patch is; it is deleted on
+the bump that contains it. The `worklets-round-trip` scenario's `maxJournalledFrames` is its proof: an idle window
+caps the run at 28 journalled frames (measured 20–22, against 388 unpatched), and a UI-runtime `setTimeout` started from idle still fires. pnpm applies `patchedDependencies` only in the workspace that declares it, so an app outside this repository must carry the same patch (pnpm `patchedDependencies` or patch-package) until the upstream ask ships; #681 owns delivering it to apps.
+
+No C++ is patched. Where `Common/cpp` does not build on a third platform, `src/WorkletsLinuxPrefix.h` — the
+counterpart of the package's Android `WorkletsPCH.h`, compiled in as a precompiled prefix — makes up the
+difference, and each entry is an upstream ask:
 
 - `<algorithm>` (`Tools/JSISerializer.cpp`), `<stdexcept>` (`Tools/FeatureFlags.h`) and `<iterator>`
   (`Tools/WorkletsJSIUtils.cpp`) are used without being included; the Android precompiled header and fbjni supply
@@ -1332,18 +1341,41 @@ are generated from the vendored spec at build time by `scripts/codegen-spec.ts`.
 **The compile-only guard.** Linux defines neither `ANDROID` nor `__APPLE__`, so building `rnl_reanimated` is the
 guard: the native job's `dev` entry builds it on every pull request, React Native and Reanimated bumps included, and
 `next-minor.yml` builds it against the next React Native minor. An upstream two-way platform `#ifdef` fails the
-build instead of an animation. Nothing links the target yet; the module proxy host (#140) will.
+build instead of an animation. `rnl_react_core` links it for the module proxy host (#140).
 
-**Patches:** one, listed with its upstream ask in `packages/reanimated/README.md`. On a platform that is neither
+**Patches:** three, listed with their upstream asks in `packages/reanimated/README.md`. On a platform that is neither
 Android nor Apple, `SynchronouslyUpdateUIPropsFunction` takes Apple's `(int, const folly::dynamic&)` shape, which is
 `IMountingManager::synchronouslyUpdateViewOnUIThread`'s, and `applySynchronousUpdates` hands it the batch the Apple
-way instead of dropping it.
+way instead of dropping it. And `LayoutAnimationsProxy_Legacy::startSurface` reads the mounting coordinator before
+taking its own mutex, the order `pullTransaction` takes them in, and `OperationsLoop` holds the updates registry
+manager weakly, which breaks the ownership cycle that leaked every proxy's Fabric graph (#140).
 
 `makePlatformDepMethodsHolder` (`src/ReanimatedPlatform.*`) fills the platform contract. Its docblock is the one
 table of which members are real (`requestRender` on the frame queue, `getAnimationTimestamp` on `steady_clock`,
 synchronous props to the mounting manager, `maybeFlushUIUpdatesQueue` as a frame request) and which are stubs that
 throw an error naming themselves. `ReanimatedPlatformTest` in `rnl_core_tests` covers every member, inside the
 coverage gate.
+
+**The module proxy host (#140).** `LinuxReanimatedModule` (`src/ReanimatedModule.*`) is the `ReanimatedModule`
+TurboModule. Its `installTurboModule`, which Reanimated's JavaScript calls on import, builds the
+`ReanimatedModuleProxy` over worklets' UI runtime, UI scheduler and frame queue, attaches it to Fabric, which
+registers Reanimated's commit and mount hooks, and installs `__reanimatedModuleProxy`. The `UIManager` comes from the
+runtime's `UIManagerBinding`, and the mounting manager from the `ContextContainer`, where `FabricHost` publishes it.
+
+Reanimated is compiled with `USE_ANIMATION_BACKEND` on, and `ReanimatedModule.cpp` static_asserts it, so its whole
+frame loop is one callback on React Native's shared animation backend. `FabricHost::tickAnimations` runs it each
+frame, the backend applies the props it returns, and that callback is the frame's flush: upstream forbids
+`performOperations` on this path, so the host never calls it. On this path Reanimated's commit hook passes commits
+through and React Native's `AnimationBackendCommitHook` re-applies animated props to a React commit, so the two hooks
+never both write one tree. `ReanimatedModuleTest` in `rnl_core_hermes_tests` covers install, a transform reaching the
+scene with no commit, a React re-render during an animation, Reanimated leaving the backend when no UI-runtime loop
+re-arms it, an unmounted view's registry entries being freed, React commits and registry writes from JavaScript
+racing the frame thread under TSan, and an install that no UI-runtime frame sees half done. The `reanimated-timing`
+e2e scenario runs a stock `useSharedValue` + `withTiming` while the JavaScript thread is held, and compares the
+final frame against a golden.
+
+Worklets' UI runtime requests an animation frame from inside every frame it runs, by upstream design, so once
+Reanimated is installed its backend callback never goes idle and the frame clock ticks every frame. #671 owns that.
 
 ## React Native bump procedure (#58)
 
@@ -8867,7 +8899,7 @@ with the version in a trailing comment; Renovate keeps those SHAs fresh through 
 | `validate` | `ubuntu-24.04` | 15 min | `pnpm validate`: format, types, lint, deadcode, duplication, Vitest with its 100% coverage thresholds, meta files. |
 | `meta` | `ubuntu-24.04` | 10 min | actionlint, typos, shellcheck, shfmt, gitleaks. |
 | `unit` | `ubuntu-24.04` | 30 min | `rnl_core_tests`, the Hermes-free GoogleTest suite for `RetainedScene` and `LinuxMountingManager`, run under `ctest` and gated at 100% line and branch coverage by `scripts/cpp-coverage.ts`. Needs neither Hermes nor Skia. |
-| `native (dev)` | `ubuntu-24.04` | 120 min | The whole C++ toolchain: vendor, configure, build, `rnl_core_hermes_tests` under `ctest`, the four `hello_react` acceptance paths, and the golden-image comparison. |
+| `native (dev)` | `ubuntu-24.04` | 120 min | The whole C++ toolchain: vendor, configure, build, `rnl_core_hermes_tests` under `ctest`, including one shuffled single-process entry (#643), the four `hello_react` acceptance paths, and the golden-image comparison. |
 | `native (asan)` | `ubuntu-24.04` | 120 min | The same build, the same suite and the same four paths under ASan + UBSan, plus `rnl_core_tests` under the `asan-tests` preset (#407). |
 | `native (tsan)` | `ubuntu-24.04` | 120 min | The same build, the same suite and the same four paths under TSan, plus `rnl_core_tests` under the `tsan-tests` preset (#407). |
 | `window` | `ubuntu-24.04` | 120 min | `rnl_window` built and run under `weston --backend=headless` with lavapipe, and the window goldens compared. The only job that reaches the Vulkan swapchain. See *Window goldens*. |

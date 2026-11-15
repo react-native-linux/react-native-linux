@@ -119,12 +119,13 @@ void WindowSession::deliverInput(std::vector<InputEvent> events) {
 
 void WindowSession::tickAnimations(std::chrono::steady_clock::time_point now) {
     ZoneScopedN("animation tick");
-    fabricHost_->tickAnimations(now);
-
-    // The JavaScript half of the same frame: the native animation backend gets `now` directly, and the frame's
-    // `requestAnimationFrame` callbacks get it through the JavaScript thread. Both are driven from here so a
-    // fallback-timeout frame — the only kind an occluded window gets — drives them too.
+    // Worklets' UI jobs and frame callbacks run first, so a `runOnUI` job that starts an animation, such as
+    // Reanimated's `withTiming`, has its first step taken by the animation backend in this frame, not the next.
+    // The JavaScript `requestAnimationFrame` dispatch this also posts runs on the JavaScript thread, concurrently
+    // with the backend either way. Both are driven from here so a fallback-timeout frame — the only kind an occluded
+    // window gets — drives them too.
     reactHost_.dispatchAnimationFrames(now);
+    fabricHost_->tickAnimations(now);
 
     // The mutation an animation step produces lands here, after `recordFrameTick` has already read
     // `hasPendingWork` for this frame and before `takeFrame` consumes the damage it produced, so without this the

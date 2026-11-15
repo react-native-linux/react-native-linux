@@ -31,7 +31,9 @@ void ReanimatedMountHook::shadowTreeDidMount(
   ReanimatedSystraceSection s("ReanimatedMountHook::shadowTreeDidMount");
 
   if constexpr (StaticFeatureFlags::getFlag("USE_ANIMATION_BACKEND")) {
-    // With the animation backend this hook only tracks surface unmounts.
+    // With the animation backend this hook only drains removed nodes and tracks surface unmounts.
+    auto lock = updatesRegistryManager_->lock();
+    updatesRegistryManager_->handleNodeRemovals(*rootShadowNode);
     return;
   }
 

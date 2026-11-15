@@ -65,6 +65,10 @@ std::shared_ptr<worklets::WorkletRuntime> LinuxWorkletsModule::uiWorkletRuntime(
     return proxy_ == nullptr ? nullptr : proxy_->getUIWorkletRuntime();
 }
 
+std::shared_ptr<LinuxUIScheduler> LinuxWorkletsModule::uiScheduler() const { return uiScheduler_; }
+
+AnimationFrameQueue& LinuxWorkletsModule::animationFrames() noexcept { return animationFrames_; }
+
 void LinuxWorkletsModule::invalidate() {
     rnRuntimeStatus_->setDead();
     proxy_.reset();

@@ -35,6 +35,7 @@ class KeyValueStore;
 class LinuxAppearanceModule;
 class LinuxDeviceInfoModule;
 class LinuxLinkingModule;
+class LinuxReanimatedModule;
 class LinuxWorkletsModule;
 class SQLiteDatabases;
 
@@ -138,6 +139,9 @@ public:
      */
     LinuxWorkletsModule& worklets() noexcept;
 
+    /** react-native-reanimated's host (#140), which `ReactHost` invalidates before worklets. */
+    LinuxReanimatedModule& reanimated() noexcept;
+
     void install(facebook::jsi::Runtime& runtime);
 
     /**
@@ -163,6 +167,7 @@ private:
     std::shared_ptr<I18nModel> i18nModel_;
     std::shared_ptr<std::string> bundleUrl_;
     std::shared_ptr<LinuxWorkletsModule> workletsModule_;
+    std::shared_ptr<LinuxReanimatedModule> reanimatedModule_;
     std::shared_ptr<std::atomic<bool>> reloadRequested_;
     std::unordered_map<std::string_view, ModuleFactory> moduleFactories_;
 };

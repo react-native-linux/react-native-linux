@@ -59,7 +59,8 @@ class OperationsLoop : public std::enable_shared_from_this<OperationsLoop> {
   const std::shared_ptr<worklets::UIScheduler> uiScheduler_;
   const RequestRenderFunction requestRender_;
   const GetAnimationTimestampFunction getTimestamp_;
-  const std::shared_ptr<UpdatesRegistryManager> updatesRegistryManager_;
+  // Weak: the manager owns the CSS registries, which own this loop.
+  const std::weak_ptr<UpdatesRegistryManager> updatesRegistryManager_;
 
   mutable std::mutex queueMutex_;
   std::vector<ScheduledOperation> scheduledOperations_;

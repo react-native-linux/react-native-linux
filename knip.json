@@ -26,6 +26,7 @@
         "@babel/runtime",
         "@react-native-linux/expo",
         "@react-native-linux/gesture-handler",
+        "@react-native-linux/reanimated",
         "deep-equal",
         "flow-enums-runtime",
         "jest-diff",
@@ -43,6 +44,10 @@
       "project": ["src/**/*.ts"],
       "ignore": ["upstream/**"],
       "ignoreDependencies": ["@egjs/hammerjs", "hoist-non-react-statics", "invariant"]
+    },
+    "packages/reanimated": {
+      "project": ["src/**/*.ts"],
+      "ignoreDependencies": ["react-native-is-edge-to-edge"]
     }
   }
 }
