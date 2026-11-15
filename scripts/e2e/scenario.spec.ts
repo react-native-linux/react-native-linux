@@ -118,6 +118,12 @@ describe("parseScenario field rejections", () => {
     expect(() => parseScenario(withoutName, "fixture.json")).toThrow('fixture.json: "name" must be a non-empty string');
   });
 
+  it.each([".", "..", "nested/name", "/absolute", "trailing/"])("rejects the scenario name %j", (name) => {
+    expect(() => parseScenario({ ...validScenario, name }, "fixture.json")).toThrow(
+      'fixture.json: "name" must be a single path segment',
+    );
+  });
+
   it("rejects an empty string field", () => {
     expect(() => parseScenario({ ...validScenario, bundle: "" }, "fixture.json")).toThrow(
       'fixture.json: "bundle" must be a non-empty string',
