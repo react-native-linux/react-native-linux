@@ -2,7 +2,7 @@
   "name": "expo-constants",
   "bundle": "expo-constants.tsx",
   "ready": "expo-constants: appOwnership=null debugMode=true deviceYearClass=null easConfig=null executionEnvironment=\"bare\" experienceUrl=\"\" expoConfig=null expoGoConfig=null expoRuntimeVersion=null expoVersion=null getWebViewUserAgentAsync=function isHeadless=false linkingUri=\"\" manifest=null manifest2=null sessionId=uuid statusBarHeight=0 systemFonts=[] deviceName=true userAgent=null eventEmitter=pong",
-  "frames": 120,
+  "frames": 600,
   "steps": ["sleep 100"],
   "expect": [
     "expo-constants: appOwnership=null debugMode=true deviceYearClass=null easConfig=null executionEnvironment=\"bare\" experienceUrl=\"\" expoConfig=null expoGoConfig=null expoRuntimeVersion=null expoVersion=null getWebViewUserAgentAsync=function isHeadless=false linkingUri=\"\" manifest=null manifest2=null sessionId=uuid statusBarHeight=0 systemFonts=[] deviceName=true userAgent=null eventEmitter=pong"
