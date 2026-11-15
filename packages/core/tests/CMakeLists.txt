@@ -326,12 +326,14 @@ target_sources(rnl_core_tests PRIVATE KeymapLayoutTest.cpp)
 target_link_libraries(rnl_core_tests PRIVATE PkgConfig::RNL_TEST_XKBCOMMON)
 
 # #23: the SQLite store behind AsyncStorage, against files in the test's temporary directory; #72's I18nManager
-# choices persist in it.
+# choices persist in it. #638: expo-sqlite's connections and their worker thread.
 target_sources(rnl_core_tests
     PRIVATE
         AsyncStorageTest.cpp
+        ExpoSQLiteTest.cpp
         I18nTest.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../src/AsyncStorage.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src/ExpoSQLite.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../src/I18n.cpp)
 target_link_libraries(rnl_core_tests PRIVATE SQLite::SQLite3)
 target_compile_options(rnl_core_tests PRIVATE -Wall -Wextra -fexceptions -frtti)
