@@ -1,4 +1,5 @@
 import {
+  OVERLAY_DIRECTORY_NAME,
   T3CODE_REVISION,
   buildPairingLink,
   describeForeignCheckout,
@@ -45,7 +46,7 @@ const repositoryRoot = path.resolve(import.meta.dirname, "..");
 const artifactsDirectory = path.join(repositoryRoot, "build", "e2e", SCENARIO_NAME);
 const fixtureDirectory = path.join(repositoryRoot, "build", "t3code");
 const bundlePath = path.join(fixtureDirectory, "index.linux.bundle.js");
-const overlayDirectory = path.join(fixtureDirectory, "overlays");
+const overlayDirectory = path.join(fixtureDirectory, OVERLAY_DIRECTORY_NAME);
 const checkout = path.resolve(argv[CHECKOUT_ARGUMENT_INDEX] ?? env["T3CODE_ROOT"] ?? "");
 const mobileRoot = path.join(checkout, "apps", "mobile");
 const serverEntry = path.join(checkout, "apps", "server", "src", "bin.ts");

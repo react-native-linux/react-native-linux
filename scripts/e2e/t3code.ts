@@ -67,10 +67,17 @@ const overlayPackArguments = (
  * Why the fixture refuses to modify `checkout`, or null when its real path lies inside `fixtureDirectory`. Adding the
  * overlays rewrites the checkout's package.json and lockfile, so it must be the fixture's own copy of T3 Code.
  */
+/** The directory under the fixture directory that receives the packed overlays, emptied before each run. */
+const OVERLAY_DIRECTORY_NAME = "overlays";
+
 const describeForeignCheckout = (checkout: string, fixtureDirectory: string): string | null => {
   const realFixtureDirectory = realpathSync(fixtureDirectory);
   const realCheckout = realpathSync(checkout);
   const relativeCheckout = path.relative(realFixtureDirectory, realCheckout);
+
+  if (`${relativeCheckout}${path.sep}`.startsWith(`${OVERLAY_DIRECTORY_NAME}${path.sep}`)) {
+    return `${checkout} resolves to ${realCheckout}, inside the overlay directory the fixture empties before each run. Clone T3 Code into ${path.join(fixtureDirectory, "checkout")} and pass that.`;
+  }
 
   return relativeCheckout !== "" && !relativeCheckout.startsWith("..")
     ? null
@@ -94,6 +101,7 @@ const overlayInstallArguments = (tarballs: readonly string[]): readonly string[]
 export {
   T3CODE_REVISION,
   buildPairingLink,
+  OVERLAY_DIRECTORY_NAME,
   describeForeignCheckout,
   gradeWindowRun,
   overlayInstallArguments,

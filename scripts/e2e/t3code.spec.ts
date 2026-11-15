@@ -1,4 +1,5 @@
 import {
+  OVERLAY_DIRECTORY_NAME,
   T3CODE_REVISION,
   buildPairingLink,
   describeForeignCheckout,
@@ -142,11 +143,13 @@ describe("describeForeignCheckout", () => {
     expect(describeForeignCheckout(link, fixtureDirectory)).toContain(`${link} resolves to ${outside}, outside`);
   });
 
-  it("refuses the fixture directory itself and a sibling whose name only starts like it", () => {
-    const sibling = `${fixtureDirectory}-copy`;
+  it("refuses the fixture directory itself, a sibling whose name only starts like it, and the overlay directory", () => {
+    const [sibling, inOverlays] = [`${fixtureDirectory}-copy`, path.join(fixtureDirectory, OVERLAY_DIRECTORY_NAME)];
 
     mkdirSync(sibling);
+    mkdirSync(inOverlays);
 
+    expect(describeForeignCheckout(inOverlays, fixtureDirectory)).toContain("inside the overlay directory");
     expect(describeForeignCheckout(fixtureDirectory, fixtureDirectory)).toContain("outside");
     expect(describeForeignCheckout(sibling, fixtureDirectory)).toContain("outside");
   });
