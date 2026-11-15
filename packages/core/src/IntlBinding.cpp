@@ -64,7 +64,21 @@ jsi::Value callGlobal(jsi::Runtime& runtime, const char* functionName, const jsi
     return runtime.global().getPropertyAsFunction(runtime, functionName).call(runtime, argument);
 }
 
+/** ECMA-262's `ToNumber`, which throws on a BigInt where `Number()` converts it: `Math.max` of one value is it. */
 double toNumber(jsi::Runtime& runtime, const jsi::Value& value) {
+    if (value.isNumber()) {
+        return value.getNumber();
+    }
+
+    return runtime.global()
+        .getPropertyAsObject(runtime, "Math")
+        .getPropertyAsFunction(runtime, "max")
+        .call(runtime, value)
+        .getNumber();
+}
+
+/** ECMA-402's `ToIntlMathematicalValue` as a double, in which a BigInt or a long decimal string loses digits (#682). */
+double toIntlMathematicalValue(jsi::Runtime& runtime, const jsi::Value& value) {
     return value.isNumber() ? value.getNumber() : callGlobal(runtime, "Number", value).getNumber();
 }
 
@@ -76,7 +90,10 @@ std::uint64_t toLength(jsi::Runtime& runtime, const jsi::Value& value) {
     return std::isnan(length) ? 0 : static_cast<std::uint64_t>(std::clamp(std::trunc(length), 0.0, kMaximumLength));
 }
 
-/** ECMA-402's `CanonicalizeLocaleList` up to the canonicalization itself: a string, or a list of strings. */
+/**
+ * ECMA-402's `CanonicalizeLocaleList` up to the canonicalization itself: a string, or a list of strings, each
+ * validated before the next element is read.
+ */
 std::vector<std::string> readLocales(jsi::Runtime& runtime, const jsi::Value& locales) {
     if (locales.isUndefined()) {
         return {};
@@ -112,6 +129,8 @@ std::vector<std::string> readLocales(jsi::Runtime& runtime, const jsi::Value& lo
         }
 
         tags.push_back(element.toString(runtime).utf8(runtime));
+        translatingErrors<std::vector<std::string>>(
+            runtime, [&tags]() { return canonicalizeLocaleList(std::span(&tags.back(), 1)); });
     }
 
     return tags;
@@ -221,17 +240,20 @@ jsi::Object installConstructor(jsi::Runtime& runtime, jsi::Object& intl, const s
         });
 
     // Hermes refuses `new` on a JSI host function ("This function cannot be used as a constructor"), so the
-    // constructor is a plain function that returns what the host function made, which `new` then yields. It hands
-    // over its own `prototype`, so no host closure holds a JavaScript object.
+    // constructor is a plain function that returns what the host function made, which `new` then yields. It takes
+    // the prototype from `new.target` as `OrdinaryCreateFromConstructor` does, so a subclass keeps its own, and the
+    // JavaScript closure holds the intrinsic one, so no host closure holds a JavaScript object.
     const jsi::Function constructor =
         runtime.global()
             .getPropertyAsFunction(runtime, "Function")
-            .callAsConstructor(runtime, "create",
-                               "return function " + name + "(locales, options) { return create(locales, options, " +
-                                   name + ".prototype); };")
+            .callAsConstructor(runtime, "create", "intrinsicPrototype",
+                               "return function " + name + "(locales, options) { const prototype = (new.target || " +
+                                   name +
+                                   ").prototype; return create(locales, options, Object(prototype) === "
+                                   "prototype ? prototype : intrinsicPrototype); };")
             .asObject(runtime)
             .asFunction(runtime)
-            .call(runtime, create)
+            .call(runtime, create, prototype)
             .asObject(runtime)
             .asFunction(runtime);
 
@@ -372,8 +394,8 @@ void installIntl(jsi::Runtime& runtime) {
         },
         [](jsi::Runtime& runtime, const IntlNumberFormat& format, const jsi::Value* arguments,
            size_t count) -> jsi::Value {
-            return jsi::String::createFromUtf8(runtime,
-                                               format.format(toNumber(runtime, argumentAt(arguments, count, 0))));
+            return jsi::String::createFromUtf8(
+                runtime, format.format(toIntlMathematicalValue(runtime, argumentAt(arguments, count, 0))));
         });
 
     installConstructor<IntlCollator>(
@@ -383,8 +405,10 @@ void installIntl(jsi::Runtime& runtime) {
         },
         [](jsi::Runtime& runtime, const IntlCollator& collator, const jsi::Value* arguments,
            size_t count) -> jsi::Value {
-            return collator.compare(argumentAt(arguments, count, 0).toString(runtime).utf8(runtime),
-                                    argumentAt(arguments, count, 1).toString(runtime).utf8(runtime));
+            const std::string left = argumentAt(arguments, count, 0).toString(runtime).utf8(runtime);
+            const std::string right = argumentAt(arguments, count, 1).toString(runtime).utf8(runtime);
+
+            return collator.compare(left, right);
         });
 
     intl.setProperty(runtime, "getCanonicalLocales",

@@ -6,8 +6,10 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <set>
+#include <unicode/locid.h>
 #include <unicode/ucal.h>
 #include <unicode/ucurr.h>
 #include <unicode/udatpg.h>
@@ -74,6 +76,30 @@ std::string toUtf8(std::u16string_view text) {
     });
 }
 
+bool isAsciiLetter(char character) { return std::isalpha(static_cast<unsigned char>(character)) != 0; }
+
+std::string asciiLowercase(std::string_view text) {
+    std::string lowercase(text);
+
+    std::ranges::transform(lowercase, lowercase.begin(), [](char character) {
+        return static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
+    });
+
+    return lowercase;
+}
+
+/**
+ * ECMA-402's locale grammar starts with a language subtag of 2, 3 or 5 to 8 letters, where ICU also accepts a
+ * private use (`x-private`) or grandfathered (`i-klingon`) tag.
+ */
+bool startsWithLanguageSubtag(std::string_view tag) {
+    const std::string_view language = tag.substr(0, tag.find('-'));
+    constexpr std::size_t kMaximumLanguageLength = 8;
+
+    return language.size() >= 2 && language.size() != 4 && language.size() <= kMaximumLanguageLength &&
+           std::ranges::all_of(language, isAsciiLetter);
+}
+
 std::string localeIdFromTag(const std::string& tag) {
     int32_t parsedLength = 0;
     std::string localeId =
@@ -81,19 +107,25 @@ std::string localeIdFromTag(const std::string& tag) {
             return uloc_forLanguageTag(tag.c_str(), buffer, capacity, &parsedLength, status);
         });
 
-    if (tag.empty() || parsedLength != static_cast<int32_t>(tag.size())) {
+    if (!startsWithLanguageSubtag(tag) || parsedLength != static_cast<int32_t>(tag.size())) {
         throw IntlRangeError(std::string(kInvalidLocale));
     }
 
     return localeId;
 }
 
+/** With CLDR's alias replacement, which only ICU's C++ `Locale::canonicalize` applies: `sh` is `sr-Latn`. */
 std::string canonicalTag(const std::string& tag) {
-    const std::string localeId = localeIdFromTag(tag);
+    icu::Locale locale(localeIdFromTag(tag).c_str());
+    UErrorCode status = U_ZERO_ERROR;
 
-    return readIcuString<char>(kInvalidLocale, [&localeId](char* buffer, int32_t capacity, UErrorCode* status) {
-        return uloc_toLanguageTag(localeId.c_str(), buffer, capacity, true, status);
-    });
+    locale.canonicalize(status);
+
+    std::string canonical = locale.toLanguageTag<std::string>(status);
+
+    requireSuccess(status, kInvalidLocale);
+
+    return canonical;
 }
 
 /** With the legacy aliases, such as `zh_TW` and `sr_RS`, which ICU's plain list leaves out though it has data. */
@@ -186,6 +218,27 @@ std::optional<std::string> canonicalTimeZone(std::string_view timeZone) {
     const std::string canonical = toUtf8({buffer.data(), static_cast<std::size_t>(length)});
 
     return canonical == "Etc/UTC" || canonical == "Etc/GMT" ? "UTC" : canonical;
+}
+
+/** ECMA-402 matches zone names without ASCII case, where ICU's lookup is exact: `europe/berlin` is `Europe/Berlin`. */
+std::string timeZoneIdIgnoringCase(const std::string& timeZone) {
+    static const std::map<std::string, std::string, std::less<>> idsByLowercase = [] {
+        UErrorCode status = U_ZERO_ERROR;
+        const std::unique_ptr<UEnumeration, decltype(&uenum_close)> zones(ucal_openTimeZones(&status), &uenum_close);
+        std::map<std::string, std::string, std::less<>> ids;
+
+        for (const char* id = uenum_next(zones.get(), nullptr, &status); id != nullptr;
+             id = uenum_next(zones.get(), nullptr, &status)) {
+            ids.emplace(asciiLowercase(id), id);
+        }
+
+        requireSuccess(status, "ICU has no list of time zones");
+
+        return ids;
+    }();
+    const auto id = idsByLowercase.find(asciiLowercase(timeZone));
+
+    return id == idsByLowercase.end() ? timeZone : id->second;
 }
 
 std::string numberingSystem(const std::string& localeId) {
@@ -287,16 +340,20 @@ constexpr std::array kTimeZoneNameChoices = {Choice{"short", "z"},        Choice
                                              Choice{"shortOffset", "O"},  Choice{"longOffset", "OOOO"},
                                              Choice{"shortGeneric", "v"}, Choice{"longGeneric", "vvvv"}};
 
+constexpr std::u16string_view kHourLetters = u"KhHk";
+
 struct Component {
     std::string_view name;
     std::span<const Choice> choices;
+    /** The pattern letters ICU writes the component with. */
+    std::u16string_view letters;
 };
 
 constexpr std::array kComponents = {
-    Component{"weekday", kWeekdayChoices}, Component{"year", kYearChoices},
-    Component{"month", kMonthChoices},     Component{"day", kDayChoices},
-    Component{"hour", kHourChoices},       Component{"minute", kMinuteChoices},
-    Component{"second", kSecondChoices},   Component{"timeZoneName", kTimeZoneNameChoices},
+    Component{"weekday", kWeekdayChoices, u"Ec"},  Component{"year", kYearChoices, u"y"},
+    Component{"month", kMonthChoices, u"ML"},      Component{"day", kDayChoices, u"d"},
+    Component{"hour", kHourChoices, kHourLetters}, Component{"minute", kMinuteChoices, u"m"},
+    Component{"second", kSecondChoices, u"s"},     Component{"timeZoneName", kTimeZoneNameChoices, u"zOv"},
 };
 
 constexpr std::array kStyleChoices = {Choice{"full", ""}, Choice{"long", ""}, Choice{"medium", ""},
@@ -304,7 +361,6 @@ constexpr std::array kStyleChoices = {Choice{"full", ""}, Choice{"long", ""}, Ch
 constexpr std::array kHourCycleChoices = {Choice{"h11", "K"}, Choice{"h12", "h"}, Choice{"h23", "H"},
                                           Choice{"h24", "k"}};
 constexpr std::array kFormatMatcherChoices = {Choice{"basic", ""}, Choice{"best fit", ""}};
-constexpr std::string_view kHourSymbols = "KhHk";
 
 UDateFormatStyle styleOption(const IntlOptions& options, std::string_view name) {
     const Choice* style = findChoice(options, name, kStyleChoices);
@@ -333,7 +389,7 @@ std::string resolveTimeZone(const IntlOptions& options, std::string_view default
     }
 
     const std::string& name = std::get<std::string>(*timeZone);
-    std::optional<std::string> canonical = canonicalTimeZone(name);
+    std::optional<std::string> canonical = canonicalTimeZone(timeZoneIdIgnoringCase(name));
 
     if (!canonical.has_value()) {
         throw IntlRangeError("Invalid time zone specified: " + name);
@@ -360,15 +416,15 @@ std::u16string bestPattern(const std::string& localeId, std::string_view skeleto
         });
 }
 
-/** Where a pattern's hour fields are, outside its quoted literals: Basque writes `'ko'`, Scottish Gaelic `'mh'`. */
-std::vector<std::size_t> hourSymbolPositions(std::u16string_view pattern) {
+/** Where a pattern's fields written with `letters` are, outside its quoted literals: Basque writes `'ko'`. */
+std::vector<std::size_t> fieldPositions(std::u16string_view pattern, std::u16string_view letters) {
     std::vector<std::size_t> positions;
     bool isQuoted = false;
 
     for (std::size_t position = 0; position < pattern.size(); ++position) {
         if (pattern[position] == u'\'') {
             isQuoted = !isQuoted;
-        } else if (!isQuoted && std::u16string_view(u"KhHk").find(pattern[position]) != std::u16string_view::npos) {
+        } else if (!isQuoted && letters.find(pattern[position]) != std::u16string_view::npos) {
             positions.push_back(position);
         }
     }
@@ -385,11 +441,23 @@ std::u16string withHourSymbol(std::u16string pattern, char hour) {
         return pattern;
     }
 
-    for (const std::size_t position : hourSymbolPositions(pattern)) {
+    for (const std::size_t position : fieldPositions(pattern, kHourLetters)) {
         pattern[position] = static_cast<char16_t>(hour);
     }
 
     return pattern;
+}
+
+/**
+ * The width ECMA-402 reports for a numeric component is the one the selected pattern has, which ICU widens where
+ * the locale pads: `j` is `HH` in English with `h23`, `m` is `mm` after an hour.
+ */
+std::string_view resolvedWidth(std::u16string_view pattern, const Component& component, std::string_view requested) {
+    if (requested != "numeric" && requested != "2-digit") {
+        return requested;
+    }
+
+    return fieldPositions(pattern, component.letters).size() == 2 ? "2-digit" : "numeric";
 }
 
 std::string calendarName(const UDateFormat* format) {
@@ -399,6 +467,17 @@ std::string calendarName(const UDateFormat* format) {
     requireSuccess(status, "ICU has no calendar type");
 
     return type == "gregorian" ? "gregory" : std::string(type);
+}
+
+/** ECMAScript dates are proleptic Gregorian, where ICU's Gregorian calendar is Julian before October 15, 1582. */
+void useProlepticGregorian(UDateFormat* format) {
+    UErrorCode status = U_ZERO_ERROR;
+    const std::unique_ptr<UCalendar, decltype(&ucal_close)> calendar(ucal_clone(udat_getCalendar(format), &status),
+                                                                     &ucal_close);
+
+    ucal_setGregorianChange(calendar.get(), -kMaximumTimeValue, &status);
+    udat_setCalendar(format, calendar.get());
+    requireSuccess(status, "ICU could not make the calendar proleptic");
 }
 
 /** ECMA-402's part type for each `UDateFormatField` the supported options and styles produce, as V8 maps them. */
@@ -488,7 +567,6 @@ std::optional<std::string> currencyOption(const IntlOptions& options) {
     }
 
     std::string code = std::get<std::string>(*value);
-    const auto isAsciiLetter = [](char character) { return std::isalpha(static_cast<unsigned char>(character)) != 0; };
 
     if (code.size() != kCurrencyCodeLength || !std::ranges::all_of(code, isAsciiLetter)) {
         throw IntlRangeError("Invalid currency code : " + code);
@@ -583,7 +661,7 @@ IntlDateTimeFormat::IntlDateTimeFormat(std::span<const std::string> requestedLoc
     const char requestedHour = hourSymbol(options);
     const std::string hourCycleExtension = keywordValue(resolved.requestedLocaleId, "hours");
     const auto extensionCycle = std::ranges::find(kHourCycleChoices, hourCycleExtension, &Choice::value);
-    const bool honoursHourCycleExtension = extensionCycle != kHourCycleChoices.end() && timeStyle == UDAT_NONE &&
+    const bool honoursHourCycleExtension = extensionCycle != kHourCycleChoices.end() &&
                                            findOption(options, "hour12") == nullptr &&
                                            (requestedHour == 'j' || requestedHour == extensionCycle->symbol.front());
     const char hour = honoursHourCycleExtension ? extensionCycle->symbol.front() : requestedHour;
@@ -601,7 +679,7 @@ IntlDateTimeFormat::IntlDateTimeFormat(std::span<const std::string> requestedLoc
     }
 
     std::string skeleton;
-    IntlResolvedOptions components;
+    std::vector<std::pair<const Component*, std::string_view>> components;
 
     for (const Component& component : kComponents) {
         const Choice* choice = findChoice(effectiveOptions, component.name, component.choices);
@@ -616,18 +694,17 @@ IntlDateTimeFormat::IntlDateTimeFormat(std::span<const std::string> requestedLoc
         }
 
         skeleton += choice->symbol;
-        components.emplace_back(component.name, std::string(choice->value));
+        components.emplace_back(&component, choice->value);
     }
 
     UErrorCode status = U_ZERO_ERROR;
 
     if (hasStyle) {
-        if (timeStyle != UDAT_NONE && hour != 'j') {
-            throw IntlRangeError("Intl.DateTimeFormat does not support hourCycle or hour12 with timeStyle on this "
-                                 "platform");
-        }
+        const auto cycle = std::ranges::find(kHourCycleChoices, std::string_view(&hour, 1), &Choice::symbol);
+        const std::string styleLocaleId =
+            cycle == kHourCycleChoices.end() ? localeId : localeId + "@hours=" + std::string(cycle->value);
 
-        format_.reset(udat_open(timeStyle, dateStyle, localeId.c_str(), timeZoneText.data(),
+        format_.reset(udat_open(timeStyle, dateStyle, styleLocaleId.c_str(), timeZoneText.data(),
                                 static_cast<int32_t>(timeZoneText.size()), nullptr, 0, &status));
     } else {
         std::ranges::replace(skeleton, 'j', hour);
@@ -641,23 +718,31 @@ IntlDateTimeFormat::IntlDateTimeFormat(std::span<const std::string> requestedLoc
 
     requireSuccess(status, "ICU could not open a date format for " + localeId);
 
+    const std::string calendar = calendarName(format_.get());
+
+    if (calendar == "gregory") {
+        useProlepticGregorian(format_.get());
+    }
+
     resolvedOptions_ = {
         {"locale", honoursHourCycleExtension ? resolved.tag + "-u-hc-" + hourCycleExtension : resolved.tag},
-        {"calendar", calendarName(format_.get())},
+        {"calendar", calendar},
         {"numberingSystem", numberingSystem(localeId)},
         {"timeZone", timeZone}};
 
     const std::u16string pattern = formatPattern(format_.get());
-    const std::vector<std::size_t> hourPositions = hourSymbolPositions(pattern);
+    const std::vector<std::size_t> hourPositions = fieldPositions(pattern, kHourLetters);
 
     if (!hourPositions.empty()) {
-        const std::size_t cycle = kHourSymbols.find(static_cast<char>(pattern[hourPositions.front()]));
+        const std::size_t cycle = kHourLetters.find(pattern[hourPositions.front()]);
 
         resolvedOptions_.emplace_back("hourCycle", std::string(kHourCycleChoices.at(cycle).value));
         resolvedOptions_.emplace_back("hour12", cycle < 2);
     }
 
-    resolvedOptions_.insert(resolvedOptions_.end(), components.begin(), components.end());
+    for (const auto& [component, requested] : components) {
+        resolvedOptions_.emplace_back(component->name, std::string(resolvedWidth(pattern, *component, requested)));
+    }
 
     if (dateStyle != UDAT_NONE) {
         resolvedOptions_.emplace_back("dateStyle", std::string(kStyleChoices.at(dateStyle).value));

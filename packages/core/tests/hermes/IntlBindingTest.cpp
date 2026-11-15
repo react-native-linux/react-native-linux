@@ -49,7 +49,7 @@ TEST_F(IntlBindingTest, DateTimeFormatFormatsWithTheLocalesPatternsAndResolvesIt
     EXPECT_EQ(evaluate("new Intl.DateTimeFormat('en-US', {hour: 'numeric', minute: '2-digit', hourCycle: 'h23', "
                        "timeZone: 'UTC'}).resolvedOptions()"),
               R"({"locale":"en-US","calendar":"gregory","numberingSystem":"latn","timeZone":"UTC","hourCycle":"h23",)"
-              R"("hour12":false,"hour":"numeric","minute":"2-digit"})");
+              R"("hour12":false,"hour":"2-digit","minute":"2-digit"})");
     EXPECT_EQ(evaluate("Intl.DateTimeFormat().resolvedOptions().locale"),
               "\"" + defaultIntlLocale(localeFromEnvironment()) + "\"");
     EXPECT_EQ(evaluate("new Intl.DateTimeFormat() instanceof Intl.DateTimeFormat"), "true");
@@ -93,6 +93,9 @@ TEST_F(IntlBindingTest, CollatorSortsFileNamesNumericallyAndCaseInsensitively) {
               R"({"locale":"en","usage":"sort","sensitivity":"variant","ignorePunctuation":false,)"
               R"("collation":"default","numeric":true,"caseFirst":"false"})");
     EXPECT_EQ(evaluate("Intl.Collator().compare('a', 'b')"), "-1");
+    EXPECT_EQ(evaluate("((order) => [new Intl.Collator('en').compare({toString() { order.push('left'); return 'b'; "
+                       "}}, {toString() { order.push('right'); return 'a'; }}), order])([])"),
+              R"([1,["left","right"]])");
 }
 
 TEST_F(IntlBindingTest, GetCanonicalLocalesCanonicalizesAndRejectsWhatIsNotALocale) {
@@ -102,6 +105,14 @@ TEST_F(IntlBindingTest, GetCanonicalLocalesCanonicalizesAndRejectsWhatIsNotALoca
     EXPECT_EQ(evaluate("Intl.getCanonicalLocales(['en_US'])"), "RangeError: Incorrect locale information provided");
     EXPECT_EQ(evaluate("Intl.getCanonicalLocales([5])"), "TypeError: Language ID should be string or object.");
     EXPECT_EQ(evaluate("Intl.getCanonicalLocales(null)"), "TypeError: Cannot convert null to object");
+    EXPECT_EQ(evaluate("Intl.getCanonicalLocales(['sh', 'sr-Latn'])"), R"(["sr-Latn"])");
+}
+
+TEST_F(IntlBindingTest, EachLocaleIsValidatedBeforeTheNextElementOrTheOptionsAreRead) {
+    EXPECT_EQ(evaluate("Intl.getCanonicalLocales(['en_US', 5])"), "RangeError: Incorrect locale information provided");
+    EXPECT_EQ(evaluate("new Intl.Collator(Object.defineProperty(['x-private'], 1, {get() { throw new Error('read'); "
+                       "}}), {get numeric() { throw new Error('read options'); }})"),
+              "RangeError: Incorrect locale information provided");
 }
 
 TEST_F(IntlBindingTest, GetCanonicalLocalesReadsALengthAsEcma262sToLength) {
@@ -112,6 +123,26 @@ TEST_F(IntlBindingTest, GetCanonicalLocalesReadsALengthAsEcma262sToLength) {
     EXPECT_EQ(evaluate("Intl.getCanonicalLocales({0: 'en', length: -Infinity})"), "[]");
     EXPECT_EQ(evaluate("Intl.getCanonicalLocales({0: 'en', length: -1})"), "[]");
     EXPECT_EQ(evaluate("Intl.getCanonicalLocales({0: 'en', 2: 'de', length: '3.9'})"), R"(["en","de"])");
+}
+
+TEST_F(IntlBindingTest, ToNumberRejectsABigIntWhereNumberFormatsOne) {
+    const std::string bigIntToNumber = "TypeError: Cannot convert BigInt to number";
+
+    EXPECT_EQ(evaluate("Intl.getCanonicalLocales({0: 'en', length: 1n})"), bigIntToNumber);
+    EXPECT_EQ(evaluate("new Intl.DateTimeFormat('en').format(1n)"), bigIntToNumber);
+    EXPECT_EQ(evaluate("new Intl.NumberFormat('en', {maximumFractionDigits: {valueOf() { return 1n; }}})"),
+              bigIntToNumber);
+    EXPECT_EQ(evaluate("new Intl.NumberFormat('en').format(1n)"), R"("1")");
+}
+
+TEST_F(IntlBindingTest, ASubclassKeepsItsOwnPrototype) {
+    EXPECT_EQ(evaluate("[Intl.DateTimeFormat, Intl.NumberFormat, Intl.Collator].map((Base) => { class Derived "
+                       "extends Base { label() { return 'ok'; } } const instance = new Derived('en'); return "
+                       "[instance.label(), instance instanceof Derived, instance.resolvedOptions().locale]; })"),
+              R"([["ok",true,"en"],["ok",true,"en"],["ok",true,"en"]])");
+    EXPECT_EQ(evaluate("((Target) => { Target.prototype = 1; return Object.getPrototypeOf(Reflect.construct("
+                       "Intl.Collator, [], Target)) === Intl.Collator.prototype; })(function Target() {})"),
+              "true");
 }
 
 TEST_F(IntlBindingTest, FormatToPartsServesT3CodesHourLabelsAndTimeZoneLabels) {

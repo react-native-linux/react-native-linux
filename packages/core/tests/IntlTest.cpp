@@ -108,6 +108,21 @@ TEST(IntlTest, LocaleListsAreCanonicalizedDeduplicatedAndValidated) {
               "Incorrect locale information provided");
 }
 
+TEST(IntlTest, AliasesAreReplacedBeforeDeduplication) {
+    EXPECT_EQ(canonicalizeLocaleList(Locales{"sh", "sr-Latn", "iw", "cmn", "art-lojban"}),
+              (Locales{"sr-Latn", "he", "zh", "jbo"}));
+}
+
+TEST(IntlTest, ATagMustStartWithALanguageSubtagThoughIcuAcceptsMore) {
+    for (const std::string tag : {"x-private", "i-klingon", "root", "Latn-US", "abcdefghi", "12-US", "en-US_POSIX"}) {
+        EXPECT_EQ(errorMessage<IntlRangeError>([&tag] { canonicalizeLocaleList(Locales{tag}); }),
+                  "Incorrect locale information provided")
+            << tag;
+    }
+
+    EXPECT_EQ(canonicalizeLocaleList(Locales{"en-x-private", "abcdefgh"}), (Locales{"en-x-private", "abcdefgh"}));
+}
+
 TEST(IntlTest, TheDefaultLocaleComesFromThePosixLocaleOrIsEnglish) {
     EXPECT_EQ(defaultIntlLocale("de_DE"), "de-DE");
     EXPECT_EQ(defaultIntlLocale("C"), "en-US");
@@ -136,7 +151,7 @@ TEST(IntlTest, TheDefaultTimeZoneIsTheHostsOrUtc) {
 TEST(IntlTest, ARequestedLocaleFallsBackSubtagBySubtagAndThenToTheDefault) {
     EXPECT_EQ(describe(dateTimeFormat({"xx", "de-CH-1996"}, {}).resolvedOptions()).substr(0, 15), "locale=de-CH ca");
     EXPECT_EQ(describe(dateTimeFormat({"de-u-co-phonebk"}, {}).resolvedOptions()).substr(0, 12), "locale=de ca");
-    EXPECT_EQ(describe(dateTimeFormat({"x-private"}, {}).resolvedOptions()).substr(0, 15), "locale=en-US ca");
+    EXPECT_EQ(describe(dateTimeFormat({"qaa"}, {}).resolvedOptions()).substr(0, 15), "locale=en-US ca");
     EXPECT_EQ(describe(IntlDateTimeFormat({}, {}, "fr-FR", "UTC").resolvedOptions()).substr(0, 15), "locale=fr-FR ca");
 }
 
@@ -162,7 +177,8 @@ TEST(IntlTest, TheHourCycleExtensionAppliesUnlessAnOptionOverridesIt) {
     EXPECT_EQ(hourCycle("en-US-u-hc-h23", {{"hour", "numeric"s}, {"hourCycle", "h11"s}}),
               "locale=en-US hourCycle=h11 ");
     EXPECT_EQ(hourCycle("en-US-u-hc-h11", {{"hour", "numeric"s}, {"hour12", true}}), "locale=en-US hourCycle=h12 ");
-    EXPECT_EQ(hourCycle("en-US-u-hc-h23", {{"timeStyle", "short"s}}), "locale=en-US hourCycle=h12 ");
+    EXPECT_EQ(hourCycle("en-US-u-hc-h23", {{"timeStyle", "short"s}}), "locale=en-US-u-hc-h23 hourCycle=h23 ");
+    EXPECT_EQ(dateTimeFormat({"en-US-u-hc-h23"}, {{"timeStyle", "short"s}}).format(13 * kOneHour), "13:00");
     EXPECT_EQ(hourCycle("en-US-u-hc-h23", {{"dateStyle", "short"s}}), "locale=en-US-u-hc-h23 absent");
     EXPECT_EQ(hourCycle("en-US-u-hc-h99", hour), "locale=en-US hourCycle=h12 ");
     EXPECT_EQ(hourCycle("en-US-u-kn", hour), "locale=en-US hourCycle=h12 ");
@@ -192,6 +208,26 @@ TEST(IntlTest, DateStylesFormatThroughTheLocalesOwnPatterns) {
     EXPECT_EQ(dateTimeFormat({"en-US"}, {{"dateStyle", "short"s}, {"hourCycle", "h23"s}}).format(0), "1/1/70");
 }
 
+TEST(IntlTest, TimeStylesTakeTheRequestedHourCycleAndKeepTheLocalesOwnGlue) {
+    EXPECT_EQ(dateTimeFormat({"en-US"}, {{"timeStyle", "short"s}, {"hour12", false}}).format(13 * kOneHour), "13:00");
+    EXPECT_EQ(dateTimeFormat({"en-US"}, {{"timeStyle", "medium"s}, {"hourCycle", "h11"s}}).format(0), "0:00:00 AM");
+    EXPECT_EQ(dateTimeFormat({"en-US"}, {{"timeStyle", "short"s}, {"hourCycle", "h24"s}}).format(0), "24:00");
+    EXPECT_EQ(dateTimeFormat({"en-US"}, {{"dateStyle", "full"s}, {"timeStyle", "full"s}, {"hourCycle", "h23"s}})
+                  .format(13 * kOneHour),
+              "Thursday, January 1, 1970 at 13:00:00 Coordinated Universal Time");
+    EXPECT_EQ(resolvedOption(dateTimeFormat({"en-US"}, {{"timeStyle", "long"s}, {"hour12", true}}).resolvedOptions(),
+                             "hourCycle"),
+              "hourCycle=h12 ");
+}
+
+TEST(IntlTest, GregorianDatesAreProlepticBeforeTheJulianCutover) {
+    constexpr double kMarchFirst1500 = -14'826'672'000'000;
+
+    EXPECT_EQ(dateTimeFormat({"en-US"}, {}).format(kMarchFirst1500), "3/1/1500");
+    EXPECT_EQ(describe(dateTimeFormat({"en-US"}, {}).formatToParts(kMarchFirst1500)),
+              "month:3|literal:/|day:1|literal:/|year:1500|");
+}
+
 TEST(IntlTest, ComponentOptionsFormatThroughTheBestPatternForTheirSkeleton) {
     const IntlDateTimeFormat time = dateTimeFormat({"en-US"}, {{"hour", "numeric"s}, {"minute", "2-digit"s}});
 
@@ -201,6 +237,18 @@ TEST(IntlTest, ComponentOptionsFormatThroughTheBestPatternForTheirSkeleton) {
     EXPECT_EQ(dateTimeFormat({"en-US"}, {{"month", "numeric"s}, {"day", "numeric"s}}).format(0), "1/1");
     EXPECT_EQ(dateTimeFormat({"en-US"}, {{"weekday", "long"s}, {"second", "2-digit"s}}).format(0), "Thursday, 00");
     EXPECT_EQ(dateTimeFormat({"en-US"}, {{"timeZoneName", "short"s}}).format(0), "1/1/1970, UTC");
+}
+
+TEST(IntlTest, ResolvedNumericWidthsAreTheSelectedPatterns) {
+    const auto widths = [](const IntlOptions& options) {
+        const IntlResolvedOptions resolved = dateTimeFormat({"en-US"}, options).resolvedOptions();
+
+        return resolvedOption(resolved, "hour") + resolvedOption(resolved, "minute");
+    };
+
+    EXPECT_EQ(widths({{"hour", "numeric"s}, {"minute", "numeric"s}}), "hour=numeric minute=2-digit ");
+    EXPECT_EQ(widths({{"hour", "numeric"s}, {"hourCycle", "h23"s}}), "hour=2-digit absent");
+    EXPECT_EQ(widths({{"hour", "2-digit"s}, {"minute", "2-digit"s}}), "hour=2-digit minute=2-digit ");
 }
 
 TEST(IntlTest, NoComponentAndNoStyleMeansNumericYearMonthAndDay) {
@@ -247,6 +295,9 @@ TEST(IntlTest, TimeZonesAreValidatedAndCanonicalized) {
     EXPECT_EQ(timeZoneOf("Europe/Berlin"), "timeZone=Europe/Berlin");
     EXPECT_EQ(timeZoneOf("UTC"), "timeZone=UTC");
     EXPECT_EQ(timeZoneOf("GMT"), "timeZone=UTC");
+    EXPECT_EQ(timeZoneOf("europe/berlin"), "timeZone=Europe/Berlin");
+    EXPECT_EQ(timeZoneOf("utc"), "timeZone=UTC");
+    EXPECT_EQ(timeZoneOf("etc/gmt"), "timeZone=UTC");
     EXPECT_EQ(errorMessage<IntlRangeError>([&] { timeZoneOf("Mars/Phobos"); }),
               "Invalid time zone specified: Mars/Phobos");
     EXPECT_EQ(errorMessage<IntlRangeError>([&] { timeZoneOf("Etc/Unknown"); }),
@@ -272,8 +323,6 @@ TEST(IntlTest, DateTimeFormatRejectsWhatItDoesNotImplementOrWhatContradicts) {
               "Value nearest out of range for option localeMatcher");
     EXPECT_EQ(errorMessage<IntlTypeError>([] { dateTimeFormat({}, {{"dateStyle", "long"s}, {"month", "long"s}}); }),
               "Can't set option month when dateStyle or timeStyle is used");
-    EXPECT_EQ(errorMessage<IntlRangeError>([] { dateTimeFormat({}, {{"timeStyle", "long"s}, {"hour12", true}}); }),
-              "Intl.DateTimeFormat does not support hourCycle or hour12 with timeStyle on this platform");
     EXPECT_NO_THROW(dateTimeFormat({}, {{"localeMatcher", "lookup"s}, {"formatMatcher", "basic"s}}));
 }
 
