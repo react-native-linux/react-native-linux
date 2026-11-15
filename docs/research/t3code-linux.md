@@ -99,7 +99,11 @@ The order epic #634 follows. Each step needs the ones before it.
    but assumes the rest from the engine. #83 chose the platform's own `Intl` over the system ICU
    (`packages/core/src/Intl.h`), with Hermes' Intl kept off; `IntlStartupTest` starts a bundle that builds those
    module-scope formatters, and `IntlBindingTest` covers the three constructors with T3 Code's options.
-7. **The fixture**: the main screen renders in `rnl_window` against a local T3 server (#641).
+7. **The fixture**: the main screen renders in `rnl_window` against a local T3 server (#641). `pnpm e2e:t3code
+   <checkout>` builds T3 Code's own bundle for `linux` with its own Metro config under this platform's resolver
+   (`packages/test-harness/scripts/t3code-metro-config.ts`), starts the checkout's T3 server on loopback, and runs the
+   bundle in the headless rig with the link that pairs it. It stops at the first fatal JavaScript error; #641 keeps
+   the ordered list of what stands between that error and the main screen.
 8. **The measurement**: against the Electron build (#642), with frame pacing (#20) and the trace surface (#90).
 
 Secondary screens come after the fixture: attachments (#650), webviews (#272), notifications (#274), the image
