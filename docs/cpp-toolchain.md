@@ -8890,7 +8890,7 @@ with the version in a trailing comment; Renovate keeps those SHAs fresh through 
 | `validate` | `ubuntu-24.04` | 15 min | `pnpm validate`: format, types, lint, deadcode, duplication, Vitest with its 100% coverage thresholds, meta files. |
 | `meta` | `ubuntu-24.04` | 10 min | actionlint, typos, shellcheck, shfmt, gitleaks. |
 | `unit` | `ubuntu-24.04` | 30 min | `rnl_core_tests`, the Hermes-free GoogleTest suite for `RetainedScene` and `LinuxMountingManager`, run under `ctest` and gated at 100% line and branch coverage by `scripts/cpp-coverage.ts`. Needs neither Hermes nor Skia. |
-| `native (dev)` | `ubuntu-24.04` | 120 min | The whole C++ toolchain: vendor, configure, build, `rnl_core_hermes_tests` under `ctest`, the four `hello_react` acceptance paths, and the golden-image comparison. |
+| `native (dev)` | `ubuntu-24.04` | 120 min | The whole C++ toolchain: vendor, configure, build, `rnl_core_hermes_tests` under `ctest`, including one shuffled single-process entry (#643), the four `hello_react` acceptance paths, and the golden-image comparison. |
 | `native (asan)` | `ubuntu-24.04` | 120 min | The same build, the same suite and the same four paths under ASan + UBSan, plus `rnl_core_tests` under the `asan-tests` preset (#407). |
 | `native (tsan)` | `ubuntu-24.04` | 120 min | The same build, the same suite and the same four paths under TSan, plus `rnl_core_tests` under the `tsan-tests` preset (#407). |
 | `window` | `ubuntu-24.04` | 120 min | `rnl_window` built and run under `weston --backend=headless` with lavapipe, and the window goldens compared. The only job that reaches the Vulkan swapchain. See *Window goldens*. |

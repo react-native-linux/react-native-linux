@@ -108,6 +108,7 @@ add_executable(rnl_core_hermes_tests
     CxxModuleTypeSurfaceTest.cpp
     DevBundleModulesTest.cpp
     ExponentConstantsModuleTest.cpp
+    FeatureFlagsResetListener.cpp
     InstanceTeardownLeakTest.cpp
     MeasureGeometryTest.cpp
     LinkingModuleTest.cpp
@@ -195,3 +196,11 @@ if(CMAKE_CXX_FLAGS MATCHES "-fsanitize=thread")
 endif()
 
 gtest_discover_tests(rnl_core_hermes_tests TEST_FILTER "${RNL_HERMES_TESTS_FILTER}")
+
+# #643: ctest gives every case its own process, which hides a case that leaves process-wide state behind for the
+# next. One shuffled process makes a new order dependency fail the change that adds it, under `ctest` locally and in
+# CI. Not under TSan, where a whole-suite run would outlast the preset's per-test timeout.
+if(NOT CMAKE_CXX_FLAGS MATCHES "-fsanitize=thread")
+    add_test(NAME rnl_core_hermes_tests.single_process
+             COMMAND rnl_core_hermes_tests --gtest_shuffle "--gtest_filter=${RNL_HERMES_TESTS_FILTER}")
+endif()
