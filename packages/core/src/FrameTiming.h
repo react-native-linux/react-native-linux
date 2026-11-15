@@ -50,6 +50,12 @@ public:
     Frame recordPresented(uint64_t sequence, uint64_t presentedNanoseconds, uint32_t refreshNanoseconds,
                           uint32_t flags);
     void recordDiscarded();
+
+    /**
+     * The next presented frame follows an idle span in which the window chose not to draw (#703), so it starts a new
+     * run and has no frame time: the gap is the absence of work, not a slow frame.
+     */
+    void startRun() noexcept;
     Summary summarise() const;
 
     /** One JSON Lines record per presented frame, as `--frame-log` writes it. */

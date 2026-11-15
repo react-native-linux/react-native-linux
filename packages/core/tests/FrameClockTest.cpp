@@ -11,11 +11,11 @@ std::chrono::steady_clock::time_point timeAt(int64_t milliseconds) {
     return std::chrono::steady_clock::time_point(std::chrono::milliseconds(milliseconds));
 }
 
-TEST(FrameClockTest, ACallbackAlwaysDrawsAndReportsTheDeltaSinceTheLastTick) {
+TEST(FrameClockTest, ACallbackWithPendingWorkDrawsAndReportsTheDeltaSinceTheLastTick) {
     FrameClock clock;
 
-    const FrameClock::Tick first = clock.onFrameCallback(timeAt(0));
-    const FrameClock::Tick second = clock.onFrameCallback(timeAt(16));
+    const FrameClock::Tick first = clock.onFrameCallback(timeAt(0), true);
+    const FrameClock::Tick second = clock.onFrameCallback(timeAt(16), true);
 
     EXPECT_TRUE(first.shouldDraw);
     EXPECT_EQ(first.source, FrameClock::Source::Callback);
@@ -27,10 +27,46 @@ TEST(FrameClockTest, ACallbackAlwaysDrawsAndReportsTheDeltaSinceTheLastTick) {
     EXPECT_FALSE(second.resumed);
 }
 
+/**
+ * #703: once the work runs out a callback still draws for `kSettleCallbacks` frames, so every swapchain image takes
+ * the last change, and then skips, which is what stops the presents because only a draw re-arms `wl_surface.frame`.
+ * The skip moves neither a counter nor the delta reference, so the tick that wakes the window on the fallback timeout
+ * measures from the last frame it actually drew, and work restarts the settle.
+ */
+TEST(FrameClockTest, IdleCallbacksSettleThenSkipAndTheNextWakeMeasuresFromTheLastDraw) {
+    FrameClock clock;
+
+    clock.onFrameCallback(timeAt(0), true);
+    const FrameClock::Tick firstSettle = clock.onFrameCallback(timeAt(8), false);
+    const FrameClock::Tick secondSettle = clock.onFrameCallback(timeAt(16), false);
+    const FrameClock::Tick idle = clock.onFrameCallback(timeAt(24), false);
+    const FrameClock::Tick wake = clock.onFallbackTimeout(timeAt(56), true);
+
+    EXPECT_TRUE(firstSettle.shouldDraw);
+    EXPECT_TRUE(secondSettle.shouldDraw);
+    EXPECT_FALSE(idle.shouldDraw);
+    EXPECT_EQ(idle.source, FrameClock::Source::Callback);
+    EXPECT_EQ(clock.callbackTicks(), 3U);
+    EXPECT_EQ(clock.lastCallbackAt(), timeAt(16));
+    EXPECT_TRUE(wake.shouldDraw);
+    EXPECT_EQ(wake.source, FrameClock::Source::Timer);
+    EXPECT_DOUBLE_EQ(wake.deltaMilliseconds, 40.0);
+    EXPECT_TRUE(clock.onFrameCallback(timeAt(64), false).shouldDraw);
+    EXPECT_TRUE(clock.onFrameCallback(timeAt(72), false).shouldDraw);
+    EXPECT_FALSE(clock.onFrameCallback(timeAt(80), false).shouldDraw);
+}
+
+TEST(FrameClockTest, AClockThatNeverHadWorkIsAlreadySettled) {
+    FrameClock clock;
+
+    EXPECT_FALSE(clock.onFrameCallback(timeAt(0), false).shouldDraw);
+    EXPECT_EQ(FrameClock::kSettleCallbacks, 2U);
+}
+
 TEST(FrameClockTest, ATimeoutWithPendingWorkDrawsFromTheWallClock) {
     FrameClock clock;
 
-    clock.onFrameCallback(timeAt(0));
+    clock.onFrameCallback(timeAt(0), true);
     const FrameClock::Tick tick = clock.onFallbackTimeout(timeAt(50), true);
 
     EXPECT_TRUE(tick.shouldDraw);
@@ -42,7 +78,7 @@ TEST(FrameClockTest, ATimeoutWithPendingWorkDrawsFromTheWallClock) {
 TEST(FrameClockTest, ATimeoutWithNoPendingWorkDoesNotDraw) {
     FrameClock clock;
 
-    clock.onFrameCallback(timeAt(0));
+    clock.onFrameCallback(timeAt(0), true);
     const FrameClock::Tick tick = clock.onFallbackTimeout(timeAt(50), false);
 
     EXPECT_FALSE(tick.shouldDraw);
@@ -52,7 +88,7 @@ TEST(FrameClockTest, ATimeoutWithNoPendingWorkDoesNotDraw) {
 TEST(FrameClockTest, TheFallbackDoesNotSpinAcrossRepeatedIdleTimeouts) {
     FrameClock clock;
 
-    clock.onFrameCallback(timeAt(0));
+    clock.onFrameCallback(timeAt(0), true);
 
     for (int64_t millisecond = 50; millisecond <= 500; millisecond += 50) {
         const FrameClock::Tick tick = clock.onFallbackTimeout(timeAt(millisecond), false);
@@ -67,7 +103,7 @@ TEST(FrameClockTest, TheFallbackDoesNotSpinAcrossRepeatedIdleTimeouts) {
 TEST(FrameClockTest, AnIdleTimeoutDoesNotAdvanceTheReferenceForTheNextDelta) {
     FrameClock clock;
 
-    clock.onFrameCallback(timeAt(0));
+    clock.onFrameCallback(timeAt(0), true);
     clock.onFallbackTimeout(timeAt(50), false);
     const FrameClock::Tick tick = clock.onFallbackTimeout(timeAt(100), true);
 
@@ -78,11 +114,11 @@ TEST(FrameClockTest, AnIdleTimeoutDoesNotAdvanceTheReferenceForTheNextDelta) {
 TEST(FrameClockTest, TheFirstCallbackAfterFallbackTicksResumesExactlyOnce) {
     FrameClock clock;
 
-    clock.onFrameCallback(timeAt(0));
+    clock.onFrameCallback(timeAt(0), true);
     clock.onFallbackTimeout(timeAt(50), true);
     clock.onFallbackTimeout(timeAt(100), true);
-    const FrameClock::Tick resumingTick = clock.onFrameCallback(timeAt(116));
-    const FrameClock::Tick nextTick = clock.onFrameCallback(timeAt(132));
+    const FrameClock::Tick resumingTick = clock.onFrameCallback(timeAt(116), true);
+    const FrameClock::Tick nextTick = clock.onFrameCallback(timeAt(132), true);
 
     EXPECT_TRUE(resumingTick.resumed);
     EXPECT_DOUBLE_EQ(resumingTick.deltaMilliseconds, 16.0);
@@ -93,9 +129,9 @@ TEST(FrameClockTest, TheFirstCallbackAfterFallbackTicksResumesExactlyOnce) {
 TEST(FrameClockTest, ACallbackArrivingDuringTheFallbackWindowTakesOverImmediately) {
     FrameClock clock;
 
-    clock.onFrameCallback(timeAt(0));
+    clock.onFrameCallback(timeAt(0), true);
     clock.onFallbackTimeout(timeAt(50), true);
-    const FrameClock::Tick callbackDuringFallback = clock.onFrameCallback(timeAt(66));
+    const FrameClock::Tick callbackDuringFallback = clock.onFrameCallback(timeAt(66), true);
 
     EXPECT_TRUE(callbackDuringFallback.shouldDraw);
     EXPECT_EQ(callbackDuringFallback.source, FrameClock::Source::Callback);
@@ -107,8 +143,8 @@ TEST(FrameClockTest, CountersTrackEachSourceAndTheLastCallbackTime) {
 
     EXPECT_EQ(clock.lastCallbackAt(), std::nullopt);
 
-    clock.onFrameCallback(timeAt(0));
-    clock.onFrameCallback(timeAt(16));
+    clock.onFrameCallback(timeAt(0), true);
+    clock.onFrameCallback(timeAt(16), true);
     clock.onFallbackTimeout(timeAt(66), true);
     clock.onFallbackTimeout(timeAt(116), false);
 

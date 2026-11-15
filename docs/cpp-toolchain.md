@@ -10,8 +10,8 @@ for issue #9, and the headless half of the Fabric bootstrap for issue #10. It is
 retained scene every frame — issue #32, the first React-driven pixels. Without the flag it draws the static
 placeholder card and runs no JavaScript.
 
-`rnl_window --screenshot <output.png> [--frames N]` is the same window, run for `N` presented frames and then
-read back: the last presented swapchain image is copied into a host buffer and written as a PNG, and the process
+`rnl_window --screenshot <output.png> [--frames N]` is the same window, run for `N` frames (presented frames and
+idle ticks, #703) and then read back: the last presented swapchain image is copied into a host buffer and written as a PNG, and the process
 exits. That is issue #33, and with a headless compositor and lavapipe it is the only rig that proves
 `SkiaVulkanRenderer`. See *Window goldens*.
 
@@ -605,13 +605,28 @@ wakeup, callback or fallback, makes a hidden window redraw every 50 ms forever f
 with no Wayland and no clock reads of its own — every timestamp is a `std::chrono::steady_clock::time_point` the
 caller passes in.
 
-Two inputs, one flag:
+Two inputs, one flag, and both draw only if `hasPendingWork` is true:
 
-- `onFrameCallback(now)` always draws. `wl_surface.frame` firing means the compositor is presenting this surface,
-  so there is never a reason to skip it.
-- `onFallbackTimeout(now, hasPendingWork)` draws only if `hasPendingWork` is true. An idle occluded window with a
-  static picture must not spin the GPU on every 50 ms wakeup; a window with something still moving must not stall
-  just because nothing sent it a callback.
+- `onFrameCallback(now, hasPendingWork)`. An idle visible window must not present an unchanged picture on every
+  callback (#703). It still draws for `kSettleCallbacks` (two) callbacks after the work runs out, so the swapchain's
+  other images take the last change while the window is busy: without that, the first frame after an idle span
+  repaints a stale image, which under lavapipe also paid first-use pipeline compiles and stalled the first frame
+  that answered a tap by 30–100 ms. A timer draw restarts the settle too, so a commit landing just after the wake
+  frame is still met by a callback. Skipping the draw is also what stops the callbacks, because only a draw re-arms
+  `wl_surface.frame`; `WaylandWindow::skipFrame` consumes the fired callback so the next wait sleeps the fallback
+  interval instead of returning at once. The loop then polls on that interval, which is the display period
+  `wp_presentation` reported (or measured, where the compositor reports zero), and the first tick that finds
+  pending work draws and re-arms the callback. Every producer is therefore one of the signals `hasPendingWork`
+  composes, read on the frame thread: a JavaScript commit or an image decode is mounting damage, a timer, a
+  `requestAnimationFrame` or a worklet job is `ReactHost::hasPendingTimers`, and a running animation is the
+  choreographer's flag. Input needs no signal: the loop takes it on every iteration, drawn or not. A resize, a
+  chrome change, a pending capture and a discarded content update draw regardless. `IdleWakeTest` proves each
+  producer wakes an idle clock from another thread, and the `idle-wake` scenario proves the window presents nothing
+  for two seconds and then answers a tap. The frame presented after a skip starts a new `FrameTiming` run, so the
+  idle span is not a frame time, and `--frames` counts idle ticks beside presented frames, so a fixture still ends.
+- `onFallbackTimeout(now, hasPendingWork)`. An idle occluded window with a static picture must not spin the GPU on
+  every fallback wakeup; a window with something still moving must not stall just because nothing sent it a
+  callback.
 
 The delta each drawing tick reports is wall-clock time since the *last drawing tick*, regardless of which input
 produced either one — a fallback-timeout draw is not measured from the last callback, and a skipped (no-work)

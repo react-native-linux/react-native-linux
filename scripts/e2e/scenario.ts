@@ -97,6 +97,11 @@ interface Scenario {
   readonly inputTrace: boolean;
   /** Passes `--inject-protocol-error` (#331): proves a real dispatch failure is reported structured, not grepped. */
   readonly injectProtocolError: boolean;
+  /**
+   * #703: requires the run's frame log to carry a span of at least this many milliseconds between two consecutive
+   * `wp_presentation` frames, which is how a scenario says an idle visible window stops presenting. `null` asks nothing.
+   */
+  readonly minIdleGapMs: number | null;
   readonly name: string;
   /**
    * #20: the headless output's refresh rate in Hz, set before the window connects; `null` keeps cage's 60 Hz. See
@@ -240,6 +245,8 @@ const parseScenario = (value: unknown, sourceName: string): Scenario => {
     frames: readFrameCount(value, sourceName),
     injectProtocolError: readOptionalBoolean(value, "injectProtocolError", sourceName),
     inputTrace: readOptionalBoolean(value, "inputTrace", sourceName),
+    minIdleGapMs:
+      "minIdleGapMs" in value ? readPositiveNumber(value["minIdleGapMs"], "minIdleGapMs", sourceName) : null,
     name: readString(value["name"], "name", sourceName),
     outputRefreshHz:
       "outputRefreshHz" in value ? readPositiveInteger(value["outputRefreshHz"], "outputRefreshHz", sourceName) : null,

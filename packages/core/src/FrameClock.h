@@ -13,9 +13,14 @@ namespace react_native_linux {
  * fired" or "the fallback timed out" into a draw decision without ever reading a clock itself — every timestamp is
  * passed in by the caller, so the machine is deterministic and has no Wayland dependency.
  *
- * A callback always draws. A fallback timeout draws only if the caller reports pending work (damage, active scroll
- * physics, or a due JS timer): an idle occluded window must not spin the GPU every 50 ms just because nothing sends
- * it a callback. Either way the reported delta is wall-clock time since the last tick that actually drew, so an
+ * Either input draws only if the caller reports pending work (damage, active scroll physics, a pending JS timer,
+ * animation frame or worklet job): an idle occluded window must not spin the GPU just because nothing sends it a
+ * callback, and an idle visible window must not present an unchanged picture on every callback (#703). A callback
+ * still draws for two frames after the work runs out, so every swapchain image takes the last change while the
+ * window is busy instead of on the first frame that answers the next input. A skipped callback is what stops the
+ * presents, because only a draw re-arms `wl_surface.frame`; the loop then keeps polling on the fallback timeout,
+ * which is where the first pending work wakes it. Either way the reported delta is wall-clock time since the last
+ * tick that actually drew, so an
  * animation driven only by the fallback advances at the right rate instead of stalling or jumping when it resumes.
  * The first callback to arrive after one or more fallback-driven ticks is flagged `resumed`, exactly once, so a
  * caller that cares can tell a real resume from an ordinary vsync-paced callback.
@@ -31,7 +36,13 @@ public:
         bool resumed{false};
     };
 
-    Tick onFrameCallback(std::chrono::steady_clock::time_point now);
+    /**
+     * The callbacks that still draw once the work runs out: enough for a triple-buffered swapchain's other two images
+     * to take the last change, so the frame that answers the next input repaints only what that input changed.
+     */
+    static constexpr uint32_t kSettleCallbacks = 2;
+
+    Tick onFrameCallback(std::chrono::steady_clock::time_point now, bool hasPendingWork);
     Tick onFallbackTimeout(std::chrono::steady_clock::time_point now, bool hasPendingWork);
 
     /**
@@ -67,6 +78,7 @@ private:
     uint64_t callbackTicks_{0};
     uint64_t timerTicks_{0};
     uint64_t resumeTransitions_{0};
+    uint32_t settleCallbacks_{kSettleCallbacks};
     std::optional<std::chrono::steady_clock::time_point> lastCallbackAt_;
 };
 

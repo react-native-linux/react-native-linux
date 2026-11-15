@@ -65,10 +65,10 @@ constexpr uint32_t kDefaultScreenshotFrames = 60;
 // The frame-pacing inputs of #335. The fallback interval is the decision `FrameClock::fallbackInterval` makes
 // from the window's activity, the machine's thermal state and the display's frame period; the thermal state is
 // re-read from the kernel's thermal zones at most once a second, because a file walk per fallback tick is the
-// very waste the pacing exists to avoid. The display period is the nominal 60 Hz one until the compositor's
-// refresh hint is plumbed into the resolver (the follow-up #449 names for the journal thresholds applies here
-// too). The stretch multipliers make the deactivated fallback 50 ms — exactly what the fixed constant used to
-// give every window — while an activated window whose callbacks stopped is re-polled at full rate.
+// very waste the pacing exists to avoid. The display period is the one `wp_presentation` last reported, and this
+// nominal 60 Hz one until a presentation reports it (#703): an idle window polls for work on this interval, so a
+// 120 Hz display must not be polled at 60 Hz. The stretch multipliers make the deactivated fallback three display
+// periods, while an activated window whose callbacks stopped is re-polled at full rate.
 constexpr std::chrono::nanoseconds kNominalRefreshInterval{16'666'666};
 constexpr std::chrono::milliseconds kThermalReadInterval{1'000};
 constexpr const char* kThermalZoneGlob = "/sys/class/thermal/thermal_zone*";
@@ -1331,9 +1331,11 @@ int main(int argc, char** argv) {
             // than the loop's next one: the capture is armed beforehand, exactly as the loop arms it for every later
             // frame, so a first-buffer failure that recovers on the next frame cannot pass a fixture that means to
             // check the first one. See *Surface commit ordering* in docs/cpp-toolchain.md.
-            uint32_t presentedFrames = 0;
+            // A frame `--frames` counts is a presented one or an idle tick (#703): an idle window presents nothing, and
+            // the count is how long a fixture runs rather than how much it painted.
+            uint32_t elapsedFrames = 0;
             const bool isStartupCaptureFrame =
-                parsedArguments.screenshotPath.has_value() && presentedFrames + 1 >= parsedArguments.frameCount;
+                parsedArguments.screenshotPath.has_value() && elapsedFrames + 1 >= parsedArguments.frameCount;
 
             if (isStartupCaptureFrame) {
                 renderer.captureNextFrame(parsedArguments.screenshotPath.value());
@@ -1342,7 +1344,7 @@ int main(int argc, char** argv) {
             const bool startupFramePresented = renderer.drawFrame(window, {}, drawPlaceholder);
 
             if (startupFramePresented) {
-                ++presentedFrames;
+                ++elapsedFrames;
             }
 
             // The bring-up hook above proves the fatal-before-dispatch path (#331): a renderer failure that
@@ -1511,7 +1513,7 @@ int main(int argc, char** argv) {
                 // picture would be written to the other's file.
                 const bool isCaptureFrame = parsedArguments.screenshotPath.has_value() &&
                                             !automation.pendingScreenshotPath.has_value() &&
-                                            presentedFrames + 1 >= parsedArguments.frameCount;
+                                            elapsedFrames + 1 >= parsedArguments.frameCount;
 
                 if (isCaptureFrame) {
                     renderer.captureNextFrame(parsedArguments.screenshotPath.value());
@@ -1571,6 +1573,7 @@ int main(int argc, char** argv) {
                 }
 
                 bool presented = false;
+                bool skipped = false;
 
                 // Pumped once per frame, on the same beat as `AppearancePortal` (#363): a later instance's
                 // forwarded activation can arrive at any time this process keeps running, not only at startup.
@@ -1611,10 +1614,9 @@ int main(int argc, char** argv) {
                     // releases everything Fabric has queued since the last frame onto the JavaScript thread.
                     session->deliverInput(std::move(frameEvents));
 
-                    // A frame callback always draws; a fallback timeout draws only if the session reports pending
-                    // work, so an occluded window with nothing left to animate stops spinning the GPU every fallback
-                    // tick instead of chasing a callback the compositor is never going to send. See *Frame clock* in
-                    // docs/cpp-toolchain.md.
+                    // Either frame source draws only if the session reports pending work: an occluded window with
+                    // nothing left to animate stops spinning the GPU every fallback tick, and an idle visible one stops
+                    // presenting on every callback (#703). See *Frame clock* in docs/cpp-toolchain.md.
                     const react_native_linux::FrameClock::Source frameSource =
                         window.hasFrameCallbackFired() ? react_native_linux::FrameClock::Source::Callback
                                                        : react_native_linux::FrameClock::Source::Timer;
@@ -1627,7 +1629,14 @@ int main(int argc, char** argv) {
                     // A discarded content update is the third reason to draw regardless of the clock: it never turned
                     // into light and is owed no frame callback, so nothing else would ever wake this window to
                     // replace it. See *Surface commit ordering* in docs/cpp-toolchain.md.
-                    if (tick.shouldDraw || renderer.hasPendingCapture() || window.hasContentUpdateDiscarded()) {
+                    // A resize or a chrome change is the fourth: a new buffer extent or an activation is not Fabric
+                    // damage, and an idle window would otherwise never show it.
+                    skipped = !tick.shouldDraw && !renderer.hasPendingCapture() &&
+                              !window.hasContentUpdateDiscarded() && !hasResized && !chrome.isRepaintNeeded;
+
+                    if (skipped) {
+                        window.skipFrame();
+                    } else {
                         // The animation backend is driven by the same instant the frame clock measured, and before
                         // the scene is taken, so a mutation this frame produces is in the snapshot it paints. A
                         // running animation is also pending work, so a fallback timeout keeps drawing it when the
@@ -1689,24 +1698,26 @@ int main(int argc, char** argv) {
                 announceFirstPresentedFrameOnce(window, presented, firstPresentedFrameAnnounced, ladderPath,
                                                 broughtUp.record);
 
+                if (presented || skipped) {
+                    ++elapsedFrames;
+                }
+
                 if (presented) {
-                    ++presentedFrames;
                     chrome.isRepaintNeeded = false;
                 }
                 hasCaptured = isCaptureFrame && !renderer.hasPendingCapture();
 
                 if (!hasCaptured) {
-                    // The compositor is not pacing this window — that is what the fallback is for — so the wait
-                    // is the interval the pacing decision (#335) makes from the window's activity, the machine's
-                    // thermal state and the display's frame period.
+                    // When the compositor is not pacing this window, or an idle one armed no callback (#703), the
+                    // fallback is what wakes it, so the wait is the interval the pacing decision (#335) makes from
+                    // the window's activity, the machine's thermal state and the display's frame period.
                     const std::chrono::steady_clock::time_point fallbackNow = std::chrono::steady_clock::now();
                     const std::chrono::nanoseconds fallbackInterval = react_native_linux::FrameClock::fallbackInterval(
                         window.toplevelState().activated ? react_native_linux::FrameClock::WindowActivity::Active
                                                          : react_native_linux::FrameClock::WindowActivity::Inactive,
-                        readThermalState(fallbackNow), kNominalRefreshInterval);
+                        readThermalState(fallbackNow), window.refreshInterval().value_or(kNominalRefreshInterval));
 
-                    if (!window.waitForRedraw(
-                            std::chrono::duration_cast<std::chrono::milliseconds>(fallbackInterval))) {
+                    if (!window.waitForRedraw(std::chrono::ceil<std::chrono::milliseconds>(fallbackInterval))) {
                         break;
                     }
                 }

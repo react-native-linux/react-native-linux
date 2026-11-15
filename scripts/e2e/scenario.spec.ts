@@ -33,6 +33,7 @@ describe("parseScenario, field by field", () => {
       frames: EXPLICIT_FRAME_COUNT,
       injectProtocolError: false,
       inputTrace: false,
+      minIdleGapMs: null,
       name: "pressable-click",
       outputRefreshHz: null,
       ready: "pressable: committed surface 1",

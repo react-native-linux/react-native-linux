@@ -83,6 +83,23 @@ TEST(FrameTimingTest, TheSecondPresentedFrameCarriesTheDeltaToTheFirst) {
     EXPECT_EQ(second.frameNanoseconds.value(), 16U * kMillisecond);
 }
 
+/** #703: the frame presented after an idle span starts a new run, so the span is never a frame time. */
+TEST(FrameTimingTest, AFrameThatStartsARunAfterAnIdleSpanHasNoDelta) {
+    FrameTiming timing;
+
+    timing.recordPresented(kFirstSequence, 0, kRefreshNanoseconds, kVsyncFlag);
+    timing.startRun();
+    const FrameTiming::Frame afterIdle =
+        timing.recordPresented(kFirstSequence + 1, 2000 * kMillisecond, kRefreshNanoseconds, kVsyncFlag);
+    const FrameTiming::Frame next =
+        timing.recordPresented(kFirstSequence + 2, 2008 * kMillisecond, kRefreshNanoseconds, kVsyncFlag);
+
+    EXPECT_EQ(afterIdle.frameNanoseconds, std::nullopt);
+    EXPECT_EQ(next.frameNanoseconds, 8 * kMillisecond);
+    EXPECT_EQ(timing.summarise().frames, 3U);
+    EXPECT_EQ(timing.summarise().maximumNanoseconds, 8 * kMillisecond);
+}
+
 TEST(FrameTimingTest, PercentilesUseNearestRankOverAKnownTable) {
     const FrameTiming::Summary summary = buildKnownTable().summarise();
 

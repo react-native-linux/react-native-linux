@@ -97,6 +97,12 @@ const wp_presentation_feedback_listener WaylandWindow::kPresentationFeedbackList
     .discarded = WaylandWindow::handleFeedbackDiscarded,
 };
 
+const wp_presentation_feedback_listener WaylandWindow::kPresentationFeedbackAfterIdleListener{
+    .sync_output = WaylandWindow::handleFeedbackSyncOutput,
+    .presented = WaylandWindow::handleFeedbackPresentedAfterIdle,
+    .discarded = WaylandWindow::handleFeedbackDiscarded,
+};
+
 WaylandWindow::WaylandWindow(const WindowIdentity& identity, WindowSize initialSize)
     : size_(initialSize), title_(identity.title), forceClientDecorations_(identity.forceClientDecorations),
       noDecorations_(identity.noDecorations) {
@@ -332,8 +338,12 @@ void WaylandWindow::requestPresentationFeedback() {
         return;
     }
 
+    // Tagged per feedback rather than by resetting `FrameTiming` here: the previous frame's `presented` can still be
+    // in flight when the loop skips, because a compositor sends `wl_surface.frame` before the flip that presents it.
     struct wp_presentation_feedback* feedback = wp_presentation_feedback(presentation_, surface_);
-    wp_presentation_feedback_add_listener(feedback, &kPresentationFeedbackListener, this);
+    wp_presentation_feedback_add_listener(
+        feedback, hasSkippedFrame_ ? &kPresentationFeedbackAfterIdleListener : &kPresentationFeedbackListener, this);
+    hasSkippedFrame_ = false;
 }
 
 bool WaylandWindow::isPresentationSupported() const noexcept { return presentation_ != nullptr; }
@@ -348,6 +358,8 @@ std::vector<WaylandWindow::PresentationEvent> WaylandWindow::takePresentationEve
 FrameTiming::Summary WaylandWindow::frameTimingSummary() const { return frameTiming_.summarise(); }
 
 std::optional<uint32_t> WaylandWindow::presentationClockId() const noexcept { return presentationClockId_; }
+
+std::optional<std::chrono::nanoseconds> WaylandWindow::refreshInterval() const noexcept { return refreshInterval_; }
 
 bool WaylandWindow::hasPresentedFirstFrame() const noexcept { return presentedFirstFrame_; }
 
@@ -375,6 +387,11 @@ bool WaylandWindow::reportPendingDisplayError() {
 }
 
 bool WaylandWindow::hasFrameCallbackFired() const noexcept { return frameCallbackFired_; }
+
+void WaylandWindow::skipFrame() noexcept {
+    frameCallbackFired_ = false;
+    hasSkippedFrame_ = true;
+}
 
 std::vector<InputEvent> WaylandWindow::takeInputEvents() {
     if (seat_ == nullptr) {
@@ -721,10 +738,31 @@ void WaylandWindow::handleFeedbackPresented(void* data, struct wp_presentation_f
     const uint64_t presentedNanoseconds = (seconds * kNanosecondsPerSecond) + nanoseconds;
     const uint64_t sequence = (static_cast<uint64_t>(sequenceHigh) << kHighWordShift) | sequenceLow;
 
-    window->presentationEvents_.emplace_back(
-        window->frameTiming_.recordPresented(sequence, presentedNanoseconds, refresh, flags));
+    const FrameTiming::Frame frame =
+        window->frameTiming_.recordPresented(sequence, presentedNanoseconds, refresh, flags);
+
+    window->presentationEvents_.emplace_back(frame);
     window->presentedFirstFrame_ = true;
+
+    // A compositor that reports no refresh (zero, as headless wlroots does) still paces a FIFO swapchain to its
+    // display, so the shortest interval between two consecutive presented frames is that display's period.
+    if (refresh != 0) {
+        window->refreshInterval_ = std::chrono::nanoseconds(refresh);
+    } else if (frame.frameNanoseconds.has_value()) {
+        window->refreshInterval_ = std::min(window->refreshInterval_.value_or(std::chrono::nanoseconds::max()),
+                                            std::chrono::nanoseconds(frame.frameNanoseconds.value()));
+    }
+
     wp_presentation_feedback_destroy(feedback);
+}
+
+void WaylandWindow::handleFeedbackPresentedAfterIdle(void* data, struct wp_presentation_feedback* feedback,
+                                                     uint32_t secondsHigh, uint32_t secondsLow, uint32_t nanoseconds,
+                                                     uint32_t refresh, uint32_t sequenceHigh, uint32_t sequenceLow,
+                                                     uint32_t flags) {
+    static_cast<WaylandWindow*>(data)->frameTiming_.startRun();
+    handleFeedbackPresented(data, feedback, secondsHigh, secondsLow, nanoseconds, refresh, sequenceHigh, sequenceLow,
+                            flags);
 }
 
 void WaylandWindow::handleFeedbackDiscarded(void* data, struct wp_presentation_feedback* feedback) {

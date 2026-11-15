@@ -150,14 +150,12 @@ void WindowSession::tickAnimations(std::chrono::steady_clock::time_point now) {
 FrameClock::Tick WindowSession::recordFrameTick(FrameClock::Source source, std::chrono::steady_clock::time_point now) {
     const bool hasPending = hasPendingWork();
 
-    // The dirty edge exists independently of whichever frame source wakes this call: a callback tick draws
-    // whether or not there is pending work, but the invalidation it might be answering was already there.
     if (hasPending) {
         frameJournal_.recordDamage(toNanosecondsSinceEpoch(now));
     }
 
     if (source == FrameClock::Source::Callback) {
-        return frameClock_.onFrameCallback(now);
+        return frameClock_.onFrameCallback(now, hasPending);
     }
 
     return frameClock_.onFallbackTimeout(now, hasPending);

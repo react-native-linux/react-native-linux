@@ -56,6 +56,8 @@ FrameTiming::Frame FrameTiming::recordPresented(uint64_t sequence, uint64_t pres
 
 void FrameTiming::recordDiscarded() { ++discardedFrames_; }
 
+void FrameTiming::startRun() noexcept { previousPresentedNanoseconds_.reset(); }
+
 FrameTiming::Summary FrameTiming::summarise() const {
     std::vector<uint64_t> sortedIntervals(intervalNanoseconds_.begin(), intervalNanoseconds_.end());
     std::sort(sortedIntervals.begin(), sortedIntervals.end());

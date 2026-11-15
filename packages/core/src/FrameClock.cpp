@@ -43,7 +43,15 @@ std::chrono::nanoseconds FrameClock::fallbackInterval(WindowActivity activity, T
     return refreshInterval; // COV_EXCL: the switch above covers every enumerator; this return satisfies -Wreturn-type.
 }
 
-FrameClock::Tick FrameClock::onFrameCallback(std::chrono::steady_clock::time_point now) {
+FrameClock::Tick FrameClock::onFrameCallback(std::chrono::steady_clock::time_point now, bool hasPendingWork) {
+    if (hasPendingWork) {
+        settleCallbacks_ = 0;
+    } else if (settleCallbacks_ < kSettleCallbacks) {
+        ++settleCallbacks_;
+    } else {
+        return Tick{.shouldDraw = false, .deltaMilliseconds = 0.0, .source = Source::Callback, .resumed = false};
+    }
+
     const Tick tick = draw(now, Source::Callback);
 
     ++callbackTicks_;
@@ -59,6 +67,7 @@ FrameClock::Tick FrameClock::onFallbackTimeout(std::chrono::steady_clock::time_p
 
     const Tick tick = draw(now, Source::Timer);
 
+    settleCallbacks_ = 0;
     ++timerTicks_;
 
     return tick;

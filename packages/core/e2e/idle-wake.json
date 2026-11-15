@@ -1,0 +1,16 @@
+{
+  "name": "idle-wake",
+  "bundle": "idle-wake.js",
+  "outputRefreshHz": 120,
+  "ready": "idle-wake: committed surface 1",
+  "frames": 720,
+  "inputTrace": true,
+  "minIdleGapMs": 2000,
+  "frameBudget": {
+    "p95Ms": 17.5,
+    "minFrames": 100,
+    "maxHangs": 1
+  },
+  "steps": ["sleep 2500", "click 200 140", "sleep 1500"],
+  "expect": ["idle-wake: committed surface 1", "idle-wake: clicked", "idle-wake: animated 120 frames"]
+}

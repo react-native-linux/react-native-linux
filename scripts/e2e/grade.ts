@@ -11,6 +11,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 import { PNG } from "pngjs";
 import type { Scenario } from "./scenario.ts";
+import { findIdleGapFailures } from "./idle-gap.ts";
 import { gradeAutomation } from "./automation.ts";
 import path from "node:path";
 import { runKeyboardAwareInjection } from "./keyboard-focus.ts";
@@ -73,7 +74,10 @@ const gradeFrameTiming = (scenario: Scenario, frameLogPath: string): Grade => {
   const frameLogText = existsSync(frameLogPath) ? readFileSync(frameLogPath, "utf8") : NO_TEXT;
   const summary = parseFrameLogSummary(frameLogText);
   const journalSummary = parseFrameJournalSummary(frameLogText);
-  const inputTraceFailures = findInputTraceFailures(frameLogText, scenario.inputTrace, frameLogPath);
+  const inputTraceFailures = [
+    ...findInputTraceFailures(frameLogText, scenario.inputTrace, frameLogPath),
+    ...findIdleGapFailures(frameLogText, scenario.minIdleGapMs),
+  ];
   const notes = [
     ...(summary === null ? [] : [describeFrameTiming(summary)]),
     ...(journalSummary === null ? [] : [describeFrameJournal(journalSummary)]),
