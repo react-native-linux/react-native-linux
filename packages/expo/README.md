@@ -1,10 +1,12 @@
 # @react-native-linux/expo
 
-Expo on Linux, as [ADR-0004](../../docs/adr/0004-expo-javascript-runs-unmodified-over-the-native-module-seam.md)
-decides it: each Expo package's own JavaScript runs unmodified, over `expo-modules-core`'s JavaScript `globalThis.expo`
-(installed by the resolver rule in `packages/cli/src/package-variants.ts`) and a C++ TurboModule of this platform
-registered under the module's Expo native-module name. A package alias to a subpath here is the escape hatch for a
-module whose JavaScript has to differ; no module uses it yet.
+Expo on Linux, as [ADR-0004](../../docs/adr/0004-expo-javascript-runs-unmodified-over-the-native-module-seam.md) decides
+it: each Expo package's own JavaScript runs unmodified, over `expo-modules-core`'s JavaScript `globalThis.expo` and a
+C++ TurboModule of this platform registered under the module's Expo native-module name. The resolver rule in
+`packages/cli/src/package-overlays.ts` swaps in this platform's polyfill, which installs upstream's and answers
+`getViewConfig` from the Fabric component registry: `requireNativeView` mounts a registered view on its component, and
+an unregistered one as an empty view after upstream's warning. A package alias to a subpath here is the escape hatch for
+a module whose JavaScript has to differ; no module uses it yet.
 
 | Module | Written against | Seam or alias | Native module | Answers |
 | --- | --- | --- | --- | --- |

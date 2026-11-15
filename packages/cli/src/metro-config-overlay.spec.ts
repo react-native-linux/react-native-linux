@@ -5,6 +5,7 @@ import {
   resolveLinuxOverlayForResolvedFile,
 } from "./metro-config.ts";
 import { describe, expect, it } from "vitest";
+import { linuxPackageOverlayIndex } from "./package-overlays.ts";
 import path from "node:path";
 
 const upstreamFile = (subpath: string): string =>
@@ -90,10 +91,13 @@ describe("createLinuxResolveRequest", () => {
     expect(result).toStrictEqual({ filePath: overlayPath, type: "sourceFile" });
   });
 
-  it("substitutes a package variant for the file that produced", () => {
+  it("substitutes a package overlay for the file that produced", () => {
     const { result } = resolveWith({ filePath: expoPolyfill("index.js"), type: "sourceFile" }, "./polyfill");
 
-    expect(result).toStrictEqual({ filePath: expoPolyfill("index.web.js"), type: "sourceFile" });
+    expect(result).toStrictEqual({
+      filePath: linuxPackageOverlayIndex["expo-modules-core/build/polyfill/index"],
+      type: "sourceFile",
+    });
   });
 
   it.each([

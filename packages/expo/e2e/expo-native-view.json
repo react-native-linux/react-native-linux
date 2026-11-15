@@ -1,0 +1,14 @@
+{
+  "name": "expo-native-view",
+  "bundle": "expo-native-view.tsx",
+  "ready": "expo-native-view: child layout",
+  "frames": 600,
+  "steps": ["sleep 100"],
+  "expect": [
+    "expo-native-view: hasViewManagerConfig View=true FrostedCutout=false getViewConfig FrostedCutout=null",
+    "'Unable to get the view config for %s from module %s', 'FrostedCutout', 'T3NativeControls'",
+    "[component] 'ViewManagerAdapter_T3NativeControls_FrostedCutout' has no native component registered",
+    "expo-native-view: FrostedCutout layout 20,20 120x80",
+    "expo-native-view: child layout 10,10 40x30"
+  ]
+}

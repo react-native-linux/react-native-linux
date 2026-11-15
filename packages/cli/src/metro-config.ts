@@ -1,13 +1,9 @@
+import { coreDirectory, resolveLinuxPackageOverlayForResolvedFile } from "./package-overlays.ts";
 import { packageAliases, resolveLinuxPackageAlias } from "./package-aliases.ts";
-import { createRequire } from "node:module";
 import path from "node:path";
-import { resolveLinuxPackageVariantForResolvedFile } from "./package-variants.ts";
 
 const reactNativeModulePrefix = "react-native/";
 const linuxPlatform = "linux";
-
-// Resolved as a dependency rather than as a sibling directory, so a packed copy finds it inside node_modules.
-const coreDirectory = path.dirname(createRequire(import.meta.url).resolve("@react-native-linux/core/package.json"));
 
 const coreLinuxUtilitiesDirectory = path.join(coreDirectory, "src-linux", "Libraries", "Utilities");
 
@@ -179,8 +175,8 @@ const resolveWithBaselessVariant = <Resolution>(
 /**
  * The Metro `resolveRequest` of a linux bundle: the specifier rewrites of `resolveLinuxModuleName` first, Metro's
  * own resolution — whose `linux`, `native`, default extension chain is `resolvePlatformCandidates` — next, and the
- * overlay substitution of `resolveLinuxOverlayForResolvedFile`, or else the package variant of
- * `resolveLinuxPackageVariantForResolvedFile`, on whatever file that produced.
+ * overlay substitution of `resolveLinuxOverlayForResolvedFile`, or else the package overlay of
+ * `resolveLinuxPackageOverlayForResolvedFile`, on whatever file that produced.
  */
 const createLinuxResolveRequest =
   (isPackageResolvable: (packageName: string) => boolean) =>
@@ -200,7 +196,7 @@ const createLinuxResolveRequest =
       "filePath" in resolution &&
       typeof resolution.filePath === "string"
         ? (resolveLinuxOverlayForResolvedFile(resolution.filePath, platform) ??
-          resolveLinuxPackageVariantForResolvedFile(resolution.filePath, platform))
+          resolveLinuxPackageOverlayForResolvedFile(resolution.filePath, platform))
         : null;
 
     return overlayPath === null ? resolution : { filePath: overlayPath, type: "sourceFile" };
