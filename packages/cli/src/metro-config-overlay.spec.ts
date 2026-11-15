@@ -80,15 +80,14 @@ const expoPolyfill = (fileName: string): string =>
   path.join("/app", "node_modules", "expo-modules-core", "build", "polyfill", fileName);
 
 describe("createLinuxResolveRequest", () => {
-  it("rewrites the specifier, resolves it, and substitutes the overlay for the file that produced", () => {
-    const overlayPath = linuxOverlayIndex["Libraries/Utilities/Platform"];
+  it("resolves a deep import to its upstream file and substitutes the overlay for it", () => {
     const { requested, result } = resolveWith(
       { filePath: upstreamFile("Utilities/Platform.js"), type: "sourceFile" },
       "react-native/Libraries/Utilities/Platform",
     );
 
-    expect(requested).toStrictEqual([overlayPath]);
-    expect(result).toStrictEqual({ filePath: overlayPath, type: "sourceFile" });
+    expect(requested).toStrictEqual(["react-native/Libraries/Utilities/Platform"]);
+    expect(result).toStrictEqual({ filePath: linuxOverlayIndex["Libraries/Utilities/Platform"], type: "sourceFile" });
   });
 
   it("resolves a substituted package file again, as its linux package's specifier", () => {
@@ -175,6 +174,17 @@ describe("createLinuxResolveRequest for an overlay's own imports", () => {
       upstreamFile("StyleSheet/processColor.js"),
       overlayPath,
     ]);
+  });
+
+  it("resolves the package imports of an overlay a deep import reached first from the file it replaced", () => {
+    const overlayPath = linuxOverlayIndex["Libraries/StyleSheet/processColor"] ?? "";
+    const deepImport = "react-native/Libraries/StyleSheet/processColor";
+    const origins = resolveOrigins({ file: upstreamFile("StyleSheet/processColor.js"), specifier: deepImport }, [
+      ["/app/src/theme.ts", deepImport],
+      [overlayPath, "@react-native/normalize-colors"],
+    ]);
+
+    expect(origins).toStrictEqual(["/app/src/theme.ts", upstreamFile("StyleSheet/processColor.js")]);
   });
 });
 
