@@ -1319,6 +1319,32 @@ that thread, and it is compiled into `rnl_worklets`, which `rnl_react_core` now 
   Generating library specs is the autolinking driver's job, which is #137. The worklets Babel plugin and Metro
   resolution are #137 as well, so the `runOnUI`/`runOnJS` end-to-end test lands there.
 
+## react-native-reanimated (#139)
+
+`rnl_reanimated` compiles Reanimated's shared C++ (`Common/cpp/reanimated`, 104 translation units at `4.6.0`) from
+the vendored `packages/reanimated/upstream`, with that package's patch queue applied, plus `src/ReanimatedPlatform.cpp`.
+It is built like `rnl_worklets`: `target_compile_reactnative_options` (`-Wall -Werror`, clean), `REANIMATED_VERSION`
+and `REANIMATED_FEATURE_FLAGS` from the vendored `package.json` and `src/featureFlags/staticFlags.json`, and
+`REACT_NATIVE_VERSION_MINOR`/`_PATCH` from `scripts/vendor.lock.json`, because `Common/cpp` switches to React Native's
+animation backend on them. The shared-transition boundary's codegen props, which the layout animations include,
+are generated from the vendored spec at build time by `scripts/codegen-spec.ts`.
+
+**The compile-only guard.** Linux defines neither `ANDROID` nor `__APPLE__`, so building `rnl_reanimated` is the
+guard: the native job's `dev` entry builds it on every pull request, React Native and Reanimated bumps included, and
+`next-minor.yml` builds it against the next React Native minor. An upstream two-way platform `#ifdef` fails the
+build instead of an animation. Nothing links the target yet; the module proxy host (#140) will.
+
+**Patches:** one, listed with its upstream ask in `packages/reanimated/README.md`. On a platform that is neither
+Android nor Apple, `SynchronouslyUpdateUIPropsFunction` takes Apple's `(int, const folly::dynamic&)` shape, which is
+`IMountingManager::synchronouslyUpdateViewOnUIThread`'s, and `applySynchronousUpdates` hands it the batch the Apple
+way instead of dropping it.
+
+`makePlatformDepMethodsHolder` (`src/ReanimatedPlatform.*`) fills the platform contract. Its docblock is the one
+table of which members are real (`requestRender` on the frame queue, `getAnimationTimestamp` on `steady_clock`,
+synchronous props to the mounting manager, `maybeFlushUIUpdatesQueue` as a frame request) and which are stubs that
+throw an error naming themselves. `ReanimatedPlatformTest` in `rnl_core_tests` covers every member, inside the
+coverage gate.
+
 ## React Native bump procedure (#58)
 
 React Native's stability promise covers its JavaScript API, not its C++ or out-of-tree platforms, and this platform
@@ -1372,8 +1398,18 @@ components use it too). A library with components gets a static `react_codegen_<
 `rnl_autolinking.cpp` appends each component that is not `interfaceOnly` to `autolinkedComponentDescriptorProviders()`
 (`src/AutolinkedComponents.h`). `FabricHost` adds those after the built-ins and refuses a name that is already
 registered, a built-in's or another library's, rather than letting one descriptor replace another. Such a component
-paints as a `View` because its props derive from `ViewProps`. An `interfaceOnly` component's descriptor is the
-library's own C++, which is #150/#151's. The fixture's `CppLibraryView` is the CI proof
+paints as a `View` because its props derive from `ViewProps`; `LinuxMountingManager` names one whose props do not
+in its diagnostics (#150). An `interfaceOnly` component's descriptor is the library's own C++, in the
+`common/cpp/react/renderer/components/<name>` its podspec and Android CMakeLists compile: its `.cpp` files join
+`react_codegen_<name>`, and each descriptor its react-native.config.js lists under Android's `componentDescriptors`
+is appended when codegen generates it or a header there defines it, as a class or a `using` alias; that header is
+included. A declared name nothing defines is skipped with a printed line. Specs are found as upstream codegen finds
+them, in `jsSrcsDir` and its subdirectories. CI autolinks react-native-safe-area-context 5.11.1,
+react-native-svg 15.16.1 and react-native-screens 4.30.1 from their registry tarballs into every host, and mounts
+`RNCSafeAreaProvider`, `RNCSafeAreaView` and screens' `RNSScreenStackHeaderConfig`
+(`test-bundles/layout-only-component.js`). `FabricHost` puts an empty `std::shared_ptr<void>` under
+`"RCTImageLoader"` in its `ContextContainer`, because that descriptor and screens' tabs host read the key in
+`adopt` off Android and only store the pointer. The fixture's `CppLibraryView` is the CI proof
 (`test-bundles/autolinked-component.js`). It is registered when the mount tree names it with its frame, and no
 "`[component] 'CppLibraryView' has no native component registered`" line appears. The interop fallback would lay
 out and paint an unregistered name too, so the frame alone proves nothing.
@@ -1421,6 +1457,40 @@ and never writes into the user's home. `set` and `remove` are one transaction ea
 the database named by the empty string; `legacy_multiMerge` rejects, because no 3.x code path calls it.
 `AsyncStorageTest` covers the store, including a batch that fails part-way and lands nothing, and
 `test-bundles/async-storage.js` is the end-to-end proof through the TurboModule.
+
+## expo-sqlite (#638)
+
+Expo on Linux runs Expo's own JavaScript over the native-module seam: upstream expo-sqlite calls
+`requireNativeModule('ExpoSQLite')`, and expo-modules-core falls back to `TurboModuleRegistry.get` and
+`createTurboModuleToExpoProxy`, which copies the module's methods and spreads `getConstants()` onto it.
+`src/ExpoSQLiteModule.cpp` serves `ExpoSQLite` over `src/ExpoSQLite.cpp`; as ADR-0004 (#657) places every Expo module,
+the class lives in its own file and `TurboModuleRegistry.cpp` holds only its factory line. Like the registry, the
+module file is outside the coverage gate's scoped list: `SQLiteModuleTest` drives it from JavaScript instead.
+
+- `getConstants()` answers `defaultDatabaseDirectory`, which is `$XDG_DATA_HOME/<app-id>/SQLite` in `rnl_window` and
+  `null` in a headless host, so upstream's own error names the missing directory. It also answers an empty
+  `bundledExtensions` and the classes `NativeDatabase` and `NativeStatement`.
+- `ensureDatabasePathExistsAsync` creates the database's directory.
+- Only the asynchronous half of `NativeDatabase` and `NativeStatement` exists: init, close, exec,
+  `isInTransaction` and prepare, then run, step, get all, reset, column names and finalize. This is what
+  `openDatabaseAsync`, `execAsync`, `runAsync`, `getFirstAsync`, `getAllAsync` and the two transaction helpers
+  reach. They follow the semantics of upstream's Android `NativeStatement.kt`.
+- Upstream's classes are Expo `SharedObject`s. Nothing in expo-sqlite's JavaScript uses that API, so each instance
+  here is a plain object that carries its handle as JSI native state, with its methods on the class prototype.
+  Hermes cannot `new` a host function, so each constructor is a two-line JavaScript function that hands `this` to
+  a host initializer.
+
+Every call posts its work to `SQLiteDatabases`' one worker thread and settles its promise through the call invoker.
+A reload drains queued writes before the old instance goes. Each `NativeDatabase` is its own connection: upstream's
+Android cache, which shares one connection per path, is not reproduced. One worker serializes every connection, so
+a write while another connection holds a transaction fails with "database is locked" instead of waiting. BLOB
+values, the synchronous API, sessions, serialization, backups, deletion, extensions and the change listener are not
+implemented. A `NativeDatabase` constructed with serialized bytes (`deserializeDatabaseAsync`) or with an enabled open
+option other than `useNewConnection` and `finalizeUnusedStatementsBeforeClosing` throws an error naming it.
+
+`ExpoSQLiteTest` covers the store. `SQLiteModuleTest` drives the module from JavaScript with upstream's exact call
+sequence, and reloads into a second host that reads the rows back. The `expo-sqlite-reload` e2e writes inside an
+exclusive transaction in `rnl_window`, reloads through `DevSettings`, and reads the row back from the file.
 
 ## I18nManager (#72)
 
@@ -8584,7 +8654,7 @@ whole module type surface: int, string and memberless enums, unions, nested and 
 ArrayBuffers, host objects, callbacks, subscriptions, promises, event emitters and device events. Its spec,
 implementation and GoogleTest suite are outside the sparse checkout, so `tests/hermes/CMakeLists.txt` downloads
 the four files at the vendored tag, pinned by SHA-256; a React Native bump fails at configure until the hashes are
-re-read. `scripts/codegen-cxx-module.ts` turns the spec into `AppSpecsJSI.h` at build time, so the generated
+re-read. `scripts/codegen-spec.ts` turns the spec into `AppSpecsJSI.h` at build time, so the generated
 bindings always come from the pinned `@react-native/codegen`. Upstream's suite calls the C++ methods directly;
 `CxxModuleTypeSurfaceTest` calls every method from JavaScript, so each type crosses JSI in both directions under
 ASan and TSan. It leaves out two ArrayBuffer methods that settle on a detached thread, which

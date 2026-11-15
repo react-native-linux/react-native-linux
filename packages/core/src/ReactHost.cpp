@@ -248,6 +248,12 @@ KeyValueStore& ReactHost::keyValueStore() noexcept {
     return turboModuleRegistry_->keyValueStore();
 }
 
+SQLiteDatabases& ReactHost::sqliteDatabases() noexcept {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    return turboModuleRegistry_->sqliteDatabases();
+}
+
 LinuxWorkletsModule& ReactHost::worklets() noexcept {
     react_native_assert(std::this_thread::get_id() == owningThread_);
 

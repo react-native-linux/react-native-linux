@@ -178,6 +178,11 @@ FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::
     const std::shared_ptr<facebook::react::RuntimeScheduler> runtimeScheduler = reactInstance.getRuntimeScheduler();
     contextContainer_->insert(facebook::react::RuntimeSchedulerKey,
                               std::weak_ptr<facebook::react::RuntimeScheduler>(runtimeScheduler));
+    // react-native-screens' header-config and tabs-host descriptors read "RCTImageLoader" in `adopt` on every
+    // platform but Android, and `ContextContainer::at` throws for a missing key. They only store it as a weak_ptr
+    // that their iOS views lock, so an empty one is what this platform has to give:
+    // https://github.com/software-mansion/react-native-screens/blob/4.30.1/common/cpp/react/renderer/components/rnscreens/RNSScreenStackHeaderConfigComponentDescriptor.h#L54-L58
+    contextContainer_->insert("RCTImageLoader", std::shared_ptr<void>());
 
     facebook::react::SchedulerToolbox schedulerToolbox;
     schedulerToolbox.contextContainer = contextContainer_;
