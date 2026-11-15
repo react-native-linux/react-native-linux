@@ -1,0 +1,14 @@
+# gitleaks' default rules, plus one narrow exception. packages/*/upstream.lock.json maps each vendored file path to
+# its SHA-256, written by `pnpm upstream`; a path containing "Api" or "Key" next to a 64-hex hash matches the
+# generic-api-key rule. The exception applies to that rule only, on that file only, and only to a line that is a
+# JSON "path": "<64 lowercase hex>" entry, so every other rule, and any other line, is still scanned.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "upstream.lock.json: a vendored file path mapped to its SHA-256"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = ['''^packages/[^/]+/upstream\.lock\.json$''']
+regexes = ['''^\s*"[^"]+": "[0-9a-f]{64}",?$''']

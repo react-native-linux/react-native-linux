@@ -1,6 +1,7 @@
 #include "CurlHttpClient.h"
 
-#include <arpa/inet.h>
+#include "LoopbackHttpServer.h"
+
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -12,7 +13,6 @@
 #include <gtest/gtest.h>
 #include <memory>
 #include <mutex>
-#include <netinet/in.h>
 #include <string>
 #include <sys/socket.h>
 #include <thread>
@@ -28,128 +28,6 @@ namespace http = facebook::react::http;
 constexpr size_t kLargeBodyBytes = 12U * 1024U * 1024U;
 constexpr size_t kWriteChunkBytes = 64U * 1024U;
 constexpr std::chrono::seconds kCompletionBudget{30};
-
-/**
- * A one-thread HTTP/1.1 server on an ephemeral loopback port. Each connection's request, headers and body, is read
- * whole and handed to the route, which writes the response on the socket itself; a route that writes nothing
- * holds the connection open until the server stops, which is how a timeout and a cancellation are staged.
- */
-class LoopbackServer final {
-public:
-    using Route = std::function<void(const std::string& request, int socket)>;
-
-    explicit LoopbackServer(Route route) : route_(std::move(route)) {
-        listener_ = ::socket(AF_INET, SOCK_STREAM, 0);
-        sockaddr_in address{};
-        address.sin_family = AF_INET;
-        address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        ::bind(listener_, reinterpret_cast<sockaddr*>(&address), sizeof(address));
-        ::listen(listener_, 8);
-        socklen_t length = sizeof(address);
-        ::getsockname(listener_, reinterpret_cast<sockaddr*>(&address), &length);
-        port_ = ntohs(address.sin_port);
-        thread_ = std::thread([this]() { serve(); });
-    }
-
-    LoopbackServer(const LoopbackServer&) = delete;
-    LoopbackServer& operator=(const LoopbackServer&) = delete;
-
-    ~LoopbackServer() {
-        stopped_.store(true);
-        ::shutdown(listener_, SHUT_RDWR);
-        ::close(listener_);
-        thread_.join();
-
-        for (const int connection : held_) {
-            ::close(connection);
-        }
-    }
-
-    std::string url(const std::string& path) const { return "http://127.0.0.1:" + std::to_string(port_) + path; }
-
-    std::string lastRequest() {
-        const std::lock_guard<std::mutex> guard(mutex_);
-
-        return lastRequest_;
-    }
-
-private:
-    static std::string readRequest(int connection) {
-        std::string request;
-        std::array<char, 4096> buffer{};
-
-        while (true) {
-            const size_t headerEnd = request.find("\r\n\r\n");
-
-            if (headerEnd != std::string::npos) {
-                const size_t lengthField = request.find("Content-Length: ");
-                const size_t bodyLength =
-                    lengthField == std::string::npos ? 0 : std::stoul(request.substr(lengthField + 16));
-
-                if (request.size() >= headerEnd + 4 + bodyLength) {
-                    return request;
-                }
-            }
-
-            const ssize_t count = ::recv(connection, buffer.data(), buffer.size(), 0);
-
-            if (count <= 0) {
-                return request;
-            }
-
-            request.append(buffer.data(), static_cast<size_t>(count));
-        }
-    }
-
-    void serve() {
-        while (!stopped_.load()) {
-            const int connection = ::accept(listener_, nullptr, nullptr);
-
-            if (connection < 0) {
-                return;
-            }
-
-            const std::string request = readRequest(connection);
-
-            {
-                const std::lock_guard<std::mutex> guard(mutex_);
-                lastRequest_ = request;
-            }
-
-            route_(request, connection);
-            held_.push_back(connection);
-        }
-    }
-
-    Route route_;
-    int listener_{-1};
-    uint16_t port_{0};
-    std::atomic<bool> stopped_{false};
-    std::mutex mutex_;
-    std::string lastRequest_;
-    std::vector<int> held_;
-    std::thread thread_;
-};
-
-void writeAll(int socket, const std::string& bytes) {
-    size_t written = 0;
-
-    while (written < bytes.size()) {
-        const ssize_t count = ::send(socket, bytes.data() + written, bytes.size() - written, MSG_NOSIGNAL);
-
-        if (count <= 0) {
-            return;
-        }
-
-        written += static_cast<size_t>(count);
-    }
-}
-
-void respond(int socket, const std::string& status, const std::string& headers, const std::string& body) {
-    writeAll(socket, "HTTP/1.1 " + status + "\r\nContent-Length: " + std::to_string(body.size()) +
-                         "\r\nConnection: close\r\n" + headers + "\r\n" + body);
-    ::shutdown(socket, SHUT_WR);
-}
 
 void respondWithLargeBody(int socket) {
     writeAll(socket,
@@ -223,7 +101,7 @@ struct Recording {
 };
 
 TEST(CurlHttpClientTest, DeliversTheStatusTheHeadersAndTheBufferedBodyOnce) {
-    LoopbackServer server([](const std::string& /*request*/, int socket) {
+    LoopbackHttpServer server([](const std::string& /*request*/, int socket) {
         respond(socket, "200 OK", "X-Probe: yes\r\nX-Empty:\r\n", "hello");
     });
     CurlHttpClient client;
@@ -247,7 +125,7 @@ TEST(CurlHttpClientTest, DeliversTheStatusTheHeadersAndTheBufferedBodyOnce) {
  * delivery has no ceiling.
  */
 TEST(CurlHttpClientTest, StreamsATwelveMegabyteDownloadIncrementallyAndBuffersOneWithoutACeiling) {
-    LoopbackServer server([](const std::string& /*request*/, int socket) { respondWithLargeBody(socket); });
+    LoopbackHttpServer server([](const std::string& /*request*/, int socket) { respondWithLargeBody(socket); });
     CurlHttpClient client;
     Recording streamed;
     Recording buffered;
@@ -267,7 +145,8 @@ TEST(CurlHttpClientTest, StreamsATwelveMegabyteDownloadIncrementallyAndBuffersOn
 TEST(CurlHttpClientTest, UploadsMultipartFormDataWithAStringFieldAndAFile) {
     const std::filesystem::path filePath = std::filesystem::temp_directory_path() / "rnl-curl-upload.txt";
     std::ofstream(filePath) << "file-contents";
-    LoopbackServer server([](const std::string& /*request*/, int socket) { respond(socket, "201 Created", "", ""); });
+    LoopbackHttpServer server(
+        [](const std::string& /*request*/, int socket) { respond(socket, "201 Created", "", ""); });
     CurlHttpClient client;
     Recording recording;
     const http::FormData formData{
@@ -293,7 +172,7 @@ TEST(CurlHttpClientTest, UploadsMultipartFormDataWithAStringFieldAndAFile) {
 }
 
 TEST(CurlHttpClientTest, SendsAStringBodyAndADecodedBase64Body) {
-    LoopbackServer server([](const std::string& /*request*/, int socket) { respond(socket, "200 OK", "", "ok"); });
+    LoopbackHttpServer server([](const std::string& /*request*/, int socket) { respond(socket, "200 OK", "", "ok"); });
     CurlHttpClient client;
     Recording stringRecording;
     Recording base64Recording;
@@ -331,7 +210,7 @@ TEST(CurlHttpClientTest, FailsARequestWhoseBodyCannotBeSentWithoutContactingTheS
 }
 
 TEST(CurlHttpClientTest, RejectsMalformedBase64BodiesBeforeContactingTheServer) {
-    LoopbackServer server([](const std::string&, int socket) { respond(socket, "200 OK", "", ""); });
+    LoopbackHttpServer server([](const std::string&, int socket) { respond(socket, "200 OK", "", ""); });
     CurlHttpClient client;
 
     for (const std::string& malformed : {"A", "YQ==junk", "aGk=*"}) {
@@ -348,7 +227,7 @@ TEST(CurlHttpClientTest, RejectsMalformedBase64BodiesBeforeContactingTheServer) 
 
 TEST(CurlHttpClientTest, FollowsARedirectAndReportsOnlyTheFinalResponsesHeaders) {
     std::string target;
-    LoopbackServer server([&target](const std::string& request, int socket) {
+    LoopbackHttpServer server([&target](const std::string& request, int socket) {
         if (request.starts_with("GET /from")) {
             respond(socket, "302 Found", "Location: " + target + "\r\nX-Hop: first\r\n", "");
         } else {
@@ -368,7 +247,7 @@ TEST(CurlHttpClientTest, FollowsARedirectAndReportsOnlyTheFinalResponsesHeaders)
 }
 
 TEST(CurlHttpClientTest, SharesRedirectCookiesWithMatchingRequestsOnOnlyTheSameClient) {
-    LoopbackServer server([](const std::string& request, int socket) {
+    LoopbackHttpServer server([](const std::string& request, int socket) {
         if (request.starts_with("GET /from ")) {
             respond(socket, "302 Found",
                     "Location: /to\r\nSet-Cookie: session=active; Path=/\r\n"
@@ -407,7 +286,7 @@ TEST(CurlHttpClientTest, SharesRedirectCookiesWithMatchingRequestsOnOnlyTheSameC
 }
 
 TEST(CurlHttpClientTest, AServerCanExpireACookieAndACompletedTokenCanOutliveTheClient) {
-    LoopbackServer server([](const std::string& request, int socket) {
+    LoopbackHttpServer server([](const std::string& request, int socket) {
         if (request.starts_with("GET /set ")) {
             respond(socket, "200 OK", "Set-Cookie: session=active; Path=/\r\n", "");
         } else {
@@ -437,7 +316,7 @@ TEST(CurlHttpClientTest, AServerCanExpireACookieAndACompletedTokenCanOutliveTheC
 }
 
 TEST(CurlHttpClientTest, AnswersAHeadRequestAndAnEmptyBodyWithAnEmptyBody) {
-    LoopbackServer server(
+    LoopbackHttpServer server(
         [](const std::string& /*request*/, int socket) { respond(socket, "204 No Content", "", ""); });
     CurlHttpClient client;
     Recording recording;
@@ -451,7 +330,7 @@ TEST(CurlHttpClientTest, AnswersAHeadRequestAndAnEmptyBodyWithAnEmptyBody) {
 }
 
 TEST(CurlHttpClientTest, ReportsATimeoutAsATimeoutAndARefusedConnectionAsAnError) {
-    LoopbackServer server([](const std::string& /*request*/, int /*socket*/) {});
+    LoopbackHttpServer server([](const std::string& /*request*/, int /*socket*/) {});
     CurlHttpClient client;
     Recording timedOut;
     Recording refused;
@@ -468,7 +347,7 @@ TEST(CurlHttpClientTest, ReportsATimeoutAsATimeoutAndARefusedConnectionAsAnError
 }
 
 TEST(CurlHttpClientTest, ACancelledRequestAndOneInFlightAtTeardownCompleteWithNoCallback) {
-    LoopbackServer server([](const std::string& /*request*/, int /*socket*/) {});
+    LoopbackHttpServer server([](const std::string& /*request*/, int /*socket*/) {});
     Recording cancelled;
     Recording inFlight;
     std::unique_ptr<http::IRequestToken> token;
@@ -487,7 +366,7 @@ TEST(CurlHttpClientTest, ACancelledRequestAndOneInFlightAtTeardownCompleteWithNo
 }
 
 TEST(CurlHttpClientTest, RunsARequestThatSetNoOptionalCallbacks) {
-    LoopbackServer server([](const std::string& /*request*/, int socket) { respond(socket, "200 OK", "", "x"); });
+    LoopbackHttpServer server([](const std::string& /*request*/, int socket) { respond(socket, "200 OK", "", "x"); });
     CurlHttpClient client;
     std::promise<std::string> completed;
     std::string body;
@@ -508,7 +387,7 @@ TEST(CurlHttpClientTest, RunsARequestThatSetNoOptionalCallbacks) {
 
 /** #79: loading a bundle from a Metro dev server, Metro's build-error response, and a redirect it never follows. */
 TEST(CurlHttpClientTest, FetchesABundleAndFailsOnABuildErrorARedirectOrNoServerNamingTheUrl) {
-    LoopbackServer server([](const std::string& request, int socket) {
+    LoopbackHttpServer server([](const std::string& request, int socket) {
         if (request.starts_with("GET /index.bundle")) {
             respond(socket, "200 OK", "", "globalThis.loaded = true;");
         } else if (request.starts_with("GET /moved.bundle")) {

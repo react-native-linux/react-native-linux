@@ -352,7 +352,11 @@ public:
         : steps_(std::move(steps)) {}
 
     std::optional<react_native_linux::WindowControlStep> take(std::chrono::steady_clock::time_point now) {
-        if (nextStepIndex_ >= steps_.size() || now - lastStepTime_ < kInjectWindowSequenceInterval) {
+        if (!lastStepTime_.has_value()) {
+            lastStepTime_ = now;
+        }
+
+        if (nextStepIndex_ >= steps_.size() || now - lastStepTime_.value() < kInjectWindowSequenceInterval) {
             return std::nullopt;
         }
 
@@ -366,7 +370,9 @@ private:
 
     std::vector<react_native_linux::WindowControlStep> steps_;
     size_t nextStepIndex_{0};
-    std::chrono::steady_clock::time_point lastStepTime_{std::chrono::steady_clock::now()};
+    // Armed by the first `take`, not at construction: cage answers the startup commit with a configure of its own
+    // that the frame loop has not dispatched yet, and a step replayed ahead of it would be overwritten by it.
+    std::optional<std::chrono::steady_clock::time_point> lastStepTime_;
 };
 
 /**

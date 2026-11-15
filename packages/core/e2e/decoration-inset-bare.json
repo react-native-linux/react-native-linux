@@ -1,0 +1,17 @@
+{
+  "name": "decoration-inset-bare",
+  "bundle": "decorations-target.js",
+  "ready": "decorations-target: committed surface 1",
+  "frames": 600,
+  "windowFlags": ["--no-decorations", "--inject-window-sequence", "{800x600}{Tiled:960x700}"],
+  "steps": ["sleep 1500", "click 2 300", "sleep 500"],
+  "expect": [
+    "[rnl-decorations] mode=bare",
+    "[rnl-geometry] configure 800x600 maximized=0 fullscreen=0 tiled=0 resizing=0",
+    "decorations-target: layout 800x600 window 800x600",
+    "[rnl-geometry] configure 960x700 maximized=0 fullscreen=0 tiled=1 resizing=0",
+    "decorations-target: layout 960x700 window 960x700",
+    "decorations-target: topPointerDown on content at 2,300"
+  ],
+  "reject": ["[rnl-decorations] resize"]
+}

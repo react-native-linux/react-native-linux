@@ -25,6 +25,11 @@ the build host's system libraries, so build it on the distribution the applicati
 that way; AGENTS.md names this as the one exception to the TypeScript rule. `packages/cli/src/init-template.spec.ts` pins the
 template's dependencies to the versions the harness app is tested with.
 
+Worklets work out of the box: `react-native-worklets` is a dependency, at the version core compiles its native
+runtime from, and its Babel plugin runs last in `.babelrc`, as worklets requires. A function with the `'worklet'`
+directive runs on the UI runtime through `scheduleOnUI`; the harness's `worklets-round-trip` e2e scenario proves it
+with this same Babel configuration.
+
 `pnpm test:fresh-project [build-directory]` is this whole flow as CI runs it in the `window` job (#57): it packs,
 initialises an app from this template outside the checkout, installs the tarballs, bundles, and renders the app's
 first screen with the packed `rnl_window` into `build/fresh-project/fresh-project.png`, which

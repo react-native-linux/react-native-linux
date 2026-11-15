@@ -720,7 +720,9 @@ if(TARGET rnl_skia)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/ImageManager.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/ImagePipeline.cpp)
     set_property(TARGET react_renderer_imagemanager PROPERTY SOURCES ${RNL_IMAGE_MANAGER_SOURCES})
-    target_include_directories(react_renderer_imagemanager PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    # ReactCxxPlatform for react/http/IHttpClient.h: a remote source downloads through src/CurlHttpClient.h (#79).
+    target_include_directories(react_renderer_imagemanager PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
+                               ${REACT_CXX_PLATFORM_DIR})
 
     # Keyword-less, because the vendored CMakeLists calls target_link_libraries without keywords and the two
     # signatures cannot be mixed on one target. Skia's codecs need no system library beyond what the archive
