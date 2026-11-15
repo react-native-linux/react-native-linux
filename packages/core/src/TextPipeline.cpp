@@ -577,10 +577,12 @@ struct TextPipelineState {
         reportResolvedDefaultFontFamily(fontDirectory);
 
         fontCollection->setAssetFontManager(assetFontManager);
-        fontCollection->setDefaultFontManager(SkFontMgr_New_FontConfig(nullptr, SkFontScanner_Make_FreeType()),
-                                              kFallbackFontFamily);
+        fontCollection->setDefaultFontManager(systemFontManager, kFallbackFontFamily);
     }
 
+    // Set once, before any thread can reach the state, so `registerApplicationFont` reads font files through it
+    // without the mutex.
+    const sk_sp<SkFontMgr> systemFontManager = SkFontMgr_New_FontConfig(nullptr, SkFontScanner_Make_FreeType());
     std::mutex mutex;
     sk_sp<skia::textlayout::FontCollection> fontCollection;
     sk_sp<SkUnicode> unicode;
@@ -897,11 +899,10 @@ void registerApplicationFonts(const std::string& fontDirectory) {
 
 bool registerApplicationFont(const std::string& fontFamily, const std::vector<std::string>& fontPaths) {
     TextPipelineState& state = textPipelineState();
-    const std::lock_guard<std::mutex> guard(state.mutex);
     std::vector<sk_sp<SkTypeface>> typefaces;
 
     for (const std::string& fontPath : fontPaths) {
-        sk_sp<SkTypeface> typeface = state.fontCollection->getFallbackManager()->makeFromFile(fontPath.c_str());
+        sk_sp<SkTypeface> typeface = state.systemFontManager->makeFromFile(fontPath.c_str());
 
         if (typeface == nullptr) {
             return false;
@@ -909,6 +910,8 @@ bool registerApplicationFont(const std::string& fontFamily, const std::vector<st
 
         typefaces.push_back(std::move(typeface));
     }
+
+    const std::lock_guard<std::mutex> guard(state.mutex);
 
     if (state.applicationFontManager == nullptr) {
         state.applicationFontManager = sk_make_sp<skia::textlayout::TypefaceFontProvider>();

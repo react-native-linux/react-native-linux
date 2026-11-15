@@ -137,6 +137,9 @@ void registerApplicationFonts(const std::string& fontDirectory);
  * false, registering none of them, when any file is missing or is not a font, so a failed family load lists nothing.
  * The pipeline's caches are cleared, but React Native's `TextMeasureCache` is not: text measured in a fallback face
  * before the font loaded keeps that size until its attributes change and it is measured again (#697).
+ *
+ * Threading contract: any thread. The files are read and parsed before the pipeline's lock is taken, so a slow file
+ * never stalls the render thread's paint; the lock covers only the registration and the cache clears.
  */
 bool registerApplicationFont(const std::string& fontFamily, const std::vector<std::string>& fontPaths);
 
