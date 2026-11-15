@@ -1,10 +1,9 @@
-import { AdaptedEvent, Point } from '../interfaces';
+import type { AdaptedEvent, Point } from '../interfaces';
 import VelocityTracker from './VelocityTracker';
 
 export interface TrackerElement {
   abosoluteCoords: Point;
   relativeCoords: Point;
-  timestamp: number;
   velocityX: number;
   velocityY: number;
 }
@@ -33,8 +32,12 @@ export default class PointerTracker {
     }
   }
 
+  public isTrackingPointer(pointerId: number): boolean {
+    return this.trackedPointers.has(pointerId);
+  }
+
   public addToTracker(event: AdaptedEvent): void {
-    if (this.trackedPointers.has(event.pointerId)) {
+    if (this.isTrackingPointer(event.pointerId)) {
       return;
     }
 
@@ -43,7 +46,6 @@ export default class PointerTracker {
     const newElement: TrackerElement = {
       abosoluteCoords: { x: event.x, y: event.y },
       relativeCoords: { x: event.offsetX, y: event.offsetY },
-      timestamp: event.time,
       velocityX: 0,
       velocityY: 0,
     };
@@ -120,6 +122,15 @@ export default class PointerTracker {
           y: pointerData.velocityY,
         }
       : null;
+  }
+
+  public getVelocityAt(pointerId: number, time: number) {
+    if (!this.isTrackingPointer(pointerId)) {
+      return null;
+    }
+
+    const [x, y] = this.velocityTracker.velocityAt(time);
+    return { x, y };
   }
 
   public getLastAbsoluteCoords(pointerId?: number) {

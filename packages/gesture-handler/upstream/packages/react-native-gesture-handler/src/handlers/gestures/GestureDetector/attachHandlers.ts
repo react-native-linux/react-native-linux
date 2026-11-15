@@ -1,27 +1,30 @@
-import React from 'react';
-import { GestureType, HandlerCallbacks } from '../gesture';
-import { registerHandler } from '../../handlersRegistry';
-import RNGestureHandlerModule from '../../../RNGestureHandlerModule';
-import { filterConfig, scheduleFlushOperations } from '../../utils';
-import { ComposedGesture } from '../gestureComposition';
-import { ActionType } from '../../../ActionType';
+import type React from 'react';
 import { Platform } from 'react-native';
-import type RNGestureHandlerModuleWeb from '../../../RNGestureHandlerModule.web';
+
+import { ActionType } from '../../../ActionType';
 import { ghQueueMicrotask } from '../../../ghQueueMicrotask';
-import { AttachedGestureState, WebEventHandler } from './types';
-import {
-  extractGestureRelations,
-  checkGestureCallbacksForWorklets,
-  ALLOWED_PROPS,
-} from './utils';
 import { MountRegistry } from '../../../mountRegistry';
+import RNGestureHandlerModule from '../../../RNGestureHandlerModule';
+import type RNGestureHandlerModuleWeb from '../../../RNGestureHandlerModule.web';
+import type { PropsRef } from '../../../web/interfaces';
+import { registerHandler } from '../../handlersRegistry';
+import { filterConfig, scheduleFlushOperations } from '../../utils';
+import type { GestureType, HandlerCallbacks } from '../gesture';
+import type { ComposedGesture } from '../gestureComposition';
+import type { AttachedGestureState } from './types';
+import {
+  ALLOWED_PROPS,
+  checkGestureCallbacksForWorklets,
+  extractGestureRelations,
+  hasExternalRelations,
+} from './utils';
 
 interface AttachHandlersConfig {
   preparedGesture: AttachedGestureState;
   gestureConfig: ComposedGesture | GestureType;
   gesturesToAttach: GestureType[];
   viewTag: number;
-  webEventHandlersRef: React.RefObject<WebEventHandler>;
+  webEventHandlersRef: React.RefObject<PropsRef>;
 }
 
 export function attachHandlers({
@@ -53,6 +56,9 @@ export function attachHandlers({
     registerHandler(handler.handlerTag, handler, handler.config.testId);
   }
 
+  // React to every mount until the microtask below classifies the new gesture set
+  preparedGesture.hasExternalRelations = true;
+
   // Use queueMicrotask to extract handlerTags, because all refs should be initialized
   // when it's ran
   ghQueueMicrotask(() => {
@@ -60,18 +66,26 @@ export function attachHandlers({
       return;
     }
     for (const handler of gesturesToAttach) {
-      RNGestureHandlerModule.updateGestureHandler(
+      RNGestureHandlerModule.setGestureHandlerConfig(
         handler.handlerTag,
-        filterConfig(
-          handler.config,
-          ALLOWED_PROPS,
-          extractGestureRelations(handler)
-        )
+        filterConfig(handler.config, ALLOWED_PROPS)
+      );
+
+      RNGestureHandlerModule.configureRelations(
+        handler.handlerTag,
+        extractGestureRelations(handler)
       );
     }
 
+    preparedGesture.hasExternalRelations =
+      hasExternalRelations(gesturesToAttach);
+
     scheduleFlushOperations();
   });
+
+  // Set before the mount events below fire, so this detector's own mount
+  // listener can tell its gestures apart from external ones
+  preparedGesture.attachedGestures = gesturesToAttach;
 
   for (const gesture of gesturesToAttach) {
     const actionType = gesture.shouldUseReanimated
@@ -97,8 +111,6 @@ export function attachHandlers({
 
     MountRegistry.gestureWillMount(gesture);
   }
-
-  preparedGesture.attachedGestures = gesturesToAttach;
 
   if (preparedGesture.animatedHandlers) {
     const isAnimatedGesture = (g: GestureType) => g.shouldUseReanimated;

@@ -39,12 +39,23 @@
     },
     "packages/expo": {
       "project": ["src/**/*.ts"],
-      "ignoreDependencies": ["expo-asset", "expo-file-system", "expo-modules-core", "whatwg-url-minimum"]
+      "expo": false,
+      "ignoreDependencies": [
+        "expo-application",
+        "expo-asset",
+        "expo-device",
+        "expo-file-system",
+        "expo-font",
+        "expo-linking",
+        "expo-modules-core",
+        "expo-network",
+        "whatwg-url-minimum"
+      ]
     },
     "packages/gesture-handler": {
       "project": ["src/**/*.ts"],
       "ignore": ["upstream/**"],
-      "ignoreDependencies": ["@egjs/hammerjs", "hoist-non-react-statics", "invariant"]
+      "ignoreDependencies": ["invariant"]
     },
     "packages/reanimated": {
       "project": ["src/**/*.ts"],

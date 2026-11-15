@@ -108,6 +108,7 @@ add_executable(rnl_core_hermes_tests
     CxxModuleTypeSurfaceTest.cpp
     DevBundleModulesTest.cpp
     ExpoAssetModuleTest.cpp
+    ExpoStartupModulesTest.cpp
     ExponentConstantsModuleTest.cpp
     ExpoFileSystemModuleTest.cpp
     ExpoSharedObjectTest.cpp
@@ -160,11 +161,11 @@ target_compile_definitions(rnl_core_hermes_tests
 
 # Two things exist only where rnl_react_core links Skia, and the sanitizer presets build without it: the decoder
 # behind CrossThreadMountingStressTest's image-decode leg and RemoteImageTest, and the text pipeline
-# ResizeTextCostTest shapes through and ApplicationFontsTest registers into.
+# ResizeTextCostTest shapes through and ApplicationFontsTest and ExpoFontLoaderModuleTest register into.
 if(TARGET rnl_skia)
     target_compile_definitions(rnl_core_hermes_tests PRIVATE RNL_ENABLE_IMAGES)
     target_sources(rnl_core_hermes_tests PRIVATE ApplicationFontsTest.cpp BidiHitTestTest.cpp EditorGeometryTest.cpp
-                   RemoteImageTest.cpp ResizeTextCostTest.cpp)
+                   ExpoFontLoaderModuleTest.cpp RemoteImageTest.cpp ResizeTextCostTest.cpp)
     target_compile_definitions(rnl_core_hermes_tests
         PRIVATE "RNL_VENDORED_FONT_DIR=\"${CMAKE_SOURCE_DIR}/packages/core/fonts\""
                 "RNL_TEST_IMAGE=\"${CMAKE_SOURCE_DIR}/packages/core/assets/rnl-test-image.png\"")

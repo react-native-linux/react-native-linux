@@ -1,0 +1,8 @@
+{
+  "name": "gesture-reanimated-swipeable",
+  "bundle": "reanimated-swipeable.tsx",
+  "ready": "swipeable: row 400x60",
+  "frames": 900,
+  "steps": ["sleep 300"],
+  "expect": ["swipeable: row 400x60"]
+}

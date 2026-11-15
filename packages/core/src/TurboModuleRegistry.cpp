@@ -4,8 +4,13 @@
 #include "BeastWebSocketClient.h"
 #include "Clipboard.h"
 #include "CurlHttpClient.h"
+#include "ExpoApplicationModule.h"
 #include "ExpoAsset.h"
+#include "ExpoDeviceModule.h"
 #include "ExpoFileSystem.h"
+#include "ExpoFontLoaderModule.h"
+#include "ExpoLinkingModule.h"
+#include "ExpoNetworkModule.h"
 #include "ExpoSQLite.h"
 #include "FantomRenderOutput.h"
 #include "HostTimerRegistry.h"
@@ -25,8 +30,11 @@
 #include <climits>
 #include <cstring>
 #include <cxxreact/ReactNativeVersion.h>
+#include <filesystem>
+#include <fstream>
 #include <functional>
 #include <iostream>
+#include <iterator>
 #include <jsi/JSIDynamic.h>
 #include <memory>
 #include <optional>
@@ -878,17 +886,21 @@ public:
 
 /**
  * `ExponentConstants` (ADR-0004), the native module upstream's unmodified `expo-constants` finds through
- * `requireOptionalNativeModule`'s TurboModule fallback, answered as a bare desktop app: no status bar, no manifest
- * until a linux build embeds the app config, the host name as the device name, and no web view, so the user agent
- * resolves `null`. `debugMode` is the native build configuration, as iOS reports it. Every field `NativeConstants`
- * requires in SDK 58 is present except `name`, which upstream's `Constants.ts` strips on every platform.
+ * `requireOptionalNativeModule`'s TurboModule fallback, answered as a bare desktop app: no status bar, the host name
+ * as the device name, and no web view, so the user agent resolves `null`. `manifest` is the app config a linux build
+ * embeds as `assets/app.config` beside its bundle, the JSON string Android's module serves from its APK's
+ * `assets/app.config`; a bundle loaded from a URL or without that file has `null`. `debugMode` is the native build
+ * configuration, as iOS reports it. Every field `NativeConstants` requires in SDK 58 is present except `name`, which
+ * upstream's `Constants.ts` strips on every platform.
  */
 class LinuxExponentConstantsModule final : public facebook::react::TurboModule {
 public:
     static constexpr std::string_view kModuleName = "ExponentConstants";
 
-    explicit LinuxExponentConstantsModule(std::shared_ptr<facebook::react::CallInvoker> jsInvoker)
-        : TurboModule(std::string(kModuleName), std::move(jsInvoker)), sessionId_(randomUuid()) {
+    LinuxExponentConstantsModule(std::shared_ptr<facebook::react::CallInvoker> jsInvoker,
+                                 std::shared_ptr<const std::string> bundleUrl)
+        : TurboModule(std::string(kModuleName), std::move(jsInvoker)), sessionId_(randomUuid()),
+          bundleUrl_(std::move(bundleUrl)) {
         methodMap_["getConstants"] = {0, [](facebook::jsi::Runtime& runtime, TurboModule& turboModule,
                                             const facebook::jsi::Value* /*arguments*/, size_t /*count*/) {
                                           return constants(runtime,
@@ -932,6 +944,21 @@ private:
         return uuid;
     }
 
+    static facebook::jsi::Value embeddedAppConfig(facebook::jsi::Runtime& runtime, const std::string& bundleUrl) {
+        if (bundleUrl.empty() || bundleUrl.find("://") != std::string::npos) {
+            return facebook::jsi::Value::null();
+        }
+
+        std::ifstream appConfig(std::filesystem::path(bundleUrl).parent_path() / "assets" / "app.config");
+
+        if (!appConfig) {
+            return facebook::jsi::Value::null();
+        }
+
+        return facebook::jsi::String::createFromUtf8(
+            runtime, std::string(std::istreambuf_iterator<char>(appConfig), std::istreambuf_iterator<char>()));
+    }
+
     static facebook::jsi::Value constants(facebook::jsi::Runtime& runtime, LinuxExponentConstantsModule& module) {
         std::array<char, HOST_NAME_MAX + 1> hostName{};
         facebook::jsi::Object constants(runtime);
@@ -948,7 +975,7 @@ private:
         constants.setProperty(runtime, "expoVersion", facebook::jsi::Value::null());
         constants.setProperty(runtime, "isHeadless", false);
         constants.setProperty(runtime, "linkingUri", facebook::jsi::String::createFromAscii(runtime, ""));
-        constants.setProperty(runtime, "manifest", facebook::jsi::Value::null());
+        constants.setProperty(runtime, "manifest", embeddedAppConfig(runtime, *module.bundleUrl_));
         constants.setProperty(runtime, "sessionId", facebook::jsi::String::createFromAscii(runtime, module.sessionId_));
         constants.setProperty(runtime, "statusBarHeight", 0);
         constants.setProperty(runtime, "systemFonts", facebook::jsi::Array(runtime, 0));
@@ -957,6 +984,7 @@ private:
     }
 
     std::string sessionId_;
+    std::shared_ptr<const std::string> bundleUrl_;
 };
 
 /**
@@ -1069,13 +1097,23 @@ TurboModuleRegistry::TurboModuleRegistry(
                              [jsInvoker]() { return std::make_shared<LinuxClipboardModule>(jsInvoker); });
     moduleFactories_.emplace(LinuxPlatformConstantsModule::kModuleName,
                              [jsInvoker]() { return std::make_shared<LinuxPlatformConstantsModule>(jsInvoker); });
-    moduleFactories_.emplace(LinuxExponentConstantsModule::kModuleName,
-                             [jsInvoker]() { return std::make_shared<LinuxExponentConstantsModule>(jsInvoker); });
+    moduleFactories_.emplace(LinuxExponentConstantsModule::kModuleName, [jsInvoker, bundleUrl = bundleUrl_]() {
+        return std::make_shared<LinuxExponentConstantsModule>(jsInvoker, bundleUrl);
+    });
     moduleFactories_.emplace("ExpoAsset", [jsInvoker, &downloads = *expoAssetDownloads_]() {
         return makeExpoAssetModule(jsInvoker, downloads);
     });
     moduleFactories_.emplace(
         "FileSystem", [jsInvoker, &host = *fileSystemHost_]() { return makeExpoFileSystemModule(jsInvoker, host); });
+    moduleFactories_.emplace("ExpoApplication", [jsInvoker]() { return makeExpoApplicationModule(jsInvoker); });
+    moduleFactories_.emplace("ExpoDevice", [jsInvoker]() { return makeExpoDeviceModule(jsInvoker); });
+    moduleFactories_.emplace("ExpoLinking", [jsInvoker, activationModel = activationModel_]() {
+        return makeExpoLinkingModule(jsInvoker, activationModel);
+    });
+    moduleFactories_.emplace("ExpoNetwork", [jsInvoker]() { return makeExpoNetworkModule(jsInvoker); });
+#ifdef RNL_ENABLE_TEXT_GEOMETRY
+    moduleFactories_.emplace("ExpoFontLoader", [jsInvoker]() { return makeExpoFontLoaderModule(jsInvoker); });
+#endif
     // #79: `fetch` and `XMLHttpRequest` reach upstream's C++ Networking module, which this platform only supplies
     // the HTTP client for.
     moduleFactories_.emplace(facebook::react::NetworkingModule::kModuleName, [jsInvoker]() {

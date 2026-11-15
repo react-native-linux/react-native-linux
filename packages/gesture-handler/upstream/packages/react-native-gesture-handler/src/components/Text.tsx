@@ -1,26 +1,27 @@
-import React, { ComponentRef, Ref, useEffect, useMemo, useRef } from 'react';
-import {
-  Platform,
-  Text as RNText,
-  TextProps as RNTextProps,
-} from 'react-native';
+import type { ComponentRef, Ref } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
+import type { TextProps as RNTextProps } from 'react-native';
+import { Platform, Text as RNText } from 'react-native';
 
-import { GestureObjects as Gesture } from '../handlers/gestures/gestureObjects';
 import { GestureDetector } from '../handlers/gestures/GestureDetector';
+import { GestureObjects as Gesture } from '../handlers/gestures/gestureObjects';
 
 type TextProps = RNTextProps & {
   ref?: Ref<ComponentRef<typeof RNText> | null>;
 };
-type RNGHTextRef = Ref<RNText | null> & { rngh?: boolean };
+type RNGHTextRef = Ref<ComponentRef<typeof RNText> | null> & { rngh?: boolean };
 
-export const Text = (props: TextProps) => {
+/**
+ * @deprecated `LegacyText` is deprecated. Since Gesture Handler 3, you should wrap `Text` with `GestureDetector`, `InterceptingGestureDetector`, or `VirtualGestureDetector`.
+ */
+export const LegacyText = (props: TextProps) => {
   const { onPress, onLongPress, ref, ...rest } = props;
 
-  const textRef = useRef<RNText | null>(null);
+  const textRef = useRef<ComponentRef<typeof RNText> | null>(null);
   const native = useMemo(() => Gesture.Native().runOnJS(true), []);
 
   const refHandler = useMemo(() => {
-    const handler: RNGHTextRef = (node: RNText | null) => {
+    const handler: RNGHTextRef = (node: ComponentRef<typeof RNText> | null) => {
       textRef.current = node;
 
       if (!ref) {
@@ -68,5 +69,8 @@ export const Text = (props: TextProps) => {
   );
 };
 
+/**
+ * @deprecated `LegacyText` is deprecated. Since Gesture Handler 3, you should wrap `Text` with `GestureDetector`, `InterceptingGestureDetector`, or `VirtualGestureDetector`.
+ */
 // eslint-disable-next-line @typescript-eslint/no-redeclare
-export type Text = typeof Text & RNText;
+export type LegacyText = typeof LegacyText & RNText;

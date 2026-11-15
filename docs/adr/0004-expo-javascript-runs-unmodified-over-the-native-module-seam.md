@@ -160,9 +160,11 @@ destroys it only after the JavaScript thread has quit, so a method can hold it b
 
 An event is a method of the event's name that takes the listener, which is what the proxy's `addListener` calls, and
 it returns an `EventSubscription`, the shape of React Native's C++ event emitter. The proxy has no `removeListener`,
-`removeAllListeners` or `emit`, so removal goes through that subscription. No module of ours emits events yet: the
-`EventEmitter` round trip in the `expo-constants` e2e proves only that the polyfill is installed, not native event
-delivery. The first module with events adds an e2e that delivers one from native code.
+`removeAllListeners` or `emit`, so removal goes through that subscription. The `EventEmitter` round trip in the
+`expo-constants` e2e proves only that the polyfill is installed, not native event delivery. `ExpoLinking`'s
+`onURLReceived` subscribes to the `url` device event an activation already emits, proved from a native activation to
+the listener by `ExpoStartupModulesTest`; `ExpoNetwork`'s `onNetworkStateChanged` is React Native's C++ event emitter
+and emits nothing yet. The first module that emits on its own emitter adds an e2e that delivers one from native code.
 
 - **Optional lookup** (`requireOptionalNativeModule`) of a module this platform does not register returns `null`,
   and upstream's JavaScript takes its own "unavailable" path, as `expo-constants` does when it warns that
@@ -219,10 +221,16 @@ that the polyfill is installed.
 `packages/expo/src/expo-constants-surface.ts` lists upstream's required fields under a type that `pnpm ts` fails
 when upstream adds one, and the e2e asserts each value.
 
-`manifest` is `null`, so `Constants.expoConfig` is `null` and upstream warns, as it does in a bare Android app whose
-config build script did not run. On Android and iOS the native module serves the app config the build embedded;
+`manifest` is the app config the build embedded, as on Android and iOS. Android's Gradle step runs upstream's
+`expo-constants/scripts/getAppConfig.js`, which evaluates `app.json` or `app.config.*` with `@expo/config` into the
+APK's `assets/app.config`, and the native module serves that file as a JSON string that `Constants.ts` parses.
 babel-preset-expo inlines `process.env.APP_MANIFEST` only for web and server bundles, and only upstream's web module
-reads it. The Linux equivalent, the native module reading the app config a `linux` build embeds, is #156's next step.
+reads it. A `linux` build runs the same script into `assets/app.config` beside its bundle, the directory #70 already
+reads `assets/fonts` from, and `ExponentConstants` serves that file. The e2e harness runs it for a scenario package with an
+`app.json` (`scripts/window-golden.ts`), and the `expo-constants` e2e asserts `expoConfig.scheme` and
+`Linking.createURL`; the CLI build, and a config source for a bundle Metro serves, is
+[#696](https://github.com/react-native-linux/react-native-linux/issues/696). A bundle Metro serves has no directory beside it, so its `manifest` stays `null`, and
+upstream warns, as it does in a bare Android app whose config build script did not run.
 
 ### Declined, each with its substitute
 
@@ -279,6 +287,11 @@ Any one of these reopens the question in a new ADR:
   platform's Metro config and Babel preset; the same entry bundled through `expo/metro-config` and
   `babel-preset-expo`, as an Expo application bundles, is
   [#687](https://github.com/react-native-linux/react-native-linux/issues/687).
+- T3 Code's startup graph reaches more Expo modules through `requireNativeModule`; `docs/research/t3code-linux.md`
+  §1 lists each one, whether it is registered, and the issue that owns it. `ExpoApplication`, `ExpoDevice`,
+  `ExpoLinking` and `ExpoNetwork` are registered, proved by the `expo-startup-modules` e2e.
+  `ExpoFontLoader` registers a font file `Font.loadAsync` or `useFonts` downloaded into the text pipeline's application
+  fonts (#70), the same registry `assets/fonts` fills, proved by the `expo-font` e2e and its screenshot golden.
 - `packages/expo` (`@react-native-linux/expo`) holds the per-module table, the e2e scenarios, the surface lists and
   the escape hatches' runtime code. Its e2e installs the upstream packages; `pnpm-workspace.yaml`
   marks `expo-constants`' `expo` peer optional because its JavaScript imports only types from it.
