@@ -1,0 +1,9 @@
+# gitleaks' default rules, plus one allowlist: packages/*/upstream.lock.json is a manifest of vendored file paths
+# and their content hashes, written by `pnpm upstream`. A path containing "Api" or "Key" next to a 40-hex hash
+# matches the generic-api-key rule. The file contains no credentials by construction.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "upstream.lock.json: vendored file paths and content hashes"
+paths = ['''(^|/)upstream\.lock\.json$''']
