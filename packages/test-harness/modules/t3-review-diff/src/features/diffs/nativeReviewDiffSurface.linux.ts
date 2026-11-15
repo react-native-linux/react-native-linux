@@ -34,8 +34,12 @@ import {
   layoutOf,
   nativeEventOf,
   parseIds,
+  readRows,
+  readStyle,
+  readTheme,
   readTokenPatch,
   readTokens,
+  rowTokensOf,
   visibleRowsOf,
   type NativeReviewDiffLayout as Layout,
   type NativeReviewDiffScrollOffset as ScrollOffset,
@@ -43,7 +47,6 @@ import {
 } from "./nativeReviewDiffRows";
 import type {
   NativeReviewDiffRow,
-  NativeReviewDiffStyle,
   NativeReviewDiffTheme,
   NativeReviewDiffToken,
   NativeReviewDiffViewProps,
@@ -415,12 +418,9 @@ function LinuxReviewDiffView(props: NativeReviewDiffViewProps) {
     onPressNotice,
     ...viewProps
   } = props;
-  const rows = useMemo(() => JSON.parse(rowsJson) as NativeReviewDiffRow[], [rowsJson]);
-  const theme = useMemo(() => JSON.parse(themeJson) as NativeReviewDiffTheme, [themeJson]);
-  const layout = useMemo(
-    () => layoutOf(styleJson ? (JSON.parse(styleJson) as NativeReviewDiffStyle) : {}, rowHeight),
-    [styleJson, rowHeight],
-  );
+  const rows = useMemo(() => readRows(rowsJson), [rowsJson]);
+  const theme = useMemo(() => readTheme(themeJson), [themeJson]);
+  const layout = useMemo(() => layoutOf(readStyle(styleJson), rowHeight), [styleJson, rowHeight]);
   const collapsedFileIds = useMemo(() => parseIds(collapsedFileIdsJson), [collapsedFileIdsJson]);
   const viewedFileIds = useMemo(() => parseIds(viewedFileIdsJson), [viewedFileIdsJson]);
   const selectedRowIds = useMemo(() => parseIds(selectedRowIdsJson), [selectedRowIdsJson]);
@@ -529,12 +529,12 @@ function LinuxReviewDiffView(props: NativeReviewDiffViewProps) {
   const renderRow = useCallback(
     (item: number, index: number, offset: ScrollOffset) => {
       const row = rows[item];
-      if (!row) return null;
+      if (!row || !theme) return null;
       const fileId = row.fileId ?? "";
       return createElement(DiffRow, {
         row,
         height: visible.heights[index] ?? layout.rowHeight,
-        tokens: tokens[row.id],
+        tokens: rowTokensOf(tokens, row.id),
         collapsed: row.kind === "comment" ? collapsedCommentIds.has(row.id) : collapsedFileIds.has(fileId),
         viewed: viewedFileIds.has(fileId),
         selected: selectedRowIds.has(row.id),
@@ -548,6 +548,7 @@ function LinuxReviewDiffView(props: NativeReviewDiffViewProps) {
     [rows, visible, tokens, collapsedCommentIds, collapsedFileIds, viewedFileIds, selectedRowIds, rowViewportWidth, layout, theme, handlers],
   );
 
+  if (!theme) return null;
   return createElement(
     View,
     {

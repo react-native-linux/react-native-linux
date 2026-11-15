@@ -4,9 +4,14 @@ import {
   createScrollOffset,
   layoutOf,
   nativeEventOf,
+  readRows,
+  readStyle,
+  readTokenPatch,
   readTokens,
+  rowTokensOf,
 } from "./src/features/diffs/nativeReviewDiffRows.ts";
 import { describe, expect, it } from "vitest";
+import type { NativeReviewDiffViewProps } from "./src/features/diffs/nativeReviewDiffSurface.ts";
 
 const ROW_HEIGHT = 20;
 const SOURCE_FILE_CONTENT_WIDTH = 32_000;
@@ -20,6 +25,30 @@ const COMMENT_PREFIX = "// ";
 const NO_OFFSET = 0;
 const PANNED_X = 240;
 const BOLD = 2;
+const CHUNK = 1;
+const LINE_NUMBER = 7;
+const RANGE_END = 3;
+const CODE_FONT_SIZE = 14;
+const LINE_ROW = {
+  actionable: false,
+  additions: 1,
+  change: "add",
+  commentRangeLabel: "line 7",
+  commentText: "x",
+  content: "let x;",
+  deletions: 0,
+  fileId: "a",
+  filePath: "a.ts",
+  id: "a:line",
+  kind: "line",
+  newLineNumber: LINE_NUMBER,
+  noteStart: RANGE_END,
+  oldLineNumber: null,
+  previousPath: null,
+  text: "x",
+  tone: "warning",
+  wordDiffRanges: [{ end: RANGE_END, start: 0 }],
+};
 
 describe("cellsOf", () => {
   it("counts one cell a code point, two for a wide or fullwidth one, and a surrogate pair as one code point", () => {
@@ -101,5 +130,75 @@ describe("readTokens", () => {
     expect(readTokens(JSON.stringify({ line: [{ color: 1, content: "x" }] }))).toStrictEqual({});
     expect(readTokens(JSON.stringify({ line: [{ content: "x", fontStyle: "bold" }] }))).toStrictEqual({});
     expect(readTokens(JSON.stringify({ line: [{ content: 1 }] }))).toStrictEqual({});
+  });
+});
+
+describe("readRows", () => {
+  it("reads rows whose fields have their declared types, unread fields included", () => {
+    const rows = [LINE_ROW, { changeType: "renamed", id: "a", kind: "file", previousPath: "b.ts" }];
+
+    expect(readRows(JSON.stringify(rows))).toStrictEqual(rows);
+  });
+
+  it("reads no rows, as T3ReviewDiffView does, when the payload or any one row is malformed", () => {
+    const malformed: readonly unknown[] = [
+      { ...LINE_ROW, kind: "gutter" },
+      { ...LINE_ROW, id: 1 },
+      { ...LINE_ROW, content: null },
+      { ...LINE_ROW, previousPath: 1 },
+      { ...LINE_ROW, change: "move" },
+      { ...LINE_ROW, oldLineNumber: "7" },
+      { ...LINE_ROW, wordDiffRanges: {} },
+      { ...LINE_ROW, wordDiffRanges: [{ start: 0 }] },
+      { ...LINE_ROW, tone: "error" },
+      { ...LINE_ROW, actionable: "yes" },
+      "row",
+    ];
+
+    expect(malformed.map((row) => readRows(JSON.stringify([LINE_ROW, row])))).toStrictEqual(malformed.map(() => []));
+    expect(readRows(JSON.stringify({ rows: [LINE_ROW] }))).toStrictEqual([]);
+  });
+});
+
+describe("readStyle", () => {
+  it("takes the fields of the declared type, and the default for an absent, mistyped or unknown one", () => {
+    const layout = layoutOf({}, ROW_HEIGHT);
+    const withoutStyle: Pick<NativeReviewDiffViewProps, "styleJson"> = {};
+    const sized = readStyle(JSON.stringify({ codeFontSize: CODE_FONT_SIZE, wordWrap: true }));
+    const mistyped = readStyle(
+      JSON.stringify({ codeFontSize: "14", codeFontWeight: 600, hunkFontWeight: "constructor" }),
+    );
+
+    expect(readStyle(withoutStyle.styleJson)).toStrictEqual({});
+    expect(readStyle("[1]")).toStrictEqual({});
+    expect(layoutOf(sized, ROW_HEIGHT)).toStrictEqual({ ...layout, codeFontSize: CODE_FONT_SIZE });
+    expect(layoutOf(mistyped, ROW_HEIGHT)).toStrictEqual(layout);
+  });
+});
+
+describe("rowTokensOf", () => {
+  it("reads a row's own tokens, and none for a row id the map only inherits", () => {
+    const tokens = readTokens(JSON.stringify({ line: [{ content: "x" }] }));
+
+    expect(rowTokensOf(tokens, "line")).toStrictEqual([{ color: null, content: "x", fontStyle: null }]);
+    expect(rowTokensOf(tokens, "constructor")).toBeUndefined();
+    expect(rowTokensOf(tokens, "missing")).toBeUndefined();
+  });
+});
+
+describe("readTokenPatch reset keys", () => {
+  const tokensByRowId = { line: [{ color: null, content: "x", fontStyle: null }] };
+
+  it("refuses a patch whose reset key is empty for content under another key, and takes it under an empty key", () => {
+    const patchJson = JSON.stringify({ chunkIndex: CHUNK, resetKey: "", tokensByRowId });
+
+    expect(readTokenPatch(patchJson, "new")).toStrictEqual({
+      delivery: { chunkIndex: CHUNK, message: "tokens-patch-failed", resetKey: "" },
+      tokensByRowId: {},
+    });
+    expect(readTokenPatch(patchJson, "")).toStrictEqual({
+      delivery: { chunkIndex: CHUNK, message: "tokens-patch-delivered", resetKey: "" },
+      tokensByRowId,
+    });
   });
 });

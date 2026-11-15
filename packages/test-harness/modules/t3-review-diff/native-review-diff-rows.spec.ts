@@ -4,6 +4,7 @@ import {
   contentWidthOf,
   layoutOf,
   parseIds,
+  readTheme,
   readTokenPatch,
   visibleRowsOf,
 } from "./src/features/diffs/nativeReviewDiffRows.ts";
@@ -279,5 +280,14 @@ describe("readTokenPatch", () => {
       delivery: null,
       tokensByRowId: {},
     });
+  });
+});
+
+describe("readTheme", () => {
+  it("reads a theme with every color, and none when a color is missing or not a string", () => {
+    expect(readTheme(JSON.stringify(theme))).toStrictEqual(theme);
+    expect(readTheme("{}")).toBeNull();
+    expect(readTheme(JSON.stringify({ ...theme, text: 0 }))).toBeNull();
+    expect(readTheme(JSON.stringify([theme]))).toBeNull();
   });
 });

@@ -9,6 +9,9 @@ import type {
 
 export type NativeReviewDiffTokens = Readonly<Record<string, ReadonlyArray<NativeReviewDiffToken>>>;
 
+/** A styleJson payload's fields, each read only when it has the type T3ReviewDiffView decodes. */
+export type NativeReviewDiffStyleFields = Readonly<Record<string, unknown>>;
+
 export type NativeReviewDiffFontWeight = "100" | "200" | "300" | "400" | "500" | "600" | "700" | "800" | "900";
 
 export interface NativeReviewDiffLayout {
@@ -67,27 +70,91 @@ const MONOSPACE_ADVANCE_PER_EM = 1233 / 2048;
 const WIDE_CHARACTER =
   /[\u1100-\u115f\u2329\u232a\u2e80-\u303e\u3040-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe10-\ufe19\ufe30-\ufe6f\uff00-\uff60\uffe0-\uffe6\u{1f300}-\u{1f64f}\u{1f900}-\u{1f9ff}\u{20000}-\u{2fffd}\u{30000}-\u{3fffd}]/gu;
 const SURROGATE_PAIR = /[\ud800-\udbff][\udc00-\udfff]/g;
-const FONT_WEIGHTS: Readonly<Record<string, NativeReviewDiffFontWeight>> = {
-  thin: "100",
-  ultralight: "200",
-  "ultra-light": "200",
-  light: "300",
-  regular: "400",
-  medium: "500",
-  semibold: "600",
-  "semi-bold": "600",
-  bold: "700",
-  heavy: "800",
-  black: "900",
-};
+const FONT_WEIGHTS = new Map<string, NativeReviewDiffFontWeight>([
+  ["thin", "100"],
+  ["ultralight", "200"],
+  ["ultra-light", "200"],
+  ["light", "300"],
+  ["regular", "400"],
+  ["medium", "500"],
+  ["semibold", "600"],
+  ["semi-bold", "600"],
+  ["bold", "700"],
+  ["heavy", "800"],
+  ["black", "900"],
+]);
+const ROW_KINDS: ReadonlySet<unknown> = new Set(["file", "hunk", "line", "notice", "comment"]);
+const THEME_COLORS = [
+  "background",
+  "text",
+  "mutedText",
+  "headerBackground",
+  "border",
+  "hunkBackground",
+  "hunkText",
+  "addBackground",
+  "deleteBackground",
+  "addBar",
+  "deleteBar",
+  "addText",
+  "deleteText",
+  "warningText",
+  "warningBackground",
+] as const satisfies ReadonlyArray<keyof NativeReviewDiffTheme>;
+
+type FieldCheck = (value: unknown) => boolean;
+
+const isString: FieldCheck = (value) => typeof value === "string";
+const isNumber: FieldCheck = (value) => typeof value === "number";
+const isNullableNumber: FieldCheck = (value) => value === null || isNumber(value);
 
 /** T3ReviewDiffView's UIFont.Weight names, falling back to bold as it does. */
-function fontWeightOf(name: string | undefined): NativeReviewDiffFontWeight {
-  return FONT_WEIGHTS[name?.toLowerCase() ?? ""] ?? "700";
+function fontWeightOf(style: NativeReviewDiffStyleFields, name: keyof NativeReviewDiffStyle): NativeReviewDiffFontWeight {
+  const weight = style[name];
+  return (typeof weight === "string" ? FONT_WEIGHTS.get(weight.toLowerCase()) : undefined) ?? "700";
+}
+
+function sizeOf(style: NativeReviewDiffStyleFields, name: keyof NativeReviewDiffStyle, fallback: number): number {
+  const size = style[name];
+  return typeof size === "number" ? size : fallback;
 }
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** The optional row fields the variant reads, each with the check its declared type needs. */
+const ROW_FIELDS = {
+  fileId: isString,
+  filePath: isString,
+  previousPath: (value) => value === null || isString(value),
+  additions: isNumber,
+  deletions: isNumber,
+  text: isString,
+  content: isString,
+  change: (value) => value === "context" || value === "add" || value === "delete",
+  oldLineNumber: isNullableNumber,
+  newLineNumber: isNullableNumber,
+  wordDiffRanges: (value) =>
+    Array.isArray(value) && value.every((range) => isRecord(range) && isNumber(range["start"]) && isNumber(range["end"])),
+  commentText: isString,
+  commentRangeLabel: isString,
+  tone: (value) => value === "warning",
+  actionable: (value) => typeof value === "boolean",
+  noteStart: isNumber,
+} satisfies Partial<Record<keyof NativeReviewDiffRow, FieldCheck>>;
+
+function isRow(value: unknown): value is NativeReviewDiffRow {
+  return (
+    isRecord(value) &&
+    ROW_KINDS.has(value["kind"]) &&
+    typeof value["id"] === "string" &&
+    Object.entries(ROW_FIELDS).every(([field, check]) => value[field] === undefined || check(value[field]))
+  );
+}
+
+function isTheme(value: unknown): value is NativeReviewDiffTheme {
+  return isRecord(value) && THEME_COLORS.every((name) => typeof value[name] === "string");
 }
 
 /** A token as the highlighter sends it; color and fontStyle may be left out, and read as null. */
@@ -120,6 +187,32 @@ export function parseIds(json: string | undefined): ReadonlySet<string> {
     throw new TypeError(`expected a JSON array of ids, got ${json}`);
   }
   return new Set(ids);
+}
+
+/** A rowsJson payload, or no rows when any row is malformed, as T3ReviewDiffView's setRowsJson does. */
+export function readRows(json: string): ReadonlyArray<NativeReviewDiffRow> {
+  const rows: unknown = JSON.parse(json);
+  return Array.isArray(rows) && rows.every(isRow) ? rows : [];
+}
+
+/** A themeJson payload, or none when a color is missing or not a string: the variant then draws nothing. */
+export function readTheme(json: string): NativeReviewDiffTheme | null {
+  const theme: unknown = JSON.parse(json);
+  return isTheme(theme) ? theme : null;
+}
+
+/** A styleJson payload, or no fields when it is absent or not an object, so every size takes its default. */
+export function readStyle(json: string | undefined): NativeReviewDiffStyleFields {
+  const style: unknown = json ? JSON.parse(json) : {};
+  return isRecord(style) ? style : {};
+}
+
+/** A row's tokens, from the map's own entries only, so a row id such as "constructor" reads none. */
+export function rowTokensOf(
+  tokens: NativeReviewDiffTokens,
+  rowId: string,
+): ReadonlyArray<NativeReviewDiffToken> | undefined {
+  return Object.hasOwn(tokens, rowId) ? tokens[rowId] : undefined;
 }
 
 /** A tokensJson map, or none when it is not one: a malformed map draws plain text rather than failing the view. */
@@ -157,23 +250,23 @@ export function nativeEventOf<T>(registrationName: string, payload: T): NativeSy
   };
 }
 
-export function layoutOf(style: NativeReviewDiffStyle, rowHeight: number): NativeReviewDiffLayout {
+export function layoutOf(style: NativeReviewDiffStyleFields, rowHeight: number): NativeReviewDiffLayout {
   return {
     rowHeight,
-    changeBarWidth: style.changeBarWidth ?? 4,
-    gutterWidth: style.gutterWidth ?? 46,
-    codePadding: style.codePadding ?? 7,
-    fileHeaderHeight: style.fileHeaderHeight ?? 56,
-    fileHeaderHorizontalPadding: style.fileHeaderHorizontalPadding ?? 10,
-    codeFontSize: style.codeFontSize ?? 12,
-    codeFontWeight: fontWeightOf(style.codeFontWeight),
-    lineNumberFontSize: style.lineNumberFontSize ?? 11,
-    lineNumberFontWeight: fontWeightOf(style.lineNumberFontWeight),
-    hunkFontSize: style.hunkFontSize ?? 11,
-    hunkFontWeight: fontWeightOf(style.hunkFontWeight),
-    fileHeaderFontSize: style.fileHeaderFontSize ?? 11,
-    fileHeaderMetaFontSize: style.fileHeaderMetaFontSize ?? 10,
-    fileHeaderSubtextFontSize: style.fileHeaderSubtextFontSize ?? 11,
+    changeBarWidth: sizeOf(style, "changeBarWidth", 4),
+    gutterWidth: sizeOf(style, "gutterWidth", 46),
+    codePadding: sizeOf(style, "codePadding", 7),
+    fileHeaderHeight: sizeOf(style, "fileHeaderHeight", 56),
+    fileHeaderHorizontalPadding: sizeOf(style, "fileHeaderHorizontalPadding", 10),
+    codeFontSize: sizeOf(style, "codeFontSize", 12),
+    codeFontWeight: fontWeightOf(style, "codeFontWeight"),
+    lineNumberFontSize: sizeOf(style, "lineNumberFontSize", 11),
+    lineNumberFontWeight: fontWeightOf(style, "lineNumberFontWeight"),
+    hunkFontSize: sizeOf(style, "hunkFontSize", 11),
+    hunkFontWeight: fontWeightOf(style, "hunkFontWeight"),
+    fileHeaderFontSize: sizeOf(style, "fileHeaderFontSize", 11),
+    fileHeaderMetaFontSize: sizeOf(style, "fileHeaderMetaFontSize", 10),
+    fileHeaderSubtextFontSize: sizeOf(style, "fileHeaderSubtextFontSize", 11),
   };
 }
 
@@ -312,7 +405,7 @@ export function readTokenPatch(patchJson: string, resetKey: string | undefined):
   const patch = isRecord(parsed) ? parsed : {};
   const patchResetKey = typeof patch["resetKey"] === "string" ? patch["resetKey"] : undefined;
   const received = "tokensByRowId" in patch ? tokenMapOf(patch["tokensByRowId"]) : {};
-  const tokens = received !== null && (!patchResetKey || patchResetKey === resetKey) ? received : null;
+  const tokens = received !== null && (patchResetKey === undefined || patchResetKey === resetKey) ? received : null;
   return {
     tokensByRowId: tokens ?? {},
     delivery:

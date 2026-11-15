@@ -8070,7 +8070,13 @@ frames on scrolling: 6,400 frames, of which 1,050 to 2,450 are startup (the bund
 the first token patch; the high end at a load average of 34), about 3,100 (half the run) are 231 wheel notches
 played four times in four orders after one sideways pan across the highlighted first screen and back, and the rest
 is a tail that only absorbs a slower startup. It gates
-`{"p50Ms": 9.5, "p95Ms": 12.5, "minFrames": 5800, "maxHangs": 20}` on the Debug build CI runs. Five runs on
+`{"p50Ms": 9.5, "p95Ms": 12.5, "minFrames": 5800, "maxHangs": 20}` on the Debug build CI runs. The hang count
+covers the whole run, but p50 and p95 are ranked over the window's last 4,096 intervals (`FrameTiming`'s and
+`FrameJournal`'s `kDefaultSampleCapacity`), frames 2,305 to 6,400 of this run: after a startup of 2,450 frames they
+hold every scroll step and the tail, and after one of 1,050 the first 1,250 or so scroll frames, the sideways pan
+and the first wheel notches among them, fall before the sample and the tail is more than half of it. The
+percentiles are therefore partial-run numbers: an early scroll frame over budget fails the gate only if it is long
+enough to count as a hang. Five runs on
 this repository's shared 24-core host at load averages of 7 to 18 read p50 8.44–8.93 ms, p95 9.23–11.12 ms and 8
 to 12 hangs, with the scroll steps 48–53 % of each run, so the budget is 0.6 ms over the worst median, 1.4 ms over
 the worst p95 and 8 hangs over the worst count. The tail follows host load and the median does not: five runs at
