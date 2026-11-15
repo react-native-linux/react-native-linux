@@ -201,8 +201,7 @@ const ecosystemMatrix: readonly EcosystemRow[] = [
     issue: 635,
     packageName: "expo-keep-awake",
     state: "declined",
-    substitute:
-      "left out with voice input; ExpoKeepAwake is registered and reports itself unavailable so the import and withDevTools load",
+    substitute: "left out with voice input, its only user",
   },
   {
     flagshipVersion: "58.0.13",

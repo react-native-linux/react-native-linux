@@ -277,13 +277,13 @@ Any one of these reopens the question in a new ADR:
 - `expo` itself (`registerRootComponent`, `Expo.fx`) runs over the same seam, proved by the `expo-entry` e2e. Of the
   native modules it reaches as it loads, `ExponentConstants` and `ExpoAsset` are registered, `ExpoGo`, `ExpoUpdates`
   and `EXDevLauncher` are optional lookups that answer as a bare app, and `ExpoFetchModule` is the escape hatch above.
-  A development bundle also reaches the registered `ExpoKeepAwake`, whose `activate` and `deactivate` rejections
-  `useKeepAwake` swallows (`.catch`, `suppressDeactivateWarnings`). The e2e bundles through this platform's Metro
-  config and Babel preset; the same entry bundled through `expo/metro-config` and `babel-preset-expo`, as an Expo
-  application bundles, is [#687](https://github.com/react-native-linux/react-native-linux/issues/687).
+  A development bundle also reaches `ExpoKeepAwake`, through a lookup upstream catches. The e2e bundles through this
+  platform's Metro config and Babel preset; the same entry bundled through `expo/metro-config` and
+  `babel-preset-expo`, as an Expo application bundles, is
+  [#687](https://github.com/react-native-linux/react-native-linux/issues/687).
 - T3 Code's startup graph reaches more Expo modules through `requireNativeModule`; `docs/research/t3code-linux.md`
   §1 lists each one, whether it is registered, and the issue that owns it. `ExpoApplication`, `ExpoDevice`,
-  `ExpoKeepAwake`, `ExpoLinking` and `ExpoNetwork` are registered, proved by the `expo-startup-modules` e2e.
+  `ExpoLinking` and `ExpoNetwork` are registered, proved by the `expo-startup-modules` e2e.
 - `packages/expo` (`@react-native-linux/expo`) holds the per-module table, the e2e scenarios, the surface lists and
   the escape hatches' runtime code. Its e2e installs the upstream packages; `pnpm-workspace.yaml`
   marks `expo-constants`' `expo` peer optional because its JavaScript imports only types from it.

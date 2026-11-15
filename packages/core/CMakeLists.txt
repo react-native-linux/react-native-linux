@@ -863,7 +863,6 @@ add_library(rnl_react_core STATIC
     src/ExpoDeviceModule.cpp
     src/ExpoFileSystem.cpp
     src/ExpoFileSystemModule.cpp
-    src/ExpoKeepAwakeModule.cpp
     src/ExpoLinkingModule.cpp
     src/ExpoNetworkModule.cpp
     src/ExpoSQLite.cpp

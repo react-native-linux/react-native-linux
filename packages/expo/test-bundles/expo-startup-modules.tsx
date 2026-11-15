@@ -1,6 +1,5 @@
 import * as Application from "expo-application";
 import * as Device from "expo-device";
-import * as KeepAwake from "expo-keep-awake";
 import * as Linking from "expo-linking";
 import * as Network from "expo-network";
 import { AppRegistry, Text, View } from "react-native";
@@ -47,18 +46,15 @@ const describeNetwork = async (): Promise<string> => {
   ].join(",");
 };
 
-const describeKeepAwake = async (): Promise<string> =>
-  [await KeepAwake.isAvailableAsync(), await errorCode(KeepAwake.activateKeepAwakeAsync)].join(",");
-
 const ExpoStartupModulesApp = (): React.JSX.Element => {
   const linkingUrl = Linking.useLinkingURL();
 
   useEffect(() => {
-    void Promise.all([describeApplication(), describeDevice(), describeNetwork(), describeKeepAwake()]).then(
-      ([application, device, network, keepAwake]) => {
+    void Promise.all([describeApplication(), describeDevice(), describeNetwork()]).then(
+      ([application, device, network]) => {
         console.log(
           `expo-startup-modules: rendered linking=${String(linkingUrl)} application=${application} ` +
-            `device=${device} network=${network} keepAwake=${keepAwake}`,
+            `device=${device} network=${network}`,
         );
       },
     );

@@ -185,27 +185,6 @@ globalThis.trace = JSON.stringify({
               R"({"url":"t3code://thread/1","received":["t3code://thread/1"]})");
 }
 
-/** Keeping the screen awake is not offered, so upstream's availability query is `false` and both calls reject. */
-TEST(ExpoStartupModulesTest, KeepAwakeReportsItselfUnavailable) {
-    EXPECT_EQ(
-        settledTrace(R"JAVASCRIPT(
-const keepAwake = globalThis.nativeModuleProxy.ExpoKeepAwake;
-const settle = (promise) => promise.then((value) => value, (error) => `${error.code}: ${error.message}`);
-(async () => {
-  globalThis.trace = JSON.stringify({
-    methods: Object.keys(Object.getPrototypeOf(keepAwake)).sort(),
-    available: await keepAwake.isAvailableAsync(),
-    activate: await settle(keepAwake.activate('tag')),
-    deactivate: await settle(keepAwake.deactivate('tag')),
-  });
-})();
-)JAVASCRIPT"),
-        R"({"methods":["activate","deactivate","isAvailableAsync"],"available":false,)"
-        R"("activate":"ERR_UNAVAILABLE: The method or property ExpoKeepAwake.activate is not available on linux",)"
-        R"("deactivate":"ERR_UNAVAILABLE: The method or property ExpoKeepAwake.deactivate is not available )"
-        R"(on linux"})");
-}
-
 /** No manifest is embedded yet, so the identity answers `null`, and nothing else is offered. */
 TEST(ExpoStartupModulesTest, ApplicationAnswersAMissingIdentity) {
     EXPECT_EQ(settledTrace(R"JAVASCRIPT(

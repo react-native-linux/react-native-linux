@@ -44,7 +44,6 @@
         "expo-asset",
         "expo-device",
         "expo-file-system",
-        "expo-keep-awake",
         "expo-linking",
         "expo-modules-core",
         "expo-network",
