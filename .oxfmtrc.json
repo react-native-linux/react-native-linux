@@ -8,6 +8,7 @@
     "build",
     "coverage",
     "packages/*/upstream.lock.json",
+    "packages/test-harness/modules/*/src",
     "third_party"
   ]
 }
