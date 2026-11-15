@@ -1,14 +1,15 @@
-import { GestureType, HandlerCallbacks } from '../gesture';
-import { registerHandler } from '../../handlersRegistry';
-import RNGestureHandlerModule from '../../../RNGestureHandlerModule';
-import { filterConfig, scheduleFlushOperations } from '../../utils';
-import { ComposedGesture } from '../gestureComposition';
 import { ghQueueMicrotask } from '../../../ghQueueMicrotask';
-import { AttachedGestureState } from './types';
+import RNGestureHandlerModule from '../../../RNGestureHandlerModule';
+import { registerHandler } from '../../handlersRegistry';
+import { filterConfig, scheduleFlushOperations } from '../../utils';
+import type { GestureType, HandlerCallbacks } from '../gesture';
+import type { ComposedGesture } from '../gestureComposition';
+import type { AttachedGestureState } from './types';
 import {
-  extractGestureRelations,
-  checkGestureCallbacksForWorklets,
   ALLOWED_PROPS,
+  checkGestureCallbacksForWorklets,
+  extractGestureRelations,
+  hasExternalRelations,
 } from './utils';
 
 export function updateHandlers(
@@ -32,6 +33,9 @@ export function updateHandlers(
 
   // Store attached gestures to avoid crash when gestures changed after queueing micro task
   const attachedGestures = preparedGesture.attachedGestures;
+
+  // React to every mount until the microtask below classifies the new gesture set
+  preparedGesture.hasExternalRelations = true;
 
   // Use queueMicrotask to extract handlerTags, because when it's ran, all refs should be updated
   // and handlerTags in BaseGesture references should be updated in the loop above (we need to wait
@@ -65,17 +69,22 @@ export function updateHandlers(
       handler.config = newGestures[i].config;
       handler.handlers = newGestures[i].handlers;
 
-      RNGestureHandlerModule.updateGestureHandler(
+      RNGestureHandlerModule.setGestureHandlerConfig(
         handler.handlerTag,
-        filterConfig(
-          handler.config,
-          ALLOWED_PROPS,
-          extractGestureRelations(handler)
-        )
+        filterConfig(handler.config, ALLOWED_PROPS)
+      );
+
+      RNGestureHandlerModule.configureRelations(
+        handler.handlerTag,
+        extractGestureRelations(handler)
       );
 
       registerHandler(handler.handlerTag, handler, handler.config.testId);
     }
+
+    // Classify the new instances: their configs reference the new siblings,
+    // which the old attached objects would mistake for external gestures
+    preparedGesture.hasExternalRelations = hasExternalRelations(newGestures);
 
     if (preparedGesture.animatedHandlers && shouldUpdateSharedValueIfUsed) {
       const newHandlersValue = attachedGestures

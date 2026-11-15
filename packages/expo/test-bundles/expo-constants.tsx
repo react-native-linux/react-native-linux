@@ -1,4 +1,5 @@
 import Constants from "expo-constants";
+import * as Linking from "expo-linking";
 import { EventEmitter } from "expo-modules-core";
 import { AppRegistry, View } from "react-native";
 import { requiredConstantsFields } from "../src/expo-constants-surface.ts";
@@ -36,7 +37,8 @@ const ExpoConstantsApp = (): React.JSX.Element => {
 
       console.log(
         `expo-constants: ${fields} deviceName=${String(hasDeviceName)} userAgent=${String(userAgent)} ` +
-          `eventEmitter=${roundTripEvent()}`,
+          `eventEmitter=${roundTripEvent()} scheme=${String(Constants.expoConfig?.scheme)} ` +
+          `createURL=${Linking.createURL("/x")}`,
       );
     });
   }, []);

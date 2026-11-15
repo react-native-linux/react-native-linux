@@ -1,15 +1,17 @@
+import type React from 'react';
+
 import type { ActionType } from './ActionType';
+import type { GestureRelations } from './v3/types';
 import { Gestures } from './web/Gestures';
-import type { Config } from './web/interfaces';
+import type { Config, HostDetector, PropsRef } from './web/interfaces';
+import { GestureHandlerLinuxDelegate } from './web/tools/GestureHandlerLinuxDelegate';
 import InteractionManager from './web/tools/InteractionManager';
 import NodeManager from './web/tools/NodeManager';
-import { GestureHandlerLinuxDelegate } from './web/tools/GestureHandlerLinuxDelegate';
 
 // Linux runs the library's own JavaScript engine (src/web) with GestureHandlerLinuxDelegate in place of the DOM
-// delegate: recognition happens on the JavaScript thread, fed by GestureHandlerRootView.linux.
+// delegate: recognition happens on the JavaScript thread, fed by GestureHandlerRootView.linux. The methods are
+// RNGestureHandlerModule.web's.
 export default {
-  handleSetJSResponder(_tag: number, _blockNativeResponder: boolean) {},
-  handleClearJSResponder() {},
   createGestureHandler<T>(
     handlerName: keyof typeof Gestures,
     handlerTag: number,
@@ -26,23 +28,34 @@ export default {
       handlerTag,
       new GestureClass(new GestureHandlerLinuxDelegate())
     );
-    this.updateGestureHandler(handlerTag, config as unknown as Config);
+    this.setGestureHandlerConfig(handlerTag, config as unknown as Config);
   },
   attachGestureHandler(
     handlerTag: number,
     newView: unknown,
-    _actionType: ActionType,
-    propsRef: React.RefObject<unknown>
+    actionType: ActionType,
+    propsRef: React.RefObject<PropsRef>,
+    hostDetector?: HostDetector | null
   ) {
-    // @ts-ignore The view is the React Native element findNodeHandle.linux returns.
-    NodeManager.getHandler(handlerTag).init(newView, propsRef);
-  },
-  updateGestureHandler(handlerTag: number, newConfig: Config) {
-    NodeManager.getHandler(handlerTag).updateGestureConfig(newConfig);
-    InteractionManager.instance.configureInteractions(
-      NodeManager.getHandler(handlerTag),
-      newConfig
+    NodeManager.getHandler(handlerTag).init(
+      // @ts-expect-error The view is the React Native element findNodeHandle.linux returns.
+      newView,
+      propsRef,
+      actionType,
+      hostDetector ?? null
     );
+  },
+  detachGestureHandler(handlerTag: number, hostDetector?: HostDetector | null) {
+    NodeManager.detachGestureHandler(handlerTag, hostDetector);
+  },
+  setGestureHandlerConfig(handlerTag: number, newConfig: Config) {
+    NodeManager.getHandler(handlerTag).setGestureConfig(newConfig);
+  },
+  updateGestureHandlerConfig(handlerTag: number, newConfig: Partial<Config>) {
+    if (!NodeManager.hasHandler(handlerTag)) {
+      return;
+    }
+    NodeManager.getHandler(handlerTag).updateGestureConfig(newConfig);
   },
   getGestureHandlerNode(handlerTag: number) {
     return NodeManager.getHandler(handlerTag);
@@ -50,8 +63,20 @@ export default {
   dropGestureHandler(handlerTag: number) {
     NodeManager.dropGestureHandler(handlerTag);
   },
-  install() {
-    return true;
+  configureRelations(handlerTag: number, relations: GestureRelations) {
+    if (!NodeManager.hasHandler(handlerTag)) {
+      return;
+    }
+    InteractionManager.instance.configureInteractions(
+      NodeManager.getHandler(handlerTag),
+      relations
+    );
   },
   flushOperations() {},
+  installUIRuntimeBindings() {
+    return true;
+  },
+  getModuleId() {
+    return -1;
+  },
 };

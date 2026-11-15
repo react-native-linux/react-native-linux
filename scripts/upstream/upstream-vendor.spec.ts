@@ -13,6 +13,7 @@ import {
 } from "./upstream-test-fixtures.ts";
 import { afterAll, beforeEach, expect, it } from "vitest";
 
+import { readlinkSync, rmSync, symlinkSync } from "node:fs";
 import type { CommandResult } from "./upstream-types.ts";
 import path from "node:path";
 
@@ -42,6 +43,63 @@ it("vendors the locked tag with the patch queue applied and without the clone's 
   expect(readTree(fixture, GREETING_PATH)).toBe(GREETING_PATCHED);
   expect(readTree(fixture, "README.md")).toBe("widget\n");
   expect(fixture.environment.pathExists(gitDirectory)).toBe(false);
+});
+
+it("copies a relative symbolic link as it is, rather than pointing it into the clone it came from", () => {
+  const { environment } = fixture;
+  const source = path.join(fixture.temporaryRoot, "linked");
+  const copy = path.join(fixture.temporaryRoot, "linked-copy");
+
+  environment.writeTextFile(path.join(source, "AGENTS.md"), "agents\n");
+  symlinkSync("AGENTS.md", path.join(source, "CLAUDE.md"));
+  environment.copyDirectory(source, copy);
+
+  expect(readlinkSync(path.join(copy, "CLAUDE.md"))).toBe("AGENTS.md");
+});
+
+it("lists a symbolic link and hashes its target, so a retargeted link is drift", () => {
+  const { environment } = fixture;
+  const directory = path.join(fixture.temporaryRoot, "hashed-links");
+  const link = path.join(directory, "CLAUDE.md");
+
+  environment.writeTextFile(path.join(directory, "AGENTS.md"), "agents\n");
+  symlinkSync("AGENTS.md", link);
+  const digestBefore = environment.hashFile(link);
+  rmSync(link);
+  symlinkSync("README.md", link);
+
+  expect(environment.listFiles(directory)).toStrictEqual(["AGENTS.md", "CLAUDE.md"]);
+  expect(environment.hashFile(link)).not.toBe(digestBefore);
+});
+
+const tagAgentInstructions = (): void => {
+  const { environment, originDirectory } = fixture;
+  const agentFiles = ["AGENTS.md", "GEMINI.md", ".cursorrules", "src/AGENTS.md", "src/.claude/settings.json"];
+
+  environment.runGit(["checkout", "--quiet", "-b", "agents", "v1"], originDirectory);
+  for (const relativePath of agentFiles) {
+    environment.writeTextFile(path.join(originDirectory, relativePath), "instructions\n");
+  }
+  symlinkSync("AGENTS.md", path.join(originDirectory, "CLAUDE.md"));
+  environment.runGit(["add", "--all"], originDirectory);
+  environment.runGit(["commit", "--quiet", "--message", "agents"], originDirectory);
+  environment.runGit(["tag", "agents"], originDirectory);
+  environment.runGit(["checkout", "--quiet", "main"], originDirectory);
+};
+
+it("leaves agent instruction files out of the vendored tree and its lock, at the root and below it", () => {
+  const { environment } = fixture;
+
+  tagAgentInstructions();
+
+  expect(runCommand(fixture, ["bump", "widget", "agents"]).exitCode).toBe(SUCCESS_EXIT_CODE);
+  expect(environment.listFiles(libraryPathsOf(fixture).treeDirectory)).toStrictEqual([
+    "README.md",
+    "src/greeting.ts",
+    "src/other.ts",
+  ]);
+  expect(environment.readTextFile(libraryPathsOf(fixture).lockFilePath)).not.toMatch(/AGENTS|CLAUDE|GEMINI|cursor/u);
+  expect(runCommand(fixture, ["check", "widget"]).exitCode).toBe(SUCCESS_EXIT_CODE);
 });
 
 it("refuses to vendor when the locked digests no longer describe the tag", () => {

@@ -54,7 +54,7 @@ Expo's Metro config turns `inlineRequires` off.
 | --- | --- | --- |
 | `ExpoAsset` | `expo-asset` | registered (#677) |
 | `ExpoApplication`, `ExpoDevice`, `ExpoLinking`, `ExpoNetwork` | `expo-application`, `expo-device`, `expo-linking`, `expo-network` | registered; the `expo-startup-modules` e2e imports all four through `expo` |
-| `ExpoFontLoader` | `expo-font` | throws: its `typeof window === 'undefined'` guard is false under React Native, which defines `window`; #156 |
+| `ExpoFontLoader` | `expo-font` | registered: its `typeof window === 'undefined'` guard is false under React Native, which defines `window`, so it needs the module; the `expo-font` e2e draws a face `useFonts` loaded |
 | `ExpoClipboard` | `expo-clipboard` | throws; #278 |
 | `ExpoCrypto`, `ExpoCryptoAES` | `expo-crypto` | throws; #276 |
 | `FileSystem` | `expo-file-system` | registered (#676) |
@@ -128,7 +128,12 @@ The order epic #634 follows. Each step needs the ones before it.
    but assumes the rest from the engine. #83 chose the platform's own `Intl` over the system ICU
    (`packages/core/src/Intl.h`), with Hermes' Intl kept off; `IntlStartupTest` starts a bundle that builds those
    module-scope formatters, and `IntlBindingTest` covers the three constructors with T3 Code's options.
-7. **The fixture**: the main screen renders in `rnl_window` against a local T3 server (#641).
+7. **The fixture**: the main screen renders in `rnl_window` against a local T3 server (#641). `pnpm e2e:t3code
+   <checkout>` builds T3 Code's own development bundle for `linux` (it pairs from a link only under `__DEV__`) with its
+   own Metro config under this platform's resolver (`packages/test-harness/scripts/t3code-metro-config.ts`), starts the
+   checkout's T3 server on loopback, and runs the bundle in the headless rig with the link that pairs it. It passes only
+   when the window presents a frame and exits cleanly with no fatal JavaScript error, and otherwise names the first such
+   error; #641 keeps the ordered list of what stands between that error and the main screen.
 8. **The measurement**: against the Electron build (#642), with frame pacing (#20) and the trace surface (#90).
 
 Secondary screens come after the fixture: attachments (#650), webviews (#272), notifications (#274), the image
@@ -161,9 +166,9 @@ transitive package.
 | `expo-updates` | `~58.0.21` | declined | #360 | diagnostics and app updates |
 | `expo-eas-client` | `58.0.2` | declined | #360 | from expo-updates and expo-observe |
 | `expo-structured-headers` | `58.0.1` | declined | #360 | from expo-updates |
-| `expo-constants` | `~58.0.15` | tracked | #156 | 17 files: app config and relay URL |
-| `expo-font` | `~58.0.11` | tracked | #156 | DM Sans and Material Symbols |
-| `expo-linking` | `~58.0.16` | tracked | #156 | deep links at the root; imports over `ExpoLinking`, but `createURL`, which `App.tsx` calls, throws until a `linux` build embeds the app config |
+| `expo-constants` | `~58.0.15` | tracked | #156 | 17 files: app config and relay URL; `expoConfig` is the app config embedded beside a built bundle (the `expo-constants` e2e), and still `null` for a bundle Metro serves; the CLI build that writes it is #696 |
+| `expo-font` | `~58.0.11` | works | `packages/expo/e2e/expo-font.json` | DM Sans and Material Symbols; `ExpoFontLoader` registers into the application fonts of #70 |
+| `expo-linking` | `~58.0.16` | tracked | #156 | deep links at the root; imports over `ExpoLinking`, and `createURL`, which `App.tsx` calls, answers from the embedded app config (the `expo-constants` e2e), so it still throws for a bundle Metro serves until #696 |
 | `expo-haptics` | `~58.0.7` | tracked | #156 | 21 files; reports itself unavailable |
 | `expo-glass-effect` | `58.0.5` | tracked | #156 | chips, toolbar and the floating working control |
 | `expo-splash-screen` | `~58.0.13` | tracked | #156 | root; the platform's first-frame policy |
@@ -197,7 +202,7 @@ transitive package.
 | `react-native-enriched-markdown` | `file:deps/react-native-enriched-markdown-1.2.0-t3.18-16db4c75.tgz` | tracked | #688 | T3 Code's fork; every message; #639 landed the base |
 | `@t3tools/mobile-source-text` | `file:./modules/t3-source-text` | tracked | #640 | source file view |
 | `@t3tools/mobile-highlights-native` | `file:./modules/t3-highlights` | tracked | #640 | syntax highlighting, a Nitro module |
-| `@t3tools/mobile-review-diff-native` | `file:./modules/t3-review-diff` | tracked | #640 | review diff view |
+| `@t3tools/mobile-review-diff-native` | `file:./modules/t3-review-diff` | tracked | #685 | review diff view; Linux renders it in JavaScript, no native code |
 | `@t3tools/mobile-terminal-native` | `file:./modules/t3-terminal` | tracked | #640 | terminal view |
 | `@react-native-menu/menu` | `^2.0.0` | tracked | #646 | 28 files: thread rows, list filter, composer |
 | `gt-react-native` | `11.4.18` | tracked | #647 | i18n root; `getEnforcing` throws at import |
@@ -230,7 +235,7 @@ other seven are Expo local modules, linked by directory rather than declared as 
 | `t3-composer-editor` | iOS, Android | #640; the plain `TextInput` composer until then |
 | `t3-source-text` | iOS | #640 |
 | `t3-highlights` | Nitro, C++ core | #640, after #152 |
-| `t3-review-diff` | iOS, Android | #640 |
+| `t3-review-diff` | iOS, Android | #685: `nativeReviewDiffSurface.linux.ts` draws the same rows, props and events with React Native views |
 | `t3-terminal` | iOS, Android | #640 |
 | `t3-voice-transcription` | iOS, Android | left out with voice input |
 | `t3-agent-notifications` | Android | left out until #274 |

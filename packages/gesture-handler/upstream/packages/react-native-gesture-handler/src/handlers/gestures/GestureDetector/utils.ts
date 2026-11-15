@@ -1,26 +1,26 @@
 import { useCallback, useRef, useState } from 'react';
 
 import { isTestEnv, tagMessage } from '../../../utils';
-import { GestureRef, BaseGesture, GestureType } from '../gesture';
-
+import type {
+  GestureHandlerNativeEvent,
+  PropsRef,
+  ResultEvent,
+} from '../../../web/interfaces';
 import { flingGestureHandlerProps } from '../../FlingGestureHandler';
 import { forceTouchGestureHandlerProps } from '../../ForceTouchGestureHandler';
+import { baseGestureHandlerWithDetectorProps } from '../../gestureHandlerCommon';
 import { longPressGestureHandlerProps } from '../../LongPressGestureHandler';
-import {
-  panGestureHandlerProps,
-  panGestureHandlerCustomNativeProps,
-} from '../../PanGestureHandler';
-import { tapGestureHandlerProps } from '../../TapGestureHandler';
-import { hoverGestureHandlerProps } from '../hoverGesture';
 import { nativeViewGestureHandlerProps } from '../../NativeViewGestureHandler';
 import {
-  HandlerStateChangeEvent,
-  baseGestureHandlerWithDetectorProps,
-} from '../../gestureHandlerCommon';
-import { isNewWebImplementationEnabled } from '../../../EnableNewWebImplementation';
-import { Reanimated } from '../reanimatedWrapper';
+  panGestureHandlerCustomNativeProps,
+  panGestureHandlerProps,
+} from '../../PanGestureHandler';
+import { tapGestureHandlerProps } from '../../TapGestureHandler';
 import { onGestureHandlerEvent } from '../eventReceiver';
-import { WebEventHandler } from './types';
+import type { GestureRef, GestureType } from '../gesture';
+import { BaseGesture } from '../gesture';
+import { hoverGestureHandlerProps } from '../hoverGesture';
+import { Reanimated } from '../reanimatedWrapper';
 
 export const ALLOWED_PROPS = [
   ...baseGestureHandlerWithDetectorProps,
@@ -64,21 +64,53 @@ function extractValidHandlerTags(interactionGroup: GestureRef[] | undefined) {
   );
 }
 
+// Relations that may resolve to a different handler after this detector attached:
+// refs (filled when the target mounts) and gesture objects attached by another
+// detector (they get a tag in `initialize`). Siblings added by composition are
+// attached together with the gesture, so they never resolve late.
+export function hasExternalRelations(gestures: GestureType[]) {
+  const ownGestures = new Set(gestures);
+
+  for (const gesture of gestures) {
+    const relations = [
+      gesture.config.blocksHandlers,
+      gesture.config.requireToFail,
+      gesture.config.simultaneousWith,
+    ];
+
+    for (const relation of relations) {
+      if (relation === undefined) {
+        continue;
+      }
+
+      for (const entry of relation) {
+        if (typeof entry === 'number') {
+          continue;
+        }
+
+        // Anything but our own gesture object is external: a ref, or a gesture
+        // attached by another detector
+        if (!(entry instanceof BaseGesture) || !ownGestures.has(entry)) {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
 export function extractGestureRelations(gesture: GestureType) {
-  gesture.config.requireToFail = extractValidHandlerTags(
-    gesture.config.requireToFail
-  );
-  gesture.config.simultaneousWith = extractValidHandlerTags(
+  const requireToFail = extractValidHandlerTags(gesture.config.requireToFail);
+  const simultaneousWith = extractValidHandlerTags(
     gesture.config.simultaneousWith
   );
-  gesture.config.blocksHandlers = extractValidHandlerTags(
-    gesture.config.blocksHandlers
-  );
+  const blocksHandlers = extractValidHandlerTags(gesture.config.blocksHandlers);
 
   return {
-    waitFor: gesture.config.requireToFail,
-    simultaneousHandlers: gesture.config.simultaneousWith,
-    blocksHandlers: gesture.config.blocksHandlers,
+    waitFor: requireToFail,
+    simultaneousHandlers: simultaneousWith,
+    blocksHandlers: blocksHandlers,
   };
 }
 
@@ -132,14 +164,15 @@ export function useForceRender() {
 }
 
 export function useWebEventHandlers() {
-  return useRef<WebEventHandler>({
-    onGestureHandlerEvent: (e: HandlerStateChangeEvent<unknown>) => {
-      onGestureHandlerEvent(e.nativeEvent);
+  return useRef<PropsRef>({
+    onGestureHandlerEvent: (e: ResultEvent) => {
+      onGestureHandlerEvent(e.nativeEvent as GestureHandlerNativeEvent);
     },
-    onGestureHandlerStateChange: isNewWebImplementationEnabled()
-      ? (e: HandlerStateChangeEvent<unknown>) => {
-          onGestureHandlerEvent(e.nativeEvent);
-        }
-      : undefined,
+    onGestureHandlerStateChange: (e: ResultEvent) => {
+      onGestureHandlerEvent(e.nativeEvent as GestureHandlerNativeEvent);
+    },
+    onGestureHandlerTouchEvent: () => {
+      // no-op
+    },
   });
 }

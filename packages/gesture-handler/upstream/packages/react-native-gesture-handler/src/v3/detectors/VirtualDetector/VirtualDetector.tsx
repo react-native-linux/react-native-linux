@@ -1,0 +1,165 @@
+import type { ComponentType, ReactElement } from 'react';
+import {
+  Children,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { findNodeHandle, Platform } from 'react-native';
+
+import { tagMessage } from '../../../utils';
+import { useJSResponderHandler } from '../../hooks/useJSResponderHandler';
+import { isComposedGesture } from '../../hooks/utils/relationUtils';
+import type { DetectorCallbacks, VirtualChild } from '../../types';
+import type { VirtualDetectorProps } from '../common';
+import { useDetectorAttachmentGuard } from '../useDetectorAttachmentGuard';
+import { useGestureRelationsUpdater } from '../useGestureRelationsUpdater';
+import { useNativeGestureRole } from '../useNativeGestureRole';
+import {
+  InterceptingDetectorMode,
+  useInterceptingDetectorContext,
+} from './useInterceptingDetectorContext';
+import { Wrap } from './Wrap';
+
+function getChildName(children: unknown) {
+  const { type } = Children.only(children) as ReactElement<
+    unknown,
+    string | ComponentType<unknown>
+  >;
+
+  return typeof type === 'string'
+    ? type
+    : (type.displayName ?? type.name ?? 'Unknown');
+}
+
+function useRequiredInterceptingDetectorContext() {
+  const context = useInterceptingDetectorContext();
+  if (!context) {
+    throw new Error(
+      tagMessage(
+        'VirtualGestureDetector must be a descendant of an InterceptingGestureDetector'
+      )
+    );
+  }
+  return context;
+}
+
+export function VirtualDetector<
+  TConfig,
+  THandlerData,
+  TExtendedHandlerData extends THandlerData,
+>(props: VirtualDetectorProps<TConfig, THandlerData, TExtendedHandlerData>) {
+  // Don't memoize virtual detectors to be able to listen to changes in children
+  // TODO: replace with MutationObserver when it rolls out in React Native
+  'use no memo';
+
+  const { register, unregister, setMode } =
+    useRequiredInterceptingDetectorContext();
+  const { handleStartShouldSetResponder } = useJSResponderHandler(
+    props.gesture
+  );
+
+  const viewRef = useRef(null);
+  const [viewTag, setViewTag] = useState<number>(-1);
+
+  const handleRef = useCallback(
+    (node: any) => {
+      viewRef.current = node;
+      if (node) {
+        const tag: number = Platform.OS === 'web' ? node : findNodeHandle(node);
+        setViewTag(tag ?? -1);
+      } else {
+        setViewTag(-1);
+      }
+    },
+    // Invalid dependency array to change the function when children change
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [props.children]
+  );
+
+  useNativeGestureRole(viewRef, props.children);
+
+  // Dev-only: no host instance after a commit means the child did not hand
+  // its `ref` to one. A child that renders null first is reported as well.
+  const reportedRef = useRef(false);
+
+  useEffect(() => {
+    if (!__DEV__ || reportedRef.current || viewRef.current) {
+      return;
+    }
+
+    reportedRef.current = true;
+
+    console.error(
+      tagMessage(
+        `VirtualGestureDetector could not attach to its child (${getChildName(props.children)}). The child must be a host view or forward its \`ref\` to one.`
+      )
+    );
+  });
+
+  const handlerTags = useMemo(
+    () =>
+      isComposedGesture(props.gesture)
+        ? props.gesture.handlerTags
+        : [props.gesture.handlerTag],
+    [props.gesture]
+  );
+
+  useDetectorAttachmentGuard(handlerTags);
+
+  useEffect(() => {
+    if (viewTag === -1) {
+      return;
+    }
+
+    if (props.gesture.config.dispatchesAnimatedEvents) {
+      throw new Error(
+        tagMessage(
+          'VirtualGestureDetector cannot handle Animated events with native driver when used inside InterceptingGestureDetector. Use Reanimated or Animated events without native driver instead.'
+        )
+      );
+    } else if (props.gesture.config.shouldUseReanimatedDetector) {
+      setMode(InterceptingDetectorMode.REANIMATED);
+    }
+
+    const virtualChild: VirtualChild = {
+      viewTag,
+      handlerTags,
+      methods: props.gesture.detectorCallbacks as DetectorCallbacks<
+        unknown,
+        unknown
+      >,
+      // used by HostGestureDetector on web
+      viewRef: Platform.OS === 'web' ? viewRef : undefined,
+      userSelect: props.userSelect,
+      touchAction: props.touchAction,
+      enableContextMenu: props.enableContextMenu,
+    };
+    register(virtualChild);
+    return () => {
+      unregister(virtualChild);
+    };
+  }, [
+    viewTag,
+    props.gesture,
+    handlerTags,
+    props.userSelect,
+    props.touchAction,
+    props.enableContextMenu,
+    register,
+    unregister,
+    setMode,
+  ]);
+
+  useGestureRelationsUpdater(props.gesture);
+
+  return (
+    <Wrap
+      ref={handleRef}
+      onStartShouldSetResponderCapture={handleStartShouldSetResponder}>
+      {props.children}
+    </Wrap>
+  );
+}

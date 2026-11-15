@@ -946,8 +946,10 @@ target_link_libraries(rnl_react_core
 # layoutParagraph in src/TextPipeline.cpp, which is only compiled when the TextLayoutManager swap happened.
 # Without it a paragraph already measures as zero, so a field has no geometry to ask about; the caret still moves
 # by grapheme, because that half is arithmetic.
+# `ExpoFontLoader` registers into that same text pipeline, so it exists only there too.
 if(TARGET rnl_skia)
     target_compile_definitions(rnl_react_core PRIVATE RNL_ENABLE_IMAGES RNL_ENABLE_TEXT_GEOMETRY)
+    target_sources(rnl_react_core PRIVATE src/ExpoFontLoaderModule.cpp)
 endif()
 
 # ---------------------------------------------------------------------------

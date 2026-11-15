@@ -59,10 +59,20 @@ describe("linuxOverlayIndex", () => {
 });
 
 describe("resolveLinuxModuleName", () => {
-  it("rewrites a react-native subpath the overlay index tracks", () => {
-    expect(resolveLinuxModuleName("react-native/Libraries/Utilities/Platform", "linux", isPackageResolvable)).toMatch(
-      /src-linux[/\\]Libraries[/\\]Utilities[/\\]Platform\.linux\.ts$/u,
-    );
+  it("rewrites a react-native subpath whose overlay has no upstream file", () => {
+    expect(
+      resolveLinuxModuleName(
+        "react-native/Libraries/Components/TextInput/LinuxTextInputNativeComponent",
+        "linux",
+        isPackageResolvable,
+      ),
+    ).toBe(linuxOverlayIndex["Libraries/Components/TextInput/LinuxTextInputNativeComponent"]);
+  });
+
+  it("leaves a react-native subpath whose overlay replaces an upstream file to that substitution", () => {
+    expect(
+      resolveLinuxModuleName("react-native/Libraries/Utilities/Platform", "linux", isPackageResolvable),
+    ).toBeNull();
   });
 
   it("rewrites a package name the shipped alias registry carries", () => {

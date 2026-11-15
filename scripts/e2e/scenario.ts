@@ -206,6 +206,20 @@ const readSnapshotName = (automation: Record<string, unknown>, field: string, so
   return name;
 };
 
+/**
+ * The scenario's own directory under `build/e2e-bundles`, which a Metro build empties first: one path segment, so no
+ * name can make that cleanup reach outside it.
+ */
+const readScenarioName = (value: unknown, sourceName: string): string => {
+  const name = readString(value, "name", sourceName);
+
+  if (name === "." || name === PARENT_DIRECTORY || name !== path.basename(name)) {
+    throw new Error(`${sourceName}: "name" must be a single path segment`);
+  }
+
+  return name;
+};
+
 const readAutomation = (record: Record<string, unknown>, sourceName: string): ScenarioAutomation | null => {
   if (!("automation" in record)) {
     return null;
@@ -240,7 +254,7 @@ const parseScenario = (value: unknown, sourceName: string): Scenario => {
     frames: readFrameCount(value, sourceName),
     injectProtocolError: readOptionalBoolean(value, "injectProtocolError", sourceName),
     inputTrace: readOptionalBoolean(value, "inputTrace", sourceName),
-    name: readString(value["name"], "name", sourceName),
+    name: readScenarioName(value["name"], sourceName),
     outputRefreshHz:
       "outputRefreshHz" in value ? readPositiveInteger(value["outputRefreshHz"], "outputRefreshHz", sourceName) : null,
     ready: readString(value["ready"], "ready", sourceName),

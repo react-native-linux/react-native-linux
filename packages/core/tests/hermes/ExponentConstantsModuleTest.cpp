@@ -4,6 +4,8 @@
 #include <chrono>
 #include <climits>
 #include <cxxreact/JSBigString.h>
+#include <filesystem>
+#include <fstream>
 #include <future>
 #include <gtest/gtest.h>
 #include <memory>
@@ -71,6 +73,48 @@ TEST(ExponentConstantsModuleTest, AnswersUpstreamExpoConstantsAsABareDesktopApp)
             R"("manifest":null,"sessionId":true,"statusBarHeight":0,"systemFonts":[]},"sameSession":true,)"
             R"("userAgent":null})");
     EXPECT_FALSE(reactHost.hasReportedFatalError());
+}
+
+/** The `manifest` `ExponentConstants` answers to a bundle loaded from `bundleDirectory`, as JSON. */
+std::string manifestOfBundleIn(const std::filesystem::path& bundleDirectory) {
+    ReactHost reactHost;
+    std::promise<std::string> trace;
+
+    std::ofstream(bundleDirectory / "index.linux.bundle")
+        << "globalThis.manifestTrace = "
+           "JSON.stringify(globalThis.nativeModuleProxy.ExponentConstants.getConstants().manifest);";
+    reactHost.loadBundle((bundleDirectory / "index.linux.bundle").string());
+    EXPECT_TRUE(reactHost.runUntilQuiescent(kQuiescenceBudget));
+    reactHost.reactInstance().getBufferedRuntimeExecutor()([&trace](facebook::jsi::Runtime& runtime) {
+        const facebook::jsi::Value value = runtime.global().getProperty(runtime, "manifestTrace");
+
+        trace.set_value(value.isString() ? value.getString(runtime).utf8(runtime) : "the probe never finished");
+    });
+
+    return trace.get_future().get();
+}
+
+/**
+ * #156: a linux build embeds the app config `@expo/config` evaluated as `assets/app.config` beside the bundle, and
+ * `manifest` serves it as the JSON string Android's module serves from its APK's `assets/app.config`, which upstream's
+ * `Constants.ts` parses into `expoConfig`. A bundle without that file still answers `null`.
+ */
+TEST(ExponentConstantsModuleTest, ServesTheAppConfigEmbeddedBesideTheBundle) {
+    const std::filesystem::path application =
+        std::filesystem::temp_directory_path() / ("rnl-expo-app-config-" + std::to_string(::getpid()));
+
+    std::filesystem::remove_all(application);
+    std::filesystem::create_directories(application);
+    const std::string withoutAppConfig = manifestOfBundleIn(application);
+
+    std::filesystem::create_directories(application / "assets");
+    std::ofstream(application / "assets" / "app.config") << R"({"name":"probe","scheme":"probe"})";
+    const std::string withAppConfig = manifestOfBundleIn(application);
+
+    std::filesystem::remove_all(application);
+
+    EXPECT_EQ(withoutAppConfig, "null");
+    EXPECT_EQ(withAppConfig, R"("{\"name\":\"probe\",\"scheme\":\"probe\"}")");
 }
 
 } // namespace

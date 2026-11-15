@@ -1,7 +1,7 @@
+import type { PropsWithChildren } from 'react';
 import * as React from 'react';
-import { PropsWithChildren } from 'react';
-import { View, StyleSheet } from 'react-native';
-import { maybeInitializeFabric } from '../init';
+import { StyleSheet, View } from 'react-native';
+
 import GestureHandlerRootViewContext from '../GestureHandlerRootViewContext';
 import type { RootViewNativeProps } from '../specs/RNGestureHandlerRootViewNativeComponent';
 
@@ -12,15 +12,10 @@ export default function GestureHandlerRootView({
   style,
   ...rest
 }: GestureHandlerRootViewProps) {
-  // Try initialize fabric on the first render, at this point we can
-  // reliably check if fabric is enabled (the function contains a flag
-  // to make sure it's called only once)
-  maybeInitializeFabric();
-
   return (
-    <GestureHandlerRootViewContext.Provider value>
+    <GestureHandlerRootViewContext value>
       <View style={style ?? styles.container} {...rest} />
-    </GestureHandlerRootViewContext.Provider>
+    </GestureHandlerRootViewContext>
   );
 }
 

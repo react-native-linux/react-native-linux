@@ -80,15 +80,14 @@ const expoPolyfill = (fileName: string): string =>
   path.join("/app", "node_modules", "expo-modules-core", "build", "polyfill", fileName);
 
 describe("createLinuxResolveRequest", () => {
-  it("rewrites the specifier, resolves it, and substitutes the overlay for the file that produced", () => {
-    const overlayPath = linuxOverlayIndex["Libraries/Utilities/Platform"];
+  it("resolves a deep import to its upstream file and substitutes the overlay for it", () => {
     const { requested, result } = resolveWith(
       { filePath: upstreamFile("Utilities/Platform.js"), type: "sourceFile" },
       "react-native/Libraries/Utilities/Platform",
     );
 
-    expect(requested).toStrictEqual([overlayPath]);
-    expect(result).toStrictEqual({ filePath: overlayPath, type: "sourceFile" });
+    expect(requested).toStrictEqual(["react-native/Libraries/Utilities/Platform"]);
+    expect(result).toStrictEqual({ filePath: linuxOverlayIndex["Libraries/Utilities/Platform"], type: "sourceFile" });
   });
 
   it("resolves a substituted package file again, as its linux package's specifier", () => {
@@ -126,27 +125,66 @@ describe("createLinuxResolveRequest", () => {
   });
 });
 
-describe("createLinuxResolveRequest for a package overlay's own imports", () => {
+/**
+ * Resolves each `[originModulePath, specifier]` in turn, Metro answering `upstream.file` for `upstream.specifier` and
+ * the specifier itself otherwise, and returns the origin Metro was asked to resolve each one from.
+ */
+const resolveOrigins = (
+  upstream: { readonly file: string; readonly specifier: string },
+  requests: readonly (readonly [string, string])[],
+): unknown[] => {
+  const origins: unknown[] = [];
+  const context = {
+    resolveRequest: (requestContext: { readonly originModulePath?: string }, name: string): unknown => {
+      origins.push(requestContext.originModulePath);
+
+      return { filePath: name === upstream.specifier ? upstream.file : name, type: "sourceFile" };
+    },
+  };
+  const resolveRequest = createLinuxResolveRequest(() => false);
+
+  for (const [originModulePath, specifier] of requests) {
+    resolveRequest({ ...context, originModulePath }, specifier, "linux");
+  }
+
+  return origins;
+};
+
+describe("createLinuxResolveRequest for an overlay's own imports", () => {
   it("resolves a package overlay's own imports from the file it replaced", () => {
     const overlayPath = linuxPackageOverlayIndex["expo-modules-core/build/polyfill/index"] ?? "";
-    const origins: unknown[] = [];
-    const context = {
-      resolveRequest: (requestContext: { readonly originModulePath?: string }, name: string): unknown => {
-        origins.push(requestContext.originModulePath);
-
-        return { filePath: name === "./polyfill" ? expoPolyfill("index.js") : name, type: "sourceFile" };
-      },
-    };
-    const resolveRequest = createLinuxResolveRequest(() => false);
-
-    resolveRequest({ ...context, originModulePath: expoPolyfill("../index.js") }, "./polyfill", "linux");
-    resolveRequest(
-      { ...context, originModulePath: overlayPath },
-      "expo-modules-core/src/polyfill/dangerous-internal",
-      "linux",
-    );
+    const origins = resolveOrigins({ file: expoPolyfill("index.js"), specifier: "./polyfill" }, [
+      [expoPolyfill("../index.js"), "./polyfill"],
+      [overlayPath, "expo-modules-core/src/polyfill/dangerous-internal"],
+    ]);
 
     expect(origins).toStrictEqual([expoPolyfill("../index.js"), expoPolyfill("index.js")]);
+  });
+
+  it("resolves a react-native overlay's package imports from the file it replaced and its relative ones from itself", () => {
+    const overlayPath = linuxOverlayIndex["Libraries/StyleSheet/processColor"] ?? "";
+    const origins = resolveOrigins({ file: upstreamFile("StyleSheet/processColor.js"), specifier: "./processColor" }, [
+      [upstreamFile("StyleSheet/StyleSheet.js"), "./processColor"],
+      [overlayPath, "@react-native/normalize-colors"],
+      [overlayPath, "./PlatformColorValueTypes.linux.ts"],
+    ]);
+
+    expect(origins).toStrictEqual([
+      upstreamFile("StyleSheet/StyleSheet.js"),
+      upstreamFile("StyleSheet/processColor.js"),
+      overlayPath,
+    ]);
+  });
+
+  it("resolves the package imports of an overlay a deep import reached first from the file it replaced", () => {
+    const overlayPath = linuxOverlayIndex["Libraries/StyleSheet/processColor"] ?? "";
+    const deepImport = "react-native/Libraries/StyleSheet/processColor";
+    const origins = resolveOrigins({ file: upstreamFile("StyleSheet/processColor.js"), specifier: deepImport }, [
+      ["/app/src/theme.ts", deepImport],
+      [overlayPath, "@react-native/normalize-colors"],
+    ]);
+
+    expect(origins).toStrictEqual(["/app/src/theme.ts", upstreamFile("StyleSheet/processColor.js")]);
   });
 });
 

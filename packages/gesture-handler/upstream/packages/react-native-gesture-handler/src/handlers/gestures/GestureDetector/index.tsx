@@ -1,24 +1,22 @@
 /* eslint-disable react/no-unused-prop-types */
-import React, { useContext, useEffect, useMemo, useRef } from 'react';
-import { Platform } from 'react-native';
-import findNodeHandle from '../../../findNodeHandle';
-import { GestureType } from '../gesture';
-import { UserSelect, TouchAction } from '../../gestureHandlerCommon';
-import { ComposedGesture } from '../gestureComposition';
-import { isTestEnv } from '../../../utils';
+import React, { useEffect, useMemo, useRef } from 'react';
 
-import GestureHandlerRootViewContext from '../../../GestureHandlerRootViewContext';
-import { AttachedGestureState, GestureDetectorState } from './types';
-import { useAnimatedGesture } from './useAnimatedGesture';
-import { attachHandlers } from './attachHandlers';
-import { needsToReattach } from './needsToReattach';
-import { dropHandlers } from './dropHandlers';
-import { useWebEventHandlers } from './utils';
-import { Wrap, AnimatedWrap } from './Wrap';
-import { useDetectorUpdater } from './useDetectorUpdater';
-import { useViewRefHandler } from './useViewRefHandler';
-import { useMountReactions } from './useMountReactions';
+import findNodeHandle from '../../../findNodeHandle';
+import { resolveHostInstance } from '../../../hostInstance';
 import { useIsomorphicLayoutEffect } from '../../../useIsomorphicLayoutEffect';
+import type { TouchAction, UserSelect } from '../../gestureHandlerCommon';
+import type { GestureType } from '../gesture';
+import type { ComposedGesture } from '../gestureComposition';
+import { attachHandlers } from './attachHandlers';
+import { dropHandlers } from './dropHandlers';
+import { needsToReattach } from './needsToReattach';
+import type { AttachedGestureState, GestureDetectorState } from './types';
+import { useAnimatedGesture } from './useAnimatedGesture';
+import { useDetectorUpdater } from './useDetectorUpdater';
+import { useMountReactions } from './useMountReactions';
+import { useViewRefHandler } from './useViewRefHandler';
+import { useWebEventHandlers } from './utils';
+import { AnimatedWrap, Wrap } from './Wrap';
 
 function propagateDetectorConfig(
   props: GestureDetectorProps,
@@ -43,7 +41,7 @@ function propagateDetectorConfig(
   }
 }
 
-interface GestureDetectorProps {
+export interface GestureDetectorProps {
   children?: React.ReactNode;
   /**
    * A gesture object containing the configuration and callbacks.
@@ -57,19 +55,19 @@ interface GestureDetectorProps {
    * This parameter allows to specify which `userSelect` property should be applied to underlying view.
    * Possible values are `"none" | "auto" | "text"`. Default value is set to `"none"`.
    */
-  userSelect?: UserSelect | undefined;
+  userSelect?: UserSelect;
   /**
    * #### Web only
    * Specifies whether context menu should be enabled after clicking on underlying view with right mouse button.
    * Default value is set to `false`.
    */
-  enableContextMenu?: boolean | undefined;
+  enableContextMenu?: boolean;
   /**
    * #### Web only
    * This parameter allows to specify which `touchAction` property should be applied to underlying view.
    * Supports all CSS touch-action values (e.g. `"none"`, `"pan-y"`). Default value is set to `"none"`.
    */
-  touchAction?: TouchAction | undefined;
+  touchAction?: TouchAction;
 }
 
 /**
@@ -88,13 +86,6 @@ interface GestureDetectorProps {
  * @see https://docs.swmansion.com/react-native-gesture-handler/docs/gestures/gesture-detector
  */
 export const GestureDetector = (props: GestureDetectorProps) => {
-  const rootViewContext = useContext(GestureHandlerRootViewContext);
-  if (__DEV__ && !rootViewContext && !isTestEnv() && Platform.OS !== 'web') {
-    throw new Error(
-      'GestureDetector must be used as a descendant of GestureHandlerRootView. Otherwise the gestures will not be recognized. See https://docs.swmansion.com/react-native-gesture-handler/docs/fundamentals/installation for more details.'
-    );
-  }
-
   if (!props.gesture) {
     throw new Error('GestureDetector must have a gesture prop provided.');
   }
@@ -126,6 +117,10 @@ export const GestureDetector = (props: GestureDetectorProps) => {
     animatedHandlers: null,
     shouldUseReanimated: shouldUseReanimated,
     isMounted: false,
+    // The real value is computed in the attach microtask, which runs after
+    // this commit's effects. Until then react to every mount, so a relation
+    // to a gesture mounting in the same commit is never skipped.
+    hasExternalRelations: true,
   }).current;
 
   const updateAttachedGestures = useDetectorUpdater(
@@ -149,7 +144,9 @@ export const GestureDetector = (props: GestureDetectorProps) => {
   useAnimatedGesture(preparedGesture, needsToRebuildReanimatedEvent);
 
   useIsomorphicLayoutEffect(() => {
-    const viewTag = findNodeHandle(state.viewRef) as number;
+    const viewTag = findNodeHandle(
+      resolveHostInstance(state.viewRef)
+    ) as number;
     preparedGesture.isMounted = true;
 
     attachHandlers({
