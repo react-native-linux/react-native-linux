@@ -468,6 +468,7 @@ set(RNL_REACT_COMMON_SUBDIRS
     logger
     oscompat
     react/bridging
+    react/cxxstableapi
     react/debug
     react/featureflags
     react/nativemodule/core
@@ -800,6 +801,7 @@ endif()
 set(RNL_REACT_COMMON_NATIVEMODULE_SUBDIRS
     react/renderer/observers/intersection
     react/renderer/observers/mutation
+    react/renderer/observers/resize
     devtoolsruntimesettings
     react/nativemodule/cputime
     react/nativemodule/defaults
@@ -810,6 +812,7 @@ set(RNL_REACT_COMMON_NATIVEMODULE_SUBDIRS
     react/nativemodule/intersectionobserver
     react/nativemodule/microtasks
     react/nativemodule/mutationobserver
+    react/nativemodule/resizeobserver
     react/nativemodule/viewtransition
     react/nativemodule/webperformance)
 
@@ -830,10 +833,12 @@ set(RNL_REACT_COMMON_NATIVEMODULE_TARGETS
     react_nativemodule_intersectionobserver
     react_nativemodule_microtasks
     react_nativemodule_mutationobserver
+    react_nativemodule_resizeobserver
     react_nativemodule_viewtransition
     react_nativemodule_webperformance
     react_renderer_observers_intersection
-    react_renderer_observers_mutation)
+    react_renderer_observers_mutation
+    react_renderer_observers_resize)
 
 # ---------------------------------------------------------------------------
 # rnl_react_core

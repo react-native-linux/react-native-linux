@@ -1,9 +1,9 @@
 {
-  "codegenVersion": "0.87.1",
+  "codegenVersion": "0.88.1",
   "inputs": [
     {
       "path": "third_party/react-native/packages/react-native/src/private/components/activityindicator/specs/ActivityIndicatorViewNativeComponent.js",
-      "sha256": "38fe7bda9d8abcc9a5e95331b945ddb31e7e7516fbafb0bf61e32a4a6aca1546"
+      "sha256": "7e86bf2bae38fd682a5723fb6a887bee318a0c25e0ded4923492d65fad8632fd"
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/components/debuggingoverlay/specs/DebuggingOverlayNativeComponent.js",
@@ -19,7 +19,7 @@
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/components/modal/specs/RCTModalHostViewNativeComponent.js",
-      "sha256": "d8458e8b7a9036589f4633f8289d58bdcb6bfdba9716b7fcb8b03101e1b064cd"
+      "sha256": "54538d4bf01f3822e3d8c651fbbf59c07380b2abd4a8450e481068f259d94c84"
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/components/progressbarandroid/specs/ProgressBarAndroidNativeComponent.js",
@@ -31,11 +31,11 @@
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/components/refreshcontrol/specs/PullToRefreshViewNativeComponent.js",
-      "sha256": "26917177615b9870c66ec3d64d44b63a7584492ef5d267ccf90f96d3d1b58437"
+      "sha256": "4f23f408aad892bbc3886cde7d03ef4a48d3911f38cbcb58a58844cc1d201b82"
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/components/safeareaview/specs/RCTSafeAreaViewNativeComponent.js",
-      "sha256": "9ac4911dcba91435ab00c3a9adbb6fdef83ef6ac5ba32d58720ff99b98975a3e"
+      "sha256": "b34c55d1429d22145e68c0532fc71cb10a4a865ae84b5eaa80409bd6c0d8b361"
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/components/scrollview/specs/AndroidHorizontalScrollContentViewNativeComponent.js",
@@ -47,7 +47,7 @@
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/components/switch/specs/SwitchNativeComponent.js",
-      "sha256": "e6e197072a5f88a5ce23406f1c0a23042f8ff2a1f9aabfabf2eacbfc1e2270de"
+      "sha256": "ef6f3c79e3400a7f41f5a5a616b249e37cd9a9bd4a0bf7cc93d29044e89922c3"
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/components/unimplementedview/specs/UnimplementedNativeViewNativeComponent.js",
@@ -75,7 +75,7 @@
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/featureflags/specs/NativeReactNativeFeatureFlags.js",
-      "sha256": "f9230bd2d50bcc9ef1ddc2d5ec176e485080681946b14b7e9d06456766aa0c80"
+      "sha256": "e8fe1e69eac440d428704bbf5ef46bc33d43f6a195884233f9b291c5c364addb"
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeAccessibilityInfo.js",
@@ -83,27 +83,27 @@
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeAccessibilityManager.js",
-      "sha256": "94348daf5bd33be2e832a9ca3801da58b8c9459467578a538061a2174d7c6b56"
+      "sha256": "8f7d84ffec31a21a23597bbce98c8a8dc20c7abb84088c63dd84c69306a493be"
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeActionSheetManager.js",
-      "sha256": "ef1bd59d8b0fff31eb0e922f1122c9a3380ad663ba37704a1968b6bac999508f"
+      "sha256": "63115588af2b7ed0f542051e26d1ab5394c26c32a0fccd6063c78806bcea949f"
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeAlertManager.js",
-      "sha256": "99de3002eb32d1341d110aec80ee8890e8375b56b607eb8d3a831b6bdbc9660f"
+      "sha256": "eecab3501d82e45b0763a08edfee57b05f201d4a63e1cf4e0d7212164e1cfae7"
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeAnimatedModule.js",
-      "sha256": "9d7ecc001b82b440441b7724b3d3010f3e4818e606cf2bb003df8cb8754f9e07"
+      "sha256": "327157b62bcca6d0206cf9abbe9ae8f21636b72e5b9500ee3dc33bf640c0f485"
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeAnimatedTurboModule.js",
-      "sha256": "22205d76367e7272d1c73b2ccb702590edd70bf153fdd96e44f899122febd4b1"
+      "sha256": "047b1df7f07fe6d75bce2421c28bc1f6997bd3e93c941bdaa3087297f1b98173"
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeAppState.js",
-      "sha256": "f10bb50c2265d75c96f36830fb733c5517d6098386e4d26e0bfb04983ef6b3e1"
+      "sha256": "f1d434c45ef7dfa6464d1f1bc166a590991925dd64a8ec38f69e4b3aaebfcaa8"
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeAppearance.js",
@@ -111,7 +111,7 @@
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeBlobModule.js",
-      "sha256": "cd22553a309f2f2912fd10a1225f4000a14d308c8be8cca2b048bfbe06ee4f25"
+      "sha256": "9f2301a90784bbe5a90c25c1966ae42c1e9668a4f4c738765ab48fc3f282d057"
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeClipboard.js",
@@ -131,7 +131,7 @@
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeDeviceInfo.js",
-      "sha256": "5d054b0b974c0c857698e6e2890e68eebf8b826e191230aa523c43b36e8cd835"
+      "sha256": "54f47a49ff87d4c30ddf67e8b9979f57b1b5874070f59799dbaca0a5a9dad835"
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeDialogManagerAndroid.js",
@@ -143,7 +143,7 @@
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeFileReaderModule.js",
-      "sha256": "af12fda7ca8b5e607b891b5c5c9c7f1a9340d5a35d2c88c25f3ed7796359107b"
+      "sha256": "1b9070a1005fb9fb5dacae02d9f407695cf87a06269913bd2cf2303add7d77f6"
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeFrameRateLogger.js",
@@ -163,11 +163,11 @@
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeImageLoaderAndroid.js",
-      "sha256": "e0a92fb4f07dfac5bb89ab5f296a7e53a488328f1fa72b430ca24f9752d22511"
+      "sha256": "dacadb559c4632234fd51828c8ec8fbb556f3ae366e72568e53f86ef160a64ce"
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeImageLoaderIOS.js",
-      "sha256": "a041f39db8aed07a6a7f3fbaccc852bf9c211de5134b35ca18b9d192d3f721d0"
+      "sha256": "ef2133e72fd786e0f173b7ab912cfaaa429e61b4b9b9622ebe6d38ce4d902f95"
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeImageStoreAndroid.js",
@@ -198,16 +198,12 @@
       "sha256": "fa12a85ca82c90a53b73e5451c638d7fc0397b041a4bf59111b4e79e40515914"
     },
     {
-      "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeModalManager.js",
-      "sha256": "9f7b297391a3f3a9153ac7b7570b964ca6bd65fcf08ba7507aa0f3a3ae92ef06"
-    },
-    {
       "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeNetworkingAndroid.js",
-      "sha256": "31269a59001b502a305b221dba4592bf439c083c97808fcd45dbd4561e432821"
+      "sha256": "3895e263e3855837c73985f5e609e32b6629d444f321ca2f719063a09c25cad5"
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeNetworkingIOS.js",
-      "sha256": "25c2dbd03f3a6583cd374b667ca8c228a3b5e04d65f4e541bcb9183eaada1d10"
+      "sha256": "ddf1345f9321cd22863b8122f458c0ffc21837b6607759d564000b76ee4875b6"
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativePermissionsAndroid.js",
@@ -223,15 +219,15 @@
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativePushNotificationManagerIOS.js",
-      "sha256": "87c04c0f18bf55b6f8ae4ddfda80909212ff28a125c66b056c5a3c4eecf26bbb"
+      "sha256": "757da8f3e5228a7c925633bc3cc76566900ec5b23d539e74583225a9a834f8f5"
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeRedBox.js",
-      "sha256": "eeb966cef14868427024ad5939f3362950e81fa08034acffc66cc2bd97109f18"
+      "sha256": "c1d4369f90fb865ce4484590c9f7fc9fea6d746e9f91320264e981c7b4314538"
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeSampleTurboModule.js",
-      "sha256": "dd97eb6a22fbcee90b5a51126f6724253bd50516e8bf469029e0fc37ad392194"
+      "sha256": "00532f0c6d8ef3b48c5593e852b4232bc4d24a9161b07ad4e88e4ae30146cd69"
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeSegmentFetcher.js",
@@ -239,7 +235,7 @@
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeSettingsManager.js",
-      "sha256": "9cb54c6d9ef336be65ac620b23093e1606674cecf43e1cc581b96076fe4e5780"
+      "sha256": "d6d12f433b53868bad6e72150251f827bb053da58c36d1435e398dc9a3b169a6"
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeShareModule.js",
@@ -275,7 +271,7 @@
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/specs_DEPRECATED/modules/NativeWebSocketModule.js",
-      "sha256": "804e022406865433e3836757bafc37895873ab8039641e340192ddb5612e8b6a"
+      "sha256": "e46ced3f923b80405d4b1fa5d18e7d9685f20564da622073a5a609237add6e72"
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/testing/fantom/specs/NativeCPUTime.js",
@@ -291,11 +287,11 @@
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/viewtransition/specs/NativeViewTransition.js",
-      "sha256": "98f15a50fea1cfd202f01e936df3f57bf905c22f3a39ad7a2ef62fb5dea646f5"
+      "sha256": "2fadcbfa20d9f696f4141f3f246072945782a8d0a0896410a0e4082b49200729"
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/webapis/dom/nodes/specs/NativeDOM.js",
-      "sha256": "f2c52937519e4dd2dee8bc30881e7a9f9ab826d3a481b57a90efce8b9d131234"
+      "sha256": "bf4e102013c27fc63f17ca1065d4a0acefceee30d2ee2e388a31b036573babe4"
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/webapis/idlecallbacks/specs/NativeIdleCallbacks.js",
@@ -315,7 +311,11 @@
     },
     {
       "path": "third_party/react-native/packages/react-native/src/private/webapis/performance/specs/NativePerformance.js",
-      "sha256": "8ac76c2356dd95f2b03d31b214cfeba7211d5bd351819d5277c6752e73760e41"
+      "sha256": "a52448165f3ac79c37c0cb28e6d8471d6c4123c17823ac86518914868acdc4e4"
+    },
+    {
+      "path": "third_party/react-native/packages/react-native/src/private/webapis/resizeobserver/specs/NativeResizeObserver.js",
+      "sha256": "3c0b09ffe57038128b49d52c6c10bef5e210769fd653ec21f39404dfd6cd0959"
     }
   ],
   "libraryName": "FBReactNativeSpec",

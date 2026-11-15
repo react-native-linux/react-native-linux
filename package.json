@@ -44,7 +44,7 @@
   "devDependencies": {
     "@commitlint/cli": "^21.2.2",
     "@react-native-linux/cli": "workspace:*",
-    "@react-native/codegen": "0.87.1",
+    "@react-native/codegen": "0.88.1",
     "@types/pngjs": "catalog:",
     "@vitest/coverage-v8": "catalog:",
     "jscpd": "catalog:",
@@ -52,6 +52,7 @@
     "oxfmt": "catalog:",
     "oxlint": "catalog:",
     "pngjs": "catalog:",
+    "react-native": "0.88.1",
     "react-native-platform-override": "catalog:",
     "react-native-worklets": "catalog:",
     "typescript": "catalog:",

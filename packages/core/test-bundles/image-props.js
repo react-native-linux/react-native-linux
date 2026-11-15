@@ -61,10 +61,11 @@ children.push(
 );
 
 // loadingIndicatorSource is the same slot as defaultSource on this platform: with no defaultSource configured, it
-// is what draws in its place.
+// is what draws in its place. It crosses as `loadingIndicatorSrc`, a bare URI, which is what Image.android.js sends
+// and, since React Native 0.88, the only name ImageProps reads.
 children.push(
   mountPropsImage(
-    { source: missingSource, loadingIndicatorSource: quadrantSource, resizeMode: 'contain' },
+    { source: missingSource, loadingIndicatorSrc: quadrantSource.uri, resizeMode: 'contain' },
     420,
     200,
     130,

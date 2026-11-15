@@ -35,6 +35,7 @@
 #include <react/renderer/mounting/MountingCoordinator.h>
 #include <react/renderer/mounting/ShadowTree.h>
 #include <react/renderer/mounting/ShadowTreeDelegate.h>
+#include <react/renderer/uimanager/LayoutEventEmitter.h>
 #include <react/renderer/uimanager/UIManager.h>
 
 // The using-declarations both commit-driven test files share. They live here rather than in each file because a
@@ -231,7 +232,8 @@ void collectAbsoluteFrames(const std::shared_ptr<const facebook::react::ShadowNo
 /**
  * The `ShadowTreeDelegate` upstream's own mounting tests use: it accepts every proposed tree and lets the
  * `MountingCoordinator` be the only observer of a commit, which is what makes `pullTransaction` the thing under
- * test rather than a mount callback.
+ * test rather than a mount callback. It forwards each commit to upstream's `LayoutEventEmitter`, as `Scheduler`
+ * registers it in a running app: since 0.88 that commit hook, not `ShadowTree::commit`, emits `onLayout`.
  */
 class PassThroughShadowTreeDelegate final : public facebook::react::ShadowTreeDelegate {
 public:
@@ -250,6 +252,12 @@ public:
     void shadowTreeDidFinishReactCommit(const facebook::react::ShadowTree& /*shadowTree*/) const override {}
 
     void shadowTreeDidPromoteReactRevision(const facebook::react::ShadowTree& /*shadowTree*/) const override {}
+
+    void shadowTreeDidCommit(const facebook::react::ShadowTree& shadowTree,
+                             const facebook::react::RootShadowNode::Shared& rootShadowNode,
+                             const std::vector<const LayoutableShadowNode*>& affectedLayoutableNodes) const override {
+        facebook::react::LayoutEventEmitter{}.shadowTreeDidCommit(shadowTree, rootShadowNode, affectedLayoutableNodes);
+    }
 };
 
 /**

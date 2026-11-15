@@ -12,7 +12,7 @@ namespace {
 enum class UpstreamSuiteLinkage { Linked, Excluded };
 
 /**
- * One vendored `tests/` directory: its expected file list at v0.87.1, whether any file from it compiles into
+ * One vendored `tests/` directory: its expected file list at v0.88.1, whether any file from it compiles into
  * `rnl_core_tests` or `rnl_core_hermes_tests` today, and — when it does not, or does only in part — the
  * reviewed reason, mirroring the comment that states the same reason in packages/core/tests/CMakeLists.txt or
  * packages/core/tests/hermes/CMakeLists.txt. `exclusionReason` is documentation
@@ -32,13 +32,13 @@ namespace {
 
 /**
  * The drift oracle for every vendored `tests/` directory (#230, generalizing #132 and #211): `ReactCommon` holds
- * 36 and `ReactCxxPlatform` holds 3, and every one of the 39 is named here — the 28 whose files already compile
- * into `rnl_core_tests` (#132, #211, #227) or `rnl_core_hermes_tests` (#228) and the 11 this table is what
+ * 38 and `ReactCxxPlatform` holds 3, and every one of the 41 is named here — the 28 whose files already compile
+ * into `rnl_core_tests` (#132, #211, #227) or `rnl_core_hermes_tests` (#228) and the 13 this table is what
  * makes reviewed rather than invisible.
  * An upstream add or remove of a directory or a file in one fails this test, and #58's bump ritual reads this
- * file, not a memory of which directories exist. Upstream v0.87.1.
+ * file, not a memory of which directories exist. Upstream v0.88.1.
  */
-TEST(UpstreamTestDriftOracleTest, VendoredTestsDirectoriesMatchTheV0871FileLists) {
+TEST(UpstreamTestDriftOracleTest, VendoredTestsDirectoriesMatchTheV0881FileLists) {
     const std::filesystem::path reactCommonRoot{RNL_UPSTREAM_REACT_COMMON_DIR};
     const std::filesystem::path vendorRoot = reactCommonRoot.parent_path();
 
@@ -53,6 +53,10 @@ TEST(UpstreamTestDriftOracleTest, VendoredTestsDirectoriesMatchTheV0871FileLists
          {"RecoverableErrorTest.cpp", "jsarg_helpers.cpp", "jsbigstring.cpp", "methodcall.cpp"},
          UpstreamSuiteLinkage::Linked,
          ""},
+        {"ReactCommon/hermes/inspector-modern/chrome/tests",
+         {"HermesRuntimeSamplingProfileSerializerTest.cpp"},
+         UpstreamSuiteLinkage::Excluded,
+         "the Hermes inspector is not built: HERMES_ENABLE_DEBUGGER is OFF and bridgelesshermes is not used"},
         {"ReactCommon/jserrorhandler/tests",
          {"StackTraceParserTest.cpp"},
          UpstreamSuiteLinkage::Linked,
@@ -110,7 +114,7 @@ TEST(UpstreamTestDriftOracleTest, VendoredTestsDirectoriesMatchTheV0871FileLists
          "LayoutAnimation is undecided (#123, needs:decision) and react/renderer/animations is not built; link "
          "only if #123 decides to implement it"},
         {"ReactCommon/react/renderer/attributedstring/tests",
-         {"AttributedStringBoxTest.cpp", "ParagraphAttributesTest.cpp"},
+         {"AttributedStringBoxTest.cpp", "ParagraphAttributesTest.cpp", "TextAttributesHashTest.cpp"},
          UpstreamSuiteLinkage::Linked,
          ""},
         {"ReactCommon/react/renderer/components/image/tests",
@@ -130,7 +134,8 @@ TEST(UpstreamTestDriftOracleTest, VendoredTestsDirectoriesMatchTheV0871FileLists
          UpstreamSuiteLinkage::Linked,
          ""},
         {"ReactCommon/react/renderer/components/view/tests",
-         {"ConversionsTest.cpp", "LayoutTest.cpp", "ResolveTransformTest.cpp", "ViewTest.cpp"},
+         {"AccessibilityPropsTest.cpp", "ConversionsTest.cpp", "LayoutTest.cpp", "ResolveTransformTest.cpp",
+          "ViewTest.cpp"},
          UpstreamSuiteLinkage::Linked,
          ""},
         {"ReactCommon/react/renderer/core/tests",
@@ -171,10 +176,16 @@ TEST(UpstreamTestDriftOracleTest, VendoredTestsDirectoriesMatchTheV0871FileLists
          UpstreamSuiteLinkage::Linked,
          ""},
         {"ReactCommon/react/renderer/mounting/tests",
-         {"DifferentiatorUnflattenTest.cpp", "OrderIndexTest.cpp", "ShadowTreeLifeCycleTest.cpp",
-          "ShadowTreeReactBranchingTest.cpp", "StackingContextTest.cpp", "StateReconciliationTest.cpp"},
+         {"DifferentiatorUnflattenTest.cpp", "MountingTransactionTest.cpp", "OrderIndexTest.cpp",
+          "ShadowTreeLifeCycleTest.cpp", "ShadowTreeReactBranchingTest.cpp", "StackingContextTest.cpp",
+          "StateReconciliationTest.cpp"},
          UpstreamSuiteLinkage::Linked,
          ""},
+        {"ReactCommon/react/renderer/observers/resize/tests",
+         {"ResizeObserverTest.cpp"},
+         UpstreamSuiteLinkage::Excluded,
+         "ResizeObserver is new in React Native 0.88 and, like the intersection and mutation observers, is built "
+         "only in the runtime configure, for the default TurboModules; the Hermes-free test configure has none"},
         {"ReactCommon/react/renderer/runtimescheduler/tests",
          {"RuntimeSchedulerTest.cpp", "SchedulerPriorityTest.cpp", "StubClock.h", "StubErrorUtils.h",
           "StubQueue.h"},
@@ -259,7 +270,7 @@ TEST(UpstreamTestDriftOracleTest, VendoredTestsDirectoriesMatchTheV0871FileLists
         expectedDirectories.insert(std::filesystem::path{directory.relativePath});
     }
 
-    // The 39 directories above are exhaustive: an upstream add or remove of a whole tests/ directory fails here
+    // The 41 directories above are exhaustive: an upstream add or remove of a whole tests/ directory fails here
     // even before any file-list assertion above would notice it.
     std::set<std::filesystem::path> actualDirectories;
     for (const std::string& subtree : {"ReactCommon", "ReactCxxPlatform"}) {

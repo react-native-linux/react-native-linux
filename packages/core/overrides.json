@@ -1,7 +1,7 @@
 {
   "includePatterns": ["src-linux/**", "index.ts"],
   "excludePatterns": ["**/*.spec.ts"],
-  "baseVersion": "0.87.1",
+  "baseVersion": "0.88.1",
   "overrides": [
     {
       "type": "platform",
@@ -12,7 +12,7 @@
       "type": "derived",
       "file": "src-linux/Libraries/NativeComponent/BaseViewConfig.linux.ts",
       "baseFile": "packages/react-native/Libraries/NativeComponent/BaseViewConfig.android.js",
-      "baseHash": "c81145f80a645420c51722714092f65090c3613a",
+      "baseHash": "b0f63d01fc01565c857d97c7f32c26364c60c95f",
       "issue": 22
     },
     {
@@ -29,7 +29,7 @@
       "type": "derived",
       "file": "src-linux/Libraries/StyleSheet/PlatformColorValueTypes.linux.ts",
       "baseFile": "packages/react-native/Libraries/StyleSheet/PlatformColorValueTypes.android.js",
-      "baseHash": "f6a020171bb4217cc5e0a7448e74e991f99c5fed",
+      "baseHash": "3e4d2a72e8e5be51e20abb262638ba7a7f21f671",
       "issue": 505
     },
     {
@@ -62,7 +62,7 @@
       "type": "derived",
       "file": "src-linux/Libraries/Utilities/PlatformTypes.ts",
       "baseFile": "packages/react-native/Libraries/Utilities/PlatformTypes.js",
-      "baseHash": "933ac7f586871c9de39fc0d84aa4c3b68997f34d",
+      "baseHash": "bca246def07610595c5a92e5a83bcffa26b0e836",
       "issue": 29
     },
     {

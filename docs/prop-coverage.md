@@ -58,62 +58,62 @@ assertion and not an implementation.
 | Component | Props | Implemented | Deviating | Not implemented |
 | --- | --- | --- | --- | --- |
 | View | 35 | 14 | 5 | 16 |
-| Text | 45 | 22 | 6 | 17 |
+| Text | 46 | 22 | 6 | 18 |
 | Image | 14 | 7 | 3 | 4 |
 | ScrollView | 39 | 12 | 2 | 25 |
 | TextInput | 24 | 13 | 0 | 11 |
 | Switch | 8 | 5 | 3 | 0 |
 | ActivityIndicator | 4 | 4 | 0 | 0 |
-| **Total** | 169 | 77 | 19 | 73 |
+| **Total** | 170 | 77 | 19 | 74 |
 
 ## View
 
 | Prop | Declared at | State | Proof, reason or owner |
 | --- | --- | --- | --- |
-| `opacity` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:46` | implemented | `RetainedSceneTest, ATranslucentParentAndATranslucentLeafEachCompositeAsALayer` |
-| `backgroundColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:47` | implemented | `RetainedSceneTest, UpdateReplacesFrameAndBackgroundColorInPlace` |
-| `borderRadii` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:50` | implemented | `BorderGeometryTest, TheHitRegionIsTheSameRoundedBoxTheSnapshotIsPaintedWith` |
-| `borderColors` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:51` | implemented | `border-matrix.png` |
-| `borderCurves` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:52` | deviating | Corners are always circular; iOS' `continuous` squircle is never drawn. See *View props fidelity*. |
-| `borderStyles` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:53` | implemented | `border-matrix.png` |
-| `outlineColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:56` | not-implemented | #68 |
-| `outlineOffset` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:57` | not-implemented | #68 |
-| `outlineStyle` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:58` | not-implemented | #68 |
-| `outlineWidth` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:59` | not-implemented | #68 |
-| `shadowColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:62` | implemented | `shadow.png` |
-| `shadowOffset` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:63` | implemented | `shadow.png` |
-| `shadowOpacity` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:64` | implemented | `shadow.png` |
-| `shadowRadius` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:65` | implemented | `shadow.png` |
-| `cursor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:67` | not-implemented | #40 |
-| `boxShadow` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:70` | implemented | `shadow.png` |
-| `filter` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:73` | not-implemented | #68 |
-| `backgroundImage` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:76` | implemented | `RetainedSceneTest, ABackgroundImageGradientTravelsToThePrimitiveWithTheInheritedOpacity` |
-| `backgroundSize` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:79` | deviating | Every gradient layer fills the whole border box; CSS `background-size` is parsed and ignored. See *Gradients*, Fidelity limits. |
-| `backgroundPosition` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:82` | deviating | Every gradient layer fills the whole border box; CSS `background-position` is parsed and ignored. See *Gradients*, Fidelity limits. |
-| `backgroundRepeat` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:85` | deviating | Every gradient layer fills the whole border box; CSS `background-repeat` is parsed and ignored, and every gradient is `SkTileMode::kClamp`. |
-| `mixBlendMode` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:88` | not-implemented | #68 |
-| `isolation` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:91` | not-implemented | #68 |
-| `transform` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:94` | implemented | `RetainedSceneTest, ATransformIsAppliedAboutTheCenterOfTheAbsoluteFrame` |
-| `transformOrigin` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:95` | implemented | `AnimatedPropsTest, ATransformResolvesAboutTheOriginTheNodeMountedWith` |
-| `backfaceVisibility` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:96` | deviating | The 4x4 transform is reduced to its 2D affine part, so depth is lost and a back face is never culled. See *View props fidelity*. |
-| `shouldRasterize` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:97` | not-implemented | #69 |
-| `zIndex` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:98` | not-implemented | #35 |
-| `pointerEvents` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:101` | implemented | `AnimatedHitTestTest, PointerEventsNoneRemovesTheNodeAndItsChildren` |
-| `hitSlop` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:102` | not-implemented | #64 |
-| `onLayout` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:103` | not-implemented | #115 |
-| `events` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:105` | not-implemented | #36 |
-| `collapsable` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:107` | not-implemented | #69 |
-| `collapsableChildren` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:108` | not-implemented | #69 |
-| `removeClippedSubviews` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:110` | not-implemented | #69 |
+| `opacity` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:48` | implemented | `RetainedSceneTest, ATranslucentParentAndATranslucentLeafEachCompositeAsALayer` |
+| `backgroundColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:49` | implemented | `RetainedSceneTest, UpdateReplacesFrameAndBackgroundColorInPlace` |
+| `borderRadii` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:52` | implemented | `BorderGeometryTest, TheHitRegionIsTheSameRoundedBoxTheSnapshotIsPaintedWith` |
+| `borderColors` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:53` | implemented | `border-matrix.png` |
+| `borderCurves` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:54` | deviating | Corners are always circular; iOS' `continuous` squircle is never drawn. See *View props fidelity*. |
+| `borderStyles` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:55` | implemented | `border-matrix.png` |
+| `outlineColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:58` | not-implemented | #68 |
+| `outlineOffset` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:59` | not-implemented | #68 |
+| `outlineStyle` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:60` | not-implemented | #68 |
+| `outlineWidth` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:61` | not-implemented | #68 |
+| `shadowColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:64` | implemented | `shadow.png` |
+| `shadowOffset` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:65` | implemented | `shadow.png` |
+| `shadowOpacity` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:66` | implemented | `shadow.png` |
+| `shadowRadius` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:67` | implemented | `shadow.png` |
+| `cursor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:69` | not-implemented | #40 |
+| `boxShadow` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:72` | implemented | `shadow.png` |
+| `filter` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:75` | not-implemented | #68 |
+| `backgroundImage` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:78` | implemented | `RetainedSceneTest, ABackgroundImageGradientTravelsToThePrimitiveWithTheInheritedOpacity` |
+| `backgroundSize` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:81` | deviating | Every gradient layer fills the whole border box; CSS `background-size` is parsed and ignored. See *Gradients*, Fidelity limits. |
+| `backgroundPosition` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:84` | deviating | Every gradient layer fills the whole border box; CSS `background-position` is parsed and ignored. See *Gradients*, Fidelity limits. |
+| `backgroundRepeat` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:87` | deviating | Every gradient layer fills the whole border box; CSS `background-repeat` is parsed and ignored, and every gradient is `SkTileMode::kClamp`. |
+| `mixBlendMode` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:90` | not-implemented | #68 |
+| `isolation` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:93` | not-implemented | #68 |
+| `transform` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:96` | implemented | `RetainedSceneTest, ATransformIsAppliedAboutTheCenterOfTheAbsoluteFrame` |
+| `transformOrigin` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:97` | implemented | `AnimatedPropsTest, ATransformResolvesAboutTheOriginTheNodeMountedWith` |
+| `backfaceVisibility` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:98` | deviating | The 4x4 transform is reduced to its 2D affine part, so depth is lost and a back face is never culled. See *View props fidelity*. |
+| `shouldRasterize` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:99` | not-implemented | #69 |
+| `zIndex` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:100` | not-implemented | #35 |
+| `pointerEvents` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:103` | implemented | `AnimatedHitTestTest, PointerEventsNoneRemovesTheNodeAndItsChildren` |
+| `hitSlop` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:104` | not-implemented | #64 |
+| `onLayout` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:105` | not-implemented | #115 |
+| `events` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:107` | not-implemented | #36 |
+| `collapsable` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:109` | not-implemented | #69 |
+| `collapsableChildren` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:110` | not-implemented | #69 |
+| `removeClippedSubviews` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/view/BaseViewProps.h:112` | not-implemented | #69 |
 
 ## Text
 
 | Prop | Declared at | State | Proof, reason or owner |
 | --- | --- | --- | --- |
-| `paragraphAttributes` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/text/BaseParagraphProps.h:43` | implemented | `RetainedSceneTextTest, ParagraphStateBecomesTheTextOnTheNode` |
-| `isSelectable` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/text/BaseParagraphProps.h:48` | not-implemented | #43 |
-| `onTextLayout` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/text/BaseParagraphProps.h:50` | not-implemented | #111 |
-| `textAttributes` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/text/BaseTextProps.h:31` | implemented | `RetainedSceneTextTest, ATranslucentAncestorFadesTextAsALayerRatherThanThroughItsFragmentColors` |
+| `paragraphAttributes` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/text/BaseParagraphProps.h:45` | implemented | `RetainedSceneTextTest, ParagraphStateBecomesTheTextOnTheNode` |
+| `isSelectable` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/text/BaseParagraphProps.h:50` | not-implemented | #43 |
+| `onTextLayout` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/text/BaseParagraphProps.h:52` | not-implemented | #111 |
+| `textAttributes` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/text/BaseTextProps.h:33` | implemented | `RetainedSceneTextTest, ATranslucentAncestorFadesTextAsALayerRatherThanThroughItsFragmentColors` |
 | `foregroundColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:50` | implemented | `RetainedSceneTextTest, ATranslucentAncestorFadesTextAsALayerRatherThanThroughItsFragmentColors` |
 | `backgroundColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:51` | implemented | `text-metrics.png` |
 | `opacity` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:52` | not-implemented | #69 |
@@ -123,28 +123,29 @@ assertion and not an implementation.
 | `fontWeight` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:58` | implemented | `text.png` |
 | `fontStyle` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:59` | implemented | `text.png` |
 | `fontVariant` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:60` | implemented | `text-style-matrix.png` |
-| `allowFontScaling` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:61` | not-implemented | #113 |
-| `maxFontSizeMultiplier` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:62` | not-implemented | #113 |
-| `dynamicTypeRamp` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:63` | not-implemented | #113 |
-| `letterSpacing` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:64` | implemented | `text.png` |
-| `textTransform` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:65` | implemented | `TextTransformTest` |
-| `lineHeight` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:68` | implemented | `LineBoxMetricsTest, ConvertsLineHeightPointsToAMultipleOfTheFontSize` |
-| `alignment` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:69` | implemented | `text.png` |
-| `baseWritingDirection` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:70` | implemented | `TextDirectionTest, AnExplicitWritingDirectionWinsAndANaturalOneFollowsTheLayout` |
-| `lineBreakStrategy` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:71` | not-implemented | #69 |
-| `lineBreakMode` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:72` | not-implemented | #69 |
-| `textDecorationColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:75` | implemented | `text-style-matrix.png` |
-| `textDecorationLineType` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:76` | implemented | `text.png` |
-| `textDecorationStyle` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:77` | implemented | `text-style-matrix.png` |
-| `textShadowOffset` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:81` | implemented | `text-style-matrix.png` |
-| `textShadowRadius` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:82` | implemented | `text-style-matrix.png` |
-| `textShadowColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:83` | implemented | `text-style-matrix.png` |
-| `isHighlighted` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:86` | not-implemented | #43 |
-| `isPressable` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:87` | not-implemented | #43 |
-| `layoutDirection` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:93` | implemented | `rtl-text.png` |
-| `accessibilityRole` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:94` | not-implemented | #61 |
-| `role` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:95` | not-implemented | #61 |
-| `textEffects` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:98` | not-implemented | #69 |
+| `fontVariationSettings` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:61` | not-implemented | #655 |
+| `allowFontScaling` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:62` | not-implemented | #113 |
+| `maxFontSizeMultiplier` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:63` | not-implemented | #113 |
+| `dynamicTypeRamp` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:64` | not-implemented | #113 |
+| `letterSpacing` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:65` | implemented | `text.png` |
+| `textTransform` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:66` | implemented | `TextTransformTest` |
+| `lineHeight` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:69` | implemented | `LineBoxMetricsTest, ConvertsLineHeightPointsToAMultipleOfTheFontSize` |
+| `alignment` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:70` | implemented | `text.png` |
+| `baseWritingDirection` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:71` | implemented | `TextDirectionTest, AnExplicitWritingDirectionWinsAndANaturalOneFollowsTheLayout` |
+| `lineBreakStrategy` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:72` | not-implemented | #69 |
+| `lineBreakMode` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:73` | not-implemented | #69 |
+| `textDecorationColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:76` | implemented | `text-style-matrix.png` |
+| `textDecorationLineType` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:77` | implemented | `text.png` |
+| `textDecorationStyle` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:78` | implemented | `text-style-matrix.png` |
+| `textShadowOffset` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:82` | implemented | `text-style-matrix.png` |
+| `textShadowRadius` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:83` | implemented | `text-style-matrix.png` |
+| `textShadowColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:84` | implemented | `text-style-matrix.png` |
+| `isHighlighted` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:87` | not-implemented | #43 |
+| `isPressable` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:88` | not-implemented | #43 |
+| `layoutDirection` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:94` | implemented | `rtl-text.png` |
+| `accessibilityRole` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:95` | not-implemented | #61 |
+| `role` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:96` | not-implemented | #61 |
+| `textEffects` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/TextAttributes.h:99` | not-implemented | #69 |
 | `maximumNumberOfLines` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/ParagraphAttributes.h:36` | implemented | `text.png` |
 | `ellipsizeMode` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/ParagraphAttributes.h:42` | implemented | `ellipsize.png` |
 | `textBreakStrategy` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/attributedstring/ParagraphAttributes.h:47` | deviating | Ignored; SkParagraph's own line breaking is used. See *Text*, Fidelity limits. |
@@ -160,88 +161,88 @@ assertion and not an implementation.
 
 | Prop | Declared at | State | Proof, reason or owner |
 | --- | --- | --- | --- |
-| `sources` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:28` | implemented | `RetainedSceneImageTest, ImageStateBecomesTheImageOnTheNode` |
-| `defaultSource` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:29` | implemented | `ImagePlaceholderTest, TheDefaultSourceDrawsUntilTheRealSourceDecodes` |
-| `loadingIndicatorSource` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:30` | implemented | `ImagePlaceholderTest, LoadingIndicatorSourceIsUsedWhenThereIsNoDefaultSource` |
-| `resizeMode` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:31` | implemented | `RetainedSceneImageTest, EveryResizeModeMapsOntoASceneResizeMode` |
-| `blurRadius` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:32` | implemented | `RetainedSceneImageTest, BlurRadiusTravelsFromPropsToTheSnapshotUnaffectedByInheritedOpacity` |
-| `capInsets` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:33` | implemented | `RetainedSceneImageTest, CapInsetsTravelFromPropsToTheSnapshot` |
-| `tintColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:34` | implemented | `RetainedSceneImageTest, ATranslucentAncestorFadesAnImageAsALayerRatherThanThroughItsTint` |
-| `internal_analyticTag` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:35` | not-implemented | #69 |
-| `resizeMethod` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:36` | not-implemented | #44 |
-| `resizeMultiplier` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:37` | not-implemented | #44 |
-| `shouldNotifyLoadEvents` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:38` | not-implemented | #44 |
-| `overlayColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:39` | deviating | Ignored; nothing is composited under a rounded image. See *Image*, Fidelity limits. |
-| `fadeDuration` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:40` | deviating | Ignored; a decoded image appears on the next damaged frame with no fade. See *Image*, Fidelity limits. |
-| `progressiveRenderingEnabled` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:41` | deviating | Ignored; `SkCodec` is asked for one complete frame. See *Image*, Fidelity limits. |
+| `sources` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:30` | implemented | `RetainedSceneImageTest, ImageStateBecomesTheImageOnTheNode` |
+| `defaultSource` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:31` | implemented | `ImagePlaceholderTest, TheDefaultSourceDrawsUntilTheRealSourceDecodes` |
+| `loadingIndicatorSource` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:32` | implemented | `ImagePlaceholderTest, LoadingIndicatorSourceIsUsedWhenThereIsNoDefaultSource` |
+| `resizeMode` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:33` | implemented | `RetainedSceneImageTest, EveryResizeModeMapsOntoASceneResizeMode` |
+| `blurRadius` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:34` | implemented | `RetainedSceneImageTest, BlurRadiusTravelsFromPropsToTheSnapshotUnaffectedByInheritedOpacity` |
+| `capInsets` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:35` | implemented | `RetainedSceneImageTest, CapInsetsTravelFromPropsToTheSnapshot` |
+| `tintColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:36` | implemented | `RetainedSceneImageTest, ATranslucentAncestorFadesAnImageAsALayerRatherThanThroughItsTint` |
+| `internal_analyticTag` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:37` | not-implemented | #69 |
+| `resizeMethod` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:38` | not-implemented | #44 |
+| `resizeMultiplier` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:39` | not-implemented | #44 |
+| `shouldNotifyLoadEvents` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:40` | not-implemented | #44 |
+| `overlayColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:41` | deviating | Ignored; nothing is composited under a rounded image. See *Image*, Fidelity limits. |
+| `fadeDuration` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:42` | deviating | Ignored; a decoded image appears on the next damaged frame with no fade. See *Image*, Fidelity limits. |
+| `progressiveRenderingEnabled` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/image/ImageProps.h:43` | deviating | Ignored; `SkCodec` is asked for one complete frame. See *Image*, Fidelity limits. |
 
 ## ScrollView
 
 | Prop | Declared at | State | Proof, reason or owner |
 | --- | --- | --- | --- |
-| `alwaysBounceHorizontal` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:32` | not-implemented | #69 |
-| `alwaysBounceVertical` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:33` | not-implemented | #69 |
-| `bounces` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:34` | not-implemented | #69 |
-| `bouncesZoom` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:35` | not-implemented | #69 |
-| `canCancelContentTouches` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:36` | not-implemented | #69 |
-| `centerContent` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:37` | not-implemented | #69 |
-| `automaticallyAdjustContentInsets` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:38` | not-implemented | #69 |
-| `automaticallyAdjustsScrollIndicatorInsets` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:39` | not-implemented | #69 |
-| `automaticallyAdjustKeyboardInsets` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:40` | not-implemented | #69 |
-| `decelerationRate` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:41` | implemented | `ScrollPhysicsTest, DecaysVelocityByTheRateRaisedToTheFrameTime` |
-| `endDraggingSensitivityMultiplier` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:42` | not-implemented | #69 |
-| `directionalLockEnabled` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:43` | not-implemented | #69 |
-| `indicatorStyle` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:44` | not-implemented | #49 |
-| `keyboardDismissMode` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:45` | not-implemented | #69 |
-| `maintainVisibleContentPosition` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:46` | not-implemented | #69 |
-| `maximumZoomScale` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:47` | not-implemented | #69 |
-| `minimumZoomScale` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:48` | not-implemented | #69 |
-| `scrollEnabled` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:49` | not-implemented | #69 |
-| `pagingEnabled` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:50` | implemented | `SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe` |
-| `pinchGestureEnabled` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:51` | not-implemented | #69 |
-| `scrollsToTop` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:52` | not-implemented | #69 |
-| `showsHorizontalScrollIndicator` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:53` | implemented | `ScrollIndicatorSceneTest, ShowsVerticalScrollIndicatorFalseHidesIt` |
-| `showsVerticalScrollIndicator` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:54` | implemented | `ScrollIndicatorSceneTest, ShowsVerticalScrollIndicatorFalseHidesIt` |
-| `persistentScrollbar` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:55` | not-implemented | #49 |
-| `horizontal` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:56` | deviating | Both axes are always live and clamp independently, so a horizontal ScrollView works because its vertical axis has nothing to scroll rather than because the prop was read. |
-| `scrollEventThrottle` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:57` | deviating | The cadence is one `onScroll` per frame, the fastest React Native ever asks for; honouring a throttle means dropping events the frame already coalesced. Issue #45 owns the cadence contract. |
-| `zoomScale` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:58` | not-implemented | #69 |
-| `contentInset` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:59` | implemented | `ScrollInsetTest, TheInsetExtendsTheRangeAtWhicheverEndsItIsSetOn` |
-| `contentOffset` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:60` | implemented | `RetainedSceneScrollTest, ContentOffsetTranslatesTheChildrenOnBothAxes` |
-| `scrollIndicatorInsets` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:61` | not-implemented | #49 |
-| `snapToInterval` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:62` | implemented | `SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe` |
-| `snapToAlignment` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:63` | implemented | `SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe` |
-| `disableIntervalMomentum` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:64` | implemented | `SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe` |
-| `snapToOffsets` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:65` | implemented | `SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe` |
-| `snapToStart` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:66` | implemented | `SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe` |
-| `snapToEnd` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:67` | implemented | `SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe` |
-| `contentInsetAdjustmentBehavior` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:68` | not-implemented | #69 |
-| `scrollToOverflowEnabled` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:69` | not-implemented | #69 |
-| `isInvertedVirtualizedList` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:70` | not-implemented | #69 |
+| `alwaysBounceHorizontal` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:34` | not-implemented | #69 |
+| `alwaysBounceVertical` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:35` | not-implemented | #69 |
+| `bounces` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:36` | not-implemented | #69 |
+| `bouncesZoom` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:37` | not-implemented | #69 |
+| `canCancelContentTouches` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:38` | not-implemented | #69 |
+| `centerContent` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:39` | not-implemented | #69 |
+| `automaticallyAdjustContentInsets` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:40` | not-implemented | #69 |
+| `automaticallyAdjustsScrollIndicatorInsets` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:41` | not-implemented | #69 |
+| `automaticallyAdjustKeyboardInsets` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:42` | not-implemented | #69 |
+| `decelerationRate` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:43` | implemented | `ScrollPhysicsTest, DecaysVelocityByTheRateRaisedToTheFrameTime` |
+| `endDraggingSensitivityMultiplier` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:44` | not-implemented | #69 |
+| `directionalLockEnabled` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:45` | not-implemented | #69 |
+| `indicatorStyle` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:46` | not-implemented | #49 |
+| `keyboardDismissMode` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:47` | not-implemented | #69 |
+| `maintainVisibleContentPosition` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:48` | not-implemented | #69 |
+| `maximumZoomScale` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:49` | not-implemented | #69 |
+| `minimumZoomScale` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:50` | not-implemented | #69 |
+| `scrollEnabled` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:51` | not-implemented | #69 |
+| `pagingEnabled` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:52` | implemented | `SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe` |
+| `pinchGestureEnabled` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:53` | not-implemented | #69 |
+| `scrollsToTop` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:54` | not-implemented | #69 |
+| `showsHorizontalScrollIndicator` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:55` | implemented | `ScrollIndicatorSceneTest, ShowsVerticalScrollIndicatorFalseHidesIt` |
+| `showsVerticalScrollIndicator` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:56` | implemented | `ScrollIndicatorSceneTest, ShowsVerticalScrollIndicatorFalseHidesIt` |
+| `persistentScrollbar` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:57` | not-implemented | #49 |
+| `horizontal` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:58` | deviating | Both axes are always live and clamp independently, so a horizontal ScrollView works because its vertical axis has nothing to scroll rather than because the prop was read. |
+| `scrollEventThrottle` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:59` | deviating | The cadence is one `onScroll` per frame, the fastest React Native ever asks for; honouring a throttle means dropping events the frame already coalesced. Issue #45 owns the cadence contract. |
+| `zoomScale` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:60` | not-implemented | #69 |
+| `contentInset` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:61` | implemented | `ScrollInsetTest, TheInsetExtendsTheRangeAtWhicheverEndsItIsSetOn` |
+| `contentOffset` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:62` | implemented | `RetainedSceneScrollTest, ContentOffsetTranslatesTheChildrenOnBothAxes` |
+| `scrollIndicatorInsets` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:63` | not-implemented | #49 |
+| `snapToInterval` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:64` | implemented | `SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe` |
+| `snapToAlignment` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:65` | implemented | `SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe` |
+| `disableIntervalMomentum` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:66` | implemented | `SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe` |
+| `snapToOffsets` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:67` | implemented | `SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe` |
+| `snapToStart` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:68` | implemented | `SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe` |
+| `snapToEnd` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:69` | implemented | `SettleTargetTest, ProjectsEveryFlickOntoTheSnapPointItsPropsDescribe` |
+| `contentInsetAdjustmentBehavior` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:70` | not-implemented | #69 |
+| `scrollToOverflowEnabled` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:71` | not-implemented | #69 |
+| `isInvertedVirtualizedList` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/BaseScrollViewProps.h:72` | not-implemented | #69 |
 
 ## TextInput
 
 | Prop | Declared at | State | Proof, reason or owner |
 | --- | --- | --- | --- |
-| `paragraphAttributes` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:45` | implemented | `RetainedSceneTextInputTest, TheStateBecomesTheTextAndTheNodeBecomesAnEditor` |
-| `defaultValue` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:47` | not-implemented | #53 |
-| `placeholder` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:49` | implemented | `RetainedSceneTextInputTest, AnEmptyValueDrawsThePlaceholderInItsOwnColour` |
-| `placeholderTextColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:50` | implemented | `RetainedSceneTextInputTest, AnEmptyValueDrawsThePlaceholderInItsOwnColour` |
-| `cursorColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:55` | implemented | `RetainedSceneTextInputTest, CursorAndSelectionColoursOverrideTheAccent` |
-| `selectionColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:56` | implemented | `RetainedSceneTextInputTest, CursorAndSelectionColoursOverrideTheAccent` |
-| `selectionHandleColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:57` | not-implemented | #69 |
-| `underlineColorAndroid` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:59` | not-implemented | #69 |
-| `maxLength` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:61` | implemented | `EditorModelTest, MaxLengthCountsUtf16CodeUnitsSoAnEmojiCostsTwo` |
-| `text` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:66` | implemented | `EditorModelTest, AControlledValueIsAdoptedWhenTheEventCountMatches` |
-| `mostRecentEventCount` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:67` | implemented | `EditorModelTest, AControlledValueIsIgnoredWhileAnEditIsInFlight` |
-| `autoFocus` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:69` | not-implemented | #54 |
-| `autoCapitalize` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:71` | not-implemented | #69 |
-| `editable` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:73` | not-implemented | #53 |
-| `readOnly` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:74` | not-implemented | #53 |
-| `submitBehavior` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:76` | not-implemented | #54 |
-| `multiline` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:78` | implemented | `EditorModelTest, AMultilineFieldKeepsPastedNewlines` |
-| `disableKeyboardShortcuts` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:80` | not-implemented | #54 |
-| `acceptDragAndDropTypes` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:82` | not-implemented | #60 |
+| `paragraphAttributes` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:47` | implemented | `RetainedSceneTextInputTest, TheStateBecomesTheTextAndTheNodeBecomesAnEditor` |
+| `defaultValue` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:49` | not-implemented | #53 |
+| `placeholder` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:51` | implemented | `RetainedSceneTextInputTest, AnEmptyValueDrawsThePlaceholderInItsOwnColour` |
+| `placeholderTextColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:52` | implemented | `RetainedSceneTextInputTest, AnEmptyValueDrawsThePlaceholderInItsOwnColour` |
+| `cursorColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:57` | implemented | `RetainedSceneTextInputTest, CursorAndSelectionColoursOverrideTheAccent` |
+| `selectionColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:58` | implemented | `RetainedSceneTextInputTest, CursorAndSelectionColoursOverrideTheAccent` |
+| `selectionHandleColor` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:59` | not-implemented | #69 |
+| `underlineColorAndroid` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:61` | not-implemented | #69 |
+| `maxLength` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:63` | implemented | `EditorModelTest, MaxLengthCountsUtf16CodeUnitsSoAnEmojiCostsTwo` |
+| `text` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:68` | implemented | `EditorModelTest, AControlledValueIsAdoptedWhenTheEventCountMatches` |
+| `mostRecentEventCount` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:69` | implemented | `EditorModelTest, AControlledValueIsIgnoredWhileAnEditIsInFlight` |
+| `autoFocus` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:71` | not-implemented | #54 |
+| `autoCapitalize` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:73` | not-implemented | #69 |
+| `editable` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:75` | not-implemented | #53 |
+| `readOnly` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:76` | not-implemented | #53 |
+| `submitBehavior` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:78` | not-implemented | #54 |
+| `multiline` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:80` | implemented | `EditorModelTest, AMultilineFieldKeepsPastedNewlines` |
+| `disableKeyboardShortcuts` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:82` | not-implemented | #54 |
+| `acceptDragAndDropTypes` | `third_party/react-native/packages/react-native/ReactCommon/react/renderer/components/textinput/BaseTextInputProps.h:84` | not-implemented | #60 |
 | `keyboardType` | `packages/core/src/TextInputComponent.h:46` | implemented | `TextInputSessionTest, TheContentPurposeIsTheClosestOneTheFieldsPropsName` |
 | `secureTextEntry` | `packages/core/src/TextInputComponent.h:47` | implemented | `EditorModelTest, SecureTextEntryMasksEveryGraphemeAndNeverTheBuffer` |
 | `caretHidden` | `packages/core/src/TextInputComponent.h:48` | implemented | `RetainedSceneTextInputTest, CaretHiddenRemovesTheCaretColourAndTheCaretWithIt` |

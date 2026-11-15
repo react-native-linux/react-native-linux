@@ -802,7 +802,7 @@ void readImageContent(SceneNode& node, const facebook::react::ShadowView& shadow
                           .placeholderFrames = placeholderFrames,
                           .elapsedMilliseconds = isSameSource ? previousImage.value().elapsedMilliseconds : 0.0,
                           .resizeMode = toSceneImageResizeMode(imageProps->resizeMode),
-                          .tintColorArgb = toArgb(imageProps->tintColor, 1.0F),
+                          .tintColorArgb = toArgb(imageProps->tintColor.value_or(facebook::react::SharedColor{}), 1.0F),
                           .blurRadius = imageProps->blurRadius,
                           .capInsets = imageProps->capInsets};
 }

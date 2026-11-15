@@ -41,8 +41,9 @@ constexpr Tag kPropsNodeTag = 103;
 // shadow colours live inside `BorderMetrics`, which `resolveBorderMetrics` cascades out of nine props, so a
 // single animated edge is a re-cascade rather than a field write; the radii, `elevation` and `zIndex` are the
 // same story for a different struct; the legacy `scaleX`/`translateY` style operations are Android's pre-Fabric
-// spelling of a transform. None of them are refusals in principle — each is a paintable prop nobody has needed
-// yet, and moving one into `kAnimatableProps` means deleting its line here.
+// spelling of a transform; `filter`, advertised since React Native 0.88, is not drawn at all yet. None of them are
+// refusals in principle — each is a paintable prop nobody has needed yet, and moving one into `kAnimatableProps`
+// means deleting its line here.
 std::vector<std::string> expectedUnpaintedUpstreamProps() {
     return {"borderBottomColor",
             "borderBottomEndRadius",
@@ -66,6 +67,7 @@ std::vector<std::string> expectedUnpaintedUpstreamProps() {
             "borderTopStartRadius",
             "color",
             "elevation",
+            "filter",
             "scaleX",
             "scaleY",
             "shadowOpacity",
