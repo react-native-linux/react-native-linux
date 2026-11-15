@@ -2,11 +2,12 @@ import { applyFastRefreshEdit, formatInjectorScript, gradeEditToVisible } from "
 import { execPath, stdout } from "node:process";
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { resolveCompositorChild, resolveWindowFlags } from "./e2e/grade.ts";
-import { spawn, spawnSync } from "node:child_process";
 import type { FastRefreshEdit } from "./e2e/fast-refresh.ts";
+import type { Injector } from "./e2e/grade.ts";
 import { buildEnvironment } from "./headless-compositor.ts";
 import { setTimeout as delay } from "node:timers/promises";
 import path from "node:path";
+import { spawn } from "node:child_process";
 import { waitUntil } from "./e2e/discovery.ts";
 
 /*
@@ -65,7 +66,9 @@ interface WindowLaunch {
 /**
  * Headless wlroots and pixman need no DRM device, seat or GPU: the screenshot comes from the client's swapchain.
  * cage runs the window as its child and exits with it. Its stderr is folded into stdout so the trace keeps write
- * order (#512), and `exec` keeps cage's own exit status and signal.
+ * order (#512), and `exec` keeps cage's own exit status and signal. The window inherits cage's stdin, a pipe the
+ * caller ends once nothing more is injected: `--hold-until-stdin-closes` keeps the window past its frame count until
+ * then (#719).
  */
 const startCompositor = (launch: WindowLaunch): Compositor =>
   spawn(
@@ -85,6 +88,7 @@ const startCompositor = (launch: WindowLaunch): Compositor =>
         launch.screenshotPath,
         "--frame-log",
         launch.frameLogPath,
+        "--hold-until-stdin-closes",
         ...(launch.scenario.automation === null ? [] : ["--automation"]),
         ...resolveWindowFlags(launch.scenario.windowFlags),
         ...(launch.scenario.injectProtocolError ? ["--inject-protocol-error"] : []),
@@ -103,7 +107,7 @@ const startCompositor = (launch: WindowLaunch): Compositor =>
         XKB_DEFAULT_LAYOUT: "us",
         ...(launch.scenario.steadyAcrossReloads ? { WAYLAND_DEBUG: "client" } : {}),
       }),
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
     },
   );
 
@@ -138,27 +142,43 @@ const stopCompositor = async (compositor: Compositor): Promise<void> => {
   compositor.kill("SIGKILL");
 };
 
-const injectSteps = (
-  steps: readonly string[],
-  runtimeDirectory: string,
-  socketName: string,
-): { failure: string | null; status: number | null } => {
-  const injection = spawnSync(injectorBinaryPath, [], {
-    encoding: "utf8",
+/**
+ * `rnl_inject` reading its script from a pipe, so the driver can hold lines back until the trace says (#719). It has no
+ * lifetime timeout of its own, because a valid trace await may hold it past one: each await is bounded by the driver,
+ * and once its input ends the injector gets INJECT_TIMEOUT_MS to finish before it is killed.
+ */
+const startInjector = (runtimeDirectory: string, socketName: string): Injector => {
+  const injection = spawn(injectorBinaryPath, [], {
     env: buildEnvironment({
       WAYLAND_DISPLAY: socketName,
       XDG_RUNTIME_DIR: runtimeDirectory,
       XKB_DEFAULT_LAYOUT: "us",
     }),
-    input: formatInjectorScript(steps),
-    timeout: INJECT_TIMEOUT_MS,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  const sink = { isClosed: false, text: "" };
+
+  attachTrace(injection, sink);
+  injection.stdin.on("error", (error: Error) => {
+    sink.text += `${error.message}\n`;
   });
 
-  const failure =
-    injection.status === SUCCESSFUL_EXIT_STATUS
-      ? null
-      : `rnl_inject exited with status ${String(injection.status)}:\n${injection.stdout}${injection.stderr}`;
-  return { failure, status: injection.status };
+  return {
+    finish: async () => {
+      injection.stdin.end();
+      if (!(await waitUntil(() => sink.isClosed, INJECT_TIMEOUT_MS))) {
+        injection.kill("SIGKILL");
+      }
+      const status = injection.exitCode;
+      const failure =
+        status === SUCCESSFUL_EXIT_STATUS ? null : `rnl_inject exited with status ${String(status)}:\n${sink.text}`;
+
+      return { failure, status };
+    },
+    send: (steps) => {
+      injection.stdin.write(formatInjectorScript(steps));
+    },
+  };
 };
 
 const readDevServerPort = async (output: AsyncIterator<unknown>, seen: string): Promise<string> => {
@@ -247,8 +267,8 @@ export {
   attachTrace,
   editAndAwaitRefresh,
   injectorBinaryPath,
-  injectSteps,
   startCompositor,
+  startInjector,
   stopCompositor,
   waitForSocketName,
   windowBinaryPath,

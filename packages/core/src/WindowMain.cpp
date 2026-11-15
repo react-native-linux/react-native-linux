@@ -50,10 +50,12 @@
 #include <memory>
 #include <optional>
 #include <ostream>
+#include <poll.h>
 #include <span>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <unistd.h>
 #include <utility>
 #include <vector>
 
@@ -146,6 +148,7 @@ constexpr std::string_view kFabricFlag = "--fabric";
 constexpr std::string_view kScreenshotFlag = "--screenshot";
 constexpr std::string_view kFramesFlag = "--frames";
 constexpr std::string_view kFrameLogFlag = "--frame-log";
+constexpr std::string_view kHoldUntilStdinClosesFlag = "--hold-until-stdin-closes";
 constexpr std::string_view kImeDebugFlag = "--ime-debug";
 // --ime-debug has no shadow tree and therefore no tag; one identifier for the one field it pretends to have.
 constexpr int32_t kImeDebugFieldIdentifier = 1;
@@ -179,6 +182,9 @@ constexpr uint64_t kNanosecondsPerSecond = 1'000'000'000;
  * `--screenshot <path>` runs the ordinary loop and reads the last presented swapchain image back into a PNG, so
  * the picture it writes came through the real Vulkan and Wayland path rather than an offscreen surface.
  * `--frames` is how long the bundle is given to mount and settle before that frame is captured.
+ * `--hold-until-stdin-closes` keeps the window running past that frame until standard input reaches end of file,
+ * then captures the next one. The e2e driver (#719) closes that pipe once nothing more is injected, so a slow
+ * startup can no longer end the run, taking cage and the injector with it, while input is still being injected.
  *
  * `--frame-log <path>` writes the `wp_presentation` measurements as JSON Lines: one record per presented frame
  * and a final summary line carrying the frame count, the discarded count and the p50, p95 and maximum frame
@@ -253,6 +259,7 @@ struct WindowArguments {
     std::string applicationIdentifier{kDefaultApplicationIdentifier};
     uint32_t frameCount{kDefaultScreenshotFrames};
     bool automation{false};
+    bool holdUntilStdinCloses{false};
     bool forceClientDecorations{false};
     bool noDecorations{false};
     bool transparentBackground{false};
@@ -589,6 +596,12 @@ WindowArguments parseArguments(std::span<char*> arguments) {
             continue;
         }
 
+        if (flag == kHoldUntilStdinClosesFlag) {
+            parsed.holdUntilStdinCloses = true;
+
+            continue;
+        }
+
         if (flag == kTransparentBackgroundFlag) {
             parsed.transparentBackground = true;
 
@@ -674,6 +687,26 @@ WindowArguments parseArguments(std::span<char*> arguments) {
     }
 
     return parsed;
+}
+
+constexpr size_t kDiscardedInputBytes = 256;
+
+/** True once standard input is at end of file; whatever arrives before that is read and dropped. */
+bool isStandardInputClosed() {
+    pollfd standardInput{.fd = STDIN_FILENO, .events = POLLIN, .revents = 0};
+
+    if (poll(&standardInput, 1, 0) <= 0) {
+        return false;
+    }
+
+    std::array<char, kDiscardedInputBytes> discarded{};
+
+    return read(STDIN_FILENO, discarded.data(), discarded.size()) <= 0;
+}
+
+bool isCaptureFrameReached(const WindowArguments& arguments, uint32_t presentedFrames) {
+    return arguments.screenshotPath.has_value() && presentedFrames + 1 >= arguments.frameCount &&
+           (!arguments.holdUntilStdinCloses || isStandardInputClosed());
 }
 
 /**
@@ -1344,8 +1377,7 @@ int main(int argc, char** argv) {
             // frame, so a first-buffer failure that recovers on the next frame cannot pass a fixture that means to
             // check the first one. See *Surface commit ordering* in docs/cpp-toolchain.md.
             uint32_t presentedFrames = 0;
-            const bool isStartupCaptureFrame =
-                parsedArguments.screenshotPath.has_value() && presentedFrames + 1 >= parsedArguments.frameCount;
+            const bool isStartupCaptureFrame = isCaptureFrameReached(parsedArguments, presentedFrames);
 
             if (isStartupCaptureFrame) {
                 renderer.captureNextFrame(parsedArguments.screenshotPath.value());
@@ -1521,9 +1553,8 @@ int main(int argc, char** argv) {
 
                 // Never while an automation capture is armed: the two would name the same pending path and one
                 // picture would be written to the other's file.
-                const bool isCaptureFrame = parsedArguments.screenshotPath.has_value() &&
-                                            !automation.pendingScreenshotPath.has_value() &&
-                                            presentedFrames + 1 >= parsedArguments.frameCount;
+                const bool isCaptureFrame = !automation.pendingScreenshotPath.has_value() &&
+                                            isCaptureFrameReached(parsedArguments, presentedFrames);
 
                 if (isCaptureFrame) {
                     renderer.captureNextFrame(parsedArguments.screenshotPath.value());

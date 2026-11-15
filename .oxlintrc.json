@@ -22,6 +22,7 @@
         "capIsNewExceptions": ["PlatformColor"]
       }
     ],
+    "eslint/no-duplicate-imports": ["error", { "allowSeparateTypeImports": true }],
     "eslint/no-ternary": "off",
     "eslint/one-var": ["error", "never"],
     "import/extensions": [

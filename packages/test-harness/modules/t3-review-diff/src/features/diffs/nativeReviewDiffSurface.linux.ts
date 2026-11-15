@@ -337,23 +337,54 @@ const DiffRow = memo(function DiffRow(props: DiffRowProps) {
   );
 });
 
-interface ReviewDiffListProps extends Omit<FlatListProps<number>, "renderItem" | "onScroll"> {
+interface ReviewDiffListProps
+  extends Omit<
+    FlatListProps<number>,
+    "renderItem" | "onScroll" | "onScrollBeginDrag" | "onScrollEndDrag" | "onMomentumScrollBegin" | "onMomentumScrollEnd"
+  > {
   readonly listRef: RefObject<FlatList<number> | null>;
   readonly renderRow: (item: number, index: number, offset: ScrollOffset) => ReactElement | null;
+  readonly onScrollSettled: (contentOffsetX: number) => void;
 }
 
 // Keyed by contentResetKey: new content starts the list and its anchored chrome at x 0 together.
-function ReviewDiffList({ listRef, renderRow, ...listProps }: ReviewDiffListProps) {
+function ReviewDiffList({ listRef, renderRow, onScrollSettled, ...listProps }: ReviewDiffListProps) {
   const [offset] = useState(createScrollOffset);
+  const [gesture] = useState(() => ({ isDragging: false, isGliding: false }));
   const renderItem = useCallback(
     ({ item, index }: ListRenderItemInfo<number>) => renderRow(item, index, offset),
     [renderRow, offset],
   );
+  const settleAt = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { x } = event.nativeEvent.contentOffset;
+    offset.set(x);
+    // A later task: React commits the anchored chrome at x in this one, and the platform mounts a commit as its
+    // task ends, so input sent after the report hits the chrome where it is drawn. The platform emits one frame's
+    // scroll events in one event beat (ScrollEventCadence.h), so by then a release that flings has started its
+    // glide, and a drag that cut a glide short has started too.
+    setTimeout(() => {
+      if (!gesture.isDragging && !gesture.isGliding) onScrollSettled(x);
+    }, 0);
+  };
   return createElement(FlatList<number>, {
     ...listProps,
     ref: listRef,
     renderItem,
     onScroll: (event: NativeSyntheticEvent<NativeScrollEvent>) => offset.set(event.nativeEvent.contentOffset.x),
+    onScrollBeginDrag: () => {
+      gesture.isDragging = true;
+    },
+    onScrollEndDrag: (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      gesture.isDragging = false;
+      settleAt(event);
+    },
+    onMomentumScrollBegin: () => {
+      gesture.isGliding = true;
+    },
+    onMomentumScrollEnd: (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      gesture.isGliding = false;
+      settleAt(event);
+    },
   });
 }
 
@@ -565,6 +596,7 @@ function LinuxReviewDiffView(props: NativeReviewDiffViewProps) {
       data: visible.indexes,
       keyExtractor: (item: number) => rows[item]?.id ?? String(item),
       renderRow,
+      onScrollSettled: (contentOffsetX: number) => report({ message: "scroll-settled", contentOffsetX }),
       getItemLayout: (_data: unknown, index: number) => ({
         index,
         length: visible.heights[index] ?? 0,

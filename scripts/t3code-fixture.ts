@@ -146,6 +146,7 @@ const driveWindow = async (
   runtimeDirectory: string,
 ): Promise<Pick<WindowRun, "hasSocket" | "isTraceClosed">> => {
   attachTrace(compositor, trace);
+  compositor.stdin?.end();
 
   const hasSocket = (await waitForSocketName(runtimeDirectory)) !== null;
   const isTraceClosed = hasSocket && (await waitUntil(() => trace.isClosed, RUN_TIMEOUT_MS));

@@ -7814,13 +7814,42 @@ platform, so a guard that degenerates to an empty passing flow would only be a w
 
 ```text
 cage -- rnl_window --fabric <bundle> --frames <n> --screenshot build/e2e/<scenario>/screenshot.png \
-     --frame-log build/e2e/<scenario>/frames.jsonl
+     --frame-log build/e2e/<scenario>/frames.jsonl --hold-until-stdin-closes
 ```
 
 with `WLR_BACKENDS=headless`, `WLR_RENDERER=pixman`, `WLR_LIBINPUT_NO_DEVICES=1`, `XKB_DEFAULT_LAYOUT=us` and the
 lavapipe ICD pinned by the same discovery `scripts/window-golden.ts` exports, waits for the wayland socket to
 appear in that directory, waits for both the scenario's `ready` line and the window's first-presented-frame line
 on the window's stdout (#373, below), and then injects.
+
+**The run ends after the input (#719).** The window counts its frames from its first buffer, so a slow startup
+spends frames the steps were sized for. Under load, `t3-review-diff-120hz` reached its 6,400th frame while
+`rnl_inject` was still scrolling. cage exited with the window, and the injector's final roundtrip failed with
+status 1 and no message. The window's stdin is a pipe the driver holds open, and `--hold-until-stdin-closes`
+keeps the window past its `--frames` count until that pipe reaches end of file, then captures the next frame. The
+driver closes the pipe after the injection, the Fast Refresh edit and the automation commands. A scenario's
+`frames` is therefore the shortest run, not a deadline its steps race. A fast startup ends the run exactly where
+it ended before, and a slow one lengthens it instead of truncating the input.
+
+**Trace awaits (#719).** A step `await <text>` is the driver's, not `rnl_inject`'s. `rnl_inject` reads its script
+from a pipe and runs each line as it arrives. `scripts/e2e/trace-await.ts` sends the steps before the await, then
+waits (bounded, like the `ready` wait) until the trace shows `<text>` after the point where that stretch began,
+and only then sends the rest. It replaces a sleep that guessed how long the app needs before the next input makes
+sense. The injector stays the same process across the wait. A second invocation would attach a new virtual
+pointer, and its first events can arrive before the window has bound the new `wl_pointer`. Splitting the script
+that way lost both clicks.
+`t3-review-diff`'s clicks on a header checkbox after a sideways pan used to sleep 5 s, and under load the click
+still landed before the anchored header had followed the scroll, so the toggle was lost. They now await the
+`scroll-settled` report the variant sends when the scroll stops: from `onMomentumScrollEnd`, or from
+`onScrollEndDrag` when the release does not fling. It is held while a drag or a glide runs, which is known by then
+because the platform emits one frame's scroll events in one event beat. It is sent from a later task than the one
+that commits the anchored chrome at the final offset, and the platform mounts a commit when its task ends, so the
+click always hits the checkbox where it is drawn. The source pan ends with a still finger, so its release never
+flings. Its pans carry a 1 pt vertical drift for that reason: `pan 150 0` sends a zero vertical axis, which
+wlroots forwards as `axis_stop`, and the platform releases the drag on it, so each such pan is its own flick.
+`t3-review-diff-120hz` ends on an await of the visible-file report its wheel scroll produces. Under load the
+JavaScript thread runs seconds behind the frames, and the window, held only until the input ends, used to capture
+before the list had reported a new visible file.
 
 **The shader cache (#704).** lavapipe compiles every shader it meets, and Mesa caches the result under
 `XDG_CACHE_HOME`, which the driver points at the scenario's private directory so a bundle never writes into the
@@ -8083,8 +8112,8 @@ hardware is still open on #20.
 
 `t3-review-diff-120hz.json` (#685) scrolls T3 Code's review diff, 5,098 lines in 42 files with token patches
 arriving as the visible range moves, through `nativeReviewDiffSurface.linux.ts`: React Native rows in a `FlatList`.
-Every frame of a run is measured, startup included, and the window exits on its frame count, taking cage and the
-injector with it, so `frames` has to cover the slowest startup plus every step. The scenario therefore spends its
+Every frame of a run is measured, startup included, and the window runs at least its frame count and never ends
+before the injector has (#719, above). The scenario therefore spends its
 frames on scrolling: 6,400 frames, of which 1,050 to 2,450 are startup (the bundle, the first mount of 5,307 rows,
 the first token patch; the high end at a load average of 34), about 3,100 (half the run) are 231 wheel notches
 played four times in four orders after one sideways pan across the highlighted first screen and back, and the rest

@@ -70,7 +70,7 @@ describe("isKeyboardFocused", () => {
 
 describe("runKeyboardAwareInjection without a keyboard step", () => {
   it("injects everything in one call and never waits", async () => {
-    const inject = vi.fn(() => null);
+    const inject = vi.fn(() => Promise.resolve(null));
     const waitForKeyboardFocus = vi.fn(() => Promise.resolve(true));
 
     const failure = await runKeyboardAwareInjection(["sleep 500", "click 1 1"], inject, waitForKeyboardFocus);
@@ -84,7 +84,7 @@ describe("runKeyboardAwareInjection without a keyboard step", () => {
 
 describe("runKeyboardAwareInjection with a keyboard step", () => {
   it("reports the beforeFocus failure and never injects afterFocus or waits", async () => {
-    const inject = vi.fn(() => "rnl_inject exited with status 1");
+    const inject = vi.fn(() => Promise.resolve("rnl_inject exited with status 1"));
     const waitForKeyboardFocus = vi.fn(() => Promise.resolve(true));
 
     const failure = await runKeyboardAwareInjection(["sleep 500", "key Tab press"], inject, waitForKeyboardFocus);
@@ -95,7 +95,7 @@ describe("runKeyboardAwareInjection with a keyboard step", () => {
   });
 
   it("waits for keyboard focus before injecting afterFocus", async () => {
-    const inject = vi.fn(() => null);
+    const inject = vi.fn(() => Promise.resolve(null));
     const waitForKeyboardFocus = vi.fn(() => Promise.resolve(true));
 
     const failure = await runKeyboardAwareInjection(
@@ -111,7 +111,7 @@ describe("runKeyboardAwareInjection with a keyboard step", () => {
   });
 
   it("fails with a clear reason when keyboard focus never arrives, and never injects afterFocus", async () => {
-    const inject = vi.fn(() => null);
+    const inject = vi.fn(() => Promise.resolve(null));
     const waitForKeyboardFocus = vi.fn(() => Promise.resolve(false));
 
     const failure = await runKeyboardAwareInjection(["key Tab press"], inject, waitForKeyboardFocus);
