@@ -25,8 +25,9 @@ version `scripts/vendor.lock.json` pins; `4.5.x` caps at `0.86`. The sparse cone
 shared C++ that `@react-native-linux/core` compiles as `rnl_reanimated` (#139; *react-native-reanimated* in
 `docs/cpp-toolchain.md`). `scripts/` is there because `src` imports `scripts/validate-worklets-version.js`, which the
 package exports. `react-native-worklets` is a sibling package in the same monorepo but releases under its
-own `worklets-<version>` tags, and `upstream.lock.json` holds exactly one tag, so it becomes `packages/worklets`
-when Phase 2 first needs to patch it — not before.
+own `worklets-<version>` tags, and `upstream.lock.json` holds exactly one tag. Its one JavaScript patch is a pnpm
+`patchedDependencies` entry (#671, see *react-native-worklets* in `docs/cpp-toolchain.md`); it becomes
+`packages/worklets` only if it needs a patch queue of its own.
 
 ```bash
 pnpm upstream:bump reanimated <tag>       # re-vendor at a new tag and replay the patch queue

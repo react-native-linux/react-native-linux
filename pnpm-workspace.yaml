@@ -27,6 +27,7 @@ minimumReleaseAgeExclude:
   - knip@6.34.0
 
 patchedDependencies:
+  react-native-worklets@0.12.2: patches/react-native-worklets@0.12.2.patch
   react-native@0.87.1: patches/react-native@0.87.1.patch
 
 # expo-constants imports only types from its `expo` peer, so the Expo e2e installs it without the expo CLI (ADR-0004).
