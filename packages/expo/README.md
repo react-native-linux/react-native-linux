@@ -9,7 +9,7 @@ escape hatch for a module whose JavaScript has to differ; `fetch` is the only on
 | Module | Written against | Seam or alias | Native module | Answers |
 | --- | --- | --- | --- | --- |
 | `expo` | 58.0.23 | seam, and an escape hatch for `fetch` | none of its own; `ExpoFetchModule` waits on #663 (#673) | `registerRootComponent` and `Expo.fx` run unmodified; the global `fetch` and `expo/fetch` are React Native's own `fetch` (`src/fetch.ts`), without a streaming body |
-| `expo-asset` | 58.0.21 | seam | `ExpoAsset` | `downloadAsync` resolves a `file://` URL unchanged and downloads any other once into `$XDG_CACHE_HOME/react-native-linux/expo-asset`, as upstream's iOS module does |
+| `expo-asset` | 58.0.21 | seam | `ExpoAsset` | `downloadAsync` resolves a `file://` URL unchanged, decodes a base64 `data:` URL, and downloads any other once, off the JavaScript thread and following redirects, into `$XDG_CACHE_HOME/<app-id>/expo-asset`, as upstream's iOS module does |
 | `expo-constants` | 58.0.15 | seam | `ExponentConstants` | every required `NativeConstants` field for a bare desktop app; `deviceName` is the host name; `manifest`, and so `expoConfig`, is `null` until a `linux` build embeds the app config (#156); `systemFonts` is empty; `getWebViewUserAgentAsync` resolves `null` |
 
 `src/` holds each module's required-field list, typed against upstream's declarations. `test-bundles/` and `e2e/`

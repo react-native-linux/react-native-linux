@@ -2,6 +2,7 @@
 
 #include "AsyncStorage.h"
 #include "DimensionsSource.h"
+#include "ExpoAsset.h"
 #include "ExpoSQLite.h"
 #include "FrameProfiling.h"
 #include "I18n.h"
@@ -40,7 +41,7 @@ uint64_t toNanosecondsSinceEpoch(std::chrono::steady_clock::time_point timePoint
 } // namespace
 
 WindowSession::WindowSession(const std::string& bundlePath, WindowSize size, double scale,
-                             const std::string& asyncStorageDatabasePath,
+                             const std::string& asyncStorageDatabasePath, const std::string& expoAssetDirectory,
                              std::optional<std::string> initialActivationUrl)
     : fabricHost_(std::make_unique<FabricHost>(reactHost_.reactInstance(), toSurfaceSize(size))),
       frameJournal_(kNominalVsyncNanoseconds, kHangThresholdVsyncCount * kNominalVsyncNanoseconds) {
@@ -51,6 +52,7 @@ WindowSession::WindowSession(const std::string& bundlePath, WindowSize size, dou
     reactHost_.keyValueStore().setDatabasePath(asyncStorageDatabasePath);
     reactHost_.sqliteDatabases().setDirectory(
         (std::filesystem::path(asyncStorageDatabasePath).parent_path() / "SQLite").string());
+    reactHost_.expoAssetDownloads().setDirectory(expoAssetDirectory);
     // After the store has its file and before the script, so the first layout already has the persisted direction.
     reactHost_.i18n().restore();
     applyLayoutDirectionChange();

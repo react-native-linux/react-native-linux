@@ -4,7 +4,7 @@
 #include "BeastWebSocketClient.h"
 #include "Clipboard.h"
 #include "CurlHttpClient.h"
-#include "ExpoAssetModule.h"
+#include "ExpoAsset.h"
 #include "ExpoSQLite.h"
 #include "FantomRenderOutput.h"
 #include "HostTimerRegistry.h"
@@ -1005,6 +1005,7 @@ TurboModuleRegistry::TurboModuleRegistry(
       activationModel_(std::make_shared<ActivationModel>()),
       linkingModule_(std::make_shared<LinuxLinkingModule>(jsInvoker, activationModel_)),
       keyValueStore_(std::make_shared<KeyValueStore>()), sqliteDatabases_(std::make_unique<SQLiteDatabases>()),
+      expoAssetDownloads_(std::make_unique<ExpoAssetDownloads>()),
       i18nModel_(std::make_shared<I18nModel>(localeFromEnvironment(), keyValueStore_)),
       bundleUrl_(std::make_shared<std::string>()), workletsModule_(std::make_shared<LinuxWorkletsModule>(jsInvoker)),
       reloadRequested_(std::make_shared<std::atomic<bool>>(false)) {
@@ -1065,7 +1066,9 @@ TurboModuleRegistry::TurboModuleRegistry(
                              [jsInvoker]() { return std::make_shared<LinuxPlatformConstantsModule>(jsInvoker); });
     moduleFactories_.emplace(LinuxExponentConstantsModule::kModuleName,
                              [jsInvoker]() { return std::make_shared<LinuxExponentConstantsModule>(jsInvoker); });
-    moduleFactories_.emplace("ExpoAsset", [jsInvoker]() { return makeExpoAssetModule(jsInvoker); });
+    moduleFactories_.emplace("ExpoAsset", [jsInvoker, &downloads = *expoAssetDownloads_]() {
+        return makeExpoAssetModule(jsInvoker, downloads);
+    });
     // #79: `fetch` and `XMLHttpRequest` reach upstream's C++ Networking module, which this platform only supplies
     // the HTTP client for.
     moduleFactories_.emplace(facebook::react::NetworkingModule::kModuleName, [jsInvoker]() {
@@ -1112,6 +1115,8 @@ bool TurboModuleRegistry::isReloadRequested() const noexcept { return reloadRequ
 KeyValueStore& TurboModuleRegistry::keyValueStore() noexcept { return *keyValueStore_; }
 
 SQLiteDatabases& TurboModuleRegistry::sqliteDatabases() noexcept { return *sqliteDatabases_; }
+
+ExpoAssetDownloads& TurboModuleRegistry::expoAssetDownloads() noexcept { return *expoAssetDownloads_; }
 
 I18nModel& TurboModuleRegistry::i18n() noexcept { return *i18nModel_; }
 

@@ -145,7 +145,9 @@ module waits on #663, and without which every application that imports `expo` lo
 call. Upstream reaches the file relatively (`Expo.fx`'s runtime calls `require('./fetch')`), which no package alias
 sees, so `linuxPackageSubstituteIndex` in `packages/cli/src/package-variants.ts` resolves the resolved file
 `expo/build/winter/fetch/index` again as `@react-native-linux/expo/fetch`, React Native's own `fetch`, once the
-application installs that package. #673 removes it.
+application installs that package. #673 removes it. Upstream's own switch, `EXPO_PUBLIC_USE_RN_FETCH`, is not used:
+it is inlined from the Metro process's environment, so one dev server bundling for Linux, iOS and Android would
+switch all three.
 
 ### The boundary: what a native module of ours answers
 
@@ -232,7 +234,10 @@ Any one of these reopens the question in a new ADR:
 - `expo` itself (`registerRootComponent`, `Expo.fx`) runs over the same seam, proved by the `expo-entry` e2e. Of the
   native modules it reaches as it loads, `ExponentConstants` and `ExpoAsset` are registered, `ExpoGo`, `ExpoUpdates`
   and `EXDevLauncher` are optional lookups that answer as a bare app, and `ExpoFetchModule` is the escape hatch above.
-  A development bundle also reaches `ExpoKeepAwake`, through a lookup upstream catches.
+  A development bundle also reaches `ExpoKeepAwake`, through a lookup upstream catches. The e2e bundles through this
+  platform's Metro config and Babel preset; the same entry bundled through `expo/metro-config` and
+  `babel-preset-expo`, as an Expo application bundles, is
+  [#687](https://github.com/react-native-linux/react-native-linux/issues/687).
 - `packages/expo` (`@react-native-linux/expo`) holds the per-module table, the e2e scenarios, the surface lists and
   the escape hatches' runtime code. Its e2e installs the upstream packages; `pnpm-workspace.yaml`
   marks `expo-constants`' `expo` peer optional because its JavaScript imports only types from it.
