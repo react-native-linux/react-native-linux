@@ -17,7 +17,7 @@
 //  1. `RootShadowNode::clone(parserContext, layoutConstraints, layoutContext)` dirties the root, so the layout
 //     pass visits every node under it and marks *all* of them affected — including nodes whose metrics come out
 //     byte-identical. `YogaLayoutableShadowNode::layout` does this deliberately (its comment names D22999891),
-//     so `ShadowTree::emitLayoutEvents` is handed the whole visited set on every configure.
+//     so `LayoutEventEmitter::shadowTreeDidCommit` is handed the whole visited set on every configure.
 //  2. `BaseViewEventEmitter::onLayout` is the gate. It holds the last `frame` it dispatched to JavaScript and
 //     returns without dispatching when the new one equals it, and collapses a second dispatch while one is in
 //     flight. So the redundant set from step 1 costs no JavaScript wake-up.
@@ -96,8 +96,8 @@ protected:
     }
 
     /**
-     * The set `ShadowTree::commit` would hand `emitLayoutEvents` for this configure, laid out on a candidate root
-     * exactly as commit does it, without committing the result.
+     * The set a commit hands the `LayoutEventEmitter` commit hook `Scheduler` registers for this configure, laid out on
+     * a candidate root exactly as commit does it, without committing the result.
      */
     std::vector<Tag> nodesMarkedAffectedBy(float width, float pointScaleFactor) {
         const PropsParserContext parserContext{kSurfaceId, *contextContainer_};

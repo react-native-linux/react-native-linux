@@ -1417,6 +1417,7 @@ installed. Every upstream change that needed a local edit:
 | `TextAttributes::fontVariationSettings` | Ledgered not-implemented in `docs/prop-coverage.json`, owned by #655 |
 | Three derived overrides' bases moved: `BaseViewConfig.android.js` (unprefixed `background*` attributes, which arrive through the import), `PlatformTypes.js` (formatting), `PlatformColorValueTypes.android.js` (a trailing `{fallback}` argument) | New `baseHash` values. The `{fallback}` argument is not ported; #656 owns it |
 | react/react-native#57975, the nanosecond round trip `scripts/react-native-timing.patch` carried, is in the release | The patch and the code that applied it are deleted |
+| `RuntimeSchedulerCallInvoker` is `[[deprecated]]`, and `enableBufferedCallInvoker` defaults on, so upstream hosts order async TurboModule calls against buffered `callFunctionOnModule` calls through `ReactInstance::createJSCallInvoker()` | Not yet: `ReactHost` still builds a `RuntimeSchedulerCallInvoker`, which keeps 0.87's ordering and prints a deprecation warning. #674 owns the switch |
 | react-native-worklets `0.12.2` declares React Native `0.83 - 0.87` | The root `package.json` names `react-native` so the peer is the one patched copy; see *react-native-worklets* below. #651 owns the move to the 0.88 line |
 
 ## Autolinking (#146, #147, #149)
