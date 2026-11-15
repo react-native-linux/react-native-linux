@@ -3,8 +3,9 @@
 // a chat feed, so every new line moves and repaints the visible message. Like T3 Code, the parent passes a new
 // `onLinkPress` arrow and a new `markdownStyle` object every render, and the reply carries a 150-line code fence.
 // The last section on screen when the stream ends is the golden: h3 to h6, a titled link, a table with a header
-// row, a thematic break, an ordered list that starts at 3, and hard and soft breaks. This runs the Debug JS bundle;
-// the same scenario on optimised Hermes is #680.
+// row, a thematic break, a loose ordered list that starts at 3 drawn in the list's own color, and hard and soft
+// breaks. The fence scrolls out of the golden, so the reply's laid-out height, which the fence's 150 lines dominate, is
+// logged for the scenario to expect. This runs the Debug JS bundle; the same scenario on optimised Hermes is #680.
 import { AppRegistry, View } from "react-native";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { EnrichedMarkdownText } from "react-native-enriched-markdown";
@@ -42,6 +43,7 @@ const finale = `### Wrap-up
 ---
 
 3. Third, the list starts at three
+
 4. Fourth, with a hard break\\
    and its second line
 
@@ -65,6 +67,8 @@ const StreamingMarkdown = (): React.JSX.Element => {
   const [length, setLength] = useState(0);
   const commits = useRef(0);
   const links = useRef(0);
+  const height = useRef(0);
+  const logHeight = (): void => console.log(`streaming-markdown: laid out ${String(Math.round(height.current))} px tall`);
 
   useEffect(() => {
     const startedAt = performance.now();
@@ -94,6 +98,7 @@ const StreamingMarkdown = (): React.JSX.Element => {
       if (commits.current >= minimumCommits) {
         console.log("streaming-markdown: kept pace");
       }
+      logHeight();
     }
   }, [length]);
 
@@ -102,23 +107,35 @@ const StreamingMarkdown = (): React.JSX.Element => {
       onLayout={() => console.log("streaming-markdown: committed")}
       style={{ backgroundColor: "#ffffff", flex: 1, overflow: "hidden" }}
     >
-      <EnrichedMarkdownText
+      <View
+        // The last append may not move the layout, and its layout event may arrive after the commit's effect, so both
+        // log the height and the scenario expects the final one.
+        onLayout={({ nativeEvent }) => {
+          height.current = nativeEvent.layout.height;
+          if (length === message.length) {
+            logHeight();
+          }
+        }}
         // Positioned rather than flex-anchored: a flex child of a fixed-height column is measured against that height,
         // and React Native clamps a taller paragraph (the 150-line fence) to it, where a chat's scroller would not.
-        containerStyle={{ bottom: 24, left: 24, position: "absolute", right: 24 }}
-        markdown={message.slice(0, length)}
-        markdownStyle={{
-          code: { fontFamily: codeFont },
-          codeBlock: { fontFamily: codeFont },
-          link: { color: "#2563EB", underline: true },
-          thematicBreak: { color: "#DC2626", height: 2 },
-        }}
-        md4cFlags={{ hardSoftBreaks: true }}
-        onLinkPress={({ url }) => console.log(`streaming-markdown: pressed ${url}`)}
-        onLinksChange={(reported) => {
-          links.current = reported.length;
-        }}
-      />
+        style={{ bottom: 24, left: 24, position: "absolute", right: 24 }}
+      >
+        <EnrichedMarkdownText
+          markdown={message.slice(0, length)}
+          markdownStyle={{
+            code: { fontFamily: codeFont },
+            codeBlock: { fontFamily: codeFont },
+            link: { color: "#2563EB", underline: true },
+            list: { color: "#7C3AED" },
+            thematicBreak: { color: "#DC2626", height: 2 },
+          }}
+          md4cFlags={{ hardSoftBreaks: true }}
+          onLinkPress={({ url }) => console.log(`streaming-markdown: pressed ${url}`)}
+          onLinksChange={(reported) => {
+            links.current = reported.length;
+          }}
+        />
+      </View>
     </View>
   );
 };

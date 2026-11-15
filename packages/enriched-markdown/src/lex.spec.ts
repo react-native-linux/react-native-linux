@@ -88,6 +88,12 @@ describe("linksOf", () => {
       { label: "bold text", title: "", url: "https://example.com" },
     ]);
   });
+
+  it("reads a line break inside a label as a space, as the library does", () => {
+    expect(linksOf(lexAppended(nothingLexed, "[first\nsecond\\\nthird](https://example.com)"))).toStrictEqual([
+      { label: "first second third", title: "", url: "https://example.com" },
+    ]);
+  });
 });
 
 describe("lexAppended", () => {
@@ -97,6 +103,17 @@ describe("lexAppended", () => {
     });
 
     expect(streamed.blocks.map(({ source }) => source).join("\n")).toBe(reply);
+  });
+
+  it("streams carriage-return line endings the same as a full parse", () => {
+    for (const lineBreak of ["\r", "\r\n"]) {
+      const source = ["# Title", "", "First", "", "Last"].join(lineBreak);
+      const streamed = lexAppended(lexAppended(nothingLexed, source), `${source} extended`);
+
+      expect(shapeOf(streamed), JSON.stringify(lineBreak)).toBe(
+        shapeOf(lexAppended(nothingLexed, `${source} extended`)),
+      );
+    }
   });
 
   it("keeps a loose ordered list one list while its items stream in", () => {

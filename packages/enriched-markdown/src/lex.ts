@@ -93,9 +93,12 @@ const lex = (source: string, references: References): LexedMarkdown => {
   };
 };
 
+// The library's web renderer reads a line break inside a link label as a space (`extractNodeText` in `src/web/utils.ts`).
+const labelBreaks: Readonly<Record<string, string>> = { hardbreak: " ", softbreak: " " };
+
 /** The text a link's children draw, for its label. */
 const plainText = (nodes: readonly MarkdownNode[]): string =>
-  nodes.map(({ children, token }) => token.content + plainText(children)).join("");
+  nodes.map(({ children, token }) => labelBreaks[token.type] ?? token.content + plainText(children)).join("");
 
 const linksIn = (nodes: readonly MarkdownNode[]): MarkdownLinkOccurrence[] =>
   nodes.flatMap(({ children, token }) =>
@@ -140,7 +143,9 @@ const reused = (before: MarkdownBlock | undefined, block: MarkdownBlock): Markdo
  * the whole reply, as does a source that does not extend the kept blocks. Either way a block lexed again to the same
  * result is handed back as the object it was.
  */
-const lexAppended = (previous: LexedMarkdown, source: string): LexedMarkdown => {
+const lexAppended = (previous: LexedMarkdown, streamed: string): LexedMarkdown => {
+  // Markdown-it's `normalize` rule, applied before the split into lines so the blocks' line maps index the same lines.
+  const source = streamed.replaceAll(/\r\n?/gu, LINE_BREAK);
   const kept = previous.blocks.slice(FIRST, STILL_OPEN);
   const keptSource = kept.map((block) => block.source + LINE_BREAK).join("");
   const keptLabels = new Set(kept.flatMap((block) => block.labels));

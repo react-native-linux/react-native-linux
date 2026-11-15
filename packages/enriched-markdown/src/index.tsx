@@ -81,7 +81,8 @@ const renderParagraph = (node: MarkdownNode, context: RenderContext): React.Reac
 const renderList = (node: MarkdownNode, context: RenderContext, renderChildren: RenderChildren): React.ReactNode => {
   const { list } = context.style;
   const start = Number(node.token.attrGet("start") ?? FIRST_ORDINAL);
-  const itemContext = { ...context, style: { ...context.style, list: { ...list, marginBottom: 0 } } };
+  const paragraph = { ...context.style.paragraph, ...textOf(list) };
+  const itemContext = { ...context, style: { ...context.style, list: { ...list, marginBottom: 0 }, paragraph } };
 
   return (
     <View style={{ marginBottom: list.marginBottom }}>
@@ -137,6 +138,7 @@ const renderTable = (node: MarkdownNode, context: RenderContext): React.ReactNod
             {row.children.map((cell, cellIndex) => (
               <Text
                 key={String(cellIndex)}
+                selectable={context.selectable}
                 style={cell.token.type === "th_open" ? { ...cellStyle, fontWeight: "bold" } : cellStyle}
               >
                 {cell.children.map(({ children }) => renderInline(children, context))}

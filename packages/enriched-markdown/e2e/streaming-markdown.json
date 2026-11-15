@@ -5,7 +5,7 @@
   "ready": "streaming-markdown: committed",
   "frames": 2400,
   "steps": ["sleep 18000"],
-  "expect": ["streaming-markdown: rendered 5819 characters, 9 links"],
+  "expect": ["streaming-markdown: rendered 5820 characters, 9 links", "streaming-markdown: laid out 5132 px tall"],
   "screenshot": {
     "golden": "streaming-markdown.png",
     "maxDifferentPixels": 1
