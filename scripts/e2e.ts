@@ -103,6 +103,7 @@ const driveScenario = async (
     scenario,
     startInjector: () => startInjector(workspace.runtimeDirectory, socketName),
     trace: {
+      isClosed: () => workspace.trace.isClosed,
       read: () => workspace.trace.text,
       waitFor: (isSatisfied) => waitUntil(() => isSatisfied(workspace.trace.text), READY_TIMEOUT_MS),
     },
@@ -120,9 +121,8 @@ const driveScenario = async (
   });
 
   /*
-   * The window exits on its own once it has captured the frame its budget names, and not before `endWindow` closes
-   * its stdin (#719). The wait is for the streams to close, not the exit code: a process can exit with its last lines still
-   * in flight, and #233's gate needs them.
+   * The window captures and exits once it has shown its frame count and `endWindow` has closed its stdin (#719).
+   * The wait is for the streams to close, not the exit code: #233's gate needs the last lines still in flight.
    */
   await endWindow();
 

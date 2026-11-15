@@ -3,6 +3,7 @@ import { execPath, stdout } from "node:process";
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { resolveCompositorChild, resolveWindowFlags } from "./e2e/grade.ts";
 import type { FastRefreshEdit } from "./e2e/fast-refresh.ts";
+import type { Injector } from "./e2e/grade.ts";
 import { buildEnvironment } from "./headless-compositor.ts";
 import { setTimeout as delay } from "node:timers/promises";
 import path from "node:path";
@@ -34,12 +35,6 @@ interface TraceSink {
   /** Set once the compositor's stdio has closed, which is later than its exit. */
   isClosed: boolean;
   text: string;
-}
-
-/** A running `rnl_inject`: `send` queues script lines it executes as they arrive, `finish` ends the script. */
-interface Injector {
-  readonly finish: () => Promise<{ failure: string | null; status: number | null }>;
-  readonly send: (steps: readonly string[]) => void;
 }
 
 interface Rig {

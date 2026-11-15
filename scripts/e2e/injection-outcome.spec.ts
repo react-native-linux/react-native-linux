@@ -18,7 +18,11 @@ const waitForExpectedClose =
   () =>
     Promise.resolve(closed);
 
-const trace = { read: (): string => "", waitFor: (): Promise<boolean> => Promise.resolve(true) };
+const trace = {
+  isClosed: (): boolean => false,
+  read: (): string => "",
+  waitFor: (): Promise<boolean> => Promise.resolve(true),
+};
 
 const CLEAN_EXIT_STATUS = 0;
 
@@ -134,15 +138,29 @@ describe("injectAndResolveFailure", () => {
   });
 });
 
+const awaitScenario = parseScenario(
+  { bundle: "b.js", expect: ["ready"], name: "s", ready: "ready", steps: ["pan 1 0", "await settled"] },
+  "fixture.json",
+);
+
 describe("injectAndResolveFailure with an await step", () => {
   it("reports an await that never traced once the injector exits cleanly", async () => {
     const result = await injectAndResolveFailure({
-      scenario: parseScenario(
-        { bundle: "b.js", expect: ["ready"], name: "s", ready: "ready", steps: ["pan 1 0", "await settled"] },
-        "fixture.json",
-      ),
+      scenario: awaitScenario,
       startInjector: injectorExiting(null, CLEAN_EXIT_STATUS),
-      trace: { read: () => "", waitFor: () => Promise.resolve(false) },
+      trace: { ...trace, waitFor: () => Promise.resolve(false) },
+      waitForExpectedClose: waitForExpectedClose(true),
+      waitForKeyboardFocus: waitForExpectedClose(true),
+    });
+
+    expect(result).toBe('the trace never produced "settled" before the steps after "await settled"');
+  });
+
+  it("reports the await rather than the injector killed while it waited", async () => {
+    const result = await injectAndResolveFailure({
+      scenario: awaitScenario,
+      startInjector: injectorExiting("rnl_inject exited with status null:\n", null),
+      trace: { ...trace, waitFor: () => Promise.resolve(false) },
       waitForExpectedClose: waitForExpectedClose(true),
       waitForKeyboardFocus: waitForExpectedClose(true),
     });

@@ -11,6 +11,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 import { PNG } from "pngjs";
 import type { Scenario } from "./scenario.ts";
+import type { TraceWatch } from "./trace-await.ts";
 import { gradeAutomation } from "./automation.ts";
 import path from "node:path";
 import { runKeyboardAwareInjection } from "./keyboard-focus.ts";
@@ -254,7 +255,7 @@ interface Injector {
 interface InjectionRun {
   readonly scenario: Scenario;
   readonly startInjector: () => Injector;
-  readonly trace: Parameters<typeof sendAwaitingTrace>[number]["trace"];
+  readonly trace: TraceWatch;
   readonly waitForKeyboardFocus: () => Promise<boolean>;
   readonly waitForExpectedClose: () => Promise<boolean>;
 }
@@ -274,7 +275,7 @@ const injectAndResolveFailure = async (run: InjectionRun): Promise<string | null
     const outcome = await injector.finish();
     ({ status } = outcome);
 
-    return outcome.failure ?? awaitFailure;
+    return awaitFailure ?? outcome.failure;
   };
   const failure = await runKeyboardAwareInjection(
     scalePointerSteps(run.scenario.steps),
@@ -293,3 +294,4 @@ export {
   resolveInjectionFailure,
   resolveWindowFlags,
 };
+export type { Injector };

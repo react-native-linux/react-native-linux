@@ -7840,9 +7840,16 @@ pointer, and its first events can arrive before the window has bound the new `wl
 that way lost both clicks.
 `t3-review-diff`'s clicks on a header checkbox after a sideways pan used to sleep 5 s, and under load the click
 still landed before the anchored header had followed the scroll, so the toggle was lost. They now await the
-`scroll-settled` report the variant sends from `onMomentumScrollEnd`. It is sent from a later task than the one
+`scroll-settled` report the variant sends when the scroll stops: from `onMomentumScrollEnd`, or from
+`onScrollEndDrag` when the release does not fling. It is held while a drag or a glide runs, which is known by then
+because the platform emits one frame's scroll events in one event beat. It is sent from a later task than the one
 that commits the anchored chrome at the final offset, and the platform mounts a commit when its task ends, so the
-click always hits the checkbox where it is drawn.
+click always hits the checkbox where it is drawn. The source pan ends with a still finger, so its release never
+flings. Its pans carry a 1 pt vertical drift for that reason: `pan 150 0` sends a zero vertical axis, which
+wlroots forwards as `axis_stop`, and the platform releases the drag on it, so each such pan is its own flick.
+`t3-review-diff-120hz` ends on an await of the visible-file report its wheel scroll produces. Under load the
+JavaScript thread runs seconds behind the frames, and the window, held only until the input ends, used to capture
+before the list had reported a new visible file.
 
 **The shader cache (#704).** lavapipe compiles every shader it meets, and Mesa caches the result under
 `XDG_CACHE_HOME`, which the driver points at the scenario's private directory so a bundle never writes into the
