@@ -128,6 +128,13 @@ public:
      * thread. Called once per frame by the window host, and once after the resize by the headless one.
      */
     void publishPendingDimensions();
+
+    /**
+     * The application's assets directory (#696): `app.config`, which `ExponentConstants` serves as `manifest`, and
+     * `fonts/`, the application's fonts (#70). The linux build writes it; `--assets` names it for a bundle a dev
+     * server serves. Empty, the default, means `assets` beside a bundle file, and nothing for a URL.
+     */
+    void setAssetsDirectory(std::string assetsDirectory);
     void loadScript(std::unique_ptr<const facebook::react::JSBigString> script, const std::string& sourceUrl);
 
     /**
@@ -200,6 +207,7 @@ private:
     std::unique_ptr<facebook::react::ReactInstance> reactInstance_;
     std::shared_ptr<facebook::react::NativeAnimatedNodesManagerProvider> animatedNodesManagerProvider_;
     std::unique_ptr<TurboModuleRegistry> turboModuleRegistry_;
+    std::string assetsDirectory_;
 };
 
 } // namespace react_native_linux

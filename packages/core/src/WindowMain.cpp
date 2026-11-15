@@ -50,10 +50,12 @@
 #include <memory>
 #include <optional>
 #include <ostream>
+#include <poll.h>
 #include <span>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <unistd.h>
 #include <utility>
 #include <vector>
 
@@ -145,6 +147,7 @@ constexpr std::string_view kFabricFlag = "--fabric";
 constexpr std::string_view kScreenshotFlag = "--screenshot";
 constexpr std::string_view kFramesFlag = "--frames";
 constexpr std::string_view kFrameLogFlag = "--frame-log";
+constexpr std::string_view kHoldUntilStdinClosesFlag = "--hold-until-stdin-closes";
 constexpr std::string_view kImeDebugFlag = "--ime-debug";
 // --ime-debug has no shadow tree and therefore no tag; one identifier for the one field it pretends to have.
 constexpr int32_t kImeDebugFieldIdentifier = 1;
@@ -153,6 +156,7 @@ constexpr std::string_view kAutomationFlag = "--automation";
 constexpr std::string_view kRendererFlag = "--renderer";
 constexpr std::string_view kAppIdFlag = "--app-id";
 constexpr std::string_view kTitleFlag = "--title";
+constexpr std::string_view kAssetsFlag = "--assets";
 constexpr std::string_view kForceClientDecorationsFlag = "--force-client-decorations";
 constexpr std::string_view kNoDecorationsFlag = "--no-decorations";
 constexpr std::string_view kTransparentBackgroundFlag = "--transparent-background";
@@ -177,6 +181,9 @@ constexpr uint64_t kNanosecondsPerSecond = 1'000'000'000;
  * `--screenshot <path>` runs the ordinary loop and reads the last presented swapchain image back into a PNG, so
  * the picture it writes came through the real Vulkan and Wayland path rather than an offscreen surface.
  * `--frames` is how long the bundle is given to mount and settle before that frame is captured.
+ * `--hold-until-stdin-closes` keeps the window running past that frame until standard input reaches end of file,
+ * then captures the next one. The e2e driver (#719) closes that pipe once nothing more is injected, so a slow
+ * startup can no longer end the run, taking cage and the injector with it, while input is still being injected.
  *
  * `--frame-log <path>` writes the `wp_presentation` measurements as JSON Lines: one record per presented frame
  * and a final summary line carrying the frame count, the discarded count and the p50, p95 and maximum frame
@@ -237,9 +244,13 @@ constexpr uint64_t kNanosecondsPerSecond = 1'000'000'000;
  * `SK_ColorTRANSPARENT` instead of `kSceneBackgroundColor`, so whatever the swapchain's chosen composite alpha
  * and Skia's premultiplied output do with a real alpha channel is visible rather than hidden behind an opaque
  * clear every other run paints over it. See *Surface format and composite alpha* in docs/cpp-toolchain.md.
+ *
+ * `--assets <directory>` is the application's assets directory the linux build writes (#696): `app.config` and
+ * `fonts/`. Without it they are read from `assets` beside a bundle file, so a bundle a dev server serves needs it.
  */
 struct WindowArguments {
     std::optional<std::string> bundlePath;
+    std::string assetsDirectory;
     std::optional<react_native_linux::RendererRung> forcedRung;
     std::optional<std::string> screenshotPath;
     std::optional<std::string> frameLogPath;
@@ -247,6 +258,7 @@ struct WindowArguments {
     std::string applicationIdentifier{kDefaultApplicationIdentifier};
     uint32_t frameCount{kDefaultScreenshotFrames};
     bool automation{false};
+    bool holdUntilStdinCloses{false};
     bool forceClientDecorations{false};
     bool noDecorations{false};
     bool transparentBackground{false};
@@ -513,6 +525,10 @@ std::string describeMissingValue(std::string_view flag) {
         return "--title requires a window title";
     }
 
+    if (flag == kAssetsFlag) {
+        return "--assets requires the application's assets directory";
+    }
+
     if (flag == kInjectRendererFailuresFlag) {
         return "--inject-renderer-failures requires a positive rung count";
     }
@@ -579,6 +595,12 @@ WindowArguments parseArguments(std::span<char*> arguments) {
             continue;
         }
 
+        if (flag == kHoldUntilStdinClosesFlag) {
+            parsed.holdUntilStdinCloses = true;
+
+            continue;
+        }
+
         if (flag == kTransparentBackgroundFlag) {
             parsed.transparentBackground = true;
 
@@ -586,8 +608,9 @@ WindowArguments parseArguments(std::span<char*> arguments) {
         }
 
         if (flag != kFabricFlag && flag != kScreenshotFlag && flag != kFramesFlag && flag != kFrameLogFlag &&
-            flag != kRendererFlag && flag != kAppIdFlag && flag != kTitleFlag && flag != kInjectKeySequenceFlag &&
-            flag != kInjectWindowSequenceFlag && flag != kInjectRendererFailuresFlag) {
+            flag != kRendererFlag && flag != kAppIdFlag && flag != kTitleFlag && flag != kAssetsFlag &&
+            flag != kInjectKeySequenceFlag && flag != kInjectWindowSequenceFlag &&
+            flag != kInjectRendererFailuresFlag) {
             // Not a flag at all: the desktop entry's `Exec=... %u` expansion for single-instance activation
             // (#363) hands this process a bare URL, with no `--` of its own. Nothing here consumes it — the
             // single-instance check reads the *original* argv directly, ahead of this parse — so it is not an
@@ -647,6 +670,8 @@ WindowArguments parseArguments(std::span<char*> arguments) {
             parsed.injectedWindowSteps = std::move(sequence.steps);
         } else if (flag == kTitleFlag) {
             parsed.title = std::string(value);
+        } else if (flag == kAssetsFlag) {
+            parsed.assetsDirectory = std::string(value);
         } else {
             const std::optional<uint32_t> count = parsePositiveCount(value);
 
@@ -661,6 +686,26 @@ WindowArguments parseArguments(std::span<char*> arguments) {
     }
 
     return parsed;
+}
+
+constexpr size_t kDiscardedInputBytes = 256;
+
+/** True once standard input is at end of file; whatever arrives before that is read and dropped. */
+bool isStandardInputClosed() {
+    pollfd standardInput{.fd = STDIN_FILENO, .events = POLLIN, .revents = 0};
+
+    if (poll(&standardInput, 1, 0) <= 0) {
+        return false;
+    }
+
+    std::array<char, kDiscardedInputBytes> discarded{};
+
+    return read(STDIN_FILENO, discarded.data(), discarded.size()) <= 0;
+}
+
+bool isCaptureFrameReached(const WindowArguments& arguments, uint32_t elapsedFrames) {
+    return arguments.screenshotPath.has_value() && elapsedFrames + 1 >= arguments.frameCount &&
+           (!arguments.holdUntilStdinCloses || isStandardInputClosed());
 }
 
 /**
@@ -1333,8 +1378,7 @@ int main(int argc, char** argv) {
             // A frame `--frames` counts is a presented one or an idle tick (#703): an idle window presents nothing, and
             // the count is how long a fixture runs rather than how much it painted.
             uint32_t elapsedFrames = 0;
-            const bool isStartupCaptureFrame =
-                parsedArguments.screenshotPath.has_value() && elapsedFrames + 1 >= parsedArguments.frameCount;
+            const bool isStartupCaptureFrame = isCaptureFrameReached(parsedArguments, elapsedFrames);
 
             if (isStartupCaptureFrame) {
                 renderer.captureNextFrame(parsedArguments.screenshotPath.value());
@@ -1391,7 +1435,7 @@ int main(int argc, char** argv) {
                 session.emplace(parsedArguments.bundlePath.value(),
                                 react_native_linux::WindowSize{chrome.content.width, chrome.content.height},
                                 outputScaleOf(window), asyncStorageDatabasePath(parsedArguments.applicationIdentifier),
-                                ownActivationUrl);
+                                ownActivationUrl, parsedArguments.assetsDirectory);
 
                 // --ime-debug owns the text input by hand, so focus must not also drive it: the two would race to
                 // enable and disable the same object. Without that flag, focus is the only thing that touches it.
@@ -1510,9 +1554,8 @@ int main(int argc, char** argv) {
 
                 // Never while an automation capture is armed: the two would name the same pending path and one
                 // picture would be written to the other's file.
-                const bool isCaptureFrame = parsedArguments.screenshotPath.has_value() &&
-                                            !automation.pendingScreenshotPath.has_value() &&
-                                            elapsedFrames + 1 >= parsedArguments.frameCount;
+                const bool isCaptureFrame = !automation.pendingScreenshotPath.has_value() &&
+                                            isCaptureFrameReached(parsedArguments, elapsedFrames);
 
                 if (isCaptureFrame) {
                     renderer.captureNextFrame(parsedArguments.screenshotPath.value());

@@ -326,6 +326,9 @@ const ReviewSheet = (): React.JSX.Element => {
         }
         pump();
       }
+      if (message === "scroll-settled") {
+        report("review scroll settled");
+      }
       if (message === "tokens-patch-delivered") {
         awaiting.current = false;
         if (deliveredChunk === 0) {
@@ -382,6 +385,11 @@ const ReviewSheet = (): React.JSX.Element => {
       <ReviewDiffView
         appearanceScheme="dark"
         contentResetKey={`source:${String(sourceRevision)}`}
+        onDebug={(event) => {
+          if (eventPayload(event).message === "scroll-settled") {
+            report("source scroll settled");
+          }
+        }}
         onToggleViewedFile={() => {
           report(`reload source-file ${String(sourceRevision + 1)}`);
           setSourceRevision(sourceRevision + 1);

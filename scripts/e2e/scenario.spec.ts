@@ -25,6 +25,7 @@ describe("parseScenario, field by field", () => {
       allowErrors: false,
       automation: null,
       bundle: "pressable.js",
+      devServer: false,
       expect: ["pressable: topClick on box at 200,140"],
       expectFailure: false,
       expectsExitAfter: null,
@@ -76,6 +77,9 @@ describe("parseScenario", () => {
     const overrides = { allowErrors: true, expectFailure: true, injectProtocolError: true };
     expect(parseScenario({ ...validScenario, ...overrides }, "fixture.json")).toMatchObject(overrides);
   });
+
+  it("reads an explicit devServer", () =>
+    expect(parseScenario({ ...validScenario, devServer: true }, "fixture.json").devServer).toBe(true));
 
   it("reads an explicit inputTrace", () =>
     expect(parseScenario({ ...validScenario, inputTrace: true }, "fixture.json").inputTrace).toBe(true));

@@ -2,18 +2,18 @@ import { argv, env, stderr, stdout } from "node:process";
 import {
   attachTrace,
   editAndAwaitRefresh,
-  injectSteps,
   injectorBinaryPath,
   startCompositor,
+  startInjector,
   stopCompositor,
   waitForSocketName,
   windowBinaryPath,
   withDevServer,
 } from "./e2e-processes.ts";
 import { describeTraceFailures, resolveArtifactPaths, resolveExpectedOutcome } from "./e2e/scenario.ts";
+import { embedScenarioAssets, findExecutable, findLavapipeIcd, resolveScenarioBundle } from "./window-golden.ts";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { findExecutable, findLavapipeIcd, resolveScenarioBundle } from "./window-golden.ts";
-import { gradeArtifacts, gradeAutomationChannel, injectAndResolveFailure } from "./e2e/grade.ts";
+import { gradeArtifacts, gradeAutomationChannel, injectAndResolveFailure, resolveWindowFlags } from "./e2e/grade.ts";
 import {
   isKeyboardFocused,
   planRuns,
@@ -78,7 +78,11 @@ const createWorkspace = (artifacts: Artifacts): Workspace => {
   };
 };
 
-const driveScenario = async (run: ScenarioRun, workspace: Workspace): Promise<readonly string[]> => {
+const driveScenario = async (
+  run: ScenarioRun,
+  workspace: Workspace,
+  endWindow: () => Promise<boolean>,
+): Promise<readonly string[]> => {
   const { scenario } = run;
   const socketName = await waitForSocketName(workspace.runtimeDirectory);
   // A missing socket short-circuits the ready wait; both bail-outs share the check below (#373).
@@ -96,8 +100,13 @@ const driveScenario = async (run: ScenarioRun, workspace: Workspace): Promise<re
   }
 
   const injectionFailure = await injectAndResolveFailure({
-    inject: (steps) => injectSteps(steps, workspace.runtimeDirectory, socketName),
     scenario,
+    startInjector: () => startInjector(workspace.runtimeDirectory, socketName),
+    trace: {
+      isClosed: () => workspace.trace.isClosed,
+      read: () => workspace.trace.text,
+      waitFor: (isSatisfied) => waitUntil(() => isSatisfied(workspace.trace.text), READY_TIMEOUT_MS),
+    },
     waitForExpectedClose: () =>
       waitUntil(() => workspace.trace.text.includes(scenario.expectsExitAfter ?? ""), READY_TIMEOUT_MS),
     waitForKeyboardFocus: () => waitUntil(() => isKeyboardFocused(workspace.trace.text), READY_TIMEOUT_MS),
@@ -112,10 +121,10 @@ const driveScenario = async (run: ScenarioRun, workspace: Workspace): Promise<re
   });
 
   /*
-   * The window exits on its own once it has captured the frame its budget names. The wait is for the streams to
-   * close, not the exit code: a process can exit with its last lines still in flight, and #233's gate needs them.
+   * The window captures and exits once it has shown its frame count and `endWindow` has closed its stdin (#719).
+   * The wait is for the streams to close, not the exit code: #233's gate needs the last lines still in flight.
    */
-  await waitUntil(() => workspace.trace.isClosed, RUN_TIMEOUT_MS);
+  await endWindow();
 
   return [...(injectionFailure === null ? [] : [injectionFailure]), ...refreshFailures, ...automationFailures];
 };
@@ -131,7 +140,11 @@ const driveAndStop = async (
   workspace: Workspace,
 ): Promise<readonly string[]> => {
   try {
-    return await driveScenario(run, workspace);
+    return await driveScenario(run, workspace, () => {
+      compositor.stdin?.end();
+
+      return waitUntil(() => workspace.trace.isClosed, RUN_TIMEOUT_MS);
+    });
   } finally {
     await stopCompositor(compositor);
   }
@@ -159,14 +172,27 @@ const runCompositor = async ({ bundle, rig, run, workspace }: WindowLaunch): Pro
   return { failures, signal: compositor.signalCode };
 };
 
-/** A `fastRefresh` scenario's window runs its bundle from a watching Metro; see `withDevServer`. */
-const runWindow = (run: ScenarioRun, rig: Rig, workspace: Workspace): Promise<WindowRun> => {
-  const { fastRefresh } = run.scenario;
-  const entryPath = path.join(run.source.bundlesDirectory, run.scenario.bundle);
+/**
+ * A `devServer` or `fastRefresh` scenario's window runs its bundle from a watching Metro (see `withDevServer`), with
+ * the package's assets named by `--assets`, since a served bundle has no directory beside it (#696).
+ */
+const runWindow = async (run: ScenarioRun, rig: Rig, workspace: Workspace): Promise<WindowRun> => {
+  const { bundlesDirectory } = run.source;
+  const { devServer, fastRefresh, name, windowFlags } = run.scenario;
 
-  return fastRefresh === null
-    ? runCompositor({ bundle: resolveScenarioBundle(run.source.bundlesDirectory, run.scenario), rig, run, workspace })
-    : withDevServer(entryPath, fastRefresh, (bundle) => runCompositor({ bundle, rig, run, workspace }));
+  if (!devServer && fastRefresh === null) {
+    return runCompositor({ bundle: await resolveScenarioBundle(bundlesDirectory, run.scenario), rig, run, workspace });
+  }
+
+  const assetsFlags = ["--assets", await embedScenarioAssets(bundlesDirectory, name)];
+  const served = {
+    ...run,
+    scenario: { ...run.scenario, windowFlags: [...resolveWindowFlags(windowFlags), ...assetsFlags] },
+  };
+
+  return withDevServer(path.join(bundlesDirectory, run.scenario.bundle), fastRefresh, (bundle) =>
+    runCompositor({ bundle, rig, run: served, workspace }),
+  );
 };
 
 const runScenario = async (run: ScenarioRun, rig: Rig, attemptKey: string): Promise<readonly string[]> => {

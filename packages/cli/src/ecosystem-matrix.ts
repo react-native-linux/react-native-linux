@@ -79,7 +79,12 @@ const ecosystemMatrix: readonly EcosystemRow[] = [
   { flagshipVersion: "~58.0.18", issue: 273, packageName: "expo-image", state: "blocked" },
   { flagshipVersion: "~58.1.8", issue: 274, packageName: "expo-notifications", state: "blocked" },
   { flagshipVersion: "~58.0.10", issue: 275, packageName: "expo-image-picker", state: "blocked" },
-  { flagshipVersion: "~58.0.7", issue: 276, packageName: "expo-crypto", state: "blocked" },
+  {
+    flagshipVersion: "~58.0.7",
+    packageName: "expo-crypto",
+    state: "works",
+    test: "packages/expo/e2e/expo-startup-modules.json",
+  },
   {
     flagshipVersion: "~58.0.5",
     packageName: "expo-device",

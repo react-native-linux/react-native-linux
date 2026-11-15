@@ -12,6 +12,7 @@
     "./autolinking-cmake.ts": "./src/autolinking-cmake.ts",
     "./babel-cache-version.ts": "./src/babel-cache-version.ts",
     "./dependency-floor.ts": "./src/dependency-floor.ts",
+    "./expo-app-assets.ts": "./src/expo-app-assets.ts",
     "./desktop-entry.ts": "./src/desktop-entry.ts",
     "./fantom-expectations.ts": "./src/fantom-expectations.ts",
     "./hicolor-icon-tree.ts": "./src/hicolor-icon-tree.ts",
@@ -22,6 +23,7 @@
     "./override-report.ts": "./src/override-report.ts",
     "./manifest-schema-drift.ts": "./src/manifest-schema-drift.ts",
     "./metro-config.ts": "./src/metro-config.ts",
+    "./package-aliases.ts": "./src/package-aliases.ts",
     "./linux-resolver-config.ts": "./src/linux-resolver-config.ts"
   },
   "publishConfig": {
@@ -31,6 +33,7 @@
       "./autolinking-cmake.ts": "./dist/autolinking-cmake.js",
       "./babel-cache-version.ts": "./dist/babel-cache-version.js",
       "./dependency-floor.ts": "./dist/dependency-floor.js",
+      "./expo-app-assets.ts": "./dist/expo-app-assets.js",
       "./desktop-entry.ts": "./dist/desktop-entry.js",
       "./fantom-expectations.ts": "./dist/fantom-expectations.js",
       "./hicolor-icon-tree.ts": "./dist/hicolor-icon-tree.js",
@@ -41,6 +44,7 @@
       "./override-report.ts": "./dist/override-report.js",
       "./manifest-schema-drift.ts": "./dist/manifest-schema-drift.js",
       "./metro-config.ts": "./dist/metro-config.js",
+      "./package-aliases.ts": "./dist/package-aliases.js",
       "./linux-resolver-config.ts": "./dist/linux-resolver-config.js"
     }
   },

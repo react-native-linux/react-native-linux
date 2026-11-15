@@ -78,6 +78,11 @@ interface Scenario {
   readonly bundle: string;
   /** Trace substrings the run has to produce, in this order. */
   readonly expect: readonly string[];
+  /**
+   * #696: `bundle` is served as a `dev=true` bundle by Metro, as a `fastRefresh` scenario's is, with no edit; the
+   * window reads the package's assets from `--assets`.
+   */
+  readonly devServer: boolean;
   /** A negative control: the scenario passes only if grading it produces at least one failure. */
   readonly expectFailure: boolean;
   /** `rnl_inject`'s exit status 1 is accepted once the trace also carries this substring; `null` never accepts it. */
@@ -254,6 +259,7 @@ const parseScenario = (value: unknown, sourceName: string): Scenario => {
     allowErrors: readOptionalBoolean(value, "allowErrors", sourceName),
     automation: readAutomation(value, sourceName),
     bundle: readString(value["bundle"], "bundle", sourceName),
+    devServer: readOptionalBoolean(value, "devServer", sourceName),
     expect: readStringArray(value["expect"], "expect", sourceName),
     expectFailure: readOptionalBoolean(value, "expectFailure", sourceName),
     expectsExitAfter: readOptionalString(value, "expectsExitAfter", sourceName),

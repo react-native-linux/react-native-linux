@@ -1,9 +1,12 @@
 import { FIRST_PRESENTED_FRAME_TRACE_LINE, hasPresentedFirstFrame } from "./window-readiness.ts";
+import path from "node:path";
+import { realpathSync } from "node:fs";
 
 /** The T3 Code revision docs/research/t3code-linux.md surveyed, and the one the fixture runs. */
 const T3CODE_REVISION = "238678951ac4945969b8203ae2996b5891b6ffce";
 
 const FATAL_ERROR_PREFIX = "[js-error] fatal";
+const MOBILE_PACKAGE_NAME = "@t3tools/mobile";
 const PAIRING_URL_PATTERN = /^Pairing URL: (?<pairingUrl>\S+)$/mu;
 const SUCCESSFUL_EXIT_STATUS = 0;
 const TAIL_LINE_COUNT = 40;
@@ -49,4 +52,60 @@ const gradeWindowRun = (run: WindowRun): readonly string[] => {
   ];
 };
 
-export { T3CODE_REVISION, buildPairingLink, gradeWindowRun, readPairingUrl, tailLines };
+/** The pnpm arguments that pack each overlay package the platform's Metro alias table names into `destination`. */
+const overlayPackArguments = (
+  aliases: readonly { readonly linux: string }[],
+  destination: string,
+): readonly string[] => [
+  ...aliases.flatMap(({ linux }) => ["--filter", linux]),
+  "pack",
+  "--pack-destination",
+  destination,
+];
+
+/**
+ * Why the fixture refuses to modify `checkout`, or null when its real path lies inside `fixtureDirectory`. Adding the
+ * overlays rewrites the checkout's package.json and lockfile, so it must be the fixture's own copy of T3 Code.
+ */
+/** The directory under the fixture directory that receives the packed overlays, emptied before each run. */
+const OVERLAY_DIRECTORY_NAME = "overlays";
+
+const describeForeignCheckout = (checkout: string, fixtureDirectory: string): string | null => {
+  const realFixtureDirectory = realpathSync(fixtureDirectory);
+  const realCheckout = realpathSync(checkout);
+  const relativeCheckout = path.relative(realFixtureDirectory, realCheckout);
+
+  if (`${relativeCheckout}${path.sep}`.startsWith(`${OVERLAY_DIRECTORY_NAME}${path.sep}`)) {
+    return `${checkout} resolves to ${realCheckout}, inside the overlay directory the fixture empties before each run. Clone T3 Code into ${path.join(fixtureDirectory, "checkout")} and pass that.`;
+  }
+
+  return relativeCheckout !== "" && !relativeCheckout.startsWith("..")
+    ? null
+    : `${checkout} resolves to ${realCheckout}, outside ${realFixtureDirectory}. The fixture rewrites the checkout's package.json and lockfile, so clone a copy of T3 Code at ${T3CODE_REVISION} into ${path.join(fixtureDirectory, "checkout")} and pass that.`;
+};
+
+/**
+ * The pnpm arguments that add the packed overlays to T3 Code's mobile app as a registry install would land them. Their
+ * install scripts do not run, as the checkout's own install skips them. Peer checks are not strict: the reanimated
+ * overlay's react-native-worklets 0.12.2 accepts react-native 0.83 to 0.87, and T3 Code pins 0.88.1.
+ */
+const overlayInstallArguments = (tarballs: readonly string[]): readonly string[] => [
+  "--filter",
+  MOBILE_PACKAGE_NAME,
+  "add",
+  ...tarballs,
+  "--ignore-scripts",
+  "--config.strict-peer-dependencies=false",
+];
+
+export {
+  T3CODE_REVISION,
+  buildPairingLink,
+  OVERLAY_DIRECTORY_NAME,
+  describeForeignCheckout,
+  gradeWindowRun,
+  overlayInstallArguments,
+  overlayPackArguments,
+  readPairingUrl,
+  tailLines,
+};
