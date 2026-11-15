@@ -18,12 +18,13 @@ The Linux overlay of https://github.com/software-mansion/react-native-reanimated
 | --- | --- |
 | Repository | https://github.com/software-mansion/react-native-reanimated |
 | Tag | `4.6.0` |
-| Sparse paths | `packages/react-native-reanimated/Common/cpp`, `packages/react-native-reanimated/src` |
+| Sparse paths | `packages/react-native-reanimated/Common/cpp`, `packages/react-native-reanimated/src`, `packages/react-native-reanimated/scripts` |
 
 `4.6.0` is the only released Reanimated line whose `peerDependencies` accept React Native `0.87`, which is the
 version `scripts/vendor.lock.json` pins; `4.5.x` caps at `0.86`. The sparse cone is the TypeScript sources and the
 shared C++ that `@react-native-linux/core` compiles as `rnl_reanimated` (#139; *react-native-reanimated* in
-`docs/cpp-toolchain.md`). `react-native-worklets` is a sibling package in the same monorepo but releases under its
+`docs/cpp-toolchain.md`). `scripts/` is there because `src` imports `scripts/validate-worklets-version.js`, which the
+package exports. `react-native-worklets` is a sibling package in the same monorepo but releases under its
 own `worklets-<version>` tags, and `upstream.lock.json` holds exactly one tag, so it becomes `packages/worklets`
 when Phase 2 first needs to patch it — not before.
 

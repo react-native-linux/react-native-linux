@@ -1,6 +1,7 @@
 #include "FabricHost.h"
 
 #include "AutolinkedComponents.h"
+#include "ReanimatedModule.h"
 #include "SwitchComponent.h"
 #include "TextInputComponent.h"
 
@@ -183,6 +184,8 @@ FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::
     // that their iOS views lock, so an empty one is what this platform has to give:
     // https://github.com/software-mansion/react-native-screens/blob/4.30.1/common/cpp/react/renderer/components/rnscreens/RNSScreenStackHeaderConfigComponentDescriptor.h#L54-L58
     contextContainer_->insert("RCTImageLoader", std::shared_ptr<void>());
+    contextContainer_->insert(kMountingManagerContextKey,
+                              std::shared_ptr<facebook::react::IMountingManager>(mountingManager_));
 
     facebook::react::SchedulerToolbox schedulerToolbox;
     schedulerToolbox.contextContainer = contextContainer_;

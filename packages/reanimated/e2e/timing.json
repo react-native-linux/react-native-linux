@@ -1,0 +1,13 @@
+{
+  "name": "reanimated-timing",
+  "bundle": "timing.tsx",
+  "ready": "reanimated-timing: started",
+  "frames": 900,
+  "frameBudget": { "p95Ms": 17.5, "minFrames": 60, "maxHangs": 0 },
+  "steps": ["sleep 2000"],
+  "expect": [
+    "reanimated-timing: started",
+    "reanimated-timing: value after the stall 1",
+    "reanimated-timing: finished true, stepped frame by frame"
+  ]
+}

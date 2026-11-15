@@ -4,10 +4,17 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./upstream/packages/react-native-reanimated/src/index.ts"
+    ".": "./upstream/packages/react-native-reanimated/src/index.ts",
+    "./scripts/validate-worklets-version": "./upstream/packages/react-native-reanimated/scripts/validate-worklets-version.js"
+  },
+  "dependencies": {
+    "react-native-is-edge-to-edge": "1.3.1",
+    "react-native-worklets": "catalog:",
+    "semver": "7.8.5"
   },
   "peerDependencies": {
     "@react-native-linux/core": "workspace:*",
+    "react": "*",
     "react-native": "*"
   }
 }
