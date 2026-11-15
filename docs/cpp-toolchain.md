@@ -8139,7 +8139,9 @@ frames on scrolling: 6,400 frames, of which 1,050 to 2,450 are startup (the bund
 the first token patch; the high end at a load average of 34), about 3,100 (half the run) are 231 wheel notches
 played four times in four orders after one sideways pan across the highlighted first screen and back, and the rest
 is a tail that only absorbs a slower startup. It gates
-`{"p50Ms": 9.5, "p95Ms": 12.5, "minFrames": 5800, "maxHangs": 20}` on the Debug build CI runs. The hang count
+`{"p50Ms": 9.5, "p95Ms": 12.5, "minFrames": 3500, "maxHangs": 20}` on the Debug build CI runs. Since #703 an idle
+window presents nothing while the bundle loads or after the scroll settles, so the run presents only its work frames
+(3,856 and 4,002 in two runs at 120 Hz) and `minFrames` is a floor under those, not under every tick. The hang count
 covers the whole run, but p50 and p95 are ranked over the window's last 4,096 intervals (`FrameTiming`'s and
 `FrameJournal`'s `kDefaultSampleCapacity`), frames 2,305 to 6,400 of this run: after a startup of 2,450 frames they
 hold every scroll step and the tail, and after one of 1,050 the first 1,250 or so scroll frames, the sideways pan

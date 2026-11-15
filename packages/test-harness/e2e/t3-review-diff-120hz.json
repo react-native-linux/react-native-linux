@@ -7,7 +7,7 @@
   "frameBudget": {
     "p50Ms": 9.5,
     "p95Ms": 12.5,
-    "minFrames": 5800,
+    "minFrames": 3500,
     "maxHangs": 20
   },
   "steps": [
