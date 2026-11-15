@@ -1,0 +1,15 @@
+{
+  "name": "expo-constants-dev-server",
+  "bundle": "expo-constants.tsx",
+  "devServer": true,
+  "ready": "expo-constants: appOwnership=null",
+  "frames": 600,
+  "steps": ["sleep 100"],
+  "screenshot": {
+    "golden": "expo-constants.png",
+    "maxDifferentPixels": 50,
+    "crop": { "left": 40, "top": 40, "width": 320, "height": 120 }
+  },
+  "automation": { "listErrorsMustBeEmpty": true },
+  "expect": ["scheme=rnl-expo createURL=rnl-expo:///x"]
+}

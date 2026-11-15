@@ -11,9 +11,9 @@ import {
   withDevServer,
 } from "./e2e-processes.ts";
 import { describeTraceFailures, resolveArtifactPaths, resolveExpectedOutcome } from "./e2e/scenario.ts";
+import { embedScenarioAssets, findExecutable, findLavapipeIcd, resolveScenarioBundle } from "./window-golden.ts";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { findExecutable, findLavapipeIcd, resolveScenarioBundle } from "./window-golden.ts";
-import { gradeArtifacts, gradeAutomationChannel, injectAndResolveFailure } from "./e2e/grade.ts";
+import { gradeArtifacts, gradeAutomationChannel, injectAndResolveFailure, resolveWindowFlags } from "./e2e/grade.ts";
 import {
   isKeyboardFocused,
   planRuns,
@@ -159,14 +159,27 @@ const runCompositor = async ({ bundle, rig, run, workspace }: WindowLaunch): Pro
   return { failures, signal: compositor.signalCode };
 };
 
-/** A `fastRefresh` scenario's window runs its bundle from a watching Metro; see `withDevServer`. */
-const runWindow = (run: ScenarioRun, rig: Rig, workspace: Workspace): Promise<WindowRun> => {
-  const { fastRefresh } = run.scenario;
-  const entryPath = path.join(run.source.bundlesDirectory, run.scenario.bundle);
+/**
+ * A `devServer` or `fastRefresh` scenario's window runs its bundle from a watching Metro (see `withDevServer`), with
+ * the package's assets named by `--assets`, since a served bundle has no directory beside it (#696).
+ */
+const runWindow = async (run: ScenarioRun, rig: Rig, workspace: Workspace): Promise<WindowRun> => {
+  const { bundlesDirectory } = run.source;
+  const { devServer, fastRefresh, name, windowFlags } = run.scenario;
 
-  return fastRefresh === null
-    ? runCompositor({ bundle: resolveScenarioBundle(run.source.bundlesDirectory, run.scenario), rig, run, workspace })
-    : withDevServer(entryPath, fastRefresh, (bundle) => runCompositor({ bundle, rig, run, workspace }));
+  if (!devServer && fastRefresh === null) {
+    return runCompositor({ bundle: await resolveScenarioBundle(bundlesDirectory, run.scenario), rig, run, workspace });
+  }
+
+  const assetsFlags = ["--assets", await embedScenarioAssets(bundlesDirectory, name)];
+  const served = {
+    ...run,
+    scenario: { ...run.scenario, windowFlags: [...resolveWindowFlags(windowFlags), ...assetsFlags] },
+  };
+
+  return withDevServer(path.join(bundlesDirectory, run.scenario.bundle), fastRefresh, (bundle) =>
+    runCompositor({ bundle, rig, run: served, workspace }),
+  );
 };
 
 const runScenario = async (run: ScenarioRun, rig: Rig, attemptKey: string): Promise<readonly string[]> => {

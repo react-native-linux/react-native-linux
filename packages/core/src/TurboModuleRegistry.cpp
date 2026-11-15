@@ -888,9 +888,9 @@ public:
 /**
  * `ExponentConstants` (ADR-0004), the native module upstream's unmodified `expo-constants` finds through
  * `requireOptionalNativeModule`'s TurboModule fallback, answered as a bare desktop app: no status bar, the host name
- * as the device name, and no web view, so the user agent resolves `null`. `manifest` is the app config a linux build
- * embeds as `assets/app.config` beside its bundle, the JSON string Android's module serves from its APK's
- * `assets/app.config`; a bundle loaded from a URL or without that file has `null`. `debugMode` is the native build
+ * as the device name, and no web view, so the user agent resolves `null`. `manifest` is the `app.config` the linux
+ * build writes into the application's assets directory (#696), the JSON string Android's module serves from its APK's
+ * `assets/app.config`; a source without that file has `null`. `debugMode` is the native build
  * configuration, as iOS reports it. Every field `NativeConstants` requires in SDK 58 is present except `name`, which
  * upstream's `Constants.ts` strips on every platform.
  */
@@ -899,9 +899,9 @@ public:
     static constexpr std::string_view kModuleName = "ExponentConstants";
 
     LinuxExponentConstantsModule(std::shared_ptr<facebook::react::CallInvoker> jsInvoker,
-                                 std::shared_ptr<const std::string> bundleUrl)
+                                 std::shared_ptr<const std::string> assetsDirectory)
         : TurboModule(std::string(kModuleName), std::move(jsInvoker)), sessionId_(randomUuid()),
-          bundleUrl_(std::move(bundleUrl)) {
+          assetsDirectory_(std::move(assetsDirectory)) {
         methodMap_["getConstants"] = {0, [](facebook::jsi::Runtime& runtime, TurboModule& turboModule,
                                             const facebook::jsi::Value* /*arguments*/, size_t /*count*/) {
                                           return constants(runtime,
@@ -945,12 +945,12 @@ private:
         return uuid;
     }
 
-    static facebook::jsi::Value embeddedAppConfig(facebook::jsi::Runtime& runtime, const std::string& bundleUrl) {
-        if (bundleUrl.empty() || bundleUrl.find("://") != std::string::npos) {
+    static facebook::jsi::Value embeddedAppConfig(facebook::jsi::Runtime& runtime, const std::string& assetsDirectory) {
+        if (assetsDirectory.empty()) {
             return facebook::jsi::Value::null();
         }
 
-        std::ifstream appConfig(std::filesystem::path(bundleUrl).parent_path() / "assets" / "app.config");
+        std::ifstream appConfig(std::filesystem::path(assetsDirectory) / "app.config");
 
         if (!appConfig) {
             return facebook::jsi::Value::null();
@@ -976,7 +976,7 @@ private:
         constants.setProperty(runtime, "expoVersion", facebook::jsi::Value::null());
         constants.setProperty(runtime, "isHeadless", false);
         constants.setProperty(runtime, "linkingUri", facebook::jsi::String::createFromAscii(runtime, ""));
-        constants.setProperty(runtime, "manifest", embeddedAppConfig(runtime, *module.bundleUrl_));
+        constants.setProperty(runtime, "manifest", embeddedAppConfig(runtime, *module.assetsDirectory_));
         constants.setProperty(runtime, "sessionId", facebook::jsi::String::createFromAscii(runtime, module.sessionId_));
         constants.setProperty(runtime, "statusBarHeight", 0);
         constants.setProperty(runtime, "systemFonts", facebook::jsi::Array(runtime, 0));
@@ -985,7 +985,7 @@ private:
     }
 
     std::string sessionId_;
-    std::shared_ptr<const std::string> bundleUrl_;
+    std::shared_ptr<const std::string> assetsDirectory_;
 };
 
 /**
@@ -1038,7 +1038,8 @@ TurboModuleRegistry::TurboModuleRegistry(
       keyValueStore_(std::make_shared<KeyValueStore>()), sqliteDatabases_(std::make_unique<SQLiteDatabases>()),
       expoAssetDownloads_(std::make_unique<ExpoAssetDownloads>()), fileSystemHost_(std::make_unique<FileSystemHost>()),
       i18nModel_(std::make_shared<I18nModel>(localeFromEnvironment(), keyValueStore_)),
-      bundleUrl_(std::make_shared<std::string>()), workletsModule_(std::make_shared<LinuxWorkletsModule>(jsInvoker)),
+      bundleUrl_(std::make_shared<std::string>()), assetsDirectory_(std::make_shared<std::string>()),
+      workletsModule_(std::make_shared<LinuxWorkletsModule>(jsInvoker)),
       reanimatedModule_(std::make_shared<LinuxReanimatedModule>(jsInvoker, workletsModule_)),
       reloadRequested_(std::make_shared<std::atomic<bool>>(false)) {
     appearanceModel_->setChangeListener([appearanceModule = appearanceModule_.get()](ColorScheme colorScheme) {
@@ -1098,9 +1099,10 @@ TurboModuleRegistry::TurboModuleRegistry(
                              [jsInvoker]() { return std::make_shared<LinuxClipboardModule>(jsInvoker); });
     moduleFactories_.emplace(LinuxPlatformConstantsModule::kModuleName,
                              [jsInvoker]() { return std::make_shared<LinuxPlatformConstantsModule>(jsInvoker); });
-    moduleFactories_.emplace(LinuxExponentConstantsModule::kModuleName, [jsInvoker, bundleUrl = bundleUrl_]() {
-        return std::make_shared<LinuxExponentConstantsModule>(jsInvoker, bundleUrl);
-    });
+    moduleFactories_.emplace(LinuxExponentConstantsModule::kModuleName,
+                             [jsInvoker, assetsDirectory = assetsDirectory_]() {
+                                 return std::make_shared<LinuxExponentConstantsModule>(jsInvoker, assetsDirectory);
+                             });
     moduleFactories_.emplace("ExpoAsset", [jsInvoker, &downloads = *expoAssetDownloads_]() {
         return makeExpoAssetModule(jsInvoker, downloads);
     });
@@ -1157,6 +1159,10 @@ AppearanceModel& TurboModuleRegistry::appearance() noexcept { return *appearance
 ActivationModel& TurboModuleRegistry::activation() noexcept { return *activationModel_; }
 
 void TurboModuleRegistry::setBundleUrl(const std::string& bundleUrl) { *bundleUrl_ = bundleUrl; }
+
+void TurboModuleRegistry::setAssetsDirectory(const std::string& assetsDirectory) {
+    *assetsDirectory_ = assetsDirectory;
+}
 
 bool TurboModuleRegistry::isReloadRequested() const noexcept { return reloadRequested_->load(); }
 
