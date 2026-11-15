@@ -142,7 +142,11 @@ const stopCompositor = async (compositor: Compositor): Promise<void> => {
   compositor.kill("SIGKILL");
 };
 
-/** `rnl_inject` reading its script from a pipe, so the driver can hold lines back until the trace says (#719). */
+/**
+ * `rnl_inject` reading its script from a pipe, so the driver can hold lines back until the trace says (#719). It has no
+ * lifetime timeout of its own, because a valid trace await may hold it past one: each await is bounded by the driver,
+ * and once its input ends the injector gets INJECT_TIMEOUT_MS to finish before it is killed.
+ */
 const startInjector = (runtimeDirectory: string, socketName: string): Injector => {
   const injection = spawn(injectorBinaryPath, [], {
     env: buildEnvironment({
@@ -151,7 +155,6 @@ const startInjector = (runtimeDirectory: string, socketName: string): Injector =
       XKB_DEFAULT_LAYOUT: "us",
     }),
     stdio: ["pipe", "pipe", "pipe"],
-    timeout: INJECT_TIMEOUT_MS,
   });
   const sink = { isClosed: false, text: "" };
 
@@ -163,7 +166,9 @@ const startInjector = (runtimeDirectory: string, socketName: string): Injector =
   return {
     finish: async () => {
       injection.stdin.end();
-      await waitUntil(() => sink.isClosed, INJECT_TIMEOUT_MS);
+      if (!(await waitUntil(() => sink.isClosed, INJECT_TIMEOUT_MS))) {
+        injection.kill("SIGKILL");
+      }
       const status = injection.exitCode;
       const failure =
         status === SUCCESSFUL_EXIT_STATUS ? null : `rnl_inject exited with status ${String(status)}:\n${sink.text}`;
