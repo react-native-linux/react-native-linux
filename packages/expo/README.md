@@ -5,11 +5,13 @@ it: each Expo package's own JavaScript runs unmodified, over `expo-modules-core`
 C++ TurboModule of this platform registered under the module's Expo native-module name. The resolver rule in
 `packages/cli/src/package-overlays.ts` swaps in this platform's polyfill, which installs upstream's and answers
 `getViewConfig` with `null`, upstream's answer for a view that is not linked: `requireNativeView` mounts an empty view
-after upstream's warning, until the first registered Expo view lands (#165). A package alias to a subpath here is the escape hatch for
-a module whose JavaScript has to differ; no module uses it yet.
+after upstream's warning, until the first registered Expo view lands (#165). A subpath here, resolved instead of the
+upstream file, is the escape hatch for a module whose JavaScript has to differ; `fetch` is the only one.
 
 | Module | Written against | Seam or alias | Native module | Answers |
 | --- | --- | --- | --- | --- |
+| `expo` | 58.0.23 | seam, and an escape hatch for `fetch` | none of its own; `ExpoFetchModule` waits on #663 (#673) | `registerRootComponent` and `Expo.fx` run unmodified; the global `fetch` and `expo/fetch` are React Native's own `fetch` (`src/fetch.ts`), without a streaming body |
+| `expo-asset` | 58.0.21 | seam | `ExpoAsset` | `downloadAsync` resolves a `file://` URL unchanged, decodes a base64 `data:` URL, and downloads any other once, off the JavaScript thread and following redirects, into `$XDG_CACHE_HOME/<app-id>/expo-asset`, as upstream's iOS module does |
 | `expo-constants` | 58.0.15 | seam | `ExponentConstants` | every required `NativeConstants` field for a bare desktop app; `deviceName` is the host name; `manifest`, and so `expoConfig`, is `null` until a `linux` build embeds the app config (#156); `systemFonts` is empty; `getWebViewUserAgentAsync` resolves `null` |
 | `expo-file-system` | 58.0.13 | seam | `FileSystem` | `File`, `Directory` and `Paths` over `makeSharedObjectClass` (#663): `Paths.document` is `$XDG_DATA_HOME/<app-id>/Documents`, `Paths.cache` is `$XDG_CACHE_HOME/<app-id>`; existence, size, create, delete, text, base64 and bytes reads and writes, copy, move and listing, with the asynchronous methods' file work on a worker thread; file handles, downloads, uploads, watching, digests, pickers and previews are absent; `Paths.join` needs the WHATWG `URL` `expo`'s runtime installs |
 

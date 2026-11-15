@@ -311,6 +311,8 @@ target_link_libraries(rnl_core_tests PRIVATE react_renderer_element)
 # #79: the libcurl HTTP client, against a loopback server inside the test. Only this binary compiles it, because
 # only this one is scored for coverage.
 target_sources(rnl_core_tests PRIVATE CurlHttpClientTest.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../src/CurlHttpClient.cpp)
+# #156: expo-asset's downloads, over that client, against the same loopback server.
+target_sources(rnl_core_tests PRIVATE ExpoAssetTest.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../src/ExpoAsset.cpp)
 target_include_directories(rnl_core_tests PRIVATE ${REACT_CXX_PLATFORM_DIR})
 target_link_libraries(rnl_core_tests PRIVATE CURL::libcurl)
 

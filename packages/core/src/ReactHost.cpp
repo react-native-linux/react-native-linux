@@ -259,6 +259,12 @@ SQLiteDatabases& ReactHost::sqliteDatabases() noexcept {
     return turboModuleRegistry_->sqliteDatabases();
 }
 
+ExpoAssetDownloads& ReactHost::expoAssetDownloads() noexcept {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    return turboModuleRegistry_->expoAssetDownloads();
+}
+
 FileSystemHost& ReactHost::fileSystem() noexcept {
     react_native_assert(std::this_thread::get_id() == owningThread_);
 

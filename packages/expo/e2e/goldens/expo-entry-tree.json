@@ -1,0 +1,24 @@
+[
+  {
+    "frame": {
+      "width": 240,
+      "height": 120,
+      "x": 40,
+      "y": 40
+    },
+    "testID": "expo-entry",
+    "componentName": "View",
+    "tag": 6
+  },
+  {
+    "text": "registerRootComponent",
+    "frame": {
+      "width": 200,
+      "height": 24,
+      "y": 56,
+      "x": 56
+    },
+    "componentName": "Paragraph",
+    "tag": 4
+  }
+]

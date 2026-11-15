@@ -25,6 +25,7 @@
       "ignoreDependencies": [
         "@babel/runtime",
         "@react-native-linux/enriched-markdown",
+        "@react-native-linux/expo",
         "@react-native-linux/gesture-handler",
         "@react-native-linux/reanimated",
         "deep-equal",
@@ -38,7 +39,7 @@
     },
     "packages/expo": {
       "project": ["src/**/*.ts"],
-      "ignoreDependencies": ["expo-file-system", "expo-modules-core", "whatwg-url-minimum"]
+      "ignoreDependencies": ["expo-asset", "expo-file-system", "expo-modules-core", "whatwg-url-minimum"]
     },
     "packages/gesture-handler": {
       "project": ["src/**/*.ts"],

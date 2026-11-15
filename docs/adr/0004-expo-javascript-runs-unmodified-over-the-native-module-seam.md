@@ -141,7 +141,11 @@ its issue proved it.
    which React Native's own `URL` silently ignores, so `new File(Paths.document, 'name')` names the document
    directory itself. `expo`'s runtime (`expo/src/winter`) installs `whatwg-url-minimum`'s `URL` in every app that
    imports `expo`, as the flagship does; the e2e, which does not import `expo`, installs the same `URL` itself.
-   `expo-audio` and `expo-video` reuse `makeSharedObjectClass` when they land.
+   `expo-audio` and `expo-video` reuse `makeSharedObjectClass` when they land, and so does `expo`'s own
+   `ExpoFetchModule`: `expo/fetch` constructs its `NativeRequest` and extends its `NativeResponse`, and `Expo.fx`
+   installs that `fetch` as the global one. Until it lands
+   ([#673](https://github.com/react-native-linux/react-native-linux/issues/673)), the escape hatch below keeps React
+   Native's own `fetch`.
 
 ### The module registry
 
@@ -172,8 +176,17 @@ delivery. The first module with events adds an e2e that delivers one from native
 The seam is the default for every module. A package alias in `packages/cli/src/package-aliases.ts`, from the
 upstream package to a subpath of `@react-native-linux/expo`, is the escape hatch for a module whose JavaScript
 itself has to differ on Linux, not merely its native module. An escape-hatch alias leaves `<package>/package.json`
-resolving to the upstream package, because tooling reads it. No module needs the escape hatch yet, so it has no code;
-it lands with its first consumer, and the module's row in `packages/expo/README.md` says which way it went and why.
+resolving to the upstream package, because tooling reads it. The module's row in `packages/expo/README.md` says which
+way it went and why.
+
+The first escape hatch is a stopgap rather than a module whose JavaScript must differ: `expo`'s `fetch`, whose native
+module is #673's, and without which every application that imports `expo` loses the global `fetch` at its first
+call. Upstream reaches the file relatively (`Expo.fx`'s runtime calls `require('./fetch')`), which no package alias
+sees, so `linuxPackageSubstituteIndex` in `packages/cli/src/package-overlays.ts` resolves the resolved file
+`expo/build/winter/fetch/index` again as `@react-native-linux/expo/fetch`, React Native's own `fetch`, once the
+application installs that package. #673 removes it. Upstream's own switch, `EXPO_PUBLIC_USE_RN_FETCH`, is not used:
+it is inlined from the Metro process's environment, so one dev server bundling for Linux, iOS and Android would
+switch all three.
 
 ### The boundary: what a native module of ours answers
 
@@ -259,10 +272,15 @@ Any one of these reopens the question in a new ADR:
 
 - #156 lands module by module: a C++ TurboModule under the Expo name, and an e2e that runs the real upstream package
   over it.
-- `expo` itself (`registerRootComponent`, `Expo.fx`) runs over the same seam once the native modules it reaches are
-  registered or optional; it is the next package to prove.
-- `packages/expo` (`@react-native-linux/expo`) holds the per-module table, the e2e scenarios and the surface lists,
-  and no runtime code until the first escape hatch. Its e2e installs the upstream packages; `pnpm-workspace.yaml`
+- `expo` itself (`registerRootComponent`, `Expo.fx`) runs over the same seam, proved by the `expo-entry` e2e. Of the
+  native modules it reaches as it loads, `ExponentConstants` and `ExpoAsset` are registered, `ExpoGo`, `ExpoUpdates`
+  and `EXDevLauncher` are optional lookups that answer as a bare app, and `ExpoFetchModule` is the escape hatch above.
+  A development bundle also reaches `ExpoKeepAwake`, through a lookup upstream catches. The e2e bundles through this
+  platform's Metro config and Babel preset; the same entry bundled through `expo/metro-config` and
+  `babel-preset-expo`, as an Expo application bundles, is
+  [#687](https://github.com/react-native-linux/react-native-linux/issues/687).
+- `packages/expo` (`@react-native-linux/expo`) holds the per-module table, the e2e scenarios, the surface lists and
+  the escape hatches' runtime code. Its e2e installs the upstream packages; `pnpm-workspace.yaml`
   marks `expo-constants`' `expo` peer optional because its JavaScript imports only types from it.
 - The upstream `expo-modules-autolinking` one-liner is still filed under
   [#160](https://github.com/react-native-linux/react-native-linux/issues/160), because discovery costs nothing and

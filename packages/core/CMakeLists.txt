@@ -857,6 +857,8 @@ add_library(rnl_react_core STATIC
     src/CurlHttpClient.cpp
     src/DimensionsSource.cpp
     src/EditorModel.cpp
+    src/ExpoAsset.cpp
+    src/ExpoAssetModule.cpp
     src/ExpoFileSystem.cpp
     src/ExpoFileSystemModule.cpp
     src/ExpoSQLite.cpp
