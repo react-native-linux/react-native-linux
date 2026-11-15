@@ -48,8 +48,9 @@ constexpr std::chrono::milliseconds kQuiescenceBudget{5000};
 
 constexpr char kTokenizeProbe[] = R"JAVASCRIPT(
 const highlights = globalThis.nativeModuleProxy.T3Highlights;
+const OriginalArrayBuffer = ArrayBuffer;
 const pairs = (buffer) =>
-  buffer instanceof ArrayBuffer ? `[${Array.from(new Uint32Array(buffer)).join(',')}]` : String(buffer);
+  buffer instanceof OriginalArrayBuffer ? `[${Array.from(new Uint32Array(buffer)).join(',')}]` : String(buffer);
 const errorOf = (call) => { try { return `returned ${pairs(call())}`; } catch (error) { return error.message; } };
 
 globalThis.tokenizeTrace = [
@@ -62,6 +63,10 @@ globalThis.tokenizeTrace = [
   pairs(highlights.tokenize('x', 1.5)),
   pairs(highlights.tokenize('x', NaN)),
   errorOf(() => highlights.tokenize('x')),
+  errorOf(() => {
+    globalThis.ArrayBuffer = function OneByteArrayBuffer() { return new OriginalArrayBuffer(1); };
+    try { return highlights.tokenize('ab', 7); } finally { globalThis.ArrayBuffer = OriginalArrayBuffer; }
+  }),
 ].join(' | ');
 )JAVASCRIPT";
 
@@ -70,6 +75,8 @@ globalThis.tokenizeTrace = [
  * contract. The source reaches the lexer as UTF-8, so `é` counts two bytes. The records come back as an
  * `ArrayBuffer`, and an empty input gives an empty one. A lexer failure gives `undefined`, and so does a language
  * that is not a lexer ID, without calling the lexer. A missing argument throws instead of reading past the arguments.
+ * The records are copied into the buffer's own storage without calling JavaScript, so a replaced global `ArrayBuffer`
+ * that would hand back one byte neither truncates them nor lets the copy overflow it.
  */
 TEST(T3HighlightsModuleTest, TokenizesFromJavaScriptWithTheNitroContract) {
     facebook::react::registerCxxModuleToGlobalModuleMap(std::string(facebook::react::T3Highlights::kModuleName),
@@ -89,9 +96,10 @@ TEST(T3HighlightsModuleTest, TokenizesFromJavaScriptWithTheNitroContract) {
         trace.set_value(value.isString() ? value.getString(runtime).utf8(runtime) : "the probe never finished");
     });
 
-    EXPECT_EQ(trace.get_future().get(), "tokenize | [4,139] | [] | undefined | undefined | undefined | undefined"
-                                        " | undefined | T3Highlights.tokenize expects a source and a language");
-    EXPECT_EQ(lexedSources, (std::vector<std::string>{"\xc3\xa9\r\n", "", "fail"}));
+    EXPECT_EQ(trace.get_future().get(),
+              "tokenize | [4,139] | [] | undefined | undefined | undefined | undefined"
+              " | undefined | T3Highlights.tokenize expects a source and a language | returned [2,7]");
+    EXPECT_EQ(lexedSources, (std::vector<std::string>{"\xc3\xa9\r\n", "", "fail", "ab"}));
     EXPECT_FALSE(reactHost.hasReportedFatalError());
 }
 

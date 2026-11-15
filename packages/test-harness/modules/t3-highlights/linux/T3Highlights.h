@@ -12,9 +12,9 @@ namespace facebook::react {
  * contract: `(endUtf16, tokenId)` uint32 pairs in an `ArrayBuffer`, or `undefined` when the language is not a lexer
  * ID or the lexer cannot run. The lexer is the module's own `t3_highlights_tokenize`, the C that iOS and Android run.
  *
- * JavaScript thread only. The lexer's memory is process-global and not thread-safe (`t3_highlights.h`), and only
- * the JavaScript runtime holds TurboModules. The class is in `facebook::react` because the autolinking
- * registration names it there.
+ * Called on its runtime's thread. The lexer's memory is process-global and not thread-safe (`t3_highlights.h`), so one
+ * process-wide mutex serializes the lexer call and the copy of its records into the `ArrayBuffer`'s own storage. The
+ * class is in `facebook::react` because the autolinking registration names it there.
  */
 class T3Highlights final : public TurboModule {
 public:
