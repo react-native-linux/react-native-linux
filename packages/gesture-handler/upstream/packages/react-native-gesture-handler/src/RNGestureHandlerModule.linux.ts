@@ -52,6 +52,9 @@ export default {
     NodeManager.getHandler(handlerTag).setGestureConfig(newConfig);
   },
   updateGestureHandlerConfig(handlerTag: number, newConfig: Partial<Config>) {
+    if (!NodeManager.hasHandler(handlerTag)) {
+      return;
+    }
     NodeManager.getHandler(handlerTag).updateGestureConfig(newConfig);
   },
   getGestureHandlerNode(handlerTag: number) {

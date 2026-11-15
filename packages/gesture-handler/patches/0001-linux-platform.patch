@@ -1,9 +1,9 @@
 diff --git a/packages/react-native-gesture-handler/src/RNGestureHandlerModule.linux.ts b/packages/react-native-gesture-handler/src/RNGestureHandlerModule.linux.ts
 new file mode 100644
-index 0000000..9696ae1
+index 0000000..c33a25b
 --- /dev/null
 +++ b/packages/react-native-gesture-handler/src/RNGestureHandlerModule.linux.ts
-@@ -0,0 +1,79 @@
+@@ -0,0 +1,82 @@
 +import type React from 'react';
 +
 +import type { ActionType } from './ActionType';
@@ -58,6 +58,9 @@ index 0000000..9696ae1
 +    NodeManager.getHandler(handlerTag).setGestureConfig(newConfig);
 +  },
 +  updateGestureHandlerConfig(handlerTag: number, newConfig: Partial<Config>) {
++    if (!NodeManager.hasHandler(handlerTag)) {
++      return;
++    }
 +    NodeManager.getHandler(handlerTag).updateGestureConfig(newConfig);
 +  },
 +  getGestureHandlerNode(handlerTag: number) {
@@ -171,12 +174,13 @@ index 7be1516..50ed40a 100644
        )(
 diff --git a/packages/react-native-gesture-handler/src/web/tools/GestureHandlerLinuxDelegate.ts b/packages/react-native-gesture-handler/src/web/tools/GestureHandlerLinuxDelegate.ts
 new file mode 100644
-index 0000000..47d2621
+index 0000000..48d6cd3
 --- /dev/null
 +++ b/packages/react-native-gesture-handler/src/web/tools/GestureHandlerLinuxDelegate.ts
-@@ -0,0 +1,107 @@
+@@ -0,0 +1,113 @@
 +import type IGestureHandler from '../handlers/IGestureHandler';
 +import type EventManager from './EventManager';
++import GestureHandlerOrchestrator from './GestureHandlerOrchestrator';
 +import type {
 +  GestureHandlerDelegate,
 +  MeasureResult,
@@ -213,6 +217,11 @@ index 0000000..47d2621
 +  }
 +
 +  detach(): void {
++    // The router keeps dispatching a captured pointer to this view until it lifts, and the orchestrator never cleans
++    // a handler that detach already returned to UNDETERMINED: without both, the old pointer reaches a handler with no
++    // props, and the next attach starts with that pointer still tracked.
++    this.eventManagers.forEach((manager) => manager.setEnabled(false));
++    GestureHandlerOrchestrator.instance.dropHandler(this.gestureHandler);
 +    this.eventManagers = [];
 +    this.forgetView();
 +  }

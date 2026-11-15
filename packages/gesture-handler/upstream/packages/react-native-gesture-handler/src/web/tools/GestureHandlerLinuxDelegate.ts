@@ -1,5 +1,6 @@
 import type IGestureHandler from '../handlers/IGestureHandler';
 import type EventManager from './EventManager';
+import GestureHandlerOrchestrator from './GestureHandlerOrchestrator';
 import type {
   GestureHandlerDelegate,
   MeasureResult,
@@ -37,6 +38,11 @@ export class GestureHandlerLinuxDelegate
   }
 
   detach(): void {
+    // The router keeps dispatching a captured pointer to this view until it lifts, and the orchestrator never cleans
+    // a handler that detach already returned to UNDETERMINED: without both, the old pointer reaches a handler with no
+    // props, and the next attach starts with that pointer still tracked.
+    this.eventManagers.forEach((manager) => manager.setEnabled(false));
+    GestureHandlerOrchestrator.instance.dropHandler(this.gestureHandler);
     this.eventManagers = [];
     this.forgetView();
   }
