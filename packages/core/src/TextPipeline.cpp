@@ -30,6 +30,7 @@
 #include "modules/skparagraph/include/ParagraphBuilder.h"
 #include "modules/skparagraph/include/ParagraphStyle.h"
 #include "modules/skparagraph/include/TextStyle.h"
+#include "modules/skparagraph/include/TypefaceFontProvider.h"
 #include "modules/skunicode/include/SkUnicode.h"
 #include "modules/skunicode/include/SkUnicode_icu.h"
 
@@ -165,26 +166,32 @@ void reportGenericFontFamilyResolution(const std::string& family, const SkString
     }
 }
 
+struct ResolvedFaceNames {
+    SkString family;
+    SkString postScriptName;
+};
+
 /**
- * What `fontCollection` resolves `attributes.fontFamily` to, or an empty `SkString` if nothing did — shared by
+ * The names of the face `fontCollection` resolves `attributes.fontFamily` to, both empty if nothing did — shared by
  * `FontconfigGeneric` and `Named` requests, which differ only in what they do with the answer.
  */
-SkString resolveRequestedFamilyName(const facebook::react::TextAttributes& attributes,
-                                    skia::textlayout::FontCollection& fontCollection) {
+ResolvedFaceNames resolveRequestedFace(const facebook::react::TextAttributes& attributes,
+                                       skia::textlayout::FontCollection& fontCollection) {
     const std::vector<SkString> requested{SkString{attributes.fontFamily}};
     const std::vector<sk_sp<SkTypeface>> resolved = fontCollection.findTypefaces(requested, toFontStyle(attributes));
-    SkString resolvedFamily;
+    ResolvedFaceNames names;
 
     if (!resolved.empty() && resolved.front() != nullptr) {
-        resolved.front()->getFamilyName(&resolvedFamily);
+        resolved.front()->getFamilyName(&names.family);
+        resolved.front()->getPostScriptName(&names.postScriptName);
     }
 
-    return resolvedFamily;
+    return names;
 }
 
 std::vector<SkString> resolveGenericFamily(const facebook::react::TextAttributes& attributes,
                                            skia::textlayout::FontCollection& fontCollection) {
-    const SkString resolvedFamily = resolveRequestedFamilyName(attributes, fontCollection);
+    const SkString resolvedFamily = resolveRequestedFace(attributes, fontCollection).family;
 
     if (!resolvedFamily.isEmpty()) {
         reportGenericFontFamilyResolution(attributes.fontFamily, resolvedFamily);
@@ -195,10 +202,11 @@ std::vector<SkString> resolveGenericFamily(const facebook::react::TextAttributes
 
 std::vector<SkString> resolveNamedFamily(const facebook::react::TextAttributes& attributes,
                                          skia::textlayout::FontCollection& fontCollection) {
-    const SkString resolvedFamily = resolveRequestedFamilyName(attributes, fontCollection);
+    const ResolvedFaceNames resolved = resolveRequestedFace(attributes, fontCollection);
 
-    if (!resolvedFamily.equals(attributes.fontFamily.c_str())) {
-        reportUnresolvedFontFamily(attributes.fontFamily, resolvedFamily);
+    if (!resolved.family.equals(attributes.fontFamily.c_str()) &&
+        !resolved.postScriptName.equals(attributes.fontFamily.c_str())) {
+        reportUnresolvedFontFamily(attributes.fontFamily, resolved.family);
     }
 
     return {SkString{attributes.fontFamily}};
@@ -823,6 +831,34 @@ layoutParagraphForField(const facebook::react::AttributedString& attributedStrin
 
 std::atomic<uint64_t> paragraphLayoutCounter{0};
 
+/**
+ * Every face in `fontDirectory`, under its family name and under its PostScript name. Expo's `expo-font` config
+ * plugin embeds an app's fonts at build time, and the app then names each face the way iOS resolves it, by
+ * PostScript name: T3 Code asks for `DMSans-Medium`, a face of the family `DM Sans`. The directory manager alone
+ * answers only the family.
+ */
+sk_sp<SkFontMgr> makeApplicationFontManager(const std::string& fontDirectory) {
+    const sk_sp<SkFontMgr> directory = SkFontMgr_New_Custom_Directory(fontDirectory.c_str());
+    const sk_sp<skia::textlayout::TypefaceFontProvider> provider = sk_make_sp<skia::textlayout::TypefaceFontProvider>();
+
+    for (int familyIndex = 0; familyIndex < directory->countFamilies(); ++familyIndex) {
+        const sk_sp<SkFontStyleSet> faces = directory->createStyleSet(familyIndex);
+
+        for (int faceIndex = 0; faceIndex < faces->count(); ++faceIndex) {
+            const sk_sp<SkTypeface> typeface = faces->createTypeface(faceIndex);
+            SkString postScriptName;
+
+            provider->registerTypeface(typeface);
+
+            if (typeface->getPostScriptName(&postScriptName)) {
+                provider->registerTypeface(typeface, postScriptName);
+            }
+        }
+    }
+
+    return provider;
+}
+
 } // namespace
 
 std::unique_ptr<skia::textlayout::Paragraph>
@@ -839,8 +875,7 @@ void registerApplicationFonts(const std::string& fontDirectory) {
     TextPipelineState& state = textPipelineState();
     const std::lock_guard<std::mutex> guard(state.mutex);
 
-    state.applicationFontManager =
-        fontDirectory.empty() ? nullptr : SkFontMgr_New_Custom_Directory(fontDirectory.c_str());
+    state.applicationFontManager = fontDirectory.empty() ? nullptr : makeApplicationFontManager(fontDirectory);
     state.fontCollection->setDynamicFontManager(state.applicationFontManager);
     state.fontCollection->clearCaches();
     state.paragraphLayoutCache.clear();

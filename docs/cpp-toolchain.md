@@ -3572,7 +3572,13 @@ beside the JavaScript bundle, React Native's usual convention.
   (`TextGeometry.h`) makes it the `FontCollection`'s dynamic font manager, which Skia consults ahead of the
   vendored faces and fontconfig, so an app's `fontFamily` resolves to its own file.
 - A source that is a URL, such as a Metro dev server, has no such directory and registers nothing.
-- `ApplicationFontsTest` proves both cases.
+- Each face also answers to its PostScript name, the way iOS resolves a font. Expo's `expo-font` config plugin
+  embeds an app's fonts at build time, and the app then names each face that way: T3 Code asks for
+  `DMSans-Medium`, a face of the family `DM Sans`. `registerApplicationFonts` registers every face of the
+  directory into a `TypefaceFontProvider` under both names, and the #70 diagnostic accepts either.
+- `ApplicationFontsTest` proves all three, and that a misspelled name still reports.
+- Expo's runtime loading, `useFonts` and `Font.loadAsync`, goes through the `ExpoFontLoader` native module, which
+  needs Expo-module support first.
 - Still open: the CLI copying a project's fonts into that directory when it packages the app, which is the CLI
   lane's, and an icon-font golden, which needs a pinned icon font.
 
