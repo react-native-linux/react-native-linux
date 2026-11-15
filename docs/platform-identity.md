@@ -184,15 +184,18 @@ building the candidate list without the `.native` step:
 ```ts
 resolveOriginAwareCandidates(
   {
-    moduleName: "./WorkletsModule/NativeWorklets",
-    originModulePath: "<...>/react-native-worklets/src/index.ts",
+    moduleName: "./mutables",
+    originModulePath: "<...>/react-native-reanimated/src/index.ts",
     platform: "linux",
   },
   ["ts", "js"],
 );
-// → ["<...>/WorkletsModule/NativeWorklets.linux.ts", "<...>/WorkletsModule/NativeWorklets.ts",
-//    "<...>/WorkletsModule/NativeWorklets.linux.js", "<...>/WorkletsModule/NativeWorklets.js"]
+// → ["<...>/mutables.linux.ts", "<...>/mutables.ts", "<...>/mutables.linux.js", "<...>/mutables.js"]
 ```
+
+Worklets has left the rule: since core registers the `WorkletsModule` host (#136), its `.native` files talk to a
+real native module, so a linux bundle takes them like any other package's. Only Reanimated still skips `.native`,
+until its own native module exists (#139).
 
 Every other request — a different platform, a package (non-relative) import, or any origin outside those two
 packages — falls through to `resolvePlatformCandidates` and keeps the ordinary `.linux` → `.native` → default chain
@@ -212,8 +215,8 @@ and Worklets `0.10.0`:
 - `react-native-worklets/src` ships **24** `.native.ts` files (`runtimes`, `threads`, all of `memory/**`,
   `WorkletsModule/NativeWorklets.native.ts`, …) beside unsuffixed siblings that are the JavaScript implementation.
   The published `lib/module/**` has the same split in `.js`. Metro treats `linux` as a native platform, so without
-  the shim every one of those 24 resolves to the native file, which needs a Worklets JSI host that does not exist
-  on Linux yet (#134–#138).
+  the shim every one of those 24 resolves to the native file, which needed a Worklets JSI host that Linux did not
+  have until #136.
 - `react-native-reanimated/src` ships exactly **one** `.native.ts`
   (`specs/SharedTransitionBoundaryProvider.native.ts`); Reanimated's own web/native split is a runtime branch, not
   a file suffix — see the next subsection.
@@ -237,8 +240,8 @@ published 4.6.0 package returns nothing. `IS_WINDOWS` survives only as a `@knipI
 A file-suffix split is precisely what this shim steers, so at 4.6.0 the rung is the shim and nothing else — the
 package's patch queue is empty for that reason.
 
-`react-native-worklets` still carries its own split (24 `.native.ts` files), reached by the same rule via the
-origin module path.
+`react-native-worklets` still carries its own split (24 `.native.ts` files), and on linux it now takes the native
+side, served by core's `WorkletsModule` host.
 
 Upstream's own Windows fallback (`shouldUseWindowsJsFallback` in `metro-config/index.js`, PR #10117) merged after
 4.6.0 was cut and first ships in 4.7.0. Ask 5 of the RFC in `docs/research/animation-on-linux.md` Appendix A (#145)
@@ -253,7 +256,7 @@ Unit only, against a committed fixture tree at `packages/cli/test-fixtures/reani
 
 | Origin module | Request | Resolves to | Proves |
 | --- | --- | --- | --- |
-| `react-native-worklets/src/index.ts` | `./worklets-module/native-worklets` | `native-worklets.ts` | the `.native` sibling is skipped inside Worklets |
+| `react-native-worklets/src/index.ts` | `./worklets-module/native-worklets` | `native-worklets.native.ts` | Worklets keeps `.native`: core serves its native module |
 | `react-native-reanimated/src/index.ts` | `./hook/use-animated-style` | `use-animated-style.ts` | the same inside Reanimated |
 | `react-native-reanimated/src/index.ts` | `./hook/use-shared-value` | `use-shared-value.linux.ts` | `.linux` still wins — upstream's "Keep `.windows` resolution" |
 | `react-native-gesture-handler/src/index.ts` | `./gesture` | `gesture.native.ts` | every other package keeps preferring `.native` |

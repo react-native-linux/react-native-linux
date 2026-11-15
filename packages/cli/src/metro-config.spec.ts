@@ -153,14 +153,14 @@ describe("shouldUseJavaScriptFallback", () => {
     expect(shouldUseJavaScriptFallback(request)).toBe(true);
   });
 
-  it("claims a relative import made from inside react-native-worklets on linux", () => {
+  it("leaves a relative import made from inside react-native-worklets alone, now that its native host exists", () => {
     const request = fallbackRequest("./worklets-module/native-worklets", workletsEntry, "linux");
 
-    expect(shouldUseJavaScriptFallback(request)).toBe(true);
+    expect(shouldUseJavaScriptFallback(request)).toBe(false);
   });
 
   it("leaves relative imports of the same packages alone on other native platforms", () => {
-    const request = fallbackRequest("./worklets-module/native-worklets", workletsEntry, "android");
+    const request = fallbackRequest("./hook/use-animated-style", reanimatedEntry, "android");
 
     expect(shouldUseJavaScriptFallback(request)).toBe(false);
   });
@@ -179,14 +179,14 @@ describe("shouldUseJavaScriptFallback", () => {
 });
 
 describe("resolveOriginAwareCandidates", () => {
-  it("skips the native suffix, and keeps the linux one, inside react-native-worklets", () => {
-    const request = fallbackRequest("./worklets-module/native-worklets", workletsEntry, "linux");
+  it("skips the native suffix, and keeps the linux one, inside react-native-reanimated", () => {
+    const request = fallbackRequest("./hook/use-animated-style", reanimatedEntry, "linux");
 
     expect(resolveOriginAwareCandidates(request, ["ts", "js"])).toEqual([
-      fallbackModulePath("react-native-worklets/src/worklets-module/native-worklets.linux.ts"),
-      fallbackModulePath("react-native-worklets/src/worklets-module/native-worklets.ts"),
-      fallbackModulePath("react-native-worklets/src/worklets-module/native-worklets.linux.js"),
-      fallbackModulePath("react-native-worklets/src/worklets-module/native-worklets.js"),
+      fallbackModulePath("react-native-reanimated/src/hook/use-animated-style.linux.ts"),
+      fallbackModulePath("react-native-reanimated/src/hook/use-animated-style.ts"),
+      fallbackModulePath("react-native-reanimated/src/hook/use-animated-style.linux.js"),
+      fallbackModulePath("react-native-reanimated/src/hook/use-animated-style.js"),
     ]);
   });
 
@@ -212,12 +212,12 @@ describe("resolveOriginAwareCandidates", () => {
 });
 
 describe("resolveOriginAwareCandidates against the fallback fixture tree", () => {
-  it("resolves a worklets module to its unsuffixed file even though a native sibling exists", () => {
+  it("resolves a worklets module to its native file, the one that talks to core's WorkletsModule host", () => {
     const request = fallbackRequest("./worklets-module/native-worklets", workletsEntry, "linux");
     const candidates = resolveOriginAwareCandidates(request, ["ts"]);
 
     expect(resolveAgainstFilesystem(candidates, existsSync)).toBe(
-      fallbackModulePath("react-native-worklets/src/worklets-module/native-worklets.ts"),
+      fallbackModulePath("react-native-worklets/src/worklets-module/native-worklets.native.ts"),
     );
   });
 

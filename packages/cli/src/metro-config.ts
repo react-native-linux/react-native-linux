@@ -227,7 +227,8 @@ const resolveAgainstFilesystem = (
   exists: (candidatePath: string) => boolean,
 ): string | null => candidates.find((candidatePath) => exists(candidatePath)) ?? null;
 
-const javaScriptFallbackPackageNames: readonly string[] = ["react-native-reanimated", "react-native-worklets"];
+// Worklets left this list when core began registering its WorkletsModule host (#136), so its `.native` files resolve.
+const javaScriptFallbackPackageNames: readonly string[] = ["react-native-reanimated"];
 
 const relativeModulePrefix = ".";
 
