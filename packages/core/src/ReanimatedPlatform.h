@@ -17,7 +17,7 @@ namespace react_native_linux {
  * | `requestRender` | `frames`, dispatched once per frame on worklets' UI thread with the frame's timestamp |
  * | `getAnimationTimestamp` | `std::chrono::steady_clock`, the clock frame timestamps are read from |
  * | `synchronouslyUpdateUIPropsFunction` | `IMountingManager::synchronouslyUpdateViewOnUIThread` |
- * | `maybeFlushUIUpdatesQueueFunction` | a frame request; the module proxy host (#140) performs operations there |
+ * | `maybeFlushUIUpdatesQueueFunction` | a frame request; unused on the animation backend path (#140) |
  * | `registerSensor`, `subscribeForKeyboardEvents` | unavailable: `-1`, as upstream's `DummyReanimatedModuleProxy` |
  * | `unregisterSensor`, `unsubscribeFromKeyboardEvents` | nothing to undo |
  * | `attachPseudoSelector`, `detachPseudoSelector` | nothing until pointer state reaches them (#143) |

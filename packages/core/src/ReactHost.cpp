@@ -4,6 +4,7 @@
 #include "ConsoleBinding.h"
 #include "CurlHttpClient.h"
 #include "ReactNativeFeatureFlagsOverridesLinux.h"
+#include "ReanimatedModule.h"
 #include "WorkletsModule.h"
 
 #ifdef RNL_ENABLE_TEXT_GEOMETRY
@@ -187,7 +188,11 @@ ReactHost::~ReactHost() noexcept {
 
     // #136: worklets' proxy and UI runtime go first, on the JavaScript thread while it still runs and while this
     // frame thread runs no frame, so a worklet in flight finds the React Native runtime marked dead, not destroyed.
-    javaScriptThread_->runOnQueueSync([&worklets = turboModuleRegistry_->worklets()]() { worklets.invalidate(); });
+    // Reanimated's proxy (#140) holds values of that UI runtime, so it goes before it.
+    javaScriptThread_->runOnQueueSync([&registry = *turboModuleRegistry_]() {
+        registry.reanimated().invalidate();
+        registry.worklets().invalidate();
+    });
     javaScriptThread_->quitSynchronous();
     animationFrameQueue_.clear();
     turboModuleRegistry_.reset();

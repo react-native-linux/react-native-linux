@@ -35,9 +35,11 @@ namespace react_native_linux {
  * fire waits for the next `tick`.
  *
  * Threading contract: construction, `tick`, `hasPendingWork` and `uiWorkletRuntime` run on the frame thread, and
- * the three JavaScript methods and `invalidate` on the JavaScript thread. `ReactHost` calls `invalidate` on the
- * JavaScript thread before it quits it, while the frame thread waits, so the proxy and the UI worklet runtime are
- * destroyed while the React Native runtime is still alive and no frame is running.
+ * the three JavaScript methods and `invalidate` on the JavaScript thread. Reanimated's `installTurboModule` also
+ * reads `uiWorkletRuntime`, `uiScheduler` and `animationFrames` on the JavaScript thread, after worklets' own
+ * `installTurboModule` set them there; the scheduler and the queue are safe from any thread. `ReactHost` calls
+ * `invalidate` on the JavaScript thread before it quits it, while the frame thread waits, so the proxy and the UI
+ * worklet runtime are destroyed while the React Native runtime is still alive and no frame is running.
  */
 class LinuxWorkletsModule final : public facebook::react::TurboModule {
 public:
@@ -50,6 +52,10 @@ public:
 
     /** The UI worklet runtime once `installTurboModule` has run, or null. */
     std::shared_ptr<worklets::WorkletRuntime> uiWorkletRuntime() const;
+
+    /** Reanimated's host (#140) builds its proxy on the same UI scheduler and frame queue as worklets. */
+    std::shared_ptr<LinuxUIScheduler> uiScheduler() const;
+    AnimationFrameQueue& animationFrames() noexcept;
 
     void invalidate();
 

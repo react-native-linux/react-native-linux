@@ -1341,18 +1341,41 @@ are generated from the vendored spec at build time by `scripts/codegen-spec.ts`.
 **The compile-only guard.** Linux defines neither `ANDROID` nor `__APPLE__`, so building `rnl_reanimated` is the
 guard: the native job's `dev` entry builds it on every pull request, React Native and Reanimated bumps included, and
 `next-minor.yml` builds it against the next React Native minor. An upstream two-way platform `#ifdef` fails the
-build instead of an animation. Nothing links the target yet; the module proxy host (#140) will.
+build instead of an animation. `rnl_react_core` links it for the module proxy host (#140).
 
-**Patches:** one, listed with its upstream ask in `packages/reanimated/README.md`. On a platform that is neither
+**Patches:** three, listed with their upstream asks in `packages/reanimated/README.md`. On a platform that is neither
 Android nor Apple, `SynchronouslyUpdateUIPropsFunction` takes Apple's `(int, const folly::dynamic&)` shape, which is
 `IMountingManager::synchronouslyUpdateViewOnUIThread`'s, and `applySynchronousUpdates` hands it the batch the Apple
-way instead of dropping it.
+way instead of dropping it. And `LayoutAnimationsProxy_Legacy::startSurface` reads the mounting coordinator before
+taking its own mutex, the order `pullTransaction` takes them in, and `OperationsLoop` holds the updates registry
+manager weakly, which breaks the ownership cycle that leaked every proxy's Fabric graph (#140).
 
 `makePlatformDepMethodsHolder` (`src/ReanimatedPlatform.*`) fills the platform contract. Its docblock is the one
 table of which members are real (`requestRender` on the frame queue, `getAnimationTimestamp` on `steady_clock`,
 synchronous props to the mounting manager, `maybeFlushUIUpdatesQueue` as a frame request) and which are stubs that
 throw an error naming themselves. `ReanimatedPlatformTest` in `rnl_core_tests` covers every member, inside the
 coverage gate.
+
+**The module proxy host (#140).** `LinuxReanimatedModule` (`src/ReanimatedModule.*`) is the `ReanimatedModule`
+TurboModule. Its `installTurboModule`, which Reanimated's JavaScript calls on import, builds the
+`ReanimatedModuleProxy` over worklets' UI runtime, UI scheduler and frame queue, attaches it to Fabric, which
+registers Reanimated's commit and mount hooks, and installs `__reanimatedModuleProxy`. The `UIManager` comes from the
+runtime's `UIManagerBinding`, and the mounting manager from the `ContextContainer`, where `FabricHost` publishes it.
+
+Reanimated is compiled with `USE_ANIMATION_BACKEND` on, and `ReanimatedModule.cpp` static_asserts it, so its whole
+frame loop is one callback on React Native's shared animation backend. `FabricHost::tickAnimations` runs it each
+frame, the backend applies the props it returns, and that callback is the frame's flush: upstream forbids
+`performOperations` on this path, so the host never calls it. On this path Reanimated's commit hook passes commits
+through and React Native's `AnimationBackendCommitHook` re-applies animated props to a React commit, so the two hooks
+never both write one tree. `ReanimatedModuleTest` in `rnl_core_hermes_tests` covers install, a transform reaching the
+scene with no commit, a React re-render during an animation, Reanimated leaving the backend when no UI-runtime loop
+re-arms it, an unmounted view's registry entries being freed, React commits and registry writes from JavaScript
+racing the frame thread under TSan, and an install that no UI-runtime frame sees half done. The `reanimated-timing`
+e2e scenario runs a stock `useSharedValue` + `withTiming` while the JavaScript thread is held, and compares the
+final frame against a golden.
+
+Worklets' UI runtime requests an animation frame from inside every frame it runs, by upstream design, so once
+Reanimated is installed its backend callback never goes idle and the frame clock ticks every frame. #671 owns that.
 
 ## React Native bump procedure (#58)
 

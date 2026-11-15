@@ -26,16 +26,21 @@ const FAILURE_EXIT_STATUS = 1;
  * been built, so without them `pnpm validate` passes on a fresh checkout and fails on a working one.
  */
 const excludedDirectoryNames = new Set(["node_modules", ".git", "coverage", "build", "third_party"]);
+/** Vendored upstream trees (`pnpm upstream`): their shell scripts are upstream's, as `_typos.toml` already treats them. */
+const vendoredUpstreamPattern = /^packages\/[^/]+\/upstream$/u;
 
-const findShellScriptPaths = (directoryPath: string): string[] => {
+const findShellScriptPaths = (directoryPath: string, rootPath: string): string[] => {
   const shellScriptPaths: string[] = [];
 
   for (const directoryEntry of readdirSync(directoryPath, { withFileTypes: true })) {
     const entryPath = path.join(directoryPath, directoryEntry.name);
-    const isExcludedDirectory = directoryEntry.isDirectory() && excludedDirectoryNames.has(directoryEntry.name);
+    const isExcludedDirectory =
+      directoryEntry.isDirectory() &&
+      (excludedDirectoryNames.has(directoryEntry.name) ||
+        vendoredUpstreamPattern.test(path.relative(rootPath, entryPath)));
 
     if (directoryEntry.isDirectory() && !isExcludedDirectory) {
-      shellScriptPaths.push(...findShellScriptPaths(entryPath));
+      shellScriptPaths.push(...findShellScriptPaths(entryPath, rootPath));
     } else if (directoryEntry.isFile() && path.extname(directoryEntry.name) === ".sh") {
       shellScriptPaths.push(entryPath);
     }
@@ -78,8 +83,6 @@ const runMetaCheck = (
   return { outcome: checkRun.status === SUCCESSFUL_EXIT_STATUS ? "passed" : "failed", toolName: metaCheck.toolName };
 };
 
-const repositoryRootPath = fileURLToPath(new URL("..", import.meta.url));
-
 const metaChecks: readonly MetaCheck[] = [
   {
     binaryName: "actionlint",
@@ -114,7 +117,8 @@ const metaChecks: readonly MetaCheck[] = [
   },
 ];
 
-const shellScriptPaths = findShellScriptPaths(repositoryRootPath);
+const repositoryRootPath = fileURLToPath(new URL("..", import.meta.url));
+const shellScriptPaths = findShellScriptPaths(repositoryRootPath, repositoryRootPath);
 const checkResults = metaChecks.map((metaCheck) => runMetaCheck(metaCheck, shellScriptPaths, repositoryRootPath));
 
 for (const checkResult of checkResults) {

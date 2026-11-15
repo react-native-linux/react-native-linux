@@ -74,6 +74,11 @@
       "type": "platform",
       "file": "src-linux/Libraries/Components/TextInput/upstream-text-input.d.ts",
       "issue": 577
+    },
+    {
+      "type": "platform",
+      "file": "src-linux/expo-modules-core/polyfill/index.linux.ts",
+      "issue": 662
     }
   ]
 }
