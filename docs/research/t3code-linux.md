@@ -88,7 +88,7 @@ so #155 and #641 also exclude the left-out modules from autolinking.
 | `expo-quick-actions` | home-screen shortcuts | nothing |
 | `expo-widgets`, `t3-widget-expiry`, `t3-subscription-widget` | home-screen widgets | nothing |
 | `@react-native-ai/apple` | Apple Intelligence | nothing |
-| `expo-audio`, `expo-keep-awake`, `t3-voice-transcription` | voice input | no microphone button; audio attachments open in the desktop's default application |
+| `expo-audio`, `expo-keep-awake`, `t3-voice-transcription` | voice input | no microphone button; audio attachments open in the desktop's default application; `ExpoKeepAwake` is registered and reports itself unavailable, so the import and expo's dev-only `withDevTools` load |
 | `expo-video` | inline video | video attachments open in the desktop's default application |
 | `expo-sensors` | device-preview motion | nothing |
 | `expo-camera` | QR pairing | the pairing link, typed or pasted |
@@ -216,7 +216,7 @@ transitive package.
 | `expo-camera` | `~58.0.14` | declined | #635 | QR pairing |
 | `expo-symbols` | `~58.0.4` | declined | #635 | SF Symbols in the shared AppSymbol |
 | `expo-audio` | `58.0.11` | declined | #635 | voice input and audio previews |
-| `expo-keep-awake` | `~58.0.3` | shimmed | `packages/expo/e2e/expo-startup-modules.json` | left out with voice input; `ExpoKeepAwake` reports itself unavailable, so expo's dev-only `withDevTools` and any import load |
+| `expo-keep-awake` | `~58.0.3` | declined | #635 | left out with voice input; ExpoKeepAwake is registered and reports itself unavailable so the import and withDevTools load |
 | `expo-video` | `58.0.13` | declined | #635 | video attachments |
 | `react-native-pdf-jsi` | `6.1.0` | declined | #635 | imported only by PdfPreview.android.tsx |
 

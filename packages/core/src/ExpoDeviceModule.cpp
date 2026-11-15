@@ -2,11 +2,11 @@
 
 #include <ReactCommon/CallInvoker.h>
 #include <ReactCommon/TurboModule.h>
-#include <ReactCommon/TurboModuleUtils.h>
 #include <array>
 #include <chrono>
 #include <climits>
 #include <cstddef>
+#include <filesystem>
 #include <fstream>
 #include <jsi/jsi.h>
 #include <memory>
@@ -16,6 +16,7 @@
 #include <sys/utsname.h>
 #include <unistd.h>
 #include <utility>
+#include <vector>
 
 namespace react_native_linux {
 namespace {
@@ -31,7 +32,7 @@ facebook::jsi::Value stringOrNull(facebook::jsi::Runtime& runtime, const std::op
     return facebook::jsi::String::createFromUtf8(runtime, value.value());
 }
 
-std::optional<std::string> firstLine(const char* path) {
+std::optional<std::string> firstLine(const std::filesystem::path& path) {
     std::ifstream stream(path);
     std::string line;
 
@@ -42,12 +43,16 @@ std::optional<std::string> firstLine(const char* path) {
     return line;
 }
 
-/** One `KEY=value` of os-release(5), unquoted: `/etc/os-release`, or `/usr/lib/os-release` when that is missing. */
-std::optional<std::string> osReleaseField(std::string_view key) {
-    std::ifstream stream("/etc/os-release");
+/** One `KEY=value` of os-release(5), unquoted, from the first of `roots` that has one; an empty value is `null`. */
+std::optional<std::string> osReleaseField(const std::vector<std::filesystem::path>& roots, std::string_view key) {
+    std::ifstream stream;
 
-    if (!stream.is_open()) {
-        stream.open("/usr/lib/os-release");
+    for (const std::filesystem::path& root : roots) {
+        stream.open(root / "os-release");
+
+        if (stream.is_open()) {
+            break;
+        }
     }
 
     const std::string prefix = std::string(key) + "=";
@@ -63,19 +68,14 @@ std::optional<std::string> osReleaseField(std::string_view key) {
             value = value.substr(1, value.size() - 2);
         }
 
-        return value;
+        return value.empty() ? std::nullopt : std::optional(value);
     }
 
     return std::nullopt;
 }
 
-facebook::jsi::Value resolvedWith(facebook::jsi::Runtime& runtime, facebook::jsi::Value value) {
-    return facebook::react::createPromiseAsJSIValue(
-        runtime, [&value](facebook::jsi::Runtime& /*promiseRuntime*/,
-                          const std::shared_ptr<facebook::react::Promise>& promise) { promise->resolve(value); });
-}
-
-facebook::jsi::Value constants(facebook::jsi::Runtime& runtime) {
+facebook::jsi::Value machineConstants(facebook::jsi::Runtime& runtime, const std::filesystem::path& dmiRoot,
+                                      const std::vector<std::filesystem::path>& osReleaseRoots) {
     std::array<char, HOST_NAME_MAX + 1> hostName{};
     utsname system{};
     facebook::jsi::Object constants(runtime);
@@ -85,17 +85,17 @@ facebook::jsi::Value constants(facebook::jsi::Runtime& runtime) {
     static_cast<void>(uname(&system));
     constants.setProperty(runtime, "isDevice", true);
     constants.setProperty(runtime, "brand", facebook::jsi::Value::null());
-    constants.setProperty(runtime, "manufacturer", stringOrNull(runtime, firstLine("/sys/class/dmi/id/sys_vendor")));
+    constants.setProperty(runtime, "manufacturer", stringOrNull(runtime, firstLine(dmiRoot / "sys_vendor")));
     constants.setProperty(runtime, "modelId", facebook::jsi::Value::null());
-    constants.setProperty(runtime, "modelName", stringOrNull(runtime, firstLine("/sys/class/dmi/id/product_name")));
+    constants.setProperty(runtime, "modelName", stringOrNull(runtime, firstLine(dmiRoot / "product_name")));
     constants.setProperty(runtime, "deviceYearClass", facebook::jsi::Value::null());
     constants.setProperty(runtime, "totalMemory",
                           static_cast<double>(sysconf(_SC_PHYS_PAGES)) * static_cast<double>(sysconf(_SC_PAGESIZE)));
-    constants.setProperty(
-        runtime, "osName",
-        facebook::jsi::String::createFromUtf8(runtime, osReleaseField("NAME").value_or(system.sysname)));
-    constants.setProperty(runtime, "osVersion", stringOrNull(runtime, osReleaseField("VERSION_ID")));
-    constants.setProperty(runtime, "osBuildId", stringOrNull(runtime, osReleaseField("BUILD_ID")));
+    constants.setProperty(runtime, "osName",
+                          facebook::jsi::String::createFromUtf8(
+                              runtime, osReleaseField(osReleaseRoots, "NAME").value_or(system.sysname)));
+    constants.setProperty(runtime, "osVersion", stringOrNull(runtime, osReleaseField(osReleaseRoots, "VERSION_ID")));
+    constants.setProperty(runtime, "osBuildId", stringOrNull(runtime, osReleaseField(osReleaseRoots, "BUILD_ID")));
     constants.setProperty(runtime, "osInternalBuildId", facebook::jsi::String::createFromUtf8(runtime, system.release));
     constants.setProperty(runtime, "deviceName", facebook::jsi::String::createFromUtf8(runtime, hostName.data()));
     constants.setProperty(runtime, "deviceType", kDesktopDeviceType);
@@ -106,13 +106,21 @@ facebook::jsi::Value constants(facebook::jsi::Runtime& runtime) {
     return constants;
 }
 
+facebook::jsi::Value resolvedWith(facebook::jsi::Runtime& runtime, const facebook::jsi::Value& value) {
+    const facebook::jsi::Object promise = runtime.global().getPropertyAsObject(runtime, "Promise");
+
+    return promise.getPropertyAsFunction(runtime, "resolve").callWithThis(runtime, promise, value);
+}
+
 class ExpoDeviceModule final : public facebook::react::TurboModule {
 public:
-    explicit ExpoDeviceModule(std::shared_ptr<facebook::react::CallInvoker> jsInvoker)
-        : TurboModule("ExpoDevice", std::move(jsInvoker)) {
-        methodMap_["getConstants"] = {0, [](facebook::jsi::Runtime& runtime, TurboModule& /*turboModule*/,
-                                            const facebook::jsi::Value* /*arguments*/,
-                                            size_t /*count*/) { return constants(runtime); }};
+    ExpoDeviceModule(std::shared_ptr<facebook::react::CallInvoker> jsInvoker, std::filesystem::path dmiRoot,
+                     std::vector<std::filesystem::path> osReleaseRoots)
+        : TurboModule("ExpoDevice", std::move(jsInvoker)), dmiRoot_(std::move(dmiRoot)),
+          osReleaseRoots_(std::move(osReleaseRoots)) {
+        methodMap_["getConstants"] = {
+            0, [](facebook::jsi::Runtime& runtime, TurboModule& turboModule, const facebook::jsi::Value* /*arguments*/,
+                  size_t /*count*/) { return static_cast<ExpoDeviceModule&>(turboModule).constants(runtime); }};
         methodMap_["getDeviceTypeAsync"] = {0, [](facebook::jsi::Runtime& runtime, TurboModule& /*turboModule*/,
                                                   const facebook::jsi::Value* /*arguments*/, size_t /*count*/) {
                                                 return resolvedWith(runtime, kDesktopDeviceType);
@@ -129,13 +137,22 @@ public:
                                                        return resolvedWith(runtime, geteuid() == 0);
                                                    }};
     }
+
+private:
+    facebook::jsi::Value constants(facebook::jsi::Runtime& runtime) const {
+        return machineConstants(runtime, dmiRoot_, osReleaseRoots_);
+    }
+
+    std::filesystem::path dmiRoot_;
+    std::vector<std::filesystem::path> osReleaseRoots_;
 };
 
 } // namespace
 
 std::shared_ptr<facebook::react::TurboModule>
-makeExpoDeviceModule(std::shared_ptr<facebook::react::CallInvoker> jsInvoker) {
-    return std::make_shared<ExpoDeviceModule>(std::move(jsInvoker));
+makeExpoDeviceModule(std::shared_ptr<facebook::react::CallInvoker> jsInvoker, std::filesystem::path dmiRoot,
+                     std::vector<std::filesystem::path> osReleaseRoots) {
+    return std::make_shared<ExpoDeviceModule>(std::move(jsInvoker), std::move(dmiRoot), std::move(osReleaseRoots));
 }
 
 } // namespace react_native_linux

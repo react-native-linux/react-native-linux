@@ -1,17 +1,25 @@
 #include "Activation.h"
+#include "ExpoDeviceModule.h"
 #include "OnJavaScriptThread.h"
 #include "ReactHost.h"
 
+#include <ReactCommon/TurboModule.h>
 #include <array>
 #include <chrono>
 #include <climits>
 #include <cstdio>
 #include <cxxreact/JSBigString.h>
+#include <filesystem>
+#include <folly/dynamic.h>
+#include <folly/json.h>
+#include <fstream>
 #include <gtest/gtest.h>
+#include <hermes/hermes.h>
 #include <memory>
 #include <string>
 #include <sys/utsname.h>
 #include <unistd.h>
+#include <vector>
 
 namespace react_native_linux {
 namespace {
@@ -43,8 +51,8 @@ std::string settledTrace(const std::string& probe) {
     return settledTrace(reactHost, probe);
 }
 
-/** What a shell prints for `command`, without its trailing newline, as a JSON string, or `null` when it is empty. */
-std::string shellOutputAsJson(const std::string& command) {
+/** What a shell prints for `command`, without its trailing newline, or `null` when it is empty. */
+folly::dynamic shellOutput(const std::string& command) {
     std::array<char, PATH_MAX> buffer{};
     std::string output;
     FILE* pipe = popen(command.c_str(), "r");
@@ -59,7 +67,85 @@ std::string shellOutputAsJson(const std::string& command) {
         output.pop_back();
     }
 
-    return output.empty() ? "null" : "\"" + output + "\"";
+    return output.empty() ? folly::dynamic(nullptr) : folly::dynamic(output);
+}
+
+/** `ExpoDevice.getConstants()` over `dmiRoot` and `osReleaseRoots`, through `JSON.stringify` and back. */
+folly::dynamic deviceConstants(const std::filesystem::path& dmiRoot,
+                               const std::vector<std::filesystem::path>& osReleaseRoots) {
+    const std::shared_ptr<facebook::jsi::Runtime> runtime = facebook::hermes::makeHermesRuntime();
+    const std::shared_ptr<facebook::react::TurboModule> device = makeExpoDeviceModule(nullptr, dmiRoot, osReleaseRoots);
+    const facebook::jsi::Value constants =
+        device->get(*runtime, facebook::jsi::PropNameID::forAscii(*runtime, "getConstants"))
+            .asObject(*runtime)
+            .asFunction(*runtime)
+            .call(*runtime);
+    const facebook::jsi::Value json = runtime->global()
+                                          .getPropertyAsObject(*runtime, "JSON")
+                                          .getPropertyAsFunction(*runtime, "stringify")
+                                          .call(*runtime, constants);
+
+    return folly::parseJson(json.getString(*runtime).utf8(*runtime));
+}
+
+/** A scratch directory of `dmi/` and `etc/`, `usr/lib/` os-release roots, removed with the fixture. */
+class ExpoStartupModulesDeviceTest : public ::testing::Test {
+protected:
+    void SetUp() override { std::filesystem::create_directories(root_ / "dmi"); }
+
+    void TearDown() override { std::filesystem::remove_all(root_); }
+
+    void write(const std::filesystem::path& relativePath, const std::string& contents) const {
+        std::filesystem::create_directories((root_ / relativePath).parent_path());
+        std::ofstream(root_ / relativePath) << contents;
+    }
+
+    [[nodiscard]] folly::dynamic constants() const {
+        return deviceConstants(root_ / "dmi", {root_ / "etc", root_ / "usr/lib"});
+    }
+
+private:
+    std::filesystem::path root_ =
+        std::filesystem::temp_directory_path() / ("rnl-expo-device-" + std::to_string(::getpid()));
+};
+
+/** Firmware without a DMI table answers `null`, never a guess, and a missing `/etc/os-release` falls back. */
+TEST_F(ExpoStartupModulesDeviceTest, MissingDmiIsNullAndOsReleaseFallsBackToUsrLib) {
+    write("usr/lib/os-release", "ID=arch\nNAME='Arch Linux'\nVERSION_ID=\"2026.11\"\nBUILD_ID=rolling\n");
+
+    const folly::dynamic answered = constants();
+
+    EXPECT_EQ(answered["manufacturer"], nullptr);
+    EXPECT_EQ(answered["modelName"], nullptr);
+    EXPECT_EQ(answered["osName"], "Arch Linux");
+    EXPECT_EQ(answered["osVersion"], "2026.11");
+    EXPECT_EQ(answered["osBuildId"], "rolling");
+}
+
+/** `/etc/os-release` wins over `/usr/lib/os-release`; an empty value is `null`, so `osName` falls back to `uname`. */
+TEST_F(ExpoStartupModulesDeviceTest, EmptyOsReleaseValuesAreNull) {
+    utsname system{};
+
+    static_cast<void>(uname(&system));
+    write("etc/os-release", "NAME=\"\"\nVERSION_ID=\nBUILD_ID=''\n");
+    write("usr/lib/os-release", "NAME=Fallback\nVERSION_ID=1\nBUILD_ID=1\n");
+
+    const folly::dynamic answered = constants();
+
+    EXPECT_EQ(answered["osName"], system.sysname);
+    EXPECT_EQ(answered["osVersion"], nullptr);
+    EXPECT_EQ(answered["osBuildId"], nullptr);
+}
+
+/** DMI strings reach JavaScript verbatim, a quote and a backslash included. */
+TEST_F(ExpoStartupModulesDeviceTest, DmiStringsKeepQuotesAndBackslashes) {
+    write("dmi/sys_vendor", "Vendor \"Q\" \\ Co\n");
+    write("dmi/product_name", "C:\\Model \"X\"\n");
+
+    const folly::dynamic answered = constants();
+
+    EXPECT_EQ(answered["manufacturer"], "Vendor \"Q\" \\ Co");
+    EXPECT_EQ(answered["modelName"], "C:\\Model \"X\"");
 }
 
 /**
@@ -161,9 +247,21 @@ TEST(ExpoStartupModulesTest, DeviceAnswersTheMachine) {
     static_cast<void>(uname(&system));
 
     const std::string osRelease = "{ . /etc/os-release 2>/dev/null || . /usr/lib/os-release; } && printf '%s' \"$";
-    const std::string osName = shellOutputAsJson(osRelease + "NAME\"");
+    const folly::dynamic osName = shellOutput(osRelease + "NAME\"");
+    const folly::dynamic expected = folly::dynamic::object(
+        "methods",
+        folly::dynamic::array("getConstants", "getDeviceTypeAsync", "getUptimeAsync", "isRootedExperimentalAsync"))(
+        "constants",
+        folly::dynamic::object("isDevice", true)("brand", nullptr)(
+            "manufacturer", shellOutput("cat /sys/class/dmi/id/sys_vendor 2>/dev/null"))("modelId", nullptr)(
+            "modelName", shellOutput("cat /sys/class/dmi/id/product_name 2>/dev/null"))("deviceYearClass", nullptr)(
+            "totalMemory", true)("osName", osName.isNull() ? folly::dynamic(system.sysname) : osName)(
+            "osVersion", shellOutput(osRelease + "VERSION_ID\""))("osBuildId", shellOutput(osRelease + "BUILD_ID\""))(
+            "osInternalBuildId", system.release)("deviceName", hostName.data())("deviceType", 3)(
+            "supportedCpuArchitectures", folly::dynamic::array(system.machine)))("deviceType", 3)("uptime", true)(
+        "rooted", geteuid() == 0);
 
-    EXPECT_EQ(settledTrace(R"JAVASCRIPT(
+    EXPECT_EQ(folly::parseJson(settledTrace(R"JAVASCRIPT(
 const device = globalThis.nativeModuleProxy.ExpoDevice;
 (async () => {
   const constants = device.getConstants();
@@ -176,19 +274,8 @@ const device = globalThis.nativeModuleProxy.ExpoDevice;
     rooted: await device.isRootedExperimentalAsync(),
   });
 })();
-)JAVASCRIPT"),
-              R"({"methods":["getConstants","getDeviceTypeAsync","getUptimeAsync","isRootedExperimentalAsync"],)"
-              R"("constants":{"isDevice":true,"brand":null,"manufacturer":)" +
-                  shellOutputAsJson("cat /sys/class/dmi/id/sys_vendor 2>/dev/null") +
-                  R"(,"modelId":null,"modelName":)" +
-                  shellOutputAsJson("cat /sys/class/dmi/id/product_name 2>/dev/null") +
-                  R"(,"deviceYearClass":null,"totalMemory":true,"osName":)" +
-                  (osName == "null" ? "\"" + std::string(system.sysname) + "\"" : osName) + R"(,"osVersion":)" +
-                  shellOutputAsJson(osRelease + "VERSION_ID\"") + R"(,"osBuildId":)" +
-                  shellOutputAsJson(osRelease + "BUILD_ID\"") + R"(,"osInternalBuildId":")" + system.release +
-                  R"(","deviceName":")" + hostName.data() + R"(","deviceType":3,"supportedCpuArchitectures":[")" +
-                  system.machine + R"("]},"deviceType":3,"uptime":true,"rooted":)" +
-                  (geteuid() == 0 ? "true" : "false") + "}");
+)JAVASCRIPT")),
+              expected);
 }
 
 } // namespace

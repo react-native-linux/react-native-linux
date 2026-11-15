@@ -198,9 +198,11 @@ const ecosystemMatrix: readonly EcosystemRow[] = [
   },
   {
     flagshipVersion: "~58.0.3",
+    issue: 635,
     packageName: "expo-keep-awake",
-    state: "shimmed",
-    test: "packages/expo/e2e/expo-startup-modules.json",
+    state: "declined",
+    substitute:
+      "left out with voice input; ExpoKeepAwake is registered and reports itself unavailable so the import and withDevTools load",
   },
   {
     flagshipVersion: "58.0.13",

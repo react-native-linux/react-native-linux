@@ -36,9 +36,9 @@ public:
         methodMap_["isAvailableAsync"] = {
             0, [](facebook::jsi::Runtime& runtime, TurboModule& /*turboModule*/,
                   const facebook::jsi::Value* /*arguments*/, size_t /*count*/) {
-                return facebook::react::createPromiseAsJSIValue(
-                    runtime, [](facebook::jsi::Runtime& /*promiseRuntime*/,
-                                const std::shared_ptr<facebook::react::Promise>& promise) { promise->resolve(false); });
+                const facebook::jsi::Object promise = runtime.global().getPropertyAsObject(runtime, "Promise");
+
+                return promise.getPropertyAsFunction(runtime, "resolve").callWithThis(runtime, promise, false);
             }};
         methodMap_["activate"] = {1, [](facebook::jsi::Runtime& runtime, TurboModule& /*turboModule*/,
                                         const facebook::jsi::Value* /*arguments*/,
