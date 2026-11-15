@@ -90,6 +90,7 @@ const scopedSourcePaths: readonly string[] = [
   "packages/core/src/WaylandSerialLedger.cpp",
   "packages/core/src/WindowControlSequence.cpp",
   "packages/core/src/WindowDecorations.cpp",
+  "packages/test-harness/modules/t3-native-controls/linux/DpopKeys.cpp",
 ];
 
 const coverageTool = env["LLVM_COV"] ?? "llvm-cov";

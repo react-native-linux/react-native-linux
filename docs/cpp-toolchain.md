@@ -1420,6 +1420,39 @@ compiles the registration source into `hello_react` and `rnl_window` — into th
 archive, so the static initializer cannot be dropped. CI autolinks `packages/cli/test-fixtures/cpp-library`, the
 unmodified `create-react-native-library` 0.63 template, and calls it from `test-bundles/autolinking.js`.
 
+**An application's own Expo module (#640).** An app's local Expo module, such as T3 Code's
+`modules/t3-native-controls`, keeps its Linux code in a `linux/` directory beside `android/` and `ios/`. That
+directory holds a `CMakeLists.txt` and a C++ TurboModule registered under the Expo module's name. The app names the
+module in its own `react-native.config.js`, because a local module has no `node_modules` entry for discovery to
+find:
+
+```js
+dependencies: {
+  't3-native-controls': {
+    root: path.join(__dirname, 'modules/t3-native-controls'),
+    platforms: {
+      android: null,
+      ios: null,
+      linux: { cxxModuleCMakeListsModuleName: 't3-native-controls', cxxModuleHeaderName: 'T3NativeControls' },
+    },
+  },
+},
+```
+
+The community CLI reads `root` and merges these keys over the `sourceDir` that `platform-config.ts` finds. The
+explicit rule then builds `linux/CMakeLists.txt` and registers the class that `cxxModuleHeaderName` names.
+`android: null` and `ios: null` leave those platforms to Expo's own autolinking. Expo's unmodified
+`requireNativeModule` reaches the module through the TurboModule fallback that ADR-0004 (#657) describes. This needs
+no discovery code of ours and no fork. The CMakeLists can rely on the `jsi` and `reactnative` targets, and the class
+lives in `facebook::react`, because the generated registration names it there.
+
+`packages/test-harness/modules/t3-native-controls` is the fixture and T3 Code's template. Its `linux/` directory
+answers the DPoP functions over the system libcrypto, so building it needs `libssl-dev`, and so does every test
+configure (`test`, `asan-tests`, `tsan-tests` and `coverage`), because the module's unit tests link it. CI autolinks
+the fixture beside the `cpp-library` one and calls it from `packages/test-harness/test-bundles/t3-native-controls.js`.
+Its unit tests are `tests/DpopKeysTest.cpp`, which the coverage gate scores, and the Hermes test is
+`tests/hermes/T3NativeControlsModuleTest.cpp`.
+
 Our C++ ABI toward a library is the vendored React Native pin's; what a library may assume beyond that is #89's
 question, not this generator's.
 
@@ -2920,7 +2953,7 @@ support:
 sudo apt-get install -y build-essential git cmake ninja-build ccache python3 pkg-config \
   clang-18 clang-tools-18 libclang-rt-18-dev llvm-18 \
   libboost-dev libdouble-conversion-dev libfmt-dev libgoogle-glog-dev libicu-dev \
-  libfreetype-dev libfontconfig-dev
+  libfreetype-dev libfontconfig-dev libssl-dev
 ```
 
 `pkg-config`, `libfreetype-dev` and `libfontconfig-dev` are what `RNL_ENABLE_SKIA` probes for; without them
