@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { AppRegistry, Text, View } from "react-native";
 import { ComposerEditor } from "../modules/t3-composer-editor/src/native/T3ComposerEditor";
 
@@ -18,12 +18,17 @@ const report = (line: string): void => {
 
 const Composer = ({
   enterBehavior,
+  name = enterBehavior,
+  controlsSelection = true,
   onSent,
 }: {
   readonly enterBehavior: EnterBehavior;
+  readonly name?: string;
+  readonly controlsSelection?: boolean;
   readonly onSent: (line: string) => void;
 }): React.JSX.Element => {
   const [value, setValue] = useState("");
+  const draft = useRef("");
   const [selection, setSelection] = useState<Selection>({ end: 0, start: 0 });
   const [height, setHeight] = useState(0);
 
@@ -32,24 +37,26 @@ const Composer = ({
       contentInsetVertical={VERTICAL_INSET / 2}
       enterBehavior={enterBehavior}
       onChangeText={(text) => {
-        report(`${enterBehavior} text="${text}"`);
+        report(`${name} text="${text}"`);
+        draft.current = text;
         setValue(text);
       }}
       onContentSizeChange={(size) => {
         if (height > 0 && size.height > height) {
-          report(`${enterBehavior} grew`);
+          report(`${name} grew`);
         }
         setHeight(size.height);
       }}
       onSelectionChange={setSelection}
       onSubmit={(alternate) => {
-        report(`${enterBehavior} submit alternate=${String(alternate)} text="${value}"`);
-        onSent(`${alternate ? "Alternate" : "Sent"}: ${value}`);
+        report(`${name} submit alternate=${String(alternate)} text="${draft.current}"`);
+        onSent(`${alternate ? "Alternate" : "Sent"}: ${draft.current}`);
+        draft.current = "";
         setValue("");
         setSelection({ end: 0, start: 0 });
       }}
       placeholder={`Ask anything (Return: ${enterBehavior})`}
-      selection={selection}
+      {...(controlsSelection ? { selection } : {})}
       style={{
         backgroundColor: "#1e293b",
         borderRadius: 18,
@@ -70,6 +77,7 @@ const ComposerApp = (): React.JSX.Element => {
     <View onLayout={() => report("ready")} style={{ backgroundColor: "#0f172a", flex: 1, padding: 24, width: 480 }}>
       <Composer enterBehavior="send" onSent={setSent} />
       <Composer enterBehavior="newline" onSent={setSent} />
+      <Composer controlsSelection={false} enterBehavior="send" name="plain" onSent={setSent} />
       <Text style={{ color: "#94a3b8", fontSize: 14, marginTop: 16 }}>{sent}</Text>
     </View>
   );

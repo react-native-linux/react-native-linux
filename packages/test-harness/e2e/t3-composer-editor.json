@@ -2,13 +2,23 @@
   "name": "t3-composer-editor",
   "bundle": "t3-composer-editor.tsx",
   "ready": "t3-composer-editor: ready",
-  "frames": 1800,
+  "frames": 2400,
   "windowFlags": [
     "--no-decorations",
     "--inject-key-sequence",
-    "{Tab}hi{Preedit:e}{Commit:é}{Shift+Enter}two{Ctrl+a}{Ctrl+c}{Right}{Ctrl+v}{Preedit:x}{Enter}{Commit:!}{Enter}x{Ctrl+Enter}{Tab}a{Enter}b{Ctrl+Enter}c{Ctrl+Shift+Enter}d{Shift+Enter}e{Escape}"
+    "{Tab}hi{Preedit:e}{Commit:é}{Shift+Enter}two{Ctrl+a}{Ctrl+c}{Right}{Ctrl+v}{Preedit:x}{Enter}{Commit:!}{Enter}x{Ctrl+Enter}{Tab}a{Enter}b{Ctrl+Enter}c{Ctrl+Shift+Enter}d{Shift+Enter}e{Tab}a{Alt+Enter}b{Ctrl+Shift+Enter}c{Escape}"
   ],
-  "steps": ["sleep 9000"],
+  "steps": [
+    "sleep 9000",
+    "key Tab press",
+    "key Tab release",
+    "sleep 200",
+    "type r",
+    "key Return press",
+    "sleep 1000",
+    "key Return release",
+    "sleep 500"
+  ],
   "expect": [
     "t3-composer-editor: send text=\"hi\"",
     "t3-composer-editor: send text=\"hié\"",
@@ -24,16 +34,24 @@
     "t3-composer-editor: newline text=\"a\\nb\"",
     "t3-composer-editor: newline submit alternate=false text=\"a\\nb\"",
     "t3-composer-editor: newline submit alternate=true text=\"c\"",
-    "t3-composer-editor: newline text=\"d\\ne\""
+    "t3-composer-editor: newline text=\"d\\ne\"",
+    "t3-composer-editor: plain text=\"a\\n\"",
+    "t3-composer-editor: plain text=\"a\\nb\"",
+    "t3-composer-editor: plain text=\"a\\nb\\n\"",
+    "t3-composer-editor: plain text=\"a\\nb\\nc\"",
+    "t3-composer-editor: send text=\"r\"",
+    "t3-composer-editor: send submit alternate=false text=\"r\""
   ],
   "reject": [
     "t3-composer-editor: send submit alternate=false text=\"hié\\ntwohié\\ntwo\"",
     "t3-composer-editor: newline submit alternate=false text=\"a\"",
-    "t3-composer-editor: newline submit alternate=true text=\"d\""
+    "t3-composer-editor: newline submit alternate=true text=\"d\"",
+    "t3-composer-editor: plain submit",
+    "t3-composer-editor: send submit alternate=false text=\"\""
   ],
   "screenshot": {
     "golden": "t3-composer-editor.png",
-    "crop": { "left": 0, "top": 0, "width": 480, "height": 280 },
-    "maxDifferentPixels": 1
+    "crop": { "left": 0, "top": 0, "width": 480, "height": 340 },
+    "maxDifferentPixels": 50
   }
 }

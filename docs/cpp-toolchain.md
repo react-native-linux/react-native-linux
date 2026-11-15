@@ -1458,10 +1458,12 @@ composer (`modules/t3-composer-editor`, #683) is this platform's `TextInput`, se
 `T3ComposerEditor.linux.tsx` beside the app's `.native.tsx`. Metro resolves `.linux` before `.native`. The variant is
 `packages/test-harness/modules/t3-composer-editor/src/native/T3ComposerEditor.linux.tsx`, and T3 Code copies it to
 `apps/mobile/src/native/`. The `src/lib` and `src/features` files beside it stand in for T3 Code's own, and the file
-is written in T3 Code's style, so this repo's oxlint and oxfmt skip `modules/*/src`. Return and its chords use
-`onKeyDown`. This platform sends every key to the focused field's React handler, with its modifiers and
-`isComposing`, before the field edits. `submitBehavior` keeps a sending Return out of the text. The e2e
-`packages/test-harness/e2e/t3-composer-editor.json` drives it under cage.
+is written in T3 Code's style, so this repo's oxlint and oxfmt skip `modules/t3-composer-editor/src`. Return and its
+chords use `onKeyDown`, with the Android view's `returnSubmission` rules: in send mode only a bare Return and
+Ctrl+Return send, every other chord inserts a newline, and a repeat never sends. This platform sends every key to
+the focused field's React handler, with its modifiers and `isComposing`, before the field edits, and delivers an
+earlier edit in the same frame as `onChange` first. `submitBehavior` keeps a sending Return out of the text. The
+e2e `packages/test-harness/e2e/t3-composer-editor.json` drives it under cage.
 
 Our C++ ABI toward a library is the vendored React Native pin's; what a library may assume beyond that is #89's
 question, not this generator's.

@@ -8,7 +8,7 @@
     "build",
     "coverage",
     "packages/*/upstream.lock.json",
-    "packages/test-harness/modules/*/src",
+    "packages/test-harness/modules/t3-composer-editor/src",
     "third_party"
   ]
 }

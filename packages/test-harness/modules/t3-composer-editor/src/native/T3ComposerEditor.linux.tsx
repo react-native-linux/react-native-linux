@@ -1,4 +1,4 @@
-import { useImperativeHandle, useRef } from "react";
+import { useImperativeHandle, useLayoutEffect, useRef } from "react";
 import { TextInput, View, type KeyDownEvent, type TextInputInstance } from "react-native";
 
 import { FONT_FAMILIES } from "../lib/fontFamilies";
@@ -28,6 +28,7 @@ export function ComposerEditor({
 }: ComposerEditorProps) {
   const inputRef = useRef<TextInputInstance>(null);
   const selectionRef = useRef<ComposerEditorSelection>({ start: 0, end: 0 });
+  const insertedSelectionRef = useRef<ComposerEditorSelection | null>(null);
   const bodyText = useScaledTextRole("body");
   const fontFamily = FONT_FAMILIES.regular;
   const editable = (props.editable ?? true) && !readOnly;
@@ -45,21 +46,35 @@ export function ComposerEditor({
     [],
   );
 
-  const handleKeyDown = ({ nativeEvent: key }: KeyDownEvent) => {
-    if (onSubmit === undefined || !editable || key.key !== "Enter") return;
-    if (key.isComposing === true || key.altKey || key.metaKey) return;
-    if (!returnSends) {
-      if (key.ctrlKey) onSubmit(key.shiftKey);
-      return;
-    }
-    if (!key.shiftKey) {
-      onSubmit(key.ctrlKey);
-      return;
-    }
-    if (key.ctrlKey) return;
+  // Runs after TextInput's own layout effect has sent the new value, so the caret lands in it.
+  useLayoutEffect(() => {
+    const inserted = insertedSelectionRef.current;
+    insertedSelectionRef.current = null;
+    if (inserted !== null) inputRef.current?.setSelection(inserted.start, inserted.end);
+  }, [props.value]);
+
+  const insertNewline = () => {
     const { start, end } = selectionRef.current;
+    const caret = { start: start + 1, end: start + 1 };
+    selectionRef.current = caret;
+    insertedSelectionRef.current = caret;
     props.onChangeText(`${props.value.slice(0, start)}\n${props.value.slice(end)}`);
-    onSelectionChange?.({ start: start + 1, end: start + 1 });
+    onSelectionChange?.(caret);
+  };
+
+  const handleKeyDown = ({ nativeEvent: key }: KeyDownEvent) => {
+    if (onSubmit === undefined || !editable || key.key !== "Enter" || key.isComposing === true) {
+      return;
+    }
+    if (!returnSends) {
+      if (key.ctrlKey && !key.altKey && !key.metaKey && !key.repeat) onSubmit(key.shiftKey);
+      return;
+    }
+    if (key.shiftKey || key.altKey || key.metaKey) {
+      insertNewline();
+      return;
+    }
+    if (!key.repeat) onSubmit(key.ctrlKey);
   };
 
   return (

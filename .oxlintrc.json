@@ -102,7 +102,7 @@
     "packages/cli/test-fixtures/cpp-library",
     "packages/template/template.config.js",
     "packages/template/template/metro.config.js",
-    "packages/test-harness/modules/*/src",
+    "packages/test-harness/modules/t3-composer-editor/src",
     "third_party"
   ]
 }
