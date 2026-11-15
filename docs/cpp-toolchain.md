@@ -7893,6 +7893,55 @@ dropped frame still reads roughly double the interval, around 33 ms, and clears 
 way. 17.5 ms is the CI regression gate; the 8.33 ms number in the testing gospel is a **real hardware** budget and
 is measured on real hardware, not here.
 
+**At 120 Hz (#20).** A scenario may name `"outputRefreshHz"`, in whole hertz. cage takes no mode flag and wlroots'
+headless output starts at 60 Hz, but cage implements wlr-output-management, so `resolveCompositorChild` in
+`scripts/e2e/grade.ts` starts the window behind `wlr-randr`, which gives the output a 1280x720 custom mode at that
+rate before the window connects. It takes two calls, `--off` and then `--on --custom-mode`. The cage that noble
+ships (0.1.5+20240127, on wlroots 0.17) aborts with `wlr_scene_output_layout_add_output: Assertion
+'solo->scene_output != so' failed` when a configuration re-enables an output that is already in its layout, and
+disabling the output first takes it out of the layout. CI installs `wlr-randr` beside cage. When a requested
+scenario names a rate and `wlr-randr` is not on `PATH`, the driver exits 2, like any other missing rig piece.
+
+`animated-views-120hz.json` is the 120 Hz gate: `animated-views.js`, 32 views animating through the native driver,
+for 480 frames at `{"p50Ms": 8.5, "p95Ms": 12.5, "minFrames": 240, "maxHangs": 1}`. The headless output is not a
+vblank, and its intervals are not a grid. wlroots 0.17 re-arms the headless frame timer, a whole number of
+milliseconds (8 ms at 120 Hz), only on an output commit, and a client buffer that lands while the output is idle is
+presented as soon as it lands. So a client that keeps up presents every 8 ms plus cage's composite, and a client
+that does not presents at its own frame cost: a slow client reads 10 or 13 ms, not 16, and its p95 can stay under
+12.5 ms. The median is what moves, so `p50Ms` is the bound that catches it, and `p95Ms` only bounds the tail.
+Measured locally (#654), with a temporary busy-wait at the top of `SkiaVulkanRenderer::drawFrame` standing in for a
+slower client, at load averages of 9 to 21 on 24 cores:
+
+| Client | p50 | p95 |
+| --- | --- | --- |
+| unmodified, 19 runs | 8.02–8.13 ms | 8.50–13.98 ms |
+| +5 ms per frame, 2 runs | 8.29–9.72 ms | 9.96–13.52 ms |
+| +6 ms per frame, 2 runs | 9.37–10.33 ms | 10.91–12.66 ms |
+| +7 ms per frame, 2 runs | 10.28–10.39 ms | 11.62–12.01 ms |
+| +10 ms per frame, 6 runs | 13.15–14.19 ms | 14.57–15.87 ms |
+| unmodified at cage's 60 Hz | | 16.52 ms |
+
+8.5 ms sits 0.37 ms above the worst clean median and 4.65 ms under the best +10 ms one, and it fails every +6 ms
+run, which is a client presenting at about 107 fps or slower. The p95 bound alone passed +7 ms, a client at about
+97 fps. The same 10 ms of busy work in the bundle's JavaScript, in a `requestAnimationFrame` loop, changes nothing
+(p50 8.03–8.05 ms, p95 8.68–8.96 ms over 4 runs), because native-driver animation does not wait for the JavaScript
+thread. The tail is sensitive to host load in a way the median is not. One clean run in 19 failed `p95Ms` and
+`maxHangs` at a load average of 21, and at a load of 66 a clean run read p50 10.20 ms and p95 19.03 ms. The 60 Hz
+scenarios share that sensitivity. What the gate proves is that on a 120 Hz headless output the renderer presents
+at least half its frames within 8.5 ms and 95 % within 12.5 ms, with at most one hang. It does not prove that
+every frame lands on a vblank, and it measures nothing under 8.33 ms, since an output frame here is 8 ms plus a composite. 120 fps on real
+hardware is still open on #20.
+
+The recipe for the real-hardware number is the same bundle on a 120 Hz output under Hyprland. **It has never been
+run.** Its measurement is tracked on #20.
+
+```sh
+build/dev/bin/rnl_window --fabric packages/core/test-bundles/animated-views.js --frames 1200 \
+  --screenshot build/demo-120hz.png --frame-log build/demo-120hz.jsonl
+```
+
+The last line of the log is the summary, and `refreshNs` on each record is the compositor's own refresh hint.
+
 ### Frame journal (#345)
 
 `FrameTiming`'s p95 and #124's native-driver frame cost are both gates on the platform's own pacing. Neither is
@@ -8320,8 +8369,9 @@ Named here so they are not mistaken for oversights, all of them still #7:
   carry the same per-channel tolerance for the same reason, because oxlint forbids the root script importing the
   package one. Moving the shared half into a package both can depend on is the fix, and it is not worth a package
   for one function yet.
-- **The 8.33 ms budget.** The CI gate is 17.5 ms because the rig is lavapipe and pixman. Measuring the gospel's
-  real number needs real hardware and a place to record the result over time; neither exists yet.
+- **The 8.33 ms budget.** `animated-views-120hz.json` gates the renderer staying inside a 120 Hz headless output's
+  8 ms frame timer, but that rig's output frames are 8 ms plus a composite, so the gospel's own number needs real
+  hardware and a place to record the result over time; neither exists yet.
 
 ## Unit tests and coverage
 

@@ -205,6 +205,8 @@ const reportScenario = (failures: readonly string[], attemptKey: string): void =
 
 const compositorPath = findExecutable(COMPOSITOR_NAME);
 const lavapipeIcdPath = findLavapipeIcd();
+const runs = planRuns(readScenarios(), env);
+const needsOutputMode = runs.some(({ run }) => run.scenario.outputRefreshHz !== null);
 
 const unavailableReasons = [
   ...(existsSync(windowBinaryPath)
@@ -214,6 +216,9 @@ const unavailableReasons = [
     ? []
     : [`${injectorBinaryPath} is missing; build it with "cmake --build build/dev --target rnl_inject"`]),
   ...(compositorPath === null ? [`${COMPOSITOR_NAME} is not on PATH; install the "cage" package`] : []),
+  ...(needsOutputMode && findExecutable("wlr-randr") === null
+    ? ['an outputRefreshHz scenario needs wlr-randr on PATH; install the "wlr-randr" package']
+    : []),
   ...(lavapipeIcdPath === null
     ? ['no lavapipe ICD; install "vulkan-swrast" on Arch or "mesa-vulkan-drivers" on Ubuntu']
     : []),
@@ -227,7 +232,7 @@ if (compositorPath === null || lavapipeIcdPath === null || unavailableReasons.le
 } else {
   mkdirSync(artifactsRoot, { recursive: true });
 
-  for (const { attemptKey, run } of planRuns(readScenarios(), env)) {
+  for (const { attemptKey, run } of runs) {
     reportScenario(await runScenario(run, { compositorPath, lavapipeIcdPath }, attemptKey), attemptKey);
   }
 }

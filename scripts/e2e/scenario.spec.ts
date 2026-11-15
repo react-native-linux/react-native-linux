@@ -8,6 +8,8 @@ const NO_FRAMES = 0;
 const MINIMUM_FRAMES = 60;
 const BUDGET_P95_MS = 16.7;
 const MAX_DIFFERENT_PIXELS = 50;
+const OUTPUT_REFRESH_HZ = 120;
+const FRACTIONAL_REFRESH_HZ = 59.94;
 
 const validScenario = {
   bundle: "pressable.js",
@@ -32,6 +34,7 @@ describe("parseScenario, field by field", () => {
       injectProtocolError: false,
       inputTrace: false,
       name: "pressable-click",
+      outputRefreshHz: null,
       ready: "pressable: committed surface 1",
       reject: [],
       screenshot: null,
@@ -54,6 +57,15 @@ describe("parseScenario", () => {
     };
 
     expect(parseScenario({ ...validScenario, ...overrides }, "fixture.json")).toMatchObject(overrides);
+  });
+
+  it("reads an output refresh rate in whole hertz", () => {
+    expect(
+      parseScenario({ ...validScenario, outputRefreshHz: OUTPUT_REFRESH_HZ }, "fixture.json").outputRefreshHz,
+    ).toBe(OUTPUT_REFRESH_HZ);
+    expect(() => parseScenario({ ...validScenario, outputRefreshHz: FRACTIONAL_REFRESH_HZ }, "fixture.json")).toThrow(
+      'fixture.json: "outputRefreshHz" must be a positive integer',
+    );
   });
 
   it("keeps an explicit empty windowFlags rather than treating it as omitted", () =>
