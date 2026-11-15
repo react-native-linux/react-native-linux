@@ -7,6 +7,7 @@
 #include "ExpoApplicationModule.h"
 #include "ExpoAsset.h"
 #include "ExpoDeviceModule.h"
+#include "ExpoFetch.h"
 #include "ExpoFileSystem.h"
 #include "ExpoFontLoaderModule.h"
 #include "ExpoLinkingModule.h"
@@ -1107,6 +1108,7 @@ TurboModuleRegistry::TurboModuleRegistry(
         "FileSystem", [jsInvoker, &host = *fileSystemHost_]() { return makeExpoFileSystemModule(jsInvoker, host); });
     moduleFactories_.emplace("ExpoApplication", [jsInvoker]() { return makeExpoApplicationModule(jsInvoker); });
     moduleFactories_.emplace("ExpoDevice", [jsInvoker]() { return makeExpoDeviceModule(jsInvoker); });
+    moduleFactories_.emplace("ExpoFetchModule", [jsInvoker]() { return makeExpoFetchModule(jsInvoker); });
     moduleFactories_.emplace("ExpoLinking", [jsInvoker, activationModel = activationModel_]() {
         return makeExpoLinkingModule(jsInvoker, activationModel);
     });

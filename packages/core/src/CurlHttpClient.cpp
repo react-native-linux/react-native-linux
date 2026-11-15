@@ -64,6 +64,7 @@ struct CurlHttpClient::Transfer {
     Transfer() = default;
 
     http::NetworkCallbacks callbacks;
+    OnResponseUrl onResponseUrl;
     HeaderList requestHeaders{nullptr, &curl_slist_free_all};
     MimeHandle mime{nullptr, &curl_mime_free};
     std::string requestBody;
@@ -85,6 +86,14 @@ struct CurlHttpClient::Transfer {
         responseDelivered = true;
         long statusCode = 0;
         curl_easy_getinfo(easy.get(), CURLINFO_RESPONSE_CODE, &statusCode);
+
+        if (onResponseUrl) {
+            const char* effectiveUrl = nullptr;
+            long redirectCount = 0;
+            curl_easy_getinfo(easy.get(), CURLINFO_EFFECTIVE_URL, &effectiveUrl);
+            curl_easy_getinfo(easy.get(), CURLINFO_REDIRECT_COUNT, &redirectCount);
+            onResponseUrl(effectiveUrl, redirectCount > 0);
+        }
 
         if (callbacks.onResponse) {
             callbacks.onResponse(static_cast<uint16_t>(statusCode), responseHeaders);
@@ -292,6 +301,25 @@ std::unique_ptr<http::IRequestToken> CurlHttpClient::sendRequest(http::NetworkCa
     transfer->callbacks = std::move(callbacks);
     configure(*transfer, method, url, headers, timeout);
 
+    return enqueue(std::move(transfer), body);
+}
+
+std::unique_ptr<http::IRequestToken> CurlHttpClient::sendFetchRequest(http::NetworkCallbacks&& callbacks,
+                                                                      OnResponseUrl onResponseUrl, bool followRedirects,
+                                                                      const std::string& method, const std::string& url,
+                                                                      const http::Headers& headers,
+                                                                      const http::Body& body) {
+    std::shared_ptr<Transfer> transfer = std::make_shared<Transfer>();
+    transfer->callbacks = std::move(callbacks);
+    transfer->onResponseUrl = std::move(onResponseUrl);
+    configure(*transfer, method, url, headers, 0);
+    curl_easy_setopt(transfer->easy.get(), CURLOPT_FOLLOWLOCATION, followRedirects ? 1L : 0L);
+
+    return enqueue(std::move(transfer), body);
+}
+
+std::unique_ptr<http::IRequestToken> CurlHttpClient::enqueue(std::shared_ptr<Transfer> transfer,
+                                                             const http::Body& body) {
     transfer->setupError = attachBody(*transfer, body);
 
     {

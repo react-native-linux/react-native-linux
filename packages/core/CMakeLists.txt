@@ -863,6 +863,8 @@ add_library(rnl_react_core STATIC
     src/ExpoAsset.cpp
     src/ExpoAssetModule.cpp
     src/ExpoDeviceModule.cpp
+    src/ExpoFetch.cpp
+    src/ExpoFetchModule.cpp
     src/ExpoFileSystem.cpp
     src/ExpoFileSystemModule.cpp
     src/ExpoLinkingModule.cpp

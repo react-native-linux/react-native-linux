@@ -313,6 +313,8 @@ target_link_libraries(rnl_core_tests PRIVATE react_renderer_element)
 target_sources(rnl_core_tests PRIVATE CurlHttpClientTest.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../src/CurlHttpClient.cpp)
 # #156: expo-asset's downloads, over that client, against the same loopback server.
 target_sources(rnl_core_tests PRIVATE ExpoAssetTest.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../src/ExpoAsset.cpp)
+# #673: expo/fetch's request and response state machine, over that client, against the same loopback server.
+target_sources(rnl_core_tests PRIVATE ExpoFetchTest.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../src/ExpoFetch.cpp)
 target_include_directories(rnl_core_tests PRIVATE ${REACT_CXX_PLATFORM_DIR})
 target_link_libraries(rnl_core_tests PRIVATE CURL::libcurl)
 

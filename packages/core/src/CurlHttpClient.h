@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstdint>
 #include <curl/curl.h>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -45,9 +46,24 @@ public:
                 const facebook::react::http::Headers& headers, const facebook::react::http::Body& body,
                 uint32_t timeout, std::optional<std::string> loggingId) override;
 
+    /** Hears where a response came from: the URL after any redirect, and whether a redirect led there. */
+    using OnResponseUrl = std::function<void(std::string url, bool redirected)>;
+
+    /**
+     * `sendRequest` for `expo/fetch` (#673), with no timeout. `followRedirects` false answers a redirect as the
+     * response itself, which `redirect: 'manual'` and `'error'` need, and `onResponseUrl` runs on the worker just
+     * before `onResponse`.
+     */
+    std::unique_ptr<facebook::react::http::IRequestToken>
+    sendFetchRequest(facebook::react::http::NetworkCallbacks&& callbacks, OnResponseUrl onResponseUrl,
+                     bool followRedirects, const std::string& method, const std::string& url,
+                     const facebook::react::http::Headers& headers, const facebook::react::http::Body& body);
+
     struct Transfer;
 
 private:
+    std::unique_ptr<facebook::react::http::IRequestToken> enqueue(std::shared_ptr<Transfer> transfer,
+                                                                  const facebook::react::http::Body& body);
     void run();
     void adoptPendingTransfers();
 
