@@ -1,4 +1,8 @@
-import type { AutolinkedLibrary, CodegenLibrary } from "@react-native-linux/cli/linux-autolinking-types.ts";
+import type {
+  AutolinkedLibrary,
+  AutolinkingDependency,
+  CodegenLibrary,
+} from "@react-native-linux/cli/linux-autolinking-types.ts";
 import {
   discoverLinuxAutolinking,
   parseReactNativeConfig,
@@ -9,17 +13,19 @@ import {
   generateAutolinkingCMake,
   generateAutolinkingRegistration,
   readCodegenConfig,
+  selectSharedComponentDescriptors,
   syncGeneratedTree,
   writeFileIfChanged,
 } from "@react-native-linux/cli/autolinking-cmake.ts";
 import { FlowParser } from "@react-native/codegen/lib/parsers/flow/parser.js";
-import type { SchemaType } from "@react-native/codegen/lib/CodegenSchema.js";
 import { TypeScriptParser } from "@react-native/codegen/lib/parsers/typescript/parser.js";
+import { collectSpecFilePaths } from "./codegen-core/generate-core-artifacts.ts";
 import { generate } from "@react-native/codegen/lib/generators/RNCodegen.js";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 type ReactNativeConfig = ReturnType<typeof parseReactNativeConfig>;
+type SpecModules = ReturnType<FlowParser["parseFile"]>["modules"];
 
 interface AutolinkingRun {
   readonly applicationConfigPath: string;
@@ -31,7 +37,6 @@ interface AutolinkingRun {
 const COMMAND_ARGUMENTS_START = 2;
 const NO_COMPONENTS = 0;
 const sourceFilePattern = /\.(?:c|cc|cpp|cxx|h|hpp|m|mm)$/u;
-const specFilePattern = /^(?:Native\w+|\w+NativeComponent)\.(?:js|ts|tsx)$/u;
 const flowParser = new FlowParser();
 const typeScriptParser = new TypeScriptParser();
 
@@ -55,26 +60,34 @@ const importApplicationConfig = async (applicationConfigPath: string): Promise<u
   return typeof module === "object" && module !== null && "default" in module ? module.default : null;
 };
 
-const readSpecModules = (specDirectory: string): SchemaType["modules"] => {
-  const modules: SchemaType["modules"] = {};
-  const specNames = readdirSync(specDirectory).filter((name) => specFilePattern.test(name));
+/** Upstream codegen's discovery: every spec under the library's `jsSrcsDir`, its subdirectories included. */
+const readSpecModules = (specDirectory: string): SpecModules => {
+  const modules: SpecModules = {};
+  const specPaths = collectSpecFilePaths(specDirectory, {
+    listDirectory: (directoryPath) =>
+      readdirSync(directoryPath, { withFileTypes: true }).map((entry) => ({
+        isDirectory: entry.isDirectory(),
+        name: entry.name,
+      })),
+    readFile: (filePath) => readFileSync(filePath, "utf8"),
+  });
 
-  for (const specName of specNames.toSorted()) {
-    const parser = specName.endsWith(".js") ? flowParser : typeScriptParser;
+  for (const specPath of specPaths) {
+    const parser = specPath.endsWith(".js") ? flowParser : typeScriptParser;
 
-    Object.assign(modules, parser.parseFile(path.join(specDirectory, specName)).modules);
+    Object.assign(modules, parser.parseFile(specPath).modules);
   }
 
   return modules;
 };
 
-type Schema = SchemaType["modules"][string];
+type Schema = SpecModules[string];
 
-const registrableComponents = (schemas: readonly Schema[]): readonly string[] =>
+const generatedComponentDescriptors = (schemas: readonly Schema[]): readonly string[] =>
   schemas.flatMap((schema) =>
     schema.type === "Component"
       ? Object.entries(schema.components).flatMap(([component, shape]) =>
-          shape.interfaceOnly === true ? [] : [component],
+          shape.interfaceOnly === true ? [] : [`${component}ComponentDescriptor`],
         )
       : [],
   );
@@ -85,11 +98,55 @@ const generatorsFor = (schemas: readonly Schema[]): ("componentsIOS" | "modulesC
 ];
 
 /**
+ * #150: the component C++ a library ships for every platform — `RNCSafeAreaViewShadowNode` and its descriptor,
+ * react-native-svg's and react-native-screens' — lives in `common/cpp`, the directory their iOS podspecs and
+ * Android CMakeLists both compile. The descriptors registered are the ones its react-native.config.js declares (under
+ * `linux`, else `android`) that codegen generates or one of that directory's headers defines; header names are not
+ * class names, so each header's text decides.
+ */
+const sharedComponentSources = (
+  { name: packageName, platforms: { android = null, linux = null }, root }: AutolinkingDependency,
+  name: string,
+  generatedDescriptors: readonly string[],
+): CodegenLibrary => {
+  const sharedSourceDirectory = path.join(root, "common", "cpp");
+  const sharedComponentDirectory = path.join(sharedSourceDirectory, "react", "renderer", "components", name);
+
+  if (!existsSync(sharedComponentDirectory)) {
+    return {
+      componentDescriptors: generatedDescriptors,
+      name,
+      sharedDescriptorHeaders: [],
+      sharedSourceDirectory: null,
+    };
+  }
+
+  const headerContents = Object.fromEntries(
+    readdirSync(sharedComponentDirectory)
+      .filter((fileName) => fileName.endsWith(".h"))
+      .map((fileName) => [fileName, readFileSync(path.join(sharedComponentDirectory, fileName), "utf8")]),
+  );
+  const { descriptors, headers, undefinedDescriptors } = selectSharedComponentDescriptors(
+    linux?.componentDescriptors ?? android?.componentDescriptors ?? [],
+    generatedDescriptors,
+    headerContents,
+  );
+
+  for (const descriptor of undefinedDescriptors) {
+    process.stdout.write(
+      `${packageName}: ${descriptor} skipped: neither codegen nor a header in ${sharedComponentDirectory} defines it\n`,
+    );
+  }
+
+  return { componentDescriptors: descriptors, name, sharedDescriptorHeaders: headers, sharedSourceDirectory };
+};
+
+/**
  * #149: `componentsIOS` is upstream's generator for the shared C++ props, shadow nodes, event emitters, states and
  * descriptors (core's own components use it too); a component that is not `interfaceOnly` gets a descriptor.
  */
-const generateCodegen = (packageRoot: string, codegenDirectory: string): CodegenLibrary | null => {
-  const packageJson = readFileOrNull(path.join(packageRoot, "package.json"));
+const generateCodegen = (dependency: AutolinkingDependency, codegenDirectory: string): CodegenLibrary | null => {
+  const packageJson = readFileOrNull(path.join(dependency.root, "package.json"));
   const codegenConfig = packageJson === null ? null : readCodegenConfig(packageJson);
 
   if (codegenConfig === null) {
@@ -97,7 +154,7 @@ const generateCodegen = (packageRoot: string, codegenDirectory: string): Codegen
   }
 
   const { jsSourceDirectory, name } = codegenConfig;
-  const modules = readSpecModules(path.join(packageRoot, jsSourceDirectory));
+  const modules = readSpecModules(path.join(dependency.root, jsSourceDirectory));
   const schemas = Object.values(modules);
 
   generate(
@@ -111,7 +168,7 @@ const generateCodegen = (packageRoot: string, codegenDirectory: string): Codegen
     { generators: generatorsFor(schemas) },
   );
 
-  return { components: registrableComponents(schemas), name };
+  return sharedComponentSources(dependency, name, generatedComponentDescriptors(schemas));
 };
 
 const autolinkedLibraries = (run: AutolinkingRun): readonly AutolinkedLibrary[] =>
@@ -128,11 +185,15 @@ const autolinkedLibraries = (run: AutolinkingRun): readonly AutolinkedLibrary[] 
   });
 
 const codegenLibraries = (run: AutolinkingRun): readonly CodegenLibrary[] =>
-  run.config.dependencies.flatMap(({ name, root }) => {
-    const codegen = run.optedOutDependencyNames.has(name) ? null : generateCodegen(root, run.codegenDirectory);
+  run.config.dependencies.flatMap((dependency) => {
+    const codegen = run.optedOutDependencyNames.has(dependency.name)
+      ? null
+      : generateCodegen(dependency, run.codegenDirectory);
 
-    if (codegen !== null && codegen.components.length > NO_COMPONENTS) {
-      process.stdout.write(`${name}: components linked by codegen: ${codegen.components.join(", ")}\n`);
+    if (codegen !== null && codegen.componentDescriptors.length > NO_COMPONENTS) {
+      process.stdout.write(
+        `${dependency.name}: component descriptors registered: ${codegen.componentDescriptors.join(", ")}\n`,
+      );
     }
 
     return codegen === null ? [] : [codegen];

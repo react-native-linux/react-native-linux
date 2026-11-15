@@ -5,6 +5,7 @@ import {
   generateAutolinkingCMake,
   generateAutolinkingRegistration,
   readCodegenConfig,
+  selectSharedComponentDescriptors,
   syncGeneratedTree,
   writeFileIfChanged,
 } from "./autolinking-cmake.ts";
@@ -12,8 +13,24 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 
 const binaryDirectory = `$${"{"}CMAKE_BINARY_DIR}`;
-const moduleCodegen: CodegenLibrary = { components: [], name: "CppLibrarySpec" };
-const componentCodegen: CodegenLibrary = { components: ["FixtureView"], name: "FixtureSpec" };
+const moduleCodegen: CodegenLibrary = {
+  componentDescriptors: [],
+  name: "CppLibrarySpec",
+  sharedDescriptorHeaders: [],
+  sharedSourceDirectory: null,
+};
+const componentCodegen: CodegenLibrary = {
+  componentDescriptors: ["FixtureViewComponentDescriptor"],
+  name: "FixtureSpec",
+  sharedDescriptorHeaders: [],
+  sharedSourceDirectory: null,
+};
+const sharedComponentCodegen: CodegenLibrary = {
+  componentDescriptors: ["SharedProviderComponentDescriptor", "SharedViewComponentDescriptor"],
+  name: "shared",
+  sharedDescriptorHeaders: ["SharedViewComponentDescriptor.h"],
+  sharedSourceDirectory: "/node_modules/shared/common/cpp",
+};
 
 const cppLibrary: AutolinkedLibrary = {
   cmakeListsPath: "/node_modules/react-native-cpp-library/android/CMakeLists.txt",
@@ -36,11 +53,11 @@ const explicitLibrary: AutolinkedLibrary = {
 };
 
 describe("generateAutolinkingCMake", () => {
-  it("defines each codegen target, adds each library's own CMakeLists unchanged and lists its target", () => {
+  it("defines each codegen target with a library's common/cpp, adds each library's own CMakeLists and lists its target", () => {
     expect(
       generateAutolinkingCMake(
         [explicitLibrary, cppLibrary],
-        [moduleCodegen, componentCodegen],
+        [moduleCodegen, componentCodegen, sharedComponentCodegen],
         "/app/build/autolinking/codegen",
       ),
     ).toBe(
@@ -60,8 +77,16 @@ describe("generateAutolinkingCMake", () => {
         `add_library(react_codegen_FixtureSpec STATIC $${"{"}RNL_CODEGEN_FixtureSpec_SOURCES})`,
         'target_include_directories(react_codegen_FixtureSpec PUBLIC "/app/build/autolinking/codegen/FixtureSpec")',
         "target_compile_options(react_codegen_FixtureSpec PRIVATE -fexceptions -frtti)",
-        "target_link_libraries(react_codegen_FixtureSpec PUBLIC jsi react_nativemodule_core react_renderer_componentregistry react_renderer_core react_renderer_graphics rrc_view)",
+        "target_link_libraries(react_codegen_FixtureSpec PUBLIC jsi react_nativemodule_core react_renderer_componentregistry react_renderer_core react_renderer_graphics react_renderer_imagemanager rrc_image rrc_view)",
         "list(APPEND RNL_AUTOLINKED_TARGETS react_codegen_FixtureSpec)",
+        "",
+        "# codegen: shared",
+        'file(GLOB RNL_CODEGEN_shared_SOURCES "/app/build/autolinking/codegen/shared/react/renderer/components/shared/*.cpp" "/node_modules/shared/common/cpp/react/renderer/components/shared/*.cpp")',
+        `add_library(react_codegen_shared STATIC $${"{"}RNL_CODEGEN_shared_SOURCES})`,
+        'target_include_directories(react_codegen_shared PUBLIC "/app/build/autolinking/codegen/shared" "/node_modules/shared/common/cpp")',
+        "target_compile_options(react_codegen_shared PRIVATE -fexceptions -frtti)",
+        "target_link_libraries(react_codegen_shared PUBLIC jsi react_nativemodule_core react_renderer_componentregistry react_renderer_core react_renderer_graphics react_renderer_imagemanager rrc_image rrc_view)",
+        "list(APPEND RNL_AUTOLINKED_TARGETS react_codegen_shared)",
         "",
         "# @scope/explicit: explicit",
         `add_subdirectory("/node_modules/@scope/explicit/linux" "${binaryDirectory}/autolinking/@scope/explicit")`,
@@ -122,6 +147,50 @@ describe("generateAutolinkingRegistration", () => {
         "",
       ].join("\n"),
     );
+  });
+});
+
+const registrationLine = (descriptor: string): string =>
+  `    react_native_linux::autolinkedComponentDescriptorProviders().push_back(concreteComponentDescriptorProvider<${descriptor}>());`;
+
+describe("generateAutolinkingRegistration for a library with its own common/cpp", () => {
+  it("includes its descriptor headers and registers every descriptor it lists", () => {
+    expect(generateAutolinkingRegistration([], [sharedComponentCodegen]).split("\n")).toStrictEqual(
+      expect.arrayContaining([
+        "#include <react/renderer/components/shared/ComponentDescriptors.h>",
+        "#include <react/renderer/components/shared/SharedViewComponentDescriptor.h>",
+        registrationLine("SharedProviderComponentDescriptor"),
+        registrationLine("SharedViewComponentDescriptor"),
+      ]),
+    );
+  });
+});
+
+describe("selectSharedComponentDescriptors", () => {
+  it("includes the headers that define a declared descriptor as a class or an alias, whatever their names", () => {
+    expect(
+      selectSharedComponentDescriptors(
+        ["CircleComponentDescriptor", "ImageComponentDescriptor", "GeneratedComponentDescriptor"],
+        ["GeneratedComponentDescriptor"],
+        {
+          "ComponentDescriptors.h": "using CircleComponentDescriptor =\n    Concrete<CircleShadowNode>;",
+          "ImageComponentDescriptor.h": "class ImageComponentDescriptor final\n    : public Concrete",
+          "ShadowNodes.h": "class CircleComponentDescriptor;\nclass ImageShadowNode;",
+        },
+      ),
+    ).toEqual({
+      descriptors: ["GeneratedComponentDescriptor", "CircleComponentDescriptor", "ImageComponentDescriptor"],
+      headers: ["ComponentDescriptors.h", "ImageComponentDescriptor.h"],
+      undefinedDescriptors: [],
+    });
+  });
+
+  it("returns a declared descriptor that no header defines instead of registering it", () => {
+    expect(
+      selectSharedComponentDescriptors(["SvgViewAndroidComponentDescriptor"], [], {
+        "ComponentDescriptors.h": "using SvgViewAndroidComponentDescriptorBase = Base;",
+      }),
+    ).toEqual({ descriptors: [], headers: [], undefinedDescriptors: ["SvgViewAndroidComponentDescriptor"] });
   });
 });
 

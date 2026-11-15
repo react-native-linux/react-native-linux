@@ -1,5 +1,6 @@
 interface NativeBuildDescriptor {
   readonly cmakeListsPath?: string | null;
+  readonly componentDescriptors?: readonly string[];
   readonly cxxModuleCMakeListsModuleName?: string | null;
   readonly cxxModuleCMakeListsPath?: string | null;
   readonly cxxModuleHeaderName?: string | null;
@@ -46,12 +47,17 @@ interface VerdictMessage {
 type AutolinkedLibrary = Extract<AutolinkingVerdict, { readonly kind: "linked" }>;
 
 /**
- * A dependency's codegen output: its `codegenConfig.name`, and the components whose shadow node and descriptor
- * codegen generated (every component spec that is not `interfaceOnly`), which the host registers (#149).
+ * A dependency's codegen output: its `codegenConfig.name`, and the component descriptors the host registers —
+ * those codegen generated, for every component spec that is not `interfaceOnly` (#149), and, when the library ships
+ * its own component C++ in `common/cpp`, the ones its react-native.config.js lists as `componentDescriptors` that
+ * a header there defines (#150). `sharedSourceDirectory` is that `common/cpp`, and `sharedDescriptorHeaders` the
+ * headers in its `react/renderer/components/<name>` that define them.
  */
 interface CodegenLibrary {
-  readonly components: readonly string[];
+  readonly componentDescriptors: readonly string[];
   readonly name: string;
+  readonly sharedDescriptorHeaders: readonly string[];
+  readonly sharedSourceDirectory: string | null;
 }
 
 export type {

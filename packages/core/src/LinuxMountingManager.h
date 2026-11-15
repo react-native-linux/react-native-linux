@@ -75,6 +75,10 @@ std::string rejectedNonFinitePropMessage(facebook::react::Tag tag, std::string_v
  * driver's allowlist is wider than what this renderer can paint without a commit, and a prop dropped in silence
  * is an animation that runs at the wrong values with nothing to point at. See *Sync props fast path* and
  * *Native-driver allowlist* in docs/cpp-toolchain.md.
+ *
+ * So is a created component whose props do not derive from `ViewProps` (#150). The scene paints every other
+ * component from its `ViewProps`, which is how a third-party component that only lays out mounts as a `View`
+ * with no Linux code; this one would otherwise be a blank box with no line saying why.
  */
 struct MountDiagnostics {
     uint64_t unknownTagOperations{0};
@@ -86,6 +90,8 @@ struct MountDiagnostics {
     uint64_t rejectedNonFiniteProps{0};
     std::string firstRejectedNonFiniteProp;
     facebook::react::Tag firstRejectedNonFiniteTag{0};
+    uint64_t componentsWithoutViewProps{0};
+    std::string firstComponentWithoutViewProps;
 };
 
 /**
@@ -252,6 +258,7 @@ private:
     bool verifyTagIsKnown(std::string_view operation, facebook::react::Tag tag);
     void reportRejectedAnimatedProp(const RejectedAnimatedProp& rejectedProp);
     void reportRejectedNonFiniteProp(const RejectedNonFiniteProp& rejectedProp);
+    void verifyPropsDeriveFromViewProps(const facebook::react::ShadowView& shadowView);
     /**
      * `changedThisTransaction` maps a tag already recorded in this transaction to its position in
      * `accessibilityChanges_`, so a second `Update` on the same tag in one transaction ORs its
