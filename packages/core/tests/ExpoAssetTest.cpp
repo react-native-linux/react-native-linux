@@ -133,6 +133,16 @@ TEST_F(ExpoAssetTest, DownloadsAgainWhenTheCachedFileNoLongerMatchesItsMd5) {
     EXPECT_EQ(served_.load(), 1);
 }
 
+/** A directory where the cached file belongs is no cache hit, and its publish rejects instead of throwing. */
+TEST_F(ExpoAssetTest, RejectsWhenADirectoryOccupiesTheCachedPath) {
+    const std::filesystem::path hashedPath = directory_ / ("ExponentAsset-" + std::string(kAssetMd5) + ".png");
+
+    std::filesystem::create_directories(hashedPath);
+
+    EXPECT_EQ(settle(server_.url("/asset.png"), std::string(kAssetMd5), "png"),
+              "rejected: Unable to save asset to directory: 'file://" + directory_.string() + "'");
+}
+
 /** Checking and hashing a cached file is disk work, so even a cache hit settles off the calling thread. */
 TEST_F(ExpoAssetTest, SettlesACachedAssetOffTheCallingThread) {
     const auto settledOn = std::make_shared<std::promise<std::thread::id>>();

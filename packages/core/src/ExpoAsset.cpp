@@ -122,7 +122,7 @@ void ExpoAssetDownloads::downloadOnWorker(const std::string& url, const std::opt
 
     std::error_code ignored;
 
-    if (std::filesystem::exists(localPath, ignored) &&
+    if (std::filesystem::is_regular_file(localPath, ignored) &&
         (!md5Hash.has_value() || contentMd5(localPath) == md5Hash.value())) {
         resolve(fileUrl);
         return;
