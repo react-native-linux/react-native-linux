@@ -130,7 +130,15 @@ uint64_t paragraphLayoutCount();
  */
 void registerApplicationFonts(const std::string& fontDirectory);
 
-/** The names `registerApplicationFonts` made resolvable, empty before it has been called. */
+/**
+ * Makes the font file at `fontPath` resolvable as `fontFamily`, beside the fonts `registerApplicationFonts`
+ * registered: `expo-font`'s `loadAsync` (#156). A second face under one name joins that family, matched by its own
+ * weight and slant. The next `registerApplicationFonts` call, that is the next bundle load, drops it. Returns false,
+ * registering nothing, when the file is missing or is not a font.
+ */
+bool registerApplicationFont(const std::string& fontFamily, const std::string& fontPath);
+
+/** The names `registerApplicationFonts` and `registerApplicationFont` made resolvable, empty before either ran. */
 std::vector<std::string> applicationFontFamilies();
 
 } // namespace react_native_linux

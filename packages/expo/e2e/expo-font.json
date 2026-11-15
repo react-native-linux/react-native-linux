@@ -1,0 +1,16 @@
+{
+  "name": "expo-font",
+  "bundle": "expo-font.tsx",
+  "ready": "expo-font: rendered",
+  "frames": 600,
+  "steps": ["sleep 300"],
+  "automation": {
+    "listErrorsMustBeEmpty": true
+  },
+  "screenshot": {
+    "golden": "expo-font.png",
+    "maxDifferentPixels": 50,
+    "crop": { "left": 40, "top": 40, "width": 320, "height": 120 }
+  },
+  "expect": ["expo-font: rendered loaded=true error=null isLoaded=true listed=true"]
+}

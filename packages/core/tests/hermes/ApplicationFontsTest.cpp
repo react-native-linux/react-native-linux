@@ -107,5 +107,25 @@ TEST(ApplicationFontsTest, AFaceResolvesByItsPostScriptNameAndAFaceTheDirectoryL
     EXPECT_TRUE(reportedUnregistered("NotoSansHebrew-Thin"));
 }
 
+/**
+ * `expo-font` registers a file under a name of the app's choosing (#156), which need not be the face's own family or
+ * PostScript name: that name draws without the #70 diagnostic, and an unregistered one still reports.
+ */
+TEST(ApplicationFontsTest, AFontRegisteredUnderAnAppChosenNameResolvesWithoutTheDiagnostic) {
+    const bool registered = registerApplicationFont(
+        "Brand Alias", (std::filesystem::path(RNL_VENDORED_FONT_DIR) / "NotoSansHebrew-Regular.ttf").string());
+
+    measureIn("Brand Alias");
+    measureIn("Brand Alias Unregistered");
+    const bool listed = registers("Brand Alias");
+
+    registerApplicationFonts(std::string());
+
+    EXPECT_TRUE(registered);
+    EXPECT_TRUE(listed);
+    EXPECT_FALSE(reportedUnregistered("Brand Alias"));
+    EXPECT_TRUE(reportedUnregistered("Brand Alias Unregistered"));
+}
+
 } // namespace
 } // namespace react_native_linux

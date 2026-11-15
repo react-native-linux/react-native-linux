@@ -200,11 +200,13 @@ std::vector<SkString> resolveGenericFamily(const facebook::react::TextAttributes
     return {SkString{attributes.fontFamily}};
 }
 
+bool isApplicationFontFamily(const std::string& family);
+
 std::vector<SkString> resolveNamedFamily(const facebook::react::TextAttributes& attributes,
                                          skia::textlayout::FontCollection& fontCollection) {
     const ResolvedFaceNames resolved = resolveRequestedFace(attributes, fontCollection);
 
-    if (!resolved.family.equals(attributes.fontFamily.c_str()) &&
+    if (!isApplicationFontFamily(attributes.fontFamily) && !resolved.family.equals(attributes.fontFamily.c_str()) &&
         !resolved.postScriptName.equals(attributes.fontFamily.c_str())) {
         reportUnresolvedFontFamily(attributes.fontFamily, resolved.family);
     }
@@ -583,8 +585,9 @@ struct TextPipelineState {
     sk_sp<skia::textlayout::FontCollection> fontCollection;
     sk_sp<SkUnicode> unicode;
     // The application's own fonts (#70), the collection's dynamic manager: consulted ahead of the vendored faces
-    // and fontconfig, and null until a bundle loaded from a directory that has an `assets/fonts` beside it.
-    sk_sp<SkFontMgr> applicationFontManager;
+    // and fontconfig, and null until a bundle loaded from a directory that has an `assets/fonts` beside it, or until
+    // `registerApplicationFont` registered one at runtime.
+    sk_sp<skia::textlayout::TypefaceFontProvider> applicationFontManager;
     // The measure cache of #342, guarded by the same mutex the shape takes: one lock per lookup, and the
     // shapes it removes from that critical section are the point.
     ParagraphLayoutCache paragraphLayoutCache{512};
@@ -594,6 +597,17 @@ TextPipelineState& textPipelineState() {
     static TextPipelineState state;
 
     return state;
+}
+
+/**
+ * Whether an application registered `family`, which `registerApplicationFont` does under a name of the app's choosing
+ * that the face's own family and PostScript names need not match: `expo-font` loads Noto Sans Italic as `Brand
+ * Italic`. Called under the pipeline's mutex, as every layout is.
+ */
+bool isApplicationFontFamily(const std::string& family) {
+    const sk_sp<skia::textlayout::TypefaceFontProvider>& provider = textPipelineState().applicationFontManager;
+
+    return provider != nullptr && provider->matchFamily(family.c_str())->count() > 0;
 }
 
 facebook::react::Rect toRect(const SkRect& rect) {
@@ -837,7 +851,7 @@ std::atomic<uint64_t> paragraphLayoutCounter{0};
  * PostScript name: T3 Code asks for `DMSans-Medium`, a face of the family `DM Sans`. The directory manager alone
  * answers only the family.
  */
-sk_sp<SkFontMgr> makeApplicationFontManager(const std::string& fontDirectory) {
+sk_sp<skia::textlayout::TypefaceFontProvider> makeApplicationFontManager(const std::string& fontDirectory) {
     const sk_sp<SkFontMgr> directory = SkFontMgr_New_Custom_Directory(fontDirectory.c_str());
     const sk_sp<skia::textlayout::TypefaceFontProvider> provider = sk_make_sp<skia::textlayout::TypefaceFontProvider>();
 
@@ -879,6 +893,27 @@ void registerApplicationFonts(const std::string& fontDirectory) {
     state.fontCollection->setDynamicFontManager(state.applicationFontManager);
     state.fontCollection->clearCaches();
     state.paragraphLayoutCache.clear();
+}
+
+bool registerApplicationFont(const std::string& fontFamily, const std::string& fontPath) {
+    TextPipelineState& state = textPipelineState();
+    const std::lock_guard<std::mutex> guard(state.mutex);
+    const sk_sp<SkTypeface> typeface = state.fontCollection->getFallbackManager()->makeFromFile(fontPath.c_str());
+
+    if (typeface == nullptr) {
+        return false;
+    }
+
+    if (state.applicationFontManager == nullptr) {
+        state.applicationFontManager = sk_make_sp<skia::textlayout::TypefaceFontProvider>();
+        state.fontCollection->setDynamicFontManager(state.applicationFontManager);
+    }
+
+    state.applicationFontManager->registerTypeface(typeface, SkString(fontFamily.c_str()));
+    state.fontCollection->clearCaches();
+    state.paragraphLayoutCache.clear();
+
+    return true;
 }
 
 std::vector<std::string> applicationFontFamilies() {
