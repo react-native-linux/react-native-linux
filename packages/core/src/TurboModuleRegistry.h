@@ -28,7 +28,7 @@ class TurboModule;
 
 namespace react_native_linux {
 
-class FileSystemHost;
+struct FileSystemHost;
 class HostTimerRegistry;
 class I18nModel;
 class KeyValueStore;

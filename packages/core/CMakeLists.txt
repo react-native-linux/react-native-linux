@@ -881,6 +881,7 @@ add_library(rnl_react_core STATIC
     src/ScrollController.cpp
     src/ScrollEventCadence.cpp
     src/ScrollPhysics.cpp
+    src/SerialWorker.cpp
     src/StubMessageQueue.cpp
     src/SwitchComponent.cpp
     src/SwitchContent.cpp

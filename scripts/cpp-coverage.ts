@@ -72,6 +72,7 @@ const scopedSourcePaths: readonly string[] = [
   "packages/core/src/ScrollEventCadence.cpp",
   "packages/core/src/ScrollPhysics.cpp",
   "packages/core/src/SeededTestScheduler.cpp",
+  "packages/core/src/SerialWorker.cpp",
   "packages/core/src/SingleInstanceActivation.cpp",
   "packages/core/src/StubMessageQueue.cpp",
   "packages/core/src/SurfaceCommitGate.cpp",

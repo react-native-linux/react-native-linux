@@ -2,13 +2,11 @@
 
 #include <cmath>
 #include <filesystem>
-#include <future>
 #include <gtest/gtest.h>
 #include <limits>
 #include <optional>
 #include <stdexcept>
 #include <string>
-#include <thread>
 #include <utility>
 #include <vector>
 
@@ -292,33 +290,6 @@ TEST_F(ExpoFileSystemTest, AFailedOrSelfReplacementLeavesWhatWasThereIntact) {
     EXPECT_TRUE(fs::is_directory(outer / "outer"));
     EXPECT_EQ(react_native_linux::readFileBytes(root_ / "folder" / "file.txt" / "kept.txt"), "kept");
     EXPECT_EQ(react_native_linux::readFileBytes(root_ / "folder" / "outer"), "kept");
-}
-
-TEST(FileSystemHostTest, TasksRunInOrderOffTheCallingThreadAndTheDestructorRunsThoseStillQueued) {
-    std::vector<int> order;
-    std::promise<std::thread::id> firstRan;
-    std::future<std::thread::id> firstThread = firstRan.get_future();
-    {
-        react_native_linux::FileSystemHost idle;
-
-        EXPECT_TRUE(idle.applicationDirectory().empty());
-        idle.setApplicationDirectory("/data/org.example.app");
-        EXPECT_EQ(idle.applicationDirectory(), fs::path("/data/org.example.app"));
-    }
-    {
-        react_native_linux::FileSystemHost worker;
-
-        worker.post([&] {
-            order.push_back(1);
-            firstRan.set_value(std::this_thread::get_id());
-        });
-        EXPECT_NE(firstThread.get(), std::this_thread::get_id());
-        for (int task = 2; task <= 4; ++task) {
-            worker.post([&order, task] { order.push_back(task); });
-        }
-    }
-
-    EXPECT_EQ(order, (std::vector<int>{1, 2, 3, 4}));
 }
 
 } // namespace

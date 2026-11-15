@@ -6,12 +6,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <functional>
 #include <jsi/jsi.h>
 #include <memory>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -206,7 +206,7 @@ void addSyncAndAsync(SharedObjectMembers& members, const Context& context, const
             try {
                 const std::shared_ptr<EntryState> entry = entryOf(runtime, thisValue);
 
-                context.host.post([promise, operation = prepare(runtime, entry, arguments, count)]() mutable {
+                context.host.worker.post([promise, operation = prepare(runtime, entry, arguments, count)]() mutable {
                     try {
                         promise.resolve(operation());
                     } catch (const std::exception& error) {
@@ -377,7 +377,7 @@ public:
 private:
     Value constants(Runtime& runtime) {
         facebook::jsi::Object constants(runtime);
-        const std::filesystem::path& applicationDirectory = host_.applicationDirectory();
+        const std::filesystem::path& applicationDirectory = host_.applicationDirectory;
         const Context context{.jsInvoker = jsInvoker_, .host = host_};
 
         constants.setProperty(runtime, "FileSystemFile",

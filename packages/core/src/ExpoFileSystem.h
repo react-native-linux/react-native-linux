@@ -1,17 +1,14 @@
 #pragma once
 
-#include <condition_variable>
+#include "SerialWorker.h"
+
 #include <cstddef>
 #include <cstdint>
-#include <deque>
 #include <filesystem>
-#include <functional>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <thread>
 #include <utility>
 #include <vector>
 
@@ -114,41 +111,16 @@ std::filesystem::path relocateEntry(const std::filesystem::path& source, FileSys
 
 /**
  * What the `FileSystem` module runs over: the application directory, which `WindowSession` sets to
- * `$XDG_DATA_HOME/<app-id>`, beside AsyncStorage's file and `ExpoSQLite`'s `SQLite`, and the thread its asynchronous
- * methods do their file work on, so a large read or write never stalls the JavaScript thread. A host that sets no
- * directory, as a headless runtime does not, has no `Paths.document` or `Paths.cache`.
+ * `$XDG_DATA_HOME/<app-id>`, beside AsyncStorage's file and `ExpoSQLite`'s `SQLite`, and the worker its asynchronous
+ * methods do their file work on. A host whose directory stays empty, as a headless one's does, has no
+ * `Paths.document` or `Paths.cache`.
  *
- * Threading contract: `setApplicationDirectory` runs before the bundle does, on the thread that then hands the
- * runtime to the JavaScript thread, which is the only one that reads `applicationDirectory`. `post` may be called
- * from any thread and never waits on a task. Tasks run on the one thread this object owns, which the first `post`
- * starts, in the order they were posted, and must not throw. The destructor runs every task already posted, so a
- * queued write still lands, then joins the thread if one started.
+ * Threading contract: `applicationDirectory` is written before the bundle runs, on the thread that then hands the
+ * runtime to the JavaScript thread, which is the only one that reads it; `worker` states its own.
  */
-class FileSystemHost final {
-public:
-    using Task = std::function<void()>;
-
-    FileSystemHost() = default;
-    FileSystemHost(const FileSystemHost&) = delete;
-    FileSystemHost(FileSystemHost&&) = delete;
-    FileSystemHost& operator=(const FileSystemHost&) = delete;
-    FileSystemHost& operator=(FileSystemHost&&) = delete;
-    ~FileSystemHost() noexcept;
-
-    void setApplicationDirectory(std::filesystem::path applicationDirectory);
-    [[nodiscard]] const std::filesystem::path& applicationDirectory() const noexcept;
-    void post(Task task);
-
-private:
-    void runTasks();
-
-    std::filesystem::path applicationDirectory_;
-
-    std::mutex mutex_;
-    std::condition_variable wake_;
-    std::deque<Task> tasks_;
-    bool stopping_{false};
-    std::thread thread_;
+struct FileSystemHost {
+    std::filesystem::path applicationDirectory;
+    SerialWorker worker;
 };
 
 /**

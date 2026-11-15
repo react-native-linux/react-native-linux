@@ -211,7 +211,7 @@ TEST(ExpoFileSystemModuleTest, UpstreamFileAndDirectorySubclassesWorkInTheApplic
     {
         ReactHost reactHost;
 
-        reactHost.fileSystem().setApplicationDirectory(root / "data" / "org.example.files");
+        reactHost.fileSystem().applicationDirectory = root / "data" / "org.example.files";
         reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>(kFileSystemProbe),
                              "ExpoFileSystemModuleTest.js");
         EXPECT_TRUE(reactHost.runUntilQuiescent(kQuiescenceBudget));
@@ -277,7 +277,7 @@ TEST(ExpoFileSystemModuleTest, JavaScriptRunsOnWhileAnAsynchronousWriteIsPending
     {
         ReactHost reactHost;
 
-        reactHost.fileSystem().setApplicationDirectory(application);
+        reactHost.fileSystem().applicationDirectory = application;
         reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>(kPendingWriteProbe),
                              "ExpoFileSystemPendingTest.js");
         EXPECT_TRUE(reactHost.runUntilQuiescent(kQuiescenceBudget));
@@ -300,7 +300,7 @@ TEST(ExpoFileSystemModuleTest, TeardownWaitsForPendingWorkAndRunsWhatIsQueued) {
     {
         ReactHost reactHost;
 
-        reactHost.fileSystem().setApplicationDirectory(application);
+        reactHost.fileSystem().applicationDirectory = application;
         reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>(kPendingWriteProbe),
                              "ExpoFileSystemTeardownTest.js");
         written = std::async(std::launch::async, [fifo = application / "Documents" / "fifo"] {
@@ -330,7 +330,7 @@ TEST(ExpoFileSystemModuleTest, AProcessWithNoHomeHasADocumentDirectoryButNoCache
     {
         ReactHost reactHost;
 
-        reactHost.fileSystem().setApplicationDirectory(root / "org.example.homeless");
+        reactHost.fileSystem().applicationDirectory = root / "org.example.homeless";
         reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>(R"JAVASCRIPT(
 globalThis.expo = { SharedObject: class SharedObject {} };
 const constants = globalThis.nativeModuleProxy.FileSystem.getConstants();
