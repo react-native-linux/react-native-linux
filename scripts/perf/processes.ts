@@ -18,7 +18,8 @@ const NO_KILOBYTES = 0;
 type ProcessRole = "backend" | "client" | "gpu";
 
 interface ProcessSample {
-  readonly commandLine: string;
+  /** /proc/<pid>/cmdline split at its NUL separators, so an argument that holds a space stays whole. */
+  readonly commandArguments: readonly string[];
   readonly cpuTicks: number;
   readonly parentPid: number;
   readonly pid: number;
@@ -60,9 +61,11 @@ const readProcessSample = (pid: string, readText: (procPath: string) => string):
   try {
     const stat = parseProcessStat(readText(`/proc/${pid}/stat`));
     const memory = parseSmapsRollup(readText(`/proc/${pid}/smaps_rollup`));
-    const commandLine = readText(`/proc/${pid}/cmdline`).replaceAll("\0", " ");
+    const commandArguments = readText(`/proc/${pid}/cmdline`)
+      .split("\0")
+      .filter((argument) => argument !== "");
 
-    return stat === null ? [] : [{ ...stat, ...memory, commandLine, pid: Number(pid) }];
+    return stat === null ? [] : [{ ...stat, ...memory, commandArguments, pid: Number(pid) }];
   } catch {
     // The process exited between the directory listing and the read.
     return [];
@@ -89,14 +92,11 @@ const resolveRole = (
   parentRole: ProcessRole | null,
   backendEntryPath: string | null,
 ): ProcessRole => {
-  if (
-    parentRole === "backend" ||
-    (backendEntryPath !== null && sample.commandLine.split(" ").includes(backendEntryPath))
-  ) {
+  if (parentRole === "backend" || (backendEntryPath !== null && sample.commandArguments.includes(backendEntryPath))) {
     return "backend";
   }
 
-  return sample.commandLine.includes("--type=gpu-process") ? "gpu" : "client";
+  return sample.commandArguments.includes("--type=gpu-process") ? "gpu" : "client";
 };
 
 /** Every process in the tree with its role; processes outside the tree are left out. */

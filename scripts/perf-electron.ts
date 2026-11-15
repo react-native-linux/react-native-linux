@@ -1,8 +1,8 @@
 import { argv, env, stderr, stdout } from "node:process";
 import { describeMissingBuild, resolveT3Code, seedHome } from "./perf-t3code.ts";
 import { describeMissingCompositor, withCompositor } from "./perf-compositor.ts";
+import { describeRungMismatch, formatReport, summarizeRun } from "./perf/report.ts";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { formatReport, summarizeRun } from "./perf/report.ts";
 import { injectorBinaryPath } from "./e2e-processes.ts";
 import { parseArgs } from "node:util";
 import path from "node:path";
@@ -76,8 +76,24 @@ const describeConditions = (electronArguments: readonly string[], rung: (typeof 
   );
 };
 
-const measureElectron = (rung: (typeof RUNGS)[keyof typeof RUNGS]): Promise<string> =>
-  withCompositor({ refreshHz, renderer: rung.compositor }, async (display) => {
+/** The run's report; a run whose Chromium drew another way than its rung asks for fails instead of reporting. */
+const reportRun = (name: keyof typeof RUNGS, run: Awaited<ReturnType<typeof runApp>>): string => {
+  const rungMismatch = describeRungMismatch(name, run.gpuInfo);
+  const result = summarizeRun(run, refreshHz);
+
+  if (rungMismatch !== null) {
+    throw new Error(rungMismatch);
+  }
+  if (result === null) {
+    throw new Error("Electron never bound wp_presentation on CLOCK_MONOTONIC, so no frame was measured");
+  }
+
+  return formatReport(result);
+};
+
+const measureElectron = (name: keyof typeof RUNGS): Promise<string> =>
+  withCompositor({ refreshHz, renderer: RUNGS[name].compositor }, async (display) => {
+    const rung = RUNGS[name];
     const electronArguments = [...rung.electronArguments, ...extraArguments];
     const conditions = describeConditions(electronArguments, rung);
     const t3Home = path.join(display.scratchDirectory, "home", "t3");
@@ -88,13 +104,8 @@ const measureElectron = (rung: (typeof RUNGS)[keyof typeof RUNGS]): Promise<stri
       t3Home,
       t3code,
     }).finally(removeSeed);
-    const result = summarizeRun(run, refreshHz);
 
-    if (result === null) {
-      throw new Error("Electron never bound wp_presentation on CLOCK_MONOTONIC, so no frame was measured");
-    }
-
-    return writeArtifacts(run.trace, `${conditions}\n${formatReport(result)}`);
+    return writeArtifacts(run.trace, `${conditions}\n${reportRun(name, run)}`);
   });
 
 const unavailableReasons = [
@@ -112,5 +123,5 @@ if (unavailableReasons.length > NO_REASONS || !isRung(rungName)) {
   stderr.write(unavailableReasons.map((reason) => `${reason}\n`).join(""));
   process.exitCode = UNAVAILABLE_EXIT_STATUS;
 } else {
-  stdout.write(await measureElectron(RUNGS[rungName]));
+  stdout.write(await measureElectron(rungName));
 }

@@ -55,7 +55,9 @@ run below.
 without the render node, Electron with no switches reports the same status. The switch only pins it, so the rung
 cannot drift on a machine whose GPU Chromium accepts. `llvmpipe` cannot be pinned by a switch: with the render
 node in reach, ANGLE took the Radeon even under `LIBGL_ALWAYS_SOFTWARE=1`, and the printed GL renderer showed it.
-So that rung runs in the container without the render node, and its rows below say llvmpipe.
+So that rung runs in the container without the render node, and its rows below say llvmpipe. The script checks
+every rung against that column: a run whose Chromium drew another way (an llvmpipe run on the Radeon, a gpu or
+llvmpipe run that fell back to software) exits non-zero instead of reporting.
 
 One difference inside a pair is not the renderer: **rnl_window's raster rung repaints the whole surface every frame,
 and Chromium damages only what changed** (`wl_surface.damage(256, 40, 1024, 680)` during the scroll, the feed and
@@ -69,7 +71,8 @@ replay agent plays recorded ACP turns with simulated streaming through the real 
 
 **The workload**, in order:
 
-1. **Cold start**: spawn to the sidebar listing the fixture's threads (watched over the DevTools protocol).
+1. **Cold start**: spawn to observed readiness, the moment the harness saw the sidebar list the fixture's threads
+   (watched over the DevTools protocol; see *Startup* below).
 2. **Idle**: two seconds with the window open and nothing happening.
 3. **Streamed reply**: a thread is started on the replay provider's `showcase` scenario (thinking, a plan, tool
    calls and markdown) with T3 Code's own CLI (`t3 thread start`, against the app's backend), opened by its
@@ -105,13 +108,18 @@ the hold, none of the runs below crashed.
 - *Late frames*: intervals longer than 1.5 refresh periods, so at least one deadline passed with no new frame.
   That is a missed deadline only while something moves every frame, as in the scroll. In the streamed reply it
   also counts the waits between chunks, and in cold start and idle it means nothing.
-- *Startup*: spawn to the first presented frame, and to the first usable frame. The first usable frame is anchored
-  on the moment the sidebar's thread list reached the DOM: in the page a MutationObserver sees React commit it,
-  and after two animation frames, by which time the frame holding the list has been produced, the check replies
-  with the time since the commit. That places the commit on `CLOCK_MONOTONIC` to within the reply's latency, and
-  the first usable frame is the first frame presented after it. **rnl_window has no DOM, so its anchor is the
-  first Fabric mount transaction that contains the sidebar's thread-item view**, and its first usable frame is the
-  first frame in its frame log presented after that transaction.
+- *Startup*: spawn to the first presented frame, and to the first frame presented after **observed readiness**:
+  the moment the harness first saw the sidebar's thread list in the DOM. In the page a MutationObserver watches
+  for it, and after two animation frames, by which time the frame holding the list has been produced, the check
+  replies with the time since it saw the list. When the list appears while the observer watches, that moment is
+  React's commit, placed on `CLOCK_MONOTONIC` to within the reply's latency. When the list is already there as a
+  check begins (DevTools attached after it rendered, or the commit fell between two checks, as around the window's
+  one reload), the moment is the check's own, after the commit, and the report says so. Observed readiness is
+  therefore never earlier than the commit, and the figure after it can only overstate Electron's startup. The runs
+  below predate that note, so which of them were anchored on a check is not recorded. **rnl_window has no DOM, and
+  its planned anchor is the first Fabric mount transaction that contains the sidebar's thread-item view**, stamped
+  by the app at the commit itself rather than by a poll, so it is never late. Until Electron gets an anchor of the
+  same kind, compare its startup only from runs whose readiness was observed at the commit.
 - *CPU time and memory*, from /proc, for the app's process tree split three ways. **Client** is the main process,
   the renderer, the zygotes, the utility processes, and helpers the main process starts in Node mode for other
   jobs. **GPU process** is reported apart: on the two software rungs it rasterises or composites on the CPU.
@@ -153,15 +161,16 @@ Ubuntu 24.04 container (Mesa 25.2.8), in a headless cage at 1280x720@120 Hz. Eve
 session (software, llvmpipe, gpu, three rounds) at a load of 1.1 to 6.4. The llvmpipe runs from that session
 reported the Radeon as their GL renderer and are discarded (see the rungs above). The llvmpipe rows below were
 re-run without the render node half an hour later, **at a load of 11 to 13** from other work on the machine, so
-they do not compare with the other two rungs: their slower startup is that load. Their run 2 failed the travel
-check (the feed came back 120 px short of its bottom) and is left out. Nothing else is averaged away.
+they do not compare with the other two rungs. That load may have contributed to their slower startup, but these
+runs cannot attribute the difference. Their run 2 failed the travel check (the feed came back 120 px short of its
+bottom) and is left out. Nothing else is averaged away.
 
 These are exploratory numbers. Every scroll and streamed-reply row here runs on Chromium's default frame clock,
 which this rig caps at 60 Hz (see above).
 
 ### Rung `software` (pair: rnl_window `--renderer raster`)
 
-| Run | Load at start | First frame (ms) | First usable frame (ms) | Discarded |
+| Run | Load at start | First frame (ms) | First frame after observed readiness (ms) | Discarded |
 | ---: | ---: | ---: | ---: | ---: |
 | 1 | 1.07 | 495 | 1415 | 0 |
 | 2 | 1.37 | 389 | 1392 | 0 |
@@ -187,7 +196,7 @@ which this rig caps at 60 Hz (see above).
 
 ### Rung `llvmpipe` (pair: rnl_window `--renderer software-vulkan`)
 
-| Run | Load at start | First frame (ms) | First usable frame (ms) | Discarded |
+| Run | Load at start | First frame (ms) | First frame after observed readiness (ms) | Discarded |
 | ---: | ---: | ---: | ---: | ---: |
 | 1 | 13.07 | 1177 | 3742 | 0 |
 | 3 | 12.91 | 738 | 2966 | 0 |
@@ -213,7 +222,7 @@ which this rig caps at 60 Hz (see above).
 
 ### Rung `gpu` (pair: rnl_window `--renderer preferred-vulkan`)
 
-| Run | Load at start | First frame (ms) | First usable frame (ms) | Discarded |
+| Run | Load at start | First frame (ms) | First frame after observed readiness (ms) | Discarded |
 | ---: | ---: | ---: | ---: | ---: |
 | 1 | 1.30 | 416 | 1378 | 0 |
 | 2 | 3.53 | 491 | 1817 | 0 |
@@ -275,9 +284,9 @@ at a load of 7.8 to 12.4.
   and the same on gles2, against 0.9 to 2.1 s for Electron's client and GPU process together.
 - **Idle is not free**: four or five frames every two seconds, one every ~500 ms, from something in the window that
   repaints on a timer. The composer's blinking caret is the likely source; it was not isolated.
-- **Cold start**, on the quiet software and gpu runs: the first frame lands 0.4 to 0.65 s after spawn, the first
-  usable one 1.4 to 2.3 s after. Client memory is 880 to 1060 MiB RSS (510 to 660 MiB PSS) once the feed has content,
-  beside 370 to 450 MiB for the backend. The GPU rung's client is about 60 MiB larger.
+- **Cold start**, on the quiet software and gpu runs: the first frame lands 0.4 to 0.65 s after spawn, and the
+  first frame after observed readiness 1.4 to 2.3 s after it. Client memory is 880 to 1060 MiB RSS (510 to 660 MiB
+  PSS) once the feed has content, beside 370 to 450 MiB for the backend. The GPU rung's client is about 60 MiB larger.
 
 These runs show the method end to end. The numbers rnl_window is held to come from the protocol above, after #641
 and #700.

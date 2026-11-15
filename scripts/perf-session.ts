@@ -138,9 +138,9 @@ const createMeasure =
     return value;
   };
 
-/** Cold start runs from spawn to the first usable state; the app idles, then runs its workload. */
+/** Cold start runs from spawn to observed readiness; the app idles, then runs its workload. */
 const recordPhases = async (page: DevTools, started: Started): Promise<Omit<AppRun, "gpuInfo" | "trace">> => {
-  const readyNanoseconds = await waitForThreadList(page, STARTUP_TIMEOUT_MS);
+  const observedReadiness = await waitForThreadList(page, STARTUP_TIMEOUT_MS);
   const phases = [
     measurePhase(started, {
       before: started.atSpawn,
@@ -156,7 +156,7 @@ const recordPhases = async (page: DevTools, started: Started): Promise<Omit<AppR
   const workload = await driveWorkload({ ...started.run, measure, page });
   const ticksPerSecond = Number(execFileSync("getconf", ["CLK_TCK"], { encoding: "utf8" }));
 
-  return { phases, readyNanoseconds, spawnedNanoseconds: started.spawnedNanoseconds, ticksPerSecond, workload };
+  return { observedReadiness, phases, spawnedNanoseconds: started.spawnedNanoseconds, ticksPerSecond, workload };
 };
 
 const connectAndRecord = async (started: Started): Promise<Omit<AppRun, "trace">> => {

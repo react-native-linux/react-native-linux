@@ -53,7 +53,7 @@ const sample = ({
   parentPid,
   pid,
 }: SampleFields): ReturnType<typeof readProcessSamples>[number] => ({
-  commandLine,
+  commandArguments: commandLine.split(" ").filter((argument) => argument !== ""),
   cpuTicks,
   parentPid,
   pid,
@@ -81,7 +81,7 @@ describe("readProcessSamples", () => {
   it("reads CPU ticks, the parent, memory and the command line of each numeric /proc entry", () => {
     expect(readProcessSamples(["27", "self", "cpuinfo"], readText)).toEqual([
       {
-        commandLine: `${ELECTRON} /opt/t3/apps/desktop --no-sandbox `,
+        commandArguments: [ELECTRON, "/opt/t3/apps/desktop", "--no-sandbox"],
         cpuTicks: 500,
         parentPid: 1,
         pid: 27,
@@ -97,7 +97,7 @@ describe("readProcessSamples", () => {
 
   it("reads missing memory lines as zero, as for a kernel thread", () => {
     expect(readProcessSamples(["28"], readText)).toEqual([
-      { commandLine: "", cpuTicks: 0, parentPid: 2, pid: 28, pssKilobytes: 0, rssKilobytes: 0 },
+      { commandArguments: [], cpuTicks: 0, parentPid: 2, pid: 28, pssKilobytes: 0, rssKilobytes: 0 },
     ]);
   });
 
@@ -123,6 +123,22 @@ describe("classifyProcessTree", () => {
       29: "client",
       61: "gpu",
       93: "client",
+    });
+  });
+
+  it("matches the backend's entry script read from /proc as one argument when the checkout path holds spaces", () => {
+    const spacedEntry = "/home/user/My Projects/t3/apps/server/dist/bin.mjs";
+    const spacedFiles = new Map([
+      ["/proc/27/stat", statText({ parentPid: 1, systemTicks: 0, userTicks: 0 })],
+      ["/proc/27/cmdline", [ELECTRON, "/home/user/My Projects/t3/apps/desktop", ""].join("\0")],
+      ["/proc/138/stat", statText({ parentPid: ROOT_PID, systemTicks: 0, userTicks: 0 })],
+      ["/proc/138/cmdline", [ELECTRON, spacedEntry, "--bootstrap-fd", "3", ""].join("\0")],
+    ]);
+    const samples = readProcessSamples(["27", "138"], (procPath) => spacedFiles.get(procPath) ?? "");
+
+    expect(Object.fromEntries(classifyProcessTree(samples, { ...APP_TREE, backendEntryPath: spacedEntry }))).toEqual({
+      138: "backend",
+      27: "client",
     });
   });
 

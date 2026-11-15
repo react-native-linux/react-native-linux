@@ -131,45 +131,55 @@ const runThreadCommand = async (workload: Workload, commandArguments: readonly s
 };
 
 /**
- * When the sidebar first listed the fixture's threads, on `CLOCK_MONOTONIC`: the first usable frame's anchor. In
+ * Observed readiness on `CLOCK_MONOTONIC`: when this harness first saw the sidebar list the fixture's threads. In
  * the page a MutationObserver sees React commit the list, and two animation frames later the frame that holds it
- * has been produced; the check then replies with the time since the commit, which places the commit on this
- * process's clock to within the reply's latency. The window reloads once on the way, which destroys the context
- * mid-evaluate, so each check waits a second at most and the next one reads the new document.
+ * has been produced; the check then replies with the time since it saw the list, which places that moment on this
+ * process's clock to within the reply's latency. If the list is already there when a check begins (DevTools
+ * attached late, or the commit fell between two checks) that moment is the check's, after the commit, and the
+ * result says so. The window reloads once on the way, which destroys the context mid-evaluate, so each check waits
+ * a second at most and the next one reads the new document.
  */
-const waitForThreadList = async (page: Page, timeoutMilliseconds: number): Promise<number> => {
-  const check = async (): Promise<number | null> => {
+const waitForThreadList = async (
+  page: Page,
+  timeoutMilliseconds: number,
+): Promise<{ nanoseconds: number; wasAlreadyPresent: boolean }> => {
+  const check = async (): Promise<{ nanoseconds: number; wasAlreadyPresent: boolean } | null> => {
     try {
-      const millisecondsSinceListed = await page.evaluate(
+      const listed = await page.evaluate(
         `new Promise((resolve) => {
           const isListed = () => document.querySelector(${JSON.stringify(THREAD_ITEM_SELECTOR)}) !== null;
           let listedAt = null;
-          const resolveAfterFrame = () => {
+          const resolveAfterFrame = (wasAlreadyPresent) => {
             listedAt = performance.now();
             observer.disconnect();
-            requestAnimationFrame(() => requestAnimationFrame(() => resolve(performance.now() - listedAt)));
+            requestAnimationFrame(() => requestAnimationFrame(() =>
+              resolve({ millisecondsSinceListed: performance.now() - listedAt, wasAlreadyPresent })));
           };
-          const observer = new MutationObserver(() => { if (listedAt === null && isListed()) resolveAfterFrame(); });
+          const observer = new MutationObserver(() => { if (listedAt === null && isListed()) resolveAfterFrame(false); });
           observer.observe(document, { childList: true, subtree: true });
           setTimeout(() => { if (listedAt === null) { observer.disconnect(); resolve(null); } }, ${String(READY_ATTEMPT_MS)});
-          if (isListed()) resolveAfterFrame();
+          if (isListed()) resolveAfterFrame(true);
         })`,
       );
 
-      return typeof millisecondsSinceListed === "number"
-        ? Number(hrtime.bigint()) - millisecondsSinceListed * NANOSECONDS_PER_MILLISECOND
+      return isRecord(listed)
+        ? {
+            nanoseconds:
+              Number(hrtime.bigint()) - Number(listed["millisecondsSinceListed"]) * NANOSECONDS_PER_MILLISECOND,
+            wasAlreadyPresent: listed["wasAlreadyPresent"] === true,
+          }
         : null;
     } catch {
       return null;
     }
   };
-  const anchorNanoseconds = await pollUntil(check, timeoutMilliseconds);
+  const readiness = await pollUntil(check, timeoutMilliseconds);
 
-  if (anchorNanoseconds === null) {
+  if (readiness === null) {
     throw new Error("the sidebar never listed the fixture's threads");
   }
 
-  return anchorNanoseconds;
+  return readiness;
 };
 
 /** The thread's route is `#/<environment>/<thread>`; the backend writes its environment id into its state directory. */

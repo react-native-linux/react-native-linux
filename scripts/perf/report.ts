@@ -7,7 +7,9 @@ const MILLISECONDS_PER_SECOND = 1000;
 const KILOBYTES_PER_MEBIBYTE = 1024;
 const MILLISECOND_DECIMALS = 2;
 const WHOLE_DECIMALS = 0;
-const GPU_FEATURES = ["gpu_compositing", "rasterization"];
+const SOFTWARE_GL_PATTERN = /llvmpipe|swiftshader/iu;
+const READINESS_ALREADY_PRESENT_NOTE =
+  " (the thread list was already there when the check began, so readiness is the check's time, after React's commit)";
 
 type FramePacing = ReturnType<typeof summarizeFramePacing>;
 
@@ -27,8 +29,11 @@ interface AppRun {
   /** The browser's `SystemInfo.getInfo` result, which says how Chromium chose to draw. */
   readonly gpuInfo: unknown;
   readonly phases: readonly MeasuredPhase[];
-  /** When the sidebar first listed the threads, the first usable frame's anchor. */
-  readonly readyNanoseconds: number;
+  /**
+   * When the harness first saw the sidebar list the threads. That is React's commit if the list appeared while the
+   * page watched for it, and the check's own time if the list was already there when the check began.
+   */
+  readonly observedReadiness: { readonly nanoseconds: number; readonly wasAlreadyPresent: boolean };
   readonly spawnedNanoseconds: number;
   readonly ticksPerSecond: number;
   readonly trace: string;
@@ -49,10 +54,11 @@ interface RunResult {
   readonly dmabufBuffers: number;
   /** Spawn to the first frame the compositor presented, whatever it showed. */
   readonly firstFrameNanoseconds: number | null;
-  /** Spawn to the first frame presented after the sidebar first listed the threads. */
-  readonly firstUsableFrameNanoseconds: number | null;
   readonly gpuFeatures: string;
+  /** Spawn to the first frame presented after observed readiness. */
+  readonly observedReadyFrameNanoseconds: number | null;
   readonly phases: readonly PhaseResult[];
+  readonly readinessWasAlreadyPresent: boolean;
   readonly refreshHz: number;
   readonly shmBuffers: number;
   readonly ticksPerSecond: number;
@@ -63,16 +69,51 @@ interface RunResult {
 const sumCpuTicks = (usage: TreeUsage): number => usage.backend.cpuTicks + usage.client.cpuTicks + usage.gpu.cpuTicks;
 
 /** Chromium's GL renderer and its compositing and raster status, from `SystemInfo.getInfo`. */
-const formatGpuFeatures = (gpuInfo: unknown): string => {
+const readGpuFeatures = (gpuInfo: unknown): { compositing: string; rasterization: string; renderer: string } => {
   const gpu = isRecord(gpuInfo) && isRecord(gpuInfo["gpu"]) ? gpuInfo["gpu"] : {};
   const status = isRecord(gpu["featureStatus"]) ? gpu["featureStatus"] : {};
   const renderer = isRecord(gpu["auxAttributes"]) ? gpu["auxAttributes"]["glRenderer"] : null;
 
-  return [
-    `GL renderer ${typeof renderer === "string" && renderer !== "" ? renderer : "unknown"}`,
-    ...GPU_FEATURES.map((feature) => `${feature} ${String(status[feature] ?? "unknown")}`),
-  ].join(", ");
+  return {
+    compositing: String(status["gpu_compositing"] ?? "unknown"),
+    rasterization: String(status["rasterization"] ?? "unknown"),
+    renderer: typeof renderer === "string" && renderer !== "" ? renderer : "unknown",
+  };
 };
+
+const formatGpuFeatures = (gpuInfo: unknown): string => {
+  const { compositing, rasterization, renderer } = readGpuFeatures(gpuInfo);
+
+  return `GL renderer ${renderer}, gpu_compositing ${compositing}, rasterization ${rasterization}`;
+};
+
+type GpuFeatures = ReturnType<typeof readGpuFeatures>;
+
+/** What Chromium has to report for a run to count as its rung; one that drew another way is not that rung's run. */
+const RUNG_EXPECTATIONS = {
+  gpu: {
+    description: "GPU compositing on a hardware GL renderer",
+    isMet: ({ compositing, renderer }: GpuFeatures) =>
+      compositing.startsWith("enabled") && !SOFTWARE_GL_PATTERN.test(renderer),
+  },
+  llvmpipe: {
+    description: "GPU raster on the llvmpipe GL renderer",
+    isMet: ({ rasterization, renderer }: GpuFeatures) =>
+      rasterization.startsWith("enabled") && renderer.includes("llvmpipe"),
+  },
+  software: {
+    description: "software compositing and raster",
+    isMet: ({ compositing, rasterization }: GpuFeatures) =>
+      compositing.startsWith("disabled") && rasterization.startsWith("disabled"),
+  },
+} as const;
+
+/** Null when Chromium drew the way the rung asks for, otherwise why the run does not count. */
+const describeRungMismatch = (rung: keyof typeof RUNG_EXPECTATIONS, gpuInfo: unknown): string | null =>
+  RUNG_EXPECTATIONS[rung].isMet(readGpuFeatures(gpuInfo))
+    ? null
+    : `--renderer ${rung} needs ${RUNG_EXPECTATIONS[rung].description}, but Chromium reported ` +
+      `${formatGpuFeatures(gpuInfo)}, so the run does not count for that rung`;
 
 /** Null when the trace has no `wp_presentation` on the monotonic clock: then no frame was measured. */
 const summarizeRun = (run: AppRun, refreshHz: number): RunResult | null => {
@@ -89,8 +130,8 @@ const summarizeRun = (run: AppRun, refreshHz: number): RunResult | null => {
     discarded: log.discarded,
     dmabufBuffers: log.dmabufBuffers,
     firstFrameNanoseconds: sinceSpawn(findFirstPresentedAfter(log, run.spawnedNanoseconds)),
-    firstUsableFrameNanoseconds: sinceSpawn(findFirstPresentedAfter(log, run.readyNanoseconds)),
     gpuFeatures: formatGpuFeatures(run.gpuInfo),
+    observedReadyFrameNanoseconds: sinceSpawn(findFirstPresentedAfter(log, run.observedReadiness.nanoseconds)),
     phases: run.phases.map((phase) => ({
       compositorCpuTicks: sumCpuTicks(phase.compositorUsage),
       durationNanoseconds: phase.endNanoseconds - phase.startNanoseconds,
@@ -98,6 +139,7 @@ const summarizeRun = (run: AppRun, refreshHz: number): RunResult | null => {
       pacing: summarizeFramePacing(log, phase, NANOSECONDS_PER_SECOND / refreshHz),
       usage: phase.usage,
     })),
+    readinessWasAlreadyPresent: run.observedReadiness.wasAlreadyPresent,
     refreshHz,
     shmBuffers: log.shmBuffers,
     ticksPerSecond: run.ticksPerSecond,
@@ -142,7 +184,8 @@ const formatPhaseRow = (phase: PhaseResult, ticksPerSecond: number): string => {
 const formatReport = (result: RunResult): string =>
   [
     `Output ${String(result.refreshHz)} Hz. First frame ${formatOptionalMilliseconds(result.firstFrameNanoseconds)}, ` +
-      `first usable frame ${formatOptionalMilliseconds(result.firstUsableFrameNanoseconds)}, ` +
+      `first frame after observed readiness ${formatOptionalMilliseconds(result.observedReadyFrameNanoseconds)}` +
+      `${result.readinessWasAlreadyPresent ? READINESS_ALREADY_PRESENT_NOTE : ""}, ` +
       `${String(result.discarded)} frames discarded.`,
     `Chromium: ${result.gpuFeatures}. Buffers: ${String(result.shmBuffers)} wl_shm, ` +
       `${String(result.dmabufBuffers)} linux-dmabuf.`,
@@ -156,5 +199,5 @@ const formatReport = (result: RunResult): string =>
     "",
   ].join("\n");
 
-export { formatReport, summarizeRun };
+export { describeRungMismatch, formatReport, summarizeRun };
 export type { AppRun, MeasuredPhase };

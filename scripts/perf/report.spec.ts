@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatReport, summarizeRun } from "./report.ts";
+import { describeRungMismatch, formatReport, summarizeRun } from "./report.ts";
 
 const REFRESH_HZ = 120;
 const LATER_THAN_EVERY_FRAME_NS = 11_000_000_000;
@@ -33,6 +33,7 @@ const trace = [
 
 const run = {
   gpuInfo,
+  observedReadiness: { nanoseconds: 10_005_000_000, wasAlreadyPresent: false },
   phases: [
     {
       compositorUsage,
@@ -42,7 +43,6 @@ const run = {
       usage,
     },
   ],
-  readyNanoseconds: 10_005_000_000,
   spawnedNanoseconds: 9_000_000_000,
   ticksPerSecond: 100,
   trace,
@@ -55,10 +55,10 @@ describe("summarizeRun", () => {
       discarded: 0,
       dmabufBuffers: 0,
       firstFrameNanoseconds: 1_000_000_000,
-      firstUsableFrameNanoseconds: 1_008_333_333,
       gpuFeatures:
         "GL renderer llvmpipe (LLVM 20.1.2, 256 bits), gpu_compositing disabled_software, " +
         "rasterization disabled_software",
+      observedReadyFrameNanoseconds: 1_008_333_333,
       phases: [
         {
           compositorCpuTicks: 42,
@@ -74,6 +74,7 @@ describe("summarizeRun", () => {
           usage,
         },
       ],
+      readinessWasAlreadyPresent: false,
       refreshHz: 120,
       shmBuffers: 1,
       ticksPerSecond: 100,
@@ -93,10 +94,10 @@ describe("summarizeRun, when something was not reported", () => {
     );
   });
 
-  it("has no first usable frame when nothing was presented after the app was ready", () => {
-    expect(
-      summarizeRun({ ...run, readyNanoseconds: LATER_THAN_EVERY_FRAME_NS }, REFRESH_HZ)?.firstUsableFrameNanoseconds,
-    ).toBeNull();
+  it("has no frame after observed readiness when nothing was presented after it", () => {
+    const observedReadiness = { nanoseconds: LATER_THAN_EVERY_FRAME_NS, wasAlreadyPresent: false };
+
+    expect(summarizeRun({ ...run, observedReadiness }, REFRESH_HZ)?.observedReadyFrameNanoseconds).toBeNull();
   });
 
   it("returns null for a trace without wp_presentation, which measured nothing", () => {
@@ -110,7 +111,7 @@ describe("formatReport", () => {
 
     expect(result === null ? "" : formatReport(result)).toBe(
       [
-        "Output 120 Hz. First frame 1000 ms, first usable frame 1008 ms, 0 frames discarded.",
+        "Output 120 Hz. First frame 1000 ms, first frame after observed readiness 1008 ms, 0 frames discarded.",
         "Chromium: GL renderer llvmpipe (LLVM 20.1.2, 256 bits), gpu_compositing disabled_software, " +
           "rasterization disabled_software. Buffers: 1 wl_shm, 0 linux-dmabuf.",
         WORKLOAD,
@@ -131,14 +132,71 @@ describe("formatReport", () => {
         discarded: 0,
         dmabufBuffers: 0,
         firstFrameNanoseconds: null,
-        firstUsableFrameNanoseconds: null,
         gpuFeatures: "",
+        observedReadyFrameNanoseconds: null,
         phases: [],
+        readinessWasAlreadyPresent: false,
         refreshHz: 120,
         shmBuffers: 0,
         ticksPerSecond: 100,
         workload: WORKLOAD,
       }),
-    ).toContain("First frame never, first usable frame never");
+    ).toContain("First frame never, first frame after observed readiness never");
+  });
+});
+
+describe("formatReport, when the thread list was already there", () => {
+  it("says readiness is the check's time, after React's commit", () => {
+    const result = summarizeRun(
+      { ...run, observedReadiness: { ...run.observedReadiness, wasAlreadyPresent: true } },
+      REFRESH_HZ,
+    );
+
+    expect(result === null ? "" : formatReport(result)).toContain(
+      "first frame after observed readiness 1008 ms (the thread list was already there when the check began, " +
+        "so readiness is the check's time, after React's commit), 0 frames discarded.",
+    );
+  });
+});
+
+const RADEON = "ANGLE (AMD, AMD Radeon 890M (radeonsi gfx1150), OpenGL ES 3.2 Mesa 25.2.8)";
+const LLVMPIPE = "ANGLE (Mesa, llvmpipe (LLVM 20.1.2 256 bits), OpenGL ES 3.2 Mesa 25.2.8)";
+
+/** The `SystemInfo.getInfo` shape, with the three statuses the rungs were seen to report in the container. */
+const reported = (renderer: string, compositing: string, rasterization: string): unknown => ({
+  gpu: { auxAttributes: { glRenderer: renderer }, featureStatus: { gpu_compositing: compositing, rasterization } },
+});
+const SOFTWARE_PATH = reported("Disabled", "disabled_software", "disabled_software");
+const LLVMPIPE_PATH = reported(LLVMPIPE, "disabled_software", "enabled");
+const RADEON_RASTER_PATH = reported(RADEON, "disabled_software", "enabled");
+const RADEON_PATH = reported(RADEON, "enabled", "enabled");
+
+describe("describeRungMismatch", () => {
+  it.each([
+    ["software", SOFTWARE_PATH],
+    ["llvmpipe", LLVMPIPE_PATH],
+    ["gpu", RADEON_PATH],
+  ] as const)("accepts the %s rung drawing the way it asks for", (rung, reportedInfo) => {
+    expect(describeRungMismatch(rung, reportedInfo)).toBeNull();
+  });
+
+  it("rejects an llvmpipe run that ANGLE put on the Radeon", () => {
+    expect(describeRungMismatch("llvmpipe", RADEON_RASTER_PATH)).toBe(
+      `--renderer llvmpipe needs GPU raster on the llvmpipe GL renderer, but Chromium reported GL renderer ${RADEON}, ` +
+        "gpu_compositing disabled_software, rasterization enabled, so the run does not count for that rung",
+    );
+  });
+
+  it.each([
+    ["llvmpipe", "fell back to software", SOFTWARE_PATH],
+    ["gpu", "fell back to software", SOFTWARE_PATH],
+    ["gpu", "composited on llvmpipe", reported(LLVMPIPE, "enabled", "enabled")],
+    ["software", "rasterised on the Radeon", RADEON_RASTER_PATH],
+    ["software", "composited on the Radeon", RADEON_PATH],
+    ["software", "reported no GPU information", null],
+  ] as const)("rejects a %s run that %s", (rung, _reason, reportedInfo) => {
+    expect(describeRungMismatch(rung, reportedInfo)).toMatch(
+      new RegExp(`^--renderer ${rung} needs .*, so the run does not count for that rung$`, "u"),
+    );
   });
 });
