@@ -75,6 +75,9 @@ describe("linuxUpstreamVariantIndex", () => {
   });
 });
 
+const expoPolyfill = (fileName: string): string =>
+  path.join("/app", "node_modules", "expo-modules-core", "build", "polyfill", fileName);
+
 describe("createLinuxResolveRequest", () => {
   it("rewrites the specifier, resolves it, and substitutes the overlay for the file that produced", () => {
     const overlayPath = linuxOverlayIndex["Libraries/Utilities/Platform"];
@@ -85,6 +88,12 @@ describe("createLinuxResolveRequest", () => {
 
     expect(requested).toStrictEqual([overlayPath]);
     expect(result).toStrictEqual({ filePath: overlayPath, type: "sourceFile" });
+  });
+
+  it("substitutes a package variant for the file that produced", () => {
+    const { result } = resolveWith({ filePath: expoPolyfill("index.js"), type: "sourceFile" }, "./polyfill");
+
+    expect(result).toStrictEqual({ filePath: expoPolyfill("index.web.js"), type: "sourceFile" });
   });
 
   it.each([

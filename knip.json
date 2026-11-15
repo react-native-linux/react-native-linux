@@ -24,7 +24,6 @@
       "project": ["src/**/*.tsx", "scripts/**/*.ts"],
       "ignoreDependencies": [
         "@babel/runtime",
-        "@react-native-linux/expo",
         "@react-native-linux/gesture-handler",
         "deep-equal",
         "flow-enums-runtime",
@@ -34,6 +33,10 @@
         "pretty-format",
         "tinybench"
       ]
+    },
+    "packages/expo": {
+      "project": ["src/**/*.ts"],
+      "ignoreDependencies": ["expo-modules-core"]
     },
     "packages/gesture-handler": {
       "project": ["src/**/*.ts"],
