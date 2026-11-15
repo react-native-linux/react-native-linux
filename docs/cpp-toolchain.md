@@ -3081,8 +3081,12 @@ mise exec cmake@latest ninja@latest -- cmake --build build/dev
 
 Presets: `dev` (Debug), `release` (Release), `asan` (ASan + UBSan), `tsan` (TSan). The sanitizer presets also flip
 Hermes' own `HERMES_ENABLE_*_SANITIZER` options, because Hermes disables its Boost.Context fibers under ASan and
-cannot infer that from `CMAKE_CXX_FLAGS`. `CMAKE_EXPORT_COMPILE_COMMANDS` is on in every preset, so clangd works
-from a fresh configure.
+cannot infer that from `CMAKE_CXX_FLAGS`. Hermes' automatic choice keeps the fibers under TSan, so `tsan` also sets
+`HERMES_ALLOW_BOOST_CONTEXT=0`. Hermes compiles every `eval` and `Function` source on that fiber, and TSan is not
+told about the stack switch. The fiber's frames unbalance the thread's shadow stack, and the next report or
+allocation crashes inside TSan's `StackDepot` (#83, when `Intl` started building its constructors with `Function`).
+Without the fiber, Hermes compiles on its `SerialExecutor` thread, which TSan understands. `CMAKE_EXPORT_COMPILE_COMMANDS`
+is on in every preset, so clangd works from a fresh configure.
 
 ### Building and running rnl_window
 
