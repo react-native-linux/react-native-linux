@@ -5,14 +5,17 @@
 
 type PointerListener = (event: LinuxPointerEvent) => void;
 
+interface LinuxRect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
 export interface LinuxElement {
   contains(other: LinuxElement): boolean;
-  getBoundingClientRect(): {
-    left: number;
-    top: number;
-    right: number;
-    bottom: number;
-  };
+  getBoundingClientRect(): LinuxRect;
+  readonly children?: ArrayLike<LinuxElement>;
 }
 
 export interface LinuxPointerEvent {
@@ -37,7 +40,10 @@ export interface LinuxPointerEvent {
 export class LinuxView {
   private readonly listeners = new Map<string, Set<PointerListener>>();
 
-  constructor(public readonly element: LinuxElement) {}
+  constructor(
+    public readonly element: LinuxElement,
+    private readonly isContents: boolean
+  ) {}
 
   addEventListener(type: string, listener: PointerListener): void {
     if (!this.listeners.has(type)) {
@@ -51,8 +57,10 @@ export class LinuxView {
     this.listeners.get(type)?.delete(listener);
   }
 
-  getBoundingClientRect() {
-    return this.element.getBoundingClientRect();
+  getBoundingClientRect(): LinuxRect {
+    return this.isContents
+      ? contentsBoundingRect(this.element)
+      : this.element.getBoundingClientRect();
   }
 
   getAttribute(_name: string): string | null {
@@ -62,6 +70,27 @@ export class LinuxView {
   dispatch(type: string, event: LinuxPointerEvent): void {
     this.listeners.get(type)?.forEach((listener) => listener(event));
   }
+}
+
+const hasBox = ({ left, top, right, bottom }: LinuxRect) =>
+  right > left || bottom > top;
+
+// The hook API's detector is a display: contents view, which has no box of its own: its bounds are its children's,
+// as the web engine's getEffectiveBoundingRect derives them.
+function contentsBoundingRect(element: LinuxElement): LinuxRect {
+  const childRects = Array.from(element.children ?? [], (child) =>
+    child.getBoundingClientRect()
+  ).filter(hasBox);
+  if (childRects.length === 0) {
+    return element.getBoundingClientRect();
+  }
+
+  return {
+    left: Math.min(...childRects.map((child) => child.left)),
+    top: Math.min(...childRects.map((child) => child.top)),
+    right: Math.max(...childRects.map((child) => child.right)),
+    bottom: Math.max(...childRects.map((child) => child.bottom)),
+  };
 }
 
 const views = new Set<LinuxView>();

@@ -1,5 +1,6 @@
 import { argv, env, execPath, stderr, stdout } from "node:process";
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { embedExpoAppAssets } from "@react-native-linux/cli/expo-app-assets.ts";
 import { fixtures } from "./window-fixtures.ts";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -178,24 +179,56 @@ if (isMainModule()) {
   }
 }
 
-/**
- * The bundle an e2e scenario runs. A React application entry (`.tsx`) is built by Metro first, through the harness
- * app's config, so a library overlay runs the way an application imports it (#168); a `.js` bundle runs as it is.
- */
-const resolveScenarioBundle = (scenarioBundles: string, scenario: { bundle: string; name: string }): string => {
-  const sourcePath = path.join(scenarioBundles, scenario.bundle);
-
-  if (!sourcePath.endsWith(".tsx")) {
-    return sourcePath;
-  }
-  const outputPath = path.join(repositoryRoot, "build", "e2e-bundles", `${scenario.name}.js`);
+const bundleWithMetro = (sourcePath: string, outputPath: string): void => {
   const bundler = path.join(repositoryRoot, "packages", "test-harness", "scripts", "bundle.ts");
+  rmSync(path.dirname(outputPath), { force: true, recursive: true });
   mkdirSync(path.dirname(outputPath), { recursive: true });
 
   if (spawnSync(execPath, [bundler, outputPath, sourcePath], { stdio: "inherit" }).status !== SUCCESSFUL_EXIT_STATUS) {
     throw new Error(`Metro could not bundle ${sourcePath}`);
   }
+};
+
+const scenarioBundleDirectory = (scenarioName: string): string =>
+  path.join(repositoryRoot, "build", "e2e-bundles", scenarioName);
+
+/**
+ * The assets the CLI's linux build step writes for the scenario package (#696), in the scenario's own directory under
+ * `build/e2e-bundles`: `assets` beside its bundle file, and what `--assets` names for a bundle a dev server serves.
+ */
+const embedScenarioAssets = async (scenarioBundles: string, scenarioName: string): Promise<string> => {
+  const assetsDirectory = path.join(scenarioBundleDirectory(scenarioName), "assets");
+
+  await embedExpoAppAssets(path.dirname(scenarioBundles), assetsDirectory);
+
+  return assetsDirectory;
+};
+
+/**
+ * The bundle an e2e scenario runs. A React application entry (`.tsx`) is built by Metro first, through the harness
+ * app's config, so a library overlay runs the way an application imports it (#168), into a directory of its own,
+ * beside the assets `embedScenarioAssets` writes; a `.js` bundle runs as it is.
+ */
+const resolveScenarioBundle = async (
+  scenarioBundles: string,
+  scenario: { bundle: string; name: string },
+): Promise<string> => {
+  const sourcePath = path.join(scenarioBundles, scenario.bundle);
+
+  if (!sourcePath.endsWith(".tsx")) {
+    return sourcePath;
+  }
+  const outputPath = path.join(scenarioBundleDirectory(scenario.name), `${scenario.name}.js`);
+  bundleWithMetro(sourcePath, outputPath);
+  await embedScenarioAssets(scenarioBundles, scenario.name);
   return outputPath;
 };
 
-export { findExecutable, findLavapipeIcd, findLavapipeIcdManifestPath, findLavapipeLibraryPath, resolveScenarioBundle };
+export {
+  embedScenarioAssets,
+  findExecutable,
+  findLavapipeIcd,
+  findLavapipeIcdManifestPath,
+  findLavapipeLibraryPath,
+  resolveScenarioBundle,
+};

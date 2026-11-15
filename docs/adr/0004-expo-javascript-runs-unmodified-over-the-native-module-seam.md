@@ -221,10 +221,31 @@ that the polyfill is installed.
 `packages/expo/src/expo-constants-surface.ts` lists upstream's required fields under a type that `pnpm ts` fails
 when upstream adds one, and the e2e asserts each value.
 
-`manifest` is `null`, so `Constants.expoConfig` is `null` and upstream warns, as it does in a bare Android app whose
-config build script did not run. On Android and iOS the native module serves the app config the build embedded;
+`manifest` is the app config the build embedded, as on Android and iOS. Android's Gradle step runs upstream's
+`expo-constants/scripts/getAppConfig.js`, which evaluates `app.json` or `app.config.*` with `@expo/config` into the
+APK's `assets/app.config`, and the native module serves that file as a JSON string that `Constants.ts` parses.
 babel-preset-expo inlines `process.env.APP_MANIFEST` only for web and server bundles, and only upstream's web module
-reads it. The Linux equivalent, the native module reading the app config a `linux` build embeds, is #156's next step.
+reads it.
+
+**The app config and fonts live in the application's assets directory, not beside the bundle (#696).** On Android and
+iOS both are part of the native app, so a debug build loading its bundle from Metro has them as much as a release
+build does. On Linux the native host, `rnl_window`, is shared by every application, so the linux build step,
+`embedExpoAppAssets` in `packages/cli/src/expo-app-assets.ts`, writes them into a directory the application owns:
+`app.config` from the same unmodified script, for a project with `expo`, and `fonts/` with the files `expo-font`'s
+config plugin declares for iOS and the project's own `assets/fonts`, resolved by the plugin's own `resolveFontPaths`.
+It finds `expo-constants` and `expo-font` from `expo`'s own directory, not the project's: `expo` depends on both, and
+expo-modules-autolinking follows the dependency graph, so Android and iOS embed the config for an app that lists only
+`expo`, and so does Linux. iOS's font list, because Linux resolves a face by its family or PostScript name as iOS
+does, where Android's list names XML resource families. `rnl_window` reads that directory from `assets`
+beside a bundle file, the packaged layout, and from `--assets <directory>` for a bundle a dev server serves, which
+has no directory beside it. `ExponentConstants` serves its `app.config` and the text pipeline registers its `fonts/`
+(#70) before the bundle runs. Metro does not serve the config: the window would have to fetch the config and every font
+before the first render, and the build step already writes the same directory a packaged app ships. The
+`expo-constants` and `expo-constants-dev-server` e2e scenarios run one bundle from a file and from Metro, each
+asserting `expoConfig.scheme` and `Linking.createURL` and drawing the face the scenario package's `expo-font` plugin
+declares against one screenshot golden. A source with neither directory has a `null` `manifest`, and upstream warns,
+as it does in a bare Android app whose config build script did not run. The step is a TypeScript function today; a
+command an application author runs is [#723](https://github.com/react-native-linux/react-native-linux/issues/723).
 
 ### Declined, each with its substitute
 
@@ -284,6 +305,8 @@ Any one of these reopens the question in a new ADR:
 - T3 Code's startup graph reaches more Expo modules through `requireNativeModule`; `docs/research/t3code-linux.md`
   §1 lists each one, whether it is registered, and the issue that owns it. `ExpoApplication`, `ExpoDevice`,
   `ExpoLinking` and `ExpoNetwork` are registered, proved by the `expo-startup-modules` e2e.
+  `ExpoFontLoader` registers a font file `Font.loadAsync` or `useFonts` downloaded into the text pipeline's application
+  fonts (#70), the same registry `assets/fonts` fills, proved by the `expo-font` e2e and its screenshot golden.
 - `packages/expo` (`@react-native-linux/expo`) holds the per-module table, the e2e scenarios, the surface lists and
   the escape hatches' runtime code. Its e2e installs the upstream packages; `pnpm-workspace.yaml`
   marks `expo-constants`' `expo` peer optional because its JavaScript imports only types from it.

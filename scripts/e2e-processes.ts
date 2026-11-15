@@ -178,13 +178,18 @@ const readDevServerPort = async (output: AsyncIterator<unknown>, seen: string): 
 };
 
 /**
- * #81: a watching Metro serving `entryPath` (a file under packages/test-harness, Metro's project root) as a
- * `dev=true` bundle, requested once first so the window's fetch is not also the cold build.
+ * #81: a watching Metro serving `entryPath` as a `dev=true` bundle, requested once first so the window's fetch is not
+ * also the cold build. A file outside packages/test-harness, Metro's project root, is served under the repository
+ * root's prefix: Metro lists the project root as its first watch folder and the harness config adds the repository
+ * root as the second, `[metro-watchFolders]/1/`.
  */
 const startDevServer = async (entryPath: string): Promise<{ bundleUrl: string; server: Compositor }> => {
   const server = spawn(execPath, [devServerScriptPath, "--watch"], { stdio: ["ignore", "pipe", "inherit"] });
   const port = await readDevServerPort(server.stdout[Symbol.asyncIterator](), "");
-  const entry = path.relative(harnessRoot, entryPath).replace(/\.tsx?$/u, "");
+  const fromHarness = path.relative(harnessRoot, entryPath);
+  const entry = (
+    fromHarness.startsWith("..") ? `[metro-watchFolders]/1/${path.relative(repositoryRoot, entryPath)}` : fromHarness
+  ).replace(/\.tsx?$/u, "");
   const bundleUrl = `http://127.0.0.1:${port}/${entry}.bundle?platform=linux&dev=true&minify=false`;
 
   server.stdout.resume();
@@ -194,23 +199,25 @@ const startDevServer = async (entryPath: string): Promise<{ bundleUrl: string; s
 };
 
 /**
- * Runs `body` against `startDevServer`. The edited file is put back, and Metro stopped, only after `body` returns:
- * the window takes its screenshot on its last frame, and that should show the refreshed render rather than a
- * refresh back to the original.
+ * Runs `body` against `startDevServer`. The file a Fast Refresh `edit` changes is put back, and Metro stopped, only
+ * after `body` returns: the window takes its screenshot on its last frame, and that should show the refreshed render
+ * rather than a refresh back to the original.
  */
 const withDevServer = async <Result>(
   entryPath: string,
-  edit: FastRefreshEdit,
+  edit: FastRefreshEdit | null,
   body: (bundleUrl: string) => Promise<Result>,
 ): Promise<Result> => {
-  const editedPath = path.join(repositoryRoot, edit.file);
-  const original = readFileSync(editedPath, "utf8");
+  const editedPath = edit === null ? null : path.join(repositoryRoot, edit.file);
+  const original = editedPath === null ? "" : readFileSync(editedPath, "utf8");
   const { bundleUrl, server } = await startDevServer(entryPath);
 
   try {
     return await body(bundleUrl);
   } finally {
-    writeFileSync(editedPath, original);
+    if (editedPath !== null) {
+      writeFileSync(editedPath, original);
+    }
     server.kill();
   }
 };

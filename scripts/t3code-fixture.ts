@@ -4,6 +4,7 @@ import { attachTrace, startCompositor, stopCompositor, waitForSocketName, window
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { findExecutable, findLavapipeIcd } from "./window-golden.ts";
 import { spawn, spawnSync } from "node:child_process";
+import { embedExpoAppAssets } from "@react-native-linux/cli/expo-app-assets.ts";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { waitUntil } from "./e2e/discovery.ts";
@@ -34,6 +35,7 @@ const repositoryRoot = path.resolve(import.meta.dirname, "..");
 const artifactsDirectory = path.join(repositoryRoot, "build", "e2e", SCENARIO_NAME);
 const bundlePath = path.join(repositoryRoot, "build", "t3code", "index.linux.bundle.js");
 const checkout = path.resolve(argv[CHECKOUT_ARGUMENT_INDEX] ?? env["T3CODE_ROOT"] ?? "");
+const mobileRoot = path.join(checkout, "apps", "mobile");
 const serverEntry = path.join(checkout, "apps", "server", "src", "bin.ts");
 const serverLogPath = path.join(artifactsDirectory, "server.log");
 
@@ -67,8 +69,9 @@ const fail = (message: string): void => {
 
 const buildBundle = (): boolean => {
   const bundler = path.join(repositoryRoot, "packages", "test-harness", "scripts", "t3code-bundle.ts");
+  mkdirSync(path.dirname(bundlePath), { recursive: true });
   const build = spawnSync(execPath, [bundler, checkout, bundlePath], {
-    cwd: path.join(checkout, "apps", "mobile"),
+    cwd: mobileRoot,
     env: { ...env, NODE_ENV: "development" },
     stdio: "inherit",
   });
@@ -220,6 +223,7 @@ const runFixture = async (rig: Rig): Promise<void> => {
   mkdirSync(artifactsDirectory, { recursive: true });
 
   if (buildBundle()) {
+    await embedExpoAppAssets(mobileRoot, path.join(path.dirname(bundlePath), "assets"));
     await runAgainstServer(rig);
   } else {
     fail("Metro could not bundle T3 Code");

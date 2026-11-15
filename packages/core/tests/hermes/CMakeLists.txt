@@ -160,11 +160,11 @@ target_compile_definitions(rnl_core_hermes_tests
 
 # Two things exist only where rnl_react_core links Skia, and the sanitizer presets build without it: the decoder
 # behind CrossThreadMountingStressTest's image-decode leg and RemoteImageTest, and the text pipeline
-# ResizeTextCostTest shapes through and ApplicationFontsTest registers into.
+# ResizeTextCostTest shapes through and ApplicationFontsTest and ExpoFontLoaderModuleTest register into.
 if(TARGET rnl_skia)
     target_compile_definitions(rnl_core_hermes_tests PRIVATE RNL_ENABLE_IMAGES)
     target_sources(rnl_core_hermes_tests PRIVATE ApplicationFontsTest.cpp BidiHitTestTest.cpp EditorGeometryTest.cpp
-                   RemoteImageTest.cpp ResizeTextCostTest.cpp)
+                   ExpoFontLoaderModuleTest.cpp RemoteImageTest.cpp ResizeTextCostTest.cpp)
     target_compile_definitions(rnl_core_hermes_tests
         PRIVATE "RNL_VENDORED_FONT_DIR=\"${CMAKE_SOURCE_DIR}/packages/core/fonts\""
                 "RNL_TEST_IMAGE=\"${CMAKE_SOURCE_DIR}/packages/core/assets/rnl-test-image.png\"")
@@ -192,24 +192,16 @@ endif()
 #        covered through JSI by CxxModuleTypeSurfaceTest.
 #
 # All are vendored and none is reachable from anything this platform calls.
-# #640: the T3NativeControls fixture module, called from JavaScript as an autolinked C++ TurboModule. Every
-# application configure reaches this file, so a machine without libcrypto's headers skips the one suite rather than
-# failing. CI installs them, and every test configure (test, asan-tests, tsan-tests and coverage) requires them for the
-# module's unit tests.
-find_package(OpenSSL 3 COMPONENTS Crypto)
-
-if(TARGET OpenSSL::Crypto)
-    set(RNL_T3_NATIVE_CONTROLS_DIR ${CMAKE_SOURCE_DIR}/packages/test-harness/modules/t3-native-controls/linux)
-    target_sources(rnl_core_hermes_tests
-        PRIVATE
-            T3NativeControlsModuleTest.cpp
-            ${RNL_T3_NATIVE_CONTROLS_DIR}/DpopKeys.cpp
-            ${RNL_T3_NATIVE_CONTROLS_DIR}/T3NativeControls.cpp)
-    target_include_directories(rnl_core_hermes_tests PRIVATE ${RNL_T3_NATIVE_CONTROLS_DIR})
-    target_link_libraries(rnl_core_hermes_tests PRIVATE OpenSSL::Crypto)
-else()
-    message(STATUS "T3NativeControlsModuleTest is skipped: libcrypto's headers (libssl-dev) are missing")
-endif()
+# #640: the T3NativeControls fixture module, called from JavaScript as an autolinked C++ TurboModule. rnl_react_core
+# already requires libcrypto (#276), so the suite builds wherever the core does.
+set(RNL_T3_NATIVE_CONTROLS_DIR ${CMAKE_SOURCE_DIR}/packages/test-harness/modules/t3-native-controls/linux)
+target_sources(rnl_core_hermes_tests
+    PRIVATE
+        T3NativeControlsModuleTest.cpp
+        ${RNL_T3_NATIVE_CONTROLS_DIR}/DpopKeys.cpp
+        ${RNL_T3_NATIVE_CONTROLS_DIR}/T3NativeControls.cpp)
+target_include_directories(rnl_core_hermes_tests PRIVATE ${RNL_T3_NATIVE_CONTROLS_DIR})
+target_link_libraries(rnl_core_hermes_tests PRIVATE OpenSSL::Crypto)
 
 # #684: the T3Highlights fixture module, called from JavaScript as an autolinked C++ TurboModule over a stand-in for
 # T3 Code's lexer. CI builds the module over the real lexer and calls it from test-bundles/t3-highlights.js.

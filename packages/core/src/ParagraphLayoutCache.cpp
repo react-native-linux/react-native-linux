@@ -8,6 +8,8 @@ namespace react_native_linux {
 ParagraphLayoutCache::ParagraphLayoutCache(size_t capacity) : capacity_(capacity) {}
 
 ParagraphLayoutCache::Metrics ParagraphLayoutCache::lookup(const Key& key, const std::function<Metrics()>& makeEntry) {
+    uint64_t missGeneration = 0;
+
     {
         const std::lock_guard<std::mutex> guard(mutex_);
 
@@ -35,20 +37,26 @@ ParagraphLayoutCache::Metrics ParagraphLayoutCache::lookup(const Key& key, const
         }
 
         ++missCount_;
+        missGeneration = generation_;
     }
 
     // Outside the lock on purpose: this shapes a paragraph, which takes the layout mutex, and holding the cache
     // mutex across it would invert the two locks' order against a frame thread that holds the layout mutex.
     // Clang attributes a tail call's counter to the callee's entry line, so llvm-cov reports this one unhit
     // while `shapeAndInsert` itself is covered by every miss-path test.
-    return shapeAndInsert(key, makeEntry); // COV_EXCL: tail-call line attribution, see above.
+    return shapeAndInsert(key, makeEntry, missGeneration); // COV_EXCL: tail-call line attribution, see above.
 }
 
 ParagraphLayoutCache::Metrics ParagraphLayoutCache::shapeAndInsert(const Key& key,
-                                                                   const std::function<Metrics()>& makeEntry) {
+                                                                   const std::function<Metrics()>& makeEntry,
+                                                                   uint64_t missGeneration) {
     const Metrics shaped = makeEntry();
 
     const std::lock_guard<std::mutex> guard(mutex_);
+
+    if (missGeneration != generation_) {
+        return shaped;
+    }
 
     // Re-checked: a racing lookup of the same key may have shaped and inserted while this one was unlocked, and
     // its entry is as good as this one.
@@ -77,6 +85,7 @@ void ParagraphLayoutCache::clear() {
 
     currentFrame_.clear();
     previousFrame_.clear();
+    ++generation_;
 }
 
 void ParagraphLayoutCache::insertBounded(Entry entry) {

@@ -1453,6 +1453,10 @@ the fixture beside the `cpp-library` one and calls it from `packages/test-harnes
 Its unit tests are `tests/DpopKeysTest.cpp`, which the coverage gate scores, and the Hermes test is
 `tests/hermes/T3NativeControlsModuleTest.cpp`.
 
+Since #276 every configure needs `libssl-dev`, not only the test ones: `rnl_react_core` links the same libcrypto for
+`ExpoCrypto` (`src/ExpoCrypto.h`), whose digests, random bytes and UUIDs `tests/ExpoCryptoTest.cpp` checks against
+RFC 1321 and FIPS 180-2. libcurl already loads libcrypto at run time, so a built app gains no new library.
+
 `packages/test-harness/modules/t3-highlights/linux` is the same layout for T3 Code's Nitro module (#684). Its
 `T3Highlights` TurboModule keeps the Nitro method's contract, `tokenize(source, language) → ArrayBuffer |
 undefined`, over the module's own `t3_highlights_tokenize`, until Nitro runs on Linux (#152, #153). The fixture holds

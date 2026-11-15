@@ -1,10 +1,23 @@
 {
   "name": "expo-constants",
   "bundle": "expo-constants.tsx",
-  "ready": "expo-constants: appOwnership=null debugMode=true deviceYearClass=null easConfig=null executionEnvironment=\"bare\" experienceUrl=\"\" expoConfig=null expoGoConfig=null expoRuntimeVersion=null expoVersion=null getWebViewUserAgentAsync=function isHeadless=false linkingUri=\"\" manifest=null manifest2=null sessionId=uuid statusBarHeight=0 systemFonts=[] deviceName=true userAgent=null eventEmitter=pong",
+  "ready": "expo-constants: appOwnership=null debugMode=true deviceYearClass=null easConfig={\"name\":\"rnl-expo\",\"slug\":\"rnl-expo\",\"scheme\":\"rnl-expo\",\"plugins\":[[\"expo-font\",{\"fonts\":[\"../core/fonts/NotoSans-Italic.ttf\"]}]],\"version\":\"0.0.0\",\"sdkVersion\":\"58.0.0\",\"platforms\":[\"ios\",\"android\"]} executionEnvironment=\"bare\" experienceUrl=\"\" expoConfig={\"name\":\"rnl-expo\",\"slug\":\"rnl-expo\",\"scheme\":\"rnl-expo\",\"plugins\":[[\"expo-font\",{\"fonts\":[\"../core/fonts/NotoSans-Italic.ttf\"]}]],\"version\":\"0.0.0\",\"sdkVersion\":\"58.0.0\",\"platforms\":[\"ios\",\"android\"]} expoGoConfig={\"name\":\"rnl-expo\",\"slug\":\"rnl-expo\",\"scheme\":\"rnl-expo\",\"plugins\":[[\"expo-font\",{\"fonts\":[\"../core/fonts/NotoSans-Italic.ttf\"]}]],\"version\":\"0.0.0\",\"sdkVersion\":\"58.0.0\",\"platforms\":[\"ios\",\"android\"]} expoRuntimeVersion=null expoVersion=null getWebViewUserAgentAsync=function isHeadless=false linkingUri=\"\" manifest={\"name\":\"rnl-expo\",\"slug\":\"rnl-expo\",\"scheme\":\"rnl-expo\",\"plugins\":[[\"expo-font\",{\"fonts\":[\"../core/fonts/NotoSans-Italic.ttf\"]}]],\"version\":\"0.0.0\",\"sdkVersion\":\"58.0.0\",\"platforms\":[\"ios\",\"android\"]} manifest2=null sessionId=uuid statusBarHeight=0 systemFonts=[] deviceName=true userAgent=null eventEmitter=pong scheme=rnl-expo createURL=rnl-expo:///x",
   "frames": 600,
   "steps": ["sleep 100"],
+  "automation": {
+    "listErrorsMustBeEmpty": true
+  },
+  "screenshot": {
+    "golden": "expo-constants.png",
+    "maxDifferentPixels": 50,
+    "crop": {
+      "left": 40,
+      "top": 40,
+      "width": 320,
+      "height": 120
+    }
+  },
   "expect": [
-    "expo-constants: appOwnership=null debugMode=true deviceYearClass=null easConfig=null executionEnvironment=\"bare\" experienceUrl=\"\" expoConfig=null expoGoConfig=null expoRuntimeVersion=null expoVersion=null getWebViewUserAgentAsync=function isHeadless=false linkingUri=\"\" manifest=null manifest2=null sessionId=uuid statusBarHeight=0 systemFonts=[] deviceName=true userAgent=null eventEmitter=pong"
+    "expo-constants: appOwnership=null debugMode=true deviceYearClass=null easConfig={\"name\":\"rnl-expo\",\"slug\":\"rnl-expo\",\"scheme\":\"rnl-expo\",\"plugins\":[[\"expo-font\",{\"fonts\":[\"../core/fonts/NotoSans-Italic.ttf\"]}]],\"version\":\"0.0.0\",\"sdkVersion\":\"58.0.0\",\"platforms\":[\"ios\",\"android\"]} executionEnvironment=\"bare\" experienceUrl=\"\" expoConfig={\"name\":\"rnl-expo\",\"slug\":\"rnl-expo\",\"scheme\":\"rnl-expo\",\"plugins\":[[\"expo-font\",{\"fonts\":[\"../core/fonts/NotoSans-Italic.ttf\"]}]],\"version\":\"0.0.0\",\"sdkVersion\":\"58.0.0\",\"platforms\":[\"ios\",\"android\"]} expoGoConfig={\"name\":\"rnl-expo\",\"slug\":\"rnl-expo\",\"scheme\":\"rnl-expo\",\"plugins\":[[\"expo-font\",{\"fonts\":[\"../core/fonts/NotoSans-Italic.ttf\"]}]],\"version\":\"0.0.0\",\"sdkVersion\":\"58.0.0\",\"platforms\":[\"ios\",\"android\"]} expoRuntimeVersion=null expoVersion=null getWebViewUserAgentAsync=function isHeadless=false linkingUri=\"\" manifest={\"name\":\"rnl-expo\",\"slug\":\"rnl-expo\",\"scheme\":\"rnl-expo\",\"plugins\":[[\"expo-font\",{\"fonts\":[\"../core/fonts/NotoSans-Italic.ttf\"]}]],\"version\":\"0.0.0\",\"sdkVersion\":\"58.0.0\",\"platforms\":[\"ios\",\"android\"]} manifest2=null sessionId=uuid statusBarHeight=0 systemFonts=[] deviceName=true userAgent=null eventEmitter=pong scheme=rnl-expo createURL=rnl-expo:///x"
   ]
 }

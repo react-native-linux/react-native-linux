@@ -39,11 +39,14 @@
     },
     "packages/expo": {
       "project": ["src/**/*.ts"],
+      "expo": false,
       "ignoreDependencies": [
         "expo-application",
         "expo-asset",
+        "expo-crypto",
         "expo-device",
         "expo-file-system",
+        "expo-font",
         "expo-linking",
         "expo-modules-core",
         "expo-network",

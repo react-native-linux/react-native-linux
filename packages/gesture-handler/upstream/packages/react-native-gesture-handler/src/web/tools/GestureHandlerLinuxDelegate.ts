@@ -30,7 +30,11 @@ export class GestureHandlerLinuxDelegate
     }
 
     this.gestureHandler = handler;
-    this.view = new LinuxView(viewRef as unknown as LinuxElement);
+    const element = viewRef as unknown as LinuxElement;
+    this.view = new LinuxView(
+      element,
+      element === handler.hostDetectorView?.current
+    );
     this.eventManagers = [
       new LinuxPointerEventManager(this.view as unknown as HTMLElement, false),
     ];

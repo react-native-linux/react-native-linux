@@ -154,6 +154,7 @@ constexpr std::string_view kAutomationFlag = "--automation";
 constexpr std::string_view kRendererFlag = "--renderer";
 constexpr std::string_view kAppIdFlag = "--app-id";
 constexpr std::string_view kTitleFlag = "--title";
+constexpr std::string_view kAssetsFlag = "--assets";
 constexpr std::string_view kForceClientDecorationsFlag = "--force-client-decorations";
 constexpr std::string_view kNoDecorationsFlag = "--no-decorations";
 constexpr std::string_view kTransparentBackgroundFlag = "--transparent-background";
@@ -238,9 +239,13 @@ constexpr uint64_t kNanosecondsPerSecond = 1'000'000'000;
  * `SK_ColorTRANSPARENT` instead of `kSceneBackgroundColor`, so whatever the swapchain's chosen composite alpha
  * and Skia's premultiplied output do with a real alpha channel is visible rather than hidden behind an opaque
  * clear every other run paints over it. See *Surface format and composite alpha* in docs/cpp-toolchain.md.
+ *
+ * `--assets <directory>` is the application's assets directory the linux build writes (#696): `app.config` and
+ * `fonts/`. Without it they are read from `assets` beside a bundle file, so a bundle a dev server serves needs it.
  */
 struct WindowArguments {
     std::optional<std::string> bundlePath;
+    std::string assetsDirectory;
     std::optional<react_native_linux::RendererRung> forcedRung;
     std::optional<std::string> screenshotPath;
     std::optional<std::string> frameLogPath;
@@ -514,6 +519,10 @@ std::string describeMissingValue(std::string_view flag) {
         return "--title requires a window title";
     }
 
+    if (flag == kAssetsFlag) {
+        return "--assets requires the application's assets directory";
+    }
+
     if (flag == kInjectRendererFailuresFlag) {
         return "--inject-renderer-failures requires a positive rung count";
     }
@@ -587,8 +596,9 @@ WindowArguments parseArguments(std::span<char*> arguments) {
         }
 
         if (flag != kFabricFlag && flag != kScreenshotFlag && flag != kFramesFlag && flag != kFrameLogFlag &&
-            flag != kRendererFlag && flag != kAppIdFlag && flag != kTitleFlag && flag != kInjectKeySequenceFlag &&
-            flag != kInjectWindowSequenceFlag && flag != kInjectRendererFailuresFlag) {
+            flag != kRendererFlag && flag != kAppIdFlag && flag != kTitleFlag && flag != kAssetsFlag &&
+            flag != kInjectKeySequenceFlag && flag != kInjectWindowSequenceFlag &&
+            flag != kInjectRendererFailuresFlag) {
             // Not a flag at all: the desktop entry's `Exec=... %u` expansion for single-instance activation
             // (#363) hands this process a bare URL, with no `--` of its own. Nothing here consumes it — the
             // single-instance check reads the *original* argv directly, ahead of this parse — so it is not an
@@ -648,6 +658,8 @@ WindowArguments parseArguments(std::span<char*> arguments) {
             parsed.injectedWindowSteps = std::move(sequence.steps);
         } else if (flag == kTitleFlag) {
             parsed.title = std::string(value);
+        } else if (flag == kAssetsFlag) {
+            parsed.assetsDirectory = std::string(value);
         } else {
             const std::optional<uint32_t> count = parsePositiveCount(value);
 
@@ -1390,7 +1402,7 @@ int main(int argc, char** argv) {
                 session.emplace(parsedArguments.bundlePath.value(),
                                 react_native_linux::WindowSize{chrome.content.width, chrome.content.height},
                                 outputScaleOf(window), asyncStorageDatabasePath(parsedArguments.applicationIdentifier),
-                                ownActivationUrl);
+                                ownActivationUrl, parsedArguments.assetsDirectory);
 
                 // --ime-debug owns the text input by hand, so focus must not also drive it: the two would race to
                 // enable and disable the same object. Without that flag, focus is the only thing that touches it.
