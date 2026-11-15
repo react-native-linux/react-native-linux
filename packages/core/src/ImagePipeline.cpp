@@ -1,6 +1,7 @@
 #include "ImagePipeline.h"
 
 #include "AutomationProtocol.h"
+#include "CurlHttpClient.h"
 #include "ImageContent.h"
 #include "ImageDecoder.h"
 #include "include/codec/SkCodec.h"
@@ -21,9 +22,12 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
+#include <cstdint>
 #include <deque>
+#include <folly/io/IOBuf.h>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -38,6 +42,11 @@ namespace {
 // Bytes rather than entries, because the cost of a decoded image is its pixels and two sources can differ by three
 // orders of magnitude in area. See *Image* in docs/cpp-toolchain.md.
 constexpr size_t kImageCacheByteCapacity = 64UL * 1024UL * 1024UL;
+constexpr uint16_t kStatusClassDivisor = 100;
+constexpr uint16_t kSuccessStatusClass = 2;
+// NSURLRequest's default. Without one, a server that stops answering on an open connection would keep the source
+// pending, and its `onError` unsent, for the life of the process.
+constexpr uint32_t kDownloadTimeoutMilliseconds = 60'000;
 
 // Only the three formats the pinned Skia archive was built with; its release name carries `jpegd`, libpng is
 // compiled into the archive, and the GIF decoder is the one Skia vendors. Passing the decoder list
@@ -133,8 +142,30 @@ std::shared_ptr<const DecodedImageFrames> decodeAnimatedImage(SkCodec& codec) {
                            .repetitionCount = codec.getRepetitionCount()});
 }
 
-std::shared_ptr<const DecodedImageFrames> decodeImageSource(const std::string& uri) {
-    const ResolvedImageSource source = resolveImageSource(uri, RNL_BUNDLED_ASSET_DIR);
+/**
+ * One source the worker owes a decode. A local one is just its URI, resolved on the worker; a remote one is queued
+ * only once its download has finished, as the bytes it downloaded or as the failure that ended it.
+ */
+struct QueuedDecode {
+    std::string uri;
+    std::optional<std::vector<uint8_t>> downloaded;
+    std::optional<std::string> failure;
+};
+
+std::shared_ptr<const DecodedImageFrames> decodeImageSource(QueuedDecode& queued) {
+    const std::string& uri = queued.uri;
+
+    if (queued.failure.has_value()) {
+        reportNativeError("image", "could not download " + uri + ": " + queued.failure.value());
+
+        return nullptr;
+    }
+
+    const ResolvedImageSource source = queued.downloaded.has_value()
+                                           ? ResolvedImageSource{.kind = ImageSourceKind::Data,
+                                                                 .filePath = {},
+                                                                 .bytes = std::move(queued.downloaded.value())}
+                                           : resolveImageSource(uri, RNL_BUNDLED_ASSET_DIR);
 
     if (source.kind == ImageSourceKind::Unsupported) {
         reportNativeError("image", "unsupported source " + uri);
@@ -203,6 +234,9 @@ struct ImagePipelineState {
     ImagePipelineState& operator=(ImagePipelineState&&) = delete;
 
     ~ImagePipelineState() {
+        // First, because its destructor joins the download thread, which is the only other thread that queues.
+        httpClient.reset();
+
         {
             const std::lock_guard<std::mutex> guard(mutex);
 
@@ -213,24 +247,73 @@ struct ImagePipelineState {
         worker.join();
     }
 
+    void enqueue(QueuedDecode decode) {
+        {
+            const std::lock_guard<std::mutex> guard(mutex);
+
+            queuedDecodes.push_back(std::move(decode));
+        }
+
+        queued.notify_one();
+    }
+
+    /**
+     * Downloads a remote source on `httpClient`'s own thread and queues the result for the worker, so a slow
+     * server never holds up the local decodes queued behind it. The body is buffered whole, because a codec needs
+     * all of it; a status other than 2xx is a failure even when a body came with it, since that body is the
+     * server's error page and not the image.
+     */
+    void download(const std::string& uri) {
+        struct Response {
+            uint16_t status{};
+            std::unique_ptr<folly::IOBuf> body;
+        };
+
+        const std::shared_ptr<Response> response = std::make_shared<Response>();
+        facebook::react::http::NetworkCallbacks callbacks;
+
+        callbacks.onResponse = [response](uint16_t status, const facebook::react::http::Headers& /*headers*/) {
+            response->status = status;
+        };
+        callbacks.onBody = [response](std::unique_ptr<folly::IOBuf> body) { response->body = std::move(body); };
+        callbacks.onResponseComplete = [this, uri, response](const std::string& error, bool /*timeoutError*/) {
+            QueuedDecode decode{.uri = uri, .downloaded = std::nullopt, .failure = std::nullopt};
+
+            if (!error.empty()) {
+                decode.failure = error;
+            } else if (response->status / kStatusClassDivisor != kSuccessStatusClass) {
+                decode.failure = "HTTP " + std::to_string(response->status);
+            } else {
+                const folly::ByteRange bytes = response->body->coalesce();
+
+                decode.downloaded = std::vector<uint8_t>(bytes.begin(), bytes.end());
+            }
+
+            enqueue(std::move(decode));
+        };
+
+        httpClient->sendRequest(std::move(callbacks), "GET", uri, {}, {}, kDownloadTimeoutMilliseconds, std::nullopt);
+    }
+
     void runWorker() {
         while (true) {
-            std::string uri;
+            QueuedDecode decode;
 
             {
                 std::unique_lock<std::mutex> guard(mutex);
 
-                queued.wait(guard, [this]() { return isStopping || !queuedUris.empty(); });
+                queued.wait(guard, [this]() { return isStopping || !queuedDecodes.empty(); });
 
                 if (isStopping) {
                     return;
                 }
 
-                uri = std::move(queuedUris.front());
-                queuedUris.pop_front();
+                decode = std::move(queuedDecodes.front());
+                queuedDecodes.pop_front();
             }
 
-            const std::shared_ptr<const DecodedImageFrames> decoded = decodeImageSource(uri);
+            const std::string& uri = decode.uri;
+            const std::shared_ptr<const DecodedImageFrames> decoded = decodeImageSource(decode);
             const size_t byteCount = decoded == nullptr ? 0 : decodedByteCount(*decoded);
             std::vector<ImageDecodeCompletion> completions;
             ImageDecodeListener decodeListener;
@@ -271,11 +354,13 @@ struct ImagePipelineState {
     std::condition_variable queued;
     PendingImageDecodes pendingDecodes;
     ImageCache cache{kImageCacheByteCapacity};
-    std::deque<std::string> queuedUris;
+    std::deque<QueuedDecode> queuedDecodes;
     std::unordered_set<std::string> requestedUris;
     std::unordered_map<std::string, std::vector<ImageDecodeCompletion>> completionsByUri;
     ImageDecodeListener listener;
     bool isStopping{false};
+    // Created by the first remote source, so an application that never names one never starts its thread.
+    std::unique_ptr<CurlHttpClient> httpClient;
     std::thread worker;
 };
 
@@ -290,6 +375,7 @@ ImagePipelineState& imagePipelineState() {
 void requestImageDecode(const std::string& uri, ImageDecodeCompletion completion) {
     ImagePipelineState& state = imagePipelineState();
     std::shared_ptr<const DecodedImageFrames> cached;
+    bool isRemote = false;
 
     {
         const std::lock_guard<std::mutex> guard(state.mutex);
@@ -308,17 +394,25 @@ void requestImageDecode(const std::string& uri, ImageDecodeCompletion completion
             // and `waitUntilSettled` passes through this same mutex so it cannot read the count between the
             // insert above and this line (#296).
             state.pendingDecodes.noteRequested();
-            state.queuedUris.push_back(uri);
+
+            isRemote = isRemoteImageSource(uri);
+
+            if (isRemote && state.httpClient == nullptr) {
+                state.httpClient = std::make_unique<CurlHttpClient>();
+            } else if (!isRemote) {
+                state.queuedDecodes.push_back(
+                    QueuedDecode{.uri = uri, .downloaded = std::nullopt, .failure = std::nullopt});
+            }
         }
     }
 
     if (cached != nullptr) {
         completion(cached);
-
-        return;
+    } else if (isRemote) {
+        state.download(uri);
+    } else {
+        state.queued.notify_one();
     }
-
-    state.queued.notify_one();
 }
 
 std::shared_ptr<const DecodedImageFrames> decodedImage(const std::string& uri) {

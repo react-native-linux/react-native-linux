@@ -20,6 +20,7 @@ using react_native_linux::ImageCache;
 using react_native_linux::imagePlacement;
 using react_native_linux::ImageSourceKind;
 using react_native_linux::isAnimatedImage;
+using react_native_linux::isRemoteImageSource;
 using react_native_linux::kAnimatedImageRepeatsForever;
 using react_native_linux::PendingImageDecodes;
 using react_native_linux::ResolvedImageSource;
@@ -95,9 +96,16 @@ TEST(ImageSourceTest, ARelativePathResolvesAgainstTheAssetDirectory) {
     EXPECT_EQ(source.filePath, "/assets/tile.png");
 }
 
-TEST(ImageSourceTest, RemoteSchemesAreUnsupportedBecauseThereIsNoNetworkingStack) {
-    EXPECT_EQ(resolve("https://example.com/tile.png").kind, ImageSourceKind::Unsupported);
+TEST(ImageSourceTest, HttpAndHttpsAreRemote) {
+    EXPECT_TRUE(isRemoteImageSource("https://example.com/tile.png"));
+    EXPECT_TRUE(isRemoteImageSource("http://127.0.0.1:8081/assets/tile.png?platform=linux"));
+    EXPECT_FALSE(isRemoteImageSource("file:///tmp/tile.png"));
+    EXPECT_FALSE(isRemoteImageSource("httpx://example.com/tile.png"));
+}
+
+TEST(ImageSourceTest, AnyOtherSchemeIsUnsupported) {
     EXPECT_EQ(resolve("asset://tile.png").kind, ImageSourceKind::Unsupported);
+    EXPECT_EQ(resolve("ftp://example.com/tile.png").kind, ImageSourceKind::Unsupported);
 }
 
 TEST(ImageSourceTest, ADataUriWithoutACommaIsUnsupported) {

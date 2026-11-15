@@ -1,0 +1,15 @@
+{
+  "name": "dev-image",
+  "bundle": "dev-image.ts",
+  "ready": "dev-image: loaded /assets/test-bundles/dev-image-before.png",
+  "expect": ["dev-image: loaded /assets/test-bundles/dev-image-after.png"],
+  "frames": 1800,
+  "steps": ["sleep 100"],
+  "fastRefresh": {
+    "file": "packages/test-harness/test-bundles/dev-image-app.tsx",
+    "find": "const source = require(\"./dev-image-before.png\");",
+    "replace": "const source = require(\"./dev-image-after.png\");",
+    "expect": "dev-image: loaded /assets/test-bundles/dev-image-after.png",
+    "maxEditToVisibleMs": 15000
+  }
+}
