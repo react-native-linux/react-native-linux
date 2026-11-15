@@ -1,6 +1,6 @@
 #include "T3Highlights.h"
 
-#include "Utf16ToUtf8.hpp"
+#include "SourceText.h"
 #include "t3_highlights.h"
 
 #include <cstdint>
@@ -34,15 +34,12 @@ jsi::Value tokenize(jsi::Runtime& runtime, const jsi::Value* arguments, std::siz
         throw jsi::JSError(runtime, "T3Highlights.tokenize expects a source and a language");
     }
 
-    std::string source;
-    auto appendSource = [&source](bool ascii, const void* data, std::size_t length) {
-        if (ascii) {
-            source.append(static_cast<const char*>(data), length);
-        } else {
-            margelo::nitro::t3highlights::appendUtf16AsUtf8(source, static_cast<const char16_t*>(data), length);
-        }
+    SourceText sourceText;
+    auto appendChunk = [&sourceText](bool ascii, const void* data, std::size_t length) {
+        sourceText.append(ascii, data, length);
     };
-    arguments[0].asString(runtime).getStringData(runtime, appendSource);
+    arguments[0].asString(runtime).getStringData(runtime, appendChunk);
+    const std::string source = std::move(sourceText).finish();
     const double language = arguments[1].asNumber();
 
     if (!(language >= 0 && language <= std::numeric_limits<std::uint8_t>::max())) {

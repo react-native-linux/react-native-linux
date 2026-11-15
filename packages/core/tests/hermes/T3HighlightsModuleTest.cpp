@@ -1,4 +1,5 @@
 #include "ReactHost.h"
+#include "SourceText.h"
 #include "T3Highlights.h"
 #include "t3_highlights.h"
 
@@ -9,8 +10,10 @@
 #include <cxxreact/JSBigString.h>
 #include <future>
 #include <gtest/gtest.h>
+#include <initializer_list>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -101,6 +104,45 @@ TEST(T3HighlightsModuleTest, TokenizesFromJavaScriptWithTheNitroContract) {
               " | undefined | T3Highlights.tokenize expects a source and a language | returned [2,7]");
     EXPECT_EQ(lexedSources, (std::vector<std::string>{"\xc3\xa9\r\n", "", "fail", "ab"}));
     EXPECT_FALSE(reactHost.hasReportedFatalError());
+}
+
+struct StringDataChunk {
+    bool ascii;
+    std::u16string_view utf16;
+    std::string_view latin1;
+};
+
+std::string utf8OfChunks(std::initializer_list<StringDataChunk> chunks) {
+    facebook::react::SourceText sourceText;
+
+    for (const StringDataChunk& chunk : chunks) {
+        if (chunk.ascii) {
+            sourceText.append(true, chunk.latin1.data(), chunk.latin1.size());
+        } else {
+            sourceText.append(false, chunk.utf16.data(), chunk.utf16.size());
+        }
+    }
+
+    return std::move(sourceText).finish();
+}
+
+StringDataChunk asciiChunk(std::string_view text) { return {.ascii = true, .utf16 = {}, .latin1 = text}; }
+
+StringDataChunk utf16Chunk(std::u16string_view units) { return {.ascii = false, .utf16 = units, .latin1 = {}}; }
+
+/**
+ * #684: `jsi::String::getStringData` may hand one string over as several ASCII and UTF-16 chunks. A surrogate pair
+ * split between two UTF-16 chunks is one code point, not two U+FFFD. A high surrogate that the next chunk does not
+ * complete, an ASCII chunk included, or that ends the string, and a lone low surrogate each become U+FFFD.
+ */
+TEST(T3HighlightsModuleTest, PairsASurrogateSplitAcrossStringDataChunks) {
+    EXPECT_EQ(utf8OfChunks({utf16Chunk(u"a\xD83D"), utf16Chunk(u"\xDE00z")}), "a\xF0\x9F\x98\x80z");
+    EXPECT_EQ(utf8OfChunks({asciiChunk("ab"), utf16Chunk(u"\u00E9\xD83D"), asciiChunk("x"), utf16Chunk(u"\u00E9")}),
+              "ab\xC3\xA9\xEF\xBF\xBDx\xC3\xA9");
+    EXPECT_EQ(utf8OfChunks({utf16Chunk(u"\xD83D"), utf16Chunk(u"z")}), "\xEF\xBF\xBDz");
+    EXPECT_EQ(utf8OfChunks({utf16Chunk(u"\xD83D"), utf16Chunk(u"\xD83D\xDE00")}), "\xEF\xBF\xBD\xF0\x9F\x98\x80");
+    EXPECT_EQ(utf8OfChunks({utf16Chunk(u"x\xD83D")}), "x\xEF\xBF\xBD");
+    EXPECT_EQ(utf8OfChunks({utf16Chunk(u"\xDE00"), asciiChunk("y")}), "\xEF\xBF\xBDy");
 }
 
 } // namespace
