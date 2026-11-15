@@ -1,6 +1,17 @@
 import type { CommandOutput, UpstreamEnvironment } from "./upstream-types.ts";
 
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  readlinkSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -29,7 +40,7 @@ const listFiles = (directoryPath: string): readonly string[] => {
   }
 
   return readdirSync(directoryPath, { recursive: true, withFileTypes: true })
-    .filter((entry) => entry.isFile())
+    .filter((entry) => entry.isFile() || entry.isSymbolicLink())
     .map((entry) => toPosixPath(path.relative(directoryPath, path.join(entry.parentPath, entry.name))))
     .filter((relativePath) => !relativePath.startsWith(GIT_DIRECTORY_PREFIX))
     .toSorted();
@@ -51,10 +62,14 @@ const createUpstreamEnvironment = (): UpstreamEnvironment => ({
     cpSync(sourceDirectory, targetDirectory, {
       filter: (sourcePath) => path.basename(sourcePath) !== GIT_DIRECTORY_NAME,
       recursive: true,
+      verbatimSymlinks: true,
     });
   },
   createTemporaryDirectory: () => mkdtempSync(path.join(tmpdir(), TEMPORARY_DIRECTORY_PREFIX)),
-  hashFile: (filePath) => createHash("sha256").update(readFileSync(filePath)).digest("hex"),
+  hashFile: (filePath) =>
+    createHash("sha256")
+      .update(lstatSync(filePath).isSymbolicLink() ? readlinkSync(filePath) : readFileSync(filePath))
+      .digest("hex"),
   listDirectories,
   listFiles,
   pathExists: existsSync,

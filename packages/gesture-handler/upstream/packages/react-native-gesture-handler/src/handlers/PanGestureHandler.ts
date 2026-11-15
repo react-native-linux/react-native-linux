@@ -1,9 +1,7 @@
-import type { PanGestureHandlerEventPayload } from './GestureHandlerEventPayload';
 import createHandler from './createHandler';
-import {
-  BaseGestureHandlerProps,
-  baseGestureHandlerProps,
-} from './gestureHandlerCommon';
+import type { BaseGestureHandlerProps } from './gestureHandlerCommon';
+import { baseGestureHandlerProps } from './gestureHandlerCommon';
+import type { PanGestureHandlerEventPayload } from './GestureHandlerEventPayload';
 
 export const panGestureHandlerProps = [
   'activeOffsetY',
@@ -50,7 +48,7 @@ interface CommonPanProperties {
    * enableTrackpadTwoFingerGesture swiping with two fingers will also trigger
    * the gesture.
    */
-  enableTrackpadTwoFingerGesture?: boolean | undefined;
+  enableTrackpadTwoFingerGesture?: boolean;
 
   /**
    * A number of fingers that is required to be placed before handler can
@@ -65,9 +63,24 @@ interface CommonPanProperties {
    */
   maxPointers?: number;
 
+  /**
+   * Minimum speed the pointer has to reach in order to activate the handler.
+   * Expressed in points per second.
+   */
   minVelocity?: number;
+
+  /**
+   * Minimum speed along X axis the pointer has to reach in order to activate
+   * the handler. Expressed in points per second.
+   */
   minVelocityX?: number;
+
+  /**
+   * Minimum speed along Y axis the pointer has to reach in order to activate
+   * the handler. Expressed in points per second.
+   */
   minVelocityY?: number;
+
   activateAfterLongPress?: number;
 }
 

@@ -1,9 +1,13 @@
-import { BaseGestureConfig, BaseGesture } from './gesture';
-import { TapGestureConfig } from '../TapGestureHandler';
 import type { TapGestureHandlerEventPayload } from '../GestureHandlerEventPayload';
+import type { TapGestureConfig } from '../TapGestureHandler';
+import type { BaseGestureConfig } from './gesture';
+import { BaseGesture } from './gesture';
 
+/**
+ * @deprecated `TapGesture` is deprecated and will be removed in the future. Please use `useTapGesture` instead.
+ */
 export class TapGesture extends BaseGesture<TapGestureHandlerEventPayload> {
-  public config: BaseGestureConfig & TapGestureConfig = {};
+  public override config: BaseGestureConfig & TapGestureConfig = {};
 
   constructor() {
     super();
@@ -54,7 +58,7 @@ export class TapGesture extends BaseGesture<TapGestureHandlerEventPayload> {
 
   /**
    * Maximum time, expressed in milliseconds, that can pass before the next tap — if many taps are required.
-   * The default value is 500.
+   * The default value is 200.
    * @param delay
    */
   maxDelay(delay: number) {
@@ -83,4 +87,7 @@ export class TapGesture extends BaseGesture<TapGestureHandlerEventPayload> {
   }
 }
 
+/**
+ * @deprecated `TapGestureType` is deprecated and will be removed in the future. Please use `TapGesture` instead.
+ */
 export type TapGestureType = InstanceType<typeof TapGesture>;

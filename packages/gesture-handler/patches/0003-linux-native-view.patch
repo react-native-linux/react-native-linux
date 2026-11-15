@@ -1,31 +1,32 @@
 diff --git a/packages/react-native-gesture-handler/src/web/handlers/NativeViewGestureHandler.ts b/packages/react-native-gesture-handler/src/web/handlers/NativeViewGestureHandler.ts
-index 8c67321..a2a0bd7 100644
+index 95a31d8..b70ef73 100644
 --- a/packages/react-native-gesture-handler/src/web/handlers/NativeViewGestureHandler.ts
 +++ b/packages/react-native-gesture-handler/src/web/handlers/NativeViewGestureHandler.ts
-@@ -6,7 +6,7 @@ import { AdaptedEvent, Config } from '../interfaces';
- import GestureHandler from './GestureHandler';
- import IGestureHandler from './IGestureHandler';
- export default class NativeViewGestureHandler extends GestureHandler {
--  private buttonRole!: boolean;
-+  private buttonRole = false;
- 
-   // TODO: Implement logic for activation on start
-   // @ts-ignore Logic yet to be implemented
-@@ -47,7 +47,7 @@ export default class NativeViewGestureHandler extends GestureHandler {
-   }
- 
-   private restoreViewStyles(view: HTMLElement) {
--    if (!view) {
-+    if (Platform.OS !== 'web' || !view) {
-       return;
-     }
- 
-@@ -82,7 +82,7 @@ export default class NativeViewGestureHandler extends GestureHandler {
-     this.begin();
+@@ -172,7 +172,7 @@ export default class NativeViewGestureHandler extends GestureHandler {
+     );
  
      const view = this.delegate.view as HTMLElement;
 -    const isRNGHText = view.hasAttribute('rnghtext');
-+    const isRNGHText = Platform.OS === 'web' && view.hasAttribute('rnghtext');
++    const isRNGHText = isStylableElement(view) && view.hasAttribute('rnghtext');
  
-     if (this.buttonRole || isRNGHText) {
-       this.activate();
+     if (
+       (this.role === NativeGestureRole.Button && this.shouldActivateOnStart) ||
+diff --git a/packages/react-native-gesture-handler/src/web/tools/GestureLifecycleEvents.ts b/packages/react-native-gesture-handler/src/web/tools/GestureLifecycleEvents.ts
+index 84626be..7705978 100644
+--- a/packages/react-native-gesture-handler/src/web/tools/GestureLifecycleEvents.ts
++++ b/packages/react-native-gesture-handler/src/web/tools/GestureLifecycleEvents.ts
+@@ -1,3 +1,5 @@
++import { isStylableElement } from '../utils';
++
+ export const GestureLifecycleEvent = {
+   Began: 'gh:gestureBegan',
+   Canceled: 'gh:gestureCanceled',
+@@ -10,5 +12,7 @@ export function dispatchGestureLifecycleEvent(
+   view: HTMLElement | null | undefined,
+   name: GestureLifecycleEventName
+ ): void {
+-  view?.dispatchEvent(new CustomEvent(name));
++  if (isStylableElement(view)) {
++    view.dispatchEvent(new CustomEvent(name));
++  }
+ }

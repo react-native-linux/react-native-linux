@@ -55,6 +55,10 @@ export class LinuxView {
     return this.element.getBoundingClientRect();
   }
 
+  getAttribute(_name: string): string | null {
+    return null;
+  }
+
   dispatch(type: string, event: LinuxPointerEvent): void {
     this.listeners.get(type)?.forEach((listener) => listener(event));
   }

@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
-import { PressableEvent } from './PressableProps';
-import { StateDefinition } from './StateMachine';
+
+import type { PressableEvent } from './PressableProps';
+import type { StateDefinition } from './StateMachine';
 
 export enum StateMachineEvent {
   NATIVE_BEGIN = 'nativeBegin',
@@ -35,11 +36,12 @@ function getAndroidAccessibilityStatesConfig(
 ) {
   return [
     {
-      eventName: StateMachineEvent.LONG_PRESS_TOUCHES_DOWN,
+      eventName: StateMachineEvent.NATIVE_BEGIN,
       callback: handlePressIn,
     },
     {
-      eventName: StateMachineEvent.NATIVE_BEGIN,
+      eventName: StateMachineEvent.LONG_PRESS_TOUCHES_DOWN,
+      optional: true,
     },
     {
       eventName: StateMachineEvent.FINALIZE,
@@ -57,8 +59,11 @@ function getIosStatesConfig(
       eventName: StateMachineEvent.LONG_PRESS_TOUCHES_DOWN,
     },
     {
-      eventName: StateMachineEvent.NATIVE_START,
+      eventName: StateMachineEvent.NATIVE_BEGIN,
       callback: handlePressIn,
+    },
+    {
+      eventName: StateMachineEvent.NATIVE_START,
     },
     {
       eventName: StateMachineEvent.FINALIZE,

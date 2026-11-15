@@ -49,7 +49,10 @@ The patch queue makes every deviation from upstream a reviewable, ordered, repla
 - `sparsePaths` is a non-empty cone-mode sparse checkout. Root-level files come along with any sparse
   checkout; everything else has to be listed.
 - `sha256` describes the **pristine** upstream tree at that tag, before any patch is applied — one
-  digest per vendored file. It is what makes a moved or re-cut tag a hard failure instead of a silent
+  digest per vendored file, and a symbolic link's digest is that of its target path. Agent instruction
+  files (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.claude`, `.cursor`, `.cursorrules`,
+  `.github/copilot-instructions.md`) are deleted from the clone at any depth before hashing, so they are
+  never vendored. The digests make a moved or re-cut tag a hard failure instead of a silent
   content change, and its diff between two bumps is the honest answer to "what did upstream change".
 
 ## Commands
