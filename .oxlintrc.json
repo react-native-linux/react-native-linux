@@ -77,7 +77,7 @@
       }
     },
     {
-      "files": ["packages/core/goldens/fixtures.ts"],
+      "files": ["packages/core/goldens/fixtures.ts", "packages/gesture-handler/src/linux-module.spec.ts"],
       "rules": {
         "eslint/max-lines": "off"
       }
