@@ -23,6 +23,7 @@ import {
 } from "node:fs";
 import { findExecutable, findLavapipeIcd } from "./window-golden.ts";
 import { spawn, spawnSync } from "node:child_process";
+import { embedExpoAppAssets } from "@react-native-linux/cli/expo-app-assets.ts";
 import { packageAliases } from "@react-native-linux/cli/package-aliases.ts";
 import path from "node:path";
 import { tmpdir } from "node:os";
@@ -59,6 +60,7 @@ const fixtureDirectory = path.join(repositoryRoot, "build", "t3code");
 const bundlePath = path.join(fixtureDirectory, "index.linux.bundle.js");
 const overlayDirectory = path.join(fixtureDirectory, "overlays");
 const checkout = path.resolve(argv[CHECKOUT_ARGUMENT_INDEX] ?? env["T3CODE_ROOT"] ?? "");
+const mobileRoot = path.join(checkout, "apps", "mobile");
 const serverEntry = path.join(checkout, "apps", "server", "src", "bin.ts");
 const serverLogPath = path.join(artifactsDirectory, "server.log");
 
@@ -112,8 +114,9 @@ const installOverlays = (): string | null => {
 
 const buildBundle = (): boolean => {
   const bundler = path.join(repositoryRoot, "packages", "test-harness", "scripts", "t3code-bundle.ts");
+  mkdirSync(path.dirname(bundlePath), { recursive: true });
   const build = spawnSync(execPath, [bundler, checkout, bundlePath], {
-    cwd: path.join(checkout, "apps", "mobile"),
+    cwd: mobileRoot,
     env: { ...env, NODE_ENV: "development" },
     stdio: "inherit",
   });
@@ -267,6 +270,7 @@ const runOnOwnCheckout = async (rig: Rig): Promise<void> => {
   if (overlayFailure !== null) {
     fail(`the overlay packages could not be packed and added to T3 Code\n${tailLines(overlayFailure)}`);
   } else if (buildBundle()) {
+    await embedExpoAppAssets(mobileRoot, path.join(path.dirname(bundlePath), "assets"));
     await runAgainstServer(rig);
   } else {
     fail("Metro could not bundle T3 Code");

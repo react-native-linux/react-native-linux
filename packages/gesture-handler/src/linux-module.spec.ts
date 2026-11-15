@@ -26,13 +26,23 @@ const unknownHandlerTag = 3;
 const refusedHandlerTag = 4;
 const configuredHandlerTag = 5;
 const draggedHandlerTag = 6;
+const contentsHandlerTag = 7;
+const anchoredHandlerTag = 8;
 const dragDistance = 50;
 const movesBeforeDetach = 1;
 const rect = { bottom: 100, left: 0, right: 100, top: 0 };
 
+interface TestRect {
+  readonly bottom: number;
+  readonly left: number;
+  readonly right: number;
+  readonly top: number;
+}
+
 interface TestElement {
+  readonly children?: readonly TestElement[];
   readonly contains: (other: unknown) => boolean;
-  readonly getBoundingClientRect: () => typeof rect;
+  readonly getBoundingClientRect: () => TestRect;
 }
 
 const createElement = (): TestElement => {
@@ -199,4 +209,48 @@ it("stops a drag at detach, and takes the next one after the handler is attached
     pointerCallbacksAfterDetach: movesBeforeDetach,
     second: [stateBegan, stateActive, stateEnd],
   });
+});
+
+const noBox = { bottom: 0, left: 0, right: 0, top: 0 };
+const boxedChild: TestElement = { contains: (other) => other === boxedChild, getBoundingClientRect: () => rect };
+const emptyChild: TestElement = { contains: () => false, getBoundingClientRect: () => noBox };
+const zeroSizeParent = (): TestElement => {
+  const parent: TestElement = {
+    children: [emptyChild, boxedChild],
+    contains: (other) => other === parent || boxedChild.contains(other),
+    getBoundingClientRect: () => noBox,
+  };
+
+  return parent;
+};
+
+const dragOnChild = async (
+  handlerTag: number,
+  parent: TestElement,
+  hostDetector: unknown,
+): Promise<StateChangeMock> => {
+  const gestureModule = await loadGestureModule();
+  const route = await loadRoute();
+  const stateChange = vi.fn();
+  const propsRef = { current: { onGestureHandlerEvent: vi.fn(), onGestureHandlerStateChange: stateChange } };
+  methodOf(gestureModule, "createGestureHandler")("PanGestureHandler", handlerTag, {});
+  methodOf(gestureModule, "attachGestureHandler")(handlerTag, parent, jsFunctionNewApi, propsRef, hostDetector);
+  route("pointerdown", { ...dragStart, target: boxedChild });
+  route("pointermove", { ...dragEnd, target: boxedChild });
+  route("pointerup", { ...dragEnd, target: boxedChild });
+
+  return stateChange;
+};
+
+it("bounds a display: contents detector by its children, so a drag on its child is recognized", async () => {
+  const contentsElement = zeroSizeParent();
+  const stateChange = await dragOnChild(contentsHandlerTag, contentsElement, { current: contentsElement });
+
+  expect(statesOf(stateChange)).toStrictEqual([stateBegan, stateActive, stateEnd]);
+});
+
+it("keeps a zero-size view's own bounds when it is not its detector, so a drag on its child is not recognized", async () => {
+  const stateChange = await dragOnChild(anchoredHandlerTag, zeroSizeParent(), null);
+
+  expect(stateChange).not.toHaveBeenCalled();
 });

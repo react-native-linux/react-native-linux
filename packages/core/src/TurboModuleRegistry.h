@@ -117,6 +117,12 @@ public:
     void setBundleUrl(const std::string& bundleUrl);
 
     /**
+     * The application's assets directory (#696), whose `app.config` `ExponentConstants` serves as `manifest`; empty
+     * when the source has none. `ReactHost::loadScript` sets it before the script runs, as it sets the bundle URL.
+     */
+    void setAssetsDirectory(const std::string& assetsDirectory);
+
+    /**
      * Whether JavaScript has asked `DevSettings` for a reload (#81). Raised on the JavaScript thread and read on the
      * host's, so it is atomic; it is never lowered, because the host answers it by destroying this registry.
      */
@@ -171,6 +177,7 @@ private:
     std::unique_ptr<FileSystemHost> fileSystemHost_;
     std::shared_ptr<I18nModel> i18nModel_;
     std::shared_ptr<std::string> bundleUrl_;
+    std::shared_ptr<std::string> assetsDirectory_;
     std::shared_ptr<LinuxWorkletsModule> workletsModule_;
     std::shared_ptr<LinuxReanimatedModule> reanimatedModule_;
     std::shared_ptr<std::atomic<bool>> reloadRequested_;

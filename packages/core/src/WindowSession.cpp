@@ -44,7 +44,7 @@ uint64_t toNanosecondsSinceEpoch(std::chrono::steady_clock::time_point timePoint
 
 WindowSession::WindowSession(const std::string& bundlePath, WindowSize size, double scale,
                              const std::string& asyncStorageDatabasePath,
-                             std::optional<std::string> initialActivationUrl)
+                             std::optional<std::string> initialActivationUrl, std::string assetsDirectory)
     : fabricHost_(std::make_unique<FabricHost>(reactHost_.reactInstance(), toSurfaceSize(size))),
       frameJournal_(kNominalVsyncNanoseconds, kHangThresholdVsyncCount * kNominalVsyncNanoseconds) {
     // Before the script, so the first `Dimensions.get` a bundle makes at module scope already answers with the
@@ -72,6 +72,7 @@ WindowSession::WindowSession(const std::string& bundlePath, WindowSize size, dou
         deliverActivationUrl(initialActivationUrl.value());
     }
 
+    reactHost_.setAssetsDirectory(std::move(assetsDirectory));
     reactHost_.loadBundle(bundlePath);
     reactHost_.startHotModuleReplacement(bundlePath);
 }
