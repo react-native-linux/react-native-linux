@@ -1,13 +1,18 @@
 import {
+  T3CODE_REVISION,
   buildPairingLink,
+  describeForeignCheckout,
   gradeWindowRun,
   overlayInstallArguments,
   overlayPackArguments,
   readPairingUrl,
   tailLines,
 } from "./t3code.ts";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { packageAliases } from "@react-native-linux/cli/package-aliases.ts";
+import path from "node:path";
+import { tmpdir } from "node:os";
 
 const TAIL_LINE_COUNT = 40;
 const pairingUrl = "http://127.0.0.1:38731/pair#token=pairing-token";
@@ -85,7 +90,7 @@ describe("overlayPackArguments", () => {
 });
 
 describe("overlayInstallArguments", () => {
-  it("adds the tarballs to the mobile app without install scripts or the unpublished core peer", () => {
+  it("adds the tarballs to the mobile app without install scripts, keeping the checkout's lockfile settings", () => {
     expect(overlayInstallArguments(["/overlays/a.tgz", "/overlays/b.tgz"])).toStrictEqual([
       "--filter",
       "@t3tools/mobile",
@@ -93,8 +98,56 @@ describe("overlayInstallArguments", () => {
       "/overlays/a.tgz",
       "/overlays/b.tgz",
       "--ignore-scripts",
-      "--config.auto-install-peers=false",
       "--config.strict-peer-dependencies=false",
     ]);
+  });
+});
+
+describe("describeForeignCheckout", () => {
+  const temporaryDirectory = realpathSync(tmpdir());
+  let workspace = "";
+  let fixtureDirectory = "";
+  let outside = "";
+
+  beforeEach(() => {
+    workspace = mkdtempSync(path.join(temporaryDirectory, "rnl-t3code-checkout-"));
+    fixtureDirectory = path.join(workspace, "build", "t3code");
+    outside = path.join(workspace, "t3code");
+    mkdirSync(path.join(fixtureDirectory, "checkout"), { recursive: true });
+    mkdirSync(outside);
+  });
+
+  afterEach(() => {
+    rmSync(workspace, { force: true, recursive: true });
+  });
+
+  it("accepts a checkout inside the fixture directory, also through a symlink that stays inside", () => {
+    symlinkSync(path.join(fixtureDirectory, "checkout"), path.join(fixtureDirectory, "link"));
+
+    expect(describeForeignCheckout(path.join(fixtureDirectory, "checkout"), fixtureDirectory)).toBeNull();
+    expect(describeForeignCheckout(path.join(fixtureDirectory, "link"), fixtureDirectory)).toBeNull();
+  });
+
+  it("refuses a checkout outside the fixture directory and says where to clone one", () => {
+    expect(describeForeignCheckout(outside, fixtureDirectory)).toBe(
+      `${outside} resolves to ${outside}, outside ${fixtureDirectory}. The fixture rewrites the checkout's package.json and lockfile, so clone a copy of T3 Code at ${T3CODE_REVISION} into ${path.join(fixtureDirectory, "checkout")} and pass that.`,
+    );
+  });
+
+  it("refuses a symlink inside the fixture directory that points outside it", () => {
+    const link = path.join(fixtureDirectory, "link");
+
+    symlinkSync(outside, link);
+
+    expect(describeForeignCheckout(link, fixtureDirectory)).toContain(`${link} resolves to ${outside}, outside`);
+  });
+
+  it("refuses the fixture directory itself and a sibling whose name only starts like it", () => {
+    const sibling = `${fixtureDirectory}-copy`;
+
+    mkdirSync(sibling);
+
+    expect(describeForeignCheckout(fixtureDirectory, fixtureDirectory)).toContain("outside");
+    expect(describeForeignCheckout(sibling, fixtureDirectory)).toContain("outside");
   });
 });

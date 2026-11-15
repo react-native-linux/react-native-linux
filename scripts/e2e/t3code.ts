@@ -1,4 +1,6 @@
 import { FIRST_PRESENTED_FRAME_TRACE_LINE, hasPresentedFirstFrame } from "./window-readiness.ts";
+import path from "node:path";
+import { realpathSync } from "node:fs";
 
 /** The T3 Code revision docs/research/t3code-linux.md surveyed, and the one the fixture runs. */
 const T3CODE_REVISION = "238678951ac4945969b8203ae2996b5891b6ffce";
@@ -62,9 +64,23 @@ const overlayPackArguments = (
 ];
 
 /**
+ * Why the fixture refuses to modify `checkout`, or null when its real path lies inside `fixtureDirectory`. Adding the
+ * overlays rewrites the checkout's package.json and lockfile, so it must be the fixture's own copy of T3 Code.
+ */
+const describeForeignCheckout = (checkout: string, fixtureDirectory: string): string | null => {
+  const realFixtureDirectory = realpathSync(fixtureDirectory);
+  const realCheckout = realpathSync(checkout);
+  const relativeCheckout = path.relative(realFixtureDirectory, realCheckout);
+
+  return relativeCheckout !== "" && !relativeCheckout.startsWith("..")
+    ? null
+    : `${checkout} resolves to ${realCheckout}, outside ${realFixtureDirectory}. The fixture rewrites the checkout's package.json and lockfile, so clone a copy of T3 Code at ${T3CODE_REVISION} into ${path.join(fixtureDirectory, "checkout")} and pass that.`;
+};
+
+/**
  * The pnpm arguments that add the packed overlays to T3 Code's mobile app as a registry install would land them. Their
- * install scripts do not run, as the checkout's own install skips them, and their `@react-native-linux/core` peer is
- * left uninstalled: it is not on npm, and the fixture bundles core from this repository.
+ * install scripts do not run, as the checkout's own install skips them. Peer checks are not strict: the reanimated
+ * overlay's react-native-worklets 0.12.2 accepts react-native 0.83 to 0.87, and T3 Code pins 0.88.1.
  */
 const overlayInstallArguments = (tarballs: readonly string[]): readonly string[] => [
   "--filter",
@@ -72,13 +88,13 @@ const overlayInstallArguments = (tarballs: readonly string[]): readonly string[]
   "add",
   ...tarballs,
   "--ignore-scripts",
-  "--config.auto-install-peers=false",
   "--config.strict-peer-dependencies=false",
 ];
 
 export {
   T3CODE_REVISION,
   buildPairingLink,
+  describeForeignCheckout,
   gradeWindowRun,
   overlayInstallArguments,
   overlayPackArguments,

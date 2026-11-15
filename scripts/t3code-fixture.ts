@@ -1,6 +1,7 @@
 import {
   T3CODE_REVISION,
   buildPairingLink,
+  describeForeignCheckout,
   gradeWindowRun,
   overlayInstallArguments,
   overlayPackArguments,
@@ -33,11 +34,12 @@ import { waitUntil } from "./e2e/discovery.ts";
  *
  *   node scripts/t3code-fixture.ts <checkout>   (or T3CODE_ROOT=<checkout>)
  *
- * The checkout is the fixture's own copy of T3 Code at T3CODE_REVISION, such as build/t3code/checkout, with the mobile
- * app's and the server's dependencies installed. The fixture packs this platform's overlay packages and adds them to
- * the mobile app, which rewrites its package.json and lockfile, so the alias table resolves them as it would for an
- * application that installed them from a registry. The run passes once the window presents a frame and exits cleanly
- * with startup throwing nothing; until then it names where startup stopped. The main screen's accessibility tree and golden join it once the screen renders.
+ * The checkout is the fixture's own copy of T3 Code at T3CODE_REVISION inside build/t3code, such as
+ * build/t3code/checkout, with the mobile app's and the server's dependencies installed; any other path is refused. The
+ * fixture packs this platform's overlay packages and adds them to the mobile app, which rewrites its package.json and
+ * lockfile, so the alias table resolves them as it would for an application that installed them from a registry. The
+ * run passes once the window presents a frame and exits cleanly with startup throwing nothing; until then it names
+ * where startup stopped. The main screen's accessibility tree and golden join it once the screen renders.
  */
 
 const SUCCESSFUL_EXIT_STATUS = 0;
@@ -53,8 +55,9 @@ const RUN_TIMEOUT_MS = 180_000;
 
 const repositoryRoot = path.resolve(import.meta.dirname, "..");
 const artifactsDirectory = path.join(repositoryRoot, "build", "e2e", SCENARIO_NAME);
-const bundlePath = path.join(repositoryRoot, "build", "t3code", "index.linux.bundle.js");
-const overlayDirectory = path.join(repositoryRoot, "build", "t3code", "overlays");
+const fixtureDirectory = path.join(repositoryRoot, "build", "t3code");
+const bundlePath = path.join(fixtureDirectory, "index.linux.bundle.js");
+const overlayDirectory = path.join(fixtureDirectory, "overlays");
 const checkout = path.resolve(argv[CHECKOUT_ARGUMENT_INDEX] ?? env["T3CODE_ROOT"] ?? "");
 const serverEntry = path.join(checkout, "apps", "server", "src", "bin.ts");
 const serverLogPath = path.join(artifactsDirectory, "server.log");
@@ -72,7 +75,7 @@ const describeUnavailable = (compositorPath: string | null, lavapipeIcdPath: str
   ...(["mobile", "server"].every((app) => existsSync(path.join(checkout, "apps", app, "node_modules")))
     ? []
     : [
-        `${checkout} is not an installed T3 Code checkout: clone https://github.com/pingdotgg/t3code at ${T3CODE_REVISION} into a copy the fixture may modify and run "corepack pnpm install --frozen-lockfile --ignore-scripts --filter '@t3tools/mobile...' --filter 't3...'" in it`,
+        `${checkout} is not an installed T3 Code checkout: clone https://github.com/pingdotgg/t3code at ${T3CODE_REVISION} into ${path.join(fixtureDirectory, "checkout")} and run "corepack pnpm install --frozen-lockfile --ignore-scripts --filter '@t3tools/mobile...' --filter 't3...'" in it`,
       ]),
   ...(spawnSync("git", ["-C", checkout, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim() === T3CODE_REVISION
     ? []
@@ -258,9 +261,7 @@ const runAgainstServer = async (rig: Rig): Promise<void> => {
   }
 };
 
-const runFixture = async (rig: Rig): Promise<void> => {
-  mkdirSync(artifactsDirectory, { recursive: true });
-
+const runOnOwnCheckout = async (rig: Rig): Promise<void> => {
   const overlayFailure = installOverlays();
 
   if (overlayFailure !== null) {
@@ -269,6 +270,19 @@ const runFixture = async (rig: Rig): Promise<void> => {
     await runAgainstServer(rig);
   } else {
     fail("Metro could not bundle T3 Code");
+  }
+};
+
+const runFixture = async (rig: Rig): Promise<void> => {
+  mkdirSync(artifactsDirectory, { recursive: true });
+  mkdirSync(fixtureDirectory, { recursive: true });
+
+  const foreignCheckout = describeForeignCheckout(checkout, fixtureDirectory);
+
+  if (foreignCheckout === null) {
+    await runOnOwnCheckout(rig);
+  } else {
+    fail(foreignCheckout);
   }
 };
 

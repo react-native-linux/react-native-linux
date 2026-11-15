@@ -15,5 +15,10 @@
     "@react-native-linux/core": "workspace:*",
     "react": "*",
     "react-native": "*"
+  },
+  "peerDependenciesMeta": {
+    "@react-native-linux/core": {
+      "optional": true
+    }
   }
 }
