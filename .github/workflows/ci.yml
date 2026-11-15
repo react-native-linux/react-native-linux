@@ -850,6 +850,23 @@ jobs:
           path: .ccache
           key: rnl-ccache-ubuntu-24.04-clang-18-window-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'packages/core/CMakeLists.txt', 'scripts/vendor.lock.json', 'scripts/skia.lock.json') }}-${{ github.run_id }}
 
+      # lavapipe's compiled shaders, which scripts/headless-compositor.ts keeps in build/mesa-shader-cache. A scene's
+      # first run in a job compiles them in its first frames after mount, which the frame journal counts as hangs
+      # (#704). The key names the lavapipe build and the Skia that generates every shader. Mesa addresses each entry
+      # by a hash of the shader and its own build, so a shader a change adds or alters is never found in a restored
+      # cache and still compiles in the run that introduces it.
+      - name: Read the lavapipe version
+        id: lavapipe
+        run: |
+          echo "version=$(dpkg -s mesa-vulkan-drivers | sed -n 's/^Version: //p')" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the Mesa shader cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/mesa-shader-cache
+          key: rnl-mesa-shader-cache-${{ steps.lavapipe.outputs.version }}-${{ hashFiles('scripts/skia.lock.json') }}-${{ github.run_id }}
+          restore-keys: rnl-mesa-shader-cache-${{ steps.lavapipe.outputs.version }}-${{ hashFiles('scripts/skia.lock.json') }}-
+
       # The spec skips itself when weston, lavapipe or the binary is missing, so on a runner the assertion that it
       # did *not* skip is what proves the rig ran at all. Without it an incomplete apt list would pass silently.
       - name: Compare window goldens
@@ -911,3 +928,10 @@ jobs:
           name: e2e
           path: build/e2e
           if-no-files-found: warn
+
+      - name: Save the Mesa shader cache
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/mesa-shader-cache
+          key: rnl-mesa-shader-cache-${{ steps.lavapipe.outputs.version }}-${{ hashFiles('scripts/skia.lock.json') }}-${{ github.run_id }}
