@@ -43,7 +43,7 @@ catalogs:
       specifier: 4.1.11
       version: 4.1.11
 
-packageExtensionsChecksum: sha256-cR2syrIbD7ejQYCKeg5tltNM4jr1biBWzKgYQw7bqeA=
+packageExtensionsChecksum: sha256-eKrlfw/EsU3+XqsdTQ6tCDU6tmqmJ8E+3yO7kQk5/mU=
 
 patchedDependencies:
   react-native-worklets@0.12.2: d61fe39e7a9a22fd6ebd82b717bdf5754ed9c64ab90c5c97e30a1521a10f5ded
@@ -165,9 +165,15 @@ importers:
       expo-constants:
         specifier: 58.0.15
         version: 58.0.15(react-native@0.87.1(patch_hash=6b3a0befcda7e6ee7b87ffc28e229730a284e887a53328eab553497985347a41)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.87.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.2.8)(supports-color@8.1.1))(supports-color@8.1.1)(typescript@7.0.2)
+      expo-file-system:
+        specifier: 58.0.13
+        version: 58.0.13(react-native@0.87.1(patch_hash=6b3a0befcda7e6ee7b87ffc28e229730a284e887a53328eab553497985347a41)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.87.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.2.8)(supports-color@8.1.1))
       expo-modules-core:
         specifier: 58.0.30
         version: 58.0.30(react-native-worklets@0.12.2(patch_hash=d61fe39e7a9a22fd6ebd82b717bdf5754ed9c64ab90c5c97e30a1521a10f5ded)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.87.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(react-native@0.87.1(patch_hash=6b3a0befcda7e6ee7b87ffc28e229730a284e887a53328eab553497985347a41)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.87.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.2.8)(supports-color@8.1.1))(react@19.2.8)(supports-color@8.1.1))(react-native@0.87.1(patch_hash=6b3a0befcda7e6ee7b87ffc28e229730a284e887a53328eab553497985347a41)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.87.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.2.8)(supports-color@8.1.1))(react@19.2.8)
+      whatwg-url-minimum:
+        specifier: 0.2.0
+        version: 0.2.0
 
   packages/gesture-handler:
     dependencies:
@@ -2270,6 +2276,15 @@ packages:
       expo:
         optional: true
 
+  expo-file-system@58.0.13:
+    resolution: {integrity: sha512-+/1aFErkawyky5UdWI06zYeO2DeHUnfaWnYHeiI8M8Z/sB6L66gI3WUxqtvUvKJoaM0Ti1CximD3x3JwteLYIg==}
+    peerDependencies:
+      expo: '*'
+      react-native: '*'
+    peerDependenciesMeta:
+      expo:
+        optional: true
+
   expo-modules-core@58.0.30:
     resolution: {integrity: sha512-uIyFJHouaiHwIoDjWSjb1Zg5LMGmkUs7CEp0rzpXvC+SStP/sr+dcjclUYD1ImmngMYuxRcs9soHEuWbcZWr/w==}
     peerDependencies:
@@ -3767,6 +3782,9 @@ packages:
 
   whatwg-fetch@3.6.20:
     resolution: {integrity: sha512-EqhiFU6daOA8kpjOWTL0olhVOF3i7OrFzSYiGsEMB8GcXS+RrzauAERX65xMeNWVqxA6HXH2m69Z9LaKKdisfg==}
+
+  whatwg-url-minimum@0.2.0:
+    resolution: {integrity: sha512-BtjXU1caNcCFfETP2DhqSeVPfRDl2MTUitI107RE34rJXjR/izfUtR5IoTFOK1WqjNLXbbeqaCH/mQAOLjpc8g==}
 
   whatwg-url@5.0.0:
     resolution: {integrity: sha512-saE57nupxk6v3HY35+jzBwYa0rKSy0XR8JSxZPwgLr7ys0IBzhGviA1/TUGJLmSVqs8pb9AnvICXEuOHLprYTw==}
@@ -5751,6 +5769,10 @@ snapshots:
       - supports-color
       - typescript
 
+  expo-file-system@58.0.13(react-native@0.87.1(patch_hash=6b3a0befcda7e6ee7b87ffc28e229730a284e887a53328eab553497985347a41)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.87.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.2.8)(supports-color@8.1.1)):
+    dependencies:
+      react-native: 0.87.1(patch_hash=6b3a0befcda7e6ee7b87ffc28e229730a284e887a53328eab553497985347a41)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.87.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.2.8)(supports-color@8.1.1)
+
   expo-modules-core@58.0.30(react-native-worklets@0.12.2(patch_hash=d61fe39e7a9a22fd6ebd82b717bdf5754ed9c64ab90c5c97e30a1521a10f5ded)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.87.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(react-native@0.87.1(patch_hash=6b3a0befcda7e6ee7b87ffc28e229730a284e887a53328eab553497985347a41)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.87.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.2.8)(supports-color@8.1.1))(react@19.2.8)(supports-color@8.1.1))(react-native@0.87.1(patch_hash=6b3a0befcda7e6ee7b87ffc28e229730a284e887a53328eab553497985347a41)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.87.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.2.8)(supports-color@8.1.1))(react@19.2.8):
     dependencies:
       expo-modules-jsi: 58.0.23(react-native@0.87.1(patch_hash=6b3a0befcda7e6ee7b87ffc28e229730a284e887a53328eab553497985347a41)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.87.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.2.8)(supports-color@8.1.1))
@@ -7376,6 +7398,8 @@ snapshots:
   webidl-conversions@3.0.1: {}
 
   whatwg-fetch@3.6.20: {}
+
+  whatwg-url-minimum@0.2.0: {}
 
   whatwg-url@5.0.0:
     dependencies:

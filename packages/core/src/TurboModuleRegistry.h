@@ -28,6 +28,7 @@ class TurboModule;
 
 namespace react_native_linux {
 
+struct FileSystemHost;
 class HostTimerRegistry;
 class I18nModel;
 class KeyValueStore;
@@ -126,6 +127,9 @@ public:
     /** The connections behind `ExpoSQLite` (#638); `WindowSession` gives them the application's directory. */
     SQLiteDatabases& sqliteDatabases() noexcept;
 
+    /** What `FileSystem` runs over (#663); `WindowSession` gives it the application's directory. */
+    FileSystemHost& fileSystem() noexcept;
+
     /** `I18nManager`'s choices (#72), which `WindowSession` restores before the bundle and applies every frame. */
     I18nModel& i18n() noexcept;
 
@@ -159,6 +163,7 @@ private:
     std::shared_ptr<LinuxLinkingModule> linkingModule_;
     std::shared_ptr<KeyValueStore> keyValueStore_;
     std::unique_ptr<SQLiteDatabases> sqliteDatabases_;
+    std::unique_ptr<FileSystemHost> fileSystemHost_;
     std::shared_ptr<I18nModel> i18nModel_;
     std::shared_ptr<std::string> bundleUrl_;
     std::shared_ptr<LinuxWorkletsModule> workletsModule_;

@@ -1,16 +1,14 @@
 #pragma once
 
+#include "SerialWorker.h"
+
 #include <atomic>
-#include <condition_variable>
 #include <cstddef>
-#include <deque>
 #include <functional>
 #include <map>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <string>
-#include <thread>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -55,13 +53,12 @@ struct SQLiteRunResult {
  * directory is `<files>/SQLite`. A host that sets no directory answers none, so upstream's own error names it.
  *
  * Threading contract: `post` and `reserveHandle` may be called from any thread and never wait on SQLite. Every task
- * runs on the one worker thread this object owns, which the first `post` starts, in the order it was posted, and
- * must not throw. The methods from
+ * runs on the `SerialWorker` this object owns, in the order it was posted, and must not throw. The methods from
  * `ensureDirectoryExists` down touch the connections, so only a posted task calls them, or a thread that posts
  * nothing. `setDirectory` runs before the bundle does, on the thread that then hands the runtime to the JavaScript
  * thread, which is the only one that reads `directory`.
- * The destructor runs every task already posted, so a queued write still lands, then joins the worker if one started
- * and closes every connection still open. One worker serializes every connection, so a write on one connection while
+ * The destructor runs every task already posted, so a queued write still lands, then closes every connection still
+ * open. One worker serializes every connection, so a write on one connection while
  * another holds a transaction fails with SQLite's "database is locked" rather than waiting for a commit that the
  * waiting worker would never run.
  */
@@ -115,17 +112,13 @@ private:
 
     sqlite3& connection(int database);
     sqlite3_stmt& statement(int statement);
-    void runTasks();
 
     std::string directory_;
     std::atomic<int> nextHandle_{1};
     std::map<int, std::unique_ptr<sqlite3, ConnectionCloser>> connections_;
     std::map<int, Statement> statements_;
-    std::mutex mutex_;
-    std::condition_variable wake_;
-    std::deque<Task> tasks_;
-    bool stopping_{false};
-    std::thread worker_;
+    // Last, so it is destroyed first: its queued tasks still use the connections.
+    SerialWorker worker_;
 };
 
 /**

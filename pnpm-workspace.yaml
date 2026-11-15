@@ -30,9 +30,14 @@ patchedDependencies:
   react-native-worklets@0.12.2: patches/react-native-worklets@0.12.2.patch
   react-native@0.87.1: patches/react-native@0.87.1.patch
 
-# expo-constants imports only types from its `expo` peer, so the Expo e2e installs it without the expo CLI (ADR-0004).
+# expo-constants imports only types from its `expo` peer, and expo-file-system nothing at all, so the Expo e2e installs
+# them without the expo CLI (ADR-0004).
 packageExtensions:
   expo-constants@58:
+    peerDependenciesMeta:
+      expo:
+        optional: true
+  expo-file-system@58:
     peerDependenciesMeta:
       expo:
         optional: true

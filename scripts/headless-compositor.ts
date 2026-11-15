@@ -95,6 +95,7 @@ const runUnderCompositor = async (
       buildEnvironment({
         VK_ICD_FILENAMES: lavapipeIcdPath,
         WAYLAND_DISPLAY: socketName,
+        XDG_CACHE_HOME: path.join(runtimeDirectory, "cache"),
         XDG_DATA_HOME: path.join(runtimeDirectory, "data"),
         XDG_RUNTIME_DIR: runtimeDirectory,
         XDG_STATE_HOME: path.join(runtimeDirectory, "state"),

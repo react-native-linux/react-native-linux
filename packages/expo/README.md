@@ -11,6 +11,7 @@ a module whose JavaScript has to differ; no module uses it yet.
 | Module | Written against | Seam or alias | Native module | Answers |
 | --- | --- | --- | --- | --- |
 | `expo-constants` | 58.0.15 | seam | `ExponentConstants` | every required `NativeConstants` field for a bare desktop app; `deviceName` is the host name; `manifest`, and so `expoConfig`, is `null` until a `linux` build embeds the app config (#156); `systemFonts` is empty; `getWebViewUserAgentAsync` resolves `null` |
+| `expo-file-system` | 58.0.13 | seam | `FileSystem` | `File`, `Directory` and `Paths` over `makeSharedObjectClass` (#663): `Paths.document` is `$XDG_DATA_HOME/<app-id>/Documents`, `Paths.cache` is `$XDG_CACHE_HOME/<app-id>`; existence, size, create, delete, text, base64 and bytes reads and writes, copy, move and listing, with the asynchronous methods' file work on a worker thread; file handles, downloads, uploads, watching, digests, pickers and previews are absent; `Paths.join` needs the WHATWG `URL` `expo`'s runtime installs |
 
 `src/` holds each module's required-field list, typed against upstream's declarations. `test-bundles/` and `e2e/`
 are the scenarios `pnpm e2e` discovers; each installs the real upstream package.

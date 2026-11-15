@@ -108,6 +108,8 @@ add_executable(rnl_core_hermes_tests
     CxxModuleTypeSurfaceTest.cpp
     DevBundleModulesTest.cpp
     ExponentConstantsModuleTest.cpp
+    ExpoFileSystemModuleTest.cpp
+    ExpoSharedObjectTest.cpp
     FeatureFlagsResetListener.cpp
     InstanceTeardownLeakTest.cpp
     MeasureGeometryTest.cpp
