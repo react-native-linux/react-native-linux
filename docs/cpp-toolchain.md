@@ -1334,11 +1334,12 @@ guard: the native job's `dev` entry builds it on every pull request, React Nativ
 `next-minor.yml` builds it against the next React Native minor. An upstream two-way platform `#ifdef` fails the
 build instead of an animation. `rnl_react_core` links it for the module proxy host (#140).
 
-**Patches:** two, listed with their upstream asks in `packages/reanimated/README.md`. On a platform that is neither
+**Patches:** three, listed with their upstream asks in `packages/reanimated/README.md`. On a platform that is neither
 Android nor Apple, `SynchronouslyUpdateUIPropsFunction` takes Apple's `(int, const folly::dynamic&)` shape, which is
 `IMountingManager::synchronouslyUpdateViewOnUIThread`'s, and `applySynchronousUpdates` hands it the batch the Apple
 way instead of dropping it. And `LayoutAnimationsProxy_Legacy::startSurface` reads the mounting coordinator before
-taking its own mutex, the order `pullTransaction` takes them in (#140).
+taking its own mutex, the order `pullTransaction` takes them in, and `OperationsLoop` holds the updates registry
+manager weakly, which breaks the ownership cycle that leaked every proxy's Fabric graph (#140).
 
 `makePlatformDepMethodsHolder` (`src/ReanimatedPlatform.*`) fills the platform contract. Its docblock is the one
 table of which members are real (`requestRender` on the frame queue, `getAnimationTimestamp` on `steady_clock`,
