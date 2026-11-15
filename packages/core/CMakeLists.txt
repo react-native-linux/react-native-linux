@@ -66,6 +66,8 @@ find_package(Threads REQUIRED)
 find_package(CURL REQUIRED)
 # #23: SQLite is the store behind AsyncStorage (src/AsyncStorage.h) and #638's expo-sqlite (src/ExpoSQLite.h).
 find_package(SQLite3 REQUIRED)
+# #83: Intl is built on the system ICU, the one Hermes' platform_unicode already links; see src/Intl.h.
+find_package(ICU 74 REQUIRED COMPONENTS uc i18n)
 
 add_library(double-conversion INTERFACE)
 target_link_libraries(double-conversion INTERFACE double-conversion::double-conversion)
@@ -857,8 +859,13 @@ add_library(rnl_react_core STATIC
     src/CurlHttpClient.cpp
     src/DimensionsSource.cpp
     src/EditorModel.cpp
+    src/ExpoAsset.cpp
+    src/ExpoAssetModule.cpp
+    src/ExpoFileSystem.cpp
+    src/ExpoFileSystemModule.cpp
     src/ExpoSQLite.cpp
     src/ExpoSQLiteModule.cpp
+    src/ExpoSharedObject.cpp
     src/FabricHost.cpp
     src/FantomRenderOutput.cpp
     src/FocusModel.cpp
@@ -866,6 +873,8 @@ add_library(rnl_react_core STATIC
     src/HostTimerRegistry.cpp
     src/I18n.cpp
     src/ImageContent.cpp
+    src/Intl.cpp
+    src/IntlBinding.cpp
     src/InputDispatcher.cpp
     src/InputPipeline.cpp
     src/JsErrorReporter.cpp
@@ -878,6 +887,7 @@ add_library(rnl_react_core STATIC
     src/ScrollController.cpp
     src/ScrollEventCadence.cpp
     src/ScrollPhysics.cpp
+    src/SerialWorker.cpp
     src/StubMessageQueue.cpp
     src/SwitchComponent.cpp
     src/SwitchContent.cpp
@@ -905,6 +915,8 @@ target_link_libraries(rnl_react_core
     PUBLIC
         CURL::libcurl
         SQLite::SQLite3
+        ICU::uc
+        ICU::i18n
         hermesvm
         jsi
         rnl_jsidynamic

@@ -14,3 +14,5 @@ HelXlo = "HelXlo"
 [default.extend-words]
 collapsable = "collapsable"
 truncat = "truncat"
+# German month name: the expected de-DE output of the Intl tests (#83).
+Januar = "Januar"

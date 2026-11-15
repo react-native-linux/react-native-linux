@@ -74,6 +74,7 @@ const runFormatCpp = (mode: FormatCppMode, environment: FormatCppEnvironment, re
   const directoryPaths = [
     path.join(repositoryRoot, "packages", "core", "src"),
     path.join(repositoryRoot, "packages", "core", "tests"),
+    path.join(repositoryRoot, "packages", "test-harness", "modules"),
   ];
   const filePaths = collectAllSourceFilePaths(directoryPaths, environment.listDirectory);
 

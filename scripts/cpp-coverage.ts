@@ -46,6 +46,8 @@ const scopedSourcePaths: readonly string[] = [
   "packages/core/src/DimensionsSource.cpp",
   "packages/core/src/EditorModel.cpp",
   "packages/core/src/EllipsizeSearch.cpp",
+  "packages/core/src/ExpoAsset.cpp",
+  "packages/core/src/ExpoFileSystem.cpp",
   "packages/core/src/ExpoSQLite.cpp",
   "packages/core/src/FocusModel.cpp",
   "packages/core/src/FontSizeScaling.cpp",
@@ -71,6 +73,7 @@ const scopedSourcePaths: readonly string[] = [
   "packages/core/src/ScrollEventCadence.cpp",
   "packages/core/src/ScrollPhysics.cpp",
   "packages/core/src/SeededTestScheduler.cpp",
+  "packages/core/src/SerialWorker.cpp",
   "packages/core/src/SingleInstanceActivation.cpp",
   "packages/core/src/StubMessageQueue.cpp",
   "packages/core/src/SurfaceCommitGate.cpp",
@@ -83,11 +86,13 @@ const scopedSourcePaths: readonly string[] = [
   "packages/core/src/ToplevelState.cpp",
   "packages/core/src/GpuResourceInvalidation.cpp",
   "packages/core/src/I18n.cpp",
+  "packages/core/src/Intl.cpp",
   "packages/core/src/VulkanResultPolicy.cpp",
   "packages/core/src/WaylandDispatchDiagnostics.cpp",
   "packages/core/src/WaylandSerialLedger.cpp",
   "packages/core/src/WindowControlSequence.cpp",
   "packages/core/src/WindowDecorations.cpp",
+  "packages/test-harness/modules/t3-native-controls/linux/DpopKeys.cpp",
 ];
 
 const coverageTool = env["LLVM_COV"] ?? "llvm-cov";

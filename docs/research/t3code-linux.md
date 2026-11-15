@@ -96,8 +96,9 @@ The order epic #634 follows. Each step needs the ones before it.
    constructs `Intl.DateTimeFormat` (`messageTimestamp.ts`), `Intl.Collator` (`fileTree.ts`, `zipTree.ts`) and
    `Intl.NumberFormat` (`diffCount.ts`, `usageFormat.ts`) at module scope, so the bundle throws before the first
    frame without them. Its `intl-polyfills.ts` adds `Intl.Locale`, `getCanonicalLocales` and English `DisplayNames`
-   but assumes the rest from the engine. #83 decides ICU or polyfills; startup proves it by loading those modules
-   in the e2e bundle, and #83's ECMA-402 fixture covers the three constructors with T3 Code's options.
+   but assumes the rest from the engine. #83 chose the platform's own `Intl` over the system ICU
+   (`packages/core/src/Intl.h`), with Hermes' Intl kept off; `IntlStartupTest` starts a bundle that builds those
+   module-scope formatters, and `IntlBindingTest` covers the three constructors with T3 Code's options.
 7. **The fixture**: the main screen renders in `rnl_window` against a local T3 server (#641).
 8. **The measurement**: against the Electron build (#642), with frame pacing (#20) and the trace surface (#90).
 
@@ -163,7 +164,7 @@ transitive package.
 | `expo-device` | `~58.0.5` | tracked | #277 | appearance defaults |
 | `expo-clipboard` | `~58.0.4` | tracked | #278 | 8 files |
 | `react-native-keyboard-controller` | `1.23.0` | tracked | #279 | KeyboardProvider at the root |
-| `react-native-enriched-markdown` | `file:deps/react-native-enriched-markdown-1.2.0-t3.18-16db4c75.tgz` | tracked | #639 | T3 Code's fork; every message |
+| `react-native-enriched-markdown` | `file:deps/react-native-enriched-markdown-1.2.0-t3.18-16db4c75.tgz` | tracked | #688 | T3 Code's fork; every message; #639 landed the base |
 | `@t3tools/mobile-source-text` | `file:./modules/t3-source-text` | tracked | #640 | source file view |
 | `@t3tools/mobile-highlights-native` | `file:./modules/t3-highlights` | tracked | #640 | syntax highlighting, a Nitro module |
 | `@t3tools/mobile-review-diff-native` | `file:./modules/t3-review-diff` | tracked | #640 | review diff view |

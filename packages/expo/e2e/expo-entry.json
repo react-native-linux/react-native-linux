@@ -1,0 +1,16 @@
+{
+  "name": "expo-entry",
+  "bundle": "expo-entry.tsx",
+  "ready": "expo-entry: rendered",
+  "frames": 600,
+  "steps": ["sleep 300"],
+  "automation": {
+    "listErrorsMustBeEmpty": true,
+    "visualTreeSnapshot": "expo-entry-tree.json"
+  },
+  "expect": [
+    "[rnl-automation] listening on",
+    "Running \"main\"",
+    "expo-entry: rendered fetch=200 rnl_window asset=file:///proc/self/comm"
+  ]
+}

@@ -3,6 +3,7 @@
 #include "AutomationProtocol.h"
 #include "ConsoleBinding.h"
 #include "CurlHttpClient.h"
+#include "IntlBinding.h"
 #include "ReactNativeFeatureFlagsOverridesLinux.h"
 #include "ReanimatedModule.h"
 #include "WorkletsModule.h"
@@ -177,6 +178,7 @@ ReactHost::ReactHost(std::shared_ptr<StubMessageQueue> stubJavaScriptQueue, Fant
         {}, [registry = turboModuleRegistry_.get(), hasMarkedTestPassed = hasMarkedTestPassed_,
              &animationFrameQueue = animationFrameQueue_](facebook::jsi::Runtime& runtime) {
             installConsoleBinding(runtime);
+            installIntl(runtime);
             installMarkTestPassedBinding(runtime, hasMarkedTestPassed);
             installAnimationFrameBinding(runtime, animationFrameQueue);
             registry->install(runtime);
@@ -257,6 +259,18 @@ SQLiteDatabases& ReactHost::sqliteDatabases() noexcept {
     react_native_assert(std::this_thread::get_id() == owningThread_);
 
     return turboModuleRegistry_->sqliteDatabases();
+}
+
+ExpoAssetDownloads& ReactHost::expoAssetDownloads() noexcept {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    return turboModuleRegistry_->expoAssetDownloads();
+}
+
+FileSystemHost& ReactHost::fileSystem() noexcept {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    return turboModuleRegistry_->fileSystem();
 }
 
 LinuxWorkletsModule& ReactHost::worklets() noexcept {

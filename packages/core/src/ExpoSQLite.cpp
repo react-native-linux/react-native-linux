@@ -97,56 +97,17 @@ void SQLiteDatabases::StatementFinalizer::operator()(sqlite3_stmt* statement) co
     sqlite3_finalize(statement);
 }
 
-SQLiteDatabases::~SQLiteDatabases() noexcept {
-    {
-        const std::lock_guard<std::mutex> lock(mutex_);
-        stopping_ = true;
-    }
-
-    wake_.notify_one();
-
-    if (worker_.joinable()) {
-        worker_.join();
-    }
-}
+SQLiteDatabases::~SQLiteDatabases() noexcept = default;
 
 void SQLiteDatabases::setDirectory(std::string directory) { directory_ = std::move(directory); }
 
 const std::string& SQLiteDatabases::directory() const noexcept { return directory_; }
 
 void SQLiteDatabases::post(Task task) {
-    {
-        const std::lock_guard<std::mutex> lock(mutex_);
-        tasks_.push_back(std::move(task));
-
-        if (!worker_.joinable()) {
-            worker_ = std::thread([this] { runTasks(); });
-        }
-    }
-
-    wake_.notify_one();
+    worker_.post([this, task = std::move(task)] { task(*this); });
 }
 
 int SQLiteDatabases::reserveHandle() noexcept { return nextHandle_.fetch_add(1); }
-
-void SQLiteDatabases::runTasks() {
-    std::unique_lock<std::mutex> lock(mutex_);
-
-    while (true) {
-        wake_.wait(lock, [this] { return stopping_ || !tasks_.empty(); });
-
-        if (tasks_.empty()) {
-            return;
-        }
-
-        const Task task = std::move(tasks_.front());
-
-        tasks_.pop_front();
-        lock.unlock();
-        task(*this);
-        lock.lock();
-    }
-}
 
 void SQLiteDatabases::ensureDirectoryExists(const std::string& databasePath) {
     const std::filesystem::path directory = std::filesystem::path(databasePath).parent_path();

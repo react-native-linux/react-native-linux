@@ -25,6 +25,10 @@ describe("platformConfig", () => {
     });
   });
 
+  it("resolves the linux directory of a dependency whose own config declares nothing", () => {
+    expect(dependencyConfig(applicationRoot)).toEqual({ sourceDir: path.join(applicationRoot, "linux") });
+  });
+
   it("reports no project for a package without a linux source directory", () => {
     expect(projectConfig(libraryRoot, {})).toBeNull();
   });

@@ -91,6 +91,22 @@ describe("createLinuxResolveRequest", () => {
     expect(result).toStrictEqual({ filePath: overlayPath, type: "sourceFile" });
   });
 
+  it("resolves a substituted package file again, as its linux package's specifier", () => {
+    const fetchIndex = path.join("/app", "node_modules", "expo", "build", "winter", "fetch", "index.js");
+    const substitute = { filePath: "/app/node_modules/@react-native-linux/expo/src/fetch.ts", type: "sourceFile" };
+    const requested: string[] = [];
+    const context = {
+      resolveRequest: (_context: unknown, name: string): unknown => {
+        requested.push(name);
+
+        return name === "./fetch" ? { filePath: fetchIndex, type: "sourceFile" } : substitute;
+      },
+    };
+
+    expect(createLinuxResolveRequest(() => true)(context, "./fetch", "linux")).toBe(substitute);
+    expect(requested).toStrictEqual(["./fetch", "@react-native-linux/expo/fetch"]);
+  });
+
   it("substitutes a package overlay for the file that produced", () => {
     const { result } = resolveWith({ filePath: expoPolyfill("index.js"), type: "sourceFile" }, "./polyfill");
 

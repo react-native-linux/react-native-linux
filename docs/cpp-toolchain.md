@@ -1271,9 +1271,18 @@ both come from the installed files at configure time, a bump cannot leave a stal
 reads `package.json` again at test time, so a bump without a reconfigure fails there instead of in worklets' own
 runtime version check. `WORKLETS_FETCH_PREVIEW_ENABLED` is left undefined, as the package's flag file also sets it.
 
-**Patch policy: none.** Nothing under `node_modules` is edited. Where `Common/cpp` does not build on a third
-platform, `src/WorkletsLinuxPrefix.h` — the counterpart of the package's Android `WorkletsPCH.h`, compiled in as a
-precompiled prefix — makes up the difference, and each entry is an upstream ask:
+**Patch policy: one JavaScript patch.** `patches/react-native-worklets@0.12.2.patch`, applied by pnpm's
+`patchedDependencies`, makes the UI runtime's frame loop demand-driven (#671). Stock `nativeFlushQueue` requests the
+next native frame after every frame, so the frame clock never idles once the UI runtime starts. With the patch, a
+native frame is requested only by `requestAnimationFrame` (which worklets' `setTimeout`, `setImmediate` and
+`setInterval` polyfills are built on), `requestAnimationFrameFinalizer` or `queueMicrotask`. The upstream ask is
+software-mansion/react-native-reanimated#11237 (issue #10845), whose worklets half the patch is; it is deleted on
+the bump that contains it. The `worklets-round-trip` scenario's `maxJournalledFrames` is its proof: an idle window
+caps the run at 28 journalled frames (measured 20–22, against 388 unpatched), and a UI-runtime `setTimeout` started from idle still fires. pnpm applies `patchedDependencies` only in the workspace that declares it, so an app outside this repository must carry the same patch (pnpm `patchedDependencies` or patch-package) until the upstream ask ships; #681 owns delivering it to apps.
+
+No C++ is patched. Where `Common/cpp` does not build on a third platform, `src/WorkletsLinuxPrefix.h` — the
+counterpart of the package's Android `WorkletsPCH.h`, compiled in as a precompiled prefix — makes up the
+difference, and each entry is an upstream ask:
 
 - `<algorithm>` (`Tools/JSISerializer.cpp`), `<stdexcept>` (`Tools/FeatureFlags.h`) and `<iterator>`
   (`Tools/WorkletsJSIUtils.cpp`) are used without being included; the Android precompiled header and fbjni supply
@@ -1410,6 +1419,51 @@ Configure with `-DRNL_AUTOLINKING_CMAKE=<output directory>/rnl_autolinking.cmake
 compiles the registration source into `hello_react` and `rnl_window` — into the executables rather than into an
 archive, so the static initializer cannot be dropped. CI autolinks `packages/cli/test-fixtures/cpp-library`, the
 unmodified `create-react-native-library` 0.63 template, and calls it from `test-bundles/autolinking.js`.
+
+**An application's own Expo module (#640).** An app's local Expo module, such as T3 Code's
+`modules/t3-native-controls`, keeps its Linux code in a `linux/` directory beside `android/` and `ios/`. That
+directory holds a `CMakeLists.txt` and a C++ TurboModule registered under the Expo module's name. The app names the
+module in its own `react-native.config.js`, because a local module has no `node_modules` entry for discovery to
+find:
+
+```js
+dependencies: {
+  't3-native-controls': {
+    root: path.join(__dirname, 'modules/t3-native-controls'),
+    platforms: {
+      android: null,
+      ios: null,
+      linux: { cxxModuleCMakeListsModuleName: 't3-native-controls', cxxModuleHeaderName: 'T3NativeControls' },
+    },
+  },
+},
+```
+
+The community CLI reads `root` and merges these keys over the `sourceDir` that `platform-config.ts` finds. The
+explicit rule then builds `linux/CMakeLists.txt` and registers the class that `cxxModuleHeaderName` names.
+`android: null` and `ios: null` leave those platforms to Expo's own autolinking. Expo's unmodified
+`requireNativeModule` reaches the module through the TurboModule fallback that ADR-0004 (#657) describes. This needs
+no discovery code of ours and no fork. The CMakeLists can rely on the `jsi` and `reactnative` targets, and the class
+lives in `facebook::react`, because the generated registration names it there.
+
+`packages/test-harness/modules/t3-native-controls` is the fixture and T3 Code's template. Its `linux/` directory
+answers the DPoP functions over the system libcrypto, so building it needs `libssl-dev`, and so does every test
+configure (`test`, `asan-tests`, `tsan-tests` and `coverage`), because the module's unit tests link it. CI autolinks
+the fixture beside the `cpp-library` one and calls it from `packages/test-harness/test-bundles/t3-native-controls.js`.
+Its unit tests are `tests/DpopKeysTest.cpp`, which the coverage gate scores, and the Hermes test is
+`tests/hermes/T3NativeControlsModuleTest.cpp`.
+
+A module whose view this platform already ships needs no `linux/` directory and no config entry. T3 Code's
+composer (`modules/t3-composer-editor`, #683) is this platform's `TextInput`, selected by a
+`T3ComposerEditor.linux.tsx` beside the app's `.native.tsx`. Metro resolves `.linux` before `.native`. The variant is
+`packages/test-harness/modules/t3-composer-editor/src/native/T3ComposerEditor.linux.tsx`, and T3 Code copies it to
+`apps/mobile/src/native/`. The `src/lib` and `src/features` files beside it stand in for T3 Code's own, and the file
+is written in T3 Code's style, so this repo's oxlint and oxfmt skip `modules/t3-composer-editor/src`. Return and its
+chords use `onKeyDown`, with the Android view's `returnSubmission` rules: in send mode only a bare Return and
+Ctrl+Return send, every other chord inserts a newline, and a repeat never sends. This platform sends every key to
+the focused field's React handler, with its modifiers and `isComposing`, before the field edits, and delivers an
+earlier edit in the same frame as `onChange` first. `submitBehavior` keeps a sending Return out of the text. The
+e2e `packages/test-harness/e2e/t3-composer-editor.json` drives it under cage.
 
 Our C++ ABI toward a library is the vendored React Native pin's; what a library may assume beyond that is #89's
 question, not this generator's.
@@ -2911,7 +2965,7 @@ support:
 sudo apt-get install -y build-essential git cmake ninja-build ccache python3 pkg-config \
   clang-18 clang-tools-18 libclang-rt-18-dev llvm-18 \
   libboost-dev libdouble-conversion-dev libfmt-dev libgoogle-glog-dev libicu-dev \
-  libfreetype-dev libfontconfig-dev
+  libfreetype-dev libfontconfig-dev libssl-dev
 ```
 
 `pkg-config`, `libfreetype-dev` and `libfontconfig-dev` are what `RNL_ENABLE_SKIA` probes for; without them
@@ -3039,8 +3093,12 @@ mise exec cmake@latest ninja@latest -- cmake --build build/dev
 
 Presets: `dev` (Debug), `release` (Release), `asan` (ASan + UBSan), `tsan` (TSan). The sanitizer presets also flip
 Hermes' own `HERMES_ENABLE_*_SANITIZER` options, because Hermes disables its Boost.Context fibers under ASan and
-cannot infer that from `CMAKE_CXX_FLAGS`. `CMAKE_EXPORT_COMPILE_COMMANDS` is on in every preset, so clangd works
-from a fresh configure.
+cannot infer that from `CMAKE_CXX_FLAGS`. Hermes' automatic choice keeps the fibers under TSan, so `tsan` also sets
+`HERMES_ALLOW_BOOST_CONTEXT=0`. Hermes compiles every `eval` and `Function` source on that fiber, and TSan is not
+told about the stack switch. The fiber's frames unbalance the thread's shadow stack, and the next report or
+allocation crashes inside TSan's `StackDepot` (#83, when `Intl` started building its constructors with `Function`).
+Without the fiber, Hermes compiles on its `SerialExecutor` thread, which TSan understands. `CMAKE_EXPORT_COMPILE_COMMANDS`
+is on in every preset, so clangd works from a fresh configure.
 
 ### Building and running rnl_window
 
@@ -6433,8 +6491,13 @@ When an update is ignored the platform writes its own buffer back into the state
 picture never shows a value React proposed and the platform rejected. `EditorModel::reconcileProps` owns the
 count half and is unit-tested against both; `TextInputController::reconcile` owns the changed half.
 
-`mostRecentEventCount` is incremented by an edit and by nothing else. A pre-edit is not an edit — the value React
-owns has not changed until the commit arrives — so composing does not move it.
+`mostRecentEventCount` is incremented by an edit and by a pre-edit that changes the buffer, which is how iOS and
+Android count marked text. An edit that leaves the buffer as it was, such as committing the pre-edit already shown,
+moves nothing, as on Android, so it raises no `onChange` of its own. Edits that move the count but leave the buffer
+where it was by the end of a frame, such as a pre-edit and its cancellation, still raise one with the unchanged
+text: it is the only event that hands JavaScript the count, and without it every later `value` would be stale. A controlled field echoes each pre-edit back as its `value`: the echo of the current one
+equals the buffer and changes nothing, and a late echo of an earlier one carries an old count and is dropped, so
+neither ends the composition.
 
 ### The editing model
 
@@ -6695,7 +6758,7 @@ Through upstream's `TextInputEventEmitter`, so the payloads are the ones `TextIn
 
 | Event | When | Payload |
 | --- | --- | --- |
-| `change` | the buffer differs from what was last reported | the **unmasked** text, the selection, the event count |
+| `change` | the buffer or the event count differs from what was last reported | the **unmasked** text, the selection, the event count |
 | `selectionChange` | the selection differs from what was last reported | the same shape |
 | `keyPress` | before the edit a key makes | the key, as upstream's own mapping of the text — an empty string is `Backspace`, a line feed is `Enter` |
 | `submitEditing`, `endEditing` | Enter, per the table above | text and event count |
@@ -7754,6 +7817,21 @@ with `WLR_BACKENDS=headless`, `WLR_RENDERER=pixman`, `WLR_LIBINPUT_NO_DEVICES=1`
 lavapipe ICD pinned by the same discovery `scripts/window-golden.ts` exports, waits for the wayland socket to
 appear in that directory, waits for both the scenario's `ready` line and the window's first-presented-frame line
 on the window's stdout (#373, below), and then injects.
+
+**The shader cache (#704).** lavapipe compiles every shader it meets, and Mesa caches the result under
+`XDG_CACHE_HOME`, which the driver points at the scenario's private directory so a bundle never writes into the
+developer's cache (#676). That left every run with a cold cache: the first frames after mount compiled shaders
+inside `vkQueuePresentKHR`, 86–137 ms for the first and 34–51 ms for the next in `animated-views-120hz`, so
+both crossed the frame journal's 33.3 ms hang threshold and the scenario failed 14 runs in 20. `buildEnvironment`
+in `scripts/headless-compositor.ts` therefore sets `MESA_SHADER_CACHE_DIR` to `build/mesa-shader-cache`, a cache
+that outlives the run and is shared by the window goldens, the fresh-project smoke test and every scenario. CI
+restores it in the `window` job from the newest main run with the same `mesa-vulkan-drivers` version, falling back
+to any earlier version's cache, and main saves it after the e2e step. Mesa addresses each entry by a hash of the
+shader, its own build and the CPU's features, so a stale entry can only miss: a restored cache never satisfies a
+shader a change adds or alters, and that change still pays its compile in the run that introduces it. When no
+cache is restored at all, the job first runs every hang-gated scenario once, untimed, to fill it, so the measured
+pass never depends on a cache existing. What the cache hides is the compile cost of shaders that already shipped,
+which is the CPU rasterizer's cost and not the renderer's.
 
 **Keyboard-focus wait (#304).** A scenario's steps are split at the first `key`/`type` step:
 `scripts/e2e/keyboard-focus.ts`'s `runKeyboardAwareInjection` runs everything before that step through one

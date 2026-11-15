@@ -111,6 +111,12 @@ public:
     /** `ExpoSQLite`'s connections (#638); see `TurboModuleRegistry::sqliteDatabases`. */
     SQLiteDatabases& sqliteDatabases() noexcept;
 
+    /** `ExpoAsset`'s downloads (#156); see `TurboModuleRegistry::expoAssetDownloads`. */
+    ExpoAssetDownloads& expoAssetDownloads() noexcept;
+
+    /** What `FileSystem` runs over (#663); see `TurboModuleRegistry::fileSystem`. */
+    FileSystemHost& fileSystem() noexcept;
+
     /** `I18nManager`'s state (#72); see `TurboModuleRegistry::i18n`. */
     I18nModel& i18n() noexcept;
 
