@@ -268,6 +268,8 @@ TEST_F(ExpoFileSystemTest, AFailedOrSelfReplacementLeavesWhatWasThereIntact) {
     fs::create_directories(root_ / "folder" / "file.txt");
     react_native_linux::writeFileBytes(root_ / "folder" / "file.txt" / "kept.txt", "kept", false);
     react_native_linux::writeFileBytes(root_ / "folder" / "outer", "kept", false);
+    fs::create_directories(root_ / "nest" / "inner" / "nest");
+    react_native_linux::writeFileBytes(root_ / "nest" / "inner" / "nest" / "kept.txt", "kept", false);
 
     for (const bool move : {false, true}) {
         EXPECT_THROW(relocateEntry(file, FileSystemEntryKind::File, file, FileSystemEntryKind::File, true, move),
@@ -284,12 +286,20 @@ TEST_F(ExpoFileSystemTest, AFailedOrSelfReplacementLeavesWhatWasThereIntact) {
         EXPECT_THROW(relocateEntry(outer, FileSystemEntryKind::Directory, root_ / "folder",
                                    FileSystemEntryKind::Directory, true, move),
                      fs::filesystem_error);
+        EXPECT_THROW(relocateEntry(root_ / "nest", FileSystemEntryKind::Directory, root_ / "nest" / "inner",
+                                   FileSystemEntryKind::Directory, true, move),
+                     std::invalid_argument);
+        EXPECT_THROW(relocateEntry(root_ / "nest", FileSystemEntryKind::Directory, root_ / "nest" / "absent",
+                                   FileSystemEntryKind::Directory, false, move),
+                     std::invalid_argument);
     }
 
     EXPECT_EQ(react_native_linux::readFileBytes(file), "file");
     EXPECT_TRUE(fs::is_directory(outer / "outer"));
     EXPECT_EQ(react_native_linux::readFileBytes(root_ / "folder" / "file.txt" / "kept.txt"), "kept");
     EXPECT_EQ(react_native_linux::readFileBytes(root_ / "folder" / "outer"), "kept");
+    EXPECT_EQ(react_native_linux::readFileBytes(root_ / "nest" / "inner" / "nest" / "kept.txt"), "kept");
+    EXPECT_FALSE(fs::exists(root_ / "nest" / "absent"));
 }
 
 } // namespace

@@ -297,6 +297,12 @@ std::filesystem::path relocateEntry(const std::filesystem::path& source, FileSys
         (sourceKind == FileSystemEntryKind::File || std::filesystem::is_directory(destination));
     const std::filesystem::path target = intoDestination ? destination / source.filename() : destination;
 
+    // A directory relocated into its own subtree would delete part of itself on overwrite, or copy into itself
+    // without end; refused before anything is touched.
+    if (sourceKind == FileSystemEntryKind::Directory && isWithin(source, target)) {
+        throw std::invalid_argument("cannot relocate the directory " + describe(source) + " into itself");
+    }
+
     if (std::filesystem::exists(target)) {
         if (std::filesystem::equivalent(source, target) || isWithin(target, source)) {
             throw std::invalid_argument("cannot relocate " + describe(source) + " onto itself or what contains it");
