@@ -1,7 +1,8 @@
+import "./ignore-expo-os-warning.ts";
 import Constants from "expo-constants";
 import * as Linking from "expo-linking";
 import { EventEmitter } from "expo-modules-core";
-import { AppRegistry, View } from "react-native";
+import { AppRegistry, Text, View } from "react-native";
 import { requiredConstantsFields } from "../src/expo-constants-surface.ts";
 import { useEffect } from "react";
 
@@ -43,7 +44,16 @@ const ExpoConstantsApp = (): React.JSX.Element => {
     });
   }, []);
 
-  return <View />;
+  return (
+    <View
+      style={{ backgroundColor: "#ffffff", height: 120, left: 40, position: "absolute", top: 40, width: 320 }}
+      testID="expo-constants"
+    >
+      <Text style={{ color: "#000000", fontFamily: "NotoSans-Italic", fontSize: 32, left: 16, position: "absolute", top: 36 }}>
+        Embedded Italic
+      </Text>
+    </View>
+  );
 };
 
 AppRegistry.registerComponent("ExpoConstants", () => ExpoConstantsApp);

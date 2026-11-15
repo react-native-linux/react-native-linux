@@ -225,12 +225,27 @@ when upstream adds one, and the e2e asserts each value.
 `expo-constants/scripts/getAppConfig.js`, which evaluates `app.json` or `app.config.*` with `@expo/config` into the
 APK's `assets/app.config`, and the native module serves that file as a JSON string that `Constants.ts` parses.
 babel-preset-expo inlines `process.env.APP_MANIFEST` only for web and server bundles, and only upstream's web module
-reads it. A `linux` build runs the same script into `assets/app.config` beside its bundle, the directory #70 already
-reads `assets/fonts` from, and `ExponentConstants` serves that file. The e2e harness runs it for a scenario package with an
-`app.json` (`scripts/window-golden.ts`), and the `expo-constants` e2e asserts `expoConfig.scheme` and
-`Linking.createURL`; the CLI build, and a config source for a bundle Metro serves, is
-[#696](https://github.com/react-native-linux/react-native-linux/issues/696). A bundle Metro serves has no directory beside it, so its `manifest` stays `null`, and
-upstream warns, as it does in a bare Android app whose config build script did not run.
+reads it.
+
+**The app config and fonts live in the application's assets directory, not beside the bundle (#696).** On Android and
+iOS both are part of the native app, so a debug build loading its bundle from Metro has them as much as a release
+build does. On Linux the native host, `rnl_window`, is shared by every application, so the linux build step,
+`embedExpoAppAssets` in `packages/cli/src/expo-app-assets.ts`, writes them into a directory the application owns:
+`app.config` from the same unmodified script, for a project with `expo`, and `fonts/` with the files `expo-font`'s
+config plugin declares for iOS and the project's own `assets/fonts`, resolved by the plugin's own `resolveFontPaths`.
+It finds `expo-constants` and `expo-font` from `expo`'s own directory, not the project's: `expo` depends on both, and
+expo-modules-autolinking follows the dependency graph, so Android and iOS embed the config for an app that lists only
+`expo`, and so does Linux. iOS's font list, because Linux resolves a face by its family or PostScript name as iOS
+does, where Android's list names XML resource families. `rnl_window` reads that directory from `assets`
+beside a bundle file, the packaged layout, and from `--assets <directory>` for a bundle a dev server serves, which
+has no directory beside it. `ExponentConstants` serves its `app.config` and the text pipeline registers its `fonts/`
+(#70) before the bundle runs. Metro does not serve the config: the window would have to fetch the config and every font
+before the first render, and the build step already writes the same directory a packaged app ships. The
+`expo-constants` and `expo-constants-dev-server` e2e scenarios run one bundle from a file and from Metro, each
+asserting `expoConfig.scheme` and `Linking.createURL` and drawing the face the scenario package's `expo-font` plugin
+declares against one screenshot golden. A source with neither directory has a `null` `manifest`, and upstream warns,
+as it does in a bare Android app whose config build script did not run. The step is a TypeScript function today; a
+command an application author runs is [#723](https://github.com/react-native-linux/react-native-linux/issues/723).
 
 ### Declined, each with its substitute
 

@@ -42,6 +42,7 @@
       "ignoreDependencies": [
         "expo-application",
         "expo-asset",
+        "expo-crypto",
         "expo-device",
         "expo-file-system",
         "expo-font",
