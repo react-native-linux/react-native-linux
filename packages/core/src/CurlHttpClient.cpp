@@ -44,9 +44,9 @@ HeaderList toHeaderList(const http::Headers& headers) {
     return list;
 }
 
-std::optional<std::string> contentTypeOf(const http::Headers& headers) {
+std::optional<std::string> headerValue(const http::Headers& headers, std::string_view lowercaseName) {
     for (const auto& [name, value] : headers) {
-        if (std::ranges::equal(name, std::string_view("content-type"),
+        if (std::ranges::equal(name, lowercaseName,
                                [](char left, char right) { return std::tolower(left) == right; })) {
             return value;
         }
@@ -109,11 +109,11 @@ struct CurlHttpClient::Transfer {
     }
 
     /**
-     * A response's headers have ended, at the blank line, the one line without a colon libcurl hands the header
-     * callback besides a status line. The response is delivered if it is the final one: neither an interim 1xx
-     * response, a proxy's CONNECT answer (whose response code is 0) nor a redirect libcurl is about to follow.
-     * Delivering the response here rather than at the first body byte is what lets a stream whose server flushes its
-     * headers and then waits resolve its request.
+     * A response's headers have ended, at the blank line. The response is delivered if it is the final one: neither
+     * an interim 1xx response, a proxy's CONNECT answer (whose response code is 0) nor a redirect libcurl is about to
+     * follow, which is a 3xx with a non-empty Location while following is on. Delivering the response here rather
+     * than at the first body byte is what lets a stream whose server flushes its headers and then waits resolve its
+     * request.
      */
     void endHeaders() {
         constexpr long kFirstFinalStatus = 200;
@@ -122,8 +122,10 @@ struct CurlHttpClient::Transfer {
         long statusCode = 0;
         curl_easy_getinfo(easy.get(), CURLINFO_RESPONSE_CODE, &statusCode);
 
-        if (statusCode >= kFirstFinalStatus &&
-            !(followsRedirects && statusCode / kStatusClassDivisor == kRedirectStatusClass)) {
+        const bool redirects = followsRedirects && statusCode / kStatusClassDivisor == kRedirectStatusClass &&
+                               !headerValue(responseHeaders, "location").value_or("").empty();
+
+        if (statusCode >= kFirstFinalStatus && !redirects) {
             deliverResponseOnce();
         }
     }
@@ -176,7 +178,7 @@ size_t onHeaderLine(char* data, size_t size, size_t count, void* userData) {
         transfer.responseHeaders.clear();
     } else if (const size_t colon = line.find(':'); colon != std::string_view::npos) {
         transfer.responseHeaders.emplace_back(trim(line.substr(0, colon)), trim(line.substr(colon + 1)));
-    } else {
+    } else if (line.find_first_not_of("\r\n") == std::string_view::npos) {
         transfer.endHeaders();
     }
 
@@ -223,7 +225,8 @@ std::optional<std::string> attachFormData(CurlHttpClient::Transfer& transfer, co
             }
         }
 
-        if (const std::optional<std::string> contentType = contentTypeOf(field.headers); contentType.has_value()) {
+        if (const std::optional<std::string> contentType = headerValue(field.headers, "content-type");
+            contentType.has_value()) {
             curl_mime_type(part, contentType->c_str());
         }
     }

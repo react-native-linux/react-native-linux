@@ -193,6 +193,34 @@ TEST_F(ExpoFetchTest, ResolvesOnceTheFinalResponsesHeadersEnd) {
     EXPECT_EQ(finishGatedRoute(), (std::vector<std::string>{"resolved", "body:body", "ready"}));
 }
 
+/** A 302 without a Location is not followed, so it is the final response and resolves once its headers end. */
+TEST_F(ExpoFetchTest, ResolvesOnARedirectWithoutALocationOnceItsHeadersEnd) {
+    const std::shared_ptr<ExpoFetchResponse> response = makeResponse();
+
+    start(*response, get("/unlocated"));
+    ASSERT_TRUE(logs("resolved"));
+    EXPECT_EQ(log_, std::vector<std::string>{"resolved"});
+    EXPECT_EQ(response->head().status, 302);
+    EXPECT_FALSE(response->head().redirected);
+    readBody(*response);
+
+    EXPECT_EQ(finishGatedRoute(), (std::vector<std::string>{"resolved", "body:body", "ready"}));
+}
+
+/** A folded header line does not end the headers, so the headers after it are delivered with the response. */
+TEST_F(ExpoFetchTest, AFoldedHeaderLineDoesNotEndTheHeaders) {
+    const std::shared_ptr<ExpoFetchResponse> response = makeResponse();
+
+    start(*response, get("/folded"));
+    ASSERT_TRUE(logs("resolved"));
+    EXPECT_NE(
+        std::ranges::find(response->head().headers, std::pair<std::string, std::string>("Content-Type", "text/plain")),
+        response->head().headers.end());
+    readBody(*response);
+
+    EXPECT_EQ(finishGatedRoute(), (std::vector<std::string>{"resolved", "body:body", "ready"}));
+}
+
 /** A failure after the response but before the first read makes that read throw its message, not wait forever. */
 TEST_F(ExpoFetchTest, AFailureBeforeTheFirstReadFailsThatRead) {
     const std::shared_ptr<ExpoFetchResponse> response = makeResponse();
