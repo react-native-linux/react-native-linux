@@ -2,11 +2,9 @@ import { useState } from "react";
 import { AppRegistry, Pressable, ScrollView, Switch, TextInput, View } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 
-let completedGestures = 0;
-let presses = 0;
-let scrollBegins = 0;
-let switchBegins = 0;
-let inputPanBegins = 0;
+// One object, not module-level lets: the worklets Babel plugin turns these gesture callbacks into worklets, and a
+// worklet captures a primitive by copy but an object by reference, so only an object's counts are shared between them.
+const counts = { completedGestures: 0, presses: 0, scrollBegins: 0, switchBegins: 0, inputPanBegins: 0 };
 
 const nativeView = Gesture.Native()
   .runOnJS(true)
@@ -17,8 +15,8 @@ const nativeView = Gesture.Native()
     console.log(`native-view: end success=${String(success)}`);
   })
   .onFinalize((event, success) => {
-    completedGestures += 1;
-    console.log(`native-view: finalize ${completedGestures} success=${String(success)} state=${event.state}`);
+    counts.completedGestures += 1;
+    console.log(`native-view: finalize ${counts.completedGestures} success=${String(success)} state=${event.state}`);
   });
 
 const nativeInput = Gesture.Native()
@@ -35,19 +33,19 @@ const inputPan = Gesture.Pan()
   .runOnJS(true)
   .minDistance(40)
   .onBegin(() => {
-    inputPanBegins += 1;
-    console.log(`native-input-pan: begin ${inputPanBegins}`);
+    counts.inputPanBegins += 1;
+    console.log(`native-input-pan: begin ${counts.inputPanBegins}`);
   })
   .onStart(() => console.log("native-input-pan: active"))
   .onFinalize((event, success) => {
-    console.log(`native-input-pan: finalize ${inputPanBegins} state=${event.state} success=${String(success)}`);
+    console.log(`native-input-pan: finalize ${counts.inputPanBegins} state=${event.state} success=${String(success)}`);
   });
 
 const nativeScroll = Gesture.Native()
   .runOnJS(true)
   .onBegin(() => {
-    scrollBegins += 1;
-    console.log(`native-scroll: begin ${scrollBegins}`);
+    counts.scrollBegins += 1;
+    console.log(`native-scroll: begin ${counts.scrollBegins}`);
   })
   .onStart(() => console.log("native-scroll: active"))
   .onFinalize((event, success) => {
@@ -57,8 +55,8 @@ const nativeScroll = Gesture.Native()
 const nativeSwitch = Gesture.Native()
   .runOnJS(true)
   .onBegin(() => {
-    switchBegins += 1;
-    console.log(`native-switch: begin ${switchBegins}`);
+    counts.switchBegins += 1;
+    console.log(`native-switch: begin ${counts.switchBegins}`);
   })
   .onStart(() => console.log("native-switch: active"))
   .onFinalize((event, success) => {
@@ -87,8 +85,8 @@ const NativeViewApp = (): React.JSX.Element => (
       <View style={{ height: 80, left: 100, position: "absolute", top: 100, width: 400 }}>
         <Pressable
           onPress={() => {
-            presses += 1;
-            console.log(`native-view: press ${presses}`);
+            counts.presses += 1;
+            console.log(`native-view: press ${counts.presses}`);
           }}
           onPressIn={() => console.log("native-view: pressIn")}
           onPressOut={() => console.log("native-view: pressOut")}

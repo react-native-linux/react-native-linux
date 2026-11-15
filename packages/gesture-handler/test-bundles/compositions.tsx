@@ -5,25 +5,22 @@ const simultaneousPanCount = 2;
 const doubleTapCount = 2;
 const doubleTapDelay = 250;
 const failureCheckpointDelay = 100;
-let activePans = 0;
-let completedPans = 0;
-let singleTaps = 0;
-let doubleTaps = 0;
-let outerTaps = 0;
-let innerDoubleTaps = 0;
+// One object, not module-level lets: the worklets Babel plugin turns these gesture callbacks into worklets, and a
+// worklet captures a primitive by copy but an object by reference, so only an object's counts are shared between them.
+const counts = { activePans: 0, completedPans: 0, singleTaps: 0, doubleTaps: 0, outerTaps: 0, innerDoubleTaps: 0 };
 
 const simultaneous = Gesture.Simultaneous(
   ...Array.from({ length: simultaneousPanCount }, () =>
     Gesture.Pan()
       .runOnJS(true)
       .onStart(() => {
-        activePans += 1;
-        console.log(`compositions: active pans=${activePans}`);
+        counts.activePans += 1;
+        console.log(`compositions: active pans=${counts.activePans}`);
       })
       .onEnd((_event, success) => {
         if (success) {
-          completedPans += 1;
-          console.log(`compositions: completed pans=${completedPans}`);
+          counts.completedPans += 1;
+          console.log(`compositions: completed pans=${counts.completedPans}`);
         }
       }),
   ),
@@ -34,16 +31,16 @@ const doubleTap = Gesture.Tap()
   .maxDelay(doubleTapDelay)
   .onEnd((_event, success) => {
     if (success) {
-      doubleTaps += 1;
-      console.log(`compositions: double taps=${doubleTaps} single taps=${singleTaps}`);
+      counts.doubleTaps += 1;
+      console.log(`compositions: double taps=${counts.doubleTaps} single taps=${counts.singleTaps}`);
     }
   });
 const singleTap = Gesture.Tap()
   .runOnJS(true)
   .onEnd((_event, success) => {
     if (success) {
-      singleTaps += 1;
-      console.log(`compositions: single taps=${singleTaps} double taps=${doubleTaps}`);
+      counts.singleTaps += 1;
+      console.log(`compositions: single taps=${counts.singleTaps} double taps=${counts.doubleTaps}`);
     }
   });
 const exclusive = Gesture.Exclusive(doubleTap, singleTap);
@@ -54,13 +51,13 @@ const innerDoubleTap = Gesture.Tap()
   .maxDelay(doubleTapDelay)
   .onTouchesUp(() => {
     setTimeout(() => {
-      console.log(`external: awaiting outer taps=${outerTaps}`);
+      console.log(`external: awaiting outer taps=${counts.outerTaps}`);
     }, failureCheckpointDelay);
   })
   .onEnd((_event, success) => {
     if (success) {
-      innerDoubleTaps += 1;
-      console.log(`external: inner double taps=${innerDoubleTaps} outer taps=${outerTaps}`);
+      counts.innerDoubleTaps += 1;
+      console.log(`external: inner double taps=${counts.innerDoubleTaps} outer taps=${counts.outerTaps}`);
     }
   });
 const outerTap = Gesture.Tap()
@@ -68,8 +65,8 @@ const outerTap = Gesture.Tap()
   .requireExternalGestureToFail(innerDoubleTap)
   .onEnd((_event, success) => {
     if (success) {
-      outerTaps += 1;
-      console.log(`external: outer taps=${outerTaps} inner double taps=${innerDoubleTaps}`);
+      counts.outerTaps += 1;
+      console.log(`external: outer taps=${counts.outerTaps} inner double taps=${counts.innerDoubleTaps}`);
     }
   });
 

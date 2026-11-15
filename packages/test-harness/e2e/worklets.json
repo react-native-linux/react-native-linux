@@ -1,0 +1,8 @@
+{
+  "name": "worklets-round-trip",
+  "bundle": "worklets.tsx",
+  "ready": "worklets: started",
+  "frames": 120,
+  "steps": ["sleep 500"],
+  "expect": ["worklets: UI runtime true computed 42, reported on the RN runtime true"]
+}
