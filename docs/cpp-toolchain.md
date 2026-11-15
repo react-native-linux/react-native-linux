@@ -6488,7 +6488,10 @@ picture never shows a value React proposed and the platform rejected. `EditorMod
 count half and is unit-tested against both; `TextInputController::reconcile` owns the changed half.
 
 `mostRecentEventCount` is incremented by an edit and by a pre-edit that changes the buffer, which is how iOS and
-Android count marked text. A controlled field echoes each pre-edit back as its `value`: the echo of the current one
+Android count marked text. An edit that leaves the buffer as it was, such as committing the pre-edit already shown,
+moves nothing, as on Android, so it raises no `onChange` of its own. Edits that move the count but leave the buffer
+where it was by the end of a frame, such as a pre-edit and its cancellation, still raise one with the unchanged
+text: it is the only event that hands JavaScript the count, and without it every later `value` would be stale. A controlled field echoes each pre-edit back as its `value`: the echo of the current one
 equals the buffer and changes nothing, and a late echo of an earlier one carries an old count and is dropped, so
 neither ends the composition.
 
@@ -6751,7 +6754,7 @@ Through upstream's `TextInputEventEmitter`, so the payloads are the ones `TextIn
 
 | Event | When | Payload |
 | --- | --- | --- |
-| `change` | the buffer differs from what was last reported | the **unmasked** text, the selection, the event count |
+| `change` | the buffer or the event count differs from what was last reported | the **unmasked** text, the selection, the event count |
 | `selectionChange` | the selection differs from what was last reported | the same shape |
 | `keyPress` | before the edit a key makes | the key, as upstream's own mapping of the text — an empty string is `Backspace`, a line feed is `Enter` |
 | `submitEditing`, `endEditing` | Enter, per the table above | text and event count |

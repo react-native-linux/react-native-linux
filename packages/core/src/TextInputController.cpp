@@ -475,7 +475,7 @@ void TextInputController::synchronize() {
 void TextInputController::publishPendingChange() {
     TextInputField* field = focusedField();
 
-    if (field != nullptr && field->editor.text() != field->emittedText) {
+    if (field != nullptr) {
         publish(*field);
     }
 }
@@ -699,20 +699,24 @@ void TextInputController::emitEvents(TextInputField& field) {
     const std::string& text = field.editor.text();
     const size_t selectionBegin = utf16LengthOfUtf8(text, field.editor.selectionBeginByte());
     const size_t selectionEnd = utf16LengthOfUtf8(text, field.editor.selectionEndByte());
-    const bool hasTextChanged = text != field.emittedText;
+    const int eventCount = field.editor.mostRecentEventCount();
+    // A count that moved with the text back where it was, such as a pre-edit and its cancellation in one frame,
+    // still needs an `onChange`: it is the only event that hands JavaScript the count its next value must echo.
+    const bool hasChanged = text != field.emittedText || eventCount != field.emittedEventCount;
     const bool hasSelectionChanged =
         selectionBegin != field.emittedSelectionBegin || selectionEnd != field.emittedSelectionEnd;
     const bool hasContentSizeChanged = !field.hasEmittedContentSize || !(field.contentSize == field.emittedContentSize);
     const bool hasScrolled = field.scrollOffsetY != field.emittedScrollOffsetY;
 
     field.emittedText = text;
+    field.emittedEventCount = eventCount;
     field.emittedSelectionBegin = selectionBegin;
     field.emittedSelectionEnd = selectionEnd;
     field.emittedContentSize = field.contentSize;
     field.hasEmittedContentSize = true;
     field.emittedScrollOffsetY = field.scrollOffsetY;
 
-    if (!hasTextChanged && !hasSelectionChanged && !hasContentSizeChanged && !hasScrolled) {
+    if (!hasChanged && !hasSelectionChanged && !hasContentSizeChanged && !hasScrolled) {
         return;
     }
 
@@ -727,7 +731,7 @@ void TextInputController::emitEvents(TextInputField& field) {
     // `onChange` first, because `onChangeText` is derived from it in JavaScript and an `onSelectionChange` that
     // arrived ahead of it would describe a string React has not been told about yet. `onContentSizeChange` sits
     // between them: it is a consequence of the text, and a selection is measured against the size it reports.
-    if (hasTextChanged) {
+    if (hasChanged) {
         emitter->onChange(metrics);
     }
 

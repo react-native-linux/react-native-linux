@@ -572,13 +572,16 @@ std::string EditorModel::normalizeInsertion(const std::string& insertion) const 
 }
 
 bool EditorModel::replaceRange(size_t beginByte, size_t endByte, const std::string& replacement) {
+    if (text_.compare(beginByte, endByte - beginByte, replacement) != 0) {
+        ++mostRecentEventCount_;
+    }
+
     text_.replace(beginByte, endByte - beginByte, replacement);
     compositionBeginByte_ = 0;
     compositionLength_ = 0;
     isComposing_ = false;
     resegment();
     collapseCaretTo(beginByte + replacement.size());
-    ++mostRecentEventCount_;
 
     return true;
 }

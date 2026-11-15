@@ -258,6 +258,16 @@ TEST_F(InputDispatcherTest, AnEditEarlierInTheFrameReachesReactBeforeTheNextKeyD
     dispatcher_->dispatch({InputEvent{.kind = InputEventKind::ImeCommit, .text = "\u00e9"}, enter});
 
     EXPECT_LT(positionOf("topChange", 0), positionOf("topKeyDown", 0));
+
+    // A caret move earlier in the frame reaches React first too, so a handler that edits at the selection on
+    // `keyDown` edits where the caret now is.
+    focus(kFieldAlphaTag);
+    dispatcher_->dispatch({});
+    recordedEventTypes_->clear();
+
+    dispatcher_->dispatch({InputEvent{.kind = InputEventKind::KeyPress, .key = "Home"}, enter});
+
+    EXPECT_LT(positionOf("topSelectionChange", 0), positionOf("topKeyDown", 1));
 }
 
 } // namespace

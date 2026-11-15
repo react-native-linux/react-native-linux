@@ -509,6 +509,18 @@ TEST(EditorModelTest, ACommitReplacesTheComposingRunAndCountsAsAnEdit) {
     EXPECT_EQ(model.mostRecentEventCount(), 2);
 }
 
+// #683: no `onChange` reports a commit of the pre-edit already shown, so a count it moved would never reach React.
+TEST(EditorModelTest, ACommitOfThePreeditAlreadyShownEndsTheCompositionWithoutMovingTheCount) {
+    EditorModel model;
+
+    model.applyPreedit("a", 1, 1);
+
+    EXPECT_TRUE(model.insertText("a"));
+    EXPECT_EQ(model.text(), "a");
+    EXPECT_FALSE(model.isComposing());
+    EXPECT_EQ(model.mostRecentEventCount(), 1);
+}
+
 TEST(EditorModelTest, DeleteSurroundingRemovesBytesOnBothSidesOfTheCaret) {
     EditorModel model = modelWith("abcdef");
 

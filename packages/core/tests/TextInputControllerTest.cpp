@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 #include <limits>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include <react/renderer/core/State.h>
@@ -102,6 +103,10 @@ protected:
         for (const char character : text) {
             controller_->handleKey(key(std::string(1, character)));
         }
+    }
+
+    void setTextAndSelection(folly::dynamic arguments) {
+        controller_->dispatchCommand({.tag = kFieldTag, .name = "setTextAndSelection", .args = std::move(arguments)});
     }
 
     size_t countRecorded(const std::string& type) const {
@@ -355,6 +360,35 @@ TEST_F(TextInputControllerTest, TheCompositionLifecycleSuppressesNothingTheModel
     controller_->onImeCommit("你");
 
     EXPECT_FALSE(controller_->isComposing());
+}
+
+// #683: a pre-edit flushed to React before a composing key, then committed unchanged. The commit used to move the
+// event count with no `onChange` to carry it, so JavaScript's next controlled value was stale and dropped.
+TEST_F(TextInputControllerTest, ACommitOfAFlushedPreeditLeavesReactsEventCountCurrent) {
+    commitTextInput(folly::dynamic::object());
+    controller_->synchronize();
+    recordedEventTypes_->clear();
+
+    controller_->onImePreedit("a", 1, 1);
+    controller_->publishPendingChange();
+    controller_->onImeCommit("a");
+    controller_->synchronize();
+
+    EXPECT_EQ(countRecorded(kChangeEvent), 1U);
+
+    recordedEventTypes_->clear();
+    setTextAndSelection(folly::dynamic::array(1, "", 0, 0));
+
+    EXPECT_EQ(countRecorded(kSelectionChangeEvent), 1U);
+    EXPECT_EQ(countRecorded(kChangeEvent), 0U);
+
+    // A pre-edit and its cancellation in one frame move the count twice and leave the text as it was. The
+    // unchanged text still has to reach React, carrying the count its next value echoes.
+    controller_->onImePreedit("e", 1, 1);
+    controller_->onImePreedit("", -1, -1);
+    controller_->synchronize();
+
+    EXPECT_EQ(countRecorded(kChangeEvent), 1U);
 }
 
 // #340: the field that loses the caret mid-composition loses the composing run with it. Without this the

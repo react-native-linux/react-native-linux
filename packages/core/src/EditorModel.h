@@ -104,9 +104,11 @@ struct EditorSelection {
  * `TextSegmenter`; without one, the code-point fallback above is used.
  *
  * `mostRecentEventCount` is the reconciliation counter React Native's controlled-value contract is built on. It
- * is incremented by every edit this object makes on the user's behalf and never by a props update, and
- * `reconcileProps` applies a `value` from JavaScript only when the count JavaScript echoed back matches the
- * current one — which is exactly what says that JavaScript has seen every edit so far and that its value is
+ * is incremented by every edit this object makes on the user's behalf that changes the text, and never by a props
+ * update. An edit that leaves the text as it was, such as a commit of the pre-edit already shown, does not move it,
+ * as Android's `ReactTextInputTextWatcher` does not: a moved count would need an `onChange` of unchanged text to
+ * reach JavaScript (#683). `reconcileProps` applies a `value` from JavaScript only when the count JavaScript echoed
+ * back matches the current one, which says that JavaScript has seen every edit so far and that its value is
  * therefore not stale. See *TextInput* in docs/cpp-toolchain.md.
  *
  * Threading contract: the frame thread owns this object, like everything else the input dispatcher reaches.
