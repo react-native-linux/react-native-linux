@@ -119,6 +119,13 @@ public:
      */
     void synchronize();
 
+    /**
+     * Publishes the focused field now when its text changed since the last `onChange`. A key or commit and the
+     * Return after it can share a frame, and a handler that reads its draft on `keyDown` must see the change
+     * first; `InputDispatcher` calls this before every key event it emits.
+     */
+    void publishPendingChange();
+
     void dispatchCommand(const SceneCommand& command);
 
     /**

@@ -15,6 +15,8 @@ namespace {
 using facebook::react::ShadowNode;
 using facebook::react::Tag;
 using react_native_linux::InputDispatcher;
+using react_native_linux::InputEvent;
+using react_native_linux::InputEventKind;
 using react_native_linux::TextInputContentPurpose;
 using react_native_linux::TextInputFieldFixture;
 using react_native_linux::TextInputFocusSink;
@@ -221,6 +223,41 @@ TEST_F(InputDispatcherTest, InstallingASinkAfterAFieldWasFocusedWithoutOneReplay
 
     ASSERT_EQ(sink_.calls.size(), 1U);
     expectFocusFieldCall(sink_.calls[0], kFieldAlphaTag);
+}
+
+/**
+ * #683: a keystroke or an IME commit and the Return after it can arrive in one frame. The edit's `onChange` used to
+ * wait for the end of the frame, so a composer that sends its draft on `keyDown` sent the draft without the edit.
+ */
+TEST_F(InputDispatcherTest, AnEditEarlierInTheFrameReachesReactBeforeTheNextKeyDown) {
+    const InputEvent enter{.kind = InputEventKind::KeyPress, .key = "Enter"};
+    const auto positionOf = [this](const std::string& type, size_t occurrence) {
+        size_t seen = 0;
+
+        for (size_t index = 0; index < recordedEventTypes_->size(); ++index) {
+            if ((*recordedEventTypes_)[index] == type && seen++ == occurrence) {
+                return index;
+            }
+        }
+
+        return recordedEventTypes_->size();
+    };
+
+    focus(kFieldAlphaTag);
+    dispatcher_->dispatch({});
+    recordedEventTypes_->clear();
+
+    dispatcher_->dispatch({InputEvent{.kind = InputEventKind::KeyPress, .key = "x"}, enter});
+
+    EXPECT_LT(positionOf("topChange", 0), positionOf("topKeyDown", 1));
+
+    focus(kFieldAlphaTag);
+    dispatcher_->dispatch({});
+    recordedEventTypes_->clear();
+
+    dispatcher_->dispatch({InputEvent{.kind = InputEventKind::ImeCommit, .text = "\u00e9"}, enter});
+
+    EXPECT_LT(positionOf("topChange", 0), positionOf("topKeyDown", 0));
 }
 
 } // namespace

@@ -472,6 +472,14 @@ void TextInputController::synchronize() {
     }
 }
 
+void TextInputController::publishPendingChange() {
+    TextInputField* field = focusedField();
+
+    if (field != nullptr && field->editor.text() != field->emittedText) {
+        publish(*field);
+    }
+}
+
 bool TextInputController::advanceCaretBlink(double frameMilliseconds) {
     if (focusedField() == nullptr) {
         return false;
