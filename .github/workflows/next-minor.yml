@@ -51,6 +51,7 @@ jobs:
             libgoogle-glog-dev \
             libicu-dev \
             libsqlite3-dev \
+            libssl-dev \
             ninja-build \
             pkg-config \
             python3
