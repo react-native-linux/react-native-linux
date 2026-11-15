@@ -5,6 +5,7 @@
   "ready": "t3-source-file: committed",
   "frames": 1500,
   "frameBudget": {
+    "p50Ms": 9.5,
     "p95Ms": 12.5,
     "minFrames": 600,
     "maxHangs": 1

@@ -166,7 +166,7 @@ transitive package.
 | `react-native-keyboard-controller` | `1.23.0` | tracked | #279 | KeyboardProvider at the root |
 | `react-native-enriched-markdown` | `file:deps/react-native-enriched-markdown-1.2.0-t3.18-16db4c75.tgz` | tracked | #688 | T3 Code's fork; every message; #639 landed the base |
 | `@t3tools/mobile-source-text` | `file:./modules/t3-source-text` | tracked | #684 | source file view; no Linux code, its `Text` fallback renders |
-| `@t3tools/mobile-highlights-native` | `file:./modules/t3-highlights` | tracked | #684 | syntax highlighting, a Nitro module; a `linux/` TurboModule until #152 |
+| `@t3tools/mobile-highlights-native` | `file:./modules/t3-highlights` | tracked | #684 | syntax highlighting, a Nitro module; a `linux/` TurboModule until #152, reached through T3 Code's `nativeHighlights.linux.ts` (below) |
 | `@t3tools/mobile-review-diff-native` | `file:./modules/t3-review-diff` | tracked | #640 | review diff view |
 | `@t3tools/mobile-terminal-native` | `file:./modules/t3-terminal` | tracked | #640 | terminal view |
 | `@react-native-menu/menu` | `^2.0.0` | tracked | #646 | 28 files: thread rows, list filter, composer |
@@ -207,3 +207,9 @@ other seven are Expo local modules, linked by directory rather than declared as 
 | `t3-widget-expiry` | Android | left out with widgets |
 | `t3-subscription-widget` | Android | left out with widgets |
 | `t3-web-socket` | iOS | React Native's WebSocket (#79) |
+
+T3 Code's `src/lib/highlights.ts` imports `react-native-nitro-modules` at the top, and 0.37.2 throws when it loads on
+Linux (`TurboModuleRegistry.getEnforcing('NitroModules')`), so the app cannot reach `T3Highlights` until T3 Code
+splits the lookup into one file: `nativeHighlights.ts` keeps `NitroModules.hasHybridObject("T3Highlights")`, and
+`nativeHighlights.linux.ts` is `TurboModuleRegistry.get("T3Highlights") ?? undefined`. T3 Code owns that copy;
+`test-bundles/t3-highlights.js` reaches the module the same way. Nitro on Linux (#152, #153) is the real fix.
