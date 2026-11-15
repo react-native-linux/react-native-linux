@@ -6,13 +6,25 @@
   "windowFlags": [
     "--no-decorations",
     "--inject-key-sequence",
-    "{Tab}hi{Preedit:e}{Commit:é}{Shift+Enter}two{Ctrl+a}{Ctrl+c}{Right}{Ctrl+v}{Preedit:x}{Enter}{Commit:!}{Enter}x{Ctrl+Enter}{Tab}a{Enter}b{Ctrl+Enter}c{Ctrl+Shift+Enter}d{Shift+Enter}e{Tab}a{Alt+Enter}b{Ctrl+Shift+Enter}c{Escape}"
+    "{Tab}hi{Preedit:e}{Commit:é}{Shift+Enter}two{Ctrl+a}{Ctrl+c}{Right}{Ctrl+v}{Preedit:x}{Enter}{Commit:!}{Enter}x{Ctrl+Enter}{Tab}a{Enter}b{Ctrl+Enter}c{Ctrl+Shift+Enter}d{Shift+Enter}e{Tab}a{Alt+Enter}b{Left}{Shift+Left}{Shift+Enter}x{Backspace}{End}{Ctrl+Shift+Enter}c{Escape}"
   ],
   "steps": [
     "sleep 9000",
     "key Tab press",
     "key Tab release",
     "sleep 200",
+    "type x",
+    "key Shift_L press",
+    "key Return press",
+    "key Return release",
+    "key Shift_L release",
+    "sleep 500",
+    "key Control_L press",
+    "type a",
+    "key Control_L release",
+    "key BackSpace press",
+    "key BackSpace release",
+    "sleep 500",
     "type r",
     "key Return press",
     "sleep 1000",
@@ -37,8 +49,12 @@
     "t3-composer-editor: newline text=\"d\\ne\"",
     "t3-composer-editor: plain text=\"a\\n\"",
     "t3-composer-editor: plain text=\"a\\nb\"",
+    "t3-composer-editor: plain text=\"a\\nxb\"",
+    "t3-composer-editor: plain text=\"a\\nb\"",
     "t3-composer-editor: plain text=\"a\\nb\\n\"",
     "t3-composer-editor: plain text=\"a\\nb\\nc\"",
+    "t3-composer-editor: send text=\"x\\n\"",
+    "t3-composer-editor: send text=\"\"",
     "t3-composer-editor: send text=\"r\"",
     "t3-composer-editor: send submit alternate=false text=\"r\""
   ],
@@ -47,7 +63,9 @@
     "t3-composer-editor: newline submit alternate=false text=\"a\"",
     "t3-composer-editor: newline submit alternate=true text=\"d\"",
     "t3-composer-editor: plain submit",
-    "t3-composer-editor: send submit alternate=false text=\"\""
+    "t3-composer-editor: plain text=\"axb\"",
+    "t3-composer-editor: send submit alternate=false text=\"\"",
+    "t3-composer-editor: send text=\"\\n\""
   ],
   "screenshot": {
     "golden": "t3-composer-editor.png",

@@ -29,6 +29,8 @@ export function ComposerEditor({
   const inputRef = useRef<TextInputInstance>(null);
   const selectionRef = useRef<ComposerEditorSelection>({ start: 0, end: 0 });
   const insertedSelectionRef = useRef<ComposerEditorSelection | null>(null);
+  // A keyDown can arrive in the same batch as the change before it, ahead of React's re-render.
+  const textRef = useRef(props.value);
   const bodyText = useScaledTextRole("body");
   const fontFamily = FONT_FAMILIES.regular;
   const editable = (props.editable ?? true) && !readOnly;
@@ -48,6 +50,7 @@ export function ComposerEditor({
 
   // Runs after TextInput's own layout effect has sent the new value, so the caret lands in it.
   useLayoutEffect(() => {
+    textRef.current = props.value;
     const inserted = insertedSelectionRef.current;
     insertedSelectionRef.current = null;
     if (inserted !== null) inputRef.current?.setSelection(inserted.start, inserted.end);
@@ -56,9 +59,16 @@ export function ComposerEditor({
   const insertNewline = () => {
     const { start, end } = selectionRef.current;
     const caret = { start: start + 1, end: start + 1 };
+    const text = textRef.current;
+    const nextText = `${text.slice(0, start)}\n${text.slice(end)}`;
     selectionRef.current = caret;
-    insertedSelectionRef.current = caret;
-    props.onChangeText(`${props.value.slice(0, start)}\n${props.value.slice(end)}`);
+    if (nextText === text) {
+      inputRef.current?.setSelection(caret.start, caret.end);
+    } else {
+      textRef.current = nextText;
+      insertedSelectionRef.current = caret;
+      props.onChangeText(nextText);
+    }
     onSelectionChange?.(caret);
   };
 
@@ -85,6 +95,10 @@ export function ComposerEditor({
         readOnly={readOnly}
         selection={selection}
         submitBehavior={returnSends && onSubmit !== undefined ? "submit" : "newline"}
+        onChangeText={(text) => {
+          textRef.current = text;
+          props.onChangeText(text);
+        }}
         onKeyDown={handleKeyDown}
         onSelectionChange={(event) => {
           selectionRef.current = event.nativeEvent.selection;
