@@ -161,9 +161,9 @@ transitive package.
 | `expo-updates` | `~58.0.21` | declined | #360 | diagnostics and app updates |
 | `expo-eas-client` | `58.0.2` | declined | #360 | from expo-updates and expo-observe |
 | `expo-structured-headers` | `58.0.1` | declined | #360 | from expo-updates |
-| `expo-constants` | `~58.0.15` | tracked | #156 | 17 files: app config and relay URL; `expoConfig` is the app config embedded beside a built bundle (the `expo-constants` e2e), and still `null` for a bundle Metro serves |
+| `expo-constants` | `~58.0.15` | tracked | #156 | 17 files: app config and relay URL; `expoConfig` is the app config embedded beside a built bundle (the `expo-constants` e2e), and still `null` for a bundle Metro serves; the CLI build that writes it is #696 |
 | `expo-font` | `~58.0.11` | works | `packages/expo/e2e/expo-font.json` | DM Sans and Material Symbols; `ExpoFontLoader` registers into the application fonts of #70 |
-| `expo-linking` | `~58.0.16` | tracked | #156 | deep links at the root; imports over `ExpoLinking`, and `createURL`, which `App.tsx` calls, answers from the embedded app config (the `expo-constants` e2e), so it still throws for a bundle Metro serves |
+| `expo-linking` | `~58.0.16` | tracked | #156 | deep links at the root; imports over `ExpoLinking`, and `createURL`, which `App.tsx` calls, answers from the embedded app config (the `expo-constants` e2e), so it still throws for a bundle Metro serves until #696 |
 | `expo-haptics` | `~58.0.7` | tracked | #156 | 21 files; reports itself unavailable |
 | `expo-glass-effect` | `58.0.5` | tracked | #156 | chips, toolbar and the floating working control |
 | `expo-splash-screen` | `~58.0.13` | tracked | #156 | root; the platform's first-frame policy |

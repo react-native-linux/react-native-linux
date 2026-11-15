@@ -226,9 +226,10 @@ when upstream adds one, and the e2e asserts each value.
 APK's `assets/app.config`, and the native module serves that file as a JSON string that `Constants.ts` parses.
 babel-preset-expo inlines `process.env.APP_MANIFEST` only for web and server bundles, and only upstream's web module
 reads it. A `linux` build runs the same script into `assets/app.config` beside its bundle, the directory #70 already
-reads `assets/fonts` from, and `ExponentConstants` serves that file. The e2e harness runs the script for a scenario
-package with an `app.json` (`scripts/window-golden.ts`), and the `expo-constants` e2e asserts `expoConfig.scheme`
-and `Linking.createURL`. A bundle Metro serves has no directory beside it, so its `manifest` stays `null`, and
+reads `assets/fonts` from, and `ExponentConstants` serves that file. The e2e harness runs it for a scenario package with an
+`app.json` (`scripts/window-golden.ts`), and the `expo-constants` e2e asserts `expoConfig.scheme` and
+`Linking.createURL`; the CLI build, and a config source for a bundle Metro serves, is
+[#696](https://github.com/react-native-linux/react-native-linux/issues/696). A bundle Metro serves has no directory beside it, so its `manifest` stays `null`, and
 upstream warns, as it does in a bare Android app whose config build script did not run.
 
 ### Declined, each with its substitute

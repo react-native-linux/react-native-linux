@@ -5,9 +5,13 @@
 #include <cxxreact/JSBigString.h>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <gtest/gtest.h>
 #include <string>
 #include <unistd.h>
+
+#include <react/renderer/attributedstring/AttributedString.h>
+#include <react/renderer/attributedstring/ParagraphAttributes.h>
 
 namespace react_native_linux {
 namespace {
@@ -18,9 +22,9 @@ const std::string kBoldFont = std::string(RNL_VENDORED_FONT_DIR) + "/NotoSans-Bo
 /**
  * The JSON of what `expression`, evaluated over `ExpoFontLoader` as `fontLoader`, resolves to, or `threw: <message>`.
  * `settle(promise)` answers `resolved` or `rejected: <message>`. Every probe runs in a fresh `ReactHost`, whose script
- * load clears the application fonts, and clears the ones it registered when it is done.
+ * load clears the application fonts, and clears the ones it registered after `whileLoaded` ran.
  */
-std::string fontLoaderTrace(const std::string& expression) {
+std::string fontLoaderTrace(const std::string& expression, const std::function<void()>& whileLoaded = [] {}) {
     constexpr std::chrono::seconds kSettleBudget{5};
     ReactHost reactHost;
 
@@ -33,6 +37,7 @@ std::string fontLoaderTrace(const std::string& expression) {
             ")))().catch((error) => `threw: ${error.message}`).then((trace) => { globalThis.fontTrace = trace; });"),
         "ExpoFontLoaderModuleTest.js");
     EXPECT_TRUE(reactHost.runUntilQuiescent(kSettleBudget));
+    whileLoaded();
     registerApplicationFonts(std::string());
 
     return onJavaScriptThread<std::string>(reactHost, [](facebook::jsi::Runtime& runtime) {
@@ -63,12 +68,62 @@ TEST(ExpoFontLoaderModuleTest, LoadFontFamilyAsyncRegistersEveryFace) {
               R"(["resolved",["Probe Family"]])");
 }
 
-/** Upstream's iOS messages for a missing file, a file that is not a font, no faces, and a face without a file. */
-TEST(ExpoFontLoaderModuleTest, RejectsWithUpstreamsMessages) {
+std::filesystem::path writeNotAFont() {
     const std::filesystem::path notAFont =
         std::filesystem::temp_directory_path() / ("rnl-expo-font-" + std::to_string(::getpid()) + ".ttf");
 
     std::ofstream(notAFont) << "not a font";
+
+    return notAFont;
+}
+
+float widthIn(const std::string& fontFamily, facebook::react::FontWeight fontWeight,
+              facebook::react::FontStyle fontStyle) {
+    facebook::react::AttributedString attributedString;
+    facebook::react::AttributedString::Fragment fragment;
+
+    fragment.string = "Families load whole";
+    fragment.textAttributes = facebook::react::TextAttributes::defaultTextAttributes();
+    fragment.textAttributes.fontSize = 16;
+    fragment.textAttributes.fontFamily = fontFamily;
+    fragment.textAttributes.fontWeight = fontWeight;
+    fragment.textAttributes.fontStyle = fontStyle;
+    attributedString.appendFragment(std::move(fragment));
+
+    return measureParagraphMetrics(attributedString, facebook::react::ParagraphAttributes{}, 1000.0F).longestLineWidth;
+}
+
+/**
+ * A family whose second face fails registers none of its faces, so `getLoadedFonts` does not list it and upstream's
+ * `isLoaded` does not skip the corrected retry, which then draws both faces: the bold and the italic measure apart.
+ */
+TEST(ExpoFontLoaderModuleTest, AFamilyWithAFailingFaceRegistersNoneAndACorrectedRetryDrawsEveryFace) {
+    const std::filesystem::path notAFont = writeNotAFont();
+    float boldWidth = 0.0F;
+    float italicWidth = 0.0F;
+
+    const std::string trace = fontLoaderTrace(
+        "[await settle(fontLoader.loadFontFamilyAsync('Probe Family', [{ localUri: 'file://" + kItalicFont +
+            "' }, { localUri: 'file://" + notAFont.string() +
+            "' }])), fontLoader.getLoadedFonts(), await settle(fontLoader.loadFontFamilyAsync('Probe Family', "
+            "[{ localUri: 'file://" +
+            kItalicFont + "' }, { localUri: 'file://" + kBoldFont + "' }])), fontLoader.getLoadedFonts()]",
+        [&] {
+            boldWidth = widthIn("Probe Family", facebook::react::FontWeight::Bold, facebook::react::FontStyle::Normal);
+            italicWidth =
+                widthIn("Probe Family", facebook::react::FontWeight::Regular, facebook::react::FontStyle::Italic);
+        });
+
+    std::filesystem::remove(notAFont);
+
+    EXPECT_EQ(trace, R"(["rejected: Could not create font from loaded data for 'Probe Family'",[],"resolved",)"
+                     R"(["Probe Family"]])");
+    EXPECT_GT(boldWidth, italicWidth);
+}
+
+/** Upstream's iOS messages for a missing file, a file that is not a font, no faces, and a face without a file. */
+TEST(ExpoFontLoaderModuleTest, RejectsWithUpstreamsMessages) {
+    const std::filesystem::path notAFont = writeNotAFont();
 
     EXPECT_EQ(fontLoaderTrace("Promise.all([settle(fontLoader.loadAsync('Missing', 'file:///nonexistent.ttf')), "
                               "settle(fontLoader.loadAsync('Broken', 'file://" +

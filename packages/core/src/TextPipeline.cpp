@@ -895,13 +895,19 @@ void registerApplicationFonts(const std::string& fontDirectory) {
     state.paragraphLayoutCache.clear();
 }
 
-bool registerApplicationFont(const std::string& fontFamily, const std::string& fontPath) {
+bool registerApplicationFont(const std::string& fontFamily, const std::vector<std::string>& fontPaths) {
     TextPipelineState& state = textPipelineState();
     const std::lock_guard<std::mutex> guard(state.mutex);
-    const sk_sp<SkTypeface> typeface = state.fontCollection->getFallbackManager()->makeFromFile(fontPath.c_str());
+    std::vector<sk_sp<SkTypeface>> typefaces;
 
-    if (typeface == nullptr) {
-        return false;
+    for (const std::string& fontPath : fontPaths) {
+        sk_sp<SkTypeface> typeface = state.fontCollection->getFallbackManager()->makeFromFile(fontPath.c_str());
+
+        if (typeface == nullptr) {
+            return false;
+        }
+
+        typefaces.push_back(std::move(typeface));
     }
 
     if (state.applicationFontManager == nullptr) {
@@ -909,7 +915,10 @@ bool registerApplicationFont(const std::string& fontFamily, const std::string& f
         state.fontCollection->setDynamicFontManager(state.applicationFontManager);
     }
 
-    state.applicationFontManager->registerTypeface(typeface, SkString(fontFamily.c_str()));
+    for (const sk_sp<SkTypeface>& typeface : typefaces) {
+        state.applicationFontManager->registerTypeface(typeface, SkString(fontFamily.c_str()));
+    }
+
     state.fontCollection->clearCaches();
     state.paragraphLayoutCache.clear();
 

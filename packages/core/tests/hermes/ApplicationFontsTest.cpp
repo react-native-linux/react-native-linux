@@ -113,7 +113,7 @@ TEST(ApplicationFontsTest, AFaceResolvesByItsPostScriptNameAndAFaceTheDirectoryL
  */
 TEST(ApplicationFontsTest, AFontRegisteredUnderAnAppChosenNameResolvesWithoutTheDiagnostic) {
     const bool registered = registerApplicationFont(
-        "Brand Alias", (std::filesystem::path(RNL_VENDORED_FONT_DIR) / "NotoSansHebrew-Regular.ttf").string());
+        "Brand Alias", {(std::filesystem::path(RNL_VENDORED_FONT_DIR) / "NotoSansHebrew-Regular.ttf").string()});
 
     measureIn("Brand Alias");
     measureIn("Brand Alias Unregistered");

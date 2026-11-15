@@ -22,15 +22,24 @@ namespace {
 constexpr std::string_view kFileScheme = "file://";
 constexpr size_t kLoadArgumentCount = 2;
 
-/** Upstream's iOS messages, so an app's error handling reads the same text on Linux. */
-void registerFontFile(const std::string& fontFamily, const std::string& localUri) {
-    const std::string fontPath = localUri.starts_with(kFileScheme) ? localUri.substr(kFileScheme.size()) : localUri;
+/**
+ * Upstream's iOS messages, so an app's error handling reads the same text on Linux. Every face is decoded before any
+ * registers, so a family that fails partway lists nothing and upstream's `isLoaded` lets a corrected retry through.
+ */
+void registerFontFiles(const std::string& fontFamily, const std::vector<std::string>& localUris) {
+    std::vector<std::string> fontPaths;
 
-    if (!std::filesystem::is_regular_file(fontPath)) {
-        throw std::runtime_error("Font file '" + localUri + "' doesn't exist");
+    for (const std::string& localUri : localUris) {
+        std::string fontPath = localUri.starts_with(kFileScheme) ? localUri.substr(kFileScheme.size()) : localUri;
+
+        if (!std::filesystem::is_regular_file(fontPath)) {
+            throw std::runtime_error("Font file '" + localUri + "' doesn't exist");
+        }
+
+        fontPaths.push_back(std::move(fontPath));
     }
 
-    if (!registerApplicationFont(fontFamily, fontPath)) {
+    if (!registerApplicationFont(fontFamily, fontPaths)) {
         throw std::runtime_error("Could not create font from loaded data for '" + fontFamily + "'");
     }
 }
@@ -108,7 +117,7 @@ private:
         const std::string fontFamily = arguments[0].asString(runtime).utf8(runtime);
         const std::string localUri = arguments[1].asString(runtime).utf8(runtime);
 
-        return settle(runtime, [&]() { registerFontFile(fontFamily, localUri); });
+        return settle(runtime, [&]() { registerFontFiles(fontFamily, {localUri}); });
     }
 
     static facebook::jsi::Value loadFontFamilyAsync(facebook::jsi::Runtime& runtime, TurboModule& /*turboModule*/,
@@ -120,11 +129,7 @@ private:
         const std::string fontFamily = arguments[0].asString(runtime).utf8(runtime);
         const facebook::jsi::Array faces = arguments[1].asObject(runtime).asArray(runtime);
 
-        return settle(runtime, [&]() {
-            for (const std::string& localUri : faceUris(runtime, fontFamily, faces)) {
-                registerFontFile(fontFamily, localUri);
-            }
-        });
+        return settle(runtime, [&]() { registerFontFiles(fontFamily, faceUris(runtime, fontFamily, faces)); });
     }
 };
 

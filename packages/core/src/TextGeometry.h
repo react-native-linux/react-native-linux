@@ -131,12 +131,14 @@ uint64_t paragraphLayoutCount();
 void registerApplicationFonts(const std::string& fontDirectory);
 
 /**
- * Makes the font file at `fontPath` resolvable as `fontFamily`, beside the fonts `registerApplicationFonts`
- * registered: `expo-font`'s `loadAsync` (#156). A second face under one name joins that family, matched by its own
- * weight and slant. The next `registerApplicationFonts` call, that is the next bundle load, drops it. Returns false,
- * registering nothing, when the file is missing or is not a font.
+ * Makes the font files at `fontPaths` resolvable as `fontFamily`, beside the fonts `registerApplicationFonts`
+ * registered: `expo-font`'s `loadAsync` and `loadFontFamilyAsync` (#156). Each face joins that family, matched by its
+ * own weight and slant. The next `registerApplicationFonts` call, that is the next bundle load, drops them. Returns
+ * false, registering none of them, when any file is missing or is not a font, so a failed family load lists nothing.
+ * The pipeline's caches are cleared, but React Native's `TextMeasureCache` is not: text measured in a fallback face
+ * before the font loaded keeps that size until its attributes change and it is measured again (#697).
  */
-bool registerApplicationFont(const std::string& fontFamily, const std::string& fontPath);
+bool registerApplicationFont(const std::string& fontFamily, const std::vector<std::string>& fontPaths);
 
 /** The names `registerApplicationFonts` and `registerApplicationFont` made resolvable, empty before either ran. */
 std::vector<std::string> applicationFontFamilies();
