@@ -64,6 +64,19 @@ the paint, which is ours.
 
 `react-native-safe-area-context` and `react-native-screens` are both in this shape today.
 
+**What you get for free (Tier A).** A component whose props extend `ViewProps` and that draws nothing of
+its own — a container, a wrapper, a layout adjuster like `RNCSafeAreaView` — mounts as a `View`: its
+background, borders, radius, opacity, transform, clipping, hit testing and `pointerEvents` are the
+`View`'s, with no Linux code ([#150](https://github.com/react-native-linux/react-native-linux/issues/150)).
+Autolinking compiles `common/cpp/react/renderer/components/<codegenConfig.name>/` into
+`react_codegen_<name>` and registers the descriptors codegen generated plus the ones your
+`react-native.config.js` lists under Android's `componentDescriptors` that a header in that directory
+defines, as a class or a `using` alias. A declared name nothing defines is skipped, and autolinking
+prints a line saying so. A component whose props do not
+extend `ViewProps` mounts as nothing, and a `[mounting]` log line names it. One that paints something a
+`View` cannot — shapes, masks, blurs — is Tier B, and its paint is ours
+([#151](https://github.com/react-native-linux/react-native-linux/issues/151)).
+
 ## What we guarantee back
 
 - **Stable CMake target names.** Link `jsi` and `react_codegen_<Name>Spec` and your existing

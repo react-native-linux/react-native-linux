@@ -243,6 +243,7 @@ void LinuxMountingManager::applyTransaction(facebook::react::MountingTransaction
         switch (mutation.type) { // COV_EXCL: every ShadowViewMutation::Type value has a case, so the implicit no-match
                                  // branch cannot execute
         case facebook::react::ShadowViewMutation::Create:
+            verifyPropsDeriveFromViewProps(mutation.newChildShadowView);
             scene_.createNode(mutation.newChildShadowView);
             break;
         case facebook::react::ShadowViewMutation::Delete:
@@ -336,6 +337,24 @@ void LinuxMountingManager::reportRejectedNonFiniteProp(const RejectedNonFinitePr
     }
 
     diagnostics_.rejectedNonFiniteProps++;
+}
+
+void LinuxMountingManager::verifyPropsDeriveFromViewProps(const facebook::react::ShadowView& shadowView) {
+    if (shadowView.props == nullptr ||
+        dynamic_cast<const facebook::react::ViewProps*>(shadowView.props.get()) != nullptr) {
+        return;
+    }
+
+    if (diagnostics_.componentsWithoutViewProps == 0) {
+        diagnostics_.firstComponentWithoutViewProps = shadowView.componentName;
+
+        LOG(ERROR) << "[mounting] '" << shadowView.componentName
+                   << "' mounts with props that do not derive from ViewProps, so react-native-linux paints nothing "
+                      "for it; a component that only lays out mounts as a View when its props extend ViewProps. See "
+                      "docs/ecosystem/linux-support-contract.md";
+    }
+
+    diagnostics_.componentsWithoutViewProps++;
 }
 
 } // namespace react_native_linux

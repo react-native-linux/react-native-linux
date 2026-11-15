@@ -108,6 +108,9 @@ public:
     /** `RNAsyncStorage`'s store (#23), which `WindowSession` points at the application's file. */
     KeyValueStore& keyValueStore() noexcept;
 
+    /** `ExpoSQLite`'s connections (#638); see `TurboModuleRegistry::sqliteDatabases`. */
+    SQLiteDatabases& sqliteDatabases() noexcept;
+
     /** `I18nManager`'s state (#72); see `TurboModuleRegistry::i18n`. */
     I18nModel& i18n() noexcept;
 

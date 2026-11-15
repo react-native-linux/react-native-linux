@@ -107,10 +107,12 @@ add_executable(rnl_core_hermes_tests
     HermesRuntimeFactory.cpp
     CxxModuleTypeSurfaceTest.cpp
     DevBundleModulesTest.cpp
+    ExponentConstantsModuleTest.cpp
     InstanceTeardownLeakTest.cpp
     MeasureGeometryTest.cpp
     LinkingModuleTest.cpp
     LinuxUISchedulerTest.cpp
+    SQLiteModuleTest.cpp
     WorkletsModuleTest.cpp
     ThreadAffinityTest.cpp
     WebSocketModuleTest.cpp

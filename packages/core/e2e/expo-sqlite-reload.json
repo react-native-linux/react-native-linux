@@ -1,0 +1,14 @@
+{
+  "name": "expo-sqlite-reload",
+  "bundle": "expo-sqlite-reload.js",
+  "ready": "expo-sqlite: instance 1",
+  "frames": 600,
+  "windowFlags": ["--no-decorations", "--app-id", "org.reactnative.linux.e2e.sqlite"],
+  "steps": ["sleep 1500"],
+  "expect": [
+    "expo-sqlite: directory /data/org.reactnative.linux.e2e.sqlite/SQLite",
+    "expo-sqlite: instance 1 read [] count 1",
+    "expo-sqlite: instance 2 read [1] count 2"
+  ],
+  "reject": ["expo-sqlite: FAILED", "expo-sqlite: instance 3"]
+}

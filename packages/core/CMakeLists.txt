@@ -64,7 +64,7 @@ find_package(fmt CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 # #79: libcurl is the HTTP client behind upstream's NetworkingModule; see src/CurlHttpClient.h.
 find_package(CURL REQUIRED)
-# #23: SQLite is the store behind AsyncStorage; see src/AsyncStorage.h.
+# #23: SQLite is the store behind AsyncStorage (src/AsyncStorage.h) and #638's expo-sqlite (src/ExpoSQLite.h).
 find_package(SQLite3 REQUIRED)
 
 add_library(double-conversion INTERFACE)
@@ -857,6 +857,8 @@ add_library(rnl_react_core STATIC
     src/CurlHttpClient.cpp
     src/DimensionsSource.cpp
     src/EditorModel.cpp
+    src/ExpoSQLite.cpp
+    src/ExpoSQLiteModule.cpp
     src/FabricHost.cpp
     src/FantomRenderOutput.cpp
     src/FocusModel.cpp

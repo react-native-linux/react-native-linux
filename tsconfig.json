@@ -17,6 +17,11 @@
     "noUncheckedIndexedAccess": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
+    "paths": {
+      "expo-modules-core/src/polyfill/dangerous-internal": [
+        "./packages/core/types/expo-modules-core-dangerous-internal.d.ts"
+      ]
+    },
     "rewriteRelativeImportExtensions": true,
     "skipLibCheck": true,
     "strict": true,
