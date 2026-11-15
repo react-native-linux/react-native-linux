@@ -3,18 +3,33 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 
 /**
- * The project Babel config files @react-native/metro-babel-transformer reads, in its order. Its cache key hashes
- * only the preset and itself, so Metro would keep serving transforms made under an older config.
+ * The root Babel config files of an application. Babel merges a project-wide `babel.config.*` with a file-relative
+ * `.babelrc*`, and @react-native/metro-babel-transformer's cache key hashes only the preset and itself, so Metro
+ * would keep serving transforms made under an older config. Files a JavaScript config requires are not followed.
  */
-const babelConfigFileNames = [".babelrc", ".babelrc.js", "babel.config.js"];
+const babelConfigFileNames = [
+  ".babelrc",
+  ".babelrc.js",
+  ".babelrc.json",
+  "babel.config.js",
+  "babel.config.json",
+  "babel.config.cjs",
+  "babel.config.mjs",
+];
 
-/** A Metro `cacheVersion` that changes whenever the Babel config of the application at `projectRoot` does. */
+/** A Metro `cacheVersion` that changes whenever any root Babel config of the application at `projectRoot` does. */
 const babelCacheVersion = (projectRoot: string): string => {
-  const configPath = babelConfigFileNames
-    .map((fileName) => path.join(projectRoot, fileName))
-    .find((candidate) => existsSync(candidate));
+  const hash = createHash("sha256");
 
-  return configPath ? createHash("sha256").update(readFileSync(configPath)).digest("hex") : "";
+  for (const fileName of babelConfigFileNames) {
+    const configPath = path.join(projectRoot, fileName);
+
+    if (existsSync(configPath)) {
+      hash.update(fileName).update("\0").update(readFileSync(configPath)).update("\0");
+    }
+  }
+
+  return hash.digest("hex");
 };
 
 export { babelCacheVersion };
