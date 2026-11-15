@@ -24,8 +24,9 @@ The Linux overlay of https://github.com/software-mansion/react-native-reanimated
 version `scripts/vendor.lock.json` pins; `4.5.x` caps at `0.86`. The sparse cone is the TypeScript sources alone —
 the JavaScript bring-up rung of issue #178 needs nothing else, and `Common/` arrives on the bump that starts the
 native port (#134–#144). `react-native-worklets` is a sibling package in the same monorepo but releases under its
-own `worklets-<version>` tags, and `upstream.lock.json` holds exactly one tag, so it becomes `packages/worklets`
-when Phase 2 first needs to patch it — not before.
+own `worklets-<version>` tags, and `upstream.lock.json` holds exactly one tag. Its one JavaScript patch is a pnpm
+`patchedDependencies` entry (#671, see *react-native-worklets* in `docs/cpp-toolchain.md`); it becomes
+`packages/worklets` only if it needs a patch queue of its own.
 
 ```bash
 pnpm upstream:bump reanimated <tag>       # re-vendor at a new tag and replay the patch queue
