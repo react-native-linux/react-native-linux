@@ -13,14 +13,16 @@
 
 ## 1. Findings
 
-1. **The whole app loads at startup.** `index.ts` statically reaches 46 packages with native code. Every Expo
-   module calls `requireNativeModule` at import time, and that throws when the module is missing, so one absent
-   module stops the bundle before the first frame. A package therefore needs a Linux implementation, or the Linux
-   entry must cut the import or resolve it to a stub. Choosing which is the desktop feature profile's job (§2).
+1. **The whole app loads at startup.** `index.ts` statically reaches 46 packages with native code. Most Expo
+   modules call `requireNativeModule` at import time, and that throws when the module is missing, so one absent
+   module stops the bundle before the first frame. The ones built on `requireOptionalNativeModule`, such as
+   `expo-haptics`, import cleanly and throw `UnavailabilityError` at the first call instead. A package therefore
+   needs a Linux implementation, or the Linux entry must cut the import or resolve it to a stub. Choosing which is
+   the desktop feature profile's job (§2).
 2. **76 rows.** 56 direct packages with native code, 17 transitive ones, and 3 JavaScript packages over a native
    library (`@clerk/expo`, `expo-auth-session`, `@tabler/icons-react-native`), listed under the ledger's existing
-   rule. 59 are tracked: 51 by issues that already existed, 8 by the five this note filed (#646–#650). 17 are not
-   ported: 8 stubbed on the desktop, 6 replaced, 3 declined.
+   rule. 59 are tracked: 51 by issues that already existed, 8 by the five this note filed (#646–#650). 17 are declined:
+   8 left out on the desktop and 6 replaced (§2), and 3 with no place in a desktop application.
 3. **The shared files are written for iOS.** T3 Code splits views into `.ios`, `.android` and a shared file. On
    Linux Metro resolves the shared file, not the Android one, and eight shared views import
    `@expo/ui/swift-ui` (`Progress`, `NumberField`, `SliderRow`, `NativeThemeHost`, `CustomSnoozeSheet` and three
@@ -29,7 +31,13 @@
    `@expo/ui` stays declined (#87), so each of these
    gets a core-component variant for Linux.
 4. **The pin is behind.** T3 Code is on react-native 0.88.1 and this platform pins 0.87.1: #636.
-5. **Not in the ledger, because they never reach the React Native bundle.** Node-only prebuilt binaries
+5. **T3 Code patches its native dependencies.** `react-native-screens` is a fork (`5.0.0-t3.50`) and
+   gesture-handler is on `~3.5`. `patches/` changes reanimated's `Common/cpp/.../LayoutAnimationsUtils.h`,
+   keyboard-controller (1,222 lines, JavaScript included), gesture-handler's `ReanimatedSwipeable`, menu,
+   expo-modules-core, expo-network, expo-sharing, expo-audio, expo-video, expo-widgets, `@expo/ui`, react-native-svg,
+   react-native-webview, react-native-pdf-jsi, `@clerk/expo-native-components`, `@react-native-ai/apple`, and the
+   JavaScript of `@react-navigation/native-stack` and `react-native-image-viewing`. A port targets the patched code.
+6. **Not in the ledger, because they never reach the React Native bundle.** Node-only prebuilt binaries
    (`lightningcss`, `@tailwindcss/oxide`, `@expo/modules-macros-*`, `@yuuang/ffi-rs`, `@cursor/sdk`,
    `@noxcturnal/*`) come in through T3 Code's build tools and server-side workspace packages; the iOS and
    Android apps ship without them. Pure JavaScript needs nothing from a platform: React Navigation (over
@@ -40,11 +48,13 @@
 
 The Linux entry that #641 adds leaves the modules below out, so the first render waits only on what the main
 screen draws. A left-out module that is still imported answers through its own documented "unavailable" path,
-never by silently doing nothing. #641 decides how: `.linux.tsx` files, a Metro resolver stub, or both.
+never by silently doing nothing. #641 decides how: `.linux.tsx` files, a Metro resolver stub, or both. Cutting the
+import is not enough on its own: Expo autolinking links every installed Expo module whatever the JavaScript imports,
+so #155 and #641 also exclude the left-out modules from autolinking.
 
 | Left out | Why | What Linux does instead |
 | --- | --- | --- |
-| `expo-haptics` | no haptics on a desktop | `isAvailableAsync()` is `false` (#156) |
+| `expo-haptics` | no haptics on a desktop | the feedback calls are stubbed: without its native module each one throws `UnavailabilityError` (#156) |
 | `expo-splash-screen` | no launch screen | the platform's first-frame policy (#156) |
 | `expo-quick-actions` | home-screen shortcuts | nothing |
 | `expo-widgets`, `t3-widget-expiry`, `t3-subscription-widget` | home-screen widgets | nothing |
@@ -82,18 +92,24 @@ The order epic #634 follows. Each step needs the ones before it.
    native-controls with its DPoP keys (#640), `gt-react-native` (#647), and network state (#648).
 5. **The main screen's content**: expo-image (#273), file-system (#269), markdown (#639), menus (#646), paste
    (#649), clipboard (#278), source text and highlights (#640).
-6. **The fixture**: the main screen renders in `rnl_window` against a local T3 server (#641).
-7. **The measurement**: against the Electron build (#642), with frame pacing (#20) and the trace surface (#90).
+6. **Intl**: Hermes is built with `HERMES_ENABLE_INTL` off (`packages/core/CMakeLists.txt`), and T3 Code
+   constructs `Intl.DateTimeFormat` (`messageTimestamp.ts`), `Intl.Collator` (`fileTree.ts`, `zipTree.ts`) and
+   `Intl.NumberFormat` (`diffCount.ts`, `usageFormat.ts`) at module scope, so the bundle throws before the first
+   frame without them. Its `intl-polyfills.ts` adds `Intl.Locale`, `getCanonicalLocales` and English `DisplayNames`
+   but assumes the rest from the engine. #83 decides ICU or polyfills; startup proves it by loading those modules
+   in the e2e bundle, and #83's ECMA-402 fixture covers the three constructors with T3 Code's options.
+7. **The fixture**: the main screen renders in `rnl_window` against a local T3 server (#641).
+8. **The measurement**: against the Electron build (#642), with frame pacing (#20) and the trace surface (#90).
 
 Secondary screens come after the fixture: attachments (#650), webviews (#272), notifications (#274), the image
 picker (#275), and T3 Code's review-diff and terminal views (#640).
 
 ## 4. The ledger
 
-The status words: **supported** (a ledger row in `works` or `shimmed`, with its test), **tracked** (`in progress`
-or `blocked` on the issue named), **stub-on-desktop** and **replace** (both `declined` in the ledger, with the
-substitute it names), and **declined** (`declined` because the feature has no place in a desktop application).
-The range is T3 Code's, or the locked version for a transitive package.
+The status words are the ledger's: **tracked** (`in progress` or `blocked` on the issue named) and **declined**
+(`declined`, with the substitute the ledger names; §2 says which are left out and which are replaced). Intl is not
+a row: it is the engine's, not a package's, and #83 tracks it. The range is T3 Code's, or the locked version for a
+transitive package.
 
 | Package | T3 Code range | Status | Owner | Note |
 | --- | --- | --- | --- | --- |
@@ -122,8 +138,8 @@ The range is T3 Code's, or the locked version for a transitive package.
 | `expo-splash-screen` | `~58.0.13` | tracked | #156 | root; the platform's first-frame policy |
 | `expo-sharing` | `58.0.22` | tracked | #156 | attachment download and incoming shares |
 | `expo-blur` | `58.0.5` | tracked | #165 | GlassBackdrop |
-| `expo-sqlite` | `~58.0.15` | tracked | #163, #638 | T3 Code opens a database (#638); Suuudokuuu uses kv-store (#163) |
-| `@expo/ui` | `58.0.27` | replace | #87 | eight shared views import `@expo/ui/swift-ui`; see the feature profile |
+| `expo-sqlite` | `~58.0.15` | tracked | #638 | T3 Code opens a database; Suuudokuuu's kv-store (#163) builds on the same port |
+| `@expo/ui` | `58.0.27` | declined | #87 | eight shared views import `@expo/ui/swift-ui`; see the feature profile |
 | `@react-native-masked-view/masked-view` | `0.3.2` | tracked | #164 | from @react-navigation/elements |
 | `react-native-reanimated` | `4.7.1` | tracked | #144 | 37 files |
 | `react-native-worklets` | `0.13.1` | tracked | #135 | from Reanimated and the behaviour probe |
@@ -160,19 +176,19 @@ The range is T3 Code's, or the locked version for a transitive package.
 | `expo-document-picker` | `~58.0.4` | tracked | #650 | composer attachments, imported lazily |
 | `expo-image-manipulator` | `~58.0.16` | tracked | #650 | fits images under the upload limit |
 | `expo-image-loader` | `58.0.3` | tracked | #650 | from expo-image-manipulator and expo-image-picker |
-| `@clerk/expo-native-components` | `0.4.4` | replace | #635 | native sign-in UI |
-| `@react-native-ai/apple` | `0.12.0` | stub-on-desktop | #635 | Apple Intelligence; reached only from iOS files |
-| `expo-observe` | `~58.0.18` | stub-on-desktop | #635 | imported by the entry |
-| `expo-app-metrics` | `58.0.15` | stub-on-desktop | #635 | from expo-observe |
-| `expo-quick-actions` | `^6.0.2` | stub-on-desktop | #635 | app shortcuts |
-| `expo-widgets` | `58.0.27` | stub-on-desktop | #635 | home-screen widgets |
-| `expo-sensors` | `~58.0.4` | stub-on-desktop | #635 | device preview motion |
-| `expo-camera` | `~58.0.14` | replace | #635 | QR pairing |
-| `expo-symbols` | `~58.0.4` | replace | #635 | SF Symbols in the shared AppSymbol |
-| `expo-audio` | `58.0.11` | stub-on-desktop | #635 | voice input and audio previews |
-| `expo-keep-awake` | `~58.0.3` | stub-on-desktop | #635 | voice input |
-| `expo-video` | `58.0.13` | replace | #635 | video attachments |
-| `react-native-pdf-jsi` | `6.1.0` | replace | #635 | imported only by PdfPreview.android.tsx |
+| `@clerk/expo-native-components` | `0.4.4` | declined | #635 | native sign-in UI |
+| `@react-native-ai/apple` | `0.12.0` | declined | #635 | Apple Intelligence; reached only from iOS files |
+| `expo-observe` | `~58.0.18` | declined | #635 | imported by the entry |
+| `expo-app-metrics` | `58.0.15` | declined | #635 | from expo-observe |
+| `expo-quick-actions` | `^6.0.2` | declined | #635 | app shortcuts |
+| `expo-widgets` | `58.0.27` | declined | #635 | home-screen widgets |
+| `expo-sensors` | `~58.0.4` | declined | #635 | device preview motion |
+| `expo-camera` | `~58.0.14` | declined | #635 | QR pairing |
+| `expo-symbols` | `~58.0.4` | declined | #635 | SF Symbols in the shared AppSymbol |
+| `expo-audio` | `58.0.11` | declined | #635 | voice input and audio previews |
+| `expo-keep-awake` | `~58.0.3` | declined | #635 | left out with voice input; expo's dev-only `withDevTools` requires it inside `try`/`catch` |
+| `expo-video` | `58.0.13` | declined | #635 | video attachments |
+| `react-native-pdf-jsi` | `6.1.0` | declined | #635 | imported only by PdfPreview.android.tsx |
 
 T3 Code's own native modules under `apps/mobile/modules`. The four with a `package.json` are rows above; the
 other seven are Expo local modules, linked by directory rather than declared as dependencies.

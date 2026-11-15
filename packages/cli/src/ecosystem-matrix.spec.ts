@@ -67,23 +67,26 @@ describe("the flagship's native dependency ledger (#87)", () => {
 
 describe("T3 Code's rows in the ledger (#635)", () => {
   const ledgerStatesByStatus = new Map([
-    ["supported", ["works", "shimmed"]],
     ["tracked", ["in progress", "blocked"]],
-    ["stub-on-desktop", ["declined"]],
-    ["replace", ["declined"]],
     ["declined", ["declined"]],
   ]);
   const researchNote = readFileSync(path.join(repositoryRoot, "docs", "research", "t3code-linux.md"), "utf8");
+  const ledgerSection = researchNote.slice(researchNote.indexOf("## 4. The ledger"));
+  const ledgerTableStart = ledgerSection.indexOf("\n|");
+  const ledgerTable = ledgerSection.slice(ledgerTableStart, ledgerSection.indexOf("\n\n", ledgerTableStart));
   const noteRows = [
-    ...researchNote.matchAll(/^\| `(?<packageName>[^`]+)` \| `[^`]+` \| (?<status>[a-z-]+) \| (?<owners>[^|]+) \|/gmu),
+    ...ledgerTable.matchAll(/^\| `(?<packageName>[^`]+)` \| `[^`]+` \| (?<status>[a-z-]+) \| (?<owners>[^|]+) \|/gmu),
   ].map(({ groups }) => ({
     owners: (groups?.["owners"] ?? "").trim().split(", "),
     packageName: groups?.["packageName"] ?? "",
     status: groups?.["status"] ?? "",
   }));
 
-  it("reads T3 Code's packages from the research note", () => {
+  it("reads every package row of the research note", () => {
+    const packageLines = ledgerTable.split("\n").filter((line) => line.startsWith("| `"));
+
     expect(noteRows).not.toStrictEqual([]);
+    expect(noteRows).toHaveLength(packageLines.length);
   });
 
   it("agrees with the research note on each package's state and owner", () => {
