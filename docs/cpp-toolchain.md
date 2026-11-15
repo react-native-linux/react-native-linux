@@ -7847,6 +7847,21 @@ lavapipe ICD pinned by the same discovery `scripts/window-golden.ts` exports, wa
 appear in that directory, waits for both the scenario's `ready` line and the window's first-presented-frame line
 on the window's stdout (#373, below), and then injects.
 
+**The shader cache (#704).** lavapipe compiles every shader it meets, and Mesa caches the result under
+`XDG_CACHE_HOME`, which the driver points at the scenario's private directory so a bundle never writes into the
+developer's cache (#676). That left every run with a cold cache: the first frames after mount compiled shaders
+inside `vkQueuePresentKHR`, 86–137 ms for the first and 34–51 ms for the next in `animated-views-120hz`, so
+both crossed the frame journal's 33.3 ms hang threshold and the scenario failed 14 runs in 20. `buildEnvironment`
+in `scripts/headless-compositor.ts` therefore sets `MESA_SHADER_CACHE_DIR` to `build/mesa-shader-cache`, a cache
+that outlives the run and is shared by the window goldens, the fresh-project smoke test and every scenario. CI
+restores it in the `window` job from the newest main run with the same `mesa-vulkan-drivers` version, falling back
+to any earlier version's cache, and main saves it after the e2e step. Mesa addresses each entry by a hash of the
+shader, its own build and the CPU's features, so a stale entry can only miss: a restored cache never satisfies a
+shader a change adds or alters, and that change still pays its compile in the run that introduces it. When no
+cache is restored at all, the job first runs every hang-gated scenario once, untimed, to fill it, so the measured
+pass never depends on a cache existing. What the cache hides is the compile cost of shaders that already shipped,
+which is the CPU rasterizer's cost and not the renderer's.
+
 **Keyboard-focus wait (#304).** A scenario's steps are split at the first `key`/`type` step:
 `scripts/e2e/keyboard-focus.ts`'s `runKeyboardAwareInjection` runs everything before that step through one
 `rnl_inject` invocation, then waits — bounded, the same style as the `ready` wait — for `[rnl-focus] keyboard
