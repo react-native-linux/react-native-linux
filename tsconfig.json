@@ -5,6 +5,7 @@
     "exactOptionalPropertyTypes": true,
     "forceConsistentCasingInFileNames": true,
     "isolatedModules": true,
+    "jsx": "react-jsx",
     "lib": ["es2023"],
     "module": "nodenext",
     "moduleResolution": "nodenext",
@@ -29,6 +30,7 @@
   },
   "include": [
     "packages/*/src/**/*.ts",
+    "packages/enriched-markdown/src/**/*.tsx",
     "packages/core/goldens/*.ts",
     "packages/core/scripts/**/*.ts",
     "packages/core/src-linux/**/*.ts",

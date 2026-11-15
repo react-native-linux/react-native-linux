@@ -85,7 +85,7 @@ const ecosystemMatrix: readonly EcosystemRow[] = [
   { flagshipVersion: "1.23.0", issue: 279, packageName: "react-native-keyboard-controller", state: "blocked" },
   {
     flagshipVersion: "file:deps/react-native-enriched-markdown-1.2.0-t3.18-16db4c75.tgz",
-    issue: 639,
+    issue: 688,
     packageName: "react-native-enriched-markdown",
     state: "in progress",
   },

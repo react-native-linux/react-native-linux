@@ -163,7 +163,7 @@ transitive package.
 | `expo-device` | `~58.0.5` | tracked | #277 | appearance defaults |
 | `expo-clipboard` | `~58.0.4` | tracked | #278 | 8 files |
 | `react-native-keyboard-controller` | `1.23.0` | tracked | #279 | KeyboardProvider at the root |
-| `react-native-enriched-markdown` | `file:deps/react-native-enriched-markdown-1.2.0-t3.18-16db4c75.tgz` | tracked | #639 | T3 Code's fork; every message |
+| `react-native-enriched-markdown` | `file:deps/react-native-enriched-markdown-1.2.0-t3.18-16db4c75.tgz` | tracked | #688 | T3 Code's fork; every message; #639 landed the base |
 | `@t3tools/mobile-source-text` | `file:./modules/t3-source-text` | tracked | #640 | source file view |
 | `@t3tools/mobile-highlights-native` | `file:./modules/t3-highlights` | tracked | #640 | syntax highlighting, a Nitro module |
 | `@t3tools/mobile-review-diff-native` | `file:./modules/t3-review-diff` | tracked | #640 | review diff view |
