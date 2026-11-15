@@ -20,6 +20,7 @@ using react_native_linux::IntlCollator;
 using react_native_linux::IntlDateTimeFormat;
 using react_native_linux::IntlNumberFormat;
 using react_native_linux::IntlOptions;
+using react_native_linux::IntlParts;
 using react_native_linux::IntlRangeError;
 using react_native_linux::IntlResolvedOptions;
 using react_native_linux::IntlTypeError;
@@ -46,6 +47,22 @@ std::string describe(const IntlResolvedOptions& options) {
     }
 
     return description;
+}
+
+std::string describe(const IntlParts& parts) {
+    std::string description;
+
+    for (const auto& [type, value] : parts) {
+        description += std::string(type) + ":" + value + "|";
+    }
+
+    return description;
+}
+
+std::string resolvedOption(const IntlResolvedOptions& options, std::string_view name) {
+    const auto option = std::ranges::find(options, name, &IntlResolvedOptions::value_type::first);
+
+    return option == options.end() ? "absent" : describe(IntlResolvedOptions{*option});
 }
 
 IntlDateTimeFormat dateTimeFormat(const Locales& locales, const IntlOptions& options) {
@@ -121,6 +138,45 @@ TEST(IntlTest, ARequestedLocaleFallsBackSubtagBySubtagAndThenToTheDefault) {
     EXPECT_EQ(describe(dateTimeFormat({"de-u-co-phonebk"}, {}).resolvedOptions()).substr(0, 12), "locale=de ca");
     EXPECT_EQ(describe(dateTimeFormat({"x-private"}, {}).resolvedOptions()).substr(0, 15), "locale=en-US ca");
     EXPECT_EQ(describe(IntlDateTimeFormat({}, {}, "fr-FR", "UTC").resolvedOptions()).substr(0, 15), "locale=fr-FR ca");
+}
+
+TEST(IntlTest, LegacyAliasedLocalesResolveToThemselvesRatherThanTheirLanguage) {
+    EXPECT_EQ(resolvedOption(dateTimeFormat({"zh-TW"}, {}).resolvedOptions(), "locale"), "locale=zh-TW ");
+    EXPECT_EQ(dateTimeFormat({"zh-TW"}, {{"month", "long"s}}).format(0), "1月");
+    EXPECT_EQ(resolvedOption(IntlCollator(Locales{"sr-RS"}, {}, "en-US").resolvedOptions(), "locale"), "locale=sr-RS ");
+}
+
+TEST(IntlTest, TheHourCycleExtensionAppliesUnlessAnOptionOverridesIt) {
+    const auto hourCycle = [](const std::string& locale, const IntlOptions& options) {
+        const IntlResolvedOptions resolved = dateTimeFormat({locale}, options).resolvedOptions();
+
+        return resolvedOption(resolved, "locale") + resolvedOption(resolved, "hourCycle");
+    };
+    const IntlOptions hour{{"hour", "numeric"s}};
+
+    EXPECT_EQ(hourCycle("en-US-u-hc-h23", hour), "locale=en-US-u-hc-h23 hourCycle=h23 ");
+    EXPECT_EQ(dateTimeFormat({"en-US-u-hc-h23"}, hour).format(13 * kOneHour), "13");
+    EXPECT_EQ(dateTimeFormat({"en-US-u-hc-h11"}, hour).format(0), "0 AM");
+    EXPECT_EQ(hourCycle("en-US-u-hc-h23", {{"hour", "numeric"s}, {"hourCycle", "h23"s}}),
+              "locale=en-US-u-hc-h23 hourCycle=h23 ");
+    EXPECT_EQ(hourCycle("en-US-u-hc-h23", {{"hour", "numeric"s}, {"hourCycle", "h11"s}}),
+              "locale=en-US hourCycle=h11 ");
+    EXPECT_EQ(hourCycle("en-US-u-hc-h11", {{"hour", "numeric"s}, {"hour12", true}}), "locale=en-US hourCycle=h12 ");
+    EXPECT_EQ(hourCycle("en-US-u-hc-h23", {{"timeStyle", "short"s}}), "locale=en-US hourCycle=h12 ");
+    EXPECT_EQ(hourCycle("en-US-u-hc-h23", {{"dateStyle", "short"s}}), "locale=en-US-u-hc-h23 absent");
+    EXPECT_EQ(hourCycle("en-US-u-hc-h99", hour), "locale=en-US hourCycle=h12 ");
+    EXPECT_EQ(hourCycle("en-US-u-kn", hour), "locale=en-US hourCycle=h12 ");
+}
+
+TEST(IntlTest, QuotedLiteralsInAPatternAreNotHourFields) {
+    EXPECT_EQ(resolvedOption(dateTimeFormat({"eu"}, {{"dateStyle", "long"s}}).resolvedOptions(), "hourCycle"),
+              "absent");
+    EXPECT_EQ(resolvedOption(dateTimeFormat({"gd"}, {{"dateStyle", "full"s}}).resolvedOptions(), "hourCycle"),
+              "absent");
+    EXPECT_EQ(
+        dateTimeFormat({"eu"}, {{"year", "numeric"s}, {"month", "long"s}, {"hour", "numeric"s}, {"hourCycle", "h11"s}})
+            .format(0),
+        "1970(e)ko urtarrila (0 AM)");
 }
 
 TEST(IntlTest, DateStylesFormatThroughTheLocalesOwnPatterns) {
@@ -219,6 +275,36 @@ TEST(IntlTest, DateTimeFormatRejectsWhatItDoesNotImplementOrWhatContradicts) {
     EXPECT_EQ(errorMessage<IntlRangeError>([] { dateTimeFormat({}, {{"timeStyle", "long"s}, {"hour12", true}}); }),
               "Intl.DateTimeFormat does not support hourCycle or hour12 with timeStyle on this platform");
     EXPECT_NO_THROW(dateTimeFormat({}, {{"localeMatcher", "lookup"s}, {"formatMatcher", "basic"s}}));
+}
+
+TEST(IntlTest, FormatToPartsTypesEachFieldAndTheLiteralsBetweenThem) {
+    const IntlOptions twentyFourHour{{"hour", "2-digit"s}, {"hourCycle", "h23"s}};
+    IntlOptions zonedTwentyFourHour = twentyFourHour;
+
+    zonedTwentyFourHour.emplace_back("timeZoneName", "short"s);
+
+    EXPECT_EQ(describe(dateTimeFormat({"en-US"}, twentyFourHour).formatToParts(13 * kOneHour)), "hour:13|");
+    EXPECT_EQ(describe(dateTimeFormat({"en-US"}, zonedTwentyFourHour).formatToParts(13 * kOneHour)),
+              "hour:13|literal: |timeZoneName:UTC|");
+    EXPECT_EQ(describe(dateTimeFormat({"en-US"}, {{"hour", "numeric"s}, {"minute", "2-digit"s}}).formatToParts(0)),
+              "hour:12|literal::|minute:00|literal: |dayPeriod:AM|");
+    EXPECT_EQ(describe(dateTimeFormat({"en-US"}, {{"dateStyle", "full"s}}).formatToParts(0)),
+              "weekday:Thursday|literal:, |month:January|literal: |day:1|literal:, |year:1970|");
+    EXPECT_EQ(describe(dateTimeFormat({"en-US"}, {{"second", "2-digit"s}}).formatToParts(0)), "second:00|");
+    EXPECT_EQ(describe(dateTimeFormat({"de-DE"}, {{"dateStyle", "long"s}}).formatToParts(0)),
+              "day:1|literal:. |month:Januar|literal: |year:1970|");
+
+    constexpr double kJulyFirst2026 = 1'782'921'600'000;
+    const auto timeZoneName = [](std::string_view style) {
+        return describe(
+            dateTimeFormat({"en-US"}, {{"timeZone", "America/New_York"s}, {"timeZoneName", std::string(style)}})
+                .formatToParts(kJulyFirst2026));
+    };
+
+    EXPECT_EQ(timeZoneName("short"), "month:7|literal:/|day:1|literal:/|year:2026|literal:, |timeZoneName:EDT|");
+    EXPECT_EQ(timeZoneName("shortGeneric"), "month:7|literal:/|day:1|literal:/|year:2026|literal:, |timeZoneName:ET|");
+    EXPECT_EQ(errorMessage<IntlRangeError>([] { dateTimeFormat({}, {}).formatToParts(std::nan("")); }),
+              "Invalid time value");
 }
 
 TEST(IntlTest, DatesOutsideTheTimeValueRangeAreRangeErrors) {
@@ -331,6 +417,23 @@ TEST(IntlTest, CollatorComparesWithTheRequestedSensitivityAndNumericOrdering) {
     EXPECT_EQ(compare("case", "a", "á"), 0);
     EXPECT_EQ(compare("variant", "a10", "a2"), -1);
     EXPECT_EQ(IntlCollator(Locales{}, {{"numeric", false}, {"usage", "sort"s}}, "en-US").compare("a10", "a2"), -1);
+}
+
+TEST(IntlTest, TheNumericCollationExtensionAppliesUnlessTheOptionOverridesIt) {
+    const auto numeric = [](const std::string& locale, const IntlOptions& options) {
+        const IntlCollator collator(Locales{locale}, options, "en-US");
+
+        return resolvedOption(collator.resolvedOptions(), "locale") +
+               resolvedOption(collator.resolvedOptions(), "numeric") + std::to_string(collator.compare("a10", "a2"));
+    };
+
+    EXPECT_EQ(numeric("en-u-kn", {}), "locale=en-u-kn numeric=true 1");
+    EXPECT_EQ(numeric("en-u-kn-true", {}), "locale=en-u-kn numeric=true 1");
+    EXPECT_EQ(numeric("en-u-kn-false", {}), "locale=en-u-kn-false numeric=false -1");
+    EXPECT_EQ(numeric("en-u-kn", {{"numeric", true}}), "locale=en-u-kn numeric=true 1");
+    EXPECT_EQ(numeric("en-u-kn", {{"numeric", false}}), "locale=en numeric=false -1");
+    EXPECT_EQ(numeric("en-u-kn-false", {{"numeric", true}}), "locale=en numeric=true 1");
+    EXPECT_EQ(numeric("en-u-co-phonebk", {}), "locale=en numeric=false -1");
 }
 
 TEST(IntlTest, CollatorRejectsWhatItDoesNotImplement) {

@@ -3,9 +3,11 @@
 #include "I18n.h"
 #include "Intl.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <span>
@@ -62,6 +64,18 @@ jsi::Value callGlobal(jsi::Runtime& runtime, const char* functionName, const jsi
     return runtime.global().getPropertyAsFunction(runtime, functionName).call(runtime, argument);
 }
 
+double toNumber(jsi::Runtime& runtime, const jsi::Value& value) {
+    return value.isNumber() ? value.getNumber() : callGlobal(runtime, "Number", value).getNumber();
+}
+
+/** ECMA-262's `ToLength`: an integer from 0 to 2^53 - 1, NaN being 0. */
+std::uint64_t toLength(jsi::Runtime& runtime, const jsi::Value& value) {
+    constexpr double kMaximumLength = 9'007'199'254'740'991.0;
+    const double length = toNumber(runtime, value);
+
+    return std::isnan(length) ? 0 : static_cast<std::uint64_t>(std::clamp(std::trunc(length), 0.0, kMaximumLength));
+}
+
 /** ECMA-402's `CanonicalizeLocaleList` up to the canonicalization itself: a string, or a list of strings. */
 std::vector<std::string> readLocales(jsi::Runtime& runtime, const jsi::Value& locales) {
     if (locales.isUndefined()) {
@@ -81,12 +95,17 @@ std::vector<std::string> readLocales(jsi::Runtime& runtime, const jsi::Value& lo
     }
 
     const jsi::Object list = locales.getObject(runtime);
-    const jsi::Value length = list.getProperty(runtime, "length");
-    const size_t count = length.isNumber() ? static_cast<size_t>(std::max(0.0, length.getNumber())) : 0;
+    const std::uint64_t length = toLength(runtime, list.getProperty(runtime, "length"));
     std::vector<std::string> tags;
 
-    for (size_t index = 0; index < count; ++index) {
-        const jsi::Value element = list.getProperty(runtime, std::to_string(index).c_str());
+    for (std::uint64_t index = 0; index < length; ++index) {
+        const std::string key = std::to_string(index);
+
+        if (!list.hasProperty(runtime, key.c_str())) {
+            continue;
+        }
+
+        const jsi::Value element = list.getProperty(runtime, key.c_str());
 
         if (!element.isString() && !element.isObject()) {
             throwJavaScriptError(runtime, "TypeError", "Language ID should be string or object.");
@@ -103,7 +122,7 @@ IntlOptionValue coerceOption(jsi::Runtime& runtime, const jsi::Value& value, Int
     case IntlOptionType::Boolean:
         return callGlobal(runtime, "Boolean", value).getBool();
     case IntlOptionType::Number:
-        return callGlobal(runtime, "Number", value).getNumber();
+        return toNumber(runtime, value);
     case IntlOptionType::String:
         break;
     }
@@ -177,12 +196,14 @@ jsi::Function hostFunction(jsi::Runtime& runtime, const char* name, unsigned int
 /**
  * One `Intl` constructor: callable with or without `new`, as ECMA-402 requires of these three, with the method
  * that `format` and `compare` are — a getter returning a function bound to the instance — and `resolvedOptions`.
+ * Returns the prototype, for methods only one constructor has.
  */
 template <typename Format>
-void installConstructor(jsi::Runtime& runtime, jsi::Object& intl, const std::string& name, const char* boundMethodName,
-                        unsigned int boundMethodLength, Construct<Format> construct, BoundMethod<Format> boundMethod) {
+jsi::Object installConstructor(jsi::Runtime& runtime, jsi::Object& intl, const std::string& name,
+                               const char* boundMethodName, unsigned int boundMethodLength, Construct<Format> construct,
+                               BoundMethod<Format> boundMethod) {
     const std::string qualifiedName = "Intl." + name;
-    const jsi::Object prototype(runtime);
+    jsi::Object prototype(runtime);
     const jsi::Function create = hostFunction(
         runtime, name.c_str(), 0,
         [construct = std::move(construct)](jsi::Runtime& callRuntime, const jsi::Value& /*thisValue*/,
@@ -217,19 +238,32 @@ void installConstructor(jsi::Runtime& runtime, jsi::Object& intl, const std::str
     const std::string boundMethodQualifiedName = qualifiedName + ".prototype." + boundMethodName;
     const jsi::Function getter = hostFunction(
         runtime, boundMethodName, 0,
-        [boundMethod = std::move(boundMethod), boundMethodQualifiedName,
+        [boundMethod = std::move(boundMethod), boundMethodQualifiedName, boundMethodName = std::string(boundMethodName),
          boundMethodLength](jsi::Runtime& getterRuntime, const jsi::Value& thisValue, const jsi::Value* /*arguments*/,
                             size_t /*count*/) -> jsi::Value {
             const std::shared_ptr<IntlState<Format>> state =
                 stateOf<Format>(getterRuntime, thisValue, boundMethodQualifiedName);
+            jsi::Function bound =
+                hostFunction(getterRuntime, "", boundMethodLength,
+                             [boundMethod, state](jsi::Runtime& callRuntime, const jsi::Value& /*thisValue*/,
+                                                  const jsi::Value* arguments, size_t count) -> jsi::Value {
+                                 return translatingErrors<jsi::Value>(callRuntime, [&]() {
+                                     return boundMethod(callRuntime, state->format, arguments, count);
+                                 });
+                             });
+            jsi::Object descriptor(getterRuntime);
 
-            return hostFunction(getterRuntime, "", boundMethodLength,
-                                [boundMethod, state](jsi::Runtime& callRuntime, const jsi::Value& /*thisValue*/,
-                                                     const jsi::Value* arguments, size_t count) -> jsi::Value {
-                                    return translatingErrors<jsi::Value>(callRuntime, [&]() {
-                                        return boundMethod(callRuntime, state->format, arguments, count);
-                                    });
-                                });
+            // ECMA-402 keeps the bound function in an internal slot, so every read returns the same one. A
+            // non-enumerable own property is that slot here: the native state cannot hold it without a cycle the
+            // collector does not see. Reflect leaves a frozen instance uncached rather than throwing.
+            descriptor.setProperty(getterRuntime, "value", bound);
+            descriptor.setProperty(getterRuntime, "configurable", true);
+            getterRuntime.global()
+                .getPropertyAsObject(getterRuntime, "Reflect")
+                .getPropertyAsFunction(getterRuntime, "defineProperty")
+                .call(getterRuntime, thisValue, boundMethodName, descriptor);
+
+            return bound;
         });
 
     jsi::Object descriptor(runtime);
@@ -255,6 +289,8 @@ void installConstructor(jsi::Runtime& runtime, jsi::Object& intl, const std::str
     prototype.setProperty(runtime, "constructor", constructor);
     constructor.setProperty(runtime, "prototype", prototype);
     intl.setProperty(runtime, name.c_str(), constructor);
+
+    return prototype;
 }
 
 struct IntlDefaults {
@@ -273,9 +309,29 @@ const IntlDefaults& defaults() {
     return kDefaults;
 }
 
-double nowMilliseconds() {
-    return std::trunc(
-        std::chrono::duration<double, std::milli>(std::chrono::system_clock::now().time_since_epoch()).count());
+/** The time a `DateTimeFormat` method formats: now when `date` is `undefined`, else `ToNumber(date)`. */
+double timeOf(jsi::Runtime& runtime, const jsi::Value& date) {
+    if (date.isUndefined()) {
+        return std::trunc(
+            std::chrono::duration<double, std::milli>(std::chrono::system_clock::now().time_since_epoch()).count());
+    }
+
+    return toNumber(runtime, date);
+}
+
+jsi::Array toArray(jsi::Runtime& runtime, const IntlParts& parts) {
+    jsi::Array array(runtime, parts.size());
+
+    for (size_t index = 0; index < parts.size(); ++index) {
+        jsi::Object part(runtime);
+
+        part.setProperty(runtime, "type",
+                         jsi::String::createFromAscii(runtime, parts[index].first.data(), parts[index].first.size()));
+        part.setProperty(runtime, "value", jsi::String::createFromUtf8(runtime, parts[index].second));
+        array.setValueAtIndex(runtime, index, part);
+    }
+
+    return array;
 }
 
 } // namespace
@@ -283,7 +339,7 @@ double nowMilliseconds() {
 void installIntl(jsi::Runtime& runtime) {
     jsi::Object intl(runtime);
 
-    installConstructor<IntlDateTimeFormat>(
+    const jsi::Object dateTimeFormatPrototype = installConstructor<IntlDateTimeFormat>(
         runtime, intl, "DateTimeFormat", "format", 1,
         [](std::span<const std::string> locales, const IntlOptions& options) {
             return std::make_shared<IntlState<IntlDateTimeFormat>>(locales, options, defaults().locale,
@@ -291,12 +347,23 @@ void installIntl(jsi::Runtime& runtime) {
         },
         [](jsi::Runtime& runtime, const IntlDateTimeFormat& format, const jsi::Value* arguments,
            size_t count) -> jsi::Value {
-            const jsi::Value& date = argumentAt(arguments, count, 0);
-            const double time =
-                date.isUndefined() ? nowMilliseconds() : callGlobal(runtime, "Number", date).getNumber();
-
-            return jsi::String::createFromUtf8(runtime, format.format(time));
+            return jsi::String::createFromUtf8(runtime,
+                                               format.format(timeOf(runtime, argumentAt(arguments, count, 0))));
         });
+
+    dateTimeFormatPrototype.setProperty(
+        runtime, "formatToParts",
+        hostFunction(runtime, "formatToParts", 1,
+                     [](jsi::Runtime& callRuntime, const jsi::Value& thisValue, const jsi::Value* arguments,
+                        size_t count) -> jsi::Value {
+                         const std::shared_ptr<IntlState<IntlDateTimeFormat>> state = stateOf<IntlDateTimeFormat>(
+                             callRuntime, thisValue, "Intl.DateTimeFormat.prototype.formatToParts");
+                         const double time = timeOf(callRuntime, argumentAt(arguments, count, 0));
+
+                         return toArray(callRuntime, translatingErrors<IntlParts>(callRuntime, [&state, time]() {
+                                            return state->format.formatToParts(time);
+                                        }));
+                     }));
 
     installConstructor<IntlNumberFormat>(
         runtime, intl, "NumberFormat", "format", 1,
@@ -305,8 +372,8 @@ void installIntl(jsi::Runtime& runtime) {
         },
         [](jsi::Runtime& runtime, const IntlNumberFormat& format, const jsi::Value* arguments,
            size_t count) -> jsi::Value {
-            return jsi::String::createFromUtf8(
-                runtime, format.format(callGlobal(runtime, "Number", argumentAt(arguments, count, 0)).getNumber()));
+            return jsi::String::createFromUtf8(runtime,
+                                               format.format(toNumber(runtime, argumentAt(arguments, count, 0))));
         });
 
     installConstructor<IntlCollator>(

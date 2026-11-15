@@ -68,6 +68,21 @@ TEST_F(IntlBindingTest, NumberFormatGroupsForTheLocaleAndItsFormatIsBound) {
               R"("$1,234.50")");
     EXPECT_EQ(evaluate("[1000, 2000].map(new Intl.NumberFormat('en-US').format)"), R"(["1,000","2,000"])");
     EXPECT_EQ(evaluate("new Intl.NumberFormat('en-US').format()"), R"("NaN")");
+    EXPECT_EQ(evaluate("new Intl.NumberFormat('en-US').format('1234')"), R"("1,234")");
+}
+
+TEST_F(IntlBindingTest, EachInstanceBindsItsMethodOnceAsANonEnumerableOwnProperty) {
+    EXPECT_EQ(evaluate("((format) => format.format === format.format)(new Intl.NumberFormat())"), "true");
+    EXPECT_EQ(evaluate("((format) => format.format === format.format)(new Intl.DateTimeFormat())"), "true");
+    EXPECT_EQ(evaluate("((collator) => [collator.compare === collator.compare, Object.keys(collator).length])"
+                       "(new Intl.Collator())"),
+              "[true,0]");
+    EXPECT_EQ(evaluate("new Intl.Collator().compare !== new Intl.Collator().compare"), "true");
+    EXPECT_EQ(
+        evaluate("((collator) => ['b', 'c', 'a'].sort(collator.compare).concat(['z', 'y'].sort(collator.compare)))"
+                 "(new Intl.Collator('en'))"),
+        R"(["a","b","c","y","z"])");
+    EXPECT_EQ(evaluate("Object.freeze(new Intl.Collator('en')).compare('a', 'b')"), "-1");
 }
 
 TEST_F(IntlBindingTest, CollatorSortsFileNamesNumericallyAndCaseInsensitively) {
@@ -87,6 +102,37 @@ TEST_F(IntlBindingTest, GetCanonicalLocalesCanonicalizesAndRejectsWhatIsNotALoca
     EXPECT_EQ(evaluate("Intl.getCanonicalLocales(['en_US'])"), "RangeError: Incorrect locale information provided");
     EXPECT_EQ(evaluate("Intl.getCanonicalLocales([5])"), "TypeError: Language ID should be string or object.");
     EXPECT_EQ(evaluate("Intl.getCanonicalLocales(null)"), "TypeError: Cannot convert null to object");
+}
+
+TEST_F(IntlBindingTest, GetCanonicalLocalesReadsALengthAsEcma262sToLength) {
+    EXPECT_EQ(evaluate("Intl.getCanonicalLocales(Object.defineProperty({0: 'en', length: Infinity}, 1, "
+                       "{get() { throw new Error('read past the first element'); }}))"),
+              "Error: read past the first element");
+    EXPECT_EQ(evaluate("Intl.getCanonicalLocales({0: 'en', length: NaN})"), "[]");
+    EXPECT_EQ(evaluate("Intl.getCanonicalLocales({0: 'en', length: -Infinity})"), "[]");
+    EXPECT_EQ(evaluate("Intl.getCanonicalLocales({0: 'en', length: -1})"), "[]");
+    EXPECT_EQ(evaluate("Intl.getCanonicalLocales({0: 'en', 2: 'de', length: '3.9'})"), R"(["en","de"])");
+}
+
+TEST_F(IntlBindingTest, FormatToPartsServesT3CodesHourLabelsAndTimeZoneLabels) {
+    const std::string hourLabel =
+        "new Intl.DateTimeFormat('en-US', {timeZone: 'UTC', hour: '2-digit', hourCycle: 'h23'";
+    const std::string formatHour =
+        ".formatToParts(new Date(Date.UTC(2026, 6, 1, 13))).map((part) => (part.type === 'hour' ? `${part.value}:00` : "
+        "part.value)).join('')";
+    const std::string zoneLabel = "new Intl.DateTimeFormat('en-US', {timeZone: 'America/New_York', timeZoneName: ";
+    const std::string findZone = ".find((part) => part.type === 'timeZoneName').value";
+
+    EXPECT_EQ(evaluate(hourLabel + "})" + formatHour), R"("13:00")");
+    EXPECT_EQ(evaluate(hourLabel + ", timeZoneName: 'short'})" + formatHour), R"("13:00 UTC")");
+    EXPECT_EQ(evaluate(zoneLabel + "'short'}).formatToParts(Date.UTC(2026, 6, 1, 16))" + findZone), R"("EDT")");
+    EXPECT_EQ(evaluate(zoneLabel + "'shortGeneric'}).formatToParts(undefined)" + findZone), R"("ET")");
+    EXPECT_EQ(evaluate("new Intl.DateTimeFormat('en-US', {timeZone: 'UTC'}).formatToParts(0)"),
+              R"([{"type":"month","value":"1"},{"type":"literal","value":"/"},{"type":"day","value":"1"},)"
+              R"({"type":"literal","value":"/"},{"type":"year","value":"1970"}])");
+    EXPECT_EQ(evaluate("new Intl.DateTimeFormat().formatToParts(NaN)"), "RangeError: Invalid time value");
+    EXPECT_EQ(evaluate("Intl.DateTimeFormat.prototype.formatToParts.call({})"),
+              "TypeError: Method Intl.DateTimeFormat.prototype.formatToParts called on incompatible receiver");
 }
 
 TEST_F(IntlBindingTest, UnsupportedOptionsAndForeignReceiversThrowTheErrorsEcma402Names) {

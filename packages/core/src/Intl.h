@@ -42,6 +42,9 @@ using IntlOptions = std::vector<std::pair<std::string_view, IntlOptionValue>>;
 /** What `resolvedOptions()` returns, in the property order ECMA-402 lists. */
 using IntlResolvedOptions = std::vector<std::pair<std::string_view, IntlOptionValue>>;
 
+/** What `formatToParts` returns: each part's ECMA-402 type (`hour`, `literal`, `timeZoneName`) and its text. */
+using IntlParts = std::vector<std::pair<std::string_view, std::string>>;
+
 /** ECMA-402's `CanonicalizeLocaleList` over tags already read from JavaScript: canonical, deduplicated, in order. */
 std::vector<std::string> canonicalizeLocaleList(std::span<const std::string> tags);
 
@@ -56,7 +59,8 @@ std::string defaultIntlTimeZone();
 
 /**
  * `Intl.DateTimeFormat` over `udat_`: the component options, `dateStyle` and `timeStyle`, `hourCycle`, `hour12`,
- * `timeZone` and `timeZoneName`. Every other option ECMA-402 defines is a `IntlRangeError` naming it.
+ * `timeZone` and `timeZoneName`, and the locale's `-u-hc`. Every other option ECMA-402 defines is a
+ * `IntlRangeError` naming it.
  *
  * Threading contract: an instance is used by one thread at a time; the JavaScript thread owns the ones it makes.
  */
@@ -68,6 +72,7 @@ public:
                        std::string_view defaultLocale, std::string_view defaultTimeZone);
 
     std::string format(double epochMilliseconds) const;
+    IntlParts formatToParts(double epochMilliseconds) const;
     const IntlResolvedOptions& resolvedOptions() const noexcept;
 
 private:
@@ -98,8 +103,8 @@ private:
 };
 
 /**
- * `Intl.Collator` over `ucol_`: `usage: "sort"`, `sensitivity` and `numeric`. Every other option ECMA-402 defines
- * is a `IntlRangeError` naming it.
+ * `Intl.Collator` over `ucol_`: `usage: "sort"`, `sensitivity`, `numeric` and the locale's `-u-kn`. Every other
+ * option ECMA-402 defines is a `IntlRangeError` naming it.
  *
  * Threading contract: as `IntlDateTimeFormat`'s.
  */
