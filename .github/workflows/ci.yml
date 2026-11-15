@@ -450,6 +450,12 @@ jobs:
       - name: Build rnl_core_hermes_tests
         run: cmake --build "build/$RNL_PRESET" --target rnl_core_hermes_tests
 
+      # #139: the compile-only guard. Reanimated's Common/cpp builds with neither ANDROID nor __APPLE__ defined, so
+      # a React Native or Reanimated bump that adds a two-way platform #ifdef fails here instead of in an animation.
+      - name: Build rnl_reanimated
+        if: matrix.preset == 'dev'
+        run: cmake --build "build/$RNL_PRESET" --target rnl_reanimated
+
       - name: Report ccache and disk usage
         if: always()
         run: |

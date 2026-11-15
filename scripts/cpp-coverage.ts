@@ -62,6 +62,7 @@ const scopedSourcePaths: readonly string[] = [
   "packages/core/src/ParagraphAttributesSignature.cpp",
   "packages/core/src/ParagraphLayoutCache.cpp",
   "packages/core/src/PlatformColor.cpp",
+  "packages/core/src/ReanimatedPlatform.cpp",
   "packages/core/src/RendererLadder.cpp",
   "packages/core/src/ResourceResolver.cpp",
   "packages/core/src/RetainedScene.cpp",
