@@ -44,7 +44,7 @@
     "packages/gesture-handler": {
       "project": ["src/**/*.ts"],
       "ignore": ["upstream/**"],
-      "ignoreDependencies": ["@egjs/hammerjs", "hoist-non-react-statics", "invariant"]
+      "ignoreDependencies": ["invariant"]
     },
     "packages/reanimated": {
       "project": ["src/**/*.ts"],

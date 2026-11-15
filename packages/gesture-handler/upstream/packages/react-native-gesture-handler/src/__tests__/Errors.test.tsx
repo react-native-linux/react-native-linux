@@ -1,0 +1,279 @@
+import { cleanup, render } from '@testing-library/react-native';
+import React from 'react';
+import type { ViewProps } from 'react-native';
+import { findNodeHandle, View } from 'react-native';
+
+import {
+  Gesture,
+  GestureDetector,
+  GestureHandlerRootView,
+  InterceptingGestureDetector,
+  useTapGesture,
+} from '../index';
+import { VirtualDetector } from '../v3/detectors/VirtualDetector/VirtualDetector';
+
+jest.mock('react-native-worklets', () =>
+  require('react-native-worklets/src/mock')
+);
+
+// Reanimated 4.6.0 throws on import under Jest (`setCSSEventHandler` is not
+// available in JSReanimated), which reanimatedWrapper silently turns into
+// `Reanimated = undefined`. Mock the wrapper so gestures with worklet
+// callbacks still take the Reanimated detector path these tests rely on.
+//
+// TODO: Remove after fixed in Reanimated
+jest.mock('../handlers/gestures/reanimatedWrapper', () => ({
+  Reanimated: {
+    useHandler: jest.fn(() => ({
+      doDependenciesDiffer: false,
+      context: { lastUpdateEvent: undefined },
+    })),
+    useEvent: jest.fn(() => jest.fn()),
+    useComposedEventHandler: jest.fn(() => jest.fn()),
+    isSharedValue: (value: unknown): boolean =>
+      value !== null && typeof value === 'object' && 'value' in value,
+    useSharedValue: <T,>(value: T) => ({ value }),
+    setGestureState: jest.fn(),
+  },
+  Worklets: undefined,
+}));
+
+beforeEach(() => cleanup());
+jest.mock('react-native/Libraries/ReactNative/RendererProxy', () => ({
+  findNodeHandle: jest.fn(),
+}));
+
+describe('VirtualDetector', () => {
+  test('virtual detector must be under InterceptingGestureDetector', () => {
+    function VirtualDetectorWithNoBoundary() {
+      const tap = useTapGesture({});
+      return (
+        <GestureHandlerRootView>
+          <VirtualDetector gesture={tap}>
+            <View />
+          </VirtualDetector>
+        </GestureHandlerRootView>
+      );
+    }
+
+    expect(() => render(<VirtualDetectorWithNoBoundary />)).toThrow(
+      'VirtualGestureDetector must be a descendant of an InterceptingGestureDetector'
+    );
+  });
+
+  test('virtual detector reports a child that swallows the ref', () => {
+    const consoleError = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+
+    function SwallowsRef({ style }: { style?: ViewProps['style'] }) {
+      return <View style={style} />;
+    }
+
+    function VirtualDetectorSwallowedRef() {
+      const tap = useTapGesture({});
+      return (
+        <GestureHandlerRootView>
+          <InterceptingGestureDetector>
+            <VirtualDetector gesture={tap}>
+              <SwallowsRef />
+            </VirtualDetector>
+          </InterceptingGestureDetector>
+        </GestureHandlerRootView>
+      );
+    }
+
+    const screen = render(<VirtualDetectorSwallowedRef />);
+    screen.rerender(<VirtualDetectorSwallowedRef />);
+
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'VirtualGestureDetector could not attach to its child (SwallowsRef)'
+      )
+    );
+    consoleError.mockRestore();
+  });
+
+  test('virtual detector does not handle animated events', () => {
+    (findNodeHandle as jest.Mock).mockReturnValue(123);
+
+    function VirtualDetectorAnimated() {
+      const tap = useTapGesture({ useAnimated: true });
+      return (
+        <GestureHandlerRootView>
+          <InterceptingGestureDetector>
+            <VirtualDetector gesture={tap}>
+              <View />
+            </VirtualDetector>
+          </InterceptingGestureDetector>
+        </GestureHandlerRootView>
+      );
+    }
+
+    expect(() => render(<VirtualDetectorAnimated />)).toThrow(
+      'VirtualGestureDetector cannot handle Animated events with native driver when used inside InterceptingGestureDetector. Use Reanimated or Animated events without native driver instead.'
+    );
+  });
+
+  test('intercepting detector cant handle multiple types of events', () => {
+    (findNodeHandle as jest.Mock).mockReturnValue(123);
+    const mockWorklet = () => undefined;
+    mockWorklet.__workletHash = 123;
+
+    function InterceptingDetectorMultipleTypes() {
+      const tap = useTapGesture({ useAnimated: true });
+      const tap2 = useTapGesture({
+        disableReanimated: false,
+        onActivate: mockWorklet,
+      });
+      return (
+        <GestureHandlerRootView>
+          <InterceptingGestureDetector gesture={tap}>
+            <VirtualDetector gesture={tap2}>
+              <View />
+            </VirtualDetector>
+          </InterceptingGestureDetector>
+        </GestureHandlerRootView>
+      );
+    }
+
+    expect(() => render(<InterceptingDetectorMultipleTypes />)).toThrow(
+      'InterceptingGestureDetector can only handle either Reanimated or Animated events.'
+    );
+  });
+});
+
+describe('Sharing a gesture across detectors', () => {
+  beforeEach(() => (findNodeHandle as jest.Mock).mockReturnValue(123));
+
+  test('throws when the same gesture is attached to two detectors', () => {
+    function SameGestureTwoDetectors() {
+      const tap = useTapGesture({});
+      return (
+        <GestureHandlerRootView>
+          <GestureDetector gesture={tap}>
+            <View />
+          </GestureDetector>
+          <GestureDetector gesture={tap}>
+            <View />
+          </GestureDetector>
+        </GestureHandlerRootView>
+      );
+    }
+
+    expect(() => render(<SameGestureTwoDetectors />)).toThrow(
+      'Using the same gesture instance across multiple GestureDetectors is not possible. Create a separate gesture for each detector.'
+    );
+  });
+
+  test('does not throw when the same gesture is reattached to another detector', () => {
+    // Changing the key unmounts the previous detector and mounts a new one with
+    // the same gesture - the old detector must release the gesture before the
+    // new one claims it.
+    function ReattachedGesture({ detectorKey }: { detectorKey: string }) {
+      const tap = useTapGesture({});
+      return (
+        <GestureHandlerRootView>
+          <GestureDetector key={detectorKey} gesture={tap}>
+            <View />
+          </GestureDetector>
+        </GestureHandlerRootView>
+      );
+    }
+
+    const { rerender } = render(<ReattachedGesture detectorKey="a" />);
+    expect(() => rerender(<ReattachedGesture detectorKey="b" />)).not.toThrow();
+  });
+
+  test('does not throw when gestures are swapped between two mounted detectors', () => {
+    // Prop-swap reattach: both detectors stay mounted and the two gestures
+    // trade places. The detector losing a gesture must release it (effect
+    // cleanup) before the detector gaining it claims it (effect setup).
+    function SwappedGestures({ swapped }: { swapped: boolean }) {
+      const tapA = useTapGesture({});
+      const tapB = useTapGesture({});
+      return (
+        <GestureHandlerRootView>
+          <GestureDetector gesture={swapped ? tapB : tapA}>
+            <View />
+          </GestureDetector>
+          <GestureDetector gesture={swapped ? tapA : tapB}>
+            <View />
+          </GestureDetector>
+        </GestureHandlerRootView>
+      );
+    }
+
+    const { rerender } = render(<SwappedGestures swapped={false} />);
+    expect(() => rerender(<SwappedGestures swapped />)).not.toThrow();
+  });
+
+  test('throws when the same gesture is attached to two virtual detectors', () => {
+    function SameGestureTwoVirtualDetectors() {
+      const tap = useTapGesture({});
+      return (
+        <GestureHandlerRootView>
+          <InterceptingGestureDetector>
+            <VirtualDetector gesture={tap}>
+              <View />
+            </VirtualDetector>
+            <VirtualDetector gesture={tap}>
+              <View />
+            </VirtualDetector>
+          </InterceptingGestureDetector>
+        </GestureHandlerRootView>
+      );
+    }
+
+    expect(() => render(<SameGestureTwoVirtualDetectors />)).toThrow(
+      'Using the same gesture instance across multiple GestureDetectors is not possible. Create a separate gesture for each detector.'
+    );
+  });
+});
+
+describe('Check if descendant of root view', () => {
+  test('gesture detector', () => {
+    function GestureDetectorNoRootView() {
+      const tap = useTapGesture({});
+      return (
+        <GestureDetector gesture={tap}>
+          <View />
+        </GestureDetector>
+      );
+    }
+    expect(() => render(<GestureDetectorNoRootView />)).toThrow(
+      'GestureDetector must be used as a descendant of GestureHandlerRootView. Otherwise the gestures will not be recognized. See https://docs.swmansion.com/react-native-gesture-handler/docs/fundamentals/installation for more details.'
+    );
+  });
+
+  test('intercepting detector', () => {
+    function GestureDetectorNoRootView() {
+      const tap = useTapGesture({});
+      return (
+        <InterceptingGestureDetector gesture={tap}>
+          <View />
+        </InterceptingGestureDetector>
+      );
+    }
+
+    expect(() => render(<GestureDetectorNoRootView />)).toThrow(
+      'GestureDetector must be used as a descendant of GestureHandlerRootView. Otherwise the gestures will not be recognized. See https://docs.swmansion.com/react-native-gesture-handler/docs/fundamentals/installation for more details.'
+    );
+  });
+
+  test('legacy detector', () => {
+    function GestureDetectorNoRootView() {
+      const tap = Gesture.Tap();
+      return (
+        <GestureDetector gesture={tap}>
+          <View />
+        </GestureDetector>
+      );
+    }
+
+    expect(() => render(<GestureDetectorNoRootView />)).toThrow(
+      'GestureDetector must be used as a descendant of GestureHandlerRootView. Otherwise the gestures will not be recognized. See https://docs.swmansion.com/react-native-gesture-handler/docs/fundamentals/installation for more details.'
+    );
+  });
+});

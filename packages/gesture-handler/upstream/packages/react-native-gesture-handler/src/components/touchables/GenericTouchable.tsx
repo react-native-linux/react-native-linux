@@ -1,15 +1,14 @@
 import * as React from 'react';
 import { Component } from 'react';
-import { Animated, Platform } from 'react-native';
+import { Animated } from 'react-native';
 
-import { State } from '../../State';
-import { BaseButton } from '../GestureButtons';
-
-import {
+import type {
   GestureEvent,
   HandlerStateChangeEvent,
 } from '../../handlers/gestureHandlerCommon';
 import type { NativeViewGestureHandlerPayload } from '../../handlers/GestureHandlerEventPayload';
+import { State } from '../../State';
+import { LegacyBaseButton } from '../GestureButtons';
 import type { GenericTouchableProps } from './GenericTouchableProps';
 
 /**
@@ -113,7 +112,7 @@ export default class GenericTouchable extends Component<
     }
   }
 
-  componentDidMount() {
+  override componentDidMount() {
     this.reset();
   }
   // Reset timeout to prevent memory leaks.
@@ -175,10 +174,7 @@ export default class GenericTouchable extends Component<
       // Need to handle case with external cancellation (e.g. by ScrollView)
       this.moveToState(TOUCHABLE_STATE.UNDETERMINED);
     } else if (
-      // This platform check is an implication of slightly different behavior of handlers on different platform.
-      // And Android "Active" state is achieving on first move of a finger, not on press in.
-      // On iOS event on "Began" is not delivered.
-      state === (Platform.OS !== 'android' ? State.ACTIVE : State.BEGAN) &&
+      state === State.BEGAN &&
       this.STATE === TOUCHABLE_STATE.UNDETERMINED
     ) {
       // Moving inside requires
@@ -202,7 +198,7 @@ export default class GenericTouchable extends Component<
     this.props.onLongPress?.();
   };
 
-  componentWillUnmount() {
+  override componentWillUnmount() {
     // To prevent memory leaks
     this.reset();
   }
@@ -223,7 +219,7 @@ export default class GenericTouchable extends Component<
     }
   }
 
-  render() {
+  override render() {
     const hitSlop =
       (typeof this.props.hitSlop === 'number'
         ? {
@@ -249,7 +245,7 @@ export default class GenericTouchable extends Component<
     };
 
     return (
-      <BaseButton
+      <LegacyBaseButton
         style={this.props.containerStyle}
         onHandlerStateChange={
           // TODO: not sure if it can be undefined instead of null
@@ -267,7 +263,7 @@ export default class GenericTouchable extends Component<
         <Animated.View {...coreProps} style={this.props.style}>
           {this.props.children}
         </Animated.View>
-      </BaseButton>
+      </LegacyBaseButton>
     );
   }
 }

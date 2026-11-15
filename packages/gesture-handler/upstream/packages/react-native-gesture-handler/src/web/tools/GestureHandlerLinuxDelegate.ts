@@ -1,23 +1,24 @@
 import type IGestureHandler from '../handlers/IGestureHandler';
-import {
+import type EventManager from './EventManager';
+import type {
   GestureHandlerDelegate,
   MeasureResult,
 } from './GestureHandlerDelegate';
 import LinuxPointerEventManager from './LinuxPointerEventManager';
 import {
   forgetLinuxView,
-  LinuxElement,
+  type LinuxElement,
   LinuxView,
   setLinuxGestureActive,
 } from './LinuxPointerRouter';
-import EventManager from './EventManager';
 
 // The web delegate's job on a React Native element: the bounds come from the element's own
 // getBoundingClientRect, and the pointer events from LinuxPointerRouter rather than from DOM listeners.
 export class GestureHandlerLinuxDelegate
   implements GestureHandlerDelegate<LinuxView, IGestureHandler>
 {
-  public view!: LinuxView;
+  public view: LinuxView | null = null;
+  private gestureHandler!: IGestureHandler;
   private eventManagers: EventManager<unknown>[] = [];
 
   init(viewRef: number, handler: IGestureHandler): void {
@@ -27,21 +28,33 @@ export class GestureHandlerLinuxDelegate
       );
     }
 
+    this.gestureHandler = handler;
     this.view = new LinuxView(viewRef as unknown as LinuxElement);
     this.eventManagers = [
-      new LinuxPointerEventManager(this.view as unknown as HTMLElement),
+      new LinuxPointerEventManager(this.view as unknown as HTMLElement, false),
     ];
     this.eventManagers.forEach((manager) => handler.attachEventManager(manager));
   }
 
+  detach(): void {
+    this.eventManagers = [];
+    this.forgetView();
+  }
+
+  updateDOM(): void {}
+
   isPointerInBounds({ x, y }: { x: number; y: number }): boolean {
+    if (!this.view) {
+      return false;
+    }
+
     const rect = this.view.getBoundingClientRect();
 
     return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
   }
 
   measureView(): MeasureResult {
-    const rect = this.view.getBoundingClientRect();
+    const rect = this.requireView().getBoundingClientRect();
 
     return {
       pageX: rect.left,
@@ -51,13 +64,19 @@ export class GestureHandlerLinuxDelegate
     };
   }
 
+  absoluteToLocal(absoluteX: number, absoluteY: number) {
+    const rect = this.requireView().getBoundingClientRect();
+
+    return { x: absoluteX - rect.left, y: absoluteY - rect.top };
+  }
+
   reset(): void {
     this.eventManagers.forEach((manager) => manager.resetManager());
   }
 
-  onEnabledChange(enabled: boolean): void {
+  onEnabledChange(): void {
     this.eventManagers.forEach((manager) =>
-      enabled ? manager.registerListeners() : manager.unregisterListeners()
+      manager.setEnabled(this.gestureHandler.enabled)
     );
   }
 
@@ -81,7 +100,22 @@ export class GestureHandlerLinuxDelegate
 
   destroy(): void {
     this.eventManagers.forEach((manager) => manager.unregisterListeners());
+    this.forgetView();
+  }
+
+  private forgetView(): void {
     setLinuxGestureActive(this, false);
-    forgetLinuxView(this.view);
+    if (this.view) {
+      forgetLinuxView(this.view);
+      this.view = null;
+    }
+  }
+
+  private requireView(): LinuxView {
+    if (!this.view) {
+      throw new Error('react-native-gesture-handler: the view is detached');
+    }
+
+    return this.view;
   }
 }

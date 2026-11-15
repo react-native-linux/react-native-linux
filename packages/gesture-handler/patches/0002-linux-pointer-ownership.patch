@@ -20,18 +20,18 @@ index 50c6247..d284df4 100644
        />
      </GestureHandlerRootViewContext.Provider>
 diff --git a/packages/react-native-gesture-handler/src/web/tools/GestureHandlerLinuxDelegate.ts b/packages/react-native-gesture-handler/src/web/tools/GestureHandlerLinuxDelegate.ts
-index 47d5a32..a185df5 100644
+index 47d2621..25ccceb 100644
 --- a/packages/react-native-gesture-handler/src/web/tools/GestureHandlerLinuxDelegate.ts
 +++ b/packages/react-native-gesture-handler/src/web/tools/GestureHandlerLinuxDelegate.ts
-@@ -8,6 +8,7 @@ import {
+@@ -9,6 +9,7 @@ import {
    forgetLinuxView,
-   LinuxElement,
+   type LinuxElement,
    LinuxView,
 +  setLinuxGestureActive,
  } from './LinuxPointerRouter';
- import EventManager from './EventManager';
  
-@@ -61,13 +62,26 @@ export class GestureHandlerLinuxDelegate
+ // The web delegate's job on a React Native element: the bounds come from the element's own
+@@ -80,10 +81,22 @@ export class GestureHandlerLinuxDelegate
    }
  
    onBegin(): void {}
@@ -58,15 +58,19 @@ index 47d5a32..a185df5 100644
  
    destroy(): void {
      this.eventManagers.forEach((manager) => manager.unregisterListeners());
-+    setLinuxGestureActive(this, false);
-     forgetLinuxView(this.view);
+@@ -91,6 +104,7 @@ export class GestureHandlerLinuxDelegate
    }
- }
+ 
+   private forgetView(): void {
++    setLinuxGestureActive(this, false);
+     if (this.view) {
+       forgetLinuxView(this.view);
+       this.view = null;
 diff --git a/packages/react-native-gesture-handler/src/web/tools/LinuxPointerRouter.ts b/packages/react-native-gesture-handler/src/web/tools/LinuxPointerRouter.ts
-index 49b1e17..ba4989c 100644
+index d92a2b1..92565a8 100644
 --- a/packages/react-native-gesture-handler/src/web/tools/LinuxPointerRouter.ts
 +++ b/packages/react-native-gesture-handler/src/web/tools/LinuxPointerRouter.ts
-@@ -61,6 +61,22 @@ export class LinuxView {
+@@ -65,6 +65,22 @@ export class LinuxView {
  }
  
  const views = new Set<LinuxView>();

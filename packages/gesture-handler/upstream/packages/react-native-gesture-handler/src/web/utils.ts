@@ -1,13 +1,86 @@
+import type { StylusData } from '../handlers/gestureHandlerCommon';
 import { PointerType } from '../PointerType';
-import type {
-  GestureHandlerRef,
-  Point,
-  StylusData,
-  SVGRef,
-} from './interfaces';
+import type { GestureHandlerRef, Point, SVGRef } from './interfaces';
+
+// Duplicate of the check in `src/useIsomorphicLayoutEffect.tsx` — kept as a
+// separate copy on purpose, since the web engine is its own compilation unit
+// and must not import from the react-native side. Keep the two in sync.
+//
+// The web handlers also run under react-native-windows, where RN aliases
+// `window` to `global` but there is no DOM — so checking `window` alone is
+// not enough.
+export function canUseDOM(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.document !== 'undefined' &&
+    typeof window.document.createElement !== 'undefined'
+  );
+}
+
+// Narrows to an element whose inline styles (and DOM attributes) are safe to
+// touch.
+export function isStylableElement(
+  view: unknown
+): view is HTMLElement | SVGElement {
+  return (
+    canUseDOM() && (view instanceof HTMLElement || view instanceof SVGElement)
+  );
+}
+
+export function hasDisplayContents(view: HTMLElement): boolean {
+  return (
+    canUseDOM() &&
+    (view.style.display === 'contents' ||
+      getComputedStyle(view).display === 'contents')
+  );
+}
+
+export function firstNonContentsView(view: HTMLElement): HTMLElement {
+  let current = view;
+
+  while (hasDisplayContents(current) && current.childElementCount > 0) {
+    current = current.children[0] as HTMLElement;
+  }
+
+  return current;
+}
+
+// For display: contents elements (like the gesture detector wrapper), getBoundingClientRect
+// returns all zeros since the element has no box. Derive the bounds from the children instead
+// (recurse until we reach elements that actually have a box).
+export function getEffectiveBoundingRect(view: HTMLElement): DOMRect {
+  if (hasDisplayContents(view) && view.children.length > 0) {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    // eslint-disable-next-line @typescript-eslint/prefer-for-of
+    for (let i = 0; i < view.children.length; i++) {
+      const childRect = getEffectiveBoundingRect(
+        view.children[i] as HTMLElement
+      );
+
+      if (childRect.width === 0 && childRect.height === 0) {
+        continue;
+      }
+
+      minX = Math.min(minX, childRect.left);
+      minY = Math.min(minY, childRect.top);
+      maxX = Math.max(maxX, childRect.right);
+      maxY = Math.max(maxY, childRect.bottom);
+    }
+
+    return minX === Infinity
+      ? view.getBoundingClientRect()
+      : new DOMRect(minX, minY, maxX - minX, maxY - minY);
+  }
+
+  return view.getBoundingClientRect();
+}
 
 export function isPointerInBounds(view: HTMLElement, { x, y }: Point): boolean {
-  const rect: DOMRect = view.getBoundingClientRect();
+  const rect = getEffectiveBoundingRect(view);
 
   return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
 }
@@ -24,40 +97,155 @@ export const degToRad = (degrees: number) => (degrees * Math.PI) / 180;
 export const coneToDeviation = (degrees: number) =>
   Math.cos(degToRad(degrees / 2));
 
-export function calculateViewScale(view: HTMLElement) {
-  const styles = getComputedStyle(view);
+type LinearTransform = [a: number, b: number, c: number, d: number];
 
-  const resultScales = {
-    scaleX: 1,
-    scaleY: 1,
-  };
+const IDENTITY: LinearTransform = [1, 0, 0, 1];
 
-  // Get scales from scale property
+function isIdentity([a, b, c, d]: LinearTransform): boolean {
+  return a === 1 && b === 0 && c === 0 && d === 1;
+}
+
+function getElementLinearTransform(element: Element): LinearTransform {
+  const styles = getComputedStyle(element);
+
+  if (styles.display === 'contents') {
+    return IDENTITY;
+  }
+
+  let [a, b, c, d] = IDENTITY;
+
+  const matrix = /matrix(3d)?\((.+)\)/.exec(styles.transform);
+
+  if (matrix) {
+    const m = matrix[2].split(',').map(parseFloat);
+
+    [a, b, c, d] = matrix[1]
+      ? [m[0], m[1], m[4], m[5]]
+      : [m[0], m[1], m[2], m[3]];
+  }
+
   if (styles.scale !== undefined && styles.scale !== 'none') {
     const scales = styles.scale.split(' ');
+    const scaleX = parseFloat(scales[0]);
+    const scaleY = scales[1] ? parseFloat(scales[1]) : scaleX;
 
-    if (scales[0]) {
-      resultScales.scaleX = parseFloat(scales[0]);
+    [a, b, c, d] = [a * scaleX, b * scaleY, c * scaleX, d * scaleY];
+  }
+
+  return [a, b, c, d];
+}
+
+function multiply(
+  [a1, b1, c1, d1]: LinearTransform,
+  [a2, b2, c2, d2]: LinearTransform
+): LinearTransform {
+  return [
+    a1 * a2 + c1 * b2,
+    b1 * a2 + d1 * b2,
+    a1 * c2 + c1 * d2,
+    b1 * c2 + d1 * d2,
+  ];
+}
+
+// View's transform composed with the transforms of its ancestors.
+function getViewLinearTransform(view: HTMLElement): LinearTransform | null {
+  let transform = getElementLinearTransform(view);
+  let element = view.parentElement;
+
+  while (element) {
+    const ancestorTransform = getElementLinearTransform(element);
+
+    if (!isIdentity(ancestorTransform)) {
+      transform = multiply(ancestorTransform, transform);
     }
 
-    resultScales.scaleY = scales[1]
-      ? parseFloat(scales[1])
-      : parseFloat(scales[0]);
+    element = element.parentElement;
   }
 
-  // Get scales from transform property
-  const matrixElements = new RegExp(/matrix\((.+)\)/).exec(
-    styles.transform
-  )?.[1];
+  return isIdentity(transform) ? null : transform;
+}
 
-  if (matrixElements) {
-    const matrixElementsArray = matrixElements.split(', ');
+// Size of the view's box before its transform is applied.
+function getUntransformedSize(
+  view: HTMLElement,
+  rect: DOMRect,
+  [a, b, c, d]: LinearTransform
+) {
+  // Layout sizes are unaffected by transforms. A `display: contents` element
+  // has no box and reports zeros.
+  if (!hasDisplayContents(view)) {
+    if (typeof view.offsetWidth === 'number') {
+      return { width: view.offsetWidth, height: view.offsetHeight };
+    }
 
-    resultScales.scaleX *= parseFloat(matrixElementsArray[0]);
-    resultScales.scaleY *= parseFloat(matrixElementsArray[3]);
+    // An svg root has a client box, the elements inside it do not.
+    if (view.clientWidth > 0 || view.clientHeight > 0) {
+      return { width: view.clientWidth, height: view.clientHeight };
+    }
   }
 
-  return resultScales;
+  // Recover the size from the transformed bounds:
+  // rect.width = |a| * width + |c| * height, rect.height = |b| * width + |d| * height.
+  const det = Math.abs(a * d) - Math.abs(b * c);
+
+  if (det === 0) {
+    return { width: rect.width, height: rect.height };
+  }
+
+  return {
+    width: (Math.abs(d) * rect.width - Math.abs(c) * rect.height) / det,
+    height: (Math.abs(a) * rect.height - Math.abs(b) * rect.width) / det,
+  };
+}
+
+// The v3 detectors attach to a `display: contents` wrapper, so the transform
+// lives on its child. With several children there is no single transform to
+// invert, the wrapper's bounds are used as they are.
+function getTransformedView(view: HTMLElement): HTMLElement {
+  let current = view;
+
+  while (hasDisplayContents(current) && current.childElementCount === 1) {
+    current = current.children[0] as HTMLElement;
+  }
+
+  return current;
+}
+
+// Maps a viewport point to the view's own coordinate space, so that `x` and `y`
+// match native under scale, mirroring and rotation of the view or any of its
+// ancestors. Perspective is not accounted for.
+export function viewportToLocal(view: HTMLElement, point: Point): Point {
+  const rect = getEffectiveBoundingRect(view);
+  const transformedView = getTransformedView(view);
+  const transform = getViewLinearTransform(transformedView);
+
+  if (!transform) {
+    return { x: point.x - rect.left, y: point.y - rect.top };
+  }
+
+  const [a, b, c, d] = transform;
+  const det = a * d - b * c;
+
+  if (det === 0) {
+    return { x: point.x - rect.left, y: point.y - rect.top };
+  }
+
+  const { width, height } = getUntransformedSize(
+    transformedView,
+    rect,
+    transform
+  );
+
+  // The transforms map the center of the view to the center of its bounding
+  // rect (transform-origin only adds a translation, which the bounding rect
+  // already reflects), so invert the linear part around the center.
+  const dx = point.x - (rect.left + rect.width / 2);
+  const dy = point.y - (rect.top + rect.height / 2);
+
+  return {
+    x: width / 2 + (d * dx - c * dy) / det,
+    y: height / 2 + (a * dy - b * dx) / det,
+  };
 }
 
 export function tryExtractStylusData(

@@ -1,0 +1,31 @@
+diff --git a/packages/react-native-gesture-handler/src/v3/NativeProxy.linux.ts b/packages/react-native-gesture-handler/src/v3/NativeProxy.linux.ts
+new file mode 100644
+index 0000000..a95ece1
+--- /dev/null
++++ b/packages/react-native-gesture-handler/src/v3/NativeProxy.linux.ts
+@@ -0,0 +1,25 @@
++import { Worklets } from '../handlers/gestures/reanimatedWrapper';
++import RNGestureHandlerModule from '../RNGestureHandlerModule';
++import { NativeProxy as WebNativeProxy } from './NativeProxy.web';
++import type { BaseGestureConfig } from './types';
++
++// A SharedValue listener (hooks/utils/reanimatedUtils) calls updateGestureHandlerConfig on the UI runtime, where
++// Android and iOS answer with a JSI host function. Linux's module is a JavaScript object on the React Native
++// runtime, so the update goes back to it; everything else is the web proxy, called on that runtime.
++const { updateGestureHandlerConfig } = RNGestureHandlerModule;
++const scheduleOnRN = Worklets?.scheduleOnRN;
++
++export const NativeProxy = {
++  ...WebNativeProxy,
++  updateGestureHandlerConfig: <
++    TConfig,
++    THandlerData,
++    TExtendedHandlerData extends THandlerData,
++  >(
++    handlerTag: number,
++    newConfig: BaseGestureConfig<TConfig, THandlerData, TExtendedHandlerData>
++  ) => {
++    'worklet';
++    scheduleOnRN?.(updateGestureHandlerConfig, handlerTag, newConfig);
++  },
++} as const;
