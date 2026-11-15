@@ -81,8 +81,8 @@ namespace react_native_linux {
 class WindowSession final {
 public:
     WindowSession(const std::string& bundlePath, WindowSize size, double scale,
-                  const std::string& asyncStorageDatabasePath,
-                  std::optional<std::string> initialActivationUrl = std::nullopt);
+                  const std::string& asyncStorageDatabasePath, std::optional<std::string> initialActivationUrl,
+                  std::string assetsDirectory);
     WindowSession(const WindowSession&) = delete;
     WindowSession(WindowSession&&) = delete;
     WindowSession& operator=(const WindowSession&) = delete;

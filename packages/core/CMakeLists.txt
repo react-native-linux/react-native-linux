@@ -66,6 +66,8 @@ find_package(Threads REQUIRED)
 find_package(CURL REQUIRED)
 # #23: SQLite is the store behind AsyncStorage (src/AsyncStorage.h) and #638's expo-sqlite (src/ExpoSQLite.h).
 find_package(SQLite3 REQUIRED)
+# #276: libcrypto computes expo-crypto's digests and random bytes (src/ExpoCrypto.h); libcurl already loads it.
+find_package(OpenSSL 3 REQUIRED COMPONENTS Crypto)
 # #83: Intl is built on the system ICU, the one Hermes' platform_unicode already links; see src/Intl.h.
 find_package(ICU 74 REQUIRED COMPONENTS uc i18n)
 
@@ -869,6 +871,8 @@ add_library(rnl_react_core STATIC
     src/ExpoApplicationModule.cpp
     src/ExpoAsset.cpp
     src/ExpoAssetModule.cpp
+    src/ExpoCrypto.cpp
+    src/ExpoCryptoModule.cpp
     src/ExpoDeviceModule.cpp
     src/ExpoFileSystem.cpp
     src/ExpoFileSystemModule.cpp
@@ -926,6 +930,7 @@ target_link_libraries(rnl_react_core
     PUBLIC
         CURL::libcurl
         SQLite::SQLite3
+        OpenSSL::Crypto
         ICU::uc
         ICU::i18n
         hermesvm

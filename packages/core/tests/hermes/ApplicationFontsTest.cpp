@@ -110,6 +110,26 @@ TEST(ApplicationFontsTest, ABundleRegistersTheFontsBesideItAndAUrlRegistersNone)
 }
 
 /**
+ * #696: a bundle a Metro dev server serves reads the application's fonts from the assets directory `--assets` names,
+ * the one the linux build writes, so a dev loop draws the fonts the packaged app ships.
+ */
+TEST(ApplicationFontsTest, AUrlRegistersTheFontsOfTheAssetsDirectoryItIsGiven) {
+    const std::filesystem::path application = makeApplicationWithBrandFont();
+    ReactHost reactHost;
+
+    reactHost.setAssetsDirectory((application / "assets").string());
+    reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>("void 0;"),
+                         "http://127.0.0.1:8081/index.bundle?platform=linux");
+    const bool registeredFromUrl = registers("Noto Sans Hebrew");
+
+    reactHost.drainJavaScriptThread();
+    registerApplicationFonts(std::string());
+    std::filesystem::remove_all(application);
+
+    EXPECT_TRUE(registeredFromUrl);
+}
+
+/**
  * Expo's `expo-font` config plugin embeds an app's fonts and the app names each face by its PostScript name, the
  * way iOS resolves it: T3 Code asks for `DMSans-Medium`, a face of the family `DM Sans`. That name draws the
  * application's face without the #70 diagnostic, and a face of the same family that the directory does not ship still

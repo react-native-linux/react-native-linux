@@ -2,6 +2,7 @@
   "expo": {
     "name": "rnl-expo",
     "slug": "rnl-expo",
-    "scheme": "rnl-expo"
+    "scheme": "rnl-expo",
+    "plugins": [["expo-font", { "fonts": ["../core/fonts/NotoSans-Italic.ttf"] }]]
   }
 }
