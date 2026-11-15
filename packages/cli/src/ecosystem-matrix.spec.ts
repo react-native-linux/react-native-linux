@@ -69,6 +69,8 @@ describe("T3 Code's rows in the ledger (#635)", () => {
   const ledgerStatesByStatus = new Map([
     ["tracked", ["in progress", "blocked"]],
     ["declined", ["declined"]],
+    ["works", ["works"]],
+    ["shimmed", ["shimmed"]],
   ]);
   const researchNote = readFileSync(path.join(repositoryRoot, "docs", "research", "t3code-linux.md"), "utf8");
   const ledgerSection = researchNote.slice(researchNote.indexOf("## 4. The ledger"));
