@@ -88,14 +88,15 @@ TEST(ApplicationFontsTest, ABundleRegistersTheFontsBesideItAndAUrlRegistersNone)
 /**
  * Expo's `expo-font` config plugin embeds an app's fonts and the app names each face by its PostScript name, the
  * way iOS resolves it: T3 Code asks for `DMSans-Medium`, a face of the family `DM Sans`. That name draws the
- * application's face without the #70 diagnostic, and a name no face carries still reports.
+ * application's face without the #70 diagnostic, and a face of the same family that the directory does not ship still
+ * reports.
  */
-TEST(ApplicationFontsTest, AFaceResolvesByItsPostScriptNameAndAMisspellingStillReports) {
+TEST(ApplicationFontsTest, AFaceResolvesByItsPostScriptNameAndAFaceTheDirectoryLacksStillReports) {
     const std::filesystem::path application = makeApplicationWithBrandFont();
 
     registerApplicationFonts((application / "assets" / "fonts").string());
     measureIn("NotoSansHebrew-Regular");
-    measureIn("NotoSansHebrew-Regualr");
+    measureIn("NotoSansHebrew-Thin");
     const bool registeredByPostScriptName = registers("NotoSansHebrew-Regular");
 
     registerApplicationFonts(std::string());
@@ -103,7 +104,7 @@ TEST(ApplicationFontsTest, AFaceResolvesByItsPostScriptNameAndAMisspellingStillR
 
     EXPECT_TRUE(registeredByPostScriptName);
     EXPECT_FALSE(reportedUnregistered("NotoSansHebrew-Regular"));
-    EXPECT_TRUE(reportedUnregistered("NotoSansHebrew-Regualr"));
+    EXPECT_TRUE(reportedUnregistered("NotoSansHebrew-Thin"));
 }
 
 } // namespace

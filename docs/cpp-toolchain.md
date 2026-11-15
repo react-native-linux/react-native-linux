@@ -3576,7 +3576,10 @@ beside the JavaScript bundle, React Native's usual convention.
   embeds an app's fonts at build time, and the app then names each face that way: T3 Code asks for
   `DMSans-Medium`, a face of the family `DM Sans`. `registerApplicationFonts` registers every face of the
   directory into a `TypefaceFontProvider` under both names, and the #70 diagnostic accepts either.
-- `ApplicationFontsTest` proves all three, and that a misspelled name still reports.
+- `ApplicationFontsTest` proves all three, and that a face of a registered family the directory does not ship
+  still reports.
+- A PostScript name names one face, so a `fontWeight` given with it is ignored: `{fontFamily: "DMSans-Regular",
+  fontWeight: "700"}` draws Regular, where iOS picks the family's closest weight and Android synthesises bold.
 - Expo's runtime loading, `useFonts` and `Font.loadAsync`, goes through the `ExpoFontLoader` native module, which
   needs Expo-module support first.
 - Still open: the CLI copying a project's fonts into that directory when it packages the app, which is the CLI
