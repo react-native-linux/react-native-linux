@@ -1,12 +1,12 @@
 import { applyFastRefreshEdit, formatInjectorScript, gradeEditToVisible } from "./e2e/scenario.ts";
 import { execPath, stdout } from "node:process";
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { resolveCompositorChild, resolveWindowFlags } from "./e2e/grade.ts";
 import { spawn, spawnSync } from "node:child_process";
 import type { FastRefreshEdit } from "./e2e/fast-refresh.ts";
 import { buildEnvironment } from "./headless-compositor.ts";
 import { setTimeout as delay } from "node:timers/promises";
 import path from "node:path";
-import { resolveWindowFlags } from "./e2e/grade.ts";
 import { waitUntil } from "./e2e/discovery.ts";
 
 /*
@@ -48,6 +48,7 @@ interface LaunchedScenario {
   readonly frames: number;
   readonly injectProtocolError: boolean;
   readonly name: string;
+  readonly outputRefreshHz: number | null;
   readonly steadyAcrossReloads: boolean;
   readonly windowFlags: readonly string[] | undefined;
 }
@@ -74,18 +75,20 @@ const startCompositor = (launch: WindowLaunch): Compositor =>
       'exec "$0" "$@" 2>&1',
       launch.rig.compositorPath,
       "--",
-      windowBinaryPath,
-      "--fabric",
-      launch.bundle,
-      "--frames",
-      String(launch.scenario.frames),
-      "--screenshot",
-      launch.screenshotPath,
-      "--frame-log",
-      launch.frameLogPath,
-      ...(launch.scenario.automation === null ? [] : ["--automation"]),
-      ...resolveWindowFlags(launch.scenario.windowFlags),
-      ...(launch.scenario.injectProtocolError ? ["--inject-protocol-error"] : []),
+      ...resolveCompositorChild(launch.scenario.outputRefreshHz, [
+        windowBinaryPath,
+        "--fabric",
+        launch.bundle,
+        "--frames",
+        String(launch.scenario.frames),
+        "--screenshot",
+        launch.screenshotPath,
+        "--frame-log",
+        launch.frameLogPath,
+        ...(launch.scenario.automation === null ? [] : ["--automation"]),
+        ...resolveWindowFlags(launch.scenario.windowFlags),
+        ...(launch.scenario.injectProtocolError ? ["--inject-protocol-error"] : []),
+      ]),
     ],
     {
       env: buildEnvironment({

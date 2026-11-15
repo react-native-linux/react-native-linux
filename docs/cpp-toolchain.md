@@ -7839,6 +7839,36 @@ dropped frame still reads roughly double the interval, around 33 ms, and clears 
 way. 17.5 ms is the CI regression gate; the 8.33 ms number in the testing gospel is a **real hardware** budget and
 is measured on real hardware, not here.
 
+**At 120 Hz (#20).** A scenario may name `"outputRefreshHz"`, in whole hertz. cage takes no mode flag and wlroots'
+headless output starts at 60 Hz, but cage implements wlr-output-management, so `resolveCompositorChild` in
+`scripts/e2e/grade.ts` starts the window behind `wlr-randr`, which gives the output a 1280x720 custom mode at that
+rate before the window connects. It takes two calls, `--off` and then `--on --custom-mode`. The cage that noble
+ships (0.1.5+20240127, on wlroots 0.17) aborts with `wlr_scene_output_layout_add_output: Assertion
+'solo->scene_output != so' failed` when a configuration re-enables an output that is already in its layout, and
+disabling the output first takes it out of the layout. CI installs `wlr-randr` beside cage. When a requested
+scenario names a rate and `wlr-randr` is not on `PATH`, the driver exits 2, like any other missing rig piece.
+
+`animated-views-120hz.json` is the 120 Hz gate: `animated-views.js`, 32 views animating through the native driver,
+for 480 frames at `{"p95Ms": 12.5, "minFrames": 240}`. The headless output is not a vblank. Its frame timer
+re-arms for a whole number of milliseconds (`1000000 / refresh`, with the refresh in mHz: 8 ms at 120 Hz) **after** each output
+commit, so an output frame is 8 ms plus cage's pixman composite, and the presented intervals sit on that grid.
+Four local runs measured p50 8.02–8.04 ms and p95 8.44–9.54 ms. The client cannot do better than the grid, and it
+cannot land between two grid points: a frame it misses reads at least 16 ms. 12.5 ms is halfway between one 120 Hz
+interval and two. It fails a client that drops more than one frame in twenty, and it does not fail on cage's
+composite jitter. The same scenario at cage's 60 Hz reads p95 16.52 ms and fails it, which proves the gate
+measures the mode change. A p95 under 8.33 ms cannot be measured on this rig, because the grid itself is 8 ms
+plus a composite. That number still belongs to real hardware.
+
+The demo for the real-hardware number is the same bundle, run on a 120 Hz output under Hyprland:
+
+```sh
+build/dev/bin/rnl_window --fabric packages/core/test-bundles/animated-views.js --frames 1200 \
+  --screenshot build/demo-120hz.png --frame-log build/demo-120hz.jsonl
+```
+
+The last line of the log is the summary, and `refreshNs` on each record is the compositor's own refresh hint.
+Nobody has run that command on hardware and recorded the result yet.
+
 ### Frame journal (#345)
 
 `FrameTiming`'s p95 and #124's native-driver frame cost are both gates on the platform's own pacing. Neither is
@@ -8266,8 +8296,9 @@ Named here so they are not mistaken for oversights, all of them still #7:
   carry the same per-channel tolerance for the same reason, because oxlint forbids the root script importing the
   package one. Moving the shared half into a package both can depend on is the fix, and it is not worth a package
   for one function yet.
-- **The 8.33 ms budget.** The CI gate is 17.5 ms because the rig is lavapipe and pixman. Measuring the gospel's
-  real number needs real hardware and a place to record the result over time; neither exists yet.
+- **The 8.33 ms budget.** `animated-views-120hz.json` gates presenting every 120 Hz frame on the headless rig, but
+  that rig's output frames are 8 ms plus a composite, so the gospel's own number needs real hardware and a place
+  to record the result over time; neither exists yet.
 
 ## Unit tests and coverage
 

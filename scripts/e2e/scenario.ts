@@ -96,6 +96,11 @@ interface Scenario {
   /** Passes `--inject-protocol-error` (#331): proves a real dispatch failure is reported structured, not grepped. */
   readonly injectProtocolError: boolean;
   readonly name: string;
+  /**
+   * #20: the headless output's refresh rate in Hz, set before the window connects; `null` keeps cage's 60 Hz. See
+   * `resolveCompositorChild` in grade.ts.
+   */
+  readonly outputRefreshHz: number | null;
   /** The trace line that means the bundle has committed and input can start. */
   readonly ready: string;
   /** Trace substrings the run must never produce, checked regardless of `allowErrors`/`expectFailure`. */
@@ -233,6 +238,8 @@ const parseScenario = (value: unknown, sourceName: string): Scenario => {
     injectProtocolError: readOptionalBoolean(value, "injectProtocolError", sourceName),
     inputTrace: readOptionalBoolean(value, "inputTrace", sourceName),
     name: readString(value["name"], "name", sourceName),
+    outputRefreshHz:
+      "outputRefreshHz" in value ? readPositiveInteger(value["outputRefreshHz"], "outputRefreshHz", sourceName) : null,
     ready: readString(value["ready"], "ready", sourceName),
     reject: readOptionalStringArray(value, "reject", sourceName) ?? [],
     screenshot: readScreenshotComparison(value, sourceName),
