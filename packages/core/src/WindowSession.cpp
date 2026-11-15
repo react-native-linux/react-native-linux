@@ -2,6 +2,7 @@
 
 #include "AsyncStorage.h"
 #include "DimensionsSource.h"
+#include "ExpoFileSystem.h"
 #include "ExpoSQLite.h"
 #include "FrameProfiling.h"
 #include "I18n.h"
@@ -51,6 +52,7 @@ WindowSession::WindowSession(const std::string& bundlePath, WindowSize size, dou
     reactHost_.keyValueStore().setDatabasePath(asyncStorageDatabasePath);
     reactHost_.sqliteDatabases().setDirectory(
         (std::filesystem::path(asyncStorageDatabasePath).parent_path() / "SQLite").string());
+    reactHost_.fileSystem().setApplicationDirectory(std::filesystem::path(asyncStorageDatabasePath).parent_path());
     // After the store has its file and before the script, so the first layout already has the persisted direction.
     reactHost_.i18n().restore();
     applyLayoutDirectionChange();

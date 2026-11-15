@@ -134,7 +134,8 @@ its issue proved it.
    `packages/core/tests/hermes/ExpoSharedObjectTest.cpp` is the constructor-and-release probe, and the `FileSystem`
    module (`packages/core/src/ExpoFileSystemModule.cpp`) is its first consumer: upstream's `File`, `Directory` and
    `Paths`, unmodified, write, read, list, copy, move and delete in the XDG directories in the `expo-file-system` e2e.
-   Every state the module and the probe hold lives on the JavaScript thread, so nothing crosses threads.
+   Every instance's state stays on the JavaScript thread: an asynchronous method copies what it needs into native
+   values, does its file work on a worker, and settles back on the JavaScript thread.
 
    One thing an app supplies, not the module: a WHATWG `URL`. Upstream's `Paths.join` assigns `pathname` on a `URL`,
    which React Native's own `URL` silently ignores, so `new File(Paths.document, 'name')` names the document
@@ -148,9 +149,10 @@ A native module of ours is a C++ TurboModule registered under the Expo native-mo
 `ExpoHaptics`, `FileSystem`, `ExpoSQLite`, …). Only its factory line goes in `packages/core/src/TurboModuleRegistry.cpp`;
 from the second Expo module on, each module's class lives in its own `packages/core/src/Expo<Name>Module.cpp`, so
 parallel work on two modules does not collide in one file. Upstream reaches it through `createTurboModuleToExpoProxy`,
-so its constants come from `getConstants()` and its functions are its methods. A module whose asynchronous methods do
-their work off the JavaScript thread also gets that thread's owner there: the registry owns `FileSystem`'s
-`FileSystemWorker` and destroys it only after the JavaScript thread has quit, so a method can hold it by reference.
+so its constants come from `getConstants()` and its functions are its methods. A module that needs more than its
+instances, a worker thread or the application directory, gets an object the registry owns and `WindowSession`
+configures before the bundle runs: `ExpoSQLite`'s `SQLiteDatabases` and `FileSystem`'s `FileSystemHost`. The registry
+destroys it only after the JavaScript thread has quit, so a method can hold it by reference.
 
 An event is a method of the event's name that takes the listener, which is what the proxy's `addListener` calls, and
 it returns an `EventSubscription`, the shape of React Native's C++ event emitter. The proxy has no `removeListener`,

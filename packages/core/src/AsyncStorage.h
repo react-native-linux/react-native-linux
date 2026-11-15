@@ -36,9 +36,6 @@ public:
     /** Closes any open connection; the next call opens `databasePath`, creating its directory. */
     void setDatabasePath(std::string databasePath);
 
-    /** `:memory:` until `setDatabasePath`; `FileSystem` (#663) places its directories beside a file. */
-    [[nodiscard]] const std::string& databasePath() const noexcept { return databasePath_; }
-
     [[nodiscard]] std::vector<Entry> get(const std::string& database, const std::vector<std::string>& keys);
     void set(const std::string& database, const std::vector<Entry>& entries);
     void remove(const std::string& database, const std::vector<std::string>& keys);

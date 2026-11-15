@@ -294,13 +294,19 @@ TEST_F(ExpoFileSystemTest, AFailedOrSelfReplacementLeavesWhatWasThereIntact) {
     EXPECT_EQ(react_native_linux::readFileBytes(root_ / "folder" / "outer"), "kept");
 }
 
-TEST(FileSystemWorkerTest, TasksRunInOrderOffTheCallingThreadAndTheDestructorRunsThoseStillQueued) {
+TEST(FileSystemHostTest, TasksRunInOrderOffTheCallingThreadAndTheDestructorRunsThoseStillQueued) {
     std::vector<int> order;
     std::promise<std::thread::id> firstRan;
     std::future<std::thread::id> firstThread = firstRan.get_future();
-    { react_native_linux::FileSystemWorker idle; }
     {
-        react_native_linux::FileSystemWorker worker;
+        react_native_linux::FileSystemHost idle;
+
+        EXPECT_TRUE(idle.applicationDirectory().empty());
+        idle.setApplicationDirectory("/data/org.example.app");
+        EXPECT_EQ(idle.applicationDirectory(), fs::path("/data/org.example.app"));
+    }
+    {
+        react_native_linux::FileSystemHost worker;
 
         worker.post([&] {
             order.push_back(1);

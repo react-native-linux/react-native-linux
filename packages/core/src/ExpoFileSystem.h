@@ -22,8 +22,6 @@ class TurboModule;
 
 namespace react_native_linux {
 
-class KeyValueStore;
-
 /**
  * The file operations behind `expo-file-system`'s `File` and `Directory` (#663), on `std::filesystem`, with the
  * semantics upstream's Android module gives them: a missing parent, an existing destination without `overwrite`, or
@@ -31,7 +29,7 @@ class KeyValueStore;
  * message names the path; the module turns them into JavaScript errors.
  *
  * Threading contract: none of its own; the functions share no state. `FileSystem`'s synchronous methods call them on
- * the JavaScript thread and its asynchronous ones on `FileSystemWorker`'s thread.
+ * the JavaScript thread and its asynchronous ones on `FileSystemHost`'s thread.
  */
 enum class FileSystemEntryKind : std::uint8_t { File, Directory };
 
@@ -115,28 +113,36 @@ std::filesystem::path relocateEntry(const std::filesystem::path& source, FileSys
 [[nodiscard]] std::vector<FileSystemRecord> listDirectory(const std::filesystem::path& path);
 
 /**
- * The thread `FileSystem`'s asynchronous methods do their file work on, so a large read or write never stalls the
- * JavaScript thread.
+ * What the `FileSystem` module runs over: the application directory, which `WindowSession` sets to
+ * `$XDG_DATA_HOME/<app-id>`, beside AsyncStorage's file and `ExpoSQLite`'s `SQLite`, and the thread its asynchronous
+ * methods do their file work on, so a large read or write never stalls the JavaScript thread. A host that sets no
+ * directory, as a headless runtime does not, has no `Paths.document` or `Paths.cache`.
  *
- * Threading contract: `post` may be called from any thread and never waits on a task. Tasks run on the one thread
- * this object owns, which the first `post` starts, in the order they were posted, and must not throw. The destructor
- * runs every task already posted, so a queued write still lands, then joins the thread if one started.
+ * Threading contract: `setApplicationDirectory` runs before the bundle does, on the thread that then hands the
+ * runtime to the JavaScript thread, which is the only one that reads `applicationDirectory`. `post` may be called
+ * from any thread and never waits on a task. Tasks run on the one thread this object owns, which the first `post`
+ * starts, in the order they were posted, and must not throw. The destructor runs every task already posted, so a
+ * queued write still lands, then joins the thread if one started.
  */
-class FileSystemWorker final {
+class FileSystemHost final {
 public:
     using Task = std::function<void()>;
 
-    FileSystemWorker() = default;
-    FileSystemWorker(const FileSystemWorker&) = delete;
-    FileSystemWorker(FileSystemWorker&&) = delete;
-    FileSystemWorker& operator=(const FileSystemWorker&) = delete;
-    FileSystemWorker& operator=(FileSystemWorker&&) = delete;
-    ~FileSystemWorker() noexcept;
+    FileSystemHost() = default;
+    FileSystemHost(const FileSystemHost&) = delete;
+    FileSystemHost(FileSystemHost&&) = delete;
+    FileSystemHost& operator=(const FileSystemHost&) = delete;
+    FileSystemHost& operator=(FileSystemHost&&) = delete;
+    ~FileSystemHost() noexcept;
 
+    void setApplicationDirectory(std::filesystem::path applicationDirectory);
+    [[nodiscard]] const std::filesystem::path& applicationDirectory() const noexcept;
     void post(Task task);
 
 private:
     void runTasks();
+
+    std::filesystem::path applicationDirectory_;
 
     std::mutex mutex_;
     std::condition_variable wake_;
@@ -146,11 +152,10 @@ private:
 };
 
 /**
- * The `FileSystem` TurboModule over these operations, doing its asynchronous work on `worker`, which must outlive
- * every JavaScript call; `ExpoFileSystemModule.cpp` documents it.
+ * The `FileSystem` TurboModule over these operations and `host`, which must outlive every JavaScript call;
+ * `ExpoFileSystemModule.cpp` documents it.
  */
 std::shared_ptr<facebook::react::TurboModule>
-makeExpoFileSystemModule(std::shared_ptr<facebook::react::CallInvoker> jsInvoker,
-                         std::shared_ptr<KeyValueStore> keyValueStore, FileSystemWorker& worker);
+makeExpoFileSystemModule(std::shared_ptr<facebook::react::CallInvoker> jsInvoker, FileSystemHost& host);
 
 } // namespace react_native_linux

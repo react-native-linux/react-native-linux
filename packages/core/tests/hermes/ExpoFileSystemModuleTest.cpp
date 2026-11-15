@@ -1,4 +1,4 @@
-#include "AsyncStorage.h"
+#include "ExpoFileSystem.h"
 #include "ReactHost.h"
 
 #include <chrono>
@@ -200,8 +200,8 @@ const failure = async (work) => {
 
 /**
  * #663: the `FileSystem` module's classes, extended as upstream's `File` and `Directory` extend them, place
- * `Paths.document` beside AsyncStorage's file and `Paths.cache` under `$XDG_CACHE_HOME`, and read, write, copy, move,
- * list and delete there; an instance passed back to a native method is resolved by its native state.
+ * `Paths.document` in the host's application directory and `Paths.cache` under `$XDG_CACHE_HOME`, and read, write,
+ * copy, move, list and delete there; an instance passed back to a native method is resolved by its native state.
  */
 TEST(ExpoFileSystemModuleTest, UpstreamFileAndDirectorySubclassesWorkInTheApplicationDirectories) {
     const fs::path root = fs::temp_directory_path() / "rnl-expo-file-system-module";
@@ -211,8 +211,7 @@ TEST(ExpoFileSystemModuleTest, UpstreamFileAndDirectorySubclassesWorkInTheApplic
     {
         ReactHost reactHost;
 
-        reactHost.keyValueStore().setDatabasePath(
-            (root / "data" / "org.example.files" / "async-storage.sqlite").string());
+        reactHost.fileSystem().setApplicationDirectory(root / "data" / "org.example.files");
         reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>(kFileSystemProbe),
                              "ExpoFileSystemModuleTest.js");
         EXPECT_TRUE(reactHost.runUntilQuiescent(kQuiescenceBudget));
@@ -278,7 +277,7 @@ TEST(ExpoFileSystemModuleTest, JavaScriptRunsOnWhileAnAsynchronousWriteIsPending
     {
         ReactHost reactHost;
 
-        reactHost.keyValueStore().setDatabasePath((application / "async-storage.sqlite").string());
+        reactHost.fileSystem().setApplicationDirectory(application);
         reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>(kPendingWriteProbe),
                              "ExpoFileSystemPendingTest.js");
         EXPECT_TRUE(reactHost.runUntilQuiescent(kQuiescenceBudget));
@@ -301,7 +300,7 @@ TEST(ExpoFileSystemModuleTest, TeardownWaitsForPendingWorkAndRunsWhatIsQueued) {
     {
         ReactHost reactHost;
 
-        reactHost.keyValueStore().setDatabasePath((application / "async-storage.sqlite").string());
+        reactHost.fileSystem().setApplicationDirectory(application);
         reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>(kPendingWriteProbe),
                              "ExpoFileSystemTeardownTest.js");
         written = std::async(std::launch::async, [fifo = application / "Documents" / "fifo"] {
@@ -331,7 +330,7 @@ TEST(ExpoFileSystemModuleTest, AProcessWithNoHomeHasADocumentDirectoryButNoCache
     {
         ReactHost reactHost;
 
-        reactHost.keyValueStore().setDatabasePath((root / "org.example.homeless" / "async-storage.sqlite").string());
+        reactHost.fileSystem().setApplicationDirectory(root / "org.example.homeless");
         reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>(R"JAVASCRIPT(
 globalThis.expo = { SharedObject: class SharedObject {} };
 const constants = globalThis.nativeModuleProxy.FileSystem.getConstants();
@@ -345,7 +344,7 @@ globalThis.fileSystemTrace = JSON.stringify(Object.keys(constants));
     fs::remove_all(root);
 }
 
-/** A headless runtime's AsyncStorage has no file, so the module has the classes but no directories. */
+/** A host with no application directory, as a headless one has none, gets the classes but no directories. */
 TEST(ExpoFileSystemModuleTest, AHeadlessRuntimeHasTheClassesButNoDirectories) {
     ReactHost reactHost;
 

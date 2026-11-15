@@ -1,4 +1,3 @@
-#include "AsyncStorage.h"
 #include "ExpoFileSystem.h"
 #include "ExpoSharedObject.h"
 
@@ -103,7 +102,7 @@ using Method = std::function<Value(Runtime&, EntryState&, const Value*, size_t)>
 
 struct Context {
     std::shared_ptr<facebook::react::CallInvoker> jsInvoker;
-    FileSystemWorker& worker;
+    FileSystemHost& host;
 };
 
 /** The instance's state, which the caller holds for the whole call: a getter it runs may `release()` the instance. */
@@ -207,7 +206,7 @@ void addSyncAndAsync(SharedObjectMembers& members, const Context& context, const
             try {
                 const std::shared_ptr<EntryState> entry = entryOf(runtime, thisValue);
 
-                context.worker.post([promise, operation = prepare(runtime, entry, arguments, count)]() mutable {
+                context.host.post([promise, operation = prepare(runtime, entry, arguments, count)]() mutable {
                     try {
                         promise.resolve(operation());
                     } catch (const std::exception& error) {
@@ -350,9 +349,9 @@ SharedObjectInitializer initializer(FileSystemEntryKind kind) {
 /**
  * `FileSystem`, the native module upstream `expo-file-system`'s `File`, `Directory` and `Paths` reach through
  * `requireNativeModule` (#663, ADR-0004). Its constants are the classes `File` and `Directory` extend, built by
- * `makeSharedObjectClass`, and `documentDirectory` and `cacheDirectory`: `Documents` inside the application directory
- * that holds AsyncStorage's file, `$XDG_DATA_HOME/<app-id>`, and `$XDG_CACHE_HOME/<app-id>`, both created on first
- * use. A headless runtime, whose AsyncStorage is `:memory:`, has neither, and a process with no absolute cache home
+ * `makeSharedObjectClass`, and `documentDirectory` and `cacheDirectory`: `Documents` inside the host's application
+ * directory, `$XDG_DATA_HOME/<app-id>`, and `$XDG_CACHE_HOME/<app-id>`, both created on first use. A host with no
+ * application directory, as a headless runtime has none, offers neither, and a process with no absolute cache home
  * has no `cacheDirectory`.
  *
  * The surface is the part T3 Code calls: existence, size, create, delete, read and write as text, base64 and bytes,
@@ -361,16 +360,15 @@ SharedObjectInitializer initializer(FileSystemEntryKind kind) {
  *
  * Threading contract: every method runs on the JavaScript thread and reads its arguments there. A synchronous method
  * does its file work before it returns. An asynchronous one copies what it read into native values, posts the work
- * to `worker`, and returns a pending promise; the worker settles it through the call invoker, and a `move` updates
- * the instance's path only then, on the JavaScript thread, so no `EntryState` is touched off it. The methods hold
- * the worker by reference because `TurboModuleRegistry` owns it and destroys it only after the JavaScript thread has
- * quit, which runs the work still queued.
+ * to the host's worker, and returns a pending promise; the worker settles it through the call invoker, and a `move`
+ * updates the instance's path only then, on the JavaScript thread, so no `EntryState` is touched off it. The methods
+ * hold the host by reference because `TurboModuleRegistry` owns it and destroys it only after the JavaScript thread
+ * has quit, which runs the work still queued.
  */
 class LinuxFileSystemModule final : public facebook::react::TurboModule {
 public:
-    LinuxFileSystemModule(std::shared_ptr<facebook::react::CallInvoker> jsInvoker,
-                          std::shared_ptr<KeyValueStore> keyValueStore, FileSystemWorker& worker)
-        : TurboModule("FileSystem", std::move(jsInvoker)), keyValueStore_(std::move(keyValueStore)), worker_(worker) {
+    LinuxFileSystemModule(std::shared_ptr<facebook::react::CallInvoker> jsInvoker, FileSystemHost& host)
+        : TurboModule("FileSystem", std::move(jsInvoker)), host_(host) {
         methodMap_["getConstants"] = {0, [](Runtime& runtime, TurboModule& turboModule, const Value*, size_t) {
                                           return static_cast<LinuxFileSystemModule&>(turboModule).constants(runtime);
                                       }};
@@ -379,8 +377,8 @@ public:
 private:
     Value constants(Runtime& runtime) {
         facebook::jsi::Object constants(runtime);
-        const std::filesystem::path databasePath(keyValueStore_->databasePath());
-        const Context context{.jsInvoker = jsInvoker_, .worker = worker_};
+        const std::filesystem::path& applicationDirectory = host_.applicationDirectory();
+        const Context context{.jsInvoker = jsInvoker_, .host = host_};
 
         constants.setProperty(runtime, "FileSystemFile",
                               makeSharedObjectClass(runtime, initializer(FileSystemEntryKind::File),
@@ -390,10 +388,10 @@ private:
                                                     directoryMethods(context),
                                                     getters(FileSystemEntryKind::Directory)));
 
-        if (databasePath.is_absolute()) {
+        if (!applicationDirectory.empty()) {
             const char* home = std::getenv("HOME");
-            const FileSystemDirectories directories = fileSystemDirectories(
-                databasePath.parent_path(), std::getenv("XDG_CACHE_HOME"), home == nullptr ? "" : home);
+            const FileSystemDirectories directories =
+                fileSystemDirectories(applicationDirectory, std::getenv("XDG_CACHE_HOME"), home == nullptr ? "" : home);
 
             std::filesystem::create_directories(directories.document);
             constants.setProperty(runtime, "documentDirectory",
@@ -412,16 +410,14 @@ private:
         return constants;
     }
 
-    std::shared_ptr<KeyValueStore> keyValueStore_;
-    FileSystemWorker& worker_;
+    FileSystemHost& host_;
 };
 
 } // namespace
 
 std::shared_ptr<facebook::react::TurboModule>
-makeExpoFileSystemModule(std::shared_ptr<facebook::react::CallInvoker> jsInvoker,
-                         std::shared_ptr<KeyValueStore> keyValueStore, FileSystemWorker& worker) {
-    return std::make_shared<LinuxFileSystemModule>(std::move(jsInvoker), std::move(keyValueStore), worker);
+makeExpoFileSystemModule(std::shared_ptr<facebook::react::CallInvoker> jsInvoker, FileSystemHost& host) {
+    return std::make_shared<LinuxFileSystemModule>(std::move(jsInvoker), host);
 }
 
 } // namespace react_native_linux

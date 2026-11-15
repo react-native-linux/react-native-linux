@@ -335,7 +335,7 @@ std::vector<FileSystemRecord> listDirectory(const std::filesystem::path& path) {
     return records;
 }
 
-FileSystemWorker::~FileSystemWorker() noexcept {
+FileSystemHost::~FileSystemHost() noexcept {
     {
         const std::lock_guard<std::mutex> lock(mutex_);
         stopping_ = true;
@@ -348,7 +348,13 @@ FileSystemWorker::~FileSystemWorker() noexcept {
     }
 }
 
-void FileSystemWorker::post(Task task) {
+void FileSystemHost::setApplicationDirectory(std::filesystem::path applicationDirectory) {
+    applicationDirectory_ = std::move(applicationDirectory);
+}
+
+const std::filesystem::path& FileSystemHost::applicationDirectory() const noexcept { return applicationDirectory_; }
+
+void FileSystemHost::post(Task task) {
     {
         const std::lock_guard<std::mutex> lock(mutex_);
         tasks_.push_back(std::move(task));
@@ -361,7 +367,7 @@ void FileSystemWorker::post(Task task) {
     wake_.notify_one();
 }
 
-void FileSystemWorker::runTasks() {
+void FileSystemHost::runTasks() {
     std::unique_lock<std::mutex> lock(mutex_);
 
     while (true) {
