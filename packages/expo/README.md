@@ -1,10 +1,12 @@
 # @react-native-linux/expo
 
-Expo on Linux, as [ADR-0004](../../docs/adr/0004-expo-javascript-runs-unmodified-over-the-native-module-seam.md)
-decides it: each Expo package's own JavaScript runs unmodified, over `expo-modules-core`'s JavaScript `globalThis.expo`
-(installed by the resolver rule in `packages/cli/src/package-variants.ts`) and a C++ TurboModule of this platform
-registered under the module's Expo native-module name. A subpath here, resolved instead of the upstream file, is the
-escape hatch for a module whose JavaScript has to differ; `fetch` is the only one.
+Expo on Linux, as [ADR-0004](../../docs/adr/0004-expo-javascript-runs-unmodified-over-the-native-module-seam.md) decides
+it: each Expo package's own JavaScript runs unmodified, over `expo-modules-core`'s JavaScript `globalThis.expo` and a
+C++ TurboModule of this platform registered under the module's Expo native-module name. The resolver rule in
+`packages/cli/src/package-overlays.ts` swaps in this platform's polyfill, which installs upstream's and answers
+`getViewConfig` with `null`, upstream's answer for a view that is not linked: `requireNativeView` mounts an empty view
+after upstream's warning, until the first registered Expo view lands (#165). A subpath here, resolved instead of the
+upstream file, is the escape hatch for a module whose JavaScript has to differ; `fetch` is the only one.
 
 | Module | Written against | Seam or alias | Native module | Answers |
 | --- | --- | --- | --- | --- |

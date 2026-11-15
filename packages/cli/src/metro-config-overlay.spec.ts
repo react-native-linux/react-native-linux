@@ -5,6 +5,7 @@ import {
   resolveLinuxOverlayForResolvedFile,
 } from "./metro-config.ts";
 import { describe, expect, it } from "vitest";
+import { linuxPackageOverlayIndex } from "./package-overlays.ts";
 import path from "node:path";
 
 const upstreamFile = (subpath: string): string =>
@@ -106,10 +107,13 @@ describe("createLinuxResolveRequest", () => {
     expect(requested).toStrictEqual(["./fetch", "@react-native-linux/expo/fetch"]);
   });
 
-  it("substitutes a package variant for the file that produced", () => {
+  it("substitutes a package overlay for the file that produced", () => {
     const { result } = resolveWith({ filePath: expoPolyfill("index.js"), type: "sourceFile" }, "./polyfill");
 
-    expect(result).toStrictEqual({ filePath: expoPolyfill("index.web.js"), type: "sourceFile" });
+    expect(result).toStrictEqual({
+      filePath: linuxPackageOverlayIndex["expo-modules-core/build/polyfill/index"],
+      type: "sourceFile",
+    });
   });
 
   it.each([
@@ -119,6 +123,30 @@ describe("createLinuxResolveRequest", () => {
     [null],
   ])("returns %j unchanged when there is nothing to substitute", (resolution) => {
     expect(resolveWith(resolution, "./View").result).toBe(resolution);
+  });
+});
+
+describe("createLinuxResolveRequest for a package overlay's own imports", () => {
+  it("resolves a package overlay's own imports from the file it replaced", () => {
+    const overlayPath = linuxPackageOverlayIndex["expo-modules-core/build/polyfill/index"] ?? "";
+    const origins: unknown[] = [];
+    const context = {
+      resolveRequest: (requestContext: { readonly originModulePath?: string }, name: string): unknown => {
+        origins.push(requestContext.originModulePath);
+
+        return { filePath: name === "./polyfill" ? expoPolyfill("index.js") : name, type: "sourceFile" };
+      },
+    };
+    const resolveRequest = createLinuxResolveRequest(() => false);
+
+    resolveRequest({ ...context, originModulePath: expoPolyfill("../index.js") }, "./polyfill", "linux");
+    resolveRequest(
+      { ...context, originModulePath: overlayPath },
+      "expo-modules-core/src/polyfill/dangerous-internal",
+      "linux",
+    );
+
+    expect(origins).toStrictEqual([expoPolyfill("../index.js"), expoPolyfill("index.js")]);
   });
 });
 

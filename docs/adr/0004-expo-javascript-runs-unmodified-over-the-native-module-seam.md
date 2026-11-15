@@ -64,13 +64,19 @@ The reasons, in order of weight:
    option needed it; (c) adds nothing on top.
 4. It reaches modules no shim can: the application's own, through `requireNativeModule` and
    `requireOptionalNativeModule`, which answer exactly as upstream answers for a module that is or is not there.
-   `requireNativeView` reaches them too once the platform answers `getViewConfig` (#662).
+   `requireNativeView` reaches them too, through the `getViewConfig` the platform answers (#662).
 
 ### The polyfill
 
-One resolver rule installs `globalThis.expo`. `linuxPackageVariantIndex` in `packages/cli/src/package-variants.ts`
-resolves `expo-modules-core/build/polyfill/index` to its `index.web` variant in a `linux` bundle, the same mechanism
-`linuxUpstreamVariantIndex` uses for `react-native`'s own platform pairs. The polyfill then installs when
+One resolver rule installs `globalThis.expo`. `linuxPackageOverlayIndex` in `packages/cli/src/package-overlays.ts`
+resolves `expo-modules-core/build/polyfill/index` in a `linux` bundle to
+`packages/core/src-linux/expo-modules-core/polyfill/index.linux.ts`, which calls upstream's own
+`installExpoGlobalPolyfill` (the package's public `src/polyfill/dangerous-internal` export, the call its `index.web`
+variant makes) and then patches the global as below. It is the mechanism `linuxOverlayIndex` uses for
+`react-native`'s own overridden files, and the overlay sits beside those in `@react-native-linux/core`, which declares
+`expo-modules-core` an optional peer. `createLinuxResolveRequest` resolves the overlay's own imports from the file it
+replaced, so `expo-modules-core` comes from the app's install as upstream's polyfill would, not from core's, where a
+pnpm install holds no copy of it. The polyfill then installs when
 `expo-modules-core`'s index first evaluates, as on web, before any of its modules reads the global; no entry point
 changes. Without the rule, the `expo-constants` e2e fails with upstream's own
 `TypeError: Cannot read property 'EventEmitter' of undefined`.
@@ -80,7 +86,7 @@ answers are web answers. `installExpoGlobalPolyfill` returns early when `globalT
 platform replaces one by patching the global after the polyfill installs, never by installing its own first. Each is
 patched when its first consumer lands:
 
-- `getViewConfig` throws `Method not implemented.`, which breaks every native view (#662, below).
+- `getViewConfig` throws `Method not implemented.`, which broke every native view. Patched (#662, below).
 - `uuidv4` calls `crypto.randomUUID`, which this runtime lacks, and `cacheDir` and `documentsDir` are `undefined`
   (#664).
 - `reloadAppAsync` reloads through `window.location`, which this platform has no `window` for, and
@@ -88,16 +94,26 @@ patched when its first consumer lands:
 
 ### Known gaps
 
-The seam is not yet proved for two shapes the flagship uses. Each is tracked, and neither is claimed to work until
-its issue lands.
+The seam was not proved for two shapes the flagship uses. Each is tracked, and neither is claimed to work until its
+issue lands.
 
-1. **Native views: the first break.** In bridgeless mode `requireNativeView` (`requireNativeViewManager`) calls
-   `NativeComponentRegistry.get`, whose view-config provider calls `globalThis.expo.getViewConfig`, and the web
-   polyfill throws. Every `requireNativeView` therefore crashes on first render: T3 Code's `FrostedCutout`,
-   `SegmentedControl`, `NativePresentation` and `T3ComposerEditor`, and upstream's `expo-image` and `expo-blur`. The
-   platform must answer `getViewConfig` by patching the global as above, for the host names `requireNativeView`
-   asks for, `ViewManagerAdapter_<Module>_<View>`
-   ([#662](https://github.com/react-native-linux/react-native-linux/issues/662)).
+1. **Native views: the first break. Resolved by
+   [#662](https://github.com/react-native-linux/react-native-linux/issues/662).** In bridgeless mode
+   `requireNativeView` (`requireNativeViewManager`) calls `NativeComponentRegistry.get`, whose view-config provider
+   calls `globalThis.expo.getViewConfig`, and the web polyfill threw, so every `requireNativeView` crashed on first
+   render: T3 Code's `FrostedCutout`, `SegmentedControl`, `NativePresentation` and `T3ComposerEditor`, and upstream's
+   `expo-image` and `expo-blur`. The patched `getViewConfig` answers `null`, which is what upstream's native
+   `getViewConfig` answers for a view that is not linked. Upstream's adapter warns
+   `Unable to get the view config for <View> from module <Module>`, and the view mounts as an empty view that lays out
+   and paints like a View with its children, after the `[component]` line `FabricHost` prints for any name with no
+   component. Every Expo view takes this path today, since none is registered.
+   - **Registered**: the registered answer, with real `validAttributes` and `directEventTypes` from a source that
+     knows the props, lands with #165's first registered Expo view. An empty config would compose only the base View
+     attributes and silently drop every prop of the view's own (`intensity`, `tint`, `source`), which this ADR exists
+     to prevent.
+   - Proved by `packages/core/src-linux/expo-modules-core/polyfill/index.linux.spec.ts` and the `expo-native-view`
+     e2e, which renders T3 Code's `FrostedCutout` call through upstream's unmodified `requireNativeViewManager` and
+     compares the frame, the child painted inside the fallback view, against a checked-in golden.
 2. **Constructor-backed modules.** `expo-file-system`'s `File.ts` declares
    `class File extends ExpoFileSystem.FileSystemFile` and passes its instances back into native code; `expo-audio`'s
    `AudioPlayer` and `expo-video`'s players follow the same pattern. `createTurboModuleToExpoProxy` copies only a
@@ -143,7 +159,7 @@ way it went and why.
 The first escape hatch is a stopgap rather than a module whose JavaScript must differ: `expo`'s `fetch`, whose native
 module waits on #663, and without which every application that imports `expo` loses the global `fetch` at its first
 call. Upstream reaches the file relatively (`Expo.fx`'s runtime calls `require('./fetch')`), which no package alias
-sees, so `linuxPackageSubstituteIndex` in `packages/cli/src/package-variants.ts` resolves the resolved file
+sees, so `linuxPackageSubstituteIndex` in `packages/cli/src/package-overlays.ts` resolves the resolved file
 `expo/build/winter/fetch/index` again as `@react-native-linux/expo/fetch`, React Native's own `fetch`, once the
 application installs that package. #673 removes it. Upstream's own switch, `EXPO_PUBLIC_USE_RN_FETCH`, is not used:
 it is inlined from the Metro process's environment, so one dev server bundling for Linux, iOS and Android would
@@ -164,8 +180,8 @@ Silently doing nothing where the real module acts is the failure this boundary e
    call rejects with upstream's `ERR_UNAVAILABLE` code. A whole module the desktop lacks is simply not registered,
    and upstream's optional lookup reports it.
 4. **Native views** (`expo-image`, `expo-blur`, `expo-linear-gradient`, `expo-glass-effect`): one of our own Fabric
-   components under the host name `requireNativeView` asks for, `ViewManagerAdapter_<Module>_<View>`, once
-   `getViewConfig` answers (#662). A view with no renderer counterpart is declined.
+   components registered under the host name `requireNativeView` asks for, `ViewManagerAdapter_<Module>_<View>`,
+   which `getViewConfig` then answers (#662). A view with no renderer counterpart is declined.
 
 ### The first module: `expo-constants`
 
@@ -220,8 +236,10 @@ Any one of these reopens the question in a new ADR:
   of (a) that `common/cpp` already holds. `expo-file-system`, `expo-audio` and `expo-video` are its known first
   hits, unless the #663 probe proves the candidate approach.
 - **The polyfill moves or changes shape.** The resolver rule keys on deep paths: `build/index.js` importing
-  `./polyfill`, and `build/polyfill/index.js` with its `index.web.js` variant. An SDK that moves or reshapes them
-  breaks the rule, and the `expo-constants` e2e fails first.
+  `./polyfill`, `build/polyfill/index.js`, and the public `src/polyfill/dangerous-internal` export with its
+  `installExpoGlobalPolyfill`. An SDK that moves or reshapes them breaks the rule, and the `expo-constants` e2e fails
+  first; one that changes how `requireNativeView` builds its host name or calls `getViewConfig` fails the
+  `expo-native-view` e2e.
 - **Two modules that need the escape hatch for the same reason**, which would mean the seam lacks something general.
 - **Expo ships a C++ module DSL**, so that (a) stops meaning that we write one.
 - **A third-party Expo module whose maintainers will take a Linux implementation upstream.** That needs a native host

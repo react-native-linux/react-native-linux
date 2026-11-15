@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  linuxPackageOverlayIndex,
+  resolveLinuxPackageOverlayForResolvedFile,
   resolveLinuxPackageSubstituteForResolvedFile,
-  resolveLinuxPackageVariantForResolvedFile,
-} from "./package-variants.ts";
+} from "./package-overlays.ts";
+import { existsSync } from "node:fs";
 import path from "node:path";
 
 const expoPolyfill = (fileName: string): string =>
@@ -32,11 +34,15 @@ const expoFetch = (fileName: string): string =>
     fileName,
   );
 
-describe("resolveLinuxPackageVariantForResolvedFile", () => {
-  it("takes the web variant of expo-modules-core's polyfill, which installs globalThis.expo", () => {
-    expect(resolveLinuxPackageVariantForResolvedFile(expoPolyfill("index.js"), "linux")).toBe(
-      expoPolyfill("index.web.js"),
+describe("resolveLinuxPackageOverlayForResolvedFile", () => {
+  it("takes this platform's polyfill for expo-modules-core's, which installs globalThis.expo", () => {
+    expect(resolveLinuxPackageOverlayForResolvedFile(expoPolyfill("index.js"), "linux")).toBe(
+      linuxPackageOverlayIndex["expo-modules-core/build/polyfill/index"],
     );
+  });
+
+  it.each(Object.entries(linuxPackageOverlayIndex))("names an overlay for %s that exists", (_subpath, overlayPath) => {
+    expect(existsSync(overlayPath)).toBe(true);
   });
 
   it.each([
@@ -45,7 +51,7 @@ describe("resolveLinuxPackageVariantForResolvedFile", () => {
     [expoPolyfill("CoreModule.js"), "linux"],
     ["/app/src/polyfill/index.js", "linux"],
   ])("leaves %s alone on %s", (filePath, platform) => {
-    expect(resolveLinuxPackageVariantForResolvedFile(filePath, platform)).toBeNull();
+    expect(resolveLinuxPackageOverlayForResolvedFile(filePath, platform)).toBeNull();
   });
 });
 
