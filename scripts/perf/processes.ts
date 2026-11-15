@@ -1,7 +1,8 @@
 /*
  * CPU time and memory of an Electron app's process tree, from /proc. The tree splits three ways: the GPU process
- * (under lavapipe it rasterises on the CPU, so its CPU time is the GPU time), the T3 backend (the Electron binary
- * started in Node mode, which has no `--type=` switch, plus everything under it), and the rest of the client.
+ * (in a software rung it rasterises on the CPU), the T3 backend (the process whose arguments hold the backend's
+ * entry script, plus everything under it), and the rest of the client, which includes helpers the main process
+ * starts in Node mode for other jobs.
  */
 
 /** Fields after the `)` that closes `comm` in /proc/<pid>/stat: state is 0, ppid 1, utime 11, stime 12. */
@@ -77,19 +78,35 @@ const readProcessSamples = (
     .filter((entry) => PROCESS_DIRECTORY_PATTERN.test(entry))
     .flatMap((entry) => readProcessSample(entry, readText));
 
-const resolveRole = (sample: ProcessSample, rootPid: number, parentRole: ProcessRole | null): ProcessRole => {
-  if (parentRole === "backend" || (sample.pid !== rootPid && !sample.commandLine.includes("--type="))) {
+/** A tree by its root, and where the backend's entry script is, or null for a tree with no backend. */
+interface ProcessTree {
+  readonly backendEntryPath: string | null;
+  readonly rootPid: number;
+}
+
+const resolveRole = (
+  sample: ProcessSample,
+  parentRole: ProcessRole | null,
+  backendEntryPath: string | null,
+): ProcessRole => {
+  if (
+    parentRole === "backend" ||
+    (backendEntryPath !== null && sample.commandLine.split(" ").includes(backendEntryPath))
+  ) {
     return "backend";
   }
 
   return sample.commandLine.includes("--type=gpu-process") ? "gpu" : "client";
 };
 
-/** Every process in `rootPid`'s tree with its role; processes outside the tree are left out. */
-const classifyProcessTree = (samples: readonly ProcessSample[], rootPid: number): ReadonlyMap<number, ProcessRole> => {
+/** Every process in the tree with its role; processes outside the tree are left out. */
+const classifyProcessTree = (
+  samples: readonly ProcessSample[],
+  { backendEntryPath, rootPid }: ProcessTree,
+): ReadonlyMap<number, ProcessRole> => {
   const roles = new Map<number, ProcessRole>();
   const visit = (sample: ProcessSample, parentRole: ProcessRole | null): void => {
-    const role = resolveRole(sample, rootPid, parentRole);
+    const role = resolveRole(sample, parentRole, backendEntryPath);
 
     roles.set(sample.pid, role);
     for (const child of samples.filter((candidate) => candidate.parentPid === sample.pid)) {
@@ -111,9 +128,9 @@ const classifyProcessTree = (samples: readonly ProcessSample[], rootPid: number)
 const summarizeTreeUsage = (
   before: readonly ProcessSample[],
   after: readonly ProcessSample[],
-  rootPid: number,
+  tree: ProcessTree,
 ): TreeUsage => {
-  const roles = classifyProcessTree(after, rootPid);
+  const roles = classifyProcessTree(after, tree);
   const ticksBefore = new Map(before.map((sample) => [sample.pid, sample.cpuTicks]));
   const usage = {
     backend: { cpuTicks: NO_TICKS, pssKilobytes: NO_KILOBYTES, rssKilobytes: NO_KILOBYTES },

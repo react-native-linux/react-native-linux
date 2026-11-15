@@ -2,9 +2,11 @@ import { classifyProcessTree, readProcessSamples, summarizeTreeUsage } from "./p
 import { describe, expect, it } from "vitest";
 
 const ELECTRON = "/opt/t3/electron";
+const BACKEND_ENTRY = "/opt/t3/apps/server/dist/bin.mjs";
 const ROOT_PID = 27;
 const NOT_RUNNING_PID = 9999;
 const DEFAULT_CPU_TICKS = 10;
+const APP_TREE = { backendEntryPath: BACKEND_ENTRY, rootPid: ROOT_PID };
 const ONE_SAMPLE = 1;
 const EMPTY = 0;
 
@@ -59,14 +61,19 @@ const sample = ({
   rssKilobytes: 200,
 });
 
-/** The tree the Electron build runs as: main, zygote, GPU, renderer, the backend in Node mode, and its agent. */
+/**
+ * The tree the Electron build runs as: main, zygote, GPU, renderer, the backend in Node mode and its agent, and a
+ * helper the main process also starts in Node mode, which is part of the client, not the backend.
+ */
 const tree = [
   sample({ commandLine: `${ELECTRON} /opt/t3/apps/desktop --no-sandbox`, parentPid: 1, pid: ROOT_PID }),
   sample({ commandLine: `${ELECTRON} --type=zygote --no-zygote-sandbox`, parentPid: ROOT_PID, pid: 29 }),
   sample({ commandLine: `${ELECTRON} --type=gpu-process --ozone-platform=wayland`, parentPid: 29, pid: 61 }),
   sample({ commandLine: `${ELECTRON} --type=renderer --enable-crash-reporter`, parentPid: 29, pid: 93 }),
-  sample({ commandLine: `${ELECTRON} /opt/t3/apps/server/dist/bin.mjs`, parentPid: ROOT_PID, pid: 138 }),
+  sample({ commandLine: `${ELECTRON} ${BACKEND_ENTRY} --bootstrap-fd 3 `, parentPid: ROOT_PID, pid: 138 }),
   sample({ commandLine: "node dev-replay-agent.ts --type=renderer", parentPid: 138, pid: 170 }),
+  sample({ commandLine: `${ELECTRON} /opt/t3/apps/desktop/shortcut-helper.js `, parentPid: ROOT_PID, pid: 201 }),
+  sample({ commandLine: "git status --porcelain", parentPid: 201, pid: 202 }),
   sample({ commandLine: "bash", parentPid: 1, pid: 500 }),
 ];
 
@@ -106,10 +113,12 @@ describe("readProcessSamples", () => {
 });
 
 describe("classifyProcessTree", () => {
-  it("splits the tree into client, GPU process and backend, the backend's children included", () => {
-    expect(Object.fromEntries(classifyProcessTree(tree, ROOT_PID))).toEqual({
+  it("splits the tree into client, GPU process and backend, only the backend's own children inheriting it", () => {
+    expect(Object.fromEntries(classifyProcessTree(tree, APP_TREE))).toEqual({
       138: "backend",
       170: "backend",
+      201: "client",
+      202: "client",
       27: "client",
       29: "client",
       61: "gpu",
@@ -117,8 +126,14 @@ describe("classifyProcessTree", () => {
     });
   });
 
+  it("finds no backend in a tree that has none, even where an argument is empty", () => {
+    expect([...classifyProcessTree(tree, { backendEntryPath: null, rootPid: ROOT_PID }).values()]).not.toContain(
+      "backend",
+    );
+  });
+
   it("is empty when the root is not running", () => {
-    expect(classifyProcessTree(tree, NOT_RUNNING_PID).size).toBe(EMPTY);
+    expect(classifyProcessTree(tree, { ...APP_TREE, rootPid: NOT_RUNNING_PID }).size).toBe(EMPTY);
   });
 });
 
@@ -129,9 +144,9 @@ describe("summarizeTreeUsage", () => {
       sample({ commandLine: "", cpuTicks: 7, parentPid: 29, pid: 61 }),
     ];
 
-    expect(summarizeTreeUsage(before, tree, ROOT_PID)).toEqual({
+    expect(summarizeTreeUsage(before, tree, APP_TREE)).toEqual({
       backend: { cpuTicks: 20, pssKilobytes: 200, rssKilobytes: 400 },
-      client: { cpuTicks: 26, pssKilobytes: 300, rssKilobytes: 600 },
+      client: { cpuTicks: 46, pssKilobytes: 500, rssKilobytes: 1000 },
       gpu: { cpuTicks: 3, pssKilobytes: 100, rssKilobytes: 200 },
     });
   });

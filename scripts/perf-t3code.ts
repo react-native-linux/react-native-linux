@@ -1,9 +1,12 @@
-import { env, execPath } from "node:process";
+import { buildWheelSteps, checkScrollTravel, formatScrollWorkload } from "./perf/scroll.ts";
+import { env, execPath, hrtime } from "node:process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { isRecord, pollUntil } from "./perf-devtools.ts";
 import { setTimeout as delay } from "node:timers/promises";
 import { execFile } from "node:child_process";
+import { injectorBinaryPath } from "./e2e-processes.ts";
+import { isRecord } from "./e2e/fields.ts";
 import path from "node:path";
+import { pollUntil } from "./perf-devtools.ts";
 import { promisify } from "node:util";
 
 /*
@@ -15,9 +18,8 @@ const TURN_TIMEOUT_MS = 120_000;
 const SETTLE_MS = 2000;
 /** Replayed before the measured turn so the feed is long enough to scroll. */
 const WARM_TURN_MESSAGES = ["Warm turn 1", "Warm turn 2", "Warm turn 3"];
-const SCROLL_SPEED_PIXELS_PER_SECOND = 1500;
-const MINIMUM_SCROLL_PIXELS = 1;
 const READY_ATTEMPT_MS = 1000;
+const NANOSECONDS_PER_MILLISECOND = 1_000_000;
 
 /** The fixture T3 Code's own desktop launch check opens: one project, two short threads, an older schema. */
 const FIXTURE_PATH = "scripts/fixtures/desktop-launch/statev2.sqlite";
@@ -27,6 +29,8 @@ const REPLAY_PROVIDER = "devReplay";
 /** Thinking, a plan, tool calls and markdown, streamed in chunks; its one approval needs none in full-access mode. */
 const REPLAY_SCENARIO = "showcase";
 const THREAD_ITEM_SELECTOR = "li[data-thread-item]";
+/** The thread timeline's scroll container, LegendList's element in `MessagesTimeline`. */
+const FEED_SELECTOR = ".messages-timeline-scroll";
 const APP_URL_PREFIX = "t3code:";
 
 const runFile = promisify(execFile);
@@ -45,8 +49,11 @@ interface T3Code {
   readonly serverEntryPath: string;
 }
 
+type Measure = <Value>(name: string, body: () => Promise<Value>) => Promise<Value>;
+
 interface Workload {
-  readonly measure: (name: string, body: () => Promise<unknown>) => Promise<void>;
+  readonly display: { readonly runtimeDirectory: string; readonly socketName: string };
+  readonly measure: Measure;
   readonly page: Page;
   readonly t3Home: string;
   readonly t3code: T3Code;
@@ -124,32 +131,45 @@ const runThreadCommand = async (workload: Workload, commandArguments: readonly s
 };
 
 /**
- * Resolves once the sidebar lists the fixture's threads, the first usable state. A MutationObserver reports the
- * list within one DevTools round trip of React committing it; the window reloads once on the way, which destroys
- * the context mid-evaluate, so each attempt waits a second at most and the next one reads the new document.
+ * When the sidebar first listed the fixture's threads, on `CLOCK_MONOTONIC`: the first usable frame's anchor. In
+ * the page a MutationObserver sees React commit the list, and two animation frames later the frame that holds it
+ * has been produced; the check then replies with the time since the commit, which places the commit on this
+ * process's clock to within the reply's latency. The window reloads once on the way, which destroys the context
+ * mid-evaluate, so each check waits a second at most and the next one reads the new document.
  */
-const waitForThreadList = async (page: Page, timeoutMilliseconds: number): Promise<void> => {
-  const isListed = async (): Promise<true | null> => {
+const waitForThreadList = async (page: Page, timeoutMilliseconds: number): Promise<number> => {
+  const check = async (): Promise<number | null> => {
     try {
-      const value = await page.evaluate(
+      const millisecondsSinceListed = await page.evaluate(
         `new Promise((resolve) => {
           const isListed = () => document.querySelector(${JSON.stringify(THREAD_ITEM_SELECTOR)}) !== null;
-          const observer = new MutationObserver(() => { if (isListed()) { observer.disconnect(); resolve(true); } });
+          let listedAt = null;
+          const resolveAfterFrame = () => {
+            listedAt = performance.now();
+            observer.disconnect();
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve(performance.now() - listedAt)));
+          };
+          const observer = new MutationObserver(() => { if (listedAt === null && isListed()) resolveAfterFrame(); });
           observer.observe(document, { childList: true, subtree: true });
-          setTimeout(() => { observer.disconnect(); resolve(isListed()); }, ${String(READY_ATTEMPT_MS)});
-          if (isListed()) { observer.disconnect(); resolve(true); }
+          setTimeout(() => { if (listedAt === null) { observer.disconnect(); resolve(null); } }, ${String(READY_ATTEMPT_MS)});
+          if (isListed()) resolveAfterFrame();
         })`,
       );
 
-      return value === true ? true : null;
+      return typeof millisecondsSinceListed === "number"
+        ? Number(hrtime.bigint()) - millisecondsSinceListed * NANOSECONDS_PER_MILLISECOND
+        : null;
     } catch {
       return null;
     }
   };
+  const anchorNanoseconds = await pollUntil(check, timeoutMilliseconds);
 
-  if ((await pollUntil(isListed, timeoutMilliseconds)) === null) {
+  if (anchorNanoseconds === null) {
     throw new Error("the sidebar never listed the fixture's threads");
   }
+
+  return anchorNanoseconds;
 };
 
 /** The thread's route is `#/<environment>/<thread>`; the backend writes its environment id into its state directory. */
@@ -159,35 +179,72 @@ const openThread = async (workload: Workload, threadId: string): Promise<void> =
   await workload.page.evaluate(`location.hash = ${JSON.stringify(`#/${environmentId}/${threadId}`)}`);
 };
 
-/**
- * `Input.synthesizeScrollGesture` parameters for the feed: the scrollable element with the most content past the
- * fold, scrolled from the bottom, where a finished turn leaves it, all the way to the top.
- */
-const findFeedScrollGesture = async (page: Page): Promise<Record<string, unknown>> => {
-  const gesture = await page.evaluate(`(() => {
-      const scrollable = (element) => element.scrollHeight - element.clientHeight;
-      const feed = [...document.querySelectorAll("*")]
-        .filter((element) => /auto|scroll/.test(getComputedStyle(element).overflowY))
-        .sort((left, right) => scrollable(right) - scrollable(left))[0];
+/** The feed at its bottom, where a finished turn leaves it, and the output point at its centre. */
+const prepareFeed = async (page: Page): Promise<{ bottom: number; xPixels: number; yPixels: number }> => {
+  const feedExpression = `document.querySelector(${JSON.stringify(FEED_SELECTOR)})`;
+
+  await page.evaluate(`(() => { const feed = ${feedExpression}; feed.scrollTop = feed.scrollHeight; })()`);
+  await delay(SETTLE_MS);
+
+  const feed = await page.evaluate(`(() => {
+      const feed = ${feedExpression};
       const box = feed.getBoundingClientRect();
-      return { x: box.x + box.width / 2, y: box.y + box.height / 2, yDistance: scrollable(feed) };
+      const top = outerHeight - innerHeight;
+      return {
+        bottom: feed.scrollHeight - feed.clientHeight,
+        xPixels: box.x + box.width / 2,
+        yPixels: top + box.y + box.height / 2,
+      };
     })()`);
 
-  if (!isRecord(gesture) || Number(gesture["yDistance"]) < MINIMUM_SCROLL_PIXELS) {
-    throw new Error("the thread feed has nothing to scroll");
+  if (!isRecord(feed)) {
+    throw new Error(`the thread has no ${FEED_SELECTOR} to scroll`);
   }
 
-  return { ...gesture, gestureSourceType: "mouse", speed: SCROLL_SPEED_PIXELS_PER_SECOND };
+  return { bottom: Number(feed["bottom"]), xPixels: Number(feed["xPixels"]), yPixels: Number(feed["yPixels"]) };
 };
 
-/** Up the whole feed and back down, as wheel events Chromium paces itself. */
-const scrollFeed = async (page: Page, gesture: Record<string, unknown>): Promise<void> => {
-  await page.send("Input.synthesizeScrollGesture", gesture);
-  await page.send("Input.synthesizeScrollGesture", { ...gesture, yDistance: -Number(gesture["yDistance"]) });
+const readScrollTop = async (page: Page): Promise<number> =>
+  Number(await page.evaluate(`document.querySelector(${JSON.stringify(FEED_SELECTOR)}).scrollTop`));
+
+/**
+ * Runs rnl_inject asynchronously: a synchronous child would stop this process draining Electron's WAYLAND_DEBUG
+ * pipe, and Electron blocks on the full pipe for as long as the child runs.
+ */
+const injectWheel = async (workload: Workload, steps: readonly string[]): Promise<number> => {
+  const scriptPath = path.join(workload.t3Home, "..", "wheel.txt");
+
+  writeFileSync(scriptPath, `${steps.join("\n")}\n`);
+  await runFile(injectorBinaryPath, [scriptPath], {
+    env: {
+      ...env,
+      WAYLAND_DISPLAY: workload.display.socketName,
+      XDG_RUNTIME_DIR: workload.display.runtimeDirectory,
+      XKB_DEFAULT_LAYOUT: "us",
+    },
+    timeout: TURN_TIMEOUT_MS,
+  });
+
+  return readScrollTop(workload.page);
+};
+
+/** The shared wheel workload, each direction its own phase, and its travel checked; returns its description. */
+const scrollFeed = async (workload: Workload): Promise<string> => {
+  const { bottom, ...point } = await prepareFeed(workload.page);
+  const start = await readScrollTop(workload.page);
+  const top = await workload.measure("Scroll up", () => injectWheel(workload, buildWheelSteps(point, "up")));
+  const end = await workload.measure("Scroll down", () => injectWheel(workload, buildWheelSteps(point, "down")));
+  const travel = checkScrollTravel({ bottom, end, start, top });
+
+  if (typeof travel === "string") {
+    throw new TypeError(travel);
+  }
+
+  return formatScrollWorkload(travel);
 };
 
 /** A few replayed turns fill the feed; then one more is measured while it streams, then the feed is scrolled. */
-const driveWorkload = async (workload: Workload): Promise<void> => {
+const driveWorkload = async (workload: Workload): Promise<string> => {
   const startArguments = ["start", "--provider", REPLAY_PROVIDER, "--model", REPLAY_SCENARIO, FIXTURE_PROJECT_ID];
   const threadId = await runThreadCommand(workload, [...startArguments, "Warm the feed"]);
 
@@ -196,14 +253,12 @@ const driveWorkload = async (workload: Workload): Promise<void> => {
     await runThreadCommand(workload, ["send", threadId, message, "--wait"]);
   }
   await delay(SETTLE_MS);
-  await workload.measure("Streamed reply", async () => {
-    await runThreadCommand(workload, ["send", threadId, "Measured turn", "--wait"]);
-  });
+  await workload.measure("Streamed reply", () =>
+    runThreadCommand(workload, ["send", threadId, "Measured turn", "--wait"]),
+  );
   await delay(SETTLE_MS);
 
-  const gesture = await findFeedScrollGesture(workload.page);
-
-  await workload.measure("Feed scroll", () => scrollFeed(workload.page, gesture));
+  return scrollFeed(workload);
 };
 
 export {

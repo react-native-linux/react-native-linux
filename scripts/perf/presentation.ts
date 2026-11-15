@@ -8,6 +8,8 @@ const PRESENTED_PATTERN =
   /wp_presentation_feedback#\d+\.presented\((?<secondsHigh>\d+), (?<secondsLow>\d+), (?<nanoseconds>\d+),/u;
 const DISCARDED_PATTERN = /wp_presentation_feedback#\d+\.discarded\(\)/u;
 const CLOCK_PATTERN = /wp_presentation#\d+\.clock_id\((?<clockId>\d+)\)/u;
+const SHM_BUFFER_PATTERN = /-> wl_shm_pool#\d+\.create_buffer\(/u;
+const DMABUF_BUFFER_PATTERN = /-> zwp_linux_buffer_params_v1#\d+\.create(?:_immed)?\(/u;
 
 /** `CLOCK_MONOTONIC`, the clock Node's `process.hrtime` reads, so phase bounds and frames share one timeline. */
 const MONOTONIC_CLOCK_ID = 1;
@@ -25,7 +27,10 @@ const LATE_INTERVAL_FACTOR = 1.5;
 
 interface PresentationLog {
   readonly discarded: number;
+  /** Buffers the client created in GPU memory and in shared CPU memory: which path its pixels took. */
+  readonly dmabufBuffers: number;
   readonly presentedNanoseconds: readonly number[];
+  readonly shmBuffers: number;
 }
 
 interface Phase {
@@ -63,11 +68,15 @@ const parsePresentationLog = (trace: string): PresentationLog | null => {
     return null;
   }
 
+  const count = (pattern: RegExp): number => lines.filter((line) => pattern.test(line)).length;
+
   return {
-    discarded: lines.filter((line) => DISCARDED_PATTERN.test(line)).length,
+    discarded: count(DISCARDED_PATTERN),
+    dmabufBuffers: count(DMABUF_BUFFER_PATTERN),
     presentedNanoseconds: lines
       .map((line) => readPresentedNanoseconds(line))
       .filter((nanoseconds) => nanoseconds !== null),
+    shmBuffers: count(SHM_BUFFER_PATTERN),
   };
 };
 

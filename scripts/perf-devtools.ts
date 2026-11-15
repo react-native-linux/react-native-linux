@@ -1,9 +1,10 @@
 import { setTimeout as delay } from "node:timers/promises";
+import { isRecord } from "./e2e/fields.ts";
 import { once } from "node:events";
 
 /*
  * Just enough of the Chrome DevTools protocol to drive an Electron window from scripts/perf-electron.ts: one socket,
- * request ids matched to responses, and `Runtime.evaluate` by value.
+ * request ids matched to responses, `Runtime.evaluate` by value, and the browser's GPU status.
  */
 
 const POLL_INTERVAL_MS = 50;
@@ -16,9 +17,6 @@ interface DevTools {
   readonly evaluate: (expression: string) => Promise<unknown>;
   readonly send: (method: string, parameters?: Record<string, unknown>) => Promise<unknown>;
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
 
 const readResult = (event: unknown, method: string): unknown => {
   const message: unknown = event instanceof MessageEvent ? event.data : null;
@@ -109,4 +107,18 @@ const connectToPage = async (port: string, urlPrefix: string, timeoutMillisecond
   return connectDevTools(url, timeoutMilliseconds);
 };
 
-export { connectToPage, isRecord, pollUntil };
+/** The browser target's `SystemInfo.getInfo`: the GL renderer and feature status Chromium settled on. */
+const readGpuInfo = async (port: string, timeoutMilliseconds: number): Promise<unknown> => {
+  const response = await fetch(`http://127.0.0.1:${port}/json/version`);
+  const version: unknown = await response.json();
+  const url = isRecord(version) ? String(version["webSocketDebuggerUrl"]) : "";
+  const browser = await connectDevTools(url, timeoutMilliseconds);
+
+  try {
+    return await browser.send("SystemInfo.getInfo");
+  } finally {
+    browser.close();
+  }
+};
+
+export { connectToPage, pollUntil, readGpuInfo };

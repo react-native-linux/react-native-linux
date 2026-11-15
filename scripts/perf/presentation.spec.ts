@@ -26,11 +26,15 @@ const scrollLog = parse(
   presentedLine("0, 1, 200000000"),
 );
 const phase = { endNanoseconds: 1_100_000_000, name: "Feed scroll", startNanoseconds: 1_000_000_000 };
-const noFrames = { discarded: 0, presentedNanoseconds: [] };
+const noFrames = { discarded: 0, dmabufBuffers: 0, presentedNanoseconds: [], shmBuffers: 0 };
 
 describe("parsePresentationLog", () => {
-  it("reads presented timestamps and counts discarded frames, ignoring everything else in the trace", () => {
+  it("reads presented timestamps and counts discarded frames and buffers, ignoring the rest of the trace", () => {
     const log = parse(
+      "[3350138.600]  -> wl_shm_pool#45.create_buffer(new id wl_buffer#50, 0, 1280, 720, 5120, 0)",
+      "[3350138.610]  -> zwp_linux_buffer_params_v1#60.create_immed(new id wl_buffer#61, 1280, 720, 875713089, 0)",
+      "[3350138.620]  -> zwp_linux_buffer_params_v1#62.create(1280, 720, 875713089, 0)",
+      "[3350138.630] wl_shm_pool#45.create_buffer(new id wl_buffer#50, 0, 1280, 720, 5120, 0)",
       "[3350138.700]  -> wl_surface#3.commit()",
       presentedLine("0, 191010, 672442967"),
       "[3350146.100] wp_presentation_feedback#29.discarded()",
@@ -38,7 +42,12 @@ describe("parsePresentationLog", () => {
       "DevTools listening on ws://127.0.0.1:9333/devtools/browser/x",
     );
 
-    expect(log).toEqual({ discarded: 1, presentedNanoseconds: [FIRST_PRESENTED_NS, SECOND_PRESENTED_NS] });
+    expect(log).toEqual({
+      discarded: 1,
+      dmabufBuffers: 2,
+      presentedNanoseconds: [FIRST_PRESENTED_NS, SECOND_PRESENTED_NS],
+      shmBuffers: 1,
+    });
   });
 
   it("carries tv_sec_hi as units of 2^32 seconds", () => {
@@ -87,7 +96,7 @@ describe("summarizeFramePacing", () => {
 });
 
 describe("findFirstPresentedAfter", () => {
-  const log = { discarded: 0, presentedNanoseconds: [phase.startNanoseconds, phase.endNanoseconds] };
+  const log = { ...noFrames, presentedNanoseconds: [phase.startNanoseconds, phase.endNanoseconds] };
 
   it("finds the first frame presented at or after a moment", () => {
     expect(findFirstPresentedAfter(log, phase.startNanoseconds)).toBe(phase.startNanoseconds);
