@@ -20,6 +20,8 @@ namespace {
 
 constexpr std::string_view kDataScheme = "data:";
 constexpr std::string_view kFileScheme = "file://";
+constexpr std::string_view kHttpScheme = "http://";
+constexpr std::string_view kHttpsScheme = "https://";
 constexpr std::string_view kSchemeSeparator = "://";
 constexpr std::string_view kBase64Marker = ";base64";
 constexpr uint32_t kBase64BitsPerCharacter = 6;
@@ -156,8 +158,10 @@ ResolvedImageSource resolveImageSource(const std::string& uri, const std::string
             .kind = ImageSourceKind::File, .filePath = uri.substr(kFileScheme.size()), .bytes = {}};
     }
 
-    // Every other scheme is remote as far as this platform is concerned, and there is no networking stack behind
-    // it. See the deferrals in *Image* in docs/cpp-toolchain.md.
+    if (startsWith(uri, kHttpScheme) || startsWith(uri, kHttpsScheme)) {
+        return ResolvedImageSource{.kind = ImageSourceKind::Remote, .filePath = {}, .bytes = {}};
+    }
+
     if (uri.find(kSchemeSeparator) != std::string::npos) {
         return {};
     }

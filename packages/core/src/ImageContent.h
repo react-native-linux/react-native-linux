@@ -21,15 +21,16 @@
 namespace react_native_linux {
 
 /**
- * What a source URI turned out to be. `Unsupported` covers everything this platform declines to fetch: `http`,
- * `https`, any other scheme, and a malformed `data:` URI. There is no networking stack here yet, so a remote
- * source is not a decode that failed — it is a decode that was never attempted.
+ * What a source URI turned out to be. `Remote` is `http` and `https`, which the pipeline downloads before it
+ * decodes. `Unsupported` covers everything this platform declines to fetch: any other scheme, and a malformed
+ * `data:` URI — a decode that was never attempted, not one that failed.
  */
-enum class ImageSourceKind : uint8_t { File, Data, Unsupported };
+enum class ImageSourceKind : uint8_t { File, Data, Remote, Unsupported };
 
 /**
  * A source URI reduced to the one thing a decoder can open: a filesystem path, or the bytes a `data:` URI carried.
- * Exactly one of the two members is filled, chosen by `kind`.
+ * At most one of the two members is filled, chosen by `kind`; a `Remote` source fills neither, because its URI is
+ * already the URL to download.
  */
 struct ResolvedImageSource {
     ImageSourceKind kind{ImageSourceKind::Unsupported};

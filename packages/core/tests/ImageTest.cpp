@@ -95,9 +95,14 @@ TEST(ImageSourceTest, ARelativePathResolvesAgainstTheAssetDirectory) {
     EXPECT_EQ(source.filePath, "/assets/tile.png");
 }
 
-TEST(ImageSourceTest, RemoteSchemesAreUnsupportedBecauseThereIsNoNetworkingStack) {
-    EXPECT_EQ(resolve("https://example.com/tile.png").kind, ImageSourceKind::Unsupported);
+TEST(ImageSourceTest, HttpAndHttpsAreRemote) {
+    EXPECT_EQ(resolve("https://example.com/tile.png").kind, ImageSourceKind::Remote);
+    EXPECT_EQ(resolve("http://127.0.0.1:8081/assets/tile.png?platform=linux").kind, ImageSourceKind::Remote);
+}
+
+TEST(ImageSourceTest, AnyOtherSchemeIsUnsupported) {
     EXPECT_EQ(resolve("asset://tile.png").kind, ImageSourceKind::Unsupported);
+    EXPECT_EQ(resolve("ftp://example.com/tile.png").kind, ImageSourceKind::Unsupported);
 }
 
 TEST(ImageSourceTest, ADataUriWithoutACommaIsUnsupported) {

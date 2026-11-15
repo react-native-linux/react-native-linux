@@ -4374,7 +4374,18 @@ mount-and-unmount loop that ends with as many bitmaps alive as the cache has ent
 | `file:///absolute/path` | The scheme is stripped and the rest is a path. |
 | `/absolute/path` | A path already. |
 | `relative/path.png` | Resolved against `RNL_BUNDLED_ASSET_DIR`, an absolute path baked in at configure time pointing at `packages/core/assets`. |
-| `http://`, `https://`, any other scheme | Unsupported. One line on stderr, no decode, nothing painted. |
+| `http://`, `https://` | Downloaded, then decoded like a `data:` URI (#79). |
+| Any other scheme | Unsupported. One line on stderr, no decode, nothing painted. |
+
+A remote source is downloaded on a `CurlHttpClient` the pipeline creates for the first one, the same client
+`fetch` uses, with redirects followed and the body buffered whole. The download runs on that client's thread and
+the decode worker only sees the finished bytes, so a slow server never holds up the local decodes queued behind
+it. A transfer error or a status other than 2xx fails the source, which reaches `onError`. That includes a
+404 whose body happens to be an image. That is what makes `<Image source={require(...)}>` work
+from a `dev=true` bundle, where Metro serves each asset at an `http://` URL. `RemoteImageTest` proves a download,
+a 404 and a stalled server against a loopback server (`tests/LoopbackHttpServer.h`). The `dev-image` e2e scenario
+loads an asset from a real Metro and swaps it with a Fast Refresh edit. There is no HTTP cache yet: a source the
+decoded-image cache evicted is downloaded again.
 
 `RNL_BUNDLED_ASSET_DIR` is the same placeholder `RNL_BUNDLED_FONT_DIR` is, for the same reason: there is no asset
 packaging, and inventing one before the CLI exists is the kind of scaffolding the Prime Directive rejects. Real
