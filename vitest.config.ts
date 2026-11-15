@@ -27,6 +27,8 @@ export default defineConfig({
       include: [
         "packages/*/src/**/*.ts",
         "packages/enriched-markdown/src/**/*.tsx",
+        // The rendering half, nativeReviewDiffSurface.linux.ts, is drawn by the t3-review-diff golden and e2e.
+        "packages/test-harness/modules/t3-review-diff/src/features/diffs/nativeReviewDiffRows.ts",
         "packages/core/goldens/*.ts",
         "packages/core/src-linux/**/*.ts",
         "scripts/codegen-core/**/*.ts",
@@ -51,6 +53,7 @@ export default defineConfig({
     include: [
       "packages/*/src/**/*.spec.ts",
       "packages/core/goldens/*.spec.ts",
+      "packages/test-harness/modules/*/*.spec.ts",
       "packages/core/src-linux/**/*.spec.ts",
       "scripts/codegen-core/**/*.spec.ts",
       "scripts/create-package/**/*.spec.ts",

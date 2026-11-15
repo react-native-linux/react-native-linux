@@ -108,9 +108,9 @@ const ecosystemMatrix: readonly EcosystemRow[] = [
   },
   {
     flagshipVersion: "file:./modules/t3-review-diff",
-    issue: 640,
+    issue: 685,
     packageName: "@t3tools/mobile-review-diff-native",
-    state: "blocked",
+    state: "in progress",
   },
   {
     flagshipVersion: "file:./modules/t3-terminal",

@@ -161,8 +161,8 @@ void reportGenericFontFamilyResolution(const std::string& family, const SkString
     static std::unordered_set<std::string> reportedFamilies;
 
     if (reportedFamilies.insert(family).second) {
-        reportNativeError("text", "fontFamily \"" + family + "\" resolved to \"" + std::string(resolved.c_str()) +
-                                      "\" via fontconfig");
+        std::cerr << "[rnl-text] fontFamily \"" << family << "\" resolved to \"" << resolved.c_str()
+                  << "\" via fontconfig" << std::endl;
     }
 }
 

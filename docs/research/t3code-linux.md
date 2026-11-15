@@ -202,7 +202,7 @@ transitive package.
 | `react-native-enriched-markdown` | `file:deps/react-native-enriched-markdown-1.2.0-t3.18-16db4c75.tgz` | tracked | #688 | T3 Code's fork; every message; #639 landed the base |
 | `@t3tools/mobile-source-text` | `file:./modules/t3-source-text` | tracked | #640 | source file view |
 | `@t3tools/mobile-highlights-native` | `file:./modules/t3-highlights` | tracked | #640 | syntax highlighting, a Nitro module |
-| `@t3tools/mobile-review-diff-native` | `file:./modules/t3-review-diff` | tracked | #640 | review diff view |
+| `@t3tools/mobile-review-diff-native` | `file:./modules/t3-review-diff` | tracked | #685 | review diff view; Linux renders it in JavaScript, no native code |
 | `@t3tools/mobile-terminal-native` | `file:./modules/t3-terminal` | tracked | #640 | terminal view |
 | `@react-native-menu/menu` | `^2.0.0` | tracked | #646 | 28 files: thread rows, list filter, composer |
 | `gt-react-native` | `11.4.18` | tracked | #647 | i18n root; `getEnforcing` throws at import |
@@ -235,7 +235,7 @@ other seven are Expo local modules, linked by directory rather than declared as 
 | `t3-composer-editor` | iOS, Android | #640; the plain `TextInput` composer until then |
 | `t3-source-text` | iOS | #640 |
 | `t3-highlights` | Nitro, C++ core | #640, after #152 |
-| `t3-review-diff` | iOS, Android | #640 |
+| `t3-review-diff` | iOS, Android | #685: `nativeReviewDiffSurface.linux.ts` draws the same rows, props and events with React Native views |
 | `t3-terminal` | iOS, Android | #640 |
 | `t3-voice-transcription` | iOS, Android | left out with voice input |
 | `t3-agent-notifications` | Android | left out until #274 |
