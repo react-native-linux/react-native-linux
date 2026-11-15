@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { injectAndResolveFailure, resolveInjectionFailure, resolveWindowFlags } from "./grade.ts";
+import {
+  injectAndResolveFailure,
+  resolveCompositorChild,
+  resolveInjectionFailure,
+  resolveWindowFlags,
+} from "./grade.ts";
 import { parseScenario } from "./scenario.ts";
 
 const EXPECTED_CLOSE_STATUS = 1;
 const USAGE_ERROR_STATUS = 2;
 const INTERRUPTED_STATUS = null;
 const CLOSE_SUBSTRING = "the window closed before frame";
+const OUTPUT_REFRESH_HZ = 120;
 
 const waitForExpectedClose =
   (closed: boolean): (() => Promise<boolean>) =>
@@ -25,6 +31,21 @@ describe("resolveWindowFlags", () => {
 
   it("uses an explicit list exactly as written", () =>
     expect(resolveWindowFlags(["--force-client-decorations"])).toEqual(["--force-client-decorations"]));
+});
+
+describe("resolveCompositorChild", () => {
+  it("runs the window directly at cage's own refresh rate", () =>
+    expect(resolveCompositorChild(null, ["rnl_window", "--frames", "1"])).toEqual(["rnl_window", "--frames", "1"]));
+
+  it("sets the headless output's custom mode before it runs the window", () =>
+    expect(resolveCompositorChild(OUTPUT_REFRESH_HZ, ["rnl_window", "--frames", "1"])).toEqual([
+      "sh",
+      "-c",
+      'wlr-randr --output HEADLESS-1 --off && wlr-randr --output HEADLESS-1 --on --custom-mode 1280x720@120Hz && exec "$0" "$@"',
+      "rnl_window",
+      "--frames",
+      "1",
+    ]));
 });
 
 describe("resolveInjectionFailure", () => {

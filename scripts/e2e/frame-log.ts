@@ -236,6 +236,12 @@ const findFrameBudgetFailures = (inputs: FrameBudgetGradeInputs): readonly strin
     ...(summary.frames < budget.minFrames
       ? [`only ${String(summary.frames)} frames were presented, the budget needs at least ${String(budget.minFrames)}`]
       : []),
+    ...(summary.medianNanoseconds > (budget.p50Ms ?? Number.POSITIVE_INFINITY) * NANOSECONDS_PER_MILLISECOND
+      ? [
+          `p50 frame time is ${formatMilliseconds(summary.medianNanoseconds)} ms, ` +
+            `the budget is ${String(budget.p50Ms)} ms`,
+        ]
+      : []),
     ...(summary.percentile95Nanoseconds > budgetNanoseconds
       ? [
           `p95 frame time is ${formatMilliseconds(summary.percentile95Nanoseconds)} ms, ` +
