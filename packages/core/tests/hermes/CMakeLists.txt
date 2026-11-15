@@ -112,6 +112,7 @@ add_executable(rnl_core_hermes_tests
     ExpoSharedObjectTest.cpp
     FeatureFlagsResetListener.cpp
     InstanceTeardownLeakTest.cpp
+    IntlBindingTest.cpp
     MeasureGeometryTest.cpp
     LinkingModuleTest.cpp
     LinuxUISchedulerTest.cpp
