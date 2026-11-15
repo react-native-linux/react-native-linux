@@ -55,35 +55,72 @@ Option (c).
 
 The reasons, in order of weight:
 
-1. It runs the JavaScript Expo maintains. Every module's argument handling, defaults, errors, events and
-   `SharedObject` classes stay upstream's, so an SDK bump changes nothing on Linux except where a native module's
-   contract changes. (b) re-implements that JavaScript per module, per SDK.
+1. It runs the JavaScript Expo maintains. Every module's argument handling, defaults, errors and events stay
+   upstream's, so an SDK bump changes nothing on Linux except where a native module's contract changes. (b)
+   re-implements that JavaScript per module, per SDK.
 2. The object model already exists, in JavaScript, maintained upstream for two consumers (web and jest-expo).
-   `expo-file-system`'s `File` and `Directory` and the audio and video players subclass it unchanged.
+   It does not yet cover a module whose JavaScript subclasses a native class; see *Known gaps*.
 3. What is left per module is the native module, which is the C++ TurboModule ADR-0002 already asks for. Every
    option needed it; (c) adds nothing on top.
-4. It reaches modules no shim can: the application's own, through `requireNativeModule`, `requireOptionalNativeModule`
-   and `requireNativeView`, which answer exactly as upstream answers for a module that is or is not there.
+4. It reaches modules no shim can: the application's own, through `requireNativeModule` and
+   `requireOptionalNativeModule`, which answer exactly as upstream answers for a module that is or is not there.
+   `requireNativeView` reaches them too once the platform answers `getViewConfig` (#662).
 
 ### The polyfill
 
-One resolver rule installs `globalThis.expo`. `linuxPackageVariantIndex` in `packages/cli/src/metro-config.ts`
+One resolver rule installs `globalThis.expo`. `linuxPackageVariantIndex` in `packages/cli/src/package-variants.ts`
 resolves `expo-modules-core/build/polyfill/index` to its `index.web` variant in a `linux` bundle, the same mechanism
 `linuxUpstreamVariantIndex` uses for `react-native`'s own platform pairs. The polyfill then installs when
 `expo-modules-core`'s index first evaluates, as on web, before any of its modules reads the global; no entry point
 changes. Without the rule, the `expo-constants` e2e fails with upstream's own
 `TypeError: Cannot read property 'EventEmitter' of undefined`.
 
-The web polyfill's `modules` table starts empty, so lookups fall through to the TurboModule registry.
-`reloadAppAsync`, `getViewConfig` and `installOnUIRuntime` keep the web answers (a `window.location` reload, which
-this platform has no `window` for, and two throws) until a flagship module needs them.
+The web polyfill's `modules` table starts empty, so lookups fall through to the TurboModule registry. Its other
+answers are web answers. `installExpoGlobalPolyfill` returns early when `globalThis.expo` already exists, so the
+platform replaces one by patching the global after the polyfill installs, never by installing its own first. Each is
+patched when its first consumer lands:
+
+- `getViewConfig` throws `Method not implemented.`, which breaks every native view (#662, below).
+- `uuidv4` calls `crypto.randomUUID`, which this runtime lacks, and `cacheDir` and `documentsDir` are `undefined`
+  (#664).
+- `reloadAppAsync` reloads through `window.location`, which this platform has no `window` for, and
+  `installOnUIRuntime` throws.
+
+### Known gaps
+
+The seam is not yet proved for two shapes the flagship uses. Each is tracked, and neither is claimed to work until
+its issue lands.
+
+1. **Native views: the first break.** In bridgeless mode `requireNativeView` (`requireNativeViewManager`) calls
+   `NativeComponentRegistry.get`, whose view-config provider calls `globalThis.expo.getViewConfig`, and the web
+   polyfill throws. Every `requireNativeView` therefore crashes on first render: T3 Code's `FrostedCutout`,
+   `SegmentedControl`, `NativePresentation` and `T3ComposerEditor`, and upstream's `expo-image` and `expo-blur`. The
+   platform must answer `getViewConfig` by patching the global as above, for the host names `requireNativeView`
+   asks for, `ViewManagerAdapter_<Module>_<View>`
+   ([#662](https://github.com/react-native-linux/react-native-linux/issues/662)).
+2. **Constructor-backed modules.** `expo-file-system`'s `File.ts` declares
+   `class File extends ExpoFileSystem.FileSystemFile` and passes its instances back into native code; `expo-audio`'s
+   `AudioPlayer` and `expo-video`'s players follow the same pattern. `createTurboModuleToExpoProxy` copies only a
+   TurboModule's prototype methods and `getConstants()` values, so there is no native class to extend, and the
+   polyfill's `SharedObject.release()` is a no-op. The candidate approach is a class from `getConstants()` that
+   extends `globalThis.expo.SharedObject`, each instance keyed by an id the native module owns. It is unproven until
+   a constructor-and-release probe over a TurboModule passes
+   ([#663](https://github.com/react-native-linux/react-native-linux/issues/663)); these three modules are the known
+   first hits of the revisit trigger below.
 
 ### The module registry
 
-A native module of ours is a C++ TurboModule registered in `packages/core/src/TurboModuleRegistry.cpp` under the
-Expo native-module name (`ExponentConstants`, `ExpoHaptics`, `FileSystem`, `ExpoSQLite`, …). Upstream reaches it
-through `createTurboModuleToExpoProxy`, so its constants come from `getConstants()`, its functions are its methods,
-and an event is a method of that name taking the listener, which is what the proxy's `addListener` calls.
+A native module of ours is a C++ TurboModule registered under the Expo native-module name (`ExponentConstants`,
+`ExpoHaptics`, `FileSystem`, `ExpoSQLite`, …). Only its factory line goes in `packages/core/src/TurboModuleRegistry.cpp`;
+from the second Expo module on, each module's class lives in its own `packages/core/src/Expo<Name>Module.cpp`, so
+parallel work on two modules does not collide in one file. Upstream reaches it through `createTurboModuleToExpoProxy`,
+so its constants come from `getConstants()` and its functions are its methods.
+
+An event is a method of the event's name that takes the listener, which is what the proxy's `addListener` calls, and
+it returns an `EventSubscription`, the shape of React Native's C++ event emitter. The proxy has no `removeListener`,
+`removeAllListeners` or `emit`, so removal goes through that subscription. No module of ours emits events yet: the
+`EventEmitter` round trip in the `expo-constants` e2e proves only that the polyfill is installed, not native event
+delivery. The first module with events adds an e2e that delivers one from native code.
 
 - **Optional lookup** (`requireOptionalNativeModule`) of a module this platform does not register returns `null`,
   and upstream's JavaScript takes its own "unavailable" path, as `expo-constants` does when it warns that
@@ -115,7 +152,8 @@ Silently doing nothing where the real module acts is the failure this boundary e
    call rejects with upstream's `ERR_UNAVAILABLE` code. A whole module the desktop lacks is simply not registered,
    and upstream's optional lookup reports it.
 4. **Native views** (`expo-image`, `expo-blur`, `expo-linear-gradient`, `expo-glass-effect`): one of our own Fabric
-   components under the view name `requireNativeView` asks for. A view with no renderer counterpart is declined.
+   components under the host name `requireNativeView` asks for, `ViewManagerAdapter_<Module>_<View>`, once
+   `getViewConfig` answers (#662). A view with no renderer counterpart is declined.
 
 ### The first module: `expo-constants`
 
@@ -125,7 +163,8 @@ Silently doing nothing where the real module acts is the failure this boundary e
 year class, empty experience and linking URIs, and a v4 session UUID per runtime. Upstream's `Constants.ts` runs
 unchanged over it, proved by
 `packages/core/tests/hermes/ExponentConstantsModuleTest.cpp` and the `expo-constants` e2e, which imports the real
-package and also round-trips an event through `expo-modules-core`'s `EventEmitter`.
+package and also round-trips an event through `expo-modules-core`'s JavaScript `EventEmitter`, which proves only
+that the polyfill is installed.
 `packages/expo/src/expo-constants-surface.ts` lists upstream's required fields under a type that `pnpm ts` fails
 when upstream adds one, and the e2e asserts each value.
 
@@ -166,9 +205,11 @@ Any one of these reopens the question in a new ADR:
 
 - **A flagship module whose JavaScript needs the native object model**: a `SharedObject` whose identity crosses the
   native boundary, a `SharedRef` handed to a native view, or worklets through `installOnUIRuntime`. That is the half
-  of (a) that `common/cpp` already holds.
-- **The polyfill moves or changes shape.** It is exported as `dangerous-internal`; an SDK that drops or reshapes it
-  breaks the resolver rule, and the `expo-constants` e2e fails first.
+  of (a) that `common/cpp` already holds. `expo-file-system`, `expo-audio` and `expo-video` are its known first
+  hits, unless the #663 probe proves the candidate approach.
+- **The polyfill moves or changes shape.** The resolver rule keys on deep paths: `build/index.js` importing
+  `./polyfill`, and `build/polyfill/index.js` with its `index.web.js` variant. An SDK that moves or reshapes them
+  breaks the rule, and the `expo-constants` e2e fails first.
 - **Two modules that need the escape hatch for the same reason**, which would mean the seam lacks something general.
 - **Expo ships a C++ module DSL**, so that (a) stops meaning that we write one.
 - **A third-party Expo module whose maintainers will take a Linux implementation upstream.** That needs a native host

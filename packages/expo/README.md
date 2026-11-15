@@ -2,7 +2,7 @@
 
 Expo on Linux, as [ADR-0004](../../docs/adr/0004-expo-javascript-runs-unmodified-over-the-native-module-seam.md)
 decides it: each Expo package's own JavaScript runs unmodified, over `expo-modules-core`'s JavaScript `globalThis.expo`
-(installed by the resolver rule in `packages/cli/src/metro-config.ts`) and a C++ TurboModule of this platform
+(installed by the resolver rule in `packages/cli/src/package-variants.ts`) and a C++ TurboModule of this platform
 registered under the module's Expo native-module name. A package alias to a subpath here is the escape hatch for a
 module whose JavaScript has to differ; no module uses it yet.
 
