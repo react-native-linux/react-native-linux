@@ -3,6 +3,26 @@
   "bundle": "reanimated-swipeable.tsx",
   "ready": "swipeable: row 400x60",
   "frames": 900,
-  "steps": ["sleep 300"],
-  "expect": ["swipeable: row 400x60"]
+  "steps": [
+    "sleep 300",
+    "move 350 30",
+    "button left press",
+    "sleep 50",
+    "move 330 30",
+    "sleep 50",
+    "move 280 30",
+    "sleep 50",
+    "move 220 30",
+    "sleep 50",
+    "move 150 30",
+    "sleep 50",
+    "button left release",
+    "sleep 1500"
+  ],
+  "expect": [
+    "swipeable: row 400x60",
+    "swipeable: drag to open left",
+    "swipeable: will open left",
+    "swipeable: open left"
+  ]
 }

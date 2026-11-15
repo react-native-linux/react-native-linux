@@ -4,15 +4,21 @@ const sourceDirectory = "../upstream/packages/react-native-gesture-handler/src";
 const modulePath = `${sourceDirectory}/RNGestureHandlerModule.linux.ts`;
 
 vi.mock("react-native", () => ({ Platform: { OS: "linux" } }));
+const scheduleOnUI = vi.hoisted(() => vi.fn());
 vi.mock("../upstream/packages/react-native-gesture-handler/src/handlers/gestures/reanimatedWrapper.ts", () => ({
   Worklets: {
     scheduleOnRN: (scheduled: Method, ...scheduledArguments: unknown[]): unknown => scheduled(...scheduledArguments),
+    scheduleOnUI,
   },
+}));
+vi.mock("../upstream/packages/react-native-gesture-handler/src/v3/detectors/HostGestureDetector.tsx", () => ({
+  default: "HostGestureDetector",
 }));
 vi.mock("../upstream/packages/react-native-gesture-handler/src/RNGestureHandlerModule.ts", () => import(modulePath));
 
 const routerPath = `${sourceDirectory}/web/tools/LinuxPointerRouter.ts`;
 const nativeProxyPath = `${sourceDirectory}/v3/NativeProxy.linux.ts`;
+const reanimatedDetectorPath = `${sourceDirectory}/v3/detectors/ReanimatedNativeDetector.linux.tsx`;
 const jsFunctionNewApi = 4;
 const stateBegan = 2;
 const stateFailed = 1;
@@ -26,13 +32,22 @@ const unknownHandlerTag = 3;
 const refusedHandlerTag = 4;
 const configuredHandlerTag = 5;
 const draggedHandlerTag = 6;
+const contentsHandlerTag = 7;
 const dragDistance = 50;
 const movesBeforeDetach = 1;
 const rect = { bottom: 100, left: 0, right: 100, top: 0 };
 
+interface TestRect {
+  readonly bottom: number;
+  readonly left: number;
+  readonly right: number;
+  readonly top: number;
+}
+
 interface TestElement {
+  readonly children?: readonly TestElement[];
   readonly contains: (other: unknown) => boolean;
-  readonly getBoundingClientRect: () => typeof rect;
+  readonly getBoundingClientRect: () => TestRect;
 }
 
 const createElement = (): TestElement => {
@@ -198,5 +213,54 @@ it("stops a drag at detach, and takes the next one after the handler is attached
     first: [stateBegan, stateActive, stateCancelled],
     pointerCallbacksAfterDetach: movesBeforeDetach,
     second: [stateBegan, stateActive, stateEnd],
+  });
+});
+
+const noBox = { bottom: 0, left: 0, right: 0, top: 0 };
+const boxedChild: TestElement = { contains: (other) => other === boxedChild, getBoundingClientRect: () => rect };
+const emptyChild: TestElement = { contains: () => false, getBoundingClientRect: () => noBox };
+const contentsElement: TestElement = {
+  children: [emptyChild, boxedChild],
+  contains: (other) => other === contentsElement || boxedChild.contains(other),
+  getBoundingClientRect: () => noBox,
+};
+
+it("bounds a display: contents detector by its children, so a drag on its child is recognized", async () => {
+  const gestureModule = await loadGestureModule();
+  const route = await loadRoute();
+  const stateChange = vi.fn();
+  const propsRef = { current: { onGestureHandlerEvent: vi.fn(), onGestureHandlerStateChange: stateChange } };
+  methodOf(gestureModule, "createGestureHandler")("PanGestureHandler", contentsHandlerTag, {});
+  methodOf(gestureModule, "attachGestureHandler")(contentsHandlerTag, contentsElement, jsFunctionNewApi, propsRef);
+  route("pointerdown", { ...dragStart, target: boxedChild });
+  route("pointermove", { ...dragEnd, target: boxedChild });
+  route("pointerup", { ...dragEnd, target: boxedChild });
+
+  expect(statesOf(stateChange)).toStrictEqual([stateBegan, stateActive, stateEnd]);
+});
+
+const stateActiveEvent = (): { nativeEvent: { oldState: number; state: number } } => ({
+  nativeEvent: { oldState: stateBegan, state: stateActive },
+});
+
+it("schedules each Reanimated detector event onto the UI runtime as it was when the engine sent it", async () => {
+  const worklet = vi.fn();
+  const detector = methodOf(await import(reanimatedDetectorPath), "ReanimatedNativeDetector");
+  const rendered = detector({ handlerTags: [], onGestureHandlerReanimatedEvent: { workletEventHandler: { worklet } } });
+  const renderedProps = propertyOf(rendered, "props");
+  const events = [
+    "onGestureHandlerReanimatedStateChange",
+    "onGestureHandlerReanimatedEvent",
+    "onGestureHandlerReanimatedTouchEvent",
+  ];
+  for (const name of events) {
+    const event = stateActiveEvent();
+    methodOf(renderedProps, name)(event);
+    Reflect.deleteProperty(event.nativeEvent, "oldState");
+  }
+
+  expect({ handlerTags: propertyOf(renderedProps, "handlerTags"), scheduled: scheduleOnUI.mock.calls }).toStrictEqual({
+    handlerTags: [],
+    scheduled: events.map(() => [worklet, stateActiveEvent()]),
   });
 });

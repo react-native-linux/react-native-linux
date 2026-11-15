@@ -1,0 +1,117 @@
+diff --git a/packages/react-native-gesture-handler/src/v3/detectors/HostGestureDetector.linux.tsx b/packages/react-native-gesture-handler/src/v3/detectors/HostGestureDetector.linux.tsx
+new file mode 100644
+index 0000000..2526bd3
+--- /dev/null
++++ b/packages/react-native-gesture-handler/src/v3/detectors/HostGestureDetector.linux.tsx
+@@ -0,0 +1,3 @@
++// Linux registers no native detector component. The web detector attaches the hook API's handlers to the view
++// itself, and the handlers are the Linux engine's, which RNGestureHandlerModule.linux created.
++export { default } from './HostGestureDetector.web';
+diff --git a/packages/react-native-gesture-handler/src/v3/detectors/ReanimatedNativeDetector.linux.tsx b/packages/react-native-gesture-handler/src/v3/detectors/ReanimatedNativeDetector.linux.tsx
+new file mode 100644
+index 0000000..d57aa4f
+--- /dev/null
++++ b/packages/react-native-gesture-handler/src/v3/detectors/ReanimatedNativeDetector.linux.tsx
+@@ -0,0 +1,32 @@
++import React from 'react';
++
++import { Worklets } from '../../handlers/gestures/reanimatedWrapper';
++import HostGestureDetector, {
++  type RNGestureHandlerDetectorNativeComponentProps,
++} from './HostGestureDetector';
++
++// Linux recognizes on the React Native runtime, so no native view exists for Reanimated to register the worklet
++// handler with. The detector schedules each event onto the UI runtime instead, where a native view's event would
++// have reached it. The UI runtime reads the event later, and the engine reuses an activation's state-change event
++// for the update that follows it, clearing its oldState, so each event is copied when it is sent.
++export function ReanimatedNativeDetector({
++  onGestureHandlerReanimatedEvent,
++  ...props
++}: RNGestureHandlerDetectorNativeComponentProps) {
++  const { workletEventHandler } = onGestureHandlerReanimatedEvent as unknown as {
++    workletEventHandler: { worklet: (event: object) => void };
++  };
++  const dispatch = ({ nativeEvent }: { nativeEvent: object }) =>
++    Worklets?.scheduleOnUI(workletEventHandler.worklet, {
++      nativeEvent: { ...nativeEvent },
++    });
++
++  return (
++    <HostGestureDetector
++      {...props}
++      onGestureHandlerReanimatedEvent={dispatch}
++      onGestureHandlerReanimatedStateChange={dispatch}
++      onGestureHandlerReanimatedTouchEvent={dispatch}
++    />
++  );
++}
+diff --git a/packages/react-native-gesture-handler/src/web/tools/LinuxPointerRouter.ts b/packages/react-native-gesture-handler/src/web/tools/LinuxPointerRouter.ts
+index 92565a8..36201a2 100644
+--- a/packages/react-native-gesture-handler/src/web/tools/LinuxPointerRouter.ts
++++ b/packages/react-native-gesture-handler/src/web/tools/LinuxPointerRouter.ts
+@@ -5,14 +5,17 @@
+ 
+ type PointerListener = (event: LinuxPointerEvent) => void;
+ 
++interface LinuxRect {
++  left: number;
++  top: number;
++  right: number;
++  bottom: number;
++}
++
+ export interface LinuxElement {
+   contains(other: LinuxElement): boolean;
+-  getBoundingClientRect(): {
+-    left: number;
+-    top: number;
+-    right: number;
+-    bottom: number;
+-  };
++  getBoundingClientRect(): LinuxRect;
++  readonly children?: ArrayLike<LinuxElement>;
+ }
+ 
+ export interface LinuxPointerEvent {
+@@ -51,8 +54,8 @@ export class LinuxView {
+     this.listeners.get(type)?.delete(listener);
+   }
+ 
+-  getBoundingClientRect() {
+-    return this.element.getBoundingClientRect();
++  getBoundingClientRect(): LinuxRect {
++    return effectiveBoundingRect(this.element);
+   }
+ 
+   getAttribute(_name: string): string | null {
+@@ -64,6 +67,30 @@ export class LinuxView {
+   }
+ }
+ 
++const hasBox = ({ left, top, right, bottom }: LinuxRect) =>
++  right > left || bottom > top;
++
++// The hook API's detector is a display: contents view, which has no box of its own: its bounds are its children's,
++// as the web engine's getEffectiveBoundingRect derives them.
++function effectiveBoundingRect(element: LinuxElement): LinuxRect {
++  const rect = element.getBoundingClientRect();
++  if (hasBox(rect)) {
++    return rect;
++  }
++
++  const childRects = Array.from(element.children ?? [], effectiveBoundingRect).filter(hasBox);
++  if (childRects.length === 0) {
++    return rect;
++  }
++
++  return {
++    left: Math.min(...childRects.map((child) => child.left)),
++    top: Math.min(...childRects.map((child) => child.top)),
++    right: Math.max(...childRects.map((child) => child.right)),
++    bottom: Math.max(...childRects.map((child) => child.bottom)),
++  };
++}
++
+ const views = new Set<LinuxView>();
+ const activeGestures = new Set<unknown>();
+ 

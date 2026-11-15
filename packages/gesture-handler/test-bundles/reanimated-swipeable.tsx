@@ -18,7 +18,12 @@ const renderRightActions = (): React.JSX.Element => <Text>Archive</Text>;
 
 const SwipeableApp = (): React.JSX.Element => (
   <GestureHandlerRootView style={styles.root}>
-    <ReanimatedSwipeable renderRightActions={renderRightActions}>
+    <ReanimatedSwipeable
+      onSwipeableOpenStartDrag={(direction) => console.log(`swipeable: drag to open ${direction}`)}
+      onSwipeableWillOpen={(direction) => console.log(`swipeable: will open ${direction}`)}
+      onSwipeableOpen={(direction) => console.log(`swipeable: open ${direction}`)}
+      renderRightActions={renderRightActions}
+    >
       <View onLayout={reportRow} style={styles.row} />
     </ReanimatedSwipeable>
   </GestureHandlerRootView>
