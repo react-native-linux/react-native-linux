@@ -160,9 +160,11 @@ destroys it only after the JavaScript thread has quit, so a method can hold it b
 
 An event is a method of the event's name that takes the listener, which is what the proxy's `addListener` calls, and
 it returns an `EventSubscription`, the shape of React Native's C++ event emitter. The proxy has no `removeListener`,
-`removeAllListeners` or `emit`, so removal goes through that subscription. No module of ours emits events yet: the
-`EventEmitter` round trip in the `expo-constants` e2e proves only that the polyfill is installed, not native event
-delivery. The first module with events adds an e2e that delivers one from native code.
+`removeAllListeners` or `emit`, so removal goes through that subscription. The `EventEmitter` round trip in the
+`expo-constants` e2e proves only that the polyfill is installed, not native event delivery. `ExpoLinking`'s
+`onURLReceived` subscribes to the `url` device event an activation already emits, proved from a native activation to
+the listener by `ExpoStartupModulesTest`; `ExpoNetwork`'s `onNetworkStateChanged` is React Native's C++ event emitter
+and emits nothing yet. The first module that emits on its own emitter adds an e2e that delivers one from native code.
 
 - **Optional lookup** (`requireOptionalNativeModule`) of a module this platform does not register returns `null`,
   and upstream's JavaScript takes its own "unavailable" path, as `expo-constants` does when it warns that
@@ -279,6 +281,9 @@ Any one of these reopens the question in a new ADR:
   platform's Metro config and Babel preset; the same entry bundled through `expo/metro-config` and
   `babel-preset-expo`, as an Expo application bundles, is
   [#687](https://github.com/react-native-linux/react-native-linux/issues/687).
+- T3 Code's startup graph reaches more Expo modules through `requireNativeModule`; `docs/research/t3code-linux.md`
+  §1 lists each one, whether it is registered, and the issue that owns it. `ExpoApplication`, `ExpoDevice`,
+  `ExpoLinking` and `ExpoNetwork` are registered, proved by the `expo-startup-modules` e2e.
 - `packages/expo` (`@react-native-linux/expo`) holds the per-module table, the e2e scenarios, the surface lists and
   the escape hatches' runtime code. Its e2e installs the upstream packages; `pnpm-workspace.yaml`
   marks `expo-constants`' `expo` peer optional because its JavaScript imports only types from it.
