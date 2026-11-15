@@ -389,6 +389,15 @@ TEST_F(TextInputControllerTest, ACommitOfAFlushedPreeditLeavesReactsEventCountCu
     controller_->synchronize();
 
     EXPECT_EQ(countRecorded(kChangeEvent), 1U);
+
+    recordedEventTypes_->clear();
+    setTextAndSelection(folly::dynamic::array(2, "stale", 5, 5));
+
+    EXPECT_TRUE(recordedEventTypes_->empty());
+
+    setTextAndSelection(folly::dynamic::array(3, "x", 1, 1));
+
+    EXPECT_EQ(countRecorded(kSelectionChangeEvent), 1U);
 }
 
 // #340: the field that loses the caret mid-composition loses the composing run with it. Without this the
