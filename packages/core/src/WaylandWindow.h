@@ -253,12 +253,11 @@ public:
     std::optional<uint32_t> presentationClockId() const noexcept;
 
     /**
-     * The display's frame period: the `refresh` the last `presented` feedback reported, or, on a compositor that
-     * reports zero, the shortest interval measured between two consecutive presented frames. Absent until one of
-     * those exists. It is what the run loop's fallback interval stretches over, so an idle window polls for work at
-     * the display's own rate rather than a nominal 60 Hz one (#703).
+     * The display's frame period, `FrameTiming::refreshNanoseconds`. It is what the run loop's fallback interval
+     * stretches over, so an idle window polls for work at the display's own rate rather than a nominal 60 Hz one
+     * (#703).
      */
-    std::optional<std::chrono::nanoseconds> refreshInterval() const noexcept;
+    std::optional<std::chrono::nanoseconds> refreshInterval() const;
 
     /**
      * The readiness signal of issue #373: true from the first `wp_presentation_feedback.presented` this window has
@@ -290,6 +289,11 @@ public:
     /** The token the last `requestActivationToken` produced, exactly once; `std::nullopt` until the `done` event. */
     std::optional<std::string> takeActivationToken();
 
+    /**
+     * Dispatches until the frame callback fires, the fallback timeout expires or the window closes; returns false once
+     * it is closed. An idle window armed no callback (#703), so input arriving while it waits ends the wait at once
+     * rather than waiting out the fallback: the next iteration takes it and answers it.
+     */
     bool waitForRedraw(std::chrono::milliseconds fallbackTimeout);
 
     /**
@@ -338,6 +342,7 @@ public:
 private:
     void bindGlobal(wl_registry* registry, uint32_t name, const char* interfaceName, uint32_t version);
     void dispatchWithTimeout(std::chrono::milliseconds timeout);
+    bool hasInputEndingIdleWait() const noexcept;
     /**
      * Classifies one dispatch/flush/read-events return value through `classifyWaylandDispatchResult`
      * (`WaylandDispatchDiagnostics.h`), passing both `wl_display_get_error` and the plain `errno` the call itself
@@ -381,6 +386,8 @@ private:
                                                  uint32_t refresh, uint32_t sequenceHigh, uint32_t sequenceLow,
                                                  uint32_t flags);
     static void handleFeedbackDiscarded(void* data, struct wp_presentation_feedback* feedback);
+    static void handleFeedbackDiscardedAfterIdle(void* data, struct wp_presentation_feedback* feedback);
+    void recordDiscardedFeedback(struct wp_presentation_feedback* feedback, bool startsRun);
 
     static const wl_registry_listener kRegistryListener;
     static const wl_surface_listener kSurfaceListener;
@@ -418,7 +425,6 @@ private:
     FrameTiming frameTiming_;
     std::vector<PresentationEvent> presentationEvents_;
     std::optional<uint32_t> presentationClockId_;
-    std::optional<std::chrono::nanoseconds> refreshInterval_;
     WindowSize size_;
     uint32_t preferredScale_{kFractionalScaleDenominator};
     std::string title_;

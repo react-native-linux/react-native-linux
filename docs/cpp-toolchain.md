@@ -11,9 +11,9 @@ retained scene every frame — issue #32, the first React-driven pixels. Without
 placeholder card and runs no JavaScript.
 
 `rnl_window --screenshot <output.png> [--frames N]` is the same window, run for `N` frames (presented frames and
-idle ticks, #703) and then read back: the last presented swapchain image is copied into a host buffer and written as a PNG, and the process
-exits. That is issue #33, and with a headless compositor and lavapipe it is the only rig that proves
-`SkiaVulkanRenderer`. See *Window goldens*.
+idle ticks, #703) and then read back: the last presented swapchain image is copied into a host buffer and written as
+a PNG, and the process exits. That is issue #33, and with a headless compositor and lavapipe it is the only rig that
+proves `SkiaVulkanRenderer`. See *Window goldens*.
 
 `hello_react --golden <bundle> <output.png>` is the third mode and the producer half of the golden-image rig from
 issue #6: it boots the same headless Fabric host, renders the settled scene into an **offscreen raster**
@@ -614,16 +614,23 @@ Two inputs, one flag, and both draw only if `hasPendingWork` is true:
   that answered a tap by 30–100 ms. A timer draw restarts the settle too, so a commit landing just after the wake
   frame is still met by a callback. Skipping the draw is also what stops the callbacks, because only a draw re-arms
   `wl_surface.frame`; `WaylandWindow::skipFrame` consumes the fired callback so the next wait sleeps the fallback
-  interval instead of returning at once. The loop then polls on that interval, which is the display period
-  `wp_presentation` reported (or measured, where the compositor reports zero), and the first tick that finds
-  pending work draws and re-arms the callback. Every producer is therefore one of the signals `hasPendingWork`
-  composes, read on the frame thread: a JavaScript commit or an image decode is mounting damage, a timer, a
-  `requestAnimationFrame` or a worklet job is `ReactHost::hasPendingTimers`, and a running animation is the
-  choreographer's flag. Input needs no signal: the loop takes it on every iteration, drawn or not. A resize, a
-  chrome change, a pending capture and a discarded content update draw regardless. `IdleWakeTest` proves each
-  producer wakes an idle clock from another thread, and the `idle-wake` scenario proves the window presents nothing
-  for two seconds and then answers a tap. The frame presented after a skip starts a new `FrameTiming` run, so the
-  idle span is not a frame time, and `--frames` counts idle ticks beside presented frames, so a fixture still ends.
+  interval instead of returning at once. The loop then polls on that interval, stretched from
+  `FrameClock::pacingPeriod`: after a skip it is the display period `wp_presentation` reported (or, where the
+  compositor reports zero, `FrameTiming::refreshNanoseconds`, the median of recent frame times above a 2 ms floor),
+  and after a draw, with a callback armed, it is two display periods and never under 60 Hz, so a slightly late
+  callback is not beaten by an off-vsync timer draw. The first tick that finds pending work draws and re-arms the
+  callback. Every producer is therefore one of the signals `hasPendingWork` composes, read on the frame thread: a
+  JavaScript commit, an image decode or a `<TextInput>` editor state that changed (a caret blink, not the unchanged
+  state `TextInputController` publishes every frame) is mounting damage, a `requestAnimationFrame` or a worklet job
+  is `ReactHost::hasPendingFrameRequests`, and a running animation is the choreographer's flag. A JS timer is not
+  a producer: `HostTimerRegistry` fires it on its own thread and what it changes arrives as a commit, so an app
+  holding a 60 s interval still goes idle. Input needs no signal: the loop takes it on every iteration, drawn or
+  not, and input arriving while no callback is armed ends the wait at once. A resize, a chrome change, a pending
+  capture and a discarded content update draw regardless. `IdleWakeTest` proves each producer wakes an idle clock
+  from another thread and that a pending timer or an unchanged editor state does not, and the `idle-wake` and
+  `text-input-typing` scenarios prove the window presents nothing while idle. The frame presented after a skip
+  starts a new `FrameTiming` run, also when the first update after the skip is discarded, so the idle span is not
+  a frame time, and `--frames` counts idle ticks beside presented frames, so a fixture still ends.
 - `onFallbackTimeout(now, hasPendingWork)`. An idle occluded window with a static picture must not spin the GPU on
   every fallback wakeup; a window with something still moving must not stall just because nothing sent it a
   callback.
@@ -667,17 +674,15 @@ previous callback (or lack of one) outstanding rather than requesting a new one 
 `hasPendingWork` for a `Timer` tick is four signals, ORed, computed by `WindowSession` and `FabricHost` between
 them:
 
-- `LinuxMountingManager::hasPendingDamage()` — a mount, an image decode, a focus change or an editor-state publish
+- `LinuxMountingManager::hasPendingDamage()` — a mount, an image decode, a focus change or an editor-state change
   since the last `takeFrame`. This is a dedicated flag on the mounting manager, not a peek at `RetainedScene`'s
   damage list, because the retained scene has no non-consuming way to ask "is there damage" without changing its
   mutation-tracking contract.
 - `ScrollController::isScrollActive()` — any target still being dragged or still gliding, read from the controller's
   own state rather than by calling `advance` a second time for the same frame.
-- `ReactHost::hasPendingTimers()` — any JS timer or `requestAnimationFrame` callback outstanding. `HostTimerRegistry` tracks a timer's delay and whether
-  it recurs, not an absolute deadline, so this is "a timer exists" rather than "a timer is due before the next
-  tick": a conservative signal that can hold the fallback awake a little ahead of when a distant `setTimeout`
-  actually fires, never behind. A precise `hasDueTimer(now)` would need the registry to track absolute deadlines
-  across the JS-thread/frame-thread boundary it does not track today, which is more machinery than this fix needs.
+- `ReactHost::hasPendingFrameRequests()` — a `requestAnimationFrame` callback or worklets' frame work outstanding.
+  A JS timer is not part of it (#703): `HostTimerRegistry` fires a timer on its own thread whatever the window does,
+  and what the callback changes reaches the window as mounting damage.
 - `LinuxAnimationChoreographer::isActive()` — a running animation, which is the signal #129 added. `resume` and
   `pause` come from `AnimationBackend::start` and `::stop`, so this is exactly "the backend has a frame callback
   registered", and it is what stops an animation freezing the moment Hyprland withholds callbacks for a background
@@ -714,7 +719,7 @@ pure: no JSI, no clock reads, every timestamp passed in. Three rules:
   rather than erased, so cancelling the callback after the running one drops it without moving the entries behind
   it. A handle is never zero and never reused, so a stale or negative handle cancels nothing, as on the web.
 
-Liveness is `hasPendingRequests`, which `ReactHost::hasPendingTimers` ORs into the frame clock's pending-work
+Liveness is `hasPendingRequests`, which `ReactHost::hasPendingFrameRequests` ORs into the frame clock's pending-work
 signal above. Without it a window whose compositor withholds `wl_surface.frame` — occluded, or on an inactive
 workspace, which ADR-0001 decision 3 names — would draw no frame, dispatch no callback, and the loop would stop
 until something else woke it: react-native#57592 as seen from JavaScript. It stays true *through* a dispatch as
@@ -748,7 +753,7 @@ What this does not cover: no e2e scenario proves fallback-only progress, because
 does not have, which is the gap the end of this section's parent already names as a follow-up. `raf-idle` is
 therefore "keeps ticking while nothing else repaints", never "ticks on the fallback alone"; the fallback claim
 rests on the unit composition above. The one seam with no test at all is the wiring — that
-`ReactHost::hasPendingTimers` is the thing that ORs the queue into that signal — because reaching it needs a live
+`ReactHost::hasPendingFrameRequests` is the thing that ORs the queue into that signal — because reaching it needs a live
 runtime; it is covered by `raf-idle` and by inspection.
 
 ### Desktop lifecycle contract (#218)

@@ -1,7 +1,9 @@
 #include "FrameTiming.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <gtest/gtest.h>
+#include <optional>
 
 namespace {
 
@@ -100,6 +102,85 @@ TEST(FrameTimingTest, AFrameThatStartsARunAfterAnIdleSpanHasNoDelta) {
     EXPECT_EQ(timing.summarise().maximumNanoseconds, 8 * kMillisecond);
 }
 
+/**
+ * #703: when the first update after an idle span is discarded, the update that replaces it is the one that presents,
+ * and the run boundary waits for it, so the idle span is still nobody's frame time.
+ */
+TEST(FrameTimingTest, ARunStartedByADiscardedUpdateStartsAtTheNextPresentedFrame) {
+    FrameTiming timing;
+
+    timing.recordPresented(kFirstSequence, 0, kRefreshNanoseconds, kVsyncFlag);
+    timing.recordDiscarded(true);
+    const FrameTiming::Frame replacement =
+        timing.recordPresented(kFirstSequence + 1, 2000 * kMillisecond, kRefreshNanoseconds, kVsyncFlag);
+
+    EXPECT_EQ(replacement.frameNanoseconds, std::nullopt);
+    EXPECT_EQ(timing.summarise().maximumNanoseconds, 0U);
+}
+
+/** A compositor that reports the display's period is taken at its word (#703). */
+TEST(FrameTimingTest, TheRefreshPeriodIsTheOneTheCompositorReports) {
+    FrameTiming timing;
+
+    EXPECT_EQ(timing.refreshNanoseconds(), std::nullopt);
+
+    timing.recordPresented(0, 0, kRefreshNanoseconds, 0);
+
+    EXPECT_EQ(timing.refreshNanoseconds(), kRefreshNanoseconds);
+}
+
+/**
+ * Where the compositor reports zero (#703), the period is measured: two presents with one timestamp are below the
+ * floor, and a late present followed by an early one does not drag the estimate to the early interval.
+ */
+TEST(FrameTimingTest, AMeasuredRefreshPeriodIgnoresEqualTimestampsAndJitter) {
+    constexpr uint64_t kPeriodNanoseconds = 8'333'333;
+    constexpr uint64_t kJitterNanoseconds = 3 * kMillisecond;
+    FrameTiming timing;
+    uint64_t presentedNanoseconds = 0;
+    uint64_t sequence = 0;
+
+    timing.recordPresented(sequence++, presentedNanoseconds, 0, 0);
+    timing.recordPresented(sequence++, presentedNanoseconds, 0, 0);
+
+    EXPECT_EQ(timing.refreshNanoseconds(), std::nullopt);
+
+    for (int pair = 0; pair < 3; ++pair) {
+        presentedNanoseconds += kPeriodNanoseconds;
+        timing.recordPresented(sequence++, presentedNanoseconds, 0, 0);
+        presentedNanoseconds += kPeriodNanoseconds + kJitterNanoseconds;
+        timing.recordPresented(sequence++, presentedNanoseconds, 0, 0);
+        presentedNanoseconds += kPeriodNanoseconds - kJitterNanoseconds;
+        timing.recordPresented(sequence++, presentedNanoseconds, 0, 0);
+    }
+
+    EXPECT_EQ(timing.refreshNanoseconds(), kPeriodNanoseconds);
+}
+
+/** The measured period follows the display when it slows (#703), rather than keeping the shortest one ever seen. */
+TEST(FrameTimingTest, AMeasuredRefreshPeriodRecoversUpward) {
+    constexpr uint64_t kFastPeriodNanoseconds = 6'944'444;
+    FrameTiming timing;
+    uint64_t presentedNanoseconds = 0;
+    uint64_t sequence = 0;
+
+    timing.recordPresented(sequence++, presentedNanoseconds, 0, 0);
+
+    for (size_t frame = 0; frame < FrameTiming::kRefreshSampleCount; ++frame) {
+        presentedNanoseconds += kFastPeriodNanoseconds;
+        timing.recordPresented(sequence++, presentedNanoseconds, 0, 0);
+    }
+
+    ASSERT_EQ(timing.refreshNanoseconds(), kFastPeriodNanoseconds);
+
+    for (size_t frame = 0; frame < FrameTiming::kRefreshSampleCount; ++frame) {
+        presentedNanoseconds += kRefreshNanoseconds;
+        timing.recordPresented(sequence++, presentedNanoseconds, 0, 0);
+    }
+
+    EXPECT_EQ(timing.refreshNanoseconds(), kRefreshNanoseconds);
+}
+
 TEST(FrameTimingTest, PercentilesUseNearestRankOverAKnownTable) {
     const FrameTiming::Summary summary = buildKnownTable().summarise();
 
@@ -114,8 +195,8 @@ TEST(FrameTimingTest, DiscardedContentUpdatesAreCountedAndNeverTimed) {
     FrameTiming timing;
 
     timing.recordPresented(0, 0, kRefreshNanoseconds, 0);
-    timing.recordDiscarded();
-    timing.recordDiscarded();
+    timing.recordDiscarded(false);
+    timing.recordDiscarded(false);
     timing.recordPresented(1, 16 * kMillisecond, kRefreshNanoseconds, 0);
 
     const FrameTiming::Summary summary = timing.summarise();

@@ -13,17 +13,17 @@ namespace react_native_linux {
  * fired" or "the fallback timed out" into a draw decision without ever reading a clock itself — every timestamp is
  * passed in by the caller, so the machine is deterministic and has no Wayland dependency.
  *
- * Either input draws only if the caller reports pending work (damage, active scroll physics, a pending JS timer,
- * animation frame or worklet job): an idle occluded window must not spin the GPU just because nothing sends it a
- * callback, and an idle visible window must not present an unchanged picture on every callback (#703). A callback
- * still draws for two frames after the work runs out, so every swapchain image takes the last change while the
- * window is busy instead of on the first frame that answers the next input. A skipped callback is what stops the
- * presents, because only a draw re-arms `wl_surface.frame`; the loop then keeps polling on the fallback timeout,
- * which is where the first pending work wakes it. Either way the reported delta is wall-clock time since the last
- * tick that actually drew, so an
- * animation driven only by the fallback advances at the right rate instead of stalling or jumping when it resumes.
- * The first callback to arrive after one or more fallback-driven ticks is flagged `resumed`, exactly once, so a
- * caller that cares can tell a real resume from an ordinary vsync-paced callback.
+ * Either input draws only if the caller reports pending work (damage, active scroll physics, a pending animation
+ * frame or worklet job; a JS timer is not one, because what it changes arrives as damage): an idle occluded window must
+ * not spin the GPU just because nothing sends it a callback, and an idle visible window must not present an unchanged
+ * picture on every callback (#703). A callback still draws for two frames after the work runs out, so every swapchain
+ * image takes the last change while the window is busy instead of on the first frame that answers the next input. A
+ * skipped callback is what stops the presents, because only a draw re-arms `wl_surface.frame`; the loop then keeps
+ * polling on the fallback timeout, which is where the first pending work wakes it. Either way the reported delta is
+ * wall-clock time since the last tick that actually drew, so an animation driven only by the fallback advances at the
+ * right rate instead of stalling or jumping when it resumes. The first callback to arrive after one or more
+ * fallback-driven ticks is flagged `resumed`, exactly once, so a caller that cares can tell a real resume from an
+ * ordinary vsync-paced callback.
  */
 class FrameClock final {
 public:
@@ -57,6 +57,16 @@ public:
 
     [[nodiscard]] static std::chrono::nanoseconds fallbackInterval(WindowActivity activity, ThermalState thermal,
                                                                    std::chrono::nanoseconds refreshInterval);
+
+    /**
+     * The `refreshInterval` the fallback stretches over (#703), from the display period `wp_presentation` reported
+     * (60 Hz until it has). After a skipped iteration no callback is armed and the fallback is how an idle window
+     * polls for work, so it is the display period. After a draw a callback is armed and the fallback only covers a
+     * compositor withholding it, so it is two display periods and never under 60 Hz: a callback a little late at
+     * 144 Hz must not lose to an off-vsync timer draw.
+     */
+    [[nodiscard]] static std::chrono::nanoseconds pacingPeriod(bool hasDrawn,
+                                                               std::optional<std::chrono::nanoseconds> displayPeriod);
 
     /**
      * The thermal state from a thermal zone's temperature as a fraction of its own critical trip temperature:

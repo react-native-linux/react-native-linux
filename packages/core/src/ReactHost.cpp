@@ -391,11 +391,10 @@ void ReactHost::dispatchAnimationFrames(std::chrono::steady_clock::time_point no
         });
 }
 
-bool ReactHost::hasPendingTimers() const {
+bool ReactHost::hasPendingFrameRequests() const {
     react_native_assert(std::this_thread::get_id() == owningThread_);
 
-    return timerRegistry_->hasPendingTimers() || animationFrameQueue_.hasPendingRequests() ||
-           turboModuleRegistry_->worklets().hasPendingWork();
+    return animationFrameQueue_.hasPendingRequests() || turboModuleRegistry_->worklets().hasPendingWork();
 }
 
 } // namespace react_native_linux

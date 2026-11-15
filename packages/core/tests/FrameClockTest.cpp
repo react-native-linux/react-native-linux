@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <gtest/gtest.h>
+#include <optional>
 
 namespace {
 
@@ -205,6 +206,22 @@ TEST(FrameClockTest, ASeriousOrCriticalThermalStateCapsTheIntervalAtOne60HzFrame
         EXPECT_EQ(FrameClock::fallbackInterval(activity, FrameClock::ThermalState::Critical, refresh144),
                   std::chrono::nanoseconds{16'666'666});
     }
+}
+
+/**
+ * #703: an idle window, which armed no callback, polls for work at the display's period, while one whose last draw
+ * armed a callback gives it two periods and never less than a 60 Hz frame before a timer draws instead.
+ */
+TEST(FrameClockTest, ThePacingPeriodPollsAnIdleWindowAtTheDisplayRateAndLetsAnArmedCallbackRunLate) {
+    const std::chrono::nanoseconds nominal{16'666'666};
+    const std::chrono::nanoseconds refresh144{6'944'444};
+    const std::chrono::nanoseconds refresh30{33'333'333};
+
+    EXPECT_EQ(FrameClock::pacingPeriod(false, refresh144), refresh144);
+    EXPECT_EQ(FrameClock::pacingPeriod(true, refresh144), nominal);
+    EXPECT_EQ(FrameClock::pacingPeriod(true, refresh30), refresh30 * 2);
+    EXPECT_EQ(FrameClock::pacingPeriod(false, std::nullopt), nominal);
+    EXPECT_EQ(FrameClock::pacingPeriod(true, std::nullopt), nominal);
 }
 
 TEST(FrameClockTest, TheThermalStateClassifiesAgainstTheZoneSOwnCriticalTrip) {

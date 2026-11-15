@@ -110,8 +110,8 @@ public:
     /**
      * Feeds one `WaylandWindow::waitForRedraw` outcome to the frame clock and returns its draw decision. `source`
      * is `Callback` when `WaylandWindow::hasFrameCallbackFired` was true and `Timer` otherwise; the pending-work
-     * flag `FrameClock` gates both on is computed here from the Fabric host and the JS timer registry, so the
-     * caller only has to say which frame source woke it.
+     * flag `FrameClock` gates both on is computed here from the Fabric host and the React host's frame requests, so
+     * the caller only has to say which frame source woke it.
      */
     FrameClock::Tick recordFrameTick(FrameClock::Source source, std::chrono::steady_clock::time_point now);
     SceneFrame takeFrame();

@@ -37,19 +37,20 @@ void expectProducerWakesAnIdleClock(const std::function<bool()>& hasPendingWork,
     EXPECT_EQ(wake.source, FrameClock::Source::Timer);
 }
 
+void commitOneView(react_native_linux::LinuxMountingManager& mountingManager) {
+    facebook::react::ShadowView view;
+    view.tag = 2;
+    facebook::react::ShadowViewMutation::List mutations;
+    mutations.push_back(facebook::react::ShadowViewMutation::CreateMutation(view));
+    mountingManager.executeMount(
+        1, facebook::react::MountingTransaction{1, 1, std::move(mutations), facebook::react::TransactionTelemetry{}});
+}
+
 TEST(IdleWakeTest, AJavaScriptCommitWakesAnIdleWindow) {
     react_native_linux::LinuxMountingManager mountingManager;
 
     expectProducerWakesAnIdleClock([&] { return mountingManager.hasPendingDamage(); },
-                                   [&] {
-                                       facebook::react::ShadowView view;
-                                       view.tag = 2;
-                                       facebook::react::ShadowViewMutation::List mutations;
-                                       mutations.push_back(facebook::react::ShadowViewMutation::CreateMutation(view));
-                                       mountingManager.executeMount(
-                                           1, facebook::react::MountingTransaction{
-                                                  1, 1, std::move(mutations), facebook::react::TransactionTelemetry{}});
-                                   });
+                                   [&] { commitOneView(mountingManager); });
 }
 
 TEST(IdleWakeTest, AnImageDecodeWakesAnIdleWindow) {
@@ -66,13 +67,54 @@ TEST(IdleWakeTest, AnAnimationFrameRequestWakesAnIdleWindow) {
                                    [&] { queue.request([](double /*frameTimestamp*/) {}); });
 }
 
-TEST(IdleWakeTest, ATimerWakesAnIdleWindow) {
+/**
+ * A pending JS timer is not pending work (#703): an app holding a 60 s interval lets the window go idle, and the commit
+ * its callback makes when it fires is what wakes it, exactly like any other commit.
+ */
+TEST(IdleWakeTest, APendingTimerLeavesAnIdleWindowAsleepUntilItCommits) {
     react_native_linux::HostTimerRegistry registry;
+    react_native_linux::LinuxMountingManager mountingManager;
+    FrameClock clock;
+    const std::chrono::steady_clock::time_point start{};
 
-    expectProducerWakesAnIdleClock([&] { return registry.hasPendingTimers(); },
-                                   [&] { registry.createTimer(1, 60'000.0); });
+    ASSERT_FALSE(clock.onFrameCallback(start, mountingManager.hasPendingDamage()).shouldDraw);
+
+    std::thread([&] { registry.createTimer(1, 60'000.0); }).join();
+
+    ASSERT_TRUE(registry.hasPendingTimers());
+    EXPECT_FALSE(
+        clock.onFallbackTimeout(start + std::chrono::milliseconds(16), mountingManager.hasPendingDamage()).shouldDraw);
+
+    std::thread([&] { commitOneView(mountingManager); }).join();
+
+    EXPECT_TRUE(
+        clock.onFallbackTimeout(start + std::chrono::milliseconds(32), mountingManager.hasPendingDamage()).shouldDraw);
 
     registry.deleteTimer(1);
+}
+
+/**
+ * `TextInputController` publishes every field's editor state on every frame, so a mounted field nobody focused must
+ * not count as damage (#703), while a caret blink, which changes the state, still wakes the window.
+ */
+TEST(IdleWakeTest, AnUnchangedEditorStateLeavesAnIdleWindowAsleepAndACaretBlinkWakesIt) {
+    react_native_linux::LinuxMountingManager mountingManager;
+    FrameClock clock;
+    const std::chrono::steady_clock::time_point start{};
+
+    commitOneView(mountingManager);
+    mountingManager.takeFrame();
+
+    ASSERT_FALSE(clock.onFrameCallback(start, mountingManager.hasPendingDamage()).shouldDraw);
+
+    std::thread([&] { mountingManager.setEditorState(2, react_native_linux::SceneEditorState{}); }).join();
+
+    EXPECT_FALSE(
+        clock.onFallbackTimeout(start + std::chrono::milliseconds(16), mountingManager.hasPendingDamage()).shouldDraw);
+
+    expectProducerWakesAnIdleClock(
+        [&] { return mountingManager.hasPendingDamage(); },
+        [&] { mountingManager.setEditorState(2, react_native_linux::SceneEditorState{.isCaretVisible = true}); });
 }
 
 TEST(IdleWakeTest, TheAnimationBackendStartingWakesAnIdleWindow) {

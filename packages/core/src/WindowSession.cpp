@@ -193,7 +193,9 @@ void WindowSession::reportJournalDiscontinuity() { frameJournal_.recordDiscontin
 
 FrameJournal::Summary WindowSession::frameJournalSummary() const { return frameJournal_.summarise(); }
 
-bool WindowSession::hasPendingWork() const { return fabricHost_->hasPendingWork() || reactHost_.hasPendingTimers(); }
+bool WindowSession::hasPendingWork() const {
+    return fabricHost_->hasPendingWork() || reactHost_.hasPendingFrameRequests();
+}
 
 double WindowSession::takeFrameMilliseconds() {
     const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();

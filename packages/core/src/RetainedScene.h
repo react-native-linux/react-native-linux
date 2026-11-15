@@ -773,9 +773,9 @@ public:
     /**
      * Publishes where a `<TextInput>`'s caret, selection and composing run are, and damages that field when any
      * of it moved. An unchanged state damages nothing, which is what keeps a caret that is not blinking and a
-     * field nobody is typing in from repainting every frame.
+     * field nobody is typing in from repainting every frame. Returns whether it damaged the field.
      */
-    void setEditorState(facebook::react::Tag tag, const SceneEditorState& editorState);
+    bool setEditorState(facebook::react::Tag tag, const SceneEditorState& editorState);
 
     /**
      * Applies the non-layout props an animation frame changed, as `animationbackend::packAnimatedProps` packs

@@ -65,11 +65,10 @@ constexpr uint32_t kDefaultScreenshotFrames = 60;
 // The frame-pacing inputs of #335. The fallback interval is the decision `FrameClock::fallbackInterval` makes
 // from the window's activity, the machine's thermal state and the display's frame period; the thermal state is
 // re-read from the kernel's thermal zones at most once a second, because a file walk per fallback tick is the
-// very waste the pacing exists to avoid. The display period is the one `wp_presentation` last reported, and this
-// nominal 60 Hz one until a presentation reports it (#703): an idle window polls for work on this interval, so a
-// 120 Hz display must not be polled at 60 Hz. The stretch multipliers make the deactivated fallback three display
-// periods, while an activated window whose callbacks stopped is re-polled at full rate.
-constexpr std::chrono::nanoseconds kNominalRefreshInterval{16'666'666};
+// very waste the pacing exists to avoid. The period it stretches is `FrameClock::pacingPeriod` (#703): an idle
+// window polls for work at the display's own rate, so a 120 Hz display is not polled at 60 Hz. The stretch
+// multipliers make the deactivated fallback three periods, while an activated window whose callbacks stopped is
+// re-polled every period.
 constexpr std::chrono::milliseconds kThermalReadInterval{1'000};
 constexpr const char* kThermalZoneGlob = "/sys/class/thermal/thermal_zone*";
 
@@ -1715,7 +1714,8 @@ int main(int argc, char** argv) {
                     const std::chrono::nanoseconds fallbackInterval = react_native_linux::FrameClock::fallbackInterval(
                         window.toplevelState().activated ? react_native_linux::FrameClock::WindowActivity::Active
                                                          : react_native_linux::FrameClock::WindowActivity::Inactive,
-                        readThermalState(fallbackNow), window.refreshInterval().value_or(kNominalRefreshInterval));
+                        readThermalState(fallbackNow),
+                        react_native_linux::FrameClock::pacingPeriod(!skipped, window.refreshInterval()));
 
                     if (!window.waitForRedraw(std::chrono::ceil<std::chrono::milliseconds>(fallbackInterval))) {
                         break;

@@ -4,7 +4,7 @@
   "ready": "reanimated-timing: started",
   "frames": 900,
   "frameBudget": { "p95Ms": 17.5, "minFrames": 60, "maxHangs": 0 },
-  "steps": ["sleep 2000"],
+  "steps": ["sleep 3000"],
   "screenshot": {
     "golden": "reanimated-timing.png",
     "maxDifferentPixels": 50,
