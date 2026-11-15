@@ -11,6 +11,7 @@
     "deadcode": "knip",
     "doctor": "node scripts/doctor.ts",
     "e2e": "node scripts/e2e.ts",
+    "e2e:t3code": "node scripts/t3code-fixture.ts",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
     "format:cpp": "node scripts/format-cpp.ts",

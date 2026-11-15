@@ -1,7 +1,7 @@
 # @react-native-linux/gesture-handler
 
-The Linux overlay of https://github.com/software-mansion/react-native-gesture-handler, vendored at `v2.32.0`, the
-version the flagship pins.
+The Linux overlay of https://github.com/software-mansion/react-native-gesture-handler, vendored at `v3.5.0`, the
+version T3 Code pins (#634).
 
 ## Layout
 
@@ -18,7 +18,9 @@ engine. It does ship a third, in JavaScript, for the web (`src/web`): the handle
 `InteractionManager` and velocity tracking, behind one `GestureHandlerDelegate` interface. The owner decided on #168
 that Linux runs that engine, so no fourth implementation exists. Linux supplies only what the DOM supplies on web:
 
-- `RNGestureHandlerModule.linux.ts` creates the web handlers with `GestureHandlerLinuxDelegate`.
+- `RNGestureHandlerModule.linux.ts` creates the web handlers with `GestureHandlerLinuxDelegate`, behind the module
+  contract `RNGestureHandlerModule.web` answers in 3.x (`setGestureHandlerConfig`, `updateGestureHandlerConfig`,
+  `configureRelations`, `detachGestureHandler`, `getModuleId`).
 - `findNodeHandle.linux.ts` answers the host element, a `ReactNativeElement`, whose `getBoundingClientRect` and
   `contains` come from React Native's own DOM APIs.
 - `GestureHandlerRootView.linux.tsx` captures every pointer event under the root, and `LinuxPointerRouter` hands a
@@ -37,6 +39,14 @@ that Linux runs that engine, so no fourth implementation exists. Linux supplies 
 
 Recognition therefore runs on the JavaScript thread, the trade-off the decision accepted. Worklet callbacks
 (`REANIMATED_WORKLET`) are #95's.
+
+3.x has two APIs, and the above is the builder one (`Gesture.Pan()` with `GestureDetector`). The hook API
+(`usePanGesture`, `useNativeGesture`, …, and `ReanimatedSwipeable`, which is built on it) renders through
+`HostGestureDetector`, a native component Linux does not register yet: it lays out as a plain `View` (#658) and its
+gestures do not recognize until #709. The package exports `react-native-gesture-handler/ReanimatedSwipeable`, the
+subpath T3 Code imports, so an application that uses it bundles and renders (`gesture-reanimated-swipeable`). A
+SharedValue in a hook gesture's config is pushed from the UI runtime, where Android and iOS answer with a JSI host
+function; `NativeProxy.linux.ts` sends that update back to the React Native runtime, where the Linux module lives.
 
 The `gesture-pan-over-pressable` e2e verifies mouse drags report upstream `PointerType.MOUSE`. Wheel input before
 and between pointer presses must not begin Pan recognition or create another press. Touchpad and touchscreen
@@ -75,7 +85,7 @@ inner double tap succeeds.
 | Field | Value |
 | --- | --- |
 | Repository | https://github.com/software-mansion/react-native-gesture-handler |
-| Tag | `v2.32.0` |
+| Tag | `v3.5.0` |
 | Sparse paths | `packages/react-native-gesture-handler/src` |
 
 ```bash
@@ -88,6 +98,7 @@ pnpm upstream:check gesture-handler            # prove the vendored tree still m
 
 | Patch | What it changes | Deletion trigger |
 | --- | --- | --- |
-| `0001-linux-platform` | Adds the five Linux files above and takes the web branch of `attachHandlers` on Linux; skips `getViewManagerConfig('getConstants')`, which logs a new-architecture error | Upstream accepting a `linux` platform: the files are already in the shape of that contribution |
+| `0001-linux-platform` | Adds the five Linux files above, takes the web branch of `attachHandlers` on Linux, and asks `hasDisplayContents` for a computed style only where a DOM exists | Upstream accepting a `linux` platform: the files are already in the shape of that contribution |
 | `0002-linux-pointer-ownership` | Tracks which gestures are active, and makes the Linux root view claim the responder while any is | The same as `0001` |
-| `0003-linux-native-view` | Skips browser style and attribute access for a Native recognizer on a Linux view | The same as `0001` |
+| `0003-linux-native-view` | Skips the `rnghtext` attribute and the DOM lifecycle events for a Native recognizer on a Linux view | The same as `0001` |
+| `0004-linux-shared-value-config` | Adds `NativeProxy.linux.ts`: the web proxy, with SharedValue config updates scheduled back onto the React Native runtime | The same as `0001` |

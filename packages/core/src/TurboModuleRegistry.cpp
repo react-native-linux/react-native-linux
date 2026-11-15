@@ -4,8 +4,12 @@
 #include "BeastWebSocketClient.h"
 #include "Clipboard.h"
 #include "CurlHttpClient.h"
+#include "ExpoApplicationModule.h"
 #include "ExpoAsset.h"
+#include "ExpoDeviceModule.h"
 #include "ExpoFileSystem.h"
+#include "ExpoLinkingModule.h"
+#include "ExpoNetworkModule.h"
 #include "ExpoSQLite.h"
 #include "FantomRenderOutput.h"
 #include "HostTimerRegistry.h"
@@ -1076,6 +1080,12 @@ TurboModuleRegistry::TurboModuleRegistry(
     });
     moduleFactories_.emplace(
         "FileSystem", [jsInvoker, &host = *fileSystemHost_]() { return makeExpoFileSystemModule(jsInvoker, host); });
+    moduleFactories_.emplace("ExpoApplication", [jsInvoker]() { return makeExpoApplicationModule(jsInvoker); });
+    moduleFactories_.emplace("ExpoDevice", [jsInvoker]() { return makeExpoDeviceModule(jsInvoker); });
+    moduleFactories_.emplace("ExpoLinking", [jsInvoker, activationModel = activationModel_]() {
+        return makeExpoLinkingModule(jsInvoker, activationModel);
+    });
+    moduleFactories_.emplace("ExpoNetwork", [jsInvoker]() { return makeExpoNetworkModule(jsInvoker); });
     // #79: `fetch` and `XMLHttpRequest` reach upstream's C++ Networking module, which this platform only supplies
     // the HTTP client for.
     moduleFactories_.emplace(facebook::react::NetworkingModule::kModuleName, [jsInvoker]() {

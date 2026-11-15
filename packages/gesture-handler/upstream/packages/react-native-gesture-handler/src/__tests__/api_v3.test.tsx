@@ -1,0 +1,1029 @@
+import {
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+} from '@testing-library/react-native';
+import { act } from 'react';
+import { Keyboard, TextInput, View } from 'react-native';
+
+import GestureHandlerRootView from '../components/GestureHandlerRootView';
+import { fireGestureHandler, getByGestureTestId } from '../jestUtils';
+import { State } from '../State';
+import {
+  Pressable,
+  RectButton,
+  RefreshControl,
+  ScrollView,
+  Touchable,
+} from '../v3/components';
+import {
+  GestureDetector,
+  InterceptingGestureDetector,
+  VirtualGestureDetector,
+} from '../v3/detectors';
+import { useSimultaneousGestures } from '../v3/hooks';
+import {
+  useLongPressGesture,
+  useNativeGesture,
+  usePanGesture,
+  useTapGesture,
+} from '../v3/hooks/gestures';
+import {
+  isKeyboardDismissingTap,
+  type JSResponderContextValue,
+} from '../v3/scrollViewInterop';
+
+const flushImmediate = () =>
+  new Promise((resolve) => {
+    setImmediate(() => resolve(undefined));
+  });
+
+// The Touchable press state machine runs on the native side — the JS layer
+// receives the resulting press events directly from the button.
+const buttonEvent = (pointerInside = true) => ({
+  nativeEvent: {
+    pointerInside,
+    x: 0,
+    y: 0,
+    absoluteX: 0,
+    absoluteY: 0,
+    numberOfPointers: 1,
+    pointerType: 0,
+  },
+});
+
+// Mirrors the event sequence the native side dispatches for a successful tap.
+const fireNativeTap = (testID: string) => {
+  const button = screen.getByTestId(testID);
+  fireEvent(button, 'buttonPressIn', buttonEvent());
+  fireEvent(button, 'buttonPressOut', buttonEvent());
+  fireEvent(button, 'buttonPress', buttonEvent());
+  fireEvent(button, 'buttonInteractionFinished', buttonEvent());
+};
+
+describe('[API v3] Hooks', () => {
+  test('Pan gesture', () => {
+    const onBegin = jest.fn();
+    const onStart = jest.fn();
+
+    const panGesture = renderHook(() =>
+      usePanGesture({
+        disableReanimated: true,
+        onBegin: (e) => onBegin(e),
+        onActivate: (e) => onStart(e),
+      })
+    ).result.current;
+
+    fireGestureHandler(panGesture, [
+      { oldState: State.UNDETERMINED, state: State.BEGAN },
+      { oldState: State.BEGAN, state: State.ACTIVE },
+      { oldState: State.ACTIVE, state: State.ACTIVE },
+      { oldState: State.ACTIVE, state: State.END },
+    ]);
+
+    expect(onBegin).toHaveBeenCalledTimes(1);
+    expect(onStart).toHaveBeenCalledTimes(1);
+  });
+
+  test('Pan gesture drops malformed event without crashing', () => {
+    // On Android a touch event may be serialized without the `allTouches` key
+    // when its payload is lost in a race (e.g. rapid taps cancelling the
+    // gesture). Such an event has no `oldState`, no `allTouches` and no
+    // `handlerData`, so it used to be misclassified as an update event and
+    // crash the pan change calculator with
+    // "Cannot read property 'translationX' of undefined".
+    const onUpdate = jest.fn();
+    const onTouchesUp = jest.fn();
+
+    const panGesture = renderHook(() =>
+      usePanGesture({
+        disableReanimated: true,
+        onUpdate: (e) => onUpdate(e),
+        onTouchesUp: (e) => onTouchesUp(e),
+      })
+    ).result.current;
+
+    const { jsEventHandler } = panGesture.detectorCallbacks;
+
+    const malformedTouchEvent = {
+      handlerTag: panGesture.handlerTag,
+      state: State.ACTIVE,
+      eventType: 3, // TouchEventType.TOUCHES_UP
+      numberOfTouches: 0,
+      changedTouches: [{ id: 0, x: 0, y: 0, absoluteX: 0, absoluteY: 0 }],
+      // no `allTouches`, no `oldState`, no `handlerData`
+    };
+
+    expect(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      jsEventHandler?.(malformedTouchEvent as any);
+    }).not.toThrow();
+
+    expect(onUpdate).not.toHaveBeenCalled();
+    expect(onTouchesUp).not.toHaveBeenCalled();
+  });
+
+  test('Pan gesture handles valid update events after a malformed one', () => {
+    const onUpdate = jest.fn();
+
+    const panGesture = renderHook(() =>
+      usePanGesture({
+        disableReanimated: true,
+        onUpdate: (e) => onUpdate(e),
+      })
+    ).result.current;
+
+    const { jsEventHandler } = panGesture.detectorCallbacks;
+
+    jsEventHandler?.({
+      handlerTag: panGesture.handlerTag,
+      state: State.ACTIVE,
+      eventType: 3,
+      numberOfTouches: 0,
+      changedTouches: [],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    jsEventHandler?.({
+      handlerTag: panGesture.handlerTag,
+      state: State.ACTIVE,
+      handlerData: {
+        translationX: 10,
+        translationY: 5,
+        x: 10,
+        y: 5,
+        absoluteX: 10,
+        absoluteY: 5,
+        velocityX: 0,
+        velocityY: 0,
+        stylusData: undefined,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any,
+    });
+
+    expect(onUpdate).toHaveBeenCalledTimes(1);
+    expect(onUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ changeX: 10, changeY: 5 })
+    );
+  });
+
+  // Apple and web leave `shouldCancelWhenOutside` off unless the config carries
+  // it, so the default has to come from here to match the documented behavior.
+  test('Tap and long press gestures cancel when outside by default', () => {
+    const tapGesture = renderHook(() => useTapGesture()).result.current;
+    const longPressGesture = renderHook(() => useLongPressGesture()).result
+      .current;
+
+    expect(tapGesture.config.shouldCancelWhenOutside).toBe(true);
+    expect(longPressGesture.config.shouldCancelWhenOutside).toBe(true);
+  });
+
+  test('Tap gesture keeps an explicitly configured shouldCancelWhenOutside', () => {
+    const tapGesture = renderHook(() =>
+      useTapGesture({ shouldCancelWhenOutside: false })
+    ).result.current;
+
+    expect(tapGesture.config.shouldCancelWhenOutside).toBe(false);
+  });
+});
+
+describe('[API v3] Components', () => {
+  const getScrollViewResponder = (
+    views: ReturnType<typeof render>['UNSAFE_getAllByType']
+  ) => {
+    return views(View).find(
+      ({ props }) =>
+        props.collapsable === false &&
+        props.onStartShouldSetResponderCapture &&
+        props.onStartShouldSetResponder
+    );
+  };
+
+  // Detector host views in document order (outer first).
+  const getNativeDetectors = (
+    views: ReturnType<typeof render>['UNSAFE_getAllByType']
+  ) => {
+    return views(View).filter(
+      ({ props }) => props.handlerTags && props.onStartShouldSetResponder
+    );
+  };
+
+  // The innermost detector: the GH ScrollView is a detector too, and it is
+  // rendered above the example's one.
+  const getNativeDetector = (
+    views: ReturnType<typeof render>['UNSAFE_getAllByType']
+  ) => {
+    const detectors = getNativeDetectors(views);
+    return detectors[detectors.length - 1];
+  };
+
+  const TapGestureDetectorExample = () => {
+    const tap = useTapGesture({ disableReanimated: true });
+
+    return (
+      <GestureDetector gesture={tap}>
+        <View />
+      </GestureDetector>
+    );
+  };
+
+  const PanGestureDetectorExample = () => {
+    const pan = usePanGesture({ disableReanimated: true });
+
+    return (
+      <GestureDetector gesture={pan}>
+        <View />
+      </GestureDetector>
+    );
+  };
+
+  const VirtualTapDetectorExample = () => {
+    const tap = useTapGesture({ disableReanimated: true });
+
+    return (
+      <VirtualGestureDetector gesture={tap}>
+        <View testID="virtual-child" />
+      </VirtualGestureDetector>
+    );
+  };
+
+  const VirtualPanDetectorExample = () => {
+    const pan = usePanGesture({ disableReanimated: true });
+
+    return (
+      <VirtualGestureDetector gesture={pan}>
+        <View testID="virtual-child" />
+      </VirtualGestureDetector>
+    );
+  };
+
+  const VirtualNativeDetectorExample = () => {
+    const native = useNativeGesture({ disableReanimated: true });
+
+    return (
+      <VirtualGestureDetector gesture={native}>
+        <View testID="virtual-child" />
+      </VirtualGestureDetector>
+    );
+  };
+
+  const InterceptingTapDetectorExample = () => {
+    const tap = useTapGesture({ disableReanimated: true });
+
+    return (
+      <InterceptingGestureDetector gesture={tap}>
+        <View />
+      </InterceptingGestureDetector>
+    );
+  };
+
+  const InterceptingNativeDetectorExample = () => {
+    const native = useNativeGesture({ disableReanimated: true });
+
+    return (
+      <InterceptingGestureDetector gesture={native}>
+        <View />
+      </InterceptingGestureDetector>
+    );
+  };
+
+  const SimultaneousGestureDetectorExample = () => {
+    const tap = useTapGesture({ disableReanimated: true });
+    const pan = usePanGesture({ disableReanimated: true });
+    const simultaneous = useSimultaneousGestures(tap, pan);
+
+    return (
+      <GestureDetector gesture={simultaneous}>
+        <View />
+      </GestureDetector>
+    );
+  };
+
+  const DisabledSimultaneousGestureDetectorExample = () => {
+    const tap = useTapGesture({ disableReanimated: true, enabled: false });
+    const pan = usePanGesture({ disableReanimated: true, enabled: false });
+    const simultaneous = useSimultaneousGestures(tap, pan);
+
+    return (
+      <GestureDetector gesture={simultaneous}>
+        <View />
+      </GestureDetector>
+    );
+  };
+
+  test('Rect Button', () => {
+    const pressFn = jest.fn();
+
+    const RectButtonExample = () => {
+      return (
+        <GestureHandlerRootView>
+          <RectButton testID="btn" onPress={pressFn} />
+        </GestureHandlerRootView>
+      );
+    };
+
+    render(<RectButtonExample />);
+
+    const nativeGesture = getByGestureTestId('btn');
+
+    act(() => {
+      fireGestureHandler(nativeGesture, [
+        { oldState: State.UNDETERMINED, state: State.BEGAN },
+        { oldState: State.BEGAN, state: State.ACTIVE },
+        { oldState: State.ACTIVE, state: State.END },
+      ]);
+    });
+
+    expect(pressFn).toHaveBeenCalledTimes(1);
+  });
+
+  // BaseButton adds plain JS callbacks of its own, so a worklet passed by the
+  // user must not move the gesture to the Reanimated detector (#4628).
+  test('Rect Button with a worklet callback stays on the JS thread', () => {
+    const pressFn = jest.fn();
+    const onTouchesDown = Object.assign(jest.fn(), { __workletHash: 1 });
+
+    render(
+      <GestureHandlerRootView>
+        <RectButton
+          testID="btn"
+          // @ts-expect-error Reanimated config is not part of the wrapper props.
+          disableReanimated={false}
+          onTouchesDown={onTouchesDown}
+          onPress={pressFn}
+        />
+      </GestureHandlerRootView>
+    );
+
+    const nativeGesture = getByGestureTestId('btn');
+
+    expect(nativeGesture.config.shouldUseReanimatedDetector).toBe(false);
+    expect(nativeGesture.config.disableReanimated).toBe(true);
+
+    act(() => {
+      fireGestureHandler(nativeGesture, [
+        { oldState: State.UNDETERMINED, state: State.BEGAN },
+        { oldState: State.BEGAN, state: State.ACTIVE },
+        { oldState: State.ACTIVE, state: State.END },
+      ]);
+    });
+
+    expect(pressFn).toHaveBeenCalledTimes(1);
+  });
+
+  describe('ScrollView', () => {
+    test('handles responder event passed through Pressable for keyboardShouldPersistTaps handled', async () => {
+      const { UNSAFE_getAllByType } = render(
+        <GestureHandlerRootView>
+          <ScrollView keyboardShouldPersistTaps="handled">
+            <Pressable testID="pressable" />
+          </ScrollView>
+        </GestureHandlerRootView>
+      );
+
+      await act(flushImmediate);
+
+      const scrollViewResponder = getScrollViewResponder(UNSAFE_getAllByType);
+      const button = screen.getByTestId('pressable');
+
+      expect(scrollViewResponder).toBeDefined();
+      expect(
+        scrollViewResponder?.props.onStartShouldSetResponderCapture()
+      ).toBe(false);
+      expect(button.props.onStartShouldSetResponderCapture()).toBe(false);
+      expect(scrollViewResponder?.props.onStartShouldSetResponder()).toBe(true);
+      expect(scrollViewResponder?.props.onStartShouldSetResponder()).toBe(
+        false
+      );
+    });
+
+    test('does not handle responder event passed through Pressable without keyboardShouldPersistTaps handled', async () => {
+      const { UNSAFE_getAllByType } = render(
+        <GestureHandlerRootView>
+          <ScrollView>
+            <Pressable testID="pressable" />
+          </ScrollView>
+        </GestureHandlerRootView>
+      );
+
+      await act(flushImmediate);
+
+      const scrollViewResponder = getScrollViewResponder(UNSAFE_getAllByType);
+      const button = screen.getByTestId('pressable');
+
+      // Outside of 'handled' mode the logical responder view is not rendered
+      // at all — the responder event can never be claimed on behalf of RNGH.
+      expect(scrollViewResponder).toBeUndefined();
+      expect(button.props.onStartShouldSetResponderCapture()).toBe(false);
+    });
+
+    test('handles responder event passed through NativeDetector for keyboardShouldPersistTaps handled', async () => {
+      const { UNSAFE_getAllByType } = render(
+        <GestureHandlerRootView>
+          <ScrollView keyboardShouldPersistTaps="handled">
+            <TapGestureDetectorExample />
+          </ScrollView>
+        </GestureHandlerRootView>
+      );
+
+      await act(flushImmediate);
+
+      const nativeDetector = getNativeDetector(UNSAFE_getAllByType);
+      const scrollViewResponder = getScrollViewResponder(UNSAFE_getAllByType);
+
+      expect(nativeDetector).toBeDefined();
+      expect(scrollViewResponder).toBeDefined();
+      expect(
+        scrollViewResponder?.props.onStartShouldSetResponderCapture()
+      ).toBe(false);
+      expect(nativeDetector?.props.onStartShouldSetResponder()).toBe(false);
+      expect(scrollViewResponder?.props.onStartShouldSetResponder()).toBe(true);
+    });
+
+    test('handles responder event passed through VirtualDetector for supported gestures', async () => {
+      const { UNSAFE_getAllByType } = render(
+        <GestureHandlerRootView>
+          <ScrollView keyboardShouldPersistTaps="handled">
+            <VirtualTapDetectorExample />
+          </ScrollView>
+        </GestureHandlerRootView>
+      );
+
+      await act(flushImmediate);
+
+      const scrollViewResponder = getScrollViewResponder(UNSAFE_getAllByType);
+      const virtualChild = screen.getByTestId('virtual-child');
+
+      expect(scrollViewResponder).toBeDefined();
+      expect(
+        scrollViewResponder?.props.onStartShouldSetResponderCapture()
+      ).toBe(false);
+      expect(virtualChild.props.onStartShouldSetResponderCapture()).toBe(false);
+      expect(scrollViewResponder?.props.onStartShouldSetResponder()).toBe(true);
+    });
+
+    test('handles responder event passed through VirtualDetector for native gestures', async () => {
+      const { UNSAFE_getAllByType } = render(
+        <GestureHandlerRootView>
+          <ScrollView keyboardShouldPersistTaps="handled">
+            <VirtualNativeDetectorExample />
+          </ScrollView>
+        </GestureHandlerRootView>
+      );
+
+      await act(flushImmediate);
+
+      const scrollViewResponder = getScrollViewResponder(UNSAFE_getAllByType);
+      const virtualChild = screen.getByTestId('virtual-child');
+
+      expect(scrollViewResponder).toBeDefined();
+      expect(
+        scrollViewResponder?.props.onStartShouldSetResponderCapture()
+      ).toBe(false);
+      expect(virtualChild.props.onStartShouldSetResponderCapture()).toBe(false);
+      expect(scrollViewResponder?.props.onStartShouldSetResponder()).toBe(true);
+    });
+
+    test('does not handle responder event passed through VirtualDetector for unsupported gestures', async () => {
+      const { UNSAFE_getAllByType } = render(
+        <GestureHandlerRootView>
+          <ScrollView keyboardShouldPersistTaps="handled">
+            <VirtualPanDetectorExample />
+          </ScrollView>
+        </GestureHandlerRootView>
+      );
+
+      await act(flushImmediate);
+
+      const scrollViewResponder = getScrollViewResponder(UNSAFE_getAllByType);
+      const virtualChild = screen.getByTestId('virtual-child');
+
+      expect(scrollViewResponder).toBeDefined();
+      expect(
+        scrollViewResponder?.props.onStartShouldSetResponderCapture()
+      ).toBe(false);
+      expect(virtualChild.props.onStartShouldSetResponderCapture()).toBe(false);
+      expect(scrollViewResponder?.props.onStartShouldSetResponder()).toBe(
+        false
+      );
+    });
+
+    test('handles responder event passed through InterceptingGestureDetector for supported gestures', async () => {
+      const { UNSAFE_getAllByType } = render(
+        <GestureHandlerRootView>
+          <ScrollView keyboardShouldPersistTaps="handled">
+            <InterceptingTapDetectorExample />
+          </ScrollView>
+        </GestureHandlerRootView>
+      );
+
+      await act(flushImmediate);
+
+      const detectors = getNativeDetectors(UNSAFE_getAllByType);
+      const scrollViewResponder = getScrollViewResponder(UNSAFE_getAllByType);
+      // The GH ScrollView is the outer intercepting detector, the example is the inner one.
+      const interceptingDetector = detectors[detectors.length - 1];
+
+      expect(interceptingDetector).toBeDefined();
+      expect(scrollViewResponder).toBeDefined();
+      expect(
+        scrollViewResponder?.props.onStartShouldSetResponderCapture()
+      ).toBe(false);
+      expect(interceptingDetector?.props.onStartShouldSetResponder()).toBe(
+        false
+      );
+      expect(scrollViewResponder?.props.onStartShouldSetResponder()).toBe(true);
+    });
+
+    test('does not handle responder event passed through InterceptingGestureDetector for native gestures', async () => {
+      const { UNSAFE_getAllByType } = render(
+        <GestureHandlerRootView>
+          <ScrollView keyboardShouldPersistTaps="handled">
+            <InterceptingNativeDetectorExample />
+          </ScrollView>
+        </GestureHandlerRootView>
+      );
+
+      await act(flushImmediate);
+
+      const detectors = getNativeDetectors(UNSAFE_getAllByType);
+      const scrollViewResponder = getScrollViewResponder(UNSAFE_getAllByType);
+      const interceptingDetector = detectors[detectors.length - 1];
+
+      expect(interceptingDetector).toBeDefined();
+      expect(scrollViewResponder).toBeDefined();
+      expect(
+        scrollViewResponder?.props.onStartShouldSetResponderCapture()
+      ).toBe(false);
+      expect(interceptingDetector?.props.onStartShouldSetResponder()).toBe(
+        false
+      );
+      expect(scrollViewResponder?.props.onStartShouldSetResponder()).toBe(
+        false
+      );
+    });
+
+    test('does not handle responder event passed through the native gesture of ScrollView itself', async () => {
+      const { UNSAFE_getAllByType } = render(
+        <GestureHandlerRootView>
+          <ScrollView keyboardShouldPersistTaps="handled" />
+        </GestureHandlerRootView>
+      );
+
+      await act(flushImmediate);
+
+      const [scrollViewDetector] = getNativeDetectors(UNSAFE_getAllByType);
+      const scrollViewResponder = getScrollViewResponder(UNSAFE_getAllByType);
+
+      expect(scrollViewDetector).toBeDefined();
+      expect(scrollViewResponder).toBeDefined();
+      expect(scrollViewDetector?.props.onStartShouldSetResponder()).toBe(false);
+      expect(scrollViewResponder?.props.onStartShouldSetResponder()).toBe(
+        false
+      );
+    });
+
+    test('does not handle responder event passed through NativeDetector for unsupported gestures', async () => {
+      const { UNSAFE_getAllByType } = render(
+        <GestureHandlerRootView>
+          <ScrollView keyboardShouldPersistTaps="handled">
+            <PanGestureDetectorExample />
+          </ScrollView>
+        </GestureHandlerRootView>
+      );
+
+      await act(flushImmediate);
+
+      const nativeDetector = getNativeDetector(UNSAFE_getAllByType);
+      const scrollViewResponder = getScrollViewResponder(UNSAFE_getAllByType);
+
+      expect(nativeDetector).toBeDefined();
+      expect(scrollViewResponder).toBeDefined();
+      expect(
+        scrollViewResponder?.props.onStartShouldSetResponderCapture()
+      ).toBe(false);
+      expect(nativeDetector?.props.onStartShouldSetResponder()).toBe(false);
+      expect(scrollViewResponder?.props.onStartShouldSetResponder()).toBe(
+        false
+      );
+    });
+
+    test('handles responder event passed through Touchable for keyboardShouldPersistTaps handled', async () => {
+      const { UNSAFE_getAllByType } = render(
+        <GestureHandlerRootView>
+          <ScrollView keyboardShouldPersistTaps="handled">
+            <Touchable testID="touchable" />
+          </ScrollView>
+        </GestureHandlerRootView>
+      );
+
+      await act(flushImmediate);
+
+      const scrollViewResponder = getScrollViewResponder(UNSAFE_getAllByType);
+      const button = screen.getByTestId('touchable');
+
+      expect(scrollViewResponder).toBeDefined();
+      expect(
+        scrollViewResponder?.props.onStartShouldSetResponderCapture()
+      ).toBe(false);
+      // The button marks the tap as RNGH-handled without claiming it...
+      expect(button.props.onStartShouldSetResponderCapture()).toBe(false);
+      // ...so the logical responder claims it and the mark is consumed.
+      expect(scrollViewResponder?.props.onStartShouldSetResponder()).toBe(true);
+      expect(scrollViewResponder?.props.onStartShouldSetResponder()).toBe(
+        false
+      );
+    });
+
+    test('does not mark responder events for a disabled Touchable', async () => {
+      const { UNSAFE_getAllByType } = render(
+        <GestureHandlerRootView>
+          <ScrollView keyboardShouldPersistTaps="handled">
+            <Touchable testID="touchable" disabled />
+          </ScrollView>
+        </GestureHandlerRootView>
+      );
+
+      await act(flushImmediate);
+
+      const scrollViewResponder = getScrollViewResponder(UNSAFE_getAllByType);
+      const button = screen.getByTestId('touchable');
+
+      expect(button.props.onStartShouldSetResponderCapture()).toBe(false);
+      expect(scrollViewResponder?.props.onStartShouldSetResponder()).toBe(
+        false
+      );
+    });
+
+    test('handles responder event passed through NativeDetector for composed gestures', async () => {
+      const { UNSAFE_getAllByType } = render(
+        <GestureHandlerRootView>
+          <ScrollView keyboardShouldPersistTaps="handled">
+            <SimultaneousGestureDetectorExample />
+          </ScrollView>
+        </GestureHandlerRootView>
+      );
+
+      await act(flushImmediate);
+
+      const nativeDetector = getNativeDetector(UNSAFE_getAllByType);
+      const scrollViewResponder = getScrollViewResponder(UNSAFE_getAllByType);
+
+      expect(nativeDetector).toBeDefined();
+      expect(scrollViewResponder).toBeDefined();
+      expect(
+        scrollViewResponder?.props.onStartShouldSetResponderCapture()
+      ).toBe(false);
+      expect(nativeDetector?.props.onStartShouldSetResponder()).toBe(false);
+      expect(scrollViewResponder?.props.onStartShouldSetResponder()).toBe(true);
+    });
+
+    test('does not handle responder event passed through NativeDetector for disabled composed gestures', async () => {
+      const { UNSAFE_getAllByType } = render(
+        <GestureHandlerRootView>
+          <ScrollView keyboardShouldPersistTaps="handled">
+            <DisabledSimultaneousGestureDetectorExample />
+          </ScrollView>
+        </GestureHandlerRootView>
+      );
+
+      await act(flushImmediate);
+
+      const nativeDetector = getNativeDetector(UNSAFE_getAllByType);
+      const scrollViewResponder = getScrollViewResponder(UNSAFE_getAllByType);
+
+      expect(nativeDetector).toBeDefined();
+      expect(scrollViewResponder).toBeDefined();
+      expect(
+        scrollViewResponder?.props.onStartShouldSetResponderCapture()
+      ).toBe(false);
+      expect(nativeDetector?.props.onStartShouldSetResponder()).toBe(false);
+      expect(scrollViewResponder?.props.onStartShouldSetResponder()).toBe(
+        false
+      );
+    });
+
+    test('does not handle responder event passed through RefreshControl', async () => {
+      const warn = jest
+        .spyOn(console, 'warn')
+        .mockImplementation(() => undefined);
+      const { UNSAFE_root, UNSAFE_getAllByType } = render(
+        <GestureHandlerRootView>
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            refreshControl={<RefreshControl refreshing={false} />}
+          />
+        </GestureHandlerRootView>
+      );
+
+      await act(flushImmediate);
+
+      const scrollViewResponder = getScrollViewResponder(UNSAFE_getAllByType);
+      // The native mock drops the props, so look at the element RN renders
+      const refreshControl = UNSAFE_root.find(
+        ({ props }) =>
+          props.refreshing !== undefined &&
+          props.onStartShouldSetResponderCapture
+      );
+
+      expect(scrollViewResponder).toBeDefined();
+      expect(refreshControl.props.onStartShouldSetResponderCapture()).toBe(
+        false
+      );
+      expect(scrollViewResponder?.props.onStartShouldSetResponder()).toBe(
+        false
+      );
+      // The opt-out is an internal config prop, it must not reach the native side
+      expect(warn).not.toHaveBeenCalledWith(
+        expect.stringContaining('countNativeAsHandled')
+      );
+      warn.mockRestore();
+    });
+  });
+
+  describe('keyboardShouldPersistTaps="never" drop', () => {
+    // The keyboard-visibility tracker subscribes via Keyboard.addListener when a
+    // ScrollView mounts. We spy on it to grab the captured `keyboardDidShow`
+    // handler and invoke it, simulating the keyboard being open.
+    const showKeyboard = (addListenerSpy: jest.SpyInstance, height = 300) => {
+      const showCall = addListenerSpy.mock.calls.find(
+        (call) => call[0] === 'keyboardDidShow'
+      );
+      act(() => {
+        showCall?.[1]?.({ endCoordinates: { height } });
+      });
+    };
+
+    const makeContext = (
+      keyboardShouldPersistTaps: JSResponderContextValue['keyboardShouldPersistTaps']
+    ): JSResponderContextValue => ({
+      isRNGHResponderEvent: { current: false },
+      keyboardShouldPersistTaps,
+    });
+
+    // The drop requires a focused RN TextInput to blur.
+    const focusInput = () =>
+      jest
+        .spyOn(TextInput.State, 'currentlyFocusedInput')
+        .mockReturnValue(
+          {} as ReturnType<typeof TextInput.State.currentlyFocusedInput>
+        );
+
+    test('isKeyboardDismissingTap is true only in never mode while the keyboard is visible', async () => {
+      const addListenerSpy = jest.spyOn(Keyboard, 'addListener');
+      const focusSpy = focusInput();
+
+      render(
+        <GestureHandlerRootView>
+          <ScrollView keyboardShouldPersistTaps="never" />
+        </GestureHandlerRootView>
+      );
+      await act(flushImmediate);
+
+      // Keyboard not shown yet -> nothing to dismiss.
+      expect(isKeyboardDismissingTap(makeContext('never'))).toBe(false);
+
+      showKeyboard(addListenerSpy);
+
+      // `never` (and its default, undefined) drops the tap; the others never do.
+      expect(isKeyboardDismissingTap(makeContext('never'))).toBe(true);
+      expect(isKeyboardDismissingTap(makeContext(undefined))).toBe(true);
+      expect(isKeyboardDismissingTap(makeContext('handled'))).toBe(false);
+      expect(isKeyboardDismissingTap(makeContext('always'))).toBe(false);
+      // Outside an RNGH ScrollView there is no context, so nothing is dropped.
+      expect(isKeyboardDismissingTap(null)).toBe(false);
+
+      // The verdict must survive the dismissal blurring the input mid-tap.
+      focusSpy.mockReturnValue(undefined);
+      expect(isKeyboardDismissingTap(makeContext('never'))).toBe(true);
+
+      addListenerSpy.mockRestore();
+      focusSpy.mockRestore();
+    });
+
+    test('isKeyboardDismissingTap is false when no RN TextInput is focused (native field keyboard)', async () => {
+      const addListenerSpy = jest.spyOn(Keyboard, 'addListener');
+
+      render(
+        <GestureHandlerRootView>
+          <ScrollView keyboardShouldPersistTaps="never" />
+        </GestureHandlerRootView>
+      );
+      await act(flushImmediate);
+
+      // Keyboard up for a native field (e.g. a native-stack search bar) -
+      // no RN TextInput to blur, so the tap must not be dropped.
+      showKeyboard(addListenerSpy);
+
+      expect(TextInput.State.currentlyFocusedInput()).toBeNull();
+      expect(isKeyboardDismissingTap(makeContext('never'))).toBe(false);
+
+      // Focus moving to an RN input while the keyboard stays up makes the
+      // tap dismissible again.
+      const focusSpy = focusInput();
+      expect(isKeyboardDismissingTap(makeContext('never'))).toBe(true);
+
+      addListenerSpy.mockRestore();
+      focusSpy.mockRestore();
+    });
+
+    test('isKeyboardDismissingTap is false for a detached (height 0) keyboard', async () => {
+      const addListenerSpy = jest.spyOn(Keyboard, 'addListener');
+
+      render(
+        <GestureHandlerRootView>
+          <ScrollView keyboardShouldPersistTaps="never" />
+        </GestureHandlerRootView>
+      );
+      await act(flushImmediate);
+
+      // A detached/floating keyboard reports height 0 - nothing to dismiss.
+      showKeyboard(addListenerSpy, 0);
+
+      expect(isKeyboardDismissingTap(makeContext('never'))).toBe(false);
+
+      addListenerSpy.mockRestore();
+    });
+
+    test('Touchable does NOT fire any press callback on the keyboard-dismissing tap (never)', async () => {
+      const addListenerSpy = jest.spyOn(Keyboard, 'addListener');
+      const focusSpy = focusInput();
+      const onPress = jest.fn();
+      const onPressIn = jest.fn();
+      const onPressOut = jest.fn();
+
+      render(
+        <GestureHandlerRootView>
+          <ScrollView keyboardShouldPersistTaps="never">
+            <Touchable
+              testID="touchable"
+              onPress={onPress}
+              onPressIn={onPressIn}
+              onPressOut={onPressOut}
+            />
+          </ScrollView>
+        </GestureHandlerRootView>
+      );
+      await act(flushImmediate);
+      showKeyboard(addListenerSpy);
+
+      // The 'never' responder blurs the input at touch-down, before the
+      // press events arrive - mirror that ordering.
+      focusSpy.mockReturnValue(undefined);
+
+      // Includes a re-entry PressIn (finger dragged out and back in) so the
+      // capture-once verdict path is exercised too.
+      const button = screen.getByTestId('touchable');
+      fireEvent(button, 'buttonPressIn', buttonEvent());
+      fireEvent(button, 'buttonPressOut', buttonEvent(false));
+      fireEvent(button, 'buttonPressIn', buttonEvent());
+      fireEvent(button, 'buttonPressOut', buttonEvent());
+      fireEvent(button, 'buttonPress', buttonEvent());
+      fireEvent(button, 'buttonInteractionFinished', buttonEvent());
+
+      // The whole interaction is swallowed - not just onPress, but the press-in/
+      // out side effects too (incl. the re-entry as the finger moves).
+      expect(onPress).not.toHaveBeenCalled();
+      expect(onPressIn).not.toHaveBeenCalled();
+      expect(onPressOut).not.toHaveBeenCalled();
+      addListenerSpy.mockRestore();
+      focusSpy.mockRestore();
+    });
+
+    test('Touchable fires onPress in never mode when the keyboard is not visible', async () => {
+      const onPress = jest.fn();
+
+      render(
+        <GestureHandlerRootView>
+          <ScrollView keyboardShouldPersistTaps="never">
+            <Touchable testID="touchable" onPress={onPress} />
+          </ScrollView>
+        </GestureHandlerRootView>
+      );
+      await act(flushImmediate);
+
+      fireNativeTap('touchable');
+
+      expect(onPress).toHaveBeenCalledTimes(1);
+    });
+
+    test.each(['handled', 'always'] as const)(
+      'Touchable fires onPress in %s mode even while the keyboard is visible',
+      async (mode) => {
+        const addListenerSpy = jest.spyOn(Keyboard, 'addListener');
+        const onPress = jest.fn();
+
+        render(
+          <GestureHandlerRootView>
+            <ScrollView keyboardShouldPersistTaps={mode}>
+              <Touchable testID="touchable" onPress={onPress} />
+            </ScrollView>
+          </GestureHandlerRootView>
+        );
+        await act(flushImmediate);
+        showKeyboard(addListenerSpy);
+
+        fireNativeTap('touchable');
+
+        expect(onPress).toHaveBeenCalledTimes(1);
+        addListenerSpy.mockRestore();
+      }
+    );
+  });
+
+  describe('Touchable', () => {
+    test('forwards hover callbacks with the native event payload', () => {
+      const onHoverIn = jest.fn();
+      const onHoverOut = jest.fn();
+
+      render(
+        <GestureHandlerRootView>
+          <Touchable
+            testID="touchable"
+            onHoverIn={onHoverIn}
+            onHoverOut={onHoverOut}
+          />
+        </GestureHandlerRootView>
+      );
+
+      const button = screen.getByTestId('touchable');
+      const hoverInEvent = buttonEvent(true);
+      const hoverOutEvent = buttonEvent(false);
+      fireEvent(button, 'buttonHoverIn', hoverInEvent);
+      fireEvent(button, 'buttonHoverOut', hoverOutEvent);
+
+      expect(onHoverIn).toHaveBeenCalledWith(hoverInEvent.nativeEvent);
+      expect(onHoverOut).toHaveBeenCalledWith(hoverOutEvent.nativeEvent);
+    });
+
+    test('calls onPress on successful press', () => {
+      const pressFn = jest.fn();
+
+      const Example = () => (
+        <GestureHandlerRootView>
+          <Touchable testID="touchable" onPress={pressFn} />
+        </GestureHandlerRootView>
+      );
+
+      render(<Example />);
+      fireNativeTap('touchable');
+
+      expect(pressFn).toHaveBeenCalledTimes(1);
+    });
+
+    test('does not call onPress on cancelled gesture', () => {
+      const pressFn = jest.fn();
+
+      const Example = () => (
+        <GestureHandlerRootView>
+          <Touchable testID="touchable" onPress={pressFn} />
+        </GestureHandlerRootView>
+      );
+
+      render(<Example />);
+
+      // A cancelled interaction ends without a Press event on the native side.
+      const button = screen.getByTestId('touchable');
+      fireEvent(button, 'buttonPressIn', buttonEvent());
+      fireEvent(button, 'buttonPressOut', buttonEvent(false));
+      fireEvent(button, 'buttonInteractionFinished', buttonEvent(false));
+
+      expect(pressFn).not.toHaveBeenCalled();
+    });
+
+    test('forwards onLongPress and requests the native long-press timer', () => {
+      const pressFn = jest.fn();
+      const longPressFn = jest.fn();
+      const DELAY = 800;
+
+      const Example = () => (
+        <GestureHandlerRootView>
+          <Touchable
+            testID="touchable"
+            onPress={pressFn}
+            onLongPress={longPressFn}
+            delayLongPress={DELAY}
+          />
+        </GestureHandlerRootView>
+      );
+
+      render(<Example />);
+
+      // The long-press timer runs on the native side; passing a callback flips
+      // the props that arm it.
+      const button = screen.getByTestId('touchable');
+      expect(button.props.hasLongPressHandler).toBe(true);
+      expect(button.props.longPressDuration).toBe(DELAY);
+
+      // A long press ends without a Press event on the native side.
+      fireEvent(button, 'buttonPressIn', buttonEvent());
+      fireEvent(button, 'buttonLongPress', buttonEvent());
+      fireEvent(button, 'buttonPressOut', buttonEvent());
+      fireEvent(button, 'buttonInteractionFinished', buttonEvent());
+
+      expect(longPressFn).toHaveBeenCalledTimes(1);
+      expect(pressFn).not.toHaveBeenCalled();
+    });
+  });
+});

@@ -44,6 +44,35 @@
    `react-native-screens`, #166), `@legendapp/list`, `uniwind`, `pele`, `react-native-image-viewing`, `effect`,
    General Translation's JavaScript packages and `@formatjs/*`.
 
+### What throws at import
+
+Read from each package's published `build/`, as a `linux` bundle resolves it (the `.native.js` file, else the
+shared one), at T3 Code's locked versions. A lookup that runs as the file evaluates is a lookup at import, because
+Expo's Metro config turns `inlineRequires` off.
+
+| Native module | Package | Linux |
+| --- | --- | --- |
+| `ExpoAsset` | `expo-asset` | registered (#677) |
+| `ExpoApplication`, `ExpoDevice`, `ExpoLinking`, `ExpoNetwork` | `expo-application`, `expo-device`, `expo-linking`, `expo-network` | registered; the `expo-startup-modules` e2e imports all four through `expo` |
+| `ExpoFontLoader` | `expo-font` | throws: its `typeof window === 'undefined'` guard is false under React Native, which defines `window`; #156 |
+| `ExpoClipboard` | `expo-clipboard` | throws; #278 |
+| `ExpoCrypto`, `ExpoCryptoAES` | `expo-crypto` | throws; #276 |
+| `FileSystem` | `expo-file-system` | registered (#676) |
+| `ExpoImage` | `expo-image` | throws; #273 |
+| `ExponentImagePicker` | `expo-image-picker` | throws; #275 |
+| `ExpoImageManipulator`, `ExpoDocumentPicker` | `expo-image-manipulator`, `expo-document-picker` | throws; #650. `expo-document-picker` is imported lazily, so not at startup |
+| twelve `Expo*` notification modules | `expo-notifications` | throws; #274 |
+| `ExpoSecureStore` | `expo-secure-store` | throws; #270 |
+| `ExpoSharing` | `expo-sharing` | throws; #156 |
+| `ExpoSQLite` | `expo-sqlite` | registered (#665) |
+| `ExpoWebBrowser` | `expo-web-browser` | throws; #271 |
+| `ExpoAudio`, `ExpoKeepAwake`, `ExpoCamera`, `ExpoObserve`, `ExpoAppMetrics`, the `expo-sensors` modules, `SymbolModule`, `ExpoUpdates`, `ExpoVideo`, `ExpoWidgets` | `expo-audio`, `expo-keep-awake`, `expo-camera`, `expo-observe`, `expo-app-metrics`, `expo-sensors`, `expo-symbols`, `expo-updates`, `expo-video`, `expo-widgets` | throws; left out or replaced by the feature profile (§2), so #641's Linux entry cuts the import |
+
+These import cleanly with nothing registered: `expo-haptics` and `expo-splash-screen` look their modules up with
+`requireOptionalNativeModule` (haptics throws `UnavailabilityError` per call; the splash screen's calls return), the
+shared files of `expo-glass-effect` are a plain `View` and `false`, and `expo-quick-actions` reads
+`globalThis.expo.modules` and answers `isSupported` `false`.
+
 ## 2. The desktop feature profile
 
 The Linux entry that #641 adds leaves the modules below out, so the first render waits only on what the main
@@ -99,7 +128,12 @@ The order epic #634 follows. Each step needs the ones before it.
    but assumes the rest from the engine. #83 chose the platform's own `Intl` over the system ICU
    (`packages/core/src/Intl.h`), with Hermes' Intl kept off; `IntlStartupTest` starts a bundle that builds those
    module-scope formatters, and `IntlBindingTest` covers the three constructors with T3 Code's options.
-7. **The fixture**: the main screen renders in `rnl_window` against a local T3 server (#641).
+7. **The fixture**: the main screen renders in `rnl_window` against a local T3 server (#641). `pnpm e2e:t3code
+   <checkout>` builds T3 Code's own development bundle for `linux` (it pairs from a link only under `__DEV__`) with its
+   own Metro config under this platform's resolver (`packages/test-harness/scripts/t3code-metro-config.ts`), starts the
+   checkout's T3 server on loopback, and runs the bundle in the headless rig with the link that pairs it. It passes only
+   when the window presents a frame and exits cleanly with no fatal JavaScript error, and otherwise names the first such
+   error; #641 keeps the ordered list of what stands between that error and the main screen.
 8. **The measurement**: against the Electron build (#642), with frame pacing (#20) and the trace surface (#90).
 
 Secondary screens come after the fixture: attachments (#650), webviews (#272), notifications (#274), the image
@@ -107,8 +141,9 @@ picker (#275), and T3 Code's review-diff and terminal views (#640).
 
 ## 4. The ledger
 
-The status words are the ledger's: **tracked** (`in progress` or `blocked` on the issue named) and **declined**
-(`declined`, with the substitute the ledger names; §2 says which are left out and which are replaced). Intl is not
+The status words are the ledger's: **works** and **shimmed** (the test named proves it), **tracked** (`in progress`
+or `blocked` on the issue named) and **declined** (`declined`, with the substitute the ledger names; §2 says which
+are left out and which are replaced). Intl is not
 a row: it is the engine's, not a package's, and #83 tracks it. The range is T3 Code's, or the locked version for a
 transitive package.
 
@@ -133,7 +168,7 @@ transitive package.
 | `expo-structured-headers` | `58.0.1` | declined | #360 | from expo-updates |
 | `expo-constants` | `~58.0.15` | tracked | #156 | 17 files: app config and relay URL |
 | `expo-font` | `~58.0.11` | tracked | #156 | DM Sans and Material Symbols |
-| `expo-linking` | `~58.0.16` | tracked | #156 | deep links at the root |
+| `expo-linking` | `~58.0.16` | tracked | #156 | deep links at the root; imports over `ExpoLinking`, but `createURL`, which `App.tsx` calls, throws until a `linux` build embeds the app config |
 | `expo-haptics` | `~58.0.7` | tracked | #156 | 21 files; reports itself unavailable |
 | `expo-glass-effect` | `58.0.5` | tracked | #156 | chips, toolbar and the floating working control |
 | `expo-splash-screen` | `~58.0.13` | tracked | #156 | root; the platform's first-frame policy |
@@ -161,18 +196,18 @@ transitive package.
 | `expo-notifications` | `~58.1.8` | tracked | #274 | agent-awareness notifications |
 | `expo-image-picker` | `~58.0.10` | tracked | #275 | composer photos |
 | `expo-crypto` | `~58.0.7` | tracked | #276 | DPoP proofs |
-| `expo-device` | `~58.0.5` | tracked | #277 | appearance defaults |
+| `expo-device` | `~58.0.5` | works | `packages/expo/e2e/expo-startup-modules.json` | appearance defaults; `ExpoDevice` answers the machine |
 | `expo-clipboard` | `~58.0.4` | tracked | #278 | 8 files |
 | `react-native-keyboard-controller` | `1.23.0` | tracked | #279 | KeyboardProvider at the root |
 | `react-native-enriched-markdown` | `file:deps/react-native-enriched-markdown-1.2.0-t3.18-16db4c75.tgz` | tracked | #688 | T3 Code's fork; every message; #639 landed the base |
 | `@t3tools/mobile-source-text` | `file:./modules/t3-source-text` | tracked | #684 | source file view; no Linux code, its `Text` fallback renders |
 | `@t3tools/mobile-highlights-native` | `file:./modules/t3-highlights` | tracked | #684 | syntax highlighting, a Nitro module; a `linux/` TurboModule until #152, reached through T3 Code's `nativeHighlights.linux.ts` (below) |
-| `@t3tools/mobile-review-diff-native` | `file:./modules/t3-review-diff` | tracked | #640 | review diff view |
+| `@t3tools/mobile-review-diff-native` | `file:./modules/t3-review-diff` | tracked | #685 | review diff view; Linux renders it in JavaScript, no native code |
 | `@t3tools/mobile-terminal-native` | `file:./modules/t3-terminal` | tracked | #640 | terminal view |
 | `@react-native-menu/menu` | `^2.0.0` | tracked | #646 | 28 files: thread rows, list filter, composer |
 | `gt-react-native` | `11.4.18` | tracked | #647 | i18n root; `getEnforcing` throws at import |
-| `expo-network` | `~58.0.4` | tracked | #648 | online and offline state of the connection layer |
-| `expo-application` | `~58.1.2` | tracked | #648 | diagnostics screen |
+| `expo-network` | `~58.0.4` | tracked | #648 | online and offline state of the connection layer; imports over `ExpoNetwork`, which answers `UNKNOWN` until the NetworkMonitor portal is read |
+| `expo-application` | `~58.1.2` | tracked | #648 | diagnostics screen; imports over `ExpoApplication`, whose identity is `null` until a `linux` build embeds it |
 | `expo-paste-input` | `^0.2.2` | tracked | #649 | both composer variants |
 | `expo-document-picker` | `~58.0.4` | tracked | #650 | composer attachments, imported lazily |
 | `expo-image-manipulator` | `~58.0.16` | tracked | #650 | fits images under the upload limit |
@@ -187,7 +222,7 @@ transitive package.
 | `expo-camera` | `~58.0.14` | declined | #635 | QR pairing |
 | `expo-symbols` | `~58.0.4` | declined | #635 | SF Symbols in the shared AppSymbol |
 | `expo-audio` | `58.0.11` | declined | #635 | voice input and audio previews |
-| `expo-keep-awake` | `~58.0.3` | declined | #635 | left out with voice input; expo's dev-only `withDevTools` requires it inside `try`/`catch` |
+| `expo-keep-awake` | `~58.0.3` | declined | #635 | left out with voice input, its only user; expo's dev-only `withDevTools` requires it inside `try`/`catch` |
 | `expo-video` | `58.0.13` | declined | #635 | video attachments |
 | `react-native-pdf-jsi` | `6.1.0` | declined | #635 | imported only by PdfPreview.android.tsx |
 
@@ -200,7 +235,7 @@ other seven are Expo local modules, linked by directory rather than declared as 
 | `t3-composer-editor` | iOS, Android | #640; the plain `TextInput` composer until then |
 | `t3-source-text` | iOS | #684: none needed, `SourceText` renders `Text` off iOS; selection is #43 |
 | `t3-highlights` | Nitro, C++ core | #684: a `linux/` TurboModule over the same lexer until #152 and #153 |
-| `t3-review-diff` | iOS, Android | #640 |
+| `t3-review-diff` | iOS, Android | #685: `nativeReviewDiffSurface.linux.ts` draws the same rows, props and events with React Native views |
 | `t3-terminal` | iOS, Android | #640 |
 | `t3-voice-transcription` | iOS, Android | left out with voice input |
 | `t3-agent-notifications` | Android | left out until #274 |

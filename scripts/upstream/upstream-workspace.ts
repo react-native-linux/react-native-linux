@@ -35,6 +35,8 @@ const COMMIT_ARGUMENTS = [
   "--message",
   "vendored upstream plus the patch queue",
 ] as const;
+const AGENT_INSTRUCTION_PATTERN =
+  /^(?:.*?\/)?(?:AGENTS\.md|CLAUDE\.md|GEMINI\.md|\.claude|\.cursor|\.cursorrules|\.github\/copilot-instructions\.md)(?=\/|$)/u;
 const DIFF_ARGUMENTS = ["diff", "--cached", "--binary", "--src-prefix=a/", "--dst-prefix=b/", "HEAD"] as const;
 
 const describeLibraryPath = (libraryName: string, relativePath: string): string =>
@@ -97,6 +99,21 @@ const cloneUpstream = (lock: UpstreamLock, directory: string, environment: Upstr
   return [];
 };
 
+const removeAgentInstructions = (
+  directory: string,
+  environment: Pick<UpstreamEnvironment, "listFiles" | "removePath">,
+): void => {
+  const instructionPaths = environment
+    .listFiles(directory)
+    .map((relativePath) => AGENT_INSTRUCTION_PATTERN.exec(relativePath)?.[FIRST_INDEX] ?? null);
+
+  for (const instructionPath of new Set(instructionPaths)) {
+    if (instructionPath !== null) {
+      environment.removePath(path.join(directory, instructionPath));
+    }
+  }
+};
+
 const describeLockMismatch = (
   request: PreparationRequest,
   pristineDigests: Readonly<Record<string, string>>,
@@ -146,6 +163,8 @@ const prepareTree = (request: PreparationRequest, environment: UpstreamEnvironme
   if (cloneFailure.length !== NO_ENTRIES) {
     return { directory, failureMessages: cloneFailure, outcome: "cloneFailed", pristineDigests: {} };
   }
+
+  removeAgentInstructions(directory, environment);
 
   const pristineDigests = computeDigests(directory, environment);
   const lockMismatch = describeLockMismatch(request, pristineDigests);

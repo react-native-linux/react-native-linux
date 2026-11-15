@@ -1,0 +1,93 @@
+import React, { useEffect } from 'react';
+
+import { GestureDetectorType, InterceptingGestureDetector } from './detectors';
+import { NativeDetector } from './detectors/NativeDetector';
+import { VirtualDetector } from './detectors/VirtualDetector/VirtualDetector';
+import { useNativeGesture } from './hooks/gestures';
+import type { NativeGestureConfig } from './hooks/gestures/native/NativeTypes';
+import { NativeWrapperProps } from './hooks/utils';
+import type { InternalConfigProps } from './types';
+import type {
+  NativeWrapperProperties,
+  WrapperSpecificProperties,
+} from './types/NativeWrapperType';
+
+export default function createNativeWrapper<TRef = unknown, TProps = unknown>(
+  Component: React.ComponentType<TProps>,
+  config: Readonly<
+    Omit<NativeWrapperProperties<TRef>, keyof WrapperSpecificProperties<TRef>>
+  > = {},
+  detectorType: GestureDetectorType = GestureDetectorType.Native,
+  // Whether a tap on the wrapped component counts as handled, see
+  // `useJSResponderHandler`
+  countNativeAsHandled = true
+) {
+  const ComponentWrapper = (
+    props: TProps & NativeWrapperProperties<TRef | null>
+  ) => {
+    const { ref, onGestureUpdate_CAN_CAUSE_INFINITE_RERENDER, ...restProps } =
+      props;
+    // Filter out props that should be passed to gesture handler wrapper
+    const { gestureHandlerProps, childProps } = Object.keys(restProps).reduce(
+      (res, key) => {
+        // @ts-ignore TS being overly protective with it's types, see https://github.com/microsoft/TypeScript/issues/26255#issuecomment-458013731 for more info
+        if (NativeWrapperProps.has(key)) {
+          // @ts-ignore FIXME(TS)
+          res.gestureHandlerProps[key] = props[key];
+        } else {
+          // @ts-ignore FIXME(TS)
+          res.childProps[key] = props[key];
+        }
+        return res;
+      },
+      {
+        gestureHandlerProps: { ...config } as NativeGestureConfig, // Watch out not to modify config
+        childProps: {
+          enabled: props.enabled,
+          hitSlop: props.hitSlop,
+          testID: props.testID,
+        } as TProps,
+      }
+    );
+
+    // Components built on top of the wrapper (e.g. BaseButton) add plain JS
+    // callbacks of their own, so the gesture must never use the Reanimated
+    // detector, whatever the caller passed.
+    gestureHandlerProps.disableReanimated = true;
+
+    if (!countNativeAsHandled) {
+      (
+        gestureHandlerProps as InternalConfigProps<unknown>
+      ).countNativeAsHandled = false;
+    }
+
+    const native = useNativeGesture(gestureHandlerProps);
+
+    useEffect(() => {
+      onGestureUpdate_CAN_CAUSE_INFINITE_RERENDER?.(native);
+    }, [native, onGestureUpdate_CAN_CAUSE_INFINITE_RERENDER]);
+
+    const DetectorComponent =
+      detectorType === GestureDetectorType.Intercepting
+        ? InterceptingGestureDetector
+        : detectorType === GestureDetectorType.Virtual
+          ? VirtualDetector
+          : NativeDetector;
+
+    return (
+      <DetectorComponent gesture={native}>
+        <Component {...childProps} ref={ref} />
+      </DetectorComponent>
+    );
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+  ComponentWrapper.displayName =
+    Component?.displayName ||
+    // @ts-ignore if render doesn't exist it will return undefined and go further
+    Component?.render?.name ||
+    (typeof Component === 'string' && Component) ||
+    'ComponentWrapper';
+
+  return ComponentWrapper;
+}

@@ -1,12 +1,11 @@
 {
   "compilerOptions": {
-    "baseUrl": ".",
     "esModuleInterop": true,
     "jsx": "react-native",
     "lib": ["esnext", "dom"],
     "types": ["jest"],
     "module": "esnext",
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "strict": true,
@@ -16,6 +15,7 @@
     "noStrictGenericChecks": false,
     "forceConsistentCasingInFileNames": true,
     "noImplicitUseStrict": false,
+    "noImplicitOverride": true,
     "noUnusedParameters": true,
     "noUnusedLocals": true
   }

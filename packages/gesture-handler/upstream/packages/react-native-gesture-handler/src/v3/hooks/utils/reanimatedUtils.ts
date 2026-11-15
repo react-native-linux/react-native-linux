@@ -1,0 +1,169 @@
+import type { HitSlop } from '../../../handlers/gestureHandlerCommon';
+import {
+  Reanimated,
+  Worklets,
+} from '../../../handlers/gestures/reanimatedWrapper';
+import { normalizeHitSlop } from '../../../handlers/hitSlop';
+import { NativeProxy } from '../../NativeProxy';
+import type {
+  BaseGestureConfig,
+  SharedValue,
+  SharedValueOrT,
+} from '../../types';
+import { HandlerCallbacks } from './propsWhiteList';
+
+// Variant of djb2 hash function.
+// Taken from https://gist.github.com/eplawless/52813b1d8ad9af510d85?permalink_comment_id=3367765#gistcomment-3367765
+function hash(str: string) {
+  'worklet';
+  const len = str.length;
+  let h = 5381;
+
+  for (let i = 0; i < len; i++) {
+    h = (h * 33) ^ str.charCodeAt(i);
+  }
+  return h >>> 0;
+}
+
+export const SHARED_VALUE_OFFSET = 1.618;
+
+const UNREACHABLE_OFFSET = 1e9;
+
+export function splitSingleOffset(value: number): [number, number] {
+  'worklet';
+  return value < 0 ? [value, UNREACHABLE_OFFSET] : [-UNREACHABLE_OFFSET, value];
+}
+
+const PAN_OFFSET_KEYS = new Set([
+  'activeOffsetX',
+  'activeOffsetY',
+  'failOffsetX',
+  'failOffsetY',
+]);
+
+// Don't transfer entire NativeProxy to the UI thread
+const { updateGestureHandlerConfig } = NativeProxy;
+
+export function bindSharedValues<
+  TConfig,
+  THandlerData,
+  TExtendedHandlerData extends THandlerData,
+>(
+  config: BaseGestureConfig<TConfig, THandlerData, TExtendedHandlerData>,
+  handlerTag: number
+) {
+  const scheduleOnUI = Worklets?.scheduleOnUI;
+
+  if (Reanimated === undefined || scheduleOnUI === undefined) {
+    return;
+  }
+
+  const baseListenerId = handlerTag + SHARED_VALUE_OFFSET;
+  const { shouldUseReanimatedDetector } = config;
+
+  const attachListener = <T>(
+    sharedValue: SharedValue<T>,
+    configKey: string
+  ) => {
+    'worklet';
+    const keyHash = hash(configKey);
+    const listenerId = baseListenerId + keyHash;
+
+    const sendUpdate = (value: T) => {
+      if (configKey === 'runOnJS') {
+        updateGestureHandlerConfig(handlerTag, {
+          dispatchesReanimatedEvents: shouldUseReanimatedDetector && !value,
+        });
+        return;
+      }
+
+      if (configKey === 'hitSlop') {
+        updateGestureHandlerConfig(handlerTag, {
+          hitSlop: normalizeHitSlop(value as HitSlop),
+        });
+        return;
+      }
+
+      if (PAN_OFFSET_KEYS.has(configKey)) {
+        const [start, end] = splitSingleOffset(value as number);
+        updateGestureHandlerConfig(handlerTag, {
+          [`${configKey}Start`]: start,
+          [`${configKey}End`]: end,
+        });
+        return;
+      }
+
+      updateGestureHandlerConfig(handlerTag, { [configKey]: value });
+    };
+
+    sharedValue.addListener(listenerId, sendUpdate);
+
+    // The full config carries the value read on the JS thread, which can be
+    // stale by the time it lands. Re-send the current value from here so it is
+    // the last write for this key and a change made before the listener
+    // existed is not lost.
+    sendUpdate(sharedValue.value);
+  };
+
+  for (const [key, maybeSharedValue] of Object.entries(config)) {
+    if (!Reanimated.isSharedValue(maybeSharedValue)) {
+      continue;
+    }
+
+    scheduleOnUI(attachListener, maybeSharedValue, key);
+  }
+}
+
+export function unbindSharedValues<
+  TConfig,
+  THandlerData,
+  TExtendedHandlerData extends THandlerData,
+>(
+  config: BaseGestureConfig<TConfig, THandlerData, TExtendedHandlerData>,
+  handlerTag: number
+) {
+  const scheduleOnUI = Worklets?.scheduleOnUI;
+
+  if (Reanimated === undefined || scheduleOnUI === undefined) {
+    return;
+  }
+
+  const baseListenerId = handlerTag + SHARED_VALUE_OFFSET;
+
+  for (const [key, maybeSharedValue] of Object.entries(config)) {
+    if (!Reanimated.isSharedValue(maybeSharedValue)) {
+      continue;
+    }
+
+    const keyHash = hash(key);
+    const listenerId = baseListenerId + keyHash;
+
+    scheduleOnUI(() => {
+      maybeSharedValue.removeListener(listenerId);
+    });
+  }
+}
+
+export function hasWorkletEventHandlers<
+  TConfig,
+  THandlerData,
+  TExtendedHandlerData extends THandlerData,
+>(config: BaseGestureConfig<TConfig, THandlerData, TExtendedHandlerData>) {
+  for (const key of HandlerCallbacks) {
+    const value = config[key];
+
+    if (typeof value === 'function' && '__workletHash' in value) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+export function maybeUnpackValue<T>(
+  v: SharedValueOrT<T, boolean> | undefined
+): T {
+  'worklet';
+
+  return (Reanimated?.isSharedValue(v) ? v.value : v) as T;
+}

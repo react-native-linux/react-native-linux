@@ -1,6 +1,8 @@
-import EventManager from './EventManager';
-import { AdaptedEvent, EventTypes } from '../interfaces';
 import { PointerType } from '../../PointerType';
+import type { AdaptedEvent } from '../interfaces';
+import { EventTypes } from '../interfaces';
+import { viewportToLocal } from '../utils';
+import EventManager from './EventManager';
 
 export default class WheelEventManager extends EventManager<HTMLElement> {
   private wheelDelta = { x: 0, y: 0 };
@@ -19,7 +21,9 @@ export default class WheelEventManager extends EventManager<HTMLElement> {
 
   public registerListeners(): void {
     this.view.addEventListener('pointermove', this.resetDelta);
-    this.view.addEventListener('wheel', this.wheelCallback);
+    this.view.addEventListener('wheel', this.wheelCallback, {
+      passive: true,
+    });
   }
 
   public unregisterListeners(): void {
@@ -28,11 +32,15 @@ export default class WheelEventManager extends EventManager<HTMLElement> {
   }
 
   protected mapEvent(event: WheelEvent): AdaptedEvent {
+    const x = event.clientX + this.wheelDelta.x;
+    const y = event.clientY + this.wheelDelta.y;
+    const local = viewportToLocal(this.view, { x, y });
+
     return {
-      x: event.clientX + this.wheelDelta.x,
-      y: event.clientY + this.wheelDelta.y,
-      offsetX: event.offsetX - event.deltaX,
-      offsetY: event.offsetY - event.deltaY,
+      x,
+      y,
+      offsetX: local.x,
+      offsetY: local.y,
       pointerId: -1,
       eventType: EventTypes.MOVE,
       pointerType: PointerType.OTHER,
@@ -42,7 +50,8 @@ export default class WheelEventManager extends EventManager<HTMLElement> {
     };
   }
 
-  public resetManager(): void {
+  public override resetManager(): void {
     super.resetManager();
+    this.wheelDelta = { x: 0, y: 0 };
   }
 }
