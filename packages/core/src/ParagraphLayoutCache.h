@@ -64,7 +64,10 @@ public:
 
     /** Swaps current to previous and clears current, dropping every entry that just went unused. */
     void endFrame();
-    /** Drops every entry, because the fonts the metrics were shaped with changed (#70). */
+    /**
+     * Drops every entry, because the fonts the metrics were shaped with changed (#70), and keeps a miss that was
+     * already shaping with the old fonts from inserting its metrics afterwards.
+     */
     void clear();
 
     [[nodiscard]] size_t currentFrameEntryCount() const;
@@ -77,8 +80,11 @@ private:
         Metrics metrics;
     };
 
-    /** Shapes a miss outside the lock, then inserts it under it, re-checking for a racing insert first. */
-    Metrics shapeAndInsert(const Key& key, const std::function<Metrics()>& makeEntry);
+    /**
+     * Shapes a miss outside the lock, then inserts it under it, re-checking for a racing insert first, unless a `clear`
+     * since the miss moved `generation_` past `missGeneration`.
+     */
+    Metrics shapeAndInsert(const Key& key, const std::function<Metrics()>& makeEntry, uint64_t missGeneration);
 
     /** Inserts into the current frame, evicting its oldest entry when it is at capacity. */
     void insertBounded(Entry entry);
@@ -89,6 +95,7 @@ private:
     std::vector<Entry> previousFrame_;
     uint64_t hitCount_{0};
     uint64_t missCount_{0};
+    uint64_t generation_{0};
 };
 
 } // namespace react_native_linux
