@@ -1453,6 +1453,14 @@ the fixture beside the `cpp-library` one and calls it from `packages/test-harnes
 Its unit tests are `tests/DpopKeysTest.cpp`, which the coverage gate scores, and the Hermes test is
 `tests/hermes/T3NativeControlsModuleTest.cpp`.
 
+`packages/test-harness/modules/t3-highlights/linux` is the same layout for T3 Code's Nitro module (#684). Its
+`T3Highlights` TurboModule keeps the Nitro method's contract, `tokenize(source, language) → ArrayBuffer |
+undefined`, over the module's own `t3_highlights_tokenize`, until Nitro runs on Linux (#152, #153). The fixture holds
+only `linux/` and a copy of the lexer's header, because the lexer is T3 Code's 6 MB of wasm2c output. CI fetches
+T3 Code's `modules/t3-highlights` at the commit the ecosystem matrix reads, adds `linux/`, autolinks it, and checks
+`test-bundles/t3-highlights.js` against `@pierre/highlights`' WebAssembly build. The Hermes test,
+`tests/hermes/T3HighlightsModuleTest.cpp`, runs the module over a stand-in lexer.
+
 A module whose view this platform already ships needs no `linux/` directory and no config entry. T3 Code's
 composer (`modules/t3-composer-editor`, #683) is this platform's `TextInput`, selected by a
 `T3ComposerEditor.linux.tsx` beside the app's `.native.tsx`. Metro resolves `.linux` before `.native`. The variant is

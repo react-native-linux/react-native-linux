@@ -210,6 +210,12 @@ else()
     message(STATUS "T3NativeControlsModuleTest is skipped: libcrypto's headers (libssl-dev) are missing")
 endif()
 
+# #684: the T3Highlights fixture module, called from JavaScript as an autolinked C++ TurboModule over a stand-in for
+# T3 Code's lexer. CI builds the module over the real lexer and calls it from test-bundles/t3-highlights.js.
+set(RNL_T3_HIGHLIGHTS_DIR ${CMAKE_SOURCE_DIR}/packages/test-harness/modules/t3-highlights)
+target_sources(rnl_core_hermes_tests PRIVATE T3HighlightsModuleTest.cpp ${RNL_T3_HIGHLIGHTS_DIR}/linux/T3Highlights.cpp)
+target_include_directories(rnl_core_hermes_tests PRIVATE ${RNL_T3_HIGHLIGHTS_DIR}/linux ${RNL_T3_HIGHLIGHTS_DIR}/cpp)
+
 set(RNL_HERMES_TESTS_FILTER
     "-BridgingTest.highResTimeStampTest:UseModernRuntimeScheduler/RuntimeSchedulerTest.*TaskYieldsToSynchronousAccess/*:NativeCxxModuleExampleTests.VoidFunEmitsEvents")
 
