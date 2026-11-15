@@ -1271,9 +1271,18 @@ both come from the installed files at configure time, a bump cannot leave a stal
 reads `package.json` again at test time, so a bump without a reconfigure fails there instead of in worklets' own
 runtime version check. `WORKLETS_FETCH_PREVIEW_ENABLED` is left undefined, as the package's flag file also sets it.
 
-**Patch policy: none.** Nothing under `node_modules` is edited. Where `Common/cpp` does not build on a third
-platform, `src/WorkletsLinuxPrefix.h` — the counterpart of the package's Android `WorkletsPCH.h`, compiled in as a
-precompiled prefix — makes up the difference, and each entry is an upstream ask:
+**Patch policy: one JavaScript patch.** `patches/react-native-worklets@0.12.2.patch`, applied by pnpm's
+`patchedDependencies`, makes the UI runtime's frame loop demand-driven (#671). Stock `nativeFlushQueue` requests the
+next native frame after every frame, so the frame clock never idles once the UI runtime starts. With the patch, a
+native frame is requested only by `requestAnimationFrame` (which worklets' `setTimeout`, `setImmediate` and
+`setInterval` polyfills are built on), `requestAnimationFrameFinalizer` or `queueMicrotask`. The upstream ask is
+software-mansion/react-native-reanimated#11237 (issue #10845), whose worklets half the patch is; it is deleted on
+the bump that contains it. The `worklets-round-trip` scenario's `maxJournalledFrames` is its proof: an idle window
+caps the run at 28 journalled frames (measured 20–22, against 388 unpatched), and a UI-runtime `setTimeout` started from idle still fires. pnpm applies `patchedDependencies` only in the workspace that declares it, so an app outside this repository must carry the same patch (pnpm `patchedDependencies` or patch-package) until the upstream ask ships; #681 owns delivering it to apps.
+
+No C++ is patched. Where `Common/cpp` does not build on a third platform, `src/WorkletsLinuxPrefix.h` — the
+counterpart of the package's Android `WorkletsPCH.h`, compiled in as a precompiled prefix — makes up the
+difference, and each entry is an upstream ask:
 
 - `<algorithm>` (`Tools/JSISerializer.cpp`), `<stdexcept>` (`Tools/FeatureFlags.h`) and `<iterator>`
   (`Tools/WorkletsJSIUtils.cpp`) are used without being included; the Android precompiled header and fbjni supply
