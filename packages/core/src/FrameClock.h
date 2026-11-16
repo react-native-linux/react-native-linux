@@ -58,9 +58,10 @@ public:
     /**
      * How long the fallback timeout waits when the compositor is not pacing the window (#335): a deactivated or
      * occluded window stretches the interval rather than burning the GPU at full rate, and a serious or critical
-     * thermal state caps the interval at one 60 Hz frame — the machine is telling us to stop chasing the display,
-     * and the stretch is a saving only while the thermal state is nominal. `refreshInterval` is the display's own
-     * frame period, so a 144 Hz panel stretches from 6.9 ms and a 60 Hz panel from 16.7 ms.
+     * thermal state (`ThermalSampler`) raises it to at least one 60 Hz frame, the minimum frame interval of GPUI's
+     * thermal gate: heat stops a 120 Hz window chasing the display and never wakes an idle one sooner.
+     * `refreshInterval` is the display's own frame period, so a 144 Hz panel stretches from 6.9 ms and a 60 Hz panel
+     * from 16.7 ms.
      */
     enum class WindowActivity : uint8_t { Active, Inactive, Occluded };
     enum class ThermalState : uint8_t { Nominal, Serious, Critical };
@@ -90,12 +91,6 @@ public:
      */
     [[nodiscard]] static std::chrono::nanoseconds pacingPeriod(bool hasDrawn,
                                                                std::optional<std::chrono::nanoseconds> displayPeriod);
-
-    /**
-     * The thermal state from a thermal zone's temperature as a fraction of its own critical trip temperature:
-     * at or above the trip is critical, 0.9 of it is serious, anything cooler is nominal.
-     */
-    [[nodiscard]] static ThermalState thermalStateFromCriticalRatio(double ratio);
 
     uint64_t callbackTicks() const noexcept;
     uint64_t timerTicks() const noexcept;

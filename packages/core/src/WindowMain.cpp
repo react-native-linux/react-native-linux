@@ -20,6 +20,7 @@
 #include "StartupActivationToken.h"
 #include "SurfaceCommitGate.h"
 #include "TextInputClient.h"
+#include "ThermalSampler.h"
 #include "TitleBarPainter.h"
 #include "ToplevelState.h"
 #include "WaylandWindow.h"
@@ -66,78 +67,18 @@ constexpr uint32_t kInitialHeight = 600;
 constexpr uint32_t kDefaultScreenshotFrames = 60;
 // The frame-pacing inputs of #335. The fallback interval is the decision `FrameClock::fallbackInterval` makes
 // from the window's activity, the machine's thermal state and the display's frame period; the thermal state is
-// re-read from the kernel's thermal zones at most once a second, because a file walk per fallback tick is the
-// very waste the pacing exists to avoid. The period it stretches is `FrameClock::pacingPeriod` (#703): an idle
+// sampled from the kernel's thermal zones once a second on `ThermalSampler`'s own thread, because a sysfs read can
+// stall for longer than a frame. The period it stretches is `FrameClock::pacingPeriod` (#703): an idle
 // window polls for work at the display's own rate, so a 120 Hz display is not polled at 60 Hz. The stretch
-// multipliers make the deactivated fallback three periods and the suspended one eight (#770), while an activated
-// window whose callbacks stopped is re-polled every period.
-constexpr std::chrono::milliseconds kThermalReadInterval{1'000};
-constexpr const char* kThermalZoneGlob = "/sys/class/thermal/thermal_zone*";
+// multipliers make the deactivated fallback three periods, while an activated window whose callbacks stopped is
+// re-polled every period.
+constexpr std::chrono::milliseconds kThermalSampleInterval{1'000};
+constexpr const char* kThermalRoot = "/sys/class/thermal";
 
-react_native_linux::FrameClock::ThermalState readThermalState(std::chrono::steady_clock::time_point now) {
-    static std::chrono::steady_clock::time_point lastRead{};
-    static react_native_linux::FrameClock::ThermalState cached = react_native_linux::FrameClock::ThermalState::Nominal;
+std::filesystem::path thermalRoot() {
+    const char* overriddenRoot = std::getenv("RNL_THERMAL_ROOT");
 
-    if (now - lastRead < kThermalReadInterval) {
-        return cached;
-    }
-
-    double worstRatio = 0.0;
-
-    // A container or a kernel without thermal zones has none to read: that is nominal, not an error. The
-    // error_code overloads return an end iterator instead of throwing, which is what the golden rig's window
-    // taught CI the hard way.
-    std::error_code zonesError;
-    const std::filesystem::directory_iterator zonesEnd;
-
-    for (std::filesystem::directory_iterator zone(kThermalZoneGlob, zonesError); zone != zonesEnd;
-         zone.increment(zonesError)) {
-        if (zonesError) {
-            break;
-        }
-
-        std::ifstream temperatureFile(zone->path() / "temp");
-
-        double temperature = 0.0;
-
-        if (!(temperatureFile >> temperature) || temperature <= 0.0) {
-            continue;
-        }
-
-        double criticalTrip = 0.0;
-
-        std::error_code tripsError;
-        const std::filesystem::directory_iterator tripsEnd;
-
-        for (std::filesystem::directory_iterator trip(zone->path(), tripsError); trip != tripsEnd;
-             trip.increment(tripsError)) {
-            if (tripsError) {
-                break;
-            }
-
-            const std::string tripName = trip->path().filename().string();
-
-            if (!tripName.starts_with("trip_point_") || !tripName.ends_with("_temp")) {
-                continue;
-            }
-
-            std::ifstream tripFile(trip->path());
-            double tripTemperature = 0.0;
-
-            if (tripFile >> tripTemperature && tripTemperature > criticalTrip) {
-                criticalTrip = tripTemperature;
-            }
-        }
-
-        if (criticalTrip > 0.0) {
-            worstRatio = std::max(worstRatio, temperature / criticalTrip);
-        }
-    }
-
-    cached = react_native_linux::FrameClock::thermalStateFromCriticalRatio(worstRatio);
-    lastRead = now;
-
-    return cached;
+    return overriddenRoot == nullptr ? kThermalRoot : overriddenRoot;
 }
 
 constexpr SkColor kCardColor = SkColorSetRGB(0x33, 0x66, 0xCC);
@@ -1505,6 +1446,7 @@ int main(int argc, char** argv) {
             }
 
             ImeDebugSink imeDebugSink;
+            const react_native_linux::ThermalSampler thermal(thermalRoot(), kThermalSampleInterval);
             std::optional<std::ofstream> frameLog;
             std::optional<react_native_linux::FrameClock::WindowActivity> loggedActivity;
             bool lastKeyboardFocus = false;
@@ -1796,7 +1738,7 @@ int main(int argc, char** argv) {
                     const react_native_linux::FrameClock::WindowActivity activity =
                         react_native_linux::FrameClock::windowActivity(window.toplevelState());
                     const std::chrono::nanoseconds fallbackInterval = react_native_linux::FrameClock::fallbackInterval(
-                        activity, readThermalState(fallbackNow),
+                        activity, thermal.state(),
                         react_native_linux::FrameClock::pacingPeriod(!skipped, window.refreshInterval()));
 
                     if (frameLog.has_value() && loggedActivity != activity) {

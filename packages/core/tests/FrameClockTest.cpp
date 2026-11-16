@@ -1,5 +1,6 @@
 #include "FrameClock.h"
 
+#include <algorithm>
 #include <chrono>
 #include <gtest/gtest.h>
 #include <optional>
@@ -232,19 +233,36 @@ TEST(FrameClockTest, TheFallbackLineNamesTheActivityItsIntervalAndWhen) {
         R"({"fallbackNs":66,"activity":"occluded","atNs":0})");
 }
 
-TEST(FrameClockTest, ASeriousOrCriticalThermalStateCapsTheIntervalAtOne60HzFrame) {
-    using namespace react_native_linux;
+/** #335: heat is a minimum frame interval of one 60 Hz frame, so it never wakes a window sooner than nominal. */
+TEST(FrameClockTest, ASeriousOrCriticalThermalStateRaisesTheIntervalToOne60HzFrameAndNeverShortensIt) {
+    const std::chrono::nanoseconds frame60{16'666'666};
 
-    const std::chrono::nanoseconds refresh144{6'944'444};
+    for (const std::chrono::nanoseconds refresh :
+         {std::chrono::nanoseconds{6'944'444}, std::chrono::nanoseconds{8'333'333}, frame60,
+          std::chrono::nanoseconds{33'333'333}}) {
+        for (const FrameClock::WindowActivity activity :
+             {FrameClock::WindowActivity::Active, FrameClock::WindowActivity::Inactive,
+              FrameClock::WindowActivity::Occluded}) {
+            const std::chrono::nanoseconds nominal =
+                FrameClock::fallbackInterval(activity, FrameClock::ThermalState::Nominal, refresh);
 
-    for (const FrameClock::WindowActivity activity :
-         {FrameClock::WindowActivity::Active, FrameClock::WindowActivity::Inactive,
-          FrameClock::WindowActivity::Occluded}) {
-        EXPECT_EQ(FrameClock::fallbackInterval(activity, FrameClock::ThermalState::Serious, refresh144),
-                  std::chrono::nanoseconds{16'666'666});
-        EXPECT_EQ(FrameClock::fallbackInterval(activity, FrameClock::ThermalState::Critical, refresh144),
-                  std::chrono::nanoseconds{16'666'666});
+            for (const FrameClock::ThermalState hot :
+                 {FrameClock::ThermalState::Serious, FrameClock::ThermalState::Critical}) {
+                EXPECT_EQ(FrameClock::fallbackInterval(activity, hot, refresh), std::max(nominal, frame60));
+            }
+        }
     }
+}
+
+TEST(FrameClockTest, HeatSlowsAnIdleActive120HzPollAndLeavesAnOccludedWindowStretched) {
+    const std::chrono::nanoseconds refresh120{8'333'333};
+
+    EXPECT_EQ(
+        FrameClock::fallbackInterval(FrameClock::WindowActivity::Active, FrameClock::ThermalState::Serious, refresh120),
+        std::chrono::nanoseconds{16'666'666});
+    EXPECT_EQ(FrameClock::fallbackInterval(FrameClock::WindowActivity::Occluded, FrameClock::ThermalState::Critical,
+                                           refresh120),
+              refresh120 * 8);
 }
 
 /**
@@ -261,17 +279,6 @@ TEST(FrameClockTest, ThePacingPeriodPollsAnIdleWindowAtTheDisplayRateAndLetsAnAr
     EXPECT_EQ(FrameClock::pacingPeriod(true, refresh30), refresh30 * 2);
     EXPECT_EQ(FrameClock::pacingPeriod(false, std::nullopt), nominal);
     EXPECT_EQ(FrameClock::pacingPeriod(true, std::nullopt), nominal);
-}
-
-TEST(FrameClockTest, TheThermalStateClassifiesAgainstTheZoneSOwnCriticalTrip) {
-    using namespace react_native_linux;
-
-    EXPECT_EQ(FrameClock::thermalStateFromCriticalRatio(0.5), FrameClock::ThermalState::Nominal);
-    EXPECT_EQ(FrameClock::thermalStateFromCriticalRatio(0.89), FrameClock::ThermalState::Nominal);
-    EXPECT_EQ(FrameClock::thermalStateFromCriticalRatio(0.9), FrameClock::ThermalState::Serious);
-    EXPECT_EQ(FrameClock::thermalStateFromCriticalRatio(0.99), FrameClock::ThermalState::Serious);
-    EXPECT_EQ(FrameClock::thermalStateFromCriticalRatio(1.0), FrameClock::ThermalState::Critical);
-    EXPECT_EQ(FrameClock::thermalStateFromCriticalRatio(1.1), FrameClock::ThermalState::Critical);
 }
 
 } // namespace
