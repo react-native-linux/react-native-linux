@@ -23,8 +23,6 @@
     "key Down release",
     "sleep 150",
     "await t3-expo-ui: light slider value=16",
-    "move 600 600",
-    "sleep 300",
     "move 168 114",
     "button left press",
     "sleep 50",
