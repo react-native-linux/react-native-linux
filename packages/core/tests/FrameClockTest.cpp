@@ -210,6 +210,28 @@ TEST(FrameClockTest, TheFallbackIntervalStretchesFromTheDisplaySPeriodNotFromAFi
               refresh60 * 3);
 }
 
+TEST(FrameClockTest, ASuspendedWindowIsOccludedWhateverItsActivationAndAnyOtherFollowsIt) {
+    using react_native_linux::ToplevelState;
+
+    EXPECT_EQ(FrameClock::windowActivity(ToplevelState{.activated = true}), FrameClock::WindowActivity::Active);
+    EXPECT_EQ(FrameClock::windowActivity(ToplevelState{}), FrameClock::WindowActivity::Inactive);
+    EXPECT_EQ(FrameClock::windowActivity(ToplevelState{.suspended = true}), FrameClock::WindowActivity::Occluded);
+    EXPECT_EQ(FrameClock::windowActivity(ToplevelState{.activated = true, .suspended = true}),
+              FrameClock::WindowActivity::Occluded);
+}
+
+TEST(FrameClockTest, TheFallbackLineNamesTheActivityItsIntervalAndWhen) {
+    EXPECT_EQ(FrameClock::formatFallbackLine(FrameClock::WindowActivity::Active, std::chrono::nanoseconds{8'333'333},
+                                             timeAt(2)),
+              R"({"fallbackNs":8333333,"activity":"active","atNs":2000000})");
+    EXPECT_EQ(
+        FrameClock::formatFallbackLine(FrameClock::WindowActivity::Inactive, std::chrono::nanoseconds{25}, timeAt(0)),
+        R"({"fallbackNs":25,"activity":"inactive","atNs":0})");
+    EXPECT_EQ(
+        FrameClock::formatFallbackLine(FrameClock::WindowActivity::Occluded, std::chrono::nanoseconds{66}, timeAt(0)),
+        R"({"fallbackNs":66,"activity":"occluded","atNs":0})");
+}
+
 TEST(FrameClockTest, ASeriousOrCriticalThermalStateCapsTheIntervalAtOne60HzFrame) {
     using namespace react_native_linux;
 

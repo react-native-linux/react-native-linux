@@ -1,8 +1,10 @@
 {
   "name": "app-state",
   "bundle": "app-state.js",
+  "outputRefreshHz": 20,
   "ready": "app-state: committed surface 1",
   "frames": 240,
+  "occludedFallback": true,
   "windowFlags": [
     "--no-decorations",
     "--inject-window-sequence",

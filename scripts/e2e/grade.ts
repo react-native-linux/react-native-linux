@@ -12,6 +12,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { PNG } from "pngjs";
 import type { Scenario } from "./scenario.ts";
 import { findIdleGapFailures } from "./idle-gap.ts";
+import { findOccludedFallbackFailures } from "./occluded-fallback.ts";
 import { gradeAutomation } from "./automation.ts";
 import path from "node:path";
 
@@ -75,6 +76,7 @@ const gradeFrameTiming = (scenario: Scenario, frameLogPath: string): Grade => {
   const inputTraceFailures = [
     ...findInputTraceFailures(frameLogText, scenario.inputTrace, frameLogPath),
     ...findIdleGapFailures(frameLogText, scenario.minIdleGapMs),
+    ...findOccludedFallbackFailures(frameLogText, scenario.occludedFallback),
   ];
   const notes = [
     ...(summary === null ? [] : [describeFrameTiming(summary)]),

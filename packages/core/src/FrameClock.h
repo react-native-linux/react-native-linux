@@ -1,8 +1,11 @@
 #pragma once
 
+#include "ToplevelState.h"
+
 #include <chrono>
 #include <cstdint>
 #include <optional>
+#include <string>
 
 namespace react_native_linux {
 
@@ -64,6 +67,19 @@ public:
 
     [[nodiscard]] static std::chrono::nanoseconds fallbackInterval(WindowActivity activity, ThermalState thermal,
                                                                    std::chrono::nanoseconds refreshInterval);
+
+    /**
+     * The activity `fallbackInterval` stretches by, from the toplevel's state: a suspended window (#770), one the
+     * compositor has stopped showing, is occluded whatever its activation, and any other is active or inactive by it.
+     */
+    [[nodiscard]] static WindowActivity windowActivity(const ToplevelState& state) noexcept;
+
+    /**
+     * The `--frame-log` record of a change in that activity, with the interval it chose and when, which is how an e2e
+     * scenario sees the fallback go occluded while the window is suspended and come back as soon as it resumes (#770).
+     */
+    [[nodiscard]] static std::string formatFallbackLine(WindowActivity activity, std::chrono::nanoseconds interval,
+                                                        std::chrono::steady_clock::time_point at);
 
     /**
      * The `refreshInterval` the fallback stretches over (#703), from the display period `wp_presentation` reported

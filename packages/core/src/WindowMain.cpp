@@ -69,8 +69,8 @@ constexpr uint32_t kDefaultScreenshotFrames = 60;
 // re-read from the kernel's thermal zones at most once a second, because a file walk per fallback tick is the
 // very waste the pacing exists to avoid. The period it stretches is `FrameClock::pacingPeriod` (#703): an idle
 // window polls for work at the display's own rate, so a 120 Hz display is not polled at 60 Hz. The stretch
-// multipliers make the deactivated fallback three periods, while an activated window whose callbacks stopped is
-// re-polled every period.
+// multipliers make the deactivated fallback three periods and the suspended one eight (#770), while an activated
+// window whose callbacks stopped is re-polled every period.
 constexpr std::chrono::milliseconds kThermalReadInterval{1'000};
 constexpr const char* kThermalZoneGlob = "/sys/class/thermal/thermal_zone*";
 
@@ -373,6 +373,19 @@ public:
         lastStepTime_ = now;
 
         return steps_[nextStepIndex_++];
+    }
+
+    /**
+     * When the next step falls due, if it changes the toplevel state: only those land mid-wait (#770), which is where
+     * a compositor's configure arrives, so a size-only step of a drag still lands in its own frame.
+     */
+    std::optional<std::chrono::steady_clock::time_point>
+    stateStepDue(const react_native_linux::ToplevelState& current) const {
+        if (!lastStepTime_.has_value() || nextStepIndex_ >= steps_.size() || steps_[nextStepIndex_].state == current) {
+            return std::nullopt;
+        }
+
+        return lastStepTime_.value() + kInjectWindowSequenceInterval;
     }
 
 private:
@@ -1493,6 +1506,7 @@ int main(int argc, char** argv) {
 
             ImeDebugSink imeDebugSink;
             std::optional<std::ofstream> frameLog;
+            std::optional<react_native_linux::FrameClock::WindowActivity> loggedActivity;
             bool lastKeyboardFocus = false;
             bool keyboardFocusAnnounced = false;
             bool pointerAnnounced = false;
@@ -1504,6 +1518,24 @@ int main(int argc, char** argv) {
                 frameLog.emplace(parsedArguments.frameLogPath.value());
             }
 
+            const auto applyInjectedWindowStep = [&window, &injectedWindowSequence] {
+                const std::optional<react_native_linux::WindowControlStep> windowStep =
+                    injectedWindowSequence.take(std::chrono::steady_clock::now());
+
+                if (!windowStep.has_value()) {
+                    return;
+                }
+
+                // A zero extent is a state-only token: the window keeps the extent the compositor gave it.
+                const react_native_linux::WindowControlStep resolvedStep{
+                    .width = windowStep->width == 0 ? window.size().width : windowStep->width,
+                    .height = windowStep->height == 0 ? window.size().height : windowStep->height,
+                    .state = windowStep->state};
+
+                window.injectConfigure(resolvedStep.width, resolvedStep.height, resolvedStep.state);
+                std::cout << react_native_linux::describeWindowControlStep(resolvedStep) << std::endl;
+            };
+
             while (!window.isClosed() && !hasCaptured) {
                 // Presentation feedback for the frames committed before this iteration arrived during the previous
                 // waitForRedraw, so the drain belongs at the top of the loop rather than beside the present.
@@ -1514,18 +1546,7 @@ int main(int argc, char** argv) {
                 // Before the pending-resize read below, so the configure this iteration replays is the one this
                 // iteration relayouts, paints and presents — which is what makes "one layout pass and one paint
                 // per configure" an assertion a scenario can make on the trace at all (#42, #432, #433, #435).
-                if (const std::optional<react_native_linux::WindowControlStep> windowStep =
-                        injectedWindowSequence.take(std::chrono::steady_clock::now());
-                    windowStep.has_value()) {
-                    // A zero extent is a state-only token: the window keeps the extent the compositor gave it.
-                    const react_native_linux::WindowControlStep resolvedStep{
-                        .width = windowStep->width == 0 ? window.size().width : windowStep->width,
-                        .height = windowStep->height == 0 ? window.size().height : windowStep->height,
-                        .state = windowStep->state};
-
-                    window.injectConfigure(resolvedStep.width, resolvedStep.height, resolvedStep.state);
-                    std::cout << react_native_linux::describeWindowControlStep(resolvedStep) << std::endl;
-                }
+                applyInjectedWindowStep();
 
                 const bool hasResized = window.takePendingResize();
                 const react_native_linux::ContentExtent previousChromeContent = chrome.content;
@@ -1772,13 +1793,30 @@ int main(int argc, char** argv) {
                     // fallback is what wakes it, so the wait is the interval the pacing decision (#335) makes from
                     // the window's activity, the machine's thermal state and the display's frame period.
                     const std::chrono::steady_clock::time_point fallbackNow = std::chrono::steady_clock::now();
+                    const react_native_linux::FrameClock::WindowActivity activity =
+                        react_native_linux::FrameClock::windowActivity(window.toplevelState());
                     const std::chrono::nanoseconds fallbackInterval = react_native_linux::FrameClock::fallbackInterval(
-                        window.toplevelState().activated ? react_native_linux::FrameClock::WindowActivity::Active
-                                                         : react_native_linux::FrameClock::WindowActivity::Inactive,
-                        readThermalState(fallbackNow),
+                        activity, readThermalState(fallbackNow),
                         react_native_linux::FrameClock::pacingPeriod(!skipped, window.refreshInterval()));
 
-                    if (!window.waitForRedraw(std::chrono::ceil<std::chrono::milliseconds>(fallbackInterval))) {
+                    if (frameLog.has_value() && loggedActivity != activity) {
+                        loggedActivity = activity;
+                        frameLog.value() << react_native_linux::FrameClock::formatFallbackLine(
+                                                activity, fallbackInterval, fallbackNow)
+                                         << "\n";
+                    }
+
+                    std::optional<react_native_linux::WaylandWindow::WaitInjection> injection;
+
+                    if (const std::optional<std::chrono::steady_clock::time_point> due =
+                            injectedWindowSequence.stateStepDue(window.toplevelState());
+                        due.has_value()) {
+                        injection = react_native_linux::WaylandWindow::WaitInjection{.due = due.value(),
+                                                                                     .apply = applyInjectedWindowStep};
+                    }
+
+                    if (!window.waitForRedraw(std::chrono::ceil<std::chrono::milliseconds>(fallbackInterval),
+                                              std::move(injection))) {
                         break;
                     }
                 }
