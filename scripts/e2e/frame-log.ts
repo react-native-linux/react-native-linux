@@ -1,4 +1,4 @@
-import type { FrameBudget } from "./scenario.ts";
+import type { FrameBudget } from "./frame-budget.ts";
 
 const NANOSECONDS_PER_MILLISECOND = 1_000_000;
 const MILLISECOND_DECIMALS = 2;
@@ -23,6 +23,7 @@ const JOURNAL_SUMMARY_MARKER = '"journalSummary":true';
 /** The journal's own per-frame record; `inputEvents` names the injected input the presented frame answered. */
 const JOURNAL_FRAME_MARKER = '"journal":true';
 
+const NO_FRAMES_REQUIRED = 0;
 const NO_INPUT_EVENTS = 0;
 
 interface FrameLogSummary {
@@ -230,10 +231,10 @@ const findFrameBudgetFailures = (inputs: FrameBudgetGradeInputs): readonly strin
     return [`the compositor advertised no wp_presentation, so ${frameLogPath} carries no frame timings`];
   }
 
-  const budgetNanoseconds = budget.p95Ms * NANOSECONDS_PER_MILLISECOND;
+  const budgetNanoseconds = (budget.p95Ms ?? Number.POSITIVE_INFINITY) * NANOSECONDS_PER_MILLISECOND;
 
   return [
-    ...(summary.frames < budget.minFrames
+    ...(summary.frames < (budget.minFrames ?? NO_FRAMES_REQUIRED)
       ? [`only ${String(summary.frames)} frames were presented, the budget needs at least ${String(budget.minFrames)}`]
       : []),
     ...(summary.medianNanoseconds > (budget.p50Ms ?? Number.POSITIVE_INFINITY) * NANOSECONDS_PER_MILLISECOND

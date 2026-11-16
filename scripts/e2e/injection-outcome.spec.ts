@@ -1,10 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   injectAndResolveFailure,
   resolveCompositorChild,
   resolveInjectionFailure,
   resolveWindowFlags,
-} from "./grade.ts";
+} from "./drive.ts";
 import { parseScenario } from "./scenario.ts";
 
 const EXPECTED_CLOSE_STATUS = 1;
@@ -17,6 +17,20 @@ const waitForExpectedClose =
   (closed: boolean): (() => Promise<boolean>) =>
   () =>
     Promise.resolve(closed);
+
+const trace = {
+  isClosed: (): boolean => false,
+  read: (): string => "",
+  waitFor: (): Promise<boolean> => Promise.resolve(true),
+};
+
+const CLEAN_EXIT_STATUS = 0;
+
+type StartInjector = Parameters<typeof injectAndResolveFailure>[number]["startInjector"];
+
+const injectorExiting =
+  (failure: string | null, status: number | null): StartInjector =>
+  (): ReturnType<StartInjector> => ({ finish: () => Promise.resolve({ failure, status }), send: vi.fn() });
 
 const injectionScenario = (expectsExitAfter: string | null): ReturnType<typeof parseScenario> =>
   parseScenario(
@@ -89,8 +103,9 @@ describe("resolveInjectionFailure", () => {
 describe("injectAndResolveFailure", () => {
   it("passes a successful injection through as null", async () => {
     const result = await injectAndResolveFailure({
-      inject: () => ({ failure: null, status: EXPECTED_CLOSE_STATUS }),
       scenario: injectionScenario(null),
+      startInjector: injectorExiting(null, EXPECTED_CLOSE_STATUS),
+      trace,
       waitForExpectedClose: waitForExpectedClose(true),
       waitForKeyboardFocus: waitForExpectedClose(true),
     });
@@ -100,8 +115,9 @@ describe("injectAndResolveFailure", () => {
 
   it("forgives status 1 for an expectsExitAfter scenario once the substring traces", async () => {
     const result = await injectAndResolveFailure({
-      inject: () => ({ failure: "boom", status: EXPECTED_CLOSE_STATUS }),
       scenario: injectionScenario(CLOSE_SUBSTRING),
+      startInjector: injectorExiting("boom", EXPECTED_CLOSE_STATUS),
+      trace,
       waitForExpectedClose: waitForExpectedClose(true),
       waitForKeyboardFocus: waitForExpectedClose(true),
     });
@@ -111,12 +127,44 @@ describe("injectAndResolveFailure", () => {
 
   it("keeps a status 2 failure even for an expectsExitAfter scenario", async () => {
     const result = await injectAndResolveFailure({
-      inject: () => ({ failure: "boom", status: USAGE_ERROR_STATUS }),
       scenario: injectionScenario(CLOSE_SUBSTRING),
+      startInjector: injectorExiting("boom", USAGE_ERROR_STATUS),
+      trace,
       waitForExpectedClose: waitForExpectedClose(true),
       waitForKeyboardFocus: waitForExpectedClose(true),
     });
 
     expect(result).toBe("boom");
+  });
+});
+
+const awaitScenario = parseScenario(
+  { bundle: "b.js", expect: ["ready"], name: "s", ready: "ready", steps: ["pan 1 0", "await settled"] },
+  "fixture.json",
+);
+
+describe("injectAndResolveFailure with an await step", () => {
+  it("reports an await that never traced once the injector exits cleanly", async () => {
+    const result = await injectAndResolveFailure({
+      scenario: awaitScenario,
+      startInjector: injectorExiting(null, CLEAN_EXIT_STATUS),
+      trace: { ...trace, waitFor: () => Promise.resolve(false) },
+      waitForExpectedClose: waitForExpectedClose(true),
+      waitForKeyboardFocus: waitForExpectedClose(true),
+    });
+
+    expect(result).toBe('the trace never produced "settled" before the steps after "await settled"');
+  });
+
+  it("reports the await rather than the injector killed while it waited", async () => {
+    const result = await injectAndResolveFailure({
+      scenario: awaitScenario,
+      startInjector: injectorExiting("rnl_inject exited with status null:\n", null),
+      trace: { ...trace, waitFor: () => Promise.resolve(false) },
+      waitForExpectedClose: waitForExpectedClose(true),
+      waitForKeyboardFocus: waitForExpectedClose(true),
+    });
+
+    expect(result).toBe('the trace never produced "settled" before the steps after "await settled"');
   });
 });

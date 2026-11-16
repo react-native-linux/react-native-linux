@@ -128,6 +128,7 @@ add_executable(rnl_core_hermes_tests
     ${RNL_CXX_MODULE_EXAMPLE_DIR}/NativeCxxModuleExample.cpp
     ${RNL_CXX_MODULE_EXAMPLE_DIR}/tests/NativeCxxModuleExampleTests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../../src/FantomTester.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/FrameClock.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../../src/MountTreeText.cpp
     ${googletest_SOURCE_DIR}/googlemock/src/gmock_main.cc
     ${REACT_COMMON_DIR}/jsi/jsi/test/testlib.cpp
