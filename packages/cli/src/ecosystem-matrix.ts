@@ -230,10 +230,10 @@ const ecosystemMatrix: readonly EcosystemRow[] = [
   },
   {
     flagshipVersion: "58.0.13",
-    issue: 635,
+    issue: 759,
     packageName: "expo-video",
     state: "declined",
-    substitute: "video attachments open in the desktop's default application",
+    substitute: "video attachments open in the desktop's default application from MediaVideoPlayer.linux.tsx",
   },
   {
     flagshipVersion: "6.1.0",
