@@ -37,6 +37,7 @@ export default defineConfig({
         "packages/test-harness/test-bundles/t3code-desktop-profile/expo-camera.ts",
         "packages/test-harness/test-bundles/t3code-desktop-profile/expo-keep-awake.ts",
         "packages/test-harness/test-bundles/t3code-desktop-profile/expo-sensors.ts",
+        "packages/test-harness/test-bundles/t3code-desktop-profile/expo-updates.ts",
         "packages/core/goldens/*.ts",
         "packages/core/src-linux/**/*.ts",
         "scripts/codegen-core/**/*.ts",

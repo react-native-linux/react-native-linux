@@ -26,6 +26,7 @@ const desktopProfile: Readonly<Record<string, string>> = {
   "expo-keep-awake": path.join(profileDirectory, "expo-keep-awake.ts"),
   "expo-observe": path.join(profileDirectory, "expo-observe.ts"),
   "expo-sensors": path.join(profileDirectory, "expo-sensors.ts"),
+  "expo-updates": path.join(profileDirectory, "expo-updates.ts"),
   "react-native-nitro-modules": path.join(profileDirectory, "react-native-nitro-modules.ts"),
 };
 
