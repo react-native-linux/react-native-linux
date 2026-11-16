@@ -1,9 +1,9 @@
 import { applyFastRefreshEdit, formatInjectorScript, gradeEditToVisible } from "./e2e/scenario.ts";
 import { execPath, stdout } from "node:process";
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { resolveCompositorChild, resolveWindowFlags } from "./e2e/grade.ts";
+import { resolveCompositorChild, resolveWindowFlags } from "./e2e/drive.ts";
 import type { FastRefreshEdit } from "./e2e/fast-refresh.ts";
-import type { Injector } from "./e2e/grade.ts";
+import type { Injector } from "./e2e/drive.ts";
 import { buildEnvironment } from "./headless-compositor.ts";
 import { setTimeout as delay } from "node:timers/promises";
 import path from "node:path";

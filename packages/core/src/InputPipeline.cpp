@@ -549,6 +549,8 @@ void ScrollAxisLock::release() {
 
 std::vector<InputEvent> InputQueue::drain() { return std::exchange(events_, {}); }
 
+bool InputQueue::isEmpty() const noexcept { return events_.empty(); }
+
 size_t InputQueue::droppedEventCount() const noexcept { return droppedEventCount_; }
 
 facebook::react::Point pointerOffsetWithinTarget(const PointerTargetTransform& transform,

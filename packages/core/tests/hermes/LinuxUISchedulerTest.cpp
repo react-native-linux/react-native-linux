@@ -1,5 +1,8 @@
 #include "LinuxUIScheduler.h"
 
+#include "FrameClock.h"
+
+#include <chrono>
 #include <cstddef>
 #include <gtest/gtest.h>
 #include <memory>
@@ -60,6 +63,26 @@ TEST(LinuxUISchedulerTest, JobsStillQueuedAtTeardownAreDestroyedWithoutRunning) 
 
     EXPECT_EQ(*capture, 0);
     EXPECT_EQ(capture.use_count(), 1);
+}
+
+/**
+ * #703: a `scheduleOnUI` from the JavaScript thread only queues the job, so an idle window that has stopped drawing
+ * must learn of it through `hasPendingJobs` on its next tick, and draw that tick to run it.
+ */
+TEST(LinuxUISchedulerTest, AJobFromAnotherThreadWakesAnIdleFrameClock) {
+    LinuxUIScheduler scheduler;
+    FrameClock clock;
+    const std::chrono::steady_clock::time_point start{};
+
+    ASSERT_FALSE(clock.onFrameCallback(start, scheduler.hasPendingJobs()).shouldDraw);
+
+    std::thread([&scheduler] { scheduler.scheduleOnUI([] {}); }).join();
+
+    EXPECT_TRUE(clock.onFallbackTimeout(start + std::chrono::milliseconds(16), scheduler.hasPendingJobs()).shouldDraw);
+
+    scheduler.triggerUI();
+
+    EXPECT_FALSE(scheduler.hasPendingJobs());
 }
 
 /**

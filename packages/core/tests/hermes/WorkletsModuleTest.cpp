@@ -109,7 +109,7 @@ TEST(WorkletsModuleTest, UIRuntimeAnimationFramesFireOnTheNextTickWithItsTimesta
 
     EXPECT_FALSE(reactHost.worklets().hasPendingWork());
     evaluateOnUIRuntime(*uiRuntime, kRequestTwoFrames);
-    EXPECT_TRUE(reactHost.hasPendingTimers());
+    EXPECT_TRUE(reactHost.hasPendingFrameRequests());
 
     reactHost.dispatchAnimationFrames(kFirstTick);
     EXPECT_EQ(evaluateOnUIRuntime(*uiRuntime, "globalThis.frames"), "[1000]");
@@ -129,6 +129,20 @@ TEST(WorkletsModuleTest, TeardownWithAFramePendingIsClean) {
     ASSERT_TRUE(reactHost->worklets().hasPendingWork());
 
     reactHost.reset();
+}
+
+/**
+ * #703: a JS timer is not a frame request. A distant `setTimeout` keeps the instance from going quiescent, yet it
+ * asks the window for no frames: what its callback changes reaches the window as mount damage when it fires.
+ */
+TEST(ReactHostFrameRequestsTest, APendingTimerIsNotAFrameRequest) {
+    ReactHost reactHost;
+
+    reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>("setTimeout(function () {}, 60000);"),
+                         "ReactHostFrameRequestsTest.js");
+
+    ASSERT_FALSE(reactHost.runUntilQuiescent(std::chrono::milliseconds(1)));
+    EXPECT_FALSE(reactHost.hasPendingFrameRequests());
 }
 
 } // namespace

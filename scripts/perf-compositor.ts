@@ -3,7 +3,7 @@ import { stopCompositor, waitForSocketName } from "./e2e-processes.ts";
 import { buildEnvironment } from "./headless-compositor.ts";
 import { findExecutable } from "./window-golden.ts";
 import path from "node:path";
-import { resolveCompositorChild } from "./e2e/grade.ts";
+import { resolveCompositorChild } from "./e2e/drive.ts";
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { waitUntil } from "./e2e/wait-until.ts";

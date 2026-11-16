@@ -71,12 +71,20 @@ TEST(LinuxMountingManagerPendingDamageTest, AFocusChangeSetsIt) {
     EXPECT_TRUE(mountingManager.hasPendingDamage());
 }
 
-TEST(LinuxMountingManagerPendingDamageTest, AnEditorStatePublishSetsIt) {
+TEST(LinuxMountingManagerPendingDamageTest, AnEditorStateThatMovedSetsIt) {
+    LinuxMountingManager mountingManager;
+
+    mountingManager.setEditorState(kTag, SceneEditorState{.caretUtf16 = 1, .isCaretVisible = true});
+
+    EXPECT_TRUE(mountingManager.hasPendingDamage());
+}
+
+TEST(LinuxMountingManagerPendingDamageTest, AnUnchangedEditorStateLeavesItClear) {
     LinuxMountingManager mountingManager;
 
     mountingManager.setEditorState(kTag, SceneEditorState{});
 
-    EXPECT_TRUE(mountingManager.hasPendingDamage());
+    EXPECT_FALSE(mountingManager.hasPendingDamage());
 }
 
 } // namespace

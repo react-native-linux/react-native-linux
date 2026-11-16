@@ -3,7 +3,7 @@ import { findFrameBudgetFailures, parseFrameLogSummary } from "./frame-log.ts";
 import { parseScenario } from "./scenario.ts";
 
 /**
- * `frameBudget.maxHangs` (#345) and `frameBudget.p50Ms` (#20), split from `scenario.spec.ts` and `frame-log.spec.ts`
+ * `frameBudget.maxHangs` (#345), `frameBudget.p50Ms` (#20) and the optional `p95Ms`/`minFrames` (#703), split from `scenario.spec.ts` and `frame-log.spec.ts`
  * rather than added to them: those files already sit at the repository's line-count ceiling. See *Frame journal* and
  * *At 120 Hz* in docs/cpp-toolchain.md.
  */
@@ -84,5 +84,30 @@ describe("findFrameBudgetFailures p50Ms", () => {
 
   it("does not gate on the median when the scenario sets no p50Ms", () => {
     expect(findFrameBudgetFailures({ ...inputs, budget })).toEqual([]);
+  });
+});
+
+describe("frameBudget without p95Ms or minFrames", () => {
+  const journalOnly = { maxJournalledFrames: 12 };
+  const summary = parseFrameLogSummary(
+    '{"summary":true,"frames":34,"discarded":0,"p50Ns":16690000,"p95Ns":41190000,"maxNs":117000000}',
+  );
+
+  it("parses a budget that gates only on the journal", () => {
+    expect(parseScenario({ ...validScenario, frameBudget: journalOnly }, "fixture.json").frameBudget).toEqual({
+      maxHangs: null,
+      maxJournalledFrames: 12,
+    });
+  });
+
+  it("gates neither the frame count nor the p95 when the scenario omits them", () => {
+    expect(
+      findFrameBudgetFailures({
+        budget: { maxHangs: null, maxJournalledFrames: null },
+        frameLogPath: "frames.jsonl",
+        journalSummary: null,
+        summary,
+      }),
+    ).toEqual([]);
   });
 });

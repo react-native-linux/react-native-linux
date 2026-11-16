@@ -163,7 +163,8 @@ public:
     /**
      * Publishes a `<TextInput>`'s caret, selection and composing run. Called from the frame thread by the text
      * input controller, and the third thing besides a mutation and a focus change that decides what the next
-     * frame paints.
+     * frame paints. Flags pending damage only when the state changed: the controller publishes every field on every
+     * frame, and an unchanged one must not keep an idle window drawing (#703).
      */
     void setEditorState(facebook::react::Tag tag, const SceneEditorState& editorState);
     SceneFrame takeFrame();
