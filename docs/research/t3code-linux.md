@@ -111,6 +111,7 @@ These are replaced by a different file on Linux, not left out:
 | --- | --- |
 | `@expo/ui/swift-ui` views | a core-component `.linux.tsx` variant of each T3 Code view that imports them (#707) |
 | `expo-video` in `MediaVideoPlayer` | a `.linux.tsx` poster that opens the video URL with `Linking.openURL` (#759) |
+| `T3NativeControls` in `VideoPreviewModal` and `FilePreviewModal` | `.linux.tsx` variants that run T3 Code's own `FilePreviewSession` on the tapped file alone and open it in the desktop's default application, since there is no `Modal` host yet (#62). A local file is first copied into the cache that `lib/attachmentDownload.ts` sweeps, so the composer can drop its draft file. Only `file:` and `http(s):` URIs are opened; anything else, or a failed open, shows the session's alert (#763). The open counts as done once xdg-open starts, so a file that xdg-open cannot open fails silently until #768 |
 | `@expo/ui/community/masked-view` | `@react-native-masked-view/masked-view` (#164) |
 | `expo-symbols` in `AppSymbol` | the tabler icon set `AppSymbol.android.tsx` already uses |
 | `T3ComposerEditor.native.tsx` | the plain `TextInput` variant, `T3ComposerEditor.tsx`, until #640's composer editor lands |
@@ -239,7 +240,7 @@ other seven are Expo local modules, linked by directory rather than declared as 
 
 | Module | Platforms | Linux |
 | --- | --- | --- |
-| `t3-native-controls` | iOS, Android | #640: DPoP keys, keyboard commands, workspace navigation; required |
+| `t3-native-controls` | iOS, Android | #640: DPoP keys, keyboard commands, workspace navigation; required. The video and file previews' `present*` methods have no Linux counterpart: their `.linux.tsx` variants open the file in the default application (#763) |
 | `t3-composer-editor` | iOS, Android | #640; the plain `TextInput` composer until then |
 | `t3-source-text` | iOS | #684: none needed, `SourceText` renders `Text` off iOS; selection is #43 |
 | `t3-highlights` | Nitro, C++ core | #684: a `linux/` TurboModule over the same lexer until #152 and #153 |

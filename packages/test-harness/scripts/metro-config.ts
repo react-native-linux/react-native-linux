@@ -14,8 +14,12 @@ const harnessMetroConfig = mergeConfig(getDefaultConfig(projectRoot), {
   cacheVersion: babelCacheVersion(projectRoot),
   resolver: {
     ...linuxResolverConfig(projectRoot),
-    // The t3-expo-ui bundle's stand-in for the T3 Code package its CustomSnoozeSheet variant imports.
-    extraNodeModules: { "@t3tools/client-runtime": path.join(projectRoot, "modules", "t3-expo-ui", "client-runtime") },
+    extraNodeModules: {
+      // The t3-expo-ui bundle's stand-in for the T3 Code package its CustomSnoozeSheet variant imports.
+      "@t3tools/client-runtime": path.join(projectRoot, "modules", "t3-expo-ui", "client-runtime"),
+      // T3 Code's own dependency, which the t3-file-preview bundle's FilePreviewModal variant copies local files with.
+      "expo-file-system": path.join(projectRoot, "..", "expo", "node_modules", "expo-file-system"),
+    },
   },
   watchFolders: [repositoryRoot],
 });
