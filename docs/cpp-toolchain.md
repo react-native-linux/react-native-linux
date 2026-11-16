@@ -6097,6 +6097,15 @@ code, with the target's own origin as the coordinates so the offset inside the t
 therefore turns them into `onPressIn`, `onPressOut` and `onPress` with no keyboard path of its own, which is what
 react-native-macos#1622 was missing.
 
+An Escape that nothing consumed is the desktop's **hardware back** (#788). A focused `<TextInput>` consumes its
+Escape to blur, so only an Escape that gets past it raises `hardwareBackPress`. The frame thread hands that event
+to the JavaScript thread through the runtime executor, without a payload, as Android's `DeviceEventManagerModule`
+sends it. Linux bundles take upstream's `BackHandler.android.js`, the file react-native-windows also ships as its
+own, so `BackHandler` and `useHardwareBack` listeners run. No `DeviceEventManager` module is registered, so
+`BackHandler.exitApp()` does nothing, whether a listener-less back calls it or the app does. Android routes both
+of those calls through the same `invokeDefaultBackPressHandler`, and closing the window there would close it on
+every Escape that no listener handled.
+
 ### Keyboard scrolling, and what loses to a focused field (#441)
 
 A scrollable region that cannot be scrolled from the keyboard is unusable without a mouse, and there is nothing

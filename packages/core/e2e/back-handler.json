@@ -1,0 +1,23 @@
+{
+  "name": "back-handler",
+  "bundle": "back-handler.tsx",
+  "ready": "back-handler: committed",
+  "frames": 600,
+  "steps": [
+    "sleep 500",
+    "key Escape press",
+    "key Escape release",
+    "await back-handler: back 1",
+    "click 300 140",
+    "await back-handler: focus",
+    "key Escape press",
+    "key Escape release",
+    "await back-handler: blur",
+    "key Escape press",
+    "key Escape release",
+    "await back-handler: back 2",
+    "sleep 200"
+  ],
+  "expect": ["back-handler: back 1", "back-handler: focus", "back-handler: blur", "back-handler: back 2"],
+  "reject": ["back-handler: back 3"]
+}

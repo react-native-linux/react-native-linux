@@ -45,7 +45,7 @@ describe("resolveLinuxOverlayForResolvedFile", () => {
 
   it.each([
     ["Network/RCTNetworking.js", "Network/RCTNetworking.android.js"],
-    ["Utilities/BackHandler.js", "Utilities/BackHandler.ios.js"],
+    ["Utilities/BackHandler.js", "Utilities/BackHandler.android.js"],
   ])("takes the named upstream variant of %s", (resolved, variant) => {
     expect(resolveLinuxOverlayForResolvedFile(upstreamFile(resolved), "linux")).toBe(upstreamFile(variant));
   });
