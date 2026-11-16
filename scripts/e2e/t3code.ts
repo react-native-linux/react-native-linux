@@ -1,6 +1,7 @@
 import { FIRST_PRESENTED_FRAME_TRACE_LINE, hasPresentedFirstFrame } from "./window-readiness.ts";
+import { cpSync, readdirSync, realpathSync } from "node:fs";
 import path from "node:path";
-import { realpathSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 
 /** The T3 Code revision docs/research/t3code-linux.md surveyed, and the one the fixture runs. */
 const T3CODE_REVISION = "238678951ac4945969b8203ae2996b5891b6ffce";
@@ -33,6 +34,32 @@ const buildPairingLink = (pairingUrl: string): string =>
 
 /** The last lines of a log, which is what a failure prints of it. */
 const tailLines = (text: string): string => text.trimEnd().split("\n").slice(-TAIL_LINE_COUNT).join("\n");
+
+const LINUX_VARIANT_PATTERN = /\.linux\.tsx?$/u;
+
+/**
+ * The Linux variants of T3 Code's own files (#707) under `variantsDirectory`, copied beside the files they replace in
+ * `mobileRoot/src` as T3 Code would carry them, so Metro picks each by its platform extension and its relative imports
+ * reach T3 Code's own modules. The directory's other files are stand-ins for T3 Code's files that only its test bundle
+ * uses, and stay behind. Answers why nothing was copied, or null: a destination T3 Code's git tracks is a variant of
+ * its own, which a copy would replace without a trace.
+ */
+const installVariants = (variantsDirectory: string, mobileRoot: string): string | null => {
+  const destinations = readdirSync(variantsDirectory, { encoding: "utf8", recursive: true })
+    .filter((relativePath) => LINUX_VARIANT_PATTERN.test(relativePath))
+    .map((variant) => path.join("src", variant));
+  const tracked = spawnSync("git", ["-C", mobileRoot, "ls-files", "--", ...destinations], { encoding: "utf8" });
+
+  if (tracked.status !== SUCCESSFUL_EXIT_STATUS || tracked.stdout !== "") {
+    return `T3 Code tracks a Linux variant of its own, or git could not tell, so none was copied into ${mobileRoot}\n${tracked.stdout}${tracked.stderr}`;
+  }
+
+  for (const destination of destinations) {
+    cpSync(path.join(variantsDirectory, path.relative("src", destination)), path.join(mobileRoot, destination));
+  }
+
+  return null;
+};
 
 /**
  * Why a run is not a pass, the first fatal JavaScript error leading as where startup stopped; empty only when the
@@ -102,6 +129,7 @@ export {
   OVERLAY_DIRECTORY_NAME,
   describeForeignCheckout,
   gradeWindowRun,
+  installVariants,
   overlayInstallArguments,
   overlayPackArguments,
   readPairingUrl,
