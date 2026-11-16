@@ -1,3 +1,5 @@
+// Expo CLI's Metro config prepends this to every bundle; this platform's does not yet (#687).
+import "expo/virtual/streams.js";
 import { AppRegistry, Text, View } from "react-native";
 import { Asset } from "expo-asset";
 import { registerRootComponent } from "expo";
@@ -19,14 +21,34 @@ const readThroughFetch = async (): Promise<string> => {
   return `${String(response.status)} ${(await response.text()).trim()}`;
 };
 
+const streamThroughFetch = async (): Promise<string> => {
+  const response = await fetch(LOCAL_FILE);
+  const { body } = response;
+
+  if (body === null) {
+    return "no body";
+  }
+
+  const reader = body.getReader();
+  let streamed = "";
+
+  for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
+    streamed += String.fromCodePoint(...chunk.value);
+  }
+
+  return streamed.trim();
+};
+
 const downloadAsset = async (): Promise<string> =>
   String((await Asset.fromURI(LOCAL_FILE).downloadAsync()).localUri);
 
 const ExpoEntryApp = (): React.JSX.Element => {
   useEffect(() => {
-    void Promise.all([settle(readThroughFetch), settle(downloadAsset)]).then(([fetched, downloaded]) => {
-      console.log(`expo-entry: rendered fetch=${fetched} asset=${downloaded}`);
-    });
+    void Promise.all([settle(readThroughFetch), settle(streamThroughFetch), settle(downloadAsset)]).then(
+      ([fetched, streamed, downloaded]) => {
+        console.log(`expo-entry: rendered fetch=${fetched} stream=${streamed} asset=${downloaded}`);
+      },
+    );
   }, []);
 
   return (

@@ -25,7 +25,6 @@
       "ignoreDependencies": [
         "@babel/runtime",
         "@react-native-linux/enriched-markdown",
-        "@react-native-linux/expo",
         "@react-native-linux/gesture-handler",
         "@react-native-linux/reanimated",
         "deep-equal",

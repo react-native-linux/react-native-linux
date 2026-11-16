@@ -107,6 +107,12 @@ describe("readRequestedScenarios", () => {
     );
   });
 
+  it("refuses a --scenario name no scenario has rather than running nothing", () => {
+    expect(() =>
+      readRequestedScenarios("/repo/packages", ["node", "e2e.ts", "--scenario", "gesture-hook-gestures"], environment),
+    ).toThrow('no scenario is named "gesture-hook-gestures"');
+  });
+
   it("refuses an empty --scenario name", () => {
     expect(() => readRequestedScenarios("/repo/packages", ["node", "e2e.ts", "--scenario", ""], environment)).toThrow(
       "--scenario needs a scenario name",

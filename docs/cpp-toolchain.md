@@ -1395,8 +1395,13 @@ racing the frame thread under TSan, and an install that no UI-runtime frame sees
 e2e scenario runs a stock `useSharedValue` + `withTiming` while the JavaScript thread is held, and compares the
 final frame against a golden.
 
-Worklets' UI runtime requests an animation frame from inside every frame it runs, by upstream design, so once
-Reanimated is installed its backend callback never goes idle and the frame clock ticks every frame. #671 owns that.
+Stock Reanimated re-queues its mapper run as a frame finalizer after every run, so with the worklets patch alone an
+app that starts Reanimated still requests a UI-runtime frame every frame, and its backend callback never goes idle.
+Patch `0005-idle-mapper-runs` (`packages/reanimated/README.md`) queues a mapper run only when a mapper starts or
+stops, one of its inputs changes, or a finalizer is requested: the Reanimated half of the same upstream ask. With
+both, the backend leaves the frame loop once an animation ends (#671). The `reanimated-timing` scenario's
+`maxJournalledFrames` is the proof: after its mount animation a tap replays the slide from idle, and the run is
+capped at 203 journalled frames (measured 152–156 with the longer animations of #710, against 770–771 unpatched).
 
 ## React Native bump procedure (#58)
 
@@ -8408,7 +8413,8 @@ pnpm e2e --scenario animated-frames
 ```
 
 A trailing `--scenario` with no name after it is an argument error rather than "every scenario": running the
-whole suite is the most expensive thing a mistyped targeted invocation could do.
+whole suite is the most expensive thing a mistyped targeted invocation could do. So is a name no scenario has, which
+would otherwise run nothing and read as a pass (#731).
 
 Like the window rig, the driver exits **2** with the reason on stderr when `cage`, the lavapipe ICD or either
 binary is missing, so a checkout without a graphics stack stays green. In CI that exit is a failure, which is what

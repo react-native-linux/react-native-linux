@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <jsi/jsi.h>
 #include <memory>
@@ -40,6 +41,19 @@ struct SharedObjectHandle final : facebook::jsi::NativeState {
     explicit SharedObjectHandle(std::shared_ptr<facebook::jsi::NativeState> state) : state(std::move(state)) {}
 
     std::shared_ptr<facebook::jsi::NativeState> state;
+};
+
+/** Bytes handed to JavaScript without a copy, owned by the `ArrayBuffer` over them. */
+class ByteBuffer final : public facebook::jsi::MutableBuffer {
+public:
+    explicit ByteBuffer(std::string bytes) : bytes_(std::move(bytes)) {}
+
+    [[nodiscard]] size_t size() const override { return bytes_.size(); }
+
+    uint8_t* data() override { return reinterpret_cast<uint8_t*>(bytes_.data()); }
+
+private:
+    std::string bytes_;
 };
 
 /** The state `initialize` gave `value`; throws when it is not such an instance, or was released. */

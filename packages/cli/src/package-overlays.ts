@@ -23,16 +23,6 @@ const linuxPackageOverlayIndex: Readonly<Record<string, string>> = {
   ),
 };
 
-/**
- * ADR-0004's escape hatch: a resolved package file whose JavaScript has to differ on Linux, and the specifier of the
- * linux package a linux bundle resolves instead. `expo`'s `fetch`, which `Expo.fx` installs as the global one, runs
- * over the native `ExpoFetchModule`, whose request and response are native classes upstream's JavaScript extends,
- * the constructor-backed shape #663 has yet to prove; until #673, both keep React Native's own `fetch`.
- */
-const linuxPackageSubstituteIndex: Readonly<Record<string, string>> = {
-  "expo/build/winter/fetch/index": "@react-native-linux/expo/fetch",
-};
-
 const packageSubpathOf = (filePath: string): string => packageSubpathPattern.exec(filePath)?.groups?.["subpath"] ?? "";
 
 /**
@@ -42,26 +32,4 @@ const packageSubpathOf = (filePath: string): string => packageSubpathPattern.exe
 const resolveLinuxPackageOverlayForResolvedFile = (filePath: string, platform: string | null): string | null =>
   platform === linuxPlatform ? (linuxPackageOverlayIndex[packageSubpathOf(filePath)] ?? null) : null;
 
-/**
- * The specifier a linux bundle resolves instead of a resolved package file that `linuxPackageSubstituteIndex` names,
- * once the linux package that holds it is installed; null for every other file, as for a package alias whose linux
- * package is missing.
- */
-const resolveLinuxPackageSubstituteForResolvedFile = (
-  filePath: string,
-  platform: string | null,
-  isPackageResolvable: (packageName: string) => boolean,
-): string | null => {
-  const substitute = linuxPackageSubstituteIndex[packageSubpathOf(filePath)] ?? null;
-
-  return platform !== linuxPlatform || substitute === null || !isPackageResolvable(path.posix.dirname(substitute))
-    ? null
-    : substitute;
-};
-
-export {
-  coreDirectory,
-  linuxPackageOverlayIndex,
-  resolveLinuxPackageOverlayForResolvedFile,
-  resolveLinuxPackageSubstituteForResolvedFile,
-};
+export { coreDirectory, linuxPackageOverlayIndex, resolveLinuxPackageOverlayForResolvedFile };

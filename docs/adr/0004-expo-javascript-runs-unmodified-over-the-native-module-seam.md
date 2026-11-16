@@ -141,11 +141,12 @@ its issue proved it.
    which React Native's own `URL` silently ignores, so `new File(Paths.document, 'name')` names the document
    directory itself. `expo`'s runtime (`expo/src/winter`) installs `whatwg-url-minimum`'s `URL` in every app that
    imports `expo`, as the flagship does; the e2e, which does not import `expo`, installs the same `URL` itself.
-   `expo-audio` and `expo-video` reuse `makeSharedObjectClass` when they land, and so does `expo`'s own
-   `ExpoFetchModule`: `expo/fetch` constructs its `NativeRequest` and extends its `NativeResponse`, and `Expo.fx`
-   installs that `fetch` as the global one. Until it lands
-   ([#673](https://github.com/react-native-linux/react-native-linux/issues/673)), the escape hatch below keeps React
-   Native's own `fetch`.
+   `expo-audio` and `expo-video` reuse `makeSharedObjectClass` when they land. Its second consumer is `expo`'s own
+   `ExpoFetchModule` (`packages/core/src/ExpoFetchModule.cpp`,
+   [#673](https://github.com/react-native-linux/react-native-linux/issues/673)): `expo/fetch` constructs its
+   `NativeRequest` and extends its `NativeResponse`, and `Expo.fx` installs that `fetch` as the global one. The response
+   emits its events by calling the instance's own `emit`, which the polyfill's `EventEmitter` provides, through a weak
+   reference, so the native side never keeps the instance alive.
 
 ### The module registry
 
@@ -165,6 +166,8 @@ it returns an `EventSubscription`, the shape of React Native's C++ event emitter
 `onURLReceived` subscribes to the `url` device event an activation already emits, proved from a native activation to
 the listener by `ExpoStartupModulesTest`; `ExpoNetwork`'s `onNetworkStateChanged` is React Native's C++ event emitter
 and emits nothing yet. The first module that emits on its own emitter adds an e2e that delivers one from native code.
+`ExpoFetchModule` emits on its `NativeResponse` instances rather than on a module emitter, and
+`ExpoFetchModuleTest` delivers those events from a native transfer to the listener.
 
 - **Optional lookup** (`requireOptionalNativeModule`) of a module this platform does not register returns `null`,
   and upstream's JavaScript takes its own "unavailable" path, as `expo-constants` does when it warns that
@@ -181,14 +184,11 @@ itself has to differ on Linux, not merely its native module. An escape-hatch ali
 resolving to the upstream package, because tooling reads it. The module's row in `packages/expo/README.md` says which
 way it went and why.
 
-The first escape hatch is a stopgap rather than a module whose JavaScript must differ: `expo`'s `fetch`, whose native
-module is #673's, and without which every application that imports `expo` loses the global `fetch` at its first
-call. Upstream reaches the file relatively (`Expo.fx`'s runtime calls `require('./fetch')`), which no package alias
-sees, so `linuxPackageSubstituteIndex` in `packages/cli/src/package-overlays.ts` resolves the resolved file
-`expo/build/winter/fetch/index` again as `@react-native-linux/expo/fetch`, React Native's own `fetch`, once the
-application installs that package. #673 removes it. Upstream's own switch, `EXPO_PUBLIC_USE_RN_FETCH`, is not used:
-it is inlined from the Metro process's environment, so one dev server bundling for Linux, iOS and Android would
-switch all three.
+No module takes the escape hatch today. The first one, `expo`'s `fetch` until its native module landed, resolved the
+file upstream reaches relatively (`Expo.fx`'s runtime calls `require('./fetch')`) to React Native's own `fetch`;
+#673 removed it with that resolver rule, so `expo/fetch` runs unmodified. Upstream's own switch,
+`EXPO_PUBLIC_USE_RN_FETCH`, stays unused: it is inlined from the Metro process's environment, so one dev server
+bundling for Linux, iOS and Android would switch all three.
 
 ### The boundary: what a native module of ours answers
 
@@ -297,7 +297,7 @@ Any one of these reopens the question in a new ADR:
   over it.
 - `expo` itself (`registerRootComponent`, `Expo.fx`) runs over the same seam, proved by the `expo-entry` e2e. Of the
   native modules it reaches as it loads, `ExponentConstants` and `ExpoAsset` are registered, `ExpoGo`, `ExpoUpdates`
-  and `EXDevLauncher` are optional lookups that answer as a bare app, and `ExpoFetchModule` is the escape hatch above.
+  and `EXDevLauncher` are optional lookups that answer as a bare app, and `ExpoFetchModule` is registered (#673).
   A development bundle also reaches `ExpoKeepAwake`, through a lookup upstream catches. The e2e bundles through this
   platform's Metro config and Babel preset; the same entry bundled through `expo/metro-config` and
   `babel-preset-expo`, as an Expo application bundles, is
@@ -308,7 +308,7 @@ Any one of these reopens the question in a new ADR:
   `ExpoFontLoader` registers a font file `Font.loadAsync` or `useFonts` downloaded into the text pipeline's application
   fonts (#70), the same registry `assets/fonts` fills, proved by the `expo-font` e2e and its screenshot golden.
 - `packages/expo` (`@react-native-linux/expo`) holds the per-module table, the e2e scenarios, the surface lists and
-  the escape hatches' runtime code. Its e2e installs the upstream packages; `pnpm-workspace.yaml`
+  any escape hatch's runtime code. Its e2e installs the upstream packages; `pnpm-workspace.yaml`
   marks `expo-constants`' `expo` peer optional because its JavaScript imports only types from it.
 - The upstream `expo-modules-autolinking` one-liner is still filed under
   [#160](https://github.com/react-native-linux/react-native-linux/issues/160), because discovery costs nothing and

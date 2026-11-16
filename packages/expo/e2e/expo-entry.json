@@ -11,6 +11,6 @@
   "expect": [
     "[rnl-automation] listening on",
     "Running \"main\"",
-    "expo-entry: rendered fetch=200 rnl_window asset=file:///proc/self/comm"
+    "expo-entry: rendered fetch=200 rnl_window stream=rnl_window asset=file:///proc/self/comm"
   ]
 }

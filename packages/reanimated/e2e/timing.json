@@ -3,8 +3,8 @@
   "bundle": "timing.tsx",
   "ready": "reanimated-timing: started",
   "frames": 900,
-  "frameBudget": { "p95Ms": 17.5, "minFrames": 60 },
-  "steps": ["sleep 3000"],
+  "frameBudget": { "p95Ms": 17.5, "minFrames": 60, "maxJournalledFrames": 203 },
+  "steps": ["sleep 3000", "click 300 300", "sleep 2000"],
   "screenshot": {
     "golden": "reanimated-timing.png",
     "maxDifferentPixels": 50,
@@ -13,6 +13,7 @@
   "expect": [
     "reanimated-timing: started",
     "reanimated-timing: value after the stall 1",
-    "reanimated-timing: finished true, stepped frame by frame"
+    "reanimated-timing: mount finished true, stepped frame by frame",
+    "reanimated-timing: idle finished true, stepped frame by frame"
   ]
 }

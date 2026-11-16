@@ -8,6 +8,7 @@ const SNAPSHOTS_DIRECTORY_NAME = "snapshots";
 const BUNDLES_DIRECTORY_NAME = "test-bundles";
 const SCENARIO_FILE_SUFFIX = ".json";
 const SCENARIO_FLAG = "--scenario";
+const NO_RUNS = 0;
 const NOT_FOUND_INDEX = -1;
 const NEXT_ARGUMENT = 1;
 const REPEAT_ENV_NAME = "RNL_E2E_REPEAT";
@@ -83,7 +84,8 @@ const readScenarioRuns = (
 /**
  * The scenarios one `pnpm e2e` runs: every package's, or the single one `--scenario <name>` names. A trailing
  * `--scenario` with nothing after it is an argument error rather than "all of them", because the whole suite is
- * the most expensive thing a mistyped targeted run could do.
+ * the most expensive thing a mistyped targeted run could do. A name no scenario has is an error too, or a mistyped
+ * targeted run would run nothing and read as a pass (#731).
  */
 const readRequestedScenarios = (
   packagesDirectory: string,
@@ -102,7 +104,13 @@ const readRequestedScenarios = (
     throw new Error(`${SCENARIO_FLAG} needs a scenario name`);
   }
 
-  return readScenarioRuns(packagesDirectory, requestedName, environment);
+  const runs = readScenarioRuns(packagesDirectory, requestedName, environment);
+
+  if (runs.length === NO_RUNS) {
+    throw new Error(`no scenario is named "${requestedName}"`);
+  }
+
+  return runs;
 };
 
 /**
