@@ -28,6 +28,11 @@ const configuredHandlerTag = 5;
 const draggedHandlerTag = 6;
 const contentsHandlerTag = 7;
 const anchoredHandlerTag = 8;
+const toastHandlerTag = 9;
+const scrollHandlerTag = 10;
+const siblingHandlerTag = 11;
+const firstPointerId = 1;
+const secondPointerId = 2;
 const dragDistance = 50;
 const movesBeforeDetach = 1;
 const rect = { bottom: 100, left: 0, right: 100, top: 0 };
@@ -224,33 +229,102 @@ const zeroSizeParent = (): TestElement => {
   return parent;
 };
 
-const dragOnChild = async (
-  handlerTag: number,
-  parent: TestElement,
-  hostDetector: unknown,
+type RoutedPointer = readonly [string, unknown];
+
+interface HandlerTarget {
+  readonly config?: object;
+  readonly element: TestElement;
+  readonly handlerTag: number;
+  readonly hostDetector?: unknown;
+  readonly name?: string;
+}
+
+const routeToHandler = async (
+  { config = {}, element: attached, handlerTag, hostDetector = null, name = "PanGestureHandler" }: HandlerTarget,
+  pointers: readonly RoutedPointer[],
 ): Promise<StateChangeMock> => {
   const gestureModule = await loadGestureModule();
   const route = await loadRoute();
   const stateChange = vi.fn();
   const propsRef = { current: { onGestureHandlerEvent: vi.fn(), onGestureHandlerStateChange: stateChange } };
-  methodOf(gestureModule, "createGestureHandler")("PanGestureHandler", handlerTag, {});
-  methodOf(gestureModule, "attachGestureHandler")(handlerTag, parent, jsFunctionNewApi, propsRef, hostDetector);
-  route("pointerdown", { ...dragStart, target: boxedChild });
-  route("pointermove", { ...dragEnd, target: boxedChild });
-  route("pointerup", { ...dragEnd, target: boxedChild });
+  methodOf(gestureModule, "createGestureHandler")(name, handlerTag, {});
+  methodOf(gestureModule, "attachGestureHandler")(handlerTag, attached, jsFunctionNewApi, propsRef, hostDetector);
+  methodOf(gestureModule, "updateGestureHandlerConfig")(handlerTag, config);
+  for (const [type, event] of pointers) {
+    route(type, event);
+  }
 
   return stateChange;
 };
 
+const childDrag: readonly RoutedPointer[] = [
+  ["pointerdown", { ...dragStart, target: boxedChild }],
+  ["pointermove", { ...dragEnd, target: boxedChild }],
+  ["pointerup", { ...dragEnd, target: boxedChild }],
+];
+
 it("bounds a display: contents detector by its children, so a drag on its child is recognized", async () => {
-  const contentsElement = zeroSizeParent();
-  const stateChange = await dragOnChild(contentsHandlerTag, contentsElement, { current: contentsElement });
+  const contents = zeroSizeParent();
+  const stateChange = await routeToHandler(
+    { element: contents, handlerTag: contentsHandlerTag, hostDetector: { current: contents } },
+    childDrag,
+  );
 
   expect(statesOf(stateChange)).toStrictEqual([stateBegan, stateActive, stateEnd]);
 });
 
 it("keeps a zero-size view's own bounds when it is not its detector, so a drag on its child is not recognized", async () => {
-  const stateChange = await dragOnChild(anchoredHandlerTag, zeroSizeParent(), null);
+  const stateChange = await routeToHandler({ element: zeroSizeParent(), handlerTag: anchoredHandlerTag }, childDrag);
 
   expect(stateChange).not.toHaveBeenCalled();
+});
+
+const toastElement = createElement();
+const toastConfig = { activeOffsetXEnd: 10, activeOffsetXStart: -10, failOffsetYEnd: 12, failOffsetYStart: -12 };
+const pressPoint = { clientX: 10, clientY: 10 };
+const verticalPoint = { clientX: 11, clientY: 40 };
+const crossingPoint = { clientX: 40, clientY: 11 };
+const releasePoint = { clientX: 80, clientY: 13 };
+const pointerOn =
+  (target: TestElement, pointerId: number) =>
+  (type: string, point: typeof pressPoint): RoutedPointer => [
+    type,
+    { nativeEvent: { ...point, pointerId }, target, timeStamp: 1 },
+  ];
+const toastPointer = pointerOn(toastElement, firstPointerId);
+
+it("begins a press that arrives in the same batch as the failure before it, as a busy JavaScript thread receives them", async () => {
+  const stateChange = await routeToHandler(
+    { config: toastConfig, element: toastElement, handlerTag: toastHandlerTag },
+    [
+      toastPointer("pointerdown", pressPoint),
+      toastPointer("pointermove", verticalPoint),
+      toastPointer("pointerup", verticalPoint),
+      toastPointer("pointerdown", pressPoint),
+      toastPointer("pointermove", crossingPoint),
+      toastPointer("pointermove", releasePoint),
+      toastPointer("pointerup", releasePoint),
+    ],
+  );
+
+  expect(statesOf(stateChange)).toStrictEqual([stateBegan, stateFailed, stateBegan, stateActive, stateEnd]);
+});
+
+const scrollElement = createElement();
+const scrollPointer = pointerOn(scrollElement, firstPointerId);
+const siblingElement = createElement();
+const siblingPointer = pointerOn(siblingElement, secondPointerId);
+
+it("activates a pan after an active Native recognizer is cancelled in the same batch, as a scroll view cancelled mid-drag is", async () => {
+  await routeToHandler({ element: scrollElement, handlerTag: scrollHandlerTag, name: "NativeViewGestureHandler" }, []);
+  const stateChange = await routeToHandler({ element: siblingElement, handlerTag: siblingHandlerTag }, [
+    scrollPointer("pointerdown", pressPoint),
+    scrollPointer("pointermove", releasePoint),
+    siblingPointer("pointerdown", pressPoint),
+    scrollPointer("pointercancel", releasePoint),
+    siblingPointer("pointermove", releasePoint),
+    siblingPointer("pointerup", releasePoint),
+  ]);
+
+  expect(statesOf(stateChange)).toStrictEqual([stateBegan, stateActive, stateEnd]);
 });

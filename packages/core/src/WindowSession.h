@@ -64,8 +64,7 @@ namespace react_native_linux {
  * to know about. See *Frame clock* in docs/cpp-toolchain.md for why the two are independent.
  *
  * `recordFrameTick` is where the frame journal of #345 sees its dirty edge: it marks `FrameJournal` dirty from
- * the same `hasPendingWork` signal the fallback timeout already reads, on every call regardless of source,
- * because an invalidation exists independently of whichever frame source wakes the loop that answers it.
+ * the same `hasPendingWork` signal the frame clock gates the draw on.
  * `tickAnimations` marks it again on the same terms, because an animation step's mutation lands after
  * `recordFrameTick` has read that signal and before `takeFrame` consumes it.
  * `recordPaintStart`/`recordPaintEnd` bracket the paint span `WindowMain` runs between `takeFrame` and the
@@ -111,10 +110,13 @@ public:
     /**
      * Feeds one `WaylandWindow::waitForRedraw` outcome to the frame clock and returns its draw decision. `source`
      * is `Callback` when `WaylandWindow::hasFrameCallbackFired` was true and `Timer` otherwise; the pending-work
-     * flag `FrameClock` needs for a `Timer` tick is computed here from the Fabric host and the JS timer registry,
-     * so the caller only has to say which frame source woke it.
+     * flag `FrameClock` gates both on is computed here from the Fabric host and the React host's frame requests, so
+     * the caller only has to say which frame source woke it.
      */
     FrameClock::Tick recordFrameTick(FrameClock::Source source, std::chrono::steady_clock::time_point now);
+
+    /** Delegates to `FrameClock::recordDrawOutcome` after every draw `recordFrameTick` asked for. */
+    void recordDrawOutcome(bool presented) noexcept;
     SceneFrame takeFrame();
     bool hasReportedFatalError() const;
 

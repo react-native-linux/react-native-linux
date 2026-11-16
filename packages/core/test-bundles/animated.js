@@ -50,4 +50,23 @@ animated.startAnimatingNode(animationId, valueTag, framesConfig, () => {
 });
 animated.finishOperationBatch();
 
+// A second, longer ramp keeps the window drawing for the frame budget's sample (#703): an idle window presents only
+// the frames that have work, so the one-frame animation above is one presented frame.
+const sampleValueTag = 3;
+const sampleStyleTag = 4;
+const sampleFrameCount = 90;
+const sampleFrames = Array.from({ length: sampleFrameCount }, (_, index) => (index + 1) / sampleFrameCount);
+
+animated.startOperationBatch();
+animated.createAnimatedNode(sampleValueTag, { type: 'value', value: 0, offset: 0 });
+animated.createAnimatedNode(sampleStyleTag, { type: 'style', style: { opacity: sampleValueTag } });
+animated.connectAnimatedNodes(sampleValueTag, sampleStyleTag);
+animated.startAnimatingNode(
+  2,
+  sampleValueTag,
+  { type: 'frames', frames: sampleFrames, toValue: 1, iterations: 1 },
+  () => {},
+);
+animated.finishOperationBatch();
+
 console.log('animated: batch ok');

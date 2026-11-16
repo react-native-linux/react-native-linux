@@ -7,7 +7,7 @@
   "frameBudget": {
     "p50Ms": 9.5,
     "p95Ms": 12.5,
-    "minFrames": 5800,
+    "minFrames": 3500,
     "maxHangs": 20
   },
   "steps": [
@@ -733,7 +733,7 @@
     "sleep 90",
     "wheel down 2",
     "sleep 80",
-    "sleep 300"
+    "await t3-review-diff: visible file file-"
   ],
   "expect": ["t3-review-diff: tokens chunk 0 delivered", "t3-review-diff: visible file file-"]
 }

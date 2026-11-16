@@ -150,6 +150,8 @@ wl_seat* WaylandSeat::seat() const noexcept { return seat_; }
 
 std::vector<InputEvent> WaylandSeat::takeEvents() { return queue_.drain(); }
 
+bool WaylandSeat::hasPendingEvents() const noexcept { return !queue_.isEmpty(); }
+
 size_t WaylandSeat::droppedEventCount() const noexcept { return queue_.droppedEventCount(); }
 
 void WaylandSeat::advanceKeyRepeat() {

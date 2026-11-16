@@ -77,6 +77,7 @@ public:
     /** The `wl_seat` every request that names one — `xdg_toplevel.move`, `.resize`, `.show_window_menu` — sends. */
     wl_seat* seat() const noexcept;
     std::vector<InputEvent> takeEvents();
+    bool hasPendingEvents() const noexcept;
     size_t droppedEventCount() const noexcept;
     /**
      * Synthesizes the `keyDown`s `wl_keyboard.repeat_info` asks for while a key is held (#65), against the

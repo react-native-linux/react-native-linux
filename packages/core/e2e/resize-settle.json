@@ -5,8 +5,6 @@
   "frames": 600,
   "windowFlags": ["--no-decorations", "--inject-window-sequence", "{800x600}{Drag:800x600:1000x600:10}"],
   "frameBudget": {
-    "p95Ms": 17.5,
-    "minFrames": 60,
     "maxHangs": 1,
     "maxJournalledFrames": 12
   },

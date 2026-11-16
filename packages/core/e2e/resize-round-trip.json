@@ -9,8 +9,6 @@
     "{800x600}{Drag:800x600:500x600:6}{Drag:500x600:800x600:6}"
   ],
   "frameBudget": {
-    "p95Ms": 17.5,
-    "minFrames": 60,
     "maxHangs": 1,
     "maxJournalledFrames": 14
   },

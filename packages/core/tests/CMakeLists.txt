@@ -135,6 +135,7 @@ add_executable(rnl_core_tests
     FrameClockTest.cpp
     FrameJournalTest.cpp
     FrameTimingTest.cpp
+    IdleWakeTest.cpp
     HitTestDifferentialTest.cpp
     ParagraphAttributesSignatureTest.cpp
     ParagraphLayoutCacheTest.cpp

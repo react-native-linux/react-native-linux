@@ -11,10 +11,9 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 import { PNG } from "pngjs";
 import type { Scenario } from "./scenario.ts";
+import { findIdleGapFailures } from "./idle-gap.ts";
 import { gradeAutomation } from "./automation.ts";
 import path from "node:path";
-import { runKeyboardAwareInjection } from "./keyboard-focus.ts";
-import { scalePointerSteps } from "./pointer-scale.ts";
 
 const NO_TEXT = "";
 const CROPPED_ARTIFACT_NAME = "screenshot-cropped.png";
@@ -73,7 +72,10 @@ const gradeFrameTiming = (scenario: Scenario, frameLogPath: string): Grade => {
   const frameLogText = existsSync(frameLogPath) ? readFileSync(frameLogPath, "utf8") : NO_TEXT;
   const summary = parseFrameLogSummary(frameLogText);
   const journalSummary = parseFrameJournalSummary(frameLogText);
-  const inputTraceFailures = findInputTraceFailures(frameLogText, scenario.inputTrace, frameLogPath);
+  const inputTraceFailures = [
+    ...findInputTraceFailures(frameLogText, scenario.inputTrace, frameLogPath),
+    ...findIdleGapFailures(frameLogText, scenario.minIdleGapMs),
+  ];
   const notes = [
     ...(summary === null ? [] : [describeFrameTiming(summary)]),
     ...(journalSummary === null ? [] : [describeFrameJournal(journalSummary)]),
@@ -196,88 +198,4 @@ const gradeAutomationChannel = (inputs: AutomationChannelInputs): Promise<readon
         trace: inputs.trace,
       });
 
-/** Omission becomes `--no-decorations`, since cage and weston have no decoration manager; `[]` or a list stands. */
-const resolveWindowFlags = (windowFlags?: readonly string[]): readonly string[] => windowFlags ?? ["--no-decorations"];
-
-/**
- * Headless wlroots starts its output at 60 Hz and cage takes no mode flag, so a scenario naming `outputRefreshHz`
- * starts the window behind `wlr-randr`, which sets a 1280x720 custom mode over wlr-output-management first. `--off`
- * goes first because noble's cage aborts when a configuration re-enables an output still in its layout; see *At
- * 120 Hz* in docs/cpp-toolchain.md.
- */
-const resolveCompositorChild = (outputRefreshHz: number | null, windowCommand: readonly string[]): readonly string[] =>
-  outputRefreshHz === null
-    ? windowCommand
-    : [
-        "sh",
-        "-c",
-        `wlr-randr --output HEADLESS-1 --off && wlr-randr --output HEADLESS-1 --on --custom-mode 1280x720@${String(outputRefreshHz)}Hz && exec "$0" "$@"`,
-        ...windowCommand,
-      ];
-
-/** `rnl_inject`'s own exit status for a clean run cut short by the socket disappearing under it. */
-const EXPECTED_CLOSE_STATUS = 1;
-
-interface InjectionOutcome {
-  readonly failure: string | null;
-  readonly status: number | null;
-}
-
-/**
- * `expectsExitAfter` scenarios (window-decorations-close, the two protocol-error scenarios) drive `rnl_window`
- * into dying on its own mid-run — a closed window, a rejected protocol request — so `rnl_inject` loses its socket
- * and exits with status 1. Only that exact status is eligible: 2 is `rnl_inject`'s own usage/argument error and
- * `null` is a signal (the #233 `INJECT_TIMEOUT_MS` kill, among others) — neither is the socket disappearing, so
- * both keep failing the scenario regardless of the trace. `waitForExpectedClose` — which checks the trace for
- * `expectsExitAfter`'s substring — is asked only once status agrees, and accepting the failure still needs it to
- * resolve `true`, so a status-1 exit for an unrelated reason still fails.
- */
-const resolveInjectionFailure = async (
-  outcome: InjectionOutcome,
-  expectsExitAfter: string | null,
-  waitForExpectedClose: () => Promise<boolean>,
-): Promise<string | null> => {
-  if (outcome.failure === null || expectsExitAfter === null || outcome.status !== EXPECTED_CLOSE_STATUS) {
-    return outcome.failure;
-  }
-
-  return (await waitForExpectedClose()) ? null : outcome.failure;
-};
-
-interface InjectionRun {
-  readonly scenario: Scenario;
-  readonly inject: (subset: readonly string[]) => InjectionOutcome;
-  readonly waitForKeyboardFocus: () => Promise<boolean>;
-  readonly waitForExpectedClose: () => Promise<boolean>;
-}
-
-/**
- * Runs `run.scenario.steps` through `run.inject`, threading its exit status to `resolveInjectionFailure` above.
- * `scalePointerSteps` converts every `move`/`click` line's coordinates from the logical pixels a scenario is
- * authored in to `rnl_inject`'s own surface pixels first, so the same rounding rule #374 gave the surface side
- * carries the injected coordinate rather than the raw logical one.
- */
-const injectAndResolveFailure = async (run: InjectionRun): Promise<string | null> => {
-  let status: number | null = null;
-  const failure = await runKeyboardAwareInjection(
-    scalePointerSteps(run.scenario.steps),
-    (steps) => {
-      const outcome = run.inject(steps);
-      ({ status } = outcome);
-
-      return outcome.failure;
-    },
-    run.waitForKeyboardFocus,
-  );
-
-  return resolveInjectionFailure({ failure, status }, run.scenario.expectsExitAfter, run.waitForExpectedClose);
-};
-
-export {
-  gradeArtifacts,
-  gradeAutomationChannel,
-  injectAndResolveFailure,
-  resolveCompositorChild,
-  resolveInjectionFailure,
-  resolveWindowFlags,
-};
+export { gradeArtifacts, gradeAutomationChannel };

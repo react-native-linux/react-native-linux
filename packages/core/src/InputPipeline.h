@@ -213,6 +213,7 @@ class InputQueue final {
 public:
     void push(const InputEvent& event);
     std::vector<InputEvent> drain();
+    bool isEmpty() const noexcept;
     size_t droppedEventCount() const noexcept;
 
 private:

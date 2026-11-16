@@ -49,8 +49,32 @@ public:
 
     Frame recordPresented(uint64_t sequence, uint64_t presentedNanoseconds, uint32_t refreshNanoseconds,
                           uint32_t flags);
-    void recordDiscarded();
+
+    /**
+     * `startsRun` is true for the first update after an idle span (#703): the run it would have started still starts
+     * at the next presented frame, so the idle span is not that frame's time either.
+     */
+    void recordDiscarded(bool startsRun);
+
+    /**
+     * The next presented frame follows an idle span in which the window chose not to draw (#703), so it starts a new
+     * run and has no frame time: the gap is the absence of work, not a slow frame.
+     */
+    void startRun() noexcept;
     Summary summarise() const;
+
+    /**
+     * The display's frame period (#703): the `refresh` the last presented frame reported, or, where the compositor
+     * reports zero (headless wlroots), the median of the last `kRefreshSampleCount` frame times at or above
+     * `kMinimumRefreshNanoseconds`. A FIFO swapchain presents once per display period, so most frame times are one
+     * period: the median ignores a late present and the early one after it, the floor ignores two presents with
+     * one timestamp, and the window slides, so the estimate recovers when the display slows. Absent until a
+     * presented frame gives either.
+     */
+    std::optional<uint64_t> refreshNanoseconds() const;
+
+    static constexpr size_t kRefreshSampleCount = 15;
+    static constexpr uint64_t kMinimumRefreshNanoseconds = 2'000'000;
 
     /** One JSON Lines record per presented frame, as `--frame-log` writes it. */
     static std::string formatFrameLine(const Frame& frame);
@@ -64,6 +88,8 @@ public:
 private:
     size_t sampleCapacity_;
     std::deque<uint64_t> intervalNanoseconds_;
+    std::deque<uint64_t> refreshSamples_;
+    uint32_t reportedRefreshNanoseconds_{0};
     std::optional<uint64_t> previousPresentedNanoseconds_;
     size_t presentedFrames_{0};
     size_t discardedFrames_{0};
