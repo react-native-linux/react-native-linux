@@ -19,7 +19,7 @@
     "await text-input: topChange on plain text=\"\"",
     "clipboard-expect SerialLedger",
     "clipboard-set pasted from another client",
-    "sleep 500",
+    "await [rnl-clipboard] received a selection of 26 bytes",
     "key Control_L press",
     "key v press",
     "key v release",

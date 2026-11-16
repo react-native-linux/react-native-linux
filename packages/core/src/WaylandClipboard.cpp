@@ -3,81 +3,17 @@
 #include "Clipboard.h"
 #include "WaylandSerialLedger.h"
 
+#include <algorithm>
 #include <array>
-#include <chrono>
-#include <csignal>
-#include <cstddef>
 #include <cstdint>
 #include <fcntl.h>
 #include <optional>
-#include <poll.h>
 #include <string>
 #include <string_view>
-#include <sys/types.h>
 #include <unistd.h>
-#include <utility>
 #include <wayland-client.h>
 
 namespace react_native_linux {
-
-namespace {
-
-constexpr std::chrono::milliseconds kTransferTimeout{100};
-constexpr size_t kReadChunkSize = 4096;
-
-/** Waits for `events` on `descriptor` until `deadline`; false once the deadline passed or the pipe failed. */
-bool waitForPipe(int descriptor, short events, std::chrono::steady_clock::time_point deadline) {
-    const auto remaining =
-        std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
-    pollfd pipe{.fd = descriptor, .events = events, .revents = 0};
-
-    return remaining.count() > 0 && poll(&pipe, 1, static_cast<int>(remaining.count())) > 0;
-}
-
-void writeText(int descriptor, std::string_view text) {
-    const auto deadline = std::chrono::steady_clock::now() + kTransferTimeout;
-
-    // The descriptor's blocking mode is this client's to choose; a reader that stops reading must not hold the
-    // frame thread inside write().
-    fcntl(descriptor, F_SETFL, fcntl(descriptor, F_GETFL) | O_NONBLOCK);
-
-    while (!text.empty() && waitForPipe(descriptor, POLLOUT, deadline)) {
-        const ssize_t written = write(descriptor, text.data(), text.size());
-
-        if (written < 0) {
-            break;
-        }
-
-        text.remove_prefix(static_cast<size_t>(written));
-    }
-
-    close(descriptor);
-}
-
-/** The whole of what the source wrote, or nothing if it did not finish within the timeout. */
-std::optional<std::string> readText(int descriptor) {
-    const auto deadline = std::chrono::steady_clock::now() + kTransferTimeout;
-    std::array<char, kReadChunkSize> chunk{};
-    std::string text;
-
-    while (waitForPipe(descriptor, POLLIN, deadline)) {
-        const ssize_t received = read(descriptor, chunk.data(), chunk.size());
-
-        if (received <= 0) {
-            close(descriptor);
-
-            return received == 0 ? std::optional<std::string>(std::move(text)) : std::nullopt;
-        }
-
-        text.append(chunk.data(), static_cast<size_t>(received));
-    }
-
-    close(descriptor);
-
-    return std::nullopt;
-}
-
-} // namespace
 
 const wl_data_device_listener WaylandClipboard::kDataDeviceListener = [] {
     wl_data_device_listener listener{};
@@ -111,13 +47,10 @@ const wl_data_source_listener WaylandClipboard::kDataSourceListener = [] {
     return listener;
 }();
 
-WaylandClipboard::WaylandClipboard(wl_display* display, wl_data_device_manager* manager, wl_seat* seat,
+WaylandClipboard::WaylandClipboard(wl_data_device_manager* manager, wl_seat* seat,
                                    const WaylandSerialLedger& serialLedger)
-    : display_(display), manager_(manager), dataDevice_(wl_data_device_manager_get_data_device(manager, seat)),
-      serialLedger_(serialLedger) {
-    // A reader that closes its pipe before the text is written must cost an EPIPE, not the process; GIO and foot
-    // ignore the signal the same way.
-    std::signal(SIGPIPE, SIG_IGN);
+    : manager_(manager), dataDevice_(wl_data_device_manager_get_data_device(manager, seat)),
+      serialLedger_(serialLedger), ownMimeType_("application/x-react-native-linux-" + std::to_string(getpid())) {
     wl_data_device_add_listener(dataDevice_, &kDataDeviceListener, this);
 }
 
@@ -134,15 +67,11 @@ WaylandClipboard::~WaylandClipboard() noexcept {
 }
 
 void WaylandClipboard::publishPendingText() {
-    const std::optional<std::string> text = takeClipboardPublish();
+    // Read rather than requested: a copy made before the first press waits for one, without a refusal logged per
+    // frame, and stays pending until then.
+    const uint32_t serial = serialLedger_.serial(WaylandSerialKind::Selection);
 
-    if (!text.has_value()) {
-        return;
-    }
-
-    const std::optional<uint32_t> serial = serialLedger_.requestSerial(WaylandSerialKind::Selection);
-
-    if (!serial.has_value()) {
+    if (serial == 0 || !takeClipboardPublish()) {
         return;
     }
 
@@ -154,43 +83,37 @@ void WaylandClipboard::publishPendingText() {
         wl_data_source_offer(ownedSource_, std::string(mimeType).c_str());
     }
 
-    wl_data_device_set_selection(dataDevice_, ownedSource_, serial.value());
+    wl_data_source_offer(ownedSource_, ownMimeType_.c_str());
+    wl_data_device_set_selection(dataDevice_, ownedSource_, serial);
 }
+
+ClipboardTransfers& WaylandClipboard::transfers() noexcept { return transfers_; }
 
 void WaylandClipboard::receiveSelection(wl_data_offer* offer) {
     // `data_offer` introduced this offer immediately before, so the types collected since are its types.
     introducedOffer_ = nullptr;
-
-    if (ownedSource_ != nullptr) {
-        // This client's own copy coming back: its text is already the clipboard's.
-        if (offer != nullptr) {
-            wl_data_offer_destroy(offer);
-        }
-
-        return;
-    }
+    transfers_.cancelRead();
 
     if (offer == nullptr) {
-        receiveClipboardText({});
+        beginClipboardReceive();
 
         return;
     }
 
+    // This client's own copy coming back is recognised by the type only its sources offer, not by still holding a
+    // source: a compositor that ignores a `set_selection` sends no `cancelled` for it.
+    const bool isOwnCopy = std::ranges::find(introducedMimeTypes_, ownMimeType_) != introducedMimeTypes_.end();
     const std::optional<std::string_view> mimeType = preferredClipboardMimeType(introducedMimeTypes_);
-    std::optional<std::string> text = std::string();
+    const std::optional<uint64_t> revision = isOwnCopy ? std::nullopt : beginClipboardReceive();
 
-    if (std::array<int, 2> descriptors{}; mimeType.has_value() && pipe2(descriptors.data(), O_CLOEXEC) == 0) {
+    if (std::array<int, 2> descriptors{};
+        revision.has_value() && mimeType.has_value() && pipe2(descriptors.data(), O_CLOEXEC) == 0) {
         wl_data_offer_receive(offer, std::string(mimeType.value()).c_str(), descriptors[1]);
         close(descriptors[1]);
-        wl_display_flush(display_);
-        text = readText(descriptors[0]);
+        transfers_.startRead(descriptors[0], revision.value());
     }
 
     wl_data_offer_destroy(offer);
-
-    if (text.has_value()) {
-        receiveClipboardText(std::move(text.value()));
-    }
 }
 
 void WaylandClipboard::handleDataOffer(void* data, wl_data_device* /*dataDevice*/, wl_data_offer* offer) {
@@ -234,9 +157,9 @@ void WaylandClipboard::handleOfferMimeType(void* data, wl_data_offer* offer, con
 
 void WaylandClipboard::handleSourceTarget(void* /*data*/, wl_data_source* /*source*/, const char* /*mimeType*/) {}
 
-void WaylandClipboard::handleSourceSend(void* /*data*/, wl_data_source* /*source*/, const char* /*mimeType*/,
+void WaylandClipboard::handleSourceSend(void* data, wl_data_source* /*source*/, const char* /*mimeType*/,
                                         int32_t descriptor) {
-    writeText(descriptor, clipboardText());
+    static_cast<WaylandClipboard*>(data)->transfers_.startWrite(descriptor, clipboardText());
 }
 
 void WaylandClipboard::handleSourceCancelled(void* data, wl_data_source* source) {

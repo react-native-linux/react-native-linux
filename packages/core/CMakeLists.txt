@@ -1278,6 +1278,7 @@ elseif(RNL_ENABLE_WINDOW)
 
     add_executable(rnl_window
         src/AutomationServer.cpp
+        src/ClipboardTransfers.cpp
         src/GpuResourceInvalidation.cpp
         src/OutputScale.cpp
         src/RendererLadder.cpp

@@ -59,7 +59,8 @@ const expectClipboard = async (expected: string, runCommand: RunCommand, deadlin
  * back when they exit. `clipboard-expect <text>` passes once the seat's selection reads `<text>`.
  * `clipboard-set <text>` makes `<text>` the selection and returns once it is set; `wl-copy` stays behind serving
  * it, as a source must, because the selection empties when its source exits, and it ends with the compositor. The
- * window reads it when its keyboard focus comes back, so a paste follows after a short sleep. Neither waits for
+ * window reads it when its keyboard focus comes back, so a paste follows an `await` of the window's
+ * `[rnl-clipboard] received` trace line. Neither waits for
  * injected input still in flight, so a `clipboard-set` that must follow a key goes after an `await` or a
  * `clipboard-expect`.
  */

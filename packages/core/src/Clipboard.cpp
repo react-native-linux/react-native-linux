@@ -1,6 +1,7 @@
 #include "Clipboard.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -14,6 +15,7 @@ namespace {
 
 std::mutex clipboardMutex;
 std::string clipboardStorage;
+uint64_t clipboardRevision = 0;
 bool isPublishPending = false;
 
 } // namespace
@@ -28,24 +30,38 @@ void setClipboardText(std::string text) {
     const std::scoped_lock lock(clipboardMutex);
 
     clipboardStorage = std::move(text);
+    ++clipboardRevision;
     isPublishPending = true;
 }
 
-std::optional<std::string> takeClipboardPublish() {
+bool takeClipboardPublish() {
     const std::scoped_lock lock(clipboardMutex);
 
-    if (!std::exchange(isPublishPending, false)) {
+    return std::exchange(isPublishPending, false);
+}
+
+std::optional<uint64_t> beginClipboardReceive() {
+    const std::scoped_lock lock(clipboardMutex);
+
+    if (isPublishPending) {
         return std::nullopt;
     }
 
-    return clipboardStorage;
+    clipboardStorage.clear();
+
+    return ++clipboardRevision;
 }
 
-void receiveClipboardText(std::string text) {
+bool receiveClipboardText(std::string text, uint64_t revision) {
     const std::scoped_lock lock(clipboardMutex);
 
+    if (revision != clipboardRevision) {
+        return false;
+    }
+
     clipboardStorage = std::move(text);
-    isPublishPending = false;
+
+    return true;
 }
 
 std::optional<std::string_view> preferredClipboardMimeType(const std::vector<std::string>& offeredMimeTypes) {

@@ -10,6 +10,7 @@
 
 namespace {
 
+using react_native_linux::beginClipboardReceive;
 using react_native_linux::CaretMotion;
 using react_native_linux::clampedScrollOffset;
 using react_native_linux::clipboardText;
@@ -743,19 +744,26 @@ TEST(ClipboardTest, RoundTripsTheTextItWasGiven) {
     EXPECT_EQ(clipboardText(), "");
 }
 
-/** #60: each copy is offered to the system selection exactly once, and another application's text never is. */
-TEST(ClipboardTest, PublishesEachCopyOnceAndNeverWhatItReceived) {
+/**
+ * #60: each copy is offered to the system selection once. Another application's selection empties the clipboard
+ * until its text arrives, is never offered back, and waits behind a copy that is still to be offered.
+ */
+TEST(ClipboardTest, PublishesEachCopyOnceAndReceivesOnlyOnceNoCopyIsPending) {
     setClipboardText("first");
     setClipboardText("second");
 
-    EXPECT_EQ(takeClipboardPublish(), "second");
-    EXPECT_EQ(takeClipboardPublish(), std::nullopt);
+    EXPECT_EQ(beginClipboardReceive(), std::nullopt);
+    EXPECT_TRUE(takeClipboardPublish());
+    EXPECT_FALSE(takeClipboardPublish());
+    EXPECT_EQ(clipboardText(), "second");
 
-    setClipboardText("superseded");
-    receiveClipboardText("from another application");
+    const std::optional<uint64_t> revision = beginClipboardReceive();
 
+    ASSERT_TRUE(revision.has_value());
+    EXPECT_EQ(clipboardText(), "");
+    EXPECT_TRUE(receiveClipboardText("from another application", revision.value()));
     EXPECT_EQ(clipboardText(), "from another application");
-    EXPECT_EQ(takeClipboardPublish(), std::nullopt);
+    EXPECT_FALSE(takeClipboardPublish());
 }
 
 /** #60: a paste asks for UTF-8 text first, takes the X11 name an XWayland source offers, and skips non-text offers. */

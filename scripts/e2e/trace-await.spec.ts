@@ -12,8 +12,8 @@ interface Rig {
 }
 
 /**
- * A trace that grows by `printedPerStretch[n]` when stretch `n` is sent, and a wait that checks it once and records
- * whether its condition held, so a test can tell a wait that ended early from one that ran out.
+ * A trace that grows by `printedPerStretch[n]` when stretch or clipboard command `n` is sent, and a wait that checks
+ * it once and records whether its condition held, so a test can tell a wait that ended early from one that ran out.
  */
 const createRig = (printedPerStretch: readonly string[], initialTrace = "", isClosed = false): Rig => {
   const sent: (readonly string[])[] = [];
@@ -22,6 +22,7 @@ const createRig = (printedPerStretch: readonly string[], initialTrace = "", isCl
 
   return {
     runCommand: (command, commandArguments) => {
+      text += printedPerStretch[sent.length] ?? "";
       sent.push([command, ...commandArguments]);
 
       return Promise.resolve({ output: "a", succeeded: command === "wl-paste" });
@@ -98,5 +99,12 @@ describe("sendAwaitingTrace with clipboard steps", () => {
       ["key b"],
       ["sh", "-c", 'exec wl-copy "$0" >/dev/null 2>&1', "unread"],
     ]);
+  });
+
+  it("counts what the window traced while a clipboard step ran toward the await after it", async () => {
+    const rig = createRig(["", "received\n"]);
+
+    expect(await sendThrough(rig, ["key a", "clipboard-expect a", "await received", "key v"])).toBeNull();
+    expect(rig.sent).toEqual([["key a"], ["wl-paste", "--no-newline"], [], ["key v"]]);
   });
 });

@@ -884,27 +884,37 @@ touched from the JavaScript thread.
 
 - **Copy.** `setClipboardText` marks the text for publishing; `WaylandWindow::waitForRedraw` calls
   `publishPendingText` once per frame, which offers a `wl_data_source` in `text/plain;charset=utf-8`,
-  `text/plain` and `UTF8_STRING` (the X11 name XWayland clients ask for) and sets it with the ledger's `Selection`
-  serial. JavaScript's `setString` therefore lands on the next frame, within one fallback interval on an idle
-  window. Each `send` writes the clipboard's text into the reader's pipe; a `cancelled` source is another
-  client's copy taking over.
-- **Paste reads eagerly.** A `selection` from another client is read as soon as it arrives — on keyboard
-  enter, or when another client copies while this one is focused — and stored with `receiveClipboardText`, so
-  Ctrl+V and `getString` never wait on a pipe. A selection while this client still owns its source is its own
-  copy coming back and is never read through a pipe, which is what rules out reading from itself on the thread
-  that has to write. A selection with no text type, or none at all, empties the clipboard.
-- **Bounded.** Both directions give up after 100 ms, so a source or reader that stalls costs one frame budget
-  once rather than a frozen window, and `SIGPIPE` is ignored so a reader that closes early costs an `EPIPE`. The price of eager reads is that one read happens per focus change after
-  another application copied, whether or not anything is pasted; it is one round trip to that application.
+  `text/plain` and `UTF8_STRING` (the X11 name XWayland clients ask for), plus the private type
+  `application/x-react-native-linux-<pid>`, and sets it with the ledger's `Selection` serial. A copy made before
+  any press waits, still pending, for the first one. JavaScript's `setString` therefore lands on the next frame,
+  within one fallback interval on an idle window. A `cancelled` source is another client's copy taking over.
+- **Paste reads eagerly.** A `selection` from another client — on keyboard enter, or when another client copies
+  while this one is focused — empties the clipboard at once, so a paste before its text arrives is empty rather
+  than stale, and is read in the background; the text lands with `receiveClipboardText` and the window traces
+  `[rnl-clipboard] received a selection of <n> bytes`. Ctrl+V and `getString` never wait on a pipe. A selection
+  that offers this process's private type is its own copy coming back and is not read: ownership is decided from
+  the offer, not from still holding a source, because a compositor that ignores a `set_selection` (a stale serial,
+  an unfocused client) never cancels it. A selection with no text type, or none at all, leaves the clipboard empty.
+- **Never blocking.** Every transfer is a non-blocking pipe in `src/ClipboardTransfers.cpp`, polled beside the
+  display in `dispatchWithTimeout` and advanced after each wake: one pending read, which a newer selection or
+  shutdown abandons, and one write per `send`, closed when written or when the reader has gone. A read stores its
+  text under the clipboard revision it started with, so a copy made here while it was in flight is never
+  overwritten, and a copy still waiting to be published supersedes a selection that arrives first. `SIGPIPE` is
+  blocked only around each `write` and a pending one consumed after an `EPIPE`, so a reader that closes early costs
+  an `EPIPE`, and nothing the process spawns inherits a changed mask or disposition. The price of eager reads is
+  one background read per focus change after another application copied, whether or not anything is pasted.
 - **Not yet.** The primary selection (`zwp_primary_selection_v1`, middle-click paste) and drag-and-drop stay on
   #60; a drag's offer is declined. The data device is bound at version 1, which is the whole selection protocol.
 
 The e2e scenario `text-input-system-clipboard` proves both directions against a second client under cage:
 `clipboard-expect <text>` reads the selection with `wl-paste`, and `clipboard-set <text>` sets one with
-`wl-copy --paste-once`, which returns only once the window has read it. noble's cage 0.1.5 offers no
-data-control protocol, so wl-clipboard takes keyboard focus with a surface of its own and gives it back on exit;
-see *E2E driver (#7)*. The pure half, publish-once and the MIME preference, is in `ClipboardTest` at 100% line and
-branch.
+`wl-copy`, which leaves a background copy serving it. The scenario then awaits the window's `received` trace line
+before Ctrl+V; an `await` after a clipboard step counts what traced while the step ran, because the window can
+receive the selection before `wl-copy` returns. noble's cage 0.1.5 offers no data-control protocol, so
+wl-clipboard takes keyboard focus with a surface of its own and gives it back on exit; see *E2E driver (#7)*. The
+pure half — publish-once, the revision check, the MIME preference and every transfer over real pipes, including
+the JavaScript-thread race under TSan — is in `ClipboardTest` and `ClipboardTransfersTest`, with `Clipboard.cpp`
+and `ClipboardTransfers.cpp` at 100% line and branch.
 
 ### Decorations and app_id (#329)
 

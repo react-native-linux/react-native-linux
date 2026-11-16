@@ -157,7 +157,7 @@ WaylandWindow::WaylandWindow(const WindowIdentity& identity, WindowSize initialS
     }
 
     if (seat_ != nullptr && dataDeviceManager_ != nullptr) {
-        clipboard_ = std::make_unique<WaylandClipboard>(display_, dataDeviceManager_, seat_->seat(), serialLedger_);
+        clipboard_ = std::make_unique<WaylandClipboard>(dataDeviceManager_, seat_->seat(), serialLedger_);
     }
 }
 
@@ -545,10 +545,17 @@ void WaylandWindow::dispatchWithTimeout(std::chrono::milliseconds timeout) {
         }
     }
 
-    pollfd pollDescriptor{.fd = wl_display_get_fd(display_), .events = POLLIN, .revents = 0};
-    const int readyDescriptors = poll(&pollDescriptor, 1, static_cast<int>(timeout.count()));
+    // The display first, then the clipboard's pipes, so a transfer becoming ready wakes the wait as input does.
+    pollDescriptors_.assign(1, pollfd{.fd = wl_display_get_fd(display_), .events = POLLIN, .revents = 0});
 
-    if (readyDescriptors > 0 && (pollDescriptor.revents & POLLIN) != 0) {
+    if (clipboard_ != nullptr) {
+        clipboard_->transfers().appendPollDescriptors(pollDescriptors_);
+    }
+
+    const int readyDescriptors =
+        poll(pollDescriptors_.data(), pollDescriptors_.size(), static_cast<int>(timeout.count()));
+
+    if (readyDescriptors > 0 && (pollDescriptors_.front().revents & POLLIN) != 0) {
         if (closesWaylandWindow(reportDispatchFailure(wl_display_read_events(display_)))) {
             return;
         }
@@ -557,6 +564,10 @@ void WaylandWindow::dispatchWithTimeout(std::chrono::milliseconds timeout) {
     }
 
     reportDispatchFailure(wl_display_dispatch_pending(display_));
+
+    if (clipboard_ != nullptr) {
+        clipboard_->transfers().advance();
+    }
 }
 
 void WaylandWindow::handleActivationTokenDone(void* data, xdg_activation_token_v1* token, const char* tokenString) {

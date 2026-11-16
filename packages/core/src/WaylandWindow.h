@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <poll.h>
 #include <string>
 #include <vector>
 
@@ -414,6 +415,8 @@ private:
     std::unique_ptr<WaylandSeat> seat_;
     wl_data_device_manager* dataDeviceManager_{nullptr};
     std::unique_ptr<WaylandClipboard> clipboard_;
+    /** Reused by every `dispatchWithTimeout`, so the event loop does not allocate per wait. */
+    std::vector<pollfd> pollDescriptors_;
     zwp_text_input_manager_v3* textInputManager_{nullptr};
     zxdg_decoration_manager_v1* decorationManager_{nullptr};
     xdg_activation_v1* activation_{nullptr};

@@ -16,6 +16,8 @@ interface AwaitingInjection {
   readonly runCommand: RunCommand;
   readonly send: (stretch: readonly string[]) => void;
   readonly steps: readonly string[];
+  /** Where the trace ended when this stretch began; a clipboard step passes the point before it ran. */
+  readonly stretchStart?: number;
   readonly trace: TraceWatch;
 }
 
@@ -44,14 +46,21 @@ const isHeldStep = (step: string): boolean => step.startsWith(AWAIT_STEP_PREFIX)
  * Sends `steps` to one running `rnl_inject` a stretch at a time, holding back what follows each `await <text>`
  * step (#719) until the trace shows `<text>` after the point where it ended when the stretch before began. The
  * wait is bounded and ends early when the window closes its trace, and the step itself never reaches the injector.
- * A clipboard step (#60) is held the same way and run through `runCommand` instead of awaited.
+ * A clipboard step (#60) is held the same way and run through `runCommand` instead of awaited; an `await` after
+ * it counts from where the trace ended when the step began, because what the window traces in answer, such as
+ * receiving the selection the step set, can arrive before the step returns.
  * Input that depends on the app's state, such as a click on a control that has to finish moving first, goes out
  * once the app reports that state rather than after a sleep that guesses how long it takes under load. One
  * injector for the whole script matters: a new one is a new virtual pointer the window has to bind before its
  * first event can land.
  */
-const sendAwaitingTrace = async ({ runCommand, send, steps, trace }: AwaitingInjection): Promise<string | null> => {
-  const stretchStart = trace.read().length;
+const sendAwaitingTrace = async ({
+  runCommand,
+  send,
+  steps,
+  trace,
+  stretchStart = trace.read().length,
+}: AwaitingInjection): Promise<string | null> => {
   const heldStep = steps.find((step) => isHeldStep(step)) ?? null;
 
   if (heldStep === null) {
@@ -64,12 +73,21 @@ const sendAwaitingTrace = async ({ runCommand, send, steps, trace }: AwaitingInj
 
   send(steps.slice(SCRIPT_START_INDEX, heldIndex));
 
+  const heldStart = trace.read().length;
   const failure = isClipboardStep(heldStep)
     ? await runClipboardStep(heldStep, runCommand)
     : await awaitTrace(trace, heldStep, stretchStart);
+  const remainingSteps = steps.slice(heldIndex + AFTER_AWAIT_STEP_OFFSET);
 
   return (
-    failure ?? sendAwaitingTrace({ runCommand, send, steps: steps.slice(heldIndex + AFTER_AWAIT_STEP_OFFSET), trace })
+    failure ??
+    sendAwaitingTrace({
+      runCommand,
+      send,
+      steps: remainingSteps,
+      ...(isClipboardStep(heldStep) ? { stretchStart: heldStart } : {}),
+      trace,
+    })
   );
 };
 
