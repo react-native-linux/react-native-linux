@@ -18,6 +18,11 @@
 #include "SecretService.h"
 #endif
 
+#ifdef RNL_ENABLE_OPEN_URI_PORTAL
+#include "ExpoSharingModule.h"
+#include "OpenUriPortal.h"
+#endif
+
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -78,6 +83,12 @@ WindowSession::WindowSession(const std::string& bundlePath, WindowSize size, dou
 #endif
 #ifdef RNL_ENABLE_DESKTOP_NOTIFICATIONS
     reactHost_.notifications().configure(applicationDirectory.filename().string(), connectSessionNotifications);
+#endif
+#ifdef RNL_ENABLE_OPEN_URI_PORTAL
+    auto portal = std::make_shared<OpenUriPortal>();
+
+    reactHost_.fileSharing().isAvailable = [portal] { return portal->isAvailable(); };
+    reactHost_.fileSharing().share = [portal](const std::filesystem::path& file) { portal->openFile(file); };
 #endif
 
     if (cacheDirectory.has_value()) {

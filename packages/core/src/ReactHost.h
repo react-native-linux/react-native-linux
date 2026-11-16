@@ -122,6 +122,9 @@ public:
     /** What expo-notifications runs over (#274); see `TurboModuleRegistry::notifications`. */
     NotificationCenter& notifications() noexcept;
 
+    /** What `ExpoSharing` hands a file to (#744); see `TurboModuleRegistry::fileSharing`. */
+    FileSharing& fileSharing() noexcept;
+
     /** `I18nManager`'s state (#72); see `TurboModuleRegistry::i18n`. */
     I18nModel& i18n() noexcept;
 

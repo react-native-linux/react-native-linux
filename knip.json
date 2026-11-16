@@ -53,6 +53,7 @@
         "expo-network",
         "expo-notifications",
         "expo-secure-store",
+        "expo-sharing",
         "whatwg-url-minimum"
       ]
     },

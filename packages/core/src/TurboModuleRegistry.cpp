@@ -16,6 +16,7 @@
 #include "ExpoNotificationsModule.h"
 #include "ExpoSQLite.h"
 #include "ExpoSecureStore.h"
+#include "ExpoSharingModule.h"
 #include "FantomRenderOutput.h"
 #include "HostTimerRegistry.h"
 #include "I18n.h"
@@ -1041,6 +1042,7 @@ TurboModuleRegistry::TurboModuleRegistry(
       keyValueStore_(std::make_shared<KeyValueStore>()), sqliteDatabases_(std::make_unique<SQLiteDatabases>()),
       expoAssetDownloads_(std::make_unique<ExpoAssetDownloads>()), fileSystemHost_(std::make_unique<FileSystemHost>()),
       secureStore_(std::make_unique<SecureStore>()), expoNotifications_(std::make_unique<ExpoNotifications>()),
+      fileSharing_(std::make_unique<FileSharing>()),
       i18nModel_(std::make_shared<I18nModel>(localeFromEnvironment(), keyValueStore_)),
       bundleUrl_(std::make_shared<std::string>()), assetsDirectory_(std::make_shared<std::string>()),
       workletsModule_(std::make_shared<LinuxWorkletsModule>(jsInvoker)),
@@ -1115,6 +1117,8 @@ TurboModuleRegistry::TurboModuleRegistry(
     moduleFactories_.emplace("ExpoSecureStore", [jsInvoker, &store = *secureStore_]() {
         return makeExpoSecureStoreModule(jsInvoker, store);
     });
+    moduleFactories_.emplace(
+        "ExpoSharing", [jsInvoker, &sharing = *fileSharing_]() { return makeExpoSharingModule(jsInvoker, sharing); });
     moduleFactories_.emplace("ExpoApplication", [jsInvoker]() { return makeExpoApplicationModule(jsInvoker); });
     moduleFactories_.emplace("ExpoCrypto", [jsInvoker]() { return makeExpoCryptoModule(jsInvoker); });
     moduleFactories_.emplace("ExpoCryptoAES", [jsInvoker]() { return makeExpoCryptoAESModule(jsInvoker); });
@@ -1190,6 +1194,8 @@ FileSystemHost& TurboModuleRegistry::fileSystem() noexcept { return *fileSystemH
 SecureStore& TurboModuleRegistry::secureStore() noexcept { return *secureStore_; }
 
 NotificationCenter& TurboModuleRegistry::notifications() noexcept { return expoNotifications_->center(); }
+
+FileSharing& TurboModuleRegistry::fileSharing() noexcept { return *fileSharing_; }
 
 I18nModel& TurboModuleRegistry::i18n() noexcept { return *i18nModel_; }
 

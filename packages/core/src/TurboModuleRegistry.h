@@ -41,6 +41,7 @@ class LinuxReanimatedModule;
 class LinuxWorkletsModule;
 class NotificationCenter;
 class SQLiteDatabases;
+struct FileSharing;
 class SecureStore;
 
 /**
@@ -140,6 +141,9 @@ public:
     /** What `ExpoSecureStore` runs over (#270); `WindowSession` gives it the application's directory and keyring. */
     SecureStore& secureStore() noexcept;
 
+    /** What `ExpoSharing` hands a file to (#744); `WindowSession` points it at the OpenURI portal. */
+    FileSharing& fileSharing() noexcept;
+
     /** `ExpoAsset`'s downloads (#156); `WindowSession` gives them the application's cache directory. */
     ExpoAssetDownloads& expoAssetDownloads() noexcept;
 
@@ -186,6 +190,7 @@ private:
     std::unique_ptr<FileSystemHost> fileSystemHost_;
     std::unique_ptr<SecureStore> secureStore_;
     std::unique_ptr<ExpoNotifications> expoNotifications_;
+    std::unique_ptr<FileSharing> fileSharing_;
     std::shared_ptr<I18nModel> i18nModel_;
     std::shared_ptr<std::string> bundleUrl_;
     std::shared_ptr<std::string> assetsDirectory_;

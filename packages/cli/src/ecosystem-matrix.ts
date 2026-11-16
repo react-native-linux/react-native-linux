@@ -51,7 +51,12 @@ const ecosystemMatrix: readonly EcosystemRow[] = [
   { flagshipVersion: "~58.0.3", issue: 156, packageName: "expo-localization", state: "blocked" },
   { flagshipVersion: "~58.0.12", issue: 155, packageName: "expo-router", state: "blocked" },
   { flagshipVersion: "~58.0.5", issue: 156, packageName: "expo-screen-capture", state: "blocked" },
-  { flagshipVersion: "~58.0.13", issue: 156, packageName: "expo-sharing", state: "blocked" },
+  {
+    flagshipVersion: "~58.0.13",
+    packageName: "expo-sharing",
+    state: "works",
+    test: "packages/expo/e2e/expo-sharing.json",
+  },
   { flagshipVersion: "~58.0.4", issue: 156, packageName: "expo-splash-screen", state: "blocked" },
   { flagshipVersion: "~58.0.8", issue: 638, packageName: "expo-sqlite", state: "blocked" },
   { flagshipVersion: "~58.0.3", issue: 156, packageName: "expo-status-bar", state: "blocked" },

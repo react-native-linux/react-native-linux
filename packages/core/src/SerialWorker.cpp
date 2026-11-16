@@ -1,16 +1,24 @@
 #include "SerialWorker.h"
 
+#include <deque>
 #include <utility>
 
 namespace react_native_linux {
 
 SerialWorker::~SerialWorker() noexcept {
+    std::deque<Task> discarded;
+
     {
         const std::lock_guard<std::mutex> lock(mutex_);
         stopping_ = true;
+
+        if (onDestroy_ == OnDestroy::discardQueued) {
+            discarded.swap(tasks_);
+        }
     }
 
     wake_.notify_one();
+    discarded.clear();
 
     if (thread_.joinable()) {
         thread_.join();

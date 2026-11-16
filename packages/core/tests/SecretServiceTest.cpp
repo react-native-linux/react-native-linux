@@ -1,9 +1,8 @@
 #include "SecretService.h"
 
 #include "ExpoSecureStore.h"
-#include "SocketPairBus.h"
+#include "PeerBus.h"
 
-#include <atomic>
 #include <cerrno>
 #include <chrono>
 #include <cstdint>
@@ -18,10 +17,8 @@
 #include <stdexcept>
 #include <stop_token>
 #include <string>
-#include <sys/socket.h>
 #include <systemd/sd-bus.h>
 #include <thread>
-#include <unistd.h>
 #include <utility>
 
 namespace {
@@ -30,6 +27,8 @@ using react_native_linux::SecretBackend;
 using react_native_linux::SecretLocation;
 using react_native_linux::SecretServiceBackend;
 using react_native_linux::SecureStore;
+using react_native_linux::test_support::failingWith;
+using react_native_linux::test_support::failureOf;
 using std::chrono::milliseconds;
 using std::chrono::steady_clock;
 
@@ -42,10 +41,6 @@ constexpr milliseconds kDismissLatency(20);
 const SecretLocation kToken{.service = "app", .key = "managed-relay-token"};
 
 using Attributes = std::map<std::string, std::string>;
-
-struct BusClose {
-    void operator()(sd_bus* bus) const noexcept { sd_bus_flush_close_unref(bus); }
-};
 
 struct MessageUnref {
     void operator()(sd_bus_message* message) const noexcept { sd_bus_message_unref(message); }
@@ -81,8 +76,7 @@ Attributes readAttributes(sd_bus_message* message) {
  * A Secret Service on the far end of a socket pair, served by sd-bus on its own thread: the methods
  * `SecretServiceBackend` calls, over one in-memory collection, with a lock and prompt, an injected failure and a
  * malformed reply to switch on, and a point after which it stops reading. It takes `kDismissLatency` to dismiss a
- * prompt, as a real keyring takes a moment to take one off screen. A peer connection needs no bus daemon, so the test
- * runs wherever sd-bus does.
+ * prompt, as a real keyring takes a moment to take one off screen.
  */
 class FakeSecretService {
 public:
@@ -100,56 +94,17 @@ public:
         std::string lastMemberRead;
     };
 
-    explicit FakeSecretService(Behavior behavior) : behavior_(std::move(behavior)) {
-        int descriptors[2] = {-1, -1};
-        sd_id128_t identifier{};
-
-        EXPECT_EQ(::socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, descriptors), 0);
-        clientDescriptor_ = descriptors[1];
-        sd_bus* server = nullptr;
-
-        EXPECT_GE(sd_bus_new(&server), 0);
-        server_.reset(server);
-        EXPECT_GE(sd_bus_set_fd(server_.get(), descriptors[0], descriptors[0]), 0);
-        EXPECT_GE(sd_id128_randomize(&identifier), 0);
-        EXPECT_GE(sd_bus_set_server(server_.get(), 1, identifier), 0);
-        EXPECT_GE(sd_bus_add_filter(server_.get(), nullptr, &FakeSecretService::onMessage, this), 0);
-        EXPECT_GE(sd_bus_start(server_.get()), 0);
-        thread_ = std::thread([this] {
-            while (!stopping_.load()) {
-                if (!reading_) {
-                    std::this_thread::sleep_for(milliseconds(10));
-                    continue;
-                }
-
-                const int processed = sd_bus_process(server_.get(), nullptr);
-
-                if (processed < 0) {
-                    return;
-                }
-
-                if (processed == 0) {
-                    sd_bus_wait(server_.get(), 10'000);
-                }
-            }
-        });
-    }
+    explicit FakeSecretService(Behavior behavior)
+        : behavior_(std::move(behavior)), peer_([this](sd_bus_message* message) { return answer(message); }) {}
 
     FakeSecretService(const FakeSecretService&) = delete;
     FakeSecretService(FakeSecretService&&) = delete;
     FakeSecretService& operator=(const FakeSecretService&) = delete;
     FakeSecretService& operator=(FakeSecretService&&) = delete;
 
-    ~FakeSecretService() {
-        stopping_.store(true);
-        thread_.join();
-        ::close(clientDescriptor_);
-    }
+    ~FakeSecretService() = default;
 
-    /** Connects a client to this service, as `sd_bus_open_user` connects one to the session bus. */
-    [[nodiscard]] SecretServiceBackend::BusOpener opener() const {
-        return react_native_linux::socketPairOpener(clientDescriptor_);
-    }
+    [[nodiscard]] SecretServiceBackend::BusOpener opener() const { return peer_.opener(); }
 
     [[nodiscard]] std::size_t itemCount() {
         const std::lock_guard<std::mutex> lock(mutex_);
@@ -188,27 +143,17 @@ private:
         std::string value;
     };
 
-    static int onMessage(sd_bus_message* message, void* userData, sd_bus_error* /*error*/) {
-        if (sd_bus_message_is_method_call(message, nullptr, nullptr) <= 0) {
-            return 0;
-        }
-
+    bool answer(sd_bus_message* message) {
         if (sd_bus_message_is_method_call(message, nullptr, "Dismiss") > 0) {
             std::this_thread::sleep_for(kDismissLatency);
         }
 
-        static_cast<FakeSecretService*>(userData)->answer(message);
-
-        return 1;
-    }
-
-    void answer(sd_bus_message* message) {
         const std::lock_guard<std::mutex> lock(mutex_);
         const std::string member = sd_bus_message_get_member(message);
         const std::string path = sd_bus_message_get_path(message);
 
         if (member == behavior_.silentMember) {
-            return;
+            return true;
         }
 
         if (member == behavior_.failingMember) {
@@ -249,24 +194,24 @@ private:
             sd_bus_reply_method_return(message, "o", "/");
         }
 
-        reading_ = member != behavior_.lastMemberRead;
+        return member != behavior_.lastMemberRead;
     }
 
     void answerPrompt() {
         if (behavior_.leavesDuringPrompt) {
             sd_bus_message* building = nullptr;
 
-            sd_bus_message_new_signal(server_.get(), &building, "/org/freedesktop/DBus", "org.freedesktop.DBus",
+            sd_bus_message_new_signal(peer_.bus(), &building, "/org/freedesktop/DBus", "org.freedesktop.DBus",
                                       "NameOwnerChanged");
 
             const OwnedMessage signal(building);
 
             sd_bus_message_set_sender(signal.get(), "org.freedesktop.DBus");
             sd_bus_message_append(signal.get(), "sss", "org.freedesktop.secrets", ":1.7", "");
-            sd_bus_send(server_.get(), signal.get(), nullptr);
+            sd_bus_send(peer_.bus(), signal.get(), nullptr);
         } else if (behavior_.completesPrompt) {
             behavior_.locked = behavior_.dismissesPrompt;
-            sd_bus_emit_signal(server_.get(), kPrompt, "org.freedesktop.Secret.Prompt", "Completed", "bv",
+            sd_bus_emit_signal(peer_.bus(), kPrompt, "org.freedesktop.Secret.Prompt", "Completed", "bv",
                                behavior_.dismissesPrompt, "ao", 0);
         }
     }
@@ -283,7 +228,7 @@ private:
         }
 
         sd_bus_message_close_container(reply.get());
-        sd_bus_send(server_.get(), reply.get(), nullptr);
+        sd_bus_send(peer_.bus(), reply.get(), nullptr);
     }
 
     void replyWithSecret(sd_bus_message* message, const std::string& value) {
@@ -295,7 +240,7 @@ private:
         sd_bus_message_append_array(reply.get(), 'y', value.data(), value.size());
         sd_bus_message_append(reply.get(), "s", "text/plain");
         sd_bus_message_close_container(reply.get());
-        sd_bus_send(server_.get(), reply.get(), nullptr);
+        sd_bus_send(peer_.bus(), reply.get(), nullptr);
     }
 
     void createItem(sd_bus_message* message) {
@@ -352,11 +297,8 @@ private:
     int promptsDismissed_{0};
     int autoStartingDismissals_{0};
     std::string lastLabel_;
-    std::unique_ptr<sd_bus, BusClose> server_;
-    int clientDescriptor_{-1};
-    std::atomic<bool> stopping_{false};
-    bool reading_{true};
-    std::thread thread_;
+    // Last, so its thread stops before anything `answer` reads goes.
+    react_native_linux::test_support::PeerBus peer_;
 };
 
 FakeSecretService::Behavior behaving(const std::function<void(FakeSecretService::Behavior&)>& change) {
@@ -381,18 +323,6 @@ template <typename Condition> bool eventually(Condition condition) {
     }
 
     return condition();
-}
-
-template <typename Work> std::string failureOf(Work work) {
-    std::string failure = "no error";
-
-    try {
-        work();
-    } catch (const std::runtime_error& error) {
-        failure = error.what();
-    }
-
-    return failure;
 }
 
 /**
@@ -438,10 +368,6 @@ TEST(SecretServiceTest, ALockedCollectionIsUnlockedThroughItsPromptAndADismissed
     EXPECT_EQ(failureOf([&] { connectTo(dismissed)->write(kToken, "secret"); }),
               "Secret Service: the keyring prompt was dismissed");
     EXPECT_EQ(dismissed.itemCount(), 0U);
-}
-
-SecretServiceBackend::BusOpener failingWith(int error) {
-    return [error](sd_bus**) { return error; };
 }
 
 /**

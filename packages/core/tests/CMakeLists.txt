@@ -377,6 +377,8 @@ target_sources(rnl_core_tests
         ${CMAKE_CURRENT_SOURCE_DIR}/../src/ExpoSecureStore.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../src/SecretService.cpp)
 target_link_libraries(rnl_core_tests PRIVATE PkgConfig::RNL_TEST_SYSTEMD)
+# #744: expo-sharing's OpenURI portal over the same sd-bus, against a fake portal on a socket pair.
+target_sources(rnl_core_tests PRIVATE OpenUriPortalTest.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../src/OpenUriPortal.cpp)
 # #139: Reanimated's platform contract on Linux, against the vendored header it fills.
 target_sources(rnl_core_tests PRIVATE ReanimatedPlatformTest.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../src/ReanimatedPlatform.cpp)
 target_include_directories(rnl_core_tests
