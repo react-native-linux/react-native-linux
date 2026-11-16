@@ -1,0 +1,15 @@
+{
+  "name": "gt-react-native",
+  "bundle": "gt-react-native.tsx",
+  "ready": "gt-react-native: stored fr",
+  "frames": 600,
+  "steps": ["sleep 1500"],
+  "expect": [
+    "gt-react-native: locales tags",
+    "gt-react-native: stored fr",
+    "[rnl-reload] reloaded",
+    "gt-react-native: locales tags",
+    "gt-react-native: read fr"
+  ],
+  "reject": ["gt-react-native: locales invalid"]
+}

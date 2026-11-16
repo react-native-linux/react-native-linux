@@ -5,6 +5,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <react/renderer/core/LayoutPrimitives.h>
 
@@ -18,6 +19,13 @@ class KeyValueStore;
  * shape Android's `Locale.toString()` gives `I18nManager.localeIdentifier`.
  */
 std::string localeFromEnvironment();
+
+/**
+ * The user's languages in preference order as BCP 47 tags, the way GNU gettext picks the language of messages: the
+ * colon-separated `LANGUAGE` list first, then `localeFromEnvironment`, with duplicates dropped. gettext ignores
+ * `LANGUAGE` while the locale is `C` or `POSIX`, and so does this, answering an empty list.
+ */
+std::vector<std::string> preferredLanguageTags();
 
 /**
  * Whether the locale's language is written right to left, which is what React Native's Android `I18nUtil` and iOS

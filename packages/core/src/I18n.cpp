@@ -6,6 +6,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdlib>
+#include <ranges>
 #include <utility>
 #include <vector>
 
@@ -19,6 +20,20 @@ constexpr std::string_view kAllowRightToLeftKey = "allowRTL";
 constexpr std::string_view kForceRightToLeftKey = "forceRTL";
 constexpr std::string_view kSwapLeftAndRightKey = "swapLeftAndRightInRTL";
 
+std::string withoutCodesetOrModifier(std::string_view locale) {
+    return std::string(locale.substr(0, locale.find_first_of(".@")));
+}
+
+bool isLanguage(std::string_view locale) { return !locale.empty() && locale != "C" && locale != "POSIX"; }
+
+void appendLanguageTag(std::vector<std::string>& tags, std::string locale) {
+    std::ranges::replace(locale, '_', '-');
+
+    if (isLanguage(locale) && std::ranges::find(tags, locale) == tags.end()) {
+        tags.push_back(std::move(locale));
+    }
+}
+
 } // namespace
 
 std::string localeFromEnvironment() {
@@ -26,13 +41,30 @@ std::string localeFromEnvironment() {
         const char* value = std::getenv(variable);
 
         if (value != nullptr && *value != '\0') {
-            const std::string_view locale(value);
-
-            return std::string(locale.substr(0, locale.find_first_of(".@")));
+            return withoutCodesetOrModifier(value);
         }
     }
 
     return {};
+}
+
+std::vector<std::string> preferredLanguageTags() {
+    const std::string locale = localeFromEnvironment();
+
+    if (!isLanguage(locale)) {
+        return {};
+    }
+
+    const char* languageList = std::getenv("LANGUAGE");
+    std::vector<std::string> tags;
+
+    for (const auto entry : std::views::split(std::string_view(languageList == nullptr ? "" : languageList), ':')) {
+        appendLanguageTag(tags, withoutCodesetOrModifier(std::string_view(entry.begin(), entry.end())));
+    }
+
+    appendLanguageTag(tags, locale);
+
+    return tags;
 }
 
 bool isRightToLeftLanguage(std::string_view localeIdentifier) noexcept {

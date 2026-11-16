@@ -18,6 +18,7 @@
 #include "ExpoSecureStore.h"
 #include "ExpoSharingModule.h"
 #include "FantomRenderOutput.h"
+#include "GtReactNativeModule.h"
 #include "HostTimerRegistry.h"
 #include "I18n.h"
 #include "PlatformColor.h"
@@ -1200,6 +1201,9 @@ TurboModuleRegistry::TurboModuleRegistry(
                              [reanimatedModule = reanimatedModule_]() { return reanimatedModule; });
     moduleFactories_.emplace(LinuxAsyncStorageModule::kModuleName, [jsInvoker, keyValueStore = keyValueStore_]() {
         return std::make_shared<LinuxAsyncStorageModule>(jsInvoker, keyValueStore);
+    });
+    moduleFactories_.emplace("GtReactNative", [jsInvoker, keyValueStore = keyValueStore_]() {
+        return makeGtReactNativeModule(jsInvoker, keyValueStore);
     });
     moduleFactories_.emplace("ExpoSQLite", [jsInvoker, &databases = *sqliteDatabases_]() {
         return makeExpoSQLiteModule(jsInvoker, databases);

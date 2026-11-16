@@ -11,6 +11,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -63,8 +64,8 @@ protected:
         }
     }
 
-    static constexpr std::array<const char*, 3> kVariables{"LC_ALL", "LC_MESSAGES", "LANG"};
-    std::array<std::optional<std::string>, 3> saved_;
+    static constexpr std::array<const char*, 4> kVariables{"LC_ALL", "LC_MESSAGES", "LANG", "LANGUAGE"};
+    std::array<std::optional<std::string>, 4> saved_;
 };
 
 TEST_F(I18nEnvironmentTest, TheFirstSetLocaleVariableWinsWithoutItsCodesetOrModifier) {
@@ -81,6 +82,34 @@ TEST_F(I18nEnvironmentTest, TheFirstSetLocaleVariableWinsWithoutItsCodesetOrModi
 
     setenv("LC_ALL", "en_US.UTF-8", 1);
     EXPECT_EQ(react_native_linux::localeFromEnvironment(), "en_US");
+}
+
+/**
+ * #647: `gt-react-native`'s `getNativeLocales`, the languages GNU gettext would show messages in, best first. The
+ * `LANGUAGE` list leads and the locale follows, all as BCP 47 tags; a `C` or `POSIX` locale switches the list off.
+ */
+TEST_F(I18nEnvironmentTest, PreferredLanguagesFollowGettext) {
+    using react_native_linux::preferredLanguageTags;
+    using Tags = std::vector<std::string>;
+
+    EXPECT_EQ(preferredLanguageTags(), Tags{});
+
+    setenv("LANGUAGE", "de", 1);
+    setenv("LANG", "C.UTF-8", 1);
+    EXPECT_EQ(preferredLanguageTags(), Tags{});
+
+    setenv("LANG", "POSIX", 1);
+    EXPECT_EQ(preferredLanguageTags(), Tags{});
+
+    setenv("LANG", "de_DE.UTF-8", 1);
+    EXPECT_EQ(preferredLanguageTags(), (Tags{"de", "de-DE"}));
+
+    setenv("LANGUAGE", "pt_BR:pt::C:fr_FR.UTF-8@euro:de_DE", 1);
+    EXPECT_EQ(preferredLanguageTags(), (Tags{"pt-BR", "pt", "fr-FR", "de-DE"}));
+
+    unsetenv("LANGUAGE");
+    setenv("LC_MESSAGES", "sr_RS@latin", 1);
+    EXPECT_EQ(preferredLanguageTags(), Tags{"sr-RS"});
 }
 
 class I18nModelTest : public ::testing::Test {
