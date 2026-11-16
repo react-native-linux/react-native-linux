@@ -4,7 +4,6 @@
 #include <ReactCommon/CallInvoker.h>
 #include <ReactCommon/TurboModule.h>
 #include <cstddef>
-#include <cstdint>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
@@ -32,19 +31,6 @@ struct EntryState final : facebook::jsi::NativeState {
 
     std::filesystem::path path;
     FileSystemEntryKind kind;
-};
-
-/** The bytes `bytes()` hands JavaScript, owned by the `ArrayBuffer`. */
-class ByteBuffer final : public facebook::jsi::MutableBuffer {
-public:
-    explicit ByteBuffer(std::string bytes) : bytes_(std::move(bytes)) {}
-
-    [[nodiscard]] size_t size() const override { return bytes_.size(); }
-
-    uint8_t* data() override { return reinterpret_cast<uint8_t*>(bytes_.data()); }
-
-private:
-    std::string bytes_;
 };
 
 /** What an operation that answers nothing settles with. */

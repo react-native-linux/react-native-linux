@@ -53,6 +53,7 @@ Expo's Metro config turns `inlineRequires` off.
 | Native module | Package | Linux |
 | --- | --- | --- |
 | `ExpoAsset` | `expo-asset` | registered (#677) |
+| `ExpoFetchModule` | `expo` (`expo/fetch`, imported by four app files and installed as the global `fetch`) | registered (#673); upstream's `expo/fetch` runs unmodified, with a body streamed chunk by chunk |
 | `ExpoApplication`, `ExpoDevice`, `ExpoLinking`, `ExpoNetwork` | `expo-application`, `expo-device`, `expo-linking`, `expo-network` | registered; the `expo-startup-modules` e2e imports all four through `expo` |
 | `ExpoFontLoader` | `expo-font` | registered: its `typeof window === 'undefined'` guard is false under React Native, which defines `window`, so it needs the module; the `expo-font` e2e draws a face `useFonts` loaded |
 | `ExpoClipboard` | `expo-clipboard` | throws; #278 |

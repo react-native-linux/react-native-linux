@@ -6,11 +6,11 @@ C++ TurboModule of this platform registered under the module's Expo native-modul
 `packages/cli/src/package-overlays.ts` swaps in this platform's polyfill, which installs upstream's and answers
 `getViewConfig` with `null`, upstream's answer for a view that is not linked: `requireNativeView` mounts an empty view
 after upstream's warning, until the first registered Expo view lands (#165). A subpath here, resolved instead of the
-upstream file, is the escape hatch for a module whose JavaScript has to differ; `fetch` is the only one.
+upstream file, would be the escape hatch for a module whose JavaScript has to differ; none needs one.
 
 | Module | Written against | Seam or alias | Native module | Answers |
 | --- | --- | --- | --- | --- |
-| `expo` | 58.0.23 | seam, and an escape hatch for `fetch` | none of its own; `ExpoFetchModule` waits on #663 (#673) | `registerRootComponent` and `Expo.fx` run unmodified; the global `fetch` and `expo/fetch` are React Native's own `fetch` (`src/fetch.ts`), without a streaming body |
+| `expo` | 58.0.23 | seam | `ExpoFetchModule` | `registerRootComponent` and `Expo.fx` run unmodified; the global `fetch` and `expo/fetch` are upstream's, over `NativeRequest` and `NativeResponse` built by `makeSharedObjectClass` (#673): libcurl transfers off the JavaScript thread, a streamed body delivered chunk by chunk as it arrives, `cancel` on abort, the `follow`, `manual` and `error` redirect modes, and `file://` URLs answering 200, or 404 when unreadable, as upstream's Android module does; no timeout, `credentials` is not read, and `Response.blob()` rejects because React Native's `BlobModule` is absent |
 | `expo-application` | 58.1.2 | seam | `ExpoApplication` | `applicationId`, `applicationName`, `nativeApplicationVersion` and `nativeBuildVersion` are `null` until a `linux` build embeds them (#648); the installation-time, referrer, vendor-id and store queries are not answered, so upstream rejects them with `ERR_UNAVAILABLE` |
 | `expo-asset` | 58.0.21 | seam | `ExpoAsset` | `downloadAsync` resolves a `file://` URL unchanged, decodes a base64 `data:` URL, and downloads any other once, off the JavaScript thread and following redirects, into `$XDG_CACHE_HOME/<app-id>/expo-asset`, as upstream's iOS module does |
 | `expo-constants` | 58.0.15 | seam | `ExponentConstants` | every required `NativeConstants` field for a bare desktop app; `deviceName` is the host name; `manifest`, and so `expoConfig`, is the `app.config` upstream's `scripts/getAppConfig.js` wrote into the application's assets directory, which the CLI's `embedExpoAppAssets` writes and `rnl_window` reads beside a bundle file or from `--assets` for a bundle Metro serves (#696); `systemFonts` is empty; `getWebViewUserAgentAsync` resolves `null` |
@@ -20,6 +20,10 @@ upstream file, is the escape hatch for a module whose JavaScript has to differ; 
 | `expo-font` | 58.0.12 | seam | `ExpoFontLoader` | `loadAsync` and `loadFontFamilyAsync` register the downloaded font file into the application fonts of #70, and `getLoadedFonts`, which `isLoaded` reads, lists every name they resolve by; a family registers every face or none; a face's `weight` and `style` are the ones its file declares, and a variable font draws its default instance (#698); the web-only `unloadAsync`, `unloadAllAsync` and server resources are not answered, so upstream throws `UnavailabilityError` |
 | `expo-linking` | 58.0.16 | seam | `ExpoLinking` | `getLinkingURL` is the URL that last activated the app, the state React Native's `Linking` reads; `onURLReceived` delivers a later activation as `{ url }`; `clearInitialURL` is not answered, so it is the no-op it is on web; `createURL` answers from the embedded app config's `scheme`, for a bundle file and a bundle Metro serves alike |
 | `expo-network` | 58.0.4 | seam | `ExpoNetwork` | `getNetworkStateAsync` resolves `{ type: 'UNKNOWN' }` until the NetworkMonitor portal is read (#648); a listener subscribes and is never called while the state stays unknown; the IP-address and airplane-mode queries reject with `ERR_UNAVAILABLE` |
+
+Bundle an Expo app with `expo/metro-config`, which installs Expo's `ReadableStream` polyfill, or set
+`EXPO_PUBLIC_USE_RN_FETCH=1`; otherwise `ReadableStream` is missing for `response.body`, `response.clone()` and
+`FormData` request bodies (#687).
 
 `src/` holds each module's required-field list, typed against upstream's declarations. `test-bundles/` and `e2e/`
 are the scenarios `pnpm e2e` discovers; each installs the real upstream package.

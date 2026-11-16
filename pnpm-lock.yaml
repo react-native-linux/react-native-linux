@@ -267,9 +267,6 @@ importers:
       '@react-native-linux/cli':
         specifier: workspace:*
         version: link:../cli
-      '@react-native-linux/expo':
-        specifier: workspace:*
-        version: link:../expo
       '@react-native/babel-preset':
         specifier: 0.88.1
         version: 0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1)

@@ -1,8 +1,4 @@
-import {
-  coreDirectory,
-  resolveLinuxPackageOverlayForResolvedFile,
-  resolveLinuxPackageSubstituteForResolvedFile,
-} from "./package-overlays.ts";
+import { coreDirectory, resolveLinuxPackageOverlayForResolvedFile } from "./package-overlays.ts";
 import { packageAliases, resolveLinuxPackageAlias } from "./package-aliases.ts";
 import path from "node:path";
 
@@ -192,8 +188,7 @@ const resolveWithBaselessVariant = <Resolution>(
  * `@react-native-linux/core`, which can sit outside the application's tree and watch folders, as it does for a
  * checkout bundled against this repository; resolved from there, its package imports reach core's own installs, such as
  * its `@react-native/normalize-colors`, rather than the application's. So they resolve from the file it replaced, as
- * that file's would, and its relative imports stay its own files. A file
- * `resolveLinuxPackageSubstituteForResolvedFile` names is resolved again, as its linux package's specifier.
+ * that file's would, and its relative imports stay its own files.
  */
 const createLinuxResolveRequest = (isPackageResolvable: (packageName: string) => boolean) => {
   const replacedFileByOverlay = new Map<string, string>();
@@ -230,15 +225,6 @@ const createLinuxResolveRequest = (isPackageResolvable: (packageName: string) =>
       typeof resolution.filePath === "string"
         ? resolution.filePath
         : null;
-    const substitute =
-      resolvedFile === null
-        ? null
-        : resolveLinuxPackageSubstituteForResolvedFile(resolvedFile, platform, isPackageResolvable);
-
-    if (substitute !== null) {
-      return context.resolveRequest(context, substitute, platform);
-    }
-
     const overlayPath = resolvedFile === null ? null : takeOverlay(resolvedFile, platform);
 
     return overlayPath === null ? resolution : { filePath: overlayPath, type: "sourceFile" };
