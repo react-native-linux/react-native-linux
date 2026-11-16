@@ -75,9 +75,10 @@ std::vector<std::string> preferredLanguageTags() {
     for (const auto entry : std::views::split(std::string_view(languageList == nullptr ? "" : languageList), ':')) {
         std::string language = withoutCodesetOrModifier(std::string_view(entry.begin(), entry.end()));
 
-        // glibc's DCIGETTEXT ends its walk of the list at a `C` or `POSIX` entry (intl/dcigettext.c).
+        // glibc's DCIGETTEXT ends its walk at a `C` or `POSIX` entry and leaves the message untranslated
+        // (intl/dcigettext.c), so the locale is not tried after it.
         if (isPortableLocale(language)) {
-            break;
+            return tags;
         }
 
         appendLanguageTag(tags, std::move(language));

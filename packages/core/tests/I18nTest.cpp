@@ -71,8 +71,9 @@ TEST_F(I18nEnvironmentTest, TheFirstSetLocaleVariableWinsWithoutItsCodesetOrModi
 
 /**
  * #647: `gt-react-native`'s `getNativeLocales`, the languages GNU gettext would show messages in, best first. The
- * `LANGUAGE` list leads, up to a `C` or `POSIX` entry where gettext stops reading it, and the locale follows, all as
- * BCP 47 tags, dropping anything not shaped like one; a `C` or `POSIX` locale switches the list off.
+ * `LANGUAGE` list leads and the locale follows, all as BCP 47 tags, dropping anything not shaped like one. A `C` or
+ * `POSIX` entry in `LANGUAGE` ends the list there, untranslated, without the locale; a `C` or `POSIX` locale switches
+ * the list off.
  */
 TEST_F(I18nEnvironmentTest, PreferredLanguagesFollowGettext) {
     using react_native_linux::preferredLanguageTags;
@@ -94,13 +95,13 @@ TEST_F(I18nEnvironmentTest, PreferredLanguagesFollowGettext) {
     EXPECT_EQ(preferredLanguageTags(), (Tags{"pt-BR", "pt", "fr-FR", "de-DE"}));
 
     setenv("LANGUAGE", "C:fr", 1);
-    EXPECT_EQ(preferredLanguageTags(), Tags{"de-DE"});
+    EXPECT_EQ(preferredLanguageTags(), Tags{});
 
     setenv("LANGUAGE", "es:C.UTF-8:fr", 1);
-    EXPECT_EQ(preferredLanguageTags(), (Tags{"es", "de-DE"}));
+    EXPECT_EQ(preferredLanguageTags(), Tags{"es"});
 
     setenv("LANGUAGE", "it:POSIX:fr", 1);
-    EXPECT_EQ(preferredLanguageTags(), (Tags{"it", "de-DE"}));
+    EXPECT_EQ(preferredLanguageTags(), Tags{"it"});
 
     setenv("LANGUAGE", "en__US:en_US_abcdefghi:x+y:en_US", 1);
     EXPECT_EQ(preferredLanguageTags(), (Tags{"en-US", "de-DE"}));

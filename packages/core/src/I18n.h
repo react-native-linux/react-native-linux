@@ -22,9 +22,10 @@ std::string localeFromEnvironment();
 
 /**
  * The user's languages in preference order as BCP 47 tags, the way GNU gettext picks the language of messages: the
- * colon-separated `LANGUAGE` list first, up to a `C` or `POSIX` entry where gettext stops reading it, then
- * `localeFromEnvironment`, with duplicates and anything not shaped like a BCP 47 tag dropped. gettext ignores
- * `LANGUAGE` while the locale is `C` or `POSIX`, and so does this, answering an empty list.
+ * colon-separated `LANGUAGE` list first, then `localeFromEnvironment`, with duplicates and anything not shaped like a
+ * BCP 47 tag dropped. A `C` or `POSIX` entry in `LANGUAGE` means "untranslated" to gettext, so the list ends there,
+ * without the locale. gettext ignores `LANGUAGE` while the locale is `C` or `POSIX`, and so does this, answering an
+ * empty list.
  */
 std::vector<std::string> preferredLanguageTags();
 
