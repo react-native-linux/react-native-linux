@@ -32,6 +32,8 @@ export default defineConfig({
         "packages/test-harness/modules/t3-review-diff/src/features/diffs/nativeReviewDiffRows.ts",
         // The views around it are drawn by the t3-expo-ui golden and e2e.
         "packages/test-harness/modules/t3-expo-ui/src/components/ui/controlValues.linux.ts",
+        // The Nitro stand-in of T3 Code's desktop profile; its spec beside it holds the TurboModule contract.
+        "packages/test-harness/test-bundles/t3code-desktop-profile/react-native-nitro-modules.ts",
         "packages/core/goldens/*.ts",
         "packages/core/src-linux/**/*.ts",
         "scripts/codegen-core/**/*.ts",
@@ -58,6 +60,7 @@ export default defineConfig({
       "packages/*/src/**/*.spec.ts",
       "packages/core/goldens/*.spec.ts",
       "packages/test-harness/modules/*/*.spec.ts",
+      "packages/test-harness/test-bundles/t3code-desktop-profile/*.spec.ts",
       "packages/core/src-linux/**/*.spec.ts",
       "scripts/codegen-core/**/*.spec.ts",
       "scripts/create-package/**/*.spec.ts",

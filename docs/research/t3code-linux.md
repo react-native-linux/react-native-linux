@@ -206,7 +206,7 @@ transitive package.
 | `react-native-screens` | `file:deps/react-native-screens-5.0.0-t3.50.tgz` | tracked | #166 | T3 Code's fork, imported by the entry; under React Navigation native-stack |
 | `react-native-safe-area-context` | `~5.11.1` | tracked | #161 | 71 files |
 | `react-native-svg` | `15.16.1` | tracked | #167 | provider icons and charts |
-| `react-native-nitro-modules` | `0.37.2` | tracked | #152 | the highlights module; 0.37.2 throws as it loads, so the desktop profile resolves it to a stand-in whose hybrid objects are TurboModules (below, `packages/test-harness/e2e/t3-highlights-fallback.json`) |
+| `react-native-nitro-modules` | `0.37.2` | tracked | #152 | the highlights module; 0.37.2 throws as it loads, so the desktop profile resolves it to a stand-in whose hybrid objects are TurboModules (below) |
 | `nitro-core` | `0.37.2` | tracked | #152 | from react-native-nitro-modules |
 | `@tabler/icons-react-native` | `^3.44.0` | tracked | #167 | JavaScript over react-native-svg |
 | `expo-file-system` | `~58.0.13` | tracked | #269 | 22 files: attachments and caches |
@@ -271,5 +271,6 @@ Linux (`TurboModuleRegistry.getEnforcing('NitroModules')`). It is the package's 
 desktop profile resolves the package to `test-bundles/t3code-desktop-profile/react-native-nitro-modules.ts` (#767):
 `hasHybridObject` and `createHybridObject` answer through `TurboModuleRegistry`, which reaches the `linux/`
 TurboModule when it is registered, as `test-bundles/t3-highlights.js` does. `rnl_window` registers none, so code blocks
-take T3 Code's own plain-text branch, which the `t3-highlights-fallback` e2e draws. Nitro on Linux (#152, #153) is
-the real fix.
+take T3 Code's own plain-text branch. `react-native-nitro-modules.spec.ts`, beside the stand-in, holds it to that
+contract, and the `t3-highlights-fallback` e2e checks both lookups' answers in `rnl_window`. Nitro on Linux (#152,
+#153) is the real fix.
