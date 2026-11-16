@@ -51,6 +51,14 @@ uint64_t beginClipboardReceive() {
     return ++clipboardRevision;
 }
 
+void clearClipboardUnlessPending() {
+    const std::scoped_lock lock(clipboardMutex);
+
+    if (!isPublishPending) {
+        clipboardStorage.clear();
+    }
+}
+
 bool receiveClipboardText(std::string text, uint64_t revision) {
     const std::scoped_lock lock(clipboardMutex);
 

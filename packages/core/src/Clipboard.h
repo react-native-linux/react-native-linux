@@ -35,6 +35,12 @@ bool takeClipboardPublish();
  */
 uint64_t beginClipboardReceive();
 
+/**
+ * The seat has no selection at all: empties the clipboard, unless a copy made here still waits for
+ * `takeClipboardPublish`, which publishing then makes the selection.
+ */
+void clearClipboardUnlessPending();
+
 /** Stores another application's text, unless a copy or a newer selection changed the clipboard since `revision`. */
 bool receiveClipboardText(std::string text, uint64_t revision);
 

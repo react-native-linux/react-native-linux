@@ -13,6 +13,7 @@ namespace {
 using react_native_linux::beginClipboardReceive;
 using react_native_linux::CaretMotion;
 using react_native_linux::clampedScrollOffset;
+using react_native_linux::clearClipboardUnlessPending;
 using react_native_linux::clipboardText;
 using react_native_linux::createClipboardOwnerMimeType;
 using react_native_linux::EditorModel;
@@ -778,6 +779,23 @@ TEST(ClipboardTest, AnotherApplicationsSelectionSupersedesACopyStillWaitingToBeP
     EXPECT_TRUE(receiveClipboardText("B", revision));
     EXPECT_EQ(clipboardText(), "B");
     EXPECT_FALSE(takeClipboardPublish());
+}
+
+/**
+ * #60: an empty system selection is not a newer copy. A copy made before any press, when focus-in reports no
+ * selection, stays pasteable and is still published once a press gives it a serial; with nothing pending, the
+ * clipboard empties.
+ */
+TEST(ClipboardTest, AnEmptySelectionKeepsACopyStillWaitingToBePublished) {
+    setClipboardText("A");
+    clearClipboardUnlessPending();
+
+    EXPECT_EQ(clipboardText(), "A");
+    EXPECT_TRUE(takeClipboardPublish());
+
+    clearClipboardUnlessPending();
+
+    EXPECT_EQ(clipboardText(), "");
 }
 
 /** #60: two clipboards never share an owner type, even in separate PID namespaces where pids repeat. */

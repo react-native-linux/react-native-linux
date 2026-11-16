@@ -896,7 +896,9 @@ touched from the JavaScript thread.
   `[rnl-clipboard] received a selection of <n> bytes`. Ctrl+V and `getString` never wait on a pipe. A selection
   that offers this process's private type is its own copy coming back and is not read: ownership is decided from
   the offer, not from still holding a source, because a compositor that ignores a `set_selection` (a stale serial,
-  an unfocused client) never cancels it. A selection with no text type, or none at all, leaves the clipboard empty.
+  an unfocused client) never cancels it. A selection with no text type leaves the clipboard empty. No selection at
+  all — what focus-in reports when the seat's clipboard is empty — is not a newer copy: it empties the clipboard
+  only when no copy made here is still waiting for a press to be published.
 - **Never blocking.** Every transfer is a non-blocking pipe in `src/ClipboardTransfers.cpp`, polled beside the
   display in `dispatchWithTimeout` and advanced after each wake: one pending read, which a newer selection or
   shutdown abandons, and one write per `send`, closed when written or when the reader has gone. A read stores its

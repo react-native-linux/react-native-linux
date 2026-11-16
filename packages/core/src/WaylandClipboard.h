@@ -30,7 +30,8 @@ class WaylandSerialLedger;
  * Paste: a `selection` from another client empties the clipboard and is read **eagerly**, as soon as it arrives,
  * in the type `preferredClipboardMimeType` picks, so Ctrl+V and `RNCClipboard`'s `getString` read the process
  * clipboard without a round trip. A selection that offers this process's private type is its own copy coming
- * back and is not read. A selection without text, or no selection, leaves the clipboard empty.
+ * back and is not read. A selection without text leaves the clipboard empty; no selection at all empties it only
+ * when no copy made here is still waiting to be published.
  *
  * Every transfer is a non-blocking pipe in `transfers`, which `WaylandWindow` polls and advances in its event
  * loop, so a source or reader that stalls never holds the frame thread.

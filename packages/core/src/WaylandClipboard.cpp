@@ -95,7 +95,7 @@ void WaylandClipboard::receiveSelection(wl_data_offer* offer) {
     transfers_.cancelRead();
 
     if (offer == nullptr) {
-        beginClipboardReceive();
+        clearClipboardUnlessPending();
 
         return;
     }
