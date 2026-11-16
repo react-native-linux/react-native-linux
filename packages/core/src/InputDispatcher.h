@@ -83,9 +83,10 @@ inline PointerTargetTransform transformOfHit(const SceneHit& hit) {
  * unfocusable text readable without a mouse. That is a platform action rather than a delivered event, so it needs
  * no target with an instance handle.
  *
- * An Escape nothing consumed — no focused field blurred on it — is the desktop's hardware back (#788):
+ * A bare Escape nothing consumed — no focused field blurred on it — is the desktop's hardware back (#788):
  * `onHardwareBackPress` is called, and it is what raises `hardwareBackPress` for `BackHandler`. A focused
- * `<TextInput>` keeps its Escape, because the field consumes it before this point.
+ * `<TextInput>` keeps its Escape, because the field consumes it before this point. A repeat or a modified Escape
+ * is not back: a held key would otherwise unwind a whole navigation stack.
  *
  * Composition is the one input that is not routed at all. `zwp_text_input_v3` follows the compositor's keyboard
  * focus, so the target of a pre-edit or a commit is whatever holds the text cursor: the `TextInputController`

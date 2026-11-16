@@ -594,7 +594,11 @@ void InputDispatcher::dispatchKeyEvent(const InputEvent& event) {
         return;
     }
 
-    if (event.key == kEscapeKey) {
+    const InputModifiers& modifiers = event.modifiers;
+    const bool isBareEscape = event.key == kEscapeKey && !event.repeat && !modifiers.control && !modifiers.shift &&
+                              !modifiers.alt && !modifiers.meta;
+
+    if (isBareEscape) {
         onHardwareBackPress_();
 
         return;
