@@ -43,7 +43,7 @@ catalogs:
       specifier: 4.1.11
       version: 4.1.11
 
-packageExtensionsChecksum: sha256-eKrlfw/EsU3+XqsdTQ6tCDU6tmqmJ8E+3yO7kQk5/mU=
+packageExtensionsChecksum: sha256-nKladEm+VwrASXZBqnuKa3IGiO1NdrlYHTFpcAaOwK4=
 
 patchedDependencies:
   react-native-worklets@0.13.1: 53a18eb9b655c7f4e00f254167a7fef02a4519ffee0b7635afdbead7c6c67a36
@@ -260,6 +260,9 @@ importers:
       react-native:
         specifier: 0.88.1
         version: 0.88.1(patch_hash=6b3a0befcda7e6ee7b87ffc28e229730a284e887a53328eab553497985347a41)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1)
+      react-native-keyboard-controller:
+        specifier: 1.23.0
+        version: 1.23.0(react-native@0.88.1(patch_hash=6b3a0befcda7e6ee7b87ffc28e229730a284e887a53328eab553497985347a41)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1)
       react-native-worklets:
         specifier: 0.13.1
         version: 0.13.1(patch_hash=53a18eb9b655c7f4e00f254167a7fef02a4519ffee0b7635afdbead7c6c67a36)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(react-native@0.88.1(patch_hash=6b3a0befcda7e6ee7b87ffc28e229730a284e887a53328eab553497985347a41)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1)(supports-color@8.1.1)
@@ -3889,6 +3892,16 @@ packages:
     peerDependencies:
       react: '*'
       react-native: '*'
+
+  react-native-keyboard-controller@1.23.0:
+    resolution: {integrity: sha512-UqHOiGeVQnUj1NBggzQ9LD9rqHf7k4u81hqDpIyS2k3r1noOp9w5/lLiSajipH88BsMO7J43E3N/L+bfKEiuZA==}
+    peerDependencies:
+      react: '*'
+      react-native: '*'
+      react-native-reanimated: '>=3.0.0'
+    peerDependenciesMeta:
+      react-native-reanimated:
+        optional: true
 
   react-native-platform-override@0.84.0:
     resolution: {integrity: sha512-S3IagAs43kUmYPZbxIOZXcboLjw+Y/xIzDm9P3sXUq+eS5t3OxZ99guvZ+JOgYOVeKHJP0kj+FL3Nw78l2ivbg==}
@@ -8484,6 +8497,12 @@ snapshots:
     dependencies:
       react: 19.3.1
       react-native: 0.88.1(patch_hash=6b3a0befcda7e6ee7b87ffc28e229730a284e887a53328eab553497985347a41)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1)
+
+  react-native-keyboard-controller@1.23.0(react-native@0.88.1(patch_hash=6b3a0befcda7e6ee7b87ffc28e229730a284e887a53328eab553497985347a41)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1):
+    dependencies:
+      react: 19.3.1
+      react-native: 0.88.1(patch_hash=6b3a0befcda7e6ee7b87ffc28e229730a284e887a53328eab553497985347a41)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1)
+      react-native-is-edge-to-edge: 1.3.1(react-native@0.88.1(patch_hash=6b3a0befcda7e6ee7b87ffc28e229730a284e887a53328eab553497985347a41)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1)
 
   react-native-platform-override@0.84.0(eslint@8.57.1(supports-color@8.1.1))(react-native@0.88.1(patch_hash=6b3a0befcda7e6ee7b87ffc28e229730a284e887a53328eab553497985347a41)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(supports-color@8.1.1)(typescript@7.0.2):
     dependencies:

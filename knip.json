@@ -33,6 +33,7 @@
         "metro-symbolicate",
         "nullthrows",
         "pretty-format",
+        "react-native-keyboard-controller",
         "tinybench"
       ]
     },

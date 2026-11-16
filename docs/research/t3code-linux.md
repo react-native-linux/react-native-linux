@@ -199,7 +199,7 @@ transitive package.
 | `expo-crypto` | `~58.0.7` | works | `packages/expo/e2e/expo-startup-modules.json` | DPoP proofs, share fingerprints and UUIDs: `digest`, `digestStringAsync`, `getRandomBytes` and `randomUUID` |
 | `expo-device` | `~58.0.5` | works | `packages/expo/e2e/expo-startup-modules.json` | appearance defaults; `ExpoDevice` answers the machine |
 | `expo-clipboard` | `~58.0.4` | tracked | #278 | 8 files |
-| `react-native-keyboard-controller` | `1.23.0` | tracked | #279 | KeyboardProvider at the root |
+| `react-native-keyboard-controller` | `1.23.0` | shimmed | `packages/test-harness/e2e/keyboard-controller.json` | KeyboardProvider at the root; a desktop has no soft keyboard, so its height stays zero, its events and handlers never fire, its views are Views and `dismiss` blurs the focused input (`linuxPackageOverlayIndex` replaces the library's native bindings) |
 | `react-native-enriched-markdown` | `file:deps/react-native-enriched-markdown-1.2.0-t3.18-16db4c75.tgz` | tracked | #688 | T3 Code's fork; every message; #639 landed the base |
 | `@t3tools/mobile-source-text` | `file:./modules/t3-source-text` | tracked | #684 | source file view; no Linux code, its `Text` fallback renders |
 | `@t3tools/mobile-highlights-native` | `file:./modules/t3-highlights` | tracked | #684 | syntax highlighting, a Nitro module; a `linux/` TurboModule until #152, reached through T3 Code's `nativeHighlights.linux.ts` (below) |

@@ -1,0 +1,35 @@
+{
+  "name": "keyboard-controller",
+  "bundle": "keyboard-controller.tsx",
+  "ready": "keyboard-controller: mounted",
+  "frames": 900,
+  "steps": [
+    "sleep 500",
+    "click 200 630",
+    "sleep 300",
+    "type Hi",
+    "sleep 300",
+    "click 200 690",
+    "sleep 300",
+    "type Yo",
+    "sleep 300",
+    "key Return press",
+    "key Return release",
+    "sleep 500"
+  ],
+  "expect": [
+    "keyboard-controller: avoiding 0,60 1280x600",
+    "keyboard-controller: avoiding input 0,540 400x60",
+    "keyboard-controller: sticky 0,660 1280x60",
+    "keyboard-controller: state height=0 visible=false isVisible()=false",
+    "keyboard-controller: reanimated height=0",
+    "keyboard-controller: avoiding focus",
+    "keyboard-controller: avoiding text=Hi",
+    "keyboard-controller: avoiding blur",
+    "keyboard-controller: sticky focus",
+    "keyboard-controller: sticky text=Yo",
+    "keyboard-controller: dismissed isVisible()=false",
+    "keyboard-controller: sticky blur"
+  ],
+  "reject": ["shifted", "keyboard-controller: event", "keyboard-controller: handler", "dismiss failed"]
+}

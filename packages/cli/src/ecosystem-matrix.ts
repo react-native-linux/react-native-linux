@@ -92,7 +92,12 @@ const ecosystemMatrix: readonly EcosystemRow[] = [
     test: "packages/expo/e2e/expo-startup-modules.json",
   },
   { flagshipVersion: "~58.0.4", issue: 278, packageName: "expo-clipboard", state: "blocked" },
-  { flagshipVersion: "1.23.0", issue: 279, packageName: "react-native-keyboard-controller", state: "blocked" },
+  {
+    flagshipVersion: "1.23.0",
+    packageName: "react-native-keyboard-controller",
+    state: "shimmed",
+    test: "packages/test-harness/e2e/keyboard-controller.json",
+  },
   {
     flagshipVersion: "file:deps/react-native-enriched-markdown-1.2.0-t3.18-16db4c75.tgz",
     issue: 688,
