@@ -75,7 +75,8 @@ Expo's Metro config turns `inlineRequires` off.
 | `ExpoKeepAwake` | `expo-keep-awake`, imported by `VoiceInputProvider.tsx` as the thread screen loads | throws, so the fixture's desktop profile (§2) resolves `expo-keep-awake` to a stand-in (#780): activate and deactivate resolve and keep nothing awake, because voice input, which activates it only while recording, is left out; `useKeepAwake` and `ExpoKeepAwakeTag` answer Expo's development `withDevTools` |
 | The `expo-sensors` modules, `ExponentPedometer` first | `expo-sensors`, imported by `DevicePreviewRouteScreen.tsx` as `Stack.tsx` loads; its index requires every sensor's module | throws, so the fixture's desktop profile (§2) resolves `expo-sensors` to a stand-in (#782): `Accelerometer` reads unavailable, takes the update interval and never delivers a sample, so the preview's shake toggle never fires; `pnpm e2e:t3code` gets past the import |
 | `ExpoCamera` | `expo-camera`, imported by `ConnectionsNewRouteScreen.tsx` as `Stack.tsx` loads | throws, so the fixture's desktop profile (§2) resolves `expo-camera` to a stand-in (#786): camera permission reads denied and cannot be asked again, so `CameraView` never mounts and the Address and Code fields pair. "Tap to scan" does nothing visible until the Linux `Alert` (#262) lands; then it shows T3 Code's "Camera access needed" alert, whose Open Settings rejects |
-| `ExpoObserve`, `ExpoAppMetrics`, `SymbolModule`, `ExpoUpdates`, `ExpoWidgets` | `expo-observe`, `expo-app-metrics`, `expo-symbols`, `expo-updates`, `expo-widgets` | throws; left out or replaced by the feature profile (§2), so #641's Linux entry cuts the import |
+| `ExpoUpdates` | `expo-updates`, imported by `SettingsDiagnosticsRouteScreen.tsx` as `Stack.tsx` loads and by `app-updates.ts` | throws, so the fixture's desktop profile (§2) resolves `expo-updates` to a stand-in (#792) that answers as expo-updates' development guard does: `isEnabled` is false, so T3 Code runs no launch or About-screen update check and its diagnostics crash log reads unavailable; the update calls reject with `ERR_UPDATES_DISABLED`, which T3 Code treats as updates unavailable, not a failure |
+| `ExpoObserve`, `ExpoAppMetrics`, `SymbolModule`, `ExpoWidgets` | `expo-observe`, `expo-app-metrics`, `expo-symbols`, `expo-widgets` | throws; left out or replaced by the feature profile (§2), so #641's Linux entry cuts the import |
 | `ExpoVideo` | `expo-video` | throws; left out (§2). `MediaVideoPlayer.linux.tsx` cuts the one import that runs at startup (#759). The others are type-only, or the lazy `import()` in `videoThumbnails.ts`, whose failure the thumbnail loader turns into no thumbnail |
 
 These import cleanly with nothing registered: `expo-haptics` and `expo-splash-screen` look their modules up with
@@ -113,7 +114,7 @@ so #155 and #641 also exclude the left-out modules from autolinking.
 | `expo-camera` | QR pairing | the address and pairing code typed into the connection screen, which always shows them; "Tap to scan" does nothing visible until the Linux `Alert` (#262) lands, then shows T3 Code's "Camera access needed" alert, whose Open Settings rejects on Linux (#786) |
 | `@expo/ui/community/datetime-picker` | the scheduled-task editor's date and time picker | a text field: the date typed as `YYYY-MM-DD`, the time as `HH:MM`, until a real picker (#750) |
 | `expo-observe`, `expo-app-metrics` | the error relay | the console and the e2e event trace |
-| `expo-updates`, `expo-dev-client` | over-the-air updates and the development launcher | the distribution's package manager (#360); development builds wait on #155 |
+| `expo-updates`, `expo-dev-client` | over-the-air updates and the development launcher | the distribution's package manager (#360): the About screen shows no update check and Diagnostics no crash log (#792); development builds wait on #155 |
 | `@clerk/expo`, `@clerk/expo-native-components` | cloud sign-in | not needed to pair with a local server; the browser flow of #271 comes later |
 | `t3-agent-notifications` | Android notification actions | nothing until #274 |
 | `t3-web-socket` | iOS's WebSocket | React Native's WebSocket over the networking stack of #79 |
@@ -190,7 +191,7 @@ transitive package.
 | `expo-manifests` | `58.0.1` | tracked | #155 | from expo-dev-client and expo-updates |
 | `expo-json-utils` | `58.0.1` | tracked | #155 | from expo-manifests |
 | `expo-updates-interface` | `58.0.1` | tracked | #155 | from expo-dev-client and expo-updates |
-| `expo-updates` | `~58.0.21` | declined | #360 | diagnostics and app updates |
+| `expo-updates` | `~58.0.21` | declined | #360 | diagnostics and app updates; the desktop profile's stand-in reports updates disabled (#792) |
 | `expo-eas-client` | `58.0.2` | declined | #360 | from expo-updates and expo-observe |
 | `expo-structured-headers` | `58.0.1` | declined | #360 | from expo-updates |
 | `expo-constants` | `~58.0.15` | tracked | #156 | 17 files: app config and relay URL; `expoConfig` is the app config the CLI's `embedExpoAppAssets` writes into the application's assets directory, for a bundle file and a bundle Metro serves alike (the `expo-constants` and `expo-constants-dev-server` e2e) |
