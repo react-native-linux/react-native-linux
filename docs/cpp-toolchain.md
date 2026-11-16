@@ -338,8 +338,9 @@ line would be waiting on a race it can lose. `[rnl-decorations] mode=bare` print
 hooks fire and is what each scenario waits on instead. Once the window dies on the injected error, `rnl_inject`
 loses its socket and exits with status 1 the same way a closed window does, so both scenarios name
 `expectsExitAfter` — the generalised form of `window-decorations-close`'s own opt-in — as the structured line's
-own substring, `wayland protocol error: xdg_wm_base#7`: `resolveInjectionFailure` forgives that status only once
-the trace carries it. `resolveExpectedOutcome` also takes `compositor.signalCode` now, alongside `trace`, and
+own substring, `wayland protocol error: xdg_wm_base#` without the object id, which moves whenever another global is
+bound before it (#60's data device moved it from 7 to 8): `resolveInjectionFailure` forgives that status only
+once the trace carries it. `resolveExpectedOutcome` also takes `compositor.signalCode` now, alongside `trace`, and
 folds `describeCompositorCrash` into the same unwaivable set `reject` already sits in — a signal there is `cage`
 or the `rnl_window` child crashing, never a scenario's own exit, and it fails the scenario regardless of
 `allowErrors` or `expectFailure` — the gap that let a run ending in a Hermes abort still print "passed", and that
@@ -870,9 +871,40 @@ only, per *Window host* above), so `recordTouchDown` has no call site yet; the l
 because the unit suite proves it independently of any binding, and it is what #60's drag-and-drop scope picks up
 without adding a second ledger.
 
-**Nothing calls `requestSerial` outside the unit suite yet.** #60, #62, #63 and #40 are each still open, and
-`WaylandWindow::serialLedger()` is the seam each of them reads from when it lands — this issue is the
-prerequisite the acceptance criteria of all four name, not the clipboard or window-decoration change itself.
+**`WaylandClipboard` is the first request built from it**: `set_selection` reads `Selection` (#60, below). #62,
+#63 and #40 are each still open, and `WaylandWindow::serialLedger()` is the seam each of them reads from when it
+lands.
+
+### Clipboard (#60)
+
+Text copied in this process reaches other applications, and text they copy pastes here, over the seat's
+`wl_data_device`. `src/Clipboard.cpp` stays the one clipboard Ctrl+C/X/V and `RNCClipboard` read and write;
+`src/WaylandClipboard.cpp` keeps it in step with the selection on the frame thread, so no Wayland object is ever
+touched from the JavaScript thread.
+
+- **Copy.** `setClipboardText` marks the text for publishing; `WaylandWindow::waitForRedraw` calls
+  `publishPendingText` once per frame, which offers a `wl_data_source` in `text/plain;charset=utf-8`,
+  `text/plain` and `UTF8_STRING` (the X11 name XWayland clients ask for) and sets it with the ledger's `Selection`
+  serial. JavaScript's `setString` therefore lands on the next frame, within one fallback interval on an idle
+  window. Each `send` writes the clipboard's text into the reader's pipe; a `cancelled` source is another
+  client's copy taking over.
+- **Paste reads eagerly.** A `selection` from another client is read as soon as it arrives — on keyboard
+  enter, or when another client copies while this one is focused — and stored with `receiveClipboardText`, so
+  Ctrl+V and `getString` never wait on a pipe. A selection while this client still owns its source is its own
+  copy coming back and is never read through a pipe, which is what rules out reading from itself on the thread
+  that has to write. A selection with no text type, or none at all, empties the clipboard.
+- **Bounded.** Both directions give up after 100 ms, so a source or reader that stalls costs one frame budget
+  once rather than a frozen window, and `SIGPIPE` is ignored so a reader that closes early costs an `EPIPE`. The price of eager reads is that one read happens per focus change after
+  another application copied, whether or not anything is pasted; it is one round trip to that application.
+- **Not yet.** The primary selection (`zwp_primary_selection_v1`, middle-click paste) and drag-and-drop stay on
+  #60; a drag's offer is declined. The data device is bound at version 1, which is the whole selection protocol.
+
+The e2e scenario `text-input-system-clipboard` proves both directions against a second client under cage:
+`clipboard-expect <text>` reads the selection with `wl-paste`, and `clipboard-set <text>` sets one with
+`wl-copy --paste-once`, which returns only once the window has read it. noble's cage 0.1.5 offers no
+data-control protocol, so wl-clipboard takes keyboard focus with a surface of its own and gives it back on exit;
+see *E2E driver (#7)*. The pure half, publish-once and the MIME preference, is in `ClipboardTest` at 100% line and
+branch.
 
 ### Decorations and app_id (#329)
 
@@ -7007,14 +7039,10 @@ what is left in them needs a `UIManager` and a committed tree, and `--type` is t
 
 ### Deferrals, with owners
 
-- **`wl_data_device`.** Ctrl+C, Ctrl+X and Ctrl+V move text through an **in-process clipboard**
-  (`src/Clipboard.cpp`), not the system one. A Wayland clipboard is a data source, a data offer, a MIME
-  negotiation and a file-descriptor transfer, all of which need a compositor and a second client to mean
-  anything — and the rig for this component is `hello_react`, which has neither. The in-process version is
-  behaviourally identical for everything the editing model can get wrong, and it is issue #60 to replace its two
-  functions. The primary selection and middle-click paste land with it. JavaScript reaches the same clipboard
-  through `RNCClipboard`, the module `@react-native-clipboard/clipboard` resolves (`getString`, `setString`,
-  `hasString`; #23), so it follows the replacement too.
+- **The primary selection.** Ctrl+C, Ctrl+X and Ctrl+V move text through `src/Clipboard.cpp`, which
+  `WaylandClipboard` keeps in step with the system selection (*Clipboard (#60)*), and JavaScript reaches the same
+  clipboard through `RNCClipboard` (`getString`, `setString`, `hasString`; #23). Middle-click paste of the
+  primary selection is still #60's.
 - **Undo and redo.** No stack, and Ctrl+Z is deliberately left unconsumed so the absence is visible.
 - **Vertical caret motion.** Up and Down do not move by line: that needs line geometry rather than the grapheme
   and word boundaries the editing model has. A multiline field scrolls to keep the caret visible now, so what is

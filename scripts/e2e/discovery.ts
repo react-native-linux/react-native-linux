@@ -195,6 +195,7 @@ const planRuns = (
   return planned;
 };
 
+export { isClipboardStep } from "./clipboard.ts";
 export { isKeyboardFocused } from "./keyboard-focus.ts";
 export { waitForWindowReadyFailures } from "./window-readiness.ts";
 export { waitUntil } from "./wait-until.ts";

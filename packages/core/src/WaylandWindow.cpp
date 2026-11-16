@@ -155,14 +155,24 @@ WaylandWindow::WaylandWindow(const WindowIdentity& identity, WindowSize initialS
     if (seat_ != nullptr && textInputManager_ != nullptr) {
         seat_->attachTextInput(textInputManager_);
     }
+
+    if (seat_ != nullptr && dataDeviceManager_ != nullptr) {
+        clipboard_ = std::make_unique<WaylandClipboard>(display_, dataDeviceManager_, seat_->seat(), serialLedger_);
+    }
 }
 
 WaylandWindow::~WaylandWindow() noexcept {
     destroyFrameCallback();
 
     // Before the connection goes away: releasing the pointer, the keyboard and the seat are all requests on it.
-    // The seat also owns the text input, which is destroyed before the manager that created it.
+    // The seat also owns the text input, which is destroyed before the manager that created it. The clipboard's
+    // data device belongs to the seat, so it goes first.
+    clipboard_.reset();
     seat_.reset();
+
+    if (dataDeviceManager_ != nullptr) {
+        wl_data_device_manager_destroy(dataDeviceManager_);
+    }
 
     if (toplevelDecoration_ != nullptr) {
         zxdg_toplevel_decoration_v1_destroy(toplevelDecoration_);
@@ -374,6 +384,10 @@ bool WaylandWindow::hasPresentedFirstFrame() const noexcept { return presentedFi
 bool WaylandWindow::waitForRedraw(std::chrono::milliseconds fallbackTimeout) {
     const std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::now() + fallbackTimeout;
 
+    if (clipboard_ != nullptr) {
+        clipboard_->publishPendingText();
+    }
+
     while (!closed_ && !frameCallbackFired_ && !hasInputEndingIdleWait()) {
         const std::chrono::milliseconds remaining =
             std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
@@ -441,6 +455,10 @@ void WaylandWindow::bindGlobal(wl_registry* registry, uint32_t name, const char*
     } else if (std::strcmp(interfaceName, wl_seat_interface.name) == 0 && version >= kMinimumSeatVersion) {
         void* bound = wl_registry_bind(registry, name, &wl_seat_interface, kMinimumSeatVersion);
         seat_ = std::make_unique<WaylandSeat>(static_cast<wl_seat*>(bound), serialLedger_);
+    } else if (std::strcmp(interfaceName, wl_data_device_manager_interface.name) == 0) {
+        // Version 1 is the whole selection protocol; what later versions add is drag-and-drop actions.
+        void* bound = wl_registry_bind(registry, name, &wl_data_device_manager_interface, 1);
+        dataDeviceManager_ = static_cast<wl_data_device_manager*>(bound);
     } else if (std::strcmp(interfaceName, zwp_text_input_manager_v3_interface.name) == 0) {
         void* bound = wl_registry_bind(registry, name, &zwp_text_input_manager_v3_interface,
                                        std::min(version, kMaximumTextInputManagerVersion));

@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <gtest/gtest.h>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -15,8 +16,11 @@ using react_native_linux::clipboardText;
 using react_native_linux::EditorModel;
 using react_native_linux::EditorSelection;
 using react_native_linux::followedScrollOffset;
+using react_native_linux::preferredClipboardMimeType;
+using react_native_linux::receiveClipboardText;
 using react_native_linux::segmentUtf8CodePoints;
 using react_native_linux::setClipboardText;
+using react_native_linux::takeClipboardPublish;
 using react_native_linux::TextSegments;
 using react_native_linux::utf16LengthOfUtf8;
 using react_native_linux::utf8OffsetForUtf16Index;
@@ -737,6 +741,29 @@ TEST(ClipboardTest, RoundTripsTheTextItWasGiven) {
     setClipboardText({});
 
     EXPECT_EQ(clipboardText(), "");
+}
+
+/** #60: each copy is offered to the system selection exactly once, and another application's text never is. */
+TEST(ClipboardTest, PublishesEachCopyOnceAndNeverWhatItReceived) {
+    setClipboardText("first");
+    setClipboardText("second");
+
+    EXPECT_EQ(takeClipboardPublish(), "second");
+    EXPECT_EQ(takeClipboardPublish(), std::nullopt);
+
+    setClipboardText("superseded");
+    receiveClipboardText("from another application");
+
+    EXPECT_EQ(clipboardText(), "from another application");
+    EXPECT_EQ(takeClipboardPublish(), std::nullopt);
+}
+
+/** #60: a paste asks for UTF-8 text first, takes the X11 name an XWayland source offers, and skips non-text offers. */
+TEST(ClipboardTest, PrefersUtf8TextAndDeclinesOffersWithoutText) {
+    EXPECT_EQ(preferredClipboardMimeType({"text/plain", "text/plain;charset=utf-8"}), "text/plain;charset=utf-8");
+    EXPECT_EQ(preferredClipboardMimeType({"image/png", "UTF8_STRING"}), "UTF8_STRING");
+    EXPECT_EQ(preferredClipboardMimeType({"image/png", "text/uri-list"}), std::nullopt);
+    EXPECT_EQ(preferredClipboardMimeType({}), std::nullopt);
 }
 
 #pragma mark - the parity matrix rows #53 leaves open (#53)

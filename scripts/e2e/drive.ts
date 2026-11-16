@@ -4,6 +4,7 @@
  */
 import type { Scenario } from "./scenario.ts";
 import type { TraceWatch } from "./trace-await.ts";
+import { createCommandRunner } from "./clipboard.ts";
 import { runKeyboardAwareInjection } from "./keyboard-focus.ts";
 import { scalePointerSteps } from "./pointer-scale.ts";
 import { sendAwaitingTrace } from "./trace-await.ts";
@@ -56,8 +57,12 @@ const resolveInjectionFailure = async (
   return (await waitForExpectedClose()) ? null : outcome.failure;
 };
 
-/** A running `rnl_inject`: `send` queues script lines it executes as they arrive, `finish` ends the script. */
+/**
+ * A running `rnl_inject`: `send` queues script lines it executes as they arrive, `finish` ends the script.
+ * `environment` is its connection to the compositor, which the clipboard steps of clipboard.ts share.
+ */
 interface Injector {
+  readonly environment: Record<string, string | undefined>;
   readonly finish: () => Promise<InjectionOutcome>;
   readonly send: (steps: readonly string[]) => void;
 }
@@ -81,7 +86,12 @@ const injectAndResolveFailure = async (run: InjectionRun): Promise<string | null
   let status: number | null = null;
   const injectOnce = async (steps: readonly string[]): Promise<string | null> => {
     const injector = run.startInjector();
-    const awaitFailure = await sendAwaitingTrace({ send: injector.send, steps, trace: run.trace });
+    const awaitFailure = await sendAwaitingTrace({
+      runCommand: createCommandRunner(injector.environment),
+      send: injector.send,
+      steps,
+      trace: run.trace,
+    });
     const outcome = await injector.finish();
     ({ status } = outcome);
 

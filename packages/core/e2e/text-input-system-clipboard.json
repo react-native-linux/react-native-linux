@@ -1,0 +1,34 @@
+{
+  "name": "text-input-system-clipboard",
+  "bundle": "text-input.js",
+  "ready": "text-input: committed surface 1",
+  "frames": 900,
+  "steps": [
+    "sleep 500",
+    "click 90 60",
+    "sleep 200",
+    "type SerialLedger",
+    "sleep 200",
+    "key Control_L press",
+    "key a press",
+    "key a release",
+    "sleep 200",
+    "key x press",
+    "key x release",
+    "key Control_L release",
+    "await text-input: topChange on plain text=\"\"",
+    "clipboard-expect SerialLedger",
+    "clipboard-set pasted from another client",
+    "sleep 500",
+    "key Control_L press",
+    "key v press",
+    "key v release",
+    "key Control_L release",
+    "sleep 500"
+  ],
+  "expect": [
+    "text-input: topChange on plain text=\"SerialLedger\"",
+    "text-input: topChange on plain text=\"\"",
+    "text-input: topChange on plain text=\"pasted from another client\""
+  ]
+}
