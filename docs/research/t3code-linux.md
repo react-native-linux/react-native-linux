@@ -56,7 +56,7 @@ Expo's Metro config turns `inlineRequires` off.
 | `ExpoFetchModule` | `expo` (`expo/fetch`, imported by four app files and installed as the global `fetch`) | registered (#673); upstream's `expo/fetch` runs unmodified, with a body streamed chunk by chunk |
 | `ExpoApplication`, `ExpoDevice`, `ExpoLinking`, `ExpoNetwork` | `expo-application`, `expo-device`, `expo-linking`, `expo-network` | registered; the `expo-startup-modules` e2e imports all four through `expo` |
 | `ExpoFontLoader` | `expo-font` | registered: its `typeof window === 'undefined'` guard is false under React Native, which defines `window`, so it needs the module; the `expo-font` e2e draws a face `useFonts` loaded |
-| `ExpoClipboard` | `expo-clipboard` | throws; #278 |
+| `ExpoClipboard` | `expo-clipboard` | registered (#278): the string methods over the in-process clipboard, which #754 connects to the Wayland selection |
 | `ExpoCrypto`, `ExpoCryptoAES` | `expo-crypto` | registered (#276): digests, random bytes and UUIDs over libcrypto; `ExpoCryptoAES` only has the two classes `expo-crypto`'s entry extends, because T3 Code calls no AES |
 | `FileSystem` | `expo-file-system` | registered (#676) |
 | `ExpoImage` | `expo-image` | throws; #273 |
@@ -198,7 +198,7 @@ transitive package.
 | `expo-image-picker` | `~58.0.10` | tracked | #275 | composer photos |
 | `expo-crypto` | `~58.0.7` | works | `packages/expo/e2e/expo-startup-modules.json` | DPoP proofs, share fingerprints and UUIDs: `digest`, `digestStringAsync`, `getRandomBytes` and `randomUUID` |
 | `expo-device` | `~58.0.5` | works | `packages/expo/e2e/expo-startup-modules.json` | appearance defaults; `ExpoDevice` answers the machine |
-| `expo-clipboard` | `~58.0.4` | tracked | #278 | 8 files |
+| `expo-clipboard` | `~58.0.4` | tracked | #278 | 8 files: copying codes and commands, terminal paste; `ExpoClipboard` answers strings in-process until #754, and its change listener is left |
 | `react-native-keyboard-controller` | `1.23.0` | shimmed | `packages/test-harness/e2e/keyboard-controller.json` | KeyboardProvider at the root; a desktop has no soft keyboard, so its height stays zero, its events and handlers never fire, its views are Views and `dismiss` blurs the focused input (`linuxPackageOverlayIndex` replaces the library's native bindings) |
 | `react-native-enriched-markdown` | `file:deps/react-native-enriched-markdown-1.2.0-t3.18-16db4c75.tgz` | tracked | #688 | T3 Code's fork; every message; #639 landed the base |
 | `@t3tools/mobile-source-text` | `file:./modules/t3-source-text` | tracked | #684 | source file view; no Linux code, its `Text` fallback renders |
