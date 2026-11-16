@@ -1861,6 +1861,11 @@ SceneSnapshot RetainedScene::snapshot() const {
     return primitives;
 }
 
+bool RetainedScene::hasOverlays() const {
+    return std::any_of(overlayTags_.begin(), overlayTags_.end(),
+                       [](const auto& surfaceOverlays) { return !surfaceOverlays.second.empty(); });
+}
+
 SceneDamage RetainedScene::takeDamage() { return std::exchange(damage_, SceneDamage{}); }
 
 std::string RetainedScene::dump() const {

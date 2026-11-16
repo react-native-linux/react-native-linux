@@ -231,6 +231,7 @@ FabricHost::FabricHost(ReactHost& reactHost, facebook::react::Size surfaceSize, 
                               std::shared_ptr<facebook::react::IMountingManager>(mountingManager_));
     contextContainer_->insert(kDimensionsSourceContextKey,
                               std::shared_ptr<const DimensionsSource>(reactHost.dimensions()));
+    mountingManager_->setDimensionsSource(reactHost.dimensions());
 
     facebook::react::SchedulerToolbox schedulerToolbox;
     schedulerToolbox.contextContainer = contextContainer_;
@@ -338,6 +339,10 @@ void FabricHost::setSurfaceSize(facebook::react::Size surfaceSize, facebook::rea
         {.minimumSize = surfaceSize, .maximumSize = surfaceSize, .layoutDirection = layoutDirection_.layoutDirection},
         {.pointScaleFactor = pointScaleFactor,
          .swapLeftAndRightInRTL = layoutDirection_.swapLeftAndRightInRightToLeft});
+
+    if (!mountingManager_->hasOverlays()) {
+        return;
+    }
 
     std::shared_ptr<const facebook::react::ShadowNode> rootShadowNode;
 

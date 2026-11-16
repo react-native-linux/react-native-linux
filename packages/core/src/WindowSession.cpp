@@ -118,8 +118,8 @@ WindowSession::~WindowSession() noexcept {
 }
 
 void WindowSession::resize(WindowSize size, double scale) {
-    fabricHost_->setSurfaceSize(toSurfaceSize(size), static_cast<facebook::react::Float>(scale));
     reactHost_.dimensions()->configure(static_cast<double>(size.width), static_cast<double>(size.height), scale);
+    fabricHost_->setSurfaceSize(toSurfaceSize(size), static_cast<facebook::react::Float>(scale));
 }
 
 void WindowSession::setTextInputFocusSink(TextInputFocusSink* textInputFocusSink) {

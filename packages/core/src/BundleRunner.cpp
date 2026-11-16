@@ -459,10 +459,10 @@ int runResizedFabricBundle(const std::string& bundlePath, facebook::react::Size 
         std::cerr << "[bundle-runner] gave up waiting for pending timers" << std::endl;
     }
 
-    // The pair a window applies on `xdg_toplevel.configure`, in the same order: new layout constraints for Fabric,
-    // the same extent for `Dimensions`, then the one change event the frame is allowed to emit.
-    fabricHost->setSurfaceSize(resizedSurfaceSize, 1.0F);
+    // The pair a window applies on `xdg_toplevel.configure`, in the same order: the extent for `Dimensions`, new
+    // layout constraints for Fabric, then the one change event the frame is allowed to emit.
     configureDimensions(reactHost, resizedSurfaceSize);
+    fabricHost->setSurfaceSize(resizedSurfaceSize, 1.0F);
     reactHost.publishPendingDimensions();
 
     return finishTimedFabricRun(reactHost, fabricHost);

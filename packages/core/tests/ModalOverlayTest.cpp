@@ -224,15 +224,18 @@ TEST(ModalOverlayTest, RapidPresentsAndRemovesAcrossCommitsLeaveNothingInTheHitP
     LinuxMountingManager mountingManager;
 
     mountedSurfaceWithASibling(mountingManager);
+    EXPECT_FALSE(mountingManager.hasOverlays());
 
     for (Tag modalTag = kModalTag; modalTag < kModalTag + 4; ++modalTag) {
         mountingManager.executeMount(kSurfaceTag, presentTransaction(modalTag));
 
         EXPECT_EQ(mountingManager.findNodeAtPoint(kSurfaceTag, Point{.x = 400, .y = 300}).tag, modalTag);
+        EXPECT_TRUE(mountingManager.hasOverlays());
 
         mountingManager.executeMount(kSurfaceTag, dismissTransaction(modalTag));
 
         EXPECT_EQ(mountingManager.findNodeAtPoint(kSurfaceTag, Point{.x = 400, .y = 300}).tag, kSiblingTag);
+        EXPECT_FALSE(mountingManager.hasOverlays());
     }
 }
 
@@ -337,6 +340,37 @@ TEST_F(ModalHostDescriptorTest, AResizeUpdatesEveryModalNotAlreadyAtTheNewSize) 
 
     react_native_linux::resizePresentedModals(*root, Size{.width = 640, .height = 480});
 
+    EXPECT_EQ(takeRequestedSizes(), (std::vector<Size>{{.width = 640, .height = 480}, {.width = 640, .height = 480}}));
+}
+
+/**
+ * The third half of the resize contract: a modal created before a resize's configure, so with the old size, and
+ * committed after the resize's walk, so out of its reach. Its mount asks for the current size at the next beat;
+ * an immediate update of another modal is what flushes that beat's queue here.
+ */
+TEST_F(ModalHostDescriptorTest, AModalCreatedBeforeAResizeAndMountedAfterItsWalkAsksForTheNewSize) {
+    const std::shared_ptr<const ModalHostViewShadowNode> createdBeforeTheResize = makeModalNode(kModalTag);
+    const std::shared_ptr<const ModalHostViewShadowNode> flushing = makeModalNode(kModalTag + 1);
+    LinuxMountingManager mountingManager;
+    const ShadowView modal{*createdBeforeTheResize};
+    const ShadowView sibling = makeView(kSiblingTag, makeRect(0, 0, 10, 10));
+
+    mountingManager.setDimensionsSource(dimensions_);
+    mountingManager.startSurface(kSurfaceTag, kSurfaceSize);
+    dimensions_->configure(640, 480, 1);
+    react_native_linux::resizePresentedModals(*makeViewNode(kParentTag, {}), Size{.width = 640, .height = 480});
+    mountingManager.executeMount(kSurfaceTag,
+                                 transactionOf({ShadowViewMutation::CreateMutation(sibling),
+                                                ShadowViewMutation::InsertMutation(kSurfaceTag, sibling, 0),
+                                                ShadowViewMutation::CreateMutation(modal),
+                                                ShadowViewMutation::InsertMutation(kSurfaceTag, modal, 1)}));
+
+    ASSERT_TRUE(stateUpdates_->empty());
+
+    react_native_linux::resizePresentedModals(*flushing, Size{.width = 640, .height = 480});
+
+    ASSERT_EQ(stateUpdates_->size(), 2U);
+    EXPECT_EQ(stateUpdates_->front().family->getTag(), kModalTag);
     EXPECT_EQ(takeRequestedSizes(), (std::vector<Size>{{.width = 640, .height = 480}, {.width = 640, .height = 480}}));
 }
 

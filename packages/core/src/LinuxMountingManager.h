@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AutomationProtocol.h"
+#include "DimensionsSource.h"
 #include "RetainedScene.h"
 
 #include <cstdint>
@@ -143,6 +144,16 @@ public:
     void setPlaceholderImageDecodeRequester(RetainedScene::ImageDecodeRequester requester);
 
     /**
+     * The surface size a presented `<Modal>` must have (ADR-0005). Set once by the host, before any surface starts.
+     * An inserted `ModalHostView` whose state holds another size asks for this one at the next event beat; see
+     * `resizePresentedModals` for the resize this closes. Without it, nothing is asked.
+     */
+    void setDimensionsSource(std::shared_ptr<const DimensionsSource> dimensions);
+
+    /** `RetainedScene::hasOverlays`, under the scene lock. */
+    bool hasOverlays() const;
+
+    /**
      * `RetainedScene::advanceImageAnimations` under the scene mutex, flagging pending damage when a frame
      * changed so the frame clock draws it. Called once per frame from the frame thread.
      */
@@ -279,6 +290,7 @@ private:
     facebook::react::MountingTransaction::Number lastTransactionNumber_{0};
     bool hasPendingDamage_{false};
     std::function<void(facebook::react::SurfaceId)> onAfterMount_;
+    std::shared_ptr<const DimensionsSource> dimensions_;
 };
 
 } // namespace react_native_linux

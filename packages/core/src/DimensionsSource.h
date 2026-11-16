@@ -38,9 +38,12 @@ struct DisplayMetrics {
  * change, so a `useWindowDimensions` consumer cannot be re-rendered per compositor event (rn-macos#2083). A
  * `configure` that repeats the current metrics is not a change at all.
  *
- * Threading contract: `configure` and `takeChangeIfAny` run on the platform frame thread, `metrics` runs on the
- * JavaScript thread inside `getConstants`. The mutex is what makes that pair safe; there is no other
- * synchronisation between the two threads for this state.
+ * Threading contract: `configure` and `takeChangeIfAny` run on the platform frame thread. `metrics` runs on the
+ * JavaScript thread inside `getConstants`, and on whichever thread commits or mounts a `<Modal>`: the modal
+ * descriptor's `createInitialState` and `LinuxMountingManager`'s insert of a `ModalHostView` both read it
+ * (ADR-0005). That is the JavaScript thread for a React commit and the frame thread for a resize or a state update
+ * flushed there. Every member takes the mutex, which is what makes all of them safe from any of those threads;
+ * there is no other synchronisation for this state.
  */
 class DimensionsSource final {
 public:

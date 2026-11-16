@@ -121,6 +121,7 @@ add_executable(rnl_core_hermes_tests
     InstanceTeardownLeakTest.cpp
     IntlBindingTest.cpp
     MeasureGeometryTest.cpp
+    ModalResizeTest.cpp
     LinkingModuleTest.cpp
     AppStateModuleTest.cpp
     LinuxUISchedulerTest.cpp

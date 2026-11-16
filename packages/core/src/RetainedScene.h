@@ -827,6 +827,9 @@ public:
     SceneHit findNodeAtPoint(facebook::react::Tag rootTag, facebook::react::Point surfacePoint) const;
     SceneSnapshot snapshot() const;
 
+    /** Whether any surface has a `ModalHostView` presented, which is when a resize has a modal to size. */
+    bool hasOverlays() const;
+
     /**
      * Holds every maintaining `<ScrollView>`'s visible child still across the mutations just applied, and answers
      * with the ScrollViews whose offset that moved.

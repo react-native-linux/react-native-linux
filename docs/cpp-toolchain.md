@@ -7248,9 +7248,11 @@ the scene. Focus, Escape and the wheel are the input slice's, and animations com
 (`rrc_modal`). The descriptor is ours, in `packages/core/src/ModalHostComponent.h`, because upstream's is `final`
 and its `cxx` initial state is 0x0, which lays the first frame out at zero size (react-native#50442). Its
 `createInitialState` reads the surface size from the `DimensionsSource` that `Dimensions.get` answers from, which
-`FabricHost` puts into the `ContextContainer`. `adopt` is upstream's. `FabricHost::setSurfaceSize` then calls
-`resizePresentedModals`, which gives every open modal the new size through an immediate state update, so a
-modal follows a window resize in the same frame.
+`FabricHost` puts into the `ContextContainer`. `adopt` is upstream's. A resize configures the `DimensionsSource` first, and `FabricHost::setSurfaceSize`
+then calls `resizePresentedModals`, which gives every open modal the new size through an immediate state update,
+so a modal follows a window resize in the same frame. The walk is skipped when no overlay is presented. A modal
+created before the configure but committed after the walk is caught at its mount: `LinuxMountingManager` compares
+an inserted `ModalHostView`'s state with the `DimensionsSource` and asks for the difference at the next beat.
 
 **Scene.** `insertChild` of a `ModalHostView` appends it to its surface's overlay list, ahead of any overlay
 already nested inside it, because Fabric inserts a new subtree's children before the subtree itself. `removeChild`

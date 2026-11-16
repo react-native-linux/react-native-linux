@@ -1,5 +1,7 @@
 #include "LinuxMountingManager.h"
 
+#include "ModalHostComponent.h"
+
 #include <functional>
 #include <glog/logging.h>
 #include <memory>
@@ -76,6 +78,18 @@ void LinuxMountingManager::setPlaceholderImageDecodeRequester(RetainedScene::Ima
     const std::lock_guard<std::mutex> guard(sceneMutex_);
 
     scene_.setPlaceholderImageDecodeRequester(std::move(requester));
+}
+
+void LinuxMountingManager::setDimensionsSource(std::shared_ptr<const DimensionsSource> dimensions) {
+    const std::lock_guard<std::mutex> guard(sceneMutex_);
+
+    dimensions_ = std::move(dimensions);
+}
+
+bool LinuxMountingManager::hasOverlays() const {
+    const std::lock_guard<std::mutex> guard(sceneMutex_);
+
+    return scene_.hasOverlays();
 }
 
 bool LinuxMountingManager::advanceImageAnimations(double frameMilliseconds) {
@@ -253,6 +267,12 @@ void LinuxMountingManager::applyTransaction(facebook::react::MountingTransaction
             break;
         case facebook::react::ShadowViewMutation::Insert:
             scene_.insertChild(mutation.parentTag, mutation.newChildShadowView, mutation.index);
+
+            if (dimensions_ != nullptr && std::string_view{mutation.newChildShadowView.componentName} ==
+                                              facebook::react::ModalHostViewComponentName) {
+                requestModalSize(mutation.newChildShadowView.state, surfaceSizeOf(*dimensions_),
+                                 facebook::react::EventQueue::UpdateMode::Asynchronous);
+            }
             break;
         case facebook::react::ShadowViewMutation::Remove:
             verifyTagIsKnown("Remove", mutation.oldChildShadowView.tag);
