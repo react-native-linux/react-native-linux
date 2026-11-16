@@ -10,9 +10,10 @@ const MILLISECONDS_PER_SECOND = 1000;
 const SECONDS_FRACTION_DIGITS = 1;
 /**
  * The fixture's window runs the `dev` preset, whose Debug Hermes evaluates T3 Code's development bundle in about 100 s
- * on an idle machine before `"main"` runs; six times that leaves room for a loaded runner.
+ * on an idle machine before `"main"` runs; six times that leaves room for a loaded runner. The first commit can be a
+ * spinner or a Suspense fallback, so the window stays open `settleMs` past it for what renders next to report.
  */
-const STARTUP_TIMING = { pollIntervalMs: 1000, timeoutMs: 600_000 };
+const STARTUP_TIMING = { pollIntervalMs: 1000, settleMs: 5000, timeoutMs: 600_000 };
 
 /** The trace of a running window so far, and whether the window has closed it. */
 interface StartupWatch {
@@ -51,33 +52,43 @@ const hasCommittedView = async (trace: string): Promise<boolean> => {
   return Array.isArray(children) && children.length > EMPTY_LENGTH;
 };
 
+/** Milliseconds since `launchedAt` once `trace` shows `"main"` running, or null before then. */
+const findRunningMainMs = (trace: string, launchedAt: number): number | null =>
+  trace.includes(RUNNING_MAIN_TRACE_LINE) ? Date.now() - launchedAt : null;
+
 /**
  * Polls the visual tree every `pollIntervalMs` until T3 Code commits a view, for at most `timeoutMs` from
- * `launchedAt`. It stops early once the window closes or startup reports an error, since an uncaught render error
- * leaves the root empty for good.
+ * `launchedAt`, then holds the window `settleMs` longer. A commit whose answer arrives after the deadline is a
+ * timeout. It stops early once the window closes or startup reports an error, since an uncaught render error leaves
+ * the root empty for good. `"main"` is sampled after each answer, before the settle, and once more on the way out.
  */
 const waitForFirstCommit = async (
   watch: StartupWatch,
   launchedAt: number,
-  { pollIntervalMs, timeoutMs } = STARTUP_TIMING,
+  { pollIntervalMs, settleMs, timeoutMs } = STARTUP_TIMING,
 ): Promise<StartupTimings> => {
   let runningMainMs: number | null = null;
+  let firstCommitMs: number | null = null;
 
   while (
+    firstCommitMs === null &&
     Date.now() - launchedAt < timeoutMs &&
     !watch.isClosed() &&
     findStartupErrors(watch.read()).length === EMPTY_LENGTH
   ) {
-    runningMainMs ??= watch.read().includes(RUNNING_MAIN_TRACE_LINE) ? Date.now() - launchedAt : null;
+    const isCommitted = await hasCommittedView(watch.read());
 
-    if (await hasCommittedView(watch.read())) {
-      return { firstCommitMs: Date.now() - launchedAt, runningMainMs };
+    runningMainMs ??= findRunningMainMs(watch.read(), launchedAt);
+
+    if (isCommitted && Date.now() - launchedAt < timeoutMs) {
+      firstCommitMs = Date.now() - launchedAt;
+      await delay(settleMs);
+    } else {
+      await delay(pollIntervalMs);
     }
-
-    await delay(pollIntervalMs);
   }
 
-  return { firstCommitMs: null, runningMainMs };
+  return { firstCommitMs, runningMainMs: runningMainMs ?? findRunningMainMs(watch.read(), launchedAt) };
 };
 
 const formatSeconds = (milliseconds: number | null): string =>

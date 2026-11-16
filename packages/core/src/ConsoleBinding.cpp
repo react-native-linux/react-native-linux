@@ -21,6 +21,15 @@ constexpr unsigned int kErrorLogLevel = 3;
  */
 constexpr std::string_view kConsoleErrorTag = "[console.error] ";
 
+/** One write per line, so a line another thread prints cannot land between the tag and the message. */
+void printLine(std::ostream& stream, std::string_view tag, const std::string& message) {
+    std::string line;
+
+    line.reserve(tag.size() + message.size() + 1);
+    line.append(tag).append(message).push_back('\n');
+    stream << line << std::flush;
+}
+
 std::string joinArguments(facebook::jsi::Runtime& runtime, const facebook::jsi::Value* arguments,
                           size_t argumentCount) {
     std::string message;
@@ -42,7 +51,7 @@ void installConsoleMethod(facebook::jsi::Runtime& runtime, facebook::jsi::Object
         runtime, facebook::jsi::PropNameID::forAscii(runtime, methodName), 1,
         [&stream, tag](facebook::jsi::Runtime& hostRuntime, const facebook::jsi::Value& /*thisValue*/,
                        const facebook::jsi::Value* arguments, size_t argumentCount) {
-            stream << tag << joinArguments(hostRuntime, arguments, argumentCount) << std::endl;
+            printLine(stream, tag, joinArguments(hostRuntime, arguments, argumentCount));
 
             return facebook::jsi::Value::undefined();
         });
@@ -67,7 +76,7 @@ void installConsoleBinding(facebook::jsi::Runtime& runtime) {
     facebook::react::bindNativeLogger(runtime, [](const std::string& message, unsigned int logLevel) {
         std::ostream& stream = logLevel >= kFirstStandardErrorLogLevel ? std::cerr : std::cout;
 
-        stream << (logLevel >= kErrorLogLevel ? kConsoleErrorTag : std::string_view{}) << message << std::endl;
+        printLine(stream, logLevel >= kErrorLogLevel ? kConsoleErrorTag : std::string_view{}, message);
     });
 }
 

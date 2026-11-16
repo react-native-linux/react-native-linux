@@ -142,7 +142,6 @@ const overlayInstallArguments = (tarballs: readonly string[]): readonly string[]
   "--ignore-scripts",
 ];
 
-export { describeStartupTimings, formatSeconds, waitForFirstCommit } from "./t3code-startup.ts";
 export {
   CHECKOUT_INSTALL_ARGUMENTS,
   T3CODE_REVISION,

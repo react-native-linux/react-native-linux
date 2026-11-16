@@ -4,17 +4,15 @@ import {
   T3CODE_REVISION,
   buildPairingLink,
   describeForeignCheckout,
-  describeStartupTimings,
-  formatSeconds,
   gradeWindowRun,
   installVariants,
   readPairingUrl,
   tailLines,
-  waitForFirstCommit,
 } from "./e2e/t3code.ts";
 import { argv, env, execPath, stderr, stdout } from "node:process";
 import { attachTrace, startCompositor, stopCompositor, waitForSocketName, windowBinaryPath } from "./e2e-processes.ts";
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { describeStartupTimings, formatSeconds, waitForFirstCommit } from "./e2e/t3code-startup.ts";
 import { embedExpoAppAssets, installOverlays } from "./t3code-app.ts";
 import { findExecutable, findLavapipeIcd } from "./window-golden.ts";
 import { spawn, spawnSync } from "node:child_process";
@@ -33,10 +31,11 @@ import { waitUntil } from "./e2e/discovery.ts";
  * fixture packs this platform's overlay packages and adds them to the mobile app, which rewrites its package.json and
  * lockfile, so the alias table resolves them as it would for an application that installed them from a registry, and
  * copies the Linux variants of T3 Code's own files beside the files they replace (#707). The window is held open
- * until T3 Code commits its first screen, which the automation channel's visual tree shows, and the screenshot is
- * the frame after that (#798): a frame count cannot cover the development bundle's evaluation under Debug Hermes. The
- * run passes once that commit comes with startup reporting no error, `console.error` included; until then it names
- * where startup stopped. The main screen's accessibility tree and golden join it once the screen renders.
+ * until T3 Code commits a view, which the automation channel's visual tree shows, and five seconds past it, and the
+ * screenshot is the frame after that (#798): a frame count cannot cover the development bundle's evaluation under
+ * Debug Hermes. The run passes once that commit comes with startup reporting no error, `console.error` included;
+ * until then it names where startup stopped. Once T3 Code's first screen renders (#797), readiness waits for a named
+ * accessibility node of that screen instead of any view, and its accessibility tree and golden join the run.
  */
 
 const SUCCESSFUL_EXIT_STATUS = 0;

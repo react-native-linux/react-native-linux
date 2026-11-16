@@ -8550,7 +8550,8 @@ What this narrow definition does **not** catch: a raw `console.error` or `consol
 `scripts/e2e.ts` captures is stdout and stderr merged into one string with no record of which stream a line came
 from. `ConsoleBinding` prints `console.warn` with no prefix, so nothing tells it apart from `console.log`. It prefixes
 `console.error` with `[console.error]` (#798), but only the T3 Code fixture grades that tag so far: it fails on any
-such line, because React reports an uncaught render error only there. Closing that gap needs the `ListErrors` channel below, which replaces this trace-substring mechanism for
+such line, because React reports an uncaught render error only there. #803 makes every scenario fail on it unless the
+scenario opts out. Closing that gap needs the `ListErrors` channel below, which replaces this trace-substring mechanism for
 the scenarios that open it; the scenario field survives that change even though its grading source does not. A
 scenario that sets `"automation": { "listErrorsMustBeEmpty": true }` is graded on what the runtime reported
 rather than on what the trace printed, and one that does not is still graded by the grep.
