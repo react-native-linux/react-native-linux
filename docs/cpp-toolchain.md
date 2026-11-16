@@ -7238,6 +7238,45 @@ which is the whole point of a partial-redraw renderer having a spinner at all.
 - `activity-indicator.png` — `small` and `large` animating, a custom colour, stopped and hidden, and stopped and
   held, each over a panel so an invisible tile is still visibly a tile.
 
+## Modal (#794)
+
+`<Modal>` draws inside the window's own surface, on an overlay layer of the retained scene
+([ADR-0005](adr/0005-modal-and-alert-draw-in-the-window-surface.md)). This is its first slice: the component and
+the scene. Focus, Escape and the wheel are the input slice's, and animations come later.
+
+**Component.** `Modal.js` runs unmodified over upstream's shadow node, props, state and event emitter
+(`rrc_modal`). The descriptor is ours, in `packages/core/src/ModalHostComponent.h`, because upstream's is `final`
+and its `cxx` initial state is 0x0, which lays the first frame out at zero size (react-native#50442). Its
+`createInitialState` reads the surface size from the `DimensionsSource` that `Dimensions.get` answers from, which
+`FabricHost` puts into the `ContextContainer`. `adopt` is upstream's. `FabricHost::setSurfaceSize` then calls
+`resizePresentedModals`, which gives every open modal the new size through an immediate state update, so a
+modal follows a window resize in the same frame.
+
+**Scene.** `insertChild` of a `ModalHostView` appends it to its surface's overlay list, ahead of any overlay
+already nested inside it, because Fabric inserts a new subtree's children before the subtree itself. `removeChild`
+and `deleteNode` take it out in the same transaction, so a modal removed by a commit is out of the hit path in
+that commit, however fast the next one follows (react-native#50152). The node stays its parent's child, but the
+parent's walk skips it. `snapshot` paints each surface's tree and then its overlays in list order. Each overlay
+walk starts at the surface origin with an identity matrix, full opacity and no clip, so no ancestor's transform,
+opacity, `overflow` or `zIndex` reaches it. `findNodeAtPoint` asks only the topmost overlay. A point that misses
+its children lands on the overlay itself, the backdrop, and never on anything beneath it. Damage stays the
+subtree extent, so a modal with a backdrop damages the whole surface and a transparent one only what it paints.
+
+`transparent` and `backdropColor` need nothing here: `Modal.js` turns them into the container's
+`backgroundColor`. Every `presentationStyle` covers the surface, and `animationType` paints as `none`.
+
+### The proof
+
+- `packages/core/tests/ModalOverlayTest.cpp` — paint and hit order from the surface origin under a clipped,
+  transformed, translucent, low-`zIndex` parent; the backdrop answering a missed point; stacking, removal and
+  nesting; damage in surface coordinates; a present and remove in one transaction and across commits; the
+  first-commit size from `DimensionsSource`; and the resize.
+- `modal-backdrop.png` and `modal-scrim.png` — an opaque modal with a `backdropColor`, then a transparent one whose
+  child `View` is the scrim, both declared inside that parent.
+- `modal-scrim-press` — a click on the scrim over a list of `Pressable` rows presses nothing, and a click on the
+  card presses the card.
+- `modal-scrim-over-list-120hz` — the same scrim over the list scrolling every frame, held to the 120 Hz budget.
+
 ## Golden images
 
 The rig has two halves. `hello_react --golden` produces a PNG; a Vitest spec compares it against a checked-in one.

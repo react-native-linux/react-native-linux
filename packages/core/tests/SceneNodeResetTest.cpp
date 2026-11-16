@@ -231,6 +231,7 @@ void expectResetTo(const SceneNode& node, const SceneNode& reference) {
     EXPECT_EQ(node.scrollContentOffset.has_value(), reference.scrollContentOffset.has_value());
     EXPECT_EQ(node.scrollIndicators.has_value(), reference.scrollIndicators.has_value());
     EXPECT_EQ(node.maintainedScroll.has_value(), reference.maintainedScroll.has_value());
+    EXPECT_EQ(node.isOverlayRoot, reference.isOverlayRoot);
 }
 
 // Every field `expectResetTo` compares, which is every field `SceneNode` declares. The oracle below holds this
@@ -260,7 +261,8 @@ const std::vector<std::string>& comparedSceneNodeFields() {
                                                  "activityIndicator",
                                                  "scrollContentOffset",
                                                  "scrollIndicators",
-                                                 "maintainedScroll"};
+                                                 "maintainedScroll",
+                                                 "isOverlayRoot"};
 
     return fields;
 }

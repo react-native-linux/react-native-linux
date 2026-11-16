@@ -66,6 +66,7 @@ const scopedSourcePaths: readonly string[] = [
   "packages/core/src/LineBoxMetrics.cpp",
   "packages/core/src/LinuxAnimationChoreographer.cpp",
   "packages/core/src/LinuxMountingManager.cpp",
+  "packages/core/src/ModalHostComponent.cpp",
   "packages/core/src/MountTreeText.cpp",
   "packages/core/src/NotificationCenter.cpp",
   "packages/core/src/OpenUriPortal.cpp",

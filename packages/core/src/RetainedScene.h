@@ -583,6 +583,12 @@ struct SceneNode {
      * was turned off would adjust the offset by everything that happened in between.
      */
     std::optional<SceneMaintainedScroll> maintainedScroll;
+
+    /**
+     * A `ModalHostView` (ADR-0005): its parent keeps it as a child, but it paints and hit-tests only as an overlay
+     * of its surface, from the surface origin, whatever its ancestors' transform, opacity, clip and `zIndex`.
+     */
+    bool isOverlayRoot{false};
 };
 
 /**
@@ -637,6 +643,11 @@ struct ScenePaintState;
  * transform and cut by its inherited clips, which is why a change to a parent's transform, opacity or clip damages
  * everything below it without any per-descendant analysis. Borders need no term of their own: React Native draws
  * them inside the frame. See *Damage tracking* in docs/cpp-toolchain.md.
+ *
+ * A `ModalHostView` is an overlay (ADR-0005). `insertChild` appends it to its surface's overlay list, which is mount
+ * order, ahead of any overlay already nested inside it; `removeChild` and `deleteNode` take it out in the same
+ * transaction. `snapshot` paints each surface's tree and then its overlays in list order, and `findNodeAtPoint`
+ * answers from the topmost overlay alone: a point that misses its children lands on the overlay itself.
  *
  * Threading contract: this type is not synchronised. Its owner serialises access.
  */
@@ -845,14 +856,19 @@ public:
 private:
     SceneNode& writeNode(const facebook::react::ShadowView& shadowView);
     std::vector<facebook::react::Tag> sortedRootTags() const;
-    void appendPrimitives(SceneSnapshot& primitives, facebook::react::Tag tag, const ScenePaintState& state) const;
+    void appendPrimitives(SceneSnapshot& primitives, facebook::react::Tag tag, const ScenePaintState& state,
+                          bool isOverlayWalk = false) const;
     SceneHit hitTestNode(facebook::react::Tag tag, facebook::react::Point surfacePoint,
                          const ScenePaintState& state) const;
     void appendNode(std::string& output, facebook::react::Tag tag, size_t depth) const;
     std::optional<facebook::react::Rect> subtreeExtent(facebook::react::Tag tag) const;
     void damageSubtree(facebook::react::Tag tag);
+    void presentOverlay(facebook::react::SurfaceId surfaceId, facebook::react::Tag tag);
+    void dismissOverlay(facebook::react::Tag tag);
+    bool isDescendantOf(facebook::react::Tag tag, facebook::react::Tag ancestorTag) const;
 
     SceneNodes nodes_;
+    std::unordered_map<facebook::react::SurfaceId, std::vector<facebook::react::Tag>> overlayTags_;
     std::vector<RejectedNonFiniteProp> rejectedNonFiniteProps_;
     SceneDamage damage_;
     std::unordered_map<facebook::react::Tag, SceneEditorState> editorStates_;

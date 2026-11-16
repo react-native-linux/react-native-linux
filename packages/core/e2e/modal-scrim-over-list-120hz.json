@@ -1,0 +1,10 @@
+{
+  "name": "modal-scrim-over-list-120hz",
+  "bundle": "modal-scrim-over-list.tsx",
+  "outputRefreshHz": 120,
+  "ready": "modal-scrim: committed",
+  "frames": 720,
+  "frameBudget": { "p50Ms": 8.5, "p95Ms": 12.5, "minFrames": 240, "maxHangs": 1 },
+  "steps": ["sleep 1000"],
+  "expect": ["modal-scrim: committed", "modal-scrim: scrolled 240 frames"]
+}

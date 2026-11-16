@@ -79,6 +79,7 @@ set(RNL_CORE_SCENE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/LineBoxMetrics.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/LinuxAnimationChoreographer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/LinuxMountingManager.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ModalHostComponent.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/MountTreeText.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/OutputScale.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/PinnedFontFamilies.cpp
@@ -164,6 +165,7 @@ add_executable(rnl_core_tests
     LinuxMountingManagerDiagnosticsTest.cpp
     LinuxMountingManagerMaintainPositionTest.cpp
     LinuxMountingManagerPendingDamageTest.cpp
+    ModalOverlayTest.cpp
     MountingRegistryConformanceTest.cpp
     MountTreeTextTest.cpp
     NestedTextFragmentTest.cpp

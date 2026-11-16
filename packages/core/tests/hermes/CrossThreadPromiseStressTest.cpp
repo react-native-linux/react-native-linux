@@ -113,7 +113,7 @@ TEST(CrossThreadPromiseStressTest, PromisesSettledAndDroppedOffTheJavaScriptThre
     start.arrive_and_wait();
 
     for (int frame = 0; frame < kFrameCount; ++frame) {
-        reactHost.dimensions().configure(800.0 + frame, 600.0, 1.0);
+        reactHost.dimensions()->configure(800.0 + frame, 600.0, 1.0);
         reactHost.publishPendingDimensions();
         reactHost.dispatchAnimationFrames(std::chrono::steady_clock::now());
     }
@@ -223,8 +223,7 @@ TEST(CrossThreadMountingStressTest, MountsDecodesAndInputRunConcurrentlyWithTheF
     }
 
     ReactHost reactHost;
-    auto fabricHost =
-        std::make_unique<FabricHost>(reactHost.reactInstance(), facebook::react::Size{.width = 400, .height = 200});
+    auto fabricHost = std::make_unique<FabricHost>(reactHost, facebook::react::Size{.width = 400, .height = 200});
 
     reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>(
                              "globalThis.imageDirectory = '" + imageDirectory.string() +

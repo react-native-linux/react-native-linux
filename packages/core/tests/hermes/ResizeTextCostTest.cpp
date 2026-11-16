@@ -61,7 +61,7 @@ fabric.completeRoot(1, children);
  */
 TEST(ResizeTextCostTest, AConfigureSequenceShapesOnlyResizedTextAndSettlesInOneFrame) {
     ReactHost reactHost;
-    auto fabricHost = std::make_unique<FabricHost>(reactHost.reactInstance(), kInitialSize);
+    auto fabricHost = std::make_unique<FabricHost>(reactHost, kInitialSize);
 
     reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>(kResizeFixture), "ResizeTextCostTest.js");
     reactHost.drainJavaScriptThread();

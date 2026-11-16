@@ -905,6 +905,7 @@ add_library(rnl_react_core STATIC
     src/JsErrorReporter.cpp
     src/LinuxAnimationChoreographer.cpp
     src/LinuxMountingManager.cpp
+    src/ModalHostComponent.cpp
     src/NotificationCenter.cpp
     src/PlatformColor.cpp
     src/ReactHost.cpp

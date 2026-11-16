@@ -1312,7 +1312,7 @@ TurboModuleRegistry::TurboModuleRegistry(
 
 TurboModuleRegistry::~TurboModuleRegistry() noexcept = default;
 
-DimensionsSource& TurboModuleRegistry::dimensions() noexcept { return *dimensionsSource_; }
+const std::shared_ptr<DimensionsSource>& TurboModuleRegistry::dimensions() noexcept { return dimensionsSource_; }
 
 AppearanceModel& TurboModuleRegistry::appearance() noexcept { return *appearanceModel_; }
 

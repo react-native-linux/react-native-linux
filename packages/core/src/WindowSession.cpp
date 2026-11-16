@@ -61,7 +61,7 @@ WindowSession::WindowSession(const std::string& bundlePath, std::optional<std::s
                              double scale, const std::string& asyncStorageDatabasePath,
                              std::optional<std::string> initialActivationUrl, std::string assetsDirectory,
                              const ToplevelState& initialToplevelState)
-    : fabricHost_(std::make_unique<FabricHost>(reactHost_.reactInstance(), toSurfaceSize(size))),
+    : fabricHost_(std::make_unique<FabricHost>(reactHost_, toSurfaceSize(size))),
       frameJournal_(kNominalVsyncNanoseconds, kHangThresholdVsyncCount * kNominalVsyncNanoseconds) {
     // Before the script, so the first `Dimensions.get` a bundle makes at module scope already answers with the
     // window's requested size and scale rather than with the pre-configure default.
@@ -119,7 +119,7 @@ WindowSession::~WindowSession() noexcept {
 
 void WindowSession::resize(WindowSize size, double scale) {
     fabricHost_->setSurfaceSize(toSurfaceSize(size), static_cast<facebook::react::Float>(scale));
-    reactHost_.dimensions().configure(static_cast<double>(size.width), static_cast<double>(size.height), scale);
+    reactHost_.dimensions()->configure(static_cast<double>(size.width), static_cast<double>(size.height), scale);
 }
 
 void WindowSession::setTextInputFocusSink(TextInputFocusSink* textInputFocusSink) {

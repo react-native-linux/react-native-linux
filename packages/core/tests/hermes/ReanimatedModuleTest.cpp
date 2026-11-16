@@ -205,7 +205,7 @@ ScenePrimitive animatedPrimitive(const FabricHost& fabricHost) {
 class ReanimatedModuleTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        fabricHost_ = std::make_unique<FabricHost>(reactHost_.reactInstance(), kSurfaceSize);
+        fabricHost_ = std::make_unique<FabricHost>(reactHost_, kSurfaceSize);
         evaluate(reactHost_, kTree, "tree.js");
         install(reactHost_);
         onJavaScriptThread<bool>(reactHost_, [this](facebook::jsi::Runtime& runtime) -> bool {
@@ -397,7 +397,7 @@ double uiGlobal(worklets::WorkletRuntime& uiRuntime, const char* name) {
  */
 TEST(ReanimatedModuleInstallTest, NoUIRuntimeFrameSeesAHalfInstalledReanimated) {
     ReactHost reactHost;
-    auto fabricHost = std::make_unique<FabricHost>(reactHost.reactInstance(), kSurfaceSize);
+    auto fabricHost = std::make_unique<FabricHost>(reactHost, kSurfaceSize);
     evaluate(reactHost, kTree, "tree.js");
     evaluate(reactHost, kStartWorklets, "worklets.js");
     std::shared_ptr<worklets::WorkletRuntime> uiRuntime = reactHost.worklets().uiWorkletRuntime();
