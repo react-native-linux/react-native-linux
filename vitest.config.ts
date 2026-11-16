@@ -35,6 +35,7 @@ export default defineConfig({
         // The Nitro stand-in of T3 Code's desktop profile; its spec beside it holds the TurboModule contract.
         "packages/test-harness/test-bundles/t3code-desktop-profile/react-native-nitro-modules.ts",
         "packages/test-harness/test-bundles/t3code-desktop-profile/expo-keep-awake.ts",
+        "packages/test-harness/test-bundles/t3code-desktop-profile/expo-sensors.ts",
         "packages/core/goldens/*.ts",
         "packages/core/src-linux/**/*.ts",
         "scripts/codegen-core/**/*.ts",
