@@ -71,7 +71,8 @@ Expo's Metro config turns `inlineRequires` off.
 | `ExpoSharing` | `expo-sharing` | registered (#744): `shareAsync` hands the file to the OpenURI portal's chooser; `isAvailableAsync` is `false` without a portal |
 | `ExpoSQLite` | `expo-sqlite` | registered (#665) |
 | `ExpoWebBrowser` | `expo-web-browser` | throws; #271 |
-| `ExpoAudio`, `ExpoKeepAwake`, `ExpoCamera`, `ExpoObserve`, `ExpoAppMetrics`, the `expo-sensors` modules, `SymbolModule`, `ExpoUpdates`, `ExpoWidgets` | `expo-audio`, `expo-keep-awake`, `expo-camera`, `expo-observe`, `expo-app-metrics`, `expo-sensors`, `expo-symbols`, `expo-updates`, `expo-widgets` | throws; left out or replaced by the feature profile (§2), so #641's Linux entry cuts the import |
+| `ExpoAudio` | `expo-audio`, imported by eight app files | throws, so the fixture's desktop profile (§2) resolves `expo-audio` to a stand-in (#760): a player's `play` opens its source in the default application, the session calls resolve, recording permission reads denied and a recorder throws; the `t3-expo-audio` e2e runs T3 Code's calls |
+| `ExpoKeepAwake`, `ExpoCamera`, `ExpoObserve`, `ExpoAppMetrics`, the `expo-sensors` modules, `SymbolModule`, `ExpoUpdates`, `ExpoWidgets` | `expo-keep-awake`, `expo-camera`, `expo-observe`, `expo-app-metrics`, `expo-sensors`, `expo-symbols`, `expo-updates`, `expo-widgets` | throws; left out or replaced by the feature profile (§2), so #641's Linux entry cuts the import |
 | `ExpoVideo` | `expo-video` | throws; left out (§2). `MediaVideoPlayer.linux.tsx` cuts the one import that runs at startup (#759). The others are type-only, or the lazy `import()` in `videoThumbnails.ts`, whose failure the thumbnail loader turns into no thumbnail |
 
 These import cleanly with nothing registered: `expo-haptics` and `expo-splash-screen` look their modules up with
@@ -229,7 +230,7 @@ transitive package.
 | `expo-sensors` | `~58.0.4` | declined | #635 | device preview motion |
 | `expo-camera` | `~58.0.14` | declined | #635 | QR pairing |
 | `expo-symbols` | `~58.0.4` | declined | #635 | SF Symbols in the shared AppSymbol |
-| `expo-audio` | `58.0.11` | declined | #635 | voice input and audio previews |
+| `expo-audio` | `58.0.11` | declined | #635 | voice input and audio previews; the desktop profile's stand-in answers its eight importers (#760) |
 | `expo-keep-awake` | `~58.0.3` | declined | #635 | left out with voice input, its only user; expo's dev-only `withDevTools` requires it inside `try`/`catch` |
 | `expo-video` | `58.0.13` | declined | #759 | video attachments open in the default application from `MediaVideoPlayer.linux.tsx`, without its long-press media actions (#762) |
 | `react-native-pdf-jsi` | `6.1.0` | declined | #635 | imported only by PdfPreview.android.tsx |

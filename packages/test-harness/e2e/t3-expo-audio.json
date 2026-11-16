@@ -1,0 +1,20 @@
+{
+  "name": "t3-expo-audio",
+  "bundle": "t3-expo-audio.tsx",
+  "ready": "t3-expo-audio: ready",
+  "frames": 240,
+  "windowFlags": ["--no-decorations"],
+  "steps": ["sleep 100"],
+  "expect": [
+    "t3-expo-audio: file loaded=true playing=false",
+    "t3-expo-audio: open https://example.com/voice-note.m4a",
+    "t3-expo-audio: file released loaded=false playing=false",
+    "t3-expo-audio: inline loaded=false playing=false",
+    "t3-expo-audio: inline replaced loaded=true playing=false",
+    "t3-expo-audio: open https://example.com/inline.ogg",
+    "t3-expo-audio: permission denied/false denied/false",
+    "t3-expo-audio: preset .m4a",
+    "t3-expo-audio: recorder threw expo-audio: recording is left out of the Linux desktop profile"
+  ],
+  "reject": ["t3-expo-audio: failed", "[expo-audio]", "t3-expo-audio: open null"]
+}
