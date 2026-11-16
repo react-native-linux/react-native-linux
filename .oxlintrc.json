@@ -104,6 +104,7 @@
     "packages/template/template.config.js",
     "packages/template/template/metro.config.js",
     "packages/test-harness/modules/t3-composer-editor/src",
+    "packages/test-harness/modules/t3-expo-ui/src",
     "packages/test-harness/modules/t3-review-diff/src",
     "third_party"
   ]

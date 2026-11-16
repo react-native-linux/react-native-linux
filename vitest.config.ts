@@ -30,6 +30,8 @@ export default defineConfig({
         "packages/enriched-markdown/src/**/*.tsx",
         // The rendering half, nativeReviewDiffSurface.linux.ts, is drawn by the t3-review-diff golden and e2e.
         "packages/test-harness/modules/t3-review-diff/src/features/diffs/nativeReviewDiffRows.ts",
+        // The views around it are drawn by the t3-expo-ui golden and e2e.
+        "packages/test-harness/modules/t3-expo-ui/src/components/ui/controlValues.linux.ts",
         "packages/core/goldens/*.ts",
         "packages/core/src-linux/**/*.ts",
         "scripts/codegen-core/**/*.ts",

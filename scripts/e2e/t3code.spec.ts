@@ -4,6 +4,7 @@ import {
   buildPairingLink,
   describeForeignCheckout,
   gradeWindowRun,
+  isLinuxVariant,
   overlayInstallArguments,
   overlayPackArguments,
   readPairingUrl,
@@ -63,6 +64,20 @@ describe("gradeWindowRun", () => {
       "the window did not exit within the run timeout",
       "the compositor ended with exit code null, signal SIGKILL",
     ]);
+  });
+});
+
+describe("isLinuxVariant", () => {
+  it("takes a .linux.ts or .linux.tsx file and leaves a test bundle's stand-ins", () => {
+    expect(
+      [
+        "components/ui/Progress.linux.tsx",
+        "components/ui/controlValues.linux.ts",
+        "components/ui/useControlTheme.ts",
+        "components/ui/linux.tsx",
+        "components/ui/Progress.linux.tsx.map",
+      ].map((file) => isLinuxVariant(file)),
+    ).toStrictEqual([true, true, false, false, false]);
   });
 });
 

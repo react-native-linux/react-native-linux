@@ -34,6 +34,14 @@ const buildPairingLink = (pairingUrl: string): string =>
 /** The last lines of a log, which is what a failure prints of it. */
 const tailLines = (text: string): string => text.trimEnd().split("\n").slice(-TAIL_LINE_COUNT).join("\n");
 
+const LINUX_VARIANT_PATTERN = /\.linux\.tsx?$/u;
+
+/**
+ * Whether a file of a module's `src` is a Linux variant T3 Code carries beside the file it replaces, as opposed to a
+ * stand-in for one of T3 Code's own files that only the module's test bundle uses.
+ */
+const isLinuxVariant = (relativePath: string): boolean => LINUX_VARIANT_PATTERN.test(relativePath);
+
 /**
  * Why a run is not a pass, the first fatal JavaScript error leading as where startup stopped; empty only when the
  * socket came up, the window presented its first frame, and the compositor exited successfully within the run.
@@ -102,6 +110,7 @@ export {
   OVERLAY_DIRECTORY_NAME,
   describeForeignCheckout,
   gradeWindowRun,
+  isLinuxVariant,
   overlayInstallArguments,
   overlayPackArguments,
   readPairingUrl,

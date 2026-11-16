@@ -20,6 +20,7 @@ const metroRuntimeDirectory = path.dirname(
  * resolves to the file here, which answers the way the profile says Linux does instead.
  */
 const desktopProfile: Readonly<Record<string, string>> = {
+  "@expo/ui/community/datetime-picker": path.join(profileDirectory, "expo-ui-datetime-picker.ts"),
   "expo-observe": path.join(profileDirectory, "expo-observe.ts"),
 };
 

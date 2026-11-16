@@ -1,5 +1,5 @@
-import { overlayInstallArguments, overlayPackArguments } from "./e2e/t3code.ts";
-import { readdirSync, rmSync } from "node:fs";
+import { cpSync, readdirSync, rmSync } from "node:fs";
+import { isLinuxVariant, overlayInstallArguments, overlayPackArguments } from "./e2e/t3code.ts";
 import { packageAliases } from "@react-native-linux/cli/package-aliases.ts";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -26,5 +26,19 @@ const installOverlays = (repositoryRoot: string, overlayDirectory: string, check
   );
 };
 
+/**
+ * The Linux variants of T3 Code's own files (#707), copied beside the files they replace as T3 Code would carry them,
+ * so Metro picks each by its platform extension and its relative imports reach T3 Code's own modules.
+ */
+const installVariants = (variantsDirectory: string, mobileRoot: string): void => {
+  const variants = readdirSync(variantsDirectory, { encoding: "utf8", recursive: true }).filter((relativePath) =>
+    isLinuxVariant(relativePath),
+  );
+
+  for (const variant of variants) {
+    cpSync(path.join(variantsDirectory, variant), path.join(mobileRoot, "src", variant));
+  }
+};
+
 export { embedExpoAppAssets } from "@react-native-linux/cli/expo-app-assets.ts";
-export { installOverlays };
+export { installOverlays, installVariants };

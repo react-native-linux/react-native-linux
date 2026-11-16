@@ -29,7 +29,11 @@
    widget files). `AppSymbol` imports `expo-symbols`. `thread-work-log` and the scheduled-task editor import
    `@expo/ui/community/masked-view` and `datetime-picker`, and `nativeTheme.ts` imports `@expo/ui/jetpack-compose`.
    `@expo/ui` stays declined (#87), so each of these
-   gets a core-component variant for Linux.
+   gets a core-component variant for Linux. #707 wrote them in `packages/test-harness/modules/t3-expo-ui/src` as
+   `.linux.tsx` files T3 Code carries beside `Progress`, `SliderRow`, `NumberField` and `CustomSnoozeSheet`, and the
+   fixture copies them into its checkout. `NativeThemeHost` has no Linux importer once those three are replaced, the
+   widget files are reached only from `.ios` and `.android` files, `masked-view`'s base file already draws its
+   children unmasked, and `nativeTheme.ts` imports only a type. The `datetime-picker` is left out (§2).
 4. **The pin is behind.** T3 Code is on react-native 0.88.1 and this platform pins 0.87.1: #636.
 5. **T3 Code patches its native dependencies.** `react-native-screens` is a fork (`5.0.0-t3.50`) and
    gesture-handler is on `~3.5`. `patches/` changes reanimated's `Common/cpp/.../LayoutAnimationsUtils.h`,
@@ -93,6 +97,7 @@ so #155 and #641 also exclude the left-out modules from autolinking.
 | `expo-video` | inline video | video attachments open in the desktop's default application |
 | `expo-sensors` | device-preview motion | nothing |
 | `expo-camera` | QR pairing | the pairing link, typed or pasted |
+| `@expo/ui/community/datetime-picker` | the scheduled-task editor's date and time picker | nothing yet: the picker draws nothing and warns by name (#750) |
 | `expo-observe`, `expo-app-metrics` | the error relay | the console and the e2e event trace |
 | `expo-updates`, `expo-dev-client` | over-the-air updates and the development launcher | the distribution's package manager (#360); development builds wait on #155 |
 | `@clerk/expo`, `@clerk/expo-native-components` | cloud sign-in | not needed to pair with a local server; the browser flow of #271 comes later |
@@ -103,7 +108,7 @@ These are replaced by a different file on Linux, not left out:
 
 | Module | Linux uses |
 | --- | --- |
-| `@expo/ui/swift-ui` views | a core-component variant of each view |
+| `@expo/ui/swift-ui` views | a core-component `.linux.tsx` variant of each T3 Code view that imports them (#707) |
 | `@expo/ui/community/masked-view` | `@react-native-masked-view/masked-view` (#164) |
 | `expo-symbols` in `AppSymbol` | the tabler icon set `AppSymbol.android.tsx` already uses |
 | `T3ComposerEditor.native.tsx` | the plain `TextInput` variant, `T3ComposerEditor.tsx`, until #640's composer editor lands |

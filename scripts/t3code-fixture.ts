@@ -10,7 +10,7 @@ import {
 import { argv, env, execPath, stderr, stdout } from "node:process";
 import { attachTrace, startCompositor, stopCompositor, waitForSocketName, windowBinaryPath } from "./e2e-processes.ts";
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { embedExpoAppAssets, installOverlays } from "./t3code-app.ts";
+import { embedExpoAppAssets, installOverlays, installVariants } from "./t3code-app.ts";
 import { findExecutable, findLavapipeIcd } from "./window-golden.ts";
 import { spawn, spawnSync } from "node:child_process";
 import path from "node:path";
@@ -26,7 +26,8 @@ import { waitUntil } from "./e2e/discovery.ts";
  * The checkout is the fixture's own copy of T3 Code at T3CODE_REVISION inside build/t3code, such as
  * build/t3code/checkout, with the mobile app's and the server's dependencies installed; any other path is refused. The
  * fixture packs this platform's overlay packages and adds them to the mobile app, which rewrites its package.json and
- * lockfile, so the alias table resolves them as it would for an application that installed them from a registry. The
+ * lockfile, so the alias table resolves them as it would for an application that installed them from a registry, and
+ * copies the Linux variants of T3 Code's own files beside the files they replace (#707). The
  * run passes once the window presents a frame and exits cleanly with startup throwing nothing; until then it names
  * where startup stopped. The main screen's accessibility tree and golden join it once the screen renders.
  */
@@ -47,6 +48,7 @@ const artifactsDirectory = path.join(repositoryRoot, "build", "e2e", SCENARIO_NA
 const fixtureDirectory = path.join(repositoryRoot, "build", "t3code");
 const bundlePath = path.join(fixtureDirectory, "index.linux.bundle.js");
 const overlayDirectory = path.join(fixtureDirectory, OVERLAY_DIRECTORY_NAME);
+const variantsDirectory = path.join(repositoryRoot, "packages", "test-harness", "modules", "t3-expo-ui", "src");
 const checkout = path.resolve(argv[CHECKOUT_ARGUMENT_INDEX] ?? env["T3CODE_ROOT"] ?? "");
 const mobileRoot = path.join(checkout, "apps", "mobile");
 const serverEntry = path.join(checkout, "apps", "server", "src", "bin.ts");
@@ -235,6 +237,8 @@ const runAgainstServer = async (rig: Rig): Promise<void> => {
 
 const runOnOwnCheckout = async (rig: Rig): Promise<void> => {
   const overlayFailure = installOverlays(repositoryRoot, overlayDirectory, checkout);
+
+  installVariants(variantsDirectory, mobileRoot);
 
   if (overlayFailure !== null) {
     fail(`the overlay packages could not be packed and added to T3 Code\n${tailLines(overlayFailure)}`);
