@@ -5,7 +5,11 @@
   "frames": 600,
   "steps": [
     "sleep 500",
-    "click 200 140",
+    "move 200 140",
+    "button left press",
+    "await pressable-react: pressIn",
+    "sleep 200",
+    "button left release",
     "sleep 400",
     "click 450 400",
     "sleep 150",
@@ -21,8 +25,8 @@
   ],
   "expect": [
     "pressable-react: pressIn",
-    "pressable-react: press 1",
     "pressable-react: pressOut",
+    "pressable-react: press 1",
     "pressable-react: press 2",
     "pressable-react: press 3"
   ],
