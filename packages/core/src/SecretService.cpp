@@ -82,7 +82,12 @@ struct PromptCompletion {
     std::string promptFailure;
 };
 
-/** Dismisses the prompt unless it completed, on every way out of `settle`, so no prompt outlives its call. */
+/**
+ * Dismisses the prompt unless it completed or its service left, on every way out of `settle`, so no prompt outlives its
+ * call. The dismissal is a call bounded by the bus's call timeout, not a queued message, so closing the bus needs no
+ * flush that a stalled peer could hold forever. It never auto-starts the service, so a service that left, whether or
+ * not `settle` saw it go, is not started again only to dismiss a prompt it no longer has.
+ */
 struct PromptDismissal {
     PromptDismissal(sd_bus* bus, const std::string& prompt, const PromptCompletion& completion)
         : bus(bus), prompt(prompt), completion(completion) {}
@@ -93,9 +98,16 @@ struct PromptDismissal {
     PromptDismissal& operator=(PromptDismissal&&) = delete;
 
     ~PromptDismissal() {
-        if (!completion.completed) {
-            sd_bus_call_method_async(bus, nullptr, kDestination, prompt.c_str(), kPromptInterface, "Dismiss", nullptr,
-                                     nullptr, "");
+        if (!completion.completed && !completion.serviceLeft) {
+            sd_bus_message* building = nullptr;
+
+            sd_bus_message_new_method_call(bus, &building, kDestination, prompt.c_str(), kPromptInterface, "Dismiss");
+
+            const std::unique_ptr<sd_bus_message, decltype(&sd_bus_message_unref)> dismissal(building,
+                                                                                             sd_bus_message_unref);
+
+            sd_bus_message_set_auto_start(dismissal.get(), 0);
+            sd_bus_call(bus, dismissal.get(), 0, nullptr, nullptr);
         }
     }
 
@@ -136,7 +148,7 @@ int onServiceLeft(sd_bus_message* /*message*/, void* userData, sd_bus_error* /*e
 
 } // namespace
 
-void SecretServiceBackend::BusClose::operator()(sd_bus* bus) const noexcept { sd_bus_flush_close_unref(bus); }
+void SecretServiceBackend::BusClose::operator()(sd_bus* bus) const noexcept { sd_bus_close_unref(bus); }
 
 void SecretServiceBackend::MessageUnref::operator()(sd_bus_message* message) const noexcept {
     sd_bus_message_unref(message);

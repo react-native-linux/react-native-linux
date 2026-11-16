@@ -5,8 +5,10 @@
 #include <atomic>
 #include <cerrno>
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <functional>
+#include <future>
 #include <gtest/gtest.h>
 #include <map>
 #include <memory>
@@ -34,6 +36,7 @@ constexpr char kCollection[] = "/org/freedesktop/secrets/collection/login";
 constexpr char kPrompt[] = "/org/freedesktop/secrets/prompt/1";
 constexpr char kSession[] = "/org/freedesktop/secrets/session/1";
 constexpr char kApplication[] = "org.example.app";
+constexpr milliseconds kDismissLatency(20);
 
 const SecretLocation kToken{.service = "app", .key = "managed-relay-token"};
 
@@ -76,7 +79,9 @@ Attributes readAttributes(sd_bus_message* message) {
 /**
  * A Secret Service on the far end of a socket pair, served by sd-bus on its own thread: the methods
  * `SecretServiceBackend` calls, over one in-memory collection, with a lock and prompt, an injected failure and a
- * malformed reply to switch on. A peer connection needs no bus daemon, so the test runs wherever sd-bus does.
+ * malformed reply to switch on, and a point after which it stops reading. It takes `kDismissLatency` to dismiss a
+ * prompt, as a real keyring takes a moment to take one off screen. A peer connection needs no bus daemon, so the test
+ * runs wherever sd-bus does.
  */
 class FakeSecretService {
 public:
@@ -91,6 +96,7 @@ public:
         std::string failingMember;
         std::string failingError{SD_BUS_ERROR_FAILED};
         std::string silentMember;
+        std::string lastMemberRead;
     };
 
     explicit FakeSecretService(Behavior behavior) : behavior_(std::move(behavior)) {
@@ -110,6 +116,11 @@ public:
         EXPECT_GE(sd_bus_start(server_.get()), 0);
         thread_ = std::thread([this] {
             while (!stopping_.load()) {
+                if (!reading_) {
+                    std::this_thread::sleep_for(milliseconds(10));
+                    continue;
+                }
+
                 const int processed = sd_bus_process(server_.get(), nullptr);
 
                 if (processed < 0) {
@@ -164,6 +175,13 @@ public:
         return promptsDismissed_;
     }
 
+    /** Dismissals that let the bus start the service to deliver them, which no dismissal should. */
+    [[nodiscard]] int autoStartingDismissals() {
+        const std::lock_guard<std::mutex> lock(mutex_);
+
+        return autoStartingDismissals_;
+    }
+
     [[nodiscard]] std::string lastLabel() {
         const std::lock_guard<std::mutex> lock(mutex_);
 
@@ -179,6 +197,10 @@ private:
     static int onMessage(sd_bus_message* message, void* userData, sd_bus_error* /*error*/) {
         if (sd_bus_message_is_method_call(message, nullptr, nullptr) <= 0) {
             return 0;
+        }
+
+        if (sd_bus_message_is_method_call(message, nullptr, "Dismiss") > 0) {
+            std::this_thread::sleep_for(kDismissLatency);
         }
 
         static_cast<FakeSecretService*>(userData)->answer(message);
@@ -220,6 +242,8 @@ private:
             }
         } else if (member == "Dismiss") {
             ++promptsDismissed_;
+            autoStartingDismissals_ += sd_bus_message_get_auto_start(message);
+            sd_bus_reply_method_return(message, "");
         } else if (member == "SearchItems") {
             replyWithItems(message, readAttributes(message));
         } else if (member == "CreateItem") {
@@ -230,6 +254,8 @@ private:
             items_.erase(path);
             sd_bus_reply_method_return(message, "o", "/");
         }
+
+        reading_ = member != behavior_.lastMemberRead;
     }
 
     void answerPrompt() {
@@ -330,10 +356,12 @@ private:
     std::map<std::string, Item> items_;
     int promptsShown_{0};
     int promptsDismissed_{0};
+    int autoStartingDismissals_{0};
     std::string lastLabel_;
     std::unique_ptr<sd_bus, BusClose> server_;
     int clientDescriptor_{-1};
     std::atomic<bool> stopping_{false};
+    bool reading_{true};
     std::thread thread_;
 };
 
@@ -487,8 +515,9 @@ TEST(SecretServiceTest, AKeyringThatFailsAnswersNonsenseOrStallsFailsTheCallInst
 }
 
 /**
- * A prompt nobody answers gives up at the timeout: the call fails, and the service is told to dismiss the prompt
- * rather than leave it on screen for a call that already failed.
+ * A prompt nobody answers gives up at the timeout: the call fails, and the service has dismissed the prompt by the
+ * time it does, rather than leave it on screen for a call that already failed. The dismissal does not auto-start the
+ * service, so one that left unseen is not started again for it.
  */
 TEST(SecretServiceTest, APromptNobodyAnswersIsDismissedAndFailsTheCallAtTheTimeout) {
     FakeSecretService unanswered(behaving([](FakeSecretService::Behavior& behavior) {
@@ -501,11 +530,15 @@ TEST(SecretServiceTest, APromptNobodyAnswersIsDismissedAndFailsTheCallAtTheTimeo
     EXPECT_EQ(failureOf([&] { keyring->write(kToken, "secret"); }), "Secret Service: the keyring prompt timed out");
     EXPECT_GE(steady_clock::now() - started, milliseconds(200));
     EXPECT_LT(steady_clock::now() - started, std::chrono::seconds(2));
-    EXPECT_TRUE(eventually([&] { return unanswered.promptsDismissed() == 1; }));
+    EXPECT_EQ(unanswered.promptsDismissed(), 1);
+    EXPECT_EQ(unanswered.autoStartingDismissals(), 0);
     EXPECT_EQ(unanswered.itemCount(), 0U);
 }
 
-/** A service that leaves the bus while its prompt is up fails the call at once instead of at the timeout. */
+/**
+ * A service that leaves the bus while its prompt is up fails the call at once instead of at the timeout, and is not
+ * told to dismiss it, since that call would start a new keyring and wait for it.
+ */
 TEST(SecretServiceTest, AServiceThatLeavesTheBusDuringItsPromptFailsTheCallAtOnce) {
     FakeSecretService leaving(behaving([](FakeSecretService::Behavior& behavior) {
         behavior.locked = true;
@@ -517,6 +550,7 @@ TEST(SecretServiceTest, AServiceThatLeavesTheBusDuringItsPromptFailsTheCallAtOnc
     EXPECT_EQ(failureOf([&] { keyring->write(kToken, "secret"); }),
               "Secret Service: the keyring service left the bus during its prompt");
     EXPECT_LT(steady_clock::now() - started, std::chrono::seconds(2));
+    EXPECT_EQ(leaving.promptsDismissed(), 0);
 }
 
 /**
@@ -547,7 +581,7 @@ TEST(SecretServiceTest, TearingTheStoreDownCancelsAPromptStillWaitingOnTheUser) 
     EXPECT_EQ(firstFailure, "Secret Service: the keyring prompt was cancelled");
     EXPECT_EQ(secondFailure, "Secret Service: the keyring prompt was cancelled");
     EXPECT_EQ(unanswered.promptsShown(), 1);
-    EXPECT_TRUE(eventually([&] { return unanswered.promptsDismissed() == 2; }));
+    EXPECT_EQ(unanswered.promptsDismissed(), 2);
 }
 
 /**
@@ -565,7 +599,7 @@ TEST(SecretServiceTest, APromptWhoseCallIsNeverAnsweredIsDismissedOnTimeoutAndOn
 
     EXPECT_EQ(failureOf([&] { keyring->write(kToken, "secret"); }).rfind("Secret Service", 0), 0U);
     EXPECT_LT(steady_clock::now() - started, std::chrono::seconds(2));
-    EXPECT_TRUE(eventually([&] { return timingOut.promptsDismissed() == 1; }));
+    EXPECT_EQ(timingOut.promptsDismissed(), 1);
 
     FakeSecretService tornDown(behaving(withheld));
     auto store = std::make_unique<SecureStore>();
@@ -582,7 +616,7 @@ TEST(SecretServiceTest, APromptWhoseCallIsNeverAnsweredIsDismissedOnTimeoutAndOn
     store.reset();
     EXPECT_LT(steady_clock::now() - tearingDown, std::chrono::seconds(2));
     EXPECT_EQ(failure, "Secret Service: the keyring prompt was cancelled");
-    EXPECT_TRUE(eventually([&] { return tornDown.promptsDismissed() == 1; }));
+    EXPECT_EQ(tornDown.promptsDismissed(), 1);
 }
 
 /** A `Prompt` call the service fails dismisses the prompt and fails the call with the error's name. */
@@ -594,7 +628,7 @@ TEST(SecretServiceTest, APromptCallTheServiceFailsIsDismissedAndFailsTheCall) {
 
     EXPECT_EQ(failureOf([&] { connectTo(failing)->write(kToken, "secret"); }),
               "Secret Service Prompt: org.freedesktop.DBus.Error.Failed");
-    EXPECT_TRUE(eventually([&] { return failing.promptsDismissed() == 1; }));
+    EXPECT_EQ(failing.promptsDismissed(), 1);
     EXPECT_EQ(failing.itemCount(), 0U);
 }
 
@@ -606,6 +640,40 @@ TEST(SecretServiceTest, AnErrorFromTheServiceFailsTheCallWithItsName) {
 
     EXPECT_EQ(failureOf([&] { static_cast<void>(keyring->read(kToken)); }),
               "Secret Service SearchItems: org.freedesktop.DBus.Error.Failed");
+}
+
+/**
+ * #745: tearing the keyring down after the service stopped reading, with part of a call still waiting to be written,
+ * returns at once instead of waiting forever for the service to read it. The client's send buffer is shrunk to the
+ * smallest the kernel allows, so the call cannot fit in it on any host.
+ */
+TEST(SecretServiceTest, TearingDownAfterTheServiceStoppedReadingReturnsAtOnce) {
+    // Outlives `deaf`, whose closing end releases a teardown that hangs, so a regression fails here rather than hangs.
+    std::future<void> tearingDown;
+    FakeSecretService deaf(behaving([](FakeSecretService::Behavior& behavior) { behavior.lastMemberRead = "Unlock"; }));
+    sd_bus* client = nullptr;
+    const auto withASmallSendBuffer = [&client, open = deaf.opener()](sd_bus** bus) {
+        const int opened = open(bus);
+        const int smallest = 1;
+
+        client = *bus;
+        EXPECT_EQ(::setsockopt(sd_bus_get_fd(client), SOL_SOCKET, SO_SNDBUF, &smallest, sizeof(smallest)), 0);
+
+        return opened;
+    };
+    std::unique_ptr<SecretBackend> keyring =
+        SecretServiceBackend::connect(withASmallSendBuffer, kApplication, std::stop_token(), milliseconds(200));
+    const std::string largerThanTheSendBuffer(1 << 20, 'x');
+    std::uint64_t queued = 0;
+
+    EXPECT_EQ(
+        failureOf([&] { keyring->write(kToken, largerThanTheSendBuffer); }).rfind("Secret Service CreateItem: ", 0),
+        0U);
+    EXPECT_GE(sd_bus_get_n_queued_write(client, &queued), 0);
+    EXPECT_GT(queued, 0U);
+
+    tearingDown = std::async(std::launch::async, [stalled = std::move(keyring)]() mutable { stalled.reset(); });
+    EXPECT_EQ(tearingDown.wait_for(std::chrono::seconds(2)), std::future_status::ready);
 }
 
 /** The session's own connector reaches no keyring when the session bus it names does not exist. */
