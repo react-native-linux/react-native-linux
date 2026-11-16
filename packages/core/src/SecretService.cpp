@@ -83,9 +83,9 @@ struct PromptCompletion {
 };
 
 /**
- * Dismisses the prompt unless it completed, on every way out of `settle`, so no prompt outlives its call. The dismissal
- * is a call bounded by the bus's call timeout, not a queued message, so closing the bus needs no flush that a stalled
- * peer could hold forever.
+ * Dismisses the prompt unless it completed or its service left, on every way out of `settle`, so no prompt outlives its
+ * call. The dismissal is a call bounded by the bus's call timeout, not a queued message, so closing the bus needs no
+ * flush that a stalled peer could hold forever; a service that left gets none, since the call would start a new one.
  */
 struct PromptDismissal {
     PromptDismissal(sd_bus* bus, const std::string& prompt, const PromptCompletion& completion)
@@ -97,7 +97,7 @@ struct PromptDismissal {
     PromptDismissal& operator=(PromptDismissal&&) = delete;
 
     ~PromptDismissal() {
-        if (!completion.completed) {
+        if (!completion.completed && !completion.serviceLeft) {
             sd_bus_call_method(bus, kDestination, prompt.c_str(), kPromptInterface, "Dismiss", nullptr, nullptr, "");
         }
     }

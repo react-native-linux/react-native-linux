@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cerrno>
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <functional>
 #include <future>
@@ -35,7 +36,7 @@ constexpr char kCollection[] = "/org/freedesktop/secrets/collection/login";
 constexpr char kPrompt[] = "/org/freedesktop/secrets/prompt/1";
 constexpr char kSession[] = "/org/freedesktop/secrets/session/1";
 constexpr char kApplication[] = "org.example.app";
-constexpr milliseconds kDismissLatency(100);
+constexpr milliseconds kDismissLatency(20);
 
 const SecretLocation kToken{.service = "app", .key = "managed-relay-token"};
 
@@ -523,7 +524,10 @@ TEST(SecretServiceTest, APromptNobodyAnswersIsDismissedAndFailsTheCallAtTheTimeo
     EXPECT_EQ(unanswered.itemCount(), 0U);
 }
 
-/** A service that leaves the bus while its prompt is up fails the call at once instead of at the timeout. */
+/**
+ * A service that leaves the bus while its prompt is up fails the call at once instead of at the timeout, and is not
+ * told to dismiss it, since that call would start a new keyring and wait for it.
+ */
 TEST(SecretServiceTest, AServiceThatLeavesTheBusDuringItsPromptFailsTheCallAtOnce) {
     FakeSecretService leaving(behaving([](FakeSecretService::Behavior& behavior) {
         behavior.locked = true;
@@ -535,6 +539,7 @@ TEST(SecretServiceTest, AServiceThatLeavesTheBusDuringItsPromptFailsTheCallAtOnc
     EXPECT_EQ(failureOf([&] { keyring->write(kToken, "secret"); }),
               "Secret Service: the keyring service left the bus during its prompt");
     EXPECT_LT(steady_clock::now() - started, std::chrono::seconds(2));
+    EXPECT_EQ(leaving.promptsDismissed(), 0);
 }
 
 /**
@@ -628,18 +633,33 @@ TEST(SecretServiceTest, AnErrorFromTheServiceFailsTheCallWithItsName) {
 
 /**
  * #745: tearing the keyring down after the service stopped reading, with part of a call still waiting to be written,
- * returns at once instead of waiting forever for the service to read it.
+ * returns at once instead of waiting forever for the service to read it. The client's send buffer is shrunk to the
+ * smallest the kernel allows, so the call cannot fit in it on any host.
  */
 TEST(SecretServiceTest, TearingDownAfterTheServiceStoppedReadingReturnsAtOnce) {
     // Outlives `deaf`, whose closing end releases a teardown that hangs, so a regression fails here rather than hangs.
     std::future<void> tearingDown;
     FakeSecretService deaf(behaving([](FakeSecretService::Behavior& behavior) { behavior.lastMemberRead = "Unlock"; }));
-    std::unique_ptr<SecretBackend> keyring = connectTo(deaf, milliseconds(200));
-    const std::string largerThanTheSocketBuffer(16 << 20, 'x');
+    sd_bus* client = nullptr;
+    const auto withASmallSendBuffer = [&client, open = deaf.opener()](sd_bus** bus) {
+        const int opened = open(bus);
+        const int smallest = 1;
+
+        client = *bus;
+        EXPECT_EQ(::setsockopt(sd_bus_get_fd(client), SOL_SOCKET, SO_SNDBUF, &smallest, sizeof(smallest)), 0);
+
+        return opened;
+    };
+    std::unique_ptr<SecretBackend> keyring =
+        SecretServiceBackend::connect(withASmallSendBuffer, kApplication, std::stop_token(), milliseconds(200));
+    const std::string largerThanTheSendBuffer(1 << 20, 'x');
+    std::uint64_t queued = 0;
 
     EXPECT_EQ(
-        failureOf([&] { keyring->write(kToken, largerThanTheSocketBuffer); }).rfind("Secret Service CreateItem: ", 0),
+        failureOf([&] { keyring->write(kToken, largerThanTheSendBuffer); }).rfind("Secret Service CreateItem: ", 0),
         0U);
+    EXPECT_GE(sd_bus_get_n_queued_write(client, &queued), 0);
+    EXPECT_GT(queued, 0U);
 
     tearingDown = std::async(std::launch::async, [stalled = std::move(keyring)]() mutable { stalled.reset(); });
     EXPECT_EQ(tearingDown.wait_for(std::chrono::seconds(2)), std::future_status::ready);
