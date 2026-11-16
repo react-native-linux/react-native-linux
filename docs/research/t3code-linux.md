@@ -231,7 +231,7 @@ transitive package.
 | `@t3tools/mobile-review-diff-native` | `file:./modules/t3-review-diff` | tracked | #685 | review diff view; Linux renders it in JavaScript, no native code |
 | `@t3tools/mobile-terminal-native` | `file:./modules/t3-terminal` | tracked | #640 | terminal view |
 | `@react-native-menu/menu` | `^2.0.0` | tracked | #646 | 28 files: thread rows, list filter, composer |
-| `gt-react-native` | `11.4.18` | tracked | #647 | i18n root; `getEnforcing` throws at import |
+| `gt-react-native` | `11.4.18` | works | `packages/test-harness/e2e/gt-react-native.json` | i18n root; `GtReactNative` answers the `LANGUAGE` list then the locale as BCP 47 tags, gettext's order, and keeps the picked locale in the application's key-value file |
 | `expo-network` | `~58.0.4` | tracked | #648 | online and offline state of the connection layer; imports over `ExpoNetwork`, which answers `UNKNOWN` until the NetworkMonitor portal is read |
 | `expo-application` | `~58.1.2` | tracked | #648 | diagnostics screen; imports over `ExpoApplication`, whose identity is `null` until a `linux` build embeds it |
 | `expo-paste-input` | `^0.2.2` | tracked | #649 | both composer variants |

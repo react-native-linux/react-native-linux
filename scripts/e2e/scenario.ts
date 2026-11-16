@@ -5,6 +5,7 @@ import {
   readOptionalBoolean,
   readOptionalString,
   readOptionalStringArray,
+  readOptionalStringRecord,
   readPositiveInteger,
   readPositiveNumber,
   readString,
@@ -68,6 +69,8 @@ interface Scenario {
    * window reads the package's assets from `--assets`.
    */
   readonly devServer: boolean;
+  /** #647: variables set in the window's environment, such as a `LANG` the bundle's locale follows. */
+  readonly env: Readonly<Record<string, string>>;
   /** A negative control: the scenario passes only if grading it produces at least one failure. */
   readonly expectFailure: boolean;
   /** `rnl_inject`'s exit status 1 is accepted once the trace also carries this substring; `null` never accepts it. */
@@ -231,6 +234,7 @@ const parseScenario = (value: unknown, sourceName: string): Scenario => {
     automation: readAutomation(value, sourceName),
     bundle: readString(value["bundle"], "bundle", sourceName),
     devServer: readOptionalBoolean(value, "devServer", sourceName),
+    env: readOptionalStringRecord(value, "env", sourceName),
     expect: readStringArray(value["expect"], "expect", sourceName),
     expectFailure: readOptionalBoolean(value, "expectFailure", sourceName),
     expectsExitAfter: readOptionalString(value, "expectsExitAfter", sourceName),

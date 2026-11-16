@@ -9,6 +9,8 @@ namespace react_native_linux {
 namespace {
 
 constexpr const char* kInMemoryDatabase = ":memory:";
+constexpr int kBusyTimeoutMilliseconds = 1000;
+constexpr const char* kJournal = "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL";
 constexpr const char* kSchema =
     "CREATE TABLE IF NOT EXISTS entries (database_name TEXT NOT NULL, entry_key TEXT NOT NULL, "
     "entry_value TEXT NOT NULL, PRIMARY KEY (database_name, entry_key)) WITHOUT ROWID";
@@ -117,6 +119,8 @@ sqlite3& KeyValueStore::connection() {
     std::unique_ptr<sqlite3, ConnectionCloser> connection(opened);
 
     check(*connection, resultCode);
+    check(*connection, sqlite3_busy_timeout(connection.get(), kBusyTimeoutMilliseconds));
+    check(*connection, sqlite3_exec(connection.get(), kJournal, nullptr, nullptr, nullptr));
     check(*connection, sqlite3_exec(connection.get(), kSchema, nullptr, nullptr, nullptr));
     connection_ = std::move(connection);
 

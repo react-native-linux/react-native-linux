@@ -2,6 +2,7 @@
 
 #include "ExpoSecureStore.h"
 #include "PeerBus.h"
+#include "ScopedEnvironment.h"
 
 #include <cerrno>
 #include <chrono>
@@ -598,17 +599,10 @@ TEST(SecretServiceTest, TearingDownAfterTheServiceStoppedReadingReturnsAtOnce) {
 
 /** The session's own connector reaches no keyring when the session bus it names does not exist. */
 TEST(SecretServiceTest, TheSessionConnectorAnswersNullWithoutASessionBus) {
-    const char* const previous = std::getenv("DBUS_SESSION_BUS_ADDRESS");
-    const std::optional<std::string> saved = previous == nullptr ? std::nullopt : std::optional<std::string>(previous);
+    const react_native_linux::ScopedEnvironment sessionBus("DBUS_SESSION_BUS_ADDRESS",
+                                                           "unix:path=/nonexistent/rnl-secret-service-test");
 
-    ::setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent/rnl-secret-service-test", 1);
     EXPECT_EQ(react_native_linux::connectSessionKeyring(kApplication, std::stop_token()), nullptr);
-
-    if (saved.has_value()) {
-        ::setenv("DBUS_SESSION_BUS_ADDRESS", saved->c_str(), 1);
-    } else {
-        ::unsetenv("DBUS_SESSION_BUS_ADDRESS");
-    }
 }
 
 } // namespace

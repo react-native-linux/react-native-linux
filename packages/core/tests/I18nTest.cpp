@@ -1,6 +1,7 @@
 #include "I18n.h"
 
 #include "AsyncStorage.h"
+#include "ScopedEnvironment.h"
 
 #include <array>
 #include <cstdlib>
@@ -11,6 +12,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -42,29 +44,13 @@ TEST(I18nTest, TheLanguageSubtagDecidesWhetherALocaleIsRightToLeft) {
     }
 }
 
+/** Every locale variable unset for one test, whatever the process had. */
 class I18nEnvironmentTest : public ::testing::Test {
-protected:
-    void SetUp() override {
-        for (std::size_t index = 0; index < kVariables.size(); ++index) {
-            const char* value = std::getenv(kVariables.at(index));
-
-            saved_.at(index) = value == nullptr ? std::nullopt : std::optional<std::string>(value);
-            unsetenv(kVariables.at(index));
-        }
-    }
-
-    void TearDown() override {
-        for (std::size_t index = 0; index < kVariables.size(); ++index) {
-            if (saved_.at(index).has_value()) {
-                setenv(kVariables.at(index), saved_.at(index)->c_str(), 1);
-            } else {
-                unsetenv(kVariables.at(index));
-            }
-        }
-    }
-
-    static constexpr std::array<const char*, 3> kVariables{"LC_ALL", "LC_MESSAGES", "LANG"};
-    std::array<std::optional<std::string>, 3> saved_;
+private:
+    const react_native_linux::ScopedEnvironment lcAll_{"LC_ALL", nullptr};
+    const react_native_linux::ScopedEnvironment lcMessages_{"LC_MESSAGES", nullptr};
+    const react_native_linux::ScopedEnvironment lang_{"LANG", nullptr};
+    const react_native_linux::ScopedEnvironment language_{"LANGUAGE", nullptr};
 };
 
 TEST_F(I18nEnvironmentTest, TheFirstSetLocaleVariableWinsWithoutItsCodesetOrModifier) {
@@ -81,6 +67,48 @@ TEST_F(I18nEnvironmentTest, TheFirstSetLocaleVariableWinsWithoutItsCodesetOrModi
 
     setenv("LC_ALL", "en_US.UTF-8", 1);
     EXPECT_EQ(react_native_linux::localeFromEnvironment(), "en_US");
+}
+
+/**
+ * #647: `gt-react-native`'s `getNativeLocales`, the languages GNU gettext would show messages in, best first. The
+ * `LANGUAGE` list leads and the locale follows, all as BCP 47 tags, dropping anything not shaped like one. A `C` or
+ * `POSIX` entry in `LANGUAGE` ends the list there, untranslated, without the locale; a `C` or `POSIX` locale switches
+ * the list off.
+ */
+TEST_F(I18nEnvironmentTest, PreferredLanguagesFollowGettext) {
+    using react_native_linux::preferredLanguageTags;
+    using Tags = std::vector<std::string>;
+
+    EXPECT_EQ(preferredLanguageTags(), Tags{});
+
+    setenv("LANGUAGE", "de", 1);
+    setenv("LANG", "C.UTF-8", 1);
+    EXPECT_EQ(preferredLanguageTags(), Tags{});
+
+    setenv("LANG", "POSIX", 1);
+    EXPECT_EQ(preferredLanguageTags(), Tags{});
+
+    setenv("LANG", "de_DE.UTF-8", 1);
+    EXPECT_EQ(preferredLanguageTags(), (Tags{"de", "de-DE"}));
+
+    setenv("LANGUAGE", "pt_BR:pt::fr_FR.UTF-8@euro:de_DE", 1);
+    EXPECT_EQ(preferredLanguageTags(), (Tags{"pt-BR", "pt", "fr-FR", "de-DE"}));
+
+    setenv("LANGUAGE", "C:fr", 1);
+    EXPECT_EQ(preferredLanguageTags(), Tags{});
+
+    setenv("LANGUAGE", "es:C.UTF-8:fr", 1);
+    EXPECT_EQ(preferredLanguageTags(), Tags{"es"});
+
+    setenv("LANGUAGE", "it:POSIX:fr", 1);
+    EXPECT_EQ(preferredLanguageTags(), Tags{"it"});
+
+    setenv("LANGUAGE", "en__US:en_US_abcdefghi:x+y:en_US", 1);
+    EXPECT_EQ(preferredLanguageTags(), (Tags{"en-US", "de-DE"}));
+
+    unsetenv("LANGUAGE");
+    setenv("LC_MESSAGES", "sr_RS@latin", 1);
+    EXPECT_EQ(preferredLanguageTags(), Tags{"sr-RS"});
 }
 
 class I18nModelTest : public ::testing::Test {

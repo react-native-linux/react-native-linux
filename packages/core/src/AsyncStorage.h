@@ -16,6 +16,11 @@ namespace react_native_linux {
  * `$XDG_DATA_HOME/<app-id>/async-storage.sqlite`; until something calls `setDatabasePath` the store is SQLite's
  * `:memory:`, so a headless run never writes into the user's home directory.
  *
+ * The file is in WAL mode with `synchronous=NORMAL`, so a write costs one append rather than two fsyncs on the
+ * JavaScript thread, and a read sees the last commit while another connection writes. A connection that finds the
+ * file locked waits up to a second for it rather than throwing, because `gt-react-native` reads and writes inside a
+ * synchronous render.
+ *
  * `set` and `remove` are one transaction each, so a batch lands whole or not at all. A `nullopt` value in `set`
  * removes the key, which is what the module's `{ key, value: null }` entry means.
  *

@@ -1,5 +1,7 @@
 #include "SeededTestScheduler.h"
 
+#include "ScopedEnvironment.h"
+
 #include <chrono>
 #include <cstdlib>
 #include <gtest/gtest.h>
@@ -9,44 +11,6 @@
 namespace react_native_linux {
 
 namespace {
-
-/** Sets `SEED` and `ITERATIONS` for one test and restores whatever the surrounding process had. */
-class ScopedEnvironment final {
-public:
-    /** A null `value` unsets the variable for the duration of the test. */
-    ScopedEnvironment(const char* variableName, const char* value) : variableName_(variableName) {
-        const char* const previous = std::getenv(variableName);
-
-        if (previous != nullptr) {
-            previousValue_ = previous;
-            hadValue_ = true;
-        }
-
-        if (value == nullptr) {
-            unsetenv(variableName);
-        } else {
-            setenv(variableName, value, 1);
-        }
-    }
-
-    ScopedEnvironment(const ScopedEnvironment&) = delete;
-    ScopedEnvironment(ScopedEnvironment&&) = delete;
-    ScopedEnvironment& operator=(const ScopedEnvironment&) = delete;
-    ScopedEnvironment& operator=(ScopedEnvironment&&) = delete;
-
-    ~ScopedEnvironment() {
-        if (hadValue_) {
-            setenv(variableName_, previousValue_.c_str(), 1);
-        } else {
-            unsetenv(variableName_);
-        }
-    }
-
-private:
-    const char* variableName_;
-    std::string previousValue_;
-    bool hadValue_{false};
-};
 
 std::vector<int> executionOrderForSeed(std::uint64_t seed, int taskCount) {
     SeededTestScheduler scheduler(seed);

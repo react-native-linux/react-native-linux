@@ -1,0 +1,14 @@
+{
+  "name": "gt-react-native",
+  "bundle": "gt-react-native.tsx",
+  "ready": "gt-react-native: system de Einstellungen",
+  "frames": 900,
+  "env": { "LANG": "de_DE.UTF-8", "LANGUAGE": "", "LC_ALL": "", "LC_MESSAGES": "" },
+  "steps": ["sleep 2000"],
+  "expect": [
+    "gt-react-native: system de Einstellungen",
+    "gt-react-native: picked fr Réglages",
+    "[rnl-reload] reloaded",
+    "gt-react-native: restored fr Réglages"
+  ]
+}

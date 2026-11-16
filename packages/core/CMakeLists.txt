@@ -893,6 +893,7 @@ add_library(rnl_react_core STATIC
     src/FabricHost.cpp
     src/FantomRenderOutput.cpp
     src/FocusModel.cpp
+    src/GtReactNativeModule.cpp
     src/HermesJSRuntimeFactory.cpp
     src/HostTimerRegistry.cpp
     src/I18n.cpp

@@ -1,6 +1,7 @@
 #include "FreedesktopNotifications.h"
 
 #include "FakeNotificationDaemon.h"
+#include "ScopedEnvironment.h"
 #include "SocketPairBus.h"
 
 #include <cerrno>
@@ -132,20 +133,13 @@ TEST(FreedesktopNotificationsTest, AnswersNullWhenTheBusCannotBeOpened) {
 }
 
 TEST(FreedesktopNotificationsTest, TheSessionConnectorAnswersNullWithoutASessionBus) {
-    const char* previous = std::getenv("DBUS_SESSION_BUS_ADDRESS");
-    const std::string saved = previous == nullptr ? "" : previous;
+    const react_native_linux::ScopedEnvironment sessionBus("DBUS_SESSION_BUS_ADDRESS",
+                                                           "unix:path=/nonexistent/rnl-notifications-test-bus");
     Received received;
 
-    ::setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent/rnl-notifications-test-bus", 1);
     testing::internal::CaptureStderr();
     EXPECT_EQ(connectSessionNotifications(kApplication, recordInto(received)), nullptr);
     testing::internal::GetCapturedStderr();
-
-    if (previous == nullptr) {
-        ::unsetenv("DBUS_SESSION_BUS_ADDRESS");
-    } else {
-        ::setenv("DBUS_SESSION_BUS_ADDRESS", saved.c_str(), 1);
-    }
 }
 
 TEST(FreedesktopNotificationsTest, ShowsANotificationWithTheDefaultActionAndClosesIt) {

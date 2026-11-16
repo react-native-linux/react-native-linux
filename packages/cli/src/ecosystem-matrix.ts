@@ -144,7 +144,12 @@ const ecosystemMatrix: readonly EcosystemRow[] = [
     state: "blocked",
   },
   { flagshipVersion: "^2.0.0", issue: 646, packageName: "@react-native-menu/menu", state: "in progress" },
-  { flagshipVersion: "11.4.18", issue: 647, packageName: "gt-react-native", state: "in progress" },
+  {
+    flagshipVersion: "11.4.18",
+    packageName: "gt-react-native",
+    state: "works",
+    test: "packages/test-harness/e2e/gt-react-native.json",
+  },
   { flagshipVersion: "~58.0.4", issue: 648, packageName: "expo-network", state: "in progress" },
   { flagshipVersion: "~58.1.2", issue: 648, packageName: "expo-application", state: "in progress" },
   { flagshipVersion: "^0.2.2", issue: 649, packageName: "expo-paste-input", state: "blocked" },
