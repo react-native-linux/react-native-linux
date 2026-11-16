@@ -28,7 +28,21 @@ const KeyboardControllerNative = {
 
 const KeyboardEvents = { addListener: subscriptionThatNeverFires };
 
-const FocusedInputEvents = { addListener: subscriptionThatNeverFires };
+const layoutSynchronizedListeners = new Set<() => void>();
+
+const FocusedInputEvents = {
+  addListener: (name: string, listener: () => void): Pick<EmitterSubscription, "remove"> => {
+    if (name !== "layoutDidSynchronize") {
+      return subscriptionThatNeverFires();
+    }
+    layoutSynchronizedListeners.add(listener);
+    return {
+      remove: () => {
+        layoutSynchronizedListeners.delete(listener);
+      },
+    };
+  },
+};
 
 const WindowDimensionsEvents = {
   addListener: (_name: "windowDidResize", listener: (size: WindowSize) => void): Pick<EmitterSubscription, "remove"> =>
@@ -37,7 +51,16 @@ const WindowDimensionsEvents = {
     }),
 };
 
-const KeyboardControllerViewCommands = { synchronizeFocusedInputLayout: doNothing };
+/** KeyboardProvider's `update()` subscribes to `layoutDidSynchronize` only after it sends this command. */
+const KeyboardControllerViewCommands = {
+  synchronizeFocusedInputLayout: (): void => {
+    queueMicrotask(() => {
+      for (const listener of layoutSynchronizedListeners) {
+        listener();
+      }
+    });
+  },
+};
 
 export {
   View as ClippingScrollView,

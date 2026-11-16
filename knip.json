@@ -17,7 +17,8 @@
     "packages/core": {
       "entry": ["goldens/*.spec.ts", "scripts/*.ts", "src-linux/**/*.linux.ts"],
       "project": ["goldens/**/*.ts", "scripts/**/*.ts", "src-linux/**/*.ts"],
-      "ignoreBinaries": ["cmake"]
+      "ignoreBinaries": ["cmake"],
+      "ignoreDependencies": ["react-native-keyboard-controller"]
     },
     "packages/test-harness": {
       "entry": ["index.ts", "scripts/*.ts"],

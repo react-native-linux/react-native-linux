@@ -9,6 +9,7 @@ import {
   KeyboardStickyView,
   useKeyboardHandler,
   useKeyboardState,
+  useReanimatedFocusedInput,
   useReanimatedKeyboardAnimation,
 } from "react-native-keyboard-controller";
 import { useAnimatedReaction } from "react-native-reanimated";
@@ -90,12 +91,24 @@ const inputEvents = (name: string): Partial<React.ComponentProps<typeof TextInpu
   onLayout: reportFrame(`${name} input`),
 });
 
+const AvoidingInput = (): React.JSX.Element => {
+  const { update } = useReanimatedFocusedInput();
+  const onFocus = (): void => {
+    report("avoiding focus");
+    update()
+      .then(() => report("focused input update resolved"))
+      .catch((error: unknown) => report(`focused input update failed ${String(error)}`));
+  };
+
+  return <TextInput {...inputEvents("avoiding")} onFocus={onFocus} style={styles.input} />;
+};
+
 const KeyboardControllerApp = (): React.JSX.Element => (
   <KeyboardProvider>
     <View onLayout={() => report("mounted")} style={styles.root}>
       <KeyboardStatus />
       <KeyboardAvoidingView automaticOffset behavior="padding" onLayout={reportFrame("avoiding")} style={styles.avoiding}>
-        <TextInput {...inputEvents("avoiding")} style={styles.input} />
+        <AvoidingInput />
       </KeyboardAvoidingView>
       <KeyboardStickyView onLayout={reportFrame("sticky")}>
         <TextInput {...inputEvents("sticky")} onSubmitEditing={dismiss} style={styles.input} submitBehavior="submit" />

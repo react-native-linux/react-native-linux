@@ -4,15 +4,15 @@
   "ready": "keyboard-controller: mounted",
   "frames": 900,
   "steps": [
-    "sleep 500",
+    "await keyboard-controller: reanimated height=0",
     "click 200 630",
-    "sleep 300",
+    "await keyboard-controller: focused input update resolved",
     "type Hi",
-    "sleep 300",
+    "await keyboard-controller: avoiding text=Hi",
     "click 200 690",
-    "sleep 300",
+    "await keyboard-controller: sticky focus",
     "type Yo",
-    "sleep 300",
+    "await keyboard-controller: sticky text=Yo",
     "key Return press",
     "key Return release",
     "sleep 500"
@@ -24,6 +24,7 @@
     "keyboard-controller: state height=0 visible=false isVisible()=false",
     "keyboard-controller: reanimated height=0",
     "keyboard-controller: avoiding focus",
+    "keyboard-controller: focused input update resolved",
     "keyboard-controller: avoiding text=Hi",
     "keyboard-controller: avoiding blur",
     "keyboard-controller: sticky focus",
@@ -31,5 +32,5 @@
     "keyboard-controller: dismissed isVisible()=false",
     "keyboard-controller: sticky blur"
   ],
-  "reject": ["shifted", "keyboard-controller: event", "keyboard-controller: handler", "dismiss failed"]
+  "reject": ["shifted", "keyboard-controller: event", "keyboard-controller: handler", "dismiss failed", "update failed"]
 }

@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { readFileSync } from "node:fs";
 
 type DimensionsChange = (change: { window: { height: number; width: number } }) => void;
 
@@ -46,12 +49,9 @@ describe("react-native-keyboard-controller's linux native module", () => {
 });
 
 describe("react-native-keyboard-controller's linux events", () => {
-  it.each([
-    ["KeyboardEvents", bindings.KeyboardEvents],
-    ["FocusedInputEvents", bindings.FocusedInputEvents],
-  ])("never fires a %s listener, and removes it", (_name, events) => {
+  it("never fires a keyboard listener, and removes it", () => {
     expect(() => {
-      events.addListener().remove();
+      bindings.KeyboardEvents.addListener().remove();
     }).not.toThrow();
   });
 
@@ -72,11 +72,29 @@ describe("react-native-keyboard-controller's linux events", () => {
     expect(dimensions.addEventListener).toHaveBeenCalledWith("change", expect.any(Function));
     expect(listener).toHaveBeenCalledWith({ height: 600, width: 800 });
   });
+});
 
-  it("synchronizes no focused input layout", () => {
-    expect(() => {
-      bindings.KeyboardControllerViewCommands.synchronizeFocusedInputLayout();
-    }).not.toThrow();
+describe("react-native-keyboard-controller's linux focused input events", () => {
+  it("completes a layout synchronization asynchronously, for the listener KeyboardProvider subscribes after it", async () => {
+    const listener = vi.fn();
+
+    bindings.KeyboardControllerViewCommands.synchronizeFocusedInputLayout();
+    const subscription = bindings.FocusedInputEvents.addListener("layoutDidSynchronize", listener);
+    expect(listener).not.toHaveBeenCalled();
+    await Promise.resolve();
+    subscription.remove();
+
+    expect(listener).toHaveBeenCalledOnce();
+  });
+
+  it.each(["focusDidSet", "layoutDidSynchronize"])("never calls a removed %s listener", async (name) => {
+    const listener = vi.fn();
+
+    bindings.FocusedInputEvents.addListener(name, listener).remove();
+    bindings.KeyboardControllerViewCommands.synchronizeFocusedInputLayout();
+    await Promise.resolve();
+
+    expect(listener).not.toHaveBeenCalled();
   });
 });
 
@@ -91,5 +109,20 @@ describe("react-native-keyboard-controller's linux views", () => {
     "RCTOverKeyboardView",
   ] as const)("mounts %s as a View", (name) => {
     expect(bindings[name]).toBe(view);
+  });
+});
+
+describe("react-native-keyboard-controller's linux bindings", () => {
+  it("export every binding the library's own no-native fallback exports, so a library upgrade that adds one fails here", () => {
+    const libraryDirectory = path.dirname(
+      createRequire(import.meta.url).resolve("react-native-keyboard-controller/package.json"),
+    );
+    const fallbackSource = readFileSync(path.join(libraryDirectory, "src", "bindings.ts"), "utf8");
+    const fallbackExports = Array.from(
+      fallbackSource.matchAll(/^export const (?<name>\w+)/gmu),
+      (match) => match.groups?.["name"],
+    );
+
+    expect(Object.keys(bindings).toSorted()).toStrictEqual(fallbackExports.toSorted());
   });
 });

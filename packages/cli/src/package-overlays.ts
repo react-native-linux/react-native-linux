@@ -14,8 +14,11 @@ const coreDirectory = path.dirname(createRequire(import.meta.url).resolve("@reac
  * Expo's own JavaScript runs unchanged over this platform's TurboModules and Fabric components.
  *
  * react-native-keyboard-controller's native bindings take this platform's in their place (#279): a desktop has no soft
- * keyboard, so its keyboard height stays zero, its keyboard events never fire, its views are Views, and `dismiss`
- * blurs the focused input. The rest of the library, T3 Code's patches to it included, runs as published.
+ * keyboard, so its keyboard height stays zero, its keyboard events never fire, a focused input layout synchronization
+ * completes asynchronously, its views are Views, and `dismiss` blurs the focused input. The rest of the library,
+ * T3 Code's patches to it included, runs as published. The overlay copies the export list of the library's private
+ * `src/bindings.native.ts`, so a library upgrade that adds a binding would leave it undefined in a linux bundle until
+ * something mounts it; the overlay's spec compares its exports with the library's `src/bindings.ts` to fail first.
  */
 const linuxPackageOverlayIndex: Readonly<Record<string, string>> = {
   "expo-modules-core/build/polyfill/index": path.join(
