@@ -175,6 +175,13 @@ public:
         return promptsDismissed_;
     }
 
+    /** Dismissals that let the bus start the service to deliver them, which no dismissal should. */
+    [[nodiscard]] int autoStartingDismissals() {
+        const std::lock_guard<std::mutex> lock(mutex_);
+
+        return autoStartingDismissals_;
+    }
+
     [[nodiscard]] std::string lastLabel() {
         const std::lock_guard<std::mutex> lock(mutex_);
 
@@ -235,6 +242,7 @@ private:
             }
         } else if (member == "Dismiss") {
             ++promptsDismissed_;
+            autoStartingDismissals_ += sd_bus_message_get_auto_start(message);
             sd_bus_reply_method_return(message, "");
         } else if (member == "SearchItems") {
             replyWithItems(message, readAttributes(message));
@@ -348,6 +356,7 @@ private:
     std::map<std::string, Item> items_;
     int promptsShown_{0};
     int promptsDismissed_{0};
+    int autoStartingDismissals_{0};
     std::string lastLabel_;
     std::unique_ptr<sd_bus, BusClose> server_;
     int clientDescriptor_{-1};
@@ -507,7 +516,8 @@ TEST(SecretServiceTest, AKeyringThatFailsAnswersNonsenseOrStallsFailsTheCallInst
 
 /**
  * A prompt nobody answers gives up at the timeout: the call fails, and the service has dismissed the prompt by the
- * time it does, rather than leave it on screen for a call that already failed.
+ * time it does, rather than leave it on screen for a call that already failed. The dismissal does not auto-start the
+ * service, so one that left unseen is not started again for it.
  */
 TEST(SecretServiceTest, APromptNobodyAnswersIsDismissedAndFailsTheCallAtTheTimeout) {
     FakeSecretService unanswered(behaving([](FakeSecretService::Behavior& behavior) {
@@ -521,6 +531,7 @@ TEST(SecretServiceTest, APromptNobodyAnswersIsDismissedAndFailsTheCallAtTheTimeo
     EXPECT_GE(steady_clock::now() - started, milliseconds(200));
     EXPECT_LT(steady_clock::now() - started, std::chrono::seconds(2));
     EXPECT_EQ(unanswered.promptsDismissed(), 1);
+    EXPECT_EQ(unanswered.autoStartingDismissals(), 0);
     EXPECT_EQ(unanswered.itemCount(), 0U);
 }
 
