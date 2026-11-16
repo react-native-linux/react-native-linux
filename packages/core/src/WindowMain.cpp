@@ -1434,7 +1434,7 @@ int main(int argc, char** argv) {
                 session.emplace(parsedArguments.bundlePath.value(),
                                 react_native_linux::WindowSize{chrome.content.width, chrome.content.height},
                                 outputScaleOf(window), asyncStorageDatabasePath(parsedArguments.applicationIdentifier),
-                                ownActivationUrl, parsedArguments.assetsDirectory);
+                                ownActivationUrl, parsedArguments.assetsDirectory, window.toplevelState());
 
                 // --ime-debug owns the text input by hand, so focus must not also drive it: the two would race to
                 // enable and disable the same object. Without that flag, focus is the only thing that touches it.

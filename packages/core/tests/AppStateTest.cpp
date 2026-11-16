@@ -17,17 +17,17 @@ using react_native_linux::nameOfAppStatus;
 using react_native_linux::ToplevelState;
 
 constexpr AppStateSnapshot kActive{.status = AppStatus::Active, .isFocused = true};
-constexpr AppStateSnapshot kInactive{.status = AppStatus::Inactive, .isFocused = false};
+constexpr AppStateSnapshot kBlurred{.status = AppStatus::Active, .isFocused = false};
+constexpr AppStateSnapshot kBackground{.status = AppStatus::Background, .isFocused = false};
 
 TEST(AppStateTest, AnActivatedWindowIsActiveAndFocused) {
     EXPECT_EQ(appStateOf(ToplevelState{.activated = true}), kActive);
 }
 
-TEST(AppStateTest, ADeactivatedWindowIsInactiveAndBlurred) { EXPECT_EQ(appStateOf(ToplevelState{}), kInactive); }
+TEST(AppStateTest, ADeactivatedWindowIsStillActiveButBlurred) { EXPECT_EQ(appStateOf(ToplevelState{}), kBlurred); }
 
 TEST(AppStateTest, ASuspendedWindowIsBackgroundWhateverItsActivation) {
-    EXPECT_EQ(appStateOf(ToplevelState{.suspended = true}),
-              (AppStateSnapshot{.status = AppStatus::Background, .isFocused = false}));
+    EXPECT_EQ(appStateOf(ToplevelState{.suspended = true}), kBackground);
     EXPECT_EQ(appStateOf(ToplevelState{.activated = true, .suspended = true}),
               (AppStateSnapshot{.status = AppStatus::Background, .isFocused = true}));
 }
@@ -38,7 +38,6 @@ TEST(AppStateTest, OtherWindowStatesDoNotChangeTheAnswer) {
 
 TEST(AppStateTest, StatusNamesAreAppStateStatusValues) {
     EXPECT_EQ(nameOfAppStatus(AppStatus::Active), "active");
-    EXPECT_EQ(nameOfAppStatus(AppStatus::Inactive), "inactive");
     EXPECT_EQ(nameOfAppStatus(AppStatus::Background), "background");
 }
 
@@ -63,8 +62,8 @@ TEST(AppStateModelTest, NotifiesOnlyWhenTheAnswerChanges) {
 
     ASSERT_EQ(changes.size(), 1U);
     EXPECT_EQ(changes[0].first, kActive);
-    EXPECT_EQ(changes[0].second, kInactive);
-    EXPECT_EQ(model.current(), kInactive);
+    EXPECT_EQ(changes[0].second, kBlurred);
+    EXPECT_EQ(model.current(), kBlurred);
 }
 
 TEST(AppStateModelTest, WithNoChangeListenerAChangeStillUpdatesTheState) {
@@ -72,10 +71,22 @@ TEST(AppStateModelTest, WithNoChangeListenerAChangeStillUpdatesTheState) {
 
     model.onToplevelStateChanged(ToplevelState{});
 
-    EXPECT_EQ(model.current(), kInactive);
+    EXPECT_EQ(model.current(), kBlurred);
 }
 
-// The TSan half of the threading contract: the frame thread toggles activation as fast as it can while the
+TEST(AppStateModelTest, SeedingSetsTheStateWithoutNotifying) {
+    AppStateModel model;
+    int notifications = 0;
+
+    model.setChangeListener([&notifications](const AppStateSnapshot&, const AppStateSnapshot&) { ++notifications; });
+    model.seed(ToplevelState{.suspended = true});
+    model.onToplevelStateChanged(ToplevelState{.suspended = true});
+
+    EXPECT_EQ(model.current(), kBackground);
+    EXPECT_EQ(notifications, 0);
+}
+
+// The TSan half of the threading contract: the frame thread toggles suspension as fast as it can while the
 // JavaScript thread reads `current`, as `getConstants` and `getCurrentAppState` do. The listener runs on the writer,
 // and with one writer it sees every transition in order, so the alternation it records can never repeat a state.
 TEST(AppStateModelTest, AFrameThreadWriterAndAJavaScriptThreadReaderDoNotRace) {
@@ -93,7 +104,9 @@ TEST(AppStateModelTest, AFrameThreadWriterAndAJavaScriptThreadReaderDoNotRace) {
         startLatch.arrive_and_wait();
 
         for (int transition = 0; transition < kTransitions; ++transition) {
-            model.onToplevelStateChanged(ToplevelState{.activated = transition % 2 == 1});
+            const bool isShown = transition % 2 == 1;
+
+            model.onToplevelStateChanged(ToplevelState{.activated = isShown, .suspended = !isShown});
         }
 
         isWriting = false;
@@ -111,7 +124,7 @@ TEST(AppStateModelTest, AFrameThreadWriterAndAJavaScriptThreadReaderDoNotRace) {
 
     ASSERT_EQ(notified.size(), static_cast<size_t>(kTransitions));
     for (size_t index = 0; index < notified.size(); ++index) {
-        EXPECT_EQ(notified[index], index % 2 == 0 ? AppStatus::Inactive : AppStatus::Active) << index;
+        EXPECT_EQ(notified[index], index % 2 == 0 ? AppStatus::Background : AppStatus::Active) << index;
     }
 }
 

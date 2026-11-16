@@ -10,16 +10,16 @@
   ],
   "steps": ["sleep 2000"],
   "expect": [
+    "app-state: initial active",
     "app-state: committed surface 1",
     "activated=0 suspended=0",
-    "app-state: change inactive",
     "app-state: focus false",
     "activated=0 suspended=1",
-    "app-state: change background",
+    "app-state: change 1 background",
     "activated=0 suspended=0",
-    "app-state: change inactive",
+    "app-state: change 2 active",
     "activated=1 suspended=0",
-    "app-state: change active",
     "app-state: focus true"
-  ]
+  ],
+  "reject": ["app-state: change 3", "inactive"]
 }

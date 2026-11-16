@@ -81,7 +81,7 @@ class WindowSession final {
 public:
     WindowSession(const std::string& bundlePath, WindowSize size, double scale,
                   const std::string& asyncStorageDatabasePath, std::optional<std::string> initialActivationUrl,
-                  std::string assetsDirectory);
+                  std::string assetsDirectory, const ToplevelState& initialToplevelState);
     WindowSession(const WindowSession&) = delete;
     WindowSession(WindowSession&&) = delete;
     WindowSession& operator=(const WindowSession&) = delete;

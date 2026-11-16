@@ -32,12 +32,12 @@ globalThis.nativeModuleProxy.AppState.getCurrentAppState((current) => {
 )JAVASCRIPT";
 
 /**
- * #765: `AppState` from JavaScript. It starts `active`, and the window's activation, written on this thread as the
- * frame thread writes it, reaches the JavaScript thread as `appStateDidChange` and `appStateFocusChange` in the
- * order the window changed: a deactivation, a suspension, a resume that is still deactivated, and a reactivation.
- * A configure that changes nothing `AppState` reports emits nothing.
+ * #765: `AppState` from JavaScript. It starts `active`, and the window's state, written on this thread as the frame
+ * thread writes it, reaches the JavaScript thread in the order the window changed: losing activation is `blur` alone,
+ * a suspension is `background`, a resume is `active` again, and a reactivation is `focus`. A configure that changes
+ * nothing `AppState` reports emits nothing.
  */
-TEST(AppStateModuleTest, ReportsTheWindowActivationAsChangeAndFocusEvents) {
+TEST(AppStateModuleTest, ReportsSuspensionAsChangeAndActivationAsFocus) {
     ReactHost reactHost;
 
     reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>(kAppStateProbe), "AppStateModuleTest.js");
@@ -53,9 +53,25 @@ TEST(AppStateModuleTest, ReportsTheWindowActivationAsChangeAndFocusEvents) {
     reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>(kAfterChanges), "AppStateAfter.js");
 
     EXPECT_EQ(awaitGlobalString(reactHost, "appStateResult"),
-              R"({"initialAppState":"active","events":["change inactive","focus false","change background",)"
-              R"("change inactive","change active","focus true"],"currentAppState":"active",)"
-              R"("afterChanges":"active"})");
+              R"({"initialAppState":"active","events":["focus false","change background","change active",)"
+              R"("focus true"],"currentAppState":"active","afterChanges":"active"})");
+    EXPECT_FALSE(reactHost.hasReportedFatalError());
+}
+
+/**
+ * A window that is already suspended when its session starts: `WindowSession` seeds the model before the bundle, so
+ * the first script reads `background` from both the constants and `getCurrentAppState`, and no change event follows.
+ */
+TEST(AppStateModuleTest, ASeededSuspendedWindowStartsInTheBackground) {
+    ReactHost reactHost;
+
+    reactHost.appState().seed(ToplevelState{.suspended = true});
+    reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>(kAppStateProbe), "AppStateModuleTest.js");
+    reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>(kAfterChanges), "AppStateAfter.js");
+
+    EXPECT_EQ(awaitGlobalString(reactHost, "appStateResult"),
+              R"({"initialAppState":"background","events":[],"currentAppState":"background",)"
+              R"("afterChanges":"background"})");
     EXPECT_FALSE(reactHost.hasReportedFatalError());
 }
 

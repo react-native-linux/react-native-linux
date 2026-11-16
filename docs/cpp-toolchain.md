@@ -784,13 +784,14 @@ and coalesces a burst of them into one pending change, mirroring `DimensionsSour
 The same class now also counts `wl_surface.enter`/`.leave` (`outputEnterCount`/`outputLeaveCount`) and forwards
 `WaylandSeat::hasKeyboardFocus`, which `wl_keyboard.enter`/`.leave` set directly.
 
-**Activation and suspension reach JavaScript as `AppState` (#765).** `WindowSession::deliverToplevelState` hands
-`toplevelState()` to `AppStateModel` every frame, and the model emits only when its answer changes: an activated
-window is `active`, a deactivated one `inactive`, and a `suspended` one (xdg-shell version 6, which the window
-binds) `background` — react-native-macos's mapping for a resigned and a hidden application. `appStateDidChange`
-carries the status and `appStateFocusChange` the activated bit, which `AppState.js` turns into `change` and
-`focus`/`blur`. The model is written on the frame thread and read on the JavaScript thread under one mutex, and its
-events reach JavaScript through the module's `CallInvoker`. Maximize/fullscreen and window-level keyboard focus
+**Activation and suspension reach JavaScript as `AppState` (#765).** `WindowSession` seeds `AppStateModel` with
+`toplevelState()` before the bundle loads, then `deliverToplevelState` hands it the state every frame, and the
+model emits only when its answer changes. The status is visibility, as react-native-web's is: a `suspended` window
+(xdg-shell version 6, which the window binds) is `background` and every other window `active`. Activation is focus
+alone — `appStateFocusChange`, which `AppState.js` turns into `focus`/`blur` — and never `inactive`, because apps
+written for iOS pause media and reconnect around `inactive`, and a desktop window loses focus on every alt-tab. The
+model is written on the frame thread and read on the JavaScript thread under one mutex, and its events reach
+JavaScript through the module's `CallInvoker`. Maximize/fullscreen and window-level keyboard focus
 still have no JavaScript landing spot; `--window-debug` on `rnl_window` prints every transition this section
 describes to stdout, which is the manual, real-compositor proof for those. The `app-state` e2e scenario replays a
 deactivation, a suspension and a reactivation through `--inject-window-sequence`'s `{Deactivated}`, `{Suspended}`,

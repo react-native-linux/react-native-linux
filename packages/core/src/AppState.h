@@ -8,17 +8,19 @@
 
 namespace react_native_linux {
 
-/** The `AppStateStatus` values a desktop window can be in; `extension` and `unknown` have no Linux meaning. */
-enum class AppStatus { Active, Inactive, Background };
+/**
+ * The `AppStateStatus` values a desktop window reports. `inactive` is not one of them: on iOS it is a brief
+ * transition, and apps written for iOS pause media and reconnect around it, which a desktop window losing focus on
+ * every alt-tab must not trigger. `extension` and `unknown` have no Linux meaning.
+ */
+enum class AppStatus { Active, Background };
 
 /**
  * What `AppState` reports for one window: its `appStateDidChange` status and its `appStateFocusChange` focus.
  *
- * The mapping is react-native-macos's (`RCTAppState.mm`), the one desktop platform that reports more than
- * `active`: a window that is open but not the one the user is typing into is `inactive`, as `NSApplication`'s
- * resign-active is, and a window the compositor says nobody can see — `xdg_toplevel`'s `suspended` state, the
- * Wayland counterpart of a hidden application — is `background`. Focus is the `activated` bit alone, so a suspended
- * window that is still activated stays focused.
+ * The status is visibility only, as react-native-web's is: a window the compositor says nobody can see —
+ * `xdg_toplevel`'s `suspended` state — is `background`, and any other window is `active`, focused or not. Focus is
+ * the `activated` bit alone, which `AppState.js` reports as `focus` and `blur`.
  */
 struct AppStateSnapshot {
     AppStatus status{AppStatus::Active};
@@ -46,12 +48,17 @@ std::string_view nameOfAppStatus(AppStatus status) noexcept;
  * listener runs after it is released, still on the frame thread. The listener only queues device events on the
  * module's `CallInvoker`, which is the hop onto the JavaScript thread; one writer is what keeps those events in
  * the order the window changed state.
+ *
+ * `seed` is the same write without the listener: `WindowSession` calls it with the window's state before the bundle
+ * loads, so the first `getConstants` already answers for that window and nothing announces a change no script saw.
  */
 class AppStateModel {
 public:
     using ChangeListener = std::function<void(const AppStateSnapshot& previous, const AppStateSnapshot& next)>;
 
     AppStateSnapshot current() const;
+
+    void seed(const ToplevelState& state);
 
     void onToplevelStateChanged(const ToplevelState& state);
 

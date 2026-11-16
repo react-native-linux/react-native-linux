@@ -5,26 +5,24 @@
 namespace react_native_linux {
 
 AppStateSnapshot appStateOf(const ToplevelState& state) noexcept {
-    if (state.suspended) {
-        return AppStateSnapshot{.status = AppStatus::Background, .isFocused = state.activated};
-    }
-
-    return AppStateSnapshot{.status = state.activated ? AppStatus::Active : AppStatus::Inactive,
+    return AppStateSnapshot{.status = state.suspended ? AppStatus::Background : AppStatus::Active,
                             .isFocused = state.activated};
 }
 
 std::string_view nameOfAppStatus(AppStatus status) noexcept {
-    if (status == AppStatus::Active) {
-        return "active";
-    }
-
-    return status == AppStatus::Inactive ? "inactive" : "background";
+    return status == AppStatus::Active ? "active" : "background";
 }
 
 AppStateSnapshot AppStateModel::current() const {
     const std::lock_guard<std::mutex> lock(mutex_);
 
     return current_;
+}
+
+void AppStateModel::seed(const ToplevelState& state) {
+    const std::lock_guard<std::mutex> lock(mutex_);
+
+    current_ = appStateOf(state);
 }
 
 void AppStateModel::onToplevelStateChanged(const ToplevelState& state) {
