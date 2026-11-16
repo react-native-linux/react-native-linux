@@ -48,6 +48,7 @@ const scopedSourcePaths: readonly string[] = [
   "packages/core/src/EllipsizeSearch.cpp",
   "packages/core/src/ExpoAsset.cpp",
   "packages/core/src/ExpoCrypto.cpp",
+  "packages/core/src/ExpoFetch.cpp",
   "packages/core/src/ExpoFileSystem.cpp",
   "packages/core/src/ExpoSQLite.cpp",
   "packages/core/src/FocusModel.cpp",

@@ -44,9 +44,9 @@ HeaderList toHeaderList(const http::Headers& headers) {
     return list;
 }
 
-std::optional<std::string> contentTypeOf(const http::Headers& headers) {
+std::optional<std::string> headerValue(const http::Headers& headers, std::string_view lowercaseName) {
     for (const auto& [name, value] : headers) {
-        if (std::ranges::equal(name, std::string_view("content-type"),
+        if (std::ranges::equal(name, lowercaseName,
                                [](char left, char right) { return std::tolower(left) == right; })) {
             return value;
         }
@@ -64,6 +64,8 @@ struct CurlHttpClient::Transfer {
     Transfer() = default;
 
     http::NetworkCallbacks callbacks;
+    OnResponseUrl onResponseUrl;
+    bool followsRedirects{true};
     HeaderList requestHeaders{nullptr, &curl_slist_free_all};
     MimeHandle mime{nullptr, &curl_mime_free};
     std::string requestBody;
@@ -86,6 +88,14 @@ struct CurlHttpClient::Transfer {
         long statusCode = 0;
         curl_easy_getinfo(easy.get(), CURLINFO_RESPONSE_CODE, &statusCode);
 
+        if (onResponseUrl) {
+            const char* effectiveUrl = nullptr;
+            long redirectCount = 0;
+            curl_easy_getinfo(easy.get(), CURLINFO_EFFECTIVE_URL, &effectiveUrl);
+            curl_easy_getinfo(easy.get(), CURLINFO_REDIRECT_COUNT, &redirectCount);
+            onResponseUrl(effectiveUrl, redirectCount > 0);
+        }
+
         if (callbacks.onResponse) {
             callbacks.onResponse(static_cast<uint16_t>(statusCode), responseHeaders);
         }
@@ -96,6 +106,28 @@ struct CurlHttpClient::Transfer {
         curl_easy_getinfo(easy.get(), CURLINFO_CONTENT_LENGTH_DOWNLOAD_T, &length);
 
         return length;
+    }
+
+    /**
+     * A response's headers have ended, at the blank line. The response is delivered if it is the final one: neither
+     * an interim 1xx response, a proxy's CONNECT answer (whose response code is 0) nor a redirect libcurl is about to
+     * follow, which is a 3xx with a non-empty Location while following is on. Delivering the response here rather
+     * than at the first body byte is what lets a stream whose server flushes its headers and then waits resolve its
+     * request.
+     */
+    void endHeaders() {
+        constexpr long kFirstFinalStatus = 200;
+        constexpr long kStatusClassDivisor = 100;
+        constexpr long kRedirectStatusClass = 3;
+        long statusCode = 0;
+        curl_easy_getinfo(easy.get(), CURLINFO_RESPONSE_CODE, &statusCode);
+
+        const bool redirects = followsRedirects && statusCode / kStatusClassDivisor == kRedirectStatusClass &&
+                               !headerValue(responseHeaders, "location").value_or("").empty();
+
+        if (statusCode >= kFirstFinalStatus && !redirects) {
+            deliverResponseOnce();
+        }
     }
 
     void receive(const char* data, size_t size) {
@@ -146,6 +178,8 @@ size_t onHeaderLine(char* data, size_t size, size_t count, void* userData) {
         transfer.responseHeaders.clear();
     } else if (const size_t colon = line.find(':'); colon != std::string_view::npos) {
         transfer.responseHeaders.emplace_back(trim(line.substr(0, colon)), trim(line.substr(colon + 1)));
+    } else if (line.find_first_not_of("\r\n") == std::string_view::npos) {
+        transfer.endHeaders();
     }
 
     return size * count;
@@ -191,7 +225,8 @@ std::optional<std::string> attachFormData(CurlHttpClient::Transfer& transfer, co
             }
         }
 
-        if (const std::optional<std::string> contentType = contentTypeOf(field.headers); contentType.has_value()) {
+        if (const std::optional<std::string> contentType = headerValue(field.headers, "content-type");
+            contentType.has_value()) {
             curl_mime_type(part, contentType->c_str());
         }
     }
@@ -292,6 +327,26 @@ std::unique_ptr<http::IRequestToken> CurlHttpClient::sendRequest(http::NetworkCa
     transfer->callbacks = std::move(callbacks);
     configure(*transfer, method, url, headers, timeout);
 
+    return enqueue(std::move(transfer), body);
+}
+
+std::unique_ptr<http::IRequestToken> CurlHttpClient::sendFetchRequest(http::NetworkCallbacks&& callbacks,
+                                                                      OnResponseUrl onResponseUrl, bool followRedirects,
+                                                                      const std::string& method, const std::string& url,
+                                                                      const http::Headers& headers,
+                                                                      const http::Body& body) {
+    std::shared_ptr<Transfer> transfer = std::make_shared<Transfer>();
+    transfer->callbacks = std::move(callbacks);
+    transfer->onResponseUrl = std::move(onResponseUrl);
+    transfer->followsRedirects = followRedirects;
+    configure(*transfer, method, url, headers, 0);
+    curl_easy_setopt(transfer->easy.get(), CURLOPT_FOLLOWLOCATION, followRedirects ? 1L : 0L);
+
+    return enqueue(std::move(transfer), body);
+}
+
+std::unique_ptr<http::IRequestToken> CurlHttpClient::enqueue(std::shared_ptr<Transfer> transfer,
+                                                             const http::Body& body) {
     transfer->setupError = attachBody(*transfer, body);
 
     {

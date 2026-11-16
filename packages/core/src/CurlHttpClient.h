@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstdint>
 #include <curl/curl.h>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -22,7 +23,8 @@ namespace react_native_linux {
  * The Networking module is a streaming contract, which is the lesson of react-native-windows#9510, #10036,
  * #11439 and #2460. A request with `sendIncrementalUpdates` delivers every received chunk to `onBodyIncremental`
  * as it arrives and is never buffered; any other request is buffered without a ceiling and delivered once to
- * `onBody`, with `onBodyProgress` per chunk when `sendProgressUpdates` asks for it.
+ * `onBody`, with `onBodyProgress` per chunk when `sendProgressUpdates` asks for it. `onResponse` runs as the final
+ * response's headers end, before its first body byte.
  *
  * Threading contract: `sendRequest`, and `cancel` on the token it returns, may be called from any thread and never
  * block. Every callback runs on the one worker thread this client owns, which drives libcurl's multi interface. A
@@ -45,9 +47,24 @@ public:
                 const facebook::react::http::Headers& headers, const facebook::react::http::Body& body,
                 uint32_t timeout, std::optional<std::string> loggingId) override;
 
+    /** Hears where a response came from: the URL after any redirect, and whether a redirect led there. */
+    using OnResponseUrl = std::function<void(std::string url, bool redirected)>;
+
+    /**
+     * `sendRequest` for `expo/fetch` (#673), with no timeout. `followRedirects` false answers a redirect as the
+     * response itself, which `redirect: 'manual'` and `'error'` need, and `onResponseUrl` runs on the worker just
+     * before `onResponse`.
+     */
+    std::unique_ptr<facebook::react::http::IRequestToken>
+    sendFetchRequest(facebook::react::http::NetworkCallbacks&& callbacks, OnResponseUrl onResponseUrl,
+                     bool followRedirects, const std::string& method, const std::string& url,
+                     const facebook::react::http::Headers& headers, const facebook::react::http::Body& body);
+
     struct Transfer;
 
 private:
+    std::unique_ptr<facebook::react::http::IRequestToken> enqueue(std::shared_ptr<Transfer> transfer,
+                                                                  const facebook::react::http::Body& body);
     void run();
     void adoptPendingTransfers();
 
