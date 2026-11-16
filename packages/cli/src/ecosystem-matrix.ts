@@ -71,7 +71,12 @@ const ecosystemMatrix: readonly EcosystemRow[] = [
   { flagshipVersion: "0.37.2", issue: 152, packageName: "nitro-core", state: "blocked" },
   { flagshipVersion: "^3.44.0", issue: 167, packageName: "@tabler/icons-react-native", state: "blocked" },
   { flagshipVersion: "~58.0.13", issue: 269, packageName: "expo-file-system", state: "blocked" },
-  { flagshipVersion: "~58.0.2", issue: 270, packageName: "expo-secure-store", state: "blocked" },
+  {
+    flagshipVersion: "~58.0.2",
+    packageName: "expo-secure-store",
+    state: "works",
+    test: "packages/expo/e2e/expo-secure-store.json",
+  },
   { flagshipVersion: "~58.0.7", issue: 271, packageName: "expo-web-browser", state: "blocked" },
   { flagshipVersion: "~58.0.17", issue: 271, packageName: "expo-auth-session", state: "blocked" },
   { flagshipVersion: "4.15.1", issue: 271, packageName: "@clerk/expo", state: "blocked" },

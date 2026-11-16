@@ -199,7 +199,10 @@ Silently doing nothing where the real module acts is the failure this boundary e
 2. **Capabilities the desktop has**: implemented. Linking and sharing go through `xdg-open` and the OpenURI portal,
    localization through the POSIX locale and the settings portal, the clipboard through #60, files through the XDG
    directories and the FileChooser portal, secure storage through the Secret Service, local notifications through
-   `org.freedesktop.Notifications`, and digests through OpenSSL.
+   `org.freedesktop.Notifications`, and digests through OpenSSL. A capability with a desktop service that a session
+   may not run gets a stated fallback rather than a refusal only when the project owner decides it: secure storage
+   without a Secret Service falls back to an encrypted file whose weaker guarantee the module's row in
+   `packages/expo/README.md` states (#270).
 3. **Capabilities the desktop lacks**: the module's own documented mechanism. Where upstream has an availability
    query, it answers `false` (`Haptics.isAvailableAsync`, `ScreenCapture.isAvailableAsync`). Where it has none, the
    call rejects with upstream's `ERR_UNAVAILABLE` code. A whole module the desktop lacks is simply not registered,
@@ -304,7 +307,8 @@ Any one of these reopens the question in a new ADR:
   [#687](https://github.com/react-native-linux/react-native-linux/issues/687).
 - T3 Code's startup graph reaches more Expo modules through `requireNativeModule`; `docs/research/t3code-linux.md`
   §1 lists each one, whether it is registered, and the issue that owns it. `ExpoApplication`, `ExpoDevice`,
-  `ExpoLinking` and `ExpoNetwork` are registered, proved by the `expo-startup-modules` e2e.
+  `ExpoLinking` and `ExpoNetwork` are registered, proved by the `expo-startup-modules` e2e. `ExpoSecureStore` is
+  registered (#270), proved by the `expo-secure-store` e2e, which stores, reloads and reads back.
   `ExpoFontLoader` registers a font file `Font.loadAsync` or `useFonts` downloaded into the text pipeline's application
   fonts (#70), the same registry `assets/fonts` fills, proved by the `expo-font` e2e and its screenshot golden.
 - `packages/expo` (`@react-native-linux/expo`) holds the per-module table, the e2e scenarios, the surface lists and

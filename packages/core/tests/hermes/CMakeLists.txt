@@ -112,6 +112,7 @@ add_executable(rnl_core_hermes_tests
     ExpoStartupModulesTest.cpp
     ExponentConstantsModuleTest.cpp
     ExpoFileSystemModuleTest.cpp
+    ExpoSecureStoreModuleTest.cpp
     ExpoSharedObjectTest.cpp
     FeatureFlagsResetListener.cpp
     InstanceTeardownLeakTest.cpp

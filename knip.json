@@ -49,6 +49,7 @@
         "expo-linking",
         "expo-modules-core",
         "expo-network",
+        "expo-secure-store",
         "whatwg-url-minimum"
       ]
     },

@@ -63,7 +63,7 @@ Expo's Metro config turns `inlineRequires` off.
 | `ExponentImagePicker` | `expo-image-picker` | throws; #275 |
 | `ExpoImageManipulator`, `ExpoDocumentPicker` | `expo-image-manipulator`, `expo-document-picker` | throws; #650. `expo-document-picker` is imported lazily, so not at startup |
 | twelve `Expo*` notification modules | `expo-notifications` | throws; #274 |
-| `ExpoSecureStore` | `expo-secure-store` | throws; #270 |
+| `ExpoSecureStore` | `expo-secure-store` | registered (#270): the desktop keyring over the Secret Service, or an encrypted file when the session has none |
 | `ExpoSharing` | `expo-sharing` | throws; #156 |
 | `ExpoSQLite` | `expo-sqlite` | registered (#665) |
 | `ExpoWebBrowser` | `expo-web-browser` | throws; #271 |
@@ -188,7 +188,7 @@ transitive package.
 | `nitro-core` | `0.37.2` | tracked | #152 | from react-native-nitro-modules |
 | `@tabler/icons-react-native` | `^3.44.0` | tracked | #167 | JavaScript over react-native-svg |
 | `expo-file-system` | `~58.0.13` | tracked | #269 | 22 files: attachments and caches |
-| `expo-secure-store` | `~58.0.2` | tracked | #270 | tokens and DPoP keys |
+| `expo-secure-store` | `~58.0.2` | works | `packages/expo/e2e/expo-secure-store.json` | tokens and DPoP keys; the desktop keyring over the Secret Service, or an encrypted file under the application directory when the session has none, which protects against copying only |
 | `expo-web-browser` | `~58.0.7` | tracked | #271 | cloud sign-in |
 | `expo-auth-session` | `~58.0.17` | tracked | #271 | JavaScript over expo-web-browser and expo-crypto |
 | `@clerk/expo` | `catalog: (4.15.1)` | tracked | #271 | JavaScript over expo-web-browser and expo-auth-session; cloud sign-in only |

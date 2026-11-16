@@ -5,8 +5,13 @@
 #include "ExpoAsset.h"
 #include "ExpoFileSystem.h"
 #include "ExpoSQLite.h"
+#include "ExpoSecureStore.h"
 #include "FrameProfiling.h"
 #include "I18n.h"
+
+#ifdef RNL_ENABLE_SECRET_SERVICE
+#include "SecretService.h"
+#endif
 
 #include <chrono>
 #include <cstdlib>
@@ -59,6 +64,13 @@ WindowSession::WindowSession(const std::string& bundlePath, WindowSize size, dou
     reactHost_.keyValueStore().setDatabasePath(asyncStorageDatabasePath);
     reactHost_.sqliteDatabases().setDirectory((applicationDirectory / "SQLite").string());
     reactHost_.fileSystem().applicationDirectory = applicationDirectory;
+#ifdef RNL_ENABLE_SECRET_SERVICE
+    reactHost_.secureStore().configure(applicationDirectory, connectSessionKeyring);
+#else
+    reactHost_.secureStore().configure(applicationDirectory, [](const std::string&, const std::stop_token&) {
+        return std::unique_ptr<SecretBackend>();
+    });
+#endif
 
     if (cacheDirectory.has_value()) {
         reactHost_.expoAssetDownloads().setDirectory(cacheDirectory.value() / "expo-asset");

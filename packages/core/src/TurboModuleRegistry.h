@@ -39,6 +39,7 @@ class LinuxLinkingModule;
 class LinuxReanimatedModule;
 class LinuxWorkletsModule;
 class SQLiteDatabases;
+class SecureStore;
 
 /**
  * The TurboModules this platform registers, and the single `TurboModuleBinding` that exposes them to JavaScript
@@ -134,6 +135,9 @@ public:
     /** The connections behind `ExpoSQLite` (#638); `WindowSession` gives them the application's directory. */
     SQLiteDatabases& sqliteDatabases() noexcept;
 
+    /** What `ExpoSecureStore` runs over (#270); `WindowSession` gives it the application's directory and keyring. */
+    SecureStore& secureStore() noexcept;
+
     /** `ExpoAsset`'s downloads (#156); `WindowSession` gives them the application's cache directory. */
     ExpoAssetDownloads& expoAssetDownloads() noexcept;
 
@@ -175,6 +179,7 @@ private:
     std::unique_ptr<SQLiteDatabases> sqliteDatabases_;
     std::unique_ptr<ExpoAssetDownloads> expoAssetDownloads_;
     std::unique_ptr<FileSystemHost> fileSystemHost_;
+    std::unique_ptr<SecureStore> secureStore_;
     std::shared_ptr<I18nModel> i18nModel_;
     std::shared_ptr<std::string> bundleUrl_;
     std::shared_ptr<std::string> assetsDirectory_;

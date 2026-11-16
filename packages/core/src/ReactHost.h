@@ -117,6 +117,9 @@ public:
     /** What `FileSystem` runs over (#663); see `TurboModuleRegistry::fileSystem`. */
     FileSystemHost& fileSystem() noexcept;
 
+    /** What `ExpoSecureStore` runs over (#270); see `TurboModuleRegistry::secureStore`. */
+    SecureStore& secureStore() noexcept;
+
     /** `I18nManager`'s state (#72); see `TurboModuleRegistry::i18n`. */
     I18nModel& i18n() noexcept;
 
