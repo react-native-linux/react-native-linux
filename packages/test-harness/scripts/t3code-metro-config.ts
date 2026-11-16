@@ -22,6 +22,7 @@ const metroRuntimeDirectory = path.dirname(
 const desktopProfile: Readonly<Record<string, string>> = {
   "@expo/ui/community/datetime-picker": path.join(profileDirectory, "expo-ui-datetime-picker.tsx"),
   "expo-audio": path.join(profileDirectory, "expo-audio.ts"),
+  "expo-camera": path.join(profileDirectory, "expo-camera.ts"),
   "expo-keep-awake": path.join(profileDirectory, "expo-keep-awake.ts"),
   "expo-observe": path.join(profileDirectory, "expo-observe.ts"),
   "expo-sensors": path.join(profileDirectory, "expo-sensors.ts"),
