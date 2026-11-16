@@ -3,7 +3,7 @@
   "bundle": "timing.tsx",
   "ready": "reanimated-timing: started",
   "frames": 900,
-  "frameBudget": { "p95Ms": 17.5, "minFrames": 60, "maxJournalledFrames": 92 },
+  "frameBudget": { "p95Ms": 17.5, "minFrames": 60, "maxJournalledFrames": 203 },
   "steps": ["sleep 3000", "click 300 300", "sleep 2000"],
   "screenshot": {
     "golden": "reanimated-timing.png",

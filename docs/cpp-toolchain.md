@@ -1401,7 +1401,7 @@ Patch `0005-idle-mapper-runs` (`packages/reanimated/README.md`) queues a mapper 
 stops, one of its inputs changes, or a finalizer is requested: the Reanimated half of the same upstream ask. With
 both, the backend leaves the frame loop once an animation ends (#671). The `reanimated-timing` scenario's
 `maxJournalledFrames` is the proof: after its mount animation a tap replays the slide from idle, and the run is
-capped at 92 journalled frames (measured 70–71, against 602 unpatched).
+capped at 203 journalled frames (measured 152–156 with the longer animations of #710, against 770–771 unpatched).
 
 ## React Native bump procedure (#58)
 
