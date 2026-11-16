@@ -71,7 +71,8 @@ Expo's Metro config turns `inlineRequires` off.
 | `ExpoSharing` | `expo-sharing` | registered (#744): `shareAsync` hands the file to the OpenURI portal's chooser; `isAvailableAsync` is `false` without a portal |
 | `ExpoSQLite` | `expo-sqlite` | registered (#665) |
 | `ExpoWebBrowser` | `expo-web-browser` | throws; #271 |
-| `ExpoAudio`, `ExpoKeepAwake`, `ExpoCamera`, `ExpoObserve`, `ExpoAppMetrics`, the `expo-sensors` modules, `SymbolModule`, `ExpoUpdates`, `ExpoVideo`, `ExpoWidgets` | `expo-audio`, `expo-keep-awake`, `expo-camera`, `expo-observe`, `expo-app-metrics`, `expo-sensors`, `expo-symbols`, `expo-updates`, `expo-video`, `expo-widgets` | throws; left out or replaced by the feature profile (§2), so #641's Linux entry cuts the import |
+| `ExpoAudio`, `ExpoKeepAwake`, `ExpoCamera`, `ExpoObserve`, `ExpoAppMetrics`, the `expo-sensors` modules, `SymbolModule`, `ExpoUpdates`, `ExpoWidgets` | `expo-audio`, `expo-keep-awake`, `expo-camera`, `expo-observe`, `expo-app-metrics`, `expo-sensors`, `expo-symbols`, `expo-updates`, `expo-widgets` | throws; left out or replaced by the feature profile (§2), so #641's Linux entry cuts the import |
+| `ExpoVideo` | `expo-video` | throws; left out (§2). `MediaVideoPlayer.linux.tsx` cuts the one import that runs at startup (#759). The others are type-only, or the lazy `import()` in `videoThumbnails.ts`, whose failure the thumbnail loader turns into no thumbnail |
 
 These import cleanly with nothing registered: `expo-haptics` and `expo-splash-screen` look their modules up with
 `requireOptionalNativeModule` (haptics throws `UnavailabilityError` per call; the splash screen's calls return), the
@@ -94,7 +95,7 @@ so #155 and #641 also exclude the left-out modules from autolinking.
 | `expo-widgets`, `t3-widget-expiry`, `t3-subscription-widget` | home-screen widgets | nothing |
 | `@react-native-ai/apple` | Apple Intelligence | nothing |
 | `expo-audio`, `expo-keep-awake`, `t3-voice-transcription` | voice input | no microphone button; audio attachments open in the desktop's default application |
-| `expo-video` | inline video | video attachments open in the desktop's default application |
+| `expo-video` | inline video | video attachments open in the desktop's default application from a poster (#759); the poster's long-press actions (Copy full path, Copy relative path, Copy URL, Open in file viewer, Save or share) are not offered until #762 |
 | `expo-sensors` | device-preview motion | nothing |
 | `expo-camera` | QR pairing | the pairing link, typed or pasted |
 | `@expo/ui/community/datetime-picker` | the scheduled-task editor's date and time picker | a text field: the date typed as `YYYY-MM-DD`, the time as `HH:MM`, until a real picker (#750) |
@@ -109,6 +110,7 @@ These are replaced by a different file on Linux, not left out:
 | Module | Linux uses |
 | --- | --- |
 | `@expo/ui/swift-ui` views | a core-component `.linux.tsx` variant of each T3 Code view that imports them (#707) |
+| `expo-video` in `MediaVideoPlayer` | a `.linux.tsx` poster that opens the video URL with `Linking.openURL` (#759) |
 | `@expo/ui/community/masked-view` | `@react-native-masked-view/masked-view` (#164) |
 | `expo-symbols` in `AppSymbol` | the tabler icon set `AppSymbol.android.tsx` already uses |
 | `T3ComposerEditor.native.tsx` | the plain `TextInput` variant, `T3ComposerEditor.tsx`, until #640's composer editor lands |
@@ -229,7 +231,7 @@ transitive package.
 | `expo-symbols` | `~58.0.4` | declined | #635 | SF Symbols in the shared AppSymbol |
 | `expo-audio` | `58.0.11` | declined | #635 | voice input and audio previews |
 | `expo-keep-awake` | `~58.0.3` | declined | #635 | left out with voice input, its only user; expo's dev-only `withDevTools` requires it inside `try`/`catch` |
-| `expo-video` | `58.0.13` | declined | #635 | video attachments |
+| `expo-video` | `58.0.13` | declined | #759 | video attachments open in the default application from `MediaVideoPlayer.linux.tsx`, without its long-press media actions (#762) |
 | `react-native-pdf-jsi` | `6.1.0` | declined | #635 | imported only by PdfPreview.android.tsx |
 
 T3 Code's own native modules under `apps/mobile/modules`. The four with a `package.json` are rows above; the

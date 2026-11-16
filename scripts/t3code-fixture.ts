@@ -1,4 +1,5 @@
 import {
+  CHECKOUT_INSTALL_ARGUMENTS,
   OVERLAY_DIRECTORY_NAME,
   T3CODE_REVISION,
   buildPairingLink,
@@ -72,7 +73,7 @@ const describeUnavailable = (compositorPath: string | null, lavapipeIcdPath: str
   ...(["mobile", "server"].every((app) => existsSync(path.join(checkout, "apps", app, "node_modules")))
     ? []
     : [
-        `${checkout} is not an installed T3 Code checkout: clone https://github.com/pingdotgg/t3code at ${T3CODE_REVISION} into ${path.join(fixtureDirectory, "checkout")} and run "corepack pnpm install --frozen-lockfile --ignore-scripts --filter '@t3tools/mobile...' --filter 't3...'" in it`,
+        `${checkout} is not an installed T3 Code checkout: clone https://github.com/pingdotgg/t3code at ${T3CODE_REVISION} into ${path.join(fixtureDirectory, "checkout")} and run "corepack pnpm ${CHECKOUT_INSTALL_ARGUMENTS.join(" ")}" in it`,
       ]),
   ...(spawnSync("git", ["-C", checkout, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim() === T3CODE_REVISION
     ? []

@@ -1,4 +1,5 @@
 import {
+  CHECKOUT_INSTALL_ARGUMENTS,
   OVERLAY_DIRECTORY_NAME,
   T3CODE_REVISION,
   buildPairingLink,
@@ -161,6 +162,20 @@ describe("overlayPackArguments", () => {
       "pack",
       "--pack-destination",
       "/build/t3code/overlays",
+    ]);
+  });
+});
+
+describe("CHECKOUT_INSTALL_ARGUMENTS", () => {
+  it("installs the workspace packages the mobile app and the server depend on, not the mobile app alone", () => {
+    expect(CHECKOUT_INSTALL_ARGUMENTS).toStrictEqual([
+      "install",
+      "--frozen-lockfile",
+      "--ignore-scripts",
+      "--filter",
+      "@t3tools/mobile...",
+      "--filter",
+      "t3...",
     ]);
   });
 });

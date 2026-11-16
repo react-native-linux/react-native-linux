@@ -1,4 +1,4 @@
-import { overlayInstallArguments, overlayPackArguments } from "./e2e/t3code.ts";
+import { CHECKOUT_INSTALL_ARGUMENTS, overlayInstallArguments, overlayPackArguments } from "./e2e/t3code.ts";
 import { readdirSync, rmSync } from "node:fs";
 import { packageAliases } from "@react-native-linux/cli/package-aliases.ts";
 import path from "node:path";
@@ -13,7 +13,10 @@ const runPnpm = (pnpmArguments: readonly string[], directory: string): string | 
   return run.status === SUCCESSFUL_EXIT_STATUS ? null : `${run.stdout}${run.stderr}`;
 };
 
-/** Every overlay package the alias table names, packed and added to the mobile app; the failure, or null. */
+/**
+ * Every overlay package the alias table names, packed and added to the mobile app, with the checkout's own install run
+ * again after the add so the workspace packages the mobile app depends on stay linked; the failure, or null.
+ */
 const installOverlays = (repositoryRoot: string, overlayDirectory: string, checkout: string): string | null => {
   rmSync(overlayDirectory, { force: true, recursive: true });
 
@@ -22,7 +25,8 @@ const installOverlays = (repositoryRoot: string, overlayDirectory: string, check
     runPnpm(
       overlayInstallArguments(readdirSync(overlayDirectory).map((name) => path.join(overlayDirectory, name))),
       checkout,
-    )
+    ) ??
+    runPnpm(CHECKOUT_INSTALL_ARGUMENTS, checkout)
   );
 };
 
