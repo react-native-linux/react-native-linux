@@ -1,0 +1,12 @@
+{
+  "name": "expo-image",
+  "bundle": "expo-image.tsx",
+  "ready": "expo-image: image layout",
+  "frames": 600,
+  "steps": ["sleep 100"],
+  "expect": [
+    "'Unable to get the view config for %s from module %s', 'default view', 'ExpoImage'",
+    "[component] 'ViewManagerAdapter_ExpoImage' has no native component registered",
+    "expo-image: image layout 20,20 16x16"
+  ]
+}

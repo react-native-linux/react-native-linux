@@ -86,7 +86,7 @@ const ecosystemMatrix: readonly EcosystemRow[] = [
   { flagshipVersion: "~58.0.17", issue: 271, packageName: "expo-auth-session", state: "blocked" },
   { flagshipVersion: "4.15.1", issue: 271, packageName: "@clerk/expo", state: "blocked" },
   { flagshipVersion: "14.0.1", issue: 272, packageName: "react-native-webview", state: "blocked" },
-  { flagshipVersion: "~58.0.18", issue: 273, packageName: "expo-image", state: "blocked" },
+  { flagshipVersion: "~58.0.18", issue: 273, packageName: "expo-image", state: "in progress" },
   {
     flagshipVersion: "~58.1.8",
     packageName: "expo-notifications",

@@ -1089,6 +1089,10 @@ TurboModuleRegistry::TurboModuleRegistry(
         return makeExpoLinkingModule(jsInvoker, activationModel);
     });
     moduleFactories_.emplace("ExpoNetwork", [jsInvoker]() { return makeExpoNetworkModule(jsInvoker); });
+    // #273: `expo-image` requires `ExpoImage` as it is imported. Its view and its static methods are later slices of
+    // #273, so the module answers no method yet and the view mounts as ADR-0004's unregistered fallback.
+    moduleFactories_.emplace(
+        "ExpoImage", [jsInvoker]() { return std::make_shared<facebook::react::TurboModule>("ExpoImage", jsInvoker); });
     for (const std::string_view name : kExpoNotificationsModuleNames) {
         moduleFactories_.emplace(name, [name, jsInvoker, &notifications = *expoNotifications_]() {
             return makeExpoNotificationsModule(name, jsInvoker, notifications);

@@ -237,6 +237,18 @@ globalThis.trace = JSON.stringify({
               R"("nativeApplicationVersion":null,"nativeBuildVersion":null}})");
 }
 
+/** `expo-image` imports over the registered module, which answers no method until #273's later slices. */
+TEST(ExpoStartupModulesTest, ImageIsRegisteredAndAnswersNoMethodYet) {
+    EXPECT_EQ(settledTrace(R"JAVASCRIPT(
+const image = globalThis.nativeModuleProxy.ExpoImage;
+globalThis.trace = JSON.stringify({
+  type: typeof image,
+  methods: Object.keys(Object.getPrototypeOf(image)).sort(),
+});
+)JAVASCRIPT"),
+              R"({"type":"object","methods":[]})");
+}
+
 /** Without the portal the state is `UNKNOWN`, never a guessed connection, and a listener subscribes and removes. */
 TEST(ExpoStartupModulesTest, NetworkAnswersAnUnknownStateAndSubscribes) {
     EXPECT_EQ(settledTrace(R"JAVASCRIPT(
