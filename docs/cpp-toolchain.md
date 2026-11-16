@@ -768,11 +768,11 @@ close-request teardown — is the Wayland equivalent, and every desktop-only beh
 assertion in the same change that adds it, which is the rule macOS did not follow.
 
 **The decode is pure, and that is what the coverage gate scores.** `ToplevelState`
-(`packages/core/src/ToplevelState.h`) is a four-bit struct — `activated`, `maximized`, `fullscreen`, `resizing` —
-and `decodeToplevelStates` maps the raw `uint32_t` values `xdg_toplevel.configure`'s `wl_array` carries onto it.
-The function takes a pointer and a count rather than a `wl_array`, and the four numeric values it switches on
-(`MAXIMIZED = 1`, `FULLSCREEN = 2`, `RESIZING = 3`, `ACTIVATED = 4`) are xdg-shell's own frozen wire values rather
-than the generated enum, because the generated header only exists under `RNL_ENABLE_WINDOW` and this file has to
+(`packages/core/src/ToplevelState.h`) is a struct of flags — `activated`, `maximized`, `fullscreen`, `resizing`,
+the four tiled edges and `suspended` — and `decodeToplevelStates` maps the raw `uint32_t` values
+`xdg_toplevel.configure`'s `wl_array` carries onto it. The function takes a pointer and a count rather than a
+`wl_array`, and the numeric values it switches on (`MAXIMIZED = 1` through `SUSPENDED = 9`) are xdg-shell's own
+frozen wire values rather than the generated enum, because the generated header only exists under `RNL_ENABLE_WINDOW` and this file has to
 compile under `RNL_BUILD_TESTS`, which does not probe for Wayland at all. That is what puts the decode itself —
 the part of this contract that can be arithmetically wrong — under the 100% line-and-branch gate
 (`packages/core/tests/ToplevelStateTest.cpp`) the same way `FrameClock` and `DimensionsSource` are, without
@@ -784,15 +784,18 @@ and coalesces a burst of them into one pending change, mirroring `DimensionsSour
 The same class now also counts `wl_surface.enter`/`.leave` (`outputEnterCount`/`outputLeaveCount`) and forwards
 `WaylandSeat::hasKeyboardFocus`, which `wl_keyboard.enter`/`.leave` set directly.
 
-**None of the three reaches JavaScript yet, and that is a scope decision, not an oversight.** Resize already
-publishes through `DimensionsSource` and `useWindowDimensions`, because that module and that event already
-existed. Activation, maximize/fullscreen and window-level keyboard focus have no comparable landing spot: this
-platform has not implemented an `AppState`-equivalent native module, only the generated
-`FBReactNativeSpec`/`NativeAppState` TurboModule stub upstream ships, and building that module — deciding what
-`activated` maps to, wiring a TurboModule, adding the JS event — is a feature in its own right and out of #218's
-scope, which is the event *contract at the window*, not a new module. `--window-debug` on `rnl_window` prints
-every transition this section describes to stdout, which is the manual, real-compositor proof until that module
-exists; see *Window host*'s flag list above.
+**Activation and suspension reach JavaScript as `AppState` (#765).** `WindowSession` seeds `AppStateModel` with
+`toplevelState()` before the bundle loads, then `deliverToplevelState` hands it the state every frame, and the
+model emits only when its answer changes. The status is visibility, as react-native-web's is: a `suspended` window
+(xdg-shell version 6, which the window binds) is `background` and every other window `active`. Activation is focus
+alone — `appStateFocusChange`, which `AppState.js` turns into `focus`/`blur` — and never `inactive`, because apps
+written for iOS pause media and reconnect around `inactive`, and a desktop window loses focus on every alt-tab. The
+model is written on the frame thread and read on the JavaScript thread under one mutex, and its events reach
+JavaScript through the module's `CallInvoker`. Maximize/fullscreen and window-level keyboard focus
+still have no JavaScript landing spot; `--window-debug` on `rnl_window` prints every transition this section
+describes to stdout, which is the manual, real-compositor proof for those. The `app-state` e2e scenario replays a
+deactivation, a suspension and a reactivation through `--inject-window-sequence`'s `{Deactivated}`, `{Suspended}`,
+`{Resumed}` and `{Activated}` tokens, because cage never takes activation away from its only window.
 
 **Window focus does not touch node focus, by construction rather than by a guard.** `FocusModel` owns which node
 is focused and has no window-level concept at all — nothing calls it from `WaylandSeat`'s keyboard enter/leave
@@ -7891,12 +7894,15 @@ own configure runs, so there is no second path to drift:
 {Maximized} {Unmaximized}    the state bit, set or cleared, at whatever extent is current
 {Fullscreen} {Unfullscreen}
 {Tiled} {Untiled}            all four tiled edges at once, per isEffectivelyTiled's rule
+{Activated} {Deactivated}    activation, which every sequence starts without (#765)
+{Suspended} {Resumed}        the compositor hiding the window and showing it again
 {Maximized:1280x800}         any state token may carry the extent that state arrives with
 ```
 
 A drag carries `resizing` on every configure but its last, which is what a compositor does across an interactive
 resize and what makes the end of a drag distinguishable from its middle. Each applied step prints one
-`[rnl-geometry] configure <w>x<h> maximized=<n> fullscreen=<n> tiled=<n> resizing=<n>` line, deliberately *not*
+`[rnl-geometry] configure <w>x<h> maximized=<n> fullscreen=<n> tiled=<n> resizing=<n> activated=<n> suspended=<n>`
+line, deliberately *not*
 tagged `[rnl-window]`: `ERROR_TRACE_PATTERNS` in `scripts/e2e/trace-grading.ts` treats every line with that tag as
 a fault, so an informational line has to carry a different one. The step is applied at the top of the frame loop,
 before `takePendingResize`, so the configure a frame replays is the configure that frame relayouts, paints and

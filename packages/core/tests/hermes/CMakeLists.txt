@@ -120,6 +120,7 @@ add_executable(rnl_core_hermes_tests
     IntlBindingTest.cpp
     MeasureGeometryTest.cpp
     LinkingModuleTest.cpp
+    AppStateModuleTest.cpp
     LinuxUISchedulerTest.cpp
     ReanimatedModuleTest.cpp
     SQLiteModuleTest.cpp

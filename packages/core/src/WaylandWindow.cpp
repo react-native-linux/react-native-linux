@@ -26,7 +26,8 @@ namespace react_native_linux {
 namespace {
 
 constexpr uint32_t kMaximumCompositorVersion = 4;
-constexpr uint32_t kMaximumWmBaseVersion = 5;
+// Version 6 adds only the `suspended` toplevel state, which `AppState` reports as `background` (#765).
+constexpr uint32_t kMaximumWmBaseVersion = 6;
 // Version 1 is every event and request this platform uses. wayland-protocols 1.49 added version 2 — actions,
 // language reporting, pre-edit style hints and the input-panel requests — and binding it would oblige us to
 // answer events that no `<TextInput>` exists to render yet. See *IME* in docs/cpp-toolchain.md.

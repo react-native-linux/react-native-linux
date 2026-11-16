@@ -81,7 +81,7 @@ class WindowSession final {
 public:
     WindowSession(const std::string& bundlePath, WindowSize size, double scale,
                   const std::string& asyncStorageDatabasePath, std::optional<std::string> initialActivationUrl,
-                  std::string assetsDirectory);
+                  std::string assetsDirectory, const ToplevelState& initialToplevelState);
     WindowSession(const WindowSession&) = delete;
     WindowSession(WindowSession&&) = delete;
     WindowSession& operator=(const WindowSession&) = delete;
@@ -103,6 +103,12 @@ public:
      * bundle loads, or a later instance's forwarded `argv`, delivered as it arrives. See `ActivationModel`.
      */
     void deliverActivationUrl(const std::string& url);
+
+    /**
+     * Feeds the window's `xdg_toplevel` state to `AppState` (#765), once per frame; `AppStateModel` emits only when
+     * the activation or the suspension actually changed.
+     */
+    void deliverToplevelState(const ToplevelState& state);
 
     /** Delegates to `FabricHost::tickAnimations` once per drawn frame. */
     void tickAnimations(std::chrono::steady_clock::time_point now);

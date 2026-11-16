@@ -80,6 +80,15 @@ These import cleanly with nothing registered: `expo-haptics` and `expo-splash-sc
 shared files of `expo-glass-effect` are a plain `View` and `false`, and `expo-quick-actions` reads
 `globalThis.expo.modules` and answers `isSupported` `false`.
 
+React Native's own `AppState`, which 39 T3 Code call sites read, is registered (#765). Without it,
+`AppState.addEventListener` throws in the mount effects of `AudioFilePreview` and `ThreadInlineFilePreview`, and
+`InlineAudio` never plays because `currentState` is `null` rather than `active`. The status is the window's
+visibility, as react-native-web reports it: `background` when the compositor suspends the window, `active`
+otherwise. Activation is `focus` and `blur` only, never `inactive`, because T3 Code pauses audio and video on
+`inactive` and runs its connection wake-up on every return to `active`, and a desktop window loses focus on every
+alt-tab. The `app-state` e2e deactivates, suspends, resumes and reactivates the window, and asserts each JavaScript
+event.
+
 ## 2. The desktop feature profile
 
 The Linux entry that #641 adds leaves the modules below out, so the first render waits only on what the main

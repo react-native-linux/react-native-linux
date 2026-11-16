@@ -59,7 +59,8 @@ uint64_t toNanosecondsSinceEpoch(std::chrono::steady_clock::time_point timePoint
 
 WindowSession::WindowSession(const std::string& bundlePath, WindowSize size, double scale,
                              const std::string& asyncStorageDatabasePath,
-                             std::optional<std::string> initialActivationUrl, std::string assetsDirectory)
+                             std::optional<std::string> initialActivationUrl, std::string assetsDirectory,
+                             const ToplevelState& initialToplevelState)
     : fabricHost_(std::make_unique<FabricHost>(reactHost_.reactInstance(), toSurfaceSize(size))),
       frameJournal_(kNominalVsyncNanoseconds, kHangThresholdVsyncCount * kNominalVsyncNanoseconds) {
     // Before the script, so the first `Dimensions.get` a bundle makes at module scope already answers with the
@@ -103,6 +104,8 @@ WindowSession::WindowSession(const std::string& bundlePath, WindowSize size, dou
         deliverActivationUrl(initialActivationUrl.value());
     }
 
+    // Before the script, so `AppState.currentState` starts as this window's answer rather than the windowless default.
+    reactHost_.appState().seed(initialToplevelState);
     reactHost_.setAssetsDirectory(std::move(assetsDirectory));
     reactHost_.loadBundle(bundlePath);
     reactHost_.startHotModuleReplacement(bundlePath);
@@ -199,6 +202,10 @@ const FrameClock& WindowSession::frameClock() const noexcept { return frameClock
 
 void WindowSession::deliverActivationUrl(const std::string& url) {
     reactHost_.activation().onActivationUrlReceived(url);
+}
+
+void WindowSession::deliverToplevelState(const ToplevelState& state) {
+    reactHost_.appState().onToplevelStateChanged(state);
 }
 
 void WindowSession::seedColorScheme() {

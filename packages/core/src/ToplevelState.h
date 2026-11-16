@@ -15,8 +15,8 @@ namespace react_native_linux {
  * on Ubuntu reports all four as tiled the instant any one of them is, so the only sound predicate is
  * `isEffectivelyTiled`, below, and keeping the raw edges is what lets that predicate — and a future one that
  * needs a single edge, such as which side to draw a square corner on — both be expressed as pure functions of
- * this struct instead of a second decode. The suspended state xdg-shell also defines is not kept, because
- * nothing here has a use for it yet and this struct is not a general mirror of the protocol.
+ * this struct instead of a second decode. `suspended` (xdg-shell version 6) is kept because `AppState` reports a
+ * window the compositor has stopped showing as `background` (#765).
  *
  * A default-constructed `ToplevelState` is every flag false, which is also what the compositor's very first
  * `configure` — before any state has ever been reported — decodes as.
@@ -30,6 +30,7 @@ struct ToplevelState {
     bool tiledRight{false};
     bool tiledTop{false};
     bool tiledBottom{false};
+    bool suspended{false};
 
     bool operator==(const ToplevelState&) const = default;
 };
@@ -52,14 +53,14 @@ constexpr bool isEffectivelyTiled(const ToplevelState& state) noexcept {
  * dependency, which is what keeps it in the unit-test coverage gate. See *Window host* in
  * docs/cpp-toolchain.md.
  *
- * The four numeric values below are xdg-shell's own wire values (`xdg-shell.xml`, `xdg_toplevel::state`):
- * MAXIMIZED = 1, FULLSCREEN = 2, RESIZING = 3, ACTIVATED = 4. They are wire constants, frozen by the protocol's
- * own stability guarantee, the same way *Input*'s evdev-keycode offset of 8 is a wire constant rather than
- * something to look up through a generated enum.
+ * The numeric values it switches on are xdg-shell's own wire values (`xdg-shell.xml`, `xdg_toplevel::state`):
+ * MAXIMIZED = 1, FULLSCREEN = 2, RESIZING = 3, ACTIVATED = 4, the tiled edges 5 to 8, and SUSPENDED = 9 since
+ * version 6. They are wire constants, frozen by the protocol's own stability guarantee, the same way *Input*'s
+ * evdev-keycode offset of 8 is a wire constant rather than something to look up through a generated enum.
  *
- * An unrecognised value — a tiled or suspended state, or anything a future protocol version adds — is silently
- * ignored rather than rejected, because `xdg_toplevel.configure` is allowed to report states this platform does
- * not act on and ignoring them is what forward compatibility means here.
+ * An unrecognised value — a constrained edge, or anything a future protocol version adds — is silently ignored
+ * rather than rejected, because `xdg_toplevel.configure` is allowed to report states this platform does not act on
+ * and ignoring them is what forward compatibility means here.
  */
 ToplevelState decodeToplevelStates(const uint32_t* states, size_t count) noexcept;
 
