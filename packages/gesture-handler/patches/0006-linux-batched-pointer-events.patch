@@ -1,0 +1,38 @@
+diff --git a/packages/react-native-gesture-handler/src/web/tools/GestureHandlerOrchestrator.ts b/packages/react-native-gesture-handler/src/web/tools/GestureHandlerOrchestrator.ts
+index 58e0d6f..a1192b5 100644
+--- a/packages/react-native-gesture-handler/src/web/tools/GestureHandlerOrchestrator.ts
++++ b/packages/react-native-gesture-handler/src/web/tools/GestureHandlerOrchestrator.ts
+@@ -55,7 +55,7 @@ export default class GestureHandlerOrchestrator {
+     }
+   }
+ 
+-  private cleanupFinishedHandlers(): void {
++  public cleanupFinishedHandlers(): void {
+     const handlersToRemove = new Set<IGestureHandler>();
+ 
+     for (let i = this.gestureHandlers.length - 1; i >= 0; --i) {
+diff --git a/packages/react-native-gesture-handler/src/web/tools/LinuxPointerRouter.ts b/packages/react-native-gesture-handler/src/web/tools/LinuxPointerRouter.ts
+index 3841c57..c40127d 100644
+--- a/packages/react-native-gesture-handler/src/web/tools/LinuxPointerRouter.ts
++++ b/packages/react-native-gesture-handler/src/web/tools/LinuxPointerRouter.ts
+@@ -3,6 +3,8 @@
+ // to every attached view containing its target, and every later event for that pointer to the views that took
+ // the down, which is what setPointerCapture gives a web view.
+ 
++import GestureHandlerOrchestrator from './GestureHandlerOrchestrator';
++
+ type PointerListener = (event: LinuxPointerEvent) => void;
+ 
+ interface LinuxRect {
+@@ -155,6 +157,11 @@ export function routeLinuxPointerEvent(
+     target: capturedTarget,
+   };
+ 
++  // The web orchestrator resets finished handlers in a microtask, which a browser runs between two pointer events.
++  // React Native dispatches every event of one batch in a single task, so without this a press would find its own
++  // handler still finished, and a gesture activating after an active Native handler ended would be cancelled by it.
++  GestureHandlerOrchestrator.instance.cleanupFinishedHandlers();
++
+   if (type === 'pointerdown') {
+     const target = rootEvent.target as LinuxElement;
+     const receivers = [...views].filter((view) =>

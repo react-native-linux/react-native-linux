@@ -57,7 +57,7 @@ const std::vector<ForeignThreadCall> kForeignThreadCalls{
     {"ReactHost::hasReportedFatalError", [](Hosts& hosts) { hosts.reactHost->hasReportedFatalError(); }},
     {"ReactHost::dispatchAnimationFrames",
      [](Hosts& hosts) { hosts.reactHost->dispatchAnimationFrames(std::chrono::steady_clock::now()); }},
-    {"ReactHost::hasPendingTimers", [](Hosts& hosts) { hosts.reactHost->hasPendingTimers(); }},
+    {"ReactHost::hasPendingFrameRequests", [](Hosts& hosts) { hosts.reactHost->hasPendingFrameRequests(); }},
     {"ReactHost::~ReactHost", [](Hosts& hosts) { hosts.reactHost.reset(); }},
     {"FabricHost::setSurfaceSize", [](Hosts& hosts) { hosts.fabricHost->setSurfaceSize(kSurfaceSize, 1.0F); }},
     {"FabricHost::setLayoutDirection", [](Hosts& hosts) { hosts.fabricHost->setLayoutDirection({}); }},

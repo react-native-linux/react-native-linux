@@ -84,6 +84,23 @@ TEST(InputQueueTest, CoalescesAHighRateMotionBurstIntoOneEvent) {
 }
 
 /**
+ * `isEmpty` is what lets input end an idle window's wait (#703): true until an event arrives, and again once drained.
+ */
+TEST(InputQueueTest, IsEmptyUntilAnEventArrivesAndAgainOnceDrained) {
+    InputQueue queue;
+
+    EXPECT_TRUE(queue.isEmpty());
+
+    queue.push(makeMotion(1.0F, 2.0F));
+
+    EXPECT_FALSE(queue.isEmpty());
+
+    queue.drain();
+
+    EXPECT_TRUE(queue.isEmpty());
+}
+
+/**
  * The axis path shares the pointer path's time source (#455): two continuous deltas that coalesce sum their
  * amount, but the compositor stamp advances to the later one, because that is the event the `ScrollController`
  * is answering.

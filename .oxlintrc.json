@@ -22,6 +22,7 @@
         "capIsNewExceptions": ["PlatformColor"]
       }
     ],
+    "eslint/no-duplicate-imports": ["error", { "allowSeparateTypeImports": true }],
     "eslint/no-ternary": "off",
     "eslint/one-var": ["error", "never"],
     "import/extensions": [
@@ -76,7 +77,7 @@
       }
     },
     {
-      "files": ["packages/core/goldens/fixtures.ts"],
+      "files": ["packages/core/goldens/fixtures.ts", "packages/gesture-handler/src/linux-module.spec.ts"],
       "rules": {
         "eslint/max-lines": "off"
       }
