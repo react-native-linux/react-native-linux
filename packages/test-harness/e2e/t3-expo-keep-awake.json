@@ -1,0 +1,15 @@
+{
+  "name": "t3-expo-keep-awake",
+  "bundle": "t3-expo-keep-awake.tsx",
+  "ready": "t3-expo-keep-awake: ready",
+  "frames": 240,
+  "windowFlags": ["--no-decorations"],
+  "steps": ["sleep 100"],
+  "expect": [
+    "t3-expo-keep-awake: dev tools mounted ExpoKeepAwakeDefaultTag",
+    "t3-expo-keep-awake: activated t3-voice-input",
+    "t3-expo-keep-awake: deactivated t3-voice-input",
+    "t3-expo-keep-awake: dev tools unmounted"
+  ],
+  "reject": ["t3-expo-keep-awake: failed"]
+}
