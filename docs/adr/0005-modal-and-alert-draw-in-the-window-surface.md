@@ -1,8 +1,9 @@
 # ADR-0005: `Modal` and `Alert` draw inside the window's own surface, on an overlay layer of the retained scene
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-11-16
 - Deciders: Vitalii Yehorov
+- Council: Claude Opus 5.5 and GPT-6.1 Sol, two rounds
 - Issues: [#62](https://github.com/react-native-linux/react-native-linux/issues/62) (Modal and overlay surfaces),
   [#262](https://github.com/react-native-linux/react-native-linux/issues/262) (Alert)
 - Flagship: [#634](https://github.com/react-native-linux/react-native-linux/issues/634), T3 Code's Expo app
