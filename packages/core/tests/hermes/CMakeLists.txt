@@ -161,8 +161,10 @@ target_link_libraries(rnl_core_hermes_tests
         ${RNL_REACT_COMMON_TARGETS}
         atomic)
 set_target_properties(rnl_core_hermes_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+# #772: IntlBindingTest loads the formatjs polyfills T3 Code imports from @react-native-linux/core's devDependencies.
 target_compile_definitions(rnl_core_hermes_tests
-    PRIVATE "RNL_WORKLETS_PACKAGE_JSON=\"${RNL_WORKLETS_DIR}/package.json\"")
+    PRIVATE "RNL_WORKLETS_PACKAGE_JSON=\"${RNL_WORKLETS_DIR}/package.json\""
+            "RNL_CORE_PACKAGE_DIR=\"${CMAKE_SOURCE_DIR}/packages/core\"")
 
 # Two things exist only where rnl_react_core links Skia, and the sanitizer presets build without it: the decoder
 # behind CrossThreadMountingStressTest's image-decode leg and RemoteImageTest, and the text pipeline

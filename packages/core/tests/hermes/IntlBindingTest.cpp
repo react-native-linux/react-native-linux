@@ -9,8 +9,11 @@
 #include <fstream>
 #include <gtest/gtest.h>
 #include <hermes/hermes.h>
+#include <iterator>
 #include <jsi/jsi.h>
 #include <memory>
+#include <regex>
+#include <stdexcept>
 #include <string>
 
 // #83: the Intl this platform installs, asserted from JavaScript, and a bundle that builds T3 Code's module-scope
@@ -33,6 +36,8 @@ protected:
             .getString(*runtime_)
             .utf8(*runtime_);
     }
+
+    facebook::jsi::Runtime& runtime() { return *runtime_; }
 
 private:
     std::unique_ptr<facebook::jsi::Runtime> runtime_{facebook::hermes::makeHermesRuntime()};
@@ -177,6 +182,175 @@ TEST_F(IntlBindingTest, UnsupportedOptionsAndForeignReceiversThrowTheErrorsEcma4
     EXPECT_EQ(evaluate("Intl.Collator.prototype.compare"),
               "TypeError: Method Intl.Collator.prototype.compare called on incompatible receiver");
     EXPECT_EQ(evaluate("'hello'.toLocaleUpperCase()"), R"("HELLO")");
+}
+
+TEST_F(IntlBindingTest, LocaleCanonicalizesAndAddsAndRemovesLikelySubtags) {
+    EXPECT_EQ(evaluate("((locale) => [locale.toString(), locale.baseName, locale.language, locale.script, "
+                       "locale.region])(new Intl.Locale('EN-latn-us-u-ca-gregory'))"),
+              R"(["en-Latn-US-u-ca-gregory","en-Latn-US","en","Latn","US"])");
+    EXPECT_EQ(evaluate("String(new Intl.Locale('en').maximize())"), R"("en-Latn-US")");
+    EXPECT_EQ(evaluate("String(new Intl.Locale('en-Latn-US').minimize())"), R"("en")");
+    EXPECT_EQ(evaluate("new Intl.Locale('en').maximize() instanceof Intl.Locale"), "true");
+    EXPECT_EQ(evaluate("String(new Intl.Locale('und-x-private'))"), R"("und-x-private")");
+    EXPECT_EQ(evaluate("String([new Intl.Locale('de').script, new Intl.Locale('de').region])"), R"(",")");
+    EXPECT_EQ(evaluate("String(new Intl.Locale(new Intl.Locale('en-US'), {region: 'GB'}))"), R"("en-GB")");
+    EXPECT_EQ(evaluate("Intl.getCanonicalLocales('und-x-private')"), R"(["und-x-private"])");
+}
+
+TEST_F(IntlBindingTest, LocaleNeedsNewAndATagAndRejectsWhatIsNotALocale) {
+    EXPECT_EQ(evaluate("Intl.Locale('en')"), "TypeError: Constructor Intl.Locale requires 'new'");
+    EXPECT_EQ(evaluate("new Intl.Locale()"),
+              "TypeError: First argument to Intl.Locale constructor can't be empty or missing");
+    EXPECT_EQ(evaluate("new Intl.Locale('en_US')"), "RangeError: Incorrect locale information provided");
+    EXPECT_EQ(evaluate("new Intl.Locale('en', {numeric: true})"),
+              "RangeError: Intl.Locale does not support the option numeric on this platform");
+    EXPECT_EQ(evaluate("String(new Intl.Locale({toString() { return 'fr-CA'; }}))"), R"("fr-CA")");
+    EXPECT_EQ(evaluate("Object.getOwnPropertyDescriptor(Intl.Locale.prototype, 'language').get.call({})"),
+              "TypeError: Method Intl.Locale.prototype.language called on incompatible receiver");
+    EXPECT_EQ(evaluate("Intl.Locale.prototype.maximize.call({})"),
+              "TypeError: Method Intl.Locale.prototype.maximize called on incompatible receiver");
+}
+
+TEST_F(IntlBindingTest, DisplayNamesAnswerFormatjsIcuProbesAsAFixedEngineDoes) {
+    EXPECT_EQ(evaluate("new Intl.DisplayNames(['en'], {type: 'region'}).of('CA')"), R"("Canada")");
+    EXPECT_EQ(evaluate("new Intl.DisplayNames(['en'], {type: 'script'}).of('arab')"), R"("Arabic")");
+    EXPECT_EQ(evaluate("new Intl.DisplayNames(['en'], {type: 'language'}).of('en-US')"), R"("American English")");
+    EXPECT_EQ(evaluate("Intl.DisplayNames.supportedLocalesOf(['en'])"), R"(["en"])");
+    EXPECT_EQ(evaluate("new Intl.DisplayNames('de', {type: 'region', style: 'short'}).resolvedOptions()"),
+              R"({"locale":"de","style":"short","type":"region","fallback":"code"})");
+    EXPECT_EQ(evaluate("String(new Intl.DisplayNames('en', {type: 'language', fallback: 'none'}).of('xyz'))"),
+              R"("undefined")");
+    EXPECT_EQ(evaluate("new Intl.DisplayNames('en', {type: 'region'}).of({toString() { return 'qm'; }})"), R"("QM")");
+}
+
+TEST_F(IntlBindingTest, DisplayNamesNeedNewAndATypeItImplements) {
+    EXPECT_EQ(evaluate("Intl.DisplayNames('en', {type: 'region'})"),
+              "TypeError: Constructor Intl.DisplayNames requires 'new'");
+    EXPECT_EQ(evaluate("new Intl.DisplayNames('en')"), "TypeError: Required option 'type' is missing");
+    EXPECT_EQ(evaluate("new Intl.DisplayNames('en', {type: 'currency'})"),
+              "RangeError: Intl.DisplayNames does not support the type currency on this platform");
+    EXPECT_EQ(evaluate("new Intl.DisplayNames('en', {type: 'region'}).of('1')"), "RangeError: Invalid region code: 1");
+    EXPECT_EQ(evaluate("Intl.DisplayNames.prototype.of.call({}, 'CA')"),
+              "TypeError: Method Intl.DisplayNames.prototype.of called on incompatible receiver");
+}
+
+TEST_F(IntlBindingTest, EveryServiceConstructorAnswersSupportedLocalesOf) {
+    EXPECT_EQ(evaluate("[Intl.DateTimeFormat, Intl.NumberFormat, Intl.Collator].map((Service) => "
+                       "Service.supportedLocalesOf(['de-DE', 'zz', 'EN-u-kn']))"),
+              R"([["de-DE","en-u-kn"],["de-DE","en-u-kn"],["de-DE","en-u-kn"]])");
+    EXPECT_EQ(evaluate("Intl.Collator.supportedLocalesOf('en', {localeMatcher: 'other'})"),
+              "RangeError: Value other out of range for option localeMatcher");
+    EXPECT_EQ(evaluate("Intl.NumberFormat.supportedLocalesOf('en_US')"),
+              "RangeError: Incorrect locale information provided");
+}
+
+/**
+ * Node's module resolution as far as the formatjs polyfills need it: a relative path, or a package found in the
+ * nearest `node_modules` up the directory tree, entered by its `main` unless a subpath names the file; each is tried
+ * as a file, with `.js`, and as a directory's `index.js`.
+ */
+std::string resolveModule(const std::filesystem::path& directory, const std::string& specifier) {
+    std::filesystem::path base = directory / specifier;
+
+    if (!specifier.starts_with('.')) {
+        const std::size_t nameEnd = specifier.find('/', specifier.starts_with('@') ? specifier.find('/') + 1 : 0);
+        const std::string name = specifier.substr(0, nameEnd);
+        std::filesystem::path package = directory / "node_modules" / name;
+
+        for (std::filesystem::path search = directory; !std::filesystem::exists(package);
+             package = search / "node_modules" / name) {
+            if (search == search.root_path()) {
+                throw std::runtime_error("Cannot find the package " + name + " from " + directory.string());
+            }
+
+            search = search.parent_path();
+        }
+
+        std::ifstream manifestFile(package / "package.json");
+        const std::string manifest{std::istreambuf_iterator<char>(manifestFile), std::istreambuf_iterator<char>()};
+        std::smatch main;
+        const bool hasSubpath = nameEnd != std::string::npos;
+
+        base = hasSubpath ? package / specifier.substr(nameEnd + 1) : package;
+
+        if (!hasSubpath && std::regex_search(manifest, main, std::regex(R"PATTERN("main"\s*:\s*"([^"]+)")PATTERN"))) {
+            base /= main[1].str();
+        }
+    }
+
+    for (const std::filesystem::path& candidate : {base, std::filesystem::path(base) += ".js", base / "index.js"}) {
+        if (std::filesystem::is_regular_file(candidate)) {
+            return std::filesystem::canonical(candidate).string();
+        }
+    }
+
+    throw std::runtime_error("Cannot resolve " + specifier + " from " + directory.string());
+}
+
+constexpr char kCommonJsLoader[] = R"JAVASCRIPT(
+const modules = {};
+const load = (path) => {
+  if (!(path in modules)) {
+    const module = { exports: {} };
+    const directory = path.slice(0, path.lastIndexOf("/"));
+
+    modules[path] = module;
+    new Function("require", "module", "exports", readModule(path))(
+      (specifier) => load(resolveModule(directory, specifier)), module, module.exports);
+  }
+  return modules[path].exports;
+};
+globalThis.requireFromCore = (specifier) => load(resolveModule(RNL_CORE_PACKAGE_DIR, specifier));
+)JAVASCRIPT";
+
+// #772: T3 Code's intl-polyfills.ts imports these three in this order. Each installs itself only when the engine's
+// Intl fails its probes; when the DisplayNames one does, its shouldPolyfill matches `en` against 571 locales through
+// the Intl.Locale polyfill, which took about 22 minutes in a Debug build.
+TEST_F(IntlBindingTest, TheFormatjsPolyfillsT3CodeImportsInstallNothingAndDecideQuickly) {
+    constexpr std::chrono::seconds kPolyfillBudget{10};
+    facebook::jsi::Runtime& runtime = this->runtime();
+
+    runtime.global().setProperty(runtime, "RNL_CORE_PACKAGE_DIR", RNL_CORE_PACKAGE_DIR);
+    runtime.global().setProperty(
+        runtime, "resolveModule",
+        facebook::jsi::Function::createFromHostFunction(
+            runtime, facebook::jsi::PropNameID::forAscii(runtime, "resolveModule"), 2,
+            [](facebook::jsi::Runtime& callRuntime, const facebook::jsi::Value& /*thisValue*/,
+               const facebook::jsi::Value* arguments, size_t /*count*/) -> facebook::jsi::Value {
+                return facebook::jsi::String::createFromUtf8(
+                    callRuntime, resolveModule(arguments[0].getString(callRuntime).utf8(callRuntime),
+                                               arguments[1].getString(callRuntime).utf8(callRuntime)));
+            }));
+    runtime.global().setProperty(
+        runtime, "readModule",
+        facebook::jsi::Function::createFromHostFunction(
+            runtime, facebook::jsi::PropNameID::forAscii(runtime, "readModule"), 1,
+            [](facebook::jsi::Runtime& callRuntime, const facebook::jsi::Value& /*thisValue*/,
+               const facebook::jsi::Value* arguments, size_t /*count*/) -> facebook::jsi::Value {
+                std::ifstream file(arguments[0].getString(callRuntime).utf8(callRuntime));
+
+                return facebook::jsi::String::createFromUtf8(
+                    callRuntime, std::string{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()});
+            }));
+    runtime.evaluateJavaScript(std::make_shared<facebook::jsi::StringBuffer>(kCommonJsLoader), "loader.js");
+
+    const std::string engineIntl = "[Intl.getCanonicalLocales, Intl.Locale, Intl.DisplayNames]";
+
+    evaluate("globalThis.engineIntl = " + engineIntl);
+
+    const auto start = std::chrono::steady_clock::now();
+
+    EXPECT_EQ(evaluate("['@formatjs/intl-getcanonicallocales/polyfill', '@formatjs/intl-locale/polyfill', "
+                       "'@formatjs/intl-displaynames/polyfill', '@formatjs/intl-displaynames/locale-data/en']"
+                       ".map(requireFromCore).length"),
+              "4");
+    EXPECT_LT(std::chrono::steady_clock::now() - start, kPolyfillBudget);
+    EXPECT_EQ(evaluate(engineIntl + ".map((value, index) => value === engineIntl[index] && "
+                                    "value.polyfilled === undefined)"),
+              "[true,true,true]");
+    EXPECT_EQ(evaluate("['intl-getcanonicallocales', 'intl-locale', 'intl-displaynames'].map((name) => "
+                       "String(requireFromCore(`@formatjs/${name}/should-polyfill`).shouldPolyfill()))"),
+              R"(["false","false","undefined"])");
 }
 
 constexpr char kModuleScopeFormatters[] = R"JAVASCRIPT(
