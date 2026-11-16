@@ -140,6 +140,14 @@ void BeastWebSocketClient::onConnected(const boost::system::error_code& error) {
 
 void BeastWebSocketClient::onHandshake(const boost::system::error_code& error) {
     if (error) {
+        // A failed handshake completes without cancelling the timer Beast armed for it, which then holds the I/O
+        // thread until `handshakeTimeout`; turning both timeouts off is Beast's way to cancel it.
+        // https://github.com/boostorg/beast/blob/boost-1.83.0/include/boost/beast/websocket/impl/handshake.hpp#L172-L182
+        stream_.set_option(boost::beast::websocket::stream_base::timeout{
+            .handshake_timeout = boost::beast::websocket::stream_base::none(),
+            .idle_timeout = boost::beast::websocket::stream_base::none(),
+            .keep_alive_pings = false,
+        });
         onConnect_(false, error.message());
         return;
     }

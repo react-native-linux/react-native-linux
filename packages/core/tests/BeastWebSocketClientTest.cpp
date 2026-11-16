@@ -2,10 +2,13 @@
 
 #include "LoopbackWebSocketServer.h"
 
+#include <array>
+#include <boost/asio/buffer.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
+#include <future>
 #include <gtest/gtest.h>
 #include <mutex>
 #include <string>
@@ -196,6 +199,44 @@ TEST(BeastWebSocketClientTest, APeerThatDoesNotSpeakWebSocketFailsTheHandshake) 
     connectRecording(client, log, "ws://127.0.0.1:" + std::to_string(acceptor.local_endpoint().port()));
 
     EXPECT_EQ(log.waitFor(1), (Events{"failed"}));
+
+    peer.join();
+}
+
+/** #735: `WebSocketModule` closes and then destroys a client on the JavaScript thread, during a connect too. */
+TEST(BeastWebSocketClientTest, ClosingAndDestroyingDuringTheHandshakeIsQuickAndFailsTheConnect) {
+    boost::asio::io_context ioContext;
+    boost::asio::ip::tcp::acceptor acceptor{
+        ioContext, boost::asio::ip::tcp::endpoint(boost::asio::ip::make_address("127.0.0.1"), 0)};
+    std::promise<void> requestArrived;
+    std::thread peer([&acceptor, &ioContext, &requestArrived]() {
+        boost::asio::ip::tcp::socket socket{ioContext};
+        std::array<char, 256> bytes{};
+        boost::system::error_code error;
+
+        acceptor.accept(socket);
+        socket.read_some(boost::asio::buffer(bytes), error);
+        requestArrived.set_value();
+
+        while (!error) {
+            socket.read_some(boost::asio::buffer(bytes), error);
+        }
+    });
+    EventLog log;
+    std::chrono::steady_clock::time_point closeStarted;
+
+    {
+        BeastWebSocketClient client;
+
+        connectRecording(client, log, "ws://127.0.0.1:" + std::to_string(acceptor.local_endpoint().port()));
+        requestArrived.get_future().wait();
+
+        closeStarted = std::chrono::steady_clock::now();
+        client.close("unmounted");
+    }
+
+    EXPECT_LT(std::chrono::steady_clock::now() - closeStarted, 100ms);
+    EXPECT_EQ(log.waitFor(2), (Events{"closed", "failed"}));
 
     peer.join();
 }
