@@ -125,6 +125,7 @@ These are replaced by a different file on Linux, not left out:
 | `@expo/ui/community/masked-view` | `@react-native-masked-view/masked-view` (#164) |
 | `expo-symbols` in `AppSymbol` | the tabler icon set `AppSymbol.android.tsx` already uses |
 | `T3ComposerEditor.native.tsx` | the plain `TextInput` variant, `T3ComposerEditor.tsx`, until #640's composer editor lands |
+| `react-native-nitro-modules` | a stand-in until Nitro runs on Linux (#152): a hybrid object resolves through `TurboModuleRegistry`, so `T3Highlights` reaches #684's TurboModule, and without it code renders as plain text, T3 Code's own fallback (#767) |
 | `react-native-pdf-jsi` | nothing to do: only `PdfPreview.android.tsx` imports it; Linux gets the shared `PdfPreview` over `react-native-webview` (#272) |
 
 ## 3. Dependency order
@@ -146,7 +147,10 @@ The order epic #634 follows. Each step needs the ones before it.
    frame without them. Its `intl-polyfills.ts` adds `Intl.Locale`, `getCanonicalLocales` and English `DisplayNames`
    but assumes the rest from the engine. #83 chose the platform's own `Intl` over the system ICU
    (`packages/core/src/Intl.h`), with Hermes' Intl kept off; `IntlStartupTest` starts a bundle that builds those
-   module-scope formatters, and `IntlBindingTest` covers the three constructors with T3 Code's options.
+   module-scope formatters, and `IntlBindingTest` covers the three constructors with T3 Code's options. The
+   polyfills are not free without the engine's own `Intl.Locale` and `Intl.DisplayNames`: `@formatjs/intl-displaynames`'
+   `shouldPolyfill()` then runs a best-fit match against 571 locales, measured at about 2.3 s a pair under the `dev`
+   build, so `App.tsx` would take about 22 minutes to load (#772).
 7. **The fixture**: the main screen renders in `rnl_window` against a local T3 server (#641). `pnpm e2e:t3code
    <checkout>` builds T3 Code's own development bundle for `linux` (it pairs from a link only under `__DEV__`) with its
    own Metro config under this platform's resolver (`packages/test-harness/scripts/t3code-metro-config.ts`), starts the
@@ -202,7 +206,7 @@ transitive package.
 | `react-native-screens` | `file:deps/react-native-screens-5.0.0-t3.50.tgz` | tracked | #166 | T3 Code's fork, imported by the entry; under React Navigation native-stack |
 | `react-native-safe-area-context` | `~5.11.1` | tracked | #161 | 71 files |
 | `react-native-svg` | `15.16.1` | tracked | #167 | provider icons and charts |
-| `react-native-nitro-modules` | `0.37.2` | tracked | #152 | the highlights module |
+| `react-native-nitro-modules` | `0.37.2` | tracked | #152 | the highlights module; 0.37.2 throws as it loads, so the desktop profile resolves it to a stand-in whose hybrid objects are TurboModules (below, `packages/test-harness/e2e/t3-highlights-fallback.json`) |
 | `nitro-core` | `0.37.2` | tracked | #152 | from react-native-nitro-modules |
 | `@tabler/icons-react-native` | `^3.44.0` | tracked | #167 | JavaScript over react-native-svg |
 | `expo-file-system` | `~58.0.13` | tracked | #269 | 22 files: attachments and caches |
@@ -220,7 +224,7 @@ transitive package.
 | `react-native-keyboard-controller` | `1.23.0` | shimmed | `packages/test-harness/e2e/keyboard-controller.json` | KeyboardProvider at the root; a desktop has no soft keyboard, so its height stays zero, its events and handlers never fire, its views are Views and `dismiss` blurs the focused input (`linuxPackageOverlayIndex` replaces the library's native bindings) |
 | `react-native-enriched-markdown` | `file:deps/react-native-enriched-markdown-1.2.0-t3.18-16db4c75.tgz` | tracked | #688 | T3 Code's fork; every message; #639 landed the base |
 | `@t3tools/mobile-source-text` | `file:./modules/t3-source-text` | tracked | #684 | source file view; no Linux code, its `Text` fallback renders |
-| `@t3tools/mobile-highlights-native` | `file:./modules/t3-highlights` | tracked | #684 | syntax highlighting, a Nitro module; a `linux/` TurboModule until #152, reached through T3 Code's `nativeHighlights.linux.ts` (below) |
+| `@t3tools/mobile-highlights-native` | `file:./modules/t3-highlights` | tracked | #684 | syntax highlighting, a Nitro module; a `linux/` TurboModule until #152, reached through the profile's `react-native-nitro-modules` stand-in (below); without it, code renders as plain text |
 | `@t3tools/mobile-review-diff-native` | `file:./modules/t3-review-diff` | tracked | #685 | review diff view; Linux renders it in JavaScript, no native code |
 | `@t3tools/mobile-terminal-native` | `file:./modules/t3-terminal` | tracked | #640 | terminal view |
 | `@react-native-menu/menu` | `^2.0.0` | tracked | #646 | 28 files: thread rows, list filter, composer |
@@ -263,7 +267,9 @@ other seven are Expo local modules, linked by directory rather than declared as 
 | `t3-web-socket` | iOS | React Native's WebSocket (#79) |
 
 T3 Code's `src/lib/highlights.ts` imports `react-native-nitro-modules` at the top, and 0.37.2 throws when it loads on
-Linux (`TurboModuleRegistry.getEnforcing('NitroModules')`), so the app cannot reach `T3Highlights` until T3 Code
-splits the lookup into one file: `nativeHighlights.ts` keeps `NitroModules.hasHybridObject("T3Highlights")`, and
-`nativeHighlights.linux.ts` is `TurboModuleRegistry.get("T3Highlights") ?? undefined`. T3 Code owns that copy;
-`test-bundles/t3-highlights.js` reaches the module the same way. Nitro on Linux (#152, #153) is the real fix.
+Linux (`TurboModuleRegistry.getEnforcing('NitroModules')`). It is the package's only importer in the app, so the
+desktop profile resolves the package to `test-bundles/t3code-desktop-profile/react-native-nitro-modules.ts` (#767):
+`hasHybridObject` and `createHybridObject` answer through `TurboModuleRegistry`, which reaches the `linux/`
+TurboModule when it is registered, as `test-bundles/t3-highlights.js` does. `rnl_window` registers none, so code blocks
+take T3 Code's own plain-text branch, which the `t3-highlights-fallback` e2e draws. Nitro on Linux (#152, #153) is
+the real fix.

@@ -1,0 +1,18 @@
+{
+  "name": "t3-highlights-fallback",
+  "bundle": "t3-highlights-fallback.tsx",
+  "ready": "t3-highlights-fallback: T3Highlights absent, 4 plain lines",
+  "frames": 300,
+  "steps": ["sleep 500"],
+  "expect": ["t3-highlights-fallback: T3Highlights absent, 4 plain lines"],
+  "screenshot": {
+    "golden": "t3-highlights-fallback.png",
+    "crop": {
+      "left": 0,
+      "top": 0,
+      "width": 480,
+      "height": 160
+    },
+    "maxDifferentPixels": 1
+  }
+}
