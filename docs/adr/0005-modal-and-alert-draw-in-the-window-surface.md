@@ -79,9 +79,10 @@ What the flagship needs, counted in `t3code/apps/mobile/src` at `2386789`:
   - A scrim over the parent is impossible, which is rnw#16307 again.
 - **`xdg_popup`**: it is positioned relative to the parent through `xdg_positioner`, and it is a different
   contract from a modal:
-  - The compositor dismisses it on an outside click, where a modal must block that click.
-  - An explicit grab needs the serial of a recent input event, and T3 Code raises alerts from failed network
-    calls that have no input serial.
+  - Creating a popup needs no input serial, but an explicit grab (`xdg_popup.grab`) does. Without a grab the
+    popup gets no keyboard focus of its own, so a keyboard-operable popup cannot be raised without input. T3 Code
+    raises alerts from failed network calls, which have no input serial.
+  - With a grab, the compositor dismisses the popup on an outside click, where a modal must block that click.
 - **`wl_subsurface`**: a second buffer inside the same window. It keeps placement in our hands, but it adds a
   second swapchain and synchronized commits. It buys a separately composited layer, which the 120 Hz numbers do
   not yet ask for (see *What would make us revisit*).
@@ -101,12 +102,13 @@ The reasons, weighed in the order the brief named them:
    The `TextInput` in `CommandPalette` composes exactly as one in the main tree does. Focus trapping is a filter
    over the focusable set `InputDispatcher` already computes, not a negotiation with Hyprland's focus rules.
 2. **Input routing.** `InputDispatcher` already hit-tests the retained scene, not the shadow tree. An overlay is
-   one more rule in that walk: the topmost overlay answers every point. There is no second `wl_pointer` focus and
-   no second `PointerRouter`.
+   one more rule in that walk: the topmost overlay answers every point. The wheel and keyboard scrolling follow
+   the same rule (see *Input and focus*). There is no second `wl_pointer` focus and no second `PointerRouter`.
 3. **One surface against the 120 fps budget.** One swapchain acquire and present per frame, one frame-callback
    stream, one `wp_presentation` feedback, one damage region. An open modal costs the nodes it paints. Opening a
    full-surface scrim damages the whole surface once, or every frame of a fade. That is the same cost class as any
-   full-window animation, and the 120 Hz frame-time gate (#654) already measures it. A second toplevel is a second
+   full-window animation. The 120 Hz frame-time gate (#654) gets a scenario for exactly this case (see *Test
+   layers*). A second toplevel is a second
    `VkSurfaceKHR` and swapchain with its own pacing loop. Its frame callbacks stop whenever Hyprland considers it
    hidden. Its time to first visible frame includes a compositor open animation we do not control.
 4. **Headless testability.** `GoldenRenderer` renders one scene, and an overlay is part of that scene, so goldens
@@ -124,21 +126,25 @@ The reasons, weighed in the order the brief named them:
 **Component.** Register `ModalHostView` with a Linux descriptor in `packages/core/src/ModalHostComponent.{h,cpp}`,
 beside `SwitchComponent.h`. Upstream's `ModalHostViewComponentDescriptor` is `final`, and on the `cxx` platform
 its initial state comes from `ModalHostViewScreenSize()`, which returns 0×0. That lays the first frame out at zero
-size: the first-frame position failure of [react-native#50442](https://github.com/facebook/react-native/issues/50442)
-and [#50152](https://github.com/facebook/react-native/issues/50152) that #62's amendment makes an acceptance
-criterion. The Linux descriptor copies Android's answer rather than iOS's:
+size. It is the failure of [react-native#50442](https://github.com/facebook/react-native/issues/50442) ("Modal's
+children are rendered in the top left corner for the first few frames"), #62's first criterion. The Linux
+descriptor copies Android's answer rather than iOS's:
 
-- `createInitialState` reads the surface's current logical size, from a per-surface entry `WindowSession` keeps
-  in the `ContextContainer`, so the first commit is already full-size.
+- `createInitialState` reads the surface's logical size from the per-surface `DimensionsSource`.
+  `TurboModuleRegistry` already owns it as a `shared_ptr`, and `ReactHost::dimensions()` exposes it.
+  `FabricHost` inserts that same pointer into the `ContextContainer`, so the first commit is already full-size,
+  and there is no new size map. `DimensionsSource`'s mutex already makes `metrics()` safe from whichever thread
+  commits.
 - `adopt` is upstream's: the size comes from the state, and the position is absolute.
 - A resize calls `updateState` on each presented modal's state with the new size, as iOS's component view does.
+  It does so from the same `DimensionsSource` change that emits `didUpdateDimensions`.
 - The shadow node, props, state and event emitter stay upstream's (`rrc_modal` is already built), so `Modal.js`
   runs unmodified.
 
 **Scene.** `RetainedScene` keeps an ordered list of overlay roots per surface. When `insertChild` sees a
-`ModalHostView`, it appends the node to that list, which is mount order. The node stays the parent's child for
-`removeChild` and `deleteNode` bookkeeping, but it is not painted at its tree position. `ScenePainter` paints
-the surface tree first and then each overlay root in list order:
+`ModalHostView`, it appends the node to that list, which is mount order. `removeChild` and `deleteNode` take it
+out of the list in the same transaction. The node stays the parent's child for bookkeeping, but it is not painted
+at its tree position. `ScenePainter` paints the surface tree first and then each overlay root in list order:
 
 - An overlay root is composed from the surface origin with the identity matrix. Every ancestor's transform,
   opacity, `overflow` clip and `zIndex` is ignored, because `ModalHostView` is `RootNodeKind` and lays out as its
@@ -151,19 +157,38 @@ the surface tree first and then each overlay root in list order:
 lands on the overlay root itself, the backdrop, and never on anything beneath it. That is the rn-macos#914
 criterion. `Modal.js` has no backdrop-press dismissal, so neither does the platform.
 
-**Input and focus.** `InputDispatcher`:
+The hit path holds only overlays that are in the list now. A removed overlay leaves the hit test, the focus trap
+and the wheel route in the commit that removes it, however fast a present follows a removal. That is #62's second
+criterion, [react-native#50152](https://github.com/facebook/react-native/issues/50152) ("Invisible layer blocks UI
+when rapidly opening and closing modals"). The dismissal snapshot that a later `animationType` slice adds only
+paints. It is never hit-tested, never focus-trapped and never a wheel target.
 
-- **Focus trap.** While an overlay is presented, `collectFocusables` walks only the topmost overlay's subtree.
-  `FocusModel` needs no new rule for the node that loses focus: a focused node outside the new set is blurred,
-  which `setFocusableTags` already does.
+**Input and focus.**
+
+- **Focus trap, on focus only.** `collectFocusables` keeps walking the whole committed tree. It also fills
+  `textInputNodes_` for `TextInputController::setMountedFields`, which drops every field it is not given, so a
+  walk restricted to the overlay would throw away a composer draft the moment a confirmation opens. While an
+  overlay is presented, the trap filters only the tags handed to `FocusModel::setFocusableTags`, down to the
+  topmost overlay's subtree. `FocusModel` needs no new rule for the node that loses focus: a focused node outside
+  the new set is blurred, which `setFocusableTags` already does.
 - **Initial focus.** On present, focus moves to the overlay's first focusable. The focus ring keeps the state it
   had, so a keyboard user keeps the ring. That is `<dialog>.showModal()`'s rule and what base-ui's dialog does in
-  T3 Code's Electron build. An application that calls `ref.focus()` from `onShow`, as `CommandPalette` does,
-  still wins, because commands drain after the present.
+  T3 Code's Electron build. An application focus wins: a `ref.focus()` from `onShow`, as `CommandPalette` does,
+  or an `autoFocus` field inside the modal, is applied after the platform's rule, because commands drain after the
+  present. `Alert` sets its own initial focus this way (see *Alert*).
 - **Restore.** On dismissal, focus returns to the tag focused when the overlay was presented, if that tag is
   still focusable. The restore stack, keyed by overlay tag, lives in `FocusModel`, because it is tag arithmetic.
 - **Escape.** Escape is delivered as a `keyDown` to the focused node as today. Unless a composition is active, it
   then fires `onRequestClose` on the topmost overlay's `ModalHostViewEventEmitter`.
+- **Close request.** The compositor's close request closes the window, as it does today. It is not routed to
+  `onRequestClose`. Escape is the modal's close path. A modal whose app ignores `onRequestClose` must not be able to
+  make the window impossible to close.
+- **The wheel.** `ScrollController::scrollViewUnderPointer` runs its own `UIManager::findNodeAtPoint` walk from
+  the surface root, which would scroll the page beneath an open modal. While an overlay is presented, that walk
+  starts at the topmost overlay's `ModalHostView` shadow node instead. A point with no `ScrollView` under it
+  inside the overlay scrolls nothing.
+- **Keyboard scrolling.** `keyboardScrollTarget`, which picks the outermost `ScrollView` for a key pressed with
+  nothing focused, picks it inside the topmost overlay for the same reason.
 - **Presses.** A press in progress beneath a presenting overlay is cancelled with the existing `cancelTouch`.
 - **`onShow`** fires after the frame that first paints the overlay is submitted.
 
@@ -174,16 +199,20 @@ overlay's subtree, as `aria-modal` and iOS's `accessibilityViewIsModal` do. Its 
 **Props.**
 
 - `transparent` and `backdropColor` are already a `backgroundColor` that `Modal.js` sets on its container.
+  `transparent` wins, so `backdropColor` is ignored on a transparent modal, and a transparent modal's scrim is a
+  child `View` of the application's.
 - `presentationStyle` is accepted, and every style covers the surface, as on Android.
-- `onDismiss`, `onOrientationChange` and `allowSwipeDismissal` stay with iOS, because `Modal.js` gates them on
-  `Platform.OS`. `CommandPalette` already carries the 400 ms fallback that Android relies on.
+- `Modal.onDismiss` never fires on Linux, and `Modal.js` is not overridden for it. Upstream gates `onDismiss`,
+  `onOrientationChange` and `allowSwipeDismissal` on `Platform.OS === 'ios'`, so Linux has Android's behaviour.
+  `CommandPalette` already carries the 400 ms fallback that Android relies on. This is a different callback from
+  `AlertOptions.onDismiss`, which Linux does fire (see *Alert*).
 - `animationType` paints as `none` in the first slice.
 
 **Out of the first slice, each named:**
 
 - `animationType` `fade` and `slide`, on present and on dismissal. Dismissal is the hard half: `Modal.js` returns
   `null` at once on non-iOS, so the scene has to keep the deleted overlay's last picture for the animation's
-  length, which is iOS's snapshot approach.
+  length, which is iOS's snapshot approach. It paints only, as above.
 - `react-native-screens` modal presentations (#166).
 - `@react-native-menu/menu`'s anchored menus (#646).
 
@@ -196,33 +225,51 @@ The last two are the second and third consumers of the overlay list. The list is
 text field, light and dark themes and translations in C++. That is a second UI toolkit inside a platform whose
 whole point is one paint model. With `Modal` in place, an alert is a small React tree.
 
-- **The override.** `packages/core/src-linux/Libraries/Alert/Alert.linux.ts`, added to `linuxOverlayIndex` for
-  `Libraries/Alert/Alert`, exports upstream's `Alert` API with upstream's types. `alert` and `prompt` both work on
-  Linux, because T3 Code's `Dialog.prompt` reaches `Alert.prompt`.
-- **Normalization.** The override reuses iOS's normalization: buttons in the order given, the `cancel` and
-  `destructive` styles, `isPreferred`, `defaultValue` and the prompt `type`, which is the shape
-  `RCTAlertManager.ios` `alertWithArgs` takes. No native `AlertManager` is registered, because nothing needs to
-  cross into C++.
-- **Requests and the host.** A request goes into a module-level store, so an alert raised before the root mounts
-  is not lost. An `AlertHost` renders every pending request as a `transparent` `Modal`, newest on top. A second
-  alert stacks over the first, as on iOS and Android, without a queue. `AlertHost` is mounted once per root by an
-  overlay of `Libraries/ReactNative/AppContainer`, which wraps upstream's dev and prod containers. The nested
-  `AppContainer` that a development `Modal` renders shares its root's tag and does not mount a second host.
+**Upstream's `Alert.js` on its iOS branch, over a JavaScript `RCTAlertManager`.**
 
-**Button order, Enter and Escape.** One table in one pure function, unit-tested:
+- **`Alert.linux.ts`** is upstream's `Alert.js` with the `Platform.OS === 'ios'` branch taken unconditionally.
+  `alert` calls `prompt` with type `default`, and `prompt` builds the iOS arguments: buttons keyed by their index,
+  `cancelButtonKey`, `destructiveButtonKey`, `preferredButtonKey`, `defaultValue`, `keyboardType` and
+  `userInterfaceStyle`. It also drops a last button with no text, as upstream does.
+  - **The one Linux deviation.** It also passes Android's `cancelable` and `onDismiss` options, which the iOS
+    branch drops, because the Escape table below needs them.
+- **`RCTAlertManager.linux.ts`** implements `alertWithArgs(args, callback)` in JavaScript, ported from
+  `React/CoreModules/RCTAlertManager.mm`. Its normalization is upstream's:
+  - A call with neither a title nor a message is an error.
+  - With no buttons, a `default` alert gets one `OK`, which is the cancel key. A prompt gets `OK` and `Cancel`,
+    with `Cancel` as the cancel key.
+  - `plain-text` and `secure-text` call back `(key, text)`. `login-password` calls back
+    `(key, {login, password})`. `default` calls back `(key)`.
+  - `userInterfaceStyle` overrides light or dark per call, and otherwise the card follows `Appearance`.
+- **Overlay index.** Both files join `linuxOverlayIndex` and `packages/core/overrides.json`. The
+  `"Libraries/Alert/RCTAlertManager": "ios"` entry in `linuxUpstreamVariantIndex` is removed, because `Alert.js`
+  never reached it on Linux and the overlay replaces it. `metro-config-overlay.spec.ts`'s list loses that line.
+- **No native module.** No `AlertManager` TurboModule is registered, because nothing crosses into C++.
+
+**Requests and the host.**
+
+- **Requests.** `alertWithArgs` puts each request into a module-level store, so an alert raised before the root
+  mounts is not lost. Each request records its target root:
+  - With one window, the first mounted root.
+  - Under #436, the root that last held keyboard focus.
+
+  There is no `rootTag` API.
+- **Hosts.** Each `AlertHost` renders only its own root's requests, so an alert is never drawn twice across
+  roots. It renders every pending request as a `transparent` `Modal`, newest on top. A second alert stacks over
+  the first, as on iOS and Android, without a queue.
+- **Mounting.** `AlertHost` is mounted once per root by an overlay of `Libraries/ReactNative/AppContainer`, which
+  wraps upstream's dev and prod containers. The nested `AppContainer` that a development `Modal` renders shares its
+  root's tag and does not mount a second host.
+- **Why not `AppRegistry.setWrapperComponentProvider`.** It is a single slot the application owns. An app or
+  framework that sets it would replace the platform's provider and silently remove the alert host, and every
+  `Alert` after that would be skipped, which is today's bug again.
+
+**Layout.**
 
 - **Order.** Buttons render in a row in the order given, except that a `cancel`-style button is moved to the
-  start, as UIAlertController does for two buttons and the GNOME HIG asks. The row mirrors in RTL and wraps into a
-  column when it does not fit. No buttons means one `OK`, as on both upstream platforms.
-- **Default button.** The `isPreferred` button. Otherwise the last button that is neither `cancel` nor
-  `destructive`. Otherwise none.
-- **Initial focus and Enter.** Focus starts on the default button, or on the cancel button when there is no
-  default. Enter and Space then activate the focused button through the existing activation path
-  (`isActivationKey`), so Enter needs no mapping of its own. A destructive-only confirmation can never be
-  accepted by a stray Enter. In a `prompt`, Enter in the field (`onSubmitEditing`) presses the default button.
-- **Escape**, through the `Modal`'s `onRequestClose`. It presses the `cancel`-style button, or a single-button
-  alert's only button. Failing both, with `options.cancelable`, it dismisses and calls `options.onDismiss`.
-  Otherwise it does nothing, and the alert keeps the focus trapped.
+  start, as UIAlertController does for two buttons and the GNOME HIG asks. The reordering is visual only: every
+  button keeps upstream's key, which is its index in the caller's array, so the callback reaches the right
+  `onPress`. The row mirrors in RTL and wraps into a column when it does not fit.
 - **Size.** The card is centred on the surface, at most 400 logical pixels wide and the surface minus a margin.
   The message scrolls when the card would be taller than the surface. A size constraint the surface cannot
   satisfy resolves to that clamp, never to a failure (#262's second note).
@@ -231,15 +278,38 @@ whole point is one paint model. With `Modal` in place, an alert is a small React
 - **Anchors.** `Alert` takes no anchor upstream and is centred. Anchoring belongs to action sheets and menus
   (#646), which can place against a view's scene rectangle in the same coordinate space without `xdg_popup`.
 
+**Keyboard.** The rules below live in one pure function, unit-tested, and each is also proved through the real
+input path (see *Test layers*):
+
+- **Default button.** The `isPreferred` button unless it is destructive. Otherwise the last button that is
+  neither `cancel` nor `destructive`. Otherwise none. Enter never activates a destructive button by default.
+- **Initial focus.** This overrides `Modal`'s first-focusable rule explicitly. `AlertHost` applies it with a focus
+  from `onShow`, the path an application's focus takes.
+  - A prompt focuses its first text field: the login field for `login-password`.
+  - Otherwise focus goes to the default button.
+  - Otherwise to the cancel button.
+  - Otherwise, when no safe button exists, to the card itself: a focusable target with no press handler, so
+    Enter and Space do nothing until the user chooses a button with Tab.
+- **Enter and Space** activate the focused button through the existing activation path (`isActivationKey`), so
+  Enter needs no mapping of its own. In a prompt, `onSubmitEditing` presses the default button.
+- **Escape**, through the `Modal`'s `onRequestClose`, takes the first rule that applies:
+  1. A lone button that is a non-destructive acknowledgement is activated.
+  2. Otherwise the cancel button is pressed, if there is one.
+  3. Otherwise, if the alert is `cancelable`, it is dismissed: `AlertOptions.onDismiss` is called and no button's
+     callback is, destructive or not.
+  4. Otherwise nothing happens, and the alert keeps the focus trapped.
+
 ### Test layers per slice
 
 | Slice | Unit | Golden | E2E |
 | --- | --- | --- | --- |
-| **Modal: scene and component** (renderer lane) | GoogleTest at 100%: overlay list order on mount, removal and nesting; hit test stops at the topmost overlay, backdrop included; the overlay ignores an ancestor's transform, clip and `zIndex`; first-commit size from `createInitialState`; `updateState` on resize | An opaque modal over content; a transparent modal with a `backdropColor` scrim; a modal declared inside a clipped, transformed, low-`zIndex` parent, painting full-surface and on top | The surface's tree beneath an open modal receives no press |
-| **Modal: focus and keys** (input lane) | GoogleTest at 100%: trap to the topmost overlay, initial focus, restore stack (nested), Escape → `onRequestClose` only on the topmost, no Escape during composition, touch cancel on present | — | Open with the keyboard; Tab and Shift+Tab cycle inside only; Escape closes; focus is back on the invoker. A `TextInput` in a transparent modal takes IME text. A `DumpAccessibilityTree` snapshot with the modal open holds only the modal, role `dialog` |
-| **Alert** (modules lane) | Vitest at 100%: the button-order, default-button and Escape table; request store ordering and stacking; the iOS-shape normalization against upstream's own `Alert.prompt` cases | Two-button and three-button alerts, a destructive confirmation, a prompt, each in light and dark | Tab cycles inside the alert only; Enter presses the default; Escape presses cancel; a destructive-only confirmation ignores Enter; T3 Code's `Dialog.confirm` and `Dialog.prompt` called through the desktop profile reach their callbacks |
+| **Modal: scene and component** (renderer lane) | GoogleTest at 100%: overlay list order on mount, removal and nesting; hit test stops at the topmost overlay, backdrop included; the overlay ignores an ancestor's transform, clip and `zIndex`; rapid present and remove, in one transaction and across consecutive commits, leaves no overlay in the hit path; first-commit size from `createInitialState` over `DimensionsSource`; `updateState` on resize | Two fixtures, each declared inside a clipped, transformed, low-`zIndex` parent and painting full-surface and on top: an opaque modal with `backdropColor`, and a transparent modal whose child `View` is the scrim | The surface's tree beneath an open modal receives no press. A #654 frame-gate scenario (`modal-scrim-over-list-120hz`): a transparent scrim modal over a scrolling list, held to the 120 Hz budget |
+| **Modal: focus and keys** (input lane) | GoogleTest at 100%: the trap filters only the focusable tags; a `TextInput` beneath keeps its buffer across present and dismiss; initial focus, and an `onShow` or `autoFocus` focus winning over it; the restore stack (nested); Escape → `onRequestClose` only on the topmost; no Escape during composition; touch cancel on present; the wheel route and `keyboardScrollTarget` start at the topmost overlay | — | Open with the keyboard; Tab and Shift+Tab cycle inside only; Escape closes; focus is back on the invoker. The wheel over an open modal scrolls the modal's list, not the page beneath. A `TextInput` in a transparent modal takes IME text. A `DumpAccessibilityTree` snapshot with the modal open holds only the modal, role `dialog` |
+| **Alert** (modules lane) | Vitest at 100%: the default-button, initial-focus and Escape table; the visual reorder preserving callback keys; request store ordering, stacking and root targeting; `alertWithArgs` against `RCTAlertManager.mm`'s cases (no buttons, prompt OK and Cancel, `login-password` credentials, missing title and message) | Two-button and three-button alerts, a destructive confirmation, a prompt, each in light and dark | Keyboard scenarios through the real seat and `InputDispatcher` against the real `Alert.linux.ts`, one per rule above: Tab cycles inside the alert only; Enter presses the default; Enter on a destructive-only confirmation activates nothing; Escape on a lone OK, on cancel, on a cancelable alert with no cancel (`onDismiss`, no button callback) and on a non-cancelable one (nothing); an `onShow` focus wins. Open a prompt, type without clicking, press Enter: the callback gets the text. T3 Code's `Dialog.confirm` and `Dialog.prompt` called through the desktop profile reach their callbacks |
 
-The renderer slice lands first. The input slice and the Alert slice both depend on it and not on each other.
+**Order.** Renderer → input → Alert. Implementation can run in parallel, but the input slice merges after the
+renderer slice, and the Alert slice merges only after both: its keyboard rules stand on the trap, the restore and
+Escape.
 
 ## Rejected
 
@@ -247,16 +317,20 @@ The renderer slice lands first. The input slice and the Alert slice both depend 
   surface are compositor policy or impossible on Wayland, and RNW's open issues (#16307, #14604, #14805, #14069)
   are that cost paid on a platform that *can* position windows. It returns as multi-window under #436, where a
   separate window is the feature rather than the side effect.
-- **`xdg_popup` for `Modal`**. Its contract is dismiss-on-outside-click with a grab that needs an input serial.
-  A modal must block the outside click, and it can be raised with no input at all.
+- **`xdg_popup` for `Modal`**. A keyboard-operable popup needs a grab, the grab needs an input serial, and the
+  grabbed popup is dismissed on an outside click. A modal must block the outside click, and it can be raised with
+  no input at all.
 - **A drawn overlay on a `wl_subsurface`**. It buys separately composited layers before any frame-time number
   asks for them, and costs a second swapchain and synchronized commits.
 - **A JavaScript `Modal` that is an absolutely positioned `View`** (lucid-softworks'). It is clipped, transformed
   and out-stacked by its ancestors. Stacking above everything has to be a renderer rule, not a style.
 - **A native `Alert` module drawing in C++**, or an external dialog process. Explained under *Alert*.
-- **Routing the compositor's close request to `onRequestClose`** while a modal is open (#62's text asks for it).
-  A modal that ignores `onRequestClose` would make the window impossible to close, which no desktop toolkit
-  permits. The close request closes the window, as it does today. See *Open questions*.
+- **A Linux re-implementation of `Alert.js`'s argument handling.** Upstream's iOS branch and `RCTAlertManager.mm`
+  already define it. A port keeps the same defaults, keys and callback shapes, and an upstream change shows up as
+  an override diff.
+- **Routing the compositor's close request to `onRequestClose`** while a modal is open. A modal whose app ignores
+  `onRequestClose` would make the window impossible to close, which no desktop toolkit permits. #62's criterion is
+  amended to match.
 
 ## Consequences
 
@@ -268,25 +342,26 @@ The renderer slice lands first. The input slice and the Alert slice both depend 
   overflowing, until a consumer proves it must overflow, which is when `xdg_popup` returns.
 - `Alert` behaves identically in every app, because the platform owns the host. It also means the platform owns
   its look; the goldens fix it, and theming beyond light and dark is a later issue.
-- `AppContainer` joins the list of upstream JavaScript files this platform overrides (ADR-0001's recurring cost).
+- `Alert`, `RCTAlertManager` and `AppContainer` join the upstream JavaScript files this platform overrides,
+  tracked in `packages/core/overrides.json` (ADR-0001's recurring cost).
 
 ## What would make us revisit
 
-- **The frame-time gate shows an open overlay costing frames** that a separately composited layer would not.
-  That reopens `wl_subsurface`.
+- **`modal-scrim-over-list-120hz` misses the 120 Hz budget** that the same list meets without the modal, and a
+  separately composited layer would not. That reopens `wl_subsurface`.
 - **A consumer needs content outside the window**: a menu or tooltip larger than a small window, or a
   drag-and-drop preview. That brings in `xdg_popup` for that consumer only.
 - **Multi-window lands (#436)** and an application wants a modal *window*. That is a new component or a
   `presentationStyle` value, not a change to `Modal`'s default.
 
-## Open questions for the council
+## Questions the council settled
 
-1. **Compositor close request with a modal open.** This ADR closes the window. #62's criteria ask for
-   `onRequestClose`. Is there a desktop precedent for the latter that is not a trap?
-2. **Which root hosts `Alert` with several windows** (#436). A single window answers this trivially. The
-   candidates are the root that last held keyboard focus, or an explicit `rootTag` option.
-3. **Initial focus for `Modal`.** This ADR moves focus to the first focusable, as `<dialog>.showModal()` does.
-   iOS and Android move only accessibility focus. Is a desktop default that differs from both mobile platforms
-   right for an app written for them?
-4. **`onDismiss` on Linux.** Upstream gates it to iOS in `Modal.js`, so Linux behaves like Android. An override
-   could fire it after the dismissal frame. Is that worth another overridden file?
+1. **Compositor close request.** It closes the window. Escape is the modal's close path. #62's criterion is
+   amended to match.
+2. **Which root hosts an `Alert`.** With one window, the first mounted root. Under #436, the root that last held
+   keyboard focus. No `rootTag` API.
+3. **Initial focus for `Modal`.** It follows `<dialog>.showModal()` and moves to the first focusable. A prompt
+   focuses its field instead, and an application's own focus wins.
+4. **`Modal.onDismiss`.** It never fires on Linux, which is Android's behaviour, and `Modal.js` is not
+   overridden. `AlertOptions.onDismiss` is a different callback, and Linux fires it when a cancelable alert is
+   dismissed with no button.
