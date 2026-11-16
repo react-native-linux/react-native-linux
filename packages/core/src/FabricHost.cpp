@@ -260,6 +260,7 @@ FabricHost::FabricHost(ReactHost& reactHost, facebook::react::Size surfaceSize, 
     schedulerDelegate_ = std::make_unique<facebook::react::SchedulerDelegateImpl>(mountingManager_);
     scheduler_ = std::make_unique<facebook::react::Scheduler>(schedulerToolbox, nullptr, schedulerDelegate_.get());
     schedulerDelegate_->setUIManager(scheduler_->getUIManager());
+    scheduler_->getUIManager()->registerCommitHook(retriedCommitRelayout_);
     mountingManager_->setAfterMountCallback(
         [scheduler = scheduler_.get()](facebook::react::SurfaceId surfaceId) { scheduler->reportMount(surfaceId); });
     additionalSurfaces_ = std::make_unique<facebook::react::SurfaceManager>(*scheduler_);
@@ -330,6 +331,7 @@ FabricHost::~FabricHost() noexcept {
 #endif
     stopSurface();
     scheduler_->unregisterSurface(*surfaceHandler_);
+    scheduler_->getUIManager()->unregisterCommitHook(retriedCommitRelayout_);
 }
 
 void FabricHost::setSurfaceSize(facebook::react::Size surfaceSize, facebook::react::Float pointScaleFactor) {

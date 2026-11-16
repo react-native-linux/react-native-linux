@@ -1,4 +1,5 @@
 #include "RecordingEventDispatcher.h"
+#include "RetriedCommitRelayout.h"
 #include "ShadowTreeTestSupport.h"
 
 #include <cmath>
@@ -6,7 +7,11 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <thread>
+#include <utility>
 #include <vector>
+
+#include <react/renderer/uimanager/LayoutEventEmitter.h>
 
 // When a resize is allowed to wake JavaScript up, and at which output scale two frames count as the same one
 // (#435). The defect the issue imports from upstream — `onLayout` firing per configure with values that did not
@@ -64,14 +69,20 @@ class OnLayoutEmissionTest : public ::testing::Test {
 protected:
     void SetUp() override {
         uiManager_ = react_native_linux::makeTaskDroppingUIManager(contextContainer_);
-        shadowTree_ = react_native_linux::addRegisteredShadowTree(*uiManager_, shadowTreeDelegate_, *contextContainer_,
-                                                                  kSurfaceId);
+        uiManager_->registerCommitHook(layoutEventEmitter_);
+        uiManager_->registerCommitHook(retriedCommitRelayout_);
+        shadowTree_ =
+            react_native_linux::addRegisteredShadowTree(*uiManager_, *uiManager_, *contextContainer_, kSurfaceId);
         configure(kInitialWidth, 1.0F);
         commitChildren(makeReportingChildren());
         shadowTree_->getMountingCoordinator()->pullTransaction();
     }
 
-    void TearDown() override { react_native_linux::removeShadowTree(*uiManager_, kSurfaceId); }
+    void TearDown() override {
+        react_native_linux::removeShadowTree(*uiManager_, kSurfaceId);
+        uiManager_->unregisterCommitHook(retriedCommitRelayout_);
+        uiManager_->unregisterCommitHook(layoutEventEmitter_);
+    }
 
     /**
      * One `xdg_toplevel.configure`, as `FabricHost::setSurfaceSize` performs it: the root cloned with new
@@ -193,7 +204,8 @@ protected:
     std::shared_ptr<facebook::react::UIManager> uiManager_;
     ViewComponentDescriptor viewDescriptor_{ComponentDescriptorParameters{
         .eventDispatcher = eventDispatcher_, .contextContainer = contextContainer_, .flavor = nullptr}};
-    react_native_linux::PassThroughShadowTreeDelegate shadowTreeDelegate_;
+    facebook::react::LayoutEventEmitter layoutEventEmitter_;
+    react_native_linux::RetriedCommitRelayout retriedCommitRelayout_;
     ShadowTree* shadowTree_{nullptr};
 };
 
@@ -296,6 +308,60 @@ TEST_F(OnLayoutEmissionTest, ALayoutHandlerWritingBackItsReportedWidthSettlesWit
 
     EXPECT_EQ(commitsUntilSettled, 1);
     EXPECT_EQ(frames(), before);
+}
+
+/**
+ * The race behind the `i18n-direction` e2e flake: a JavaScript commit appending a nested subtree to a root that
+ * already holds a committed parent and child loses its compare-and-swap to a resize landing between its layout and
+ * its compare, and is retried over the very nodes its first attempt already laid out. The resize runs on its own
+ * thread, joined inside the transaction, so it lands in exactly that window every time. Without
+ * `RetriedCommitRelayout` the retry lays the subtree out again only as far as the resize changed it, and the leaf's
+ * first `onLayout` never happens.
+ */
+TEST_F(OnLayoutEmissionTest, ACommitRetriedAfterAConcurrentResizeStillReportsItsNewLeaf) {
+    constexpr Tag kRowTag = 20;
+    constexpr Tag kSurfaceTag = 21;
+    constexpr Tag kCommittedParentTag = 22;
+    constexpr Tag kCommittedChildTag = 23;
+    const folly::dynamic fixedSize = folly::dynamic::object("width", kFixedWidth)("height", kFixedHeight);
+    const std::shared_ptr<const ShadowNode> committedChild = react_native_linux::makeConfiguredShadowNode(
+        viewDescriptor_, kCommittedChildTag, kSurfaceId, contextContainer_, fixedSize,
+        std::make_shared<const std::vector<std::shared_ptr<const ShadowNode>>>());
+    commitChildren(
+        {childWithTag(kFixedTag), childWithTag(kFlexibleTag),
+         react_native_linux::makeConfiguredShadowNode(
+             viewDescriptor_, kCommittedParentTag, kSurfaceId, contextContainer_, folly::dynamic::object(),
+             std::make_shared<const std::vector<std::shared_ptr<const ShadowNode>>>(std::vector{committedChild}))});
+    const size_t eventsBefore = layoutEventCount();
+    const std::shared_ptr<const ShadowNode> leaf = makeReportingView(kAddedTag, fixedSize);
+    const std::shared_ptr<const ShadowNode> row = react_native_linux::makeConfiguredShadowNode(
+        viewDescriptor_, kRowTag, kSurfaceId, contextContainer_,
+        folly::dynamic::object("flexDirection", "row")("width", kInitialWidth)("height", kFixedHeight),
+        std::make_shared<const std::vector<std::shared_ptr<const ShadowNode>>>(std::vector{leaf}));
+    const std::shared_ptr<const ShadowNode> surface = react_native_linux::makeConfiguredShadowNode(
+        viewDescriptor_, kSurfaceTag, kSurfaceId, contextContainer_, folly::dynamic::object("flex", 1),
+        std::make_shared<const std::vector<std::shared_ptr<const ShadowNode>>>(std::vector{row}));
+    int attempts = 0;
+
+    shadowTree_->commit(
+        [this, &attempts, &surface](const RootShadowNode& oldRootShadowNode) {
+            if (attempts++ == 0) {
+                std::thread([this] { configure(kResizedWidth, 1.0F); }).join();
+            }
+
+            std::vector<std::shared_ptr<const ShadowNode>> children = oldRootShadowNode.getChildren();
+            children.push_back(surface);
+
+            return react_native_linux::cloneRootWithChildren(
+                oldRootShadowNode,
+                std::make_shared<const std::vector<std::shared_ptr<const ShadowNode>>>(std::move(children)));
+        },
+        {});
+
+    EXPECT_EQ(attempts, 2);
+    EXPECT_EQ(layoutEventCount(), eventsBefore + 1);
+    EXPECT_EQ(frames().at(kAddedTag), (Rect{.origin = {.x = 0, .y = 3 * kFixedHeight},
+                                            .size = {.width = kFixedWidth, .height = kFixedHeight}}));
 }
 
 } // namespace

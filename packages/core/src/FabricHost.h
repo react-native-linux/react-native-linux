@@ -6,6 +6,7 @@
 #include "LinuxAnimationChoreographer.h"
 #include "LinuxMountingManager.h"
 #include "RetainedScene.h"
+#include "RetriedCommitRelayout.h"
 #include "ScrollController.h"
 
 #include <chrono>
@@ -210,6 +211,7 @@ private:
     std::shared_ptr<LinuxAnimationChoreographer> animationChoreographer_;
     std::weak_ptr<facebook::react::UIManagerAnimationBackend> animationBackend_;
     std::function<void()> eventBeatInducer_;
+    RetriedCommitRelayout retriedCommitRelayout_;
     std::unique_ptr<facebook::react::SchedulerDelegateImpl> schedulerDelegate_;
     std::unique_ptr<facebook::react::Scheduler> scheduler_;
     std::unique_ptr<facebook::react::SurfaceManager> additionalSurfaces_;
