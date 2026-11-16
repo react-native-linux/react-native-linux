@@ -82,7 +82,11 @@ struct PromptCompletion {
     std::string promptFailure;
 };
 
-/** Dismisses the prompt unless it completed, on every way out of `settle`, so no prompt outlives its call. */
+/**
+ * Dismisses the prompt unless it completed, on every way out of `settle`, so no prompt outlives its call. The dismissal
+ * is a call bounded by the bus's call timeout, not a queued message, so closing the bus needs no flush that a stalled
+ * peer could hold forever.
+ */
 struct PromptDismissal {
     PromptDismissal(sd_bus* bus, const std::string& prompt, const PromptCompletion& completion)
         : bus(bus), prompt(prompt), completion(completion) {}
@@ -94,8 +98,7 @@ struct PromptDismissal {
 
     ~PromptDismissal() {
         if (!completion.completed) {
-            sd_bus_call_method_async(bus, nullptr, kDestination, prompt.c_str(), kPromptInterface, "Dismiss", nullptr,
-                                     nullptr, "");
+            sd_bus_call_method(bus, kDestination, prompt.c_str(), kPromptInterface, "Dismiss", nullptr, nullptr, "");
         }
     }
 
@@ -136,7 +139,7 @@ int onServiceLeft(sd_bus_message* /*message*/, void* userData, sd_bus_error* /*e
 
 } // namespace
 
-void SecretServiceBackend::BusClose::operator()(sd_bus* bus) const noexcept { sd_bus_flush_close_unref(bus); }
+void SecretServiceBackend::BusClose::operator()(sd_bus* bus) const noexcept { sd_bus_close_unref(bus); }
 
 void SecretServiceBackend::MessageUnref::operator()(sd_bus_message* message) const noexcept {
     sd_bus_message_unref(message);
