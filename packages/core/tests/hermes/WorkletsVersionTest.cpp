@@ -25,8 +25,7 @@ TEST(WorkletsVersionTest, TheCompiledVersionStampIsTheInstalledPackagesVersion) 
     EXPECT_EQ(worklets::getWorkletsCppVersion(), installedWorkletsVersion());
 }
 
-TEST(WorkletsVersionTest, TheStaticFeatureFlagsAreThePackagesOwnAndFetchPreviewIsOff) {
-    EXPECT_FALSE(worklets::StaticFeatureFlags::getFlag("FETCH_PREVIEW_ENABLED"));
+TEST(WorkletsVersionTest, TheStaticFeatureFlagsAreThePackagesOwn) {
     EXPECT_TRUE(worklets::StaticFeatureFlags::getFlag("ENABLE_CROSS_RUNTIME_STACK_TRACES"));
     EXPECT_THROW(worklets::StaticFeatureFlags::getFlag("NOT_A_FLAG"), std::logic_error);
 }

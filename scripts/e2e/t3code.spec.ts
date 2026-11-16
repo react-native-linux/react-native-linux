@@ -99,7 +99,6 @@ describe("overlayInstallArguments", () => {
       "/overlays/a.tgz",
       "/overlays/b.tgz",
       "--ignore-scripts",
-      "--config.strict-peer-dependencies=false",
     ]);
   });
 });

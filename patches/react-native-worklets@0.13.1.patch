@@ -1,5 +1,5 @@
 diff --git a/src/runLoop/uiRuntime/requestAnimationFrame.ts b/src/runLoop/uiRuntime/requestAnimationFrame.ts
-index 953826b663c79ce476644996c19e7fb5e82966d2..3875f25d3fcc741b486f6e1df02f65e315c373b5 100644
+index f9a439aac90ac2935ff9db165eadd58443a524d4..5f828e8094c63b475020b4cb05f17522b537e931 100644
 --- a/src/runLoop/uiRuntime/requestAnimationFrame.ts
 +++ b/src/runLoop/uiRuntime/requestAnimationFrame.ts
 @@ -13,6 +13,21 @@ export function setupRequestAnimationFrame() {
@@ -24,7 +24,7 @@ index 953826b663c79ce476644996c19e7fb5e82966d2..3875f25d3fcc741b486f6e1df02f65e3
    function executeQueue(timestamp: number) {
      flushedCallbacks = queuedCallbacks;
      queuedCallbacks = [];
-@@ -41,6 +56,7 @@ export function setupRequestAnimationFrame() {
+@@ -44,6 +59,7 @@ export function setupRequestAnimationFrame() {
    ): number {
      const handle = queuedCallbacksEnd++;
      queuedCallbacks.push(callback);
@@ -32,7 +32,7 @@ index 953826b663c79ce476644996c19e7fb5e82966d2..3875f25d3fcc741b486f6e1df02f65e3
      return handle;
    }
  
-@@ -57,10 +73,9 @@ export function setupRequestAnimationFrame() {
+@@ -60,10 +76,9 @@ export function setupRequestAnimationFrame() {
    }
  
    function nativeFlushQueue(timestamp: number) {
@@ -45,13 +45,15 @@ index 953826b663c79ce476644996c19e7fb5e82966d2..3875f25d3fcc741b486f6e1df02f65e3
    }
  
    function flushQueue(timestamp: number) {
-@@ -74,10 +89,21 @@ export function setupRequestAnimationFrame() {
+@@ -77,10 +92,21 @@ export function setupRequestAnimationFrame() {
      cancelAnimationFrame as typeof globalThis.cancelAnimationFrame;
    globalThis.requestAnimationFrameFinalizer = (callback: () => void) => {
      queuedFinalizers.push(callback);
 +    requestNativeFrame();
-+  };
-+
+   };
+ 
+-  /* Start the loop */
+-  globalThis.__nativeRequestAnimationFrame(nativeFlushQueue);
 +  /*
 +   * A microtask queued outside of a task that drains microtasks (for example
 +   * from a native callback) is drained by the next frame, so request one.
@@ -60,10 +62,8 @@ index 953826b663c79ce476644996c19e7fb5e82966d2..3875f25d3fcc741b486f6e1df02f65e3
 +  globalThis.queueMicrotask = (callback: () => void) => {
 +    enqueueMicrotask(callback);
 +    requestNativeFrame();
-   };
- 
--  /* Start the loop */
--  globalThis.__nativeRequestAnimationFrame(nativeFlushQueue);
++  };
++
 +  /* Run the first frame */
 +  requestNativeFrame();
  

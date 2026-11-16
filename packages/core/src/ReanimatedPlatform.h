@@ -22,16 +22,14 @@ namespace react_native_linux {
  * | `unregisterSensor`, `unsubscribeFromKeyboardEvents` | nothing to undo |
  * | `attachPseudoSelector`, `detachPseudoSelector` | nothing until pointer state reaches them (#143) |
  * | `setGestureStateFunction` | throws (#143) |
- * | `cssCanRouteProperty`, `cssApplyTransition` | empty (#141) |
- * | `cssRemoveTransition`, `cssGetPlatformValue` | empty (#141) |
- * | `platformAnimationFactory` | null (#141) |
+ * | `platformTransitionBackend`, `platformAnimationFactory` | null (#141) |
  *
  * `-1` makes `useAnimatedSensor` report `isAvailable = false` and keyboard tracking stay at its initial state,
  * the desktop answer. Pseudo-selectors must not throw: upstream's `PseudoStylesRegistry` records the tag before
  * attaching, so a throw would leave it half-registered; until #143, `:hover` styles stay as if never hovered.
  * `setGestureState` is reached only by an explicit gesture-handler manual activation, so it throws a
- * `std::runtime_error` naming itself rather than pretending the gesture changed. The CSS members stay empty
- * because upstream null-checks every one of them and then runs the animation on its own loop.
+ * `std::runtime_error` naming itself rather than pretending the gesture changed. The CSS members stay null
+ * because upstream null-checks both of them and then runs the animation on its own loop.
  *
  * Threading contract: `requestRender` (the frame queue locks) and `getAnimationTimestamp` (`steady_clock`) may be
  * called from any thread: the JavaScript thread reads the timestamp and the mount hook requests renders from the

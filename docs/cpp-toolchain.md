@@ -1279,23 +1279,24 @@ error-stack symbolication.
 
 ## react-native-worklets (#134)
 
-`rnl_worklets` compiles react-native-worklets' shared C++ (`Common/cpp/worklets`, 29 translation units at `0.12.2`)
+`rnl_worklets` compiles react-native-worklets' shared C++ (`Common/cpp/worklets`, 49 translation units at `0.13.1`)
 from the installed package. There is no vendored copy: the version is pinned by the `react-native-worklets` entry in
-the `pnpm-workspace.yaml` catalog, the way `scripts/vendor.lock.json` pins React Native, and `compatibility.json` in
-that release accepts React Native `0.83`–`0.87`, which Reanimated `4.6.0` (`packages/reanimated`) also requires.
-The pin is `0.88.1` since #636, so `pnpm install` reports that peer as unmet: the root `package.json` names
-`react-native` itself so the peer resolves to the one patched `0.88.1` rather than a second, unpatched `0.87.1`.
-The `dev` build and its e2e scenarios prove the 29 units against `0.88.1` until worklets `0.13` and Reanimated
-`4.7`, the 0.88 line, replace them. knip's `ignoreDependencies` names both because only CMake consumes them.
+the `pnpm-workspace.yaml` catalog, the way `scripts/vendor.lock.json` pins React Native. `0.13.x` accepts React
+Native `0.86`–`0.88` and is the line Reanimated `4.7.x` (`packages/reanimated`) requires (#651). The root
+`package.json` also names `react-native`: worklets' `@react-native/metro-config` peer is installed once, outside any
+package, and resolves `react-native/setup-env` from the repository root. knip's `ignoreDependencies` names both
+because nothing in the root's TypeScript imports them.
 
 The target is built exactly as the package's own `android/CMakeLists.txt` builds it: React Native's
 `target_compile_reactnative_options` (`-Wall -Werror`, clean), `WORKLETS_VERSION` from the package's `package.json`,
 and `WORKLETS_FEATURE_FLAGS` from its `src/featureFlags/staticFlags.json`, the two files its podspec reads. Because
 both come from the installed files at configure time, a bump cannot leave a stale define; `WorkletsVersionTest`
 reads `package.json` again at test time, so a bump without a reconfigure fails there instead of in worklets' own
-runtime version check. `WORKLETS_FETCH_PREVIEW_ENABLED` is left undefined, as the package's flag file also sets it.
+runtime version check. `0.13` compiles its networking (`Networking/`) unconditionally and installs it only on a
+worklet runtime in Bundle Mode, with the platform's `NetworkingBackend`; Bundle Mode is off here, so the host passes
+none.
 
-**Patch policy: one JavaScript patch.** `patches/react-native-worklets@0.12.2.patch`, applied by pnpm's
+**Patch policy: one JavaScript patch.** `patches/react-native-worklets@0.13.1.patch`, applied by pnpm's
 `patchedDependencies`, makes the UI runtime's frame loop demand-driven (#671). Stock `nativeFlushQueue` requests the
 next native frame after every frame, so the frame clock never idles once the UI runtime starts. With the patch, a
 native frame is requested only by `requestAnimationFrame` (which worklets' `setTimeout`, `setImmediate` and
@@ -1337,9 +1338,12 @@ frame's one `triggerUI` call, arrive with the WorkletsModule host (#136).
 `WorkletsModule.cpp`. `TurboModuleRegistry` constructs it on the frame thread, so its `LinuxUIScheduler` answers for
 that thread, and it is compiled into `rnl_worklets`, which `rnl_react_core` now links.
 
-- `installTurboModule` constructs the one `WorkletsModuleProxy`, which installs `globalThis.__workletsModuleProxy`,
-  and `start` initializes the UI worklet runtime. `isJavaScriptQueue` answers for the thread that called
-  `installTurboModule`, which is the JavaScript thread.
+- `installTurboModule` constructs the one `WorkletsModuleProxy` over a `JSScheduler` and attaches it to the React
+  Native runtime, which installs `globalThis.__workletsModuleProxy`, and `start` initializes the UI worklet runtime.
+  The `JSScheduler`'s `isJavaScriptQueue` answers for the thread that called `installTurboModule`, which is the
+  JavaScript thread. iOS and Android construct the proxy on a background thread through
+  `WorkletsModuleProxyInitializer` before the bundle asks for it; with Bundle Mode off the host constructs it
+  in place, on the JavaScript thread, as `0.12` did.
 - `requestAnimationFrame` is an `AnimationFrameQueue`. `ReactHost::dispatchAnimationFrames` ticks the module on the
   frame thread every frame: first upstream's `triggerUI` runs the UI jobs that other threads queued, then the queue
   fires with the frame's own timestamp. A callback registered while the queue fires waits for the next frame.
@@ -1354,7 +1358,7 @@ that thread, and it is compiled into `rnl_worklets`, which `rnl_react_core` now 
 
 ## react-native-reanimated (#139)
 
-`rnl_reanimated` compiles Reanimated's shared C++ (`Common/cpp/reanimated`, 104 translation units at `4.6.0`) from
+`rnl_reanimated` compiles Reanimated's shared C++ (`Common/cpp/reanimated`, 106 translation units at `4.7.1`) from
 the vendored `packages/reanimated/upstream`, with that package's patch queue applied, plus `src/ReanimatedPlatform.cpp`.
 It is built like `rnl_worklets`: `target_compile_reactnative_options` (`-Wall -Werror`, clean), `REANIMATED_VERSION`
 and `REANIMATED_FEATURE_FLAGS` from the vendored `package.json` and `src/featureFlags/staticFlags.json`, and
@@ -1367,12 +1371,12 @@ guard: the native job's `dev` entry builds it on every pull request, React Nativ
 `next-minor.yml` builds it against the next React Native minor. An upstream two-way platform `#ifdef` fails the
 build instead of an animation. `rnl_react_core` links it for the module proxy host (#140).
 
-**Patches:** three, listed with their upstream asks in `packages/reanimated/README.md`. On a platform that is neither
+**Patches:** four, listed with their upstream asks in `packages/reanimated/README.md`. On a platform that is neither
 Android nor Apple, `SynchronouslyUpdateUIPropsFunction` takes Apple's `(int, const folly::dynamic&)` shape, which is
-`IMountingManager::synchronouslyUpdateViewOnUIThread`'s, and `applySynchronousUpdates` hands it the batch the Apple
-way instead of dropping it. And `LayoutAnimationsProxy_Legacy::startSurface` reads the mounting coordinator before
-taking its own mutex, the order `pullTransaction` takes them in, and `OperationsLoop` holds the updates registry
-manager weakly, which breaks the ownership cycle that leaked every proxy's Fabric graph (#140).
+`IMountingManager::synchronouslyUpdateViewOnUIThread`'s, and `writeSynchronousPropsToViews` hands it the batch the
+Apple way instead of dropping it. `OperationsLoop` holds the updates registry manager weakly, which breaks the
+ownership cycle that leaked every proxy's Fabric graph (#140). `4.7` reads the mounting coordinator's base revision
+outside the layout-animation proxy's mutex itself, so the lock-order patch `4.6` needed is gone (#651).
 
 `makePlatformDepMethodsHolder` (`src/ReanimatedPlatform.*`) fills the platform contract. Its docblock is the one
 table of which members are real (`requestRender` on the frame queue, `getAnimationTimestamp` on `steady_clock`,
@@ -1400,7 +1404,7 @@ final frame against a golden.
 
 Stock Reanimated re-queues its mapper run as a frame finalizer after every run, so with the worklets patch alone an
 app that starts Reanimated still requests a UI-runtime frame every frame, and its backend callback never goes idle.
-Patch `0005-idle-mapper-runs` (`packages/reanimated/README.md`) queues a mapper run only when a mapper starts or
+Patch `0004-idle-mapper-runs` (`packages/reanimated/README.md`) queues a mapper run only when a mapper starts or
 stops, one of its inputs changes, or a finalizer is requested: the Reanimated half of the same upstream ask. With
 both, the backend leaves the frame loop once an animation ends (#671). The `reanimated-timing` scenario's
 `maxJournalledFrames` is the proof: after its mount animation a tap replays the slide from idle, and the run is
@@ -1446,7 +1450,7 @@ installed. Every upstream change that needed a local edit:
 | `RuntimeSchedulerCallInvoker` is `[[deprecated]]`, and `enableBufferedCallInvoker` defaults on, so upstream hosts order async TurboModule calls against buffered `callFunctionOnModule` calls through `ReactInstance::createJSCallInvoker()` | Not yet: `ReactHost` still builds a `RuntimeSchedulerCallInvoker`, which keeps 0.87's ordering and prints a deprecation warning. #674 owns the switch |
 | Hermes ships `TextDecoder` as a contrib extension (`API/hermes/extensions/contrib`), on by default and installed into every runtime `makeHermesRuntime` builds | `HERMES_ENABLE_CONTRIB_EXTENSIONS` is set `ON` explicitly beside the other Hermes options, because T3 Code's bundle constructs a `TextDecoder` at startup (#641); `TextDecoderTest` decodes multibyte UTF-8, a sequence split across streamed chunks and a fatal error through `HermesJSRuntimeFactory` |
 | Hermes destroys a collected object's `jsi::NativeState`, `HostObject` and `HostFunction` on its own JSI finalizer thread (`finalizerExecutor_`), after `collectGarbage` returns, rather than on the thread that collected | The platform's native states (`ExpoSharedObject.h`'s handle, the SQLite and file-system handles, `IntlBinding`'s formatters) are plain data whose destructors touch nothing owned by the JavaScript thread; `ExpoSharedObject.h` states it. `ExpoSharedObjectTest` counts live states atomically and waits for the finalizer, which `tsan` reported as a race |
-| react-native-worklets `0.12.2` declares React Native `0.83 - 0.87` | The root `package.json` names `react-native` so the peer is the one patched copy; see *react-native-worklets* below. #651 owns the move to the 0.88 line |
+| react-native-worklets `0.12.2` declares React Native `0.83 - 0.87` | #651 moved the pin to `0.13.1`, which declares `0.86 - 0.88`, and Reanimated to `4.7.1`; see *react-native-worklets* below |
 
 ## Autolinking (#146, #147, #149)
 

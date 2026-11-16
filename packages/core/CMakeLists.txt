@@ -1426,11 +1426,11 @@ endif()
 # rnl_worklets (#134)
 #
 # react-native-worklets' shared C++, compiled from the installed package rather than a vendored copy: the version
-# is pinned by the workspace catalog, exactly as scripts/vendor.lock.json pins React Native, and Reanimated 4.6
-# requires worklets 0.12.x. Common/cpp needs one platform file, the PlatformLogger in src/. The version and the
+# is pinned by the workspace catalog, exactly as scripts/vendor.lock.json pins React Native, and Reanimated 4.7
+# requires worklets 0.13.x. Common/cpp needs one platform file, the PlatformLogger in src/. The version and the
 # static feature flags are read from the package's own package.json and src/featureFlags/staticFlags.json, the
-# same two files its podspec reads, so a bump cannot leave a stale define behind. WORKLETS_FETCH_PREVIEW_ENABLED
-# stays undefined: it is the one part of worklets that wants a networking stack of its own.
+# same two files its podspec reads, so a bump cannot leave a stale define behind. Its networking compiles but is
+# installed only in Bundle Mode, which is off on Linux, so the host gives it no NetworkingBackend.
 # ---------------------------------------------------------------------------
 
 set(RNL_WORKLETS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../node_modules/react-native-worklets)

@@ -22,7 +22,7 @@ namespace react_native_linux {
 /**
  * react-native-worklets' `WorkletsModule` (#136): the host `apple/worklets/apple/WorkletsModule.mm` and
  * `android/src/main/cpp/worklets/android/WorkletsModule.cpp` are on their platforms, as a C++ TurboModule.
- * `installTurboModule` constructs the one `WorkletsModuleProxy`, whose constructor installs
+ * `installTurboModule` constructs the one `WorkletsModuleProxy` and attaches it to the runtime, which installs
  * `globalThis.__workletsModuleProxy`, and `start` initializes the UI worklet runtime. Bundle Mode is off; see
  * *react-native-worklets* in docs/cpp-toolchain.md.
  *
