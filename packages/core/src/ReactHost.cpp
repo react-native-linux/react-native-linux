@@ -272,6 +272,12 @@ FileSystemHost& ReactHost::fileSystem() noexcept {
     return turboModuleRegistry_->fileSystem();
 }
 
+SecureStore& ReactHost::secureStore() noexcept {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    return turboModuleRegistry_->secureStore();
+}
+
 LinuxWorkletsModule& ReactHost::worklets() noexcept {
     react_native_assert(std::this_thread::get_id() == owningThread_);
 

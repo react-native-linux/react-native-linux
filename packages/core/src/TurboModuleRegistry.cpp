@@ -14,6 +14,7 @@
 #include "ExpoLinkingModule.h"
 #include "ExpoNetworkModule.h"
 #include "ExpoSQLite.h"
+#include "ExpoSecureStore.h"
 #include "FantomRenderOutput.h"
 #include "HostTimerRegistry.h"
 #include "I18n.h"
@@ -1038,6 +1039,7 @@ TurboModuleRegistry::TurboModuleRegistry(
       linkingModule_(std::make_shared<LinuxLinkingModule>(jsInvoker, activationModel_)),
       keyValueStore_(std::make_shared<KeyValueStore>()), sqliteDatabases_(std::make_unique<SQLiteDatabases>()),
       expoAssetDownloads_(std::make_unique<ExpoAssetDownloads>()), fileSystemHost_(std::make_unique<FileSystemHost>()),
+      secureStore_(std::make_unique<SecureStore>()),
       i18nModel_(std::make_shared<I18nModel>(localeFromEnvironment(), keyValueStore_)),
       bundleUrl_(std::make_shared<std::string>()), assetsDirectory_(std::make_shared<std::string>()),
       workletsModule_(std::make_shared<LinuxWorkletsModule>(jsInvoker)),
@@ -1109,6 +1111,9 @@ TurboModuleRegistry::TurboModuleRegistry(
     });
     moduleFactories_.emplace(
         "FileSystem", [jsInvoker, &host = *fileSystemHost_]() { return makeExpoFileSystemModule(jsInvoker, host); });
+    moduleFactories_.emplace("ExpoSecureStore", [jsInvoker, &store = *secureStore_]() {
+        return makeExpoSecureStoreModule(jsInvoker, store);
+    });
     moduleFactories_.emplace("ExpoApplication", [jsInvoker]() { return makeExpoApplicationModule(jsInvoker); });
     moduleFactories_.emplace("ExpoCrypto", [jsInvoker]() { return makeExpoCryptoModule(jsInvoker); });
     moduleFactories_.emplace("ExpoCryptoAES", [jsInvoker]() { return makeExpoCryptoAESModule(jsInvoker); });
@@ -1175,6 +1180,8 @@ SQLiteDatabases& TurboModuleRegistry::sqliteDatabases() noexcept { return *sqlit
 ExpoAssetDownloads& TurboModuleRegistry::expoAssetDownloads() noexcept { return *expoAssetDownloads_; }
 
 FileSystemHost& TurboModuleRegistry::fileSystem() noexcept { return *fileSystemHost_; }
+
+SecureStore& TurboModuleRegistry::secureStore() noexcept { return *secureStore_; }
 
 I18nModel& TurboModuleRegistry::i18n() noexcept { return *i18nModel_; }
 

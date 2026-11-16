@@ -190,6 +190,7 @@ jobs:
             libcurl4-openssl-dev \
             libsqlite3-dev \
             libssl-dev \
+            libsystemd-dev \
             libxkbcommon-dev \
             libicu-dev \
             llvm-18 \
@@ -327,6 +328,7 @@ jobs:
             libcurl4-openssl-dev \
             libsqlite3-dev \
             libssl-dev \
+            libsystemd-dev \
             libxkbcommon-dev \
             libicu-dev \
             llvm-18 \

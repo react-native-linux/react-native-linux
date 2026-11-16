@@ -12,7 +12,13 @@ const WINDOW_WIDTH = "800";
 const WINDOW_HEIGHT = "600";
 
 /** Every variable that could point the client at the developer's own session or driver; dropped, not overwritten. */
-const overriddenEnvironmentNames = new Set(["DISPLAY", "WAYLAND_DISPLAY", "VK_DRIVER_FILES", "VK_ICD_FILENAMES"]);
+const overriddenEnvironmentNames = new Set([
+  "DBUS_SESSION_BUS_ADDRESS",
+  "DISPLAY",
+  "WAYLAND_DISPLAY",
+  "VK_DRIVER_FILES",
+  "VK_ICD_FILENAMES",
+]);
 
 /**
  * Mesa keeps lavapipe's compiled shaders under `XDG_CACHE_HOME`, which every run points at a fresh directory, so

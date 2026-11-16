@@ -882,6 +882,8 @@ add_library(rnl_react_core STATIC
     src/ExpoNetworkModule.cpp
     src/ExpoSQLite.cpp
     src/ExpoSQLiteModule.cpp
+    src/ExpoSecureStore.cpp
+    src/ExpoSecureStoreModule.cpp
     src/ExpoSharedObject.cpp
     src/FabricHost.cpp
     src/FantomRenderOutput.cpp
@@ -1319,8 +1321,14 @@ elseif(RNL_ENABLE_WINDOW)
         # `SingleInstanceCoordinator`.
         target_sources(rnl_window PRIVATE src/SingleInstanceActivation.cpp src/SingleInstanceCoordinator.cpp)
         target_compile_definitions(rnl_window PRIVATE RNL_ENABLE_SINGLE_INSTANCE_ACTIVATION)
+
+        # expo-secure-store's keyring (#270), the Secret Service on the same session bus. Without it every value
+        # goes to the encrypted-file fallback `SecureStore` uses when the session has no Secret Service.
+        target_sources(rnl_window PRIVATE src/SecretService.cpp)
+        target_compile_definitions(rnl_window PRIVATE RNL_ENABLE_SECRET_SERVICE)
     else()
-        message(WARNING "libsystemd is unavailable; the appearance portal and single-instance activation are disabled")
+        message(WARNING
+            "libsystemd is unavailable; the appearance portal, single-instance activation and the keyring are disabled")
     endif()
     target_compile_options(rnl_window PRIVATE -Wall -Wextra)
     target_include_directories(rnl_window PRIVATE src)

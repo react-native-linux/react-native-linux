@@ -1,0 +1,16 @@
+{
+  "name": "expo-secure-store",
+  "bundle": "expo-secure-store.tsx",
+  "ready": "expo-secure-store: stored",
+  "frames": 600,
+  "windowFlags": ["--no-decorations", "--app-id", "org.reactnative.linux.e2e.securestore"],
+  "steps": ["sleep 1500"],
+  "expect": [
+    "[rnl-secure-store] no Secret Service on the session bus: values are stored encrypted under ",
+    "expo-secure-store: stored",
+    "[rnl-reload] reloaded",
+    "/data/org.reactnative.linux.e2e.securestore/SecureStore, which protects them against copying, not against code running as this user",
+    "expo-secure-store: read token={\"kty\":\"EC\"} grant=null deleted=null other=null available=true biometrics=false"
+  ],
+  "reject": ["expo-secure-store: FAILED"]
+}
