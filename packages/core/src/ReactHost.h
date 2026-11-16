@@ -105,6 +105,9 @@ public:
     /** `Linking`'s activation state (#363); see `TurboModuleRegistry::activation`. */
     ActivationModel& activation() noexcept;
 
+    /** `AppState`'s window activation (#765); see `TurboModuleRegistry::appState`. */
+    AppStateModel& appState() noexcept;
+
     /** `RNAsyncStorage`'s store (#23), which `WindowSession` points at the application's file. */
     KeyValueStore& keyValueStore() noexcept;
 

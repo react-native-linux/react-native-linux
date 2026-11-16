@@ -52,6 +52,7 @@
 #include <variant>
 #include <vector>
 
+#include <react/coremodules/AppStateModule.h>
 #include <react/coremodules/DeviceInfoModule.h>
 #include <react/devsupport/SourceCodeModule.h>
 #include <react/io/ImageLoaderModule.h>
@@ -163,6 +164,65 @@ private:
 };
 
 // jscpd:ignore-end
+
+/**
+ * `NativeAppState` (#765) answered from `AppStateModel`, which the frame thread feeds the window's activation. The
+ * `AppState` and `AppStateConstants` bridging types are upstream's, from `ReactCxxPlatform`'s `AppStateModule.h`,
+ * whose module itself is a stub that answers an empty state. `getCurrentAppState` never fails, as
+ * react-native-windows' never does, because the answer is already on hand.
+ *
+ * `emitAppStateChange` is the model's change listener: `appStateDidChange` when the status changed and
+ * `appStateFocusChange` when the focus did, the two events `AppState.js` turns into `change` and `focus`/`blur`.
+ */
+// jscpd:ignore-start — see the CRTP note on LinuxAppearanceModule's addListener/removeListeners above: the same
+// exact pair, unavoidably, for the same reason.
+class LinuxAppStateModule final : public facebook::react::NativeAppStateCxxSpec<LinuxAppStateModule> {
+public:
+    LinuxAppStateModule(std::shared_ptr<facebook::react::CallInvoker> jsInvoker,
+                        std::shared_ptr<AppStateModel> appStateModel)
+        : NativeAppStateCxxSpec(std::move(jsInvoker)), appStateModel_(std::move(appStateModel)) {}
+
+    facebook::react::AppStateConstants getConstants(facebook::jsi::Runtime& /*runtime*/) {
+        return facebook::react::AppStateConstants{.initialAppState = currentStatusName()};
+    }
+
+    void getCurrentAppState(facebook::jsi::Runtime& /*runtime*/,
+                            const facebook::react::AsyncCallback<facebook::react::AppState>& success,
+                            const facebook::jsi::Function& /*error*/) {
+        success(facebook::react::AppState{.app_state = currentStatusName()});
+    }
+
+    void addListener(facebook::jsi::Runtime& /*runtime*/, const std::string& /*eventName*/) {}
+
+    void removeListeners(facebook::jsi::Runtime& /*runtime*/, double /*count*/) {}
+
+    // jscpd:ignore-end
+
+    void emitAppStateChange(const AppStateSnapshot& previous, const AppStateSnapshot& next) {
+        if (next.status != previous.status) {
+            emitDeviceEvent(
+                "appStateDidChange",
+                [appState = facebook::react::AppState{.app_state = std::string(nameOfAppStatus(next.status))},
+                 jsInvoker = jsInvoker_](facebook::jsi::Runtime& runtime,
+                                         std::vector<facebook::jsi::Value>& arguments) {
+                    arguments.emplace_back(facebook::react::bridging::toJs(runtime, appState, jsInvoker));
+                });
+        }
+
+        if (next.isFocused != previous.isFocused) {
+            emitDeviceEvent("appStateFocusChange",
+                            [isFocused = next.isFocused](facebook::jsi::Runtime& /*runtime*/,
+                                                         std::vector<facebook::jsi::Value>& arguments) {
+                                arguments.emplace_back(isFocused);
+                            });
+        }
+    }
+
+private:
+    std::string currentStatusName() const { return std::string(nameOfAppStatus(appStateModel_->current().status)); }
+
+    std::shared_ptr<AppStateModel> appStateModel_;
+};
 
 /**
  * `NativeLinkingManagerCxxSpec` (#363), backed by `ActivationModel`. `getInitialURL` answers whatever URL last
@@ -1000,6 +1060,8 @@ TurboModuleRegistry::TurboModuleRegistry(
       appearanceModule_(std::make_shared<LinuxAppearanceModule>(jsInvoker, appearanceModel_)),
       activationModel_(std::make_shared<ActivationModel>()),
       linkingModule_(std::make_shared<LinuxLinkingModule>(jsInvoker, activationModel_)),
+      appStateModel_(std::make_shared<AppStateModel>()),
+      appStateModule_(std::make_shared<LinuxAppStateModule>(jsInvoker, appStateModel_)),
       keyValueStore_(std::make_shared<KeyValueStore>()), sqliteDatabases_(std::make_unique<SQLiteDatabases>()),
       expoAssetDownloads_(std::make_unique<ExpoAssetDownloads>()), fileSystemHost_(std::make_unique<FileSystemHost>()),
       secureStore_(std::make_unique<SecureStore>()), expoNotifications_(std::make_unique<ExpoNotifications>()),
@@ -1014,12 +1076,18 @@ TurboModuleRegistry::TurboModuleRegistry(
     });
     activationModel_->setChangeListener(
         [linkingModule = linkingModule_.get()](const std::string& url) { linkingModule->emitActivationUrl(url); });
+    appStateModel_->setChangeListener(
+        [appStateModule = appStateModule_.get()](const AppStateSnapshot& previous, const AppStateSnapshot& next) {
+            appStateModule->emitAppStateChange(previous, next);
+        });
     moduleFactories_.emplace(LinuxDeviceInfoModule::kModuleName,
                              [deviceInfoModule = deviceInfoModule_]() { return deviceInfoModule; });
     moduleFactories_.emplace(LinuxAppearanceModule::kModuleName,
                              [appearanceModule = appearanceModule_]() { return appearanceModule; });
     moduleFactories_.emplace(LinuxLinkingModule::kModuleName,
                              [linkingModule = linkingModule_]() { return linkingModule; });
+    moduleFactories_.emplace(LinuxAppStateModule::kModuleName,
+                             [appStateModule = appStateModule_]() { return appStateModule; });
     moduleFactories_.emplace(LinuxWorkletsModule::kModuleName,
                              [workletsModule = workletsModule_]() { return workletsModule; });
     moduleFactories_.emplace(LinuxReanimatedModule::kModuleName,
@@ -1139,6 +1207,8 @@ DimensionsSource& TurboModuleRegistry::dimensions() noexcept { return *dimension
 AppearanceModel& TurboModuleRegistry::appearance() noexcept { return *appearanceModel_; }
 
 ActivationModel& TurboModuleRegistry::activation() noexcept { return *activationModel_; }
+
+AppStateModel& TurboModuleRegistry::appState() noexcept { return *appStateModel_; }
 
 void TurboModuleRegistry::setBundleUrl(const std::string& bundleUrl) { *bundleUrl_ = bundleUrl; }
 

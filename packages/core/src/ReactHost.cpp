@@ -248,6 +248,12 @@ ActivationModel& ReactHost::activation() noexcept {
     return turboModuleRegistry_->activation();
 }
 
+AppStateModel& ReactHost::appState() noexcept {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    return turboModuleRegistry_->appState();
+}
+
 KeyValueStore& ReactHost::keyValueStore() noexcept {
     react_native_assert(std::this_thread::get_id() == owningThread_);
 

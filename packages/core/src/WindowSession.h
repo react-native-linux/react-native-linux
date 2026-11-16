@@ -104,6 +104,12 @@ public:
      */
     void deliverActivationUrl(const std::string& url);
 
+    /**
+     * Feeds the window's `xdg_toplevel` state to `AppState` (#765), once per frame; `AppStateModel` emits only when
+     * the activation or the suspension actually changed.
+     */
+    void deliverToplevelState(const ToplevelState& state);
+
     /** Delegates to `FabricHost::tickAnimations` once per drawn frame. */
     void tickAnimations(std::chrono::steady_clock::time_point now);
 

@@ -47,10 +47,15 @@ struct WindowControlSequence {
  *   `{Maximized}` `{Unmaximized}`     the matching state bit, set or cleared
  *   `{Fullscreen}` `{Unfullscreen}`
  *   `{Tiled}` `{Untiled}`             all four tiled edges at once, per `isEffectivelyTiled`'s rule
+ *   `{Activated}` `{Deactivated}`     the window gaining and losing activation, which cage never takes away (#765)
+ *   `{Suspended}` `{Resumed}`         the compositor hiding the window and showing it again
  *   `{Maximized:1280x800}`            any state token may carry the extent that state arrives with
  *
  * A drag carries `resizing` on every configure but its last, which is what a compositor does across an
  * interactive resize and what makes the end of the drag distinguishable from its middle.
+ *
+ * Every sequence starts deactivated, exactly as a replayed configure always has, so `{Activated}` is what a scenario
+ * names when the window must stay the active one.
  */
 WindowControlSequence parseWindowControlSequence(std::string_view specification);
 

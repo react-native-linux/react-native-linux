@@ -53,6 +53,7 @@ file(GLOB RNL_UPSTREAM_TIMELINE_TESTS
 # rnl_react_core (a Hermes-linked target).
 set(RNL_CORE_SCENE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/Activation.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/AppState.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ActivityIndicatorContent.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/AnimationFrameQueue.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/Appearance.cpp
@@ -113,6 +114,7 @@ set(RNL_CORE_SCENE_SOURCES
 
 add_executable(rnl_core_tests
     ActivationTest.cpp
+    AppStateTest.cpp
     ActivityIndicatorTest.cpp
     AutomationProtocolTest.cpp
     AnimatedHitTestTest.cpp

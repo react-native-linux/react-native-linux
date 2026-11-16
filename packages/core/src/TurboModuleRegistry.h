@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Activation.h"
+#include "AppState.h"
 #include "Appearance.h"
 #include "DimensionsSource.h"
 
@@ -34,6 +35,7 @@ struct FileSystemHost;
 class HostTimerRegistry;
 class I18nModel;
 class KeyValueStore;
+class LinuxAppStateModule;
 class LinuxAppearanceModule;
 class LinuxDeviceInfoModule;
 class LinuxLinkingModule;
@@ -66,8 +68,8 @@ class SecureStore;
  *
  * Threading contract: `install` runs on the JavaScript thread, inside the `initializeRuntime` bindings installer,
  * and so does every factory in the map, because `TurboModuleBinding` only calls the provider from a JavaScript
- * property access. `dimensions`, `publishPendingDimensions` and `appearance` run on the platform frame thread;
- * all three reach JavaScript only through `DimensionsSource`'s mutex and the modules' `CallInvoker`.
+ * property access. `dimensions`, `publishPendingDimensions`, `appearance` and `appState` run on the platform frame
+ * thread; all four reach JavaScript only through their models' mutexes and the modules' `CallInvoker`.
  */
 /**
  * What an itest run (#210) lets `NativeFantomCxx` drive: the flush of the `StubMessageQueue` its runtime runs on,
@@ -113,6 +115,9 @@ public:
      * `SingleInstanceCoordinator` feeds it a later instance's forwarded `argv`.
      */
     ActivationModel& activation() noexcept;
+
+    /** The window activation behind `AppState` (#765), which `WindowSession` feeds every frame. */
+    AppStateModel& appState() noexcept;
 
     /**
      * The URL `SourceCode.getConstants().scriptURL` answers (#79), which a `dev=true` bundle reads to find its dev
@@ -184,6 +189,8 @@ private:
     std::shared_ptr<LinuxAppearanceModule> appearanceModule_;
     std::shared_ptr<ActivationModel> activationModel_;
     std::shared_ptr<LinuxLinkingModule> linkingModule_;
+    std::shared_ptr<AppStateModel> appStateModel_;
+    std::shared_ptr<LinuxAppStateModule> appStateModule_;
     std::shared_ptr<KeyValueStore> keyValueStore_;
     std::unique_ptr<SQLiteDatabases> sqliteDatabases_;
     std::unique_ptr<ExpoAssetDownloads> expoAssetDownloads_;

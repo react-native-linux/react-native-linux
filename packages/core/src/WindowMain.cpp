@@ -194,13 +194,12 @@ constexpr uint64_t kNanosecondsPerSecond = 1'000'000'000;
  * when the frame closed an open interval — and the run ends with the journal's own summary line, beside
  * `FrameTiming`'s. See *Frame journal* in docs/cpp-toolchain.md.
  *
- * `--window-debug` is issue #218's manual proof, the same role `--ime-debug` plays for text composition: none of
- * the desktop lifecycle contract's activated/maximized/fullscreen/resizing bits, `wl_surface` enter/leave, or
- * keyboard focus reach JavaScript today — there is no `AppState`-equivalent module to carry them there, and
- * building one is out of #218's scope — so this prints every transition `WaylandWindow`/`WaylandSeat` decode to
- * stdout, which is how a developer under a real compositor (Hyprland, for instance, where activate/deactivate,
- * maximize and multi-monitor `wl_surface.enter` are all reachable) confirms the decode is correct end to end. See
- * *Window host* in docs/cpp-toolchain.md.
+ * `--window-debug` is issue #218's manual proof, the same role `--ime-debug` plays for text composition: of the
+ * desktop lifecycle contract's bits only activation and suspension reach JavaScript, through `AppState` (#765), so
+ * this prints every transition `WaylandWindow`/`WaylandSeat` decode — maximized, fullscreen, resizing, tiled,
+ * `wl_surface` enter/leave and keyboard focus included — to stdout, which is how a developer under a real
+ * compositor (Hyprland, for instance, where activate/deactivate, maximize and multi-monitor `wl_surface.enter` are
+ * all reachable) confirms the decode is correct end to end. See *Window host* in docs/cpp-toolchain.md.
  * It also arms one injected `VK_ERROR_OUT_OF_DATE_KHR` at the first acquire, so the swapchain recreation the
  * `VkResult` policy prescribes is exercised on every run of the flag rather than only when a compositor happens
  * to invalidate the swapchain.
@@ -1652,6 +1651,8 @@ int main(int argc, char** argv) {
                 }
 
                 if (session.has_value()) {
+                    session->deliverToplevelState(window.toplevelState());
+
                     // Input first, and unconditionally: the event beat is induced inside this call, and it is what
                     // releases everything Fabric has queued since the last frame onto the JavaScript thread.
                     session->deliverInput(std::move(frameEvents));

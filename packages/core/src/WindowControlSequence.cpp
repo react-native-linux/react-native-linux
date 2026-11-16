@@ -69,6 +69,18 @@ bool applyStateName(std::string_view name, ToplevelState& state) {
         return true;
     }
 
+    if (name == "Activated" || name == "Deactivated") {
+        state.activated = name == "Activated";
+
+        return true;
+    }
+
+    if (name == "Suspended" || name == "Resumed") {
+        state.suspended = name == "Suspended";
+
+        return true;
+    }
+
     if (name != "Tiled" && name != "Untiled") {
         return false;
     }
@@ -205,7 +217,9 @@ std::string describeWindowControlStep(const WindowControlStep& step) {
            " maximized=" + std::to_string(static_cast<int>(step.state.maximized)) +
            " fullscreen=" + std::to_string(static_cast<int>(step.state.fullscreen)) +
            " tiled=" + std::to_string(static_cast<int>(isEffectivelyTiled(step.state))) +
-           " resizing=" + std::to_string(static_cast<int>(step.state.resizing));
+           " resizing=" + std::to_string(static_cast<int>(step.state.resizing)) +
+           " activated=" + std::to_string(static_cast<int>(step.state.activated)) +
+           " suspended=" + std::to_string(static_cast<int>(step.state.suspended));
 }
 
 } // namespace react_native_linux

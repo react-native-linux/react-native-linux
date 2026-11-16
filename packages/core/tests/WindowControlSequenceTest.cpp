@@ -124,9 +124,11 @@ TEST(WindowControlSequenceTest, AStateTokenWithAnUnreadableExtentIsRejected) {
 }
 
 TEST(WindowControlSequenceTest, EveryStateNameSetsAndClearsItsOwnBit) {
-    const WindowControlSequence parsed = parse("{Maximized}{Unmaximized}{Fullscreen}{Unfullscreen}{Tiled}{Untiled}");
+    const WindowControlSequence parsed =
+        parse("{Maximized}{Unmaximized}{Fullscreen}{Unfullscreen}{Tiled}{Untiled}{Activated}{Deactivated}{Suspended}"
+              "{Resumed}");
 
-    ASSERT_EQ(parsed.steps.size(), 6U);
+    ASSERT_EQ(parsed.steps.size(), 10U);
     EXPECT_TRUE(parsed.steps[0].state.maximized);
     EXPECT_FALSE(parsed.steps[1].state.maximized);
     EXPECT_TRUE(parsed.steps[2].state.fullscreen);
@@ -137,6 +139,18 @@ TEST(WindowControlSequenceTest, EveryStateNameSetsAndClearsItsOwnBit) {
     EXPECT_TRUE(parsed.steps[4].state.tiledBottom);
     EXPECT_FALSE(parsed.steps[5].state.tiledLeft);
     EXPECT_FALSE(parsed.steps[5].state.tiledBottom);
+    EXPECT_TRUE(parsed.steps[6].state.activated);
+    EXPECT_FALSE(parsed.steps[7].state.activated);
+    EXPECT_TRUE(parsed.steps[8].state.suspended);
+    EXPECT_FALSE(parsed.steps[9].state.suspended);
+}
+
+TEST(WindowControlSequenceTest, AStepDescribesItsActivationAndSuspension) {
+    const WindowControlSequence parsed = parse("{Activated:800x600}{Suspended}");
+
+    ASSERT_EQ(parsed.steps.size(), 2U);
+    EXPECT_EQ(describeWindowControlStep(parsed.steps[1]),
+              "[rnl-geometry] configure 800x600 maximized=0 fullscreen=0 tiled=0 resizing=0 activated=1 suspended=1");
 }
 
 TEST(WindowControlSequenceTest, StateAndExtentBothCarryForwardAcrossTokens) {
@@ -216,7 +230,7 @@ TEST(WindowControlSequenceTest, AStepDescribesItselfWithATagThatIsNotAFault) {
 
     ASSERT_EQ(parsed.steps.size(), 1U);
     EXPECT_EQ(describeWindowControlStep(parsed.steps[0]),
-              "[rnl-geometry] configure 1024x768 maximized=0 fullscreen=0 tiled=1 resizing=0");
+              "[rnl-geometry] configure 1024x768 maximized=0 fullscreen=0 tiled=1 resizing=0 activated=0 suspended=0");
 }
 
 TEST(WindowControlSequenceTest, AMaximizedStepIsNotReportedTiled) {
@@ -224,7 +238,7 @@ TEST(WindowControlSequenceTest, AMaximizedStepIsNotReportedTiled) {
 
     ASSERT_EQ(parsed.steps.size(), 2U);
     EXPECT_EQ(describeWindowControlStep(parsed.steps[1]),
-              "[rnl-geometry] configure 800x600 maximized=1 fullscreen=0 tiled=0 resizing=0");
+              "[rnl-geometry] configure 800x600 maximized=1 fullscreen=0 tiled=0 resizing=0 activated=0 suspended=0");
 }
 
 TEST(WindowControlSequenceTest, AFullscreenDragStepDescribesEveryBitItCarries) {
@@ -232,7 +246,7 @@ TEST(WindowControlSequenceTest, AFullscreenDragStepDescribesEveryBitItCarries) {
 
     ASSERT_EQ(parsed.steps.size(), 3U);
     EXPECT_EQ(describeWindowControlStep(parsed.steps[1]),
-              "[rnl-geometry] configure 800x600 maximized=0 fullscreen=1 tiled=0 resizing=1");
+              "[rnl-geometry] configure 800x600 maximized=0 fullscreen=1 tiled=0 resizing=1 activated=0 suspended=0");
 }
 
 } // namespace

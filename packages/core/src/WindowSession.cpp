@@ -201,6 +201,10 @@ void WindowSession::deliverActivationUrl(const std::string& url) {
     reactHost_.activation().onActivationUrlReceived(url);
 }
 
+void WindowSession::deliverToplevelState(const ToplevelState& state) {
+    reactHost_.appState().onToplevelStateChanged(state);
+}
+
 void WindowSession::seedColorScheme() {
 #ifdef RNL_ENABLE_APPEARANCE_PORTAL
     const std::optional<ColorScheme> portalColorScheme = appearancePortal_.initialColorScheme();

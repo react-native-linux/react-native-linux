@@ -119,10 +119,10 @@ struct WindowIdentity {
  * way `DimensionsSource` coalesces a burst of configures into one change: `toplevelState`/`takeStateChange` for
  * `xdg_toplevel.configure`'s activated/maximized/fullscreen/resizing bits, decoded by the pure, unit-tested
  * `decodeToplevelStates`; `outputEnterCount`/`outputLeaveCount` for `wl_surface.enter`/`.leave`; and
- * `hasKeyboardFocus`, forwarded from `WaylandSeat`, for `wl_keyboard.enter`/`.leave`. None of the three feeds a
- * JS-visible event yet — no `AppState`-equivalent module exists on this platform to carry activation there, and
- * inventing one is out of this issue's scope — so today they are observable only at this seam and in a caller
- * that polls it, exactly as `takePendingResize` is. See *Window host* in docs/cpp-toolchain.md.
+ * `hasKeyboardFocus`, forwarded from `WaylandSeat`, for `wl_keyboard.enter`/`.leave`. Of these, only
+ * `toplevelState`'s activated and suspended bits reach JavaScript, as `AppState` (#765), which the window loop
+ * feeds from `toplevelState` every frame; the rest are observable only at this seam and in a caller that polls it,
+ * exactly as `takePendingResize` is. See *Window host* in docs/cpp-toolchain.md.
  *
  * Output scale (#51) follows `wp_fractional_scale_v1`, and only with `wp_viewporter` beside it, because the
  * viewport is what maps a buffer drawn at that scale back onto the logical surface: `size` stays in logical surface
@@ -207,7 +207,7 @@ public:
     /** What the drawn close button does: the same flag `xdg_toplevel.close` sets, so teardown takes one path. */
     void requestClose() noexcept;
 
-    /** The activated/maximized/fullscreen/resizing bits from the most recent `xdg_toplevel.configure`. */
+    /** The state bits from the most recent `xdg_toplevel.configure`. */
     ToplevelState toplevelState() const noexcept;
     /** Whether `toplevelState` changed since the last call. Coalesces a burst of configures into one change. */
     bool takeStateChange() noexcept;

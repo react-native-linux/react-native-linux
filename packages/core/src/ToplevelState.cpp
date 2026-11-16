@@ -9,11 +9,12 @@ constexpr uint32_t kXdgToplevelStateFullscreen = 2;
 constexpr uint32_t kXdgToplevelStateResizing = 3;
 constexpr uint32_t kXdgToplevelStateActivated = 4;
 // xdg-shell.xml, xdg_toplevel::state, added in the protocol's version 2: TILED_LEFT = 5, TILED_RIGHT = 6,
-// TILED_TOP = 7, TILED_BOTTOM = 8. SUSPENDED = 9 exists too but nothing here decodes it; see the docblock.
+// TILED_TOP = 7, TILED_BOTTOM = 8; and in version 6, SUSPENDED = 9.
 constexpr uint32_t kXdgToplevelStateTiledLeft = 5;
 constexpr uint32_t kXdgToplevelStateTiledRight = 6;
 constexpr uint32_t kXdgToplevelStateTiledTop = 7;
 constexpr uint32_t kXdgToplevelStateTiledBottom = 8;
+constexpr uint32_t kXdgToplevelStateSuspended = 9;
 
 } // namespace
 
@@ -45,6 +46,9 @@ ToplevelState decodeToplevelStates(const uint32_t* states, size_t count) noexcep
             break;
         case kXdgToplevelStateTiledBottom:
             decoded.tiledBottom = true;
+            break;
+        case kXdgToplevelStateSuspended:
+            decoded.suspended = true;
             break;
         default:
             break;

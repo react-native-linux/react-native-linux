@@ -20,6 +20,7 @@ constexpr uint32_t kXdgToplevelStateTiledRight = 6;
 constexpr uint32_t kXdgToplevelStateTiledTop = 7;
 constexpr uint32_t kXdgToplevelStateTiledBottom = 8;
 constexpr uint32_t kXdgToplevelStateSuspended = 9;
+constexpr uint32_t kXdgToplevelStateConstrainedLeft = 10;
 
 TEST(ToplevelStateTest, DefaultIsEveryFlagFalse) {
     EXPECT_EQ(ToplevelState{}, (ToplevelState{false, false, false, false, false, false, false, false}));
@@ -58,8 +59,14 @@ TEST(ToplevelStateTest, ResizingIsDecoded) {
     EXPECT_TRUE(decodeToplevelStates(states, 1).resizing);
 }
 
-TEST(ToplevelStateTest, AnUnrecognisedStateIsIgnored) {
+TEST(ToplevelStateTest, SuspendedIsDecoded) {
     const uint32_t states[] = {kXdgToplevelStateSuspended};
+
+    EXPECT_EQ(decodeToplevelStates(states, 1), ToplevelState{.suspended = true});
+}
+
+TEST(ToplevelStateTest, AnUnrecognisedStateIsIgnored) {
+    const uint32_t states[] = {kXdgToplevelStateConstrainedLeft};
 
     EXPECT_EQ(decodeToplevelStates(states, 1), ToplevelState{});
 }
@@ -99,7 +106,8 @@ TEST(ToplevelStateTest, MaximizedAndActivatedTogetherAreBothSet) {
 }
 
 TEST(ToplevelStateTest, AnUnrecognisedStateAmongRecognisedOnesDoesNotSuppressThem) {
-    const uint32_t states[] = {kXdgToplevelStateSuspended, kXdgToplevelStateFullscreen, kXdgToplevelStateActivated};
+    const uint32_t states[] = {kXdgToplevelStateConstrainedLeft, kXdgToplevelStateFullscreen,
+                               kXdgToplevelStateActivated};
 
     const ToplevelState decoded = decodeToplevelStates(states, 3);
 
@@ -110,14 +118,18 @@ TEST(ToplevelStateTest, AnUnrecognisedStateAmongRecognisedOnesDoesNotSuppressThe
 }
 
 TEST(ToplevelStateTest, EqualityDistinguishesEveryField) {
-    EXPECT_NE(ToplevelState{}, (ToplevelState{true, false, false, false, false, false, false, false}));
-    EXPECT_NE(ToplevelState{}, (ToplevelState{false, true, false, false, false, false, false, false}));
-    EXPECT_NE(ToplevelState{}, (ToplevelState{false, false, true, false, false, false, false, false}));
-    EXPECT_NE(ToplevelState{}, (ToplevelState{false, false, false, true, false, false, false, false}));
-    EXPECT_NE(ToplevelState{}, (ToplevelState{false, false, false, false, true, false, false, false}));
-    EXPECT_NE(ToplevelState{}, (ToplevelState{false, false, false, false, false, true, false, false}));
-    EXPECT_NE(ToplevelState{}, (ToplevelState{false, false, false, false, false, false, true, false}));
-    EXPECT_NE(ToplevelState{}, (ToplevelState{false, false, false, false, false, false, false, true}));
+    const std::vector<bool ToplevelState::*> fields{
+        &ToplevelState::activated, &ToplevelState::maximized,   &ToplevelState::fullscreen,
+        &ToplevelState::resizing,  &ToplevelState::tiledLeft,   &ToplevelState::tiledRight,
+        &ToplevelState::tiledTop,  &ToplevelState::tiledBottom, &ToplevelState::suspended,
+    };
+
+    for (bool ToplevelState::*field : fields) {
+        ToplevelState state;
+        state.*field = true;
+
+        EXPECT_NE(ToplevelState{}, state);
+    }
 }
 
 struct TiledPredicateCase {
