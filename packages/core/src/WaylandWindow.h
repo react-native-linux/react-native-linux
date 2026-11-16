@@ -4,6 +4,7 @@
 #include "InputPipeline.h"
 #include "OutputScale.h"
 #include "ToplevelState.h"
+#include "WaylandClipboard.h"
 #include "WaylandDispatchDiagnostics.h"
 #include "WaylandSeat.h"
 #include "WaylandSerialLedger.h"
@@ -13,6 +14,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <poll.h>
 #include <string>
 #include <vector>
 
@@ -22,6 +24,7 @@ struct wl_callback_listener;
 struct wl_compositor;
 struct wl_display;
 struct wl_output;
+struct wl_data_device_manager;
 struct wl_registry;
 struct wl_registry_listener;
 struct wl_seat;
@@ -107,6 +110,10 @@ struct WindowIdentity {
  * `zwp_text_input_manager_v3` is bound on the same terms: with it, the seat gets a `TextInputClient` and
  * composition events join that queue; without it, `textInput` is null and typing is whatever the keyboard sends.
  * Text composition is per-seat, so the text input is created once the seat exists, not per surface.
+ *
+ * `wl_data_device_manager` is the third per-seat binding: with it, `WaylandClipboard` keeps the process clipboard
+ * and the seat's selection in step, and `waitForRedraw` publishes each frame's copy before it waits; without it,
+ * copy and paste stay inside the process. See *Clipboard* in docs/cpp-toolchain.md.
  *
  * The desktop lifecycle contract (#218) is four more seams beyond resize, each decoded and coalesced the same
  * way `DimensionsSource` coalesces a burst of configures into one change: `toplevelState`/`takeStateChange` for
@@ -406,6 +413,10 @@ private:
     WaylandSerialLedger serialLedger_;
     wl_shm* sharedMemory_{nullptr};
     std::unique_ptr<WaylandSeat> seat_;
+    wl_data_device_manager* dataDeviceManager_{nullptr};
+    std::unique_ptr<WaylandClipboard> clipboard_;
+    /** Reused by every `dispatchWithTimeout`, so the event loop does not allocate per wait. */
+    std::vector<pollfd> pollDescriptors_;
     zwp_text_input_manager_v3* textInputManager_{nullptr};
     zxdg_decoration_manager_v1* decorationManager_{nullptr};
     xdg_activation_v1* activation_{nullptr};

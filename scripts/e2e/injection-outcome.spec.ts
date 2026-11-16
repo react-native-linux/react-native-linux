@@ -30,7 +30,11 @@ type StartInjector = Parameters<typeof injectAndResolveFailure>[number]["startIn
 
 const injectorExiting =
   (failure: string | null, status: number | null): StartInjector =>
-  (): ReturnType<StartInjector> => ({ finish: () => Promise.resolve({ failure, status }), send: vi.fn() });
+  (): ReturnType<StartInjector> => ({
+    environment: {},
+    finish: () => Promise.resolve({ failure, status }),
+    send: vi.fn(),
+  });
 
 const injectionScenario = (expectsExitAfter: string | null): ReturnType<typeof parseScenario> =>
   parseScenario(

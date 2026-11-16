@@ -338,8 +338,9 @@ line would be waiting on a race it can lose. `[rnl-decorations] mode=bare` print
 hooks fire and is what each scenario waits on instead. Once the window dies on the injected error, `rnl_inject`
 loses its socket and exits with status 1 the same way a closed window does, so both scenarios name
 `expectsExitAfter` — the generalised form of `window-decorations-close`'s own opt-in — as the structured line's
-own substring, `wayland protocol error: xdg_wm_base#7`: `resolveInjectionFailure` forgives that status only once
-the trace carries it. `resolveExpectedOutcome` also takes `compositor.signalCode` now, alongside `trace`, and
+own substring, `wayland protocol error: xdg_wm_base#` without the object id, which moves whenever another global is
+bound before it (#60's data device moved it from 7 to 8): `resolveInjectionFailure` forgives that status only
+once the trace carries it. `resolveExpectedOutcome` also takes `compositor.signalCode` now, alongside `trace`, and
 folds `describeCompositorCrash` into the same unwaivable set `reject` already sits in — a signal there is `cage`
 or the `rnl_window` child crashing, never a scenario's own exit, and it fails the scenario regardless of
 `allowErrors` or `expectFailure` — the gap that let a run ending in a Hermes abort still print "passed", and that
@@ -870,9 +871,54 @@ only, per *Window host* above), so `recordTouchDown` has no call site yet; the l
 because the unit suite proves it independently of any binding, and it is what #60's drag-and-drop scope picks up
 without adding a second ledger.
 
-**Nothing calls `requestSerial` outside the unit suite yet.** #60, #62, #63 and #40 are each still open, and
-`WaylandWindow::serialLedger()` is the seam each of them reads from when it lands — this issue is the
-prerequisite the acceptance criteria of all four name, not the clipboard or window-decoration change itself.
+**`WaylandClipboard` is the first request built from it**: `set_selection` reads `Selection` (#60, below). #62,
+#63 and #40 are each still open, and `WaylandWindow::serialLedger()` is the seam each of them reads from when it
+lands.
+
+### Clipboard (#60)
+
+Text copied in this process reaches other applications, and text they copy pastes here, over the seat's
+`wl_data_device`. `src/Clipboard.cpp` stays the one clipboard Ctrl+C/X/V and `RNCClipboard` read and write;
+`src/WaylandClipboard.cpp` keeps it in step with the selection on the frame thread, so no Wayland object is ever
+touched from the JavaScript thread.
+
+- **Copy.** `setClipboardText` marks the text for publishing; `WaylandWindow::waitForRedraw` calls
+  `publishPendingText` once per frame, which offers a `wl_data_source` in `text/plain;charset=utf-8`,
+  `text/plain` and `UTF8_STRING` (the X11 name XWayland clients ask for), plus the private type
+  `application/x-react-native-linux-<pid>-<random token>` (the token because sandboxed applications in separate PID
+  namespaces share pids), and sets it with the ledger's `Selection` serial. A copy made before any press waits,
+  still pending, for the first one, unless another client's selection arrives first. JavaScript's `setString` therefore lands on the next frame,
+  within one fallback interval on an idle window. A `cancelled` source is another client's copy taking over.
+- **Paste reads eagerly.** A `selection` from another client — on keyboard enter, or when another client copies
+  while this one is focused — is the truth: it empties the clipboard at once, so a paste before its text arrives is
+  empty rather than stale, drops a copy made here that was still waiting for a press to be published, and is read
+  in the background; the text lands with `receiveClipboardText` and the window traces
+  `[rnl-clipboard] received a selection of <n> bytes`. Ctrl+V and `getString` never wait on a pipe. A selection
+  that offers this process's private type is its own copy coming back and is not read: ownership is decided from
+  the offer, not from still holding a source, because a compositor that ignores a `set_selection` (a stale serial,
+  an unfocused client) never cancels it. A selection with no text type leaves the clipboard empty. No selection at
+  all — what focus-in reports when the seat's clipboard is empty — is not a newer copy: it empties the clipboard
+  only when no copy made here is still waiting for a press to be published.
+- **Never blocking.** Every transfer is a non-blocking pipe in `src/ClipboardTransfers.cpp`, polled beside the
+  display in `dispatchWithTimeout` and advanced after each wake: one pending read, which a newer selection or
+  shutdown abandons, and one write per `send`, closed when written or when the reader has gone. A read stores its
+  text under the clipboard revision it started with, so a copy made here while it was in flight is never
+  overwritten. `SIGPIPE` is
+  blocked only around each `write` and a pending one consumed after an `EPIPE`, so a reader that closes early costs
+  an `EPIPE`, and nothing the process spawns inherits a changed mask or disposition. The price of eager reads is
+  one background read per focus change after another application copied, whether or not anything is pasted.
+- **Not yet.** The primary selection (`zwp_primary_selection_v1`, middle-click paste) and drag-and-drop stay on
+  #60; a drag's offer is declined. The data device is bound at version 1, which is the whole selection protocol.
+
+The e2e scenario `text-input-system-clipboard` proves both directions against a second client under cage:
+`clipboard-expect <text>` reads the selection with `wl-paste`, and `clipboard-set <text>` sets one with
+`wl-copy`, which leaves a background copy serving it. The scenario then awaits the window's `received` trace line
+before Ctrl+V; an `await` after a clipboard step counts what traced while the step ran, because the window can
+receive the selection before `wl-copy` returns. noble's cage 0.1.5 offers no data-control protocol, so
+wl-clipboard takes keyboard focus with a surface of its own and gives it back on exit; see *E2E driver (#7)*. The
+pure half — publish-once, the revision check, the MIME preference and every transfer over real pipes, including
+the JavaScript-thread race under TSan — is in `ClipboardTest` and `ClipboardTransfersTest`, with `Clipboard.cpp`
+and `ClipboardTransfers.cpp` at 100% line and branch.
 
 ### Decorations and app_id (#329)
 
@@ -7007,14 +7053,10 @@ what is left in them needs a `UIManager` and a committed tree, and `--type` is t
 
 ### Deferrals, with owners
 
-- **`wl_data_device`.** Ctrl+C, Ctrl+X and Ctrl+V move text through an **in-process clipboard**
-  (`src/Clipboard.cpp`), not the system one. A Wayland clipboard is a data source, a data offer, a MIME
-  negotiation and a file-descriptor transfer, all of which need a compositor and a second client to mean
-  anything — and the rig for this component is `hello_react`, which has neither. The in-process version is
-  behaviourally identical for everything the editing model can get wrong, and it is issue #60 to replace its two
-  functions. The primary selection and middle-click paste land with it. JavaScript reaches the same clipboard
-  through `RNCClipboard`, the module `@react-native-clipboard/clipboard` resolves (`getString`, `setString`,
-  `hasString`; #23), so it follows the replacement too.
+- **The primary selection.** Ctrl+C, Ctrl+X and Ctrl+V move text through `src/Clipboard.cpp`, which
+  `WaylandClipboard` keeps in step with the system selection (*Clipboard (#60)*), and JavaScript reaches the same
+  clipboard through `RNCClipboard` (`getString`, `setString`, `hasString`; #23). Middle-click paste of the
+  primary selection is still #60's.
 - **Undo and redo.** No stack, and Ctrl+Z is deliberately left unconsumed so the absence is visible.
 - **Vertical caret motion.** Up and Down do not move by line: that needs line geometry rather than the grapheme
   and word boundaries the editing model has. A multiline field scrolls to keep the caret visible now, so what is

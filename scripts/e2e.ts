@@ -18,6 +18,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { gradeArtifacts, gradeAutomationChannel } from "./e2e/grade.ts";
 import { injectAndResolveFailure, resolveWindowFlags } from "./e2e/drive.ts";
 import {
+  isClipboardStep,
   isKeyboardFocused,
   planRuns,
   readRequestedScenarios,
@@ -243,6 +244,7 @@ const lavapipeIcdPath = findLavapipeIcd();
 const runs = planRuns(readScenarios(), env);
 const needsOutputMode = runs.some(({ run }) => run.scenario.outputRefreshHz !== null);
 const needsNotificationDaemon = runs.some(({ run }) => run.scenario.notificationDaemon);
+const needsClipboard = runs.some(({ run }) => run.scenario.steps.some((step) => isClipboardStep(step)));
 
 const unavailableReasons = [
   ...(existsSync(windowBinaryPath)
@@ -262,6 +264,9 @@ const unavailableReasons = [
     : []),
   ...(needsOutputMode && findExecutable("wlr-randr") === null
     ? ['an outputRefreshHz scenario needs wlr-randr on PATH; install the "wlr-randr" package']
+    : []),
+  ...(needsClipboard && (findExecutable("wl-paste") === null || findExecutable("wl-copy") === null)
+    ? ['a clipboard step needs wl-paste and wl-copy on PATH; install the "wl-clipboard" package']
     : []),
   ...(lavapipeIcdPath === null
     ? ['no lavapipe ICD; install "vulkan-swrast" on Arch or "mesa-vulkan-drivers" on Ubuntu']

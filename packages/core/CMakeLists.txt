@@ -1280,6 +1280,7 @@ elseif(RNL_ENABLE_WINDOW)
 
     add_executable(rnl_window
         src/AutomationServer.cpp
+        src/ClipboardTransfers.cpp
         src/GpuResourceInvalidation.cpp
         src/OutputScale.cpp
         src/RendererLadder.cpp
@@ -1293,6 +1294,7 @@ elseif(RNL_ENABLE_WINDOW)
         src/TitleBarPainter.cpp
         src/ToplevelState.cpp
         src/VulkanResultPolicy.cpp
+        src/WaylandClipboard.cpp
         src/WaylandDispatchDiagnostics.cpp
         src/WaylandSeat.cpp
         src/WaylandSerialLedger.cpp

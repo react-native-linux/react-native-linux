@@ -148,14 +148,12 @@ const stopCompositor = async (compositor: Compositor): Promise<void> => {
  * and once its input ends the injector gets INJECT_TIMEOUT_MS to finish before it is killed.
  */
 const startInjector = (runtimeDirectory: string, socketName: string): Injector => {
-  const injection = spawn(injectorBinaryPath, [], {
-    env: buildEnvironment({
-      WAYLAND_DISPLAY: socketName,
-      XDG_RUNTIME_DIR: runtimeDirectory,
-      XKB_DEFAULT_LAYOUT: "us",
-    }),
-    stdio: ["pipe", "pipe", "pipe"],
+  const environment = buildEnvironment({
+    WAYLAND_DISPLAY: socketName,
+    XDG_RUNTIME_DIR: runtimeDirectory,
+    XKB_DEFAULT_LAYOUT: "us",
   });
+  const injection = spawn(injectorBinaryPath, [], { env: environment, stdio: ["pipe", "pipe", "pipe"] });
   const sink = { isClosed: false, text: "" };
 
   attachTrace(injection, sink);
@@ -164,6 +162,7 @@ const startInjector = (runtimeDirectory: string, socketName: string): Injector =
   });
 
   return {
+    environment,
     finish: async () => {
       injection.stdin.end();
       if (!(await waitUntil(() => sink.isClosed, INJECT_TIMEOUT_MS))) {

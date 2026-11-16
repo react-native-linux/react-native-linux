@@ -4,19 +4,26 @@
 #include <cstddef>
 #include <cstdint>
 #include <gtest/gtest.h>
+#include <optional>
 #include <string>
 #include <vector>
 
 namespace {
 
+using react_native_linux::beginClipboardReceive;
 using react_native_linux::CaretMotion;
 using react_native_linux::clampedScrollOffset;
+using react_native_linux::clearClipboardUnlessPending;
 using react_native_linux::clipboardText;
+using react_native_linux::createClipboardOwnerMimeType;
 using react_native_linux::EditorModel;
 using react_native_linux::EditorSelection;
 using react_native_linux::followedScrollOffset;
+using react_native_linux::preferredClipboardMimeType;
+using react_native_linux::receiveClipboardText;
 using react_native_linux::segmentUtf8CodePoints;
 using react_native_linux::setClipboardText;
+using react_native_linux::takeClipboardPublish;
 using react_native_linux::TextSegments;
 using react_native_linux::utf16LengthOfUtf8;
 using react_native_linux::utf8OffsetForUtf16Index;
@@ -737,6 +744,75 @@ TEST(ClipboardTest, RoundTripsTheTextItWasGiven) {
     setClipboardText({});
 
     EXPECT_EQ(clipboardText(), "");
+}
+
+/**
+ * #60: each copy is offered to the system selection once. Another application's selection empties the clipboard
+ * until its text arrives, and is never offered back.
+ */
+TEST(ClipboardTest, PublishesEachCopyOnceAndNeverWhatItReceived) {
+    setClipboardText("first");
+    setClipboardText("second");
+
+    EXPECT_TRUE(takeClipboardPublish());
+    EXPECT_FALSE(takeClipboardPublish());
+    EXPECT_EQ(clipboardText(), "second");
+
+    const uint64_t revision = beginClipboardReceive();
+
+    EXPECT_EQ(clipboardText(), "");
+    EXPECT_TRUE(receiveClipboardText("from another application", revision));
+    EXPECT_EQ(clipboardText(), "from another application");
+    EXPECT_FALSE(takeClipboardPublish());
+}
+
+/**
+ * #60: a copy made before any press has no serial to be published with, so it is still pending when the user
+ * copies in another application and focuses this window. That selection is the truth: Ctrl+V pastes it, and the
+ * stale copy is never published over it.
+ */
+TEST(ClipboardTest, AnotherApplicationsSelectionSupersedesACopyStillWaitingToBePublished) {
+    setClipboardText("A");
+
+    const uint64_t revision = beginClipboardReceive();
+
+    EXPECT_TRUE(receiveClipboardText("B", revision));
+    EXPECT_EQ(clipboardText(), "B");
+    EXPECT_FALSE(takeClipboardPublish());
+}
+
+/**
+ * #60: an empty system selection is not a newer copy. A copy made before any press, when focus-in reports no
+ * selection, stays pasteable and is still published once a press gives it a serial; with nothing pending, the
+ * clipboard empties.
+ */
+TEST(ClipboardTest, AnEmptySelectionKeepsACopyStillWaitingToBePublished) {
+    setClipboardText("A");
+    clearClipboardUnlessPending();
+
+    EXPECT_EQ(clipboardText(), "A");
+    EXPECT_TRUE(takeClipboardPublish());
+
+    clearClipboardUnlessPending();
+
+    EXPECT_EQ(clipboardText(), "");
+}
+
+/** #60: two clipboards never share an owner type, even in separate PID namespaces where pids repeat. */
+TEST(ClipboardTest, EachClipboardOwnerTypeIsUnique) {
+    const std::string first = createClipboardOwnerMimeType();
+    const std::string second = createClipboardOwnerMimeType();
+
+    EXPECT_TRUE(first.starts_with("application/x-react-native-linux-"));
+    EXPECT_NE(first, second);
+}
+
+/** #60: a paste asks for UTF-8 text first, takes the X11 name an XWayland source offers, and skips non-text offers. */
+TEST(ClipboardTest, PrefersUtf8TextAndDeclinesOffersWithoutText) {
+    EXPECT_EQ(preferredClipboardMimeType({"text/plain", "text/plain;charset=utf-8"}), "text/plain;charset=utf-8");
+    EXPECT_EQ(preferredClipboardMimeType({"image/png", "UTF8_STRING"}), "UTF8_STRING");
+    EXPECT_EQ(preferredClipboardMimeType({"image/png", "text/uri-list"}), std::nullopt);
+    EXPECT_EQ(preferredClipboardMimeType({}), std::nullopt);
 }
 
 #pragma mark - the parity matrix rows #53 leaves open (#53)
