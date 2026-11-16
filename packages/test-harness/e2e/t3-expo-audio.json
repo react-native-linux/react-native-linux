@@ -1,0 +1,35 @@
+{
+  "name": "t3-expo-audio",
+  "bundle": "t3-expo-audio.tsx",
+  "ready": "t3-expo-audio: ready",
+  "frames": 240,
+  "windowFlags": ["--no-decorations"],
+  "steps": ["sleep 100"],
+  "expect": [
+    "t3-expo-audio: file start loaded=true playing=false finished=false error=none",
+    "t3-expo-audio: inline start loaded=false playing=false finished=false error=none",
+    "t3-expo-audio: open https://example.com/voice-note.m4a",
+    "t3-expo-audio: file first loaded=true playing=true finished=false error=none",
+    "t3-expo-audio: file first loaded=true playing=false finished=true error=none",
+    "t3-expo-audio: open https://example.com/voice-note.m4a",
+    "t3-expo-audio: file second loaded=true playing=true finished=false error=none",
+    "t3-expo-audio: file second loaded=true playing=false finished=true error=none",
+    "t3-expo-audio: file released loaded=false playing=false finished=true error=none",
+    "t3-expo-audio: inline replaced loaded=true playing=false finished=false error=none",
+    "t3-expo-audio: open https://example.com/inline.ogg",
+    "t3-expo-audio: inline played loaded=true playing=true finished=false error=none",
+    "t3-expo-audio: inline played loaded=true playing=false finished=true error=none",
+    "t3-expo-audio: open https://example.com/missing.ogg",
+    "t3-expo-audio: failing played loaded=true playing=true finished=false error=none",
+    "t3-expo-audio: failing played loaded=true playing=false finished=false error=no application opens https://example.com/missing.ogg",
+    "t3-expo-audio: permission denied/false denied/false",
+    "t3-expo-audio: preset .m4a",
+    "t3-expo-audio: recorder threw expo-audio: recording is left out of the Linux desktop profile"
+  ],
+  "reject": [
+    "t3-expo-audio: failed",
+    "t3-expo-audio: open null",
+    "t3-expo-audio: inline empty",
+    "t3-expo-audio: failing played loaded=true playing=false finished=true"
+  ]
+}
