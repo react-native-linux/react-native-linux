@@ -79,6 +79,11 @@
       "type": "platform",
       "file": "src-linux/expo-modules-core/polyfill/index.linux.ts",
       "issue": 662
+    },
+    {
+      "type": "platform",
+      "file": "src-linux/react-native-keyboard-controller/bindings.linux.ts",
+      "issue": 279
     }
   ]
 }

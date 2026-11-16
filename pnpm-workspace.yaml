@@ -41,3 +41,8 @@ packageExtensions:
     peerDependenciesMeta:
       expo:
         optional: true
+  # Its reanimated imports resolve to @react-native-linux/reanimated through the linux package alias (#279).
+  react-native-keyboard-controller@1:
+    peerDependenciesMeta:
+      react-native-reanimated:
+        optional: true

@@ -12,6 +12,13 @@ const coreDirectory = path.dirname(createRequire(import.meta.url).resolve("@reac
  * run on, only from the web variant of its polyfill, and its other modules read that global as they load. A linux
  * bundle takes this platform's polyfill instead, which installs upstream's and then answers `getViewConfig` (#662), so
  * Expo's own JavaScript runs unchanged over this platform's TurboModules and Fabric components.
+ *
+ * react-native-keyboard-controller's native bindings take this platform's in their place (#279): a desktop has no soft
+ * keyboard, so its keyboard height stays zero, its keyboard events never fire, a focused input layout synchronization
+ * completes asynchronously, its views are Views, and `dismiss` blurs the focused input. The rest of the library,
+ * T3 Code's patches to it included, runs as published. The overlay copies the export list of the library's private
+ * `src/bindings.native.ts`, so a library upgrade that adds a binding would leave it undefined in a linux bundle until
+ * something mounts it; the overlay's spec compares its exports with the library's `src/bindings.ts` to fail first.
  */
 const linuxPackageOverlayIndex: Readonly<Record<string, string>> = {
   "expo-modules-core/build/polyfill/index": path.join(
@@ -20,6 +27,12 @@ const linuxPackageOverlayIndex: Readonly<Record<string, string>> = {
     "expo-modules-core",
     "polyfill",
     "index.linux.ts",
+  ),
+  "react-native-keyboard-controller/src/bindings.native": path.join(
+    coreDirectory,
+    "src-linux",
+    "react-native-keyboard-controller",
+    "bindings.linux.ts",
   ),
 };
 
