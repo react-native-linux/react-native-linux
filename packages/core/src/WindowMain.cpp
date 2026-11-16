@@ -50,10 +50,12 @@
 #include <memory>
 #include <optional>
 #include <ostream>
+#include <poll.h>
 #include <span>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <unistd.h>
 #include <utility>
 #include <vector>
 
@@ -65,11 +67,10 @@ constexpr uint32_t kDefaultScreenshotFrames = 60;
 // The frame-pacing inputs of #335. The fallback interval is the decision `FrameClock::fallbackInterval` makes
 // from the window's activity, the machine's thermal state and the display's frame period; the thermal state is
 // re-read from the kernel's thermal zones at most once a second, because a file walk per fallback tick is the
-// very waste the pacing exists to avoid. The display period is the nominal 60 Hz one until the compositor's
-// refresh hint is plumbed into the resolver (the follow-up #449 names for the journal thresholds applies here
-// too). The stretch multipliers make the deactivated fallback 50 ms — exactly what the fixed constant used to
-// give every window — while an activated window whose callbacks stopped is re-polled at full rate.
-constexpr std::chrono::nanoseconds kNominalRefreshInterval{16'666'666};
+// very waste the pacing exists to avoid. The period it stretches is `FrameClock::pacingPeriod` (#703): an idle
+// window polls for work at the display's own rate, so a 120 Hz display is not polled at 60 Hz. The stretch
+// multipliers make the deactivated fallback three periods, while an activated window whose callbacks stopped is
+// re-polled every period.
 constexpr std::chrono::milliseconds kThermalReadInterval{1'000};
 constexpr const char* kThermalZoneGlob = "/sys/class/thermal/thermal_zone*";
 
@@ -146,6 +147,7 @@ constexpr std::string_view kFabricFlag = "--fabric";
 constexpr std::string_view kScreenshotFlag = "--screenshot";
 constexpr std::string_view kFramesFlag = "--frames";
 constexpr std::string_view kFrameLogFlag = "--frame-log";
+constexpr std::string_view kHoldUntilStdinClosesFlag = "--hold-until-stdin-closes";
 constexpr std::string_view kImeDebugFlag = "--ime-debug";
 // --ime-debug has no shadow tree and therefore no tag; one identifier for the one field it pretends to have.
 constexpr int32_t kImeDebugFieldIdentifier = 1;
@@ -154,6 +156,7 @@ constexpr std::string_view kAutomationFlag = "--automation";
 constexpr std::string_view kRendererFlag = "--renderer";
 constexpr std::string_view kAppIdFlag = "--app-id";
 constexpr std::string_view kTitleFlag = "--title";
+constexpr std::string_view kAssetsFlag = "--assets";
 constexpr std::string_view kForceClientDecorationsFlag = "--force-client-decorations";
 constexpr std::string_view kNoDecorationsFlag = "--no-decorations";
 constexpr std::string_view kTransparentBackgroundFlag = "--transparent-background";
@@ -178,6 +181,9 @@ constexpr uint64_t kNanosecondsPerSecond = 1'000'000'000;
  * `--screenshot <path>` runs the ordinary loop and reads the last presented swapchain image back into a PNG, so
  * the picture it writes came through the real Vulkan and Wayland path rather than an offscreen surface.
  * `--frames` is how long the bundle is given to mount and settle before that frame is captured.
+ * `--hold-until-stdin-closes` keeps the window running past that frame until standard input reaches end of file,
+ * then captures the next one. The e2e driver (#719) closes that pipe once nothing more is injected, so a slow
+ * startup can no longer end the run, taking cage and the injector with it, while input is still being injected.
  *
  * `--frame-log <path>` writes the `wp_presentation` measurements as JSON Lines: one record per presented frame
  * and a final summary line carrying the frame count, the discarded count and the p50, p95 and maximum frame
@@ -238,9 +244,13 @@ constexpr uint64_t kNanosecondsPerSecond = 1'000'000'000;
  * `SK_ColorTRANSPARENT` instead of `kSceneBackgroundColor`, so whatever the swapchain's chosen composite alpha
  * and Skia's premultiplied output do with a real alpha channel is visible rather than hidden behind an opaque
  * clear every other run paints over it. See *Surface format and composite alpha* in docs/cpp-toolchain.md.
+ *
+ * `--assets <directory>` is the application's assets directory the linux build writes (#696): `app.config` and
+ * `fonts/`. Without it they are read from `assets` beside a bundle file, so a bundle a dev server serves needs it.
  */
 struct WindowArguments {
     std::optional<std::string> bundlePath;
+    std::string assetsDirectory;
     std::optional<react_native_linux::RendererRung> forcedRung;
     std::optional<std::string> screenshotPath;
     std::optional<std::string> frameLogPath;
@@ -248,6 +258,7 @@ struct WindowArguments {
     std::string applicationIdentifier{kDefaultApplicationIdentifier};
     uint32_t frameCount{kDefaultScreenshotFrames};
     bool automation{false};
+    bool holdUntilStdinCloses{false};
     bool forceClientDecorations{false};
     bool noDecorations{false};
     bool transparentBackground{false};
@@ -514,6 +525,10 @@ std::string describeMissingValue(std::string_view flag) {
         return "--title requires a window title";
     }
 
+    if (flag == kAssetsFlag) {
+        return "--assets requires the application's assets directory";
+    }
+
     if (flag == kInjectRendererFailuresFlag) {
         return "--inject-renderer-failures requires a positive rung count";
     }
@@ -580,6 +595,12 @@ WindowArguments parseArguments(std::span<char*> arguments) {
             continue;
         }
 
+        if (flag == kHoldUntilStdinClosesFlag) {
+            parsed.holdUntilStdinCloses = true;
+
+            continue;
+        }
+
         if (flag == kTransparentBackgroundFlag) {
             parsed.transparentBackground = true;
 
@@ -587,8 +608,9 @@ WindowArguments parseArguments(std::span<char*> arguments) {
         }
 
         if (flag != kFabricFlag && flag != kScreenshotFlag && flag != kFramesFlag && flag != kFrameLogFlag &&
-            flag != kRendererFlag && flag != kAppIdFlag && flag != kTitleFlag && flag != kInjectKeySequenceFlag &&
-            flag != kInjectWindowSequenceFlag && flag != kInjectRendererFailuresFlag) {
+            flag != kRendererFlag && flag != kAppIdFlag && flag != kTitleFlag && flag != kAssetsFlag &&
+            flag != kInjectKeySequenceFlag && flag != kInjectWindowSequenceFlag &&
+            flag != kInjectRendererFailuresFlag) {
             // Not a flag at all: the desktop entry's `Exec=... %u` expansion for single-instance activation
             // (#363) hands this process a bare URL, with no `--` of its own. Nothing here consumes it — the
             // single-instance check reads the *original* argv directly, ahead of this parse — so it is not an
@@ -648,6 +670,8 @@ WindowArguments parseArguments(std::span<char*> arguments) {
             parsed.injectedWindowSteps = std::move(sequence.steps);
         } else if (flag == kTitleFlag) {
             parsed.title = std::string(value);
+        } else if (flag == kAssetsFlag) {
+            parsed.assetsDirectory = std::string(value);
         } else {
             const std::optional<uint32_t> count = parsePositiveCount(value);
 
@@ -662,6 +686,26 @@ WindowArguments parseArguments(std::span<char*> arguments) {
     }
 
     return parsed;
+}
+
+constexpr size_t kDiscardedInputBytes = 256;
+
+/** True once standard input is at end of file; whatever arrives before that is read and dropped. */
+bool isStandardInputClosed() {
+    pollfd standardInput{.fd = STDIN_FILENO, .events = POLLIN, .revents = 0};
+
+    if (poll(&standardInput, 1, 0) <= 0) {
+        return false;
+    }
+
+    std::array<char, kDiscardedInputBytes> discarded{};
+
+    return read(STDIN_FILENO, discarded.data(), discarded.size()) <= 0;
+}
+
+bool isCaptureFrameReached(const WindowArguments& arguments, uint32_t elapsedFrames) {
+    return arguments.screenshotPath.has_value() && elapsedFrames + 1 >= arguments.frameCount &&
+           (!arguments.holdUntilStdinCloses || isStandardInputClosed());
 }
 
 /**
@@ -1331,9 +1375,10 @@ int main(int argc, char** argv) {
             // than the loop's next one: the capture is armed beforehand, exactly as the loop arms it for every later
             // frame, so a first-buffer failure that recovers on the next frame cannot pass a fixture that means to
             // check the first one. See *Surface commit ordering* in docs/cpp-toolchain.md.
-            uint32_t presentedFrames = 0;
-            const bool isStartupCaptureFrame =
-                parsedArguments.screenshotPath.has_value() && presentedFrames + 1 >= parsedArguments.frameCount;
+            // A frame `--frames` counts is a presented one or an idle tick (#703): an idle window presents nothing, and
+            // the count is how long a fixture runs rather than how much it painted.
+            uint32_t elapsedFrames = 0;
+            const bool isStartupCaptureFrame = isCaptureFrameReached(parsedArguments, elapsedFrames);
 
             if (isStartupCaptureFrame) {
                 renderer.captureNextFrame(parsedArguments.screenshotPath.value());
@@ -1342,7 +1387,7 @@ int main(int argc, char** argv) {
             const bool startupFramePresented = renderer.drawFrame(window, {}, drawPlaceholder);
 
             if (startupFramePresented) {
-                ++presentedFrames;
+                ++elapsedFrames;
             }
 
             // The bring-up hook above proves the fatal-before-dispatch path (#331): a renderer failure that
@@ -1390,7 +1435,7 @@ int main(int argc, char** argv) {
                 session.emplace(parsedArguments.bundlePath.value(),
                                 react_native_linux::WindowSize{chrome.content.width, chrome.content.height},
                                 outputScaleOf(window), asyncStorageDatabasePath(parsedArguments.applicationIdentifier),
-                                ownActivationUrl);
+                                ownActivationUrl, parsedArguments.assetsDirectory);
 
                 // --ime-debug owns the text input by hand, so focus must not also drive it: the two would race to
                 // enable and disable the same object. Without that flag, focus is the only thing that touches it.
@@ -1509,9 +1554,8 @@ int main(int argc, char** argv) {
 
                 // Never while an automation capture is armed: the two would name the same pending path and one
                 // picture would be written to the other's file.
-                const bool isCaptureFrame = parsedArguments.screenshotPath.has_value() &&
-                                            !automation.pendingScreenshotPath.has_value() &&
-                                            presentedFrames + 1 >= parsedArguments.frameCount;
+                const bool isCaptureFrame = !automation.pendingScreenshotPath.has_value() &&
+                                            isCaptureFrameReached(parsedArguments, elapsedFrames);
 
                 if (isCaptureFrame) {
                     renderer.captureNextFrame(parsedArguments.screenshotPath.value());
@@ -1571,6 +1615,7 @@ int main(int argc, char** argv) {
                 }
 
                 bool presented = false;
+                bool skipped = false;
 
                 // Pumped once per frame, on the same beat as `AppearancePortal` (#363): a later instance's
                 // forwarded activation can arrive at any time this process keeps running, not only at startup.
@@ -1611,10 +1656,9 @@ int main(int argc, char** argv) {
                     // releases everything Fabric has queued since the last frame onto the JavaScript thread.
                     session->deliverInput(std::move(frameEvents));
 
-                    // A frame callback always draws; a fallback timeout draws only if the session reports pending
-                    // work, so an occluded window with nothing left to animate stops spinning the GPU every fallback
-                    // tick instead of chasing a callback the compositor is never going to send. See *Frame clock* in
-                    // docs/cpp-toolchain.md.
+                    // Either frame source draws only if the session reports pending work: an occluded window with
+                    // nothing left to animate stops spinning the GPU every fallback tick, and an idle visible one stops
+                    // presenting on every callback (#703). See *Frame clock* in docs/cpp-toolchain.md.
                     const react_native_linux::FrameClock::Source frameSource =
                         window.hasFrameCallbackFired() ? react_native_linux::FrameClock::Source::Callback
                                                        : react_native_linux::FrameClock::Source::Timer;
@@ -1627,7 +1671,14 @@ int main(int argc, char** argv) {
                     // A discarded content update is the third reason to draw regardless of the clock: it never turned
                     // into light and is owed no frame callback, so nothing else would ever wake this window to
                     // replace it. See *Surface commit ordering* in docs/cpp-toolchain.md.
-                    if (tick.shouldDraw || renderer.hasPendingCapture() || window.hasContentUpdateDiscarded()) {
+                    // A resize or a chrome change is the fourth: a new buffer extent or an activation is not Fabric
+                    // damage, and an idle window would otherwise never show it.
+                    skipped = !tick.shouldDraw && !renderer.hasPendingCapture() &&
+                              !window.hasContentUpdateDiscarded() && !hasResized && !chrome.isRepaintNeeded;
+
+                    if (skipped) {
+                        window.skipFrame();
+                    } else {
                         // The animation backend is driven by the same instant the frame clock measured, and before
                         // the scene is taken, so a mutation this frame produces is in the snapshot it paints. A
                         // running animation is also pending work, so a fallback timeout keeps drawing it when the
@@ -1675,6 +1726,7 @@ int main(int argc, char** argv) {
                                     });
                                 session->recordPaintEnd(std::chrono::steady_clock::now());
                             });
+                        session->recordDrawOutcome(presented);
                     }
                 } else {
                     presented = renderer.drawFrame(window, {}, drawPlaceholder);
@@ -1689,24 +1741,27 @@ int main(int argc, char** argv) {
                 announceFirstPresentedFrameOnce(window, presented, firstPresentedFrameAnnounced, ladderPath,
                                                 broughtUp.record);
 
+                if (presented || skipped) {
+                    ++elapsedFrames;
+                }
+
                 if (presented) {
-                    ++presentedFrames;
                     chrome.isRepaintNeeded = false;
                 }
                 hasCaptured = isCaptureFrame && !renderer.hasPendingCapture();
 
                 if (!hasCaptured) {
-                    // The compositor is not pacing this window — that is what the fallback is for — so the wait
-                    // is the interval the pacing decision (#335) makes from the window's activity, the machine's
-                    // thermal state and the display's frame period.
+                    // When the compositor is not pacing this window, or an idle one armed no callback (#703), the
+                    // fallback is what wakes it, so the wait is the interval the pacing decision (#335) makes from
+                    // the window's activity, the machine's thermal state and the display's frame period.
                     const std::chrono::steady_clock::time_point fallbackNow = std::chrono::steady_clock::now();
                     const std::chrono::nanoseconds fallbackInterval = react_native_linux::FrameClock::fallbackInterval(
                         window.toplevelState().activated ? react_native_linux::FrameClock::WindowActivity::Active
                                                          : react_native_linux::FrameClock::WindowActivity::Inactive,
-                        readThermalState(fallbackNow), kNominalRefreshInterval);
+                        readThermalState(fallbackNow),
+                        react_native_linux::FrameClock::pacingPeriod(!skipped, window.refreshInterval()));
 
-                    if (!window.waitForRedraw(
-                            std::chrono::duration_cast<std::chrono::milliseconds>(fallbackInterval))) {
+                    if (!window.waitForRedraw(std::chrono::ceil<std::chrono::milliseconds>(fallbackInterval))) {
                         break;
                     }
                 }

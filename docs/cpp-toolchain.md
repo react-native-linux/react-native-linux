@@ -10,10 +10,10 @@ for issue #9, and the headless half of the Fabric bootstrap for issue #10. It is
 retained scene every frame — issue #32, the first React-driven pixels. Without the flag it draws the static
 placeholder card and runs no JavaScript.
 
-`rnl_window --screenshot <output.png> [--frames N]` is the same window, run for `N` presented frames and then
-read back: the last presented swapchain image is copied into a host buffer and written as a PNG, and the process
-exits. That is issue #33, and with a headless compositor and lavapipe it is the only rig that proves
-`SkiaVulkanRenderer`. See *Window goldens*.
+`rnl_window --screenshot <output.png> [--frames N]` is the same window, run for `N` frames (presented frames and
+idle ticks, #703) and then read back: the last presented swapchain image is copied into a host buffer and written as
+a PNG, and the process exits. That is issue #33, and with a headless compositor and lavapipe it is the only rig that
+proves `SkiaVulkanRenderer`. See *Window goldens*.
 
 `hello_react --golden <bundle> <output.png>` is the third mode and the producer half of the golden-image rig from
 issue #6: it boots the same headless Fabric host, renders the settled scene into an **offscreen raster**
@@ -605,13 +605,36 @@ wakeup, callback or fallback, makes a hidden window redraw every 50 ms forever f
 with no Wayland and no clock reads of its own — every timestamp is a `std::chrono::steady_clock::time_point` the
 caller passes in.
 
-Two inputs, one flag:
+Two inputs, one flag, and both draw only if `hasPendingWork` is true:
 
-- `onFrameCallback(now)` always draws. `wl_surface.frame` firing means the compositor is presenting this surface,
-  so there is never a reason to skip it.
-- `onFallbackTimeout(now, hasPendingWork)` draws only if `hasPendingWork` is true. An idle occluded window with a
-  static picture must not spin the GPU on every 50 ms wakeup; a window with something still moving must not stall
-  just because nothing sent it a callback.
+- `onFrameCallback(now, hasPendingWork)`. An idle visible window must not present an unchanged picture on every
+  callback (#703). It still draws for `kSettleCallbacks` (two) callbacks after the work runs out, so the swapchain's
+  other images take the last change while the window is busy: without that, the first frame after an idle span
+  repaints a stale image, which under lavapipe also paid first-use pipeline compiles and stalled the first frame
+  that answered a tap by 30–100 ms. A timer draw restarts the settle too, so a commit landing just after the wake
+  frame is still met by a callback. Skipping the draw is also what stops the callbacks, because only a draw re-arms
+  `wl_surface.frame`; `WaylandWindow::skipFrame` consumes the fired callback so the next wait sleeps the fallback
+  interval instead of returning at once. The loop then polls on that interval, stretched from
+  `FrameClock::pacingPeriod`: after a skip it is the display period `wp_presentation` reported (or, where the
+  compositor reports zero, `FrameTiming::refreshNanoseconds`, the median of recent frame times above a 2 ms floor),
+  and after a draw, with a callback armed, it is two display periods and never under 60 Hz, so a slightly late
+  callback is not beaten by an off-vsync timer draw. The first tick that finds pending work draws and re-arms the
+  callback. Every producer is therefore one of the signals `hasPendingWork` composes, read on the frame thread: a
+  JavaScript commit, an image decode or a `<TextInput>` editor state that changed (a caret blink, not the unchanged
+  state `TextInputController` publishes every frame) is mounting damage, a `requestAnimationFrame` or a worklet job
+  is `ReactHost::hasPendingFrameRequests`, and a running animation is the choreographer's flag. A JS timer is not
+  a producer: `HostTimerRegistry` fires it on its own thread and what it changes arrives as a commit, so an app
+  holding a 60 s interval still goes idle. Input needs no signal: the loop takes it on every iteration, drawn or
+  not, and input arriving while no callback is armed ends the wait at once. A resize, a chrome change, a pending
+  capture and a discarded content update draw regardless, and so does every tick after a draw that presented
+  nothing (`FrameClock::recordDrawOutcome`): that draw already took the damage and armed no callback. `IdleWakeTest` proves each producer wakes an idle clock
+  from another thread and that a pending timer or an unchanged editor state does not, and the `idle-wake` and
+  `text-input-typing` scenarios prove the window presents nothing while idle. The frame presented after a skip
+  starts a new `FrameTiming` run, also when the first update after the skip is discarded, so the idle span is not
+  a frame time, and `--frames` counts idle ticks beside presented frames, so a fixture still ends.
+- `onFallbackTimeout(now, hasPendingWork)`. An idle occluded window with a static picture must not spin the GPU on
+  every fallback wakeup; a window with something still moving must not stall just because nothing sent it a
+  callback.
 
 The delta each drawing tick reports is wall-clock time since the *last drawing tick*, regardless of which input
 produced either one — a fallback-timeout draw is not measured from the last callback, and a skipped (no-work)
@@ -652,17 +675,15 @@ previous callback (or lack of one) outstanding rather than requesting a new one 
 `hasPendingWork` for a `Timer` tick is four signals, ORed, computed by `WindowSession` and `FabricHost` between
 them:
 
-- `LinuxMountingManager::hasPendingDamage()` — a mount, an image decode, a focus change or an editor-state publish
+- `LinuxMountingManager::hasPendingDamage()` — a mount, an image decode, a focus change or an editor-state change
   since the last `takeFrame`. This is a dedicated flag on the mounting manager, not a peek at `RetainedScene`'s
   damage list, because the retained scene has no non-consuming way to ask "is there damage" without changing its
   mutation-tracking contract.
 - `ScrollController::isScrollActive()` — any target still being dragged or still gliding, read from the controller's
   own state rather than by calling `advance` a second time for the same frame.
-- `ReactHost::hasPendingTimers()` — any JS timer or `requestAnimationFrame` callback outstanding. `HostTimerRegistry` tracks a timer's delay and whether
-  it recurs, not an absolute deadline, so this is "a timer exists" rather than "a timer is due before the next
-  tick": a conservative signal that can hold the fallback awake a little ahead of when a distant `setTimeout`
-  actually fires, never behind. A precise `hasDueTimer(now)` would need the registry to track absolute deadlines
-  across the JS-thread/frame-thread boundary it does not track today, which is more machinery than this fix needs.
+- `ReactHost::hasPendingFrameRequests()` — a `requestAnimationFrame` callback or worklets' frame work outstanding.
+  A JS timer is not part of it (#703): `HostTimerRegistry` fires a timer on its own thread whatever the window does,
+  and what the callback changes reaches the window as mounting damage.
 - `LinuxAnimationChoreographer::isActive()` — a running animation, which is the signal #129 added. `resume` and
   `pause` come from `AnimationBackend::start` and `::stop`, so this is exactly "the backend has a frame callback
   registered", and it is what stops an animation freezing the moment Hyprland withholds callbacks for a background
@@ -699,7 +720,7 @@ pure: no JSI, no clock reads, every timestamp passed in. Three rules:
   rather than erased, so cancelling the callback after the running one drops it without moving the entries behind
   it. A handle is never zero and never reused, so a stale or negative handle cancels nothing, as on the web.
 
-Liveness is `hasPendingRequests`, which `ReactHost::hasPendingTimers` ORs into the frame clock's pending-work
+Liveness is `hasPendingRequests`, which `ReactHost::hasPendingFrameRequests` ORs into the frame clock's pending-work
 signal above. Without it a window whose compositor withholds `wl_surface.frame` — occluded, or on an inactive
 workspace, which ADR-0001 decision 3 names — would draw no frame, dispatch no callback, and the loop would stop
 until something else woke it: react-native#57592 as seen from JavaScript. It stays true *through* a dispatch as
@@ -733,7 +754,7 @@ What this does not cover: no e2e scenario proves fallback-only progress, because
 does not have, which is the gap the end of this section's parent already names as a follow-up. `raf-idle` is
 therefore "keeps ticking while nothing else repaints", never "ticks on the fallback alone"; the fallback claim
 rests on the unit composition above. The one seam with no test at all is the wiring — that
-`ReactHost::hasPendingTimers` is the thing that ORs the queue into that signal — because reaching it needs a live
+`ReactHost::hasPendingFrameRequests` is the thing that ORs the queue into that signal — because reaching it needs a live
 runtime; it is covered by `raf-idle` and by inspection.
 
 ### Desktop lifecycle contract (#218)
@@ -1424,6 +1445,55 @@ Configure with `-DRNL_AUTOLINKING_CMAKE=<output directory>/rnl_autolinking.cmake
 compiles the registration source into `hello_react` and `rnl_window` — into the executables rather than into an
 archive, so the static initializer cannot be dropped. CI autolinks `packages/cli/test-fixtures/cpp-library`, the
 unmodified `create-react-native-library` 0.63 template, and calls it from `test-bundles/autolinking.js`.
+
+**An application's own Expo module (#640).** An app's local Expo module, such as T3 Code's
+`modules/t3-native-controls`, keeps its Linux code in a `linux/` directory beside `android/` and `ios/`. That
+directory holds a `CMakeLists.txt` and a C++ TurboModule registered under the Expo module's name. The app names the
+module in its own `react-native.config.js`, because a local module has no `node_modules` entry for discovery to
+find:
+
+```js
+dependencies: {
+  't3-native-controls': {
+    root: path.join(__dirname, 'modules/t3-native-controls'),
+    platforms: {
+      android: null,
+      ios: null,
+      linux: { cxxModuleCMakeListsModuleName: 't3-native-controls', cxxModuleHeaderName: 'T3NativeControls' },
+    },
+  },
+},
+```
+
+The community CLI reads `root` and merges these keys over the `sourceDir` that `platform-config.ts` finds. The
+explicit rule then builds `linux/CMakeLists.txt` and registers the class that `cxxModuleHeaderName` names.
+`android: null` and `ios: null` leave those platforms to Expo's own autolinking. Expo's unmodified
+`requireNativeModule` reaches the module through the TurboModule fallback that ADR-0004 (#657) describes. This needs
+no discovery code of ours and no fork. The CMakeLists can rely on the `jsi` and `reactnative` targets, and the class
+lives in `facebook::react`, because the generated registration names it there.
+
+`packages/test-harness/modules/t3-native-controls` is the fixture and T3 Code's template. Its `linux/` directory
+answers the DPoP functions over the system libcrypto, so building it needs `libssl-dev`, and so does every test
+configure (`test`, `asan-tests`, `tsan-tests` and `coverage`), because the module's unit tests link it. CI autolinks
+the fixture beside the `cpp-library` one and calls it from `packages/test-harness/test-bundles/t3-native-controls.js`.
+Its unit tests are `tests/DpopKeysTest.cpp`, which the coverage gate scores, and the Hermes test is
+`tests/hermes/T3NativeControlsModuleTest.cpp`.
+
+Since #276 every configure needs `libssl-dev`, not only the test ones: `rnl_react_core` links the same libcrypto for
+`ExpoCrypto` (`src/ExpoCrypto.h`), whose digests, random bytes and UUIDs `tests/ExpoCryptoTest.cpp` checks against
+RFC 1321 and FIPS 180-2. libcurl already loads libcrypto at run time, so a built app gains no new library.
+
+A module whose view this platform already ships needs no `linux/` directory and no config entry. T3 Code's
+composer (`modules/t3-composer-editor`, #683) is this platform's `TextInput`, selected by a
+`T3ComposerEditor.linux.tsx` beside the app's `.native.tsx`. Metro resolves `.linux` before `.native`. The variant is
+`packages/test-harness/modules/t3-composer-editor/src/native/T3ComposerEditor.linux.tsx`, and T3 Code copies it to
+`apps/mobile/src/native/`. The `src/lib` and `src/features` files beside it stand in for T3 Code's own, and the file
+is written in T3 Code's style, so this repo's oxlint and oxfmt skip `modules/t3-composer-editor/src`. Return and its
+chords use `onKeyDown`, with the Android view's `returnSubmission` rules: in send mode only a bare Return and
+Ctrl+Return send, every other chord inserts a newline, and a repeat never sends. This platform sends every key to
+the focused field's React handler, with its modifiers and `isComposing`, before the field edits, and delivers an
+earlier edit in the same frame as `onChange` first. `submitBehavior` keeps a sending Return out of the text. The
+e2e `packages/test-harness/e2e/t3-composer-editor.json` drives it under cage.
 
 Our C++ ABI toward a library is the vendored React Native pin's; what a library may assume beyond that is #89's
 question, not this generator's.
@@ -2925,7 +2995,7 @@ support:
 sudo apt-get install -y build-essential git cmake ninja-build ccache python3 pkg-config \
   clang-18 clang-tools-18 libclang-rt-18-dev llvm-18 \
   libboost-dev libdouble-conversion-dev libfmt-dev libgoogle-glog-dev libicu-dev \
-  libfreetype-dev libfontconfig-dev
+  libfreetype-dev libfontconfig-dev libssl-dev
 ```
 
 `pkg-config`, `libfreetype-dev` and `libfontconfig-dev` are what `RNL_ENABLE_SKIA` probes for; without them
@@ -3053,8 +3123,12 @@ mise exec cmake@latest ninja@latest -- cmake --build build/dev
 
 Presets: `dev` (Debug), `release` (Release), `asan` (ASan + UBSan), `tsan` (TSan). The sanitizer presets also flip
 Hermes' own `HERMES_ENABLE_*_SANITIZER` options, because Hermes disables its Boost.Context fibers under ASan and
-cannot infer that from `CMAKE_CXX_FLAGS`. `CMAKE_EXPORT_COMPILE_COMMANDS` is on in every preset, so clangd works
-from a fresh configure.
+cannot infer that from `CMAKE_CXX_FLAGS`. Hermes' automatic choice keeps the fibers under TSan, so `tsan` also sets
+`HERMES_ALLOW_BOOST_CONTEXT=0`. Hermes compiles every `eval` and `Function` source on that fiber, and TSan is not
+told about the stack switch. The fiber's frames unbalance the thread's shadow stack, and the next report or
+allocation crashes inside TSan's `StackDepot` (#83, when `Intl` started building its constructors with `Function`).
+Without the fiber, Hermes compiles on its `SerialExecutor` thread, which TSan understands. `CMAKE_EXPORT_COMPILE_COMMANDS`
+is on in every preset, so clangd works from a fresh configure.
 
 ### Building and running rnl_window
 
@@ -3960,7 +4034,7 @@ one differently:
 | Request | Source | Why |
 | --- | --- | --- |
 | Unset, `sans-serif`, `system-ui` | The vendored Noto Sans (`kBundledFontFamily`), asked for directly | These are React Native's own unspecified default and the two CSS spellings of "the platform's interface font." Asking fontconfig for `sans-serif` is exactly the query electron/electron#53499 got wrong, so this rule never asks it: the name is not put in `toFontFamilies`' request list at all, and the vendored face — already first in that list for `kEmojiFontFamily`'s sake, see *Colour emoji and the fallback chain* below — is what resolves. A golden built against it is reproducible on any host. |
-| `serif`, `monospace`, `cursive`, `fantasy` | Fontconfig's own answer | There is no vendored serif or monospace face, and resolving a generic to a real face of that kind is the point of asking for one — the same exemption `classifyFontFamilyRequest` keeps from the #70 diagnostic. The resolved family is logged once per name, the same log-once discipline #70 uses, so a broken host answer (this repository's own `dev` container resolves both `serif` and `monospace` to `Noto Naskh Arabic` — the only face installed) is visible without being treated as a failure. |
+| `serif`, `monospace`, `cursive`, `fantasy` | Fontconfig's own answer | There is no vendored serif or monospace face, and resolving a generic to a real face of that kind is the point of asking for one — the same exemption `classifyFontFamilyRequest` keeps from the #70 diagnostic. The resolved family is logged once per name, the same log-once discipline #70 uses, as an `[rnl-text]` line that the e2e trace grading does not count as an error, so a broken host answer (this repository's own `dev` container resolves both `serif` and `monospace` to `Noto Naskh Arabic` — the only face installed) is visible without being treated as a failure. |
 | Anything else | The name itself, then the #70 diagnostic if it substitutes | Covered by *An unresolvable fontFamily says so (#70)* already: the text still draws, substituted by the vendored Noto Sans or fontconfig's fallback, and the substitution is reported once per name — including for a family nobody registered at all, which stays loud under this rule exactly as it was before it. |
 
 The order every text run asks in is therefore: the requested family resolved per the table above (nothing, for
@@ -6447,8 +6521,13 @@ When an update is ignored the platform writes its own buffer back into the state
 picture never shows a value React proposed and the platform rejected. `EditorModel::reconcileProps` owns the
 count half and is unit-tested against both; `TextInputController::reconcile` owns the changed half.
 
-`mostRecentEventCount` is incremented by an edit and by nothing else. A pre-edit is not an edit — the value React
-owns has not changed until the commit arrives — so composing does not move it.
+`mostRecentEventCount` is incremented by an edit and by a pre-edit that changes the buffer, which is how iOS and
+Android count marked text. An edit that leaves the buffer as it was, such as committing the pre-edit already shown,
+moves nothing, as on Android, so it raises no `onChange` of its own. Edits that move the count but leave the buffer
+where it was by the end of a frame, such as a pre-edit and its cancellation, still raise one with the unchanged
+text: it is the only event that hands JavaScript the count, and without it every later `value` would be stale. A controlled field echoes each pre-edit back as its `value`: the echo of the current one
+equals the buffer and changes nothing, and a late echo of an earlier one carries an old count and is dropped, so
+neither ends the composition.
 
 ### The editing model
 
@@ -6709,7 +6788,7 @@ Through upstream's `TextInputEventEmitter`, so the payloads are the ones `TextIn
 
 | Event | When | Payload |
 | --- | --- | --- |
-| `change` | the buffer differs from what was last reported | the **unmasked** text, the selection, the event count |
+| `change` | the buffer or the event count differs from what was last reported | the **unmasked** text, the selection, the event count |
 | `selectionChange` | the selection differs from what was last reported | the same shape |
 | `keyPress` | before the edit a key makes | the key, as upstream's own mapping of the text — an empty string is `Backspace`, a line feed is `Enter` |
 | `submitEditing`, `endEditing` | Enter, per the table above | text and event count |
@@ -7761,13 +7840,57 @@ platform, so a guard that degenerates to an empty passing flow would only be a w
 
 ```text
 cage -- rnl_window --fabric <bundle> --frames <n> --screenshot build/e2e/<scenario>/screenshot.png \
-     --frame-log build/e2e/<scenario>/frames.jsonl
+     --frame-log build/e2e/<scenario>/frames.jsonl --hold-until-stdin-closes
 ```
 
 with `WLR_BACKENDS=headless`, `WLR_RENDERER=pixman`, `WLR_LIBINPUT_NO_DEVICES=1`, `XKB_DEFAULT_LAYOUT=us` and the
 lavapipe ICD pinned by the same discovery `scripts/window-golden.ts` exports, waits for the wayland socket to
 appear in that directory, waits for both the scenario's `ready` line and the window's first-presented-frame line
 on the window's stdout (#373, below), and then injects.
+
+**The run ends after the input (#719).** The window counts its frames from its first buffer, so a slow startup
+spends frames the steps were sized for. Under load, `t3-review-diff-120hz` reached its 6,400th frame while
+`rnl_inject` was still scrolling. cage exited with the window, and the injector's final roundtrip failed with
+status 1 and no message. The window's stdin is a pipe the driver holds open, and `--hold-until-stdin-closes`
+keeps the window past its `--frames` count until that pipe reaches end of file, then captures the next frame. The
+driver closes the pipe after the injection, the Fast Refresh edit and the automation commands. A scenario's
+`frames` is therefore the shortest run, not a deadline its steps race. A fast startup ends the run exactly where
+it ended before, and a slow one lengthens it instead of truncating the input.
+
+**Trace awaits (#719).** A step `await <text>` is the driver's, not `rnl_inject`'s. `rnl_inject` reads its script
+from a pipe and runs each line as it arrives. `scripts/e2e/trace-await.ts` sends the steps before the await, then
+waits (bounded, like the `ready` wait) until the trace shows `<text>` after the point where that stretch began,
+and only then sends the rest. It replaces a sleep that guessed how long the app needs before the next input makes
+sense. The injector stays the same process across the wait. A second invocation would attach a new virtual
+pointer, and its first events can arrive before the window has bound the new `wl_pointer`. Splitting the script
+that way lost both clicks.
+`t3-review-diff`'s clicks on a header checkbox after a sideways pan used to sleep 5 s, and under load the click
+still landed before the anchored header had followed the scroll, so the toggle was lost. They now await the
+`scroll-settled` report the variant sends when the scroll stops: from `onMomentumScrollEnd`, or from
+`onScrollEndDrag` when the release does not fling. It is held while a drag or a glide runs, which is known by then
+because the platform emits one frame's scroll events in one event beat. It is sent from a later task than the one
+that commits the anchored chrome at the final offset, and the platform mounts a commit when its task ends, so the
+click always hits the checkbox where it is drawn. The source pan ends with a still finger, so its release never
+flings. Its pans carry a 1 pt vertical drift for that reason: `pan 150 0` sends a zero vertical axis, which
+wlroots forwards as `axis_stop`, and the platform releases the drag on it, so each such pan is its own flick.
+`t3-review-diff-120hz` ends on an await of the visible-file report its wheel scroll produces. Under load the
+JavaScript thread runs seconds behind the frames, and the window, held only until the input ends, used to capture
+before the list had reported a new visible file.
+
+**The shader cache (#704).** lavapipe compiles every shader it meets, and Mesa caches the result under
+`XDG_CACHE_HOME`, which the driver points at the scenario's private directory so a bundle never writes into the
+developer's cache (#676). That left every run with a cold cache: the first frames after mount compiled shaders
+inside `vkQueuePresentKHR`, 86–137 ms for the first and 34–51 ms for the next in `animated-views-120hz`, so
+both crossed the frame journal's 33.3 ms hang threshold and the scenario failed 14 runs in 20. `buildEnvironment`
+in `scripts/headless-compositor.ts` therefore sets `MESA_SHADER_CACHE_DIR` to `build/mesa-shader-cache`, a cache
+that outlives the run and is shared by the window goldens, the fresh-project smoke test and every scenario. CI
+restores it in the `window` job from the newest main run with the same `mesa-vulkan-drivers` version, falling back
+to any earlier version's cache, and main saves it after the e2e step. Mesa addresses each entry by a hash of the
+shader, its own build and the CPU's features, so a stale entry can only miss: a restored cache never satisfies a
+shader a change adds or alters, and that change still pays its compile in the run that introduces it. When no
+cache is restored at all, the job first runs every hang-gated scenario once, untimed, to fill it, so the measured
+pass never depends on a cache existing. What the cache hides is the compile cost of shaders that already shipped,
+which is the CPU rasterizer's cost and not the renderer's.
 
 **Keyboard-focus wait (#304).** A scenario's steps are split at the first `key`/`type` step:
 `scripts/e2e/keyboard-focus.ts`'s `runKeyboardAwareInjection` runs everything before that step through one
@@ -7976,7 +8099,7 @@ is measured on real hardware, not here.
 
 **At 120 Hz (#20).** A scenario may name `"outputRefreshHz"`, in whole hertz. cage takes no mode flag and wlroots'
 headless output starts at 60 Hz, but cage implements wlr-output-management, so `resolveCompositorChild` in
-`scripts/e2e/grade.ts` starts the window behind `wlr-randr`, which gives the output a 1280x720 custom mode at that
+`scripts/e2e/drive.ts` starts the window behind `wlr-randr`, which gives the output a 1280x720 custom mode at that
 rate before the window connects. It takes two calls, `--off` and then `--on --custom-mode`. The cage that noble
 ships (0.1.5+20240127, on wlroots 0.17) aborts with `wlr_scene_output_layout_add_output: Assertion
 'solo->scene_output != so' failed` when a configuration re-enables an output that is already in its layout, and
@@ -8012,6 +8135,67 @@ scenarios share that sensitivity. What the gate proves is that on a 120 Hz headl
 at least half its frames within 8.5 ms and 95 % within 12.5 ms, with at most one hang. It does not prove that
 every frame lands on a vblank, and it measures nothing under 8.33 ms, since an output frame here is 8 ms plus a composite. 120 fps on real
 hardware is still open on #20.
+
+`t3-review-diff-120hz.json` (#685) scrolls T3 Code's review diff, 5,098 lines in 42 files with token patches
+arriving as the visible range moves, through `nativeReviewDiffSurface.linux.ts`: React Native rows in a `FlatList`.
+Every frame of a run is measured, startup included, and the window runs at least its frame count and never ends
+before the injector has (#719, above). The scenario therefore spends its
+frames on scrolling: 6,400 frames, of which 1,050 to 2,450 are startup (the bundle, the first mount of 5,307 rows,
+the first token patch; the high end at a load average of 34), about 3,100 (half the run) are 231 wheel notches
+played four times in four orders after one sideways pan across the highlighted first screen and back, and the rest
+is a tail that only absorbs a slower startup. It gates
+`{"p50Ms": 9.5, "p95Ms": 12.5, "minFrames": 3500, "maxHangs": 20}` on the Debug build CI runs. Since #703 an idle
+window presents nothing while the bundle loads or after the scroll settles, so the run presents only its work frames
+(3,856 and 4,002 in two runs at 120 Hz) and `minFrames` is a floor under those, not under every tick. The hang count
+covers the whole run, but p50 and p95 are ranked over the window's last 4,096 intervals (`FrameTiming`'s and
+`FrameJournal`'s `kDefaultSampleCapacity`), frames 2,305 to 6,400 of this run: after a startup of 2,450 frames they
+hold every scroll step and the tail, and after one of 1,050 the first 1,250 or so scroll frames, the sideways pan
+and the first wheel notches among them, fall before the sample and the tail is more than half of it. The
+percentiles are therefore partial-run numbers: an early scroll frame over budget fails the gate only if it is long
+enough to count as a hang. Five runs on
+this repository's shared 24-core host at load averages of 7 to 18 read p50 8.44–8.93 ms, p95 9.23–11.12 ms and 8
+to 12 hangs, with the scroll steps 48–53 % of each run, so the budget is 0.6 ms over the worst median, 1.4 ms over
+the worst p95 and 8 hangs over the worst count. The tail follows host load and the median does not: five runs at
+18 to 30 read p95 9.53–14.92 ms and 13 to 25 hangs, and three failed. CI's runner has no neighbours; the
+scenario's first version read p95 8.62 ms with 1 hang there. The hangs are the first mount, the first token
+patch, rows mounting during the scroll and late patches repainting rows. With the sideways pan added, three runs
+at load averages of 11 to 12 read p50 8.46–8.57 ms, p95 9.03–9.37 ms and 7 to 13 hangs.
+
+**What it proves:** a Debug build keeps this list scrolling on a 120 Hz output with the variant's per-row work
+(rows mounting and unmounting, monospace text, the anchored gutter and headers), and a change that adds work to
+every scrolled frame fails it. Native-driven `Animated` transforms on every mounted row for the anchored chrome
+read p50 37.8 ms and p95 121 ms over the scroll steps. The variant keeps the list's x offset in a small store
+that only the anchored views subscribe to, so a sideways pan re-renders the gutter and header wrappers and none of
+the code or its token runs, and a vertical scroll re-renders nothing. Two right-and-left pans over the highlighted
+first screen, measured from the first frame that answered a pan to the last, took 452–453 frames with the store
+against 623–664 when every row re-rendered from React state, and the slowest pan reached the screen after 1.5–1.6 s
+against 2.9–3.4 s (two runs each, load 12 to 16, Debug), the backlog of a Debug JavaScript thread re-rendering
+every row per scroll event. **What it does not prove:** 120 fps with highlighted rows. Debug Hermes delivers
+each token patch seconds late, so most rows the scroll passes paint as plain text. That gate needs a Release
+build, and #705 owns it. On a Release `rnl_window`, where the JavaScript keeps up (first commit 0.28 s, a patch
+every 25 ms), the scenario as first written, in a proportional face and without the anchored chrome, read p95
+17–44 ms with 16 to 89 hangs, while `animated-views-120hz` passed beside it at p95 8.9 ms. Mounted once, with
+every row colored and nothing committed during the scroll, each wheel notch still painted for 13.7 ms (p50) on
+lavapipe. That is evidence of a paint bottleneck in the current implementation, not proof that a native view would
+cost the same: #685 keeps the JavaScript view provisionally, and revisits a native view if #705's profile shows
+per-node overhead.
+
+The variant reads `codeFontWeight`, `lineNumberFontWeight` and `hunkFontWeight` as `T3ReviewDiffView` does, and
+draws code, line numbers and hunk headers in fontconfig's `monospace`, which is DejaVu Sans Mono on Ubuntu 24.04,
+where fontconfig's own configuration prefers it, so the `t3-review-diff` golden depends on that answer. A sideways
+scroll moves the `FlatList` itself: this platform scrolls both axes of any ScrollView whose content is wider than
+it, as iOS does, and a horizontal ScrollView around the list would never receive a sideways pan, because a scroll
+goes to the innermost ScrollView under the pointer. The content is as wide as the longest line or hunk header in monospace cells,
+counted as wcwidth does (an East Asian Wide or Fullwidth code point is two cells, a surrogate pair one code point),
+plus the chrome, capped at `contentWidth`, as `contentWidthsByFileId` measures it on iOS; SourceFileSurface's
+32,000 and ReviewCommentCard's 2,800 now mean the longest line instead. `styleJson`'s `wordWrap` is not read:
+lines never wrap, tracked on #712. The golden is the review diff scrolled to its right edge and back to the top,
+headers and gutter still in place and `file-1` marked viewed by a click on its translated checkbox, above a source
+file mid pull-to-refresh, whose `refreshing` draws a 2-point bar along the top, panned sideways and then reloaded
+under a new `contentResetKey`: list, header and gutter all back at x 0. No CJK face ships in the CI image, so the
+wide-character rule is proved by the unit test rather than the golden. A click on a line or a header path after a
+sideways pan scrolls the list back to x 0 or 10: pointer focus reveals the pressed control by its untransformed
+layout box (#715), so the scenario presses the checkboxes, which stay inside the viewport.
 
 The recipe for the real-hardware number is the same bundle on a 120 Hz output under Hyprland. **It has never been
 run.** Its measurement is tracked on #20.

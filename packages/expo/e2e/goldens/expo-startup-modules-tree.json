@@ -1,0 +1,24 @@
+[
+  {
+    "testID": "expo-startup-modules",
+    "frame": {
+      "height": 120,
+      "width": 240,
+      "x": 40,
+      "y": 40
+    },
+    "componentName": "View",
+    "tag": 6
+  },
+  {
+    "text": "expo startup modules",
+    "frame": {
+      "width": 200,
+      "height": 24,
+      "x": 56,
+      "y": 56
+    },
+    "tag": 4,
+    "componentName": "Paragraph"
+  }
+]

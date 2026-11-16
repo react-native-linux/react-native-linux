@@ -25,6 +25,7 @@ describe("parseScenario, field by field", () => {
       allowErrors: false,
       automation: null,
       bundle: "pressable.js",
+      devServer: false,
       expect: ["pressable: topClick on box at 200,140"],
       expectFailure: false,
       expectsExitAfter: null,
@@ -33,6 +34,7 @@ describe("parseScenario, field by field", () => {
       frames: EXPLICIT_FRAME_COUNT,
       injectProtocolError: false,
       inputTrace: false,
+      minIdleGapMs: null,
       name: "pressable-click",
       outputRefreshHz: null,
       ready: "pressable: committed surface 1",
@@ -76,6 +78,9 @@ describe("parseScenario", () => {
     expect(parseScenario({ ...validScenario, ...overrides }, "fixture.json")).toMatchObject(overrides);
   });
 
+  it("reads an explicit devServer", () =>
+    expect(parseScenario({ ...validScenario, devServer: true }, "fixture.json").devServer).toBe(true));
+
   it("reads an explicit inputTrace", () =>
     expect(parseScenario({ ...validScenario, inputTrace: true }, "fixture.json").inputTrace).toBe(true));
 
@@ -116,6 +121,12 @@ describe("parseScenario field rejections", () => {
     const withoutName = { bundle: "pressable.js", expect: ["click"], ready: "ready", steps: ["sleep 1"] };
 
     expect(() => parseScenario(withoutName, "fixture.json")).toThrow('fixture.json: "name" must be a non-empty string');
+  });
+
+  it.each([".", "..", "nested/name", "/absolute", "trailing/"])("rejects the scenario name %j", (name) => {
+    expect(() => parseScenario({ ...validScenario, name }, "fixture.json")).toThrow(
+      'fixture.json: "name" must be a single path segment',
+    );
   });
 
   it("rejects an empty string field", () => {

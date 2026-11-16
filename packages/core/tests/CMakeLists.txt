@@ -135,6 +135,7 @@ add_executable(rnl_core_tests
     FrameClockTest.cpp
     FrameJournalTest.cpp
     FrameTimingTest.cpp
+    IdleWakeTest.cpp
     HitTestDifferentialTest.cpp
     ParagraphAttributesSignatureTest.cpp
     ParagraphLayoutCacheTest.cpp
@@ -311,6 +312,8 @@ target_link_libraries(rnl_core_tests PRIVATE react_renderer_element)
 # #79: the libcurl HTTP client, against a loopback server inside the test. Only this binary compiles it, because
 # only this one is scored for coverage.
 target_sources(rnl_core_tests PRIVATE CurlHttpClientTest.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../src/CurlHttpClient.cpp)
+# #156: expo-asset's downloads, over that client, against the same loopback server.
+target_sources(rnl_core_tests PRIVATE ExpoAssetTest.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../src/ExpoAsset.cpp)
 target_include_directories(rnl_core_tests PRIVATE ${REACT_CXX_PLATFORM_DIR})
 target_link_libraries(rnl_core_tests PRIVATE CURL::libcurl)
 
@@ -336,10 +339,33 @@ target_sources(rnl_core_tests
         ${CMAKE_CURRENT_SOURCE_DIR}/../src/ExpoSQLite.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../src/I18n.cpp)
 target_link_libraries(rnl_core_tests PRIVATE SQLite::SQLite3)
+
+# #83: Intl's ICU half; the JSI half is proved from JavaScript in rnl_core_hermes_tests.
+target_sources(rnl_core_tests PRIVATE IntlTest.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../src/Intl.cpp)
+target_link_libraries(rnl_core_tests PRIVATE ICU::uc ICU::i18n)
+
+# #640: the DPoP keys of the T3NativeControls fixture, an application's own Expo module whose Linux code lives in its
+# linux/ directory, over the system libcrypto. Every test configure therefore needs libssl-dev.
+set(RNL_T3_NATIVE_CONTROLS_DIR ${CMAKE_SOURCE_DIR}/packages/test-harness/modules/t3-native-controls/linux)
+find_package(OpenSSL 3 REQUIRED COMPONENTS Crypto)
+target_sources(rnl_core_tests PRIVATE DpopKeysTest.cpp ${RNL_T3_NATIVE_CONTROLS_DIR}/DpopKeys.cpp)
+target_include_directories(rnl_core_tests PRIVATE ${RNL_T3_NATIVE_CONTROLS_DIR})
+target_link_libraries(rnl_core_tests PRIVATE OpenSSL::Crypto)
+# #276: expo-crypto's digests, random bytes and UUIDs over the same libcrypto, against RFC 1321 and FIPS 180-2.
+target_sources(rnl_core_tests PRIVATE ExpoCryptoTest.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../src/ExpoCrypto.cpp)
 # #139: Reanimated's platform contract on Linux, against the vendored header it fills.
 target_sources(rnl_core_tests PRIVATE ReanimatedPlatformTest.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../src/ReanimatedPlatform.cpp)
 target_include_directories(rnl_core_tests
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../reanimated/upstream/packages/react-native-reanimated/Common/cpp)
+
+# #663: expo-file-system's file operations, against the test's temporary directory, and the worker thread it shares
+# with expo-sqlite.
+target_sources(rnl_core_tests
+    PRIVATE
+        ExpoFileSystemTest.cpp
+        SerialWorkerTest.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src/ExpoFileSystem.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src/SerialWorker.cpp)
 target_compile_options(rnl_core_tests PRIVATE -Wall -Wextra -fexceptions -frtti)
 target_include_directories(rnl_core_tests
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src ${RNL_UPSTREAM_ANIMATED_TESTS_DIR})

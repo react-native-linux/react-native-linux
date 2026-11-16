@@ -18,8 +18,9 @@ const resolve = (moduleName: string, platform: string | null): string | null =>
   resolveLinuxPackageAlias({ aliases, isPackageResolvable, moduleName, platform });
 
 describe("packageAliases", () => {
-  it("registers the gesture-handler and reanimated overlays and nothing else", () => {
+  it("registers the gesture-handler, reanimated and enriched-markdown overlays and nothing else", () => {
     expect(packageAliases).toStrictEqual([
+      { linux: "@react-native-linux/enriched-markdown", upstream: "react-native-enriched-markdown" },
       { linux: "@react-native-linux/gesture-handler", upstream: "react-native-gesture-handler" },
       { linux: "@react-native-linux/reanimated", upstream: "react-native-reanimated" },
     ]);

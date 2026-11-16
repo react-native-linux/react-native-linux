@@ -107,9 +107,14 @@ add_executable(rnl_core_hermes_tests
     HermesRuntimeFactory.cpp
     CxxModuleTypeSurfaceTest.cpp
     DevBundleModulesTest.cpp
+    ExpoAssetModuleTest.cpp
+    ExpoStartupModulesTest.cpp
     ExponentConstantsModuleTest.cpp
+    ExpoFileSystemModuleTest.cpp
+    ExpoSharedObjectTest.cpp
     FeatureFlagsResetListener.cpp
     InstanceTeardownLeakTest.cpp
+    IntlBindingTest.cpp
     MeasureGeometryTest.cpp
     LinkingModuleTest.cpp
     LinuxUISchedulerTest.cpp
@@ -123,6 +128,7 @@ add_executable(rnl_core_hermes_tests
     ${RNL_CXX_MODULE_EXAMPLE_DIR}/NativeCxxModuleExample.cpp
     ${RNL_CXX_MODULE_EXAMPLE_DIR}/tests/NativeCxxModuleExampleTests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../../src/FantomTester.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/FrameClock.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../../src/MountTreeText.cpp
     ${googletest_SOURCE_DIR}/googlemock/src/gmock_main.cc
     ${REACT_COMMON_DIR}/jsi/jsi/test/testlib.cpp
@@ -155,11 +161,11 @@ target_compile_definitions(rnl_core_hermes_tests
 
 # Two things exist only where rnl_react_core links Skia, and the sanitizer presets build without it: the decoder
 # behind CrossThreadMountingStressTest's image-decode leg and RemoteImageTest, and the text pipeline
-# ResizeTextCostTest shapes through and ApplicationFontsTest registers into.
+# ResizeTextCostTest shapes through and ApplicationFontsTest and ExpoFontLoaderModuleTest register into.
 if(TARGET rnl_skia)
     target_compile_definitions(rnl_core_hermes_tests PRIVATE RNL_ENABLE_IMAGES)
     target_sources(rnl_core_hermes_tests PRIVATE ApplicationFontsTest.cpp BidiHitTestTest.cpp EditorGeometryTest.cpp
-                   RemoteImageTest.cpp ResizeTextCostTest.cpp)
+                   ExpoFontLoaderModuleTest.cpp RemoteImageTest.cpp ResizeTextCostTest.cpp)
     target_compile_definitions(rnl_core_hermes_tests
         PRIVATE "RNL_VENDORED_FONT_DIR=\"${CMAKE_SOURCE_DIR}/packages/core/fonts\""
                 "RNL_TEST_IMAGE=\"${CMAKE_SOURCE_DIR}/packages/core/assets/rnl-test-image.png\"")
@@ -187,6 +193,17 @@ endif()
 #        covered through JSI by CxxModuleTypeSurfaceTest.
 #
 # All are vendored and none is reachable from anything this platform calls.
+# #640: the T3NativeControls fixture module, called from JavaScript as an autolinked C++ TurboModule. rnl_react_core
+# already requires libcrypto (#276), so the suite builds wherever the core does.
+set(RNL_T3_NATIVE_CONTROLS_DIR ${CMAKE_SOURCE_DIR}/packages/test-harness/modules/t3-native-controls/linux)
+target_sources(rnl_core_hermes_tests
+    PRIVATE
+        T3NativeControlsModuleTest.cpp
+        ${RNL_T3_NATIVE_CONTROLS_DIR}/DpopKeys.cpp
+        ${RNL_T3_NATIVE_CONTROLS_DIR}/T3NativeControls.cpp)
+target_include_directories(rnl_core_hermes_tests PRIVATE ${RNL_T3_NATIVE_CONTROLS_DIR})
+target_link_libraries(rnl_core_hermes_tests PRIVATE OpenSSL::Crypto)
+
 set(RNL_HERMES_TESTS_FILTER
     "-BridgingTest.highResTimeStampTest:UseModernRuntimeScheduler/RuntimeSchedulerTest.*TaskYieldsToSynchronousAccess/*:NativeCxxModuleExampleTests.VoidFunEmitsEvents")
 

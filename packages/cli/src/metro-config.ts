@@ -1,4 +1,8 @@
-import { coreDirectory, resolveLinuxPackageOverlayForResolvedFile } from "./package-overlays.ts";
+import {
+  coreDirectory,
+  resolveLinuxPackageOverlayForResolvedFile,
+  resolveLinuxPackageSubstituteForResolvedFile,
+} from "./package-overlays.ts";
 import { packageAliases, resolveLinuxPackageAlias } from "./package-aliases.ts";
 import path from "node:path";
 
@@ -9,7 +13,11 @@ const coreLinuxUtilitiesDirectory = path.join(coreDirectory, "src-linux", "Libra
 
 const coreLinuxNativeComponentDirectory = path.join(coreLinuxUtilitiesDirectory, "..", "NativeComponent");
 
-const linuxOverlayIndex: Readonly<Record<string, string>> = {
+/**
+ * The overlays with no upstream file to replace: React Native's patched modules require them by name, so they are
+ * reached only by rewriting that specifier. Every other overlay replaces the upstream file a specifier resolves to.
+ */
+const linuxOnlyOverlayIndex: Readonly<Record<string, string>> = {
   "Libraries/Components/TextInput/LinuxTextInputNativeComponent": path.join(
     coreLinuxUtilitiesDirectory,
     "..",
@@ -17,6 +25,10 @@ const linuxOverlayIndex: Readonly<Record<string, string>> = {
     "TextInput",
     "LinuxTextInputNativeComponent.linux.ts",
   ),
+};
+
+const linuxOverlayIndex: Readonly<Record<string, string>> = {
+  ...linuxOnlyOverlayIndex,
   "Libraries/NativeComponent/BaseViewConfig": path.join(coreLinuxNativeComponentDirectory, "BaseViewConfig.linux.ts"),
   "Libraries/StyleSheet/PlatformColorValueTypes": path.join(
     coreLinuxUtilitiesDirectory,
@@ -49,7 +61,7 @@ const resolveLinuxOverlay = (
 };
 
 /**
- * The name-rewriting head of the chain: the fixed `react-native` subpath overrides first, then the overlay
+ * The name-rewriting head of the chain: the `react-native` subpaths of `linuxOnlyOverlayIndex` first, then the overlay
  * packages of issue #180. Returns null when neither applies, which leaves the module name to the package-name
  * redirect and the extension chain below.
  */
@@ -58,7 +70,7 @@ const resolveLinuxModuleName = (
   platform: string | null,
   isPackageResolvable: (packageName: string) => boolean,
 ): string | null =>
-  resolveLinuxOverlay(moduleName, platform, linuxOverlayIndex) ??
+  resolveLinuxOverlay(moduleName, platform, linuxOnlyOverlayIndex) ??
   resolveLinuxPackageAlias({ aliases: packageAliases, isPackageResolvable, moduleName, platform });
 
 /**
@@ -176,19 +188,35 @@ const resolveWithBaselessVariant = <Resolution>(
  * The Metro `resolveRequest` of a linux bundle: the specifier rewrites of `resolveLinuxModuleName` first, Metro's
  * own resolution — whose `linux`, `native`, default extension chain is `resolvePlatformCandidates` — next, and the
  * overlay substitution of `resolveLinuxOverlayForResolvedFile`, or else the package overlay of
- * `resolveLinuxPackageOverlayForResolvedFile`, on whatever file that produced. A package overlay lives in
- * `@react-native-linux/core`, so its own imports resolve from the file it replaced, as the package's would, rather
- * than from core's install location, where pnpm's strict layout holds no copy of the package.
+ * `resolveLinuxPackageOverlayForResolvedFile`, on whatever file that produced. An overlay lives in
+ * `@react-native-linux/core`, which can sit outside the application's tree and watch folders, as it does for a
+ * checkout bundled against this repository; resolved from there, its package imports reach core's own installs, such as
+ * its `@react-native/normalize-colors`, rather than the application's. So they resolve from the file it replaced, as
+ * that file's would, and its relative imports stay its own files. A file
+ * `resolveLinuxPackageSubstituteForResolvedFile` names is resolved again, as its linux package's specifier.
  */
 const createLinuxResolveRequest = (isPackageResolvable: (packageName: string) => boolean) => {
-  const replacedFileByPackageOverlay = new Map<string, string>();
+  const replacedFileByOverlay = new Map<string, string>();
+  const takeOverlay = (resolvedFile: string, platform: string | null): string | null => {
+    const overlayPath =
+      resolveLinuxOverlayForResolvedFile(resolvedFile, platform) ??
+      resolveLinuxPackageOverlayForResolvedFile(resolvedFile, platform);
+
+    if (overlayPath !== null) {
+      replacedFileByOverlay.set(overlayPath, resolvedFile);
+    }
+
+    return overlayPath;
+  };
 
   return <Resolution>(
     context: LinuxResolutionContext<Resolution>,
     moduleName: string,
     platform: string | null,
   ): Resolution | SourceFileResolution => {
-    const replacedFile = replacedFileByPackageOverlay.get(context.originModulePath ?? "") ?? null;
+    const replacedFile = moduleName.startsWith(".")
+      ? null
+      : (replacedFileByOverlay.get(context.originModulePath ?? "") ?? null);
     const originContext = replacedFile === null ? context : { ...context, originModulePath: replacedFile };
     const resolution = resolveWithBaselessVariant(
       (specifier) => context.resolveRequest(originContext, specifier, platform),
@@ -202,15 +230,16 @@ const createLinuxResolveRequest = (isPackageResolvable: (packageName: string) =>
       typeof resolution.filePath === "string"
         ? resolution.filePath
         : null;
-    const packageOverlayPath =
-      resolvedFile === null ? null : resolveLinuxPackageOverlayForResolvedFile(resolvedFile, platform);
+    const substitute =
+      resolvedFile === null
+        ? null
+        : resolveLinuxPackageSubstituteForResolvedFile(resolvedFile, platform, isPackageResolvable);
 
-    if (resolvedFile !== null && packageOverlayPath !== null) {
-      replacedFileByPackageOverlay.set(packageOverlayPath, resolvedFile);
+    if (substitute !== null) {
+      return context.resolveRequest(context, substitute, platform);
     }
 
-    const overlayPath =
-      resolvedFile === null ? null : (resolveLinuxOverlayForResolvedFile(resolvedFile, platform) ?? packageOverlayPath);
+    const overlayPath = resolvedFile === null ? null : takeOverlay(resolvedFile, platform);
 
     return overlayPath === null ? resolution : { filePath: overlayPath, type: "sourceFile" };
   };

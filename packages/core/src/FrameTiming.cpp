@@ -46,7 +46,17 @@ FrameTiming::Frame FrameTiming::recordPresented(uint64_t sequence, uint64_t pres
         }
 
         intervalNanoseconds_.push_back(intervalNanoseconds);
+
+        if (intervalNanoseconds >= kMinimumRefreshNanoseconds) {
+            if (refreshSamples_.size() == kRefreshSampleCount) {
+                refreshSamples_.pop_front();
+            }
+
+            refreshSamples_.push_back(intervalNanoseconds);
+        }
     }
+
+    reportedRefreshNanoseconds_ = refreshNanoseconds;
 
     previousPresentedNanoseconds_ = presentedNanoseconds;
     ++presentedFrames_;
@@ -54,7 +64,30 @@ FrameTiming::Frame FrameTiming::recordPresented(uint64_t sequence, uint64_t pres
     return frame;
 }
 
-void FrameTiming::recordDiscarded() { ++discardedFrames_; }
+void FrameTiming::recordDiscarded(bool startsRun) {
+    ++discardedFrames_;
+
+    if (startsRun) {
+        startRun();
+    }
+}
+
+void FrameTiming::startRun() noexcept { previousPresentedNanoseconds_.reset(); }
+
+std::optional<uint64_t> FrameTiming::refreshNanoseconds() const {
+    if (reportedRefreshNanoseconds_ != 0) {
+        return reportedRefreshNanoseconds_;
+    }
+
+    if (refreshSamples_.empty()) {
+        return std::nullopt;
+    }
+
+    std::vector<uint64_t> sortedSamples(refreshSamples_.begin(), refreshSamples_.end());
+    std::sort(sortedSamples.begin(), sortedSamples.end());
+
+    return percentileNanoseconds(sortedSamples, kMedianFraction);
+}
 
 FrameTiming::Summary FrameTiming::summarise() const {
     std::vector<uint64_t> sortedIntervals(intervalNanoseconds_.begin(), intervalNanoseconds_.end());

@@ -2,20 +2,15 @@
 #include "OnJavaScriptThread.h"
 #include "ReactHost.h"
 
-#include <chrono>
 #include <cxxreact/JSBigString.h>
 #include <filesystem>
 #include <gtest/gtest.h>
 #include <memory>
 #include <string>
-#include <thread>
 #include <unistd.h>
 
 namespace react_native_linux {
 namespace {
-
-constexpr std::chrono::milliseconds kQuiescenceBudget{5000};
-constexpr std::chrono::milliseconds kPollInterval{10};
 
 /**
  * The native calls upstream expo-sqlite 58's JavaScript makes for what T3 Code calls, in its order and with its
@@ -151,29 +146,6 @@ constexpr char kHeadlessProbe[] = R"JAVASCRIPT(
 globalThis.sqliteTrace = String(ExpoSQLite.defaultDatabaseDirectory);
 )JAVASCRIPT";
 
-/** The database work settles off the JavaScript thread, so the host is pumped until the probe has written its trace. */
-std::string awaitTrace(ReactHost& reactHost) {
-    const std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::now() + kQuiescenceBudget;
-
-    while (std::chrono::steady_clock::now() < deadline) {
-        reactHost.runUntilQuiescent(kQuiescenceBudget);
-
-        const std::string trace = onJavaScriptThread<std::string>(reactHost, [](facebook::jsi::Runtime& runtime) {
-            const facebook::jsi::Value value = runtime.global().getProperty(runtime, "sqliteTrace");
-
-            return value.isString() ? value.getString(runtime).utf8(runtime) : std::string();
-        });
-
-        if (!trace.empty()) {
-            return trace;
-        }
-
-        std::this_thread::sleep_for(kPollInterval);
-    }
-
-    return "the probe never finished";
-}
-
 void loadProbe(ReactHost& reactHost, const char* probe, const char* name) {
     reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>(kUpstreamCalls), "SQLiteUpstreamCalls.js");
     reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>(probe), name);
@@ -199,7 +171,7 @@ TEST(SQLiteModuleTest, UpstreamsCallsWriteInTransactionsAndTheNextInstanceReadsT
         reactHost.sqliteDatabases().setDirectory(directory.string());
         loadProbe(reactHost, kWriteProbe, "SQLiteWrite.js");
 
-        EXPECT_EQ(awaitTrace(reactHost),
+        EXPECT_EQ(awaitGlobalString(reactHost, "sqliteTrace"),
                   "in transaction true | inserted 1 1 | ExpoSQLite: NOT NULL constraint failed: entries.label | "
                   R"([{"id":1,"label":"first","note":null},{"id":2,"label":"second","note":null}] | )"
                   R"({"label":"second"} | null | [] | in transaction false | )"
@@ -220,7 +192,7 @@ TEST(SQLiteModuleTest, UpstreamsCallsWriteInTransactionsAndTheNextInstanceReadsT
     reloaded.sqliteDatabases().setDirectory(directory.string());
     loadProbe(reloaded, kReadProbe, "SQLiteRead.js");
 
-    EXPECT_EQ(awaitTrace(reloaded), R"([{"label":"first"},{"label":"second"}])");
+    EXPECT_EQ(awaitGlobalString(reloaded, "sqliteTrace"), R"([{"label":"first"},{"label":"second"}])");
     EXPECT_FALSE(reloaded.hasReportedFatalError());
     std::filesystem::remove_all(directory);
 }
@@ -231,7 +203,7 @@ TEST(SQLiteModuleTest, AHeadlessHostHasNoDefaultDirectory) {
 
     loadProbe(reactHost, kHeadlessProbe, "SQLiteHeadless.js");
 
-    EXPECT_EQ(awaitTrace(reactHost), "null");
+    EXPECT_EQ(awaitGlobalString(reactHost, "sqliteTrace"), "null");
 }
 
 } // namespace

@@ -1,0 +1,15 @@
+{
+  "name": "expo-startup-modules",
+  "bundle": "expo-startup-modules.tsx",
+  "ready": "expo-startup-modules: rendered",
+  "frames": 600,
+  "steps": ["sleep 300"],
+  "automation": {
+    "listErrorsMustBeEmpty": true,
+    "visualTreeSnapshot": "expo-startup-modules-tree.json"
+  },
+  "expect": [
+    "Running \"main\"",
+    "expo-startup-modules: rendered linking=null application=null,null,null,null,ERR_UNAVAILABLE device=true,true,true,1,ERR_UNAVAILABLE,ERR_UNAVAILABLE network={\"type\":\"UNKNOWN\"},ERR_UNAVAILABLE crypto=ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad,ungWv48Bz+pBQUDeXa4iI7ADYaOWF3qctBD/YfIAFa0=,900150983cd24fb0d6963f7d28e17f72,16,8,true,function"
+  ]
+}

@@ -1,39 +1,46 @@
-import {
-  useMemo,
+import type { ForwardedRef } from 'react';
+import React, {
   useCallback,
+  useEffect,
   useImperativeHandle,
-  ForwardedRef,
-  useState,
+  useMemo,
+  useRef,
 } from 'react';
-import { LayoutChangeEvent, View, I18nManager, StyleSheet } from 'react-native';
+import type { LayoutChangeEvent } from 'react-native';
+import { I18nManager, Platform, StyleSheet, View } from 'react-native';
 import Animated, {
-  useSharedValue,
   interpolate,
-  runOnJS,
-  ReduceMotion,
-  withSpring,
-  useAnimatedRef,
+  isSharedValue,
   measure,
-  runOnUI,
+  ReduceMotion,
+  useAnimatedRef,
   useAnimatedStyle,
+  useSharedValue,
+  withSpring,
 } from 'react-native-reanimated';
 import {
-  SwipeableProps,
+  isWorkletRuntime,
+  scheduleOnRN,
+  scheduleOnUI,
+} from 'react-native-worklets';
+
+import { tagMessage } from '../../utils';
+import { GestureDetector } from '../../v3/detectors';
+import type {
+  PanGestureActiveEvent,
+  PanGestureDeactivateEvent,
+} from '../../v3/hooks/gestures';
+import { usePanGesture, useTapGesture } from '../../v3/hooks/gestures';
+import {
+  maybeUnpackValue,
+  SHARED_VALUE_OFFSET,
+} from '../../v3/hooks/utils/reanimatedUtils';
+import type { SharedValueOrT } from '../../v3/types';
+import type {
   SwipeableMethods,
-  SwipeDirection,
+  SwipeableProps,
 } from './ReanimatedSwipeableProps';
-import { Gesture } from '../..';
-import {
-  GestureStateChangeEvent,
-  GestureUpdateEvent,
-} from '../../handlers/gestureHandlerCommon';
-import { PanGestureHandlerEventPayload } from '../../handlers/GestureHandlerEventPayload';
-import { GestureDetector } from '../../handlers/gestures/GestureDetector';
-import {
-  applyRelationProp,
-  RelationPropName,
-  RelationPropType,
-} from '../utils';
+import { SwipeDirection } from './ReanimatedSwipeableProps';
 
 const DRAG_TOSS = 0.05;
 
@@ -41,6 +48,21 @@ const DEFAULT_FRICTION = 1;
 const DEFAULT_OVERSHOOT_FRICTION = 1;
 const DEFAULT_DRAG_OFFSET = 10;
 const DEFAULT_ENABLE_TRACKING_TWO_FINGER_GESTURE = false;
+
+function useEventCallback<Args extends unknown[]>(
+  callback: ((...args: Args) => void) | undefined
+): ((...args: Args) => void) | undefined {
+  const callbackRef = useRef(callback);
+  callbackRef.current = callback;
+
+  const stableCallback = useCallback((...args: Args) => {
+    callbackRef.current?.(...args);
+  }, []);
+
+  // Keep a stable wrapper only while a user callback exists, so the existing
+  // truthiness checks can still skip `scheduleOnRN` when the prop is absent.
+  return callback ? stableCallback : undefined;
+}
 
 const Swipeable = (props: SwipeableProps) => {
   const {
@@ -56,39 +78,71 @@ const Swipeable = (props: SwipeableProps) => {
     testID,
     children,
     enableTrackpadTwoFingerGesture = DEFAULT_ENABLE_TRACKING_TWO_FINGER_GESTURE,
-    dragOffsetFromLeftEdge = DEFAULT_DRAG_OFFSET,
-    dragOffsetFromRightEdge = DEFAULT_DRAG_OFFSET,
+    dragOffsetFromLeft = DEFAULT_DRAG_OFFSET,
+    dragOffsetFromRight = -DEFAULT_DRAG_OFFSET,
     friction = DEFAULT_FRICTION,
     overshootFriction = DEFAULT_OVERSHOOT_FRICTION,
-    onSwipeableOpenStartDrag,
-    onSwipeableCloseStartDrag,
-    onSwipeableWillOpen,
-    onSwipeableWillClose,
-    onSwipeableOpen,
-    onSwipeableClose,
+    onSwipeableOpenStartDrag: onSwipeableOpenStartDragProp,
+    onSwipeableCloseStartDrag: onSwipeableCloseStartDragProp,
+    onSwipeableWillOpen: onSwipeableWillOpenProp,
+    onSwipeableWillClose: onSwipeableWillCloseProp,
+    onSwipeableOpen: onSwipeableOpenProp,
+    onSwipeableClose: onSwipeableCloseProp,
     renderLeftActions,
     renderRightActions,
-    simultaneousWithExternalGesture,
-    requireExternalGestureToFail,
-    blocksExternalGesture,
+    simultaneousWith,
+    requireToFail,
+    block,
     hitSlop,
     ...remainingProps
   } = props;
 
-  const relationProps = useMemo(
-    () => ({
-      simultaneousWithExternalGesture,
-      requireExternalGestureToFail,
-      blocksExternalGesture,
-    }),
-    [
-      blocksExternalGesture,
-      requireExternalGestureToFail,
-      simultaneousWithExternalGesture,
-    ]
+  const onSwipeableOpenStartDrag = useEventCallback(
+    onSwipeableOpenStartDragProp
   );
+  const onSwipeableCloseStartDrag = useEventCallback(
+    onSwipeableCloseStartDragProp
+  );
+  const onSwipeableWillOpen = useEventCallback(onSwipeableWillOpenProp);
+  const onSwipeableWillClose = useEventCallback(onSwipeableWillCloseProp);
+  const onSwipeableOpen = useEventCallback(onSwipeableOpenProp);
+  const onSwipeableClose = useEventCallback(onSwipeableCloseProp);
 
-  const [shouldEnableTap, setShouldEnableTap] = useState(false);
+  if (__DEV__) {
+    const checkValue = (value: SharedValueOrT<number>) => {
+      'worklet';
+      if (maybeUnpackValue<number>(value) > 0) {
+        throw new Error(
+          tagMessage('dragOffsetFromRight should be non-positive.')
+        );
+      }
+    };
+
+    checkValue(dragOffsetFromRight);
+
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    useEffect(() => {
+      if (!isSharedValue<number>(dragOffsetFromRight)) {
+        return;
+      }
+
+      const listenerId = Math.random() + SHARED_VALUE_OFFSET;
+
+      scheduleOnUI(() => {
+        'worklet';
+        dragOffsetFromRight.addListener(listenerId, checkValue);
+      });
+
+      return () => {
+        scheduleOnUI(() => {
+          'worklet';
+          dragOffsetFromRight.removeListener(listenerId);
+        });
+      };
+    }, [dragOffsetFromRight, checkValue]);
+  }
+
+  const shouldEnableTap = useSharedValue<boolean>(false);
   const rowState = useSharedValue<number>(0);
 
   const userDrag = useSharedValue<number>(0);
@@ -101,6 +155,10 @@ const Swipeable = (props: SwipeableProps) => {
 
   const showLeftProgress = useSharedValue<number>(0);
   const showRightProgress = useSharedValue<number>(0);
+
+  // Row state at the start of the animation whose end events are not yet
+  // dispatched, or `null` when there is none.
+  const pendingEndFromState = useSharedValue<number | null>(null);
 
   const updateAnimatedEvent = useCallback(() => {
     'worklet';
@@ -169,13 +227,15 @@ const Swipeable = (props: SwipeableProps) => {
       'worklet';
 
       if (onSwipeableWillOpen && toValue !== 0) {
-        runOnJS(onSwipeableWillOpen)(
+        scheduleOnRN(
+          onSwipeableWillOpen,
           toValue > 0 ? SwipeDirection.RIGHT : SwipeDirection.LEFT
         );
       }
 
       if (onSwipeableWillClose && toValue === 0) {
-        runOnJS(onSwipeableWillClose)(
+        scheduleOnRN(
+          onSwipeableWillClose,
           fromValue > 0 ? SwipeDirection.LEFT : SwipeDirection.RIGHT
         );
       }
@@ -188,13 +248,15 @@ const Swipeable = (props: SwipeableProps) => {
       'worklet';
 
       if (onSwipeableOpen && toValue !== 0) {
-        runOnJS(onSwipeableOpen)(
+        scheduleOnRN(
+          onSwipeableOpen,
           toValue > 0 ? SwipeDirection.RIGHT : SwipeDirection.LEFT
         );
       }
 
       if (onSwipeableClose && toValue === 0) {
-        runOnJS(onSwipeableClose)(
+        scheduleOnRN(
+          onSwipeableClose,
           fromValue > 0 ? SwipeDirection.LEFT : SwipeDirection.RIGHT
         );
       }
@@ -202,8 +264,12 @@ const Swipeable = (props: SwipeableProps) => {
     [onSwipeableClose, onSwipeableOpen]
   );
 
-  const animateRow: (toValue: number, velocityX?: number) => void = useCallback(
-    (toValue: number, velocityX = 0) => {
+  const animateRow: (
+    toValue: number,
+    velocityX?: number,
+    silent?: boolean
+  ) => void = useCallback(
+    (toValue: number, velocityX = 0, silent = false) => {
       'worklet';
 
       const translationSpringConfig = {
@@ -237,12 +303,18 @@ const Swipeable = (props: SwipeableProps) => {
 
       const frozenRowState = rowState.value;
 
+      // A silent animation dispatches only the end events of an earlier
+      // animation that it interrupted.
+      const endFromState = silent ? pendingEndFromState.value : frozenRowState;
+      pendingEndFromState.value = endFromState;
+
       appliedTranslation.value = withSpring(
         toValue,
         translationSpringConfig,
         (isFinished) => {
-          if (isFinished) {
-            dispatchEndEvents(frozenRowState, toValue);
+          if (isFinished && endFromState !== null) {
+            pendingEndFromState.value = null;
+            dispatchEndEvents(endFromState, toValue);
           }
         }
       );
@@ -259,11 +331,13 @@ const Swipeable = (props: SwipeableProps) => {
         progressSpringConfig
       );
 
-      dispatchImmediateEvents(frozenRowState, toValue);
+      if (!silent) {
+        dispatchImmediateEvents(frozenRowState, toValue);
+      }
 
       rowState.value = Math.sign(toValue);
 
-      runOnJS(setShouldEnableTap)(rowState.value !== 0);
+      shouldEnableTap.value = rowState.value !== 0;
     },
     [
       rowState,
@@ -275,6 +349,7 @@ const Swipeable = (props: SwipeableProps) => {
       rightWidth,
       dispatchImmediateEvents,
       dispatchEndEvents,
+      pendingEndFromState,
     ]
   );
 
@@ -307,37 +382,37 @@ const Swipeable = (props: SwipeableProps) => {
     () => ({
       close() {
         'worklet';
-        if (_WORKLET) {
+        if (isWorkletRuntime()) {
           animateRow(0);
           return;
         }
-        runOnUI(() => {
+        scheduleOnUI(() => {
           animateRow(0);
-        })();
+        });
       },
       openLeft() {
         'worklet';
-        if (_WORKLET) {
+        if (isWorkletRuntime()) {
           updateElementWidths();
           animateRow(leftWidth.value);
           return;
         }
-        runOnUI(() => {
+        scheduleOnUI(() => {
           updateElementWidths();
           animateRow(leftWidth.value);
-        })();
+        });
       },
       openRight() {
         'worklet';
-        if (_WORKLET) {
+        if (isWorkletRuntime()) {
           updateElementWidths();
           animateRow(-rightWidth.value);
           return;
         }
-        runOnUI(() => {
+        scheduleOnUI(() => {
           updateElementWidths();
           animateRow(-rightWidth.value);
-        })();
+        });
       },
       reset() {
         'worklet';
@@ -345,6 +420,7 @@ const Swipeable = (props: SwipeableProps) => {
         showLeftProgress.value = 0;
         appliedTranslation.value = 0;
         rowState.value = 0;
+        pendingEndFromState.value = null;
       },
     }),
     [
@@ -356,6 +432,7 @@ const Swipeable = (props: SwipeableProps) => {
       showLeftProgress,
       appliedTranslation,
       rowState,
+      pendingEndFromState,
     ]
   );
 
@@ -371,7 +448,10 @@ const Swipeable = (props: SwipeableProps) => {
 
   const leftActionAnimation = useAnimatedStyle(() => {
     return {
-      opacity: showLeftProgress.value === 0 ? 0 : 1,
+      // Both action containers use `absoluteFill` and overlap, so the
+      // inactive one must not intercept touches meant for the visible
+      // actions.
+      pointerEvents: showLeftProgress.value === 0 ? 'none' : 'auto',
     };
   });
 
@@ -401,7 +481,10 @@ const Swipeable = (props: SwipeableProps) => {
 
   const rightActionAnimation = useAnimatedStyle(() => {
     return {
-      opacity: showRightProgress.value === 0 ? 0 : 1,
+      // Both action containers use `absoluteFill` and overlap, so the
+      // inactive one must not intercept touches meant for the visible
+      // actions.
+      pointerEvents: showRightProgress.value === 0 ? 'none' : 'auto',
     };
   });
 
@@ -427,8 +510,20 @@ const Swipeable = (props: SwipeableProps) => {
   );
 
   const handleRelease = useCallback(
-    (event: GestureStateChangeEvent<PanGestureHandlerEventPayload>) => {
+    (event: PanGestureDeactivateEvent) => {
       'worklet';
+      if (event.canceled) {
+        // Restore the row to where it rested before the gesture.
+        const restingValue =
+          rowState.value === 1
+            ? leftWidth.value
+            : rowState.value === -1
+              ? -rightWidth.value
+              : 0;
+        animateRow(restingValue, 0, true);
+        return;
+      }
+
       const { velocityX } = event;
       userDrag.value = event.translationX;
 
@@ -478,90 +573,99 @@ const Swipeable = (props: SwipeableProps) => {
 
   const dragStarted = useSharedValue<boolean>(false);
 
-  const tapGesture = useMemo(() => {
-    const tap = Gesture.Tap()
-      .shouldCancelWhenOutside(true)
-      .enabled(shouldEnableTap)
-      .onStart(() => {
+  const handleFinalize = useCallback(() => {
+    'worklet';
+    dragStarted.value = false;
+  }, [dragStarted]);
+
+  const handleUpdate = useCallback(
+    (event: PanGestureActiveEvent) => {
+      'worklet';
+      userDrag.value = event.translationX;
+
+      const direction =
+        rowState.value === -1
+          ? SwipeDirection.RIGHT
+          : rowState.value === 1
+            ? SwipeDirection.LEFT
+            : event.translationX > 0
+              ? SwipeDirection.RIGHT
+              : SwipeDirection.LEFT;
+
+      if (!dragStarted.value) {
+        dragStarted.value = true;
+        if (rowState.value === 0 && onSwipeableOpenStartDrag) {
+          scheduleOnRN(onSwipeableOpenStartDrag, direction);
+        } else if (onSwipeableCloseStartDrag) {
+          scheduleOnRN(onSwipeableCloseStartDrag, direction);
+        }
+      }
+
+      updateAnimatedEvent();
+    },
+    [
+      dragStarted,
+      onSwipeableCloseStartDrag,
+      onSwipeableOpenStartDrag,
+      rowState,
+      updateAnimatedEvent,
+      userDrag,
+    ]
+  );
+
+  const tapConfig = useMemo(
+    () => ({
+      shouldCancelWhenOutside: true,
+      enabled: shouldEnableTap,
+      simultaneousWith,
+      requireToFail,
+      block,
+      onActivate: () => {
+        'worklet';
         if (rowState.value !== 0) {
           close();
         }
-      });
+      },
+    }),
+    [block, close, requireToFail, rowState, shouldEnableTap, simultaneousWith]
+  );
 
-    Object.entries(relationProps).forEach(([relationName, relation]) => {
-      applyRelationProp(
-        tap,
-        relationName as RelationPropName,
-        relation as RelationPropType
-      );
-    });
-    return tap;
-  }, [close, relationProps, rowState, shouldEnableTap]);
+  const tapGesture = useTapGesture(tapConfig);
 
-  const panGesture = useMemo(() => {
-    const pan = Gesture.Pan()
-      .enabled(enabled !== false)
-      .hitSlop(hitSlop)
-      .enableTrackpadTwoFingerGesture(enableTrackpadTwoFingerGesture)
-      .activeOffsetX([-dragOffsetFromRightEdge, dragOffsetFromLeftEdge])
-      .onStart(updateElementWidths)
-      .onUpdate((event: GestureUpdateEvent<PanGestureHandlerEventPayload>) => {
-        userDrag.value = event.translationX;
+  const panConfig = useMemo(
+    () => ({
+      enabled: enabled ?? true,
+      enableTrackpadTwoFingerGesture: enableTrackpadTwoFingerGesture,
+      activeOffsetX: [dragOffsetFromRight, dragOffsetFromLeft] as [
+        typeof dragOffsetFromRight,
+        typeof dragOffsetFromLeft,
+      ],
+      simultaneousWith,
+      requireToFail,
+      block,
+      hitSlop: hitSlop,
+      onActivate: updateElementWidths,
+      onUpdate: handleUpdate,
+      onDeactivate: handleRelease,
+      onFinalize: handleFinalize,
+    }),
+    [
+      block,
+      dragOffsetFromLeft,
+      dragOffsetFromRight,
+      enableTrackpadTwoFingerGesture,
+      enabled,
+      handleFinalize,
+      handleRelease,
+      handleUpdate,
+      hitSlop,
+      requireToFail,
+      simultaneousWith,
+      updateElementWidths,
+    ]
+  );
 
-        const direction =
-          rowState.value === -1
-            ? SwipeDirection.RIGHT
-            : rowState.value === 1
-              ? SwipeDirection.LEFT
-              : event.translationX > 0
-                ? SwipeDirection.RIGHT
-                : SwipeDirection.LEFT;
-
-        if (!dragStarted.value) {
-          dragStarted.value = true;
-          if (rowState.value === 0 && onSwipeableOpenStartDrag) {
-            runOnJS(onSwipeableOpenStartDrag)(direction);
-          } else if (onSwipeableCloseStartDrag) {
-            runOnJS(onSwipeableCloseStartDrag)(direction);
-          }
-        }
-
-        updateAnimatedEvent();
-      })
-      .onEnd(
-        (event: GestureStateChangeEvent<PanGestureHandlerEventPayload>) => {
-          handleRelease(event);
-        }
-      )
-      .onFinalize(() => {
-        dragStarted.value = false;
-      });
-
-    Object.entries(relationProps).forEach(([relationName, relation]) => {
-      applyRelationProp(
-        pan,
-        relationName as RelationPropName,
-        relation as RelationPropType
-      );
-    });
-
-    return pan;
-  }, [
-    enabled,
-    hitSlop,
-    enableTrackpadTwoFingerGesture,
-    dragOffsetFromRightEdge,
-    dragOffsetFromLeftEdge,
-    updateElementWidths,
-    relationProps,
-    userDrag,
-    rowState,
-    dragStarted,
-    updateAnimatedEvent,
-    onSwipeableOpenStartDrag,
-    onSwipeableCloseStartDrag,
-    handleRelease,
-  ]);
+  const panGesture = usePanGesture(panConfig);
 
   useImperativeHandle(ref, () => swipeableMethods, [swipeableMethods]);
 
@@ -570,7 +674,7 @@ const Swipeable = (props: SwipeableProps) => {
       transform: [{ translateX: appliedTranslation.value }],
       pointerEvents: rowState.value === 0 ? 'auto' : 'box-only',
     }),
-    [appliedTranslation, rowState]
+    Platform.OS === 'web' ? [appliedTranslation, rowState] : undefined
   );
 
   const swipeableComponent = (

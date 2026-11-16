@@ -111,6 +111,12 @@ public:
     /** `ExpoSQLite`'s connections (#638); see `TurboModuleRegistry::sqliteDatabases`. */
     SQLiteDatabases& sqliteDatabases() noexcept;
 
+    /** `ExpoAsset`'s downloads (#156); see `TurboModuleRegistry::expoAssetDownloads`. */
+    ExpoAssetDownloads& expoAssetDownloads() noexcept;
+
+    /** What `FileSystem` runs over (#663); see `TurboModuleRegistry::fileSystem`. */
+    FileSystemHost& fileSystem() noexcept;
+
     /** `I18nManager`'s state (#72); see `TurboModuleRegistry::i18n`. */
     I18nModel& i18n() noexcept;
 
@@ -122,6 +128,13 @@ public:
      * thread. Called once per frame by the window host, and once after the resize by the headless one.
      */
     void publishPendingDimensions();
+
+    /**
+     * The application's assets directory (#696): `app.config`, which `ExponentConstants` serves as `manifest`, and
+     * `fonts/`, the application's fonts (#70). The linux build writes it; `--assets` names it for a bundle a dev
+     * server serves. Empty, the default, means `assets` beside a bundle file, and nothing for a URL.
+     */
+    void setAssetsDirectory(std::string assetsDirectory);
     void loadScript(std::unique_ptr<const facebook::react::JSBigString> script, const std::string& sourceUrl);
 
     /**
@@ -173,17 +186,14 @@ public:
     void dispatchAnimationFrames(std::chrono::steady_clock::time_point now);
 
     /**
-     * Whether a JS timer, a `requestAnimationFrame` callback or worklets' frame work is outstanding, for the frame
-     * clock's fallback-timeout pending-work signal (see *Frame clock* in docs/cpp-toolchain.md). Both are timers in
-     * React Native's model — upstream's `TimerManager` installs `requestAnimationFrame` as a timer source of its
-     * own — and both have the same consequence here: a window the compositor sends no `wl_surface.frame` to has
-     * to draw on the fallback timeout, or the callback never runs.
+     * Whether a `requestAnimationFrame` callback or worklets' frame work is outstanding, for the frame clock's
+     * pending-work signal (see *Frame clock* in docs/cpp-toolchain.md): both only run on a frame the window draws,
+     * so a window with one pending has to draw or the callback never runs.
      *
-     * For the timer half this is "any timer scheduled", not "a timer due before the next tick" —
-     * `HostTimerRegistry` tracks delay and recurrence, not an absolute deadline — so it is a conservative signal:
-     * it can hold the fallback awake slightly ahead of when a distant timer actually fires, never behind.
+     * A JS timer is not one (#703). `HostTimerRegistry` fires it on its own thread, and whatever it changes reaches
+     * the window as mount damage, so an app holding a 60 s interval does not keep an idle window presenting.
      */
-    bool hasPendingTimers() const;
+    bool hasPendingFrameRequests() const;
 
 private:
     const std::thread::id owningThread_{std::this_thread::get_id()};
@@ -197,6 +207,7 @@ private:
     std::unique_ptr<facebook::react::ReactInstance> reactInstance_;
     std::shared_ptr<facebook::react::NativeAnimatedNodesManagerProvider> animatedNodesManagerProvider_;
     std::unique_ptr<TurboModuleRegistry> turboModuleRegistry_;
+    std::string assetsDirectory_;
 };
 
 } // namespace react_native_linux

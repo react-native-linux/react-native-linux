@@ -2,11 +2,14 @@
 
 #include "AsyncStorage.h"
 #include "DimensionsSource.h"
+#include "ExpoAsset.h"
+#include "ExpoFileSystem.h"
 #include "ExpoSQLite.h"
 #include "FrameProfiling.h"
 #include "I18n.h"
 
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -41,16 +44,26 @@ uint64_t toNanosecondsSinceEpoch(std::chrono::steady_clock::time_point timePoint
 
 WindowSession::WindowSession(const std::string& bundlePath, WindowSize size, double scale,
                              const std::string& asyncStorageDatabasePath,
-                             std::optional<std::string> initialActivationUrl)
+                             std::optional<std::string> initialActivationUrl, std::string assetsDirectory)
     : fabricHost_(std::make_unique<FabricHost>(reactHost_.reactInstance(), toSurfaceSize(size))),
       frameJournal_(kNominalVsyncNanoseconds, kHangThresholdVsyncCount * kNominalVsyncNanoseconds) {
     // Before the script, so the first `Dimensions.get` a bundle makes at module scope already answers with the
     // window's requested size and scale rather than with the pre-configure default.
     resize(size, scale);
     seedColorScheme();
+    const std::filesystem::path applicationDirectory = std::filesystem::path(asyncStorageDatabasePath).parent_path();
+    const char* home = std::getenv("HOME");
+    const std::optional<std::filesystem::path> cacheDirectory =
+        fileSystemDirectories(applicationDirectory, std::getenv("XDG_CACHE_HOME"), home == nullptr ? "" : home).cache;
+
     reactHost_.keyValueStore().setDatabasePath(asyncStorageDatabasePath);
-    reactHost_.sqliteDatabases().setDirectory(
-        (std::filesystem::path(asyncStorageDatabasePath).parent_path() / "SQLite").string());
+    reactHost_.sqliteDatabases().setDirectory((applicationDirectory / "SQLite").string());
+    reactHost_.fileSystem().applicationDirectory = applicationDirectory;
+
+    if (cacheDirectory.has_value()) {
+        reactHost_.expoAssetDownloads().setDirectory(cacheDirectory.value() / "expo-asset");
+    }
+
     // After the store has its file and before the script, so the first layout already has the persisted direction.
     reactHost_.i18n().restore();
     applyLayoutDirectionChange();
@@ -59,6 +72,7 @@ WindowSession::WindowSession(const std::string& bundlePath, WindowSize size, dou
         deliverActivationUrl(initialActivationUrl.value());
     }
 
+    reactHost_.setAssetsDirectory(std::move(assetsDirectory));
     reactHost_.loadBundle(bundlePath);
     reactHost_.startHotModuleReplacement(bundlePath);
 }
@@ -134,17 +148,17 @@ void WindowSession::tickAnimations(std::chrono::steady_clock::time_point now) {
     }
 }
 
+void WindowSession::recordDrawOutcome(bool presented) noexcept { frameClock_.recordDrawOutcome(presented); }
+
 FrameClock::Tick WindowSession::recordFrameTick(FrameClock::Source source, std::chrono::steady_clock::time_point now) {
     const bool hasPending = hasPendingWork();
 
-    // The dirty edge exists independently of whichever frame source wakes this call: a callback tick draws
-    // whether or not there is pending work, but the invalidation it might be answering was already there.
     if (hasPending) {
         frameJournal_.recordDamage(toNanosecondsSinceEpoch(now));
     }
 
     if (source == FrameClock::Source::Callback) {
-        return frameClock_.onFrameCallback(now);
+        return frameClock_.onFrameCallback(now, hasPending);
     }
 
     return frameClock_.onFallbackTimeout(now, hasPending);
@@ -182,7 +196,9 @@ void WindowSession::reportJournalDiscontinuity() { frameJournal_.recordDiscontin
 
 FrameJournal::Summary WindowSession::frameJournalSummary() const { return frameJournal_.summarise(); }
 
-bool WindowSession::hasPendingWork() const { return fabricHost_->hasPendingWork() || reactHost_.hasPendingTimers(); }
+bool WindowSession::hasPendingWork() const {
+    return fabricHost_->hasPendingWork() || reactHost_.hasPendingFrameRequests();
+}
 
 double WindowSession::takeFrameMilliseconds() {
     const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();

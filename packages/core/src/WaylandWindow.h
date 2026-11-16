@@ -253,6 +253,13 @@ public:
     std::optional<uint32_t> presentationClockId() const noexcept;
 
     /**
+     * The display's frame period, `FrameTiming::refreshNanoseconds`. It is what the run loop's fallback interval
+     * stretches over, so an idle window polls for work at the display's own rate rather than a nominal 60 Hz one
+     * (#703).
+     */
+    std::optional<std::chrono::nanoseconds> refreshInterval() const;
+
+    /**
      * The readiness signal of issue #373: true from the first `wp_presentation_feedback.presented` this window has
      * ever received, or, when the compositor advertises no `wp_presentation`, from the first `wl_surface.frame`
      * callback. Both mechanisms only ever fire for a commit that already carried an attached buffer — every
@@ -282,6 +289,11 @@ public:
     /** The token the last `requestActivationToken` produced, exactly once; `std::nullopt` until the `done` event. */
     std::optional<std::string> takeActivationToken();
 
+    /**
+     * Dispatches until the frame callback fires, the fallback timeout expires or the window closes; returns false once
+     * it is closed. An idle window armed no callback (#703), so input arriving while it waits ends the wait at once
+     * rather than waiting out the fallback: the next iteration takes it and answers it.
+     */
     bool waitForRedraw(std::chrono::milliseconds fallbackTimeout);
 
     /**
@@ -298,12 +310,18 @@ public:
 
     /**
      * Whether the compositor has sent `wl_callback.done` for the frame callback currently or most recently
-     * requested. `requestFrameCallback` — called from inside `SkiaVulkanRenderer::drawFrame` — is what resets this,
-     * so a caller that skips drawing on a fallback timeout leaves it exactly as `waitForRedraw` last left it: a
-     * caller can use it right after `waitForRedraw` returns to tell a callback-driven wake from a timeout one. See
-     * *Frame clock* in docs/cpp-toolchain.md.
+     * requested. `requestFrameCallback` — called from inside `SkiaVulkanRenderer::drawFrame` — and `skipFrame` are
+     * what reset this, so a caller can use it right after `waitForRedraw` returns to tell a callback-driven wake from
+     * a timeout one. See *Frame clock* in docs/cpp-toolchain.md.
      */
     bool hasFrameCallbackFired() const noexcept;
+
+    /**
+     * The run loop decided not to draw this iteration (#703). A fired callback is consumed rather than left set, so
+     * the next `waitForRedraw` sleeps its fallback timeout instead of returning at once, and the next presented frame
+     * starts a new `FrameTiming` run: the idle span before it is not a frame time.
+     */
+    void skipFrame() noexcept;
     std::vector<InputEvent> takeInputEvents();
     TextInputClient* textInput() const noexcept;
     /** The serial ledger every request that needs one — set_selection, an interactive move, ack_configure — reads
@@ -324,6 +342,7 @@ public:
 private:
     void bindGlobal(wl_registry* registry, uint32_t name, const char* interfaceName, uint32_t version);
     void dispatchWithTimeout(std::chrono::milliseconds timeout);
+    bool hasInputEndingIdleWait() const noexcept;
     /**
      * Classifies one dispatch/flush/read-events return value through `classifyWaylandDispatchResult`
      * (`WaylandDispatchDiagnostics.h`), passing both `wl_display_get_error` and the plain `errno` the call itself
@@ -362,7 +381,13 @@ private:
     static void handleFeedbackPresented(void* data, struct wp_presentation_feedback* feedback, uint32_t secondsHigh,
                                         uint32_t secondsLow, uint32_t nanoseconds, uint32_t refresh,
                                         uint32_t sequenceHigh, uint32_t sequenceLow, uint32_t flags);
+    static void handleFeedbackPresentedAfterIdle(void* data, struct wp_presentation_feedback* feedback,
+                                                 uint32_t secondsHigh, uint32_t secondsLow, uint32_t nanoseconds,
+                                                 uint32_t refresh, uint32_t sequenceHigh, uint32_t sequenceLow,
+                                                 uint32_t flags);
     static void handleFeedbackDiscarded(void* data, struct wp_presentation_feedback* feedback);
+    static void handleFeedbackDiscardedAfterIdle(void* data, struct wp_presentation_feedback* feedback);
+    void recordDiscardedFeedback(struct wp_presentation_feedback* feedback, bool startsRun);
 
     static const wl_registry_listener kRegistryListener;
     static const wl_surface_listener kSurfaceListener;
@@ -373,6 +398,7 @@ private:
     static const wl_callback_listener kFrameCallbackListener;
     static const wp_fractional_scale_v1_listener kFractionalScaleListener;
     static const wp_presentation_listener kPresentationListener;
+    static const wp_presentation_feedback_listener kPresentationFeedbackAfterIdleListener;
     static const wp_presentation_feedback_listener kPresentationFeedbackListener;
 
     wl_display* display_{nullptr};
@@ -408,6 +434,7 @@ private:
     ToplevelState toplevelState_;
     bool configured_{false};
     bool frameCallbackFired_{false};
+    bool hasSkippedFrame_{false};
     bool presentedFirstFrame_{false};
     bool pendingResize_{false};
     bool contentUpdateDiscarded_{false};

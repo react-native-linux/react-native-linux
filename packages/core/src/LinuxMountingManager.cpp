@@ -106,8 +106,9 @@ void LinuxMountingManager::setFocus(facebook::react::Tag tag, bool isFocusVisibl
 void LinuxMountingManager::setEditorState(facebook::react::Tag tag, const SceneEditorState& editorState) {
     const std::lock_guard<std::mutex> guard(sceneMutex_);
 
-    scene_.setEditorState(tag, editorState);
-    hasPendingDamage_ = true;
+    const bool hasChanged = scene_.setEditorState(tag, editorState);
+
+    hasPendingDamage_ = hasPendingDamage_ || hasChanged;
 }
 
 SceneFrame LinuxMountingManager::takeFrame() {

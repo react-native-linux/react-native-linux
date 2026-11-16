@@ -3,10 +3,11 @@ import { AppRegistry, Pressable, StyleSheet } from "react-native";
 import { scheduleOnRN } from "react-native-worklets";
 import { useCallback, useEffect } from "react";
 
-const animationMilliseconds = 500;
-const stallMilliseconds = 1500;
+const animationMilliseconds = 1200;
+const stallMilliseconds = 2500;
 const travel = 400;
-// A 500 ms ramp is 30 frames at 60 Hz; a value that jumped to its end would step once.
+// A 1200 ms ramp is 72 frames at 60 Hz, enough for the frame budget's sample on a window that presents only the
+// frames with work (#703); a value that jumped to its end would step once.
 const minimumSteps = 20;
 
 const styles = StyleSheet.create({

@@ -67,6 +67,7 @@
         "CMAKE_CXX_FLAGS": "-fsanitize=thread -fno-omit-frame-pointer",
         "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=thread",
         "CMAKE_SHARED_LINKER_FLAGS": "-fsanitize=thread",
+        "HERMES_ALLOW_BOOST_CONTEXT": "0",
         "HERMES_ENABLE_THREAD_SANITIZER": "ON"
       }
     },

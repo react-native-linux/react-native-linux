@@ -1,0 +1,12 @@
+{
+  "name": "expo-file-system",
+  "bundle": "expo-file-system.tsx",
+  "ready": "expo-file-system:",
+  "frames": 600,
+  "windowFlags": ["--no-decorations", "--app-id", "org.reactnative.linux.e2e.files"],
+  "steps": ["sleep 100"],
+  "expect": [
+    "expo-file-system: document=/data/org.reactnative.linux.e2e.files/Documents/ cache=/cache/org.reactnative.linux.e2e.files/ message=thread%20outbox/message-1.json listed=file:image.bin,file:message-1.json,directory:nested text={\"id\":2} bytes=104,105 base64=aGk= size=2 marker=grant parent=true deleted=true"
+  ],
+  "reject": ["expo-file-system: FAILED"]
+}

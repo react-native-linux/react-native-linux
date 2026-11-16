@@ -1,7 +1,6 @@
 import {
   isRecord,
   readCoordinate,
-  readNonNegativeInteger,
   readObject,
   readOptionalBoolean,
   readOptionalString,
@@ -12,30 +11,17 @@ import {
   readStringArray,
 } from "./fields.ts";
 import type { Crop } from "./screenshot.ts";
+import type { FrameBudget } from "./frame-budget.ts";
 import path from "node:path";
 import { readAccessibilityChanges } from "./accessibility-changes.ts";
 import { readFastRefresh } from "./fast-refresh.ts";
+import { readFrameBudget } from "./frame-budget.ts";
 
 const DEFAULT_FRAME_COUNT = 600;
 const FRAME_LOG_FILE_NAME = "frames.jsonl";
 const SCREENSHOT_FILE_NAME = "screenshot.png";
 const TRACE_FILE_NAME = "trace.log";
 const PARENT_DIRECTORY = "..";
-
-/**
- * The perf gate of #7: `p95Ms`/`minFrames` bound the p95 `wp_presentation` frame time and the frames needed for
- * it to mean anything. `maxHangs` (#345) caps hang-thresholded frames; `null` opts out, `0` is a measured zero.
- * `maxJournalledFrames` (#42) caps the frames that painted damage, which is how a scenario says nothing repaints
- * once its input stops; `null` opts out. `p50Ms` (#20) bounds the median, which a client slower than the headless
- * output's frame timer moves while its p95 can stay inside `p95Ms`; omitted opts out.
- */
-interface FrameBudget {
-  readonly maxHangs: number | null;
-  readonly maxJournalledFrames: number | null;
-  readonly minFrames: number;
-  readonly p50Ms?: number;
-  readonly p95Ms: number;
-}
 
 /**
  * `golden` is a file name under `packages/core/e2e/goldens`. A golden that does not exist yet is a skip with a note
@@ -77,6 +63,11 @@ interface Scenario {
   readonly bundle: string;
   /** Trace substrings the run has to produce, in this order. */
   readonly expect: readonly string[];
+  /**
+   * #696: `bundle` is served as a `dev=true` bundle by Metro, as a `fastRefresh` scenario's is, with no edit; the
+   * window reads the package's assets from `--assets`.
+   */
+  readonly devServer: boolean;
   /** A negative control: the scenario passes only if grading it produces at least one failure. */
   readonly expectFailure: boolean;
   /** `rnl_inject`'s exit status 1 is accepted once the trace also carries this substring; `null` never accepts it. */
@@ -97,10 +88,15 @@ interface Scenario {
   readonly inputTrace: boolean;
   /** Passes `--inject-protocol-error` (#331): proves a real dispatch failure is reported structured, not grepped. */
   readonly injectProtocolError: boolean;
+  /**
+   * #703: requires the run's frame log to carry a span of at least this many milliseconds between two consecutive
+   * `wp_presentation` frames, which is how a scenario says an idle visible window stops presenting. `null` asks nothing.
+   */
+  readonly minIdleGapMs: number | null;
   readonly name: string;
   /**
    * #20: the headless output's refresh rate in Hz, set before the window connects; `null` keeps cage's 60 Hz. See
-   * `resolveCompositorChild` in grade.ts.
+   * `resolveCompositorChild` in drive.ts.
    */
   readonly outputRefreshHz: number | null;
   /** The trace line that means the bundle has committed and input can start. */
@@ -115,7 +111,7 @@ interface Scenario {
    * find the same retained GPU resources and the same live Wayland objects. See `describeReloadCounterFailures`.
    */
   readonly steadyAcrossReloads: boolean;
-  /** Extra `rnl_window` flags. `resolveWindowFlags` in grade.ts turns omission, `[]` and a list into three cases. */
+  /** Extra `rnl_window` flags. `resolveWindowFlags` in drive.ts turns omission, `[]` and a list into three cases. */
   readonly windowFlags: readonly string[] | undefined;
 }
 
@@ -132,26 +128,6 @@ const readFrameCount = (record: Record<string, unknown>, sourceName: string): nu
   }
 
   return readPositiveInteger(record["frames"], "frames", sourceName);
-};
-
-const readFrameBudget = (record: Record<string, unknown>, sourceName: string): FrameBudget | null => {
-  if (!("frameBudget" in record)) {
-    return null;
-  }
-
-  const budget = readObject(record["frameBudget"], "frameBudget", sourceName);
-
-  return {
-    maxHangs:
-      "maxHangs" in budget ? readNonNegativeInteger(budget["maxHangs"], "frameBudget.maxHangs", sourceName) : null,
-    maxJournalledFrames:
-      "maxJournalledFrames" in budget
-        ? readNonNegativeInteger(budget["maxJournalledFrames"], "frameBudget.maxJournalledFrames", sourceName)
-        : null,
-    minFrames: readPositiveInteger(budget["minFrames"], "frameBudget.minFrames", sourceName),
-    p95Ms: readPositiveNumber(budget["p95Ms"], "frameBudget.p95Ms", sourceName),
-    ...("p50Ms" in budget ? { p50Ms: readPositiveNumber(budget["p50Ms"], "frameBudget.p50Ms", sourceName) } : {}),
-  };
 };
 
 const readCrop = (comparison: Record<string, unknown>, sourceName: string): Crop | null => {
@@ -206,6 +182,20 @@ const readSnapshotName = (automation: Record<string, unknown>, field: string, so
   return name;
 };
 
+/**
+ * The scenario's own directory under `build/e2e-bundles`, which a Metro build empties first: one path segment, so no
+ * name can make that cleanup reach outside it.
+ */
+const readScenarioName = (value: unknown, sourceName: string): string => {
+  const name = readString(value, "name", sourceName);
+
+  if (name === "." || name === PARENT_DIRECTORY || name !== path.basename(name)) {
+    throw new Error(`${sourceName}: "name" must be a single path segment`);
+  }
+
+  return name;
+};
+
 const readAutomation = (record: Record<string, unknown>, sourceName: string): ScenarioAutomation | null => {
   if (!("automation" in record)) {
     return null;
@@ -232,6 +222,7 @@ const parseScenario = (value: unknown, sourceName: string): Scenario => {
     allowErrors: readOptionalBoolean(value, "allowErrors", sourceName),
     automation: readAutomation(value, sourceName),
     bundle: readString(value["bundle"], "bundle", sourceName),
+    devServer: readOptionalBoolean(value, "devServer", sourceName),
     expect: readStringArray(value["expect"], "expect", sourceName),
     expectFailure: readOptionalBoolean(value, "expectFailure", sourceName),
     expectsExitAfter: readOptionalString(value, "expectsExitAfter", sourceName),
@@ -240,7 +231,9 @@ const parseScenario = (value: unknown, sourceName: string): Scenario => {
     frames: readFrameCount(value, sourceName),
     injectProtocolError: readOptionalBoolean(value, "injectProtocolError", sourceName),
     inputTrace: readOptionalBoolean(value, "inputTrace", sourceName),
-    name: readString(value["name"], "name", sourceName),
+    minIdleGapMs:
+      "minIdleGapMs" in value ? readPositiveNumber(value["minIdleGapMs"], "minIdleGapMs", sourceName) : null,
+    name: readScenarioName(value["name"], sourceName),
     outputRefreshHz:
       "outputRefreshHz" in value ? readPositiveInteger(value["outputRefreshHz"], "outputRefreshHz", sourceName) : null,
     ready: readString(value["ready"], "ready", sourceName),
@@ -268,4 +261,4 @@ const resolveArtifactPaths = (artifactsRoot: string, scenarioName: string): Arti
 export { describeTraceFailures, resolveExpectedOutcome } from "./trace-grading.ts";
 export { applyFastRefreshEdit, gradeEditToVisible } from "./fast-refresh.ts";
 export { formatInjectorScript, parseScenario, resolveArtifactPaths };
-export type { FrameBudget, Scenario, ScenarioAutomation };
+export type { Scenario, ScenarioAutomation };

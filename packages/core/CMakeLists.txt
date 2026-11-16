@@ -66,6 +66,10 @@ find_package(Threads REQUIRED)
 find_package(CURL REQUIRED)
 # #23: SQLite is the store behind AsyncStorage (src/AsyncStorage.h) and #638's expo-sqlite (src/ExpoSQLite.h).
 find_package(SQLite3 REQUIRED)
+# #276: libcrypto computes expo-crypto's digests and random bytes (src/ExpoCrypto.h); libcurl already loads it.
+find_package(OpenSSL 3 REQUIRED COMPONENTS Crypto)
+# #83: Intl is built on the system ICU, the one Hermes' platform_unicode already links; see src/Intl.h.
+find_package(ICU 74 REQUIRED COMPONENTS uc i18n)
 
 add_library(double-conversion INTERFACE)
 target_link_libraries(double-conversion INTERFACE double-conversion::double-conversion)
@@ -857,8 +861,19 @@ add_library(rnl_react_core STATIC
     src/CurlHttpClient.cpp
     src/DimensionsSource.cpp
     src/EditorModel.cpp
+    src/ExpoApplicationModule.cpp
+    src/ExpoAsset.cpp
+    src/ExpoAssetModule.cpp
+    src/ExpoCrypto.cpp
+    src/ExpoCryptoModule.cpp
+    src/ExpoDeviceModule.cpp
+    src/ExpoFileSystem.cpp
+    src/ExpoFileSystemModule.cpp
+    src/ExpoLinkingModule.cpp
+    src/ExpoNetworkModule.cpp
     src/ExpoSQLite.cpp
     src/ExpoSQLiteModule.cpp
+    src/ExpoSharedObject.cpp
     src/FabricHost.cpp
     src/FantomRenderOutput.cpp
     src/FocusModel.cpp
@@ -866,6 +881,8 @@ add_library(rnl_react_core STATIC
     src/HostTimerRegistry.cpp
     src/I18n.cpp
     src/ImageContent.cpp
+    src/Intl.cpp
+    src/IntlBinding.cpp
     src/InputDispatcher.cpp
     src/InputPipeline.cpp
     src/JsErrorReporter.cpp
@@ -878,6 +895,7 @@ add_library(rnl_react_core STATIC
     src/ScrollController.cpp
     src/ScrollEventCadence.cpp
     src/ScrollPhysics.cpp
+    src/SerialWorker.cpp
     src/StubMessageQueue.cpp
     src/SwitchComponent.cpp
     src/SwitchContent.cpp
@@ -905,6 +923,9 @@ target_link_libraries(rnl_react_core
     PUBLIC
         CURL::libcurl
         SQLite::SQLite3
+        OpenSSL::Crypto
+        ICU::uc
+        ICU::i18n
         hermesvm
         jsi
         rnl_jsidynamic
@@ -923,8 +944,10 @@ target_link_libraries(rnl_react_core
 # layoutParagraph in src/TextPipeline.cpp, which is only compiled when the TextLayoutManager swap happened.
 # Without it a paragraph already measures as zero, so a field has no geometry to ask about; the caret still moves
 # by grapheme, because that half is arithmetic.
+# `ExpoFontLoader` registers into that same text pipeline, so it exists only there too.
 if(TARGET rnl_skia)
     target_compile_definitions(rnl_react_core PRIVATE RNL_ENABLE_IMAGES RNL_ENABLE_TEXT_GEOMETRY)
+    target_sources(rnl_react_core PRIVATE src/ExpoFontLoaderModule.cpp)
 endif()
 
 # ---------------------------------------------------------------------------

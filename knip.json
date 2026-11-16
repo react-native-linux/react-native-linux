@@ -24,6 +24,8 @@
       "project": ["src/**/*.tsx", "scripts/**/*.ts"],
       "ignoreDependencies": [
         "@babel/runtime",
+        "@react-native-linux/enriched-markdown",
+        "@react-native-linux/expo",
         "@react-native-linux/gesture-handler",
         "@react-native-linux/reanimated",
         "deep-equal",
@@ -37,12 +39,24 @@
     },
     "packages/expo": {
       "project": ["src/**/*.ts"],
-      "ignoreDependencies": ["expo-modules-core"]
+      "expo": false,
+      "ignoreDependencies": [
+        "expo-application",
+        "expo-asset",
+        "expo-crypto",
+        "expo-device",
+        "expo-file-system",
+        "expo-font",
+        "expo-linking",
+        "expo-modules-core",
+        "expo-network",
+        "whatwg-url-minimum"
+      ]
     },
     "packages/gesture-handler": {
       "project": ["src/**/*.ts"],
       "ignore": ["upstream/**"],
-      "ignoreDependencies": ["@egjs/hammerjs", "hoist-non-react-statics", "invariant"]
+      "ignoreDependencies": ["invariant"]
     },
     "packages/reanimated": {
       "project": ["src/**/*.ts"],

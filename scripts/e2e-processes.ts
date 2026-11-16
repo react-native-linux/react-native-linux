@@ -1,12 +1,13 @@
 import { applyFastRefreshEdit, formatInjectorScript, gradeEditToVisible } from "./e2e/scenario.ts";
 import { execPath, stdout } from "node:process";
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { resolveCompositorChild, resolveWindowFlags } from "./e2e/grade.ts";
-import { spawn, spawnSync } from "node:child_process";
+import { resolveCompositorChild, resolveWindowFlags } from "./e2e/drive.ts";
 import type { FastRefreshEdit } from "./e2e/fast-refresh.ts";
+import type { Injector } from "./e2e/drive.ts";
 import { buildEnvironment } from "./headless-compositor.ts";
 import { setTimeout as delay } from "node:timers/promises";
 import path from "node:path";
+import { spawn } from "node:child_process";
 import { waitUntil } from "./e2e/discovery.ts";
 
 /*
@@ -65,7 +66,9 @@ interface WindowLaunch {
 /**
  * Headless wlroots and pixman need no DRM device, seat or GPU: the screenshot comes from the client's swapchain.
  * cage runs the window as its child and exits with it. Its stderr is folded into stdout so the trace keeps write
- * order (#512), and `exec` keeps cage's own exit status and signal.
+ * order (#512), and `exec` keeps cage's own exit status and signal. The window inherits cage's stdin, a pipe the
+ * caller ends once nothing more is injected: `--hold-until-stdin-closes` keeps the window past its frame count until
+ * then (#719).
  */
 const startCompositor = (launch: WindowLaunch): Compositor =>
   spawn(
@@ -85,6 +88,7 @@ const startCompositor = (launch: WindowLaunch): Compositor =>
         launch.screenshotPath,
         "--frame-log",
         launch.frameLogPath,
+        "--hold-until-stdin-closes",
         ...(launch.scenario.automation === null ? [] : ["--automation"]),
         ...resolveWindowFlags(launch.scenario.windowFlags),
         ...(launch.scenario.injectProtocolError ? ["--inject-protocol-error"] : []),
@@ -96,13 +100,14 @@ const startCompositor = (launch: WindowLaunch): Compositor =>
         WLR_BACKENDS: "headless",
         WLR_LIBINPUT_NO_DEVICES: "1",
         WLR_RENDERER: "pixman",
+        XDG_CACHE_HOME: path.join(launch.runtimeDirectory, "cache"),
         XDG_DATA_HOME: path.join(launch.runtimeDirectory, "data"),
         XDG_RUNTIME_DIR: launch.runtimeDirectory,
         XDG_STATE_HOME: path.join(launch.runtimeDirectory, "state"),
         XKB_DEFAULT_LAYOUT: "us",
         ...(launch.scenario.steadyAcrossReloads ? { WAYLAND_DEBUG: "client" } : {}),
       }),
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
     },
   );
 
@@ -137,27 +142,43 @@ const stopCompositor = async (compositor: Compositor): Promise<void> => {
   compositor.kill("SIGKILL");
 };
 
-const injectSteps = (
-  steps: readonly string[],
-  runtimeDirectory: string,
-  socketName: string,
-): { failure: string | null; status: number | null } => {
-  const injection = spawnSync(injectorBinaryPath, [], {
-    encoding: "utf8",
+/**
+ * `rnl_inject` reading its script from a pipe, so the driver can hold lines back until the trace says (#719). It has no
+ * lifetime timeout of its own, because a valid trace await may hold it past one: each await is bounded by the driver,
+ * and once its input ends the injector gets INJECT_TIMEOUT_MS to finish before it is killed.
+ */
+const startInjector = (runtimeDirectory: string, socketName: string): Injector => {
+  const injection = spawn(injectorBinaryPath, [], {
     env: buildEnvironment({
       WAYLAND_DISPLAY: socketName,
       XDG_RUNTIME_DIR: runtimeDirectory,
       XKB_DEFAULT_LAYOUT: "us",
     }),
-    input: formatInjectorScript(steps),
-    timeout: INJECT_TIMEOUT_MS,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  const sink = { isClosed: false, text: "" };
+
+  attachTrace(injection, sink);
+  injection.stdin.on("error", (error: Error) => {
+    sink.text += `${error.message}\n`;
   });
 
-  const failure =
-    injection.status === SUCCESSFUL_EXIT_STATUS
-      ? null
-      : `rnl_inject exited with status ${String(injection.status)}:\n${injection.stdout}${injection.stderr}`;
-  return { failure, status: injection.status };
+  return {
+    finish: async () => {
+      injection.stdin.end();
+      if (!(await waitUntil(() => sink.isClosed, INJECT_TIMEOUT_MS))) {
+        injection.kill("SIGKILL");
+      }
+      const status = injection.exitCode;
+      const failure =
+        status === SUCCESSFUL_EXIT_STATUS ? null : `rnl_inject exited with status ${String(status)}:\n${sink.text}`;
+
+      return { failure, status };
+    },
+    send: (steps) => {
+      injection.stdin.write(formatInjectorScript(steps));
+    },
+  };
 };
 
 const readDevServerPort = async (output: AsyncIterator<unknown>, seen: string): Promise<string> => {
@@ -177,13 +198,18 @@ const readDevServerPort = async (output: AsyncIterator<unknown>, seen: string): 
 };
 
 /**
- * #81: a watching Metro serving `entryPath` (a file under packages/test-harness, Metro's project root) as a
- * `dev=true` bundle, requested once first so the window's fetch is not also the cold build.
+ * #81: a watching Metro serving `entryPath` as a `dev=true` bundle, requested once first so the window's fetch is not
+ * also the cold build. A file outside packages/test-harness, Metro's project root, is served under the repository
+ * root's prefix: Metro lists the project root as its first watch folder and the harness config adds the repository
+ * root as the second, `[metro-watchFolders]/1/`.
  */
 const startDevServer = async (entryPath: string): Promise<{ bundleUrl: string; server: Compositor }> => {
   const server = spawn(execPath, [devServerScriptPath, "--watch"], { stdio: ["ignore", "pipe", "inherit"] });
   const port = await readDevServerPort(server.stdout[Symbol.asyncIterator](), "");
-  const entry = path.relative(harnessRoot, entryPath).replace(/\.tsx?$/u, "");
+  const fromHarness = path.relative(harnessRoot, entryPath);
+  const entry = (
+    fromHarness.startsWith("..") ? `[metro-watchFolders]/1/${path.relative(repositoryRoot, entryPath)}` : fromHarness
+  ).replace(/\.tsx?$/u, "");
   const bundleUrl = `http://127.0.0.1:${port}/${entry}.bundle?platform=linux&dev=true&minify=false`;
 
   server.stdout.resume();
@@ -193,23 +219,25 @@ const startDevServer = async (entryPath: string): Promise<{ bundleUrl: string; s
 };
 
 /**
- * Runs `body` against `startDevServer`. The edited file is put back, and Metro stopped, only after `body` returns:
- * the window takes its screenshot on its last frame, and that should show the refreshed render rather than a
- * refresh back to the original.
+ * Runs `body` against `startDevServer`. The file a Fast Refresh `edit` changes is put back, and Metro stopped, only
+ * after `body` returns: the window takes its screenshot on its last frame, and that should show the refreshed render
+ * rather than a refresh back to the original.
  */
 const withDevServer = async <Result>(
   entryPath: string,
-  edit: FastRefreshEdit,
+  edit: FastRefreshEdit | null,
   body: (bundleUrl: string) => Promise<Result>,
 ): Promise<Result> => {
-  const editedPath = path.join(repositoryRoot, edit.file);
-  const original = readFileSync(editedPath, "utf8");
+  const editedPath = edit === null ? null : path.join(repositoryRoot, edit.file);
+  const original = editedPath === null ? "" : readFileSync(editedPath, "utf8");
   const { bundleUrl, server } = await startDevServer(entryPath);
 
   try {
     return await body(bundleUrl);
   } finally {
-    writeFileSync(editedPath, original);
+    if (editedPath !== null) {
+      writeFileSync(editedPath, original);
+    }
     server.kill();
   }
 };
@@ -239,8 +267,8 @@ export {
   attachTrace,
   editAndAwaitRefresh,
   injectorBinaryPath,
-  injectSteps,
   startCompositor,
+  startInjector,
   stopCompositor,
   waitForSocketName,
   windowBinaryPath,

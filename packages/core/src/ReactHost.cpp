@@ -3,14 +3,13 @@
 #include "AutomationProtocol.h"
 #include "ConsoleBinding.h"
 #include "CurlHttpClient.h"
+#include "IntlBinding.h"
 #include "ReactNativeFeatureFlagsOverridesLinux.h"
 #include "ReanimatedModule.h"
 #include "WorkletsModule.h"
 
 #ifdef RNL_ENABLE_TEXT_GEOMETRY
 #include "TextGeometry.h"
-
-#include <filesystem>
 #endif
 
 #include <algorithm>
@@ -18,6 +17,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <filesystem>
 #include <folly/Uri.h>
 #include <folly/dynamic.h>
 #include <functional>
@@ -177,6 +177,7 @@ ReactHost::ReactHost(std::shared_ptr<StubMessageQueue> stubJavaScriptQueue, Fant
         {}, [registry = turboModuleRegistry_.get(), hasMarkedTestPassed = hasMarkedTestPassed_,
              &animationFrameQueue = animationFrameQueue_](facebook::jsi::Runtime& runtime) {
             installConsoleBinding(runtime);
+            installIntl(runtime);
             installMarkTestPassedBinding(runtime, hasMarkedTestPassed);
             installAnimationFrameBinding(runtime, animationFrameQueue);
             registry->install(runtime);
@@ -259,6 +260,18 @@ SQLiteDatabases& ReactHost::sqliteDatabases() noexcept {
     return turboModuleRegistry_->sqliteDatabases();
 }
 
+ExpoAssetDownloads& ReactHost::expoAssetDownloads() noexcept {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    return turboModuleRegistry_->expoAssetDownloads();
+}
+
+FileSystemHost& ReactHost::fileSystem() noexcept {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    return turboModuleRegistry_->fileSystem();
+}
+
 LinuxWorkletsModule& ReactHost::worklets() noexcept {
     react_native_assert(std::this_thread::get_id() == owningThread_);
 
@@ -297,16 +310,30 @@ void ReactHost::startHotModuleReplacement(const std::string& location) {
     }
 }
 
+void ReactHost::setAssetsDirectory(std::string assetsDirectory) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    assetsDirectory_ = std::move(assetsDirectory);
+}
+
 void ReactHost::loadScript(std::unique_ptr<const facebook::react::JSBigString> script, const std::string& sourceUrl) {
     react_native_assert(std::this_thread::get_id() == owningThread_);
 
-#ifdef RNL_ENABLE_TEXT_GEOMETRY
-    // The application's fonts live beside its bundle (#70). A URL, or a bundle without the directory, has none,
-    // and registering none clears whatever the previous source registered.
-    const std::filesystem::path applicationFonts = std::filesystem::path(sourceUrl).parent_path() / "assets" / "fonts";
+    std::filesystem::path assetsDirectory(assetsDirectory_);
 
-    registerApplicationFonts(std::filesystem::is_directory(applicationFonts) ? applicationFonts.string()
-                                                                             : std::string());
+    if (assetsDirectory.empty() && sourceUrl.find("://") == std::string::npos) {
+        assetsDirectory = std::filesystem::path(sourceUrl).parent_path() / "assets";
+    }
+
+    turboModuleRegistry_->setAssetsDirectory(assetsDirectory.string());
+
+#ifdef RNL_ENABLE_TEXT_GEOMETRY
+    // A source without the directory has no fonts, and registering none clears whatever the previous one registered.
+    const std::filesystem::path applicationFonts = assetsDirectory / "fonts";
+
+    registerApplicationFonts(!assetsDirectory.empty() && std::filesystem::is_directory(applicationFonts)
+                                 ? applicationFonts.string()
+                                 : std::string());
 #endif
 
     reactInstance_->loadScript(std::move(script), sourceUrl);
@@ -377,11 +404,10 @@ void ReactHost::dispatchAnimationFrames(std::chrono::steady_clock::time_point no
         });
 }
 
-bool ReactHost::hasPendingTimers() const {
+bool ReactHost::hasPendingFrameRequests() const {
     react_native_assert(std::this_thread::get_id() == owningThread_);
 
-    return timerRegistry_->hasPendingTimers() || animationFrameQueue_.hasPendingRequests() ||
-           turboModuleRegistry_->worklets().hasPendingWork();
+    return animationFrameQueue_.hasPendingRequests() || turboModuleRegistry_->worklets().hasPendingWork();
 }
 
 } // namespace react_native_linux

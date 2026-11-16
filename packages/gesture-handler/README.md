@@ -1,7 +1,7 @@
 # @react-native-linux/gesture-handler
 
-The Linux overlay of https://github.com/software-mansion/react-native-gesture-handler, vendored at `v2.32.0`, the
-version the flagship pins.
+The Linux overlay of https://github.com/software-mansion/react-native-gesture-handler, vendored at `v3.5.0`, the
+version T3 Code pins (#634).
 
 ## Layout
 
@@ -18,7 +18,9 @@ engine. It does ship a third, in JavaScript, for the web (`src/web`): the handle
 `InteractionManager` and velocity tracking, behind one `GestureHandlerDelegate` interface. The owner decided on #168
 that Linux runs that engine, so no fourth implementation exists. Linux supplies only what the DOM supplies on web:
 
-- `RNGestureHandlerModule.linux.ts` creates the web handlers with `GestureHandlerLinuxDelegate`.
+- `RNGestureHandlerModule.linux.ts` creates the web handlers with `GestureHandlerLinuxDelegate`, behind the module
+  contract `RNGestureHandlerModule.web` answers in 3.x (`setGestureHandlerConfig`, `updateGestureHandlerConfig`,
+  `configureRelations`, `detachGestureHandler`, `getModuleId`).
 - `findNodeHandle.linux.ts` answers the host element, a `ReactNativeElement`, whose `getBoundingClientRect` and
   `contains` come from React Native's own DOM APIs.
 - `GestureHandlerRootView.linux.tsx` captures every pointer event under the root, and `LinuxPointerRouter` hands a
@@ -35,8 +37,37 @@ that Linux runs that engine, so no fourth implementation exists. Linux supplies 
   event of the same step, so the move that activates a gesture is the move that takes the pointer
   (`gesture-pan-over-pressable`).
 
-Recognition therefore runs on the JavaScript thread, the trade-off the decision accepted. Worklet callbacks
-(`REANIMATED_WORKLET`) are #95's.
+Recognition therefore runs on the JavaScript thread, the trade-off the decision accepted. The builder API's worklet
+callbacks (`REANIMATED_WORKLET`) are #95's; the hook API's run as described below.
+
+3.x has two APIs, and the above is the builder one (`Gesture.Pan()` with `GestureDetector`). The hook API
+(`usePanGesture`, `useNativeGesture`, …, and `ReanimatedSwipeable`, which is built on it) renders through
+`HostGestureDetector`, a native component on Android and iOS. On Linux, `HostGestureDetector.linux.tsx` is the web
+detector, a `display: contents` view that attaches the handlers to itself (or, for a Native gesture, to its child).
+That view has no box of its own, so `GestureHandlerLinuxDelegate` marks a handler attached to its own detector view,
+and `LinuxPointerRouter` bounds that view by its children, as the web engine's `getEffectiveBoundingRect` does. Any
+other view keeps its own bounds, even an empty one.
+
+A hook gesture with worklet callbacks renders through `ReanimatedNativeDetector`. On Android and iOS, Reanimated
+registers its worklet handler with the native detector view. `ReanimatedNativeDetector.linux.tsx` instead schedules
+each event the engine sends onto the UI runtime, flattened and named as Reanimated's web `jsListener` sends it
+(`{ ...nativeEvent, eventName }`). The hooks key each gesture's last update by the event's `handlerTag`, and the
+composed handler of `InterceptingGestureDetector` routes by `eventName`. The flat event is also a copy, which matters
+because the engine reuses an activation's state-change event for the update after it. A SharedValue in a hook gesture's config is pushed from the UI runtime,
+where Android and iOS answer with a JSI host function; `NativeProxy.linux.ts` sends that update back to the React
+Native runtime, where the Linux module lives.
+
+The `gesture-hook-api` e2e drives `usePanGesture` through began, active and end, and moves its view with the
+translation. A `useExclusiveGestures` double/single tap pair arbitrates as the builder pair does, and
+`useNativeGesture` over a `ScrollView` begins on a click while the wheel keeps scrolling. An
+`InterceptingGestureDetector`'s worklet pan ends on the UI runtime, and a builder tap on a zero-size view rejects a
+click on the child it overflows into. In `gesture-reanimated-swipeable`, a `ReanimatedSwipeable` row (the subpath T3
+Code imports) sits in a `ScrollView` under a `useNativeGesture` detector, as in T3 Code's thread list, and a drag
+springs it open on its right actions. Beside it, a toast-like worklet pan with `activeOffsetX` and `failOffsetY`
+fails on a vertical drag and ends on a horizontal one. It does both again when the two drags reach the app in one
+batch, as a busy JavaScript thread receives them: the web orchestrator resets finished handlers in a microtask, which a
+browser runs between two events and React Native only after the whole batch, so `LinuxPointerRouter` resets them
+before it routes each event.
 
 The `gesture-pan-over-pressable` e2e verifies mouse drags report upstream `PointerType.MOUSE`. Wheel input before
 and between pointer presses must not begin Pan recognition or create another press. Touchpad and touchscreen
@@ -75,7 +106,7 @@ inner double tap succeeds.
 | Field | Value |
 | --- | --- |
 | Repository | https://github.com/software-mansion/react-native-gesture-handler |
-| Tag | `v2.32.0` |
+| Tag | `v3.5.0` |
 | Sparse paths | `packages/react-native-gesture-handler/src` |
 
 ```bash
@@ -88,6 +119,9 @@ pnpm upstream:check gesture-handler            # prove the vendored tree still m
 
 | Patch | What it changes | Deletion trigger |
 | --- | --- | --- |
-| `0001-linux-platform` | Adds the five Linux files above and takes the web branch of `attachHandlers` on Linux; skips `getViewManagerConfig('getConstants')`, which logs a new-architecture error | Upstream accepting a `linux` platform: the files are already in the shape of that contribution |
+| `0001-linux-platform` | Adds the five Linux files above, takes the web branch of `attachHandlers` on Linux, and asks `hasDisplayContents` for a computed style only where a DOM exists | Upstream accepting a `linux` platform: the files are already in the shape of that contribution |
 | `0002-linux-pointer-ownership` | Tracks which gestures are active, and makes the Linux root view claim the responder while any is | The same as `0001` |
-| `0003-linux-native-view` | Skips browser style and attribute access for a Native recognizer on a Linux view | The same as `0001` |
+| `0003-linux-native-view` | Skips the `rnghtext` attribute and the DOM lifecycle events for a Native recognizer on a Linux view | The same as `0001` |
+| `0004-linux-shared-value-config` | Adds `NativeProxy.linux.ts`: the web proxy, with SharedValue config updates scheduled back onto the React Native runtime | The same as `0001` |
+| `0005-linux-hook-detectors` | Adds `HostGestureDetector.linux.tsx` and `ReanimatedNativeDetector.linux.tsx` for the hook API, and bounds a detector's own `display: contents` view by its children | The same as `0001` |
+| `0006-linux-batched-pointer-events` | Makes `cleanupFinishedHandlers` public, and `LinuxPointerRouter` calls it before every event, as a browser's microtask checkpoint would | Upstream resetting finished handlers synchronously, or the same as `0001` |
