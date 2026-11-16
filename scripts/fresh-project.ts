@@ -1,5 +1,5 @@
 import { argv, execPath } from "node:process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { findExecutable, findLavapipeIcd } from "./window-golden.ts";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
@@ -13,6 +13,7 @@ const FRAME_COUNT = "120";
 const RENDER_TIMEOUT_MS = 120_000;
 const UPDATE_FLAG = "--update";
 const COMMAND_ARGUMENTS_START = 2;
+const MODULE_FLAG_PATTERN = /--module (?<key>\S+)/u;
 
 const repositoryRoot = path.resolve(import.meta.dirname, "..");
 const [buildArgument] = argv.slice(COMMAND_ARGUMENTS_START).filter((argument) => argument !== UPDATE_FLAG);
@@ -40,8 +41,38 @@ const requireRig = (): { readonly compositorPath: string; readonly lavapipeIcdPa
   return { compositorPath, lavapipeIcdPath };
 };
 
+const readLinuxScript = (applicationDirectory: string): string => {
+  const manifest: unknown = JSON.parse(readFileSync(path.join(applicationDirectory, "package.json"), "utf8"));
+
+  if (typeof manifest !== "object" || manifest === null || !("scripts" in manifest)) {
+    return "";
+  }
+
+  const { scripts } = manifest;
+
+  return typeof scripts === "object" && scripts !== null && "linux" in scripts && typeof scripts.linux === "string"
+    ? scripts.linux
+    : "";
+};
+
+/**
+ * The `AppRegistry` key the scaffolded `linux` script hands rnl_window (#777), which init must have renamed from the
+ * template's `HelloWorld` to the project's name, exactly as it renames the key `index.tsx` registers.
+ */
+const readModuleKey = (applicationDirectory: string): string => {
+  const linuxScript = readLinuxScript(applicationDirectory);
+  const moduleKey = MODULE_FLAG_PATTERN.exec(linuxScript)?.groups?.["key"];
+
+  if (moduleKey !== APPLICATION_NAME) {
+    throw new Error(`the scaffolded linux script "${linuxScript}" does not run --module ${APPLICATION_NAME}`);
+  }
+
+  return moduleKey;
+};
+
 /** The scaffolded app's own rnl_window, from the packed core, rendering its own bundle under the headless rig. */
 const renderApplication = async (applicationDirectory: string): Promise<void> => {
+  const moduleKey = readModuleKey(applicationDirectory);
   const { compositorPath, lavapipeIcdPath } = requireRig();
 
   await runUnderCompositor(compositorPath, lavapipeIcdPath, (clientEnvironment) => {
@@ -51,7 +82,7 @@ const renderApplication = async (applicationDirectory: string): Promise<void> =>
         "--fabric",
         path.join(applicationDirectory, "build", "index.linux.bundle.js"),
         "--module",
-        APPLICATION_NAME,
+        moduleKey,
         "--screenshot",
         renderedPath,
         "--frames",
