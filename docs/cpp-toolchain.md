@@ -7980,9 +7980,9 @@ pass never depends on a cache existing. What the cache hides is the compile cost
 which is the CPU rasterizer's cost and not the renderer's.
 
 **Keyboard-focus wait (#304).** A scenario's steps are split at the first `key`/`type` step:
-`scripts/e2e/keyboard-focus.ts`'s `runKeyboardAwareInjection` runs everything before that step through one
-`rnl_inject` invocation, then waits — bounded, the same style as the `ready` wait — for `[rnl-focus] keyboard
-entered` before running the rest through a second invocation. A scenario with no keyboard step waits for nothing.
+`scripts/e2e/keyboard-focus.ts`'s `runKeyboardAwareInjection` sends everything before that step to `rnl_inject`,
+then waits — bounded, the same style as the `ready` wait — for `[rnl-focus] keyboard entered` before sending the
+rest to the same injector. A scenario with no keyboard step waits for nothing.
 This replaces the fixed sleep that used to precede the first keystroke, which could race the compositor's
 `wl_keyboard.enter` and lose the race under load (#304's `shadow-flicker` flake).
 
@@ -7992,6 +7992,18 @@ true, **unconditionally** — deliberately not the `[rnl-window] keyboard enter`
 would never fire in a scenario run. It also has to be a different tag than `[rnl-window]`: `ERROR_TRACE_PATTERNS`
 in `scripts/e2e/scenario.ts` treats any `[rnl-window]` line as a fault, and an expected, successful focus arrival
 is not one — reusing that tag here would fail the error gate on every keyboard scenario, not just this one.
+
+**Pointer-bound wait (#752).** The window has no `wl_pointer` until `rnl_inject` creates its virtual pointer,
+because that is what makes cage advertise the capability. The window asks for one on that `wl_seat.capabilities`,
+and a button cage handles before the request reaches it goes to no client: a scenario whose first step was a
+`click` lost the press and the release about one run in three, with only the `wl_pointer.enter` that wlroots sends
+on the bind arriving. A run's injector therefore starts with the driver's own `await [rnl-seat] pointer bound`,
+which `WindowMain.cpp`'s `announcePointerOnce` prints once the window has the pointer. `WaylandSeat` sends a
+`wl_display.sync` right after `get_pointer` and reports the pointer only from that callback's `done`, which the
+ordinary event loop dispatches: the compositor answers a sync only after every request before it, so the bind is
+processed before any step the line releases, and the frame loop never blocks on a roundtrip.
+One injector serves the whole run, because a second one would be a second virtual pointer to bind. Scenarios no
+longer move the pointer before their first click, and `pressable.json` clicks as soon as the window is ready.
 
 **Ready is the first presented frame (#373).** A bundle's `ready` line only proves the bundle mounted; it says
 nothing about whether the window ever put a pixel on screen, and a driver that trusts it alone can run input, or
@@ -8037,7 +8049,7 @@ where the picture a screenshot golden gets blessed from comes out.
   "bundle": "pressable.js",
   "ready": "pressable: committed surface 1",
   "frames": 600,
-  "steps": ["sleep 500", "move 200 140", "sleep 100", "click 200 140", "sleep 500"],
+  "steps": ["click 200 140", "sleep 500"],
   "screenshot": { "golden": "pressable-click.png", "maxDifferentPixels": 50 },
   "expect": ["pressable: topClick on box at 200,140"]
 }

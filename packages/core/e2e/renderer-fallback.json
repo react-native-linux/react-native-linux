@@ -4,7 +4,7 @@
   "ready": "pressable: committed surface 1",
   "frames": 600,
   "windowFlags": ["--no-decorations", "--inject-renderer-failures", "3"],
-  "steps": ["sleep 500", "move 200 140", "sleep 100", "click 200 140", "sleep 500"],
+  "steps": ["sleep 500", "click 200 140", "sleep 500"],
   "automation": {
     "listErrorsMustBeEmpty": true,
     "rendererRung": "raster"

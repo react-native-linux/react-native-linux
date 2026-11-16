@@ -5,8 +5,6 @@
   "frames": 600,
   "steps": [
     "sleep 500",
-    "move 110 140",
-    "sleep 100",
     "click 110 140",
     "sleep 200",
     "move 300 100",

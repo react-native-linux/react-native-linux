@@ -722,6 +722,20 @@ void announceKeyboardFocusOnce(react_native_linux::WaylandWindow& window, bool& 
     }
 }
 
+/**
+ * Unconditional for the same reason (#752): the e2e driver waits for this line before a scenario's first step. The
+ * window binds `wl_pointer` only once the seat advertises a pointer, which under the rig is when `rnl_inject`
+ * creates its virtual one, and the compositor delivers a button sent before that bind to no one. `hasPointer` turns
+ * true only once the compositor has answered a sync sent after the bind, so it has processed the request before any
+ * step the line releases.
+ */
+void announcePointerOnce(react_native_linux::WaylandWindow& window, bool& pointerAnnounced) {
+    if (!pointerAnnounced && window.hasPointer()) {
+        pointerAnnounced = true;
+        std::cout << "[rnl-seat] pointer bound" << std::endl;
+    }
+}
+
 void printWindowDebugTransitions(react_native_linux::WaylandWindow& window, bool& lastKeyboardFocus,
                                  uint32_t& lastOutputEnterCount, uint32_t& lastOutputLeaveCount) {
     if (window.takeStateChange()) {
@@ -1482,6 +1496,7 @@ int main(int argc, char** argv) {
             std::optional<std::ofstream> frameLog;
             bool lastKeyboardFocus = false;
             bool keyboardFocusAnnounced = false;
+            bool pointerAnnounced = false;
             uint32_t lastOutputEnterCount = 0;
             uint32_t lastOutputLeaveCount = 0;
             uint32_t injectedFaultCount = 0;
@@ -1536,6 +1551,7 @@ int main(int argc, char** argv) {
                 }
 
                 announceKeyboardFocusOnce(window, keyboardFocusAnnounced);
+                announcePointerOnce(window, pointerAnnounced);
 
                 if (parsedArguments.windowDebug) {
                     printWindowDebugTransitions(window, lastKeyboardFocus, lastOutputEnterCount, lastOutputLeaveCount);

@@ -3,7 +3,7 @@
   "bundle": "press-during-mount.js",
   "ready": "press-mount: committed surface 1",
   "frames": 300,
-  "steps": ["sleep 500", "move 200 150", "click 200 150", "sleep 500"],
+  "steps": ["sleep 500", "click 200 150", "sleep 500"],
   "expect": [
     "press-mount: committed surface 1",
     "press-mount: target mounted",
