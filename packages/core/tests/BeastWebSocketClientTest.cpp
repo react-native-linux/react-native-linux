@@ -55,7 +55,8 @@ void connectRecording(BeastWebSocketClient& client, EventLog& log, const std::st
 
 using Events = std::vector<std::string>;
 
-TEST(BeastWebSocketClientTest, MessagesSentBeforeAndJustAfterTheOpenAreEchoedInOrder) {
+/** Sent from the open callback, both later messages reach the I/O thread while "early" is still being written. */
+TEST(BeastWebSocketClientTest, MessagesSentBeforeTheOpenAndFromItsCallbackAreEchoedInOrder) {
     LoopbackWebSocketServer server;
     EventLog log;
 
@@ -63,12 +64,13 @@ TEST(BeastWebSocketClientTest, MessagesSentBeforeAndJustAfterTheOpenAreEchoedInO
         BeastWebSocketClient client;
 
         client.send("early");
-        connectRecording(client, log, server.url());
-
-        ASSERT_EQ(log.waitFor(1).front(), "open");
-
-        client.send("first");
-        client.send("second");
+        client.setOnMessageCallback([&log](const std::string& message) { log.add("message " + message); });
+        client.setOnClosedCallback([&log](const std::string&) { log.add("closed"); });
+        client.connect(server.url(), [&client, &log](bool connected, const std::string&) {
+            log.add(connected ? "open" : "failed");
+            client.send("first");
+            client.send("second");
+        });
 
         EXPECT_EQ(log.waitFor(4), (Events{"open", "message early", "message first", "message second"}));
 
@@ -198,6 +200,17 @@ TEST(BeastWebSocketClientTest, APeerThatDoesNotSpeakWebSocketFailsTheHandshake) 
     EXPECT_EQ(log.waitFor(1), (Events{"failed"}));
 
     peer.join();
+}
+
+/** Queued before the I/O thread exists, the close runs first once `connect` starts it, with the client not open. */
+TEST(BeastWebSocketClientTest, ClosingBeforeConnectingStillReportsTheConnectsFailure) {
+    EventLog log;
+    BeastWebSocketClient client;
+
+    client.close("closed first");
+    connectRecording(client, log, "wss://127.0.0.1:1/");
+
+    EXPECT_EQ(log.waitFor(1), (Events{"failed"}));
 }
 
 TEST(BeastWebSocketClientTest, AUrlThatIsNotWsFailsWithoutConnecting) {
