@@ -9,14 +9,14 @@
   "dependencies": {
     "@babel/runtime": "7.29.2",
     "flow-enums-runtime": "0.0.6",
-    "react": "19.2.8",
-    "react-native": "0.87.1",
+    "react": "19.3.1",
+    "react-native": "0.88.1",
     "react-native-worklets": "0.12.2"
   },
   "devDependencies": {
-    "@react-native/babel-preset": "0.87.1",
-    "@react-native/metro-config": "0.87.1",
+    "@react-native/babel-preset": "0.88.1",
+    "@react-native/metro-config": "0.88.1",
     "babel-plugin-transform-flow-enums": "0.0.2",
-    "metro": "0.87.1"
+    "metro": "0.87.3"
   }
 }

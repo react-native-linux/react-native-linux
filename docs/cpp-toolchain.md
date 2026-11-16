@@ -1107,8 +1107,8 @@ depend on a third party's release cadence.
 
 | Component | Pin | Source of truth |
 | --- | --- | --- |
-| React Native | `v0.87.1` | `scripts/vendor.lock.json` |
-| Hermes | `hermes-v250829098.0.17` | `third_party/react-native/packages/react-native/sdks/hermes-engine/version.properties`, read at configure time |
+| React Native | `v0.88.1` | `scripts/vendor.lock.json` |
+| Hermes | `hermes-v260318099.0.5` | `third_party/react-native/packages/react-native/sdks/hermes-engine/version.properties`, read at configure time |
 | folly | `v2024.11.18.00` | `RNL_FOLLY_VERSION` in `packages/core/CMakeLists.txt`, mirroring RN's `gradle/libs.versions.toml` |
 | fast_float | `v8.0.0` | `RNL_FAST_FLOAT_VERSION`, same mirror |
 | Boost (fallback only) | `1.83.0` | `RNL_BOOST_VERSION`, same mirror; used only when no system Boost is found |
@@ -1125,7 +1125,7 @@ Re-vendoring on a React Native bump: edit `tag` in `scripts/vendor.lock.json`, r
 reconfigure. The script re-clones when the pin changes and is a no-op when it has not.
 
 That reconfigure is also the bump gate for *Upstream animated tests* below: `UpstreamTestDriftOracleTest` (#230)
-fails the build if any of the 39 vendored `tests/` directories under `ReactCommon` and `ReactCxxPlatform` was
+fails the build if any of the 41 vendored `tests/` directories under `ReactCommon` and `ReactCxxPlatform` was
 added, removed, or had its file list change, whether or not that directory is linked into `rnl_core_tests` today;
 `rnl_core_tests` itself fails if any upstream test that is linked changed behaviour — both are read before a bump
 PR merges, not after an app looks wrong.
@@ -1283,7 +1283,10 @@ error-stack symbolication.
 from the installed package. There is no vendored copy: the version is pinned by the `react-native-worklets` entry in
 the `pnpm-workspace.yaml` catalog, the way `scripts/vendor.lock.json` pins React Native, and `compatibility.json` in
 that release accepts React Native `0.83`–`0.87`, which Reanimated `4.6.0` (`packages/reanimated`) also requires.
-knip's `ignoreDependencies` names it because only CMake consumes it.
+The pin is `0.88.1` since #636, so `pnpm install` reports that peer as unmet: the root `package.json` names
+`react-native` itself so the peer resolves to the one patched `0.88.1` rather than a second, unpatched `0.87.1`.
+The `dev` build and its e2e scenarios prove the 29 units against `0.88.1` until worklets `0.13` and Reanimated
+`4.7`, the 0.88 line, replace them. knip's `ignoreDependencies` names both because only CMake consumes them.
 
 The target is built exactly as the package's own `android/CMakeLists.txt` builds it: React Native's
 `target_compile_reactnative_options` (`-Wall -Werror`, clean), `WORKLETS_VERSION` from the package's `package.json`,
@@ -1420,6 +1423,31 @@ trace and frame-timing budget, run against the vendored pin. A bump is:
 release, or newest release candidate), building `hello_react` and comparing the goldens. It is a signal, not a
 gate: a red run is the list the next bump will have to explain, known before anyone starts on it.
 
+### 0.87.1 to 0.88.1 (#636)
+
+The pins that moved with it: Hermes `250829098.0.17` to `260318099.0.5` (read from `version.properties`, nothing
+to edit), React `19.3.1` (0.88 peers on `^19.3.0`), `@react-native/*` `0.88.1`. Metro stays on its 0.87 line,
+which is what 0.88.1 depends on (`^0.87.1`); the pins move to its newest patch, `0.87.3`, so one Metro is
+installed. Every upstream change that needed a local edit:
+
+| Upstream change in 0.88 | Local edit |
+| --- | --- |
+| `react/cxxstableapi`, a new header-only target; `oscompat` and most ReactCommon headers include its `PrivateGuard.h` | Added to `RNL_REACT_COMMON_SUBDIRS` |
+| `DefaultTurboModules` registers the new ResizeObserver module, so `react_nativemodule_defaults` links `react_nativemodule_resizeobserver` | `react/renderer/observers/resize` and `react/nativemodule/resizeobserver` join the runtime-only TurboModule lists, beside the intersection and mutation observers |
+| `ImageProps::tintColor` is `std::optional<SharedColor>` | `RetainedScene` reads it with `value_or(SharedColor{})`, the old unset value |
+| `ImageProps` reads `loadingIndicatorSource` under its wire name, `loadingIndicatorSrc`, the name `Image.android.js` always sent | `test-bundles/image-props.js` sends the wire name; `image-props.png` is unchanged. Through the JavaScript `<Image>`, the prop reaches C++ for the first time |
+| `ShadowTree::commit` no longer emits `onLayout`; the `LayoutEventEmitter` commit hook `Scheduler` registers does | Nothing in the platform, which runs `Scheduler`. The tests' `PassThroughShadowTreeDelegate` forwards each commit to `LayoutEventEmitter`, as `Scheduler` would |
+| `getDirectManipulationAllowlist()` advertises `filter` | Listed in `AnimatedPropAllowlistTest`'s unpainted props; `filter` is not drawn yet |
+| Three new upstream tests in directories already linked (`TextAttributesHashTest`, `AccessibilityPropsTest`, `MountingTransactionTest`) and two new `tests/` directories | The drift oracle's file lists; the new files compile through the existing globs and pass. The two new directories are excluded with reasons |
+| Codegen drops `NativeModalManager` and adds `NativeResizeObserver` | `pnpm codegen`; nothing here used the dropped spec |
+| `TextAttributes::fontVariationSettings` | Ledgered not-implemented in `docs/prop-coverage.json`, owned by #655 |
+| Three derived overrides' bases moved: `BaseViewConfig.android.js` (unprefixed `background*` attributes, which arrive through the import), `PlatformTypes.js` (formatting), `PlatformColorValueTypes.android.js` (a trailing `{fallback}` argument) | New `baseHash` values. `PlatformColorValueTypes.linux.ts` ports the `{fallback}` argument (#656): a trailing object with a string `fallback` is kept beside the names and processed as a colour when none resolves; one anywhere else is ignored, as upstream ignores it |
+| react/react-native#57975, the nanosecond round trip `scripts/react-native-timing.patch` carried, is in the release | The patch and the code that applied it are deleted |
+| `RuntimeSchedulerCallInvoker` is `[[deprecated]]`, and `enableBufferedCallInvoker` defaults on, so upstream hosts order async TurboModule calls against buffered `callFunctionOnModule` calls through `ReactInstance::createJSCallInvoker()` | Not yet: `ReactHost` still builds a `RuntimeSchedulerCallInvoker`, which keeps 0.87's ordering and prints a deprecation warning. #674 owns the switch |
+| Hermes ships `TextDecoder` as a contrib extension (`API/hermes/extensions/contrib`), on by default and installed into every runtime `makeHermesRuntime` builds | `HERMES_ENABLE_CONTRIB_EXTENSIONS` is set `ON` explicitly beside the other Hermes options, because T3 Code's bundle constructs a `TextDecoder` at startup (#641); `TextDecoderTest` decodes multibyte UTF-8, a sequence split across streamed chunks and a fatal error through `HermesJSRuntimeFactory` |
+| Hermes destroys a collected object's `jsi::NativeState`, `HostObject` and `HostFunction` on its own JSI finalizer thread (`finalizerExecutor_`), after `collectGarbage` returns, rather than on the thread that collected | The platform's native states (`ExpoSharedObject.h`'s handle, the SQLite and file-system handles, `IntlBinding`'s formatters) are plain data whose destructors touch nothing owned by the JavaScript thread; `ExpoSharedObject.h` states it. `ExpoSharedObjectTest` counts live states atomically and waits for the finalizer, which `tsan` reported as a race |
+| react-native-worklets `0.12.2` declares React Native `0.83 - 0.87` | The root `package.json` names `react-native` so the peer is the one patched copy; see *react-native-worklets* below. #651 owns the move to the 0.88 line |
+
 ## Autolinking (#146, #147, #149)
 
 `node scripts/autolink.ts <react-native config JSON> <output directory>` reads the dependency tree the community
@@ -1541,7 +1569,7 @@ in either configuration.
 
 ## A React Native application (#22)
 
-`packages/test-harness` is an ordinary React Native 0.87.1 application — `react`, `react-native`, `@babel/runtime`,
+`packages/test-harness` is an ordinary React Native 0.88.1 application — `react`, `react-native`, `@babel/runtime`,
 Metro and the React Native Babel preset, an `index.ts` that calls `AppRegistry.registerComponent("TestHarness", …)`
 and a `View`/`Text`/`StyleSheet` screen — and `node packages/test-harness/scripts/bundle.ts [out]` bundles it with
 Metro for `--platform linux`. `hello_react --app-golden <ModuleName> <bundle> <out.png>` runs it the way an
@@ -1818,7 +1846,8 @@ macOS and iOS expose the whole `NSColor`/`UIColor` catalogue and then spend issu
 wired up (rn-macos#2736, rn-macos#1846); Linux has no system catalogue to mirror, because the portal publishes a
 colour *scheme* rather than a palette, so a hundred names would be a hundred invented colours. An unrecognised
 name resolves to nothing, which is what lets the JavaScript side throw something readable instead of putting an
-undefined colour into a prop — rn-macos#413 is the version where it does not.
+undefined colour into a prop — rn-macos#413 is the version where it does not. A trailing `{fallback}` argument,
+React Native 0.88's `PlatformColor('labelColor', {fallback: '#333'})`, is drawn instead of throwing (#656).
 
 It reaches JavaScript as one host function, `globalThis.__rnlPlatformColor(name)`, installed beside the
 TurboModule binding. A global rather than a module method because `PlatformColor` has no TurboModule spec on any

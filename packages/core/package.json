@@ -41,7 +41,7 @@
     "vendor:skia": "node ../../scripts/vendor-skia.ts"
   },
   "dependencies": {
-    "@react-native/normalize-colors": "0.87.1"
+    "@react-native/normalize-colors": "0.88.1"
   },
   "devDependencies": {
     "@types/node": "catalog:",
@@ -52,7 +52,7 @@
   },
   "peerDependencies": {
     "expo-modules-core": "*",
-    "react-native": "0.87.1"
+    "react-native": "0.88.1"
   },
   "peerDependenciesMeta": {
     "expo-modules-core": {

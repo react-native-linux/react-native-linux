@@ -1,17 +1,34 @@
 #include "ExpoSharedObject.h"
 
+#include <atomic>
+#include <chrono>
 #include <gtest/gtest.h>
 #include <hermes/hermes.h>
 #include <jsi/instrumentation.h>
 #include <jsi/jsi.h>
 #include <memory>
 #include <string>
+#include <thread>
 #include <utility>
 
 namespace react_native_linux {
 namespace {
 
-int liveProbeStates = 0;
+constexpr std::chrono::milliseconds kFinalizerBudget{5000};
+constexpr std::chrono::milliseconds kFinalizerPoll{1};
+
+std::atomic<int> liveProbeStates = 0;
+
+/** Hermes destroys a collected object's native state on its finalizer thread, after `collectGarbage` returns. */
+bool probeStatesFreedWithinBudget() {
+    const auto deadline = std::chrono::steady_clock::now() + kFinalizerBudget;
+
+    while (liveProbeStates.load() != 0 && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(kFinalizerPoll);
+    }
+
+    return liveProbeStates.load() == 0;
+}
 
 struct ProbeState final : facebook::jsi::NativeState {
     explicit ProbeState(std::string label) : label(std::move(label)) { ++liveProbeStates; }
@@ -115,11 +132,11 @@ TEST(ExpoSharedObjectTest, JavaScriptSubclassesCrossTheBoundaryByIdentityAndRele
     const std::unique_ptr<facebook::jsi::Runtime> runtime = makeProbeRuntime();
 
     EXPECT_EQ(evaluate(*runtime, kProbe), R"([true,"function","first:true",true,false,"second","true"])");
-    EXPECT_EQ(liveProbeStates, 1);
+    EXPECT_EQ(liveProbeStates.load(), 1);
 
     runtime->global().setProperty(*runtime, "second", facebook::jsi::Value::undefined());
     runtime->instrumentation().collectGarbage("ExpoSharedObjectTest");
-    EXPECT_EQ(liveProbeStates, 0);
+    EXPECT_TRUE(probeStatesFreedWithinBudget());
 }
 
 TEST(ExpoSharedObjectTest, ANativeMethodRejectsAnObjectThatIsNotAnInstance) {

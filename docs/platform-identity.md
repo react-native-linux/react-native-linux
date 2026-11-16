@@ -26,7 +26,7 @@ document only records what actually landed and why, not the survey.
   `NativePlatformConstantsLinuxSpec.getConstants()` when a native module is present, and fall back to a static
   constants object otherwise (`resolveLinuxPlatformConstants`, unit-tested directly).
 - `packages/core/overrides.json` — the **react-native-platform-override** manifest (see "Override tooling"
-  below) tracking the three files above plus `index.ts`, against `baseVersion: "0.87.1"`.
+  below) tracking the three files above plus `index.ts`, against `baseVersion: "0.88.1"`.
 - `packages/cli/src/metro-config.ts` — `resolveLinuxOverlay(moduleName, platform, overlayIndex)`, a pure function
   used to prefer the `src-linux` overlay over the plain package-name redirect for the handful of `react-native`
   deep imports (`react-native/Libraries/Utilities/Platform`, `.../PlatformTypes`) this package currently overrides.
@@ -213,10 +213,10 @@ react-native-platform-override version`). Added to the `catalog:` in `pnpm-works
 `Libraries/Utilities/Platform.android.js` at `v0.87.1` with this exact algorithm reproduces
 `react-native-windows`'s own recorded `baseHash` for that same file
 (`6497ec623691b34885e226e4d05bc55ba582a135`) byte-for-byte — the file has not changed between their pinned
-nightly and `v0.87.1`. All six `baseHash` values in `packages/core/overrides.json` were computed this way
-against `v0.87.1`, not left as placeholders.
+nightly and `v0.87.1`. All six `baseHash` values in `packages/core/overrides.json` are computed this way
+against the current `baseVersion` (`v0.88.1`), not left as placeholders.
 
-**Manifest** (`packages/core/overrides.json`): `baseVersion: "0.87.1"`, `includePatterns: ["src-linux/**",
+**Manifest** (`packages/core/overrides.json`): `baseVersion: "0.88.1"`, `includePatterns: ["src-linux/**",
 "index.ts"]`, excluding `**/*.spec.ts`. Ten entries: six `derived` overrides (`BaseViewConfig.linux.ts`,
 `PlatformColorValueTypes.linux.ts`, `processColor.linux.ts`, `NativePlatformConstantsLinux.ts`,
 `Platform.linux.ts`, and `PlatformTypes.ts`) and four `platform` entries (`index.ts`, `mergeBaseViewConfigs.ts`,
@@ -243,7 +243,7 @@ mkdir -p ~/.cache/react-native-linux-tmp
 TMPDIR=~/.cache/react-native-linux-tmp pnpm override:check
 ```
 
-When React Native is upgraded past `0.87.1`, run `react-native-platform-override upgrade` from `packages/core` to
+When React Native is upgraded past `0.88.1`, run `react-native-platform-override upgrade` from `packages/core` to
 merge upstream changes into the six `derived` files and bump `baseVersion`.
 
 ## Deferred

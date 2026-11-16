@@ -11,7 +11,7 @@ somebody else's widget tree, and the frame loop is ours to pace.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-3DA639?style=flat-square)](LICENSE)
 [![Status](https://img.shields.io/badge/status-pre--alpha%20%C2%B7%20M1-E05D44?style=flat-square)](https://github.com/react-native-linux/react-native-linux/issues/1)
-[![Target](https://img.shields.io/badge/target-RN%200.87%2B%20%C2%B7%20New%20Architecture-61DAFB?style=flat-square)](docs/adr/0001-gpu-first-out-of-tree-react-native-platform-for-linux.md)
+[![Target](https://img.shields.io/badge/target-RN%200.88%2B%20%C2%B7%20New%20Architecture-61DAFB?style=flat-square)](docs/adr/0001-gpu-first-out-of-tree-react-native-platform-for-linux.md)
 [![Stack](https://img.shields.io/badge/Wayland%20%C2%B7%20Vulkan%20%C2%B7%20Hermes-7C4DFF?style=flat-square)](#architecture)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square)](AGENTS.md)
 
@@ -19,7 +19,7 @@ somebody else's widget tree, and the frame loop is ours to pace.
 
 > [!NOTE]
 > **Status: pre-alpha, M0 done, M1 in progress.** A Wayland/Vulkan/Skia Ganesh window runs a bridgeless
-> `ReactInstance` built from source (RN 0.87.1 + Hermes) and draws Fabric's retained scene with
+> `ReactInstance` built from source (RN 0.88.1 + Hermes) and draws Fabric's retained scene with
 > `View`, `Text`, `Image` and `ScrollView`, damage tracking, pointer/keyboard input, a focus model
 > and IME over `zwp_text_input_v3`; `TextInput` is in verification. ~220 GoogleTest cases at 100%
 > line+branch coverage, ten visually reviewed goldens plus two window goldens, and seven CI jobs gate

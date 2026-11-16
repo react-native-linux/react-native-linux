@@ -95,6 +95,7 @@
     "fontWeight": { "state": "implemented", "test": "text.png" },
     "fontStyle": { "state": "implemented", "test": "text.png" },
     "fontVariant": { "state": "implemented", "test": "text-style-matrix.png" },
+    "fontVariationSettings": { "state": "not-implemented", "issue": "#655" },
     "allowFontScaling": { "state": "not-implemented", "issue": "#113" },
     "maxFontSizeMultiplier": { "state": "not-implemented", "issue": "#113" },
     "dynamicTypeRamp": { "state": "not-implemented", "issue": "#113" },

@@ -236,9 +236,9 @@ protected:
     methodMap_["disableViewPreallocationAndroid"] = MethodMetadata {.argCount = 0, .invoker = __disableViewPreallocationAndroid};
     methodMap_["enableAccessibilityOrder"] = MethodMetadata {.argCount = 0, .invoker = __enableAccessibilityOrder};
     methodMap_["enableAccumulatedUpdatesInRawPropsAndroid"] = MethodMetadata {.argCount = 0, .invoker = __enableAccumulatedUpdatesInRawPropsAndroid};
-    methodMap_["enableAndroidFontWeightAdjustment"] = MethodMetadata {.argCount = 0, .invoker = __enableAndroidFontWeightAdjustment};
     methodMap_["enableAndroidTextMeasurementOptimizations"] = MethodMetadata {.argCount = 0, .invoker = __enableAndroidTextMeasurementOptimizations};
     methodMap_["enableBridgelessArchitecture"] = MethodMetadata {.argCount = 0, .invoker = __enableBridgelessArchitecture};
+    methodMap_["enableBufferedCallInvoker"] = MethodMetadata {.argCount = 0, .invoker = __enableBufferedCallInvoker};
     methodMap_["enableCppPropsIteratorSetter"] = MethodMetadata {.argCount = 0, .invoker = __enableCppPropsIteratorSetter};
     methodMap_["enableCustomFocusSearchOnClippedElementsAndroid"] = MethodMetadata {.argCount = 0, .invoker = __enableCustomFocusSearchOnClippedElementsAndroid};
     methodMap_["enableDestroyShadowTreeRevisionAsync"] = MethodMetadata {.argCount = 0, .invoker = __enableDestroyShadowTreeRevisionAsync};
@@ -253,7 +253,9 @@ protected:
     methodMap_["enableIOSTextBaselineOffsetPerLine"] = MethodMetadata {.argCount = 0, .invoker = __enableIOSTextBaselineOffsetPerLine};
     methodMap_["enableIOSViewClipToPaddingBox"] = MethodMetadata {.argCount = 0, .invoker = __enableIOSViewClipToPaddingBox};
     methodMap_["enableImagePrefetchingAndroid"] = MethodMetadata {.argCount = 0, .invoker = __enableImagePrefetchingAndroid};
+    methodMap_["enableImageTransparentTintColor"] = MethodMetadata {.argCount = 0, .invoker = __enableImageTransparentTintColor};
     methodMap_["enableImmediateUpdateModeForContentOffsetChanges"] = MethodMetadata {.argCount = 0, .invoker = __enableImmediateUpdateModeForContentOffsetChanges};
+    methodMap_["enableImperativeEvents"] = MethodMetadata {.argCount = 0, .invoker = __enableImperativeEvents};
     methodMap_["enableImperativeFocus"] = MethodMetadata {.argCount = 0, .invoker = __enableImperativeFocus};
     methodMap_["enableInteropViewManagerClassLookUpOptimizationIOS"] = MethodMetadata {.argCount = 0, .invoker = __enableInteropViewManagerClassLookUpOptimizationIOS};
     methodMap_["enableIntersectionObserverByDefault"] = MethodMetadata {.argCount = 0, .invoker = __enableIntersectionObserverByDefault};
@@ -261,13 +263,12 @@ protected:
     methodMap_["enableLayoutAnimationsOnAndroid"] = MethodMetadata {.argCount = 0, .invoker = __enableLayoutAnimationsOnAndroid};
     methodMap_["enableLayoutAnimationsOnIOS"] = MethodMetadata {.argCount = 0, .invoker = __enableLayoutAnimationsOnIOS};
     methodMap_["enableModuleArgumentNSNullConversionIOS"] = MethodMetadata {.argCount = 0, .invoker = __enableModuleArgumentNSNullConversionIOS};
+    methodMap_["enableMountingCoordinatorPullModelAndroid"] = MethodMetadata {.argCount = 0, .invoker = __enableMountingCoordinatorPullModelAndroid};
     methodMap_["enableMutationObserverByDefault"] = MethodMetadata {.argCount = 0, .invoker = __enableMutationObserverByDefault};
     methodMap_["enableNativeCSSParsing"] = MethodMetadata {.argCount = 0, .invoker = __enableNativeCSSParsing};
-    methodMap_["enableNetworkEventReporting"] = MethodMetadata {.argCount = 0, .invoker = __enableNetworkEventReporting};
     methodMap_["enablePreparedTextLayout"] = MethodMetadata {.argCount = 0, .invoker = __enablePreparedTextLayout};
     methodMap_["enablePropsUpdateReconciliationAndroid"] = MethodMetadata {.argCount = 0, .invoker = __enablePropsUpdateReconciliationAndroid};
-    methodMap_["enableRuntimeSchedulerQueueClearingOnError"] = MethodMetadata {.argCount = 0, .invoker = __enableRuntimeSchedulerQueueClearingOnError};
-    methodMap_["enableSchedulerDelegateInvalidation"] = MethodMetadata {.argCount = 0, .invoker = __enableSchedulerDelegateInvalidation};
+    methodMap_["enableResizeObserverByDefault"] = MethodMetadata {.argCount = 0, .invoker = __enableResizeObserverByDefault};
     methodMap_["enableSwiftUIBasedFilters"] = MethodMetadata {.argCount = 0, .invoker = __enableSwiftUIBasedFilters};
     methodMap_["enableViewCulling"] = MethodMetadata {.argCount = 0, .invoker = __enableViewCulling};
     methodMap_["enableViewRecycling"] = MethodMetadata {.argCount = 0, .invoker = __enableViewRecycling};
@@ -282,8 +283,8 @@ protected:
     methodMap_["fuseboxAssertSingleHostState"] = MethodMetadata {.argCount = 0, .invoker = __fuseboxAssertSingleHostState};
     methodMap_["fuseboxEnabledRelease"] = MethodMetadata {.argCount = 0, .invoker = __fuseboxEnabledRelease};
     methodMap_["fuseboxFrameRecordingEnabled"] = MethodMetadata {.argCount = 0, .invoker = __fuseboxFrameRecordingEnabled};
-    methodMap_["fuseboxNetworkInspectionEnabled"] = MethodMetadata {.argCount = 0, .invoker = __fuseboxNetworkInspectionEnabled};
     methodMap_["fuseboxScreenshotCaptureEnabled"] = MethodMetadata {.argCount = 0, .invoker = __fuseboxScreenshotCaptureEnabled};
+    methodMap_["fuseboxWebSocketEventsEnabled"] = MethodMetadata {.argCount = 0, .invoker = __fuseboxWebSocketEventsEnabled};
     methodMap_["optimizedAnimatedPropUpdates"] = MethodMetadata {.argCount = 0, .invoker = __optimizedAnimatedPropUpdates};
     methodMap_["overrideBySynchronousMountPropsAtMountingAndroid"] = MethodMetadata {.argCount = 0, .invoker = __overrideBySynchronousMountPropsAtMountingAndroid};
     methodMap_["perfIssuesEnabled"] = MethodMetadata {.argCount = 0, .invoker = __perfIssuesEnabled};
@@ -404,13 +405,6 @@ private:
     return bridging::callFromJs<bool>(rt, &T::enableAccumulatedUpdatesInRawPropsAndroid,  static_cast<NativeReactNativeFeatureFlagsCxxSpec*>(&turboModule)->jsInvoker_, static_cast<T*>(&turboModule));
   }
 
-  static jsi::Value __enableAndroidFontWeightAdjustment(jsi::Runtime &rt, TurboModule &turboModule, const jsi::Value* /*args*/, size_t /*count*/) {
-    static_assert(
-      bridging::getParameterCount(&T::enableAndroidFontWeightAdjustment) == 1,
-      "Expected enableAndroidFontWeightAdjustment(...) to have 1 parameters");
-    return bridging::callFromJs<bool>(rt, &T::enableAndroidFontWeightAdjustment,  static_cast<NativeReactNativeFeatureFlagsCxxSpec*>(&turboModule)->jsInvoker_, static_cast<T*>(&turboModule));
-  }
-
   static jsi::Value __enableAndroidTextMeasurementOptimizations(jsi::Runtime &rt, TurboModule &turboModule, const jsi::Value* /*args*/, size_t /*count*/) {
     static_assert(
       bridging::getParameterCount(&T::enableAndroidTextMeasurementOptimizations) == 1,
@@ -423,6 +417,13 @@ private:
       bridging::getParameterCount(&T::enableBridgelessArchitecture) == 1,
       "Expected enableBridgelessArchitecture(...) to have 1 parameters");
     return bridging::callFromJs<bool>(rt, &T::enableBridgelessArchitecture,  static_cast<NativeReactNativeFeatureFlagsCxxSpec*>(&turboModule)->jsInvoker_, static_cast<T*>(&turboModule));
+  }
+
+  static jsi::Value __enableBufferedCallInvoker(jsi::Runtime &rt, TurboModule &turboModule, const jsi::Value* /*args*/, size_t /*count*/) {
+    static_assert(
+      bridging::getParameterCount(&T::enableBufferedCallInvoker) == 1,
+      "Expected enableBufferedCallInvoker(...) to have 1 parameters");
+    return bridging::callFromJs<bool>(rt, &T::enableBufferedCallInvoker,  static_cast<NativeReactNativeFeatureFlagsCxxSpec*>(&turboModule)->jsInvoker_, static_cast<T*>(&turboModule));
   }
 
   static jsi::Value __enableCppPropsIteratorSetter(jsi::Runtime &rt, TurboModule &turboModule, const jsi::Value* /*args*/, size_t /*count*/) {
@@ -523,11 +524,25 @@ private:
     return bridging::callFromJs<bool>(rt, &T::enableImagePrefetchingAndroid,  static_cast<NativeReactNativeFeatureFlagsCxxSpec*>(&turboModule)->jsInvoker_, static_cast<T*>(&turboModule));
   }
 
+  static jsi::Value __enableImageTransparentTintColor(jsi::Runtime &rt, TurboModule &turboModule, const jsi::Value* /*args*/, size_t /*count*/) {
+    static_assert(
+      bridging::getParameterCount(&T::enableImageTransparentTintColor) == 1,
+      "Expected enableImageTransparentTintColor(...) to have 1 parameters");
+    return bridging::callFromJs<bool>(rt, &T::enableImageTransparentTintColor,  static_cast<NativeReactNativeFeatureFlagsCxxSpec*>(&turboModule)->jsInvoker_, static_cast<T*>(&turboModule));
+  }
+
   static jsi::Value __enableImmediateUpdateModeForContentOffsetChanges(jsi::Runtime &rt, TurboModule &turboModule, const jsi::Value* /*args*/, size_t /*count*/) {
     static_assert(
       bridging::getParameterCount(&T::enableImmediateUpdateModeForContentOffsetChanges) == 1,
       "Expected enableImmediateUpdateModeForContentOffsetChanges(...) to have 1 parameters");
     return bridging::callFromJs<bool>(rt, &T::enableImmediateUpdateModeForContentOffsetChanges,  static_cast<NativeReactNativeFeatureFlagsCxxSpec*>(&turboModule)->jsInvoker_, static_cast<T*>(&turboModule));
+  }
+
+  static jsi::Value __enableImperativeEvents(jsi::Runtime &rt, TurboModule &turboModule, const jsi::Value* /*args*/, size_t /*count*/) {
+    static_assert(
+      bridging::getParameterCount(&T::enableImperativeEvents) == 1,
+      "Expected enableImperativeEvents(...) to have 1 parameters");
+    return bridging::callFromJs<bool>(rt, &T::enableImperativeEvents,  static_cast<NativeReactNativeFeatureFlagsCxxSpec*>(&turboModule)->jsInvoker_, static_cast<T*>(&turboModule));
   }
 
   static jsi::Value __enableImperativeFocus(jsi::Runtime &rt, TurboModule &turboModule, const jsi::Value* /*args*/, size_t /*count*/) {
@@ -579,6 +594,13 @@ private:
     return bridging::callFromJs<bool>(rt, &T::enableModuleArgumentNSNullConversionIOS,  static_cast<NativeReactNativeFeatureFlagsCxxSpec*>(&turboModule)->jsInvoker_, static_cast<T*>(&turboModule));
   }
 
+  static jsi::Value __enableMountingCoordinatorPullModelAndroid(jsi::Runtime &rt, TurboModule &turboModule, const jsi::Value* /*args*/, size_t /*count*/) {
+    static_assert(
+      bridging::getParameterCount(&T::enableMountingCoordinatorPullModelAndroid) == 1,
+      "Expected enableMountingCoordinatorPullModelAndroid(...) to have 1 parameters");
+    return bridging::callFromJs<bool>(rt, &T::enableMountingCoordinatorPullModelAndroid,  static_cast<NativeReactNativeFeatureFlagsCxxSpec*>(&turboModule)->jsInvoker_, static_cast<T*>(&turboModule));
+  }
+
   static jsi::Value __enableMutationObserverByDefault(jsi::Runtime &rt, TurboModule &turboModule, const jsi::Value* /*args*/, size_t /*count*/) {
     static_assert(
       bridging::getParameterCount(&T::enableMutationObserverByDefault) == 1,
@@ -591,13 +613,6 @@ private:
       bridging::getParameterCount(&T::enableNativeCSSParsing) == 1,
       "Expected enableNativeCSSParsing(...) to have 1 parameters");
     return bridging::callFromJs<bool>(rt, &T::enableNativeCSSParsing,  static_cast<NativeReactNativeFeatureFlagsCxxSpec*>(&turboModule)->jsInvoker_, static_cast<T*>(&turboModule));
-  }
-
-  static jsi::Value __enableNetworkEventReporting(jsi::Runtime &rt, TurboModule &turboModule, const jsi::Value* /*args*/, size_t /*count*/) {
-    static_assert(
-      bridging::getParameterCount(&T::enableNetworkEventReporting) == 1,
-      "Expected enableNetworkEventReporting(...) to have 1 parameters");
-    return bridging::callFromJs<bool>(rt, &T::enableNetworkEventReporting,  static_cast<NativeReactNativeFeatureFlagsCxxSpec*>(&turboModule)->jsInvoker_, static_cast<T*>(&turboModule));
   }
 
   static jsi::Value __enablePreparedTextLayout(jsi::Runtime &rt, TurboModule &turboModule, const jsi::Value* /*args*/, size_t /*count*/) {
@@ -614,18 +629,11 @@ private:
     return bridging::callFromJs<bool>(rt, &T::enablePropsUpdateReconciliationAndroid,  static_cast<NativeReactNativeFeatureFlagsCxxSpec*>(&turboModule)->jsInvoker_, static_cast<T*>(&turboModule));
   }
 
-  static jsi::Value __enableRuntimeSchedulerQueueClearingOnError(jsi::Runtime &rt, TurboModule &turboModule, const jsi::Value* /*args*/, size_t /*count*/) {
+  static jsi::Value __enableResizeObserverByDefault(jsi::Runtime &rt, TurboModule &turboModule, const jsi::Value* /*args*/, size_t /*count*/) {
     static_assert(
-      bridging::getParameterCount(&T::enableRuntimeSchedulerQueueClearingOnError) == 1,
-      "Expected enableRuntimeSchedulerQueueClearingOnError(...) to have 1 parameters");
-    return bridging::callFromJs<bool>(rt, &T::enableRuntimeSchedulerQueueClearingOnError,  static_cast<NativeReactNativeFeatureFlagsCxxSpec*>(&turboModule)->jsInvoker_, static_cast<T*>(&turboModule));
-  }
-
-  static jsi::Value __enableSchedulerDelegateInvalidation(jsi::Runtime &rt, TurboModule &turboModule, const jsi::Value* /*args*/, size_t /*count*/) {
-    static_assert(
-      bridging::getParameterCount(&T::enableSchedulerDelegateInvalidation) == 1,
-      "Expected enableSchedulerDelegateInvalidation(...) to have 1 parameters");
-    return bridging::callFromJs<bool>(rt, &T::enableSchedulerDelegateInvalidation,  static_cast<NativeReactNativeFeatureFlagsCxxSpec*>(&turboModule)->jsInvoker_, static_cast<T*>(&turboModule));
+      bridging::getParameterCount(&T::enableResizeObserverByDefault) == 1,
+      "Expected enableResizeObserverByDefault(...) to have 1 parameters");
+    return bridging::callFromJs<bool>(rt, &T::enableResizeObserverByDefault,  static_cast<NativeReactNativeFeatureFlagsCxxSpec*>(&turboModule)->jsInvoker_, static_cast<T*>(&turboModule));
   }
 
   static jsi::Value __enableSwiftUIBasedFilters(jsi::Runtime &rt, TurboModule &turboModule, const jsi::Value* /*args*/, size_t /*count*/) {
@@ -726,18 +734,18 @@ private:
     return bridging::callFromJs<bool>(rt, &T::fuseboxFrameRecordingEnabled,  static_cast<NativeReactNativeFeatureFlagsCxxSpec*>(&turboModule)->jsInvoker_, static_cast<T*>(&turboModule));
   }
 
-  static jsi::Value __fuseboxNetworkInspectionEnabled(jsi::Runtime &rt, TurboModule &turboModule, const jsi::Value* /*args*/, size_t /*count*/) {
-    static_assert(
-      bridging::getParameterCount(&T::fuseboxNetworkInspectionEnabled) == 1,
-      "Expected fuseboxNetworkInspectionEnabled(...) to have 1 parameters");
-    return bridging::callFromJs<bool>(rt, &T::fuseboxNetworkInspectionEnabled,  static_cast<NativeReactNativeFeatureFlagsCxxSpec*>(&turboModule)->jsInvoker_, static_cast<T*>(&turboModule));
-  }
-
   static jsi::Value __fuseboxScreenshotCaptureEnabled(jsi::Runtime &rt, TurboModule &turboModule, const jsi::Value* /*args*/, size_t /*count*/) {
     static_assert(
       bridging::getParameterCount(&T::fuseboxScreenshotCaptureEnabled) == 1,
       "Expected fuseboxScreenshotCaptureEnabled(...) to have 1 parameters");
     return bridging::callFromJs<bool>(rt, &T::fuseboxScreenshotCaptureEnabled,  static_cast<NativeReactNativeFeatureFlagsCxxSpec*>(&turboModule)->jsInvoker_, static_cast<T*>(&turboModule));
+  }
+
+  static jsi::Value __fuseboxWebSocketEventsEnabled(jsi::Runtime &rt, TurboModule &turboModule, const jsi::Value* /*args*/, size_t /*count*/) {
+    static_assert(
+      bridging::getParameterCount(&T::fuseboxWebSocketEventsEnabled) == 1,
+      "Expected fuseboxWebSocketEventsEnabled(...) to have 1 parameters");
+    return bridging::callFromJs<bool>(rt, &T::fuseboxWebSocketEventsEnabled,  static_cast<NativeReactNativeFeatureFlagsCxxSpec*>(&turboModule)->jsInvoker_, static_cast<T*>(&turboModule));
   }
 
   static jsi::Value __optimizedAnimatedPropUpdates(jsi::Runtime &rt, TurboModule &turboModule, const jsi::Value* /*args*/, size_t /*count*/) {
@@ -3899,36 +3907,6 @@ private:
 
 
 template <typename T>
-class JSI_EXPORT NativeModalManagerCxxSpec : public TurboModule {
-public:
-  static constexpr std::string_view kModuleName = "ModalManager";
-
-protected:
-  NativeModalManagerCxxSpec(std::shared_ptr<CallInvoker> jsInvoker) : TurboModule(std::string{NativeModalManagerCxxSpec::kModuleName}, jsInvoker) {
-    methodMap_["addListener"] = MethodMetadata {.argCount = 1, .invoker = __addListener};
-    methodMap_["removeListeners"] = MethodMetadata {.argCount = 1, .invoker = __removeListeners};
-  }
-  
-private:
-  static jsi::Value __addListener(jsi::Runtime &rt, TurboModule &turboModule, const jsi::Value* args, size_t count) {
-    static_assert(
-      bridging::getParameterCount(&T::addListener) == 2,
-      "Expected addListener(...) to have 2 parameters");
-    bridging::callFromJs<void>(rt, &T::addListener,  static_cast<NativeModalManagerCxxSpec*>(&turboModule)->jsInvoker_, static_cast<T*>(&turboModule),
-      count <= 0 ? throw jsi::JSError(rt, "Expected argument in position 0 to be passed") : args[0].asString(rt));return jsi::Value::undefined();
-  }
-
-  static jsi::Value __removeListeners(jsi::Runtime &rt, TurboModule &turboModule, const jsi::Value* args, size_t count) {
-    static_assert(
-      bridging::getParameterCount(&T::removeListeners) == 2,
-      "Expected removeListeners(...) to have 2 parameters");
-    bridging::callFromJs<void>(rt, &T::removeListeners,  static_cast<NativeModalManagerCxxSpec*>(&turboModule)->jsInvoker_, static_cast<T*>(&turboModule),
-      count <= 0 ? throw jsi::JSError(rt, "Expected argument in position 0 to be passed") : args[0].asNumber());return jsi::Value::undefined();
-  }
-};
-
-
-template <typename T>
 class JSI_EXPORT NativeNetworkingAndroidCxxSpec : public TurboModule {
 public:
   static constexpr std::string_view kModuleName = "Networking";
@@ -4869,6 +4847,9 @@ protected:
     methodMap_["getUnsafeObject"] = MethodMetadata {.argCount = 1, .invoker = __getUnsafeObject};
     methodMap_["getRootTag"] = MethodMetadata {.argCount = 1, .invoker = __getRootTag};
     methodMap_["getValue"] = MethodMetadata {.argCount = 3, .invoker = __getValue};
+    methodMap_["getArrayBuffer"] = MethodMetadata {.argCount = 1, .invoker = __getArrayBuffer};
+    methodMap_["createNativeBuffer"] = MethodMetadata {.argCount = 1, .invoker = __createNativeBuffer};
+    methodMap_["processAsyncBuffer"] = MethodMetadata {.argCount = 1, .invoker = __processAsyncBuffer};
     methodMap_["getValueWithCallback"] = MethodMetadata {.argCount = 1, .invoker = __getValueWithCallback};
     methodMap_["getValueWithPromise"] = MethodMetadata {.argCount = 1, .invoker = __getValueWithPromise};
     methodMap_["voidFuncThrows"] = MethodMetadata {.argCount = 0, .invoker = __voidFuncThrows};
@@ -4995,6 +4976,30 @@ private:
       count <= 0 ? throw jsi::JSError(rt, "Expected argument in position 0 to be passed") : args[0].asNumber(),
       count <= 1 ? throw jsi::JSError(rt, "Expected argument in position 1 to be passed") : args[1].asString(rt),
       count <= 2 ? throw jsi::JSError(rt, "Expected argument in position 2 to be passed") : args[2].asObject(rt));
+  }
+
+  static jsi::Value __getArrayBuffer(jsi::Runtime &rt, TurboModule &turboModule, const jsi::Value* args, size_t count) {
+    static_assert(
+      bridging::getParameterCount(&T::getArrayBuffer) == 2,
+      "Expected getArrayBuffer(...) to have 2 parameters");
+    return bridging::callFromJs<jsi::ArrayBuffer>(rt, &T::getArrayBuffer,  static_cast<NativeSampleTurboModuleCxxSpec*>(&turboModule)->jsInvoker_, static_cast<T*>(&turboModule),
+      count <= 0 ? throw jsi::JSError(rt, "Expected argument in position 0 to be passed") : args[0].asObject(rt).getArrayBuffer(rt));
+  }
+
+  static jsi::Value __createNativeBuffer(jsi::Runtime &rt, TurboModule &turboModule, const jsi::Value* args, size_t count) {
+    static_assert(
+      bridging::getParameterCount(&T::createNativeBuffer) == 2,
+      "Expected createNativeBuffer(...) to have 2 parameters");
+    return bridging::callFromJs<jsi::ArrayBuffer>(rt, &T::createNativeBuffer,  static_cast<NativeSampleTurboModuleCxxSpec*>(&turboModule)->jsInvoker_, static_cast<T*>(&turboModule),
+      count <= 0 ? throw jsi::JSError(rt, "Expected argument in position 0 to be passed") : args[0].asNumber());
+  }
+
+  static jsi::Value __processAsyncBuffer(jsi::Runtime &rt, TurboModule &turboModule, const jsi::Value* args, size_t count) {
+    static_assert(
+      bridging::getParameterCount(&T::processAsyncBuffer) == 2,
+      "Expected processAsyncBuffer(...) to have 2 parameters");
+    return bridging::callFromJs<jsi::Value>(rt, &T::processAsyncBuffer,  static_cast<NativeSampleTurboModuleCxxSpec*>(&turboModule)->jsInvoker_, static_cast<T*>(&turboModule),
+      count <= 0 ? throw jsi::JSError(rt, "Expected argument in position 0 to be passed") : args[0].asObject(rt).getArrayBuffer(rt));
   }
 
   static jsi::Value __getValueWithCallback(jsi::Runtime &rt, TurboModule &turboModule, const jsi::Value* args, size_t count) {
@@ -7313,6 +7318,187 @@ private:
       bridging::getParameterCount(&T::clearEventCountsForTesting) == 1,
       "Expected clearEventCountsForTesting(...) to have 1 parameters");
     bridging::callFromJs<void>(rt, &T::clearEventCountsForTesting,  static_cast<NativePerformanceCxxSpec*>(&turboModule)->jsInvoker_, static_cast<T*>(&turboModule));return jsi::Value::undefined();
+  }
+};
+
+
+#pragma mark - NativeResizeObserverNativeResizeObserverEntry
+
+template <typename P0, typename P1, typename P2, typename P3, typename P4, typename P5>
+struct NativeResizeObserverNativeResizeObserverEntry {
+  P0 resizeObserverId{};
+  P1 targetInstanceHandle{};
+  P2 contentRect{};
+  P3 borderBoxSize{};
+  P4 contentBoxSize{};
+  P5 devicePixelContentBoxSize;
+  bool operator==(const NativeResizeObserverNativeResizeObserverEntry &other) const {
+    return resizeObserverId == other.resizeObserverId && targetInstanceHandle == other.targetInstanceHandle && contentRect == other.contentRect && borderBoxSize == other.borderBoxSize && contentBoxSize == other.contentBoxSize && devicePixelContentBoxSize == other.devicePixelContentBoxSize;
+  }
+};
+
+template <typename T>
+struct NativeResizeObserverNativeResizeObserverEntryBridging {
+  static T types;
+
+  static T fromJs(
+      jsi::Runtime &rt,
+      const jsi::Object &value,
+      const std::shared_ptr<CallInvoker> &jsInvoker) {
+    T result{
+      bridging::fromJs<decltype(types.resizeObserverId)>(rt, value.getProperty(rt, "resizeObserverId"), jsInvoker),
+      bridging::fromJs<decltype(types.targetInstanceHandle)>(rt, value.getProperty(rt, "targetInstanceHandle"), jsInvoker),
+      bridging::fromJs<decltype(types.contentRect)>(rt, value.getProperty(rt, "contentRect"), jsInvoker),
+      bridging::fromJs<decltype(types.borderBoxSize)>(rt, value.getProperty(rt, "borderBoxSize"), jsInvoker),
+      bridging::fromJs<decltype(types.contentBoxSize)>(rt, value.getProperty(rt, "contentBoxSize"), jsInvoker),
+      bridging::fromJs<decltype(types.devicePixelContentBoxSize)>(rt, value.getProperty(rt, "devicePixelContentBoxSize"), jsInvoker)};
+    return result;
+  }
+
+#ifdef DEBUG
+  static double resizeObserverIdToJs(jsi::Runtime &rt, decltype(types.resizeObserverId) value) {
+    return bridging::toJs(rt, value);
+  }
+  static jsi::Value targetInstanceHandleToJs(jsi::Runtime &rt, decltype(types.targetInstanceHandle) value) {
+    return bridging::toJs(rt, value);
+  }
+  static jsi::Array contentRectToJs(jsi::Runtime &rt, decltype(types.contentRect) value) {
+    return bridging::toJs(rt, value);
+  }
+  static jsi::Array borderBoxSizeToJs(jsi::Runtime &rt, decltype(types.borderBoxSize) value) {
+    return bridging::toJs(rt, value);
+  }
+  static jsi::Array contentBoxSizeToJs(jsi::Runtime &rt, decltype(types.contentBoxSize) value) {
+    return bridging::toJs(rt, value);
+  }
+  static jsi::Array devicePixelContentBoxSizeToJs(jsi::Runtime &rt, decltype(types.devicePixelContentBoxSize) value) {
+    return bridging::toJs(rt, value);
+  }
+#endif
+
+  static jsi::Object toJs(
+      jsi::Runtime &rt,
+      const T &value,
+      const std::shared_ptr<CallInvoker> &jsInvoker) {
+    auto result = facebook::jsi::Object(rt);
+    result.setProperty(rt, "resizeObserverId", bridging::toJs(rt, value.resizeObserverId, jsInvoker));
+    result.setProperty(rt, "targetInstanceHandle", bridging::toJs(rt, value.targetInstanceHandle, jsInvoker));
+    result.setProperty(rt, "contentRect", bridging::toJs(rt, value.contentRect, jsInvoker));
+    result.setProperty(rt, "borderBoxSize", bridging::toJs(rt, value.borderBoxSize, jsInvoker));
+    result.setProperty(rt, "contentBoxSize", bridging::toJs(rt, value.contentBoxSize, jsInvoker));
+    result.setProperty(rt, "devicePixelContentBoxSize", bridging::toJs(rt, value.devicePixelContentBoxSize, jsInvoker));
+    return result;
+  }
+};
+
+
+
+#pragma mark - NativeResizeObserverNativeResizeObserverObserveOptions
+
+template <typename P0, typename P1, typename P2>
+struct NativeResizeObserverNativeResizeObserverObserveOptions {
+  P0 resizeObserverId{};
+  P1 targetShadowNode{};
+  P2 box;
+  bool operator==(const NativeResizeObserverNativeResizeObserverObserveOptions &other) const {
+    return resizeObserverId == other.resizeObserverId && targetShadowNode == other.targetShadowNode && box == other.box;
+  }
+};
+
+template <typename T>
+struct NativeResizeObserverNativeResizeObserverObserveOptionsBridging {
+  static T types;
+
+  static T fromJs(
+      jsi::Runtime &rt,
+      const jsi::Object &value,
+      const std::shared_ptr<CallInvoker> &jsInvoker) {
+    T result{
+      bridging::fromJs<decltype(types.resizeObserverId)>(rt, value.getProperty(rt, "resizeObserverId"), jsInvoker),
+      bridging::fromJs<decltype(types.targetShadowNode)>(rt, value.getProperty(rt, "targetShadowNode"), jsInvoker),
+      bridging::fromJs<decltype(types.box)>(rt, value.getProperty(rt, "box"), jsInvoker)};
+    return result;
+  }
+
+#ifdef DEBUG
+  static double resizeObserverIdToJs(jsi::Runtime &rt, decltype(types.resizeObserverId) value) {
+    return bridging::toJs(rt, value);
+  }
+  static jsi::Value targetShadowNodeToJs(jsi::Runtime &rt, decltype(types.targetShadowNode) value) {
+    return bridging::toJs(rt, value);
+  }
+  static std::optional<jsi::String> boxToJs(jsi::Runtime &rt, decltype(types.box) value) {
+    return bridging::toJs(rt, value);
+  }
+#endif
+
+  static jsi::Object toJs(
+      jsi::Runtime &rt,
+      const T &value,
+      const std::shared_ptr<CallInvoker> &jsInvoker) {
+    auto result = facebook::jsi::Object(rt);
+    result.setProperty(rt, "resizeObserverId", bridging::toJs(rt, value.resizeObserverId, jsInvoker));
+    result.setProperty(rt, "targetShadowNode", bridging::toJs(rt, value.targetShadowNode, jsInvoker));
+    if (value.box) {
+      result.setProperty(rt, "box", bridging::toJs(rt, value.box.value(), jsInvoker));
+    }
+    return result;
+  }
+};
+
+
+template <typename T>
+class JSI_EXPORT NativeResizeObserverCxxSpec : public TurboModule {
+public:
+  static constexpr std::string_view kModuleName = "NativeResizeObserverCxx";
+
+protected:
+  NativeResizeObserverCxxSpec(std::shared_ptr<CallInvoker> jsInvoker) : TurboModule(std::string{NativeResizeObserverCxxSpec::kModuleName}, jsInvoker) {
+    methodMap_["observe"] = MethodMetadata {.argCount = 1, .invoker = __observe};
+    methodMap_["unobserve"] = MethodMetadata {.argCount = 2, .invoker = __unobserve};
+    methodMap_["connect"] = MethodMetadata {.argCount = 1, .invoker = __connect};
+    methodMap_["disconnect"] = MethodMetadata {.argCount = 0, .invoker = __disconnect};
+    methodMap_["takeRecords"] = MethodMetadata {.argCount = 0, .invoker = __takeRecords};
+  }
+  
+private:
+  static jsi::Value __observe(jsi::Runtime &rt, TurboModule &turboModule, const jsi::Value* args, size_t count) {
+    static_assert(
+      bridging::getParameterCount(&T::observe) == 2,
+      "Expected observe(...) to have 2 parameters");
+    return bridging::callFromJs<jsi::Value>(rt, &T::observe,  static_cast<NativeResizeObserverCxxSpec*>(&turboModule)->jsInvoker_, static_cast<T*>(&turboModule),
+      count <= 0 ? throw jsi::JSError(rt, "Expected argument in position 0 to be passed") : args[0].asObject(rt));
+  }
+
+  static jsi::Value __unobserve(jsi::Runtime &rt, TurboModule &turboModule, const jsi::Value* args, size_t count) {
+    static_assert(
+      bridging::getParameterCount(&T::unobserve) == 3,
+      "Expected unobserve(...) to have 3 parameters");
+    bridging::callFromJs<void>(rt, &T::unobserve,  static_cast<NativeResizeObserverCxxSpec*>(&turboModule)->jsInvoker_, static_cast<T*>(&turboModule),
+      count <= 0 ? throw jsi::JSError(rt, "Expected argument in position 0 to be passed") : args[0].asNumber(),
+      count <= 1 ? throw jsi::JSError(rt, "Expected argument in position 1 to be passed") : jsi::Value(rt, args[1]));return jsi::Value::undefined();
+  }
+
+  static jsi::Value __connect(jsi::Runtime &rt, TurboModule &turboModule, const jsi::Value* args, size_t count) {
+    static_assert(
+      bridging::getParameterCount(&T::connect) == 2,
+      "Expected connect(...) to have 2 parameters");
+    bridging::callFromJs<void>(rt, &T::connect,  static_cast<NativeResizeObserverCxxSpec*>(&turboModule)->jsInvoker_, static_cast<T*>(&turboModule),
+      count <= 0 ? throw jsi::JSError(rt, "Expected argument in position 0 to be passed") : args[0].asObject(rt).asFunction(rt));return jsi::Value::undefined();
+  }
+
+  static jsi::Value __disconnect(jsi::Runtime &rt, TurboModule &turboModule, const jsi::Value* /*args*/, size_t /*count*/) {
+    static_assert(
+      bridging::getParameterCount(&T::disconnect) == 1,
+      "Expected disconnect(...) to have 1 parameters");
+    bridging::callFromJs<void>(rt, &T::disconnect,  static_cast<NativeResizeObserverCxxSpec*>(&turboModule)->jsInvoker_, static_cast<T*>(&turboModule));return jsi::Value::undefined();
+  }
+
+  static jsi::Value __takeRecords(jsi::Runtime &rt, TurboModule &turboModule, const jsi::Value* /*args*/, size_t /*count*/) {
+    static_assert(
+      bridging::getParameterCount(&T::takeRecords) == 1,
+      "Expected takeRecords(...) to have 1 parameters");
+    return bridging::callFromJs<jsi::Array>(rt, &T::takeRecords,  static_cast<NativeResizeObserverCxxSpec*>(&turboModule)->jsInvoker_, static_cast<T*>(&turboModule));
   }
 };
 
