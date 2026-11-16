@@ -4,16 +4,26 @@ import {
   buildPairingLink,
   describeForeignCheckout,
   gradeWindowRun,
-  isLinuxVariant,
+  installVariants,
   overlayInstallArguments,
   overlayPackArguments,
   readPairingUrl,
   tailLines,
 } from "./t3code.ts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { packageAliases } from "@react-native-linux/cli/package-aliases.ts";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 
 const TAIL_LINE_COUNT = 40;
@@ -67,17 +77,67 @@ describe("gradeWindowRun", () => {
   });
 });
 
-describe("isLinuxVariant", () => {
-  it("takes a .linux.ts or .linux.tsx file and leaves a test bundle's stand-ins", () => {
-    expect(
-      [
-        "components/ui/Progress.linux.tsx",
-        "components/ui/controlValues.linux.ts",
-        "components/ui/useControlTheme.ts",
-        "components/ui/linux.tsx",
-        "components/ui/Progress.linux.tsx.map",
-      ].map((file) => isLinuxVariant(file)),
-    ).toStrictEqual([true, true, false, false, false]);
+const variantsFixtureFiles = ["Progress.linux.tsx", "controlValues.linux.ts", "AppText.tsx", "Progress.linux.tsx.map"];
+
+const writeFile = (filePath: string, text: string): void => {
+  mkdirSync(path.dirname(filePath), { recursive: true });
+  writeFileSync(filePath, text);
+};
+
+const commitAll = (root: string): void => {
+  const identity = ["-c", "user.name=fixture", "-c", "user.email=fixture@localhost"];
+
+  spawnSync("git", ["-C", root, "add", "--all"]);
+  spawnSync("git", ["-C", root, ...identity, "commit", "--quiet", "--message", "fixture"]);
+};
+
+describe("installVariants", () => {
+  const temporaryDirectory = realpathSync(tmpdir());
+  let workspace = "";
+  let variantsDirectory = "";
+  let mobileRoot = "";
+  let uiDirectory = "";
+
+  beforeEach(() => {
+    workspace = mkdtempSync(path.join(temporaryDirectory, "rnl-t3code-variants-"));
+    variantsDirectory = path.join(workspace, "variants");
+    mobileRoot = path.join(workspace, "mobile");
+    uiDirectory = path.join(mobileRoot, "src", "components", "ui");
+    for (const name of variantsFixtureFiles) {
+      writeFile(path.join(variantsDirectory, "components", "ui", name), name);
+    }
+    writeFile(path.join(uiDirectory, "Progress.tsx"), "shared");
+    spawnSync("git", ["-C", mobileRoot, "init", "--quiet"]);
+    commitAll(mobileRoot);
+  });
+
+  afterEach(() => {
+    rmSync(workspace, { force: true, recursive: true });
+  });
+
+  it("copies each .linux.ts and .linux.tsx beside the file it replaces, again over its own copies", () => {
+    expect([
+      installVariants(variantsDirectory, mobileRoot),
+      installVariants(variantsDirectory, mobileRoot),
+    ]).toStrictEqual([null, null]);
+    const copied = variantsFixtureFiles.map((name) => existsSync(path.join(uiDirectory, name)));
+
+    expect(copied).toStrictEqual([true, true, false, false]);
+  });
+
+  it("refuses to overwrite a variant T3 Code tracks, and copies nothing", () => {
+    writeFile(path.join(uiDirectory, "Progress.linux.tsx"), "T3 Code's own");
+    commitAll(mobileRoot);
+
+    expect(installVariants(variantsDirectory, mobileRoot)).toContain("src/components/ui/Progress.linux.tsx");
+    expect([
+      readFileSync(path.join(uiDirectory, "Progress.linux.tsx"), "utf8"),
+      existsSync(path.join(uiDirectory, "controlValues.linux.ts")),
+    ]).toStrictEqual(["T3 Code's own", false]);
+  });
+
+  it("refuses when git cannot list the checkout's files", () => {
+    expect(installVariants(variantsDirectory, path.join(workspace, "missing"))).toContain("git could not tell");
   });
 });
 

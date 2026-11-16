@@ -13,9 +13,10 @@ const SLIDER_HEIGHT = 44;
 const TRACK_HEIGHT = 4;
 const THUMB_SIZE = 24;
 const TRACK_OPACITY = 0.16;
+const KEY_STEPS: Readonly<Record<string, number>> = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1 };
 
 // react-native-linux: SwiftUI's Slider, drawn with Views. A drag moves the thumb and commits
-// the stepped value on release, as the iOS row commits when editing ends.
+// the stepped value on release, as the iOS row commits when editing ends; the arrow keys step it.
 export function SliderRow(props: SliderRowProps) {
   const { colors } = useControlTheme();
   const [width, setWidth] = useState(0);
@@ -69,6 +70,10 @@ export function SliderRow(props: SliderRowProps) {
           onAccessibilityAction={({ nativeEvent }) => {
             if (nativeEvent.actionName === "increment") commit(props.value + props.step);
             else if (nativeEvent.actionName === "decrement") commit(props.value - props.step);
+          }}
+          onKeyDown={({ nativeEvent }) => {
+            const direction = KEY_STEPS[nativeEvent.key];
+            if (direction !== undefined) commit(props.value + direction * props.step);
           }}
           onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
           onStartShouldSetResponder={() => !props.disabled}

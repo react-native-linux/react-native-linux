@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { AppRegistry, View } from "react-native";
-import { NumberField } from "../modules/t3-expo-ui/src/components/ui/NumberField.linux";
+import { CustomSnoozeSheet } from "../modules/t3-expo-ui/src/features/threads/CustomSnoozeSheet.linux";
+import { DateTimePicker } from "./t3code-desktop-profile/expo-ui-datetime-picker";
 import { Progress } from "../modules/t3-expo-ui/src/components/ui/Progress.linux";
 import { SliderRow } from "../modules/t3-expo-ui/src/components/ui/SliderRow.linux";
 import { ControlColorScheme, useControlTheme } from "../modules/t3-expo-ui/src/components/ui/useControlTheme";
@@ -8,17 +9,22 @@ import { ControlColorScheme, useControlTheme } from "../modules/t3-expo-ui/src/c
 const COLUMN_WIDTH = 400;
 const GAP = 16;
 const PADDING = 8;
+const SHEET_HEIGHT = 300;
 const INITIAL_FONT_SIZE = 16;
-const INITIAL_AUTO_SETTLE_DAYS = 7;
+const PICKER_YEAR = 2026;
+const PICKER_HOUR = 9;
+const PART_LENGTH = 2;
+const MONTH_OFFSET = 1;
 
 const report = (line: string): void => {
   console.log(`t3-expo-ui: ${line}`);
 };
 
+const pad = (part: number): string => String(part).padStart(PART_LENGTH, "0");
+
 const Controls = ({ name }: { readonly name: string }): React.JSX.Element => {
   const { colors } = useControlTheme();
   const [fontSize, setFontSize] = useState(INITIAL_FONT_SIZE);
-  const [days, setDays] = useState(INITIAL_AUTO_SETTLE_DAYS);
 
   return (
     <View style={{ backgroundColor: colors["--color-card"], gap: PADDING, padding: PADDING, width: COLUMN_WIDTH }}>
@@ -39,16 +45,6 @@ const Controls = ({ name }: { readonly name: string }): React.JSX.Element => {
         value={fontSize}
         valueLabel={`${String(fontSize)} pt`}
       />
-      <NumberField
-        label="Auto settle"
-        max={30}
-        min={1}
-        onValueChange={(value) => {
-          report(`${name} number value=${String(value)}`);
-          setDays(value);
-        }}
-        value={days}
-      />
       <SliderRow
         disabled
         icon="speaker.wave.2"
@@ -62,15 +58,47 @@ const Controls = ({ name }: { readonly name: string }): React.JSX.Element => {
         value={0.5}
         valueLabel="50%"
       />
-      <NumberField
-        label="Retries"
-        max={3}
-        min={1}
-        onValueChange={() => {
-          report(`${name} number at its minimum changed`);
+    </View>
+  );
+};
+
+const Sheets = (): React.JSX.Element => {
+  const { colors } = useControlTheme();
+  const [isSnoozed, setIsSnoozed] = useState(false);
+  const [pickerValue] = useState(() => new Date(PICKER_YEAR, 0, 1, PICKER_HOUR, 0));
+
+  return (
+    <View style={{ backgroundColor: colors["--color-card"], gap: PADDING, padding: PADDING, width: COLUMN_WIDTH }}>
+      <View style={{ height: SHEET_HEIGHT }}>
+        <CustomSnoozeSheet
+          onClose={() => {
+            report("snooze sheet closed");
+          }}
+          onSnooze={(snoozedUntil) => {
+            report(`snoozed ${snoozedUntil}`);
+            setIsSnoozed(true);
+          }}
+        />
+      </View>
+      <DateTimePicker
+        mode="time"
+        onValueChange={(_event, date) => {
+          report(`time ${pad(date.getHours())}:${pad(date.getMinutes())}`);
         }}
-        value={1}
+        value={pickerValue}
       />
+      <DateTimePicker
+        mode="date"
+        onValueChange={(_event, date) => {
+          report(`date ${String(date.getFullYear())}-${pad(date.getMonth() + MONTH_OFFSET)}-${pad(date.getDate())}`);
+        }}
+        value={pickerValue}
+      />
+      {isSnoozed ? null : (
+        <View style={{ marginTop: "auto" }}>
+          <Progress label="Connecting" />
+        </View>
+      )}
     </View>
   );
 };
@@ -82,6 +110,9 @@ const T3ExpoUi = (): React.JSX.Element => (
     </ControlColorScheme>
     <ControlColorScheme value="dark">
       <Controls name="dark" />
+    </ControlColorScheme>
+    <ControlColorScheme value="light">
+      <Sheets />
     </ControlColorScheme>
   </View>
 );

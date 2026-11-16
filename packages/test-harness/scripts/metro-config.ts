@@ -12,7 +12,11 @@ const harnessMetroConfig = mergeConfig(getDefaultConfig(projectRoot), {
   // Off /tmp, whose per-user quota this machine's other work shares.
   cacheStores: [new FileStore({ root: path.join(repositoryRoot, "build", "metro-cache") })],
   cacheVersion: babelCacheVersion(projectRoot),
-  resolver: linuxResolverConfig(projectRoot),
+  resolver: {
+    ...linuxResolverConfig(projectRoot),
+    // The t3-expo-ui bundle's stand-in for the T3 Code package its CustomSnoozeSheet variant imports.
+    extraNodeModules: { "@t3tools/client-runtime": path.join(projectRoot, "modules", "t3-expo-ui", "client-runtime") },
+  },
   watchFolders: [repositoryRoot],
 });
 

@@ -4,13 +4,14 @@ import {
   buildPairingLink,
   describeForeignCheckout,
   gradeWindowRun,
+  installVariants,
   readPairingUrl,
   tailLines,
 } from "./e2e/t3code.ts";
 import { argv, env, execPath, stderr, stdout } from "node:process";
 import { attachTrace, startCompositor, stopCompositor, waitForSocketName, windowBinaryPath } from "./e2e-processes.ts";
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { embedExpoAppAssets, installOverlays, installVariants } from "./t3code-app.ts";
+import { embedExpoAppAssets, installOverlays } from "./t3code-app.ts";
 import { findExecutable, findLavapipeIcd } from "./window-golden.ts";
 import { spawn, spawnSync } from "node:child_process";
 import path from "node:path";
@@ -48,6 +49,10 @@ const artifactsDirectory = path.join(repositoryRoot, "build", "e2e", SCENARIO_NA
 const fixtureDirectory = path.join(repositoryRoot, "build", "t3code");
 const bundlePath = path.join(fixtureDirectory, "index.linux.bundle.js");
 const overlayDirectory = path.join(fixtureDirectory, OVERLAY_DIRECTORY_NAME);
+/**
+ * Only t3-expo-ui's variants are written to drop into apps/mobile/src: t3-review-diff's imports nativeReviewDiffRows,
+ * which T3 Code does not carry, and t3-composer-editor's (#701) has not been run in this fixture.
+ */
 const variantsDirectory = path.join(repositoryRoot, "packages", "test-harness", "modules", "t3-expo-ui", "src");
 const checkout = path.resolve(argv[CHECKOUT_ARGUMENT_INDEX] ?? env["T3CODE_ROOT"] ?? "");
 const mobileRoot = path.join(checkout, "apps", "mobile");
@@ -236,11 +241,12 @@ const runAgainstServer = async (rig: Rig): Promise<void> => {
 };
 
 const runOnOwnCheckout = async (rig: Rig): Promise<void> => {
-  const overlayFailure = installOverlays(repositoryRoot, overlayDirectory, checkout);
+  const variantFailure = installVariants(variantsDirectory, mobileRoot);
+  const overlayFailure = variantFailure === null ? installOverlays(repositoryRoot, overlayDirectory, checkout) : null;
 
-  installVariants(variantsDirectory, mobileRoot);
-
-  if (overlayFailure !== null) {
+  if (variantFailure !== null) {
+    fail(variantFailure);
+  } else if (overlayFailure !== null) {
     fail(`the overlay packages could not be packed and added to T3 Code\n${tailLines(overlayFailure)}`);
   } else if (buildBundle()) {
     await embedExpoAppAssets(mobileRoot, path.join(path.dirname(bundlePath), "assets"));
