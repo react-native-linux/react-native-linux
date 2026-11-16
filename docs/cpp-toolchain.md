@@ -9337,16 +9337,18 @@ ADR-0001's pacing obligation has two halves: hit the compositor's deadline when 
 (#20), and stop when there is not. The second half lives in the fallback: `FrameClock::fallbackInterval` decides
 how long `waitForRedraw` waits when the compositor is not pacing the window — a deactivated window stretches the
 interval to three display periods, an occluded one to eight, and an active one keeps the display's own period.
-A serious or critical thermal state caps the interval at one 60 Hz frame whatever the display or the activity
-would otherwise stretch it to: the machine is saying it is slow, and the stretch is a saving only while the
-thermal state is nominal. The thermal state comes from the kernel's thermal zones — each zone's temperature
-against its own critical trip (`thermalStateFromCriticalRatio`: at the trip is critical, 0.9 of it is serious) —
-re-read at most once a second, because a file walk per fallback tick is the waste the pacing exists to avoid.
-`FrameClock::readThermalState` walks the `thermal_zone*` entries of `/sys/class/thermal` (the directory also
-holds `cooling_device*`), and takes each zone's trip whose `trip_point_<n>_type` is `critical`; a zone without
-one, or a file that fails to read, counts as nominal. `RNL_THERMAL_ROOT` replaces that directory, and the
-headless rig's `buildEnvironment` points it at one with no zones unless the caller exports it, so a hot CI runner
-grades the same intervals as a cool one (#774).
+A serious or critical thermal state raises the interval to at least one 60 Hz frame, the minimum frame interval of
+GPUI's thermal gate: a hot machine stops polling a 120 Hz display at its full rate, and never wakes an inactive or
+occluded window sooner than it would when cool. The thermal state follows the OS thermal-pressure semantics of
+Android and macOS, which tell throttling apart from shutdown: a zone is critical at its `critical` trip, where
+Linux shuts the machine down, and serious from its lowest `passive` or `hot` trip, where the kernel starts
+throttling, or from 0.9 of the critical trip for a zone that has no other. The worst zone wins. A
+`ThermalSampler` thread owned by the window loop walks the `thermal_zone*` entries of `/sys/class/thermal` (the
+directory also holds `cooling_device*`) once a second and publishes the state as an atomic the frame loop reads,
+because some drivers stall a sensor read for longer than a frame; it reads a zone's trip types before its
+temperature, so a zone without a relevant trip costs no sensor read. `RNL_THERMAL_ROOT` replaces that directory,
+and the headless rig's `buildEnvironment` points it at one with no zones unless the caller exports it, so a hot CI
+runner grades the same intervals as a cool one (#774).
 
 `FrameClock::windowActivity` picks the activity from the toplevel state (#770): a window the compositor has
 suspended (`xdg_toplevel`'s `suspended`, xdg-shell v6 — a hidden workspace, a minimized window) is occluded

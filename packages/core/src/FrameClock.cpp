@@ -2,104 +2,46 @@
 
 #include <algorithm>
 #include <array>
-#include <fstream>
-#include <string>
-#include <system_error>
 
 namespace react_native_linux {
 
 namespace {
 
-// The thermal cap of #335: under a serious or critical thermal state every fallback interval is this one
-// 60 Hz frame, whatever the display's refresh rate or the window's activity would otherwise stretch it to.
+// The thermal floor of #335: under a serious or critical thermal state no fallback interval is shorter than one
+// 60 Hz frame, whatever the display's refresh rate would otherwise poll at.
 constexpr std::chrono::nanoseconds kNominalRefreshInterval{16'666'666};
-constexpr std::chrono::nanoseconds kThermalCappedInterval = kNominalRefreshInterval;
+constexpr std::chrono::nanoseconds kThermalMinimumInterval = kNominalRefreshInterval;
 
 // How many display periods a callback the last draw armed may take before the fallback draws instead (#703).
 constexpr int64_t kLateCallbackPeriods = 2;
 
 // The stretch factors over the display's own frame period, in the states the compositor is not pacing.
-constexpr double kSeriousThermalRatio = 0.9;
 constexpr uint64_t kInactiveStretch = 3;
 constexpr uint64_t kOccludedStretch = 8;
 
-std::optional<double> readNumber(const std::filesystem::path& file) {
-    std::ifstream stream(file);
-    double value = 0.0;
-
-    if (stream >> value) {
-        return value;
+std::chrono::nanoseconds activityInterval(FrameClock::WindowActivity activity,
+                                          std::chrono::nanoseconds refreshInterval) {
+    switch (activity) { // COV_EXCL: the switch's implicit default is untakeable when every enumerator is tested.
+    case FrameClock::WindowActivity::Occluded:
+        return refreshInterval * kOccludedStretch;
+    case FrameClock::WindowActivity::Inactive:
+        return refreshInterval * kInactiveStretch;
+    case FrameClock::WindowActivity::Active:
+        return refreshInterval;
     }
 
-    return std::nullopt;
-}
-
-// The kernel numbers a zone's trips from zero without gaps, so the first missing `trip_point_<n>_type` ends them.
-std::optional<double> readCriticalTrip(const std::filesystem::path& zone) {
-    for (int trip = 0;; ++trip) {
-        const std::string prefix = "trip_point_" + std::to_string(trip);
-        std::ifstream typeFile(zone / (prefix + "_type"));
-        std::string type;
-
-        if (!(typeFile >> type)) {
-            return std::nullopt;
-        }
-
-        if (type == "critical") {
-            return readNumber(zone / (prefix + "_temp"));
-        }
-    }
+    return refreshInterval; // COV_EXCL: the switch above covers every enumerator; this return satisfies -Wreturn-type.
 }
 
 constexpr std::array<const char*, 3> kActivityNames{"active", "inactive", "occluded"};
 
 } // namespace
 
-FrameClock::ThermalState FrameClock::readThermalState(const std::filesystem::path& thermalRoot) {
-    double worstRatio = 0.0;
-    std::error_code error;
-
-    for (std::filesystem::directory_iterator zone(thermalRoot, error), end; !error && zone != end;
-         zone.increment(error)) {
-        if (!zone->path().filename().string().starts_with("thermal_zone")) {
-            continue;
-        }
-
-        const std::optional<double> temperature = readNumber(zone->path() / "temp");
-        const std::optional<double> criticalTrip = readCriticalTrip(zone->path());
-
-        if (temperature.has_value() && criticalTrip.has_value() && criticalTrip.value() > 0.0) {
-            worstRatio = std::max(worstRatio, temperature.value() / criticalTrip.value());
-        }
-    }
-
-    return thermalStateFromCriticalRatio(worstRatio);
-}
-
-FrameClock::ThermalState FrameClock::thermalStateFromCriticalRatio(double ratio) {
-    if (ratio >= 1.0) {
-        return ThermalState::Critical;
-    }
-
-    return ratio >= kSeriousThermalRatio ? ThermalState::Serious : ThermalState::Nominal;
-}
-
 std::chrono::nanoseconds FrameClock::fallbackInterval(WindowActivity activity, ThermalState thermal,
                                                       std::chrono::nanoseconds refreshInterval) {
-    if (thermal != ThermalState::Nominal) {
-        return kThermalCappedInterval;
-    }
+    const std::chrono::nanoseconds interval = activityInterval(activity, refreshInterval);
 
-    switch (activity) { // COV_EXCL: the switch's implicit default is untakeable when every enumerator is tested.
-    case WindowActivity::Occluded:
-        return refreshInterval * kOccludedStretch;
-    case WindowActivity::Inactive:
-        return refreshInterval * kInactiveStretch;
-    case WindowActivity::Active:
-        return refreshInterval;
-    }
-
-    return refreshInterval; // COV_EXCL: the switch above covers every enumerator; this return satisfies -Wreturn-type.
+    return thermal == ThermalState::Nominal ? interval : std::max(interval, kThermalMinimumInterval);
 }
 
 FrameClock::WindowActivity FrameClock::windowActivity(const ToplevelState& state) noexcept {

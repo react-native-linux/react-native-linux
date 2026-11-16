@@ -105,6 +105,7 @@ set(RNL_CORE_SCENE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputSession.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextInputV3State.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/TextTransform.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ThermalSampler.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ToplevelState.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/VulkanResultPolicy.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/WaylandDispatchDiagnostics.cpp
@@ -179,6 +180,7 @@ add_executable(rnl_core_tests
     ShadowTreeCommitTest.cpp
     SingleInstanceActivationTest.cpp
     TextLayoutManagerStubTest.cpp
+    ThermalSamplerTest.cpp
     TextRasterizationPolicyTest.cpp
     TextDirectionTest.cpp
     TextTransformTest.cpp
