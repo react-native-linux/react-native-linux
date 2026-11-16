@@ -17,7 +17,7 @@ const exercise = async (): Promise<string> => {
 
   if (token === null) {
     await SecureStore.setItemAsync("dpop-proof-key", JSON.stringify({ kty: "EC" }));
-    SecureStore.setItem("voice-grant", "null", deviceOnly);
+    SecureStore.setItem("voice-grant", "voice-grant-v1", deviceOnly);
     await SecureStore.setItemAsync("relay-token", "deleted");
     await SecureStore.deleteItemAsync("relay-token");
 
@@ -26,7 +26,7 @@ const exercise = async (): Promise<string> => {
 
   const fields = [
     `token=${token}`,
-    `grant=${String(SecureStore.getItem("voice-grant", deviceOnly))}`,
+    `grant=${JSON.stringify(SecureStore.getItem("voice-grant", deviceOnly))}`,
     `deleted=${String(await SecureStore.getItemAsync("relay-token"))}`,
     `other=${String(await SecureStore.getItemAsync("dpop-proof-key", { keychainService: "other" }))}`,
     `available=${String(await SecureStore.isAvailableAsync())}`,

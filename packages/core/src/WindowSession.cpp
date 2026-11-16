@@ -67,8 +67,9 @@ WindowSession::WindowSession(const std::string& bundlePath, WindowSize size, dou
 #ifdef RNL_ENABLE_SECRET_SERVICE
     reactHost_.secureStore().configure(applicationDirectory, connectSessionKeyring);
 #else
-    reactHost_.secureStore().configure(applicationDirectory,
-                                       [](const std::string&) { return std::unique_ptr<SecretBackend>(); });
+    reactHost_.secureStore().configure(applicationDirectory, [](const std::string&, const std::stop_token&) {
+        return std::unique_ptr<SecretBackend>();
+    });
 #endif
 
     if (cacheDirectory.has_value()) {

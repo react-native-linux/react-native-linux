@@ -9,9 +9,11 @@
 #include <memory>
 #include <optional>
 #include <stdexcept>
+#include <stop_token>
 #include <string>
 #include <thread>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -167,17 +169,61 @@ TEST_F(ExpoSecureStoreTest, AMissingOrEmptyMachineIdentifierIsAnError) {
               "cannot read " + machineIdentifier_.string() + ": No such file or directory");
 }
 
-/** A write that cannot create its temporary file fails, and leaves the value it would have replaced intact. */
-TEST_F(ExpoSecureStoreTest, AWriteThatCannotCreateItsTemporaryFileKeepsThePreviousValue) {
+/** A write that cannot replace its file fails and removes the temporary file it wrote. */
+TEST_F(ExpoSecureStoreTest, AWriteThatCannotReplaceItsFileLeavesNoTemporaryFileBehind) {
     const std::unique_ptr<EncryptedFileBackend> store = backend("org.example.app");
 
     store->write(kToken, "secret");
     const fs::path file = onlyFile();
 
-    fs::create_directory(file.string() + ".tmp");
+    fs::remove(file);
+    fs::create_directories(file / "occupied");
     EXPECT_EQ(messageOf([&] { store->write(kToken, "replacement"); }),
-              "cannot create " + file.string() + ".tmp: Is a directory");
-    EXPECT_EQ(store->read(kToken), "secret");
+              "cannot replace " + file.string() + ": Is a directory");
+    EXPECT_EQ(onlyFile(), file);
+}
+
+/**
+ * A world-readable file left at the old shared temporary name, by a crash or by another process, lends its mode to
+ * nothing: every write creates a temporary file of its own at 0600.
+ */
+TEST_F(ExpoSecureStoreTest, AStaleWorldReadableTemporaryFileDoesNotLendItsModeToTheValue) {
+    const std::unique_ptr<EncryptedFileBackend> store = backend("org.example.app");
+
+    store->write(kToken, "secret");
+    const fs::path file = onlyFile();
+    const fs::path stale = file.string() + ".tmp";
+
+    writeContents(stale, "stale");
+    fs::permissions(stale, fs::perms::all);
+    store->write(kToken, "replacement");
+    EXPECT_EQ(fs::status(file).permissions(), fs::perms::owner_read | fs::perms::owner_write);
+    EXPECT_EQ(store->read(kToken), "replacement");
+    EXPECT_EQ(contentsOf(stale), "stale");
+}
+
+/** Two writers of one value at once, as two processes of one application are, each land a whole value. */
+TEST_F(ExpoSecureStoreTest, TwoWritersAtOnceEachLandAWholeValue) {
+    const auto writeMany = [this](const std::string& value) {
+        const std::unique_ptr<EncryptedFileBackend> store = backend("org.example.app");
+
+        for (int round = 0; round < 200; ++round) {
+            store->write(kToken, value);
+        }
+    };
+    std::vector<std::thread> writers;
+
+    writers.emplace_back(writeMany, "first writer");
+    writers.emplace_back(writeMany, "second writer");
+
+    for (std::thread& writer : writers) {
+        writer.join();
+    }
+
+    const std::optional<std::string> landed = backend("org.example.app")->read(kToken);
+
+    EXPECT_TRUE(landed == "first writer" || landed == "second writer");
+    EXPECT_EQ(std::distance(fs::directory_iterator(root_ / "SecureStore"), fs::directory_iterator()), 1);
 }
 
 /**
@@ -189,7 +235,7 @@ TEST_F(ExpoSecureStoreTest, TheStoreUsesTheKeyringWhenTheConnectorReachesOne) {
     int connections = 0;
     std::string connectedApplication;
 
-    store.configure(root_ / "org.example.app", [&](const std::string& applicationIdentifier) {
+    store.configure(root_ / "org.example.app", [&](const std::string& applicationIdentifier, const std::stop_token&) {
         ++connections;
         connectedApplication = applicationIdentifier;
 
@@ -215,7 +261,7 @@ TEST_F(ExpoSecureStoreTest, TheStoreUsesTheKeyringWhenTheConnectorReachesOne) {
 
 /** With no keyring, the values go to the encrypted file under the application directory, and outlive the store. */
 TEST_F(ExpoSecureStoreTest, TheStoreFallsBackToTheEncryptedFileWhenThereIsNoKeyring) {
-    const auto noKeyring = [](const std::string&) { return std::unique_ptr<SecretBackend>(); };
+    const auto noKeyring = [](const std::string&, const std::stop_token&) { return std::unique_ptr<SecretBackend>(); };
     {
         SecureStore store;
 
@@ -232,6 +278,41 @@ TEST_F(ExpoSecureStoreTest, TheStoreFallsBackToTheEncryptedFileWhenThereIsNoKeyr
     reloaded.configure(root_ / "org.example.app", noKeyring, machineIdentifier_);
     reloaded.post([&](SecureStore& posted) { read.set_value(posted.backend().read(kToken)); });
     EXPECT_EQ(read.get_future().get(), "secret");
+}
+
+/**
+ * A keyring connector that fails, as a Secret Service that is there but slow or erroring makes it, fails the call
+ * without switching to the file; the next call asks the connector again.
+ */
+TEST_F(ExpoSecureStoreTest, AFailingKeyringFailsTheCallWithoutFallingBackToTheFile) {
+    SecureStore store;
+    int connections = 0;
+
+    store.configure(
+        root_ / "org.example.app",
+        [&](const std::string&, const std::stop_token&) -> std::unique_ptr<SecretBackend> {
+            if (++connections == 1) {
+                throw std::runtime_error("Secret Service OpenSession: org.freedesktop.DBus.Error.NoReply");
+            }
+
+            return std::make_unique<MemoryKeyring>();
+        },
+        machineIdentifier_);
+
+    std::promise<std::string> failed;
+    std::promise<std::optional<std::string>> read;
+
+    store.post([&](SecureStore& posted) { failed.set_value(messageOf([&] { posted.backend().write(kToken, "a"); })); });
+    EXPECT_EQ(failed.get_future().get(), "Secret Service OpenSession: org.freedesktop.DBus.Error.NoReply");
+    EXPECT_FALSE(fs::exists(root_ / "org.example.app" / "SecureStore"));
+
+    store.post([&](SecureStore& posted) {
+        posted.backend().write(kToken, "b");
+        read.set_value(posted.backend().read(kToken));
+    });
+    EXPECT_EQ(read.get_future().get(), "b");
+    EXPECT_EQ(connections, 2);
+    EXPECT_FALSE(fs::exists(root_ / "org.example.app" / "SecureStore"));
 }
 
 TEST_F(ExpoSecureStoreTest, AStoreWithNoApplicationDirectoryRefusesEveryCall) {

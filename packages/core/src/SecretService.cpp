@@ -1,5 +1,7 @@
 #include "SecretService.h"
 
+#include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <exception>
 #include <iostream>
@@ -7,6 +9,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -21,6 +24,15 @@ constexpr char kCollectionInterface[] = "org.freedesktop.Secret.Collection";
 constexpr char kItemInterface[] = "org.freedesktop.Secret.Item";
 constexpr char kPromptInterface[] = "org.freedesktop.Secret.Prompt";
 constexpr char kNoObject[] = "/";
+constexpr char kServiceLeftMatch[] = "type='signal',sender='org.freedesktop.DBus',path='/org/freedesktop/DBus',"
+                                     "interface='org.freedesktop.DBus',member='NameOwnerChanged',"
+                                     "arg0='org.freedesktop.secrets',arg2=''";
+constexpr std::chrono::milliseconds kStopCheckInterval(100);
+
+/** The session has no Secret Service at all, which is the one failure `connect` answers with the file fallback. */
+struct NoSecretService : std::runtime_error {
+    using std::runtime_error::runtime_error;
+};
 
 /** An error a failed sd-bus call filled, or one `requireBus` fills from the call's result. */
 struct BusError {
@@ -39,7 +51,14 @@ struct BusError {
 int requireBus(int result, const std::string& what, BusError& error) {
     if (result < 0) {
         sd_bus_error_set_errno(&error.value, result);
-        throw std::runtime_error("Secret Service " + what + ": " + error.value.name);
+
+        const std::string failure = "Secret Service " + what + ": " + error.value.name;
+
+        if (sd_bus_error_has_names(&error.value, SD_BUS_ERROR_SERVICE_UNKNOWN, SD_BUS_ERROR_NAME_HAS_NO_OWNER)) {
+            throw NoSecretService(failure);
+        }
+
+        throw std::runtime_error(failure);
     }
 
     return result;
@@ -58,6 +77,7 @@ struct SlotUnref {
 struct PromptCompletion {
     bool completed{false};
     bool dismissed{true};
+    bool serviceLeft{false};
 };
 
 int onPromptCompleted(sd_bus_message* message, void* userData, sd_bus_error* /*error*/) {
@@ -71,6 +91,12 @@ int onPromptCompleted(sd_bus_message* message, void* userData, sd_bus_error* /*e
     return 0;
 }
 
+int onServiceLeft(sd_bus_message* /*message*/, void* userData, sd_bus_error* /*error*/) {
+    static_cast<PromptCompletion*>(userData)->serviceLeft = true;
+
+    return 0;
+}
+
 } // namespace
 
 void SecretServiceBackend::BusClose::operator()(sd_bus* bus) const noexcept { sd_bus_flush_close_unref(bus); }
@@ -79,13 +105,21 @@ void SecretServiceBackend::MessageUnref::operator()(sd_bus_message* message) con
     sd_bus_message_unref(message);
 }
 
-SecretServiceBackend::SecretServiceBackend(const BusOpener& openBus, std::string applicationIdentifier)
-    : applicationIdentifier_(std::move(applicationIdentifier)) {
+SecretServiceBackend::SecretServiceBackend(const BusOpener& openBus, std::string applicationIdentifier,
+                                           std::stop_token stopping, std::chrono::microseconds promptTimeout)
+    : applicationIdentifier_(std::move(applicationIdentifier)), stopping_(std::move(stopping)),
+      promptTimeout_(promptTimeout) {
     sd_bus* bus = nullptr;
     const int opened = openBus(&bus);
 
     bus_.reset(bus);
-    requireBus(opened, "open the session bus");
+
+    if (opened < 0) {
+        throw NoSecretService("no session bus: " + std::error_code(-opened, std::generic_category()).message());
+    }
+
+    requireBus(sd_bus_set_method_call_timeout(bus_.get(), std::min(promptTimeout, kCallTimeout).count()),
+               "set the call timeout");
 
     const Message session = call(kServicePath, kServiceInterface, "OpenSession", "sv", "plain", "s", "");
 
@@ -94,15 +128,18 @@ SecretServiceBackend::SecretServiceBackend(const BusOpener& openBus, std::string
     collection_ = readPath(call(kServicePath, kServiceInterface, "ReadAlias", "s", "default"), "ReadAlias");
 
     if (collection_ == kNoObject) {
-        throw std::runtime_error("Secret Service has no default collection");
+        throw NoSecretService("Secret Service has no default collection");
     }
 }
 
 std::unique_ptr<SecretBackend> SecretServiceBackend::connect(const BusOpener& openBus,
-                                                             const std::string& applicationIdentifier) {
+                                                             const std::string& applicationIdentifier,
+                                                             std::stop_token stopping,
+                                                             std::chrono::microseconds promptTimeout) {
     try {
-        return std::make_unique<SecretServiceBackend>(openBus, applicationIdentifier);
-    } catch (const std::exception& error) {
+        return std::make_unique<SecretServiceBackend>(openBus, applicationIdentifier, std::move(stopping),
+                                                      promptTimeout);
+    } catch (const NoSecretService& error) {
         std::cerr << "[rnl-secure-store] " << error.what() << std::endl;
 
         return nullptr;
@@ -222,28 +259,62 @@ void SecretServiceBackend::settle(const std::string& prompt) {
     }
 
     PromptCompletion completion;
-    sd_bus_slot* slot = nullptr;
+    sd_bus_slot* completedSlot = nullptr;
+    sd_bus_slot* serviceSlot = nullptr;
 
-    requireBus(sd_bus_match_signal(bus_.get(), &slot, nullptr, prompt.c_str(), kPromptInterface, "Completed",
+    requireBus(sd_bus_match_signal(bus_.get(), &completedSlot, nullptr, prompt.c_str(), kPromptInterface, "Completed",
                                    onPromptCompleted, &completion),
                "watch the prompt");
 
-    const std::unique_ptr<sd_bus_slot, SlotUnref> watch(slot);
+    const std::unique_ptr<sd_bus_slot, SlotUnref> completedWatch(completedSlot);
 
-    call(prompt, kPromptInterface, "Prompt", "s", "");
+    requireBus(sd_bus_add_match(bus_.get(), &serviceSlot, kServiceLeftMatch, onServiceLeft, &completion),
+               "watch the service");
 
-    while (!completion.completed) {
-        requireBus(sd_bus_wait(bus_.get(), UINT64_MAX), "wait for the prompt");
-        requireBus(sd_bus_process(bus_.get(), nullptr), "wait for the prompt");
+    const std::unique_ptr<sd_bus_slot, SlotUnref> serviceWatch(serviceSlot);
+    const auto deadline = std::chrono::steady_clock::now() + promptTimeout_;
+
+    if (!stopping_.stop_requested()) {
+        call(prompt, kPromptInterface, "Prompt", "s", "");
     }
 
-    if (completion.dismissed) {
-        throw std::runtime_error("Secret Service: the keyring prompt was dismissed");
+    while (!completion.completed && !completion.serviceLeft && !stopping_.stop_requested()) {
+        const std::chrono::steady_clock::duration left = deadline - std::chrono::steady_clock::now();
+
+        if (left <= std::chrono::steady_clock::duration::zero()) {
+            break;
+        }
+
+        if (requireBus(sd_bus_process(bus_.get(), nullptr), "wait for the prompt") == 0) {
+            const auto slice = std::min<std::chrono::steady_clock::duration>(left, kStopCheckInterval);
+
+            requireBus(sd_bus_wait(bus_.get(), std::chrono::duration_cast<std::chrono::microseconds>(slice).count()),
+                       "wait for the prompt");
+        }
     }
+
+    if (completion.completed) {
+        if (completion.dismissed) {
+            throw std::runtime_error("Secret Service: the keyring prompt was dismissed");
+        }
+
+        return;
+    }
+
+    sd_bus_call_method_async(bus_.get(), nullptr, kDestination, prompt.c_str(), kPromptInterface, "Dismiss", nullptr,
+                             nullptr, "");
+
+    if (completion.serviceLeft) {
+        throw std::runtime_error("Secret Service: the keyring service left the bus during its prompt");
+    }
+
+    throw std::runtime_error(stopping_.stop_requested() ? "Secret Service: the keyring prompt was cancelled"
+                                                        : "Secret Service: the keyring prompt timed out");
 }
 
-std::unique_ptr<SecretBackend> connectSessionKeyring(const std::string& applicationIdentifier) {
-    return SecretServiceBackend::connect(sd_bus_open_user, applicationIdentifier);
+std::unique_ptr<SecretBackend> connectSessionKeyring(const std::string& applicationIdentifier,
+                                                     std::stop_token stopping) {
+    return SecretServiceBackend::connect(sd_bus_open_user, applicationIdentifier, std::move(stopping));
 }
 
 } // namespace react_native_linux

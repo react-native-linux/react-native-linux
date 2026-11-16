@@ -8,6 +8,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <stop_token>
 #include <string>
 
 namespace facebook::react {
@@ -42,7 +43,8 @@ public:
  * The fallback for a session with no Secret Service (#270): one file per value under `directory`, mode 0600 in a
  * 0700 directory, sealed with AES-256-GCM under a key HKDF-SHA256 derives from the machine id, the user id and the
  * application id, with a fresh random nonce per write and the location as associated data. A write lands through a
- * temporary file and a rename, so a reader never sees half of one.
+ * temporary file of its own and a rename, so a reader never sees half of one and two writers never share one; the
+ * directory is synced after every rename and delete, so a crash keeps either the old value or the new one.
  *
  * Every input to the key is readable by any process of the same user, so this protects a copied file on another
  * machine or account, not a value against code running as this user. The key is wiped when the backend is
@@ -71,27 +73,30 @@ private:
 
 /**
  * What `ExpoSecureStore` runs over: the backend, chosen once on first use, and the one thread every backend call
- * runs on. The keyring wins whenever `connectKeyring` reaches a Secret Service; otherwise the values go to an
- * `EncryptedFileBackend` under `<application directory>/SecureStore`, and a line on standard error says so.
+ * runs on. The keyring wins whenever `connectKeyring` reaches a Secret Service; when it answers that the session has
+ * none, the values go to an `EncryptedFileBackend` under `<application directory>/SecureStore`, and a line on
+ * standard error says so. When it throws, the call fails and the next one asks again.
  *
  * Threading contract: `configure` runs before the bundle does, on the thread that then hands the runtime to the
  * JavaScript thread. `post` may be called from any thread and never waits on the backend. Every task runs on the
  * `SerialWorker` this object owns, in the order it was posted, and must not throw; only a task calls `backend`, so
- * neither the D-Bus connection nor the files are ever touched from two threads. The destructor runs every task
+ * neither the D-Bus connection nor the files are ever touched from two threads. The destructor first requests the
+ * stop the connector's token carries, which ends a keyring prompt still waiting on the user, then runs every task
  * already posted, so a queued write still lands.
  */
 class SecureStore final {
 public:
     using Task = std::function<void(SecureStore&)>;
-    /** The Secret Service for an application id, or null when the session has none. */
-    using KeyringConnector = std::function<std::unique_ptr<SecretBackend>(const std::string& applicationIdentifier)>;
+    /** The Secret Service for an application id, or null when the session has none; `stopping` ends its waits. */
+    using KeyringConnector = std::function<std::unique_ptr<SecretBackend>(const std::string& applicationIdentifier,
+                                                                          std::stop_token stopping)>;
 
     SecureStore() = default;
     SecureStore(const SecureStore&) = delete;
     SecureStore(SecureStore&&) = delete;
     SecureStore& operator=(const SecureStore&) = delete;
     SecureStore& operator=(SecureStore&&) = delete;
-    ~SecureStore() noexcept = default;
+    ~SecureStore() noexcept;
 
     /** The application id is `applicationDirectory`'s last component, as `WindowSession` names it. */
     void configure(std::filesystem::path applicationDirectory, KeyringConnector connectKeyring,
@@ -101,9 +106,12 @@ public:
 
 private:
     std::filesystem::path applicationDirectory_;
-    KeyringConnector connectKeyring_ = [](const std::string&) { return std::unique_ptr<SecretBackend>(); };
+    KeyringConnector connectKeyring_ = [](const std::string&, const std::stop_token&) {
+        return std::unique_ptr<SecretBackend>();
+    };
     std::filesystem::path machineIdentifierPath_;
     std::unique_ptr<SecretBackend> backend_;
+    std::stop_source stopping_;
     // Last, so it is destroyed first: its queued tasks still use the backend.
     SerialWorker worker_;
 };

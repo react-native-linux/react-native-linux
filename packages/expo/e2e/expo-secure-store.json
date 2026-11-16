@@ -10,7 +10,7 @@
     "expo-secure-store: stored",
     "[rnl-reload] reloaded",
     "/data/org.reactnative.linux.e2e.securestore/SecureStore, which protects them against copying, not against code running as this user",
-    "expo-secure-store: read token={\"kty\":\"EC\"} grant=null deleted=null other=null available=true biometrics=false"
+    "expo-secure-store: read token={\"kty\":\"EC\"} grant=\"voice-grant-v1\" deleted=null other=null available=true biometrics=false"
   ],
   "reject": ["expo-secure-store: FAILED"]
 }

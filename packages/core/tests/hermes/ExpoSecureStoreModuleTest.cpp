@@ -95,7 +95,8 @@ protected:
 
     void configure(ReactHost& reactHost) const {
         reactHost.secureStore().configure(
-            root_ / "org.example.app", [](const std::string&) { return std::unique_ptr<SecretBackend>(); },
+            root_ / "org.example.app",
+            [](const std::string&, const std::stop_token&) { return std::unique_ptr<SecretBackend>(); },
             root_ / "machine-id");
     }
 

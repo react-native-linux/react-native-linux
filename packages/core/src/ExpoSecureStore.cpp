@@ -20,6 +20,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <sys/stat.h>
 #include <system_error>
 #include <unistd.h>
 #include <utility>
@@ -81,19 +82,39 @@ std::string readFile(const std::filesystem::path& path) {
     return {std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
 }
 
+void syncDirectory(const std::filesystem::path& directory) {
+    const int descriptor = ::open(directory.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+
+    requireSystem(descriptor >= 0, "cannot open", directory);
+
+    const OpenDescriptor closer{descriptor};
+
+    requireSystem(::fsync(descriptor) == 0, "cannot sync", directory);
+}
+
 void writeAtomically(const std::filesystem::path& path, std::string_view contents) {
-    const std::filesystem::path temporary = path.string() + ".tmp";
-    const int descriptor = ::open(temporary.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+    std::string temporary = path.string() + ".XXXXXX";
+    const int descriptor = ::mkostemp(temporary.data(), O_CLOEXEC);
 
     requireSystem(descriptor >= 0, "cannot create", temporary);
-    {
-        const OpenDescriptor closer{descriptor};
 
-        requireSystem(::write(descriptor, contents.data(), contents.size()) == static_cast<ssize_t>(contents.size()),
-                      "cannot write", temporary);
-        requireSystem(::fsync(descriptor) == 0, "cannot sync", temporary);
+    try {
+        {
+            const OpenDescriptor closer{descriptor};
+
+            requireSystem(::fchmod(descriptor, 0600) == 0, "cannot restrict", temporary);
+            requireSystem(::write(descriptor, contents.data(), contents.size()) ==
+                              static_cast<ssize_t>(contents.size()),
+                          "cannot write", temporary);
+            requireSystem(::fsync(descriptor) == 0, "cannot sync", temporary);
+        }
+        requireSystem(::rename(temporary.c_str(), path.c_str()) == 0, "cannot replace", path);
+    } catch (...) {
+        ::unlink(temporary.c_str());
+        throw;
     }
-    std::filesystem::rename(temporary, path);
+
+    syncDirectory(path.parent_path());
 }
 
 std::string associatedData(const SecretLocation& location) { return location.service + '\0' + location.key; }
@@ -206,12 +227,19 @@ std::optional<std::string> EncryptedFileBackend::read(const SecretLocation& loca
 }
 
 void EncryptedFileBackend::write(const SecretLocation& location, const std::string& value) {
-    std::filesystem::create_directories(directory_);
+    if (std::filesystem::create_directories(directory_)) {
+        syncDirectory(directory_.parent_path());
+    }
+
     std::filesystem::permissions(directory_, std::filesystem::perms::owner_all);
     writeAtomically(pathOf(location), seal(key_, associatedData(location), value));
 }
 
-void EncryptedFileBackend::remove(const SecretLocation& location) { std::filesystem::remove(pathOf(location)); }
+void EncryptedFileBackend::remove(const SecretLocation& location) {
+    if (std::filesystem::remove(pathOf(location))) {
+        syncDirectory(directory_);
+    }
+}
 
 std::filesystem::path EncryptedFileBackend::pathOf(const SecretLocation& location) const {
     const std::string name = associatedData(location);
@@ -219,6 +247,8 @@ std::filesystem::path EncryptedFileBackend::pathOf(const SecretLocation& locatio
     return directory_ /
            hexOf(cryptoDigest("SHA-256", std::span(reinterpret_cast<const std::uint8_t*>(name.data()), name.size())));
 }
+
+SecureStore::~SecureStore() noexcept { stopping_.request_stop(); }
 
 void SecureStore::configure(std::filesystem::path applicationDirectory, KeyringConnector connectKeyring,
                             std::filesystem::path machineIdentifierPath) {
@@ -240,7 +270,7 @@ SecretBackend& SecureStore::backend() {
 
     const std::string applicationIdentifier = applicationDirectory_.filename().string();
 
-    backend_ = connectKeyring_(applicationIdentifier);
+    backend_ = connectKeyring_(applicationIdentifier, stopping_.get_token());
 
     if (backend_ == nullptr) {
         const std::filesystem::path directory = applicationDirectory_ / "SecureStore";
