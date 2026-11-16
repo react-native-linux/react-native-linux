@@ -1,7 +1,6 @@
 #include "ReactHost.h"
 
 #include <chrono>
-#include <csignal>
 #include <cstdlib>
 #include <cxxreact/JSBigString.h>
 #include <filesystem>
@@ -10,7 +9,9 @@
 #include <gtest/gtest.h>
 #include <jsi/jsi.h>
 #include <memory>
+#include <signal.h>
 #include <string>
+#include <sys/syscall.h>
 #include <thread>
 #include <unistd.h>
 
@@ -44,7 +45,7 @@ globalThis.linkingTrace.urlAfterActivation = globalThis.nativeModuleProxy.Linkin
 constexpr char kOpenerOutcomesProbe[] = R"JAVASCRIPT(
 const linking = globalThis.nativeModuleProxy.LinkingManager;
 globalThis.linkingTrace = {};
-['exit:0', 'exit:3', 'exit:9', 'kill', 'block'].forEach((url) =>
+['exit:0', 'exit:3', 'exit:9', 'kill', 'late:3', 'block'].forEach((url) =>
   linking.openURL(url).then(
     () => { globalThis.linkingTrace[url] = 'resolved'; },
     (error) => { globalThis.linkingTrace[url] = `rejected ${error.message}`; },
@@ -55,6 +56,7 @@ globalThis.linkingTrace = {};
 constexpr char kFakeOpener[] = R"SHELL(#!/bin/sh
 case "$1" in
   exit:*) exit "${1#exit:}" ;;
+  late:*) sleep 1; exit "${1#late:}" ;;
   kill) kill -KILL $$ ;;
   block) echo $$ > "$(dirname "$0")/blocked.pid"; exec sleep 60 ;;
 esac
@@ -104,59 +106,116 @@ TEST(LinkingModuleTest, AnswersInitialUrlActivationsAndOpenRequests) {
 }
 
 /**
- * #768: `openURL` settles on how `xdg-open` ends, through a fake one on `PATH`. Exit 0 resolves; exit 3 rejects with
- * the reason `xdg-open(1)` gives that status; an undocumented status and a killed opener reject with the raw status;
- * an opener still running after the wait resolves, and is reaped once it does end rather than left a zombie.
+ * A fake `xdg-open` first on `PATH`, and a no-op `SIGUSR1` handler without `SA_RESTART`, both undone however the test
+ * ends, along with the opener a `block` call leaves running.
  */
-TEST(LinkingModuleTest, SettlesOpenUrlOnHowXdgOpenEnds) {
-    const std::filesystem::path openerDirectory =
+class LinkingOpenerTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        const char* path = std::getenv("PATH");
+
+        savedPath_ = path == nullptr ? "" : path;
+        std::filesystem::create_directories(openerDirectory_);
+        std::ofstream openerScript(openerDirectory_ / "xdg-open");
+        openerScript << kFakeOpener;
+        openerScript.close();
+        std::filesystem::permissions(openerDirectory_ / "xdg-open", std::filesystem::perms::owner_all);
+        setenv("PATH", (openerDirectory_.string() + ":" + savedPath_).c_str(), 1);
+
+        struct sigaction interrupting {};
+
+        interrupting.sa_handler = [](int) {};
+        sigaction(SIGUSR1, &interrupting, &savedAction_);
+    }
+
+    void TearDown() override {
+        killBlockedOpener();
+        sigaction(SIGUSR1, &savedAction_, nullptr);
+        setenv("PATH", savedPath_.c_str(), 1);
+        std::filesystem::remove_all(openerDirectory_);
+    }
+
+    /** Kills the opener a `block` call left running, once, if there is one; its process id, or 0. */
+    pid_t killBlockedOpener() const {
+        pid_t blockedOpener = 0;
+        std::ifstream blockedPidFile(openerDirectory_ / "blocked.pid");
+
+        blockedPidFile >> blockedOpener;
+        std::filesystem::remove(openerDirectory_ / "blocked.pid");
+
+        return blockedOpener > 0 && kill(blockedOpener, SIGKILL) == 0 ? blockedOpener : 0;
+    }
+
+    const std::filesystem::path openerDirectory_ =
         std::filesystem::temp_directory_path() / ("rnl-linking-opener-" + std::to_string(::getpid()));
-    const std::filesystem::path opener = openerDirectory / "xdg-open";
-    const std::string path = std::getenv("PATH") == nullptr ? "" : std::getenv("PATH");
+    std::string savedPath_;
+
+    struct sigaction savedAction_ {};
+};
+
+/** Sends `SIGUSR1` to every thread of this process blocked in `syscallNumber`; whether it reached any. */
+bool interruptThreadsIn(long syscallNumber) {
+    bool interrupted = false;
+
+    for (const std::filesystem::directory_entry& task : std::filesystem::directory_iterator("/proc/self/task")) {
+        long blockedIn = -1;
+        std::ifstream(task.path() / "syscall") >> blockedIn;
+
+        if (blockedIn == syscallNumber &&
+            tgkill(::getpid(), std::stoi(task.path().filename().string()), SIGUSR1) == 0) {
+            interrupted = true;
+        }
+    }
+
+    return interrupted;
+}
+
+/**
+ * #768: `openURL` settles on how `xdg-open` ends. Exit 0 resolves; exit 3 rejects with the reason `xdg-open(1)` gives
+ * that status; an undocumented status rejects with it, and a killed opener with its signal; an opener still running
+ * after the wait resolves, and is reaped once it does end rather than left a zombie. A signal that interrupts the
+ * worker's `poll` while `late:3` runs, or the reaper's `waitid` while `block` runs, changes none of that.
+ */
+TEST_F(LinkingOpenerTest, SettlesOpenUrlOnHowXdgOpenEndsThroughInterruptingSignals) {
     ReactHost reactHost;
 
-    std::filesystem::create_directories(openerDirectory);
-    std::ofstream openerScript(opener);
-    openerScript << kFakeOpener;
-    openerScript.close();
-    std::filesystem::permissions(opener, std::filesystem::perms::owner_all);
-    ASSERT_EQ(setenv("PATH", (openerDirectory.string() + ":" + path).c_str(), 1), 0);
     reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>(kOpenerOutcomesProbe),
                          "LinkingOpenerOutcomes.js");
     reactHost.drainJavaScriptThread();
-    ASSERT_EQ(setenv("PATH", path.c_str(), 1), 0);
 
     const std::string expected =
         R"json({"exit:0":"resolved",)json"
         R"json("exit:3":"rejected Unable to open URL: exit:3 (xdg-open: a required tool could not be found)",)json"
-        R"json("exit:9":"rejected Unable to open URL: exit:9 (xdg-open ended with status 9)",)json"
-        R"json("kill":"rejected Unable to open URL: kill (xdg-open ended with status 9)","block":"resolved"})json";
+        R"json("exit:9":"rejected Unable to open URL: exit:9 (xdg-open exited with status 9)",)json"
+        R"json("kill":"rejected Unable to open URL: kill (xdg-open was killed by signal 9)",)json"
+        R"json("late:3":"rejected Unable to open URL: late:3 (xdg-open: a required tool could not be found)",)json"
+        R"json("block":"resolved"})json";
     const std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::now() + kQuiescenceBudget;
+    bool interruptedPoll = false;
+    bool interruptedWait = false;
     std::string trace = traceOf(reactHost);
 
-    while (trace != expected && std::chrono::steady_clock::now() < deadline) {
+    while ((trace != expected || !interruptedWait) && std::chrono::steady_clock::now() < deadline) {
+        interruptedPoll = interruptThreadsIn(SYS_poll) || interruptedPoll;
+        interruptedWait = interruptThreadsIn(SYS_waitid) || interruptedWait;
         std::this_thread::sleep_for(kPollInterval);
         trace = traceOf(reactHost);
     }
 
-    EXPECT_EQ(trace, expected);
-
-    pid_t blockedOpener = 0;
-    std::ifstream blockedPidFile(openerDirectory / "blocked.pid");
-    blockedPidFile >> blockedOpener;
+    const pid_t blockedOpener = killBlockedOpener();
     const std::filesystem::path blockedProcess = "/proc/" + std::to_string(blockedOpener);
 
-    ASSERT_GT(blockedOpener, 0);
-    ASSERT_TRUE(std::filesystem::exists(blockedProcess));
-    ASSERT_EQ(kill(blockedOpener, SIGKILL), 0);
-
-    while (std::filesystem::exists(blockedProcess) && std::chrono::steady_clock::now() < deadline + kQuiescenceBudget) {
+    while (blockedOpener > 0 && std::filesystem::exists(blockedProcess) &&
+           std::chrono::steady_clock::now() < deadline + kQuiescenceBudget) {
         std::this_thread::sleep_for(kPollInterval);
     }
 
+    EXPECT_EQ(trace, expected);
+    EXPECT_TRUE(interruptedPoll);
+    EXPECT_TRUE(interruptedWait);
+    EXPECT_GT(blockedOpener, 0);
     EXPECT_FALSE(std::filesystem::exists(blockedProcess));
     EXPECT_FALSE(reactHost.hasReportedFatalError());
-    std::filesystem::remove_all(openerDirectory);
 }
 
 } // namespace

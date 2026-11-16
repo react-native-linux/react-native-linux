@@ -34,6 +34,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cerrno>
 #include <chrono>
 #include <climits>
 #include <cstddef>
@@ -192,6 +193,7 @@ private:
  * each promise back on the JavaScript thread through the call invoker. Each wait ends by its own spawn's deadline, so
  * waits queued behind a blocking handler overlap it rather than add to it. A `xdg-open` still running at its
  * deadline is handed to a detached thread that holds only its descriptor and reaps it, so no exit leaves a zombie.
+ * Both waits retry through a signal that interrupts them, since an embedder's handler need not set `SA_RESTART`.
  * The worker runs every queued wait before it joins, which bounds teardown by `kOpenerExitWait`.
  */
 // jscpd:ignore-start — see the CRTP note on LinuxAppearanceModule's addListener/removeListeners above: the same
@@ -267,42 +269,80 @@ private:
     static void settleWhenOpenerExits(facebook::react::AsyncPromise<>& promise, int opener, const std::string& url,
                                       std::chrono::steady_clock::time_point deadline) {
         pollfd openerExit{.fd = opener, .events = POLLIN, .revents = 0};
-        const auto remaining =
-            std::chrono::ceil<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
+        int ready = -1;
 
-        if (poll(&openerExit, 1, static_cast<int>(std::max<std::int64_t>(remaining.count(), 0))) <= 0) {
-            promise.resolve();
+        do {
+            const auto remaining =
+                std::chrono::ceil<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
+            ready = poll(&openerExit, 1, static_cast<int>(std::max<std::int64_t>(remaining.count(), 0)));
+        } while (ready < 0 && errno == EINTR);
+
+        if (ready <= 0) {
+            const int pollError = ready < 0 ? errno : 0;
+
             std::thread([opener] {
                 siginfo_t ignored{};
-                waitid(P_PIDFD, static_cast<id_t>(opener), &ignored, WEXITED);
-                close(opener);
+                reapOpener(opener, ignored);
             }).detach();
+
+            if (pollError == 0) {
+                promise.resolve();
+            } else {
+                promise.reject(openFailure(url, std::strerror(pollError)));
+            }
 
             return;
         }
 
         siginfo_t ending{};
-        waitid(P_PIDFD, static_cast<id_t>(opener), &ending, WEXITED);
-        close(opener);
+        const int waitError = reapOpener(opener, ending);
 
-        if (ending.si_code == CLD_EXITED && ending.si_status == 0) {
+        if (waitError != 0) {
+            promise.reject(openFailure(url, std::strerror(waitError)));
+        } else if (ending.si_code == CLD_EXITED && ending.si_status == 0) {
             promise.resolve();
         } else {
-            promise.reject(facebook::react::Error("Unable to open URL: " + url + " (" + openerFailure(ending) + ")"));
+            promise.reject(openFailure(url, openerFailure(ending)));
         }
     }
 
-    /** The meaning `xdg-open(1)` documents for its exit statuses 1-4, or the raw status of any other ending. */
+    /**
+     * Waits for `opener` to end, through any interrupting signal, and closes it once there is nothing left to reap:
+     * after the wait succeeds, or fails for a reason other than a signal. `waitid`'s errno, or 0.
+     */
+    static int reapOpener(int opener, siginfo_t& ending) {
+        int result = -1;
+
+        do {
+            result = waitid(P_PIDFD, static_cast<id_t>(opener), &ending, WEXITED);
+        } while (result != 0 && errno == EINTR);
+
+        const int waitError = result == 0 ? 0 : errno;
+
+        close(opener);
+
+        return waitError;
+    }
+
+    static facebook::react::Error openFailure(const std::string& url, std::string_view reason) {
+        return facebook::react::Error("Unable to open URL: " + url + " (" + std::string(reason) + ")");
+    }
+
+    /** The meaning `xdg-open(1)` documents for its exit statuses 1-4, the signal that killed it, or the raw status. */
     static std::string openerFailure(const siginfo_t& ending) {
         static constexpr std::array<std::string_view, 5> kExitReasons{
             "", "error in command line syntax", "the file does not exist", "a required tool could not be found",
             "the action failed"};
 
-        if (ending.si_code == CLD_EXITED && static_cast<std::size_t>(ending.si_status) < kExitReasons.size()) {
+        if (ending.si_code != CLD_EXITED) {
+            return "xdg-open was killed by signal " + std::to_string(ending.si_status);
+        }
+
+        if (static_cast<std::size_t>(ending.si_status) < kExitReasons.size()) {
             return "xdg-open: " + std::string(kExitReasons.at(static_cast<std::size_t>(ending.si_status)));
         }
 
-        return "xdg-open ended with status " + std::to_string(ending.si_status);
+        return "xdg-open exited with status " + std::to_string(ending.si_status);
     }
 
     std::shared_ptr<ActivationModel> activationModel_;
