@@ -1,17 +1,21 @@
 #include "ExpoSecureStore.h"
 
+#include <cerrno>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <future>
 #include <gtest/gtest.h>
 #include <iterator>
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <stop_token>
 #include <string>
 #include <thread>
+#include <unistd.h>
 #include <utility>
 #include <vector>
 
@@ -44,6 +48,42 @@ std::string messageOf(const std::function<void()>& work) {
     }
 
     return "no error";
+}
+
+/**
+ * An `fsync` that records what it synced, a directory with its entries at that moment and a file by its directory,
+ * and fails with `EIO` instead for every path `failing` accepts.
+ */
+EncryptedFileBackend::Sync recordingSync(std::vector<std::string>& synced,
+                                         std::function<bool(const fs::path&)> failing) {
+    return [&synced, failing = std::move(failing)](int descriptor) {
+        const fs::path path = fs::read_symlink("/proc/self/fd/" + std::to_string(descriptor));
+
+        if (failing(path)) {
+            errno = EIO;
+
+            return -1;
+        }
+
+        if (fs::is_directory(path)) {
+            std::set<std::string> entries;
+            std::string record = path.string() + ":";
+
+            for (const fs::directory_entry& entry : fs::directory_iterator(path)) {
+                entries.insert(entry.path().filename().string());
+            }
+
+            for (const std::string& entry : entries) {
+                record += " " + entry;
+            }
+
+            synced.push_back(record);
+        } else {
+            synced.push_back("a file in " + path.parent_path().string());
+        }
+
+        return ::fsync(descriptor);
+    };
 }
 
 class ExpoSecureStoreTest : public ::testing::Test {
@@ -200,6 +240,83 @@ TEST_F(ExpoSecureStoreTest, AStaleWorldReadableTemporaryFileDoesNotLendItsModeTo
     EXPECT_EQ(fs::status(file).permissions(), fs::perms::owner_read | fs::perms::owner_write);
     EXPECT_EQ(store->read(kToken), "replacement");
     EXPECT_EQ(contentsOf(stale), "stale");
+}
+
+/**
+ * Every directory a write creates has its parent synced once it exists, the value's directory is synced once the
+ * rename has landed, and again once a delete has: a crash at any point keeps the directories and the value whole.
+ */
+TEST_F(ExpoSecureStoreTest, EveryCreatedDirectoryAndEveryRenameAndDeleteIsSyncedAfterItHappens) {
+    const fs::path root = fs::canonical(root_);
+    const fs::path directory = root / "data" / "org.example.app" / "SecureStore";
+    std::vector<std::string> synced;
+    EncryptedFileBackend store(directory, machineIdentifier_, "org.example.app",
+                               recordingSync(synced, [](const fs::path&) { return false; }));
+
+    store.write(kToken, "first");
+    const std::string file = fs::directory_iterator(directory)->path().filename().string();
+
+    EXPECT_EQ(synced, (std::vector<std::string>{root.string() + ": data machine-id",
+                                                (root / "data").string() + ": org.example.app",
+                                                (root / "data" / "org.example.app").string() + ": SecureStore",
+                                                "a file in " + directory.string(), directory.string() + ": " + file}));
+
+    synced.clear();
+    store.write(kToken, "second");
+    EXPECT_EQ(synced, (std::vector<std::string>{"a file in " + directory.string(), directory.string() + ": " + file}));
+
+    synced.clear();
+    store.remove(kToken);
+    EXPECT_EQ(synced, (std::vector<std::string>{directory.string() + ":"}));
+}
+
+/** A created directory whose parent fails to sync fails the write, and the next write syncs that parent again. */
+TEST_F(ExpoSecureStoreTest, ACreatedDirectoryWhoseParentFailedToSyncIsSyncedOnTheNextWrite) {
+    const fs::path root = fs::canonical(root_);
+    const fs::path directory = root / "data" / "org.example.app" / "SecureStore";
+    std::vector<std::string> synced;
+    int failures = 1;
+    EncryptedFileBackend store(
+        directory, machineIdentifier_, "org.example.app",
+        recordingSync(synced, [&](const fs::path& path) { return path == root / "data" && failures-- > 0; }));
+
+    EXPECT_EQ(messageOf([&] { store.write(kToken, "secret"); }),
+              "cannot sync " + (root / "data").string() + ": Input/output error");
+    EXPECT_EQ(synced, (std::vector<std::string>{root.string() + ": data machine-id"}));
+
+    synced.clear();
+    store.write(kToken, "secret");
+    EXPECT_EQ(synced.size(), 4U);
+    EXPECT_EQ(synced.front(), (root / "data").string() + ": org.example.app");
+    EXPECT_EQ(synced.at(1), (root / "data" / "org.example.app").string() + ": SecureStore");
+    EXPECT_EQ(store.read(kToken), "secret");
+}
+
+/** A file or directory sync that fails fails the write or delete, and a failed file sync leaves no temporary file. */
+TEST_F(ExpoSecureStoreTest, AFileOrDirectorySyncThatFailsFailsTheCall) {
+    const fs::path directory = fs::canonical(root_) / "SecureStore";
+    std::vector<std::string> synced;
+    std::string failing;
+    EncryptedFileBackend store(directory, machineIdentifier_, "org.example.app",
+                               recordingSync(synced, [&](const fs::path& path) {
+                                   return failing == (fs::is_directory(path) ? "directory" : "file");
+                               }));
+
+    store.write(kToken, "first");
+    const fs::path file = directory / onlyFile().filename();
+
+    failing = "file";
+    const std::string fileFailure = messageOf([&] { store.write(kToken, "second"); });
+
+    EXPECT_EQ(fileFailure.rfind("cannot sync " + file.string() + ".", 0), 0U);
+    EXPECT_TRUE(fileFailure.ends_with(": Input/output error"));
+    EXPECT_EQ(onlyFile().filename(), file.filename());
+    EXPECT_EQ(store.read(kToken), "first");
+
+    failing = "directory";
+    EXPECT_EQ(messageOf([&] { store.write(kToken, "third"); }),
+              "cannot sync " + directory.string() + ": Input/output error");
+    EXPECT_EQ(messageOf([&] { store.remove(kToken); }), "cannot sync " + directory.string() + ": Input/output error");
 }
 
 /** Two writers of one value at once, as two processes of one application are, each land a whole value. */

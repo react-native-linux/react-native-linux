@@ -10,6 +10,8 @@
 #include <optional>
 #include <stop_token>
 #include <string>
+#include <unistd.h>
+#include <vector>
 
 namespace facebook::react {
 class CallInvoker;
@@ -44,7 +46,9 @@ public:
  * 0700 directory, sealed with AES-256-GCM under a key HKDF-SHA256 derives from the machine id, the user id and the
  * application id, with a fresh random nonce per write and the location as associated data. A write lands through a
  * temporary file of its own and a rename, so a reader never sees half of one and two writers never share one; the
- * directory is synced after every rename and delete, so a crash keeps either the old value or the new one.
+ * directory is synced after every rename and delete, so a crash keeps either the old value or the new one, and the
+ * parent of every directory a write creates is synced before the value lands, again on the next write when that sync
+ * failed.
  *
  * Every input to the key is readable by any process of the same user, so this protects a copied file on another
  * machine or account, not a value against code running as this user. The key is wiped when the backend is
@@ -52,8 +56,11 @@ public:
  */
 class EncryptedFileBackend final : public SecretBackend {
 public:
-    EncryptedFileBackend(std::filesystem::path directory, const std::filesystem::path& machineIdentifierPath,
-                         const std::string& applicationIdentifier);
+    /** `fsync`, which a test replaces to watch or fail the syncs. */
+    using Sync = std::function<int(int descriptor)>;
+
+    EncryptedFileBackend(const std::filesystem::path& directory, const std::filesystem::path& machineIdentifierPath,
+                         const std::string& applicationIdentifier, Sync sync = ::fsync);
     EncryptedFileBackend(const EncryptedFileBackend&) = delete;
     EncryptedFileBackend(EncryptedFileBackend&&) = delete;
     EncryptedFileBackend& operator=(const EncryptedFileBackend&) = delete;
@@ -66,9 +73,12 @@ public:
 
 private:
     [[nodiscard]] std::filesystem::path pathOf(const SecretLocation& location) const;
+    void createDirectory();
 
     std::filesystem::path directory_;
     std::array<std::uint8_t, 32> key_{};
+    Sync sync_;
+    std::vector<std::filesystem::path> unsyncedDirectories_;
 };
 
 /**

@@ -82,17 +82,18 @@ std::string readFile(const std::filesystem::path& path) {
     return {std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
 }
 
-void syncDirectory(const std::filesystem::path& directory) {
+void syncDirectory(const std::filesystem::path& directory, const EncryptedFileBackend::Sync& sync) {
     const int descriptor = ::open(directory.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 
     requireSystem(descriptor >= 0, "cannot open", directory);
 
     const OpenDescriptor closer{descriptor};
 
-    requireSystem(::fsync(descriptor) == 0, "cannot sync", directory);
+    requireSystem(sync(descriptor) == 0, "cannot sync", directory);
 }
 
-void writeAtomically(const std::filesystem::path& path, std::string_view contents) {
+void writeAtomically(const std::filesystem::path& path, std::string_view contents,
+                     const EncryptedFileBackend::Sync& sync) {
     std::string temporary = path.string() + ".XXXXXX";
     const int descriptor = ::mkostemp(temporary.data(), O_CLOEXEC);
 
@@ -106,7 +107,7 @@ void writeAtomically(const std::filesystem::path& path, std::string_view content
             requireSystem(::write(descriptor, contents.data(), contents.size()) ==
                               static_cast<ssize_t>(contents.size()),
                           "cannot write", temporary);
-            requireSystem(::fsync(descriptor) == 0, "cannot sync", temporary);
+            requireSystem(sync(descriptor) == 0, "cannot sync", temporary);
         }
         requireSystem(::rename(temporary.c_str(), path.c_str()) == 0, "cannot replace", path);
     } catch (...) {
@@ -114,7 +115,7 @@ void writeAtomically(const std::filesystem::path& path, std::string_view content
         throw;
     }
 
-    syncDirectory(path.parent_path());
+    syncDirectory(path.parent_path(), sync);
 }
 
 std::string associatedData(const SecretLocation& location) { return location.service + '\0' + location.key; }
@@ -184,10 +185,10 @@ std::string hexOf(std::span<const std::uint8_t> bytes) {
 
 } // namespace
 
-EncryptedFileBackend::EncryptedFileBackend(std::filesystem::path directory,
+EncryptedFileBackend::EncryptedFileBackend(const std::filesystem::path& directory,
                                            const std::filesystem::path& machineIdentifierPath,
-                                           const std::string& applicationIdentifier)
-    : directory_(std::move(directory)) {
+                                           const std::string& applicationIdentifier, Sync sync)
+    : directory_(std::filesystem::absolute(directory)), sync_(std::move(sync)) {
     std::string machineIdentifier = readFile(machineIdentifierPath);
 
     while (!machineIdentifier.empty() && machineIdentifier.back() == '\n') {
@@ -227,17 +228,31 @@ std::optional<std::string> EncryptedFileBackend::read(const SecretLocation& loca
 }
 
 void EncryptedFileBackend::write(const SecretLocation& location, const std::string& value) {
-    if (std::filesystem::create_directories(directory_)) {
-        syncDirectory(directory_.parent_path());
-    }
-
+    createDirectory();
     std::filesystem::permissions(directory_, std::filesystem::perms::owner_all);
-    writeAtomically(pathOf(location), seal(key_, associatedData(location), value));
+    writeAtomically(pathOf(location), seal(key_, associatedData(location), value), sync_);
 }
 
 void EncryptedFileBackend::remove(const SecretLocation& location) {
     if (std::filesystem::remove(pathOf(location))) {
-        syncDirectory(directory_);
+        syncDirectory(directory_, sync_);
+    }
+}
+
+void EncryptedFileBackend::createDirectory() {
+    std::vector<std::filesystem::path> missing;
+
+    for (std::filesystem::path ancestor = directory_; !std::filesystem::exists(ancestor);
+         ancestor = ancestor.parent_path()) {
+        missing.push_back(ancestor);
+    }
+
+    std::filesystem::create_directories(directory_);
+    unsyncedDirectories_.insert(unsyncedDirectories_.end(), missing.rbegin(), missing.rend());
+
+    while (!unsyncedDirectories_.empty()) {
+        syncDirectory(unsyncedDirectories_.front().parent_path(), sync_);
+        unsyncedDirectories_.erase(unsyncedDirectories_.begin());
     }
 }
 

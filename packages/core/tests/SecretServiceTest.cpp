@@ -84,6 +84,7 @@ public:
         bool locked{false};
         bool dismissesPrompt{false};
         bool completesPrompt{true};
+        bool withholdsPromptReply{false};
         bool leavesDuringPrompt{false};
         bool hasDefaultCollection{true};
         bool answersSessionMalformed{false};
@@ -212,8 +213,11 @@ private:
             }
         } else if (member == "Prompt") {
             ++promptsShown_;
-            sd_bus_reply_method_return(message, "");
-            answerPrompt();
+
+            if (!behavior_.withholdsPromptReply) {
+                sd_bus_reply_method_return(message, "");
+                answerPrompt();
+            }
         } else if (member == "Dismiss") {
             ++promptsDismissed_;
         } else if (member == "SearchItems") {
@@ -414,7 +418,14 @@ TEST(SecretServiceTest, ALockedCollectionIsUnlockedThroughItsPromptAndADismissed
     EXPECT_EQ(dismissed.itemCount(), 0U);
 }
 
-/** A session with no bus, no owner of the Secret Service's name or no default collection has no keyring. */
+SecretServiceBackend::BusOpener failingWith(int error) {
+    return [error](sd_bus**) { return error; };
+}
+
+/**
+ * A session with no bus (no address, no socket at it, nobody listening), no owner of the Secret Service's name or no
+ * default collection has no keyring.
+ */
 TEST(SecretServiceTest, ThereIsNoKeyringWithoutABusAServiceOrADefaultCollection) {
     FakeSecretService withoutCollection(
         behaving([](FakeSecretService::Behavior& behavior) { behavior.hasDefaultCollection = false; }));
@@ -427,11 +438,26 @@ TEST(SecretServiceTest, ThereIsNoKeyringWithoutABusAServiceOrADefaultCollection)
         behavior.failingError = SD_BUS_ERROR_NAME_HAS_NO_OWNER;
     }));
 
-    EXPECT_EQ(SecretServiceBackend::connect([](sd_bus**) { return -ENOENT; }, kApplication, std::stop_token()),
-              nullptr);
+    for (const int error : {-ENOMEDIUM, -ENOENT, -ECONNREFUSED}) {
+        EXPECT_EQ(SecretServiceBackend::connect(failingWith(error), kApplication, std::stop_token()), nullptr);
+    }
+
     EXPECT_EQ(connectTo(withoutCollection), nullptr);
     EXPECT_EQ(connectTo(unknown), nullptr);
     EXPECT_EQ(connectTo(unowned), nullptr);
+}
+
+/**
+ * A session bus that is there but cannot be opened, for want of permission or memory, fails the call rather than
+ * sending the value to the weaker file fallback.
+ */
+TEST(SecretServiceTest, ABusThatExistsButCannotBeOpenedFailsTheCallInsteadOfFallingBack) {
+    EXPECT_EQ(
+        failureOf([] { static_cast<void>(SecretServiceBackend::connect(failingWith(-EACCES), kApplication, {})); }),
+        "Secret Service cannot open the session bus: Permission denied");
+    EXPECT_EQ(
+        failureOf([] { static_cast<void>(SecretServiceBackend::connect(failingWith(-ENOMEM), kApplication, {})); }),
+        "Secret Service cannot open the session bus: Cannot allocate memory");
 }
 
 /**
@@ -522,6 +548,54 @@ TEST(SecretServiceTest, TearingTheStoreDownCancelsAPromptStillWaitingOnTheUser) 
     EXPECT_EQ(secondFailure, "Secret Service: the keyring prompt was cancelled");
     EXPECT_EQ(unanswered.promptsShown(), 1);
     EXPECT_TRUE(eventually([&] { return unanswered.promptsDismissed() == 2; }));
+}
+
+/**
+ * A service that shows its prompt but never answers the `Prompt` call still has the prompt dismissed: the call fails
+ * at the timeout, and tearing the store down during the call ends it at once rather than after the call timeout.
+ */
+TEST(SecretServiceTest, APromptWhoseCallIsNeverAnsweredIsDismissedOnTimeoutAndOnTeardown) {
+    const auto withheld = [](FakeSecretService::Behavior& behavior) {
+        behavior.locked = true;
+        behavior.withholdsPromptReply = true;
+    };
+    FakeSecretService timingOut(behaving(withheld));
+    const std::unique_ptr<SecretBackend> keyring = connectTo(timingOut, milliseconds(200));
+    const auto started = steady_clock::now();
+
+    EXPECT_EQ(failureOf([&] { keyring->write(kToken, "secret"); }).rfind("Secret Service", 0), 0U);
+    EXPECT_LT(steady_clock::now() - started, std::chrono::seconds(2));
+    EXPECT_TRUE(eventually([&] { return timingOut.promptsDismissed() == 1; }));
+
+    FakeSecretService tornDown(behaving(withheld));
+    auto store = std::make_unique<SecureStore>();
+    std::string failure;
+
+    store->configure("/nonexistent/org.example.app", [&](const std::string& application, std::stop_token stopping) {
+        return SecretServiceBackend::connect(tornDown.opener(), application, std::move(stopping));
+    });
+    store->post([&](SecureStore& posted) { failure = failureOf([&] { posted.backend().write(kToken, "a"); }); });
+    ASSERT_TRUE(eventually([&] { return tornDown.promptsShown() == 1; }));
+
+    const auto tearingDown = steady_clock::now();
+
+    store.reset();
+    EXPECT_LT(steady_clock::now() - tearingDown, std::chrono::seconds(2));
+    EXPECT_EQ(failure, "Secret Service: the keyring prompt was cancelled");
+    EXPECT_TRUE(eventually([&] { return tornDown.promptsDismissed() == 1; }));
+}
+
+/** A `Prompt` call the service fails dismisses the prompt and fails the call with the error's name. */
+TEST(SecretServiceTest, APromptCallTheServiceFailsIsDismissedAndFailsTheCall) {
+    FakeSecretService failing(behaving([](FakeSecretService::Behavior& behavior) {
+        behavior.locked = true;
+        behavior.failingMember = "Prompt";
+    }));
+
+    EXPECT_EQ(failureOf([&] { connectTo(failing)->write(kToken, "secret"); }),
+              "Secret Service Prompt: org.freedesktop.DBus.Error.Failed");
+    EXPECT_TRUE(eventually([&] { return failing.promptsDismissed() == 1; }));
+    EXPECT_EQ(failing.itemCount(), 0U);
 }
 
 /** A D-Bus error from the service reaches the caller with its name. */

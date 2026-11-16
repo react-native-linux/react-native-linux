@@ -1,6 +1,7 @@
 #include "SecretService.h"
 
 #include <algorithm>
+#include <cerrno>
 #include <chrono>
 #include <cstdint>
 #include <exception>
@@ -78,7 +79,33 @@ struct PromptCompletion {
     bool completed{false};
     bool dismissed{true};
     bool serviceLeft{false};
+    std::string promptFailure;
 };
+
+/** Dismisses the prompt unless it completed, on every way out of `settle`, so no prompt outlives its call. */
+struct PromptDismissal {
+    PromptDismissal(sd_bus* bus, const std::string& prompt, const PromptCompletion& completion)
+        : bus(bus), prompt(prompt), completion(completion) {}
+
+    PromptDismissal(const PromptDismissal&) = delete;
+    PromptDismissal(PromptDismissal&&) = delete;
+    PromptDismissal& operator=(const PromptDismissal&) = delete;
+    PromptDismissal& operator=(PromptDismissal&&) = delete;
+
+    ~PromptDismissal() {
+        if (!completion.completed) {
+            sd_bus_call_method_async(bus, nullptr, kDestination, prompt.c_str(), kPromptInterface, "Dismiss", nullptr,
+                                     nullptr, "");
+        }
+    }
+
+    sd_bus* bus;
+    const std::string& prompt;
+    const PromptCompletion& completion;
+};
+
+/** `sd_bus_open_user`'s answers that mean the session has no bus: no address (`-ENOMEDIUM`), no socket, no listener. */
+bool meansNoSessionBus(int error) { return error == -ENOMEDIUM || error == -ENOENT || error == -ECONNREFUSED; }
 
 int onPromptCompleted(sd_bus_message* message, void* userData, sd_bus_error* /*error*/) {
     auto& completion = *static_cast<PromptCompletion*>(userData);
@@ -87,6 +114,16 @@ int onPromptCompleted(sd_bus_message* message, void* userData, sd_bus_error* /*e
     sd_bus_message_read(message, "b", &dismissed);
     completion.completed = true;
     completion.dismissed = dismissed != 0;
+
+    return 0;
+}
+
+int onPromptReplied(sd_bus_message* message, void* userData, sd_bus_error* /*error*/) {
+    const sd_bus_error* const failure = sd_bus_message_get_error(message);
+
+    if (failure != nullptr) {
+        static_cast<PromptCompletion*>(userData)->promptFailure = failure->name;
+    }
 
     return 0;
 }
@@ -115,7 +152,13 @@ SecretServiceBackend::SecretServiceBackend(const BusOpener& openBus, std::string
     bus_.reset(bus);
 
     if (opened < 0) {
-        throw NoSecretService("no session bus: " + std::error_code(-opened, std::generic_category()).message());
+        const std::string reason = std::error_code(-opened, std::generic_category()).message();
+
+        if (meansNoSessionBus(opened)) {
+            throw NoSecretService("no session bus: " + reason);
+        }
+
+        throw std::runtime_error("Secret Service cannot open the session bus: " + reason);
     }
 
     requireBus(sd_bus_set_method_call_timeout(bus_.get(), std::min(promptTimeout, kCallTimeout).count()),
@@ -272,13 +315,20 @@ void SecretServiceBackend::settle(const std::string& prompt) {
                "watch the service");
 
     const std::unique_ptr<sd_bus_slot, SlotUnref> serviceWatch(serviceSlot);
+    const PromptDismissal dismissal(bus_.get(), prompt, completion);
     const auto deadline = std::chrono::steady_clock::now() + promptTimeout_;
+    sd_bus_slot* promptSlot = nullptr;
 
     if (!stopping_.stop_requested()) {
-        call(prompt, kPromptInterface, "Prompt", "s", "");
+        requireBus(sd_bus_call_method_async(bus_.get(), &promptSlot, kDestination, prompt.c_str(), kPromptInterface,
+                                            "Prompt", onPromptReplied, &completion, "s", ""),
+                   "Prompt");
     }
 
-    while (!completion.completed && !completion.serviceLeft && !stopping_.stop_requested()) {
+    const std::unique_ptr<sd_bus_slot, SlotUnref> promptCall(promptSlot);
+
+    while (!completion.completed && !completion.serviceLeft && completion.promptFailure.empty() &&
+           !stopping_.stop_requested()) {
         const std::chrono::steady_clock::duration left = deadline - std::chrono::steady_clock::now();
 
         if (left <= std::chrono::steady_clock::duration::zero()) {
@@ -301,8 +351,9 @@ void SecretServiceBackend::settle(const std::string& prompt) {
         return;
     }
 
-    sd_bus_call_method_async(bus_.get(), nullptr, kDestination, prompt.c_str(), kPromptInterface, "Dismiss", nullptr,
-                             nullptr, "");
+    if (!completion.promptFailure.empty()) {
+        throw std::runtime_error("Secret Service Prompt: " + completion.promptFailure);
+    }
 
     if (completion.serviceLeft) {
         throw std::runtime_error("Secret Service: the keyring service left the bus during its prompt");

@@ -20,8 +20,9 @@ namespace react_native_linux {
  * are `application`, `service` and `key`, so a second write replaces it. The session is the `plain` algorithm, as
  * libsecret falls back to: the value crosses the session bus, which only this user's processes can connect to,
  * unencrypted. Every call first unlocks the default collection; a locked one is unlocked through the service's own
- * prompt, which this waits on until its `Completed` signal. The wait gives up, dismisses the prompt and fails the call
- * when the prompt outlives `promptTimeout`, when the service leaves the bus, or when `stopping` is requested; every
+ * prompt, which this waits on until its `Completed` signal; the `Prompt` call itself is part of that wait. The wait
+ * gives up and fails the call when the prompt outlives `promptTimeout`, when the service fails the `Prompt` call or
+ * leaves the bus, or when `stopping` is requested, and every way out of it but `Completed` dismisses the prompt; every
  * method call gives up after `kCallTimeout`, or `promptTimeout` when that is shorter.
  *
  * Threading contract: not thread-safe. `SecureStore` constructs it and calls it only from its one worker thread;
@@ -44,9 +45,10 @@ public:
     void remove(const SecretLocation& location) override;
 
     /**
-     * The backend, or null, with the reason on standard error, when the session has none: no session bus, no owner of
-     * `org.freedesktop.secrets`, or no default collection. Any other failure throws, so a slow or failing keyring
-     * fails the call rather than sending its values to another store.
+     * The backend, or null, with the reason on standard error, when the session has none: no session bus (no address,
+     * no socket at it, or nobody listening), no owner of `org.freedesktop.secrets`, or no default collection. Any other
+     * failure throws, opening the bus included, so a slow or failing keyring fails the call rather than sending its
+     * values to another store.
      */
     static std::unique_ptr<SecretBackend> connect(const BusOpener& openBus, const std::string& applicationIdentifier,
                                                   std::stop_token stopping,
