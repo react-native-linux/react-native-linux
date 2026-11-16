@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { ActivityIndicator, Linking, Pressable, View } from "react-native";
 
 import { AppText } from "./ui/AppText";
@@ -17,13 +18,16 @@ interface MediaVideoPlayerProps {
 
 async function openVideo(props: MediaVideoPlayerProps) {
   const uri = props.resolvePlaybackUri ? await props.resolvePlaybackUri() : props.uri;
-  if (uri !== null) await Linking.openURL(uri);
+  if (uri === null) throw new Error("Video unavailable");
+  await Linking.openURL(uri);
 }
 
 // react-native-linux: expo-video is left out of the desktop feature profile, so the poster opens
 // the video in the desktop's default application instead of playing it inline.
 export function MediaVideoPlayer(props: MediaVideoPlayerProps) {
-  const playable = props.uri !== null && props.unavailable !== true;
+  const [openState, setOpenState] = useState<"idle" | "opening" | "failed">("idle");
+  const unavailable = props.unavailable === true || openState === "failed";
+  const playable = props.uri !== null && props.unavailable !== true && openState !== "opening";
   const unavailableText = props.unavailableDetail
     ? `Video unavailable. ${props.unavailableDetail}`
     : "Video unavailable";
@@ -31,13 +35,17 @@ export function MediaVideoPlayer(props: MediaVideoPlayerProps) {
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={
-        props.unavailable ? `${props.name}. ${unavailableText}` : `Open ${props.name}`
+        unavailable ? `${props.name}. ${unavailableText}` : `Open ${props.name}`
       }
-      accessibilityState={{ disabled: !playable }}
+      accessibilityState={{ disabled: !playable, busy: openState === "opening" }}
       disabled={!playable}
       onPress={() => {
         props.onPlaybackStart?.();
-        void openVideo(props).catch(() => undefined);
+        setOpenState("opening");
+        openVideo(props).then(
+          () => setOpenState("idle"),
+          () => setOpenState("failed"),
+        );
       }}
       style={[
         {
@@ -51,11 +59,11 @@ export function MediaVideoPlayer(props: MediaVideoPlayerProps) {
         props.expanded ? { flex: 1 } : { width: "100%", maxWidth: 480, aspectRatio: 16 / 9 },
       ]}
     >
-      {props.unavailable ? (
+      {unavailable ? (
         <AppText style={{ color: "#ffffffcc", fontSize: 14, textAlign: "center" }}>
           {unavailableText}
         </AppText>
-      ) : props.uri === null ? (
+      ) : props.uri === null || openState === "opening" ? (
         <ActivityIndicator color="#ffffff" accessibilityLabel="Loading video" />
       ) : (
         <View
@@ -71,7 +79,7 @@ export function MediaVideoPlayer(props: MediaVideoPlayerProps) {
           <SymbolView name="play" size={28} tintColor="#ffffff" type="monochrome" />
         </View>
       )}
-      {playable ? (
+      {props.uri !== null && !unavailable ? (
         <AppText
           numberOfLines={1}
           style={{

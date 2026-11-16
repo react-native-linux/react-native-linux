@@ -95,7 +95,7 @@ so #155 and #641 also exclude the left-out modules from autolinking.
 | `expo-widgets`, `t3-widget-expiry`, `t3-subscription-widget` | home-screen widgets | nothing |
 | `@react-native-ai/apple` | Apple Intelligence | nothing |
 | `expo-audio`, `expo-keep-awake`, `t3-voice-transcription` | voice input | no microphone button; audio attachments open in the desktop's default application |
-| `expo-video` | inline video | video attachments open in the desktop's default application from a poster (#759) |
+| `expo-video` | inline video | video attachments open in the desktop's default application from a poster (#759); the poster's long-press actions (Copy full path, Copy relative path, Copy URL, Open in file viewer, Save or share) are not offered until #762 |
 | `expo-sensors` | device-preview motion | nothing |
 | `expo-camera` | QR pairing | the pairing link, typed or pasted |
 | `@expo/ui/community/datetime-picker` | the scheduled-task editor's date and time picker | a text field: the date typed as `YYYY-MM-DD`, the time as `HH:MM`, until a real picker (#750) |
@@ -231,7 +231,7 @@ transitive package.
 | `expo-symbols` | `~58.0.4` | declined | #635 | SF Symbols in the shared AppSymbol |
 | `expo-audio` | `58.0.11` | declined | #635 | voice input and audio previews |
 | `expo-keep-awake` | `~58.0.3` | declined | #635 | left out with voice input, its only user; expo's dev-only `withDevTools` requires it inside `try`/`catch` |
-| `expo-video` | `58.0.13` | declined | #759 | video attachments open in the default application from `MediaVideoPlayer.linux.tsx` |
+| `expo-video` | `58.0.13` | declined | #759 | video attachments open in the default application from `MediaVideoPlayer.linux.tsx`, without its long-press media actions (#762) |
 | `react-native-pdf-jsi` | `6.1.0` | declined | #635 | imported only by PdfPreview.android.tsx |
 
 T3 Code's own native modules under `apps/mobile/modules`. The four with a `package.json` are rows above; the

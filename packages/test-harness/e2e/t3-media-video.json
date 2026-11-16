@@ -6,21 +6,31 @@
   "windowFlags": ["--no-decorations"],
   "steps": [
     "sleep 500",
-    "click 848 106",
+    "click 176 302",
     "click 176 106",
     "await t3-media-video: open https://example.com/demo.mp4",
     "click 512 106",
+    "await t3-media-video: signed resolve 1",
+    "sleep 100",
+    "click 512 106",
     "await t3-media-video: open https://assets.example.com/signed-recording.webm?signature=renewed",
+    "click 512 302",
+    "await t3-media-video: revoked resolve 1",
+    "sleep 150",
+    "click 512 302",
+    "await t3-media-video: revoked resolve 2",
     "sleep 300"
   ],
   "expect": [
     "t3-media-video: demo playback start",
     "t3-media-video: open https://example.com/demo.mp4",
-    "t3-media-video: open https://assets.example.com/signed-recording.webm?signature=renewed"
+    "t3-media-video: open https://assets.example.com/signed-recording.webm?signature=renewed",
+    "t3-media-video: revoked resolve 2"
   ],
   "reject": [
     "t3-media-video: missing playback start",
     "t3-media-video: open https://example.com/missing.mp4",
+    "t3-media-video: signed resolve 2",
     "signature=expired"
   ],
   "screenshot": {
@@ -28,8 +38,8 @@
     "crop": {
       "left": 0,
       "top": 0,
-      "width": 1024,
-      "height": 212
+      "width": 688,
+      "height": 408
     },
     "maxDifferentPixels": 1
   }
