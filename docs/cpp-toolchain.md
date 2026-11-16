@@ -8396,7 +8396,8 @@ pnpm e2e --scenario animated-frames
 ```
 
 A trailing `--scenario` with no name after it is an argument error rather than "every scenario": running the
-whole suite is the most expensive thing a mistyped targeted invocation could do.
+whole suite is the most expensive thing a mistyped targeted invocation could do. So is a name no scenario has, which
+would otherwise run nothing and read as a pass (#731).
 
 Like the window rig, the driver exits **2** with the reason on stderr when `cage`, the lavapipe ICD or either
 binary is missing, so a checkout without a graphics stack stays green. In CI that exit is a failure, which is what
