@@ -14,6 +14,7 @@ using react_native_linux::beginClipboardReceive;
 using react_native_linux::CaretMotion;
 using react_native_linux::clampedScrollOffset;
 using react_native_linux::clipboardText;
+using react_native_linux::createClipboardOwnerMimeType;
 using react_native_linux::EditorModel;
 using react_native_linux::EditorSelection;
 using react_native_linux::followedScrollOffset;
@@ -746,24 +747,46 @@ TEST(ClipboardTest, RoundTripsTheTextItWasGiven) {
 
 /**
  * #60: each copy is offered to the system selection once. Another application's selection empties the clipboard
- * until its text arrives, is never offered back, and waits behind a copy that is still to be offered.
+ * until its text arrives, and is never offered back.
  */
-TEST(ClipboardTest, PublishesEachCopyOnceAndReceivesOnlyOnceNoCopyIsPending) {
+TEST(ClipboardTest, PublishesEachCopyOnceAndNeverWhatItReceived) {
     setClipboardText("first");
     setClipboardText("second");
 
-    EXPECT_EQ(beginClipboardReceive(), std::nullopt);
     EXPECT_TRUE(takeClipboardPublish());
     EXPECT_FALSE(takeClipboardPublish());
     EXPECT_EQ(clipboardText(), "second");
 
-    const std::optional<uint64_t> revision = beginClipboardReceive();
+    const uint64_t revision = beginClipboardReceive();
 
-    ASSERT_TRUE(revision.has_value());
     EXPECT_EQ(clipboardText(), "");
-    EXPECT_TRUE(receiveClipboardText("from another application", revision.value()));
+    EXPECT_TRUE(receiveClipboardText("from another application", revision));
     EXPECT_EQ(clipboardText(), "from another application");
     EXPECT_FALSE(takeClipboardPublish());
+}
+
+/**
+ * #60: a copy made before any press has no serial to be published with, so it is still pending when the user
+ * copies in another application and focuses this window. That selection is the truth: Ctrl+V pastes it, and the
+ * stale copy is never published over it.
+ */
+TEST(ClipboardTest, AnotherApplicationsSelectionSupersedesACopyStillWaitingToBePublished) {
+    setClipboardText("A");
+
+    const uint64_t revision = beginClipboardReceive();
+
+    EXPECT_TRUE(receiveClipboardText("B", revision));
+    EXPECT_EQ(clipboardText(), "B");
+    EXPECT_FALSE(takeClipboardPublish());
+}
+
+/** #60: two clipboards never share an owner type, even in separate PID namespaces where pids repeat. */
+TEST(ClipboardTest, EachClipboardOwnerTypeIsUnique) {
+    const std::string first = createClipboardOwnerMimeType();
+    const std::string second = createClipboardOwnerMimeType();
+
+    EXPECT_TRUE(first.starts_with("application/x-react-native-linux-"));
+    EXPECT_NE(first, second);
 }
 
 /** #60: a paste asks for UTF-8 text first, takes the X11 name an XWayland source offers, and skips non-text offers. */

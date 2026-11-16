@@ -29,11 +29,11 @@ void setClipboardText(std::string text);
 bool takeClipboardPublish();
 
 /**
- * Another application's selection replaced the clipboard: empties it, so a paste before its text arrives is empty
- * rather than stale, and returns the revision `receiveClipboardText` stores that text under. Nothing while a copy
- * made here still waits for `takeClipboardPublish`, because publishing it supersedes that selection.
+ * Another application's selection replaced the clipboard: the compositor's selection is the truth, so this empties
+ * the clipboard, so a paste before its text arrives is empty rather than stale, drops a copy made here that was
+ * still waiting for `takeClipboardPublish`, and returns the revision `receiveClipboardText` stores the text under.
  */
-std::optional<uint64_t> beginClipboardReceive();
+uint64_t beginClipboardReceive();
 
 /** Stores another application's text, unless a copy or a newer selection changed the clipboard since `revision`. */
 bool receiveClipboardText(std::string text, uint64_t revision);
@@ -41,6 +41,12 @@ bool receiveClipboardText(std::string text, uint64_t revision);
 /** The text types offered on copy, in the order they are preferred on paste. */
 inline constexpr std::array<std::string_view, 3> kClipboardTextMimeTypes{"text/plain;charset=utf-8", "text/plain",
                                                                          "UTF8_STRING"};
+
+/**
+ * The private type every source of one clipboard offers, so the selection it gets back is recognised as its own:
+ * the process id and a random token, because sandboxed applications in separate PID namespaces share pids.
+ */
+std::string createClipboardOwnerMimeType();
 
 /** The type a paste asks an offer for, or nothing when the offer carries no text. */
 std::optional<std::string_view> preferredClipboardMimeType(const std::vector<std::string>& offeredMimeTypes);

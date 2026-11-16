@@ -50,7 +50,7 @@ const wl_data_source_listener WaylandClipboard::kDataSourceListener = [] {
 WaylandClipboard::WaylandClipboard(wl_data_device_manager* manager, wl_seat* seat,
                                    const WaylandSerialLedger& serialLedger)
     : manager_(manager), dataDevice_(wl_data_device_manager_get_data_device(manager, seat)),
-      serialLedger_(serialLedger), ownMimeType_("application/x-react-native-linux-" + std::to_string(getpid())) {
+      serialLedger_(serialLedger), ownMimeType_(createClipboardOwnerMimeType()) {
     wl_data_device_add_listener(dataDevice_, &kDataDeviceListener, this);
 }
 
@@ -104,7 +104,8 @@ void WaylandClipboard::receiveSelection(wl_data_offer* offer) {
     // source: a compositor that ignores a `set_selection` sends no `cancelled` for it.
     const bool isOwnCopy = std::ranges::find(introducedMimeTypes_, ownMimeType_) != introducedMimeTypes_.end();
     const std::optional<std::string_view> mimeType = preferredClipboardMimeType(introducedMimeTypes_);
-    const std::optional<uint64_t> revision = isOwnCopy ? std::nullopt : beginClipboardReceive();
+    const std::optional<uint64_t> revision =
+        isOwnCopy ? std::nullopt : std::optional<uint64_t>(beginClipboardReceive());
 
     if (std::array<int, 2> descriptors{};
         revision.has_value() && mimeType.has_value() && pipe2(descriptors.data(), O_CLOEXEC) == 0) {

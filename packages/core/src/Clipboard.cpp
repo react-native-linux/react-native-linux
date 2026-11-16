@@ -4,8 +4,10 @@
 #include <cstdint>
 #include <mutex>
 #include <optional>
+#include <random>
 #include <string>
 #include <string_view>
+#include <unistd.h>
 #include <utility>
 #include <vector>
 
@@ -40,14 +42,11 @@ bool takeClipboardPublish() {
     return std::exchange(isPublishPending, false);
 }
 
-std::optional<uint64_t> beginClipboardReceive() {
+uint64_t beginClipboardReceive() {
     const std::scoped_lock lock(clipboardMutex);
 
-    if (isPublishPending) {
-        return std::nullopt;
-    }
-
     clipboardStorage.clear();
+    isPublishPending = false;
 
     return ++clipboardRevision;
 }
@@ -62,6 +61,13 @@ bool receiveClipboardText(std::string text, uint64_t revision) {
     clipboardStorage = std::move(text);
 
     return true;
+}
+
+std::string createClipboardOwnerMimeType() {
+    std::random_device randomDevice;
+
+    return "application/x-react-native-linux-" + std::to_string(getpid()) + "-" + std::to_string(randomDevice()) +
+           std::to_string(randomDevice());
 }
 
 std::optional<std::string_view> preferredClipboardMimeType(const std::vector<std::string>& offeredMimeTypes) {

@@ -10,7 +10,6 @@
 #include <cstdint>
 #include <fcntl.h>
 #include <gtest/gtest.h>
-#include <optional>
 #include <poll.h>
 #include <string>
 #include <thread>
@@ -46,11 +45,7 @@ uint64_t receiveRevision() {
     setClipboardText("before the selection");
     takeClipboardPublish();
 
-    const std::optional<uint64_t> revision = beginClipboardReceive();
-
-    EXPECT_TRUE(revision.has_value());
-
-    return revision.value_or(0);
+    return beginClipboardReceive();
 }
 
 bool isOpen(int descriptor) { return fcntl(descriptor, F_GETFD) != -1; }
@@ -236,9 +231,7 @@ TEST(ClipboardTransfersTest, TheJavaScriptAndFrameThreadsShareTheClipboardSafely
     while (isCopying) {
         takeClipboardPublish();
 
-        if (const std::optional<uint64_t> revision = beginClipboardReceive(); revision.has_value()) {
-            receiveClipboardText("received", revision.value());
-        }
+        receiveClipboardText("received", beginClipboardReceive());
     }
 
     javaScriptThread.join();

@@ -885,12 +885,14 @@ touched from the JavaScript thread.
 - **Copy.** `setClipboardText` marks the text for publishing; `WaylandWindow::waitForRedraw` calls
   `publishPendingText` once per frame, which offers a `wl_data_source` in `text/plain;charset=utf-8`,
   `text/plain` and `UTF8_STRING` (the X11 name XWayland clients ask for), plus the private type
-  `application/x-react-native-linux-<pid>`, and sets it with the ledger's `Selection` serial. A copy made before
-  any press waits, still pending, for the first one. JavaScript's `setString` therefore lands on the next frame,
+  `application/x-react-native-linux-<pid>-<random token>` (the token because sandboxed applications in separate PID
+  namespaces share pids), and sets it with the ledger's `Selection` serial. A copy made before any press waits,
+  still pending, for the first one, unless another client's selection arrives first. JavaScript's `setString` therefore lands on the next frame,
   within one fallback interval on an idle window. A `cancelled` source is another client's copy taking over.
 - **Paste reads eagerly.** A `selection` from another client — on keyboard enter, or when another client copies
-  while this one is focused — empties the clipboard at once, so a paste before its text arrives is empty rather
-  than stale, and is read in the background; the text lands with `receiveClipboardText` and the window traces
+  while this one is focused — is the truth: it empties the clipboard at once, so a paste before its text arrives is
+  empty rather than stale, drops a copy made here that was still waiting for a press to be published, and is read
+  in the background; the text lands with `receiveClipboardText` and the window traces
   `[rnl-clipboard] received a selection of <n> bytes`. Ctrl+V and `getString` never wait on a pipe. A selection
   that offers this process's private type is its own copy coming back and is not read: ownership is decided from
   the offer, not from still holding a source, because a compositor that ignores a `set_selection` (a stale serial,
@@ -899,7 +901,7 @@ touched from the JavaScript thread.
   display in `dispatchWithTimeout` and advanced after each wake: one pending read, which a newer selection or
   shutdown abandons, and one write per `send`, closed when written or when the reader has gone. A read stores its
   text under the clipboard revision it started with, so a copy made here while it was in flight is never
-  overwritten, and a copy still waiting to be published supersedes a selection that arrives first. `SIGPIPE` is
+  overwritten. `SIGPIPE` is
   blocked only around each `write` and a pending one consumed after an `EPIPE`, so a reader that closes early costs
   an `EPIPE`, and nothing the process spawns inherits a changed mask or disposition. The price of eager reads is
   one background read per focus change after another application copied, whether or not anything is pasted.
