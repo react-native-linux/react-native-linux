@@ -1,5 +1,4 @@
 import { TextInput, useColorScheme } from "react-native";
-import { useState } from "react";
 
 const MONTH_OFFSET = 1;
 const PART_LENGTH = 2;
@@ -43,16 +42,15 @@ const applyTyped = (field: Field, value: Date, text: string): Date | null => {
  */
 const DateTimePicker = (props: DateTimePickerProps): React.JSX.Element => {
   const field: Field = props.mode === "time" ? "time" : "date";
-  const [text, setText] = useState(() => formatField(field, props.value));
   const color = useColorScheme() === "dark" ? "#f5f5f5" : "#27272a";
 
   return (
     <TextInput
+      defaultValue={formatField(field, props.value)}
       accessibilityLabel={field === "date" ? "Date, YYYY-MM-DD" : "Time, HH:MM"}
       onChangeText={(nextText) => {
         const date = applyTyped(field, props.value, nextText);
 
-        setText(nextText);
         if (date !== null) {
           props.onValueChange?.(
             { nativeEvent: { timestamp: date.getTime(), utcOffset: -date.getTimezoneOffset() } },
@@ -62,7 +60,6 @@ const DateTimePicker = (props: DateTimePickerProps): React.JSX.Element => {
       }}
       placeholder={field === "date" ? "YYYY-MM-DD" : "HH:MM"}
       style={{ borderColor: color, borderRadius: 8, borderWidth: 1, color, fontSize: 16, height: 40, paddingHorizontal: 12 }}
-      value={text}
     />
   );
 };

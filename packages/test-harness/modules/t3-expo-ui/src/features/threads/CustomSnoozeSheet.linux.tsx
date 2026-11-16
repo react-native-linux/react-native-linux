@@ -4,7 +4,7 @@ import {
   resolveCustomSnooze,
   type CustomSnoozeInput,
 } from "@t3tools/client-runtime/state/thread-settled";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Pressable, TextInput, View, useWindowDimensions } from "react-native";
 
 import { AppText } from "../../components/ui/AppText";
@@ -34,8 +34,9 @@ export function CustomSnoozeSheet(props: {
   const { themeVariables: colors } = useAppearancePreferences();
   const [mode, setMode] = useState<CustomSnoozeInput["mode"]>("date");
   const [initial] = useState(() => new Date(Date.now() + 3_600_000));
-  const [date, setDate] = useState(() => localSnoozeDate(initial));
-  const [time, setTime] = useState(() => localSnoozeTime(initial));
+  // The fields own their text; refs give submit the latest edit even when it arrives in the same event batch.
+  const date = useRef(localSnoozeDate(initial));
+  const time = useRef(localSnoozeTime(initial));
   const [amount, setAmount] = useState(2);
   const [unit, setUnit] = useState<"minutes" | "hours" | "days">("hours");
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +49,9 @@ export function CustomSnoozeSheet(props: {
 
   const submit = () => {
     const input: CustomSnoozeInput =
-      mode === "date" ? { mode, date, time } : { mode, amount: String(amount), unit };
+      mode === "date"
+        ? { mode, date: date.current, time: time.current }
+        : { mode, amount: String(amount), unit };
     const snoozedUntil = resolveCustomSnooze(input, new Date());
     if (!snoozedUntil) {
       setError(
@@ -115,16 +118,20 @@ export function CustomSnoozeSheet(props: {
               <TextInput
                 accessibilityLabel="Snooze date"
                 placeholder="YYYY-MM-DD"
-                value={date}
-                onChangeText={edit(setDate)}
+                defaultValue={date.current}
+                onChangeText={edit((text: string) => {
+                  date.current = text;
+                })}
                 onSubmitEditing={submit}
                 style={fieldStyle}
               />
               <TextInput
                 accessibilityLabel="Snooze time"
                 placeholder="HH:MM"
-                value={time}
-                onChangeText={edit(setTime)}
+                defaultValue={time.current}
+                onChangeText={edit((text: string) => {
+                  time.current = text;
+                })}
                 onSubmitEditing={submit}
                 style={fieldStyle}
               />
