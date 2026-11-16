@@ -21,9 +21,9 @@ interface StepsAroundKeyboardFocus {
 }
 
 /**
- * Splits a scenario's steps at its first keyboard step, so the driver can run `beforeFocus` through `rnl_inject`,
- * wait for keyboard focus, and only then run `afterFocus` through a second invocation. A scenario with no
- * keyboard step gets everything back in `beforeFocus` and an empty `afterFocus`.
+ * Splits a scenario's steps at its first keyboard step, so the driver can send `beforeFocus` to `rnl_inject`, wait
+ * for keyboard focus, and only then send `afterFocus` to the same injector. A scenario with no keyboard step gets
+ * everything back in `beforeFocus` and an empty `afterFocus`.
  */
 const splitStepsAtKeyboardFocus = (steps: readonly string[]): StepsAroundKeyboardFocus => {
   const focusStepIndex = steps.findIndex((step) => KEYBOARD_STEP_PATTERN.test(step));

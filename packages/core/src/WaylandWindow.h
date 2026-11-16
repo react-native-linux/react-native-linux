@@ -229,6 +229,12 @@ public:
     /** `wl_keyboard.enter` most recently reached this surface and no `.leave` has followed it yet. */
     bool hasKeyboardFocus() const noexcept;
 
+    /** Forwarded from `WaylandSeat::hasPointer`. */
+    bool hasPointer() const noexcept;
+
+    /** Sends every request queued so far without waiting for the next dispatch. */
+    void flush();
+
     void requestFrameCallback();
 
     /**

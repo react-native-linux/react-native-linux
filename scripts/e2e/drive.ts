@@ -76,34 +76,35 @@ interface InjectionRun {
 }
 
 /**
- * Runs `run.scenario.steps` through `rnl_inject`, threading its exit status to `resolveInjectionFailure` above.
+ * `WindowMain.cpp`'s `announcePointerOnce` prints this once the window has bound `wl_pointer` and flushed the
+ * request (#752). The seat advertises a pointer only once `rnl_inject` creates its virtual one, and a button the
+ * compositor handles before that bind reaches no one, so a click with no step before it was lost.
+ */
+const POINTER_BOUND_TRACE_LINE = "[rnl-seat] pointer bound";
+
+/**
+ * Runs `run.scenario.steps` through one `rnl_inject`, threading its exit status to `resolveInjectionFailure` above.
  * `scalePointerSteps` converts every `move`/`click` line's coordinates from the logical pixels a scenario is
  * authored in to `rnl_inject`'s own surface pixels first, so the same rounding rule #374 gave the surface side
- * carries the injected coordinate rather than the raw logical one. Each side of the keyboard split is one injector,
- * fed its steps around their `await` steps.
+ * carries the injected coordinate rather than the raw logical one. The first step waits for the window to bind the
+ * injector's pointer, and the keyboard split only holds the rest back: a second injector would be a second virtual
+ * pointer, bound again.
  */
 const injectAndResolveFailure = async (run: InjectionRun): Promise<string | null> => {
-  let status: number | null = null;
-  const injectOnce = async (steps: readonly string[]): Promise<string | null> => {
-    const injector = run.startInjector();
-    const awaitFailure = await sendAwaitingTrace({
-      runCommand: createCommandRunner(injector.environment),
-      send: injector.send,
-      steps,
-      trace: run.trace,
-    });
-    const outcome = await injector.finish();
-    ({ status } = outcome);
-
-    return awaitFailure ?? outcome.failure;
-  };
+  const injector = run.startInjector();
+  const runCommand = createCommandRunner(injector.environment);
   const failure = await runKeyboardAwareInjection(
-    scalePointerSteps(run.scenario.steps),
-    injectOnce,
+    [`await ${POINTER_BOUND_TRACE_LINE}`, ...scalePointerSteps(run.scenario.steps)],
+    (steps) => sendAwaitingTrace({ runCommand, send: injector.send, steps, trace: run.trace }),
     run.waitForKeyboardFocus,
   );
+  const outcome = await injector.finish();
 
-  return resolveInjectionFailure({ failure, status }, run.scenario.expectsExitAfter, run.waitForExpectedClose);
+  return resolveInjectionFailure(
+    { failure: failure ?? outcome.failure, status: outcome.status },
+    run.scenario.expectsExitAfter,
+    run.waitForExpectedClose,
+  );
 };
 
 export { injectAndResolveFailure, resolveCompositorChild, resolveInjectionFailure, resolveWindowFlags };

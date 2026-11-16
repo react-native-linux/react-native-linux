@@ -18,11 +18,30 @@ const waitForExpectedClose =
   () =>
     Promise.resolve(closed);
 
-const trace = {
-  isClosed: (): boolean => false,
-  read: (): string => "",
-  waitFor: (): Promise<boolean> => Promise.resolve(true),
+const POINTER_BOUND_TRACE_LINE = "[rnl-seat] pointer bound";
+
+interface FakeTrace {
+  readonly isClosed: () => boolean;
+  readonly read: () => string;
+  readonly waitFor: (isSatisfied: (text: string) => boolean) => Promise<boolean>;
+}
+
+/** A trace the window writes `lines` to once the driver first waits on it, as it binds the injector's pointer. */
+const traceProducing = (lines: readonly string[]): FakeTrace => {
+  let text = "";
+
+  return {
+    isClosed: () => false,
+    read: () => text,
+    waitFor: (isSatisfied) => {
+      text = lines.join("\n");
+
+      return Promise.resolve(isSatisfied(text));
+    },
+  };
 };
+
+const boundPointerTrace = (): FakeTrace => traceProducing([POINTER_BOUND_TRACE_LINE]);
 
 const CLEAN_EXIT_STATUS = 0;
 
@@ -109,7 +128,7 @@ describe("injectAndResolveFailure", () => {
     const result = await injectAndResolveFailure({
       scenario: injectionScenario(null),
       startInjector: injectorExiting(null, EXPECTED_CLOSE_STATUS),
-      trace,
+      trace: boundPointerTrace(),
       waitForExpectedClose: waitForExpectedClose(true),
       waitForKeyboardFocus: waitForExpectedClose(true),
     });
@@ -121,7 +140,7 @@ describe("injectAndResolveFailure", () => {
     const result = await injectAndResolveFailure({
       scenario: injectionScenario(CLOSE_SUBSTRING),
       startInjector: injectorExiting("boom", EXPECTED_CLOSE_STATUS),
-      trace,
+      trace: boundPointerTrace(),
       waitForExpectedClose: waitForExpectedClose(true),
       waitForKeyboardFocus: waitForExpectedClose(true),
     });
@@ -133,7 +152,7 @@ describe("injectAndResolveFailure", () => {
     const result = await injectAndResolveFailure({
       scenario: injectionScenario(CLOSE_SUBSTRING),
       startInjector: injectorExiting("boom", USAGE_ERROR_STATUS),
-      trace,
+      trace: boundPointerTrace(),
       waitForExpectedClose: waitForExpectedClose(true),
       waitForKeyboardFocus: waitForExpectedClose(true),
     });
@@ -152,7 +171,7 @@ describe("injectAndResolveFailure with an await step", () => {
     const result = await injectAndResolveFailure({
       scenario: awaitScenario,
       startInjector: injectorExiting(null, CLEAN_EXIT_STATUS),
-      trace: { ...trace, waitFor: () => Promise.resolve(false) },
+      trace: boundPointerTrace(),
       waitForExpectedClose: waitForExpectedClose(true),
       waitForKeyboardFocus: waitForExpectedClose(true),
     });
@@ -164,11 +183,57 @@ describe("injectAndResolveFailure with an await step", () => {
     const result = await injectAndResolveFailure({
       scenario: awaitScenario,
       startInjector: injectorExiting("rnl_inject exited with status null:\n", null),
-      trace: { ...trace, waitFor: () => Promise.resolve(false) },
+      trace: boundPointerTrace(),
       waitForExpectedClose: waitForExpectedClose(true),
       waitForKeyboardFocus: waitForExpectedClose(true),
     });
 
     expect(result).toBe('the trace never produced "settled" before the steps after "await settled"');
+  });
+});
+
+/** An injector that exits cleanly and records every line the driver sends it, in order. */
+const recordingInjector = (sent: string[]): ReturnType<StartInjector> => ({
+  environment: {},
+  finish: () => Promise.resolve({ failure: null, status: CLEAN_EXIT_STATUS }),
+  send: (steps) => {
+    sent.push(...steps);
+  },
+});
+
+describe("injectAndResolveFailure before the window binds the pointer", () => {
+  it("holds every step back until the window traces the pointer it bound after the injector started", async () => {
+    const sent: string[] = [];
+    const result = await injectAndResolveFailure({
+      scenario: injectionScenario(null),
+      startInjector: () => recordingInjector(sent),
+      trace: traceProducing([]),
+      waitForExpectedClose: waitForExpectedClose(true),
+      waitForKeyboardFocus: waitForExpectedClose(true),
+    });
+
+    expect(result).toBe(
+      `the trace never produced "${POINTER_BOUND_TRACE_LINE}" before the steps after "await ${POINTER_BOUND_TRACE_LINE}"`,
+    );
+    expect(sent).toEqual([]);
+  });
+
+  it("sends the steps on both sides of the keyboard split to the one injector", async () => {
+    const sent: string[] = [];
+    const startInjector = vi.fn((): ReturnType<StartInjector> => recordingInjector(sent));
+    const result = await injectAndResolveFailure({
+      scenario: parseScenario(
+        { bundle: "b.js", expect: ["ready"], name: "s", ready: "ready", steps: ["click 1 1", "key Tab press"] },
+        "fixture.json",
+      ),
+      startInjector,
+      trace: boundPointerTrace(),
+      waitForExpectedClose: waitForExpectedClose(true),
+      waitForKeyboardFocus: waitForExpectedClose(true),
+    });
+
+    expect(result).toBeNull();
+    expect(startInjector).toHaveBeenCalledOnce();
+    expect(sent).toEqual(["click 1 1", "key Tab press"]);
   });
 });

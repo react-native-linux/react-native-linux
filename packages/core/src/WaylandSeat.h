@@ -89,6 +89,8 @@ public:
     TextInputClient* textInput() const noexcept;
     /** `wl_keyboard.enter` most recently reached this seat's surface and no `.leave` has followed it yet. */
     bool hasKeyboardFocus() const noexcept;
+    /** The seat advertises a pointer and this client has asked for its `wl_pointer`. */
+    bool hasPointer() const noexcept;
 
 private:
     void updateCapabilities(uint32_t capabilities);

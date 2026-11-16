@@ -335,6 +335,10 @@ uint32_t WaylandWindow::outputLeaveCount() const noexcept { return outputLeaveCo
 
 bool WaylandWindow::hasKeyboardFocus() const noexcept { return seat_ != nullptr && seat_->hasKeyboardFocus(); }
 
+bool WaylandWindow::hasPointer() const noexcept { return seat_ != nullptr && seat_->hasPointer(); }
+
+void WaylandWindow::flush() { wl_display_flush(display_); }
+
 void WaylandWindow::requestFrameCallback() {
     destroyFrameCallback();
 

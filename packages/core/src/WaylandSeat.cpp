@@ -484,4 +484,6 @@ TextInputClient* WaylandSeat::textInput() const noexcept { return textInput_.get
 
 bool WaylandSeat::hasKeyboardFocus() const noexcept { return hasKeyboardFocus_; }
 
+bool WaylandSeat::hasPointer() const noexcept { return pointer_ != nullptr; }
+
 } // namespace react_native_linux
