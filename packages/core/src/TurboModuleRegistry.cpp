@@ -22,6 +22,7 @@
 #include "I18n.h"
 #include "PlatformColor.h"
 #include "ReanimatedModule.h"
+#include "SerialWorker.h"
 #include "WorkletsModule.h"
 
 #include <FBReactNativeSpec/FBReactNativeSpecJSI.h>
@@ -30,9 +31,14 @@
 #include <ReactCommon/TurboModule.h>
 #include <ReactCommon/TurboModuleBinding.h>
 #include <ReactCommon/TurboModuleUtils.h>
+#include <algorithm>
 #include <array>
 #include <atomic>
+#include <cerrno>
+#include <chrono>
 #include <climits>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <cxxreact/ReactNativeVersion.h>
 #include <filesystem>
@@ -43,10 +49,14 @@
 #include <jsi/JSIDynamic.h>
 #include <memory>
 #include <optional>
+#include <poll.h>
 #include <random>
 #include <spawn.h>
 #include <string>
+#include <string_view>
 #include <sys/utsname.h>
+#include <sys/wait.h>
+#include <thread>
 #include <unistd.h>
 #include <utility>
 #include <variant>
@@ -231,10 +241,20 @@ private:
  * device event the same way a portal signal reaches it as `appearanceChanged`.
  *
  * `canOpenURL` and `openURL` have no per-scheme handler registry to consult on this platform, so both go through
- * `xdg-open`: `canOpenURL` is optimistic (`xdg-open` itself decides, and does not expose a dry-run check), and
- * `openURL` spawns it and resolves once the spawn succeeds rather than waiting for the handler to exit, which
- * matches upstream's own fire-and-forget `Linking.openURL` contract. `openSettings` has no desktop equivalent to
- * open and rejects saying so; a real per-application settings surface is out of this module's scope (#23).
+ * `xdg-open`: `canOpenURL` is optimistic (`xdg-open` itself decides, and does not expose a dry-run check). `openURL`
+ * settles the way iOS's and Windows' do, on whether a handler took the URL (#768): it rejects when `xdg-open` cannot
+ * be spawned or exits non-zero, with the reason its exit status stands for, and resolves when it exits 0. Some
+ * handlers keep `xdg-open` waiting until the launched application quits, so a `xdg-open` still running after
+ * `kOpenerExitWait` counts as launched; a handler that finds nothing to open fails within milliseconds. `openSettings`
+ * has no desktop equivalent to open and rejects saying so; a real per-application settings surface is out of this
+ * module's scope (#23).
+ *
+ * Threading contract: `xdg-open` is spawned on the JavaScript thread and waited for on `openerExits_`, which settles
+ * each promise back on the JavaScript thread through the call invoker. Each wait ends by its own spawn's deadline, so
+ * waits queued behind a blocking handler overlap it rather than add to it. A `xdg-open` still running at its
+ * deadline is handed to a detached thread that holds only its descriptor and reaps it, so no exit leaves a zombie.
+ * Both waits retry through a signal that interrupts them, since an embedder's handler need not set `SA_RESTART`.
+ * The worker runs every queued wait before it joins, which bounds teardown by `kOpenerExitWait`.
  */
 // jscpd:ignore-start — see the CRTP note on LinuxAppearanceModule's addListener/removeListeners above: the same
 // exact pair, unavoidably, for the same reason.
@@ -264,15 +284,19 @@ public:
     facebook::react::AsyncPromise<> openURL(facebook::jsi::Runtime& runtime, std::string url) {
         facebook::react::AsyncPromise<> promise(runtime, jsInvoker_);
         std::array<char*, 3> spawnArguments{const_cast<char*>("xdg-open"), url.data(), nullptr};
-        pid_t spawnedProcessId = 0;
-        const int spawnError =
-            posix_spawnp(&spawnedProcessId, "xdg-open", nullptr, nullptr, spawnArguments.data(), environ);
+        int opener = -1;
+        const int spawnError = pidfd_spawnp(&opener, "xdg-open", nullptr, nullptr, spawnArguments.data(), environ);
 
-        if (spawnError == 0) {
-            promise.resolve();
-        } else {
+        if (spawnError != 0) {
             promise.reject(facebook::react::Error(std::strerror(spawnError)));
+
+            return promise;
         }
+
+        openerExits_.post([promise, opener, url = std::move(url),
+                           deadline = std::chrono::steady_clock::now() + kOpenerExitWait]() mutable {
+            settleWhenOpenerExits(promise, opener, url, deadline);
+        });
 
         return promise;
     }
@@ -300,7 +324,89 @@ public:
     }
 
 private:
+    static constexpr std::chrono::milliseconds kOpenerExitWait{2000};
+
+    static void settleWhenOpenerExits(facebook::react::AsyncPromise<>& promise, int opener, const std::string& url,
+                                      std::chrono::steady_clock::time_point deadline) {
+        pollfd openerExit{.fd = opener, .events = POLLIN, .revents = 0};
+        int ready = -1;
+
+        do {
+            const auto remaining =
+                std::chrono::ceil<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
+            ready = poll(&openerExit, 1, static_cast<int>(std::max<std::int64_t>(remaining.count(), 0)));
+        } while (ready < 0 && errno == EINTR);
+
+        if (ready <= 0) {
+            const int pollError = ready < 0 ? errno : 0;
+
+            std::thread([opener] {
+                siginfo_t ignored{};
+                reapOpener(opener, ignored);
+            }).detach();
+
+            if (pollError == 0) {
+                promise.resolve();
+            } else {
+                promise.reject(openFailure(url, std::strerror(pollError)));
+            }
+
+            return;
+        }
+
+        siginfo_t ending{};
+        const int waitError = reapOpener(opener, ending);
+
+        if (waitError != 0) {
+            promise.reject(openFailure(url, std::strerror(waitError)));
+        } else if (ending.si_code == CLD_EXITED && ending.si_status == 0) {
+            promise.resolve();
+        } else {
+            promise.reject(openFailure(url, openerFailure(ending)));
+        }
+    }
+
+    /**
+     * Waits for `opener` to end, through any interrupting signal, and closes it once there is nothing left to reap:
+     * after the wait succeeds, or fails for a reason other than a signal. `waitid`'s errno, or 0.
+     */
+    static int reapOpener(int opener, siginfo_t& ending) {
+        int result = -1;
+
+        do {
+            result = waitid(P_PIDFD, static_cast<id_t>(opener), &ending, WEXITED);
+        } while (result != 0 && errno == EINTR);
+
+        const int waitError = result == 0 ? 0 : errno;
+
+        close(opener);
+
+        return waitError;
+    }
+
+    static facebook::react::Error openFailure(const std::string& url, std::string_view reason) {
+        return facebook::react::Error("Unable to open URL: " + url + " (" + std::string(reason) + ")");
+    }
+
+    /** The meaning `xdg-open(1)` documents for its exit statuses 1-4, the signal that killed it, or the raw status. */
+    static std::string openerFailure(const siginfo_t& ending) {
+        static constexpr std::array<std::string_view, 5> kExitReasons{
+            "", "error in command line syntax", "the file does not exist", "a required tool could not be found",
+            "the action failed"};
+
+        if (ending.si_code != CLD_EXITED) {
+            return "xdg-open was killed by signal " + std::to_string(ending.si_status);
+        }
+
+        if (static_cast<std::size_t>(ending.si_status) < kExitReasons.size()) {
+            return "xdg-open: " + std::string(kExitReasons.at(static_cast<std::size_t>(ending.si_status)));
+        }
+
+        return "xdg-open exited with status " + std::to_string(ending.si_status);
+    }
+
     std::shared_ptr<ActivationModel> activationModel_;
+    SerialWorker openerExits_;
 };
 
 /**
