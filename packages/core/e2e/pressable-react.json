@@ -7,7 +7,10 @@
     "sleep 500",
     "move 200 140",
     "sleep 100",
-    "click 200 140",
+    "button left press",
+    "await pressable-react: pressIn",
+    "sleep 200",
+    "button left release",
     "sleep 400",
     "button left press",
     "sleep 100",
@@ -21,8 +24,8 @@
   "expect": [
     "pressable-react: committed",
     "pressable-react: pressIn",
-    "pressable-react: press 1",
     "pressable-react: pressOut",
+    "pressable-react: press 1",
     "pressable-react: pressIn",
     "pressable-react: pressOut"
   ],

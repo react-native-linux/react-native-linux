@@ -1,6 +1,9 @@
 // Issue #168: pointer ownership between a gesture and a Pressable. A click on the Pressable is its press, because
 // the pan never activates; a drag that activates the pan takes the pointer, so the Pressable reports pressOut and
 // no second press, as RNGH cancels the JavaScript responder on Android and iOS.
+// The click and the drag's press are held past Pressability's 130 ms minimum press duration
+// (DEFAULT_MIN_PRESS_DURATION), counted from the traced pressIn: a shorter press defers pressOut on a timer that a
+// loaded JavaScript thread can push past press or pan end, so only a held press logs one order every time (#740).
 import { AppRegistry, Pressable, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView, PointerType } from "react-native-gesture-handler";
 import { useEffect } from "react";
