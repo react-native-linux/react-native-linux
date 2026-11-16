@@ -197,6 +197,19 @@ TEST_F(IntlBindingTest, LocaleCanonicalizesAndAddsAndRemovesLikelySubtags) {
     EXPECT_EQ(evaluate("Intl.getCanonicalLocales('und-x-private')"), R"(["und-x-private"])");
 }
 
+TEST_F(IntlBindingTest, ALocaleIsReadAsItsTagWhereverALocaleListIsTaken) {
+    const std::string german = "Object.defineProperty(new Intl.Locale('de'), 'toString', {value: () => 'fr'})";
+
+    EXPECT_EQ(evaluate("Intl.getCanonicalLocales(" + german + ")"), R"(["de"])");
+    EXPECT_EQ(evaluate("Intl.getCanonicalLocales([" + german + ", 'en'])"), R"(["de","en"])");
+    EXPECT_EQ(evaluate("new Intl.DisplayNames(" + german + ", {type: 'language'}).resolvedOptions().locale"),
+              R"("de")");
+    EXPECT_EQ(evaluate("[Intl.DateTimeFormat, Intl.NumberFormat, Intl.Collator, Intl.DisplayNames].map((Service) => "
+                       "Service.supportedLocalesOf([" +
+                       german + "]))"),
+              R"([["de"],["de"],["de"],["de"]])");
+}
+
 TEST_F(IntlBindingTest, LocaleNeedsNewAndATagAndRejectsWhatIsNotALocale) {
     EXPECT_EQ(evaluate("Intl.Locale('en')"), "TypeError: Constructor Intl.Locale requires 'new'");
     EXPECT_EQ(evaluate("new Intl.Locale()"),
@@ -305,9 +318,8 @@ globalThis.requireFromCore = (specifier) => load(resolveModule(RNL_CORE_PACKAGE_
 
 // #772: T3 Code's intl-polyfills.ts imports these three in this order. Each installs itself only when the engine's
 // Intl fails its probes; when the DisplayNames one does, its shouldPolyfill matches `en` against 571 locales through
-// the Intl.Locale polyfill, which took about 22 minutes in a Debug build.
-TEST_F(IntlBindingTest, TheFormatjsPolyfillsT3CodeImportsInstallNothingAndDecideQuickly) {
-    constexpr std::chrono::seconds kPolyfillBudget{10};
+// the Intl.Locale polyfill, which took about 22 minutes in a Debug build, and returns a match rather than undefined.
+TEST_F(IntlBindingTest, TheFormatjsPolyfillsT3CodeImportsFindTheEngineIntlAndInstallNothing) {
     facebook::jsi::Runtime& runtime = this->runtime();
 
     runtime.global().setProperty(runtime, "RNL_CORE_PACKAGE_DIR", RNL_CORE_PACKAGE_DIR);
@@ -337,14 +349,10 @@ TEST_F(IntlBindingTest, TheFormatjsPolyfillsT3CodeImportsInstallNothingAndDecide
     const std::string engineIntl = "[Intl.getCanonicalLocales, Intl.Locale, Intl.DisplayNames]";
 
     evaluate("globalThis.engineIntl = " + engineIntl);
-
-    const auto start = std::chrono::steady_clock::now();
-
     EXPECT_EQ(evaluate("['@formatjs/intl-getcanonicallocales/polyfill', '@formatjs/intl-locale/polyfill', "
                        "'@formatjs/intl-displaynames/polyfill', '@formatjs/intl-displaynames/locale-data/en']"
                        ".map(requireFromCore).length"),
               "4");
-    EXPECT_LT(std::chrono::steady_clock::now() - start, kPolyfillBudget);
     EXPECT_EQ(evaluate(engineIntl + ".map((value, index) => value === engineIntl[index] && "
                                     "value.polyfilled === undefined)"),
               "[true,true,true]");

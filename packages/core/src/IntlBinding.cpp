@@ -91,6 +91,19 @@ std::uint64_t toLength(jsi::Runtime& runtime, const jsi::Value& value) {
     return std::isnan(length) ? 0 : static_cast<std::uint64_t>(std::clamp(std::trunc(length), 0.0, kMaximumLength));
 }
 
+/** The tag an `Intl.Locale` holds, which ECMA-402 reads from its slot rather than through `toString`. */
+std::optional<std::string> localeTagOf(jsi::Runtime& runtime, const jsi::Value& value) {
+    if (value.isObject()) {
+        const jsi::Object object = value.getObject(runtime);
+
+        if (object.hasNativeState<IntlState<IntlLocale>>(runtime)) {
+            return object.getNativeState<IntlState<IntlLocale>>(runtime)->format.toString();
+        }
+    }
+
+    return std::nullopt;
+}
+
 /**
  * ECMA-402's `CanonicalizeLocaleList` up to the canonicalization itself: a string, or a list of strings, each
  * validated before the next element is read.
@@ -98,6 +111,10 @@ std::uint64_t toLength(jsi::Runtime& runtime, const jsi::Value& value) {
 std::vector<std::string> readLocales(jsi::Runtime& runtime, const jsi::Value& locales) {
     if (locales.isUndefined()) {
         return {};
+    }
+
+    if (std::optional<std::string> tag = localeTagOf(runtime, locales)) {
+        return {std::move(*tag)};
     }
 
     if (locales.isString()) {
@@ -129,7 +146,9 @@ std::vector<std::string> readLocales(jsi::Runtime& runtime, const jsi::Value& lo
             throwJavaScriptError(runtime, "TypeError", "Language ID should be string or object.");
         }
 
-        tags.push_back(element.toString(runtime).utf8(runtime));
+        std::optional<std::string> tag = localeTagOf(runtime, element);
+
+        tags.push_back(tag.has_value() ? std::move(*tag) : element.toString(runtime).utf8(runtime));
         translatingErrors<std::vector<std::string>>(
             runtime, [&tags]() { return canonicalizeLocaleList(std::span(&tags.back(), 1)); });
     }
@@ -385,13 +404,11 @@ void installBoundMethod(jsi::Runtime& runtime, const jsi::Object& prototype, con
 
 /** ECMA-402's `Intl.Locale` tag argument: a string, or an object, which an `Intl.Locale` passes as its tag. */
 std::string readLocaleTag(jsi::Runtime& runtime, const jsi::Value& tag) {
-    if (tag.isObject()) {
-        const jsi::Object object = tag.getObject(runtime);
+    if (std::optional<std::string> locale = localeTagOf(runtime, tag)) {
+        return std::move(*locale);
+    }
 
-        if (object.hasNativeState<IntlState<IntlLocale>>(runtime)) {
-            return object.getNativeState<IntlState<IntlLocale>>(runtime)->format.toString();
-        }
-    } else if (!tag.isString()) {
+    if (!tag.isString() && !tag.isObject()) {
         throwJavaScriptError(runtime, "TypeError",
                              "First argument to Intl.Locale constructor can't be empty or missing");
     }
