@@ -15,6 +15,10 @@ namespace {
 
 using react_native_linux::FrameClock;
 
+// Polling while the producer runs is what lets TSan see an unsynchronised signal: a read after `join` alone is
+// ordered by the join itself, so a missing atomic or lock would pass unnoticed.
+constexpr std::chrono::seconds kObserveDeadline{5};
+
 /**
  * #703's wake contract, one producer at a time: an idle visible window skips the callback tick, which stops the
  * presents, and the first tick after a producer on another thread publishes work draws again. Each producer runs on
@@ -29,7 +33,17 @@ void expectProducerWakesAnIdleClock(const std::function<bool()>& hasPendingWork,
     ASSERT_FALSE(clock.onFrameCallback(start, hasPendingWork()).shouldDraw);
 
     std::thread producer(produce);
+    const std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::now() + kObserveDeadline;
+    bool isObservedWhileProducing = hasPendingWork();
+
+    while (!isObservedWhileProducing && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::yield();
+        isObservedWhileProducing = hasPendingWork();
+    }
+
     producer.join();
+
+    EXPECT_TRUE(isObservedWhileProducing);
 
     const FrameClock::Tick wake = clock.onFallbackTimeout(start + std::chrono::milliseconds(16), hasPendingWork());
 
