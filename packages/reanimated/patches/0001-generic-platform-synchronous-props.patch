@@ -1,8 +1,8 @@
 diff --git a/packages/react-native-reanimated/Common/cpp/reanimated/NativeModules/ReanimatedModuleProxy.cpp b/packages/react-native-reanimated/Common/cpp/reanimated/NativeModules/ReanimatedModuleProxy.cpp
-index 016b103..0569eb1 100644
+index 1c45066..ee3ca7e 100644
 --- a/packages/react-native-reanimated/Common/cpp/reanimated/NativeModules/ReanimatedModuleProxy.cpp
 +++ b/packages/react-native-reanimated/Common/cpp/reanimated/NativeModules/ReanimatedModuleProxy.cpp
-@@ -1042,13 +1042,11 @@ void ReanimatedModuleProxy::applySynchronousUpdates(UpdatesBatch &updatesBatch,
+@@ -1087,13 +1087,11 @@ void ReanimatedModuleProxy::writeSynchronousPropsToViews(const UpdatesBatch &syn
          synchronousUpdatesBatch, synchronousPropsIntBuffer_, synchronousPropsDoubleBuffer_);
      synchronouslyUpdateUIPropsFunction_(synchronousPropsIntBuffer_, synchronousPropsDoubleBuffer_);
    }
@@ -15,14 +15,14 @@ index 016b103..0569eb1 100644
    }
 -#endif // __APPLE__
 +#endif // ANDROID
- 
-   updatesBatch = std::move(shadowTreeUpdatesBatch);
  }
+ 
+ void ReanimatedModuleProxy::requestFlushRegistry() {
 diff --git a/packages/react-native-reanimated/Common/cpp/reanimated/Tools/PlatformDepMethodsHolder.h b/packages/react-native-reanimated/Common/cpp/reanimated/Tools/PlatformDepMethodsHolder.h
-index d3aecd3..f5c5660 100644
+index 08c3c9b..fd14dcd 100644
 --- a/packages/react-native-reanimated/Common/cpp/reanimated/Tools/PlatformDepMethodsHolder.h
 +++ b/packages/react-native-reanimated/Common/cpp/reanimated/Tools/PlatformDepMethodsHolder.h
-@@ -31,7 +31,7 @@ using MeasureFunction = std::function<jsi::Value(jsi::Runtime &rt, const jsi::Va
+@@ -32,7 +32,7 @@ using MeasureFunction = std::function<jsi::Value(jsi::Runtime &rt, const jsi::Va
  using RequestRenderFunction = std::function<void(std::function<void(const double)>)>;
  #ifdef ANDROID
  using SynchronouslyUpdateUIPropsFunction = std::function<void(const std::vector<int> &, const std::vector<double> &)>;

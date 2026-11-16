@@ -86,8 +86,7 @@ const describeForeignCheckout = (checkout: string, fixtureDirectory: string): st
 
 /**
  * The pnpm arguments that add the packed overlays to T3 Code's mobile app as a registry install would land them. Their
- * install scripts do not run, as the checkout's own install skips them. Peer checks are not strict: the reanimated
- * overlay's react-native-worklets 0.12.2 accepts react-native 0.83 to 0.87, and T3 Code pins 0.88.1.
+ * install scripts do not run, as the checkout's own install skips them.
  */
 const overlayInstallArguments = (tarballs: readonly string[]): readonly string[] => [
   "--filter",
@@ -95,7 +94,6 @@ const overlayInstallArguments = (tarballs: readonly string[]): readonly string[]
   "add",
   ...tarballs,
   "--ignore-scripts",
-  "--config.strict-peer-dependencies=false",
 ];
 
 export {

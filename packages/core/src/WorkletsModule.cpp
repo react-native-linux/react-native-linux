@@ -6,6 +6,7 @@
 #include <thread>
 #include <utility>
 #include <worklets/NativeModules/WorkletsModuleProxy.h>
+#include <worklets/Tools/JSScheduler.h>
 #include <worklets/WorkletRuntime/BundleModeConfig.h>
 #include <worklets/WorkletRuntime/RuntimeBindings.h>
 
@@ -43,11 +44,15 @@ void LinuxWorkletsModule::installProxy(facebook::jsi::Runtime& runtime, bool bun
     auto runtimeBindings = std::make_shared<worklets::RuntimeBindings>(worklets::RuntimeBindings{
         .requestAnimationFrame =
             [this](std::function<void(const double)>&& callback) { animationFrames_.request(std::move(callback)); },
-        .nativeLoggingHook = {}});
-    proxy_ = std::make_shared<worklets::WorkletsModuleProxy>(
-        runtime, jsInvoker_, uiScheduler_,
-        [javaScriptThread = std::this_thread::get_id()]() { return std::this_thread::get_id() == javaScriptThread; },
-        runtimeBindings, worklets::BundleModeConfig{}, rnRuntimeStatus_);
+        .nativeLoggingHook = {},
+        .networkingBackend = nullptr});
+    auto javaScriptScheduler =
+        std::make_shared<worklets::JSScheduler>(runtime, jsInvoker_, [javaScriptThread = std::this_thread::get_id()]() {
+            return std::this_thread::get_id() == javaScriptThread;
+        });
+    proxy_ = std::make_shared<worklets::WorkletsModuleProxy>(std::move(javaScriptScheduler), uiScheduler_,
+                                                             std::move(runtimeBindings), rnRuntimeStatus_);
+    proxy_->attachToRNRuntime(runtime, worklets::BundleModeConfig{.enabled = false});
 }
 
 void LinuxWorkletsModule::start() { proxy_->start(); }

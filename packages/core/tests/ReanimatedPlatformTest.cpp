@@ -122,10 +122,7 @@ TEST(ReanimatedPlatformTest, CssRoutingMembersAreEmptySoUpstreamRunsEveryAnimati
     AnimationFrameQueue frames;
     const auto holder = holderOver(frames);
 
-    EXPECT_FALSE(holder.cssCanRouteProperty);
-    EXPECT_FALSE(holder.cssApplyTransition);
-    EXPECT_FALSE(holder.cssRemoveTransition);
-    EXPECT_FALSE(holder.cssGetPlatformValue);
+    EXPECT_EQ(holder.platformTransitionBackend, nullptr);
     EXPECT_EQ(holder.platformAnimationFactory, nullptr);
 }
 
