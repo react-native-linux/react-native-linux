@@ -82,6 +82,7 @@ globalThis.tokenizeTrace = [
  * that would hand back one byte neither truncates them nor lets the copy overflow it.
  */
 TEST(T3HighlightsModuleTest, TokenizesFromJavaScriptWithTheNitroContract) {
+    lexedSources.clear();
     facebook::react::registerCxxModuleToGlobalModuleMap(std::string(facebook::react::T3Highlights::kModuleName),
                                                         [](std::shared_ptr<facebook::react::CallInvoker> jsInvoker) {
                                                             return std::make_shared<facebook::react::T3Highlights>(
