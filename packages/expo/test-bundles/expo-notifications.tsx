@@ -77,4 +77,3 @@ const ExpoNotificationsApp = (): React.JSX.Element => {
 };
 
 AppRegistry.registerComponent("main", () => ExpoNotificationsApp);
-AppRegistry.runApplication("main", { initialProps: {}, rootTag: 1 });

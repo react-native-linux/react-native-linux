@@ -1630,6 +1630,17 @@ application runs: `FabricHost` starts its surface with that module name, and ups
 `RN$AppRegistry.runApplication` once the bundle has registered it. The `application golden` case in
 `goldens/golden.spec.ts` bundles, renders and compares `goldens/test-harness-app.png`.
 
+`rnl_window` starts its surface empty and picks the key once the bundle has run (#777): `--module <key>` when it is
+passed, otherwise `"main"` when the bundle registered it, otherwise none, and `FabricHost::runApplication` hands
+the key to the same `AppRegistryBinding`. `"main"` is the key Expo's `registerRootComponent` registers and leaves
+its host to run, as Expo's own Android and iOS hosts do, so an Expo app needs no flag. A bundle that registered no
+`"main"` keeps the empty surface it commits into by hand. The key is the host's to name, as Android's
+`getMainComponentName`, the iOS app delegate's `moduleName` and react-native-windows' `ReactViewOptions.ComponentName`
+are, and react-native-windows' init template bakes `app.json`'s `name` into the last of these. The init template does
+the same through its `linux` script's `--module HelloWorld`, which the community CLI renames with the project. The
+`expo-entry`, `expo-font`, `expo-startup-modules` and `expo-notifications` e2e scenarios register `"main"` and
+never run it themselves; `selectApplicationKey` is unit-tested in `ApplicationKeyTest.cpp`.
+
 What it took, all of it upstream's code except the resolver table:
 
 - **Resolution.** `createLinuxResolveRequest` in `packages/cli/src/metro-config.ts` is the `resolveRequest`: Metro's

@@ -50,6 +50,8 @@ const renderApplication = async (applicationDirectory: string): Promise<void> =>
       [
         "--fabric",
         path.join(applicationDirectory, "build", "index.linux.bundle.js"),
+        "--module",
+        APPLICATION_NAME,
         "--screenshot",
         renderedPath,
         "--frames",

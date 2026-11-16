@@ -3,7 +3,7 @@ import * as Crypto from "expo-crypto";
 import * as Device from "expo-device";
 import * as Linking from "expo-linking";
 import * as Network from "expo-network";
-import { AppRegistry, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { useEffect } from "react";
 import { registerRootComponent } from "expo";
 
@@ -87,4 +87,3 @@ const ExpoStartupModulesApp = (): React.JSX.Element => {
 };
 
 registerRootComponent(ExpoStartupModulesApp);
-AppRegistry.runApplication("main", { initialProps: {}, rootTag: 1 });

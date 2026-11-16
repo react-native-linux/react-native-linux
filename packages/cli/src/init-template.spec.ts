@@ -31,6 +31,15 @@ describe("the init template", () => {
     expect(readFileSync(path.join(appDirectory, "index.tsx"), "utf8")).toContain('registerComponent("HelloWorld"');
   });
 
+  it("starts the key index.tsx registers through rnl_window, without running it by hand", () => {
+    expect(readJson(path.join(appDirectory, "package.json"))).toMatchObject({
+      scripts: {
+        linux: expect.stringContaining("rnl_window --fabric build/index.linux.bundle.js --module HelloWorld"),
+      },
+    });
+    expect(readFileSync(path.join(appDirectory, "index.tsx"), "utf8")).not.toContain("runApplication");
+  });
+
   it("pins every dependency the harness app also pins to the harness's own version", () => {
     const harnessVersions = readDependencyVersions(
       path.join(repositoryRoot, "packages", "test-harness", "package.json"),

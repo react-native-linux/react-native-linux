@@ -34,6 +34,7 @@ const mergedProfilePath = path.join(coverageDirectory, "rnl_core_tests.profdata"
 const scopedSourcePaths: readonly string[] = [
   "packages/core/src/ActivityIndicatorContent.cpp",
   "packages/core/src/Activation.cpp",
+  "packages/core/src/ApplicationKey.cpp",
   "packages/core/src/AppState.cpp",
   "packages/core/src/AnimationFrameQueue.cpp",
   "packages/core/src/Appearance.cpp",
