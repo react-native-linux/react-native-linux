@@ -112,6 +112,22 @@ const describeForeignCheckout = (checkout: string, fixtureDirectory: string): st
 };
 
 /**
+ * The pnpm arguments that install a T3 Code checkout for the fixture: the mobile app, the server, and the workspace
+ * packages each depends on. They also run after the overlays are added, because an add that cannot hard link from the
+ * store the checkout was installed with (a container, a copied checkout) relinks node_modules for the mobile app alone
+ * and leaves the links of its workspace dependencies, such as packages/shared's remark-math, pointing at nothing.
+ */
+const CHECKOUT_INSTALL_ARGUMENTS: readonly string[] = [
+  "install",
+  "--frozen-lockfile",
+  "--ignore-scripts",
+  "--filter",
+  `${MOBILE_PACKAGE_NAME}...`,
+  "--filter",
+  "t3...",
+];
+
+/**
  * The pnpm arguments that add the packed overlays to T3 Code's mobile app as a registry install would land them. Their
  * install scripts do not run, as the checkout's own install skips them.
  */
@@ -124,6 +140,7 @@ const overlayInstallArguments = (tarballs: readonly string[]): readonly string[]
 ];
 
 export {
+  CHECKOUT_INSTALL_ARGUMENTS,
   T3CODE_REVISION,
   buildPairingLink,
   OVERLAY_DIRECTORY_NAME,
