@@ -11,12 +11,14 @@ ReanimatedMountHook::ReanimatedMountHook(
     const std::shared_ptr<UIManager> &uiManager,
     const std::shared_ptr<UpdatesRegistryManager> &updatesRegistryManager,
     const std::shared_ptr<css::ViewStylesRepository> &viewStylesRepository,
-    const std::shared_ptr<ReanimatedSurfaceTracker> &surfaceTracker,
+    const std::shared_ptr<LayoutAnimationsProxyRegistry> &layoutAnimationsProxyRegistry,
+    const std::shared_ptr<SynchronousWritesTracker> &synchronousWritesTracker,
     const std::function<void()> &requestFlush)
     : uiManager_(uiManager),
       updatesRegistryManager_(updatesRegistryManager),
       viewStylesRepository_(viewStylesRepository),
-      surfaceTracker_(surfaceTracker),
+      layoutAnimationsProxyRegistry_(layoutAnimationsProxyRegistry),
+      synchronousWritesTracker_(synchronousWritesTracker),
       requestFlush_(requestFlush) {
   uiManager_->registerMountHook(*this);
 }
@@ -35,6 +37,10 @@ void ReanimatedMountHook::shadowTreeDidMount(
     auto lock = updatesRegistryManager_->lock();
     updatesRegistryManager_->handleNodeRemovals(*rootShadowNode);
     return;
+  }
+
+  if (synchronousWritesTracker_) {
+    synchronousWritesTracker_->onMountReport(rootShadowNode);
   }
 
   auto reaShadowNode = std::reinterpret_pointer_cast<ReanimatedCommitShadowNode>(
@@ -72,8 +78,15 @@ void ReanimatedMountHook::shadowTreeDidMount(
 }
 
 void ReanimatedMountHook::shadowTreeDidUnmount(SurfaceId surfaceId, HighResTimeStamp /*unmountTime*/) noexcept {
-  // Forget stopped surfaces so a reused surface id registers again.
-  surfaceTracker_->remove(surfaceId);
+  if (layoutAnimationsProxyRegistry_) {
+    layoutAnimationsProxyRegistry_->remove(surfaceId);
+  }
+  if (synchronousWritesTracker_) {
+    synchronousWritesTracker_->onSurfaceStop(surfaceId);
+  }
+
+  auto lock = updatesRegistryManager_->lock();
+  viewStylesRepository_->removeSurface(surfaceId);
 }
 
 } // namespace reanimated

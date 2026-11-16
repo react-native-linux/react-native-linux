@@ -35,10 +35,7 @@ makePlatformDepMethodsHolder(AnimationFrameQueue& frames,
         .maybeFlushUIUpdatesQueueFunction = [&frames] { frames.request([](double) {}); },
         .attachPseudoSelector = [](facebook::react::Tag, reanimated::PseudoSelector, std::function<void(bool)>) {},
         .detachPseudoSelector = [](facebook::react::Tag, reanimated::PseudoSelector) {},
-        .cssCanRouteProperty = {},
-        .cssApplyTransition = {},
-        .cssRemoveTransition = {},
-        .cssGetPlatformValue = {},
+        .platformTransitionBackend = nullptr,
         .platformAnimationFactory = nullptr,
     };
 }

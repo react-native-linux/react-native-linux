@@ -1,6 +1,6 @@
 # @react-native-linux/reanimated
 
-The Linux overlay of https://github.com/software-mansion/react-native-reanimated, vendored at `4.6.0`.
+The Linux overlay of https://github.com/software-mansion/react-native-reanimated, vendored at `4.7.1`.
 
 ## Layout
 
@@ -17,11 +17,12 @@ The Linux overlay of https://github.com/software-mansion/react-native-reanimated
 | Field | Value |
 | --- | --- |
 | Repository | https://github.com/software-mansion/react-native-reanimated |
-| Tag | `4.6.0` |
+| Tag | `4.7.1` |
 | Sparse paths | `packages/react-native-reanimated/Common/cpp`, `packages/react-native-reanimated/src`, `packages/react-native-reanimated/scripts` |
 
-`4.6.0` is the only released Reanimated line whose `peerDependencies` accept React Native `0.87`, which is the
-version `scripts/vendor.lock.json` pins; `4.5.x` caps at `0.86`. The sparse cone is the TypeScript sources and the
+`4.7.1` is the Reanimated line for React Native `0.86`–`0.88` and react-native-worklets `0.13.x`, which
+`scripts/vendor.lock.json` and the workspace catalog pin, and the version T3 Code ships. As upstream does, the overlay
+declares `react-native-worklets` a peer, so an app's own copy is the one its bundle carries (#651). The sparse cone is the TypeScript sources and the
 shared C++ that `@react-native-linux/core` compiles as `rnl_reanimated` (#139; *react-native-reanimated* in
 `docs/cpp-toolchain.md`). `scripts/` is there because `src` imports `scripts/validate-worklets-version.js`, which the
 package exports. `react-native-worklets` is a sibling package in the same monorepo but releases under its
@@ -42,11 +43,10 @@ accident. A patch that upstream merges is deleted on the bump that first contain
 
 | Patch | What it changes | Upstream ask | Deletion trigger |
 | --- | --- | --- | --- |
-| `0001-generic-platform-synchronous-props` | On a platform that is neither Android nor Apple, `SynchronouslyUpdateUIPropsFunction` takes Apple's `(int, const folly::dynamic&)` shape and `applySynchronousUpdates` calls it the Apple way. Without it `PlatformDepMethodsHolder.h` does not compile, and the synchronous props batch would be dropped. | RFC ask 1 (`docs/research/animation-on-linux.md`, appendix A) | The bump to a release whose `PlatformDepMethodsHolder.h` has an `#else` branch. |
-| `0002-layout-animations-start-surface-lock-order` | `LayoutAnimationsProxy_Legacy::startSurface` reads the mounting coordinator's base revision before it takes its own mutex. `pullTransaction` takes the two in the other order, so a surface the commit hook first sees while that surface mounts on another thread could deadlock; TSan reports the inversion when the proxy attaches to a running surface (#140). | Upstream issue to file: the same order inversion exists on every platform. | The bump to a release whose `startSurface` no longer calls into the coordinator under `mutex`. |
-| `0003-operations-loop-registry-cycle` | `OperationsLoop` holds the `UpdatesRegistryManager` weakly. The manager owns the CSS registries and they own the loop, so every `ReanimatedModuleProxy` leaked them, and through `ViewStylesRepository` the `UIManager` and the whole Fabric graph with them; LeakSanitizer reports it on every proxy teardown (#140), which on Linux is every reload. | Upstream issue to file: the cycle exists on every platform. | The bump to a release whose `OperationsLoop` does not own the manager. |
-| `0004-backend-mount-hook-node-removals` | With `USE_ANIMATION_BACKEND`, `ReanimatedMountHook::shadowTreeDidMount` still drains removed nodes (`handleNodeRemovals` under the registry lock) before it returns. Upstream returns first (`initializeFabric`: "for now we leave this to leak the memory"), so every unmounted view Reanimated's JavaScript marked removable kept its `ShadowNodeFamily` and its registry and static-props entries for the proxy's lifetime; Linux enables the flag for every app (#140). | Upstream's own TODO in `initializeFabric` names the follow-up. | The bump to a release whose backend path handles node removals. |
-| `0005-idle-mapper-runs` | `mappers.native.ts` queues a mapper run only when a mapper starts or stops, one of its inputs changes, or a mapper-run finalizer is requested outside a run. Upstream re-queues the run as a frame finalizer after every run, so an app that starts Reanimated requests a UI-runtime frame every frame, its animation-backend callback never goes idle, and the frame clock ticks at the refresh rate forever (#671). | software-mansion/react-native-reanimated#11237, the Reanimated half (the worklets half is `patches/react-native-worklets@0.12.2.patch`). | The bump to a release that contains #11237. |
+| `0001-generic-platform-synchronous-props` | On a platform that is neither Android nor Apple, `SynchronouslyUpdateUIPropsFunction` takes Apple's `(int, const folly::dynamic&)` shape and `writeSynchronousPropsToViews` calls it the Apple way. Without it `PlatformDepMethodsHolder.h` does not compile, and the synchronous props batch would be dropped. | RFC ask 1 (`docs/research/animation-on-linux.md`, appendix A) | The bump to a release whose `PlatformDepMethodsHolder.h` has an `#else` branch. |
+| `0002-operations-loop-registry-cycle` | `OperationsLoop` holds the `UpdatesRegistryManager` weakly. The manager owns the CSS registries and they own the loop, so every `ReanimatedModuleProxy` leaked them, and through `ViewStylesRepository` the `UIManager` and the whole Fabric graph with them; LeakSanitizer reports it on every proxy teardown (#140), which on Linux is every reload. | Upstream issue to file: the cycle exists on every platform. | The bump to a release whose `OperationsLoop` does not own the manager. |
+| `0003-backend-mount-hook-node-removals` | With `USE_ANIMATION_BACKEND`, `ReanimatedMountHook::shadowTreeDidMount` still drains removed nodes (`handleNodeRemovals` under the registry lock) before it returns. Upstream returns first (`initializeFabric`: "for now we leave this to leak the memory"), so every unmounted view Reanimated's JavaScript marked removable kept its `ShadowNodeFamily` and its registry and static-props entries for the proxy's lifetime; Linux enables the flag for every app (#140). | Upstream's own TODO in `initializeFabric` names the follow-up. | The bump to a release whose backend path handles node removals. |
+| `0004-idle-mapper-runs` | `mappers.native.ts` queues a mapper run only when a mapper starts or stops, one of its inputs changes, or a mapper-run finalizer is requested outside a run. Upstream re-queues the run as a frame finalizer after every run, so an app that starts Reanimated requests a UI-runtime frame every frame, its animation-backend callback never goes idle, and the frame clock ticks at the refresh rate forever (#671). | software-mansion/react-native-reanimated#11237, the Reanimated half (the worklets half is `patches/react-native-worklets@0.13.1.patch`). | The bump to a release that contains #11237. |
 
 ## Conformance
 
