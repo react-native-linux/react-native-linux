@@ -161,6 +161,22 @@ std::vector<std::string> readRegisteredApplicationKeys(facebook::jsi::Runtime& r
     return registeredKeys;
 }
 
+/**
+ * What Android's `DeviceEventManagerModule.emitHardwareBackPressed` sends: `hardwareBackPress` with no payload, the
+ * event `BackHandler.android.js` listens for. The emitter is absent until the bundle's `InitializeCore` has run.
+ */
+void emitHardwareBackPress(facebook::jsi::Runtime& runtime) {
+    const facebook::jsi::Value emitter = runtime.global().getProperty(runtime, "__rctDeviceEventEmitter");
+
+    if (!emitter.isObject()) {
+        return;
+    }
+
+    const facebook::jsi::Object emitterObject = emitter.getObject(runtime);
+
+    emitterObject.getPropertyAsFunction(runtime, "emit").callWithThis(runtime, emitterObject, "hardwareBackPress");
+}
+
 // AppRegistryBinding::stopSurface throws when RN$stopSurface is absent, and SurfaceHandler::stop goes through it
 // even for a surface that was started empty. React Native's JavaScript surface registry is not part of this host.
 void installStopSurfaceBinding(facebook::jsi::Runtime& runtime) {
@@ -244,7 +260,9 @@ FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::
     // The `AnimationBackend` the Scheduler built over the choreographer above. It is held weakly for the same
     // reason `AnimationChoreographer` holds it weakly: the UIManager owns it, and this host outlives neither.
     animationBackend_ = scheduler_->getUIManager()->unstable_getAnimationBackend();
-    inputDispatcher_ = std::make_unique<InputDispatcher>(scheduler_->getUIManager(), mountingManager_, kSurfaceId);
+    inputDispatcher_ = std::make_unique<InputDispatcher>(
+        scheduler_->getUIManager(), mountingManager_, kSurfaceId,
+        [runtimeExecutor = runtimeExecutor_]() { runtimeExecutor(emitHardwareBackPress); });
     scrollController_ = std::make_unique<ScrollController>(scheduler_->getUIManager(), kSurfaceId);
 
     // `UIManager.hasViewManagerConfig` answers through this global, and a `dev=true` bundle asks it about

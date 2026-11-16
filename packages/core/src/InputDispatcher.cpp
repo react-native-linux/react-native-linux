@@ -62,6 +62,7 @@ constexpr char kFocusCommandName[] = "focus";
 constexpr char kScrollToCommandName[] = "scrollTo";
 constexpr char kPreventScrollArgument[] = "preventScroll";
 constexpr char kFocusVisibleArgument[] = "focusVisible";
+constexpr char kEscapeKey[] = "Escape";
 constexpr facebook::react::Tag kNoTag = 0;
 
 /**
@@ -320,9 +321,10 @@ void emitPointerDispatch(const facebook::react::TouchEventEmitter& emitter, cons
 
 InputDispatcher::InputDispatcher(std::shared_ptr<facebook::react::UIManager> uiManager,
                                  std::shared_ptr<LinuxMountingManager> mountingManager,
-                                 facebook::react::SurfaceId surfaceId)
+                                 facebook::react::SurfaceId surfaceId, std::function<void()> onHardwareBackPress)
     : uiManager_(std::move(uiManager)), mountingManager_(std::move(mountingManager)), surfaceId_(surfaceId),
-      textInputController_(uiManager_, mountingManager_, surfaceId) {}
+      textInputController_(uiManager_, mountingManager_, surfaceId),
+      onHardwareBackPress_(std::move(onHardwareBackPress)) {}
 
 void InputDispatcher::dispatch(const std::vector<InputEvent>& events) {
     // Before the events rather than with them: a commit that unmounted the focused node has to blur it even on a
@@ -588,6 +590,16 @@ void InputDispatcher::dispatchKeyEvent(const InputEvent& event) {
 
     if (focusedNode_ != nullptr && isActivationKey(accessibilityRoleOf(*focusedNode_), event.key)) {
         emitActivation(event);
+
+        return;
+    }
+
+    const InputModifiers& modifiers = event.modifiers;
+    const bool isBareEscape = event.key == kEscapeKey && !event.repeat && !modifiers.control && !modifiers.shift &&
+                              !modifiers.alt && !modifiers.meta;
+
+    if (isBareEscape) {
+        onHardwareBackPress_();
 
         return;
     }

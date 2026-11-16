@@ -92,8 +92,9 @@ const linuxUpstreamVariantIndex: Readonly<Record<string, "android" | "ios">> = {
   "Libraries/Network/RCTNetworking": "android",
   // The only variant upstream ships.
   "Libraries/Settings/Settings": "ios",
-  // A desktop has no hardware back button, and the iOS variant is the one without one.
-  "Libraries/Utilities/BackHandler": "ios",
+  // Android's emits `hardwareBackPress`, which an unconsumed Escape raises (#788).
+  // Its `exitApp` does nothing without a `DeviceEventManager` module, as in react-native-windows, which ships it too.
+  "Libraries/Utilities/BackHandler": "android",
   // No base file at all, only the pair, and a development bundle requires it. Android's reads an optional module.
   // The iOS one reaches NativeSettingsManager through getEnforcing, which throws on a platform that does not serve it.
   "src/private/devsupport/rndevtools/ReactDevToolsSettingsManager": "android",

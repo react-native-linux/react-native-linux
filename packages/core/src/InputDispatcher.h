@@ -6,6 +6,7 @@
 #include "ScrollPhysics.h"
 #include "TextInputController.h"
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -82,6 +83,11 @@ inline PointerTargetTransform transformOfHit(const SceneHit& hit) {
  * unfocusable text readable without a mouse. That is a platform action rather than a delivered event, so it needs
  * no target with an instance handle.
  *
+ * A bare Escape nothing consumed — no focused field blurred on it — is the desktop's hardware back (#788):
+ * `onHardwareBackPress` is called, and it is what raises `hardwareBackPress` for `BackHandler`. A focused
+ * `<TextInput>` keeps its Escape, because the field consumes it before this point. A repeat or a modified Escape
+ * is not back: a held key would otherwise unwind a whole navigation stack.
+ *
  * Composition is the one input that is not routed at all. `zwp_text_input_v3` follows the compositor's keyboard
  * focus, so the target of a pre-edit or a commit is whatever holds the text cursor: the `TextInputController`
  * this class owns is the `ImeSink`, and it drops a composition that arrives with no field focused. The
@@ -102,12 +108,14 @@ inline PointerTargetTransform transformOfHit(const SceneHit& hit) {
  * shadow nodes are immutable once committed, `EventQueue::enqueueEvent` takes its own mutex, and the mounting
  * manager's focus mark is written under the same mutex that guards the scene. The scene hit test takes that mutex
  * too, which is the mutex an animation frame's synchronous prop update already writes under, so a press is
- * answered against one frame's scene state rather than against half of two.
+ * answered against one frame's scene state rather than against half of two. `onHardwareBackPress` is called on the
+ * frame thread too, so it must only hand the event to the JavaScript thread, never run JavaScript itself.
  */
 class InputDispatcher final {
 public:
-    InputDispatcher(std::shared_ptr<facebook::react::UIManager> uiManager,
-                    std::shared_ptr<LinuxMountingManager> mountingManager, facebook::react::SurfaceId surfaceId);
+    InputDispatcher(
+        std::shared_ptr<facebook::react::UIManager> uiManager, std::shared_ptr<LinuxMountingManager> mountingManager,
+        facebook::react::SurfaceId surfaceId, std::function<void()> onHardwareBackPress = [] {});
 
     void dispatch(const std::vector<InputEvent>& events);
 
@@ -165,6 +173,7 @@ private:
     std::shared_ptr<const facebook::react::ShadowNode> focusedNode_;
     std::shared_ptr<const facebook::react::ShadowNode> syncedRoot_;
     TextInputController textInputController_;
+    std::function<void()> onHardwareBackPress_;
 
     /**
      * The emitter of the last node a pointer event reached, other than the surface root. The root has no instance

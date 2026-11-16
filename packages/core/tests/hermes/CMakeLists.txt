@@ -117,6 +117,7 @@ add_executable(rnl_core_hermes_tests
     ExpoSharedObjectTest.cpp
     FeatureFlagsResetListener.cpp
     GtReactNativeModuleTest.cpp
+    HardwareBackPressTest.cpp
     InstanceTeardownLeakTest.cpp
     IntlBindingTest.cpp
     MeasureGeometryTest.cpp

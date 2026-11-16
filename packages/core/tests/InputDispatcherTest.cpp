@@ -79,7 +79,8 @@ protected:
 
         commitFields({kFieldAlphaTag, kFieldBetaTag});
 
-        dispatcher_ = std::make_unique<InputDispatcher>(uiManager_, mountingManager_, kSurfaceId);
+        dispatcher_ = std::make_unique<InputDispatcher>(uiManager_, mountingManager_, kSurfaceId,
+                                                        [this]() { ++hardwareBackPresses_; });
         dispatcher_->setTextInputFocusSink(&sink_);
 
         // Picks up the two fields just committed; neither is focused yet, so this produces no sink call.
@@ -118,6 +119,7 @@ protected:
 
     std::unique_ptr<InputDispatcher> dispatcher_;
     RecordingTextInputFocusSink sink_;
+    int hardwareBackPresses_{0};
 
 private:
     facebook::react::ViewComponentDescriptor viewDescriptor_ = makeViewComponentDescriptor(contextContainer_);
@@ -268,6 +270,58 @@ TEST_F(InputDispatcherTest, AnEditEarlierInTheFrameReachesReactBeforeTheNextKeyD
     dispatcher_->dispatch({InputEvent{.kind = InputEventKind::KeyPress, .key = "Home"}, enter});
 
     EXPECT_LT(positionOf("topSelectionChange", 0), positionOf("topKeyDown", 1));
+}
+
+/** #788: an Escape nothing consumed is the desktop's hardware back; its release and other keys are not. */
+TEST_F(InputDispatcherTest, AnUnconsumedEscapeIsAHardwareBackPress) {
+    dispatcher_->dispatch({InputEvent{.kind = InputEventKind::KeyPress, .key = "Escape"},
+                           InputEvent{.kind = InputEventKind::KeyRelease, .key = "Escape"},
+                           InputEvent{.kind = InputEventKind::KeyPress, .key = "a"}});
+
+    EXPECT_EQ(hardwareBackPresses_, 1);
+}
+
+/** A held Escape is one back, not one per repeat, or react-navigation would unwind its whole stack. */
+TEST_F(InputDispatcherTest, ARepeatedEscapeIsNoHardwareBackPress) {
+    dispatcher_->dispatch({InputEvent{.kind = InputEventKind::KeyPress, .key = "Escape"},
+                           InputEvent{.kind = InputEventKind::KeyPress, .key = "Escape", .repeat = true},
+                           InputEvent{.kind = InputEventKind::KeyPress, .key = "Escape", .repeat = true}});
+
+    EXPECT_EQ(hardwareBackPresses_, 1);
+}
+
+/** Only a bare Escape is back; Shift, Alt and Meta with it are not. */
+TEST_F(InputDispatcherTest, AModifiedEscapeIsNoHardwareBackPress) {
+    dispatcher_->dispatch({InputEvent{.kind = InputEventKind::KeyPress, .key = "Escape", .modifiers = {.shift = true}},
+                           InputEvent{.kind = InputEventKind::KeyPress, .key = "Escape", .modifiers = {.alt = true}},
+                           InputEvent{.kind = InputEventKind::KeyPress, .key = "Escape", .modifiers = {.meta = true}}});
+
+    EXPECT_EQ(hardwareBackPresses_, 0);
+}
+
+/**
+ * A focused `<TextInput>` keeps its Escape and blurs on it; only the next Escape goes back. Ctrl+Escape, which the
+ * field does not consume, does not go back either.
+ */
+TEST_F(InputDispatcherTest, AFocusedFieldKeepsItsEscape) {
+    const InputEvent escape{.kind = InputEventKind::KeyPress, .key = "Escape"};
+
+    focus(kFieldAlphaTag);
+    dispatcher_->dispatch(
+        {InputEvent{.kind = InputEventKind::KeyPress, .key = "Escape", .modifiers = {.control = true}}});
+
+    EXPECT_EQ(hardwareBackPresses_, 0);
+    ASSERT_EQ(sink_.calls.size(), 1U);
+
+    dispatcher_->dispatch({escape});
+
+    EXPECT_EQ(hardwareBackPresses_, 0);
+    ASSERT_EQ(sink_.calls.size(), 2U);
+    EXPECT_FALSE(sink_.calls.back().isFocus);
+
+    dispatcher_->dispatch({escape});
+
+    EXPECT_EQ(hardwareBackPresses_, 1);
 }
 
 } // namespace
