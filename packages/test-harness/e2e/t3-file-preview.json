@@ -1,0 +1,36 @@
+{
+  "name": "t3-file-preview",
+  "bundle": "t3-file-preview.tsx",
+  "ready": "t3-file-preview: done",
+  "frames": 120,
+  "steps": ["sleep 1200"],
+  "expect": [
+    "FilePreviewSession gallery 0",
+    "t3-file-preview: open https://example.com/screenshot.png",
+    "t3-file-preview: closed image",
+    "t3-file-preview: open https://example.com/spec.pdf",
+    "t3-file-preview: closed pdf",
+    "Dialog.alert Could not open preview: The file could not be opened. Please try again.",
+    "t3-file-preview: closed pasted image",
+    "Dialog.alert Could not open preview: The file could not be opened. Please try again.",
+    "t3-file-preview: closed protocol-relative image",
+    "Dialog.alert Could not open preview: The file could not be opened. Check the connection and try again.",
+    "t3-file-preview: closed unopenable",
+    "t3-file-preview: unmount canceled",
+    "t3-file-preview: open https://example.com/demo.mp4",
+    "t3-file-preview: closed media video",
+    "t3-file-preview: open handoff copy clip.webm clip",
+    "t3-file-preview: closed local video",
+    "t3-file-preview: done",
+    "t3-file-preview: open slow"
+  ],
+  "reject": [
+    "FilePreviewSession gallery 2",
+    "t3-file-preview: open data:",
+    "t3-file-preview: open //",
+    "t3-file-preview: open https://example.com/unopenable.pdf",
+    "t3-file-preview: closed canceled",
+    "t3-file-preview: open file:",
+    "t3-file-preview: open error canceled"
+  ]
+}
