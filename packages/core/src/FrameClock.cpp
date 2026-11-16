@@ -58,9 +58,11 @@ FrameClock::WindowActivity FrameClock::windowActivity(const ToplevelState& state
     return state.activated ? WindowActivity::Active : WindowActivity::Inactive;
 }
 
-std::string FrameClock::formatFallbackLine(WindowActivity activity, std::chrono::nanoseconds interval) {
+std::string FrameClock::formatFallbackLine(WindowActivity activity, std::chrono::nanoseconds interval,
+                                           std::chrono::steady_clock::time_point at) {
     return std::string("{\"fallbackNs\":") + std::to_string(interval.count()) + ",\"activity\":\"" +
-           kActivityNames.at(static_cast<size_t>(activity)) + "\"}";
+           kActivityNames.at(static_cast<size_t>(activity)) + "\",\"atNs\":" +
+           std::to_string(std::chrono::duration_cast<std::chrono::nanoseconds>(at.time_since_epoch()).count()) + "}";
 }
 
 std::chrono::nanoseconds FrameClock::pacingPeriod(bool hasDrawn,

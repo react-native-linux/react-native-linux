@@ -220,13 +220,16 @@ TEST(FrameClockTest, ASuspendedWindowIsOccludedWhateverItsActivationAndAnyOtherF
               FrameClock::WindowActivity::Occluded);
 }
 
-TEST(FrameClockTest, TheFallbackLineNamesTheActivityAndItsInterval) {
-    EXPECT_EQ(FrameClock::formatFallbackLine(FrameClock::WindowActivity::Active, std::chrono::nanoseconds{8'333'333}),
-              R"({"fallbackNs":8333333,"activity":"active"})");
-    EXPECT_EQ(FrameClock::formatFallbackLine(FrameClock::WindowActivity::Inactive, std::chrono::nanoseconds{25}),
-              R"({"fallbackNs":25,"activity":"inactive"})");
-    EXPECT_EQ(FrameClock::formatFallbackLine(FrameClock::WindowActivity::Occluded, std::chrono::nanoseconds{66}),
-              R"({"fallbackNs":66,"activity":"occluded"})");
+TEST(FrameClockTest, TheFallbackLineNamesTheActivityItsIntervalAndWhen) {
+    EXPECT_EQ(FrameClock::formatFallbackLine(FrameClock::WindowActivity::Active, std::chrono::nanoseconds{8'333'333},
+                                             timeAt(2)),
+              R"({"fallbackNs":8333333,"activity":"active","atNs":2000000})");
+    EXPECT_EQ(
+        FrameClock::formatFallbackLine(FrameClock::WindowActivity::Inactive, std::chrono::nanoseconds{25}, timeAt(0)),
+        R"({"fallbackNs":25,"activity":"inactive","atNs":0})");
+    EXPECT_EQ(
+        FrameClock::formatFallbackLine(FrameClock::WindowActivity::Occluded, std::chrono::nanoseconds{66}, timeAt(0)),
+        R"({"fallbackNs":66,"activity":"occluded","atNs":0})");
 }
 
 TEST(FrameClockTest, ASeriousOrCriticalThermalStateCapsTheIntervalAtOne60HzFrame) {

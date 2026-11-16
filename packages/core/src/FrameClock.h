@@ -75,10 +75,11 @@ public:
     [[nodiscard]] static WindowActivity windowActivity(const ToplevelState& state) noexcept;
 
     /**
-     * The `--frame-log` record of a change in that activity, with the interval it chose, which is how an e2e scenario
-     * sees the fallback stretch while the window is suspended and shrink back when it resumes (#770).
+     * The `--frame-log` record of a change in that activity, with the interval it chose and when, which is how an e2e
+     * scenario sees the fallback go occluded while the window is suspended and come back as soon as it resumes (#770).
      */
-    [[nodiscard]] static std::string formatFallbackLine(WindowActivity activity, std::chrono::nanoseconds interval);
+    [[nodiscard]] static std::string formatFallbackLine(WindowActivity activity, std::chrono::nanoseconds interval,
+                                                        std::chrono::steady_clock::time_point at);
 
     /**
      * The `refreshInterval` the fallback stretches over (#703), from the display period `wp_presentation` reported

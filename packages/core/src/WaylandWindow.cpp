@@ -384,7 +384,7 @@ std::optional<std::chrono::nanoseconds> WaylandWindow::refreshInterval() const {
 
 bool WaylandWindow::hasPresentedFirstFrame() const noexcept { return presentedFirstFrame_; }
 
-bool WaylandWindow::waitForRedraw(std::chrono::milliseconds fallbackTimeout) {
+bool WaylandWindow::waitForRedraw(std::chrono::milliseconds fallbackTimeout, std::optional<WaitInjection> injection) {
     const std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::now() + fallbackTimeout;
 
     if (clipboard_ != nullptr) {
@@ -394,14 +394,23 @@ bool WaylandWindow::waitForRedraw(std::chrono::milliseconds fallbackTimeout) {
     const ToplevelState stateAtEntry = toplevelState_;
 
     while (!closed_ && !frameCallbackFired_ && !hasInputEndingIdleWait() && toplevelState_ == stateAtEntry) {
+        const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+
+        if (injection.has_value() && now >= injection->due) {
+            std::exchange(injection, std::nullopt)->apply();
+            continue;
+        }
+
         const std::chrono::milliseconds remaining =
-            std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
+            std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now);
 
         if (remaining <= std::chrono::milliseconds::zero()) {
             break;
         }
 
-        dispatchWithTimeout(remaining);
+        dispatchWithTimeout(injection.has_value() ? std::min(remaining, std::chrono::ceil<std::chrono::milliseconds>(
+                                                                            injection->due - now))
+                                                  : remaining);
     }
 
     return !closed_;

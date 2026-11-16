@@ -12,6 +12,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <poll.h>
@@ -305,8 +306,17 @@ public:
      * rather than waiting out the fallback: the next iteration takes it and answers it. A configure that changes the
      * toplevel state ends it too, because the fallback was stretched for the old state: a suspended window that
      * resumes must not wait out the occluded interval before it paints and reports `active` (#770).
+     *
+     * `injection` is `--inject-window-sequence`'s replayed configure, applied when it falls due mid-wait the way a
+     * compositor's would arrive during the dispatch, so a scenario can prove that a state change ends the wait.
      */
-    bool waitForRedraw(std::chrono::milliseconds fallbackTimeout);
+    struct WaitInjection {
+        std::chrono::steady_clock::time_point due;
+        std::function<void()> apply;
+    };
+
+    bool waitForRedraw(std::chrono::milliseconds fallbackTimeout,
+                       std::optional<WaitInjection> injection = std::nullopt);
 
     /**
      * Drains whatever the compositor has already sent on the display socket, without blocking, and reports it as

@@ -2,10 +2,27 @@ import { describe, expect, it } from "vitest";
 import { findOccludedFallbackFailures } from "./occluded-fallback.ts";
 import { parseScenario } from "./scenario.ts";
 
-/** #770: the `occludedFallback` scenario field and its grader, which reads the activity sequence only. */
+/** #770: the `occludedFallback` scenario field and its grader. */
 
-const fallbackLog = (...activities: readonly string[]): string =>
-  activities.map((activity) => `{"fallbackNs":8333333,"activity":"${activity}"}`).join("\n");
+const OCCLUDED_WAIT_NS = 400_000_000;
+const PROMPT_NS = 100_000_000;
+const LATE_NS = 400_000_000;
+const STEP_NS = 50_000_000;
+const START_NS = 0;
+
+const fallbackLine = (activity: string, atNanoseconds: number, intervalNanoseconds = STEP_NS): string =>
+  `{"fallbackNs":${String(intervalNanoseconds)},"activity":"${activity}","atNs":${String(atNanoseconds)}}`;
+
+const resumeLog = (resumedAtNanoseconds: number): string =>
+  [
+    fallbackLine("active", START_NS),
+    '{"seq":1,"presentedNs":1000000000,"refreshNs":8333333,"flags":1}',
+    fallbackLine("occluded", STEP_NS, OCCLUDED_WAIT_NS),
+    fallbackLine("inactive", STEP_NS + resumedAtNanoseconds),
+  ].join("\n");
+
+const sequenceLog = (...activities: readonly string[]): string =>
+  activities.map((activity, index) => fallbackLine(activity, index * STEP_NS)).join("\n");
 
 describe("parseScenario occludedFallback", () => {
   it("reads the opt-in", () => {
@@ -27,14 +44,14 @@ describe("findOccludedFallbackFailures", () => {
     expect(findOccludedFallbackFailures("", false)).toEqual([]);
   });
 
-  it("passes a fallback that goes occluded and back, whatever the intervals", () => {
-    const log = [
-      fallbackLog("active", "inactive"),
-      '{"seq":1,"presentedNs":1000000000,"refreshNs":8333333,"flags":1}',
-      fallbackLog("occluded", "inactive"),
-    ].join("\n");
+  it("passes a fallback that goes occluded and comes back well inside the occluded wait", () => {
+    expect(findOccludedFallbackFailures(resumeLog(PROMPT_NS), true)).toEqual([]);
+  });
 
-    expect(findOccludedFallbackFailures(log, true)).toEqual([]);
+  it("reports a resume that waited out the occluded interval", () => {
+    expect(findOccludedFallbackFailures(resumeLog(LATE_NS), true)).toEqual([
+      "the window resumed 400 ms after it went occluded, not inside half of its 400 ms occluded wait",
+    ]);
   });
 
   it.each([
@@ -42,13 +59,13 @@ describe("findOccludedFallbackFailures", () => {
     ["occluded from the start", ["occluded", "active"]],
     ["never resumed", ["active", "occluded"]],
   ])("reports a fallback %s", (_description, activities) => {
-    expect(findOccludedFallbackFailures(fallbackLog(...activities), true)).toEqual([
+    expect(findOccludedFallbackFailures(sequenceLog(...activities), true)).toEqual([
       `the fallback must go from another activity to occluded and back, the log records ${activities.join(" → ")}`,
     ]);
   });
 
   it("fails rather than skipping a record it cannot read", () => {
-    expect(findOccludedFallbackFailures(`${fallbackLog("active")}\n{"fallbackNs":12`, true)).toEqual([
+    expect(findOccludedFallbackFailures(`${sequenceLog("active")}\n{"fallbackNs":12`, true)).toEqual([
       "the frame log carries a fallback record it cannot read",
     ]);
   });

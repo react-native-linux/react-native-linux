@@ -9345,10 +9345,13 @@ re-read at most once a second, because a file walk per fallback tick is the wast
 
 `FrameClock::windowActivity` picks the activity from the toplevel state (#770): a window the compositor has
 suspended (`xdg_toplevel`'s `suspended`, xdg-shell v6 — a hidden workspace, a minimized window) is occluded
-whatever its activation, and any other window is active or inactive by its activation. `--frame-log` writes
-`{"fallbackNs":…,"activity":"occluded"}` each time the activity changes, and the `app-state` scenario's
-`occludedFallback` check asserts from it that the interval grows while the window is suspended and shrinks when it
-resumes.
+whatever its activation, and any other window is active or inactive by its activation. A configure that changes the
+toplevel state ends `waitForRedraw`, so a resumed window does not wait out the occluded interval before it paints.
+`--frame-log` writes `{"fallbackNs":…,"activity":"occluded","atNs":…}` each time the activity changes. The
+`app-state` scenario's `occludedFallback` check reads the activity sequence (another, occluded, another) and requires
+the record after the occluded one inside half of the occluded wait. It runs at a 20 Hz output, so that wait (eight
+periods, 400 ms or more) dwarfs the 100 ms step interval, and `--inject-window-sequence` applies a state-changing
+step mid-wait, where a compositor's configure would arrive.
 
 An idle window that is *also* clean already does nothing: the fallback draws only when the session reports
 pending work, so an occluded window with no animation stops presenting entirely (see *Frame clock*). Still open
