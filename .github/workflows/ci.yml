@@ -751,7 +751,8 @@ jobs:
 
       # The native list plus what rnl_window needs to build and what the rig needs to run: libwayland-dev and
       # wayland-protocols for the xdg-shell client, libxkbcommon-dev for the keymap, libvulkan-dev for the loader
-      # and headers, mesa-vulkan-drivers for the lavapipe ICD, and weston for the headless compositor.
+      # and headers, mesa-vulkan-drivers for the lavapipe ICD, weston for the headless compositor, and libsystemd-dev
+      # for the window's sd-bus half (portals, activation, keyring, notifications, sharing), which the e2e scenarios exercise.
       - name: Install build prerequisites
         run: |
           set -euo pipefail

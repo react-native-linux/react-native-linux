@@ -310,7 +310,9 @@ Any one of these reopens the question in a new ADR:
 - T3 Code's startup graph reaches more Expo modules through `requireNativeModule`; `docs/research/t3code-linux.md`
   §1 lists each one, whether it is registered, and the issue that owns it. `ExpoApplication`, `ExpoDevice`,
   `ExpoLinking` and `ExpoNetwork` are registered, proved by the `expo-startup-modules` e2e. `ExpoSecureStore` is
-  registered (#270), proved by the `expo-secure-store` e2e, which stores, reloads and reads back.
+  registered (#270), proved by the `expo-secure-store` e2e, which stores, reloads and reads back. `ExpoSharing` hands
+  a file to the OpenURI portal's chooser (#744), proved against a fake portal by `OpenUriPortalTest` and without one
+  by the `expo-sharing` e2e.
   `ExpoFontLoader` registers a font file `Font.loadAsync` or `useFonts` downloaded into the text pipeline's application
   fonts (#70), the same registry `assets/fonts` fills, proved by the `expo-font` e2e and its screenshot golden.
 - `packages/expo` (`@react-native-linux/expo`) holds the per-module table, the e2e scenarios, the surface lists and

@@ -1,10 +1,7 @@
+import "./install-whatwg-url.ts";
 import { Directory, File, Paths } from "expo-file-system";
 import { AppRegistry, View } from "react-native";
-import { URL } from "whatwg-url-minimum";
 import { useEffect } from "react";
-
-// `expo`'s runtime installs this URL in an app; expo-file-system's `Paths.join` needs it, not React Native's.
-Object.defineProperty(globalThis, "URL", { value: URL, configurable: true, writable: true });
 
 const fromDataHome = (uri: string): string => uri.slice(uri.indexOf("/data/"));
 const fromCacheHome = (uri: string): string => uri.slice(uri.indexOf("/cache/"));

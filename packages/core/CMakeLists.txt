@@ -886,6 +886,7 @@ add_library(rnl_react_core STATIC
     src/ExpoSQLiteModule.cpp
     src/ExpoSecureStore.cpp
     src/ExpoSecureStoreModule.cpp
+    src/ExpoSharingModule.cpp
     src/ExpoSharedObject.cpp
     src/FabricHost.cpp
     src/FantomRenderOutput.cpp
@@ -1339,9 +1340,14 @@ elseif(RNL_ENABLE_WINDOW)
         target_compile_options(rnl_fake_notifications PRIVATE -Wall -Wextra)
         target_link_libraries(rnl_fake_notifications PRIVATE PkgConfig::RNL_SYSTEMD)
         set_target_properties(rnl_fake_notifications PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+        # expo-sharing's portal (#744): OpenURI's chooser on the same session bus. Without it `isAvailableAsync`
+        # answers false and `shareAsync` rejects.
+        target_sources(rnl_window PRIVATE src/OpenUriPortal.cpp)
+        target_compile_definitions(rnl_window PRIVATE RNL_ENABLE_OPEN_URI_PORTAL)
     else()
         message(WARNING
-            "libsystemd is unavailable; the appearance portal, single-instance activation, the keyring and notifications are disabled")
+            "libsystemd is unavailable; the appearance portal, single-instance activation, the keyring, notifications and sharing are disabled")
     endif()
     target_compile_options(rnl_window PRIVATE -Wall -Wextra)
     target_include_directories(rnl_window PRIVATE src)

@@ -1,5 +1,7 @@
 #include "SerialWorker.h"
 
+#include "ExpoSharingModule.h"
+
 #include <chrono>
 #include <cstddef>
 #include <future>
@@ -50,6 +52,33 @@ TEST(SerialWorkerTest, ATaskPostedAfterTheQueueRanDryStillRuns) {
     worker.post([&secondRan] { secondRan.set_value(); });
 
     EXPECT_EQ(ran.wait_for(kTaskBudget), std::future_status::ready);
+}
+
+/**
+ * #744: `FileSharing` outlives the JavaScript that awaits its calls, so a portal call still queued when it goes is
+ * destroyed unrun, before the destructor waits for the one running, instead of holding the window's close for another
+ * portal timeout each. The queued call's capture reports its destruction, which is what lets the running one finish.
+ */
+TEST(SerialWorkerTest, FileSharingDiscardsTheCallsStillQueuedWhenItGoes) {
+    std::promise<void> runningStarted;
+    std::future<void> started = runningStarted.get_future();
+    std::promise<void> queuedDestroyed;
+    std::future<void> destroyed = queuedDestroyed.get_future();
+    bool queuedRan = false;
+    {
+        react_native_linux::FileSharing sharing;
+
+        sharing.worker.post([&runningStarted, &destroyed] {
+            runningStarted.set_value();
+            EXPECT_EQ(destroyed.wait_for(kTaskBudget), std::future_status::ready);
+        });
+        started.wait();
+        sharing.worker.post([&queuedRan, signal = std::shared_ptr<void>(nullptr, [&queuedDestroyed](std::nullptr_t) {
+                                             queuedDestroyed.set_value();
+                                         })] { queuedRan = true; });
+    }
+
+    EXPECT_FALSE(queuedRan);
 }
 
 } // namespace

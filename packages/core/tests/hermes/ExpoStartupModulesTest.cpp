@@ -1,11 +1,11 @@
 #include "Activation.h"
 #include "ExpoDeviceModule.h"
+#include "ExpoSharingModule.h"
 #include "OnJavaScriptThread.h"
 #include "ReactHost.h"
 
 #include <ReactCommon/TurboModule.h>
 #include <array>
-#include <chrono>
 #include <climits>
 #include <cstdio>
 #include <cxxreact/JSBigString.h>
@@ -16,6 +16,7 @@
 #include <gtest/gtest.h>
 #include <hermes/hermes.h>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <sys/utsname.h>
 #include <unistd.h>
@@ -24,25 +25,22 @@
 namespace react_native_linux {
 namespace {
 
-constexpr std::chrono::milliseconds kQuiescenceBudget{5000};
-
 /**
- * Loads `probe`, which sets `globalThis.trace` to a JSON string, runs it until it settles, and answers the trace, or
- * `threw: <message>` when the probe throws, as it does when the module is not registered.
+ * Loads `probe`, which sets `globalThis.trace` to a JSON string, waits until it has, a worker thread's promise
+ * included, and answers the trace, or `threw: <message>` when the probe throws, as it does when the module is not
+ * registered.
  */
 std::string settledTrace(ReactHost& reactHost, const std::string& probe) {
     const std::string guardedProbe =
         "(async () => {\n" + probe + "\n})().catch((error) => { globalThis.trace = `threw: ${error.message}`; });";
 
     reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>(guardedProbe), "ExpoStartupModulesTest.js");
-    EXPECT_TRUE(reactHost.runUntilQuiescent(kQuiescenceBudget));
+
+    std::string trace = awaitGlobalString(reactHost, "trace");
+
     EXPECT_FALSE(reactHost.hasReportedFatalError());
 
-    return onJavaScriptThread<std::string>(reactHost, [](facebook::jsi::Runtime& runtime) {
-        const facebook::jsi::Value trace = runtime.global().getProperty(runtime, "trace");
-
-        return trace.isString() ? trace.getString(runtime).utf8(runtime) : std::string("the probe never finished");
-    });
+    return trace;
 }
 
 std::string settledTrace(const std::string& probe) {
@@ -367,6 +365,58 @@ globalThis.trace = [
 ].join(' | ');
 )JAVASCRIPT"),
               "getConstants | true | true | true");
+}
+
+/**
+ * #744: `ExpoSharing` answers what upstream's `expo-sharing` calls for T3 Code, the methods being the prototype keys
+ * `createTurboModuleToExpoProxy` copies for `requireNativeModule`. Availability and the share run `FileSharing`'s
+ * functions, the share with the path a `file://` URL names, and a failed share rejects with Android's prefix; no
+ * other URL is shared. Nothing is ever shared into the app, so incoming payloads are empty.
+ */
+TEST(ExpoStartupModulesTest, SharingHandsTheFileItNamesToThePortalAndReceivesNothing) {
+    std::vector<std::string> shared;
+    ReactHost reactHost;
+
+    reactHost.fileSharing().isAvailable = [] { return true; };
+    reactHost.fileSharing().share = [&shared](const std::filesystem::path& file) {
+        shared.push_back(file.string());
+
+        if (file == "/missing") {
+            throw std::runtime_error("cannot open /missing: No such file or directory");
+        }
+    };
+
+    EXPECT_EQ(settledTrace(reactHost, R"JAVASCRIPT(
+const sharing = globalThis.nativeModuleProxy.ExpoSharing;
+const rejection = async (share) => { try { await share(); return 'resolved'; } catch (error) { return error.message; } };
+globalThis.trace = [
+  Object.keys(Object.getPrototypeOf(sharing)).sort().join(','),
+  await sharing.isAvailableAsync(),
+  await rejection(() => sharing.shareAsync('file:///cache/T3%20Code/report.pdf', { mimeType: 'application/pdf', dialogTitle: 'report.pdf' })),
+  await rejection(() => sharing.shareAsync('/missing', {})),
+  await rejection(() => sharing.shareAsync('https://example.com/report.pdf', {})),
+  JSON.stringify(sharing.getSharedPayloads()),
+  JSON.stringify(await sharing.getResolvedSharedPayloadsAsync()),
+  String(sharing.clearSharedPayloads()),
+].join(' | ');
+)JAVASCRIPT"),
+              "clearSharedPayloads,getResolvedSharedPayloadsAsync,getSharedPayloads,isAvailableAsync,shareAsync | true"
+              " | resolved | Failed to share the file: cannot open /missing: No such file or directory"
+              " | Exception in HostFunction: 'https://example.com/report.pdf' is not a file URI or an absolute path"
+              " | [] | [] | undefined");
+    EXPECT_EQ(shared, (std::vector<std::string>{"/cache/T3 Code/report.pdf", "/missing"}));
+}
+
+/** A host nobody gave a portal, the headless runner or a build without libsystemd, cannot share, and says so. */
+TEST(ExpoStartupModulesTest, SharingWithoutAPortalIsUnavailableAndRejects) {
+    EXPECT_EQ(settledTrace(R"JAVASCRIPT(
+const sharing = globalThis.nativeModuleProxy.ExpoSharing;
+globalThis.trace = [
+  await sharing.isAvailableAsync(),
+  await sharing.shareAsync('file:///tmp/report.pdf', {}).then(() => 'resolved', (error) => error.message),
+].join(' | ');
+)JAVASCRIPT"),
+              "false | Failed to share the file: this host has no desktop portal to share through");
 }
 
 } // namespace

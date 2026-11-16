@@ -64,7 +64,7 @@ Expo's Metro config turns `inlineRequires` off.
 | `ExpoImageManipulator`, `ExpoDocumentPicker` | `expo-image-manipulator`, `expo-document-picker` | throws; #650. `expo-document-picker` is imported lazily, so not at startup |
 | the ten notification modules `expo-notifications`' index requires | `expo-notifications` | registered (#274): local notifications over `org.freedesktop.Notifications`, the push token rejecting with upstream's `ERR_UNAVAILABLE`; the `expo-notifications` e2e runs T3 Code's calls against a fake daemon |
 | `ExpoSecureStore` | `expo-secure-store` | registered (#270): the desktop keyring over the Secret Service, or an encrypted file when the session has none |
-| `ExpoSharing` | `expo-sharing` | throws; #156 |
+| `ExpoSharing` | `expo-sharing` | registered (#744): `shareAsync` hands the file to the OpenURI portal's chooser; `isAvailableAsync` is `false` without a portal |
 | `ExpoSQLite` | `expo-sqlite` | registered (#665) |
 | `ExpoWebBrowser` | `expo-web-browser` | throws; #271 |
 | `ExpoAudio`, `ExpoKeepAwake`, `ExpoCamera`, `ExpoObserve`, `ExpoAppMetrics`, the `expo-sensors` modules, `SymbolModule`, `ExpoUpdates`, `ExpoVideo`, `ExpoWidgets` | `expo-audio`, `expo-keep-awake`, `expo-camera`, `expo-observe`, `expo-app-metrics`, `expo-sensors`, `expo-symbols`, `expo-updates`, `expo-video`, `expo-widgets` | throws; left out or replaced by the feature profile (§2), so #641's Linux entry cuts the import |
@@ -173,7 +173,7 @@ transitive package.
 | `expo-haptics` | `~58.0.7` | tracked | #156 | 21 files; reports itself unavailable |
 | `expo-glass-effect` | `58.0.5` | tracked | #156 | chips, toolbar and the floating working control |
 | `expo-splash-screen` | `~58.0.13` | tracked | #156 | root; the platform's first-frame policy |
-| `expo-sharing` | `58.0.22` | tracked | #156 | attachment download and incoming shares |
+| `expo-sharing` | `58.0.22` | works | `packages/expo/e2e/expo-sharing.json` | attachment download over the OpenURI portal's chooser (#744); the e2e runs without a session bus, so it proves the module is wired into the window and rejects, and the hand-off to a portal is proved by `OpenUriPortalTest` against a fake one; incoming shares are read on Android and iOS only, and answer `[]` |
 | `expo-blur` | `58.0.5` | tracked | #165 | GlassBackdrop |
 | `expo-sqlite` | `~58.0.15` | tracked | #638 | T3 Code opens a database; Suuudokuuu's kv-store (#163) builds on the same port |
 | `@expo/ui` | `58.0.27` | declined | #87 | eight shared views import `@expo/ui/swift-ui`; see the feature profile |

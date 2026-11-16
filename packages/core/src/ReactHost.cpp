@@ -284,6 +284,12 @@ NotificationCenter& ReactHost::notifications() noexcept {
     return turboModuleRegistry_->notifications();
 }
 
+FileSharing& ReactHost::fileSharing() noexcept {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    return turboModuleRegistry_->fileSharing();
+}
+
 LinuxWorkletsModule& ReactHost::worklets() noexcept {
     react_native_assert(std::this_thread::get_id() == owningThread_);
 

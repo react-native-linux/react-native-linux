@@ -1,0 +1,12 @@
+{
+  "name": "expo-sharing",
+  "bundle": "expo-sharing.tsx",
+  "ready": "expo-sharing:",
+  "frames": 600,
+  "windowFlags": ["--no-decorations", "--app-id", "org.reactnative.linux.e2e.sharing"],
+  "steps": ["sleep 100"],
+  "expect": [
+    "expo-sharing: available=false share=Failed to share the file: cannot open the session bus: No such file or directory payloads=[] resolved=[]"
+  ],
+  "reject": ["expo-sharing: FAILED"]
+}
