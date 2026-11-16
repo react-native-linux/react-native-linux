@@ -391,7 +391,9 @@ bool WaylandWindow::waitForRedraw(std::chrono::milliseconds fallbackTimeout) {
         clipboard_->publishPendingText();
     }
 
-    while (!closed_ && !frameCallbackFired_ && !hasInputEndingIdleWait()) {
+    const ToplevelState stateAtEntry = toplevelState_;
+
+    while (!closed_ && !frameCallbackFired_ && !hasInputEndingIdleWait() && toplevelState_ == stateAtEntry) {
         const std::chrono::milliseconds remaining =
             std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
 

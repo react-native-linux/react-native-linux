@@ -302,7 +302,9 @@ public:
     /**
      * Dispatches until the frame callback fires, the fallback timeout expires or the window closes; returns false once
      * it is closed. An idle window armed no callback (#703), so input arriving while it waits ends the wait at once
-     * rather than waiting out the fallback: the next iteration takes it and answers it.
+     * rather than waiting out the fallback: the next iteration takes it and answers it. A configure that changes the
+     * toplevel state ends it too, because the fallback was stretched for the old state: a suspended window that
+     * resumes must not wait out the occluded interval before it paints and reports `active` (#770).
      */
     bool waitForRedraw(std::chrono::milliseconds fallbackTimeout);
 
