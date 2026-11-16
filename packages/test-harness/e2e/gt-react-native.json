@@ -1,15 +1,14 @@
 {
   "name": "gt-react-native",
   "bundle": "gt-react-native.tsx",
-  "ready": "gt-react-native: stored fr",
-  "frames": 600,
-  "steps": ["sleep 1500"],
+  "ready": "gt-react-native: system de Einstellungen",
+  "frames": 900,
+  "env": { "LANG": "de_DE.UTF-8", "LANGUAGE": "", "LC_ALL": "", "LC_MESSAGES": "" },
+  "steps": ["sleep 2000"],
   "expect": [
-    "gt-react-native: locales tags",
-    "gt-react-native: stored fr",
+    "gt-react-native: system de Einstellungen",
+    "gt-react-native: picked fr Réglages",
     "[rnl-reload] reloaded",
-    "gt-react-native: locales tags",
-    "gt-react-native: read fr"
-  ],
-  "reject": ["gt-react-native: locales invalid"]
+    "gt-react-native: restored fr Réglages"
+  ]
 }

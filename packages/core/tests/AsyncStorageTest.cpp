@@ -1,11 +1,14 @@
 #include "AsyncStorage.h"
 
+#include <chrono>
 #include <filesystem>
 #include <gtest/gtest.h>
+#include <memory>
 #include <optional>
 #include <sqlite3.h>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -15,6 +18,8 @@ using react_native_linux::KeyValueStore;
 namespace fs = std::filesystem;
 
 using Entries = std::vector<KeyValueStore::Entry>;
+
+constexpr std::chrono::milliseconds kLockHeld{50};
 
 class AsyncStorageTest : public ::testing::Test {
 protected:
@@ -75,6 +80,37 @@ TEST_F(AsyncStorageTest, ValuesSurviveTheProcessInTheFileTheDirectoryIsCreatedFo
     reopened.setDatabasePath(databasePath());
 
     EXPECT_EQ(reopened.get("db", {"saved"}), (Entries{{"saved", "yes"}}));
+}
+
+/**
+ * #647: another connection holding the file's write lock neither fails a read, which WAL lets see the last commit,
+ * nor a write, which waits for the lock rather than throwing `database is locked` inside a synchronous render.
+ */
+TEST_F(AsyncStorageTest, AnotherConnectionsWriteLockFailsNeitherAReadNorAWriteThatWaitsForIt) {
+    KeyValueStore store;
+
+    store.setDatabasePath(databasePath());
+    store.set("db", {{"key", "committed"}});
+
+    sqlite3* opened = nullptr;
+    ASSERT_EQ(sqlite3_open(databasePath().c_str(), &opened), SQLITE_OK);
+    const std::unique_ptr<sqlite3, decltype(&sqlite3_close)> writer(opened, &sqlite3_close);
+    ASSERT_EQ(sqlite3_exec(writer.get(),
+                           "BEGIN EXCLUSIVE; INSERT OR REPLACE INTO entries VALUES ('db', 'key', 'written')", nullptr,
+                           nullptr, nullptr),
+              SQLITE_OK);
+
+    EXPECT_EQ(store.get("db", {"key"}), (Entries{{"key", "committed"}}));
+
+    std::thread committer([&writer] {
+        std::this_thread::sleep_for(kLockHeld);
+        sqlite3_exec(writer.get(), "COMMIT", nullptr, nullptr, nullptr);
+    });
+
+    EXPECT_NO_THROW(store.set("db", {{"other", "waited"}}));
+    committer.join();
+
+    EXPECT_EQ(store.get("db", {"key", "other"}), (Entries{{"key", "written"}, {"other", "waited"}}));
 }
 
 TEST_F(AsyncStorageTest, MovingTheDatabaseClosesTheInMemoryOne) {

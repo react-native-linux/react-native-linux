@@ -1,6 +1,7 @@
 #include "OpenUriPortal.h"
 
 #include "PeerBus.h"
+#include "ScopedEnvironment.h"
 
 #include <array>
 #include <cerrno>
@@ -337,17 +338,10 @@ TEST_F(OpenUriPortalTest, AnythingButARegularFileFailsAtOnce) {
 
 /** The session's own bus, when the address it names has nobody listening, has no portal. */
 TEST_F(OpenUriPortalTest, TheSessionBusWithNobodyAtItsAddressIsUnavailable) {
-    const char* const previous = std::getenv("DBUS_SESSION_BUS_ADDRESS");
-    const std::optional<std::string> saved = previous == nullptr ? std::nullopt : std::optional<std::string>(previous);
+    const react_native_linux::ScopedEnvironment sessionBus("DBUS_SESSION_BUS_ADDRESS",
+                                                           "unix:path=/nonexistent/rnl-open-uri-portal-test");
 
-    ::setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent/rnl-open-uri-portal-test", 1);
     EXPECT_FALSE(OpenUriPortal().isAvailable());
-
-    if (saved.has_value()) {
-        ::setenv("DBUS_SESSION_BUS_ADDRESS", saved->c_str(), 1);
-    } else {
-        ::unsetenv("DBUS_SESSION_BUS_ADDRESS");
-    }
 }
 
 } // namespace

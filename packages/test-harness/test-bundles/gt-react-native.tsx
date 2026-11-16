@@ -1,44 +1,66 @@
-import { AppRegistry, TurboModuleRegistry, View } from "react-native";
+import { AppRegistry, Text, TurboModuleRegistry } from "react-native";
+import { GTProvider, initializeGT, useGT, useLocale, useSetLocale } from "gt-react-native";
 import type { TurboModule } from "react-native";
+import structuredClone from "@ungap/structured-clone";
 import { useEffect } from "react";
-
-interface GtReactNativeSpec extends TurboModule {
-  readonly getNativeLocales: () => string[];
-  readonly nativeStoreGet: (key: string) => string | null;
-  readonly nativeStoreSet: (key: string, value: string) => void;
-}
 
 interface DevSettingsSpec extends TurboModule {
   readonly reload: () => void;
 }
 
-// #647: gt-react-native's own lookup, which throws on Linux without the module, then the locale T3 Code's language
-// picker stores. The first instance stores it and reloads; the second reads it back from the application's file.
-const LOCALE_KEY = "generaltranslation.locale";
+// #647: the scenario runs the window with LANG=de_DE.UTF-8. With nothing stored, GTProvider follows the system
+// language through GtReactNative's getNativeLocales and renders German. The bundle then picks French, as T3 Code's
+// language setting does, and reloads; the second instance starts in French from GtReactNative's store.
+// The key is T3 Code's own catalog entry for gt("Settings").
+const SETTINGS = "0a75e464d833bca8";
+const TRANSLATIONS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  de: { [SETTINGS]: "Einstellungen" },
+  fr: { [SETTINGS]: "Réglages" },
+};
+
+let isSwitching = false;
+
+// gt-i18n clones its caches with the structuredClone global, which Hermes lacks; Expo's runtime installs this one
+// (expo/src/winter/runtime.native.ts), which is where T3 Code gets it.
+globalThis.structuredClone ??= structuredClone;
+
+initializeGT({
+  defaultLocale: "en",
+  loadTranslations: async (locale: string) => TRANSLATIONS[locale] ?? {},
+  locales: ["en", "de", "fr"],
+});
 
 const report = (line: string): void => {
   console.log(`gt-react-native: ${line}`);
 };
 
-const GtReactNativeApp = (): React.JSX.Element => {
+const Settings = (): React.JSX.Element => {
+  const gt = useGT();
+  const locale = useLocale();
+  const setLocale = useSetLocale();
+  const title = gt("Settings");
+
   useEffect(() => {
-    const gt = TurboModuleRegistry.getEnforcing<GtReactNativeSpec>("GtReactNative");
-    const locales = gt.getNativeLocales();
-    const stored = gt.nativeStoreGet(LOCALE_KEY);
-
-    report(`locales ${Array.isArray(locales) && locales.every((tag) => typeof tag === "string") ? "tags" : "invalid"}`);
-
-    if (stored === null) {
-      gt.nativeStoreSet(LOCALE_KEY, "fr");
-      report("stored fr");
+    if (locale === "de") {
+      report(`system ${locale} ${title}`);
+      isSwitching = true;
+      setLocale("fr");
+    } else if (isSwitching) {
+      report(`picked ${locale} ${title}`);
       TurboModuleRegistry.getEnforcing<DevSettingsSpec>("DevSettings").reload();
     } else {
-      report(`read ${stored}`);
+      report(`restored ${locale} ${title}`);
     }
-  }, []);
+  }, [locale, setLocale, title]);
 
-  return <View />;
+  return <Text>{title}</Text>;
 };
+
+const GtReactNativeApp = (): React.JSX.Element => (
+  <GTProvider>
+    <Settings />
+  </GTProvider>
+);
 
 AppRegistry.registerComponent("GtReactNative", () => GtReactNativeApp);
 AppRegistry.runApplication("GtReactNative", { initialProps: {}, rootTag: 1 });

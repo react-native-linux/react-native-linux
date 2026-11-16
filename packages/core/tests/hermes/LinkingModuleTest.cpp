@@ -1,3 +1,4 @@
+#include "../ScopedEnvironment.h"
 #include "ReactHost.h"
 
 #include <chrono>
@@ -85,13 +86,14 @@ std::string traceOf(ReactHost& reactHost) {
  * be spawned rejects `openURL` with the spawn error, and `openSettings` rejects because there is nothing to open.
  */
 TEST(LinkingModuleTest, AnswersInitialUrlActivationsAndOpenRequests) {
-    const std::string path = std::getenv("PATH") == nullptr ? "" : std::getenv("PATH");
     ReactHost reactHost;
 
-    ASSERT_EQ(setenv("PATH", "", 1), 0);
-    reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>(kLinkingProbe), "LinkingModuleTest.js");
-    reactHost.drainJavaScriptThread();
-    ASSERT_EQ(setenv("PATH", path.c_str(), 1), 0);
+    {
+        const ScopedEnvironment emptyPath("PATH", "");
+
+        reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>(kLinkingProbe), "LinkingModuleTest.js");
+        reactHost.drainJavaScriptThread();
+    }
 
     reactHost.activation().onActivationUrlReceived("myapp://deep/link");
     reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>(kAfterActivation), "LinkingAfter.js");

@@ -1,18 +1,14 @@
+#include "../ScopedEnvironment.h"
 #include "ReactHost.h"
 
-#include <chrono>
-#include <cstdlib>
 #include <cxxreact/JSBigString.h>
 #include <future>
 #include <gtest/gtest.h>
 #include <memory>
-#include <optional>
 #include <string>
 
 namespace react_native_linux {
 namespace {
-
-constexpr std::chrono::milliseconds kQuiescenceBudget{5000};
 
 // gt-react-native's three calls, as its getLocale() and NativeConditionStore make them.
 constexpr char kGtReactNativeProbe[] = R"JAVASCRIPT(
@@ -34,53 +30,22 @@ try {
 }
 )JAVASCRIPT";
 
-/** Sets `name` for one test and puts back what was there before. */
-class ScopedVariable final {
-public:
-    ScopedVariable(const char* name, const char* value) : name_(name) {
-        const char* saved = std::getenv(name);
-
-        if (saved != nullptr) {
-            saved_ = saved;
-        }
-
-        setenv(name, value, 1);
-    }
-
-    ScopedVariable(const ScopedVariable&) = delete;
-    ScopedVariable(ScopedVariable&&) = delete;
-    ScopedVariable& operator=(const ScopedVariable&) = delete;
-    ScopedVariable& operator=(ScopedVariable&&) = delete;
-
-    ~ScopedVariable() {
-        if (saved_.has_value()) {
-            setenv(name_, saved_->c_str(), 1);
-        } else {
-            unsetenv(name_);
-        }
-    }
-
-private:
-    const char* name_;
-    std::optional<std::string> saved_;
-};
-
 /**
  * #647: `gt-react-native` requires `GtReactNative` with `getEnforcing` as it is imported, which is T3 Code's first
  * fatal on Linux. The module answers the user's languages from the POSIX environment, best first, and keeps the
  * locale the user picked in its own store; a call missing an argument or passing the wrong type throws.
  */
 TEST(GtReactNativeModuleTest, AnswersTheEnvironmentLanguagesAndStoresThePickedLocale) {
-    const ScopedVariable lcAll("LC_ALL", "");
-    const ScopedVariable lcMessages("LC_MESSAGES", "");
-    const ScopedVariable lang("LANG", "de_DE.UTF-8");
-    const ScopedVariable language("LANGUAGE", "fr_CA:fr");
+    const ScopedEnvironment lcAll("LC_ALL", "");
+    const ScopedEnvironment lcMessages("LC_MESSAGES", "");
+    const ScopedEnvironment lang("LANG", "de_DE.UTF-8");
+    const ScopedEnvironment language("LANGUAGE", "fr_CA:fr");
     ReactHost reactHost;
     std::promise<std::string> trace;
 
     reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>(kGtReactNativeProbe),
                          "GtReactNativeModuleTest.js");
-    EXPECT_TRUE(reactHost.runUntilQuiescent(kQuiescenceBudget));
+    reactHost.drainJavaScriptThread();
     reactHost.reactInstance().getBufferedRuntimeExecutor()([&trace](facebook::jsi::Runtime& runtime) {
         const facebook::jsi::Value value = runtime.global().getProperty(runtime, "gtTrace");
 

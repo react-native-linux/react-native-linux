@@ -281,6 +281,9 @@ importers:
       '@react-native-linux/reanimated':
         specifier: workspace:*
         version: link:../reanimated
+      gt-react-native:
+        specifier: 11.4.18
+        version: 11.4.18(react-native@0.88.1(patch_hash=6b3a0befcda7e6ee7b87ffc28e229730a284e887a53328eab553497985347a41)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1)
       react:
         specifier: 19.3.1
         version: 19.3.1
@@ -306,6 +309,9 @@ importers:
       '@types/react':
         specifier: ^19.1.1
         version: 19.3.0
+      '@ungap/structured-clone':
+        specifier: 1.4.0
+        version: 1.4.0
       babel-plugin-transform-flow-enums:
         specifier: 0.0.2
         version: 0.0.2(@babel/core@7.29.7(supports-color@8.1.1))
@@ -1050,6 +1056,9 @@ packages:
   '@formatjs/fast-memoize@2.2.7':
     resolution: {integrity: sha512-Yabmi9nSvyOMrlSeGGWDiH7rf3a7sIwplbvo/dlz9WCIjzIQAfy1RMf4S0X3yG724n5Ghu2GmEl5NJIV6O9sZQ==}
 
+  '@formatjs/intl-datetimeformat@6.18.2':
+    resolution: {integrity: sha512-XXGJVOi/vmB+eLtYDs+ggDIvba/+VNmNrDZOtMyol5D0zl+zzuPps6W3TgDflpKfzg4memAEbLnA1wC6/TBSjQ==}
+
   '@formatjs/intl-displaynames@6.8.13':
     resolution: {integrity: sha512-VbY7BdYJX5eURVKLk2grndUQtnbCLNbcJId/Sb/PsX7fWXiqWvg7qt/mecVHRzqoSEoGCQToKDxzpJj8RC0s3g==}
 
@@ -1060,11 +1069,40 @@ packages:
   '@formatjs/intl-getcanonicallocales@2.5.6':
     resolution: {integrity: sha512-CnBbc4St61RL06gDXlCZG08Gt41uiySgsdZNBExh8/c0FBONJCrAlQ9FsyalUdq9ze0nCeknJtMmO8JnB9xHgQ==}
 
+  '@formatjs/intl-listformat@7.7.13':
+    resolution: {integrity: sha512-e1jk2w1H6VLy4kKoYyfBjvkw6IXE48AczF+7FIzWr5zB7VjdWQyrvs858t2WeQzHD8dRIxvIyX+qmeGql4jvng==}
+
   '@formatjs/intl-locale@4.2.13':
     resolution: {integrity: sha512-Qcs0mP9JhEPCinPfpZ5JKzOa+VYDg94TQSFZozYuqG8R+hEGUTKyoyMqB5xi5QZT/hlB0CSgeNc/0fWMGtTFXA==}
 
   '@formatjs/intl-localematcher@0.6.2':
     resolution: {integrity: sha512-XOMO2Hupl0wdd172Y06h6kLpBz6Dv+J4okPLl4LPtzbr8f66WbIoy4ev98EBuZ6ZK4h5ydTN6XneT4QVpD7cdA==}
+
+  '@formatjs/intl-numberformat@8.15.6':
+    resolution: {integrity: sha512-htynTNKm5WOnbR521tNSMkWzX3yO6Z77qjOxvRujh5/A/UBKeoNElyuKCJltizdx3X33QNWQZC4aWjLKcccyeQ==}
+
+  '@formatjs/intl-pluralrules@5.4.6':
+    resolution: {integrity: sha512-2HlOq+c7KsSps829SJ3B5987coX5mzKx9NbPcNwQ07eq8FBHgB3HfMoxt5HvLsdk4oQwCjAEnocbtd+wVwZ2Kg==}
+
+  '@formatjs/intl-relativetimeformat@11.4.13':
+    resolution: {integrity: sha512-fNs6cpz9zIUEgTlE3kPSEyRfslxeMG19dT7sLz2C6U7Jxkx8xK/IH1ImZzCeqd6JlqE81O7uNW4oZTb1pz8lUw==}
+
+  '@generaltranslation/api@0.5.6':
+    resolution: {integrity: sha512-rPcqH7BomEIRQKX6oyOagfqrfHddi3EcOkgWC/dgs2qSRhkoZYcpn68RWCr3ZFnmCMib7uDtSR9v8BjUI7AZLQ==}
+
+  '@generaltranslation/format@0.1.9':
+    resolution: {integrity: sha512-GwXbdajc7pIBsnrxVXE4PqjBHRwgKef4GyauH7CLaXSormRLU8G58ahqfwmQRL6ie1xt5KMMb6UAekdj1i9Sxg==}
+
+  '@generaltranslation/icu@0.1.2':
+    resolution: {integrity: sha512-2A0txUrZdAWAc42N58/PtoWv7vNB0U1Iyl+nDzf7RSswLHPMsonp7OmPnSraQgkoRSVSlueARVQK4T+zanWsyA==}
+
+  '@generaltranslation/react-core@11.4.18':
+    resolution: {integrity: sha512-1fFrMeddHH0mUTvg2iCSzL2Bfsc34j2EtL9hc4wxI8Xkwh2umHHtuZcD2Z3H7uA94w2kXEShgXe1kX/HFxqlOg==}
+    peerDependencies:
+      react: '>=18.0.0'
+
+  '@generaltranslation/supported-locales@2.1.45':
+    resolution: {integrity: sha512-OqKHSJgvcMxWvUz74HLvvaI1c8brLslTNyAsh7RID4YUTxhL1OLbrd6HPJKPlURoExQ72lE+R3KHwtMt1wjOXg==}
 
   '@humanwhocodes/config-array@0.13.0':
     resolution: {integrity: sha512-DZLEEqFWQFiyK6h5YIeynKx7JlvCYWL0cImfSRXZ9l4Sg2efkFGTuFf6vzXjK1cq6IYkU+Eg/JizXw+TD2vRNw==}
@@ -1122,6 +1160,10 @@ packages:
     peerDependencies:
       '@emnapi/core': ^1.7.1 || ^2.0.0-alpha.4
       '@emnapi/runtime': ^1.7.1 || ^2.0.0-alpha.4
+
+  '@noble/hashes@2.4.0':
+    resolution: {integrity: sha512-X5XaVWZIBCT7HHZGm5I7ZQXDwLG+bGXuSrMQAW+7Zvl87h1kmc1ZB1VSRJcpUfoUrGQp4Fkoxm5kZ+Ms+aW+eA==}
+    engines: {node: '>= 20.19.0'}
 
   '@nodelib/fs.scandir@2.1.5':
     resolution: {integrity: sha512-vq24Bq3ym5HEQm2NKCr3yXDwjc7vTsEThRDnkp2DK9p1uqLR+DHurm/NOTo0KG7HYHU7eppKZj3MyqYuMBf62g==}
@@ -3009,6 +3051,9 @@ packages:
   functions-have-names@1.2.3:
     resolution: {integrity: sha512-xckBUXyTIqT97tq2x2AMb+g163b5JFysYk0x4qxNFwbfQkmNZoiRHb6sPzI9/QV33WeuvVYBUIiD4NzNIyqaRQ==}
 
+  generaltranslation@9.5.9:
+    resolution: {integrity: sha512-/R/MvEEiB+Us/fj/YfuSTfhvzUfmvFpiHxGx2f+C6Wv0O875T0yJI3RLGDopqZVbnKPimog9eXofJL7W0SOxJg==}
+
   gensync@1.0.0-beta.2:
     resolution: {integrity: sha512-3hN7NaskYvMDLQY55gnW3NQ+mesEAepTqlg+VEbj7zzqEMBVNhzcGYYeqFo/TlYz6eQiFcp1HcsCZO+nGgS8zg==}
     engines: {node: '>=6.9.0'}
@@ -3076,6 +3121,15 @@ packages:
 
   graphemer@1.4.0:
     resolution: {integrity: sha512-EtKwoO6kxCL9WO5xipiHTZlSzBm7WLT627TqC/uVRd0HKmq8NXyebnNYxDoBi7wt8eTWrUrKXCOVaFq9x1kgag==}
+
+  gt-i18n@1.0.40:
+    resolution: {integrity: sha512-EbDhYhtyUrZI4iBSWpe1AMRoYrmEn52/hnVG6NAqVhVvY85t15JCJWMdVOkDoB1TRVH9nbSzAttaYwcv0LF3KQ==}
+
+  gt-react-native@11.4.18:
+    resolution: {integrity: sha512-juASbGUn0R4fFZdr8qR7wovAXliH5RD3djZwkGL5x4ALp8/1J6fR1t8q0uF1Iq0GrsIcuE4oKjVgROCyMiXudA==}
+    peerDependencies:
+      react: '>=19.0.0'
+      react-native: '>=0.78.0'
 
   has-flag@3.0.0:
     resolution: {integrity: sha512-sKJf1+ceQBr4SMkvQnBDNDtf4TXpVhVGateu0t918bl30FnbE2m4vNLX+VWe/dpjlb+HugGYzW7uQXH98HPEYw==}
@@ -5721,6 +5775,13 @@ snapshots:
     dependencies:
       tslib: 2.8.1
 
+  '@formatjs/intl-datetimeformat@6.18.2':
+    dependencies:
+      '@formatjs/ecma402-abstract': 2.3.6
+      '@formatjs/intl-localematcher': 0.6.2
+      decimal.js: 10.6.0
+      tslib: 2.8.1
+
   '@formatjs/intl-displaynames@6.8.13':
     dependencies:
       '@formatjs/ecma402-abstract': 2.3.6
@@ -5736,6 +5797,12 @@ snapshots:
     dependencies:
       tslib: 2.8.1
 
+  '@formatjs/intl-listformat@7.7.13':
+    dependencies:
+      '@formatjs/ecma402-abstract': 2.3.6
+      '@formatjs/intl-localematcher': 0.6.2
+      tslib: 2.8.1
+
   '@formatjs/intl-locale@4.2.13':
     dependencies:
       '@formatjs/ecma402-abstract': 2.3.6
@@ -5746,6 +5813,45 @@ snapshots:
   '@formatjs/intl-localematcher@0.6.2':
     dependencies:
       tslib: 2.8.1
+
+  '@formatjs/intl-numberformat@8.15.6':
+    dependencies:
+      '@formatjs/ecma402-abstract': 2.3.6
+      '@formatjs/intl-localematcher': 0.6.2
+      decimal.js: 10.6.0
+      tslib: 2.8.1
+
+  '@formatjs/intl-pluralrules@5.4.6':
+    dependencies:
+      '@formatjs/ecma402-abstract': 2.3.6
+      '@formatjs/intl-localematcher': 0.6.2
+      decimal.js: 10.6.0
+      tslib: 2.8.1
+
+  '@formatjs/intl-relativetimeformat@11.4.13':
+    dependencies:
+      '@formatjs/ecma402-abstract': 2.3.6
+      '@formatjs/intl-localematcher': 0.6.2
+      tslib: 2.8.1
+
+  '@generaltranslation/api@0.5.6': {}
+
+  '@generaltranslation/format@0.1.9':
+    dependencies:
+      '@generaltranslation/icu': 0.1.2
+
+  '@generaltranslation/icu@0.1.2': {}
+
+  '@generaltranslation/react-core@11.4.18(react@19.3.1)':
+    dependencies:
+      '@generaltranslation/format': 0.1.9
+      generaltranslation: 9.5.9
+      gt-i18n: 1.0.40
+      react: 19.3.1
+
+  '@generaltranslation/supported-locales@2.1.45':
+    dependencies:
+      generaltranslation: 9.5.9
 
   '@humanwhocodes/config-array@0.13.0(supports-color@8.1.1)':
     dependencies:
@@ -5812,6 +5918,8 @@ snapshots:
       '@emnapi/runtime': 1.11.2
       '@tybys/wasm-util': 0.10.3
     optional: true
+
+  '@noble/hashes@2.4.0': {}
 
   '@nodelib/fs.scandir@2.1.5':
     dependencies:
@@ -7487,6 +7595,13 @@ snapshots:
 
   functions-have-names@1.2.3: {}
 
+  generaltranslation@9.5.9:
+    dependencies:
+      '@generaltranslation/api': 0.5.6
+      '@generaltranslation/format': 0.1.9
+      '@generaltranslation/icu': 0.1.2
+      '@noble/hashes': 2.4.0
+
   gensync@1.0.0-beta.2: {}
 
   get-caller-file@2.0.5: {}
@@ -7570,6 +7685,29 @@ snapshots:
   graceful-fs@4.2.11: {}
 
   graphemer@1.4.0: {}
+
+  gt-i18n@1.0.40:
+    dependencies:
+      '@generaltranslation/format': 0.1.9
+      generaltranslation: 9.5.9
+
+  gt-react-native@11.4.18(react-native@0.88.1(patch_hash=6b3a0befcda7e6ee7b87ffc28e229730a284e887a53328eab553497985347a41)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1):
+    dependencies:
+      '@formatjs/intl-datetimeformat': 6.18.2
+      '@formatjs/intl-displaynames': 6.8.13
+      '@formatjs/intl-getcanonicallocales': 2.5.6
+      '@formatjs/intl-listformat': 7.7.13
+      '@formatjs/intl-locale': 4.2.13
+      '@formatjs/intl-numberformat': 8.15.6
+      '@formatjs/intl-pluralrules': 5.4.6
+      '@formatjs/intl-relativetimeformat': 11.4.13
+      '@generaltranslation/format': 0.1.9
+      '@generaltranslation/react-core': 11.4.18(react@19.3.1)
+      '@generaltranslation/supported-locales': 2.1.45
+      generaltranslation: 9.5.9
+      gt-i18n: 1.0.40
+      react: 19.3.1
+      react-native: 0.88.1(patch_hash=6b3a0befcda7e6ee7b87ffc28e229730a284e887a53328eab553497985347a41)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1)
 
   has-flag@3.0.0: {}
 

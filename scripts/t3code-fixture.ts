@@ -175,6 +175,7 @@ const runWindow = async (link: string, rig: Rig): Promise<WindowRun> => {
       runtimeDirectory,
       scenario: {
         automation: null,
+        env: {},
         fastRefresh: null,
         frames: FRAMES,
         injectProtocolError: false,

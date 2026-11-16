@@ -110,6 +110,21 @@ const readOptionalStringArray = (
   return value;
 };
 
+/** An omitted field is `{}`; every value must be a string, and an empty one is kept, as an empty variable is. */
+const readOptionalStringRecord = (
+  record: Record<string, unknown>,
+  label: string,
+  sourceName: string,
+): Readonly<Record<string, string>> => {
+  const value = label in record ? record[label] : {};
+
+  if (!isRecord(value) || !Object.values(value).every((entry) => typeof entry === "string")) {
+    throw new Error(`${sourceName}: "${label}" must be an object of strings`);
+  }
+
+  return Object.fromEntries(Object.entries(value).map(([name, entry]) => [name, String(entry)]));
+};
+
 /** `null` for an omitted field or an explicit JSON `null`; an explicit empty string still hits `readString`'s reject. */
 const readOptionalString = (record: Record<string, unknown>, label: string, sourceName: string): string | null =>
   !(label in record) || record[label] === null ? null : readString(record[label], label, sourceName);
@@ -122,6 +137,7 @@ export {
   readOptionalBoolean,
   readOptionalString,
   readOptionalStringArray,
+  readOptionalStringRecord,
   readPositiveInteger,
   readPositiveNumber,
   readString,

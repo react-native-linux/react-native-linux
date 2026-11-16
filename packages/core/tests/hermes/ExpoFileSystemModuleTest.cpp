@@ -1,3 +1,4 @@
+#include "../ScopedEnvironment.h"
 #include "ExpoFileSystem.h"
 #include "ReactHost.h"
 
@@ -24,41 +25,6 @@ constexpr std::chrono::milliseconds kQuiescenceBudget{5000};
 constexpr std::chrono::milliseconds kReaderDelay{200};
 constexpr std::chrono::milliseconds kPollInterval{10};
 constexpr std::chrono::seconds kRescueBudget{30};
-
-/** Sets an environment variable, or unsets it for `nullptr`, for the object's lifetime. */
-class EnvironmentOverride final {
-public:
-    EnvironmentOverride(const char* name, const char* value) : name_(name) {
-        const char* previous = std::getenv(name);
-
-        if (previous != nullptr) {
-            previous_ = previous;
-        }
-
-        if (value == nullptr) {
-            unsetenv(name);
-        } else {
-            setenv(name, value, 1);
-        }
-    }
-
-    EnvironmentOverride(const EnvironmentOverride&) = delete;
-    EnvironmentOverride(EnvironmentOverride&&) = delete;
-    EnvironmentOverride& operator=(const EnvironmentOverride&) = delete;
-    EnvironmentOverride& operator=(EnvironmentOverride&&) = delete;
-
-    ~EnvironmentOverride() {
-        if (previous_.has_value()) {
-            setenv(name_, previous_->c_str(), 1);
-        } else {
-            unsetenv(name_);
-        }
-    }
-
-private:
-    const char* name_;
-    std::optional<std::string> previous_;
-};
 
 /** Everything a writer puts into the FIFO at `path`, read once a writer has opened and closed it. */
 std::string drainFifo(const fs::path& path) {
@@ -205,7 +171,7 @@ const failure = async (work) => {
  */
 TEST(ExpoFileSystemModuleTest, UpstreamFileAndDirectorySubclassesWorkInTheApplicationDirectories) {
     const fs::path root = fs::temp_directory_path() / "rnl-expo-file-system-module";
-    const EnvironmentOverride cacheHome("XDG_CACHE_HOME", (root / "cache").c_str());
+    const ScopedEnvironment cacheHome("XDG_CACHE_HOME", (root / "cache").c_str());
 
     fs::remove_all(root);
     {
@@ -323,8 +289,8 @@ TEST(ExpoFileSystemModuleTest, TeardownWaitsForPendingWorkAndRunsWhatIsQueued) {
 /** With neither `XDG_CACHE_HOME` nor `HOME` there is no absolute cache directory, so the module offers none. */
 TEST(ExpoFileSystemModuleTest, AProcessWithNoHomeHasADocumentDirectoryButNoCacheDirectory) {
     const fs::path root = fs::temp_directory_path() / "rnl-expo-file-system-homeless";
-    const EnvironmentOverride cacheHome("XDG_CACHE_HOME", nullptr);
-    const EnvironmentOverride home("HOME", nullptr);
+    const ScopedEnvironment cacheHome("XDG_CACHE_HOME", nullptr);
+    const ScopedEnvironment home("HOME", nullptr);
 
     fs::remove_all(root);
     {

@@ -6,6 +6,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdlib>
+#include <locale>
 #include <ranges>
 #include <utility>
 #include <vector>
@@ -24,12 +25,25 @@ std::string withoutCodesetOrModifier(std::string_view locale) {
     return std::string(locale.substr(0, locale.find_first_of(".@")));
 }
 
-bool isLanguage(std::string_view locale) { return !locale.empty() && locale != "C" && locale != "POSIX"; }
+bool isPortableLocale(std::string_view locale) { return locale == "C" || locale == "POSIX"; }
+
+/** BCP 47's shape, which is all `getNativeLocales` promises: subtags of one to eight ASCII letters and digits. */
+bool isLanguageTag(std::string_view tag) {
+    constexpr std::size_t kLongestSubtag = 8;
+
+    return !tag.empty() && std::ranges::all_of(std::views::split(tag, '-'), [](const auto range) {
+        const std::string_view subtag(range.begin(), range.end());
+
+        return !subtag.empty() && subtag.size() <= kLongestSubtag && std::ranges::all_of(subtag, [](char character) {
+            return std::isalnum(character, std::locale::classic());
+        });
+    });
+}
 
 void appendLanguageTag(std::vector<std::string>& tags, std::string locale) {
     std::ranges::replace(locale, '_', '-');
 
-    if (isLanguage(locale) && std::ranges::find(tags, locale) == tags.end()) {
+    if (isLanguageTag(locale) && std::ranges::find(tags, locale) == tags.end()) {
         tags.push_back(std::move(locale));
     }
 }
@@ -51,7 +65,7 @@ std::string localeFromEnvironment() {
 std::vector<std::string> preferredLanguageTags() {
     const std::string locale = localeFromEnvironment();
 
-    if (!isLanguage(locale)) {
+    if (locale.empty() || isPortableLocale(locale)) {
         return {};
     }
 
@@ -59,7 +73,14 @@ std::vector<std::string> preferredLanguageTags() {
     std::vector<std::string> tags;
 
     for (const auto entry : std::views::split(std::string_view(languageList == nullptr ? "" : languageList), ':')) {
-        appendLanguageTag(tags, withoutCodesetOrModifier(std::string_view(entry.begin(), entry.end())));
+        std::string language = withoutCodesetOrModifier(std::string_view(entry.begin(), entry.end()));
+
+        // glibc's DCIGETTEXT ends its walk of the list at a `C` or `POSIX` entry (intl/dcigettext.c).
+        if (isPortableLocale(language)) {
+            break;
+        }
+
+        appendLanguageTag(tags, std::move(language));
     }
 
     appendLanguageTag(tags, locale);

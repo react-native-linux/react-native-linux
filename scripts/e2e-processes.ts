@@ -45,6 +45,7 @@ interface Rig {
 /** The fields of a `Scenario` that starting and driving its processes read. */
 interface LaunchedScenario {
   readonly automation: unknown;
+  readonly env: Readonly<Record<string, string>>;
   readonly fastRefresh: FastRefreshEdit | null;
   readonly frames: number;
   readonly injectProtocolError: boolean;
@@ -96,6 +97,7 @@ const startCompositor = (launch: WindowLaunch): Compositor =>
     ],
     {
       env: buildEnvironment({
+        ...launch.scenario.env,
         VK_ICD_FILENAMES: launch.rig.lavapipeIcdPath,
         WLR_BACKENDS: "headless",
         WLR_LIBINPUT_NO_DEVICES: "1",

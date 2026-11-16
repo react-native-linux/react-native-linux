@@ -62,9 +62,13 @@ public:
             }};
         methodMap_["nativeStoreSet"] = {
             2, [](Runtime& runtime, TurboModule& turboModule, const Value* arguments, size_t count) {
-                storeOf(turboModule)
-                    .set(kDatabase, {{stringArgument(runtime, arguments, count, 0),
-                                      stringArgument(runtime, arguments, count, 1)}});
+                std::string key = stringArgument(runtime, arguments, count, 0);
+                std::string value = stringArgument(runtime, arguments, count, 1);
+                KeyValueStore& store = storeOf(turboModule);
+
+                if (store.get(kDatabase, {key}).front().second != value) {
+                    store.set(kDatabase, {{std::move(key), std::move(value)}});
+                }
 
                 return Value::undefined();
             }};

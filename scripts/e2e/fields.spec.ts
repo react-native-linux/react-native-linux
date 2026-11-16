@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readOptionalString, readOptionalStringArray } from "./fields.ts";
+import { readOptionalString, readOptionalStringArray, readOptionalStringRecord } from "./fields.ts";
 
 const NON_STRING_ENTRY = 1;
 
@@ -47,6 +47,28 @@ describe("readOptionalString", () => {
   it("rejects an explicit empty string", () => {
     expect(() => readOptionalString({ expectsExitAfter: "" }, "expectsExitAfter", "fixture.json")).toThrow(
       'fixture.json: "expectsExitAfter" must be a non-empty string',
+    );
+  });
+});
+
+describe("readOptionalStringRecord", () => {
+  it("is empty when the field is omitted", () => {
+    expect(readOptionalStringRecord({}, "env", "fixture.json")).toEqual({});
+  });
+
+  it("keeps every value, an empty one included", () => {
+    expect(readOptionalStringRecord({ env: { LANG: "de_DE.UTF-8", LANGUAGE: "" } }, "env", "fixture.json")).toEqual({
+      LANG: "de_DE.UTF-8",
+      LANGUAGE: "",
+    });
+  });
+
+  it("rejects anything but an object of strings", () => {
+    expect(() => readOptionalStringRecord({ env: ["LANG"] }, "env", "fixture.json")).toThrow(
+      'fixture.json: "env" must be an object of strings',
+    );
+    expect(() => readOptionalStringRecord({ env: { LANG: 1 } }, "env", "fixture.json")).toThrow(
+      'fixture.json: "env" must be an object of strings',
     );
   });
 });

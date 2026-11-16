@@ -26,6 +26,7 @@ describe("parseScenario, field by field", () => {
       automation: null,
       bundle: "pressable.js",
       devServer: false,
+      env: {},
       expect: ["pressable: topClick on box at 200,140"],
       expectFailure: false,
       expectsExitAfter: null,
