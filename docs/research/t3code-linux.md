@@ -147,10 +147,11 @@ The order epic #634 follows. Each step needs the ones before it.
    frame without them. Its `intl-polyfills.ts` adds `Intl.Locale`, `getCanonicalLocales` and English `DisplayNames`
    but assumes the rest from the engine. #83 chose the platform's own `Intl` over the system ICU
    (`packages/core/src/Intl.h`), with Hermes' Intl kept off; `IntlStartupTest` starts a bundle that builds those
-   module-scope formatters, and `IntlBindingTest` covers the three constructors with T3 Code's options. The
-   polyfills are not free without the engine's own `Intl.Locale` and `Intl.DisplayNames`: `@formatjs/intl-displaynames`'
-   `shouldPolyfill()` then runs a best-fit match against 571 locales, measured at about 2.3 s a pair under the `dev`
-   build, so `App.tsx` would take about 22 minutes to load (#772).
+   module-scope formatters, and `IntlBindingTest` covers the constructors with T3 Code's options. Without an engine
+   `Intl.Locale` and `Intl.DisplayNames`, `@formatjs/intl-displaynames`' `shouldPolyfill()` runs a best-fit match
+   against 571 locales, measured at about 2.3 s a pair in T3 Code's `dev` build, about 22 minutes before `App.tsx`
+   loads. This platform's `Intl` now has both (#772), so all three polyfills skip themselves:
+   `IntlBindingTest` loads them at T3 Code's versions and checks that none installs itself.
 7. **The fixture**: the main screen renders in `rnl_window` against a local T3 server (#641). `pnpm e2e:t3code
    <checkout>` builds T3 Code's own development bundle for `linux` (it pairs from a link only under `__DEV__`) with its
    own Metro config under this platform's resolver (`packages/test-harness/scripts/t3code-metro-config.ts`), starts the
@@ -172,7 +173,7 @@ transitive package.
 
 | Package | T3 Code range | Status | Owner | Note |
 | --- | --- | --- | --- | --- |
-| `expo` | `58.0.23` | tracked | #155 | the Expo host decision; `registerRootComponent` and `requireNativeModule` at the entry |
+| `expo` | `58.0.23` | tracked | #155 | the Expo host decision; `registerRootComponent` and `requireNativeModule` at the entry; `rnl_window` does not yet run the `"main"` that `registerRootComponent` registers (#777) |
 | `expo-modules-core` | `58.0.30` | tracked | #155 | under every Expo module |
 | `expo-modules-jsi` | `58.0.22` | tracked | #155 | from expo-modules-core |
 | `expo-modules-macros` | `0.29.0` | tracked | #155 | Swift macros from expo-modules-core |

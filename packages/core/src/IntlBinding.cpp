@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <type_traits>
@@ -34,7 +35,7 @@ template <typename Format>
 using Construct = std::function<std::shared_ptr<IntlState<Format>>(std::span<const std::string>, const IntlOptions&)>;
 
 template <typename Format>
-using BoundMethod = std::function<jsi::Value(jsi::Runtime&, const Format&, const jsi::Value*, size_t)>;
+using Method = std::function<jsi::Value(jsi::Runtime&, const Format&, const jsi::Value*, size_t)>;
 
 const jsi::Value& argumentAt(const jsi::Value* arguments, size_t count, size_t index) {
     static const jsi::Value undefined;
@@ -90,6 +91,19 @@ std::uint64_t toLength(jsi::Runtime& runtime, const jsi::Value& value) {
     return std::isnan(length) ? 0 : static_cast<std::uint64_t>(std::clamp(std::trunc(length), 0.0, kMaximumLength));
 }
 
+/** The tag an `Intl.Locale` holds, which ECMA-402 reads from its slot rather than through `toString`. */
+std::optional<std::string> localeTagOf(jsi::Runtime& runtime, const jsi::Value& value) {
+    if (value.isObject()) {
+        const jsi::Object object = value.getObject(runtime);
+
+        if (object.hasNativeState<IntlState<IntlLocale>>(runtime)) {
+            return object.getNativeState<IntlState<IntlLocale>>(runtime)->format.toString();
+        }
+    }
+
+    return std::nullopt;
+}
+
 /**
  * ECMA-402's `CanonicalizeLocaleList` up to the canonicalization itself: a string, or a list of strings, each
  * validated before the next element is read.
@@ -97,6 +111,10 @@ std::uint64_t toLength(jsi::Runtime& runtime, const jsi::Value& value) {
 std::vector<std::string> readLocales(jsi::Runtime& runtime, const jsi::Value& locales) {
     if (locales.isUndefined()) {
         return {};
+    }
+
+    if (std::optional<std::string> tag = localeTagOf(runtime, locales)) {
+        return {std::move(*tag)};
     }
 
     if (locales.isString()) {
@@ -128,7 +146,9 @@ std::vector<std::string> readLocales(jsi::Runtime& runtime, const jsi::Value& lo
             throwJavaScriptError(runtime, "TypeError", "Language ID should be string or object.");
         }
 
-        tags.push_back(element.toString(runtime).utf8(runtime));
+        std::optional<std::string> tag = localeTagOf(runtime, element);
+
+        tags.push_back(tag.has_value() ? std::move(*tag) : element.toString(runtime).utf8(runtime));
         translatingErrors<std::vector<std::string>>(
             runtime, [&tags]() { return canonicalizeLocaleList(std::span(&tags.back(), 1)); });
     }
@@ -212,32 +232,38 @@ jsi::Function hostFunction(jsi::Runtime& runtime, const char* name, unsigned int
                                                  std::move(function));
 }
 
+jsi::Array toArray(jsi::Runtime& runtime, const std::vector<std::string>& strings) {
+    jsi::Array array(runtime, strings.size());
+
+    for (size_t index = 0; index < strings.size(); ++index) {
+        array.setValueAtIndex(runtime, index, jsi::String::createFromUtf8(runtime, strings[index]));
+    }
+
+    return array;
+}
+
+void defineGetter(jsi::Runtime& runtime, const jsi::Object& object, const char* name, const jsi::Function& getter) {
+    jsi::Object descriptor(runtime);
+
+    descriptor.setProperty(runtime, "get", getter);
+    descriptor.setProperty(runtime, "configurable", true);
+    runtime.global()
+        .getPropertyAsObject(runtime, "Object")
+        .getPropertyAsFunction(runtime, "defineProperty")
+        .call(runtime, object, name, descriptor);
+}
+
 /**
- * One `Intl` constructor: callable with or without `new`, as ECMA-402 requires of these three, with the method
- * that `format` and `compare` are — a getter returning a function bound to the instance — and `resolvedOptions`.
- * Returns the prototype, for methods only one constructor has.
+ * One `Intl` constructor over `create`, a host function that takes the first argument, the options and the prototype
+ * of the instance to make. Returns the prototype.
  */
-template <typename Format>
-jsi::Object installConstructor(jsi::Runtime& runtime, jsi::Object& intl, const std::string& name,
-                               const char* boundMethodName, unsigned int boundMethodLength, Construct<Format> construct,
-                               BoundMethod<Format> boundMethod) {
-    const std::string qualifiedName = "Intl." + name;
+jsi::Object installConstructor(jsi::Runtime& runtime, jsi::Object& intl, const std::string& name, bool isCallable,
+                               const jsi::Function& create) {
     jsi::Object prototype(runtime);
-    const jsi::Function create = hostFunction(
-        runtime, name.c_str(), 0,
-        [construct = std::move(construct)](jsi::Runtime& callRuntime, const jsi::Value& /*thisValue*/,
-                                           const jsi::Value* arguments, size_t count) -> jsi::Value {
-            const std::vector<std::string> locales = readLocales(callRuntime, argumentAt(arguments, count, 0));
-            const IntlOptions options =
-                readOptions(callRuntime, argumentAt(arguments, count, 1), Format::optionNames());
-            std::shared_ptr<IntlState<Format>> state = translatingErrors<std::shared_ptr<IntlState<Format>>>(
-                callRuntime, [&construct, &locales, &options]() { return construct(locales, options); });
-            jsi::Object instance = jsi::Object::create(callRuntime, argumentAt(arguments, count, 2));
-
-            instance.setNativeState(callRuntime, std::move(state));
-
-            return instance;
-        });
+    const std::string requireNew =
+        isCallable
+            ? ""
+            : "if (new.target === undefined) throw new TypeError(\"Constructor Intl." + name + " requires 'new'\"); ";
 
     // Hermes refuses `new` on a JSI host function ("This function cannot be used as a constructor"), so the
     // constructor is a plain function that returns what the host function made, which `new` then yields. It takes
@@ -247,72 +273,206 @@ jsi::Object installConstructor(jsi::Runtime& runtime, jsi::Object& intl, const s
         runtime.global()
             .getPropertyAsFunction(runtime, "Function")
             .callAsConstructor(runtime, "create", "intrinsicPrototype",
-                               "return function " + name + "(locales, options) { const prototype = (new.target || " +
-                                   name +
-                                   ").prototype; return create(locales, options, Object(prototype) === "
-                                   "prototype ? prototype : intrinsicPrototype); };")
+                               "return function " + name + "(first, options) { " + requireNew +
+                                   "const prototype = (new.target || " + name +
+                                   ").prototype; return create(first, options, Object(prototype) === prototype ? "
+                                   "prototype : intrinsicPrototype); };")
             .asObject(runtime)
             .asFunction(runtime)
             .call(runtime, create, prototype)
             .asObject(runtime)
             .asFunction(runtime);
 
-    const std::string boundMethodQualifiedName = qualifiedName + ".prototype." + boundMethodName;
+    prototype.setProperty(runtime, "constructor", constructor);
+    constructor.setProperty(runtime, "prototype", prototype);
+    intl.setProperty(runtime, name.c_str(), constructor);
+
+    return prototype;
+}
+
+jsi::Value instanceWith(jsi::Runtime& runtime, const jsi::Value& prototype, std::shared_ptr<jsi::NativeState> state) {
+    jsi::Object instance = jsi::Object::create(runtime, prototype);
+
+    instance.setNativeState(runtime, std::move(state));
+
+    return instance;
+}
+
+/** A prototype method, which reads its instance's state and throws the `Intl` errors as JavaScript ones. */
+template <typename Format>
+jsi::Function method(jsi::Runtime& runtime, const std::string& constructorName, const char* name, unsigned int length,
+                     Method<Format> body) {
+    return hostFunction(runtime, name, length,
+                        [body = std::move(body), qualifiedName = "Intl." + constructorName + ".prototype." + name](
+                            jsi::Runtime& callRuntime, const jsi::Value& thisValue, const jsi::Value* arguments,
+                            size_t count) -> jsi::Value {
+                            const std::shared_ptr<IntlState<Format>> state =
+                                stateOf<Format>(callRuntime, thisValue, qualifiedName);
+
+                            return translatingErrors<jsi::Value>(
+                                callRuntime, [&]() { return body(callRuntime, state->format, arguments, count); });
+                        });
+}
+
+/** A service's `locales` and `options` arguments, read in ECMA-402's order. */
+std::pair<std::vector<std::string>, IntlOptions> readServiceArguments(jsi::Runtime& runtime,
+                                                                      const jsi::Value* arguments, size_t count,
+                                                                      std::span<const IntlOptionName> names) {
+    std::vector<std::string> locales = readLocales(runtime, argumentAt(arguments, count, 0));
+
+    return {std::move(locales), readOptions(runtime, argumentAt(arguments, count, 1), names)};
+}
+
+/**
+ * An `Intl` service constructor (`DateTimeFormat`, `NumberFormat`, `Collator`, `DisplayNames`): a locale list and
+ * options, `resolvedOptions` and `supportedLocalesOf`. Returns the prototype, for each one's own methods.
+ */
+template <typename Format>
+jsi::Object installService(jsi::Runtime& runtime, jsi::Object& intl, const std::string& name, bool isCallable,
+                           Construct<Format> construct) {
+    jsi::Object prototype = installConstructor(
+        runtime, intl, name, isCallable,
+        hostFunction(runtime, name.c_str(), 0,
+                     [construct = std::move(construct)](jsi::Runtime& callRuntime, const jsi::Value& /*thisValue*/,
+                                                        const jsi::Value* arguments, size_t count) -> jsi::Value {
+                         const auto [locales, options] =
+                             readServiceArguments(callRuntime, arguments, count, Format::optionNames());
+
+                         return instanceWith(callRuntime, argumentAt(arguments, count, 2),
+                                             translatingErrors<std::shared_ptr<IntlState<Format>>>(
+                                                 callRuntime, [&]() { return construct(locales, options); }));
+                     }));
+
+    prototype.setProperty(
+        runtime, "resolvedOptions",
+        method<Format>(runtime, name, "resolvedOptions", 0,
+                       [](jsi::Runtime& callRuntime, const Format& format, const jsi::Value* /*arguments*/,
+                          size_t /*count*/) -> jsi::Value { return toObject(callRuntime, format.resolvedOptions()); }));
+    intl.getPropertyAsObject(runtime, name.c_str())
+        .setProperty(runtime, "supportedLocalesOf",
+                     hostFunction(runtime, "supportedLocalesOf", 1,
+                                  [](jsi::Runtime& callRuntime, const jsi::Value& /*thisValue*/,
+                                     const jsi::Value* arguments, size_t count) -> jsi::Value {
+                                      const auto [locales, options] = readServiceArguments(
+                                          callRuntime, arguments, count, kSupportedLocalesOptionNames);
+
+                                      return toArray(callRuntime,
+                                                     translatingErrors<std::vector<std::string>>(callRuntime, [&]() {
+                                                         return supportedLocales(locales, options);
+                                                     }));
+                                  }));
+
+    return prototype;
+}
+
+/**
+ * The method that `format` and `compare` are: a getter returning a function bound to the instance, which ECMA-402
+ * keeps in an internal slot so every read returns the same one.
+ */
+template <typename Format>
+void installBoundMethod(jsi::Runtime& runtime, const jsi::Object& prototype, const std::string& constructorName,
+                        const char* name, unsigned int length, Method<Format> body) {
     const jsi::Function getter = hostFunction(
-        runtime, boundMethodName, 0,
-        [boundMethod = std::move(boundMethod), boundMethodQualifiedName, boundMethodName = std::string(boundMethodName),
-         boundMethodLength](jsi::Runtime& getterRuntime, const jsi::Value& thisValue, const jsi::Value* /*arguments*/,
-                            size_t /*count*/) -> jsi::Value {
-            const std::shared_ptr<IntlState<Format>> state =
-                stateOf<Format>(getterRuntime, thisValue, boundMethodQualifiedName);
-            jsi::Function bound =
-                hostFunction(getterRuntime, "", boundMethodLength,
-                             [boundMethod, state](jsi::Runtime& callRuntime, const jsi::Value& /*thisValue*/,
-                                                  const jsi::Value* arguments, size_t count) -> jsi::Value {
-                                 return translatingErrors<jsi::Value>(callRuntime, [&]() {
-                                     return boundMethod(callRuntime, state->format, arguments, count);
-                                 });
-                             });
+        runtime, name, 0,
+        [body = std::move(body), qualifiedName = "Intl." + constructorName + ".prototype." + name,
+         name = std::string(name), length](jsi::Runtime& getterRuntime, const jsi::Value& thisValue,
+                                           const jsi::Value* /*arguments*/, size_t /*count*/) -> jsi::Value {
+            const std::shared_ptr<IntlState<Format>> state = stateOf<Format>(getterRuntime, thisValue, qualifiedName);
+            jsi::Function bound = hostFunction(getterRuntime, "", length,
+                                               [body, state](jsi::Runtime& callRuntime, const jsi::Value& /*thisValue*/,
+                                                             const jsi::Value* arguments, size_t count) -> jsi::Value {
+                                                   return translatingErrors<jsi::Value>(callRuntime, [&]() {
+                                                       return body(callRuntime, state->format, arguments, count);
+                                                   });
+                                               });
             jsi::Object descriptor(getterRuntime);
 
-            // ECMA-402 keeps the bound function in an internal slot, so every read returns the same one. A
-            // non-enumerable own property is that slot here: the native state cannot hold it without a cycle the
+            // A non-enumerable own property is that slot here: the native state cannot hold it without a cycle the
             // collector does not see. Reflect leaves a frozen instance uncached rather than throwing.
             descriptor.setProperty(getterRuntime, "value", bound);
             descriptor.setProperty(getterRuntime, "configurable", true);
             getterRuntime.global()
                 .getPropertyAsObject(getterRuntime, "Reflect")
                 .getPropertyAsFunction(getterRuntime, "defineProperty")
-                .call(getterRuntime, thisValue, boundMethodName, descriptor);
+                .call(getterRuntime, thisValue, name, descriptor);
 
             return bound;
         });
 
-    jsi::Object descriptor(runtime);
+    defineGetter(runtime, prototype, name, getter);
+}
 
-    descriptor.setProperty(runtime, "get", getter);
-    descriptor.setProperty(runtime, "configurable", true);
-    runtime.global()
-        .getPropertyAsObject(runtime, "Object")
-        .getPropertyAsFunction(runtime, "defineProperty")
-        .call(runtime, prototype, boundMethodName, descriptor);
+/** ECMA-402's `Intl.Locale` tag argument: a string, or an object, which an `Intl.Locale` passes as its tag. */
+std::string readLocaleTag(jsi::Runtime& runtime, const jsi::Value& tag) {
+    if (std::optional<std::string> locale = localeTagOf(runtime, tag)) {
+        return std::move(*locale);
+    }
 
-    const std::string resolvedOptionsName = qualifiedName + ".prototype.resolvedOptions";
+    if (!tag.isString() && !tag.isObject()) {
+        throwJavaScriptError(runtime, "TypeError",
+                             "First argument to Intl.Locale constructor can't be empty or missing");
+    }
 
-    prototype.setProperty(
-        runtime, "resolvedOptions",
-        hostFunction(runtime, "resolvedOptions", 0,
-                     [resolvedOptionsName](jsi::Runtime& callRuntime, const jsi::Value& thisValue,
-                                           const jsi::Value* /*arguments*/, size_t /*count*/) -> jsi::Value {
-                         return toObject(
-                             callRuntime,
-                             stateOf<Format>(callRuntime, thisValue, resolvedOptionsName)->format.resolvedOptions());
+    return tag.toString(runtime).utf8(runtime);
+}
+
+jsi::Value optionalString(jsi::Runtime& runtime, const std::optional<std::string>& text) {
+    return text.has_value() ? jsi::Value(jsi::String::createFromUtf8(runtime, *text)) : jsi::Value::undefined();
+}
+
+void installLocale(jsi::Runtime& runtime, jsi::Object& intl) {
+    const jsi::Object prototype = installConstructor(
+        runtime, intl, "Locale", false,
+        hostFunction(runtime, "Locale", 0,
+                     [](jsi::Runtime& callRuntime, const jsi::Value& /*thisValue*/, const jsi::Value* arguments,
+                        size_t count) -> jsi::Value {
+                         const std::string tag = readLocaleTag(callRuntime, argumentAt(arguments, count, 0));
+                         const IntlOptions options =
+                             readOptions(callRuntime, argumentAt(arguments, count, 1), IntlLocale::optionNames());
+
+                         return instanceWith(
+                             callRuntime, argumentAt(arguments, count, 2),
+                             translatingErrors<std::shared_ptr<IntlState<IntlLocale>>>(
+                                 callRuntime, [&]() { return std::make_shared<IntlState<IntlLocale>>(tag, options); }));
                      }));
-    prototype.setProperty(runtime, "constructor", constructor);
-    constructor.setProperty(runtime, "prototype", prototype);
-    intl.setProperty(runtime, name.c_str(), constructor);
+    const auto text = [](std::string (IntlLocale::*read)() const) -> Method<IntlLocale> {
+        return
+            [read](jsi::Runtime& runtime, const IntlLocale& locale, const jsi::Value* /*arguments*/,
+                   size_t /*count*/) -> jsi::Value { return jsi::String::createFromUtf8(runtime, (locale.*read)()); };
+    };
+    const auto optionalText = [](std::optional<std::string> (IntlLocale::*read)() const) -> Method<IntlLocale> {
+        return [read](jsi::Runtime& runtime, const IntlLocale& locale, const jsi::Value* /*arguments*/,
+                      size_t /*count*/) -> jsi::Value { return optionalString(runtime, (locale.*read)()); };
+    };
 
-    return prototype;
+    prototype.setProperty(runtime, "toString",
+                          method<IntlLocale>(runtime, "Locale", "toString", 0,
+                                             [](jsi::Runtime& callRuntime, const IntlLocale& locale,
+                                                const jsi::Value* /*arguments*/, size_t /*count*/) -> jsi::Value {
+                                                 return jsi::String::createFromUtf8(callRuntime, locale.toString());
+                                             }));
+    defineGetter(runtime, prototype, "baseName",
+                 method<IntlLocale>(runtime, "Locale", "baseName", 0, text(&IntlLocale::baseName)));
+    defineGetter(runtime, prototype, "language",
+                 method<IntlLocale>(runtime, "Locale", "language", 0, text(&IntlLocale::language)));
+    defineGetter(runtime, prototype, "script",
+                 method<IntlLocale>(runtime, "Locale", "script", 0, optionalText(&IntlLocale::script)));
+    defineGetter(runtime, prototype, "region",
+                 method<IntlLocale>(runtime, "Locale", "region", 0, optionalText(&IntlLocale::region)));
+
+    // ECMA-402 makes maximize and minimize `Construct(%Intl.Locale%, tag)`, which only the constructor's own
+    // JavaScript closure can do without a host closure holding a JavaScript object.
+    runtime.global()
+        .getPropertyAsFunction(runtime, "Function")
+        .callAsConstructor(
+            runtime, "Locale", "maximal", "minimal",
+            "Locale.prototype.maximize = function maximize() { return new Locale(maximal.call(this)); }; "
+            "Locale.prototype.minimize = function minimize() { return new Locale(minimal.call(this)); };")
+        .asObject(runtime)
+        .asFunction(runtime)
+        .call(runtime, intl.getProperty(runtime, "Locale"),
+              method<IntlLocale>(runtime, "Locale", "maximize", 0, text(&IntlLocale::maximize)),
+              method<IntlLocale>(runtime, "Locale", "minimize", 0, text(&IntlLocale::minimize)));
 }
 
 struct IntlDefaults {
@@ -341,7 +501,7 @@ double timeOf(jsi::Runtime& runtime, const jsi::Value& date) {
     return toNumber(runtime, date);
 }
 
-jsi::Array toArray(jsi::Runtime& runtime, const IntlParts& parts) {
+jsi::Array partsToArray(jsi::Runtime& runtime, const IntlParts& parts) {
     jsi::Array array(runtime, parts.size());
 
     for (size_t index = 0; index < parts.size(); ++index) {
@@ -361,74 +521,86 @@ jsi::Array toArray(jsi::Runtime& runtime, const IntlParts& parts) {
 void installIntl(jsi::Runtime& runtime) {
     jsi::Object intl(runtime);
 
-    const jsi::Object dateTimeFormatPrototype = installConstructor<IntlDateTimeFormat>(
-        runtime, intl, "DateTimeFormat", "format", 1,
-        [](std::span<const std::string> locales, const IntlOptions& options) {
+    const jsi::Object dateTimeFormatPrototype = installService<IntlDateTimeFormat>(
+        runtime, intl, "DateTimeFormat", true, [](std::span<const std::string> locales, const IntlOptions& options) {
             return std::make_shared<IntlState<IntlDateTimeFormat>>(locales, options, defaults().locale,
                                                                    defaults().timeZone);
-        },
-        [](jsi::Runtime& runtime, const IntlDateTimeFormat& format, const jsi::Value* arguments,
-           size_t count) -> jsi::Value {
-            return jsi::String::createFromUtf8(runtime,
-                                               format.format(timeOf(runtime, argumentAt(arguments, count, 0))));
         });
 
+    installBoundMethod<IntlDateTimeFormat>(runtime, dateTimeFormatPrototype, "DateTimeFormat", "format", 1,
+                                           [](jsi::Runtime& callRuntime, const IntlDateTimeFormat& format,
+                                              const jsi::Value* arguments, size_t count) -> jsi::Value {
+                                               return jsi::String::createFromUtf8(
+                                                   callRuntime,
+                                                   format.format(timeOf(callRuntime, argumentAt(arguments, count, 0))));
+                                           });
     dateTimeFormatPrototype.setProperty(
         runtime, "formatToParts",
-        hostFunction(runtime, "formatToParts", 1,
-                     [](jsi::Runtime& callRuntime, const jsi::Value& thisValue, const jsi::Value* arguments,
-                        size_t count) -> jsi::Value {
-                         const std::shared_ptr<IntlState<IntlDateTimeFormat>> state = stateOf<IntlDateTimeFormat>(
-                             callRuntime, thisValue, "Intl.DateTimeFormat.prototype.formatToParts");
-                         const double time = timeOf(callRuntime, argumentAt(arguments, count, 0));
+        method<IntlDateTimeFormat>(runtime, "DateTimeFormat", "formatToParts", 1,
+                                   [](jsi::Runtime& callRuntime, const IntlDateTimeFormat& format,
+                                      const jsi::Value* arguments, size_t count) -> jsi::Value {
+                                       return partsToArray(
+                                           callRuntime,
+                                           format.formatToParts(timeOf(callRuntime, argumentAt(arguments, count, 0))));
+                                   }));
 
-                         return toArray(callRuntime, translatingErrors<IntlParts>(callRuntime, [&state, time]() {
-                                            return state->format.formatToParts(time);
-                                        }));
-                     }));
-
-    installConstructor<IntlNumberFormat>(
-        runtime, intl, "NumberFormat", "format", 1,
-        [](std::span<const std::string> locales, const IntlOptions& options) {
-            return std::make_shared<IntlState<IntlNumberFormat>>(locales, options, defaults().locale);
-        },
-        [](jsi::Runtime& runtime, const IntlNumberFormat& format, const jsi::Value* arguments,
+    installBoundMethod<IntlNumberFormat>(
+        runtime,
+        installService<IntlNumberFormat>(runtime, intl, "NumberFormat", true,
+                                         [](std::span<const std::string> locales, const IntlOptions& options) {
+                                             return std::make_shared<IntlState<IntlNumberFormat>>(locales, options,
+                                                                                                  defaults().locale);
+                                         }),
+        "NumberFormat", "format", 1,
+        [](jsi::Runtime& callRuntime, const IntlNumberFormat& format, const jsi::Value* arguments,
            size_t count) -> jsi::Value {
             return jsi::String::createFromUtf8(
-                runtime, format.format(toIntlMathematicalValue(runtime, argumentAt(arguments, count, 0))));
+                callRuntime, format.format(toIntlMathematicalValue(callRuntime, argumentAt(arguments, count, 0))));
         });
 
-    installConstructor<IntlCollator>(
-        runtime, intl, "Collator", "compare", 2,
-        [](std::span<const std::string> locales, const IntlOptions& options) {
-            return std::make_shared<IntlState<IntlCollator>>(locales, options, defaults().locale);
-        },
-        [](jsi::Runtime& runtime, const IntlCollator& collator, const jsi::Value* arguments,
+    installBoundMethod<IntlCollator>(
+        runtime,
+        installService<IntlCollator>(runtime, intl, "Collator", true,
+                                     [](std::span<const std::string> locales, const IntlOptions& options) {
+                                         return std::make_shared<IntlState<IntlCollator>>(locales, options,
+                                                                                          defaults().locale);
+                                     }),
+        "Collator", "compare", 2,
+        [](jsi::Runtime& callRuntime, const IntlCollator& collator, const jsi::Value* arguments,
            size_t count) -> jsi::Value {
-            const std::string left = argumentAt(arguments, count, 0).toString(runtime).utf8(runtime);
-            const std::string right = argumentAt(arguments, count, 1).toString(runtime).utf8(runtime);
+            const std::string left = argumentAt(arguments, count, 0).toString(callRuntime).utf8(callRuntime);
+            const std::string right = argumentAt(arguments, count, 1).toString(callRuntime).utf8(callRuntime);
 
             return collator.compare(left, right);
         });
+
+    installService<IntlDisplayNames>(runtime, intl, "DisplayNames", false,
+                                     [](std::span<const std::string> locales, const IntlOptions& options) {
+                                         return std::make_shared<IntlState<IntlDisplayNames>>(locales, options,
+                                                                                              defaults().locale);
+                                     })
+        .setProperty(
+            runtime, "of",
+            method<IntlDisplayNames>(runtime, "DisplayNames", "of", 1,
+                                     [](jsi::Runtime& callRuntime, const IntlDisplayNames& names,
+                                        const jsi::Value* arguments, size_t count) -> jsi::Value {
+                                         const std::string code =
+                                             argumentAt(arguments, count, 0).toString(callRuntime).utf8(callRuntime);
+
+                                         return optionalString(callRuntime, names.of(code));
+                                     }));
+
+    installLocale(runtime, intl);
 
     intl.setProperty(runtime, "getCanonicalLocales",
                      hostFunction(runtime, "getCanonicalLocales", 1,
                                   [](jsi::Runtime& callRuntime, const jsi::Value& /*thisValue*/,
                                      const jsi::Value* arguments, size_t count) -> jsi::Value {
-                                      const std::vector<std::string> canonical =
-                                          translatingErrors<std::vector<std::string>>(callRuntime, [&]() {
-                                              return canonicalizeLocaleList(
-                                                  readLocales(callRuntime, argumentAt(arguments, count, 0)));
-                                          });
-                                      jsi::Array array(callRuntime, canonical.size());
-
-                                      for (size_t index = 0; index < canonical.size(); ++index) {
-                                          array.setValueAtIndex(
-                                              callRuntime, index,
-                                              jsi::String::createFromUtf8(callRuntime, canonical[index]));
-                                      }
-
-                                      return array;
+                                      return toArray(callRuntime,
+                                                     translatingErrors<std::vector<std::string>>(callRuntime, [&]() {
+                                                         return canonicalizeLocaleList(
+                                                             readLocales(callRuntime, argumentAt(arguments, count, 0)));
+                                                     }));
                                   }));
 
     runtime.global().setProperty(runtime, "Intl", intl);

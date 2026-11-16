@@ -1,10 +1,14 @@
 #pragma once
 
+#include <array>
 #include <memory>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <unicode/locdspnm.h>
+#include <unicode/locid.h>
 #include <unicode/ucol.h>
 #include <unicode/udat.h>
 #include <unicode/unumberformatter.h>
@@ -47,6 +51,13 @@ using IntlParts = std::vector<std::pair<std::string_view, std::string>>;
 
 /** ECMA-402's `CanonicalizeLocaleList` over tags already read from JavaScript: canonical, deduplicated, in order. */
 std::vector<std::string> canonicalizeLocaleList(std::span<const std::string> tags);
+
+/** The options every constructor's `supportedLocalesOf` reads. */
+inline constexpr std::array kSupportedLocalesOptionNames = {
+    IntlOptionName{"localeMatcher", IntlOptionType::String, true}};
+
+/** ECMA-402's `SupportedLocales` by `LookupSupportedLocales`: the requested locales ICU has data for, canonical. */
+std::vector<std::string> supportedLocales(std::span<const std::string> requestedLocales, const IntlOptions& options);
 
 /**
  * The locale an `Intl` object made with no locale uses, from a POSIX locale name as `localeFromEnvironment` gives
@@ -120,6 +131,61 @@ public:
 
 private:
     std::unique_ptr<UCollator, decltype(&ucol_close)> collator_;
+    IntlResolvedOptions resolvedOptions_;
+};
+
+/**
+ * `Intl.Locale` over `icu::Locale`: a canonical tag with the `language`, `script` and `region` options applied, its
+ * subtags, and its likely subtags. The Unicode extension options are a `IntlRangeError` naming them.
+ *
+ * Threading contract: as `IntlDateTimeFormat`'s.
+ */
+class IntlLocale final {
+public:
+    static std::span<const IntlOptionName> optionNames() noexcept;
+
+    IntlLocale(const std::string& tag, const IntlOptions& options);
+
+    const std::string& toString() const noexcept;
+    std::string baseName() const;
+    std::string language() const;
+    std::optional<std::string> script() const;
+    std::optional<std::string> region() const;
+    /** ECMA-402's `AddLikelySubtags` (`en` is `en-Latn-US`), keeping the extensions. */
+    std::string maximize() const;
+    /** ECMA-402's `RemoveLikelySubtags` (`en-Latn-US` is `en`), keeping the extensions. */
+    std::string minimize() const;
+
+private:
+    std::string likelySubtags(bool isMaximal) const;
+
+    std::string tag_;
+    icu::Locale locale_;
+};
+
+/**
+ * `Intl.DisplayNames` over `icu::LocaleDisplayNames`, for the `language`, `region` and `script` types. The other
+ * types are a `IntlRangeError` naming them.
+ *
+ * Threading contract: as `IntlDateTimeFormat`'s.
+ */
+class IntlDisplayNames final {
+public:
+    enum class Type { Language, Region, Script };
+
+    static std::span<const IntlOptionName> optionNames() noexcept;
+
+    IntlDisplayNames(std::span<const std::string> requestedLocales, const IntlOptions& options,
+                     std::string_view defaultLocale);
+
+    /** The name of a code, the canonical code when ICU has none, or null when `fallback` is `none`. */
+    std::optional<std::string> of(const std::string& code) const;
+    const IntlResolvedOptions& resolvedOptions() const noexcept;
+
+private:
+    std::unique_ptr<icu::LocaleDisplayNames> names_;
+    Type type_;
+    bool fallsBackToCode_;
     IntlResolvedOptions resolvedOptions_;
 };
 

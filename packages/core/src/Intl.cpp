@@ -9,6 +9,7 @@
 #include <map>
 #include <optional>
 #include <set>
+#include <unicode/localebuilder.h>
 #include <unicode/locid.h>
 #include <unicode/ucal.h>
 #include <unicode/ucurr.h>
@@ -174,17 +175,26 @@ struct ResolvedLocale {
     std::string requestedLocaleId;
 };
 
-/** ECMA-402's `LookupMatcher`: the first requested locale ICU has data for, dropping trailing subtags. */
+/** ECMA-402's `BestAvailableLocale`: the locale without extensions, dropping trailing subtags until ICU has data. */
+std::optional<std::string> bestAvailableLocale(const std::string& tag) {
+    for (std::string candidate = withoutExtensions(tag); !candidate.empty();) {
+        if (isAvailable(localeIdFromTag(candidate))) {
+            return candidate;
+        }
+
+        const std::size_t separator = candidate.rfind('-');
+
+        candidate.resize(separator == std::string::npos ? 0 : separator);
+    }
+
+    return std::nullopt;
+}
+
+/** ECMA-402's `LookupMatcher`: the first requested locale ICU has data for. */
 ResolvedLocale resolveLocale(std::span<const std::string> requestedLocales, std::string_view defaultLocale) {
     for (const std::string& tag : canonicalizeLocaleList(requestedLocales)) {
-        for (std::string candidate = withoutExtensions(tag); !candidate.empty();) {
-            if (isAvailable(localeIdFromTag(candidate))) {
-                return {candidate, localeIdFromTag(tag)};
-            }
-
-            const std::size_t separator = candidate.rfind('-');
-
-            candidate.resize(separator == std::string::npos ? 0 : separator);
+        if (std::optional<std::string> available = bestAvailableLocale(tag)) {
+            return {std::move(*available), localeIdFromTag(tag)};
         }
     }
 
@@ -606,7 +616,114 @@ constexpr std::array kSensitivityStrengths = {UCOL_PRIMARY, UCOL_SECONDARY, UCOL
 constexpr std::size_t kCaseSensitivity = 2;
 constexpr std::size_t kVariantSensitivity = 3;
 
+constexpr std::array kLocaleOptionNames = {
+    IntlOptionName{"language", IntlOptionType::String, true},
+    IntlOptionName{"script", IntlOptionType::String, true},
+    IntlOptionName{"region", IntlOptionType::String, true},
+    IntlOptionName{"calendar", IntlOptionType::String, false},
+    IntlOptionName{"collation", IntlOptionType::String, false},
+    IntlOptionName{"hourCycle", IntlOptionType::String, false},
+    IntlOptionName{"caseFirst", IntlOptionType::String, false},
+    IntlOptionName{"numeric", IntlOptionType::Boolean, false},
+    IntlOptionName{"numberingSystem", IntlOptionType::String, false},
+};
+
+/** The `language`, `script` and `region` options over a canonical tag, which `LocaleBuilder` validates. */
+std::string applyLocaleOptions(const std::string& tag, const IntlOptions& options) {
+    icu::LocaleBuilder builder;
+
+    builder.setLanguageTag(tag);
+
+    for (const auto& [name, value] : options) {
+        const std::string& subtag = std::get<std::string>(value);
+
+        // LocaleBuilder clears a subtag set to the empty string, where ECMA-402 rejects it.
+        if (subtag.empty()) {
+            throw IntlRangeError(std::string(kInvalidLocale));
+        }
+
+        if (name == "language") {
+            builder.setLanguage(subtag);
+        } else if (name == "script") {
+            builder.setScript(subtag);
+        } else {
+            builder.setRegion(subtag);
+        }
+    }
+
+    UErrorCode status = U_ZERO_ERROR;
+    const icu::Locale locale = builder.build(status);
+    std::string applied = locale.toLanguageTag<std::string>(status);
+
+    requireSuccess(status, kInvalidLocale);
+
+    return canonicalTag(applied);
+}
+
+constexpr std::array kDisplayNamesOptionNames = {
+    IntlOptionName{"localeMatcher", IntlOptionType::String, true},
+    IntlOptionName{"style", IntlOptionType::String, true},
+    IntlOptionName{"type", IntlOptionType::String, true},
+    IntlOptionName{"fallback", IntlOptionType::String, true},
+    IntlOptionName{"languageDisplay", IntlOptionType::String, true},
+};
+
+constexpr std::array kDisplayNamesStyleChoices = {Choice{"narrow", ""}, Choice{"short", ""}, Choice{"long", ""}};
+constexpr std::array kDisplayNamesTypeChoices = {Choice{"language", ""}, Choice{"region", ""},
+                                                 Choice{"script", ""},   Choice{"currency", ""},
+                                                 Choice{"calendar", ""}, Choice{"dateTimeField", ""}};
+constexpr std::array kFallbackChoices = {Choice{"code", ""}, Choice{"none", ""}};
+constexpr std::array kLanguageDisplayChoices = {Choice{"dialect", ""}, Choice{"standard", ""}};
+
+std::string_view choiceOrDefault(const IntlOptions& options, std::string_view name, std::span<const Choice> choices,
+                                 std::string_view defaultValue) {
+    const Choice* choice = findChoice(options, name, choices);
+
+    return choice == nullptr ? defaultValue : choice->value;
+}
+
+bool isAsciiDigit(char character) { return std::isdigit(static_cast<unsigned char>(character)) != 0; }
+
+/** ECMA-402's `CanonicalCodeForDisplayNames` for a region (`ca` is `CA`) or a script (`arab` is `Arab`). */
+std::string canonicalSubtag(const std::string& code, IntlDisplayNames::Type type) {
+    constexpr std::size_t kScriptLength = 4;
+    constexpr std::size_t kAlphaRegionLength = 2;
+    constexpr std::size_t kNumericRegionLength = 3;
+    const bool isScript = type == IntlDisplayNames::Type::Script;
+    const bool isLetters = std::ranges::all_of(code, isAsciiLetter);
+    const bool isWellFormed =
+        isScript ? isLetters && code.size() == kScriptLength
+                 : (isLetters && code.size() == kAlphaRegionLength) ||
+                       (code.size() == kNumericRegionLength && std::ranges::all_of(code, isAsciiDigit));
+
+    if (!isWellFormed) {
+        throw IntlRangeError("Invalid " + std::string(isScript ? "script" : "region") + " code: " + code);
+    }
+
+    std::string canonical = asciiLowercase(code);
+
+    std::transform(
+        canonical.begin(), isScript ? canonical.begin() + 1 : canonical.end(), canonical.begin(),
+        [](char character) { return static_cast<char>(std::toupper(static_cast<unsigned char>(character))); });
+
+    return canonical;
+}
+
 } // namespace
+
+std::vector<std::string> supportedLocales(std::span<const std::string> requestedLocales, const IntlOptions& options) {
+    validateLocaleMatcher(options);
+
+    std::vector<std::string> supported;
+
+    for (std::string& tag : canonicalizeLocaleList(requestedLocales)) {
+        if (bestAvailableLocale(tag).has_value()) {
+            supported.push_back(std::move(tag));
+        }
+    }
+
+    return supported;
+}
 
 std::vector<std::string> canonicalizeLocaleList(std::span<const std::string> tags) {
     std::vector<std::string> canonical;
@@ -925,5 +1042,138 @@ int IntlCollator::compare(std::string_view left, std::string_view right) const {
 }
 
 const IntlResolvedOptions& IntlCollator::resolvedOptions() const noexcept { return resolvedOptions_; }
+
+std::span<const IntlOptionName> IntlLocale::optionNames() noexcept { return kLocaleOptionNames; }
+
+IntlLocale::IntlLocale(const std::string& tag, const IntlOptions& options) {
+    rejectUnsupportedOptions(options, kLocaleOptionNames, "Intl.Locale");
+
+    const std::string canonical = canonicalTag(tag);
+
+    tag_ = options.empty() ? canonical : applyLocaleOptions(canonical, options);
+    locale_ = icu::Locale(localeIdFromTag(tag_).c_str());
+}
+
+const std::string& IntlLocale::toString() const noexcept { return tag_; }
+
+std::string IntlLocale::baseName() const { return withoutExtensions(tag_); }
+
+std::string IntlLocale::language() const {
+    const std::string_view language = locale_.getLanguage();
+
+    return language.empty() ? "und" : std::string(language);
+}
+
+std::optional<std::string> IntlLocale::script() const {
+    const std::string_view script = locale_.getScript();
+
+    return script.empty() ? std::nullopt : std::optional<std::string>(script);
+}
+
+std::optional<std::string> IntlLocale::region() const {
+    const std::string_view region = locale_.getCountry();
+
+    return region.empty() ? std::nullopt : std::optional<std::string>(region);
+}
+
+std::string IntlLocale::maximize() const { return likelySubtags(true); }
+
+std::string IntlLocale::minimize() const { return likelySubtags(false); }
+
+/** Over the base name, because ICU fails to add likely subtags to a tag with only private use: `und-x-private`. */
+std::string IntlLocale::likelySubtags(bool isMaximal) const {
+    const std::string base = baseName();
+    icu::Locale locale(localeIdFromTag(base).c_str());
+    UErrorCode status = U_ZERO_ERROR;
+
+    if (isMaximal) {
+        locale.addLikelySubtags(status);
+    } else {
+        locale.minimizeSubtags(status);
+    }
+
+    std::string likely = locale.toLanguageTag<std::string>(status);
+
+    requireSuccess(status, "ICU has no likely subtags for " + base);
+
+    return likely + tag_.substr(base.size());
+}
+
+std::span<const IntlOptionName> IntlDisplayNames::optionNames() noexcept { return kDisplayNamesOptionNames; }
+
+IntlDisplayNames::IntlDisplayNames(std::span<const std::string> requestedLocales, const IntlOptions& options,
+                                   std::string_view defaultLocale)
+    : type_(Type::Language), fallsBackToCode_(true) {
+    rejectUnsupportedOptions(options, kDisplayNamesOptionNames, "Intl.DisplayNames");
+    validateLocaleMatcher(options);
+
+    const ResolvedLocale resolved = resolveLocale(requestedLocales, defaultLocale);
+    const std::string_view style = choiceOrDefault(options, "style", kDisplayNamesStyleChoices, "long");
+    const Choice* type = findChoice(options, "type", kDisplayNamesTypeChoices);
+
+    if (type == nullptr) {
+        throw IntlTypeError("Required option 'type' is missing");
+    }
+
+    const auto typeIndex = static_cast<std::size_t>(type - kDisplayNamesTypeChoices.data());
+
+    if (typeIndex > static_cast<std::size_t>(Type::Script)) {
+        throw IntlRangeError("Intl.DisplayNames does not support the type " + std::string(type->value) +
+                             " on this platform");
+    }
+
+    const std::string_view fallback = choiceOrDefault(options, "fallback", kFallbackChoices, "code");
+    const std::string_view languageDisplay =
+        choiceOrDefault(options, "languageDisplay", kLanguageDisplayChoices, "dialect");
+    std::array contexts = {style == "long" ? UDISPCTX_LENGTH_FULL : UDISPCTX_LENGTH_SHORT,
+                           languageDisplay == "dialect" ? UDISPCTX_DIALECT_NAMES : UDISPCTX_STANDARD_NAMES,
+                           UDISPCTX_NO_SUBSTITUTE};
+
+    type_ = static_cast<Type>(typeIndex);
+    fallsBackToCode_ = fallback == "code";
+    names_.reset(icu::LocaleDisplayNames::createInstance(icu::Locale(localeIdFromTag(resolved.tag).c_str()),
+                                                         contexts.data(), static_cast<int32_t>(contexts.size())));
+    resolvedOptions_ = {{"locale", resolved.tag},
+                        {"style", std::string(style)},
+                        {"type", std::string(type->value)},
+                        {"fallback", std::string(fallback)}};
+
+    if (type_ == Type::Language) {
+        resolvedOptions_.emplace_back("languageDisplay", std::string(languageDisplay));
+    }
+}
+
+std::optional<std::string> IntlDisplayNames::of(const std::string& code) const {
+    icu::UnicodeString name;
+    std::string canonical;
+
+    if (type_ == Type::Language) {
+        canonical = canonicalTag(code);
+
+        if (withoutExtensions(canonical) != canonical) {
+            throw IntlRangeError("Invalid language code: " + code);
+        }
+
+        names_->localeDisplayName(icu::Locale(localeIdFromTag(canonical).c_str()), name);
+    } else {
+        canonical = canonicalSubtag(code, type_);
+
+        if (type_ == Type::Region) {
+            names_->regionDisplayName(canonical.c_str(), name);
+        } else {
+            names_->scriptDisplayName(canonical.c_str(), name);
+        }
+    }
+
+    if (name.isBogus()) {
+        return fallsBackToCode_ ? std::optional(canonical) : std::nullopt;
+    }
+
+    std::string text;
+
+    return name.toUTF8String(text);
+}
+
+const IntlResolvedOptions& IntlDisplayNames::resolvedOptions() const noexcept { return resolvedOptions_; }
 
 } // namespace react_native_linux

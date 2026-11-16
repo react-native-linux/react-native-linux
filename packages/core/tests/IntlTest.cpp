@@ -18,12 +18,15 @@ using react_native_linux::defaultIntlLocale;
 using react_native_linux::defaultIntlTimeZone;
 using react_native_linux::IntlCollator;
 using react_native_linux::IntlDateTimeFormat;
+using react_native_linux::IntlDisplayNames;
+using react_native_linux::IntlLocale;
 using react_native_linux::IntlNumberFormat;
 using react_native_linux::IntlOptions;
 using react_native_linux::IntlParts;
 using react_native_linux::IntlRangeError;
 using react_native_linux::IntlResolvedOptions;
 using react_native_linux::IntlTypeError;
+using react_native_linux::supportedLocales;
 
 using Locales = std::vector<std::string>;
 
@@ -97,6 +100,9 @@ TEST(IntlTest, EachConstructorListsEveryOptionEcma402DefinesAndWhichAreNotImplem
               "minimumSignificantDigits maximumSignificantDigits roundingIncrement roundingMode roundingPriority "
               "trailingZeroDisplay compactDisplay useGrouping signDisplay 21");
     EXPECT_EQ(unsupportedOptionNames(IntlCollator::optionNames()), "collation caseFirst ignorePunctuation 7");
+    EXPECT_EQ(unsupportedOptionNames(IntlLocale::optionNames()),
+              "calendar collation hourCycle caseFirst numeric numberingSystem 9");
+    EXPECT_EQ(unsupportedOptionNames(IntlDisplayNames::optionNames()), "5");
 }
 
 TEST(IntlTest, LocaleListsAreCanonicalizedDeduplicatedAndValidated) {
@@ -490,6 +496,109 @@ TEST(IntlTest, CollatorRejectsWhatItDoesNotImplement) {
               "Value search out of range for option usage");
     EXPECT_EQ(errorMessage<IntlRangeError>([] { IntlCollator(Locales{}, {{"ignorePunctuation", true}}, "en-US"); }),
               "Intl.Collator does not support the option ignorePunctuation on this platform");
+}
+
+TEST(IntlTest, SupportedLocalesKeepsTheRequestedLocalesIcuHasDataForAsTheyWereCanonicalized) {
+    EXPECT_EQ(supportedLocales(Locales{"EN", "de-CH-u-co-phonebk", "zz", "en"}, {}),
+              (Locales{"en", "de-CH-u-co-phonebk"}));
+    EXPECT_EQ(supportedLocales(Locales{}, {{"localeMatcher", "lookup"s}}), Locales{});
+    EXPECT_EQ(errorMessage<IntlRangeError>([] { supportedLocales(Locales{"en"}, {{"localeMatcher", "other"s}}); }),
+              "Value other out of range for option localeMatcher");
+}
+
+std::string describe(const IntlLocale& locale) {
+    return locale.toString() + " base=" + locale.baseName() + " language=" + locale.language() +
+           " script=" + locale.script().value_or("none") + " region=" + locale.region().value_or("none");
+}
+
+TEST(IntlTest, ALocaleIsItsCanonicalTagAndItsSubtags) {
+    EXPECT_EQ(describe(IntlLocale("EN-latn-us-u-CA-gregory", {})),
+              "en-Latn-US-u-ca-gregory base=en-Latn-US language=en script=Latn region=US");
+    EXPECT_EQ(describe(IntlLocale("sh", {})), "sr-Latn base=sr-Latn language=sr script=Latn region=none");
+    EXPECT_EQ(describe(IntlLocale("und-x-private", {})), "und-x-private base=und language=und script=none region=none");
+    EXPECT_EQ(errorMessage<IntlRangeError>([] { IntlLocale("en_US", {}); }), "Incorrect locale information provided");
+}
+
+TEST(IntlTest, LocaleOptionsReplaceTheTagsSubtags) {
+    EXPECT_EQ(IntlLocale("en-US", {{"language", "fr"s}, {"script", "Latn"s}, {"region", "ca"s}}).toString(),
+              "fr-Latn-CA");
+    EXPECT_EQ(IntlLocale("en-u-ca-gregory", {{"region", "419"s}}).toString(), "en-419-u-ca-gregory");
+    EXPECT_EQ(errorMessage<IntlRangeError>([] { IntlLocale("en", {{"region", "1"s}}); }),
+              "Incorrect locale information provided");
+    EXPECT_EQ(errorMessage<IntlRangeError>([] { IntlLocale("en-US", {{"script", ""s}}); }),
+              "Incorrect locale information provided");
+    EXPECT_EQ(errorMessage<IntlRangeError>([] { IntlLocale("en", {{"numeric", true}}); }),
+              "Intl.Locale does not support the option numeric on this platform");
+}
+
+TEST(IntlTest, LikelySubtagsAreAddedAndRemovedKeepingTheExtensions) {
+    EXPECT_EQ(IntlLocale("en", {}).maximize(), "en-Latn-US");
+    EXPECT_EQ(IntlLocale("zh-TW-u-nu-hanidec", {}).maximize(), "zh-Hant-TW-u-nu-hanidec");
+    EXPECT_EQ(IntlLocale("und-x-private", {}).maximize(), "en-Latn-US-x-private");
+    EXPECT_EQ(IntlLocale("en-Latn-US", {}).minimize(), "en");
+    EXPECT_EQ(IntlLocale("de-Latn-DE-u-co-phonebk", {}).minimize(), "de-u-co-phonebk");
+}
+
+std::string displayName(const IntlDisplayNames& names, const std::string& code) {
+    return names.of(code).value_or("undefined");
+}
+
+TEST(IntlTest, DisplayNamesNameRegionsScriptsAndLanguagesInTheResolvedLocale) {
+    const IntlDisplayNames regions(Locales{"en"}, {{"type", "region"s}}, "en-US");
+    const IntlDisplayNames scripts(Locales{"en"}, {{"type", "script"s}}, "en-US");
+    const IntlDisplayNames languages(Locales{"en"}, {{"type", "language"s}}, "en-US");
+    const IntlDisplayNames germanRegions(Locales{"de"}, {{"type", "region"s}}, "en-US");
+
+    EXPECT_EQ(displayName(regions, "CA"), "Canada");
+    EXPECT_EQ(displayName(regions, "419"), "Latin America");
+    EXPECT_EQ(displayName(scripts, "arab"), "Arabic");
+    EXPECT_EQ(displayName(languages, "en-us"), "American English");
+    EXPECT_EQ(displayName(languages, "de"), "German");
+    EXPECT_EQ(displayName(germanRegions, "us"), "Vereinigte Staaten");
+    EXPECT_EQ(describe(languages.resolvedOptions()),
+              "locale=en style=long type=language fallback=code languageDisplay=dialect ");
+    EXPECT_EQ(describe(regions.resolvedOptions()), "locale=en style=long type=region fallback=code ");
+}
+
+TEST(IntlTest, DisplayNamesStylesAndLanguageDisplayChooseIcusNameForms) {
+    const auto name = [](const IntlOptions& options, const std::string& code) {
+        return displayName(IntlDisplayNames(Locales{"en"}, options, "en-US"), code);
+    };
+
+    EXPECT_EQ(name({{"type", "language"s}, {"languageDisplay", "standard"s}}, "en-US"), "English (United States)");
+    EXPECT_EQ(name({{"type", "language"s}, {"style", "short"s}}, "en-US"), "US English");
+    EXPECT_EQ(name({{"type", "language"s}, {"style", "narrow"s}, {"languageDisplay", "standard"s}}, "en-US"),
+              "English (US)");
+}
+
+TEST(IntlTest, CodesWithoutANameFallBackToTheCanonicalCodeOrToNothing) {
+    const IntlDisplayNames regions(Locales{}, {{"type", "region"s}}, "en-US");
+    const IntlDisplayNames languages(Locales{}, {{"type", "language"s}, {"fallback", "none"s}}, "en-US");
+
+    EXPECT_EQ(displayName(regions, "qm"), "QM");
+    EXPECT_EQ(displayName(languages, "xyz"), "undefined");
+    EXPECT_EQ(resolvedOption(languages.resolvedOptions(), "fallback"), "fallback=none ");
+}
+
+TEST(IntlTest, DisplayNamesRejectCodesThatAreNotOfTheirTypeAndTypesItDoesNotImplement) {
+    const IntlDisplayNames regions(Locales{}, {{"type", "region"s}}, "en-US");
+    const IntlDisplayNames scripts(Locales{}, {{"type", "script"s}}, "en-US");
+    const IntlDisplayNames languages(Locales{}, {{"type", "language"s}}, "en-US");
+
+    EXPECT_EQ(errorMessage<IntlRangeError>([&] { regions.of("C"); }), "Invalid region code: C");
+    EXPECT_EQ(errorMessage<IntlRangeError>([&] { regions.of("12"); }), "Invalid region code: 12");
+    EXPECT_EQ(errorMessage<IntlRangeError>([&] { regions.of("1a3"); }), "Invalid region code: 1a3");
+    EXPECT_EQ(errorMessage<IntlRangeError>([&] { scripts.of("ara1"); }), "Invalid script code: ara1");
+    EXPECT_EQ(errorMessage<IntlRangeError>([&] { scripts.of("arabic"); }), "Invalid script code: arabic");
+    EXPECT_EQ(errorMessage<IntlRangeError>([&] { languages.of("en-u-ca-gregory"); }),
+              "Invalid language code: en-u-ca-gregory");
+    EXPECT_EQ(errorMessage<IntlRangeError>([&] { languages.of("en_US"); }), "Incorrect locale information provided");
+    EXPECT_EQ(errorMessage<IntlTypeError>([] { IntlDisplayNames(Locales{}, {}, "en-US"); }),
+              "Required option 'type' is missing");
+    EXPECT_EQ(errorMessage<IntlRangeError>([] { IntlDisplayNames(Locales{}, {{"type", "currency"s}}, "en-US"); }),
+              "Intl.DisplayNames does not support the type currency on this platform");
+    EXPECT_EQ(errorMessage<IntlRangeError>([] { IntlDisplayNames(Locales{}, {{"type", "unit"s}}, "en-US"); }),
+              "Value unit out of range for option type");
 }
 
 } // namespace
