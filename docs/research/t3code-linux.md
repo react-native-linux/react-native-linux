@@ -73,7 +73,8 @@ Expo's Metro config turns `inlineRequires` off.
 | `ExpoWebBrowser` | `expo-web-browser` | throws; #271 |
 | `ExpoAudio` | `expo-audio`, imported by eight app files | throws, so the fixture's desktop profile (§2) resolves `expo-audio` to a stand-in (#760): a player's `play` opens its source in the default application, the session calls resolve, recording permission reads denied and a recorder throws; the `t3-expo-audio` e2e runs T3 Code's calls |
 | `ExpoKeepAwake` | `expo-keep-awake`, imported by `VoiceInputProvider.tsx` as the thread screen loads | throws, so the fixture's desktop profile (§2) resolves `expo-keep-awake` to a stand-in (#780): activate and deactivate resolve and keep nothing awake, because voice input, which activates it only while recording, is left out; `useKeepAwake` and `ExpoKeepAwakeTag` answer Expo's development `withDevTools` |
-| `ExpoCamera`, `ExpoObserve`, `ExpoAppMetrics`, the `expo-sensors` modules, `SymbolModule`, `ExpoUpdates`, `ExpoWidgets` | `expo-camera`, `expo-observe`, `expo-app-metrics`, `expo-sensors`, `expo-symbols`, `expo-updates`, `expo-widgets` | throws; left out or replaced by the feature profile (§2), so #641's Linux entry cuts the import |
+| The `expo-sensors` modules, `ExponentPedometer` first | `expo-sensors`, imported by `DevicePreviewRouteScreen.tsx` as `Stack.tsx` loads; its index requires every sensor's module | throws, so the fixture's desktop profile (§2) resolves `expo-sensors` to a stand-in (#782): `Accelerometer` reads unavailable, takes the update interval and never delivers a sample, so the preview's shake toggle never fires; `pnpm e2e:t3code` gets past the import |
+| `ExpoCamera`, `ExpoObserve`, `ExpoAppMetrics`, `SymbolModule`, `ExpoUpdates`, `ExpoWidgets` | `expo-camera`, `expo-observe`, `expo-app-metrics`, `expo-symbols`, `expo-updates`, `expo-widgets` | throws; left out or replaced by the feature profile (§2), so #641's Linux entry cuts the import |
 | `ExpoVideo` | `expo-video` | throws; left out (§2). `MediaVideoPlayer.linux.tsx` cuts the one import that runs at startup (#759). The others are type-only, or the lazy `import()` in `videoThumbnails.ts`, whose failure the thumbnail loader turns into no thumbnail |
 
 These import cleanly with nothing registered: `expo-haptics` and `expo-splash-screen` look their modules up with
@@ -107,7 +108,7 @@ so #155 and #641 also exclude the left-out modules from autolinking.
 | `@react-native-ai/apple` | Apple Intelligence | nothing |
 | `expo-audio`, `expo-keep-awake`, `t3-voice-transcription` | voice input | no microphone button; audio attachments open in the desktop's default application |
 | `expo-video` | inline video | video attachments open in the desktop's default application from a poster (#759); the poster's long-press actions (Copy full path, Copy relative path, Copy URL, Open in file viewer, Save or share) are not offered until #762 |
-| `expo-sensors` | device-preview motion | nothing |
+| `expo-sensors` | device-preview motion | no shake toggle: the accelerometer reads unavailable and never delivers a sample, and the preview's controls stay reachable (#782) |
 | `expo-camera` | QR pairing | the pairing link, typed or pasted |
 | `@expo/ui/community/datetime-picker` | the scheduled-task editor's date and time picker | a text field: the date typed as `YYYY-MM-DD`, the time as `HH:MM`, until a real picker (#750) |
 | `expo-observe`, `expo-app-metrics` | the error relay | the console and the e2e event trace |
@@ -243,7 +244,7 @@ transitive package.
 | `expo-app-metrics` | `58.0.15` | declined | #635 | from expo-observe |
 | `expo-quick-actions` | `^6.0.2` | declined | #635 | app shortcuts |
 | `expo-widgets` | `58.0.27` | declined | #635 | home-screen widgets |
-| `expo-sensors` | `~58.0.4` | declined | #635 | device preview motion; `DevicePreviewRouteScreen.tsx` imports it as `Stack.tsx` loads, and its index requires every sensor module, so the desktop profile needs a stand-in (#782) |
+| `expo-sensors` | `~58.0.4` | declined | #635 | device preview motion; the desktop profile's stand-in answers `DevicePreviewRouteScreen.tsx` (#782) |
 | `expo-camera` | `~58.0.14` | declined | #635 | QR pairing |
 | `expo-symbols` | `~58.0.4` | declined | #635 | SF Symbols in the shared AppSymbol |
 | `expo-audio` | `58.0.11` | declined | #635 | voice input and audio previews; the desktop profile's stand-in answers its eight importers (#760) |
