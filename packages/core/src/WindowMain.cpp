@@ -85,6 +85,7 @@ constexpr SkColor kCardColor = SkColorSetRGB(0x33, 0x66, 0xCC);
 constexpr SkScalar kCardInset = 64.0F;
 constexpr SkScalar kCardCornerRadius = 24.0F;
 constexpr std::string_view kFabricFlag = "--fabric";
+constexpr std::string_view kModuleFlag = "--module";
 constexpr std::string_view kScreenshotFlag = "--screenshot";
 constexpr std::string_view kFramesFlag = "--frames";
 constexpr std::string_view kFrameLogFlag = "--frame-log";
@@ -185,11 +186,16 @@ constexpr uint64_t kNanosecondsPerSecond = 1'000'000'000;
  * and Skia's premultiplied output do with a real alpha channel is visible rather than hidden behind an opaque
  * clear every other run paints over it. See *Surface format and composite alpha* in docs/cpp-toolchain.md.
  *
+ * `--module <key>` is the `AppRegistry` key the bundle runs (#777), the name the template's `linux` script bakes in
+ * at init as Android's `getMainComponentName` does. Without it the window runs "main", the key Expo's
+ * `registerRootComponent` registers, once the bundle has registered it; see `selectApplicationKey`.
+ *
  * `--assets <directory>` is the application's assets directory the linux build writes (#696): `app.config` and
  * `fonts/`. Without it they are read from `assets` beside a bundle file, so a bundle a dev server serves needs it.
  */
 struct WindowArguments {
     std::optional<std::string> bundlePath;
+    std::optional<std::string> applicationKey;
     std::string assetsDirectory;
     std::optional<react_native_linux::RendererRung> forcedRung;
     std::optional<std::string> screenshotPath;
@@ -450,6 +456,10 @@ std::string describeMissingValue(std::string_view flag) {
         return "--fabric requires a bundle path";
     }
 
+    if (flag == kModuleFlag) {
+        return "--module requires an AppRegistry key";
+    }
+
     if (flag == kScreenshotFlag) {
         return "--screenshot requires an output path";
     }
@@ -560,9 +570,9 @@ WindowArguments parseArguments(std::span<char*> arguments) {
             continue;
         }
 
-        if (flag != kFabricFlag && flag != kScreenshotFlag && flag != kFramesFlag && flag != kFrameLogFlag &&
-            flag != kRendererFlag && flag != kAppIdFlag && flag != kTitleFlag && flag != kAssetsFlag &&
-            flag != kInjectKeySequenceFlag && flag != kInjectWindowSequenceFlag &&
+        if (flag != kFabricFlag && flag != kModuleFlag && flag != kScreenshotFlag && flag != kFramesFlag &&
+            flag != kFrameLogFlag && flag != kRendererFlag && flag != kAppIdFlag && flag != kTitleFlag &&
+            flag != kAssetsFlag && flag != kInjectKeySequenceFlag && flag != kInjectWindowSequenceFlag &&
             flag != kInjectRendererFailuresFlag) {
             // Not a flag at all: the desktop entry's `Exec=... %u` expansion for single-instance activation
             // (#363) hands this process a bare URL, with no `--` of its own. Nothing here consumes it — the
@@ -588,6 +598,8 @@ WindowArguments parseArguments(std::span<char*> arguments) {
 
         if (flag == kFabricFlag) {
             parsed.bundlePath = std::string(value);
+        } else if (flag == kModuleFlag) {
+            parsed.applicationKey = std::string(value);
         } else if (flag == kScreenshotFlag) {
             parsed.screenshotPath = std::string(value);
         } else if (flag == kFrameLogFlag) {
@@ -1399,7 +1411,7 @@ int main(int argc, char** argv) {
             // Run once at startup and again for every reload the bundle asks for (#81): a reload is a new session from
             // the same bundle at the current size, built only after the old one is gone, so no two instances overlap.
             const auto startSession = [&]() {
-                session.emplace(parsedArguments.bundlePath.value(),
+                session.emplace(parsedArguments.bundlePath.value(), parsedArguments.applicationKey,
                                 react_native_linux::WindowSize{chrome.content.width, chrome.content.height},
                                 outputScaleOf(window), asyncStorageDatabasePath(parsedArguments.applicationIdentifier),
                                 ownActivationUrl, parsedArguments.assetsDirectory, window.toplevelState());

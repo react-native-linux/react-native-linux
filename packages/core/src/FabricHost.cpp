@@ -1,5 +1,6 @@
 #include "FabricHost.h"
 
+#include "ApplicationKey.h"
 #include "AutolinkedComponents.h"
 #include "ReanimatedModule.h"
 #include "SwitchComponent.h"
@@ -40,6 +41,7 @@
 #include <react/renderer/mounting/ShadowView.h>
 #include <react/renderer/runtimescheduler/RuntimeScheduler.h>
 #include <react/renderer/scheduler/SchedulerToolbox.h>
+#include <react/renderer/uimanager/AppRegistryBinding.h>
 
 namespace react_native_linux {
 
@@ -138,6 +140,27 @@ facebook::react::ComponentRegistryFactory createComponentRegistryFactory(
     };
 }
 
+std::vector<std::string> readRegisteredApplicationKeys(facebook::jsi::Runtime& runtime) {
+    const facebook::jsi::Value registry = runtime.global().getProperty(runtime, "RN$AppRegistry");
+
+    if (!registry.isObject()) {
+        return {};
+    }
+
+    const facebook::jsi::Array keys = registry.asObject(runtime)
+                                          .getPropertyAsFunction(runtime, "getAppKeys")
+                                          .call(runtime)
+                                          .asObject(runtime)
+                                          .asArray(runtime);
+    std::vector<std::string> registeredKeys;
+
+    for (size_t index = 0; index < keys.size(runtime); ++index) {
+        registeredKeys.push_back(keys.getValueAtIndex(runtime, index).asString(runtime).utf8(runtime));
+    }
+
+    return registeredKeys;
+}
+
 // AppRegistryBinding::stopSurface throws when RN$stopSurface is absent, and SurfaceHandler::stop goes through it
 // even for a surface that was started empty. React Native's JavaScript surface registry is not part of this host.
 void installStopSurfaceBinding(facebook::jsi::Runtime& runtime) {
@@ -172,7 +195,8 @@ public:
 
 FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::react::Size surfaceSize,
                        const std::string& moduleName)
-    : contextContainer_(std::make_shared<const facebook::react::ContextContainer>()),
+    : runtimeExecutor_(reactInstance.getBufferedRuntimeExecutor()),
+      contextContainer_(std::make_shared<const facebook::react::ContextContainer>()),
       componentDescriptorProviderRegistry_(std::make_shared<facebook::react::ComponentDescriptorProviderRegistry>()),
       mountingManager_(std::make_shared<LinuxMountingManager>()),
       animationChoreographer_(std::make_shared<LinuxAnimationChoreographer>()) {
@@ -189,7 +213,7 @@ FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::
 
     facebook::react::SchedulerToolbox schedulerToolbox;
     schedulerToolbox.contextContainer = contextContainer_;
-    schedulerToolbox.runtimeExecutor = reactInstance.getBufferedRuntimeExecutor();
+    schedulerToolbox.runtimeExecutor = runtimeExecutor_;
     schedulerToolbox.bridgelessBindingsExecutor = reactInstance.getUnbufferedRuntimeExecutor();
     const auto registeredComponentNames = std::make_shared<std::unordered_set<std::string>>();
     schedulerToolbox.componentRegistryFactory =
@@ -258,6 +282,20 @@ FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::
     scheduler_->registerSurface(*surfaceHandler_);
     setSurfaceSize(surfaceSize, 1.0F);
     surfaceHandler_->start();
+}
+
+void FabricHost::runApplication(std::optional<std::string> requestedKey) {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    runtimeExecutor_([requestedKey = std::move(requestedKey)](facebook::jsi::Runtime& runtime) {
+        const std::optional<std::string> key =
+            selectApplicationKey(requestedKey, readRegisteredApplicationKeys(runtime));
+
+        if (key.has_value()) {
+            facebook::react::AppRegistryBinding::startSurface(
+                runtime, kSurfaceId, key.value(), folly::dynamic::object(), facebook::react::DisplayMode::Visible);
+        }
+    });
 }
 
 FabricHost::~FabricHost() noexcept {

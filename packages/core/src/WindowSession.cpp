@@ -57,8 +57,8 @@ uint64_t toNanosecondsSinceEpoch(std::chrono::steady_clock::time_point timePoint
 
 } // namespace
 
-WindowSession::WindowSession(const std::string& bundlePath, WindowSize size, double scale,
-                             const std::string& asyncStorageDatabasePath,
+WindowSession::WindowSession(const std::string& bundlePath, std::optional<std::string> applicationKey, WindowSize size,
+                             double scale, const std::string& asyncStorageDatabasePath,
                              std::optional<std::string> initialActivationUrl, std::string assetsDirectory,
                              const ToplevelState& initialToplevelState)
     : fabricHost_(std::make_unique<FabricHost>(reactHost_.reactInstance(), toSurfaceSize(size))),
@@ -108,6 +108,7 @@ WindowSession::WindowSession(const std::string& bundlePath, WindowSize size, dou
     reactHost_.appState().seed(initialToplevelState);
     reactHost_.setAssetsDirectory(std::move(assetsDirectory));
     reactHost_.loadBundle(bundlePath);
+    fabricHost_->runApplication(std::move(applicationKey));
     reactHost_.startHotModuleReplacement(bundlePath);
 }
 

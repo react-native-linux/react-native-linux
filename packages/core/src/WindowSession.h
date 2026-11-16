@@ -79,9 +79,11 @@ namespace react_native_linux {
  */
 class WindowSession final {
 public:
-    WindowSession(const std::string& bundlePath, WindowSize size, double scale,
-                  const std::string& asyncStorageDatabasePath, std::optional<std::string> initialActivationUrl,
-                  std::string assetsDirectory, const ToplevelState& initialToplevelState);
+    /** `applicationKey` is `--module`'s; `FabricHost::runApplication` says what an absent one runs. */
+    WindowSession(const std::string& bundlePath, std::optional<std::string> applicationKey, WindowSize size,
+                  double scale, const std::string& asyncStorageDatabasePath,
+                  std::optional<std::string> initialActivationUrl, std::string assetsDirectory,
+                  const ToplevelState& initialToplevelState);
     WindowSession(const WindowSession&) = delete;
     WindowSession(WindowSession&&) = delete;
     WindowSession& operator=(const WindowSession&) = delete;

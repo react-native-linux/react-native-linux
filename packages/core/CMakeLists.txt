@@ -857,6 +857,7 @@ set(RNL_REACT_COMMON_NATIVEMODULE_TARGETS
 
 add_library(rnl_react_core STATIC
     src/Activation.cpp
+    src/ApplicationKey.cpp
     src/AppState.cpp
     src/ActivityIndicatorContent.cpp
     src/AnimationFrameQueue.cpp

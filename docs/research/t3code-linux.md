@@ -173,7 +173,7 @@ transitive package.
 
 | Package | T3 Code range | Status | Owner | Note |
 | --- | --- | --- | --- | --- |
-| `expo` | `58.0.23` | tracked | #155 | the Expo host decision; `registerRootComponent` and `requireNativeModule` at the entry; `rnl_window` does not yet run the `"main"` that `registerRootComponent` registers (#777) |
+| `expo` | `58.0.23` | tracked | #155 | the Expo host decision; `requireNativeModule` at the entry; `registerRootComponent`'s `"main"` runs without a flag (#777) |
 | `expo-modules-core` | `58.0.30` | tracked | #155 | under every Expo module |
 | `expo-modules-jsi` | `58.0.22` | tracked | #155 | from expo-modules-core |
 | `expo-modules-macros` | `0.29.0` | tracked | #155 | Swift macros from expo-modules-core |

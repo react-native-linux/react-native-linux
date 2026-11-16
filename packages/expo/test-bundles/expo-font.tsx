@@ -1,5 +1,5 @@
 import * as Font from "expo-font";
-import { AppRegistry, Text, TurboModuleRegistry, View } from "react-native";
+import { Text, TurboModuleRegistry, View } from "react-native";
 import type { TurboModule } from "react-native";
 import { registerRootComponent } from "expo";
 import { useEffect } from "react";
@@ -43,4 +43,3 @@ const ExpoFontApp = (): React.JSX.Element => {
 };
 
 registerRootComponent(ExpoFontApp);
-AppRegistry.runApplication("main", { initialProps: {}, rootTag: 1 });

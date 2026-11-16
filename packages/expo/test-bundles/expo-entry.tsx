@@ -1,6 +1,6 @@
 // Expo CLI's Metro config prepends this to every bundle; this platform's does not yet (#687).
 import "expo/virtual/streams.js";
-import { AppRegistry, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { Asset } from "expo-asset";
 import { registerRootComponent } from "expo";
 import { useEffect } from "react";
@@ -62,4 +62,3 @@ const ExpoEntryApp = (): React.JSX.Element => {
 };
 
 registerRootComponent(ExpoEntryApp);
-AppRegistry.runApplication("main", { initialProps: {}, rootTag: 1 });

@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "bundle:linux": "mkdir -p build && metro build index.tsx --platform linux --out build/index.linux.bundle.js",
-    "linux": "pnpm bundle:linux && rnl_window --fabric build/index.linux.bundle.js"
+    "linux": "pnpm bundle:linux && rnl_window --fabric build/index.linux.bundle.js --module HelloWorld"
   },
   "dependencies": {
     "@babel/runtime": "7.29.2",

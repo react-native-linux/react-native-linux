@@ -18,7 +18,9 @@ pnpm add -D /path/to/react-native-linux/build/pack/react-native-linux-cli-0.0.0.
 pnpm linux
 ```
 
-`pnpm linux` bundles `index.tsx` with Metro for `--platform linux` and opens it in `rnl_window`. The binary links
+`pnpm linux` bundles `index.tsx` with Metro for `--platform linux` and opens it in `rnl_window`, which runs the
+`AppRegistry` key its `--module` names: the one `index.tsx` registers, renamed with the project at init (#777).
+Without `--module`, `rnl_window` runs `"main"`, the key Expo's `registerRootComponent` registers. The binary links
 the build host's system libraries, so build it on the distribution the application runs on (#357).
 
 `template.config.js` and `metro.config.js` are plain JavaScript because the community CLI and Metro load them

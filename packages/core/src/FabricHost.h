@@ -11,6 +11,7 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -87,6 +88,14 @@ public:
      * surface starts left to right.
      */
     void setLayoutDirection(LayoutDirectionRequest request);
+
+    /**
+     * Runs the key `selectApplicationKey` picks on this host's empty surface (#777), once the bundle loaded before
+     * this call has evaluated: the check needs its `AppRegistry`, so it rides the buffered runtime executor, which
+     * holds it until the bundle has run. Upstream's `AppRegistryBinding::startSurface` then calls
+     * `RN$AppRegistry.runApplication`, exactly as a surface started with that module name would.
+     */
+    void runApplication(std::optional<std::string> requestedKey);
 
     /** Stops this host's surface and every additional one, each committing its empty tree. */
     void stopSurface();
@@ -190,6 +199,7 @@ public:
 private:
     const std::thread::id owningThread_{std::this_thread::get_id()};
     LayoutDirectionRequest layoutDirection_;
+    facebook::react::RuntimeExecutor runtimeExecutor_;
     std::shared_ptr<const facebook::react::ContextContainer> contextContainer_;
     std::shared_ptr<facebook::react::ComponentDescriptorProviderRegistry> componentDescriptorProviderRegistry_;
     std::shared_ptr<LinuxMountingManager> mountingManager_;
