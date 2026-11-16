@@ -8,7 +8,11 @@ namespace {
 
 // The thermal cap of #335: under a serious or critical thermal state every fallback interval is this one
 // 60 Hz frame, whatever the display's refresh rate or the window's activity would otherwise stretch it to.
-constexpr std::chrono::nanoseconds kThermalCappedInterval{16'666'666};
+constexpr std::chrono::nanoseconds kNominalRefreshInterval{16'666'666};
+constexpr std::chrono::nanoseconds kThermalCappedInterval = kNominalRefreshInterval;
+
+// How many display periods a callback the last draw armed may take before the fallback draws instead (#703).
+constexpr int64_t kLateCallbackPeriods = 2;
 
 // The stretch factors over the display's own frame period, in the states the compositor is not pacing.
 constexpr double kSeriousThermalRatio = 0.9;
@@ -43,7 +47,25 @@ std::chrono::nanoseconds FrameClock::fallbackInterval(WindowActivity activity, T
     return refreshInterval; // COV_EXCL: the switch above covers every enumerator; this return satisfies -Wreturn-type.
 }
 
-FrameClock::Tick FrameClock::onFrameCallback(std::chrono::steady_clock::time_point now) {
+std::chrono::nanoseconds FrameClock::pacingPeriod(bool hasDrawn,
+                                                  std::optional<std::chrono::nanoseconds> displayPeriod) {
+    if (!displayPeriod.has_value()) {
+        return kNominalRefreshInterval;
+    }
+
+    return hasDrawn ? std::max(kNominalRefreshInterval, displayPeriod.value() * kLateCallbackPeriods)
+                    : displayPeriod.value();
+}
+
+FrameClock::Tick FrameClock::onFrameCallback(std::chrono::steady_clock::time_point now, bool hasPendingWork) {
+    if (hasPendingWork || isRetryPending_) {
+        settleCallbacks_ = 0;
+    } else if (settleCallbacks_ < kSettleCallbacks) {
+        ++settleCallbacks_;
+    } else {
+        return Tick{.shouldDraw = false, .deltaMilliseconds = 0.0, .source = Source::Callback, .resumed = false};
+    }
+
     const Tick tick = draw(now, Source::Callback);
 
     ++callbackTicks_;
@@ -53,16 +75,19 @@ FrameClock::Tick FrameClock::onFrameCallback(std::chrono::steady_clock::time_poi
 }
 
 FrameClock::Tick FrameClock::onFallbackTimeout(std::chrono::steady_clock::time_point now, bool hasPendingWork) {
-    if (!hasPendingWork) {
+    if (!hasPendingWork && !isRetryPending_) {
         return Tick{.shouldDraw = false, .deltaMilliseconds = 0.0, .source = Source::Timer, .resumed = false};
     }
 
     const Tick tick = draw(now, Source::Timer);
 
+    settleCallbacks_ = 0;
     ++timerTicks_;
 
     return tick;
 }
+
+void FrameClock::recordDrawOutcome(bool presented) noexcept { isRetryPending_ = !presented; }
 
 uint64_t FrameClock::callbackTicks() const noexcept { return callbackTicks_; }
 

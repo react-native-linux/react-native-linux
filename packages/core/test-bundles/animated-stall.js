@@ -1,5 +1,5 @@
 // Issue #19: a native-driven animation runs on the frame thread, not the JavaScript one. The bundle starts a
-// half-second scale ramp and then holds the JavaScript thread in a busy loop for a full second. The frames that
+// 1.5-second scale ramp and then holds the JavaScript thread in a busy loop for two seconds. The frames that
 // step the driver are the window loop's (LinuxAnimationChoreographer, #129), so by the time JavaScript runs again
 // the ramp has already ended: the value it reads back is the end of the ramp, and the end callback reports a
 // finished animation. A driver stepped by JavaScript would read back the start of the ramp instead. The scenario's
@@ -20,9 +20,10 @@ if (animated === null || animated === undefined) {
 const valueTag = 1;
 const transformTag = 2;
 const animationId = 1;
-const stallMilliseconds = 1000;
-// One entry per 60 Hz frame, so thirty entries are half a second: half the stall.
-const rampFrameCount = 30;
+const stallMilliseconds = 2000;
+// One entry per 60 Hz frame, so ninety entries are a second and a half: shorter than the stall, and enough frames
+// for the frame budget's sample on a window that presents only the frames with work (#703).
+const rampFrameCount = 90;
 const frames = Array.from({ length: rampFrameCount }, (_, index) => (index + 1) / rampFrameCount);
 
 // The ramp scales: the native driver steps a transform node like any other, and only the value is read back.

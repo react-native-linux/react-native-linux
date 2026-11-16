@@ -1688,7 +1688,7 @@ void RetainedScene::setFocus(facebook::react::Tag tag, bool isFocusVisible) {
     }
 }
 
-void RetainedScene::setEditorState(facebook::react::Tag tag, const SceneEditorState& editorState) {
+bool RetainedScene::setEditorState(facebook::react::Tag tag, const SceneEditorState& editorState) {
     SceneEditorState& current = editorStates_[tag];
 
     if (std::tie(current.caretUtf16, current.selectionBeginUtf16, current.selectionEndUtf16,
@@ -1697,7 +1697,7 @@ void RetainedScene::setEditorState(facebook::react::Tag tag, const SceneEditorSt
         std::tie(editorState.caretUtf16, editorState.selectionBeginUtf16, editorState.selectionEndUtf16,
                  editorState.compositionBeginUtf16, editorState.compositionEndUtf16, editorState.scrollOffsetX,
                  editorState.scrollOffsetY, editorState.isCaretVisible)) {
-        return;
+        return false;
     }
 
     current = editorState;
@@ -1705,6 +1705,8 @@ void RetainedScene::setEditorState(facebook::react::Tag tag, const SceneEditorSt
     // One rectangle, not two: everything a caret, a selection or a composing underline draws is inside the
     // field's own frame, which is also the extent this damages. A blink is therefore one field's repaint.
     damageSubtree(tag);
+
+    return true;
 }
 
 std::vector<RejectedAnimatedProp> RetainedScene::applyAnimatedProps(facebook::react::Tag tag,
