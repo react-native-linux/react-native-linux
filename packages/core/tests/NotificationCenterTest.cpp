@@ -4,6 +4,8 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <exception>
+#include <filesystem>
 #include <folly/dynamic.h>
 #include <folly/json.h>
 #include <functional>
@@ -16,6 +18,8 @@
 #include <stdexcept>
 #include <string>
 #include <sys/eventfd.h>
+#include <sys/resource.h>
+#include <thread>
 #include <unistd.h>
 #include <utility>
 #include <vector>
@@ -81,6 +85,7 @@ struct Script {
     std::atomic<bool> reachable{true};
     std::atomic<bool> failsNotify{false};
     std::atomic<bool> failsClose{false};
+    std::atomic<milliseconds> notifyTakes{milliseconds(0)};
     int wake{::eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK)};
     std::mutex mutex;
     std::vector<std::string> summaries;
@@ -100,6 +105,8 @@ public:
         if (script_->failsNotify) {
             throw std::runtime_error("Notify failed");
         }
+
+        std::this_thread::sleep_for(script_->notifyTakes.load());
 
         const std::lock_guard lock(script_->mutex);
 
@@ -272,7 +279,45 @@ protected:
     std::shared_ptr<Script> script_{std::make_shared<Script>()};
 };
 
-TEST_F(NotificationCenterTest, AnUnusedCenterStartsNoWorker) { EXPECT_NE(makeCenter(), nullptr); }
+size_t threadCount() {
+    return static_cast<size_t>(
+        std::distance(std::filesystem::directory_iterator("/proc/self/task"), std::filesystem::directory_iterator()));
+}
+
+TEST_F(NotificationCenterTest, AConfiguredButUnusedCenterStartsNoWorker) {
+    const size_t before = threadCount();
+    const std::unique_ptr<NotificationCenter> center = makeCenter();
+
+    connect(*center);
+    EXPECT_EQ(threadCount(), before);
+}
+
+TEST(NotificationCenterWakeDescriptorTest, ACenterThatCannotCreateItsWakeDescriptorThrows) {
+    rlimit saved{};
+    const int lowestFreeDescriptor = ::dup(STDERR_FILENO);
+
+    ::close(lowestFreeDescriptor);
+    ASSERT_EQ(::getrlimit(RLIMIT_NOFILE, &saved), 0);
+
+    rlimit exhausted = saved;
+
+    std::exception_ptr failure;
+
+    exhausted.rlim_cur = static_cast<rlim_t>(lowestFreeDescriptor);
+    ASSERT_EQ(::setrlimit(RLIMIT_NOFILE, &exhausted), 0);
+    try {
+        const NotificationCenter center(nullptr, nullptr);
+    } catch (...) {
+        failure = std::current_exception();
+    }
+    ASSERT_EQ(::setrlimit(RLIMIT_NOFILE, &saved), 0);
+    ASSERT_NE(failure, nullptr);
+    try {
+        std::rethrow_exception(failure);
+    } catch (const std::runtime_error& error) {
+        EXPECT_STREQ(error.what(), "NotificationCenter: eventfd: Too many open files");
+    }
+}
 
 TEST_F(NotificationCenterTest, PermissionsAreGrantedOnlyWhileADaemonAnswers) {
     const std::string undetermined =
@@ -361,6 +406,26 @@ TEST_F(NotificationCenterTest, ANotificationTheHandlerHidesOrNobodyHandlesIsNotS
     EXPECT_TRUE(script_->shown().empty());
 }
 
+TEST_F(NotificationCenterTest, ARedeliveredIdentifierTimesOutTheDeliveryStillAwaitingTheHandler) {
+    const std::unique_ptr<NotificationCenter> center = makeCenter();
+
+    connect(*center);
+    EXPECT_EQ(schedule(*center, "turn", nullptr, folly::dynamic::object("title", "First")), "\"turn\"");
+    events_.await(2);
+    EXPECT_EQ(schedule(*center, "turn", nullptr, folly::dynamic::object("title", "Second")), "\"turn\"");
+
+    const auto events = events_.await(5);
+
+    EXPECT_EQ(events_.names(),
+              (std::vector<std::string>{"onDidReceiveNotification", "onHandleNotification", "onDidReceiveNotification",
+                                        "onHandleNotificationTimeout", "onHandleNotification"}));
+    ASSERT_EQ(events.size(), 5U);
+    EXPECT_EQ(events[3].second["notification"]["request"]["content"]["title"], "First");
+    EXPECT_EQ(events[4].second["notification"]["request"]["content"]["title"], "Second");
+    EXPECT_EQ(handle(*center, "turn", false), "null");
+    EXPECT_EQ(script_->shown(), std::vector<std::string>{"First|"});
+}
+
 TEST_F(NotificationCenterTest, AHandlerThatDoesNotAnswerTimesOutAndTheNotificationShows) {
     const std::unique_ptr<NotificationCenter> center = makeCenter(milliseconds(20));
 
@@ -400,6 +465,24 @@ TEST_F(NotificationCenterTest, FiresTimeIntervalAndDateTriggersWhenTheyAreDue) {
     EXPECT_GE(std::chrono::steady_clock::now() - startedAt, milliseconds(50));
 }
 
+TEST_F(NotificationCenterTest, ATriggerThatFallsDueWhileTheDaemonIsSlowStillFires) {
+    const std::unique_ptr<NotificationCenter> center = makeCenter(milliseconds(20));
+
+    connect(*center);
+    script_->notifyTakes = milliseconds(500);
+    EXPECT_EQ(schedule(*center, "overdue", folly::dynamic::object("type", "timeInterval")("seconds", 0.2)),
+              "\"overdue\"");
+    EXPECT_EQ(schedule(*center, "slow", nullptr), "\"slow\"");
+
+    const auto events = events_.await(4);
+
+    script_->notifyTakes = milliseconds(0);
+    ASSERT_GE(events.size(), 4U);
+    EXPECT_EQ(events[2].first, "onHandleNotificationTimeout");
+    EXPECT_EQ(events[3].first, "onDidReceiveNotification");
+    EXPECT_EQ(events[3].second["request"]["identifier"], "overdue");
+}
+
 TEST_F(NotificationCenterTest, RejectsTriggersAndContentLinuxCannotFire) {
     const std::unique_ptr<NotificationCenter> center = makeCenter();
 
@@ -434,7 +517,7 @@ TEST_F(NotificationCenterTest, ANotificationIsDeliveredButNotShownWithoutABusOrW
     EXPECT_TRUE(script_->closedByCenter().empty());
 }
 
-TEST_F(NotificationCenterTest, DismissAllClosesEveryShownNotificationAndForgetsIt) {
+TEST_F(NotificationCenterTest, DismissAllClosesEveryShownNotificationAndKeepsOneThatFailedToClose) {
     const std::unique_ptr<NotificationCenter> center = makeCenter();
 
     connect(*center);
@@ -449,6 +532,11 @@ TEST_F(NotificationCenterTest, DismissAllClosesEveryShownNotificationAndForgetsI
     testing::internal::CaptureStderr();
     EXPECT_EQ(dismissAll(*center), "null");
     EXPECT_EQ(testing::internal::GetCapturedStderr(), "[rnl-notifications] CloseNotification failed\n");
+    EXPECT_EQ(script_->closedByCenter(), (std::vector<uint32_t>{1, 2}));
+
+    script_->failsClose = false;
+    EXPECT_EQ(dismissAll(*center), "null");
+    EXPECT_EQ(script_->closedByCenter(), (std::vector<uint32_t>{1, 2, 3}));
 
     script_->click(3, "default");
     deliverAndHandle(*center, "fourth", true);

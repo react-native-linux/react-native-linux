@@ -20,26 +20,20 @@ constexpr int kActionArrayLength = 2;
 constexpr int kNoHints = 0;
 constexpr int32_t kServerDecidesExpiry = -1;
 
-struct BusError {
-    BusError() = default;
-    BusError(const BusError&) = delete;
-    BusError(BusError&&) = delete;
-    BusError& operator=(const BusError&) = delete;
-    BusError& operator=(BusError&&) = delete;
-
-    ~BusError() { sd_bus_error_free(&value); }
-
-    sd_bus_error value{};
-};
-
 struct MessageUnref {
     void operator()(sd_bus_message* message) const noexcept { sd_bus_message_unref(message); }
 };
 
 using Message = std::unique_ptr<sd_bus_message, MessageUnref>;
 
+std::string senderOf(sd_bus_message* message) {
+    const char* sender = sd_bus_message_get_sender(message);
+
+    return sender == nullptr ? std::string() : std::string(sender);
+}
+
 /** Throws naming `member` and the D-Bus error, which `sd_bus_error_set_errno` keeps when the call already set one. */
-void require(int result, const char* member, BusError& error) {
+void require(int result, const char* member, SdBusError& error) {
     if (result < 0) {
         sd_bus_error_set_errno(&error.value, result);
 
@@ -49,7 +43,7 @@ void require(int result, const char* member, BusError& error) {
 
 } // namespace
 
-void FreedesktopNotifications::BusClose::operator()(sd_bus* bus) const noexcept { sd_bus_flush_close_unref(bus); }
+void FreedesktopNotifications::BusClose::operator()(sd_bus* bus) const noexcept { sd_bus_close_unref(bus); }
 
 void FreedesktopNotifications::SlotUnref::operator()(sd_bus_slot* slot) const noexcept { sd_bus_slot_unref(slot); }
 
@@ -71,7 +65,7 @@ std::unique_ptr<NotificationServer> FreedesktopNotifications::connect(const BusO
     const int opened = openBus(&bus);
 
     if (opened < 0) {
-        sd_bus_flush_close_unref(bus);
+        sd_bus_close_unref(bus);
         std::cerr << "[rnl-notifications] no session bus: "
                   << std::error_code(-opened, std::generic_category()).message() << '\n';
 
@@ -83,7 +77,7 @@ std::unique_ptr<NotificationServer> FreedesktopNotifications::connect(const BusO
 }
 
 bool FreedesktopNotifications::reachable() {
-    BusError error;
+    SdBusError error;
     sd_bus_message* reply = nullptr;
     const int result = sd_bus_call_method(bus_.get(), kDestination, kPath, kInterface, "GetServerInformation",
                                           &error.value, &reply, "");
@@ -94,7 +88,7 @@ bool FreedesktopNotifications::reachable() {
 }
 
 uint32_t FreedesktopNotifications::notify(const std::string& summary, const std::string& body) {
-    BusError error;
+    SdBusError error;
     sd_bus_message* reply = nullptr;
     const int result =
         sd_bus_call_method(bus_.get(), kDestination, kPath, kInterface, "Notify", &error.value, &reply, "susssasa{sv}i",
@@ -105,12 +99,13 @@ uint32_t FreedesktopNotifications::notify(const std::string& summary, const std:
 
     require(result, "Notify", error);
     require(sd_bus_message_read(reply, "u", &serverId), "Notify", error);
+    daemonName_ = senderOf(reply);
 
     return serverId;
 }
 
 void FreedesktopNotifications::close(uint32_t serverId) {
-    BusError error;
+    SdBusError error;
     sd_bus_message* reply = nullptr;
     const int result = sd_bus_call_method(bus_.get(), kDestination, kPath, kInterface, "CloseNotification",
                                           &error.value, &reply, "u", serverId);
@@ -130,23 +125,27 @@ void FreedesktopNotifications::process() {
     }
 }
 
+bool FreedesktopNotifications::fromDaemon(sd_bus_message* message) const { return senderOf(message) == daemonName_; }
+
 int FreedesktopNotifications::onActionInvoked(sd_bus_message* message, void* userData, sd_bus_error* /*error*/) {
+    auto* const self = static_cast<FreedesktopNotifications*>(userData);
     uint32_t serverId = 0;
     const char* actionKey = nullptr;
 
-    if (sd_bus_message_read(message, "us", &serverId, &actionKey) >= 0) {
-        static_cast<FreedesktopNotifications*>(userData)->signals_.actionInvoked(serverId, actionKey);
+    if (self->fromDaemon(message) && sd_bus_message_read(message, "us", &serverId, &actionKey) >= 0) {
+        self->signals_.actionInvoked(serverId, actionKey);
     }
 
     return 0;
 }
 
 int FreedesktopNotifications::onClosed(sd_bus_message* message, void* userData, sd_bus_error* /*error*/) {
+    auto* const self = static_cast<FreedesktopNotifications*>(userData);
     uint32_t serverId = 0;
     uint32_t reason = 0;
 
-    if (sd_bus_message_read(message, "uu", &serverId, &reason) >= 0) {
-        static_cast<FreedesktopNotifications*>(userData)->signals_.closed(serverId);
+    if (self->fromDaemon(message) && sd_bus_message_read(message, "uu", &serverId, &reason) >= 0) {
+        self->signals_.closed(serverId);
     }
 
     return 0;

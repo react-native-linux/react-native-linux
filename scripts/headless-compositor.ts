@@ -133,31 +133,47 @@ const fakeNotificationsBinaryPath = path.resolve(
   "rnl_fake_notifications",
 );
 
-const waitFor = async (isDone: () => boolean): Promise<void> => {
+/**
+ * Resolves once `isReady`, and rejects with the spawn error when `child` cannot start, or with `describeTimeout()` when
+ * it is not ready within `NOTIFICATION_DAEMON_TIMEOUT_MS`.
+ */
+const awaitReady = async (
+  child: ReturnType<typeof spawn>,
+  isReady: () => boolean,
+  describeTimeout: () => string,
+): Promise<void> => {
   const deadline = Date.now() + NOTIFICATION_DAEMON_TIMEOUT_MS;
+  const startup: { error?: Error } = {};
 
-  while (!isDone() && Date.now() < deadline) {
+  child.once("error", (error) => {
+    startup.error = error;
+  });
+
+  while (!isReady()) {
+    if (startup.error instanceof Error) {
+      throw startup.error;
+    }
+
+    if (Date.now() >= deadline) {
+      throw new Error(describeTimeout());
+    }
+
     await delay(SOCKET_POLL_INTERVAL_MS);
   }
 };
 
-const startSessionBus = async (socketPath: string): Promise<ReturnType<typeof spawn>> => {
-  const bus = spawn("dbus-daemon", ["--session", "--nofork", "--nopidfile", `--address=unix:path=${socketPath}`], {
+const spawnSessionBus = (socketPath: string): ReturnType<typeof spawn> =>
+  spawn("dbus-daemon", ["--session", "--nofork", "--nopidfile", `--address=unix:path=${socketPath}`], {
     stdio: "ignore",
   });
 
-  await waitFor(() => existsSync(socketPath));
-
-  return bus;
-};
-
-const startFakeNotificationDaemon = (socketPath: string, trace: { text: string }): ReturnType<typeof spawn> => {
+const spawnFakeNotificationDaemon = (socketPath: string, output: { text: string }): ReturnType<typeof spawn> => {
   const daemon = spawn(fakeNotificationsBinaryPath, [], {
     env: buildEnvironment({ DBUS_SESSION_BUS_ADDRESS: `unix:path=${socketPath}` }),
     stdio: ["ignore", "pipe", "pipe"],
   });
   const record = (chunk: Buffer): void => {
-    trace.text += chunk.toString();
+    output.text += chunk.toString();
   };
 
   daemon.stdout.on("data", record);
@@ -166,10 +182,37 @@ const startFakeNotificationDaemon = (socketPath: string, trace: { text: string }
   return daemon;
 };
 
+/** Starts the bus, then the daemon on it, adding each to `children` as it spawns so the caller stops it. */
+const startNotificationProcesses = async (
+  socketPath: string,
+  daemonOutput: { text: string },
+  children: ReturnType<typeof spawn>[],
+): Promise<void> => {
+  const bus = spawnSessionBus(socketPath);
+
+  children.push(bus);
+  await awaitReady(
+    bus,
+    () => existsSync(socketPath),
+    () => `dbus-daemon never created ${socketPath}`,
+  );
+
+  const daemon = spawnFakeNotificationDaemon(socketPath, daemonOutput);
+
+  children.push(daemon);
+  await awaitReady(
+    daemon,
+    () => daemonOutput.text.includes(NOTIFICATION_DAEMON_READY),
+    () => `rnl_fake_notifications never printed "${NOTIFICATION_DAEMON_READY}"; it printed: ${daemonOutput.text}`,
+  );
+};
+
 /**
  * #274: runs `body` with a private session bus at `<runtimeDirectory>/bus`, which is where a client's sd-bus looks
  * once `buildEnvironment` has dropped `DBUS_SESSION_BUS_ADDRESS`, and `rnl_fake_notifications` on it owning
- * `org.freedesktop.Notifications`. The daemon's lines join `trace`; both processes are stopped after `body`.
+ * `org.freedesktop.Notifications`. Rejects when either process fails to start or is not ready in time. The daemon's
+ * lines join `trace` after `body`, as one block: two processes' pipes have no order between them, so a scenario
+ * expects the daemon's lines after the window's. Both processes are stopped after `body`.
  */
 const withNotificationDaemon = async <Result>(
   runtimeDirectory: string,
@@ -177,16 +220,19 @@ const withNotificationDaemon = async <Result>(
   body: () => Promise<Result>,
 ): Promise<Result> => {
   const socketPath = path.join(runtimeDirectory, "bus");
-  const bus = await startSessionBus(socketPath);
-  const daemon = startFakeNotificationDaemon(socketPath, trace);
+  const daemonOutput = { text: "" };
+  const children: ReturnType<typeof spawn>[] = [];
 
   try {
-    await waitFor(() => trace.text.includes(NOTIFICATION_DAEMON_READY));
+    await startNotificationProcesses(socketPath, daemonOutput, children);
 
     return await body();
   } finally {
-    daemon.kill();
-    bus.kill();
+    for (const child of children) {
+      child.kill();
+    }
+
+    trace.text += daemonOutput.text;
   }
 };
 

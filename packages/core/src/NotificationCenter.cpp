@@ -2,10 +2,12 @@
 
 #include <algorithm>
 #include <array>
+#include <cerrno>
 #include <chrono>
 #include <climits>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <exception>
 #include <folly/json.h>
 #include <iostream>
@@ -71,7 +73,11 @@ folly::dynamic permission(bool granted) {
 
 NotificationCenter::NotificationCenter(Emit emit, HasListeners hasListeners, std::chrono::milliseconds handlerTimeout)
     : emit_(std::move(emit)), hasListeners_(std::move(hasListeners)), handlerTimeout_(handlerTimeout),
-      wakeDescriptor_(::eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK)) {}
+      wakeDescriptor_(::eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK)) {
+    if (wakeDescriptor_ < 0) {
+        throw std::runtime_error(std::string("NotificationCenter: eventfd: ") + std::strerror(errno));
+    }
+}
 
 NotificationCenter::~NotificationCenter() {
     {
@@ -92,10 +98,8 @@ NotificationCenter::~NotificationCenter() {
 }
 
 void NotificationCenter::configure(std::string applicationName, NotificationServerConnector connect) {
-    post([this, applicationName = std::move(applicationName), connect = std::move(connect)]() mutable {
-        applicationName_ = std::move(applicationName);
-        connect_ = std::move(connect);
-    });
+    applicationName_ = std::move(applicationName);
+    connect_ = std::move(connect);
 }
 
 void NotificationCenter::getPermissions(Resolve resolve) {
@@ -157,15 +161,16 @@ void NotificationCenter::handle(std::string identifier, bool shows, Resolve reso
 
 void NotificationCenter::dismissAll(Resolve resolve) {
     post([this, resolve = std::move(resolve)] {
-        for (const auto& [serverId, notification] : presented_) {
+        for (auto entry = presented_.begin(); entry != presented_.end();) {
             try {
-                server_->close(serverId);
+                server_->close(entry->first);
+                entry = presented_.erase(entry);
             } catch (const std::exception& error) {
                 std::cerr << "[rnl-notifications] " << error.what() << '\n';
+                ++entry;
             }
         }
 
-        presented_.clear();
         resolve(nullptr);
     });
 }
@@ -235,15 +240,18 @@ void NotificationCenter::waitForWork() {
         }
     }
 
-    const int64_t timeout =
-        next.has_value() ? std::chrono::ceil<std::chrono::milliseconds>(next.value() - Clock::now()).count() : -1;
+    const int timeout =
+        next.has_value()
+            ? static_cast<int>(std::clamp<int64_t>(
+                  std::chrono::ceil<std::chrono::milliseconds>(next.value() - Clock::now()).count(), 0, INT_MAX))
+            : -1;
     std::array<pollfd, 2> descriptors{
         pollfd{.fd = wakeDescriptor_, .events = POLLIN, .revents = 0},
         server_ != nullptr ? server_->pollDescriptor() : pollfd{.fd = -1, .events = 0, .revents = 0},
     };
     uint64_t wakes = 0;
 
-    ::poll(descriptors.data(), descriptors.size(), static_cast<int>(std::clamp<int64_t>(timeout, -1, INT_MAX)));
+    ::poll(descriptors.data(), descriptors.size(), timeout);
     ::read(wakeDescriptor_, &wakes, sizeof wakes);
 }
 
@@ -265,10 +273,8 @@ void NotificationCenter::fireDueTimers() {
         return due;
     };
 
-    for (folly::dynamic& notification : takeDue(handling_)) {
-        emit_("onHandleNotificationTimeout",
-              folly::dynamic::object("id", notification["request"]["identifier"])("notification", notification));
-        present(notification);
+    for (const folly::dynamic& notification : takeDue(handling_)) {
+        timeOut(notification);
     }
 
     for (const folly::dynamic& notification : takeDue(scheduled_)) {
@@ -288,8 +294,21 @@ void NotificationCenter::deliver(const folly::dynamic& scheduled) {
 
     const std::string identifier = notification["request"]["identifier"].asString();
 
+    if (const auto earlier = handling_.find(identifier); earlier != handling_.end()) {
+        const folly::dynamic awaiting = std::move(earlier->second.notification);
+
+        handling_.erase(earlier);
+        timeOut(awaiting);
+    }
+
     handling_[identifier] = Pending{.deadline = Clock::now() + handlerTimeout_, .notification = notification};
     emit_("onHandleNotification", folly::dynamic::object("id", identifier)("notification", std::move(notification)));
+}
+
+void NotificationCenter::timeOut(const folly::dynamic& notification) {
+    emit_("onHandleNotificationTimeout",
+          folly::dynamic::object("id", notification["request"]["identifier"])("notification", notification));
+    present(notification);
 }
 
 void NotificationCenter::present(const folly::dynamic& notification) {

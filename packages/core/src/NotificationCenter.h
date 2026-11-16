@@ -56,12 +56,14 @@ using NotificationServerConnector =
  *   which upstream's default handler is until the app passes `null` to `setNotificationHandler`, it is offered there
  *   and shown once `handle` answers a behavior that shows a banner or a list entry. A handler that does not answer
  *   within `handlerTimeout` gets `onHandleNotificationTimeout` and the notification shows, as upstream documents. With
- *   no listener it does not show, as on Android and iOS.
+ *   no listener it does not show, as on Android and iOS. A delivery whose identifier is still awaiting the handler
+ *   times the earlier one out first, so each delivery gets one decision.
  * - Triggers: `null` (now), `timeInterval` without `repeats`, and `date`. Every other one rejects.
  * - Permissions are granted while a daemon answers on the session bus, and undetermined otherwise.
  *
- * Threading contract: every public method may be called from any thread and never blocks on the bus. The work, the
- * daemon connection and the timers live on one worker thread, which the first call starts; `resolve`, `reject` and
+ * Threading contract: `configure` runs before every other call, on the thread that constructs the center. Every
+ * other public method may then be called from any thread and never blocks on the bus. The work, the daemon
+ * connection and the timers live on one worker thread, which the first of them starts; `resolve`, `reject` and
  * `emit` are called from it, and `hasListeners` is asked from it. `lastResponse` and `clearLastResponse` are guarded
  * by a mutex, because upstream reads the last response synchronously on the JavaScript thread. The destructor stops
  * the worker and drops whatever is scheduled.
@@ -75,6 +77,7 @@ public:
 
     static constexpr std::chrono::milliseconds kHandlerTimeout{3000};
 
+    /** Throws `std::runtime_error`, naming the system error, when the worker's wake descriptor cannot be created. */
     NotificationCenter(Emit emit, HasListeners hasListeners,
                        std::chrono::milliseconds handlerTimeout = kHandlerTimeout);
     NotificationCenter(const NotificationCenter&) = delete;
@@ -83,7 +86,7 @@ public:
     NotificationCenter& operator=(NotificationCenter&&) = delete;
     ~NotificationCenter();
 
-    /** Before the bundle runs; until then, and without a connector, no notification shows. */
+    /** Before any other call, as `WindowSession` makes it before the bundle runs; without it no notification shows. */
     void configure(std::string applicationName, NotificationServerConnector connect);
 
     void getPermissions(Resolve resolve);
@@ -111,6 +114,7 @@ private:
     void waitForWork();
     void fireDueTimers();
     void deliver(const folly::dynamic& notification);
+    void timeOut(const folly::dynamic& notification);
     void present(const folly::dynamic& notification);
     NotificationServer* server();
     void onActionInvoked(uint32_t serverId, const std::string& actionKey);

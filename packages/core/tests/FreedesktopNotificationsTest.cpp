@@ -1,6 +1,7 @@
 #include "FreedesktopNotifications.h"
 
 #include "FakeNotificationDaemon.h"
+#include "SocketPairBus.h"
 
 #include <atomic>
 #include <cerrno>
@@ -8,6 +9,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <functional>
+#include <future>
 #include <gtest/gtest.h>
 #include <memory>
 #include <poll.h>
@@ -59,22 +61,21 @@ public:
     PeerDaemon& operator=(PeerDaemon&&) = delete;
 
     ~PeerDaemon() {
-        stopping_.store(true);
-        thread_.join();
+        stopReading();
         daemon_.reset();
         ::close(clientDescriptor_);
     }
 
-    [[nodiscard]] FreedesktopNotifications::BusOpener opener() const {
-        return [descriptor = clientDescriptor_](sd_bus** bus) {
-            const int client = ::dup(descriptor);
+    /** Stops processing its bus, as a stalled daemon does: what the client sends piles up unread. */
+    void stopReading() {
+        stopping_.store(true);
 
-            sd_bus_new(bus);
-            sd_bus_set_fd(*bus, client, client);
-
-            return sd_bus_start(*bus);
-        };
+        if (thread_.joinable()) {
+            thread_.join();
+        }
     }
+
+    [[nodiscard]] FreedesktopNotifications::BusOpener opener() const { return socketPairOpener(clientDescriptor_); }
 
     [[nodiscard]] const FakeNotificationDaemon& daemon() const { return *daemon_; }
 
@@ -178,10 +179,13 @@ TEST(FreedesktopNotificationsTest, ShowsANotificationWithTheDefaultActionAndClos
     EXPECT_GE(server->pollDescriptor().fd, 0);
 }
 
-TEST(FreedesktopNotificationsTest, DeliversAClickAsActionInvokedAndIgnoresMalformedSignals) {
+/** The daemon answers from `:1.7`; another client forges each signal from `:1.66` just before the daemon sends it. */
+TEST(FreedesktopNotificationsTest, DeliversAClickAsActionInvokedAndIgnoresMalformedAndForgedSignals) {
     const PeerDaemon peer(behaving([](FakeNotificationDaemon::Behavior& behavior) {
         behavior.invokedAction = "default";
         behavior.emitsMalformedSignals = true;
+        behavior.sender = ":1.7";
+        behavior.forgedSender = ":1.66";
     }));
     Received received;
     const std::unique_ptr<NotificationServer> server =
@@ -225,6 +229,41 @@ TEST(FreedesktopNotificationsTest, AMalformedNotifyReplyThrows) {
 
     ASSERT_NE(server, nullptr);
     EXPECT_THROW(server->notify("Turn complete", ""), std::runtime_error);
+}
+
+TEST(FreedesktopNotificationsTest, ClosingDoesNotWaitForADaemonThatStoppedReading) {
+    constexpr size_t kMoreThanTheSocketBuffers = size_t{16} << 20U;
+    auto peer = std::make_unique<PeerDaemon>(FakeNotificationDaemon::Behavior{});
+    Received received;
+    sd_bus* client = nullptr;
+    std::unique_ptr<NotificationServer> server = FreedesktopNotifications::connect(
+        [&client, open = peer->opener()](sd_bus** bus) {
+            const int result = open(bus);
+
+            client = *bus;
+
+            return result;
+        },
+        kApplication, recordInto(received));
+    sd_bus_message* message = nullptr;
+
+    ASSERT_NE(server, nullptr);
+    ASSERT_TRUE(server->reachable());
+    peer->stopReading();
+    ASSERT_GE(sd_bus_message_new_method_call(client, &message, nullptr, "/org/freedesktop/Notifications",
+                                             "org.freedesktop.Notifications", "Notify"),
+              0);
+    ASSERT_GE(sd_bus_message_append(message, "s", std::string(kMoreThanTheSocketBuffers, 'x').c_str()), 0);
+    ASSERT_GE(sd_bus_send(client, message, nullptr), 0);
+    sd_bus_message_unref(message);
+    ASSERT_NE(sd_bus_get_events(client) & POLLOUT, 0);
+
+    std::future<void> closing = std::async(std::launch::async, [&server] { server.reset(); });
+    const bool closedPromptly = closing.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
+
+    peer.reset();
+    closing.get();
+    EXPECT_TRUE(closedPromptly);
 }
 
 } // namespace

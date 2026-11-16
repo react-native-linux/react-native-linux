@@ -97,7 +97,7 @@ interface Scenario {
   /**
    * #274: a private session bus at `$XDG_RUNTIME_DIR/bus`, where the window's sd-bus looks, with
    * `rnl_fake_notifications` owning `org.freedesktop.Notifications` and clicking every notification it shows. Its
-   * lines join the trace. See `withNotificationDaemon` in scripts/e2e-processes.ts.
+   * lines join the trace after the window's, as one block. See `withNotificationDaemon` in scripts/e2e-processes.ts.
    */
   readonly notificationDaemon: boolean;
   /**

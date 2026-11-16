@@ -34,6 +34,12 @@ public:
         bool answersMalformed{false};
         /** Signals whose arguments do not match the specification, before each well-formed one. */
         bool emitsMalformedSignals{false};
+        /**
+         * On a socket pair, where no broker stamps one: the sender its `Notify` replies and signals carry, and the
+         * sender of a copy of each signal that another client forges just before it.
+         */
+        std::string sender;
+        std::string forgedSender;
         std::function<void(const std::string& line)> log;
     };
 
@@ -55,6 +61,8 @@ private:
     static int onMessage(sd_bus_message* message, void* userData, sd_bus_error* error);
     int answer(sd_bus_message* message);
     void emitClosed(sd_bus* bus, uint32_t identifier, uint32_t reason) const;
+    void emitActionInvoked(sd_bus* bus, uint32_t identifier) const;
+    [[nodiscard]] std::vector<std::string> signalSenders() const;
     void log(const std::string& line) const;
 
     Behavior behavior_;

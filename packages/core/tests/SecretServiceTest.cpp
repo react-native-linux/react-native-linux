@@ -1,6 +1,7 @@
 #include "SecretService.h"
 
 #include "ExpoSecureStore.h"
+#include "SocketPairBus.h"
 
 #include <atomic>
 #include <cerrno>
@@ -147,14 +148,7 @@ public:
 
     /** Connects a client to this service, as `sd_bus_open_user` connects one to the session bus. */
     [[nodiscard]] SecretServiceBackend::BusOpener opener() const {
-        return [descriptor = clientDescriptor_](sd_bus** bus) {
-            const int client = ::dup(descriptor);
-
-            sd_bus_new(bus);
-            sd_bus_set_fd(*bus, client, client);
-
-            return sd_bus_start(*bus);
-        };
+        return react_native_linux::socketPairOpener(clientDescriptor_);
     }
 
     [[nodiscard]] std::size_t itemCount() {

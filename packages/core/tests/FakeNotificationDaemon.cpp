@@ -15,6 +15,16 @@ constexpr char kInterface[] = "org.freedesktop.Notifications";
 constexpr uint32_t kDismissedByUser = 2;
 constexpr uint32_t kClosedByCall = 3;
 
+/** Sends `message` from `sender`, or with no sender field when it is empty, and releases it. */
+void send(sd_bus* bus, sd_bus_message* message, const std::string& sender) {
+    if (!sender.empty()) {
+        sd_bus_message_set_sender(message, sender.c_str());
+    }
+
+    sd_bus_send(bus, message, nullptr);
+    sd_bus_message_unref(message);
+}
+
 std::vector<std::string> readActions(sd_bus_message* message) {
     std::vector<std::string> actions;
     const char* action = nullptr;
@@ -116,27 +126,60 @@ int FakeNotificationDaemon::answer(sd_bus_message* message) {
 
     log("Notify app=" + notification.applicationName + " summary=" + notification.summary +
         " body=" + notification.body + " id=" + std::to_string(identifier));
-    sd_bus_reply_method_return(message, "u", identifier);
+
+    sd_bus_message* reply = nullptr;
+
+    sd_bus_message_new_method_return(message, &reply);
+    sd_bus_message_append(reply, "u", identifier);
+    send(bus, reply, behavior_.sender);
 
     if (!behavior_.invokedAction.empty()) {
-        if (behavior_.emitsMalformedSignals) {
-            sd_bus_emit_signal(bus, kPath, kInterface, "ActionInvoked", "s", "malformed");
-        }
-
-        sd_bus_emit_signal(bus, kPath, kInterface, "ActionInvoked", "us", identifier, behavior_.invokedAction.c_str());
         log("ActionInvoked id=" + std::to_string(identifier) + " action=" + behavior_.invokedAction);
+        emitActionInvoked(bus, identifier);
         emitClosed(bus, identifier, kDismissedByUser);
     }
 
     return 1;
 }
 
-void FakeNotificationDaemon::emitClosed(sd_bus* bus, uint32_t identifier, uint32_t reason) const {
-    if (behavior_.emitsMalformedSignals) {
-        sd_bus_emit_signal(bus, kPath, kInterface, "NotificationClosed", "s", "malformed");
+std::vector<std::string> FakeNotificationDaemon::signalSenders() const {
+    if (behavior_.forgedSender.empty()) {
+        return {behavior_.sender};
     }
 
-    sd_bus_emit_signal(bus, kPath, kInterface, "NotificationClosed", "uu", identifier, reason);
+    return {behavior_.forgedSender, behavior_.sender};
+}
+
+void FakeNotificationDaemon::emitActionInvoked(sd_bus* bus, uint32_t identifier) const {
+    sd_bus_message* signal = nullptr;
+
+    if (behavior_.emitsMalformedSignals) {
+        sd_bus_message_new_signal(bus, &signal, kPath, kInterface, "ActionInvoked");
+        sd_bus_message_append(signal, "s", "malformed");
+        send(bus, signal, behavior_.sender);
+    }
+
+    for (const std::string& sender : signalSenders()) {
+        sd_bus_message_new_signal(bus, &signal, kPath, kInterface, "ActionInvoked");
+        sd_bus_message_append(signal, "us", identifier, behavior_.invokedAction.c_str());
+        send(bus, signal, sender);
+    }
+}
+
+void FakeNotificationDaemon::emitClosed(sd_bus* bus, uint32_t identifier, uint32_t reason) const {
+    sd_bus_message* signal = nullptr;
+
+    if (behavior_.emitsMalformedSignals) {
+        sd_bus_message_new_signal(bus, &signal, kPath, kInterface, "NotificationClosed");
+        sd_bus_message_append(signal, "s", "malformed");
+        send(bus, signal, behavior_.sender);
+    }
+
+    for (const std::string& sender : signalSenders()) {
+        sd_bus_message_new_signal(bus, &signal, kPath, kInterface, "NotificationClosed");
+        sd_bus_message_append(signal, "uu", identifier, reason);
+        send(bus, signal, sender);
+    }
 }
 
 void FakeNotificationDaemon::log(const std::string& line) const {

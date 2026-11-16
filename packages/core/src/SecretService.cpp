@@ -35,21 +35,8 @@ struct NoSecretService : std::runtime_error {
     using std::runtime_error::runtime_error;
 };
 
-/** An error a failed sd-bus call filled, or one `requireBus` fills from the call's result. */
-struct BusError {
-    BusError() = default;
-    BusError(const BusError&) = delete;
-    BusError(BusError&&) = delete;
-    BusError& operator=(const BusError&) = delete;
-    BusError& operator=(BusError&&) = delete;
-
-    ~BusError() { sd_bus_error_free(&value); }
-
-    sd_bus_error value{};
-};
-
 /** `result`, or a throw naming `what` and the D-Bus error, which `sd_bus_error_set_errno` keeps when already set. */
-int requireBus(int result, const std::string& what, BusError& error) {
+int requireBus(int result, const std::string& what, SdBusError& error) {
     if (result < 0) {
         sd_bus_error_set_errno(&error.value, result);
 
@@ -66,7 +53,7 @@ int requireBus(int result, const std::string& what, BusError& error) {
 }
 
 int requireBus(int result, const std::string& what) {
-    BusError error;
+    SdBusError error;
 
     return requireBus(result, what, error);
 }
@@ -244,7 +231,7 @@ void SecretServiceBackend::write(const SecretLocation& location, const std::stri
     requireBus(sd_bus_message_close_container(request.get()), "CreateItem");
     requireBus(sd_bus_message_append(request.get(), "b", 1), "CreateItem");
 
-    BusError error;
+    SdBusError error;
     sd_bus_message* reply = nullptr;
 
     requireBus(sd_bus_call(bus_.get(), request.get(), 0, &error.value, &reply), "CreateItem", error);
@@ -265,7 +252,7 @@ template <typename... Arguments>
 SecretServiceBackend::Message SecretServiceBackend::call(const std::string& path, const char* interface,
                                                          const char* member, const char* types,
                                                          Arguments... arguments) {
-    BusError error;
+    SdBusError error;
     sd_bus_message* reply = nullptr;
 
     requireBus(sd_bus_call_method(bus_.get(), kDestination, path.c_str(), interface, member, &error.value, &reply,
