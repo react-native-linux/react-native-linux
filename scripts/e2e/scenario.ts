@@ -95,6 +95,12 @@ interface Scenario {
   readonly minIdleGapMs: number | null;
   readonly name: string;
   /**
+   * #274: a private session bus at `$XDG_RUNTIME_DIR/bus`, where the window's sd-bus looks, with
+   * `rnl_fake_notifications` owning `org.freedesktop.Notifications` and clicking every notification it shows. Its
+   * lines join the trace. See `withNotificationDaemon` in scripts/e2e-processes.ts.
+   */
+  readonly notificationDaemon: boolean;
+  /**
    * #20: the headless output's refresh rate in Hz, set before the window connects; `null` keeps cage's 60 Hz. See
    * `resolveCompositorChild` in drive.ts.
    */
@@ -234,6 +240,7 @@ const parseScenario = (value: unknown, sourceName: string): Scenario => {
     minIdleGapMs:
       "minIdleGapMs" in value ? readPositiveNumber(value["minIdleGapMs"], "minIdleGapMs", sourceName) : null,
     name: readScenarioName(value["name"], sourceName),
+    notificationDaemon: readOptionalBoolean(value, "notificationDaemon", sourceName),
     outputRefreshHz:
       "outputRefreshHz" in value ? readPositiveInteger(value["outputRefreshHz"], "outputRefreshHz", sourceName) : null,
     ready: readString(value["ready"], "ready", sourceName),

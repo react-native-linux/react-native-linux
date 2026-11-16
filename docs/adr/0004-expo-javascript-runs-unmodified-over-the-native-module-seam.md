@@ -165,7 +165,9 @@ it returns an `EventSubscription`, the shape of React Native's C++ event emitter
 `expo-constants` e2e proves only that the polyfill is installed, not native event delivery. `ExpoLinking`'s
 `onURLReceived` subscribes to the `url` device event an activation already emits, proved from a native activation to
 the listener by `ExpoStartupModulesTest`; `ExpoNetwork`'s `onNetworkStateChanged` is React Native's C++ event emitter
-and emits nothing yet. The first module that emits on its own emitter adds an e2e that delivers one from native code.
+and emits nothing yet. `expo-notifications`' modules are the first to emit on their own emitters (#274), from a worker
+thread; one whose JavaScript calls the module's own `emit`, as `clearLastNotificationResponse` does, answers it as a
+method. The `expo-notifications` e2e delivers a notification response from a daemon's D-Bus signal to the listener.
 `ExpoFetchModule` emits on its `NativeResponse` instances rather than on a module emitter, and
 `ExpoFetchModuleTest` delivers those events from a native transfer to the listener.
 

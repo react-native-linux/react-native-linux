@@ -263,6 +263,7 @@ const editAndAwaitRefresh = async (scenario: LaunchedScenario, trace: TraceSink)
   return grade.failures;
 };
 
+export { fakeNotificationsBinaryPath, withNotificationDaemon } from "./headless-compositor.ts";
 export {
   attachTrace,
   editAndAwaitRefresh,

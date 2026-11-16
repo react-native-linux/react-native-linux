@@ -2,6 +2,7 @@ import { argv, env, stderr, stdout } from "node:process";
 import {
   attachTrace,
   editAndAwaitRefresh,
+  fakeNotificationsBinaryPath,
   injectorBinaryPath,
   startCompositor,
   startInjector,
@@ -9,6 +10,7 @@ import {
   waitForSocketName,
   windowBinaryPath,
   withDevServer,
+  withNotificationDaemon,
 } from "./e2e-processes.ts";
 import { describeTraceFailures, resolveArtifactPaths, resolveExpectedOutcome } from "./e2e/scenario.ts";
 import { embedScenarioAssets, findExecutable, findLavapipeIcd, resolveScenarioBundle } from "./window-golden.ts";
@@ -163,14 +165,20 @@ interface WindowLaunch {
   readonly workspace: Workspace;
 }
 
-const runCompositor = async ({ bundle, rig, run, workspace }: WindowLaunch): Promise<WindowRun> => {
-  const compositor = startCompositor({ ...workspace, bundle, rig, scenario: run.scenario });
+const runCompositor = ({ bundle, rig, run, workspace }: WindowLaunch): Promise<WindowRun> => {
+  const drive = async (): Promise<WindowRun> => {
+    const compositor = startCompositor({ ...workspace, bundle, rig, scenario: run.scenario });
 
-  attachTrace(compositor, workspace.trace);
+    attachTrace(compositor, workspace.trace);
 
-  const failures = await driveAndStop(run, compositor, workspace);
+    const failures = await driveAndStop(run, compositor, workspace);
 
-  return { failures, signal: compositor.signalCode };
+    return { failures, signal: compositor.signalCode };
+  };
+
+  return run.scenario.notificationDaemon
+    ? withNotificationDaemon(workspace.runtimeDirectory, workspace.trace, drive)
+    : drive();
 };
 
 /**
@@ -234,6 +242,7 @@ const compositorPath = findExecutable(COMPOSITOR_NAME);
 const lavapipeIcdPath = findLavapipeIcd();
 const runs = planRuns(readScenarios(), env);
 const needsOutputMode = runs.some(({ run }) => run.scenario.outputRefreshHz !== null);
+const needsNotificationDaemon = runs.some(({ run }) => run.scenario.notificationDaemon);
 
 const unavailableReasons = [
   ...(existsSync(windowBinaryPath)
@@ -243,6 +252,14 @@ const unavailableReasons = [
     ? []
     : [`${injectorBinaryPath} is missing; build it with "cmake --build build/dev --target rnl_inject"`]),
   ...(compositorPath === null ? [`${COMPOSITOR_NAME} is not on PATH; install the "cage" package`] : []),
+  ...(needsNotificationDaemon && !existsSync(fakeNotificationsBinaryPath)
+    ? [
+        `${fakeNotificationsBinaryPath} is missing; build it with "cmake --build build/dev --target rnl_fake_notifications"`,
+      ]
+    : []),
+  ...(needsNotificationDaemon && findExecutable("dbus-daemon") === null
+    ? ['a notificationDaemon scenario needs dbus-daemon on PATH; install the "dbus-daemon" package']
+    : []),
   ...(needsOutputMode && findExecutable("wlr-randr") === null
     ? ['an outputRefreshHz scenario needs wlr-randr on PATH; install the "wlr-randr" package']
     : []),

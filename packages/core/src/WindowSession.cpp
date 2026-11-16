@@ -8,6 +8,11 @@
 #include "ExpoSecureStore.h"
 #include "FrameProfiling.h"
 #include "I18n.h"
+#include "NotificationCenter.h"
+
+#ifdef RNL_ENABLE_DESKTOP_NOTIFICATIONS
+#include "FreedesktopNotifications.h"
+#endif
 
 #ifdef RNL_ENABLE_SECRET_SERVICE
 #include "SecretService.h"
@@ -70,6 +75,9 @@ WindowSession::WindowSession(const std::string& bundlePath, WindowSize size, dou
     reactHost_.secureStore().configure(applicationDirectory, [](const std::string&, const std::stop_token&) {
         return std::unique_ptr<SecretBackend>();
     });
+#endif
+#ifdef RNL_ENABLE_DESKTOP_NOTIFICATIONS
+    reactHost_.notifications().configure(applicationDirectory.filename().string(), connectSessionNotifications);
 #endif
 
     if (cacheDirectory.has_value()) {

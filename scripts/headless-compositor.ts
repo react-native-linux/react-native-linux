@@ -122,4 +122,72 @@ const runUnderCompositor = async (
   }
 };
 
-export { buildEnvironment, runUnderCompositor };
+const NOTIFICATION_DAEMON_TIMEOUT_MS = 10_000;
+const NOTIFICATION_DAEMON_READY = "[fake-notifications] ready";
+const fakeNotificationsBinaryPath = path.resolve(
+  import.meta.dirname,
+  "..",
+  "build",
+  "dev",
+  "bin",
+  "rnl_fake_notifications",
+);
+
+const waitFor = async (isDone: () => boolean): Promise<void> => {
+  const deadline = Date.now() + NOTIFICATION_DAEMON_TIMEOUT_MS;
+
+  while (!isDone() && Date.now() < deadline) {
+    await delay(SOCKET_POLL_INTERVAL_MS);
+  }
+};
+
+const startSessionBus = async (socketPath: string): Promise<ReturnType<typeof spawn>> => {
+  const bus = spawn("dbus-daemon", ["--session", "--nofork", "--nopidfile", `--address=unix:path=${socketPath}`], {
+    stdio: "ignore",
+  });
+
+  await waitFor(() => existsSync(socketPath));
+
+  return bus;
+};
+
+const startFakeNotificationDaemon = (socketPath: string, trace: { text: string }): ReturnType<typeof spawn> => {
+  const daemon = spawn(fakeNotificationsBinaryPath, [], {
+    env: buildEnvironment({ DBUS_SESSION_BUS_ADDRESS: `unix:path=${socketPath}` }),
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const record = (chunk: Buffer): void => {
+    trace.text += chunk.toString();
+  };
+
+  daemon.stdout.on("data", record);
+  daemon.stderr.on("data", record);
+
+  return daemon;
+};
+
+/**
+ * #274: runs `body` with a private session bus at `<runtimeDirectory>/bus`, which is where a client's sd-bus looks
+ * once `buildEnvironment` has dropped `DBUS_SESSION_BUS_ADDRESS`, and `rnl_fake_notifications` on it owning
+ * `org.freedesktop.Notifications`. The daemon's lines join `trace`; both processes are stopped after `body`.
+ */
+const withNotificationDaemon = async <Result>(
+  runtimeDirectory: string,
+  trace: { text: string },
+  body: () => Promise<Result>,
+): Promise<Result> => {
+  const socketPath = path.join(runtimeDirectory, "bus");
+  const bus = await startSessionBus(socketPath);
+  const daemon = startFakeNotificationDaemon(socketPath, trace);
+
+  try {
+    await waitFor(() => trace.text.includes(NOTIFICATION_DAEMON_READY));
+
+    return await body();
+  } finally {
+    daemon.kill();
+    bus.kill();
+  }
+};
+
+export { buildEnvironment, fakeNotificationsBinaryPath, runUnderCompositor, withNotificationDaemon };

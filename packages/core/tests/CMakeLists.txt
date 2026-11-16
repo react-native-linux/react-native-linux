@@ -346,6 +346,18 @@ target_link_libraries(rnl_core_tests PRIVATE SQLite::SQLite3)
 target_sources(rnl_core_tests PRIVATE IntlTest.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../src/Intl.cpp)
 target_link_libraries(rnl_core_tests PRIVATE ICU::uc ICU::i18n)
 
+# #274: expo-notifications' delivery, handler and response logic against a scripted daemon, and its D-Bus client
+# against FakeNotificationDaemon on a socket pair. Every test configure therefore needs libsystemd-dev.
+pkg_check_modules(RNL_TEST_SYSTEMD REQUIRED IMPORTED_TARGET libsystemd)
+target_sources(rnl_core_tests
+    PRIVATE
+        NotificationCenterTest.cpp
+        FreedesktopNotificationsTest.cpp
+        FakeNotificationDaemon.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src/NotificationCenter.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src/FreedesktopNotifications.cpp)
+target_link_libraries(rnl_core_tests PRIVATE PkgConfig::RNL_TEST_SYSTEMD)
+
 # #640: the DPoP keys of the T3NativeControls fixture, an application's own Expo module whose Linux code lives in its
 # linux/ directory, over the system libcrypto. Every test configure therefore needs libssl-dev.
 set(RNL_T3_NATIVE_CONTROLS_DIR ${CMAKE_SOURCE_DIR}/packages/test-harness/modules/t3-native-controls/linux)
