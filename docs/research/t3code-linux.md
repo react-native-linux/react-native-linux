@@ -121,7 +121,7 @@ The order epic #634 follows. Each step needs the ones before it.
 4. **Session and data**: the expo-sqlite database (#638), secure-store (#270), crypto (#276), T3 Code's
    native-controls with its DPoP keys (#640), `gt-react-native` (#647), and network state (#648).
 5. **The main screen's content**: expo-image (#273), file-system (#269), markdown (#639), menus (#646), paste
-   (#649), clipboard (#278), source text and highlights (#640).
+   (#649), clipboard (#278), source text and highlights (#684).
 6. **Intl**: Hermes is built with `HERMES_ENABLE_INTL` off (`packages/core/CMakeLists.txt`), and T3 Code
    constructs `Intl.DateTimeFormat` (`messageTimestamp.ts`), `Intl.Collator` (`fileTree.ts`, `zipTree.ts`) and
    `Intl.NumberFormat` (`diffCount.ts`, `usageFormat.ts`) at module scope, so the bundle throws before the first
@@ -201,8 +201,8 @@ transitive package.
 | `expo-clipboard` | `~58.0.4` | tracked | #278 | 8 files |
 | `react-native-keyboard-controller` | `1.23.0` | tracked | #279 | KeyboardProvider at the root |
 | `react-native-enriched-markdown` | `file:deps/react-native-enriched-markdown-1.2.0-t3.18-16db4c75.tgz` | tracked | #688 | T3 Code's fork; every message; #639 landed the base |
-| `@t3tools/mobile-source-text` | `file:./modules/t3-source-text` | tracked | #640 | source file view |
-| `@t3tools/mobile-highlights-native` | `file:./modules/t3-highlights` | tracked | #640 | syntax highlighting, a Nitro module |
+| `@t3tools/mobile-source-text` | `file:./modules/t3-source-text` | tracked | #684 | source file view; no Linux code, its `Text` fallback renders |
+| `@t3tools/mobile-highlights-native` | `file:./modules/t3-highlights` | tracked | #684 | syntax highlighting, a Nitro module; a `linux/` TurboModule until #152, reached through T3 Code's `nativeHighlights.linux.ts` (below) |
 | `@t3tools/mobile-review-diff-native` | `file:./modules/t3-review-diff` | tracked | #685 | review diff view; Linux renders it in JavaScript, no native code |
 | `@t3tools/mobile-terminal-native` | `file:./modules/t3-terminal` | tracked | #640 | terminal view |
 | `@react-native-menu/menu` | `^2.0.0` | tracked | #646 | 28 files: thread rows, list filter, composer |
@@ -234,8 +234,8 @@ other seven are Expo local modules, linked by directory rather than declared as 
 | --- | --- | --- |
 | `t3-native-controls` | iOS, Android | #640: DPoP keys, keyboard commands, workspace navigation; required |
 | `t3-composer-editor` | iOS, Android | #640; the plain `TextInput` composer until then |
-| `t3-source-text` | iOS | #640 |
-| `t3-highlights` | Nitro, C++ core | #640, after #152 |
+| `t3-source-text` | iOS | #684: none needed, `SourceText` renders `Text` off iOS; selection is #43 |
+| `t3-highlights` | Nitro, C++ core | #684: a `linux/` TurboModule over the same lexer until #152 and #153 |
 | `t3-review-diff` | iOS, Android | #685: `nativeReviewDiffSurface.linux.ts` draws the same rows, props and events with React Native views |
 | `t3-terminal` | iOS, Android | #640 |
 | `t3-voice-transcription` | iOS, Android | left out with voice input |
@@ -243,3 +243,9 @@ other seven are Expo local modules, linked by directory rather than declared as 
 | `t3-widget-expiry` | Android | left out with widgets |
 | `t3-subscription-widget` | Android | left out with widgets |
 | `t3-web-socket` | iOS | React Native's WebSocket (#79) |
+
+T3 Code's `src/lib/highlights.ts` imports `react-native-nitro-modules` at the top, and 0.37.2 throws when it loads on
+Linux (`TurboModuleRegistry.getEnforcing('NitroModules')`), so the app cannot reach `T3Highlights` until T3 Code
+splits the lookup into one file: `nativeHighlights.ts` keeps `NitroModules.hasHybridObject("T3Highlights")`, and
+`nativeHighlights.linux.ts` is `TurboModuleRegistry.get("T3Highlights") ?? undefined`. T3 Code owns that copy;
+`test-bundles/t3-highlights.js` reaches the module the same way. Nitro on Linux (#152, #153) is the real fix.

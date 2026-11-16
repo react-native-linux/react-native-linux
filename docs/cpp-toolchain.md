@@ -1483,6 +1483,18 @@ Since #276 every configure needs `libssl-dev`, not only the test ones: `rnl_reac
 `ExpoCrypto` (`src/ExpoCrypto.h`), whose digests, random bytes and UUIDs `tests/ExpoCryptoTest.cpp` checks against
 RFC 1321 and FIPS 180-2. libcurl already loads libcrypto at run time, so a built app gains no new library.
 
+`packages/test-harness/modules/t3-highlights/linux` is the same layout for T3 Code's Nitro module (#684). Its
+`T3Highlights` TurboModule keeps the Nitro method's contract, `tokenize(source, language) → ArrayBuffer |
+undefined`, over the module's own `t3_highlights_tokenize`, until Nitro runs on Linux (#152, #153). The fixture holds
+only `linux/` and copies of the lexer's header and of T3 Code's `Utf16ToUtf8`, each under T3 Code's MIT notice,
+because the lexer is T3 Code's 6 MB of wasm2c output. `Utf16ToUtf8` reads the source through `getStringData`, as
+T3 Code's Nitro binding does: on a 2,000-line file in the Debug build it takes about 0.1 ms where Hermes' `utf8()`
+takes about 2.8 ms. `linux/SourceText.h` gathers `getStringData`'s chunks, so a surrogate pair split between two of
+them stays one code point. CI fetches
+T3 Code's `modules/t3-highlights` at the commit the ecosystem matrix reads, adds `linux/`, autolinks it, and checks
+`test-bundles/t3-highlights.js` against `@pierre/highlights`' WebAssembly build. The Hermes test,
+`tests/hermes/T3HighlightsModuleTest.cpp`, runs the module over a stand-in lexer.
+
 A module whose view this platform already ships needs no `linux/` directory and no config entry. T3 Code's
 composer (`modules/t3-composer-editor`, #683) is this platform's `TextInput`, selected by a
 `T3ComposerEditor.linux.tsx` beside the app's `.native.tsx`. Metro resolves `.linux` before `.native`. The variant is

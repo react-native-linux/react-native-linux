@@ -101,15 +101,15 @@ const ecosystemMatrix: readonly EcosystemRow[] = [
   },
   {
     flagshipVersion: "file:./modules/t3-source-text",
-    issue: 640,
+    issue: 684,
     packageName: "@t3tools/mobile-source-text",
     state: "in progress",
   },
   {
     flagshipVersion: "file:./modules/t3-highlights",
-    issue: 640,
+    issue: 684,
     packageName: "@t3tools/mobile-highlights-native",
-    state: "blocked",
+    state: "in progress",
   },
   {
     flagshipVersion: "file:./modules/t3-review-diff",
