@@ -1,0 +1,11 @@
+{
+  "name": "t3-highlights-fallback",
+  "bundle": "t3-highlights-fallback.tsx",
+  "ready": "t3-highlights-fallback: hasHybridObject T3Highlights",
+  "frames": 300,
+  "steps": ["sleep 100"],
+  "expect": [
+    "t3-highlights-fallback: createHybridObject T3Highlights threw: TurboModuleRegistry.getEnforcing(...): 'T3Highlights' could not be found",
+    "t3-highlights-fallback: hasHybridObject T3Highlights false"
+  ]
+}

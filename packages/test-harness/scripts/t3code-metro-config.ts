@@ -16,13 +16,14 @@ const metroRuntimeDirectory = path.dirname(
 );
 
 /**
- * The desktop feature profile of docs/research/t3code-linux.md §2: a module it leaves out that T3 Code still imports
- * resolves to the file here, which answers the way the profile says Linux does instead.
+ * The desktop feature profile of docs/research/t3code-linux.md §2: a module it leaves out or replaces that T3 Code
+ * still imports resolves to the file here, which answers the way the profile says Linux does instead.
  */
 const desktopProfile: Readonly<Record<string, string>> = {
   "@expo/ui/community/datetime-picker": path.join(profileDirectory, "expo-ui-datetime-picker.tsx"),
   "expo-audio": path.join(profileDirectory, "expo-audio.ts"),
   "expo-observe": path.join(profileDirectory, "expo-observe.ts"),
+  "react-native-nitro-modules": path.join(profileDirectory, "react-native-nitro-modules.ts"),
 };
 
 /**
