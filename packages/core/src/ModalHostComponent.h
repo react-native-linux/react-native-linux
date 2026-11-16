@@ -55,8 +55,8 @@ void requestModalSize(const facebook::react::State::Shared& modalState, facebook
  * its bounds change. The update is immediate, so the commit it causes lands in the frame of the resize that asked
  * for it rather than one beat later.
  *
- * The resize contract has two halves, and this is the first. A resize configures the `DimensionsSource` first and
- * then calls `FabricHost::setSurfaceSize`, which lays the surface out and then walks the committed tree with this.
+ * This is one half of the resize contract; the mount is the other. A resize configures the `DimensionsSource` first
+ * and then calls `FabricHost::setSurfaceSize`, which lays the surface out and then walks the committed tree with this.
  * A modal is therefore sized correctly in one of three ways:
  * - created after the configure: `createInitialState` reads the new size;
  * - committed before the walk: the walk updates it;
