@@ -337,8 +337,6 @@ bool WaylandWindow::hasKeyboardFocus() const noexcept { return seat_ != nullptr 
 
 bool WaylandWindow::hasPointer() const noexcept { return seat_ != nullptr && seat_->hasPointer(); }
 
-void WaylandWindow::flush() { wl_display_flush(display_); }
-
 void WaylandWindow::requestFrameCallback() {
     destroyFrameCallback();
 
@@ -458,7 +456,7 @@ void WaylandWindow::bindGlobal(wl_registry* registry, uint32_t name, const char*
         sharedMemory_ = static_cast<wl_shm*>(bound);
     } else if (std::strcmp(interfaceName, wl_seat_interface.name) == 0 && version >= kMinimumSeatVersion) {
         void* bound = wl_registry_bind(registry, name, &wl_seat_interface, kMinimumSeatVersion);
-        seat_ = std::make_unique<WaylandSeat>(static_cast<wl_seat*>(bound), serialLedger_);
+        seat_ = std::make_unique<WaylandSeat>(display_, static_cast<wl_seat*>(bound), serialLedger_);
     } else if (std::strcmp(interfaceName, wl_data_device_manager_interface.name) == 0) {
         // Version 1 is the whole selection protocol; what later versions add is drag-and-drop actions.
         void* bound = wl_registry_bind(registry, name, &wl_data_device_manager_interface, 1);

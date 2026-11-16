@@ -10,6 +10,9 @@
 #include <vector>
 
 struct wl_array;
+struct wl_callback;
+struct wl_callback_listener;
+struct wl_display;
 struct wl_keyboard;
 struct wl_keyboard_listener;
 struct wl_pointer;
@@ -67,7 +70,7 @@ constexpr uint32_t kMinimumSeatVersion = 5;
  */
 class WaylandSeat final {
 public:
-    WaylandSeat(wl_seat* seat, WaylandSerialLedger& serialLedger);
+    WaylandSeat(wl_display* display, wl_seat* seat, WaylandSerialLedger& serialLedger);
     WaylandSeat(const WaylandSeat&) = delete;
     WaylandSeat(WaylandSeat&&) = delete;
     WaylandSeat& operator=(const WaylandSeat&) = delete;
@@ -89,7 +92,10 @@ public:
     TextInputClient* textInput() const noexcept;
     /** `wl_keyboard.enter` most recently reached this seat's surface and no `.leave` has followed it yet. */
     bool hasKeyboardFocus() const noexcept;
-    /** The seat advertises a pointer and this client has asked for its `wl_pointer`. */
+    /**
+     * The seat advertises a pointer and the compositor has answered a `wl_display.sync` sent after `get_pointer`,
+     * so it has processed the request and routes the next button here (#752).
+     */
     bool hasPointer() const noexcept;
 
 private:
@@ -113,6 +119,7 @@ private:
     InputEvent makeKeyEvent(uint32_t evdevKeycode, InputEventKind kind) const;
     void releasePointer() noexcept;
     void releaseKeyboard() noexcept;
+    void destroyPointerSync() noexcept;
 
     static wl_seat_listener makeSeatListener();
     static wl_pointer_listener makePointerListener();
@@ -121,9 +128,11 @@ private:
     static const wl_seat_listener kSeatListener;
     static const wl_pointer_listener kPointerListener;
     static const wl_keyboard_listener kKeyboardListener;
+    static const wl_callback_listener kPointerSyncListener;
 
     static void handleSeatCapabilities(void* data, wl_seat* seat, uint32_t capabilities);
     static void handleSeatName(void* data, wl_seat* seat, const char* name);
+    static void handlePointerSync(void* data, wl_callback* callback, uint32_t callbackData);
     static void handlePointerEnter(void* data, wl_pointer* pointer, uint32_t serial, wl_surface* surface,
                                    int32_t surfaceX, int32_t surfaceY);
     static void handlePointerLeave(void* data, wl_pointer* pointer, uint32_t serial, wl_surface* surface);
@@ -147,8 +156,11 @@ private:
                                         uint32_t latched, uint32_t locked, uint32_t group);
     static void handleKeyboardRepeatInfo(void* data, wl_keyboard* keyboard, int32_t rate, int32_t delay);
 
+    wl_display* display_{nullptr};
     wl_seat* seat_{nullptr};
     wl_pointer* pointer_{nullptr};
+    wl_callback* pointerSync_{nullptr};
+    bool hasPointer_{false};
     wl_keyboard* keyboard_{nullptr};
     xkb_context* xkbContext_{nullptr};
     xkb_keymap* keymap_{nullptr};

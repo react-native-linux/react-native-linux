@@ -232,9 +232,6 @@ public:
     /** Forwarded from `WaylandSeat::hasPointer`. */
     bool hasPointer() const noexcept;
 
-    /** Sends every request queued so far without waiting for the next dispatch. */
-    void flush();
-
     void requestFrameCallback();
 
     /**

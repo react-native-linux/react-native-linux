@@ -7998,7 +7998,10 @@ because that is what makes cage advertise the capability. The window asks for on
 and a button cage handles before the request reaches it goes to no client: a scenario whose first step was a
 `click` lost the press and the release about one run in three, with only the `wl_pointer.enter` that wlroots sends
 on the bind arriving. A run's injector therefore starts with the driver's own `await [rnl-seat] pointer bound`,
-which `WindowMain.cpp`'s `announcePointerOnce` prints once the window has the pointer, after flushing the request.
+which `WindowMain.cpp`'s `announcePointerOnce` prints once the window has the pointer. `WaylandSeat` sends a
+`wl_display.sync` right after `get_pointer` and reports the pointer only from that callback's `done`, which the
+ordinary event loop dispatches: the compositor answers a sync only after every request before it, so the bind is
+processed before any step the line releases, and the frame loop never blocks on a roundtrip.
 One injector serves the whole run, because a second one would be a second virtual pointer to bind. Scenarios no
 longer move the pointer before their first click, and `pressable.json` clicks as soon as the window is ready.
 

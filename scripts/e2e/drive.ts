@@ -76,8 +76,8 @@ interface InjectionRun {
 }
 
 /**
- * `WindowMain.cpp`'s `announcePointerOnce` prints this once the window has bound `wl_pointer` and flushed the
- * request (#752). The seat advertises a pointer only once `rnl_inject` creates its virtual one, and a button the
+ * `WindowMain.cpp`'s `announcePointerOnce` prints this once the compositor has answered a `wl_display.sync` the
+ * window sent after `get_pointer`, so it has processed the bind (#752). The seat advertises a pointer only once `rnl_inject` creates its virtual one, and a button the
  * compositor handles before that bind reaches no one, so a click with no step before it was lost.
  */
 const POINTER_BOUND_TRACE_LINE = "[rnl-seat] pointer bound";

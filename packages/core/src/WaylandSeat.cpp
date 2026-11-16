@@ -118,8 +118,10 @@ const wl_pointer_listener WaylandSeat::kPointerListener = WaylandSeat::makePoint
 
 const wl_keyboard_listener WaylandSeat::kKeyboardListener = WaylandSeat::makeKeyboardListener();
 
-WaylandSeat::WaylandSeat(wl_seat* seat, WaylandSerialLedger& serialLedger)
-    : seat_(seat), xkbContext_(xkb_context_new(XKB_CONTEXT_NO_FLAGS)), serialLedger_(serialLedger) {
+const wl_callback_listener WaylandSeat::kPointerSyncListener{.done = WaylandSeat::handlePointerSync};
+
+WaylandSeat::WaylandSeat(wl_display* display, wl_seat* seat, WaylandSerialLedger& serialLedger)
+    : display_(display), seat_(seat), xkbContext_(xkb_context_new(XKB_CONTEXT_NO_FLAGS)), serialLedger_(serialLedger) {
     wl_seat_add_listener(seat_, &kSeatListener, this);
 }
 
@@ -176,6 +178,8 @@ void WaylandSeat::updateCapabilities(uint32_t capabilities) {
     if (hasPointer && pointer_ == nullptr) {
         pointer_ = wl_seat_get_pointer(seat_);
         wl_pointer_add_listener(pointer_, &kPointerListener, this);
+        pointerSync_ = wl_display_sync(display_);
+        wl_callback_add_listener(pointerSync_, &kPointerSyncListener, this);
     } else if (!hasPointer) {
         releasePointer();
     }
@@ -319,10 +323,27 @@ void WaylandSeat::pushKey(uint32_t serial, uint32_t key, uint32_t state, uint32_
 }
 
 void WaylandSeat::releasePointer() noexcept {
+    destroyPointerSync();
+    hasPointer_ = false;
+
     if (pointer_ != nullptr) {
         wl_pointer_release(pointer_);
         pointer_ = nullptr;
     }
+}
+
+void WaylandSeat::destroyPointerSync() noexcept {
+    if (pointerSync_ != nullptr) {
+        wl_callback_destroy(pointerSync_);
+        pointerSync_ = nullptr;
+    }
+}
+
+void WaylandSeat::handlePointerSync(void* data, wl_callback* /*callback*/, uint32_t /*callbackData*/) {
+    WaylandSeat* seat = static_cast<WaylandSeat*>(data);
+
+    seat->destroyPointerSync();
+    seat->hasPointer_ = true;
 }
 
 void WaylandSeat::releaseKeyboard() noexcept {
@@ -484,6 +505,6 @@ TextInputClient* WaylandSeat::textInput() const noexcept { return textInput_.get
 
 bool WaylandSeat::hasKeyboardFocus() const noexcept { return hasKeyboardFocus_; }
 
-bool WaylandSeat::hasPointer() const noexcept { return pointer_ != nullptr; }
+bool WaylandSeat::hasPointer() const noexcept { return hasPointer_; }
 
 } // namespace react_native_linux
