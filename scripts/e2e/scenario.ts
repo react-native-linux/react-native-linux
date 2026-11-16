@@ -100,6 +100,8 @@ interface Scenario {
    * lines join the trace after the window's, as one block. See `withNotificationDaemon` in scripts/e2e-processes.ts.
    */
   readonly notificationDaemon: boolean;
+  /** #770: requires the frame log's fallback interval to grow while the window is suspended and shrink after it. */
+  readonly occludedFallback: boolean;
   /**
    * #20: the headless output's refresh rate in Hz, set before the window connects; `null` keeps cage's 60 Hz. See
    * `resolveCompositorChild` in drive.ts.
@@ -241,6 +243,7 @@ const parseScenario = (value: unknown, sourceName: string): Scenario => {
       "minIdleGapMs" in value ? readPositiveNumber(value["minIdleGapMs"], "minIdleGapMs", sourceName) : null,
     name: readScenarioName(value["name"], sourceName),
     notificationDaemon: readOptionalBoolean(value, "notificationDaemon", sourceName),
+    occludedFallback: readOptionalBoolean(value, "occludedFallback", sourceName),
     outputRefreshHz:
       "outputRefreshHz" in value ? readPositiveInteger(value["outputRefreshHz"], "outputRefreshHz", sourceName) : null,
     ready: readString(value["ready"], "ready", sourceName),

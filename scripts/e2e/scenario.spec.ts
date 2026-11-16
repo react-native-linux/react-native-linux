@@ -37,6 +37,7 @@ describe("parseScenario, field by field", () => {
       minIdleGapMs: null,
       name: "pressable-click",
       notificationDaemon: false,
+      occludedFallback: false,
       outputRefreshHz: null,
       ready: "pressable: committed surface 1",
       reject: [],

@@ -9343,6 +9343,13 @@ thermal state is nominal. The thermal state comes from the kernel's thermal zone
 against its own critical trip (`thermalStateFromCriticalRatio`: at the trip is critical, 0.9 of it is serious) —
 re-read at most once a second, because a file walk per fallback tick is the waste the pacing exists to avoid.
 
+`FrameClock::windowActivity` picks the activity from the toplevel state (#770): a window the compositor has
+suspended (`xdg_toplevel`'s `suspended`, xdg-shell v6 — a hidden workspace, a minimized window) is occluded
+whatever its activation, and any other window is active or inactive by its activation. `--frame-log` writes
+`{"fallbackNs":…,"activity":"occluded"}` each time the activity changes, and the `app-state` scenario's
+`occludedFallback` check asserts from it that the interval grows while the window is suspended and shrinks when it
+resumes.
+
 An idle window that is *also* clean already does nothing: the fallback draws only when the session reports
 pending work, so an occluded window with no animation stops presenting entirely (see *Frame clock*). Still open
 on #335: the clean-window re-present (presenting the last frame without repainting needs the renderer to hold

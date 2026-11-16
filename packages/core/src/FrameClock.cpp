@@ -1,6 +1,7 @@
 #include "FrameClock.h"
 
 #include <algorithm>
+#include <array>
 
 namespace react_native_linux {
 
@@ -18,6 +19,8 @@ constexpr int64_t kLateCallbackPeriods = 2;
 constexpr double kSeriousThermalRatio = 0.9;
 constexpr uint64_t kInactiveStretch = 3;
 constexpr uint64_t kOccludedStretch = 8;
+
+constexpr std::array<const char*, 3> kActivityNames{"active", "inactive", "occluded"};
 
 } // namespace
 
@@ -45,6 +48,19 @@ std::chrono::nanoseconds FrameClock::fallbackInterval(WindowActivity activity, T
     }
 
     return refreshInterval; // COV_EXCL: the switch above covers every enumerator; this return satisfies -Wreturn-type.
+}
+
+FrameClock::WindowActivity FrameClock::windowActivity(const ToplevelState& state) noexcept {
+    if (state.suspended) {
+        return WindowActivity::Occluded;
+    }
+
+    return state.activated ? WindowActivity::Active : WindowActivity::Inactive;
+}
+
+std::string FrameClock::formatFallbackLine(WindowActivity activity, std::chrono::nanoseconds interval) {
+    return std::string("{\"fallbackNs\":") + std::to_string(interval.count()) + ",\"activity\":\"" +
+           kActivityNames.at(static_cast<size_t>(activity)) + "\"}";
 }
 
 std::chrono::nanoseconds FrameClock::pacingPeriod(bool hasDrawn,
