@@ -1,0 +1,11 @@
+{
+  "name": "expo-clipboard",
+  "bundle": "expo-clipboard.tsx",
+  "ready": "expo-clipboard: ",
+  "frames": 600,
+  "steps": ["sleep 300"],
+  "expect": [
+    "expo-clipboard: copied=true has=true pasted=\"t3 device code ABCD-1234\" unavailable=ERR_UNAVAILABLE,ERR_UNAVAILABLE"
+  ],
+  "reject": ["expo-clipboard: FAILED"]
+}

@@ -864,6 +864,7 @@ add_library(rnl_react_core STATIC
     src/AutomationProtocol.cpp
     src/BeastWebSocketClient.cpp
     src/Clipboard.cpp
+    src/ClipboardModules.cpp
     src/ConsoleBinding.cpp
     src/CurlHttpClient.cpp
     src/DimensionsSource.cpp
