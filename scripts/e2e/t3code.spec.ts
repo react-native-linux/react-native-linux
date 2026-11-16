@@ -53,25 +53,52 @@ describe("buildPairingLink", () => {
 });
 
 const presented = "[rnl-present] first frame presented\n";
-const cleanRun = { exitCode: 0, hasSocket: true, isTraceClosed: true, signal: null, trace: presented };
+const cleanRun = {
+  exitCode: 0,
+  firstCommitMs: 97_000,
+  hasSocket: true,
+  isTraceClosed: true,
+  signal: null,
+  trace: presented,
+};
+const statusBarError =
+  "[console.error] Invariant Violation: TurboModuleRegistry.getEnforcing(...): 'StatusBarManager' could not be found.";
+const componentError = "[console.error] TypeError: Cannot read property 'default' of undefined";
 
 describe("gradeWindowRun", () => {
-  it("passes a run whose window presented a frame and exited cleanly with no fatal error", () => {
+  it("passes a run whose window presented, committed a view and exited cleanly with no startup error", () => {
     expect(gradeWindowRun(cleanRun)).toStrictEqual([]);
   });
 
-  it("leads with the first fatal JavaScript error", () => {
-    const trace = `${presented}[js-error] fatal A\nwarn\n[js-error] fatal B\n`;
+  it("fails an empty window: a run that presented and exited cleanly but never committed a view", () => {
+    expect(gradeWindowRun({ ...cleanRun, firstCommitMs: null })).toStrictEqual([
+      "T3 Code never committed a view under the surface root",
+    ]);
+  });
 
-    expect(gradeWindowRun({ ...cleanRun, trace })).toStrictEqual(["startup stopped at\n[js-error] fatal A"]);
+  it("fails a root render error React reported only through console.error, and leads with it", () => {
+    const trace = `${presented}Running "main"\n${statusBarError}\n${componentError}\n  isComponentError: true }\n`;
+
+    expect(gradeWindowRun({ ...cleanRun, firstCommitMs: null, trace })).toStrictEqual([
+      `startup reported\n${statusBarError}\n${componentError}`,
+      "T3 Code never committed a view under the surface root",
+    ]);
   });
 
   it("fails a run that never got a socket, a frame, a close or a clean exit", () => {
     expect(
-      gradeWindowRun({ exitCode: null, hasSocket: false, isTraceClosed: false, signal: "SIGKILL", trace: "" }),
+      gradeWindowRun({
+        exitCode: null,
+        firstCommitMs: null,
+        hasSocket: false,
+        isTraceClosed: false,
+        signal: "SIGKILL",
+        trace: "",
+      }),
     ).toStrictEqual([
       "the compositor never created a wayland socket",
       'the window never printed "[rnl-present] first frame presented"',
+      "T3 Code never committed a view under the surface root",
       "the window did not exit within the run timeout",
       "the compositor ended with exit code null, signal SIGKILL",
     ]);

@@ -4,10 +4,13 @@ import {
   T3CODE_REVISION,
   buildPairingLink,
   describeForeignCheckout,
+  describeStartupTimings,
+  formatSeconds,
   gradeWindowRun,
   installVariants,
   readPairingUrl,
   tailLines,
+  waitForFirstCommit,
 } from "./e2e/t3code.ts";
 import { argv, env, execPath, stderr, stdout } from "node:process";
 import { attachTrace, startCompositor, stopCompositor, waitForSocketName, windowBinaryPath } from "./e2e-processes.ts";
@@ -29,8 +32,10 @@ import { waitUntil } from "./e2e/discovery.ts";
  * build/t3code/checkout, with the mobile app's and the server's dependencies installed; any other path is refused. The
  * fixture packs this platform's overlay packages and adds them to the mobile app, which rewrites its package.json and
  * lockfile, so the alias table resolves them as it would for an application that installed them from a registry, and
- * copies the Linux variants of T3 Code's own files beside the files they replace (#707). The
- * run passes once the window presents a frame and exits cleanly with startup throwing nothing; until then it names
+ * copies the Linux variants of T3 Code's own files beside the files they replace (#707). The window is held open
+ * until T3 Code commits its first screen, which the automation channel's visual tree shows, and the screenshot is
+ * the frame after that (#798): a frame count cannot cover the development bundle's evaluation under Debug Hermes. The
+ * run passes once that commit comes with startup reporting no error, `console.error` included; until then it names
  * where startup stopped. The main screen's accessibility tree and golden join it once the screen renders.
  */
 
@@ -40,10 +45,10 @@ const UNAVAILABLE_EXIT_STATUS = 2;
 const CHECKOUT_ARGUMENT_INDEX = 2;
 const EMPTY_LENGTH = 0;
 const SCENARIO_NAME = "t3code-main-screen";
-const FRAMES = 1200;
+const FRAMES = 1;
 const SERVER_TIMEOUT_MS = 60_000;
 const SERVER_STOP_GRACE_MS = 5000;
-const RUN_TIMEOUT_MS = 180_000;
+const EXIT_TIMEOUT_MS = 60_000;
 
 const repositoryRoot = path.resolve(import.meta.dirname, "..");
 const artifactsDirectory = path.join(repositoryRoot, "build", "e2e", SCENARIO_NAME);
@@ -91,11 +96,14 @@ const fail = (message: string): void => {
 const buildBundle = (): boolean => {
   const bundler = path.join(repositoryRoot, "packages", "test-harness", "scripts", "t3code-bundle.ts");
   mkdirSync(path.dirname(bundlePath), { recursive: true });
+  const startedAt = Date.now();
   const build = spawnSync(execPath, [bundler, checkout, bundlePath], {
     cwd: mobileRoot,
     env: { ...env, NODE_ENV: "development" },
     stdio: "inherit",
   });
+
+  stdout.write(`e2e ${SCENARIO_NAME}: Metro bundled T3 Code in ${formatSeconds(Date.now() - startedAt)}\n`);
 
   return build.status === SUCCESSFUL_EXIT_STATUS;
 };
@@ -148,18 +156,27 @@ const waitForPairingUrl = async ({ state }: Server): Promise<string | null> => {
   return readPairingUrl(readServerLog());
 };
 
+/** Ending the window's input releases `--hold-until-stdin-closes`: it captures the next frame and exits. */
 const driveWindow = async (
   compositor: Compositor,
   trace: { isClosed: boolean; text: string },
   runtimeDirectory: string,
-): Promise<Pick<WindowRun, "hasSocket" | "isTraceClosed">> => {
+): Promise<Pick<WindowRun, "firstCommitMs" | "hasSocket" | "isTraceClosed">> => {
+  const launchedAt = Date.now();
+
   attachTrace(compositor, trace);
-  compositor.stdin?.end();
 
   const hasSocket = (await waitForSocketName(runtimeDirectory)) !== null;
-  const isTraceClosed = hasSocket && (await waitUntil(() => trace.isClosed, RUN_TIMEOUT_MS));
+  const timings = hasSocket
+    ? await waitForFirstCommit({ isClosed: (): boolean => trace.isClosed, read: (): string => trace.text }, launchedAt)
+    : { firstCommitMs: null, runningMainMs: null };
 
-  return { hasSocket, isTraceClosed };
+  compositor.stdin?.end();
+  stdout.write(`e2e ${SCENARIO_NAME}: ${describeStartupTimings(timings)}\n`);
+
+  const isTraceClosed = hasSocket && (await waitUntil(() => trace.isClosed, EXIT_TIMEOUT_MS));
+
+  return { firstCommitMs: timings.firstCommitMs, hasSocket, isTraceClosed };
 };
 
 /** The window, handed the link as a bare argument: the activation URL `Linking.getInitialURL` answers (#363). */
@@ -174,7 +191,7 @@ const runWindow = async (link: string, rig: Rig): Promise<WindowRun> => {
       rig,
       runtimeDirectory,
       scenario: {
-        automation: null,
+        automation: true,
         env: {},
         fastRefresh: null,
         frames: FRAMES,
