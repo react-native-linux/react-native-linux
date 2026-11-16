@@ -4,7 +4,7 @@
     ".": {
       "entry": ["scripts/codegen-spec.ts"],
       "project": ["*.ts", "scripts/**/*.ts"],
-      "ignoreBinaries": ["cmake", "ctest", "ldd", "readelf"],
+      "ignoreBinaries": ["cmake", "ctest", "dbus-daemon", "ldd", "readelf"],
       "ignoreDependencies": ["react-native", "react-native-worklets"]
     },
     "packages/*": {
@@ -51,6 +51,7 @@
         "expo-linking",
         "expo-modules-core",
         "expo-network",
+        "expo-notifications",
         "expo-secure-store",
         "whatwg-url-minimum"
       ]

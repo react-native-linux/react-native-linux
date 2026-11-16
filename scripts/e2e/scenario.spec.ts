@@ -36,6 +36,7 @@ describe("parseScenario, field by field", () => {
       inputTrace: false,
       minIdleGapMs: null,
       name: "pressable-click",
+      notificationDaemon: false,
       outputRefreshHz: null,
       ready: "pressable: committed surface 1",
       reject: [],
@@ -80,6 +81,11 @@ describe("parseScenario", () => {
 
   it("reads an explicit devServer", () =>
     expect(parseScenario({ ...validScenario, devServer: true }, "fixture.json").devServer).toBe(true));
+
+  it("reads an explicit notificationDaemon", () =>
+    expect(parseScenario({ ...validScenario, notificationDaemon: true }, "fixture.json").notificationDaemon).toBe(
+      true,
+    ));
 
   it("reads an explicit inputTrace", () =>
     expect(parseScenario({ ...validScenario, inputTrace: true }, "fixture.json").inputTrace).toBe(true));

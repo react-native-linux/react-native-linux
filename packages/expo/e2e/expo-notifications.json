@@ -1,0 +1,16 @@
+{
+  "name": "expo-notifications",
+  "bundle": "expo-notifications.tsx",
+  "ready": "expo-notifications:",
+  "frames": 600,
+  "notificationDaemon": true,
+  "windowFlags": ["--no-decorations", "--app-id", "org.reactnative.linux.e2e.notifications"],
+  "steps": ["sleep 100"],
+  "expect": [
+    "expo-notifications: before=null permissions=granted,granted push=ERR_UNAVAILABLE badge=ERR_UNAVAILABLE scheduled=turn-4 response=default url=\"t3code://thread/4\" last=turn-4 cleared=null",
+    "[fake-notifications] ready",
+    "[fake-notifications] Notify app=org.reactnative.linux.e2e.notifications summary=Turn complete body=Thread 4 finished id=1",
+    "[fake-notifications] ActionInvoked id=1 action=default"
+  ],
+  "reject": ["expo-notifications: FAILED"]
+}

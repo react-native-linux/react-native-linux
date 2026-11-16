@@ -278,6 +278,12 @@ SecureStore& ReactHost::secureStore() noexcept {
     return turboModuleRegistry_->secureStore();
 }
 
+NotificationCenter& ReactHost::notifications() noexcept {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    return turboModuleRegistry_->notifications();
+}
+
 LinuxWorkletsModule& ReactHost::worklets() noexcept {
     react_native_assert(std::this_thread::get_id() == owningThread_);
 

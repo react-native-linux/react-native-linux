@@ -62,7 +62,7 @@ Expo's Metro config turns `inlineRequires` off.
 | `ExpoImage` | `expo-image` | throws; #273 |
 | `ExponentImagePicker` | `expo-image-picker` | throws; #275 |
 | `ExpoImageManipulator`, `ExpoDocumentPicker` | `expo-image-manipulator`, `expo-document-picker` | throws; #650. `expo-document-picker` is imported lazily, so not at startup |
-| twelve `Expo*` notification modules | `expo-notifications` | throws; #274 |
+| the ten notification modules `expo-notifications`' index requires | `expo-notifications` | registered (#274): local notifications over `org.freedesktop.Notifications`, the push token rejecting with upstream's `ERR_UNAVAILABLE`; the `expo-notifications` e2e runs T3 Code's calls against a fake daemon |
 | `ExpoSecureStore` | `expo-secure-store` | registered (#270): the desktop keyring over the Secret Service, or an encrypted file when the session has none |
 | `ExpoSharing` | `expo-sharing` | throws; #156 |
 | `ExpoSQLite` | `expo-sqlite` | registered (#665) |
@@ -194,7 +194,7 @@ transitive package.
 | `@clerk/expo` | `catalog: (4.15.1)` | tracked | #271 | JavaScript over expo-web-browser and expo-auth-session; cloud sign-in only |
 | `react-native-webview` | `14.0.1` | tracked | #272 | previews, PDFs, MCP apps and legal pages |
 | `expo-image` | `~58.0.18` | tracked | #273 | 14 files |
-| `expo-notifications` | `~58.1.8` | tracked | #274 | agent-awareness notifications |
+| `expo-notifications` | `~58.1.8` | works | `packages/expo/e2e/expo-notifications.json` | agent-awareness notifications: permissions, the handler, the response listener and the last response; no push token on a desktop |
 | `expo-image-picker` | `~58.0.10` | tracked | #275 | composer photos |
 | `expo-crypto` | `~58.0.7` | works | `packages/expo/e2e/expo-startup-modules.json` | DPoP proofs, share fingerprints and UUIDs: `digest`, `digestStringAsync`, `getRandomBytes` and `randomUUID` |
 | `expo-device` | `~58.0.5` | works | `packages/expo/e2e/expo-startup-modules.json` | appearance defaults; `ExpoDevice` answers the machine |

@@ -29,6 +29,7 @@ class TurboModule;
 namespace react_native_linux {
 
 class ExpoAssetDownloads;
+class ExpoNotifications;
 struct FileSystemHost;
 class HostTimerRegistry;
 class I18nModel;
@@ -38,6 +39,7 @@ class LinuxDeviceInfoModule;
 class LinuxLinkingModule;
 class LinuxReanimatedModule;
 class LinuxWorkletsModule;
+class NotificationCenter;
 class SQLiteDatabases;
 class SecureStore;
 
@@ -144,6 +146,9 @@ public:
     /** What `FileSystem` runs over (#663); `WindowSession` gives it the application's directory. */
     FileSystemHost& fileSystem() noexcept;
 
+    /** What expo-notifications' modules run over (#274); `WindowSession` connects it to the session's daemon. */
+    NotificationCenter& notifications() noexcept;
+
     /** `I18nManager`'s choices (#72), which `WindowSession` restores before the bundle and applies every frame. */
     I18nModel& i18n() noexcept;
 
@@ -180,6 +185,7 @@ private:
     std::unique_ptr<ExpoAssetDownloads> expoAssetDownloads_;
     std::unique_ptr<FileSystemHost> fileSystemHost_;
     std::unique_ptr<SecureStore> secureStore_;
+    std::unique_ptr<ExpoNotifications> expoNotifications_;
     std::shared_ptr<I18nModel> i18nModel_;
     std::shared_ptr<std::string> bundleUrl_;
     std::shared_ptr<std::string> assetsDirectory_;

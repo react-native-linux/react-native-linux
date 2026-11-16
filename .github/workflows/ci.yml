@@ -762,6 +762,7 @@ jobs:
             clang-18 \
             clang-tools-18 \
             cmake \
+            dbus-daemon \
             git \
             libboost-dev \
             libdouble-conversion-dev \
@@ -772,6 +773,7 @@ jobs:
             libcurl4-openssl-dev \
             libsqlite3-dev \
             libssl-dev \
+            libsystemd-dev \
             libicu-dev \
             libvulkan-dev \
             libwayland-dev \
@@ -936,8 +938,9 @@ jobs:
       - name: Install cage
         run: sudo apt-get install -y cage wlr-randr
 
+      # rnl_fake_notifications is the notification daemon the expo-notifications e2e runs on a private bus (#274).
       - name: Build rnl_inject
-        run: cmake --build build/dev --target rnl_inject
+        run: cmake --build build/dev --target rnl_inject rnl_fake_notifications
 
       # When no cache was restored at all, one untimed pass of every hang-gated scenario compiles their shaders, so
       # the measured pass below never depends on whether a cache existed. Its verdicts and artifacts are discarded.

@@ -13,6 +13,7 @@
 #include "ExpoFontLoaderModule.h"
 #include "ExpoLinkingModule.h"
 #include "ExpoNetworkModule.h"
+#include "ExpoNotificationsModule.h"
 #include "ExpoSQLite.h"
 #include "ExpoSecureStore.h"
 #include "FantomRenderOutput.h"
@@ -1039,7 +1040,7 @@ TurboModuleRegistry::TurboModuleRegistry(
       linkingModule_(std::make_shared<LinuxLinkingModule>(jsInvoker, activationModel_)),
       keyValueStore_(std::make_shared<KeyValueStore>()), sqliteDatabases_(std::make_unique<SQLiteDatabases>()),
       expoAssetDownloads_(std::make_unique<ExpoAssetDownloads>()), fileSystemHost_(std::make_unique<FileSystemHost>()),
-      secureStore_(std::make_unique<SecureStore>()),
+      secureStore_(std::make_unique<SecureStore>()), expoNotifications_(std::make_unique<ExpoNotifications>()),
       i18nModel_(std::make_shared<I18nModel>(localeFromEnvironment(), keyValueStore_)),
       bundleUrl_(std::make_shared<std::string>()), assetsDirectory_(std::make_shared<std::string>()),
       workletsModule_(std::make_shared<LinuxWorkletsModule>(jsInvoker)),
@@ -1123,6 +1124,11 @@ TurboModuleRegistry::TurboModuleRegistry(
         return makeExpoLinkingModule(jsInvoker, activationModel);
     });
     moduleFactories_.emplace("ExpoNetwork", [jsInvoker]() { return makeExpoNetworkModule(jsInvoker); });
+    for (const std::string_view name : kExpoNotificationsModuleNames) {
+        moduleFactories_.emplace(name, [name, jsInvoker, &notifications = *expoNotifications_]() {
+            return makeExpoNotificationsModule(name, jsInvoker, notifications);
+        });
+    }
 #ifdef RNL_ENABLE_TEXT_GEOMETRY
     moduleFactories_.emplace("ExpoFontLoader", [jsInvoker]() { return makeExpoFontLoaderModule(jsInvoker); });
 #endif
@@ -1182,6 +1188,8 @@ ExpoAssetDownloads& TurboModuleRegistry::expoAssetDownloads() noexcept { return 
 FileSystemHost& TurboModuleRegistry::fileSystem() noexcept { return *fileSystemHost_; }
 
 SecureStore& TurboModuleRegistry::secureStore() noexcept { return *secureStore_; }
+
+NotificationCenter& TurboModuleRegistry::notifications() noexcept { return expoNotifications_->center(); }
 
 I18nModel& TurboModuleRegistry::i18n() noexcept { return *i18nModel_; }
 

@@ -119,6 +119,8 @@ public:
 
     /** What `ExpoSecureStore` runs over (#270); see `TurboModuleRegistry::secureStore`. */
     SecureStore& secureStore() noexcept;
+    /** What expo-notifications runs over (#274); see `TurboModuleRegistry::notifications`. */
+    NotificationCenter& notifications() noexcept;
 
     /** `I18nManager`'s state (#72); see `TurboModuleRegistry::i18n`. */
     I18nModel& i18n() noexcept;

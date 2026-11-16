@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ExpoSecureStore.h"
+#include "SdBus.h"
 
 #include <chrono>
 #include <functional>
@@ -30,8 +31,7 @@ namespace react_native_linux {
  */
 class SecretServiceBackend final : public SecretBackend {
 public:
-    /** Fills its argument with a connected bus and answers its result, as `sd_bus_open_user` does. */
-    using BusOpener = std::function<int(sd_bus**)>;
+    using BusOpener = SdBusOpener;
 
     static constexpr std::chrono::microseconds kPromptTimeout = std::chrono::seconds(60);
     static constexpr std::chrono::microseconds kCallTimeout = std::chrono::seconds(10);

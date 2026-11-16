@@ -880,6 +880,7 @@ add_library(rnl_react_core STATIC
     src/ExpoFileSystemModule.cpp
     src/ExpoLinkingModule.cpp
     src/ExpoNetworkModule.cpp
+    src/ExpoNotificationsModule.cpp
     src/ExpoSQLite.cpp
     src/ExpoSQLiteModule.cpp
     src/ExpoSecureStore.cpp
@@ -899,6 +900,7 @@ add_library(rnl_react_core STATIC
     src/JsErrorReporter.cpp
     src/LinuxAnimationChoreographer.cpp
     src/LinuxMountingManager.cpp
+    src/NotificationCenter.cpp
     src/PlatformColor.cpp
     src/ReactHost.cpp
     src/RetainedScene.cpp
@@ -1326,9 +1328,19 @@ elseif(RNL_ENABLE_WINDOW)
         # goes to the encrypted-file fallback `SecureStore` uses when the session has no Secret Service.
         target_sources(rnl_window PRIVATE src/SecretService.cpp)
         target_compile_definitions(rnl_window PRIVATE RNL_ENABLE_SECRET_SERVICE)
+
+        # expo-notifications' local notifications (#274), through the daemon on the same session bus. Without it they
+        # are delivered to the app and never shown, and permissions stay undetermined. rnl_fake_notifications is the
+        # daemon the expo-notifications e2e runs on its private bus.
+        target_sources(rnl_window PRIVATE src/FreedesktopNotifications.cpp)
+        target_compile_definitions(rnl_window PRIVATE RNL_ENABLE_DESKTOP_NOTIFICATIONS)
+        add_executable(rnl_fake_notifications tests/FakeNotificationDaemon.cpp tests/FakeNotificationDaemonMain.cpp)
+        target_compile_options(rnl_fake_notifications PRIVATE -Wall -Wextra)
+        target_link_libraries(rnl_fake_notifications PRIVATE PkgConfig::RNL_SYSTEMD)
+        set_target_properties(rnl_fake_notifications PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
     else()
         message(WARNING
-            "libsystemd is unavailable; the appearance portal, single-instance activation and the keyring are disabled")
+            "libsystemd is unavailable; the appearance portal, single-instance activation, the keyring and notifications are disabled")
     endif()
     target_compile_options(rnl_window PRIVATE -Wall -Wextra)
     target_include_directories(rnl_window PRIVATE src)
