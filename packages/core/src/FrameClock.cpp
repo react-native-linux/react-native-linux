@@ -2,6 +2,9 @@
 
 #include <algorithm>
 #include <array>
+#include <fstream>
+#include <string>
+#include <system_error>
 
 namespace react_native_linux {
 
@@ -20,9 +23,58 @@ constexpr double kSeriousThermalRatio = 0.9;
 constexpr uint64_t kInactiveStretch = 3;
 constexpr uint64_t kOccludedStretch = 8;
 
+std::optional<double> readNumber(const std::filesystem::path& file) {
+    std::ifstream stream(file);
+    double value = 0.0;
+
+    if (stream >> value) {
+        return value;
+    }
+
+    return std::nullopt;
+}
+
+// The kernel numbers a zone's trips from zero without gaps, so the first missing `trip_point_<n>_type` ends them.
+std::optional<double> readCriticalTrip(const std::filesystem::path& zone) {
+    for (int trip = 0;; ++trip) {
+        const std::string prefix = "trip_point_" + std::to_string(trip);
+        std::ifstream typeFile(zone / (prefix + "_type"));
+        std::string type;
+
+        if (!(typeFile >> type)) {
+            return std::nullopt;
+        }
+
+        if (type == "critical") {
+            return readNumber(zone / (prefix + "_temp"));
+        }
+    }
+}
+
 constexpr std::array<const char*, 3> kActivityNames{"active", "inactive", "occluded"};
 
 } // namespace
+
+FrameClock::ThermalState FrameClock::readThermalState(const std::filesystem::path& thermalRoot) {
+    double worstRatio = 0.0;
+    std::error_code error;
+
+    for (std::filesystem::directory_iterator zone(thermalRoot, error), end; !error && zone != end;
+         zone.increment(error)) {
+        if (!zone->path().filename().string().starts_with("thermal_zone")) {
+            continue;
+        }
+
+        const std::optional<double> temperature = readNumber(zone->path() / "temp");
+        const std::optional<double> criticalTrip = readCriticalTrip(zone->path());
+
+        if (temperature.has_value() && criticalTrip.has_value() && criticalTrip.value() > 0.0) {
+            worstRatio = std::max(worstRatio, temperature.value() / criticalTrip.value());
+        }
+    }
+
+    return thermalStateFromCriticalRatio(worstRatio);
+}
 
 FrameClock::ThermalState FrameClock::thermalStateFromCriticalRatio(double ratio) {
     if (ratio >= 1.0) {

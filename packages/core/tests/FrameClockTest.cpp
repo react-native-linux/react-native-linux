@@ -1,8 +1,14 @@
 #include "FrameClock.h"
 
 #include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <gtest/gtest.h>
 #include <optional>
+#include <string>
+#include <unistd.h>
+#include <utility>
+#include <vector>
 
 namespace {
 
@@ -272,6 +278,99 @@ TEST(FrameClockTest, TheThermalStateClassifiesAgainstTheZoneSOwnCriticalTrip) {
     EXPECT_EQ(FrameClock::thermalStateFromCriticalRatio(0.99), FrameClock::ThermalState::Serious);
     EXPECT_EQ(FrameClock::thermalStateFromCriticalRatio(1.0), FrameClock::ThermalState::Critical);
     EXPECT_EQ(FrameClock::thermalStateFromCriticalRatio(1.1), FrameClock::ThermalState::Critical);
+}
+
+/** A fake `/sys/class/thermal`: each zone has a `temp` and numbered `trip_point_<n>_{type,temp}` files. */
+class FakeThermalRoot final {
+public:
+    FakeThermalRoot()
+        : root_(std::filesystem::temp_directory_path() /
+                ("rnl-thermal-" + std::to_string(getpid()) + "-" +
+                 ::testing::UnitTest::GetInstance()->current_test_info()->name())) {
+        std::filesystem::remove_all(root_);
+        std::filesystem::create_directories(root_);
+    }
+
+    FakeThermalRoot(const FakeThermalRoot&) = delete;
+    FakeThermalRoot& operator=(const FakeThermalRoot&) = delete;
+    FakeThermalRoot(FakeThermalRoot&&) = delete;
+    FakeThermalRoot& operator=(FakeThermalRoot&&) = delete;
+
+    ~FakeThermalRoot() { std::filesystem::remove_all(root_); }
+
+    std::filesystem::path zone(const std::string& name, const std::string& temperature,
+                               const std::vector<std::pair<std::string, std::string>>& trips) const {
+        const std::filesystem::path zone = root_ / name;
+
+        std::filesystem::create_directories(zone);
+        write(zone / "temp", temperature);
+
+        for (std::size_t trip = 0; trip < trips.size(); ++trip) {
+            const std::string prefix = "trip_point_" + std::to_string(trip);
+
+            write(zone / (prefix + "_type"), trips[trip].first);
+            write(zone / (prefix + "_temp"), trips[trip].second);
+        }
+
+        return zone;
+    }
+
+    const std::filesystem::path& path() const { return root_; }
+
+private:
+    static void write(const std::filesystem::path& file, const std::string& text) {
+        std::ofstream(file) << text << '\n';
+    }
+
+    std::filesystem::path root_;
+};
+
+TEST(FrameClockTest, AMissingOrEmptyThermalRootReadsNominal) {
+    const FakeThermalRoot thermal;
+
+    EXPECT_EQ(FrameClock::readThermalState(thermal.path() / "missing"), FrameClock::ThermalState::Nominal);
+    EXPECT_EQ(FrameClock::readThermalState(thermal.path()), FrameClock::ThermalState::Nominal);
+}
+
+TEST(FrameClockTest, TheThermalStateIsTheWorstZoneAgainstItsOwnCriticalTrip) {
+    const FakeThermalRoot thermal;
+
+    thermal.zone("thermal_zone0", "50000", {{"passive", "95000"}, {"critical", "100000"}});
+    EXPECT_EQ(FrameClock::readThermalState(thermal.path()), FrameClock::ThermalState::Nominal);
+
+    thermal.zone("thermal_zone1", "92000", {{"critical", "100000"}});
+    EXPECT_EQ(FrameClock::readThermalState(thermal.path()), FrameClock::ThermalState::Serious);
+
+    thermal.zone("thermal_zone2", "110000", {{"active", "60000"}, {"critical", "110000"}});
+    EXPECT_EQ(FrameClock::readThermalState(thermal.path()), FrameClock::ThermalState::Critical);
+}
+
+TEST(FrameClockTest, OnlyAThermalZoneWithAReadableTemperatureAndPositiveCriticalTripCounts) {
+    const FakeThermalRoot thermal;
+
+    thermal.zone("cooling_device0", "200000", {{"critical", "100000"}});
+    thermal.zone("thermal_zone0", "90000", {{"passive", "50000"}});
+    thermal.zone("thermal_zone1", "90000", {{"critical", "0"}});
+    thermal.zone("thermal_zone2", "not-a-number", {{"critical", "100000"}});
+    std::filesystem::remove(thermal.zone("thermal_zone3", "", {{"critical", "100000"}}) / "temp");
+    const std::filesystem::path unreadableTemperature =
+        thermal.zone("thermal_zone4", "", {{"critical", "100000"}}) / "temp";
+    std::filesystem::remove(unreadableTemperature);
+    std::filesystem::create_directory(unreadableTemperature);
+    std::filesystem::remove(thermal.zone("thermal_zone5", "200000", {{"critical", "100000"}}) / "trip_point_0_temp");
+
+    EXPECT_EQ(FrameClock::readThermalState(thermal.path()), FrameClock::ThermalState::Nominal);
+}
+
+TEST(FrameClockTest, ACriticalZoneCapsAnOccludedWindowAtOne60HzFrame) {
+    const FakeThermalRoot thermal;
+    const std::chrono::nanoseconds refresh120{8'333'333};
+
+    thermal.zone("thermal_zone0", "105000", {{"critical", "105000"}});
+
+    EXPECT_EQ(FrameClock::fallbackInterval(FrameClock::WindowActivity::Occluded,
+                                           FrameClock::readThermalState(thermal.path()), refresh120),
+              std::chrono::nanoseconds{16'666'666});
 }
 
 } // namespace

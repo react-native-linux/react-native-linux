@@ -9342,6 +9342,11 @@ would otherwise stretch it to: the machine is saying it is slow, and the stretch
 thermal state is nominal. The thermal state comes from the kernel's thermal zones — each zone's temperature
 against its own critical trip (`thermalStateFromCriticalRatio`: at the trip is critical, 0.9 of it is serious) —
 re-read at most once a second, because a file walk per fallback tick is the waste the pacing exists to avoid.
+`FrameClock::readThermalState` walks the `thermal_zone*` entries of `/sys/class/thermal` (the directory also
+holds `cooling_device*`), and takes each zone's trip whose `trip_point_<n>_type` is `critical`; a zone without
+one, or a file that fails to read, counts as nominal. `RNL_THERMAL_ROOT` replaces that directory, and the
+headless rig's `buildEnvironment` points it at one with no zones unless the caller exports it, so a hot CI runner
+grades the same intervals as a cool one (#774).
 
 `FrameClock::windowActivity` picks the activity from the toplevel state (#770): a window the compositor has
 suspended (`xdg_toplevel`'s `suspended`, xdg-shell v6 — a hidden workspace, a minimized window) is occluded

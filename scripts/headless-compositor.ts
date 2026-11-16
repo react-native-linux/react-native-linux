@@ -26,12 +26,24 @@ const overriddenEnvironmentNames = new Set([
  */
 const mesaShaderCacheDirectory = path.resolve(import.meta.dirname, "..", "build", "mesa-shader-cache");
 
+/**
+ * The window caps every fallback interval at one 60 Hz frame while a kernel thermal zone runs hot (#335), so a warm
+ * runner would grade different frame timings than a cool one. A headless window reads its zones from this directory,
+ * which nothing creates, and so stays nominal (#774); exporting `RNL_THERMAL_ROOT` opts a run into real or fake zones.
+ */
+const nominalThermalRoot = path.resolve(import.meta.dirname, "..", "build", "no-thermal-zones");
+
 const buildEnvironment = (overrides: Record<string, string>): Record<string, string | undefined> => {
   const inherited = Object.fromEntries(
     Object.entries(env).filter(([variableName]) => !overriddenEnvironmentNames.has(variableName)),
   );
 
-  return { ...inherited, MESA_SHADER_CACHE_DIR: mesaShaderCacheDirectory, ...overrides };
+  return {
+    RNL_THERMAL_ROOT: nominalThermalRoot,
+    ...inherited,
+    MESA_SHADER_CACHE_DIR: mesaShaderCacheDirectory,
+    ...overrides,
+  };
 };
 
 interface Compositor {

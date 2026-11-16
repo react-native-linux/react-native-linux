@@ -4,6 +4,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
 #include <optional>
 #include <string>
 
@@ -96,6 +97,14 @@ public:
      * at or above the trip is critical, 0.9 of it is serious, anything cooler is nominal.
      */
     [[nodiscard]] static ThermalState thermalStateFromCriticalRatio(double ratio);
+
+    /**
+     * The worst thermal state over the `thermal_zone*` entries of a sysfs thermal class directory
+     * (`/sys/class/thermal` in production; the e2e rig points `RNL_THERMAL_ROOT` at a directory without zones, so
+     * a hot runner cannot cap its intervals). A zone counts only with a readable temperature and a positive
+     * `critical` trip; a missing root, a zone without one, or a file that fails to read is nominal, not an error.
+     */
+    [[nodiscard]] static ThermalState readThermalState(const std::filesystem::path& thermalRoot);
 
     uint64_t callbackTicks() const noexcept;
     uint64_t timerTicks() const noexcept;

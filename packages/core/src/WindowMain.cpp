@@ -72,70 +72,18 @@ constexpr uint32_t kDefaultScreenshotFrames = 60;
 // multipliers make the deactivated fallback three periods and the suspended one eight (#770), while an activated
 // window whose callbacks stopped is re-polled every period.
 constexpr std::chrono::milliseconds kThermalReadInterval{1'000};
-constexpr const char* kThermalZoneGlob = "/sys/class/thermal/thermal_zone*";
+constexpr const char* kThermalRoot = "/sys/class/thermal";
 
 react_native_linux::FrameClock::ThermalState readThermalState(std::chrono::steady_clock::time_point now) {
+    static const char* const overriddenRoot = std::getenv("RNL_THERMAL_ROOT");
+    static const std::filesystem::path root = overriddenRoot == nullptr ? kThermalRoot : overriddenRoot;
     static std::chrono::steady_clock::time_point lastRead{};
     static react_native_linux::FrameClock::ThermalState cached = react_native_linux::FrameClock::ThermalState::Nominal;
 
-    if (now - lastRead < kThermalReadInterval) {
-        return cached;
+    if (now - lastRead >= kThermalReadInterval) {
+        cached = react_native_linux::FrameClock::readThermalState(root);
+        lastRead = now;
     }
-
-    double worstRatio = 0.0;
-
-    // A container or a kernel without thermal zones has none to read: that is nominal, not an error. The
-    // error_code overloads return an end iterator instead of throwing, which is what the golden rig's window
-    // taught CI the hard way.
-    std::error_code zonesError;
-    const std::filesystem::directory_iterator zonesEnd;
-
-    for (std::filesystem::directory_iterator zone(kThermalZoneGlob, zonesError); zone != zonesEnd;
-         zone.increment(zonesError)) {
-        if (zonesError) {
-            break;
-        }
-
-        std::ifstream temperatureFile(zone->path() / "temp");
-
-        double temperature = 0.0;
-
-        if (!(temperatureFile >> temperature) || temperature <= 0.0) {
-            continue;
-        }
-
-        double criticalTrip = 0.0;
-
-        std::error_code tripsError;
-        const std::filesystem::directory_iterator tripsEnd;
-
-        for (std::filesystem::directory_iterator trip(zone->path(), tripsError); trip != tripsEnd;
-             trip.increment(tripsError)) {
-            if (tripsError) {
-                break;
-            }
-
-            const std::string tripName = trip->path().filename().string();
-
-            if (!tripName.starts_with("trip_point_") || !tripName.ends_with("_temp")) {
-                continue;
-            }
-
-            std::ifstream tripFile(trip->path());
-            double tripTemperature = 0.0;
-
-            if (tripFile >> tripTemperature && tripTemperature > criticalTrip) {
-                criticalTrip = tripTemperature;
-            }
-        }
-
-        if (criticalTrip > 0.0) {
-            worstRatio = std::max(worstRatio, temperature / criticalTrip);
-        }
-    }
-
-    cached = react_native_linux::FrameClock::thermalStateFromCriticalRatio(worstRatio);
-    lastRead = now;
 
     return cached;
 }
