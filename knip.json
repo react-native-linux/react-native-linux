@@ -48,6 +48,7 @@
         "expo-crypto",
         "expo-device",
         "expo-file-system",
+        "expo-image",
         "expo-font",
         "expo-linking",
         "expo-modules-core",

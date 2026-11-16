@@ -59,7 +59,7 @@ Expo's Metro config turns `inlineRequires` off.
 | `ExpoClipboard` | `expo-clipboard` | registered (#278): the string methods over the in-process clipboard, which #754 connects to the Wayland selection |
 | `ExpoCrypto`, `ExpoCryptoAES` | `expo-crypto` | registered (#276): digests, random bytes and UUIDs over libcrypto; `ExpoCryptoAES` only has the two classes `expo-crypto`'s entry extends, because T3 Code calls no AES |
 | `FileSystem` | `expo-file-system` | registered (#676) |
-| `ExpoImage` | `expo-image` | throws; #273 |
+| `ExpoImage` | `expo-image` | registered (#273), with no method yet; the `ExpoImage` view mounts as ADR-0004's unregistered fallback, which lays out and draws nothing, until #273 registers it |
 | `ExponentImagePicker` | `expo-image-picker` | throws; #275 |
 | `ExpoImageManipulator`, `ExpoDocumentPicker` | `expo-image-manipulator`, `expo-document-picker` | throws; #650. `expo-document-picker` is imported lazily, so not at startup |
 | the ten notification modules `expo-notifications`' index requires | `expo-notifications` | registered (#274): local notifications over `org.freedesktop.Notifications`, the push token rejecting with upstream's `ERR_UNAVAILABLE`; the `expo-notifications` e2e runs T3 Code's calls against a fake daemon |
@@ -193,7 +193,7 @@ transitive package.
 | `expo-auth-session` | `~58.0.17` | tracked | #271 | JavaScript over expo-web-browser and expo-crypto |
 | `@clerk/expo` | `catalog: (4.15.1)` | tracked | #271 | JavaScript over expo-web-browser and expo-auth-session; cloud sign-in only |
 | `react-native-webview` | `14.0.1` | tracked | #272 | previews, PDFs, MCP apps and legal pages |
-| `expo-image` | `~58.0.18` | tracked | #273 | 14 files |
+| `expo-image` | `~58.0.18` | tracked | #273 | 14 files: favicons, avatars and attachments; imports over `ExpoImage`, whose view and static methods (`loadAsync` and the cache methods, which T3 Code's favicon thumbnails call) are left |
 | `expo-notifications` | `~58.1.8` | works | `packages/expo/e2e/expo-notifications.json` | agent-awareness notifications: permissions, the handler, the response listener and the last response; no push token on a desktop |
 | `expo-image-picker` | `~58.0.10` | tracked | #275 | composer photos |
 | `expo-crypto` | `~58.0.7` | works | `packages/expo/e2e/expo-startup-modules.json` | DPoP proofs, share fingerprints and UUIDs: `digest`, `digestStringAsync`, `getRandomBytes` and `randomUUID` |
