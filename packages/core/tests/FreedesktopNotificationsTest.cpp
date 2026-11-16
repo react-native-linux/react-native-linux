@@ -3,7 +3,6 @@
 #include "FakeNotificationDaemon.h"
 #include "SocketPairBus.h"
 
-#include <atomic>
 #include <cerrno>
 #include <chrono>
 #include <cstdint>
@@ -14,9 +13,9 @@
 #include <memory>
 #include <poll.h>
 #include <stdexcept>
+#include <stop_token>
 #include <string>
 #include <sys/socket.h>
-#include <systemd/sd-bus.h>
 #include <thread>
 #include <unistd.h>
 #include <utility>
@@ -48,8 +47,8 @@ public:
         EXPECT_GE(sd_bus_set_server(server, 1, identifier), 0);
         daemon_ = std::make_unique<FakeNotificationDaemon>(server, std::move(behavior));
         EXPECT_GE(sd_bus_start(server), 0);
-        thread_ = std::thread([this] {
-            while (!stopping_.load() && sd_bus_process(server_.get(), nullptr) >= 0) {
+        thread_ = std::jthread([this](const std::stop_token& stopping) {
+            while (!stopping.stop_requested() && sd_bus_process(server_.get(), nullptr) >= 0) {
                 sd_bus_wait(server_.get(), 10'000);
             }
         });
@@ -68,7 +67,7 @@ public:
 
     /** Stops processing its bus, as a stalled daemon does: what the client sends piles up unread. */
     void stopReading() {
-        stopping_.store(true);
+        thread_.request_stop();
 
         if (thread_.joinable()) {
             thread_.join();
@@ -83,8 +82,7 @@ private:
     int clientDescriptor_{-1};
     std::unique_ptr<sd_bus, BusClose> server_;
     std::unique_ptr<FakeNotificationDaemon> daemon_;
-    std::atomic<bool> stopping_{false};
-    std::thread thread_;
+    std::jthread thread_;
 };
 
 FakeNotificationDaemon::Behavior behaving(const std::function<void(FakeNotificationDaemon::Behavior&)>& adjust) {
