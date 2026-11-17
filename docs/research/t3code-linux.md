@@ -93,6 +93,15 @@ otherwise. Activation is `focus` and `blur` only, never `inactive`, because T3 C
 alt-tab. The `app-state` e2e deactivates, suspends, resumes and reactivates the window, and asserts each JavaScript
 event.
 
+React Native's own `StatusBar`, which `AppContent`, `LoadingScreen` and `DevicePreviewRouteScreen` render, is
+registered (#797). `StatusBar.js` has no platform variants: it imports both `NativeStatusBarManagerAndroid` and
+`NativeStatusBarManagerIOS`, each of which calls `getEnforcing('StatusBarManager')` as it loads, and it calls them only
+when `Platform.OS` is `ios` or `android`. Without the module, `AppContent`'s first render threw and React unmounted the
+root. A desktop window has no status bar, so the module answers the Android spec with `HEIGHT` 0 and setters that do
+nothing, as react-native-windows' `StatusBarManager` does and react-native-macos' `RCTStatusBarManager` does on macOS.
+A `StatusBar.linux.js` overlay would have done the same in more code and diverged from both references. The
+`status-bar` e2e renders `<StatusBar>` beside a view, calls its static methods, and rejects any `Invariant Violation`.
+
 ## 2. The desktop feature profile
 
 The Linux entry that #641 adds leaves the modules below out, so the first render waits only on what the main
@@ -209,7 +218,7 @@ transitive package.
 | `react-native-worklets` | `0.13.1` | tracked | #135 | from Reanimated and the behaviour probe |
 | `react-native-gesture-handler` | `~3.5.0` | tracked | #168 | imported by the entry |
 | `react-native-screens` | `file:deps/react-native-screens-5.0.0-t3.50.tgz` | tracked | #166 | T3 Code's fork, imported by the entry; under React Navigation native-stack |
-| `react-native-safe-area-context` | `~5.11.1` | tracked | #161 | 71 files |
+| `react-native-safe-area-context` | `~5.11.1` | tracked | #161 | 71 files; `RNCSafeAreaProvider` mounts, but nothing sends `onInsetsChange`, so `App.tsx`'s `SafeAreaProvider` renders no children and T3 Code draws nothing (#806) |
 | `react-native-svg` | `15.16.1` | tracked | #167 | provider icons and charts |
 | `react-native-nitro-modules` | `0.37.2` | tracked | #152 | the highlights module; 0.37.2 throws as it loads, so the desktop profile resolves it to a stand-in whose hybrid objects are TurboModules (below) |
 | `nitro-core` | `0.37.2` | tracked | #152 | from react-native-nitro-modules |
