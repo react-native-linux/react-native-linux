@@ -2,8 +2,11 @@
 #include "RetriedCommitRelayout.h"
 #include "ShadowTreeTestSupport.h"
 
+#include <atomic>
 #include <cmath>
+#include <functional>
 #include <gtest/gtest.h>
+#include <latch>
 #include <map>
 #include <memory>
 #include <string>
@@ -11,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include <react/renderer/components/text/RawTextComponentDescriptor.h>
 #include <react/renderer/uimanager/LayoutEventEmitter.h>
 
 // When a resize is allowed to wake JavaScript up, and at which output scale two frames count as the same one
@@ -45,10 +49,17 @@
 // live rather than frozen.
 namespace {
 
+using ChildList = std::vector<std::shared_ptr<const ShadowNode>>;
+
 constexpr SurfaceId kSurfaceId = 1;
 constexpr Tag kFixedTag = 10;
 constexpr Tag kFlexibleTag = 11;
 constexpr Tag kAddedTag = 12;
+constexpr Tag kRowTag = 20;
+constexpr Tag kNewSurfaceTag = 21;
+constexpr Tag kCommittedParentTag = 22;
+constexpr Tag kCommittedChildTag = 23;
+constexpr Tag kRawTextTag = 24;
 constexpr float kSurfaceHeight = 600.0F;
 constexpr float kInitialWidth = 400.0F;
 constexpr float kResizedWidth = 800.0F;
@@ -197,11 +208,68 @@ protected:
         return count;
     }
 
+    /**
+     * A committed sibling with a child of its own beside the two reporting views, so a retried commit's candidate
+     * holds committed nodes below the root as well as at it. Answers the committed child.
+     */
+    std::shared_ptr<const ShadowNode> commitNestedSibling() {
+        const std::shared_ptr<const ShadowNode> committedChild = react_native_linux::makeConfiguredShadowNode(
+            viewDescriptor_, kCommittedChildTag, kSurfaceId, contextContainer_, fixedSize(),
+            std::make_shared<const ChildList>());
+
+        commitChildren({childWithTag(kFixedTag), childWithTag(kFlexibleTag),
+                        react_native_linux::makeConfiguredShadowNode(
+                            viewDescriptor_, kCommittedParentTag, kSurfaceId, contextContainer_,
+                            folly::dynamic::object(), std::make_shared<const ChildList>(ChildList{committedChild}))});
+
+        return committedChild;
+    }
+
+    /**
+     * One commit that appends a new subtree (a flexible surface over a row holding the reporting leaf `kAddedTag`
+     * and a raw text node Yoga does not lay out) to `siblingsOf` its base root, with a resize committed from another
+     * thread inside the first attempt, so the commit is retried. Answers the number of attempts.
+     */
+    int commitRetriedOverAResize(const std::function<ChildList(const RootShadowNode&)>& siblingsOf) {
+        const std::shared_ptr<const ShadowNode> row = react_native_linux::makeConfiguredShadowNode(
+            viewDescriptor_, kRowTag, kSurfaceId, contextContainer_,
+            folly::dynamic::object("flexDirection", "row")("width", kInitialWidth)("height", kFixedHeight),
+            std::make_shared<const ChildList>(ChildList{
+                makeReportingView(kAddedTag, fixedSize()),
+                react_native_linux::makeConfiguredShadowNode(rawTextDescriptor_, kRawTextTag, kSurfaceId,
+                                                             contextContainer_, folly::dynamic::object("text", "x"),
+                                                             std::make_shared<const ChildList>())}));
+        const std::shared_ptr<const ShadowNode> surface = react_native_linux::makeConfiguredShadowNode(
+            viewDescriptor_, kNewSurfaceTag, kSurfaceId, contextContainer_, folly::dynamic::object("flex", 1),
+            std::make_shared<const ChildList>(ChildList{row}));
+        int attempts = 0;
+
+        shadowTree_->commit(
+            [this, &attempts, &siblingsOf, &surface](const RootShadowNode& oldRootShadowNode) {
+                if (attempts++ == 0) {
+                    std::thread([this] { configure(kResizedWidth, 1.0F); }).join();
+                }
+
+                ChildList children = siblingsOf(oldRootShadowNode);
+                children.push_back(surface);
+
+                return react_native_linux::cloneRootWithChildren(
+                    oldRootShadowNode, std::make_shared<const ChildList>(std::move(children)));
+            },
+            {});
+
+        return attempts;
+    }
+
+    static folly::dynamic fixedSize() { return folly::dynamic::object("width", kFixedWidth)("height", kFixedHeight); }
+
     std::shared_ptr<std::vector<std::string>> recordedEventTypes_{std::make_shared<std::vector<std::string>>()};
     std::shared_ptr<const ContextContainer> contextContainer_{std::make_shared<ContextContainer>()};
     std::shared_ptr<const EventDispatcher> eventDispatcher_{
         react_native_linux::makeRecordingEventDispatcher(recordedEventTypes_)};
     std::shared_ptr<facebook::react::UIManager> uiManager_;
+    facebook::react::RawTextComponentDescriptor rawTextDescriptor_{ComponentDescriptorParameters{
+        .eventDispatcher = eventDispatcher_, .contextContainer = contextContainer_, .flavor = nullptr}};
     ViewComponentDescriptor viewDescriptor_{ComponentDescriptorParameters{
         .eventDispatcher = eventDispatcher_, .contextContainer = contextContainer_, .flavor = nullptr}};
     facebook::react::LayoutEventEmitter layoutEventEmitter_;
@@ -319,49 +387,48 @@ TEST_F(OnLayoutEmissionTest, ALayoutHandlerWritingBackItsReportedWidthSettlesWit
  * first `onLayout` never happens.
  */
 TEST_F(OnLayoutEmissionTest, ACommitRetriedAfterAConcurrentResizeStillReportsItsNewLeaf) {
-    constexpr Tag kRowTag = 20;
-    constexpr Tag kSurfaceTag = 21;
-    constexpr Tag kCommittedParentTag = 22;
-    constexpr Tag kCommittedChildTag = 23;
-    const folly::dynamic fixedSize = folly::dynamic::object("width", kFixedWidth)("height", kFixedHeight);
-    const std::shared_ptr<const ShadowNode> committedChild = react_native_linux::makeConfiguredShadowNode(
-        viewDescriptor_, kCommittedChildTag, kSurfaceId, contextContainer_, fixedSize,
-        std::make_shared<const std::vector<std::shared_ptr<const ShadowNode>>>());
-    commitChildren(
-        {childWithTag(kFixedTag), childWithTag(kFlexibleTag),
-         react_native_linux::makeConfiguredShadowNode(
-             viewDescriptor_, kCommittedParentTag, kSurfaceId, contextContainer_, folly::dynamic::object(),
-             std::make_shared<const std::vector<std::shared_ptr<const ShadowNode>>>(std::vector{committedChild}))});
+    commitNestedSibling();
     const size_t eventsBefore = layoutEventCount();
-    const std::shared_ptr<const ShadowNode> leaf = makeReportingView(kAddedTag, fixedSize);
-    const std::shared_ptr<const ShadowNode> row = react_native_linux::makeConfiguredShadowNode(
-        viewDescriptor_, kRowTag, kSurfaceId, contextContainer_,
-        folly::dynamic::object("flexDirection", "row")("width", kInitialWidth)("height", kFixedHeight),
-        std::make_shared<const std::vector<std::shared_ptr<const ShadowNode>>>(std::vector{leaf}));
-    const std::shared_ptr<const ShadowNode> surface = react_native_linux::makeConfiguredShadowNode(
-        viewDescriptor_, kSurfaceTag, kSurfaceId, contextContainer_, folly::dynamic::object("flex", 1),
-        std::make_shared<const std::vector<std::shared_ptr<const ShadowNode>>>(std::vector{row}));
-    int attempts = 0;
 
-    shadowTree_->commit(
-        [this, &attempts, &surface](const RootShadowNode& oldRootShadowNode) {
-            if (attempts++ == 0) {
-                std::thread([this] { configure(kResizedWidth, 1.0F); }).join();
-            }
-
-            std::vector<std::shared_ptr<const ShadowNode>> children = oldRootShadowNode.getChildren();
-            children.push_back(surface);
-
-            return react_native_linux::cloneRootWithChildren(
-                oldRootShadowNode,
-                std::make_shared<const std::vector<std::shared_ptr<const ShadowNode>>>(std::move(children)));
-        },
-        {});
-
-    EXPECT_EQ(attempts, 2);
+    EXPECT_EQ(commitRetriedOverAResize(
+                  [](const RootShadowNode& oldRootShadowNode) { return oldRootShadowNode.getChildren(); }),
+              2);
     EXPECT_EQ(layoutEventCount(), eventsBefore + 1);
     EXPECT_EQ(frames().at(kAddedTag), (Rect{.origin = {.x = 0, .y = 3 * kFixedHeight},
                                             .size = {.width = kFixedWidth, .height = kFixedHeight}}));
+}
+
+/**
+ * The retry must not write to a node an older revision still holds, because another thread may be reading it. The
+ * transaction keeps the children it read before the resize, as React keeps nodes the frame thread has since cloned,
+ * so the retried candidate carries nodes of the first revision that the resized one no longer shares. A second thread
+ * clones one of them, the read Yoga's `adoptYogaChild` makes, from before the commit until after it, with nothing
+ * ordering those reads against the commit: under the `tsan-tests` preset any write the retry makes to that node is a
+ * ThreadSanitizer report, and in every build the node has to come out of the commit still laid out.
+ */
+TEST_F(OnLayoutEmissionTest, ARetryOnlyReadsTheNodesAnOlderRevisionStillHolds) {
+    const std::shared_ptr<const ShadowNode> olderRevisionNode = commitNestedSibling();
+    const ChildList olderRevisionChildren = shadowTree_->getCurrentRevision().rootShadowNode->getChildren();
+    const size_t eventsBefore = layoutEventCount();
+    std::atomic<bool> isCommitted{false};
+    std::latch isReading{1};
+    std::thread reader([&olderRevisionNode, &isCommitted, &isReading] {
+        isReading.count_down();
+
+        do {
+            EXPECT_NE(olderRevisionNode->clone({}), nullptr);
+        } while (!isCommitted.load());
+    });
+
+    isReading.wait();
+    const int attempts = commitRetriedOverAResize(
+        [&olderRevisionChildren](const RootShadowNode& /*oldRootShadowNode*/) { return olderRevisionChildren; });
+    isCommitted.store(true);
+    reader.join();
+
+    EXPECT_EQ(attempts, 2);
+    EXPECT_EQ(layoutEventCount(), eventsBefore + 1);
+    EXPECT_TRUE(dynamic_cast<const LayoutableShadowNode&>(*olderRevisionNode).getIsLayoutClean());
 }
 
 } // namespace

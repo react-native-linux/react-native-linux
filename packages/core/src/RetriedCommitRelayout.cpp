@@ -1,5 +1,6 @@
 #include "RetriedCommitRelayout.h"
 
+#include <memory>
 #include <utility>
 
 #include <react/renderer/core/LayoutableShadowNode.h>
@@ -26,17 +27,26 @@ const facebook::react::ShadowNode* committedCounterpart(const facebook::react::S
     return nullptr;
 }
 
-void dirtyUncommittedLayout(facebook::react::LayoutableShadowNode& candidate,
-                            const facebook::react::ShadowNode* committed) {
-    if (&candidate == committed) {
-        return;
+std::shared_ptr<facebook::react::ShadowNode> dirtyCopy(const facebook::react::ShadowNode& candidate,
+                                                       const facebook::react::ShadowNode* committed) {
+    auto children = candidate.getChildren();
+
+    for (std::shared_ptr<const facebook::react::ShadowNode>& child : children) {
+        const facebook::react::ShadowNode* committedChild = committedCounterpart(*child, committed);
+
+        if (child.get() != committedChild &&
+            dynamic_cast<const facebook::react::LayoutableShadowNode*>(child.get()) != nullptr) {
+            child = dirtyCopy(*child, committedChild);
+        }
     }
 
-    candidate.dirtyLayout();
+    std::shared_ptr<facebook::react::ShadowNode> copy = candidate.clone(
+        {.children = std::make_shared<const std::vector<std::shared_ptr<const facebook::react::ShadowNode>>>(
+             std::move(children))});
 
-    for (facebook::react::LayoutableShadowNode* child : candidate.getLayoutableChildNodes()) {
-        dirtyUncommittedLayout(*child, committedCounterpart(*child, committed));
-    }
+    static_cast<facebook::react::LayoutableShadowNode&>(*copy).dirtyLayout();
+
+    return copy;
 }
 
 } // namespace
@@ -49,11 +59,12 @@ facebook::react::RootShadowNode::Unshared RetriedCommitRelayout::shadowTreeWillC
     const facebook::react::ShadowTree& shadowTree, const facebook::react::RootShadowNode::Shared& oldRootShadowNode,
     const facebook::react::RootShadowNode::Unshared& newRootShadowNode,
     const facebook::react::ShadowTreeCommitOptions& /*commitOptions*/) noexcept {
-    if (std::exchange(treeInFlight, &shadowTree) == &shadowTree) {
-        dirtyUncommittedLayout(*newRootShadowNode, oldRootShadowNode.get());
+    if (std::exchange(treeInFlight, &shadowTree) != &shadowTree) {
+        return newRootShadowNode;
     }
 
-    return newRootShadowNode;
+    return std::static_pointer_cast<facebook::react::RootShadowNode>(
+        dirtyCopy(*newRootShadowNode, oldRootShadowNode.get()));
 }
 
 void RetriedCommitRelayout::shadowTreeDidCommit(
