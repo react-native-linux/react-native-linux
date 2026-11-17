@@ -13,7 +13,19 @@ const SECONDS_FRACTION_DIGITS = 1;
  * on an idle machine before `"main"` runs; six times that leaves room for a loaded runner. The first commit can be a
  * spinner or a Suspense fallback, so the window stays open `settleMs` past it for what renders next to report.
  */
-const STARTUP_TIMING = { pollIntervalMs: 1000, settleMs: 5000, timeoutMs: 600_000 };
+const STARTUP_TIMING: StartupTiming = { pollIntervalMs: 1000, settleMs: 5000, timeoutMs: 600_000 };
+
+/**
+ * How long the wait polls, settles and waits in all, and, when a spec passes a virtual clock so the settle is not a
+ * race against wall-clock time, where it reads the time and how it sleeps.
+ */
+interface StartupTiming {
+  readonly now?: () => number;
+  readonly pollIntervalMs: number;
+  readonly settleMs: number;
+  readonly sleep?: (milliseconds: number) => Promise<unknown>;
+  readonly timeoutMs: number;
+}
 
 /** The trace of a running window so far, and whether the window has closed it. */
 interface StartupWatch {
@@ -53,8 +65,8 @@ const hasCommittedView = async (trace: string): Promise<boolean> => {
 };
 
 /** Milliseconds since `launchedAt` once `trace` shows `"main"` running, or null before then. */
-const findRunningMainMs = (trace: string, launchedAt: number): number | null =>
-  trace.includes(RUNNING_MAIN_TRACE_LINE) ? Date.now() - launchedAt : null;
+const findRunningMainMs = (trace: string, elapsedMs: number): number | null =>
+  trace.includes(RUNNING_MAIN_TRACE_LINE) ? elapsedMs : null;
 
 /**
  * Polls the visual tree every `pollIntervalMs` until T3 Code commits a view, for at most `timeoutMs` from
@@ -65,30 +77,30 @@ const findRunningMainMs = (trace: string, launchedAt: number): number | null =>
 const waitForFirstCommit = async (
   watch: StartupWatch,
   launchedAt: number,
-  { pollIntervalMs, settleMs, timeoutMs } = STARTUP_TIMING,
+  { now = Date.now, pollIntervalMs, settleMs, sleep = delay, timeoutMs } = STARTUP_TIMING,
 ): Promise<StartupTimings> => {
   let runningMainMs: number | null = null;
   let firstCommitMs: number | null = null;
 
   while (
     firstCommitMs === null &&
-    Date.now() - launchedAt < timeoutMs &&
+    now() - launchedAt < timeoutMs &&
     !watch.isClosed() &&
     findStartupErrors(watch.read()).length === EMPTY_LENGTH
   ) {
     const isCommitted = await hasCommittedView(watch.read());
 
-    runningMainMs ??= findRunningMainMs(watch.read(), launchedAt);
+    runningMainMs ??= findRunningMainMs(watch.read(), now() - launchedAt);
 
-    if (isCommitted && Date.now() - launchedAt < timeoutMs) {
-      firstCommitMs = Date.now() - launchedAt;
-      await delay(settleMs);
+    if (isCommitted && now() - launchedAt < timeoutMs) {
+      firstCommitMs = now() - launchedAt;
+      await sleep(settleMs);
     } else {
-      await delay(pollIntervalMs);
+      await sleep(pollIntervalMs);
     }
   }
 
-  return { firstCommitMs, runningMainMs: runningMainMs ?? findRunningMainMs(watch.read(), launchedAt) };
+  return { firstCommitMs, runningMainMs: runningMainMs ?? findRunningMainMs(watch.read(), now() - launchedAt) };
 };
 
 const formatSeconds = (milliseconds: number | null): string =>
@@ -98,4 +110,4 @@ const describeStartupTimings = ({ firstCommitMs, runningMainMs }: StartupTimings
   `time to "main": ${formatSeconds(runningMainMs)}, time to the first commit: ${formatSeconds(firstCommitMs)}`;
 
 export { describeStartupTimings, findStartupErrors, formatSeconds, waitForFirstCommit };
-export type { StartupWatch };
+export type { StartupTiming, StartupWatch };

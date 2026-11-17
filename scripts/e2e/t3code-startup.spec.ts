@@ -1,10 +1,11 @@
+import type { StartupTiming, StartupWatch } from "./t3code-startup.ts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { describeStartupTimings, findStartupErrors, waitForFirstCommit } from "./t3code-startup.ts";
 import { mkdtempSync, rmSync } from "node:fs";
-import type { StartupWatch } from "./t3code-startup.ts";
 import { createServer } from "node:net";
 import { once } from "node:events";
 import path from "node:path";
+import { setImmediate } from "node:timers/promises";
 import { tmpdir } from "node:os";
 
 const statusBarError =
@@ -15,6 +16,56 @@ const runningMain = 'Running "main" with {"rootTag":1}';
 const SETTLE_MS = 50;
 const timing = { pollIntervalMs: 1, settleMs: SETTLE_MS, timeoutMs: 5000 };
 const shortTiming = { pollIntervalMs: 1, settleMs: SETTLE_MS, timeoutMs: 20 };
+const VIRTUAL_LAUNCH_MS = 1_000_000;
+const NO_ELAPSED_MS = 0;
+const POLLS_BEFORE_COMMIT = 2;
+/** The two polls answered with a refusal and an empty root, each followed by one poll interval. */
+const COMMIT_AFTER_MS = POLLS_BEFORE_COMMIT * timing.pollIntervalMs;
+
+/** A promise and the call that resolves it. */
+interface Latch {
+  readonly open: () => void;
+  readonly promise: Promise<unknown>;
+}
+
+const createLatch = (): Latch => {
+  const target = new EventTarget();
+
+  return { open: (): boolean => target.dispatchEvent(new Event("open")), promise: once(target, "open") };
+};
+
+/** A virtual clock, with the start and release of its held sleep. */
+interface VirtualClock extends Required<Pick<StartupTiming, "now" | "sleep">> {
+  readonly release: () => void;
+  readonly requested: Promise<unknown>;
+  readonly sleeps: readonly number[];
+}
+
+/**
+ * A clock that stands still between sleeps and records each one, so time moves only when the wait sleeps. A sleep of
+ * `heldMs` reports that it started through `requested` and lasts until `release` is called, so a spec can see what
+ * the wait does while it is in progress.
+ */
+const createVirtualClock = (heldMs: number | null = null): VirtualClock => {
+  let time = VIRTUAL_LAUNCH_MS;
+  const sleeps: number[] = [];
+  const [requested, held] = [createLatch(), createLatch()];
+
+  return {
+    now: (): number => time,
+    release: held.open,
+    requested: requested.promise,
+    sleep: async (milliseconds: number): Promise<void> => {
+      sleeps.push(milliseconds);
+      if (milliseconds === heldMs) {
+        requested.open();
+        await held.promise;
+      }
+      time += milliseconds;
+    },
+    sleeps,
+  };
+};
 
 describe("findStartupErrors", () => {
   it("answers each fatal error and console.error once, in trace order, and ignores logs and warnings", () => {
@@ -77,6 +128,31 @@ const serveAnswers = async (
   return server;
 };
 
+/** A wait in progress against a window that commits on its third poll, and whether the wait has returned. */
+interface SettlingWait {
+  readonly clock: VirtualClock;
+  readonly pending: Promise<Awaited<ReturnType<typeof waitForFirstCommit>>>;
+  readonly progress: { hasReturned: boolean };
+  readonly server: ReturnType<typeof createServer>;
+}
+
+const startSettlingWait = async (socketPath: string): Promise<SettlingWait> => {
+  const server = await serveAnswers(socketPath, [refusal, treeLine([]), treeLine([{ tag: 2 }])]);
+  const lines = [`[rnl-automation] listening on ${socketPath}`, runningMain];
+  const clock = createVirtualClock(SETTLE_MS);
+  const progress = { hasReturned: false };
+  const watch = { isClosed: (): boolean => false, read: (): string => lines.join("\n") };
+  const pending = (async (): Promise<Awaited<ReturnType<typeof waitForFirstCommit>>> => {
+    const timings = await waitForFirstCommit(watch, VIRTUAL_LAUNCH_MS, { ...timing, ...clock });
+
+    progress.hasReturned = true;
+
+    return timings;
+  })();
+
+  return { clock, pending, progress, server };
+};
+
 /** A fresh directory per test for the fake window's automation socket, answering the socket's path. */
 const useSocketPath = (): (() => string) => {
   let directory = "";
@@ -96,20 +172,22 @@ describe("waitForFirstCommit", () => {
   const socketPathOf = useSocketPath();
 
   it("polls through a refusal and an empty root until a view commits, times main, and settles past the commit", async () => {
-    const socketPath = socketPathOf();
-    const server = await serveAnswers(socketPath, [refusal, treeLine([]), treeLine([{ tag: 2 }])]);
-    const lines = [`[rnl-automation] listening on ${socketPath}`];
-    const launchedAt = Date.now();
-    const pending = waitForFirstCommit({ isClosed: () => false, read: () => lines.join("\n") }, launchedAt, timing);
+    const { clock, pending, progress, server } = await startSettlingWait(socketPathOf());
 
-    lines.push(runningMain);
-    const { firstCommitMs, runningMainMs } = await pending;
+    await clock.requested;
+    await setImmediate();
+    const hasReturnedWhileSettling = progress.hasReturned;
+
+    clock.release();
+    const timings = await pending;
 
     server.close();
-    expect([
-      runningMainMs === null,
-      firstCommitMs !== null && Date.now() - launchedAt >= firstCommitMs + SETTLE_MS,
-    ]).toStrictEqual([false, true]);
+    expect([hasReturnedWhileSettling, timings, clock.sleeps, clock.now() - VIRTUAL_LAUNCH_MS]).toStrictEqual([
+      false,
+      { firstCommitMs: COMMIT_AFTER_MS, runningMainMs: NO_ELAPSED_MS },
+      [timing.pollIntervalMs, timing.pollIntervalMs, SETTLE_MS],
+      COMMIT_AFTER_MS + SETTLE_MS,
+    ]);
   });
 
   it("stops at once when startup reports an error or the window closes, still timing a main run seen in that poll", async () => {
@@ -154,10 +232,10 @@ describe("waitForFirstCommit around one poll", () => {
       onRequest: () => lines.push(runningMain),
     });
     const watch = { isClosed: (): boolean => false, read: (): string => lines.join("\n") };
-    const { firstCommitMs, runningMainMs } = await waitForFirstCommit(watch, Date.now(), timing);
+    const timings = await waitForFirstCommit(watch, VIRTUAL_LAUNCH_MS, { ...timing, ...createVirtualClock() });
 
     server.close();
-    expect(runningMainMs !== null && firstCommitMs !== null && runningMainMs <= firstCommitMs).toBe(true);
+    expect(timings).toStrictEqual({ firstCommitMs: NO_ELAPSED_MS, runningMainMs: NO_ELAPSED_MS });
   });
 });
 
