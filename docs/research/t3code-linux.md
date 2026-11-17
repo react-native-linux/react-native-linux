@@ -100,7 +100,7 @@ when `Platform.OS` is `ios` or `android`. Without the module, `AppContent`'s fir
 root. A desktop window has no status bar, so the module answers the Android spec with `HEIGHT` 0 and setters that do
 nothing, as react-native-windows' `StatusBarManager` does and react-native-macos' `RCTStatusBarManager` does on macOS.
 A `StatusBar.linux.js` overlay would have done the same in more code and diverged from both references. The
-`status-bar` e2e renders `<StatusBar>`, calls its static methods, and compares the content beside it with a golden.
+`status-bar` e2e renders `<StatusBar>` beside a view, calls its static methods, and rejects any `Invariant Violation`.
 
 ## 2. The desktop feature profile
 
