@@ -1,6 +1,7 @@
 import { FIRST_PRESENTED_FRAME_TRACE_LINE, hasPresentedFirstFrame } from "./window-readiness.ts";
 import { MAIN_SCREEN_BUTTON_NAME, findStartupErrors } from "./t3code-startup.ts";
 import { cpSync, readdirSync, realpathSync } from "node:fs";
+import { gradeScreenshot } from "./grade.ts";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -12,6 +13,15 @@ const MOBILE_PACKAGE_NAME = "@t3tools/mobile";
 const PAIRING_URL_PATTERN = /^Pairing URL: (?<pairingUrl>\S+)$/mu;
 const SUCCESSFUL_EXIT_STATUS = 0;
 const TAIL_LINE_COUNT = 40;
+/**
+ * The screenshot comparison of T3 Code's main screen: everything above LogBox's toast, whose warning count varies from
+ * run to run, with no pixel budget. The golden holds for the CI container image.
+ */
+const MAIN_SCREEN_SCREENSHOT = {
+  crop: { height: 640, left: 0, top: 0, width: 1280 },
+  golden: "t3code-main-screen.png",
+  maxDifferentPixels: 0,
+};
 
 /**
  * What the fixture saw of one window run: the wayland socket, whether T3 Code's main screen showed and what the last
@@ -93,6 +103,22 @@ const gradeWindowRun = (run: WindowRun): readonly string[] => {
   ];
 };
 
+/**
+ * Why a run is not a pass, and what it notes: `gradeWindowRun`'s failures, and once there are none, the screenshot of
+ * T3 Code's main screen against its golden in `goldensDirectory`, which only notes a golden not blessed yet.
+ */
+const gradeMainScreenRun = (
+  run: WindowRun,
+  goldensDirectory: string,
+  screenshotPath: string,
+): ReturnType<typeof gradeScreenshot> => {
+  const failures = gradeWindowRun(run);
+
+  return failures.length === EMPTY_LENGTH
+    ? gradeScreenshot(MAIN_SCREEN_SCREENSHOT, goldensDirectory, screenshotPath)
+    : { failures, notes: [] };
+};
+
 /** The pnpm arguments that pack each overlay package the platform's Metro alias table names into `destination`. */
 const overlayPackArguments = (
   aliases: readonly { readonly linux: string }[],
@@ -156,6 +182,7 @@ const overlayInstallArguments = (tarballs: readonly string[]): readonly string[]
 export {
   CHECKOUT_INSTALL_ARGUMENTS,
   T3CODE_REVISION,
+  gradeMainScreenRun,
   buildPairingLink,
   OVERLAY_DIRECTORY_NAME,
   describeForeignCheckout,

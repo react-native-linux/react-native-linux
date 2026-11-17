@@ -4,7 +4,7 @@ import {
   T3CODE_REVISION,
   buildPairingLink,
   describeForeignCheckout,
-  gradeWindowRun,
+  gradeMainScreenRun,
   installVariants,
   readPairingUrl,
   tailLines,
@@ -13,7 +13,7 @@ import { argv, env, execPath, stderr, stdout } from "node:process";
 import { attachTrace, startCompositor, stopCompositor, waitForSocketName, windowBinaryPath } from "./e2e-processes.ts";
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { describeStartupTimings, formatSeconds, waitForMainScreen } from "./e2e/t3code-startup.ts";
-import { embedExpoAppAssets, findMainScreenMismatches, installOverlays } from "./t3code-app.ts";
+import { embedExpoAppAssets, installOverlays } from "./t3code-app.ts";
 import { findExecutable, findLavapipeIcd } from "./window-golden.ts";
 import { spawn, spawnSync } from "node:child_process";
 import path from "node:path";
@@ -30,11 +30,10 @@ import { waitUntil } from "./e2e/discovery.ts";
  * build/t3code/checkout, with the mobile app's and the server's dependencies installed; any other path is refused. The
  * fixture packs this platform's overlay packages and adds them to the mobile app, which rewrites its package.json and
  * lockfile, so the alias table resolves them as it would for an application that installed them from a registry, and
- * copies the Linux variants of T3 Code's own files beside the files they replace (#707). The window is held open
- * until the automation channel's accessibility tree holds T3 Code's main screen, its "New thread" button (#807), and
- * five seconds past it, and the screenshot is the frame after that (#798): a frame count cannot cover the development
- * bundle's evaluation. The run passes once the main screen shows with startup reporting no error, `console.error`
- * included, and its screenshot matches the golden; until then it names where startup stopped and what it last saw.
+ * copies the Linux variants of T3 Code's own files beside the files they replace (#707). The window is held open until
+ * the accessibility tree shows T3 Code's main screen (#807) and five seconds past it, and the screenshot is the frame
+ * after that (#798). The run passes once that comes with no startup error, `console.error` included, and the screenshot
+ * matches its golden; otherwise it names where startup stopped and what it last saw.
  */
 
 const SUCCESSFUL_EXIT_STATUS = 0;
@@ -63,10 +62,11 @@ const mobileRoot = path.join(checkout, "apps", "mobile");
 const serverEntry = path.join(checkout, "apps", "server", "src", "bin.ts");
 const serverLogPath = path.join(artifactsDirectory, "server.log");
 const screenshotPath = path.join(artifactsDirectory, "screenshot.png");
+const goldensDirectory = path.join(repositoryRoot, "packages", "test-harness", "e2e", "goldens");
 
 type Rig = Parameters<typeof startCompositor>[number]["rig"];
 type Compositor = ReturnType<typeof startCompositor>;
-type WindowRun = Parameters<typeof gradeWindowRun>[number];
+type WindowRun = Parameters<typeof gradeMainScreenRun>[number];
 
 interface Server {
   readonly child: ReturnType<typeof spawn>;
@@ -217,8 +217,8 @@ const runWindow = async (link: string, rig: Rig): Promise<WindowRun> => {
 };
 
 const reportRun = (run: WindowRun): void => {
-  const runFailures = gradeWindowRun(run);
-  const failures = runFailures.length === EMPTY_LENGTH ? findMainScreenMismatches(screenshotPath) : runFailures;
+  const { failures, notes } = gradeMainScreenRun(run, goldensDirectory, screenshotPath);
+  stdout.write(notes.map((note) => `e2e ${SCENARIO_NAME}: ${note}\n`).join(""));
 
   if (failures.length === EMPTY_LENGTH) {
     stdout.write(`e2e ${SCENARIO_NAME}: passed; artifacts: ${artifactsDirectory}\n`);

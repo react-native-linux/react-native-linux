@@ -172,7 +172,9 @@ The order epic #634 follows. Each step needs the ones before it.
    when the accessibility tree shows the main screen's "New thread" button within 60 s, startup reports no fatal error or
    `console.error`, the window exits cleanly, and the screenshot above LogBox's toast matches
    `packages/test-harness/e2e/goldens/t3code-main-screen.png` (#807); otherwise it names the first error and what the
-   last accessibility tree held. #641 keeps the ordered list of what stands between that and the main screen. With
+   last accessibility tree held. The golden, held to 0 differing pixels, holds for the CI container image's Mesa and
+   fonts, so run the fixture in that image; it is blessed from the run's `screenshot-cropped.png` like every e2e golden.
+   #641 keeps the ordered list of what stands between that and the main screen. With
    `rnl_window` autolinking safe-area-context, svg and screens as CI's fabric job does, and its Hermes built optimised
    (#814), `"main"` runs 3.1 s after launch and the main screen, paired with the server, shows 0–2 s later; a Hermes with
    slow-debug checks reaches `"main"` only after 90 s, and the fixture fails.

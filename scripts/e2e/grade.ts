@@ -155,28 +155,34 @@ const compareAgainstGolden = (
   };
 };
 
-const gradeScreenshot = (inputs: GradeInputs): Grade => {
-  const comparison = inputs.scenario.screenshot;
-
+/** The screenshot against its golden; a fixture that is no scenario, such as `pnpm e2e:t3code`, hands its own. */
+const gradeScreenshot = (
+  comparison: Scenario["screenshot"],
+  goldensDirectory: string,
+  screenshotPath: string,
+): Grade => {
   if (comparison === null) {
     return { failures: [], notes: [] };
   }
 
-  if (!existsSync(inputs.screenshotPath)) {
-    return { failures: [`the window captured no screenshot at ${inputs.screenshotPath}`], notes: [] };
+  if (!existsSync(screenshotPath)) {
+    return { failures: [`the window captured no screenshot at ${screenshotPath}`], notes: [] };
   }
 
-  const captured = resolveCapturedScreenshot(inputs.screenshotPath, comparison.crop);
+  const captured = resolveCapturedScreenshot(screenshotPath, comparison.crop);
 
   if (typeof captured === "string") {
     return { failures: [`the screenshot does not match ${comparison.golden}: ${captured}`], notes: [] };
   }
 
-  return compareAgainstGolden(comparison, inputs.goldensDirectory, captured);
+  return compareAgainstGolden(comparison, goldensDirectory, captured);
 };
 
 const gradeArtifacts = (inputs: GradeInputs): Grade => {
-  const grades = [gradeFrameTiming(inputs.scenario, inputs.frameLogPath), gradeScreenshot(inputs)];
+  const grades = [
+    gradeFrameTiming(inputs.scenario, inputs.frameLogPath),
+    gradeScreenshot(inputs.scenario.screenshot, inputs.goldensDirectory, inputs.screenshotPath),
+  ];
 
   return {
     failures: grades.flatMap((grade) => grade.failures),
@@ -200,4 +206,4 @@ const gradeAutomationChannel = (inputs: AutomationChannelInputs): Promise<readon
         trace: inputs.trace,
       });
 
-export { gradeArtifacts, gradeAutomationChannel };
+export { gradeArtifacts, gradeAutomationChannel, gradeScreenshot };
