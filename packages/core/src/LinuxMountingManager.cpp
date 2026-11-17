@@ -123,6 +123,12 @@ bool LinuxMountingManager::hasOverlays() const {
     return scene_.hasOverlays();
 }
 
+facebook::react::Tag LinuxMountingManager::topmostOverlayTag(facebook::react::SurfaceId surfaceId) const {
+    const std::lock_guard<std::mutex> guard(sceneMutex_);
+
+    return scene_.topmostOverlayTag(surfaceId);
+}
+
 bool LinuxMountingManager::advanceImageAnimations(double frameMilliseconds) {
     const std::lock_guard<std::mutex> guard(sceneMutex_);
     const bool hasAdvanced = scene_.advanceImageAnimations(frameMilliseconds);
@@ -161,7 +167,9 @@ SceneFrame LinuxMountingManager::takeFrame() {
 
     hasPendingDamage_ = false;
 
-    return SceneFrame{.scene = scene_.snapshot(), .damage = scene_.takeDamage()};
+    return SceneFrame{.scene = scene_.snapshot(),
+                      .damage = scene_.takeDamage(),
+                      .presentedOverlays = std::exchange(presentedOverlays_, {})};
 }
 
 std::vector<SceneCommand> LinuxMountingManager::takeCommands() {
@@ -300,8 +308,15 @@ void LinuxMountingManager::applyTransaction(facebook::react::MountingTransaction
             scene_.insertChild(mutation.parentTag, mutation.newChildShadowView, mutation.index);
             reportSafeAreaInsetsIfProvider(nullptr, mutation.newChildShadowView);
 
-            if (dimensions_ != nullptr && std::string_view{mutation.newChildShadowView.componentName} ==
-                                              facebook::react::ModalHostViewComponentName) {
+            if (std::string_view{mutation.newChildShadowView.componentName} !=
+                facebook::react::ModalHostViewComponentName) {
+                break;
+            }
+
+            presentedOverlays_.push_back(std::static_pointer_cast<const facebook::react::ModalHostViewEventEmitter>(
+                mutation.newChildShadowView.eventEmitter));
+
+            if (dimensions_ != nullptr) {
                 requestModalSize(mutation.newChildShadowView.state, surfaceSizeOf(*dimensions_),
                                  facebook::react::EventQueue::UpdateMode::Asynchronous);
             }

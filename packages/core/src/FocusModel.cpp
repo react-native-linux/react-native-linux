@@ -22,8 +22,33 @@ constexpr facebook::react::Tag kNoTag = 0;
 
 } // namespace
 
-FocusTransition FocusModel::setFocusableTags(std::vector<facebook::react::Tag> focusableTags) {
+FocusTransition FocusModel::setFocusableTags(std::vector<facebook::react::Tag> focusableTags,
+                                             facebook::react::Tag overlayTag) {
     focusableTags_ = std::move(focusableTags);
+
+    const auto presented =
+        std::find_if(presentedOverlays_.begin(), presentedOverlays_.end(),
+                     [overlayTag](const PresentedOverlay& overlay) { return overlay.overlayTag == overlayTag; });
+
+    if (overlayTag != kNoTag && presented == presentedOverlays_.end()) {
+        presentedOverlays_.push_back(
+            PresentedOverlay{.overlayTag = overlayTag, .invokerTag = focusedTag_, .wasFocusVisible = isFocusVisible_});
+
+        return focusableTags_.empty() ? transitionTo(kNoTag, false)
+                                      : transitionTo(focusableTags_.front(), isFocusVisible_);
+    }
+
+    const auto firstDismissed = presented == presentedOverlays_.end() ? presentedOverlays_.begin() : presented + 1;
+
+    if (firstDismissed != presentedOverlays_.end()) {
+        const PresentedOverlay dismissed = *firstDismissed;
+
+        presentedOverlays_.erase(firstDismissed, presentedOverlays_.end());
+
+        if (isFocusable(dismissed.invokerTag)) {
+            return transitionTo(dismissed.invokerTag, dismissed.wasFocusVisible);
+        }
+    }
 
     if (focusedTag_ == kNoTag || isFocusable(focusedTag_)) {
         return {};

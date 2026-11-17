@@ -13,6 +13,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include <react/renderer/components/FBReactNativeSpec/EventEmitters.h>
 #include <react/renderer/core/ReactPrimitives.h>
 #include <react/renderer/graphics/Point.h>
 #include <react/renderer/graphics/Size.h>
@@ -29,6 +30,12 @@ namespace react_native_linux {
 struct SceneFrame {
     SceneSnapshot scene;
     SceneDamage damage;
+
+    /**
+     * Every `<Modal>` this frame paints for the first time (ADR-0005). The frame loop fires their `onShow` once the
+     * frame is submitted.
+     */
+    std::vector<std::shared_ptr<const facebook::react::ModalHostViewEventEmitter>> presentedOverlays;
 };
 
 /**
@@ -152,6 +159,12 @@ public:
 
     /** `RetainedScene::hasOverlays`, under the scene lock. */
     bool hasOverlays() const;
+
+    /**
+     * `RetainedScene::topmostOverlayTag`, under the scene lock: the `<Modal>` that the hit test, the focus trap and
+     * the wheel all answer from (ADR-0005).
+     */
+    facebook::react::Tag topmostOverlayTag(facebook::react::SurfaceId surfaceId) const;
 
     /**
      * `RetainedScene::advanceImageAnimations` under the scene mutex, flagging pending damage when a frame
@@ -286,6 +299,7 @@ private:
     std::vector<SceneCommand> commands_;
     std::vector<MaintainedScrollOffset> maintainedScrollOffsets_;
     std::vector<AccessibilityChange> accessibilityChanges_;
+    std::vector<std::shared_ptr<const facebook::react::ModalHostViewEventEmitter>> presentedOverlays_;
     MountDiagnostics diagnostics_;
     facebook::react::MountingTransaction::Number lastTransactionNumber_{0};
     bool hasPendingDamage_{false};

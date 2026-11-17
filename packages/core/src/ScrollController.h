@@ -69,7 +69,9 @@ struct ScrollTargetAxis {
  *
  * Routing is a hit test plus one walk up. `UIManager::findNodeAtPoint` answers what is under the pointer, exactly
  * as it does for a click, and the deepest `ScrollViewShadowNode` on the path from the root to that node is what a
- * wheel over it scrolls — which is nested-ScrollView behaviour without a second rule for it.
+ * wheel over it scrolls — which is nested-ScrollView behaviour without a second rule for it. While a `<Modal>` is
+ * presented, the walk starts at the topmost one the scene's overlay list names instead of the root (ADR-0005), so
+ * a wheel over it never scrolls the page beneath, and a point with no `<ScrollView>` inside it scrolls nothing.
  *
  * Threading contract: every member runs on the platform frame thread. `findNodeAtPoint`,
  * `getNewestCloneOfShadowNode` and `ShadowNodeFamily::getAncestors` all take the shadow tree's shared lock and are
@@ -78,7 +80,8 @@ struct ScrollTargetAxis {
  */
 class ScrollController final {
 public:
-    ScrollController(std::shared_ptr<facebook::react::UIManager> uiManager, facebook::react::SurfaceId surfaceId);
+    ScrollController(std::shared_ptr<facebook::react::UIManager> uiManager,
+                     std::shared_ptr<const LinuxMountingManager> mountingManager, facebook::react::SurfaceId surfaceId);
 
     /**
      * Routes one frame's scroll input. Events that are not scroll events are ignored, so the caller may hand over
@@ -167,6 +170,7 @@ private:
     scrollViewUnderPointer(facebook::react::Point surfacePoint) const;
 
     std::shared_ptr<facebook::react::UIManager> uiManager_;
+    std::shared_ptr<const LinuxMountingManager> mountingManager_;
     facebook::react::SurfaceId surfaceId_;
     std::unordered_map<facebook::react::Tag, ScrollTarget> targets_;
     ScrollAxisLock axisLock_;

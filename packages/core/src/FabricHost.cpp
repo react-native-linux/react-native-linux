@@ -270,7 +270,7 @@ FabricHost::FabricHost(ReactHost& reactHost, facebook::react::Size surfaceSize, 
     inputDispatcher_ = std::make_unique<InputDispatcher>(
         scheduler_->getUIManager(), mountingManager_, kSurfaceId,
         [runtimeExecutor = runtimeExecutor_]() { runtimeExecutor(emitHardwareBackPress); });
-    scrollController_ = std::make_unique<ScrollController>(scheduler_->getUIManager(), kSurfaceId);
+    scrollController_ = std::make_unique<ScrollController>(scheduler_->getUIManager(), mountingManager_, kSurfaceId);
 
     // `UIManager.hasViewManagerConfig` answers through this global, and a `dev=true` bundle asks it about
     // `DebuggingOverlay` while it mounts the app (#79); upstream's cxx host binds it the same way.

@@ -214,6 +214,63 @@ TEST(FocusModelTest, FocusSurvivesReorderingIntoANewTraversalPosition) {
     expectTransition(model.move(FocusDirection::Forward), kGamma, kAlpha);
 }
 
+constexpr Tag kOverlay = 40;
+constexpr Tag kNestedOverlay = 50;
+constexpr Tag kInsideOverlay = 41;
+constexpr Tag kInsideNestedOverlay = 51;
+
+/** ADR-0005: a present focuses the overlay's first focusable with the ring the invoker had, as `showModal()`. */
+TEST(FocusModelTest, APresentFocusesTheFirstFocusableAndADismissalRestoresTheInvoker) {
+    FocusModel model = modelWithThreeFocusables();
+
+    model.focusTag(kBeta, FocusOrigin::Keyboard);
+
+    expectTransition(model.setFocusableTags({kInsideOverlay, kGamma}, kOverlay), kBeta, kInsideOverlay);
+    EXPECT_TRUE(model.isFocusVisible());
+    expectNoTransition(model.setFocusableTags({kInsideOverlay, kGamma}, kOverlay));
+    expectTransition(model.setFocusableTags({kAlpha, kBeta, kGamma}), kInsideOverlay, kBeta);
+    EXPECT_TRUE(model.isFocusVisible());
+}
+
+/** A present with nothing focusable blurs; the dismissal still restores the invoker, with its ring state. */
+TEST(FocusModelTest, AnOverlayWithNothingFocusableBlursAndStillRestores) {
+    FocusModel model = modelWithThreeFocusables();
+
+    model.focusTag(kAlpha, FocusOrigin::Pointer);
+
+    expectTransition(model.setFocusableTags({}, kOverlay), kAlpha, kNoTag);
+    expectTransition(model.setFocusableTags({kAlpha}), kNoTag, kAlpha);
+    EXPECT_FALSE(model.isFocusVisible());
+}
+
+TEST(FocusModelTest, APresentWithNothingFocusedFocusesNothingUntilThereIsAFocusable) {
+    FocusModel model;
+
+    expectNoTransition(model.setFocusableTags({}, kOverlay));
+    expectNoTransition(model.setFocusableTags({kAlpha}));
+}
+
+TEST(FocusModelTest, NestedOverlaysRestoreOneAtATimeOrAllAtOnceToTheFirstInvoker) {
+    FocusModel model = modelWithThreeFocusables();
+
+    model.focusTag(kAlpha, FocusOrigin::Keyboard);
+    model.setFocusableTags({kInsideOverlay}, kOverlay);
+    expectTransition(model.setFocusableTags({kInsideNestedOverlay}, kNestedOverlay), kInsideOverlay,
+                     kInsideNestedOverlay);
+    expectTransition(model.setFocusableTags({kInsideOverlay}, kOverlay), kInsideNestedOverlay, kInsideOverlay);
+    model.setFocusableTags({kInsideNestedOverlay}, kNestedOverlay);
+    expectTransition(model.setFocusableTags({kAlpha, kBeta}), kInsideNestedOverlay, kAlpha);
+}
+
+TEST(FocusModelTest, AnInvokerUnmountedWhileTheOverlayWasOpenIsNotRestored) {
+    FocusModel model = modelWithThreeFocusables();
+
+    model.focusTag(kAlpha, FocusOrigin::Keyboard);
+    model.setFocusableTags({kInsideOverlay}, kOverlay);
+
+    expectTransition(model.setFocusableTags({kBeta}), kInsideOverlay, kNoTag);
+}
+
 TEST(FocusKeyTest, TabAndShiftTabAreTheOnlyTraversalKeys) {
     const std::optional<FocusDirection> forward = focusDirectionForKey("Tab", false);
     const std::optional<FocusDirection> backward = focusDirectionForKey("Tab", true);

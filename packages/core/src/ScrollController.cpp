@@ -292,8 +292,9 @@ void writeContentOffset(const facebook::react::ScrollViewShadowNode& scrollView,
 } // namespace
 
 ScrollController::ScrollController(std::shared_ptr<facebook::react::UIManager> uiManager,
+                                   std::shared_ptr<const LinuxMountingManager> mountingManager,
                                    facebook::react::SurfaceId surfaceId)
-    : uiManager_(std::move(uiManager)), surfaceId_(surfaceId) {}
+    : uiManager_(std::move(uiManager)), mountingManager_(std::move(mountingManager)), surfaceId_(surfaceId) {}
 
 void ScrollController::dispatch(const std::vector<InputEvent>& events) {
     for (const InputEvent& event : events) {
@@ -563,17 +564,17 @@ bool ScrollController::advanceTarget(ScrollTarget& target, const facebook::react
 namespace {
 
 /**
- * The `<ScrollView>` with this tag anywhere under `node`, or nothing. A command names a tag rather than a point,
- * so this is the lookup `scrollViewUnderPointer` is for a press.
+ * The node with this tag anywhere under `node`, or nothing. A command names a tag rather than a point, and so does
+ * the scene's topmost overlay.
  */
-std::shared_ptr<const facebook::react::ScrollViewShadowNode>
-findScrollViewWithTag(const std::shared_ptr<const facebook::react::ShadowNode>& node, facebook::react::Tag tag) {
+std::shared_ptr<const facebook::react::ShadowNode>
+findNodeWithTag(const std::shared_ptr<const facebook::react::ShadowNode>& node, facebook::react::Tag tag) {
     if (node->getTag() == tag) {
-        return std::dynamic_pointer_cast<const facebook::react::ScrollViewShadowNode>(node);
+        return node;
     }
 
     for (const std::shared_ptr<const facebook::react::ShadowNode>& child : node->getChildren()) {
-        const std::shared_ptr<const facebook::react::ScrollViewShadowNode> found = findScrollViewWithTag(child, tag);
+        const std::shared_ptr<const facebook::react::ShadowNode> found = findNodeWithTag(child, tag);
 
         if (found != nullptr) {
             return found;
@@ -603,19 +604,30 @@ std::shared_ptr<const facebook::react::ScrollViewShadowNode>
 ScrollController::scrollViewWithTag(facebook::react::Tag tag) const {
     const std::shared_ptr<const facebook::react::ShadowNode> rootNode = rootShadowNode();
 
-    return rootNode == nullptr ? nullptr : findScrollViewWithTag(rootNode, tag);
+    return rootNode == nullptr
+               ? nullptr
+               : std::dynamic_pointer_cast<const facebook::react::ScrollViewShadowNode>(findNodeWithTag(rootNode, tag));
 }
 
 std::shared_ptr<const facebook::react::ScrollViewShadowNode>
 ScrollController::scrollViewUnderPointer(facebook::react::Point surfacePoint) const {
-    const std::shared_ptr<const facebook::react::ShadowNode> rootNode = rootShadowNode();
+    const std::shared_ptr<const facebook::react::ShadowNode> surfaceRoot = rootShadowNode();
 
-    if (rootNode == nullptr) {
+    if (surfaceRoot == nullptr) {
         return nullptr;
     }
 
+    const facebook::react::Tag overlayTag = mountingManager_->topmostOverlayTag(surfaceId_);
+    const std::shared_ptr<const facebook::react::ShadowNode> overlay =
+        overlayTag == 0 ? nullptr : findNodeWithTag(surfaceRoot, overlayTag);
+    const std::shared_ptr<const facebook::react::ShadowNode> rootNode = overlay == nullptr ? surfaceRoot : overlay;
+
+    // The overlay lays out at its parent's origin but is painted at the surface's, so the point moves by that origin
+    // into the frame `findNodeAtPoint` tests it against. The surface root's origin is zero.
+    const facebook::react::Point rootOrigin =
+        dynamic_cast<const facebook::react::LayoutableShadowNode&>(*rootNode).getLayoutMetrics().frame.origin;
     const std::shared_ptr<const facebook::react::ShadowNode> hitNode =
-        uiManager_->findNodeAtPoint(rootNode, surfacePoint);
+        uiManager_->findNodeAtPoint(rootNode, surfacePoint + rootOrigin);
 
     if (hitNode == nullptr) {
         return nullptr;

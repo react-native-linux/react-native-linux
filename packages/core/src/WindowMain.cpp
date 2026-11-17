@@ -1719,6 +1719,11 @@ int main(int argc, char** argv) {
                                 session->recordPaintEnd(std::chrono::steady_clock::now());
                             });
                         session->recordDrawOutcome(presented);
+
+                        for (const std::shared_ptr<const facebook::react::ModalHostViewEventEmitter>& overlay :
+                             frame.presentedOverlays) {
+                            overlay->onShow({});
+                        }
                     }
                 } else {
                     presented = renderer.drawFrame(window, {}, drawPlaceholder);

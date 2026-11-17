@@ -1110,7 +1110,7 @@ protected:
             commitOptions);
     }
 
-    ScrollController makeController() { return ScrollController(uiManager_, kSurfaceId); }
+    ScrollController makeController() { return ScrollController(uiManager_, mountingManager_, kSurfaceId); }
 
     // One frame after a `scrollTo(0, y)` command on the committed ScrollView.
     static void scrollToThenAdvance(ScrollController& controller, const folly::dynamic& y) {
@@ -1253,6 +1253,8 @@ protected:
 
     std::unique_ptr<ShadowTree> removedTree_;
     std::shared_ptr<UIManager> uiManager_;
+    std::shared_ptr<react_native_linux::LinuxMountingManager> mountingManager_{
+        std::make_shared<react_native_linux::LinuxMountingManager>()};
 };
 
 // Issue #256 and react/core#49226. A multiline <TextInput> is a window on its own content, so it is the deepest
