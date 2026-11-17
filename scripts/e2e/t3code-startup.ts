@@ -1,19 +1,22 @@
-import { findAutomationSocketPath, findSurfaceChildren, requestAutomation } from "./automation.ts";
+import { findAutomationSocketPath, requestAutomation } from "./automation.ts";
 import { setTimeout as delay } from "node:timers/promises";
+import { isRecord } from "./fields.ts";
 
 const FATAL_ERROR_PREFIX = "[js-error] fatal";
 const CONSOLE_ERROR_PREFIX = "[console.error] ";
 const RUNNING_MAIN_TRACE_LINE = 'Running "main"';
+const MAIN_SCREEN_BUTTON_NAME = "New thread";
 const AUTOMATION_TIMEOUT_MS = 10_000;
 const EMPTY_LENGTH = 0;
 const MILLISECONDS_PER_SECOND = 1000;
 const SECONDS_FRACTION_DIGITS = 1;
 /**
- * The fixture's window runs the `dev` preset, whose Debug Hermes evaluates T3 Code's development bundle in about 100 s
- * on an idle machine before `"main"` runs; six times that leaves room for a loaded runner. The first commit can be a
- * spinner or a Suspense fallback, so the window stays open `settleMs` past it for what renders next to report.
+ * The fixture's window runs the `dev` preset, which evaluates T3 Code's development bundle in about 3 s on an idle
+ * machine before `"main"` runs, and the main screen follows within about 2 s (#814). The timeout leaves room for a
+ * loaded runner and is still short of the 90 s a Hermes with slow-debug checks takes to reach `"main"`. The window
+ * stays open `settleMs` past the main screen for what renders next to report.
  */
-const STARTUP_TIMING: StartupTiming = { pollIntervalMs: 1000, settleMs: 5000, timeoutMs: 600_000 };
+const STARTUP_TIMING: StartupTiming = { pollIntervalMs: 1000, settleMs: 5000, timeoutMs: 60_000 };
 
 /**
  * How long the wait polls, settles and waits in all, and, when a spec passes a virtual clock so the settle is not a
@@ -33,11 +36,17 @@ interface StartupWatch {
   readonly read: () => string;
 }
 
-/** Milliseconds from launch to `"main"` running, which is where the bundle's evaluation ended, and to the first commit. */
-interface StartupTimings {
-  readonly firstCommitMs: number | null;
+/**
+ * Milliseconds from launch to `"main"` running, which is where the bundle's evaluation ended, and to the main screen,
+ * with the names the last accessibility tree the wait read held, which is what a run that never reached it saw.
+ */
+interface StartupOutcome {
+  readonly lastNames: readonly string[];
+  readonly mainScreenMs: number | null;
   readonly runningMainMs: number | null;
 }
+
+type AccessibilityNode = Record<string, unknown>;
 
 /**
  * The errors startup reported, in trace order and each once (React Native prints a console line both through its
@@ -50,18 +59,33 @@ const findStartupErrors = (trace: string): readonly string[] => [
   ),
 ];
 
-/** Whether the window's visual tree holds a view under the surface root: React committed T3 Code's first screen. */
-const hasCommittedView = async (trace: string): Promise<boolean> => {
+/** Every node of an accessibility projection, each before its children. */
+const flattenAccessibilityNodes = (nodes: unknown): readonly AccessibilityNode[] =>
+  Array.isArray(nodes)
+    ? nodes
+        .filter((node): node is AccessibilityNode => isRecord(node))
+        .flatMap((node) => [node, ...flattenAccessibilityNodes(node["children"])])
+    : [];
+
+/**
+ * T3 Code's "New thread" button, which only its main screen's empty workspace shows, LogBox never does, and which
+ * names itself through the text inside it.
+ */
+const isMainScreenButton = (node: AccessibilityNode): boolean =>
+  node["role"] === "button" &&
+  [node, ...flattenAccessibilityNodes(node["children"])].some(({ name }) => name === MAIN_SCREEN_BUTTON_NAME);
+
+/** The window's accessibility tree, flattened; empty while the window has no automation channel or refuses. */
+const readAccessibilityNodes = async (trace: string): Promise<readonly AccessibilityNode[]> => {
   const socketPath = findAutomationSocketPath(trace);
 
   if (socketPath === null) {
-    return false;
+    return [];
   }
 
-  const { result } = await requestAutomation(socketPath, { command: "DumpVisualTree" }, AUTOMATION_TIMEOUT_MS);
-  const children = result === null ? null : findSurfaceChildren(result);
+  const { result } = await requestAutomation(socketPath, { command: "DumpAccessibilityTree" }, AUTOMATION_TIMEOUT_MS);
 
-  return Array.isArray(children) && children.length > EMPTY_LENGTH;
+  return flattenAccessibilityNodes(result?.["nodes"]);
 };
 
 /** Milliseconds since `launchedAt` once `trace` shows `"main"` running, or null before then. */
@@ -69,45 +93,45 @@ const findRunningMainMs = (trace: string, elapsedMs: number): number | null =>
   trace.includes(RUNNING_MAIN_TRACE_LINE) ? elapsedMs : null;
 
 /**
- * Polls the visual tree every `pollIntervalMs` until T3 Code commits a view, for at most `timeoutMs` from
- * `launchedAt`, then holds the window `settleMs` longer. A commit whose answer arrives after the deadline is a
- * timeout. It stops early once the window closes or startup reports an error, since an uncaught render error leaves
+ * Polls the accessibility tree every `pollIntervalMs` until it holds T3 Code's main screen, for at most `timeoutMs`
+ * from `launchedAt`, then holds the window `settleMs` longer. A main screen whose answer arrives after the deadline is
+ * a timeout. It stops early once the window closes or startup reports an error, since an uncaught render error leaves
  * the root empty for good. `"main"` is sampled after each answer, before the settle, and once more on the way out.
  */
-const waitForFirstCommit = async (
+const waitForMainScreen = async (
   watch: StartupWatch,
   launchedAt: number,
   { now = Date.now, pollIntervalMs, settleMs, sleep = delay, timeoutMs } = STARTUP_TIMING,
-): Promise<StartupTimings> => {
+): Promise<StartupOutcome> => {
   let runningMainMs: number | null = null;
-  let firstCommitMs: number | null = null;
+  let mainScreenMs: number | null = null;
+  let nodes: readonly AccessibilityNode[] = [];
 
   while (
-    firstCommitMs === null &&
+    mainScreenMs === null &&
     now() - launchedAt < timeoutMs &&
     !watch.isClosed() &&
     findStartupErrors(watch.read()).length === EMPTY_LENGTH
   ) {
-    const isCommitted = await hasCommittedView(watch.read());
-
+    nodes = await readAccessibilityNodes(watch.read());
     runningMainMs ??= findRunningMainMs(watch.read(), now() - launchedAt);
-
-    if (isCommitted && now() - launchedAt < timeoutMs) {
-      firstCommitMs = now() - launchedAt;
-      await sleep(settleMs);
-    } else {
-      await sleep(pollIntervalMs);
-    }
+    mainScreenMs =
+      nodes.some((node) => isMainScreenButton(node)) && now() - launchedAt < timeoutMs ? now() - launchedAt : null;
+    await sleep(mainScreenMs === null ? pollIntervalMs : settleMs);
   }
 
-  return { firstCommitMs, runningMainMs: runningMainMs ?? findRunningMainMs(watch.read(), now() - launchedAt) };
+  return {
+    lastNames: nodes.flatMap(({ name }) => (typeof name === "string" ? [name] : [])),
+    mainScreenMs,
+    runningMainMs: runningMainMs ?? findRunningMainMs(watch.read(), now() - launchedAt),
+  };
 };
 
 const formatSeconds = (milliseconds: number | null): string =>
   milliseconds === null ? "not seen" : `${(milliseconds / MILLISECONDS_PER_SECOND).toFixed(SECONDS_FRACTION_DIGITS)} s`;
 
-const describeStartupTimings = ({ firstCommitMs, runningMainMs }: StartupTimings): string =>
-  `time to "main": ${formatSeconds(runningMainMs)}, time to the first commit: ${formatSeconds(firstCommitMs)}`;
+const describeStartupTimings = ({ mainScreenMs, runningMainMs }: StartupOutcome): string =>
+  `time to "main": ${formatSeconds(runningMainMs)}, time to the main screen: ${formatSeconds(mainScreenMs)}`;
 
-export { describeStartupTimings, findStartupErrors, formatSeconds, waitForFirstCommit };
-export type { StartupTiming, StartupWatch };
+export { MAIN_SCREEN_BUTTON_NAME, describeStartupTimings, findStartupErrors, formatSeconds, waitForMainScreen };
+export type { StartupOutcome, StartupTiming, StartupWatch };

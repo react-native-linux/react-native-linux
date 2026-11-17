@@ -1,6 +1,7 @@
 import { FIRST_PRESENTED_FRAME_TRACE_LINE, hasPresentedFirstFrame } from "./window-readiness.ts";
+import { MAIN_SCREEN_BUTTON_NAME, findStartupErrors } from "./t3code-startup.ts";
 import { cpSync, readdirSync, realpathSync } from "node:fs";
-import { findStartupErrors } from "./t3code-startup.ts";
+import { gradeScreenshot } from "./grade.ts";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -12,12 +13,25 @@ const MOBILE_PACKAGE_NAME = "@t3tools/mobile";
 const PAIRING_URL_PATTERN = /^Pairing URL: (?<pairingUrl>\S+)$/mu;
 const SUCCESSFUL_EXIT_STATUS = 0;
 const TAIL_LINE_COUNT = 40;
+/**
+ * The screenshot comparison of T3 Code's main screen: everything above LogBox's toast, whose warning count varies from
+ * run to run, with no pixel budget. The golden holds for the CI container image.
+ */
+const MAIN_SCREEN_SCREENSHOT = {
+  crop: { height: 640, left: 0, top: 0, width: 1280 },
+  golden: "t3code-main-screen.png",
+  maxDifferentPixels: 0,
+};
 
-/** What the fixture saw of one window run: the wayland socket, the trace, and how the compositor ended. */
+/**
+ * What the fixture saw of one window run: the wayland socket, whether T3 Code's main screen showed and what the last
+ * accessibility tree named, the trace, and how the compositor ended.
+ */
 interface WindowRun {
   readonly exitCode: number | null;
-  readonly firstCommitMs: number | null;
   readonly hasSocket: boolean;
+  readonly lastNames: readonly string[];
+  readonly mainScreenMs: number | null;
   readonly isTraceClosed: boolean;
   readonly signal: string | null;
   readonly trace: string;
@@ -63,9 +77,12 @@ const installVariants = (variantsDirectory: string, mobileRoot: string): string 
   return null;
 };
 
+const describeLastNames = (names: readonly string[]): string =>
+  names.length === EMPTY_LENGTH ? "nothing" : names.map((name) => JSON.stringify(name)).join(", ");
+
 /**
  * Why a run is not a pass, the errors startup reported leading as where it stopped; empty only when the socket came
- * up, the window presented its first frame, T3 Code committed a view, and the compositor exited successfully.
+ * up, the window presented its first frame, T3 Code showed its main screen, and the compositor exited successfully.
  */
 const gradeWindowRun = (run: WindowRun): readonly string[] => {
   const startupErrors = findStartupErrors(run.trace);
@@ -74,12 +91,32 @@ const gradeWindowRun = (run: WindowRun): readonly string[] => {
     ...(startupErrors.length === EMPTY_LENGTH ? [] : [`startup reported\n${startupErrors.join("\n")}`]),
     ...(run.hasSocket ? [] : ["the compositor never created a wayland socket"]),
     ...(hasPresentedFirstFrame(run.trace) ? [] : [`the window never printed "${FIRST_PRESENTED_FRAME_TRACE_LINE}"`]),
-    ...(run.firstCommitMs === null ? ["T3 Code never committed a view under the surface root"] : []),
+    ...(run.mainScreenMs === null
+      ? [
+          `T3 Code's main screen never showed its "${MAIN_SCREEN_BUTTON_NAME}" button; the last accessibility tree named ${describeLastNames(run.lastNames)}`,
+        ]
+      : []),
     ...(run.isTraceClosed ? [] : ["the window did not exit within the run timeout"]),
     ...(run.exitCode === SUCCESSFUL_EXIT_STATUS
       ? []
       : [`the compositor ended with exit code ${String(run.exitCode)}, signal ${String(run.signal)}`]),
   ];
+};
+
+/**
+ * Why a run is not a pass, and what it notes: `gradeWindowRun`'s failures, and once there are none, the screenshot of
+ * T3 Code's main screen against its golden in `goldensDirectory`, which only notes a golden not blessed yet.
+ */
+const gradeMainScreenRun = (
+  run: WindowRun,
+  goldensDirectory: string,
+  screenshotPath: string,
+): ReturnType<typeof gradeScreenshot> => {
+  const failures = gradeWindowRun(run);
+
+  return failures.length === EMPTY_LENGTH
+    ? gradeScreenshot(MAIN_SCREEN_SCREENSHOT, goldensDirectory, screenshotPath)
+    : { failures, notes: [] };
 };
 
 /** The pnpm arguments that pack each overlay package the platform's Metro alias table names into `destination`. */
@@ -145,6 +182,7 @@ const overlayInstallArguments = (tarballs: readonly string[]): readonly string[]
 export {
   CHECKOUT_INSTALL_ARGUMENTS,
   T3CODE_REVISION,
+  gradeMainScreenRun,
   buildPairingLink,
   OVERLAY_DIRECTORY_NAME,
   describeForeignCheckout,

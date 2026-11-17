@@ -169,8 +169,15 @@ The order epic #634 follows. Each step needs the ones before it.
    <checkout>` builds T3 Code's own development bundle for `linux` (it pairs from a link only under `__DEV__`) with its
    own Metro config under this platform's resolver (`packages/test-harness/scripts/t3code-metro-config.ts`), starts the
    checkout's T3 server on loopback, and runs the bundle in the headless rig with the link that pairs it. It passes only
-   when the window presents a frame and exits cleanly with no fatal JavaScript error, and otherwise names the first such
-   error; #641 keeps the ordered list of what stands between that error and the main screen.
+   when the accessibility tree shows the main screen's "New thread" button within 60 s, startup reports no fatal error or
+   `console.error`, the window exits cleanly, and the screenshot above LogBox's toast matches
+   `packages/test-harness/e2e/goldens/t3code-main-screen.png` (#807); otherwise it names the first error and what the
+   last accessibility tree held. The golden, held to 0 differing pixels, holds for the CI container image's Mesa and
+   fonts, so run the fixture in that image; it is blessed from the run's `screenshot-cropped.png` like every e2e golden.
+   #641 keeps the ordered list of what stands between that and the main screen. With
+   `rnl_window` autolinking safe-area-context, svg and screens as CI's fabric job does, and its Hermes built optimised
+   (#814), `"main"` runs 3.1 s after launch and the main screen, paired with the server, shows 0–2 s later; a Hermes with
+   slow-debug checks reaches `"main"` only after 90 s, and the fixture fails.
 8. **The measurement**: against the Electron build (#642), with frame pacing (#20) and the trace surface (#90).
 
 Secondary screens come after the fixture: attachments (#650), webviews (#272), notifications (#274), the image
@@ -217,9 +224,9 @@ transitive package.
 | `react-native-reanimated` | `4.7.1` | tracked | #144 | 37 files |
 | `react-native-worklets` | `0.13.1` | tracked | #135 | from Reanimated and the behaviour probe |
 | `react-native-gesture-handler` | `~3.5.0` | tracked | #168 | imported by the entry |
-| `react-native-screens` | `file:deps/react-native-screens-5.0.0-t3.50.tgz` | tracked | #166 | T3 Code's fork, imported by the entry; under React Navigation native-stack |
+| `react-native-screens` | `file:deps/react-native-screens-5.0.0-t3.50.tgz` | tracked | #166 | T3 Code's fork, imported by the entry; under React Navigation native-stack. With the registry's 4.30.1 descriptors autolinked, the root stack's Home and the pairing form in its detail pane render (#814) |
 | `react-native-safe-area-context` | `~5.11.1` | tracked | #161 | 71 files; `SafeAreaProvider` at the root renders its children: `RNCSafeAreaProvider` sends zero insets and its frame when it mounts and when its frame changes, and `SafeAreaView` pads by zero (#806, the `safe-area-provider` e2e). The frame is relative to the provider's parent, not root coordinates as on iOS and Android. That is the same for T3 Code's provider, which sits at the root, and React Navigation and T3 Code read only its size. `initialWindowMetrics`, root-coordinate frames for nested providers and the resize golden stay with #161 |
-| `react-native-svg` | `15.16.1` | tracked | #167 | provider icons and charts |
+| `react-native-svg` | `15.16.1` | tracked | #167 | provider icons and charts; the descriptors autolink and mount, but nothing draws them, so the T3 mark beside "Code" in the sidebar header is missing (#814) |
 | `react-native-nitro-modules` | `0.37.2` | tracked | #152 | the highlights module; 0.37.2 throws as it loads, so the desktop profile resolves it to a stand-in whose hybrid objects are TurboModules (below) |
 | `nitro-core` | `0.37.2` | tracked | #152 | from react-native-nitro-modules |
 | `@tabler/icons-react-native` | `^3.44.0` | tracked | #167 | JavaScript over react-native-svg |
