@@ -57,8 +57,15 @@ public:
      * Replaces the focusable set after a commit. A focused node that is no longer in it was unmounted, hidden or
      * disabled, and is blurred; focus does not move to a neighbour, because the nearest-focusable-ancestor rule
      * needs a tree and this class deliberately has none.
+     *
+     * `overlayTag` is the topmost presented `<Modal>`, or zero (ADR-0005), and the set is already trapped to its
+     * subtree. An overlay this has not seen is a present: the focused tag and its ring state are pushed as the
+     * overlay's invoker, and focus moves to the first focusable, keeping the ring state, as `<dialog>.showModal()`
+     * does. An overlay already on the stack with others above it, or zero with a stack, is a dismissal: the
+     * overlays above it are popped, and focus returns to the lowest popped invoker when it is still focusable.
      */
-    FocusTransition setFocusableTags(std::vector<facebook::react::Tag> focusableTags);
+    FocusTransition setFocusableTags(std::vector<facebook::react::Tag> focusableTags,
+                                     facebook::react::Tag overlayTag = 0);
 
     /**
      * Tab and Shift+Tab. With nothing focused, forward starts at the first focusable and backward at the last,
@@ -81,6 +88,9 @@ public:
      */
     FocusTransition focusTagWithVisibility(facebook::react::Tag tag, bool isFocusVisible);
 
+    /** Whether `overlayTag` is on the stack of presented overlays, so that seeing it again is not a present. */
+    bool isPresented(facebook::react::Tag overlayTag) const;
+
     facebook::react::Tag focusedTag() const noexcept;
     bool isFocusVisible() const noexcept;
 
@@ -88,7 +98,16 @@ private:
     bool isFocusable(facebook::react::Tag tag) const;
     FocusTransition transitionTo(facebook::react::Tag tag, bool isFocusVisible);
 
+    struct PresentedOverlay {
+        facebook::react::Tag overlayTag;
+        facebook::react::Tag invokerTag;
+        bool wasFocusVisible;
+    };
+
+    std::vector<PresentedOverlay>::const_iterator findPresented(facebook::react::Tag overlayTag) const;
+
     std::vector<facebook::react::Tag> focusableTags_;
+    std::vector<PresentedOverlay> presentedOverlays_;
     facebook::react::Tag focusedTag_{0};
     bool isFocusVisible_{false};
 };

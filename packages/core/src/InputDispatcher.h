@@ -11,6 +11,7 @@
 #include <optional>
 #include <vector>
 
+#include <react/renderer/components/modal/ModalHostViewShadowNode.h>
 #include <react/renderer/components/scrollview/ScrollViewShadowNode.h>
 #include <react/renderer/components/view/TouchEventEmitter.h>
 #include <react/renderer/core/ReactPrimitives.h>
@@ -83,6 +84,10 @@ inline PointerTargetTransform transformOfHit(const SceneHit& hit) {
  * unfocusable text readable without a mouse. That is a platform action rather than a delivered event, so it needs
  * no target with an instance handle.
  *
+ * While a `<Modal>` is presented (ADR-0005), a bare Escape is its `onRequestClose` and nothing else, the way
+ * Android's dialog consumes back: a focused field inside it keeps focus, and no back press follows. A key pressed
+ * while composing never gets that far.
+ *
  * A bare Escape nothing consumed — no focused field blurred on it — is the desktop's hardware back (#788):
  * `onHardwareBackPress` is called, and it is what raises `hardwareBackPress` for `BackHandler`. A focused
  * `<TextInput>` keeps its Escape, because the field consumes it before this point. A repeat or a modified Escape
@@ -154,7 +159,8 @@ private:
     void emitSwitchChange(const facebook::react::ShadowNode& shadowNode) const;
 
     void syncFocusables();
-    void collectFocusables(const facebook::react::ShadowNode& shadowNode, bool isHidden);
+    void collectFocusables(const facebook::react::ShadowNode& shadowNode, bool isHidden, bool isOutsideOverlay);
+    std::shared_ptr<const facebook::react::ShadowNode> scopeRoot() const;
     void applyFocusTransition(const FocusTransition& transition, bool preventScroll = false);
     void updateTextInput();
     void scrollFocusedNodeIntoView() const;
@@ -172,6 +178,21 @@ private:
     std::vector<std::shared_ptr<const TextInputShadowNode>> textInputNodes_;
     std::shared_ptr<const facebook::react::ShadowNode> focusedNode_;
     std::shared_ptr<const facebook::react::ShadowNode> syncedRoot_;
+
+    /**
+     * The topmost presented `<Modal>` in `syncedRoot_`'s tree, which the scene's overlay list names (ADR-0005), or
+     * null. While it is set, the focusable set holds only its subtree, Escape is its `onRequestClose`, and a key
+     * scrolls only a `<ScrollView>` inside it. Every mounted field still reaches `textInputController_`, so a
+     * draft beneath it keeps its buffer.
+     */
+    std::shared_ptr<const facebook::react::ModalHostViewShadowNode> overlayNode_;
+    facebook::react::Tag syncedOverlayTag_{0};
+
+    /**
+     * The scene presents an overlay whose dismissal the committed tree already holds and the mount has not applied.
+     * Until it has, the focus state is the last settled one, and Escape closes nothing and goes nowhere.
+     */
+    bool isOverlaySettling_{false};
     TextInputController textInputController_;
     std::function<void()> onHardwareBackPress_;
 

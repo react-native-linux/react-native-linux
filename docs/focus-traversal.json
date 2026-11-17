@@ -15,5 +15,5 @@
   "TextInput": { "state": "traversed", "scenario": "text-input.json" },
   "ActivityIndicatorView": { "state": "not-interactive", "reason": "Display only; it has no press or value handler." },
   "Switch": { "state": "traversed", "scenario": "switch-keyboard.json" },
-  "ModalHost": { "state": "not-traversed", "issue": "#795" }
+  "ModalHost": { "state": "traversed", "scenario": "modal-focus-keyboard.json" }
 }

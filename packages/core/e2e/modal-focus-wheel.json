@@ -1,0 +1,17 @@
+{
+  "name": "modal-focus-wheel",
+  "bundle": "modal-focus.tsx",
+  "ready": "modal-focus: committed",
+  "frames": 900,
+  "steps": [
+    "sleep 500",
+    "click 100 88",
+    "await modal-focus: show",
+    "move 300 300",
+    "sleep 100",
+    "wheel down 3",
+    "sleep 500"
+  ],
+  "expect": ["modal-focus: show", "modal-focus: list scroll"],
+  "reject": ["modal-focus: page scroll"]
+}

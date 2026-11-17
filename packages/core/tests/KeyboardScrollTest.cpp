@@ -451,7 +451,7 @@ TEST_F(KeyboardScrollArbitrationTest, TheHorizontalArrowsMoveTheHorizontalAxisOn
 TEST_F(KeyboardScrollArbitrationTest, AKeyboardScrollReachesTheControllerAsOneJumpWithNoMomentum) {
     commitScrollableTree();
     const std::unique_ptr<InputDispatcher> dispatcher = makeDispatcher();
-    ScrollController controller(uiManager_, kSurfaceId);
+    ScrollController controller(uiManager_, mountingManager_, kSurfaceId);
 
     controller.dispatchCommands(pressKey(*dispatcher, "PageDown"));
     controller.advance(kFrameMilliseconds60Hz);

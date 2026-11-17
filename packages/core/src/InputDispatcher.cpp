@@ -14,6 +14,7 @@
 
 #include <react/renderer/components/FBReactNativeSpec/EventEmitters.h>
 #include <react/renderer/components/FBReactNativeSpec/Props.h>
+#include <react/renderer/components/modal/ModalHostViewShadowNode.h>
 #include <react/renderer/components/scrollview/ScrollViewShadowNode.h>
 #include <react/renderer/components/scrollview/ScrollViewState.h>
 #include <react/renderer/components/view/TouchEvent.h>
@@ -122,6 +123,14 @@ folly::dynamic makeKeyPayload(const InputEvent& event, bool isComposing) {
 
 bool isKeyEvent(const InputEvent& event) {
     return event.kind == InputEventKind::KeyPress || event.kind == InputEventKind::KeyRelease;
+}
+
+/** A bare, unrepeated Escape press: what hardware back is, and what closes a `<Modal>` (ADR-0005). */
+bool isBareEscapePress(const InputEvent& event) {
+    const InputModifiers& modifiers = event.modifiers;
+
+    return event.kind == InputEventKind::KeyPress && event.key == kEscapeKey && !event.repeat && !modifiers.control &&
+           !modifiers.shift && !modifiers.alt && !modifiers.meta;
 }
 
 bool isImeEvent(const InputEvent& event) {
@@ -564,6 +573,18 @@ void InputDispatcher::dispatchKeyEvent(const InputEvent& event) {
         return;
     }
 
+    // While a dismissal is committed but not yet mounted, the Escape is no one's: the modal is already closing, and
+    // going back as well would act on the screen beneath it.
+    if (isBareEscapePress(event) && isOverlaySettling_) {
+        return;
+    }
+
+    if (isBareEscapePress(event) && overlayNode_ != nullptr) {
+        overlayNode_->getConcreteEventEmitter().onRequestClose({});
+
+        return;
+    }
+
     const TextInputKeyResult editorResult = textInputController_.handleKey(event);
 
     if (editorResult == TextInputKeyResult::ConsumedAndBlurred) {
@@ -594,11 +615,7 @@ void InputDispatcher::dispatchKeyEvent(const InputEvent& event) {
         return;
     }
 
-    const InputModifiers& modifiers = event.modifiers;
-    const bool isBareEscape = event.key == kEscapeKey && !event.repeat && !modifiers.control && !modifiers.shift &&
-                              !modifiers.alt && !modifiers.meta;
-
-    if (isBareEscape) {
+    if (isBareEscapePress(event)) {
         onHardwareBackPress_();
 
         return;
@@ -685,18 +702,45 @@ void InputDispatcher::emitFocusEvent(const facebook::react::ShadowNode& shadowNo
 }
 
 void InputDispatcher::syncFocusables() {
+    // The scene's tag before the committed root: a mount follows its commit, so a tag this root does not hold is a
+    // dismissal still to be mounted, never a present the root has not seen.
+    const facebook::react::Tag overlayTag = mountingManager_->topmostOverlayTag(surfaceId_);
     const std::shared_ptr<const facebook::react::ShadowNode> root = rootShadowNode();
 
-    if (root == syncedRoot_) {
+    if (root == syncedRoot_ && overlayTag == syncedOverlayTag_) {
         return;
     }
 
+    const std::shared_ptr<const facebook::react::ModalHostViewShadowNode> overlay =
+        root == nullptr || overlayTag == kNoTag
+            ? nullptr
+            : std::dynamic_pointer_cast<const facebook::react::ModalHostViewShadowNode>(
+                  shadowNodeWithTag(root, overlayTag));
+
+    // The scene still presents an overlay the committed tree no longer holds: its dismissal is committed and not yet
+    // mounted. Nothing is re-read until the mount settles it, so a nested dismissal restores one level, not all.
+    isOverlaySettling_ = overlayTag != kNoTag && overlay == nullptr;
+
+    if (isOverlaySettling_) {
+        return;
+    }
+
+    // A press in progress beneath a `<Modal>` that is presenting ends: its touch as a cancel, and its click never,
+    // even if the modal is dismissed before the button is released over the node it started on. An overlay
+    // uncovered by a dismissal above it is not presenting.
+    if (overlay != nullptr && !focusModel_.isPresented(overlayTag)) {
+        cancelTouch(InputEvent{.kind = InputEventKind::PointerLeave, .surfacePoint = touchOrigin_});
+        router_.cancelPress();
+    }
+
     syncedRoot_ = root;
+    syncedOverlayTag_ = overlayTag;
+    overlayNode_ = overlay;
     focusableNodes_.clear();
     textInputNodes_.clear();
 
     if (root != nullptr) {
-        collectFocusables(*root, false);
+        collectFocusables(*root, false, overlayNode_ != nullptr);
     }
 
     // Before the focus transition below, so a commit that dropped the focused field finds the new field set
@@ -711,7 +755,7 @@ void InputDispatcher::syncFocusables() {
         focusableTags.push_back(focusable->getTag());
     }
 
-    const FocusTransition transition = focusModel_.setFocusableTags(std::move(focusableTags));
+    const FocusTransition transition = focusModel_.setFocusableTags(std::move(focusableTags), overlayTag);
 
     if (transition.hasChanged) {
         applyFocusTransition(transition);
@@ -726,11 +770,13 @@ void InputDispatcher::syncFocusables() {
     }
 }
 
-void InputDispatcher::collectFocusables(const facebook::react::ShadowNode& shadowNode, bool isHidden) {
+void InputDispatcher::collectFocusables(const facebook::react::ShadowNode& shadowNode, bool isHidden,
+                                        bool isOutsideOverlay) {
     for (const std::shared_ptr<const facebook::react::ShadowNode>& child : shadowNode.getChildren()) {
         const bool isChildHidden = isHidden || isDisplayNone(*child);
+        const bool isChildOutsideOverlay = isOutsideOverlay && child != overlayNode_;
 
-        if (!isChildHidden && isFocusableNode(*child)) {
+        if (!isChildHidden && !isChildOutsideOverlay && isFocusableNode(*child)) {
             focusableNodes_.push_back(child);
         }
 
@@ -741,8 +787,16 @@ void InputDispatcher::collectFocusables(const facebook::react::ShadowNode& shado
             textInputNodes_.push_back(textInput);
         }
 
-        collectFocusables(*child, isChildHidden);
+        collectFocusables(*child, isChildHidden, isChildOutsideOverlay);
     }
+}
+
+/**
+ * Where a key's scroll and a focus change's scroll-into-view look for a `<ScrollView>`: the topmost presented
+ * `<Modal>`, so neither moves the page beneath it, or the surface root.
+ */
+std::shared_ptr<const facebook::react::ShadowNode> InputDispatcher::scopeRoot() const {
+    return overlayNode_ != nullptr ? overlayNode_ : rootShadowNode();
 }
 
 void InputDispatcher::applyFocusTransition(const FocusTransition& transition, bool preventScroll) {
@@ -785,7 +839,7 @@ void InputDispatcher::scrollFocusedNodeIntoView() const {
         return;
     }
 
-    const std::shared_ptr<const facebook::react::ShadowNode> root = rootShadowNode();
+    const std::shared_ptr<const facebook::react::ShadowNode> root = scopeRoot();
 
     if (root == nullptr) {
         return;
@@ -908,7 +962,7 @@ facebook::react::Tag InputDispatcher::focusableAncestorTag(const facebook::react
  * the surface's outermost one, so a page of text that contains no focusable node at all still scrolls.
  */
 std::shared_ptr<const facebook::react::ScrollViewShadowNode> InputDispatcher::keyboardScrollTarget() const {
-    const std::shared_ptr<const facebook::react::ShadowNode> root = rootShadowNode();
+    const std::shared_ptr<const facebook::react::ShadowNode> root = scopeRoot();
 
     if (root == nullptr) {
         return nullptr;

@@ -7267,6 +7267,36 @@ subtree extent, so a modal with a backdrop damages the whole surface and a trans
 `transparent` and `backdropColor` need nothing here: `Modal.js` turns them into the container's
 `backgroundColor`. Every `presentationStyle` covers the surface, and `animationType` paints as `none`.
 
+**Input (#795).** Every input rule reads the topmost overlay from the same list the hit test does, through
+`LinuxMountingManager::topmostOverlayTag`, and finds its node in the committed tree.
+
+- *Focus trap.* `InputDispatcher::collectFocusables` still walks the whole tree, and every mounted field still
+  reaches `TextInputController::setMountedFields`, so a draft beneath a modal keeps its buffer. Only the tags
+  handed to `FocusModel::setFocusableTags` are filtered to the overlay's subtree. The dispatcher re-reads them when
+  the committed root or the topmost overlay changes. A dismissal can be committed before it is mounted, so for a
+  moment the scene still presents an overlay the committed tree no longer holds. The dispatcher then keeps its
+  last settled state until the mount, so a nested dismissal restores one level rather than all of them.
+- *Initial focus and restore.* `FocusModel` keeps a stack of presented overlays and their invokers. An overlay it
+  has not seen moves focus to its first focusable with the ring state the invoker had, as `<dialog>.showModal()`
+  does. A dismissal pops every overlay above the new topmost one and returns focus to the lowest popped invoker
+  if it is still focusable. `onShow`'s `ref.focus()` and `autoFocus` arrive as commands, which drain after the
+  present, so they win.
+- *Escape.* A bare Escape press goes to the focused node as a `keyDown` and then fires the topmost overlay's
+  `onRequestClose`. It is not a hardware back press, and a field inside the modal keeps focus, as Android's
+  dialog consumes back. During a composition it does neither, and between a dismissal's commit and its mount it
+  goes nowhere. The compositor's close request still closes the window.
+- *Scrolling.* `ScrollController::scrollViewUnderPointer` hit-tests from the topmost overlay, offset by its layout
+  origin, because it paints at the surface origin. `keyboardScrollTarget` and the scroll-into-view of a focus
+  change look for a `<ScrollView>` only inside the overlay. A modal declared inside the page's `<ScrollView>`
+  never scrolls it. Between a dismissal's commit and its mount, the wheel scrolls nothing.
+- *Presses and `onShow`.* Presenting cancels a touch in progress beneath; an overlay uncovered by a dismissal is
+  not presenting. A `ModalHostView` is queued for `onShow` when it is created, not inserted, because Fabric moves a
+  reordered or reparented node with a remove and an insert. `LinuxMountingManager::takeShownOverlays` hands out
+  the ones a taken frame painted, and the window calls it only after a frame is submitted. A failed draw leaves
+  them for the next one, and a modal deleted before then is dropped.
+
+The accessibility projection of an open modal is #804's.
+
 ### The proof
 
 - `packages/core/tests/ModalOverlayTest.cpp` — paint and hit order from the surface origin under a clipped,
@@ -7278,6 +7308,13 @@ subtree extent, so a modal with a backdrop damages the whole surface and a trans
 - `modal-scrim-press` — a click on the scrim over a list of `Pressable` rows presses nothing, and a click on the
   card presses the card.
 - `modal-scrim-over-list-120hz` — the same scrim over the list scrolling every frame, held to the 120 Hz budget.
+- `packages/core/tests/ModalFocusTest.cpp` and `FocusTest.cpp` — the trap over focusable tags only, a draft
+  beneath that survives, initial focus and an application focus winning over it, nested restore, Escape as the
+  topmost `onRequestClose` and never during a composition, the touch cancel, the key and wheel scroll scope,
+  the gap between a dismissal's commit and its mount, and `onShow` once per modal after a submitted frame.
+- `modal-focus-keyboard` — a real `<Modal>` opened with Space: Tab and Shift+Tab cycle inside it, Escape fires
+  `onRequestClose` and no back press, focus returns to the invoker, and the draft beneath keeps its text.
+- `modal-focus-wheel` — the wheel over the modal's list scrolls it and never the page it is declared in.
 
 ## Golden images
 

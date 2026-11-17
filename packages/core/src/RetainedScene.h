@@ -830,6 +830,9 @@ public:
     /** Whether any surface has a `ModalHostView` presented, which is when a resize has a modal to size. */
     bool hasOverlays() const;
 
+    /** The tag of the overlay `findNodeAtPoint` answers from on `surfaceId`, or zero when none is presented. */
+    facebook::react::Tag topmostOverlayTag(facebook::react::SurfaceId surfaceId) const;
+
     /**
      * Holds every maintaining `<ScrollView>`'s visible child still across the mutations just applied, and answers
      * with the ScrollViews whose offset that moved.

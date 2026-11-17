@@ -184,6 +184,9 @@ public:
      */
     bool hasPendingWork() const;
     SceneFrame takeFrame();
+
+    /** Fires `onShow` for every `<Modal>` a submitted frame painted for the first time. Frame thread only. */
+    void emitShownOverlays();
     SceneSnapshot snapshotScene() const;
 
     /**

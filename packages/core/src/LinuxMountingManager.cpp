@@ -50,6 +50,12 @@ void reportSafeAreaInsetsIfProvider(const facebook::react::ShadowView* previous,
                          "height", frame.size.height)));
 }
 
+/** A mutation's view names no component in some fixtures, and `std::string_view` of a null pointer is undefined. */
+bool isModalHostView(const facebook::react::ShadowView& shadowView) {
+    return shadowView.componentName != nullptr &&
+           std::string_view{shadowView.componentName} == facebook::react::ModalHostViewComponentName;
+}
+
 std::string supportedAnimatedPropNames() {
     std::string names;
 
@@ -123,6 +129,24 @@ bool LinuxMountingManager::hasOverlays() const {
     return scene_.hasOverlays();
 }
 
+std::vector<std::shared_ptr<const facebook::react::ModalHostViewEventEmitter>>
+LinuxMountingManager::takeShownOverlays() {
+    const std::lock_guard<std::mutex> guard(sceneMutex_);
+    std::vector<std::shared_ptr<const facebook::react::ModalHostViewEventEmitter>> shown;
+
+    for (const PendingShow& painted : std::exchange(paintedOverlays_, {})) {
+        shown.push_back(painted.emitter);
+    }
+
+    return shown;
+}
+
+facebook::react::Tag LinuxMountingManager::topmostOverlayTag(facebook::react::SurfaceId surfaceId) const {
+    const std::lock_guard<std::mutex> guard(sceneMutex_);
+
+    return scene_.topmostOverlayTag(surfaceId);
+}
+
 bool LinuxMountingManager::advanceImageAnimations(double frameMilliseconds) {
     const std::lock_guard<std::mutex> guard(sceneMutex_);
     const bool hasAdvanced = scene_.advanceImageAnimations(frameMilliseconds);
@@ -160,6 +184,9 @@ SceneFrame LinuxMountingManager::takeFrame() {
     const std::lock_guard<std::mutex> guard(sceneMutex_);
 
     hasPendingDamage_ = false;
+
+    paintedOverlays_.insert(paintedOverlays_.end(), unpaintedOverlays_.begin(), unpaintedOverlays_.end());
+    unpaintedOverlays_.clear();
 
     return SceneFrame{.scene = scene_.snapshot(), .damage = scene_.takeDamage()};
 }
@@ -291,17 +318,31 @@ void LinuxMountingManager::applyTransaction(facebook::react::MountingTransaction
         case facebook::react::ShadowViewMutation::Create:
             verifyPropsDeriveFromViewProps(mutation.newChildShadowView);
             scene_.createNode(mutation.newChildShadowView);
+
+            // On the create, not the insert: a modal reordered or reparented is removed and inserted again, and a
+            // second `onShow` would run the app's show handler, and its focus, twice.
+            if (isModalHostView(mutation.newChildShadowView)) {
+                unpaintedOverlays_.push_back(
+                    PendingShow{.tag = mutation.newChildShadowView.tag,
+                                .emitter = std::static_pointer_cast<const facebook::react::ModalHostViewEventEmitter>(
+                                    mutation.newChildShadowView.eventEmitter)});
+            }
             break;
         case facebook::react::ShadowViewMutation::Delete:
             verifyTagIsKnown("Delete", mutation.oldChildShadowView.tag);
             scene_.deleteNode(mutation.oldChildShadowView.tag);
+            std::erase_if(unpaintedOverlays_, [&mutation](const PendingShow& pending) {
+                return pending.tag == mutation.oldChildShadowView.tag;
+            });
+            std::erase_if(paintedOverlays_, [&mutation](const PendingShow& pending) {
+                return pending.tag == mutation.oldChildShadowView.tag;
+            });
             break;
         case facebook::react::ShadowViewMutation::Insert:
             scene_.insertChild(mutation.parentTag, mutation.newChildShadowView, mutation.index);
             reportSafeAreaInsetsIfProvider(nullptr, mutation.newChildShadowView);
 
-            if (dimensions_ != nullptr && std::string_view{mutation.newChildShadowView.componentName} ==
-                                              facebook::react::ModalHostViewComponentName) {
+            if (dimensions_ != nullptr && isModalHostView(mutation.newChildShadowView)) {
                 requestModalSize(mutation.newChildShadowView.state, surfaceSizeOf(*dimensions_),
                                  facebook::react::EventQueue::UpdateMode::Asynchronous);
             }

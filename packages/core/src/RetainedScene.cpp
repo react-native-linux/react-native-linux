@@ -1798,13 +1798,12 @@ std::vector<RejectedAnimatedProp> RetainedScene::applyAnimatedProps(facebook::re
 }
 
 SceneHit RetainedScene::findNodeAtPoint(facebook::react::Tag rootTag, facebook::react::Point surfacePoint) const {
-    const auto overlays = overlayTags_.find(rootTag);
+    const facebook::react::Tag topmostTag = topmostOverlayTag(rootTag);
 
-    if (overlays == overlayTags_.end() || overlays->second.empty()) {
+    if (topmostTag == 0) {
         return hitTestNode(rootTag, surfacePoint, ScenePaintState{});
     }
 
-    const facebook::react::Tag topmostTag = overlays->second.back();
     const SceneHit hit = hitTestNode(topmostTag, surfacePoint, overlayRootState(nodes_.at(topmostTag)));
 
     return hit.tag != 0 ? hit : SceneHit{.tag = topmostTag};
@@ -1864,6 +1863,12 @@ SceneSnapshot RetainedScene::snapshot() const {
 bool RetainedScene::hasOverlays() const {
     return std::any_of(overlayTags_.begin(), overlayTags_.end(),
                        [](const auto& surfaceOverlays) { return !surfaceOverlays.second.empty(); });
+}
+
+facebook::react::Tag RetainedScene::topmostOverlayTag(facebook::react::SurfaceId surfaceId) const {
+    const auto overlays = overlayTags_.find(surfaceId);
+
+    return overlays == overlayTags_.end() || overlays->second.empty() ? 0 : overlays->second.back();
 }
 
 SceneDamage RetainedScene::takeDamage() { return std::exchange(damage_, SceneDamage{}); }

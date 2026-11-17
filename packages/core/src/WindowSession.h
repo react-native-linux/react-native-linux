@@ -123,8 +123,11 @@ public:
      */
     FrameClock::Tick recordFrameTick(FrameClock::Source source, std::chrono::steady_clock::time_point now);
 
-    /** Delegates to `FrameClock::recordDrawOutcome` after every draw `recordFrameTick` asked for. */
-    void recordDrawOutcome(bool presented) noexcept;
+    /**
+     * Delegates to `FrameClock::recordDrawOutcome` after every draw `recordFrameTick` asked for. A submitted frame
+     * also fires `onShow` for the `<Modal>`s it painted first (ADR-0005); a failed one leaves them for the next.
+     */
+    void recordDrawOutcome(bool presented);
     SceneFrame takeFrame();
     bool hasReportedFatalError() const;
 

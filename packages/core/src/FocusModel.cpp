@@ -22,8 +22,31 @@ constexpr facebook::react::Tag kNoTag = 0;
 
 } // namespace
 
-FocusTransition FocusModel::setFocusableTags(std::vector<facebook::react::Tag> focusableTags) {
+FocusTransition FocusModel::setFocusableTags(std::vector<facebook::react::Tag> focusableTags,
+                                             facebook::react::Tag overlayTag) {
     focusableTags_ = std::move(focusableTags);
+
+    const auto presented = findPresented(overlayTag);
+
+    if (overlayTag != kNoTag && presented == presentedOverlays_.cend()) {
+        presentedOverlays_.push_back(
+            PresentedOverlay{.overlayTag = overlayTag, .invokerTag = focusedTag_, .wasFocusVisible = isFocusVisible_});
+
+        return focusableTags_.empty() ? transitionTo(kNoTag, false)
+                                      : transitionTo(focusableTags_.front(), isFocusVisible_);
+    }
+
+    const auto firstDismissed = presented == presentedOverlays_.cend() ? presentedOverlays_.cbegin() : presented + 1;
+
+    if (firstDismissed != presentedOverlays_.cend()) {
+        const PresentedOverlay dismissed = *firstDismissed;
+
+        presentedOverlays_.erase(firstDismissed, presentedOverlays_.end());
+
+        if (isFocusable(dismissed.invokerTag)) {
+            return transitionTo(dismissed.invokerTag, dismissed.wasFocusVisible);
+        }
+    }
 
     if (focusedTag_ == kNoTag || isFocusable(focusedTag_)) {
         return {};
@@ -61,6 +84,16 @@ FocusTransition FocusModel::focusTagWithVisibility(facebook::react::Tag tag, boo
     }
 
     return transitionTo(tag, isFocusVisible);
+}
+
+bool FocusModel::isPresented(facebook::react::Tag overlayTag) const {
+    return findPresented(overlayTag) != presentedOverlays_.end();
+}
+
+std::vector<FocusModel::PresentedOverlay>::const_iterator
+FocusModel::findPresented(facebook::react::Tag overlayTag) const {
+    return std::find_if(presentedOverlays_.begin(), presentedOverlays_.end(),
+                        [overlayTag](const PresentedOverlay& overlay) { return overlay.overlayTag == overlayTag; });
 }
 
 facebook::react::Tag FocusModel::focusedTag() const noexcept { return focusedTag_; }

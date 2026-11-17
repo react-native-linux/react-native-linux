@@ -166,6 +166,7 @@ add_executable(rnl_core_tests
     LinuxMountingManagerDiagnosticsTest.cpp
     LinuxMountingManagerMaintainPositionTest.cpp
     LinuxMountingManagerPendingDamageTest.cpp
+    ModalFocusTest.cpp
     ModalOverlayTest.cpp
     MountingRegistryConformanceTest.cpp
     MountTreeTextTest.cpp

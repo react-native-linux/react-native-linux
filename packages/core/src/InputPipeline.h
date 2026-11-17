@@ -318,6 +318,9 @@ public:
      */
     void cancelPressForScroll(const InputEvent& event);
 
+    /** Forgets the press in progress, so its release clicks nothing: a `<Modal>` presented over it (ADR-0005). */
+    void cancelPress() noexcept;
+
 private:
     std::vector<PointerDispatch> routeRelease(const InputEvent& event, facebook::react::Tag targetTag,
                                               facebook::react::Point targetOffset);

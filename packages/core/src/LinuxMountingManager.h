@@ -13,6 +13,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include <react/renderer/components/FBReactNativeSpec/EventEmitters.h>
 #include <react/renderer/core/ReactPrimitives.h>
 #include <react/renderer/graphics/Point.h>
 #include <react/renderer/graphics/Size.h>
@@ -154,6 +155,20 @@ public:
     bool hasOverlays() const;
 
     /**
+     * `RetainedScene::topmostOverlayTag`, under the scene lock: the `<Modal>` that the hit test, the focus trap and
+     * the wheel all answer from (ADR-0005).
+     */
+    facebook::react::Tag topmostOverlayTag(facebook::react::SurfaceId surfaceId) const;
+
+    /**
+     * The `<Modal>`s a taken frame painted for the first time, for `onShow` (ADR-0005), and forgets them. The frame
+     * loop calls it only once a frame was submitted, so a frame that failed to draw leaves them for the next one
+     * that does. A modal is queued when it is created, so a reorder or reparent never shows it again, and a modal
+     * deleted before any frame is submitted is dropped.
+     */
+    std::vector<std::shared_ptr<const facebook::react::ModalHostViewEventEmitter>> takeShownOverlays();
+
+    /**
      * `RetainedScene::advanceImageAnimations` under the scene mutex, flagging pending damage when a frame
      * changed so the frame clock draws it. Called once per frame from the frame thread.
      */
@@ -286,6 +301,14 @@ private:
     std::vector<SceneCommand> commands_;
     std::vector<MaintainedScrollOffset> maintainedScrollOffsets_;
     std::vector<AccessibilityChange> accessibilityChanges_;
+
+    struct PendingShow {
+        facebook::react::Tag tag;
+        std::shared_ptr<const facebook::react::ModalHostViewEventEmitter> emitter;
+    };
+
+    std::vector<PendingShow> unpaintedOverlays_;
+    std::vector<PendingShow> paintedOverlays_;
     MountDiagnostics diagnostics_;
     facebook::react::MountingTransaction::Number lastTransactionNumber_{0};
     bool hasPendingDamage_{false};
