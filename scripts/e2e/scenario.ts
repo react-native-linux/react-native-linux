@@ -80,6 +80,11 @@ interface Scenario {
    * Metro, and the driver makes this edit once the window is ready. See `FastRefreshEdit`.
    */
   readonly fastRefresh: ReturnType<typeof readFastRefresh>;
+  /**
+   * #806: the scenario mounts a library the test harness installs, so `rnl_window` has to be configured with the
+   * harness's autolinking (`scripts/autolink-harness.ts`); e2e.ts refuses to run it on a window that was not.
+   */
+  readonly harnessAutolinking: boolean;
   /** How long `rnl_window` runs before it captures its screenshot and exits. */
   readonly frames: number;
   readonly frameBudget: FrameBudget | null;
@@ -241,6 +246,7 @@ const parseScenario = (value: unknown, sourceName: string): Scenario => {
     fastRefresh: readFastRefresh(value, sourceName),
     frameBudget: readFrameBudget(value, sourceName),
     frames: readFrameCount(value, sourceName),
+    harnessAutolinking: readOptionalBoolean(value, "harnessAutolinking", sourceName),
     injectProtocolError: readOptionalBoolean(value, "injectProtocolError", sourceName),
     inputTrace: readOptionalBoolean(value, "inputTrace", sourceName),
     minIdleGapMs:
@@ -273,6 +279,7 @@ const resolveArtifactPaths = (artifactsRoot: string, scenarioName: string): Arti
 };
 
 export { describeTraceFailures, resolveExpectedOutcome } from "./trace-grading.ts";
+export { describeMissingHarnessAutolinking } from "./harness-autolinking.ts";
 export { applyFastRefreshEdit, gradeEditToVisible } from "./fast-refresh.ts";
 export { formatInjectorScript, parseScenario, resolveArtifactPaths };
 export type { Scenario, ScenarioAutomation };

@@ -12,7 +12,12 @@ import {
   withDevServer,
   withNotificationDaemon,
 } from "./e2e-processes.ts";
-import { describeTraceFailures, resolveArtifactPaths, resolveExpectedOutcome } from "./e2e/scenario.ts";
+import {
+  describeMissingHarnessAutolinking,
+  describeTraceFailures,
+  resolveArtifactPaths,
+  resolveExpectedOutcome,
+} from "./e2e/scenario.ts";
 import { embedScenarioAssets, findExecutable, findLavapipeIcd, resolveScenarioBundle } from "./window-golden.ts";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { gradeArtifacts, gradeAutomationChannel } from "./e2e/grade.ts";
@@ -245,6 +250,12 @@ const runs = planRuns(readScenarios(), env);
 const needsOutputMode = runs.some(({ run }) => run.scenario.outputRefreshHz !== null);
 const needsNotificationDaemon = runs.some(({ run }) => run.scenario.notificationDaemon);
 const needsClipboard = runs.some(({ run }) => run.scenario.steps.some((step) => isClipboardStep(step)));
+const windowCMakeCachePath = path.join(path.dirname(path.dirname(windowBinaryPath)), "CMakeCache.txt");
+const missingHarnessAutolinking = runs.some(({ run }) => run.scenario.harnessAutolinking)
+  ? describeMissingHarnessAutolinking(
+      existsSync(windowCMakeCachePath) ? readFileSync(windowCMakeCachePath, "utf8") : null,
+    )
+  : null;
 
 const unavailableReasons = [
   ...(existsSync(windowBinaryPath)
@@ -268,6 +279,7 @@ const unavailableReasons = [
   ...(needsClipboard && (findExecutable("wl-paste") === null || findExecutable("wl-copy") === null)
     ? ['a clipboard step needs wl-paste and wl-copy on PATH; install the "wl-clipboard" package']
     : []),
+  ...(missingHarnessAutolinking === null ? [] : [missingHarnessAutolinking]),
   ...(lavapipeIcdPath === null
     ? ['no lavapipe ICD; install "vulkan-swrast" on Arch or "mesa-vulkan-drivers" on Ubuntu']
     : []),

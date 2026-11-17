@@ -33,6 +33,7 @@ describe("parseScenario, field by field", () => {
       fastRefresh: null,
       frameBudget: null,
       frames: EXPLICIT_FRAME_COUNT,
+      harnessAutolinking: false,
       injectProtocolError: false,
       inputTrace: false,
       minIdleGapMs: null,
@@ -96,6 +97,13 @@ describe("parseScenario", () => {
     expect(parseScenario({ ...validScenario, reject: ["Broken pipe"] }, "fixture.json").reject).toEqual([
       "Broken pipe",
     ]));
+});
+
+describe("parseScenario harnessAutolinking", () => {
+  it("reads an explicit harnessAutolinking", () =>
+    expect(parseScenario({ ...validScenario, harnessAutolinking: true }, "fixture.json").harnessAutolinking).toBe(
+      true,
+    ));
 });
 
 describe("parseScenario boolean rejections", () => {

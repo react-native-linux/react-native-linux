@@ -19,6 +19,37 @@ namespace react_native_linux {
 
 namespace {
 
+constexpr std::string_view kSafeAreaProviderComponentName = "RNCSafeAreaProvider";
+
+/**
+ * What iOS's and Android's `RNCSafeAreaProvider` views do when they are laid out (#806): send react-native-safe-area-
+ * context's `insetsChange`, again whenever the frame changes. Its `SafeAreaProvider` renders no children until the
+ * first one arrives. An `Insert` is the first layout; an `Update` whose frame differs is a later one, a resize too.
+ *
+ * The insets are always zero: a desktop window has no notch, and the surface React lays out already excludes the
+ * title bar this platform draws client-side (`contentExtentOf`).
+ *
+ * The frame is the provider's layout frame, relative to its parent. iOS and Android report it in root coordinates,
+ * and the two agree only for a provider at the root of the surface, which is where apps mount it. A nested provider
+ * under an offset reports that offset wrongly, and an ancestor that moves sends nothing. #161 owns both: the scene
+ * has no absolute-origin query to answer them with yet.
+ */
+void reportSafeAreaInsetsIfProvider(const facebook::react::ShadowView* previous,
+                                    const facebook::react::ShadowView& next) {
+    const facebook::react::Rect& frame = next.layoutMetrics.frame;
+
+    if (std::string_view{next.componentName} != kSafeAreaProviderComponentName ||
+        (previous != nullptr && previous->layoutMetrics.frame == frame)) {
+        return;
+    }
+
+    next.eventEmitter->dispatchEvent(
+        "insetsChange",
+        folly::dynamic::object("insets", folly::dynamic::object("top", 0)("right", 0)("bottom", 0)("left", 0))(
+            "frame", folly::dynamic::object("x", frame.origin.x)("y", frame.origin.y)("width", frame.size.width)(
+                         "height", frame.size.height)));
+}
+
 std::string supportedAnimatedPropNames() {
     std::string names;
 
@@ -267,6 +298,7 @@ void LinuxMountingManager::applyTransaction(facebook::react::MountingTransaction
             break;
         case facebook::react::ShadowViewMutation::Insert:
             scene_.insertChild(mutation.parentTag, mutation.newChildShadowView, mutation.index);
+            reportSafeAreaInsetsIfProvider(nullptr, mutation.newChildShadowView);
 
             if (dimensions_ != nullptr && std::string_view{mutation.newChildShadowView.componentName} ==
                                               facebook::react::ModalHostViewComponentName) {
@@ -282,6 +314,7 @@ void LinuxMountingManager::applyTransaction(facebook::react::MountingTransaction
             verifyTagIsKnown("Update", mutation.newChildShadowView.tag);
             recordAccessibilityChangeIfAny(mutation.newChildShadowView, accessibilityChangesThisTransaction);
             scene_.updateNode(mutation.newChildShadowView);
+            reportSafeAreaInsetsIfProvider(&mutation.oldChildShadowView, mutation.newChildShadowView);
             break;
         }
     }

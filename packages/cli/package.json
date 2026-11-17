@@ -8,6 +8,7 @@
   "type": "module",
   "exports": {
     ".": "./src/platform-config.ts",
+    "./android-dependency-config.ts": "./src/android-dependency-config.ts",
     "./animation-rung.ts": "./src/animation-rung.ts",
     "./autolinking-cmake.ts": "./src/autolinking-cmake.ts",
     "./babel-cache-version.ts": "./src/babel-cache-version.ts",
@@ -30,6 +31,7 @@
   "publishConfig": {
     "exports": {
       ".": "./dist/platform-config.js",
+      "./android-dependency-config.ts": "./dist/android-dependency-config.js",
       "./animation-rung.ts": "./dist/animation-rung.js",
       "./autolinking-cmake.ts": "./dist/autolinking-cmake.js",
       "./babel-cache-version.ts": "./dist/babel-cache-version.js",
