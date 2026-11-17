@@ -910,6 +910,7 @@ add_library(rnl_react_core STATIC
     src/PlatformColor.cpp
     src/ReactHost.cpp
     src/RetainedScene.cpp
+    src/RetriedCommitRelayout.cpp
     src/ScrollIndicator.cpp
     src/ScrollController.cpp
     src/ScrollEventCadence.cpp
