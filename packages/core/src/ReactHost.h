@@ -93,7 +93,7 @@ public:
      * `WindowSession` on every `xdg_toplevel.configure`, `BundleRunner` from the headless surface size. See
      * *Dimensions and TurboModules* in docs/cpp-toolchain.md.
      */
-    DimensionsSource& dimensions() noexcept;
+    const std::shared_ptr<DimensionsSource>& dimensions() noexcept;
 
     /**
      * The colour-scheme state `Appearance.getColorScheme()` answers from. Whoever owns the portal connection

@@ -31,7 +31,7 @@ globalThis.__rctDeviceEventEmitter = {
  */
 TEST(HardwareBackPressTest, AnEscapeReachesTheListenerOnTheJavaScriptThread) {
     ReactHost reactHost;
-    auto fabricHost = std::make_unique<FabricHost>(reactHost.reactInstance(), kSurfaceSize);
+    auto fabricHost = std::make_unique<FabricHost>(reactHost, kSurfaceSize);
 
     reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>(kBackHandlerProbe), "BackHandlerProbe.js");
     reactHost.drainJavaScriptThread();

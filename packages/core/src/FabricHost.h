@@ -28,8 +28,10 @@
 
 namespace react_native_linux {
 
+class ReactHost;
+
 /**
- * Bootstraps Fabric on top of an already initialised bridgeless `ReactInstance`: one `Scheduler`, one
+ * Bootstraps Fabric on top of an already initialised `ReactHost`'s bridgeless `ReactInstance`: one `Scheduler`, one
  * `SurfaceHandler` started as an empty surface, and the retained scene the resulting mounting transactions are
  * applied to. The surface is sized by the caller: headlessly that is a fixed size, and under a window it is the
  * window's size, republished through `setSurfaceSize` on every configure so Yoga relayouts against it.
@@ -71,15 +73,17 @@ public:
      * `RN$AppRegistry.runApplication` with it once the bundle has registered it. Empty starts the empty surface the
      * bare test bundles commit into by hand.
      */
-    FabricHost(facebook::react::ReactInstance& reactInstance, facebook::react::Size surfaceSize,
-               const std::string& moduleName = {});
+    FabricHost(ReactHost& reactHost, facebook::react::Size surfaceSize, const std::string& moduleName = {});
     FabricHost(const FabricHost&) = delete;
     FabricHost(FabricHost&&) = delete;
     FabricHost& operator=(const FabricHost&) = delete;
     FabricHost& operator=(FabricHost&&) = delete;
     ~FabricHost() noexcept;
 
-    /** `pointScaleFactor` is the output scale, so Yoga rounds every frame onto the physical pixel grid. */
+    /**
+     * `pointScaleFactor` is the output scale, so Yoga rounds every frame onto the physical pixel grid. Every open
+     * `<Modal>` follows the new size in the same call (ADR-0005).
+     */
     void setSurfaceSize(facebook::react::Size surfaceSize, facebook::react::Float pointScaleFactor);
 
     /**

@@ -14,5 +14,6 @@
   "RawText": { "state": "not-interactive", "reason": "A string leaf inside a Paragraph with no host view." },
   "TextInput": { "state": "traversed", "scenario": "text-input.json" },
   "ActivityIndicatorView": { "state": "not-interactive", "reason": "Display only; it has no press or value handler." },
-  "Switch": { "state": "traversed", "scenario": "switch-keyboard.json" }
+  "Switch": { "state": "traversed", "scenario": "switch-keyboard.json" },
+  "ModalHost": { "state": "not-traversed", "issue": "#795" }
 }

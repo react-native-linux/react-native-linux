@@ -113,7 +113,7 @@ TEST(CrossThreadPromiseStressTest, PromisesSettledAndDroppedOffTheJavaScriptThre
     start.arrive_and_wait();
 
     for (int frame = 0; frame < kFrameCount; ++frame) {
-        reactHost.dimensions().configure(800.0 + frame, 600.0, 1.0);
+        reactHost.dimensions()->configure(800.0 + frame, 600.0, 1.0);
         reactHost.publishPendingDimensions();
         reactHost.dispatchAnimationFrames(std::chrono::steady_clock::now());
     }
@@ -157,7 +157,9 @@ constexpr std::array<std::uint8_t, 70> kOnePixelPng{
 // Every animation frame recommits the same eight images with their sources walked on through the files, so mounts
 // request decodes on the JavaScript thread for as long as there are files left, and the nodes those decodes
 // complete into are the ones input is hitting. The nodes stay the same so an event still has a mounted target by
-// the time JavaScript handles it; upstream drops one whose target has unmounted.
+// the time JavaScript handles it; upstream drops one whose target has unmounted. Every other pair of commits also
+// presents a new `<Modal>` over them, which every frame's resize then sizes from the frame thread while JavaScript
+// commits (ADR-0005); the pairs without one are when input reaches the images.
 constexpr char kMountingLoop[] = R"JAVASCRIPT(
 const fabric = globalThis.nativeFabricUIManager;
 globalThis.deliveredPointerEvents = 0;
@@ -186,6 +188,7 @@ for (let index = 0; index < 8; index += 1) {
   }, instanceHandle);
   instanceHandles.push(instanceHandle);
 }
+globalThis.presentedModals = 0;
 const commit = () => {
   const childSet = fabric.createChildSet();
   instanceHandles.forEach((instanceHandle, index) => {
@@ -195,6 +198,14 @@ const commit = () => {
     });
     fabric.appendChildToSet(childSet, instanceHandle.stateNode.node);
   });
+  if (globalThis.commitCount % 4 < 2) {
+    const modalHandle = { stateNode: { node: null } };
+    modalHandle.stateNode.node = fabric.createNode(1000 + 2 * globalThis.commitCount, 'ModalHostView', 1, {
+      position: 'absolute',
+    }, modalHandle);
+    fabric.appendChildToSet(childSet, modalHandle.stateNode.node);
+    globalThis.presentedModals += 1;
+  }
   fabric.completeRoot(1, childSet);
   globalThis.commitCount += 1;
   requestAnimationFrame(commit);
@@ -207,7 +218,8 @@ requestAnimationFrame(commit);
  * commits a new tree of images every animation frame, each mount requests decodes that complete on the decode
  * worker and damage the scene through the mounting manager's listener, and this thread is the frame thread,
  * calling every member the contract lets the frame loop call while the surface runs — in `WindowSession`'s order —
- * with a press, a release and a motion injected every frame. TSan grades the races; the assertions grade that
+ * with a press, a release and a motion injected every frame, and a resize that sizes every presented `<Modal>`
+ * through an immediate state update while JavaScript commits. TSan grades the races; the assertions grade that
  * every leg did its work rather than none of it.
  */
 TEST(CrossThreadMountingStressTest, MountsDecodesAndInputRunConcurrentlyWithTheFrameThread) {
@@ -223,8 +235,7 @@ TEST(CrossThreadMountingStressTest, MountsDecodesAndInputRunConcurrentlyWithTheF
     }
 
     ReactHost reactHost;
-    auto fabricHost =
-        std::make_unique<FabricHost>(reactHost.reactInstance(), facebook::react::Size{.width = 400, .height = 200});
+    auto fabricHost = std::make_unique<FabricHost>(reactHost, facebook::react::Size{.width = 400, .height = 200});
 
     reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>(
                              "globalThis.imageDirectory = '" + imageDirectory.string() +
@@ -236,6 +247,11 @@ TEST(CrossThreadMountingStressTest, MountsDecodesAndInputRunConcurrentlyWithTheF
         const auto now = std::chrono::steady_clock::now();
         const facebook::react::Point point{.x = 50.0F + static_cast<float>(frame % 4) * 100.0F, .y = 50.0F};
 
+        const facebook::react::Size surfaceSize{.width = 400.0F + static_cast<float>(frame % 2) * 10.0F,
+                                                .height = 200.0F};
+
+        reactHost.dimensions()->configure(surfaceSize.width, surfaceSize.height, 1.0);
+        fabricHost->setSurfaceSize(surfaceSize, 1.0F);
         fabricHost->advanceImageAnimations(kFrameMilliseconds);
         fabricHost->dispatchInput({InputEvent{.kind = InputEventKind::PointerMotion, .surfacePoint = point},
                                    InputEvent{.kind = InputEventKind::PointerButtonPress, .surfacePoint = point},
@@ -254,11 +270,23 @@ TEST(CrossThreadMountingStressTest, MountsDecodesAndInputRunConcurrentlyWithTheF
 #endif
     // Not fatal: a wait that times out still has to be followed by the shutdown order below.
     EXPECT_TRUE(reactHost.runUntilQuiescent(kQuiescenceBudget));
+    // A modal created before the last resize and mounted after it has asked for the new size at the next beat.
+    fabricHost->induceEventBeat();
+    EXPECT_TRUE(reactHost.runUntilQuiescent(kQuiescenceBudget));
 
-    const std::array<double, 2> ledger = onJavaScriptThread<std::array<double, 2>>(reactHost, [](Runtime& runtime) {
+    const std::array<double, 3> ledger = onJavaScriptThread<std::array<double, 3>>(reactHost, [](Runtime& runtime) {
         return std::array{runtime.global().getProperty(runtime, "commitCount").asNumber(),
-                          runtime.global().getProperty(runtime, "deliveredPointerEvents").asNumber()};
+                          runtime.global().getProperty(runtime, "deliveredPointerEvents").asNumber(),
+                          runtime.global().getProperty(runtime, "presentedModals").asNumber()};
     });
+    const facebook::react::Size lastSurfaceSize{
+        .width = 400.0F + static_cast<float>((kMountingFrameCount - 1) % 2) * 10.0F, .height = 200.0F};
+
+    for (const auto& [tag, node] : fabricHost->visualTreeNodes()) {
+        if (node.isOverlayRoot) {
+            EXPECT_EQ(node.layoutMetrics.frame.size, lastSurfaceSize) << tag;
+        }
+    }
 
     fabricHost->stopSurface();
     reactHost.drainJavaScriptThread();
@@ -275,6 +303,7 @@ TEST(CrossThreadMountingStressTest, MountsDecodesAndInputRunConcurrentlyWithTheF
 
     EXPECT_GT(ledger[0], static_cast<double>(kImageFileCount) / 8);
     EXPECT_GT(ledger[1], 0.0);
+    EXPECT_GT(ledger[2], 0.0);
     EXPECT_FALSE(reactHost.hasReportedFatalError());
     std::filesystem::remove_all(imageDirectory);
 }

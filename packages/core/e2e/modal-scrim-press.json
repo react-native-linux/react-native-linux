@@ -1,0 +1,9 @@
+{
+  "name": "modal-scrim-press",
+  "bundle": "modal-scrim-over-list.tsx",
+  "ready": "modal-scrim: committed",
+  "frames": 600,
+  "steps": ["sleep 500", "click 100 60", "sleep 300", "click 350 280", "sleep 400"],
+  "expect": ["modal-scrim: committed", "modal-scrim: card press"],
+  "reject": ["modal-scrim: row"]
+}

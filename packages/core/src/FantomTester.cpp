@@ -18,9 +18,9 @@ constexpr std::chrono::milliseconds kQuiescenceBudget{30000};
 } // namespace
 
 FantomTester::FantomTester(facebook::react::Size surfaceSize)
-    : fabricHost_(std::make_unique<FabricHost>(reactHost_.reactInstance(), surfaceSize)) {
-    reactHost_.dimensions().configure(static_cast<double>(surfaceSize.width), static_cast<double>(surfaceSize.height),
-                                      DimensionsSource::kDefaultScale);
+    : fabricHost_(std::make_unique<FabricHost>(reactHost_, surfaceSize)) {
+    reactHost_.dimensions()->configure(static_cast<double>(surfaceSize.width), static_cast<double>(surfaceSize.height),
+                                       DimensionsSource::kDefaultScale);
 }
 
 FantomTester::~FantomTester() noexcept {

@@ -358,6 +358,20 @@ const fixtures: readonly GoldenFixture[] = [
     renderArguments: ["85", "315", "12"],
     renderFlag: "--clicked-frame",
   },
+  // ADR-0005 (#794): an opaque <Modal> with a backdropColor, declared inside a clipped, transformed, half-transparent, zIndex -1 parent under a zIndex 5 sibling — it paints the whole surface, on top, with nothing beneath it showing.
+  {
+    bundleFileName: "modal.js",
+    goldenFileName: "modal-backdrop.png",
+    renderArguments: [],
+    renderFlag: "--golden",
+  },
+  // ADR-0005 (#794): the same fixture two frames after a click on the modal's card, which swaps in a transparent <Modal> whose child View is the scrim — the rows and the zIndex 5 sibling show through it, dimmed, and the card is still on top.
+  {
+    bundleFileName: "modal.js",
+    goldenFileName: "modal-scrim.png",
+    renderArguments: ["400", "300", "2"],
+    renderFlag: "--clicked-frame",
+  },
   // Issue #261: <ActivityIndicator> at both sizes, with a custom colour, stopped and hidden, and stopped and held — the arc's angle is the same five frames of wall-clock time.
   {
     bundleFileName: "activity-indicator.js",

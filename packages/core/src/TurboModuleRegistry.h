@@ -100,7 +100,7 @@ public:
     TurboModuleRegistry& operator=(TurboModuleRegistry&&) = delete;
     ~TurboModuleRegistry() noexcept;
 
-    DimensionsSource& dimensions() noexcept;
+    const std::shared_ptr<DimensionsSource>& dimensions() noexcept;
 
     /**
      * The colour-scheme state `Appearance` answers from. Whoever owns the portal connection writes it:

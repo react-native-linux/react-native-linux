@@ -2,6 +2,8 @@
 
 #include "ApplicationKey.h"
 #include "AutolinkedComponents.h"
+#include "ModalHostComponent.h"
+#include "ReactHost.h"
 #include "ReanimatedModule.h"
 #include "SwitchComponent.h"
 #include "TextInputComponent.h"
@@ -117,6 +119,7 @@ facebook::react::ComponentRegistryFactory createComponentRegistryFactory(
     add(facebook::react::concreteComponentDescriptorProvider<
         facebook::react::ActivityIndicatorViewComponentDescriptor>());
     add(facebook::react::concreteComponentDescriptorProvider<SwitchComponentDescriptor>());
+    add(facebook::react::concreteComponentDescriptorProvider<ModalHostComponentDescriptor>());
 
     for (const facebook::react::ComponentDescriptorProvider& provider : autolinkedComponentDescriptorProviders()) {
         add(provider);
@@ -209,13 +212,13 @@ public:
 
 } // namespace
 
-FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::react::Size surfaceSize,
-                       const std::string& moduleName)
-    : runtimeExecutor_(reactInstance.getBufferedRuntimeExecutor()),
+FabricHost::FabricHost(ReactHost& reactHost, facebook::react::Size surfaceSize, const std::string& moduleName)
+    : runtimeExecutor_(reactHost.reactInstance().getBufferedRuntimeExecutor()),
       contextContainer_(std::make_shared<const facebook::react::ContextContainer>()),
       componentDescriptorProviderRegistry_(std::make_shared<facebook::react::ComponentDescriptorProviderRegistry>()),
       mountingManager_(std::make_shared<LinuxMountingManager>()),
       animationChoreographer_(std::make_shared<LinuxAnimationChoreographer>()) {
+    facebook::react::ReactInstance& reactInstance = reactHost.reactInstance();
     const std::shared_ptr<facebook::react::RuntimeScheduler> runtimeScheduler = reactInstance.getRuntimeScheduler();
     contextContainer_->insert(facebook::react::RuntimeSchedulerKey,
                               std::weak_ptr<facebook::react::RuntimeScheduler>(runtimeScheduler));
@@ -226,6 +229,9 @@ FabricHost::FabricHost(facebook::react::ReactInstance& reactInstance, facebook::
     contextContainer_->insert("RCTImageLoader", std::shared_ptr<void>());
     contextContainer_->insert(kMountingManagerContextKey,
                               std::shared_ptr<facebook::react::IMountingManager>(mountingManager_));
+    contextContainer_->insert(kDimensionsSourceContextKey,
+                              std::shared_ptr<const DimensionsSource>(reactHost.dimensions()));
+    mountingManager_->setDimensionsSource(reactHost.dimensions());
 
     facebook::react::SchedulerToolbox schedulerToolbox;
     schedulerToolbox.contextContainer = contextContainer_;
@@ -333,6 +339,22 @@ void FabricHost::setSurfaceSize(facebook::react::Size surfaceSize, facebook::rea
         {.minimumSize = surfaceSize, .maximumSize = surfaceSize, .layoutDirection = layoutDirection_.layoutDirection},
         {.pointScaleFactor = pointScaleFactor,
          .swapLeftAndRightInRTL = layoutDirection_.swapLeftAndRightInRightToLeft});
+
+    if (!mountingManager_->hasOverlays()) {
+        return;
+    }
+
+    std::shared_ptr<const facebook::react::ShadowNode> rootShadowNode;
+
+    scheduler_->getUIManager()->getShadowTreeRegistry().visit(
+        kSurfaceId, [&rootShadowNode](const facebook::react::ShadowTree& shadowTree) {
+            rootShadowNode = shadowTree.getCurrentRevision().rootShadowNode;
+        });
+
+    // Outside `visit`: the immediate state update commits through the same registry, whose lock is not reentrant.
+    if (rootShadowNode != nullptr) {
+        resizePresentedModals(*rootShadowNode, surfaceSize);
+    }
 }
 
 void FabricHost::setLayoutDirection(LayoutDirectionRequest request) {

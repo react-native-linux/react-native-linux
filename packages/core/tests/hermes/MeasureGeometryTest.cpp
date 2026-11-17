@@ -130,7 +130,7 @@ scrolledChild layoutInScrollView(0 80 50 20)
  */
 TEST(MeasureGeometryTest, MeasuresFollowUpstreamThroughTransformsClipsFlatteningAndScrolling) {
     ReactHost reactHost;
-    auto fabricHost = std::make_unique<FabricHost>(reactHost.reactInstance(), kSurfaceSize);
+    auto fabricHost = std::make_unique<FabricHost>(reactHost, kSurfaceSize);
 
     reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>(kGeometryTree), "MeasureGeometryTest.js");
     reactHost.drainJavaScriptThread();

@@ -21,7 +21,7 @@ constexpr double kFrameMilliseconds = 16.0;
 /** Both hosts, built in `WindowSession`'s order on the thread that constructs this one. */
 struct Hosts {
     std::unique_ptr<ReactHost> reactHost{std::make_unique<ReactHost>()};
-    std::unique_ptr<FabricHost> fabricHost{std::make_unique<FabricHost>(reactHost->reactInstance(), kSurfaceSize)};
+    std::unique_ptr<FabricHost> fabricHost{std::make_unique<FabricHost>(*reactHost, kSurfaceSize)};
 };
 
 struct ForeignThreadCall {

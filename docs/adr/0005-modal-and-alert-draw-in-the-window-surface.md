@@ -138,7 +138,10 @@ descriptor copies Android's answer rather than iOS's:
   commits.
 - `adopt` is upstream's: the size comes from the state, and the position is absolute.
 - A resize calls `updateState` on each presented modal's state with the new size, as iOS's component view does.
-  It does so from the same `DimensionsSource` change that emits `didUpdateDimensions`.
+  The resize configures the `DimensionsSource` first. `FabricHost::setSurfaceSize` then lays the surface out and
+  walks the committed tree with an immediate update, so the modal follows in the same frame. A modal created
+  before the configure but committed after the walk is caught at its mount: inserting a `ModalHostView` whose
+  state differs from the `DimensionsSource` asks for the current size at the next beat.
 - The shadow node, props, state and event emitter stay upstream's (`rrc_modal` is already built), so `Modal.js`
   runs unmodified.
 
@@ -150,7 +153,8 @@ at its tree position. `ScenePainter` paints the surface tree first and then each
 - An overlay root is composed from the surface origin with the identity matrix. Every ancestor's transform,
   opacity, `overflow` clip and `zIndex` is ignored, because `ModalHostView` is `RootNodeKind` and lays out as its
   own root.
-- Presenting or removing an overlay damages the whole surface.
+- Presenting or removing an overlay damages the extent of the overlay's subtree, as any other insert or removal
+  does. A modal with a backdrop therefore damages the whole surface, and a transparent one only what it paints.
 - The overlay covers the React surface, not the drawn title bar (#329), so the window can always be moved,
   resized and closed.
 

@@ -230,7 +230,7 @@ facebook::react::ReactInstance& ReactHost::reactInstance() noexcept {
     return *reactInstance_;
 }
 
-DimensionsSource& ReactHost::dimensions() noexcept {
+const std::shared_ptr<DimensionsSource>& ReactHost::dimensions() noexcept {
     react_native_assert(std::this_thread::get_id() == owningThread_);
 
     return turboModuleRegistry_->dimensions();

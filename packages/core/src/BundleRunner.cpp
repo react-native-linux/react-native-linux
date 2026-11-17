@@ -62,8 +62,8 @@ constexpr char kTabKeyCode[] = "Tab";
  * `Dimensions.get` has to answer with that surface's size rather than with the pre-configure default.
  */
 void configureDimensions(ReactHost& reactHost, facebook::react::Size surfaceSize) {
-    reactHost.dimensions().configure(static_cast<double>(surfaceSize.width), static_cast<double>(surfaceSize.height),
-                                     DimensionsSource::kDefaultScale);
+    reactHost.dimensions()->configure(static_cast<double>(surfaceSize.width), static_cast<double>(surfaceSize.height),
+                                      DimensionsSource::kDefaultScale);
 }
 
 void loadAndSettle(ReactHost& reactHost, const std::optional<std::string>& bundlePath) {
@@ -239,7 +239,7 @@ void deliverInputFrame(ReactHost& reactHost, FabricHost& fabricHost, const std::
 
 std::unique_ptr<FabricHost> startFabricRun(ReactHost& reactHost, const std::string& bundlePath,
                                            facebook::react::Size surfaceSize) {
-    std::unique_ptr<FabricHost> fabricHost = std::make_unique<FabricHost>(reactHost.reactInstance(), surfaceSize);
+    std::unique_ptr<FabricHost> fabricHost = std::make_unique<FabricHost>(reactHost, surfaceSize);
 
     configureDimensions(reactHost, surfaceSize);
     reactHost.loadBundle(bundlePath);
@@ -459,10 +459,10 @@ int runResizedFabricBundle(const std::string& bundlePath, facebook::react::Size 
         std::cerr << "[bundle-runner] gave up waiting for pending timers" << std::endl;
     }
 
-    // The pair a window applies on `xdg_toplevel.configure`, in the same order: new layout constraints for Fabric,
-    // the same extent for `Dimensions`, then the one change event the frame is allowed to emit.
-    fabricHost->setSurfaceSize(resizedSurfaceSize, 1.0F);
+    // The pair a window applies on `xdg_toplevel.configure`, in the same order: the extent for `Dimensions`, new
+    // layout constraints for Fabric, then the one change event the frame is allowed to emit.
     configureDimensions(reactHost, resizedSurfaceSize);
+    fabricHost->setSurfaceSize(resizedSurfaceSize, 1.0F);
     reactHost.publishPendingDimensions();
 
     return finishTimedFabricRun(reactHost, fabricHost);
@@ -718,8 +718,7 @@ FabricRunResult runTypedFabricBundle(const std::string& bundlePath, facebook::re
 FabricRunResult runFabricBundle(const std::optional<std::string>& bundlePath, facebook::react::Size surfaceSize,
                                 const std::string& moduleName) {
     ReactHost reactHost;
-    std::unique_ptr<FabricHost> fabricHost =
-        std::make_unique<FabricHost>(reactHost.reactInstance(), surfaceSize, moduleName);
+    std::unique_ptr<FabricHost> fabricHost = std::make_unique<FabricHost>(reactHost, surfaceSize, moduleName);
 
     configureDimensions(reactHost, surfaceSize);
     loadAndSettle(reactHost, bundlePath);
@@ -744,7 +743,7 @@ FabricRunResult runAppearanceFabricBundle(const std::string& bundlePath, faceboo
                                           ColorScheme portalColorScheme,
                                           std::optional<ColorScheme> colorSchemeOverride) {
     ReactHost reactHost;
-    std::unique_ptr<FabricHost> fabricHost = std::make_unique<FabricHost>(reactHost.reactInstance(), surfaceSize);
+    std::unique_ptr<FabricHost> fabricHost = std::make_unique<FabricHost>(reactHost, surfaceSize);
 
     configureDimensions(reactHost, surfaceSize);
 
@@ -766,7 +765,7 @@ FabricRunResult runAppearanceFabricBundle(const std::string& bundlePath, faceboo
 FabricHitPaintRunResult runHitSampledFabricBundle(const std::string& bundlePath, facebook::react::Size surfaceSize,
                                                   int sampleStep) {
     ReactHost reactHost;
-    std::unique_ptr<FabricHost> fabricHost = std::make_unique<FabricHost>(reactHost.reactInstance(), surfaceSize);
+    std::unique_ptr<FabricHost> fabricHost = std::make_unique<FabricHost>(reactHost, surfaceSize);
 
     configureDimensions(reactHost, surfaceSize);
     loadAndSettle(reactHost, bundlePath);

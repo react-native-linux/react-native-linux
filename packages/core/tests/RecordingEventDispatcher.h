@@ -10,6 +10,8 @@
 #include <react/renderer/core/EventListener.h>
 #include <react/renderer/core/EventQueueProcessor.h>
 #include <react/renderer/core/RawEvent.h>
+#include <react/renderer/core/StatePipe.h>
+#include <react/renderer/core/StateUpdate.h>
 #include <react/renderer/runtimescheduler/RuntimeScheduler.h>
 
 namespace react_native_linux {
@@ -36,15 +38,18 @@ inline facebook::react::RuntimeScheduler& noopRuntimeScheduler() {
  * together are a jscpd clone at threshold 0 — the same reason `makeRecordingEventDispatcher` below is shared.
  * What a test varies is only what it reads off the event, which is the listener it passes in.
  *
+ * `statePipe` sees every state update the queue flushes, which only an immediate update does without a beat.
+ *
  * The caller keeps the returned dispatcher alive: an `EventEmitter` holds only a weak reference to it.
  */
-inline std::shared_ptr<const facebook::react::EventDispatcher>
-makeListeningEventDispatcher(std::function<bool(const facebook::react::RawEvent&)> listener) {
+inline std::shared_ptr<const facebook::react::EventDispatcher> makeListeningEventDispatcher(
+    std::function<bool(const facebook::react::RawEvent&)> listener,
+    facebook::react::StatePipe statePipe = [](const facebook::react::StateUpdate&) {}) {
     const facebook::react::EventQueueProcessor eventQueueProcessor{
         [](facebook::jsi::Runtime& /*runtime*/, facebook::react::EventTarget* /*eventTarget*/,
            const std::string& /*type*/, facebook::react::ReactEventPriority /*priority*/,
            const facebook::react::EventPayload& /*payload*/, facebook::react::HighResTimeStamp /*eventTimestamp*/) {},
-        [](facebook::jsi::Runtime& /*runtime*/) {}, [](const facebook::react::StateUpdate& /*stateUpdate*/) {},
+        [](facebook::jsi::Runtime& /*runtime*/) {}, std::move(statePipe),
         std::weak_ptr<facebook::react::EventLogger>{}};
     const std::shared_ptr<const facebook::react::EventDispatcher> eventDispatcher =
         std::make_shared<const facebook::react::EventDispatcher>(

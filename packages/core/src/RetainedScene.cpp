@@ -12,6 +12,7 @@
 #include <react/renderer/components/image/ImageEventEmitter.h>
 #include <react/renderer/components/image/ImageProps.h>
 #include <react/renderer/components/image/ImageState.h>
+#include <react/renderer/components/modal/ModalHostViewShadowNode.h>
 #include <react/renderer/components/root/RootShadowNode.h>
 #include <react/renderer/components/scrollview/ScrollViewProps.h>
 #include <react/renderer/components/scrollview/ScrollViewState.h>
@@ -1150,8 +1151,21 @@ SceneVisit visitNode(const SceneNode& node, const ScenePaintState& state, bool i
  * parent chain is broken — an insert under a tag that was never created — is measured as if it were a root, which
  * damages a region that nothing paints. That is a superset, and a superset is safe.
  */
+ScenePaintState overlayRootState(const SceneNode& overlay) {
+    return ScenePaintState{.origin = facebook::react::Point{} - overlay.layoutMetrics.frame.origin};
+}
+
+/**
+ * An overlay root's walk starts at `overlayRootState` rather than at its parent's state, which is what keeps every
+ * ancestor's transform, opacity and clip off an overlay and off everything inside it.
+ */
 ScenePaintState paintStateOfAncestors(const SceneNodes& nodes, facebook::react::Tag tag) {
     const auto entry = nodes.find(tag);
+
+    if (entry != nodes.end() && entry->second.isOverlayRoot) {
+        return overlayRootState(entry->second);
+    }
+
     facebook::react::Tag current = entry == nodes.end() ? 0 : entry->second.parentTag;
     std::vector<const SceneNode*> ancestors;
 
@@ -1171,7 +1185,7 @@ ScenePaintState paintStateOfAncestors(const SceneNodes& nodes, facebook::react::
     ScenePaintState state;
 
     for (const SceneNode* ancestor : ancestors) {
-        state = visitNode(*ancestor, state).childState;
+        state = visitNode(*ancestor, ancestor->isOverlayRoot ? overlayRootState(*ancestor) : state).childState;
     }
 
     return state;
@@ -1451,6 +1465,10 @@ void RetainedScene::deleteNode(facebook::react::Tag tag) {
 
     if (node != nodes_.end()) {
         eraseChildTag(nodes_, node->second.parentTag, tag);
+
+        if (node->second.isOverlayRoot) {
+            dismissOverlay(tag);
+        }
     }
 
     nodes_.erase(tag);
@@ -1480,6 +1498,10 @@ void RetainedScene::insertChild(facebook::react::Tag parentTag, const facebook::
         childTags.insert(childTags.begin() + static_cast<std::ptrdiff_t>(position), childShadowView.tag);
     }
 
+    if (child.isOverlayRoot) {
+        presentOverlay(childShadowView.surfaceId, childShadowView.tag);
+    }
+
     damageSubtree(childShadowView.tag);
 }
 
@@ -1492,6 +1514,10 @@ void RetainedScene::removeChild(facebook::react::Tag parentTag, const facebook::
     if (child != nodes_.end()) {
         formerParentTag = child->second.parentTag;
         child->second.parentTag = 0;
+
+        if (child->second.isOverlayRoot) {
+            dismissOverlay(childShadowView.tag);
+        }
     }
 
     eraseChildTag(nodes_, parentTag, childShadowView.tag);
@@ -1772,7 +1798,16 @@ std::vector<RejectedAnimatedProp> RetainedScene::applyAnimatedProps(facebook::re
 }
 
 SceneHit RetainedScene::findNodeAtPoint(facebook::react::Tag rootTag, facebook::react::Point surfacePoint) const {
-    return hitTestNode(rootTag, surfacePoint, ScenePaintState{});
+    const auto overlays = overlayTags_.find(rootTag);
+
+    if (overlays == overlayTags_.end() || overlays->second.empty()) {
+        return hitTestNode(rootTag, surfacePoint, ScenePaintState{});
+    }
+
+    const facebook::react::Tag topmostTag = overlays->second.back();
+    const SceneHit hit = hitTestNode(topmostTag, surfacePoint, overlayRootState(nodes_.at(topmostTag)));
+
+    return hit.tag != 0 ? hit : SceneHit{.tag = topmostTag};
 }
 
 std::optional<ScenePrimitiveDisplacement> findDisplacedPrimitive(const SceneSnapshot& before,
@@ -1811,9 +1846,24 @@ SceneSnapshot RetainedScene::snapshot() const {
 
     for (facebook::react::Tag tag : sortedRootTags()) {
         appendPrimitives(primitives, tag, rootState);
+
+        const auto overlays = overlayTags_.find(tag);
+
+        if (overlays == overlayTags_.end()) {
+            continue;
+        }
+
+        for (facebook::react::Tag overlayTag : overlays->second) {
+            appendPrimitives(primitives, overlayTag, overlayRootState(nodes_.at(overlayTag)), /*isOverlayWalk=*/true);
+        }
     }
 
     return primitives;
+}
+
+bool RetainedScene::hasOverlays() const {
+    return std::any_of(overlayTags_.begin(), overlayTags_.end(),
+                       [](const auto& surfaceOverlays) { return !surfaceOverlays.second.empty(); });
 }
 
 SceneDamage RetainedScene::takeDamage() { return std::exchange(damage_, SceneDamage{}); }
@@ -1834,6 +1884,7 @@ SceneNode& RetainedScene::writeNode(const facebook::react::ShadowView& shadowVie
     node.tag = shadowView.tag;
     node.componentName = readComponentName(shadowView);
     node.layoutMetrics = shadowView.layoutMetrics;
+    node.isOverlayRoot = node.componentName == facebook::react::ModalHostViewComponentName;
     readPaintProps(node, shadowView);
     readTextContent(node, shadowView);
     readEditorContent(node, shadowView);
@@ -1865,11 +1916,11 @@ std::vector<facebook::react::Tag> RetainedScene::sortedRootTags() const {
     return rootTags;
 }
 
-void RetainedScene::appendPrimitives(SceneSnapshot& primitives, facebook::react::Tag tag,
-                                     const ScenePaintState& state) const {
+void RetainedScene::appendPrimitives(SceneSnapshot& primitives, facebook::react::Tag tag, const ScenePaintState& state,
+                                     bool isOverlayWalk) const {
     const auto entry = nodes_.find(tag);
 
-    if (entry == nodes_.end()) {
+    if (entry == nodes_.end() || (entry->second.isOverlayRoot && !isOverlayWalk)) {
         return;
     }
 
@@ -1965,7 +2016,7 @@ SceneHit RetainedScene::hitTestNode(facebook::react::Tag tag, facebook::react::P
 std::optional<facebook::react::Rect> RetainedScene::subtreeExtent(facebook::react::Tag tag) const {
     SceneSnapshot primitives;
 
-    appendPrimitives(primitives, tag, paintStateOfAncestors(nodes_, tag));
+    appendPrimitives(primitives, tag, paintStateOfAncestors(nodes_, tag), /*isOverlayWalk=*/true);
 
     std::optional<facebook::react::Rect> extent;
 
@@ -1992,6 +2043,34 @@ void RetainedScene::damageSubtree(facebook::react::Tag tag) {
     if (extent.has_value()) {
         addDamageRect(damage_, extent.value());
     }
+}
+
+void RetainedScene::presentOverlay(facebook::react::SurfaceId surfaceId, facebook::react::Tag tag) {
+    std::vector<facebook::react::Tag>& overlays = overlayTags_[surfaceId];
+
+    // Fabric inserts a new subtree's children before the subtree itself, so a `Modal` declared inside another
+    // arrives first and the outer one has to go beneath it.
+    const auto firstNested = std::find_if(overlays.begin(), overlays.end(), [this, tag](facebook::react::Tag overlay) {
+        return isDescendantOf(overlay, tag);
+    });
+
+    overlays.insert(firstNested, tag);
+}
+
+void RetainedScene::dismissOverlay(facebook::react::Tag tag) {
+    for (auto& [surfaceId, overlays] : overlayTags_) {
+        std::erase(overlays, tag);
+    }
+}
+
+bool RetainedScene::isDescendantOf(facebook::react::Tag tag, facebook::react::Tag ancestorTag) const {
+    for (auto entry = nodes_.find(tag); entry != nodes_.end(); entry = nodes_.find(entry->second.parentTag)) {
+        if (entry->second.parentTag == ancestorTag) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 void RetainedScene::appendNode(std::string& output, facebook::react::Tag tag, size_t depth) const {

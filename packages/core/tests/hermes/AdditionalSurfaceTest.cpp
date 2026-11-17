@@ -49,7 +49,7 @@ constexpr char kEmptiedTree[] = "<rn-rootview layoutMetrics-frame=\"{x:0,y:0,wid
  */
 TEST(AdditionalSurfaceTest, ATreeCommittedToAnAdditionalSurfaceMountsUnderItsOwnRootAndStoppingItEmptiesIt) {
     ReactHost reactHost;
-    auto fabricHost = std::make_unique<FabricHost>(reactHost.reactInstance(), kSurfaceSize);
+    auto fabricHost = std::make_unique<FabricHost>(reactHost, kSurfaceSize);
 
     fabricHost->startAdditionalSurface(kAdditionalSurfaceId, kSurfaceSize, 1.0F, {});
     reactHost.loadScript(std::make_unique<facebook::react::JSBigStdString>(kCommitIntoAdditionalSurface),
