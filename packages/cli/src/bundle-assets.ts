@@ -14,19 +14,22 @@ interface BundleAsset {
 }
 
 /**
- * Upstream's `getAssetDestPathIOS`, the layout `react-native bundle --assets-dest` writes for every platform but
- * Android: `httpServerLocation` without its leading slash and with each `../` as `_`, the path React Native's
- * `AssetSourceResolver.scaledAssetURLNearBundle` resolves an image `require` to beside a bundle loaded from a file.
+ * The path React Native's `AssetSourceResolver.scaledAssetURLNearBundle` resolves an image `require` to beside a bundle
+ * loaded from a file: `httpServerLocation` without its leading slash, then the file name, with each `../` in the whole
+ * path as `_`. Upstream's `getAssetDestPathIOS` replaces only within the location, which differs for a location that
+ * ends in `..`.
  */
 const assetDestinationPath = (asset: BundleAsset, scale: number): string =>
-  path.join(
-    asset.httpServerLocation.slice(LEADING_SLASH_LENGTH).replaceAll("../", "_"),
-    `${asset.name}${scale === BASE_SCALE ? "" : `@${String(scale)}x`}.${asset.type}`,
+  `${asset.httpServerLocation.slice(LEADING_SLASH_LENGTH)}/${asset.name}${scale === BASE_SCALE ? "" : `@${String(scale)}x`}.${asset.type}`.replaceAll(
+    "../",
+    "_",
   );
 
 /**
  * Copies every scale of the bundle's assets into `bundleDirectory`, as `react-native bundle --assets-dest
- * <bundleDirectory>` does after the same `Metro.runBuild`.
+ * <bundleDirectory>` does after the same `Metro.runBuild`. `assets/fonts` and `assets/app.config` are reserved there:
+ * `embedExpoAppAssets` replaces them, so an image a project keeps under a top-level `fonts` directory, or one named
+ * `app.config`, would not survive it.
  */
 const writeBundleAssets = (assets: readonly BundleAsset[], bundleDirectory: string): void => {
   for (const asset of assets) {

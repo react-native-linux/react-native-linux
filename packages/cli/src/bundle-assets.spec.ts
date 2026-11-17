@@ -68,7 +68,39 @@ describe("writeBundleAssets", () => {
     expect(readFileSync(path.join(store, "close@2x.png"), "utf8")).toBe("close@2x.png");
     expect(readFileSync(path.join(bundleDirectory, "assets/src/logo@3x.png"), "utf8")).toBe("logo.png");
   });
+});
 
+describe("writeBundleAssets, a location that ends in ..", () => {
+  it("turns each ../ of the whole path into _, a location that ends in .. included, as the runtime resolves it", () => {
+    const sources = makeDirectory();
+    const bundleDirectory = makeDirectory();
+
+    writeBundleAssets(
+      [
+        {
+          files: [writeSource(sources, "x.png")],
+          httpServerLocation: "/assets/..",
+          name: "x",
+          scales: [BASE_SCALE],
+          type: "png",
+        },
+        {
+          files: [writeSource(sources, "y.png")],
+          httpServerLocation: "/assets/../..",
+          name: "x",
+          scales: [BASE_SCALE],
+          type: "png",
+        },
+      ],
+      bundleDirectory,
+    );
+
+    expect(readFileSync(path.join(bundleDirectory, "assets/_x.png"), "utf8")).toBe("x.png");
+    expect(readFileSync(path.join(bundleDirectory, "assets/__x.png"), "utf8")).toBe("y.png");
+  });
+});
+
+describe("writeBundleAssets, Metro's asset data", () => {
   it("refuses a scale Metro lists no file for", () => {
     expect(() => {
       writeBundleAssets(
