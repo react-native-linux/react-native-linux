@@ -38,7 +38,7 @@ void reportSafeAreaInsetsIfProvider(const facebook::react::ShadowView* previous,
                                     const facebook::react::ShadowView& next) {
     const facebook::react::Rect& frame = next.layoutMetrics.frame;
 
-    if (std::string_view{next.componentName} != kSafeAreaProviderComponentName ||
+    if (next.componentName == nullptr || std::string_view{next.componentName} != kSafeAreaProviderComponentName ||
         (previous != nullptr && previous->layoutMetrics.frame == frame)) {
         return;
     }
@@ -441,9 +441,10 @@ void LinuxMountingManager::verifyPropsDeriveFromViewProps(const facebook::react:
     }
 
     if (diagnostics_.componentsWithoutViewProps == 0) {
-        diagnostics_.firstComponentWithoutViewProps = shadowView.componentName;
+        diagnostics_.firstComponentWithoutViewProps =
+            shadowView.componentName != nullptr ? shadowView.componentName : "";
 
-        LOG(ERROR) << "[mounting] '" << shadowView.componentName
+        LOG(ERROR) << "[mounting] '" << diagnostics_.firstComponentWithoutViewProps
                    << "' mounts with props that do not derive from ViewProps, so react-native-linux paints nothing "
                       "for it; a component that only lays out mounts as a View when its props extend ViewProps. See "
                       "docs/ecosystem/linux-support-contract.md";

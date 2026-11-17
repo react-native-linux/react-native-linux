@@ -394,6 +394,8 @@ target_link_libraries(rnl_core_tests PRIVATE PkgConfig::RNL_TEST_SYSTEMD)
 target_sources(rnl_core_tests PRIVATE OpenUriPortalTest.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../src/OpenUriPortal.cpp)
 # #139: Reanimated's platform contract on Linux, against the vendored header it fills.
 target_sources(rnl_core_tests PRIVATE ReanimatedPlatformTest.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../src/ReanimatedPlatform.cpp)
+# #819: the Fantom render output of a view that names no component.
+target_sources(rnl_core_tests PRIVATE FantomRenderOutputTest.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../src/FantomRenderOutput.cpp)
 target_include_directories(rnl_core_tests
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../reanimated/upstream/packages/react-native-reanimated/Common/cpp)
 
