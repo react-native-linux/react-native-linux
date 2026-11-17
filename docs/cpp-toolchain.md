@@ -9535,10 +9535,10 @@ shares the container-matrix decision with #349 and #356's e2e.
    bundle about 30 times slower: `"main"` at 90–120 s instead of 3.1 s, and the commit that holds its first screen
    took over 20 s of one JavaScript task, so the screen mounted a minute after the first commit and `e2e:t3code`
    screenshotted an empty provider (#814). The Hermes branch sets `HERMES_SLOW_DEBUG=OFF` and appends `-O2` to
-   `CMAKE_CXX_FLAGS` for Hermes' `add_subdirectory` only, inside the same save and restore as hazard 2; a Release
-   configure's `-O3` still follows it. Hermes' `assert`s stay on in Debug, because they follow `NDEBUG`.
-   `HermesBuildTest` fails while `HermesInternal.getRuntimeProperties().Build` answers `SlowDebug`. Without
-   the slow-debug checks but at `-O0`, `"main"` took 22.3 s.
+   `CMAKE_C_FLAGS` and `CMAKE_CXX_FLAGS` for Hermes' `add_subdirectory` only, as Hermes' own CI configures it, saving
+   and restoring both as hazard 2 does; a Release configure's `-O3` still follows it. Hermes' `assert`s stay on in
+   Debug, because they follow `NDEBUG`. `HermesBuildTest` fails while `HermesInternal.getRuntimeProperties().Build`
+   answers `SlowDebug`. Without the slow-debug checks but at `-O0`, `"main"` took 22.3 s.
 
 ## First-build fix ledger (2026-09-01, clang 22, Arch)
 

@@ -228,8 +228,9 @@ set_target_properties(folly_runtime PROPERTIES CXX_STANDARD 20)
 #      same directory Hermes would have added through JSI_DIR, so jsi is one target either
 #      way. See docs/cpp-toolchain.md.
 #   4. A Debug configure would build the VM at -O0 with HERMES_SLOW_DEBUG, which runs a
-#      development bundle about 30 times slower (#814). The VM is always built at -O2 and
-#      without those checks; this repository's own sources keep the configure's build type.
+#      development bundle about 30 times slower (#814). Its C and C++ sources are always
+#      built at -O2, as Hermes' own CI builds them, and without those checks; this
+#      repository's own sources keep the configure's build type.
 # ---------------------------------------------------------------------------
 
 if(RNL_BUILD_TESTS)
@@ -266,7 +267,9 @@ else()
         GIT_SHALLOW TRUE
         GIT_PROGRESS TRUE)
 
+    set(RNL_SAVED_C_FLAGS "${CMAKE_C_FLAGS}")
     set(RNL_SAVED_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2")
 
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
@@ -276,6 +279,7 @@ else()
 
     FetchContent_MakeAvailable(hermes)
 
+    set(CMAKE_C_FLAGS "${RNL_SAVED_C_FLAGS}")
     set(CMAKE_CXX_FLAGS "${RNL_SAVED_CXX_FLAGS}")
 
     if(NOT TARGET hermesvm)
