@@ -214,7 +214,7 @@ set_target_properties(folly_runtime PROPERTIES CXX_STANDARD 20)
 # Hermes, or the jsi target on its own
 #
 # There is no prebuilt Hermes runtime for Linux, so the VM is built from source at the
-# version React Native pins in sdks/hermes-engine/version.properties. Three hazards are
+# version React Native pins in sdks/hermes-engine/version.properties. Four hazards are
 # handled here:
 #   1. HERMES_ENABLE_TOOLS must stay ON even though we ship no CLI: Hermes precompiles
 #      InternalBytecode with its own hermesc and Ninja fails with a missing rule otherwise.
@@ -227,6 +227,9 @@ set_target_properties(folly_runtime PROPERTIES CXX_STANDARD 20)
 #      RNL_BUILD_TESTS drops Hermes and adds ReactCommon's jsi directly instead; it is the
 #      same directory Hermes would have added through JSI_DIR, so jsi is one target either
 #      way. See docs/cpp-toolchain.md.
+#   4. A Debug configure would build the VM at -O0 with HERMES_SLOW_DEBUG, which runs a
+#      development bundle about 30 times slower (#814). The VM is always built at -O2 and
+#      without those checks; this repository's own sources keep the configure's build type.
 # ---------------------------------------------------------------------------
 
 if(RNL_BUILD_TESTS)
@@ -255,6 +258,7 @@ else()
     set(HERMES_ENABLE_INTL OFF CACHE BOOL "" FORCE)
     set(HERMES_ENABLE_TEST_SUITE OFF CACHE BOOL "" FORCE)
     set(HERMES_ENABLE_TOOLS ON CACHE BOOL "" FORCE)
+    set(HERMES_SLOW_DEBUG OFF CACHE BOOL "" FORCE)
 
     FetchContent_Declare(hermes
         GIT_REPOSITORY https://github.com/facebook/hermes.git
@@ -263,6 +267,7 @@ else()
         GIT_PROGRESS TRUE)
 
     set(RNL_SAVED_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2")
 
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         set(CMAKE_CXX_FLAGS
