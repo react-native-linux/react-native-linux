@@ -38,7 +38,7 @@ void reportSafeAreaInsetsIfProvider(const facebook::react::ShadowView* previous,
                                     const facebook::react::ShadowView& next) {
     const facebook::react::Rect& frame = next.layoutMetrics.frame;
 
-    if (std::string_view{next.componentName} != kSafeAreaProviderComponentName ||
+    if (next.componentName == nullptr || std::string_view{next.componentName} != kSafeAreaProviderComponentName ||
         (previous != nullptr && previous->layoutMetrics.frame == frame)) {
         return;
     }

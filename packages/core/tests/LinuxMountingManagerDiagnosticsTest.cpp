@@ -119,6 +119,22 @@ TEST(LinuxMountingManagerDiagnosticsTest, AnUpdateForAnUnknownTagIsCountedWithIt
     EXPECT_EQ(diagnostics.firstUnknownTransactionNumber, kLaterTransaction);
 }
 
+TEST(LinuxMountingManagerDiagnosticsTest, AViewWithoutAComponentNameMountsThroughInsertAndUpdate) {
+    LinuxMountingManager mountingManager;
+    ShadowView unnamed = makePaintedView(kMountedTag, makeRect(0, 0, 10, 10), blue());
+    ShadowViewMutationList mutations;
+
+    unnamed.componentName = nullptr;
+    mountingManager.startSurface(kSurfaceTag, Size{.width = 800, .height = 600});
+    mutations.push_back(ShadowViewMutation::CreateMutation(unnamed));
+    mutations.push_back(ShadowViewMutation::InsertMutation(kSurfaceTag, unnamed, 0));
+    mutations.push_back(ShadowViewMutation::UpdateMutation(unnamed, unnamed, kSurfaceTag));
+    mountingManager.executeMount(kSurfaceTag, numberedTransactionOf(kMountTransaction, std::move(mutations)));
+
+    EXPECT_EQ(mountingManager.mountDiagnostics().unknownTagOperations, 0U);
+    EXPECT_EQ(mountingManager.snapshotScene().size(), 1U);
+}
+
 TEST(LinuxMountingManagerDiagnosticsTest, ARemoveForAnUnknownTagIsCountedWithItsTagAndTransaction) {
     const ShadowView orphan = makePaintedView(kUnknownTag, makeRect(0, 0, 10, 10), blue());
     const MountDiagnostics diagnostics = diagnosticsAfter(ShadowViewMutation::RemoveMutation(kSurfaceTag, orphan, 0));
