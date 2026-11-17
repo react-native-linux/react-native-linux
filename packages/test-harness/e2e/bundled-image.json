@@ -1,0 +1,19 @@
+{
+  "name": "bundled-image",
+  "bundle": "bundled-image.tsx",
+  "ready": "bundled-image: loaded file://",
+  "frames": 60,
+  "steps": ["sleep 300"],
+  "expect": ["/build/e2e-bundles/bundled-image/assets/test-bundles/dev-image-before.png"],
+  "reject": ["bundled-image: error"],
+  "screenshot": {
+    "golden": "bundled-image.png",
+    "maxDifferentPixels": 1,
+    "crop": {
+      "left": 0,
+      "top": 0,
+      "width": 160,
+      "height": 112
+    }
+  }
+}
