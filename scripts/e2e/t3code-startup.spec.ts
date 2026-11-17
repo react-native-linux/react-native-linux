@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { once } from "node:events";
 import path from "node:path";
+import { setImmediate } from "node:timers/promises";
 import { tmpdir } from "node:os";
 
 const statusBarError =
@@ -21,17 +22,46 @@ const POLLS_BEFORE_COMMIT = 2;
 /** The two polls answered with a refusal and an empty root, each followed by one poll interval. */
 const COMMIT_AFTER_MS = POLLS_BEFORE_COMMIT * timing.pollIntervalMs;
 
-/** A clock that stands still between sleeps and records each one, so time moves only when the wait sleeps. */
-const createVirtualClock = (): Required<Pick<StartupTiming, "now" | "sleep">> & { readonly sleeps: number[] } => {
+/** A promise and the call that resolves it. */
+interface Latch {
+  readonly open: () => void;
+  readonly promise: Promise<unknown>;
+}
+
+const createLatch = (): Latch => {
+  const target = new EventTarget();
+
+  return { open: (): boolean => target.dispatchEvent(new Event("open")), promise: once(target, "open") };
+};
+
+/** A virtual clock, with the start and release of its held sleep. */
+interface VirtualClock extends Required<Pick<StartupTiming, "now" | "sleep">> {
+  readonly release: () => void;
+  readonly requested: Promise<unknown>;
+  readonly sleeps: readonly number[];
+}
+
+/**
+ * A clock that stands still between sleeps and records each one, so time moves only when the wait sleeps. A sleep of
+ * `heldMs` reports that it started through `requested` and lasts until `release` is called, so a spec can see what
+ * the wait does while it is in progress.
+ */
+const createVirtualClock = (heldMs: number | null = null): VirtualClock => {
   let time = VIRTUAL_LAUNCH_MS;
   const sleeps: number[] = [];
+  const [requested, held] = [createLatch(), createLatch()];
 
   return {
     now: (): number => time,
+    release: held.open,
+    requested: requested.promise,
     sleep: async (milliseconds: number): Promise<void> => {
       sleeps.push(milliseconds);
+      if (milliseconds === heldMs) {
+        requested.open();
+        await held.promise;
+      }
       time += milliseconds;
-      await Promise.resolve();
     },
     sleeps,
   };
@@ -98,6 +128,31 @@ const serveAnswers = async (
   return server;
 };
 
+/** A wait in progress against a window that commits on its third poll, and whether the wait has returned. */
+interface SettlingWait {
+  readonly clock: VirtualClock;
+  readonly pending: Promise<Awaited<ReturnType<typeof waitForFirstCommit>>>;
+  readonly progress: { hasReturned: boolean };
+  readonly server: ReturnType<typeof createServer>;
+}
+
+const startSettlingWait = async (socketPath: string): Promise<SettlingWait> => {
+  const server = await serveAnswers(socketPath, [refusal, treeLine([]), treeLine([{ tag: 2 }])]);
+  const lines = [`[rnl-automation] listening on ${socketPath}`, runningMain];
+  const clock = createVirtualClock(SETTLE_MS);
+  const progress = { hasReturned: false };
+  const watch = { isClosed: (): boolean => false, read: (): string => lines.join("\n") };
+  const pending = (async (): Promise<Awaited<ReturnType<typeof waitForFirstCommit>>> => {
+    const timings = await waitForFirstCommit(watch, VIRTUAL_LAUNCH_MS, { ...timing, ...clock });
+
+    progress.hasReturned = true;
+
+    return timings;
+  })();
+
+  return { clock, pending, progress, server };
+};
+
 /** A fresh directory per test for the fake window's automation socket, answering the socket's path. */
 const useSocketPath = (): (() => string) => {
   let directory = "";
@@ -117,15 +172,18 @@ describe("waitForFirstCommit", () => {
   const socketPathOf = useSocketPath();
 
   it("polls through a refusal and an empty root until a view commits, times main, and settles past the commit", async () => {
-    const socketPath = socketPathOf();
-    const server = await serveAnswers(socketPath, [refusal, treeLine([]), treeLine([{ tag: 2 }])]);
-    const lines = [`[rnl-automation] listening on ${socketPath}`, runningMain];
-    const clock = createVirtualClock();
-    const watch = { isClosed: (): boolean => false, read: (): string => lines.join("\n") };
-    const timings = await waitForFirstCommit(watch, VIRTUAL_LAUNCH_MS, { ...timing, ...clock });
+    const { clock, pending, progress, server } = await startSettlingWait(socketPathOf());
+
+    await clock.requested;
+    await setImmediate();
+    const hasReturnedWhileSettling = progress.hasReturned;
+
+    clock.release();
+    const timings = await pending;
 
     server.close();
-    expect([timings, clock.sleeps, clock.now() - VIRTUAL_LAUNCH_MS]).toStrictEqual([
+    expect([hasReturnedWhileSettling, timings, clock.sleeps, clock.now() - VIRTUAL_LAUNCH_MS]).toStrictEqual([
+      false,
       { firstCommitMs: COMMIT_AFTER_MS, runningMainMs: NO_ELAPSED_MS },
       [timing.pollIntervalMs, timing.pollIntervalMs, SETTLE_MS],
       COMMIT_AFTER_MS + SETTLE_MS,
