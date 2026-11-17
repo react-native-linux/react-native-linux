@@ -175,6 +175,7 @@ add_executable(rnl_core_tests
     PixelAndFontScaleTest.cpp
     RendererLadderTest.cpp
     ResizeRelayoutTest.cpp
+    SafeAreaProviderInsetsTest.cpp
     SceneTest.cpp
     SeededInterleavingTest.cpp
     SeededTestSchedulerTest.cpp

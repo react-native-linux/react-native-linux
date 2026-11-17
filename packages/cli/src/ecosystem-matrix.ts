@@ -38,7 +38,7 @@ const ecosystemMatrix: readonly EcosystemRow[] = [
   { flagshipVersion: "^5.1.3", issue: 144, packageName: "reanimated-color-picker", state: "blocked" },
   { flagshipVersion: "~3.2.1", issue: 168, packageName: "react-native-gesture-handler", state: "in progress" },
   { flagshipVersion: "~4.28.0", issue: 166, packageName: "react-native-screens", state: "blocked" },
-  { flagshipVersion: "~5.9.1", issue: 161, packageName: "react-native-safe-area-context", state: "blocked" },
+  { flagshipVersion: "~5.9.1", issue: 161, packageName: "react-native-safe-area-context", state: "in progress" },
   { flagshipVersion: "~58.0.2", issue: 155, packageName: "expo", state: "blocked" },
   { flagshipVersion: "~58.0.3", issue: 165, packageName: "expo-blur", state: "blocked" },
   { flagshipVersion: "~58.0.9", issue: 156, packageName: "expo-constants", state: "in progress" },

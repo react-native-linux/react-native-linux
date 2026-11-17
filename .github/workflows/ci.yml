@@ -852,8 +852,24 @@ jobs:
           printf 'max_size = 2G\ncompression = true\n' > "$CCACHE_DIR/ccache.conf"
           ccache --zero-stats
 
+      # #806: the safe-area-provider scenario mounts react-native-safe-area-context's SafeAreaProvider through the
+      # library as the test harness installs it, so its descriptors are autolinked into the window as an app's are,
+      # with the Android descriptors its react-native.config.js declares, as `react-native config` prints them.
+      - name: Autolink react-native-safe-area-context
+        run: |
+          set -euo pipefail
+          library=$(realpath packages/test-harness/node_modules/react-native-safe-area-context)
+          node -e 'const { dependency } = require(process.argv[1]); const android = dependency.platforms.android;
+            console.log(JSON.stringify({ root: process.argv[2], dependencies: { "react-native-safe-area-context": {
+              root: process.argv[3], platforms: { linux: null, android: {
+              cmakeListsPath: require("node:path").resolve(process.argv[3], "android", android.cmakeListsPath),
+              componentDescriptors: android.componentDescriptors } } } } }));' \
+            "$library/react-native.config.js" "$GITHUB_WORKSPACE/packages/test-harness" "$library" \
+            > /tmp/rnl-window-autolink-config.json
+          node scripts/autolink.ts /tmp/rnl-window-autolink-config.json build/autolinking-window
+
       - name: Configure
-        run: cmake --preset dev
+        run: cmake --preset dev -DRNL_AUTOLINKING_CMAKE="$GITHUB_WORKSPACE/build/autolinking-window/rnl_autolinking.cmake"
 
       # This is also the assertion that the window half configured: RNL_ENABLE_WINDOW skips the target rather
       # than failing when Wayland or Vulkan is missing, so an incomplete apt list shows up here as an unknown

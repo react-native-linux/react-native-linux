@@ -293,6 +293,9 @@ importers:
       react-native-keyboard-controller:
         specifier: 1.23.0
         version: 1.23.0(react-native@0.88.1(patch_hash=6b3a0befcda7e6ee7b87ffc28e229730a284e887a53328eab553497985347a41)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1)
+      react-native-safe-area-context:
+        specifier: 5.11.1
+        version: 5.11.1(react-native@0.88.1(patch_hash=6b3a0befcda7e6ee7b87ffc28e229730a284e887a53328eab553497985347a41)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1)
       react-native-worklets:
         specifier: 0.13.1
         version: 0.13.1(patch_hash=53a18eb9b655c7f4e00f254167a7fef02a4519ffee0b7635afdbead7c6c67a36)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(react-native@0.88.1(patch_hash=6b3a0befcda7e6ee7b87ffc28e229730a284e887a53328eab553497985347a41)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1)(supports-color@8.1.1)
@@ -4062,6 +4065,12 @@ packages:
     engines: {node: '>= 22'}
     hasBin: true
     peerDependencies:
+      react-native: '*'
+
+  react-native-safe-area-context@5.11.1:
+    resolution: {integrity: sha512-yCltXXwhwp42vMqfhAsH5BWgAysbLNgwfn3PDwNpOn/CgwfM+eMWgScZIbHbMzJYNLi5bKJEOIUEG4RwKNiECA==}
+    peerDependencies:
+      react: '*'
       react-native: '*'
 
   react-native-worklets@0.13.1:
@@ -8863,6 +8872,11 @@ snapshots:
       - eslint
       - supports-color
       - typescript
+
+  react-native-safe-area-context@5.11.1(react-native@0.88.1(patch_hash=6b3a0befcda7e6ee7b87ffc28e229730a284e887a53328eab553497985347a41)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1):
+    dependencies:
+      react: 19.3.1
+      react-native: 0.88.1(patch_hash=6b3a0befcda7e6ee7b87ffc28e229730a284e887a53328eab553497985347a41)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1)
 
   react-native-worklets@0.13.1(patch_hash=53a18eb9b655c7f4e00f254167a7fef02a4519ffee0b7635afdbead7c6c67a36)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(react-native@0.88.1(patch_hash=6b3a0befcda7e6ee7b87ffc28e229730a284e887a53328eab553497985347a41)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1)(supports-color@8.1.1):
     dependencies:

@@ -1,0 +1,23 @@
+{
+  "name": "safe-area-provider",
+  "bundle": "safe-area-provider.tsx",
+  "ready": "safe-area-provider: insets",
+  "frames": 300,
+  "windowFlags": ["--no-decorations"],
+  "steps": ["sleep 300"],
+  "automation": {
+    "accessibilityTreeSnapshot": "safe-area-provider.json",
+    "listErrorsMustBeEmpty": true
+  },
+  "expect": ["safe-area-provider: insets 0,0,0,0 frame 0,0 1280x720"],
+  "screenshot": {
+    "golden": "safe-area-provider.png",
+    "crop": {
+      "left": 0,
+      "top": 0,
+      "width": 320,
+      "height": 200
+    },
+    "maxDifferentPixels": 1
+  }
+}

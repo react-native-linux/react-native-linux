@@ -42,6 +42,7 @@
         "nullthrows",
         "pretty-format",
         "react-native-keyboard-controller",
+        "react-native-safe-area-context",
         "tinybench"
       ]
     },
