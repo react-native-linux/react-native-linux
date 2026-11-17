@@ -445,6 +445,32 @@ private:
 };
 
 /**
+ * `StatusBarManager` (#797). A desktop window has no status bar, so the height is 0 and every setter does nothing, as
+ * react-native-windows' `StatusBarManager` answers the same Android spec and react-native-macos' `RCTStatusBarManager`
+ * answers on macOS. `StatusBar.js` imports both platform specs, and each one calls `getEnforcing` as it loads, so the
+ * module has to exist even though `StatusBar.js` calls it only when `Platform.OS` is `ios` or `android`.
+ */
+class LinuxStatusBarManagerModule final
+    : public facebook::react::NativeStatusBarManagerAndroidCxxSpec<LinuxStatusBarManagerModule> {
+public:
+    explicit LinuxStatusBarManagerModule(std::shared_ptr<facebook::react::CallInvoker> jsInvoker)
+        : NativeStatusBarManagerAndroidCxxSpec(std::move(jsInvoker)) {}
+
+    facebook::jsi::Object getConstants(facebook::jsi::Runtime& runtime) {
+        facebook::jsi::Object constants(runtime);
+
+        constants.setProperty(runtime, "HEIGHT", 0);
+
+        return constants;
+    }
+
+    void setStyle(facebook::jsi::Runtime& /*runtime*/, const std::optional<facebook::jsi::String>& /*statusBarStyle*/) {
+    }
+
+    void setHidden(facebook::jsi::Runtime& /*runtime*/, bool /*hidden*/) {}
+};
+
+/**
  * `RNAsyncStorage`, the native module `@react-native-async-storage/async-storage` 3.x resolves on any platform that
  * is not web or Windows (#23), over `KeyValueStore`. Written against `TurboModule::methodMap_` rather than a
  * generated spec, because the spec belongs to a package this one does not depend on. `legacy_*` is the v2 surface
@@ -1211,6 +1237,8 @@ TurboModuleRegistry::TurboModuleRegistry(
     moduleFactories_.emplace(LinuxI18nManagerModule::kModuleName, [jsInvoker, i18nModel = i18nModel_]() {
         return std::make_shared<LinuxI18nManagerModule>(jsInvoker, i18nModel);
     });
+    moduleFactories_.emplace(LinuxStatusBarManagerModule::kModuleName,
+                             [jsInvoker]() { return std::make_shared<LinuxStatusBarManagerModule>(jsInvoker); });
     moduleFactories_.emplace(LinuxFantomModule::kModuleName,
                              [jsInvoker, fantomRunControls = std::move(fantomRunControls)]() {
                                  return std::make_shared<LinuxFantomModule>(jsInvoker, fantomRunControls);

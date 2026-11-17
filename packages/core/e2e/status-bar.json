@@ -1,0 +1,13 @@
+{
+  "name": "status-bar",
+  "bundle": "status-bar.tsx",
+  "ready": "status-bar: committed",
+  "frames": 600,
+  "steps": ["sleep 500"],
+  "expect": ["status-bar: currentHeight=null", "status-bar: committed"],
+  "reject": ["Invariant Violation", "StatusBarManager"],
+  "screenshot": {
+    "golden": "status-bar.png",
+    "maxDifferentPixels": 1
+  }
+}

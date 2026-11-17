@@ -128,6 +128,7 @@ add_executable(rnl_core_hermes_tests
     LinuxUISchedulerTest.cpp
     ReanimatedModuleTest.cpp
     SQLiteModuleTest.cpp
+    StatusBarManagerModuleTest.cpp
     TextDecoderTest.cpp
     WorkletsModuleTest.cpp
     ThreadAffinityTest.cpp
