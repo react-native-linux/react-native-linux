@@ -8152,6 +8152,26 @@ the driver that touches the filesystem and is still covered, because a temporary
 The process side stays in `scripts/e2e.ts`, uncovered by Vitest for the reason `scripts/doctor.ts` is: it is
 spawns and sockets.
 
+### Third-party components in the e2e window (#806)
+
+A scenario that mounts a library the test harness installs, such as react-native-safe-area-context's
+`SafeAreaProvider` in `safe-area-provider.json`, needs that library's component descriptors in `rnl_window`. They
+come from autolinking it, as an application's build does (*Autolinking*), so the local loop is CI's `window` job:
+
+```sh
+node scripts/autolink-harness.ts build/autolinking-harness
+cmake --preset dev -DRNL_AUTOLINKING_CMAKE=$PWD/build/autolinking-harness/rnl_autolinking.cmake
+cmake --build build/dev --target rnl_window rnl_inject
+pnpm e2e
+```
+
+`scripts/autolink-harness.ts` writes the `react-native config` JSON for each library in its `HARNESS_LIBRARIES`,
+read from the copy under `packages/test-harness/node_modules`, and runs `scripts/autolink.ts` on it. Its
+`--dependency <library root>` prints one library's entry, which is how CI's fabric job autolinks the registry
+tarballs it unpacks. A scenario that needs this sets `"harnessAutolinking": true`. `scripts/e2e.ts` reads
+`build/dev/CMakeCache.txt` and refuses to start the run, with exit status 2 and both commands above, when the
+window was configured without that file.
+
 ### Fast Refresh (#81)
 
 A scenario with a `fastRefresh` block runs its window on a `dev=true` bundle from a watching Metro instead of a bundle
