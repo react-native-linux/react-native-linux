@@ -88,6 +88,9 @@ public:
      */
     FocusTransition focusTagWithVisibility(facebook::react::Tag tag, bool isFocusVisible);
 
+    /** Whether `overlayTag` is on the stack of presented overlays, so that seeing it again is not a present. */
+    bool isPresented(facebook::react::Tag overlayTag) const;
+
     facebook::react::Tag focusedTag() const noexcept;
     bool isFocusVisible() const noexcept;
 
@@ -100,6 +103,8 @@ private:
         facebook::react::Tag invokerTag;
         bool wasFocusVisible;
     };
+
+    std::vector<PresentedOverlay>::const_iterator findPresented(facebook::react::Tag overlayTag) const;
 
     std::vector<facebook::react::Tag> focusableTags_;
     std::vector<PresentedOverlay> presentedOverlays_;

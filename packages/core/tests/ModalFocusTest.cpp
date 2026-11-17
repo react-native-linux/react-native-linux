@@ -8,6 +8,7 @@
 #include "ShadowTreeTestSupport.h"
 #include "TextInputComponent.h"
 
+#include <algorithm>
 #include <folly/dynamic.h>
 #include <gtest/gtest.h>
 #include <memory>
@@ -74,12 +75,31 @@ protected:
 
     /** Commits `children` under the root and mounts the transaction, as the JavaScript thread does. */
     void present(ChildList children) {
-        react_native_linux::commitChildren(*shadowTree_, std::make_shared<const ChildList>(std::move(children)));
+        commit(std::move(children));
+        mount();
+    }
 
+    /** The first half of `present`: the frame thread can run between a commit and its mount. */
+    void commit(ChildList children) {
+        react_native_linux::commitChildren(*shadowTree_, std::make_shared<const ChildList>(std::move(children)));
+    }
+
+    void mount() {
         std::optional<facebook::react::MountingTransaction> transaction =
             shadowTree_->getMountingCoordinator()->pullTransaction();
 
         mountingManager_->executeMount(kSurfaceId, std::move(transaction.value()));
+    }
+
+    static InputEvent press(float x, float y) {
+        return InputEvent{.kind = InputEventKind::PointerButtonPress, .surfacePoint = {.x = x, .y = y}};
+    }
+
+    static InputEvent wheelAt(float x, float y) {
+        return InputEvent{.kind = InputEventKind::PointerScrollDiscrete,
+                          .surfacePoint = {.x = x, .y = y},
+                          .scrollAxis = react_native_linux::ScrollAxisKind::Vertical,
+                          .scrollAmount = 1.0};
     }
 
     void focus(Tag tag) {
@@ -120,6 +140,15 @@ protected:
 
     std::shared_ptr<const ShadowNode> modal(Tag tag, ChildList children) {
         return node(modalDescriptor_, tag, folly::dynamic::object(), std::move(children));
+    }
+
+    /** The modal two buttons are in, with whatever is nested after them. */
+    std::shared_ptr<const ShadowNode> outerModal(ChildList nested) {
+        ChildList children{button(kFirstButtonTag), button(kSecondButtonTag)};
+
+        children.insert(children.end(), nested.begin(), nested.end());
+
+        return modal(kModalTag, std::move(children));
     }
 
     /** A 100x100 `<ScrollView>` at the top left over 1000 points of content, which is what a wheel can move. */
@@ -263,6 +292,25 @@ TEST_F(ModalFocusTest, PresentingCancelsAPressBeneath) {
     EXPECT_EQ(takeEvents(), (std::vector<std::string>{"21:topTouchCancel", "21:topBlur"}));
 }
 
+/** A button held through a modal's present and dismissal clicks nothing when it is released over its control. */
+TEST_F(ModalFocusTest, APressHeldThroughAModalClicksNothingOnRelease) {
+    present({button(kInvokerTag)});
+    dispatcher_->dispatch({press(10, 10)});
+    present({button(kInvokerTag), modal(kModalTag, {})});
+    dispatcher_->dispatch({});
+    present({button(kInvokerTag)});
+    dispatcher_->dispatch({});
+    takeEvents();
+
+    dispatcher_->dispatch(
+        {InputEvent{.kind = InputEventKind::PointerButtonRelease, .surfacePoint = {.x = 10, .y = 10}}});
+
+    const std::vector<std::string> events = takeEvents();
+
+    EXPECT_EQ(std::count(events.begin(), events.end(), "21:topPointerUp"), 1);
+    EXPECT_EQ(std::count(events.begin(), events.end(), "21:topClick"), 0);
+}
+
 /** A modal declared inside the page's `<ScrollView>` still never scrolls it, by key or by focus. */
 TEST_F(ModalFocusTest, KeysScrollOnlyInsideTheTopmostModal) {
     present({scrollView(kPageScrollViewTag, {modal(kModalTag, {button(kFirstButtonTag)})})});
@@ -303,11 +351,120 @@ TEST_F(ModalFocusTest, TheWheelOverAModalScrollsOnlyInsideIt) {
     EXPECT_EQ(takeEvents(), (std::vector<std::string>{"44:topScroll", "44:topMomentumScrollBegin"}));
 }
 
-TEST_F(ModalFocusTest, AFrameCarriesTheModalsItPaintsForTheFirstTime) {
+/**
+ * A nested dismissal committed and not yet mounted: the scene still presents the inner modal, the committed tree no
+ * longer holds it. Nothing settles until the mount, which restores one level, and an uncovered modal is no present.
+ */
+TEST_F(ModalFocusTest, ANestedDismissalSettlesAtItsMountAndRestoresOneLevel) {
+    present({button(kInvokerTag)});
+    focus(kInvokerTag);
+    present({button(kInvokerTag), outerModal({})});
+    dispatcher_->dispatch({keyPress("Tab"), press(10, 50)});
+    present({button(kInvokerTag), outerModal({modal(kNestedModalTag, {button(kNestedButtonTag)})})});
+    dispatcher_->dispatch({press(10, 10)});
+    takeEvents();
+
+    commit({button(kInvokerTag), outerModal({})});
+    dispatcher_->dispatch({keyPress("Escape")});
+
+    EXPECT_EQ(takeEvents(), (std::vector<std::string>{"51:topKeyDown"}));
+
+    mount();
+    dispatcher_->dispatch({});
+
+    EXPECT_EQ(takeFocusedTags(), (std::vector<Tag>{kSecondButtonTag}));
+    EXPECT_EQ(hardwareBackPresses_, 0);
+}
+
+TEST_F(ModalFocusTest, PresentingANestedModalCancelsThePressBeneathItOnceAndItsDismissalCancelsNothing) {
+    present({outerModal({})});
+    dispatcher_->dispatch({press(10, 50)});
+    present({outerModal({modal(kNestedModalTag, {button(kNestedButtonTag)})})});
+    dispatcher_->dispatch({press(10, 10)});
+    commit({outerModal({})});
+    dispatcher_->dispatch({});
+    mount();
+    dispatcher_->dispatch({});
+
+    const std::vector<std::string> events = takeEvents();
+
+    EXPECT_EQ(std::count(events.begin(), events.end(), "42:topTouchCancel"), 1);
+    EXPECT_EQ(std::count(events.begin(), events.end(), "51:topTouchCancel"), 0);
+}
+
+/** Between a dismissal's commit and its mount the scene still covers the page: Escape and the wheel reach nothing. */
+TEST_F(ModalFocusTest, EscapeAndTheWheelReachNothingBetweenADismissalsCommitAndItsMount) {
+    ScrollController controller(uiManager_, mountingManager_, kSurfaceId);
+
+    present({scrollView(kPageScrollViewTag, {modal(kModalTag, {button(kFirstButtonTag)})})});
+    dispatcher_->dispatch({});
+    takeEvents();
+
+    commit({scrollView(kPageScrollViewTag)});
+    dispatcher_->dispatch({keyPress("Escape")});
+    controller.dispatch({wheelAt(50, 50)});
+    controller.advance(16.0);
+
+    EXPECT_EQ(takeEvents(), (std::vector<std::string>{"41:topKeyDown"}));
+    EXPECT_EQ(hardwareBackPresses_, 0);
+
+    mount();
+    dispatcher_->dispatch({keyPress("Escape")});
+    controller.dispatch({wheelAt(50, 50)});
+    controller.advance(16.0);
+
+    EXPECT_EQ(hardwareBackPresses_, 1);
+    EXPECT_EQ(takeEvents(), (std::vector<std::string>{"41:topBlur", "30:topScroll", "30:topMomentumScrollBegin"}));
+}
+
+/** `onShow` follows a submitted frame: a failed draw leaves it for the next, and it fires once. */
+TEST_F(ModalFocusTest, OnShowWaitsForASubmittedFrameAndFiresOnce) {
     present({modal(kModalTag, {})});
 
-    ASSERT_EQ(mountingManager_->takeFrame().presentedOverlays.size(), 1U);
-    EXPECT_TRUE(mountingManager_->takeFrame().presentedOverlays.empty());
+    EXPECT_TRUE(mountingManager_->takeShownOverlays().empty());
+
+    mountingManager_->takeFrame();
+    mountingManager_->takeFrame();
+
+    EXPECT_EQ(mountingManager_->takeShownOverlays().size(), 1U);
+    EXPECT_TRUE(mountingManager_->takeShownOverlays().empty());
+}
+
+/**
+ * Fabric moves a reordered or reparented node with a remove and an insert. That is no second show, whether the move
+ * lands before the modal's first frame or after it.
+ */
+TEST_F(ModalFocusTest, AMovedModalIsShownOnce) {
+    const facebook::react::ShadowView moved{*modal(kModalTag, {})};
+    const auto move = [this, &moved]() {
+        mountingManager_->executeMount(kSurfaceId,
+                                       facebook::react::MountingTransaction{
+                                           kSurfaceId,
+                                           1,
+                                           {facebook::react::ShadowViewMutation::RemoveMutation(kSurfaceId, moved, 0),
+                                            facebook::react::ShadowViewMutation::InsertMutation(kSurfaceId, moved, 1)},
+                                           facebook::react::TransactionTelemetry{}});
+        mountingManager_->takeFrame();
+    };
+
+    present({modal(kModalTag, {}), button(kInvokerTag)});
+    move();
+
+    EXPECT_EQ(mountingManager_->takeShownOverlays().size(), 1U);
+
+    move();
+
+    EXPECT_TRUE(mountingManager_->takeShownOverlays().empty());
+}
+
+TEST_F(ModalFocusTest, AModalDismissedBeforeAnyFrameIsSubmittedIsNeverShown) {
+    present({modal(kModalTag, {})});
+    present({});
+    present({modal(kNestedModalTag, {})});
+    mountingManager_->takeFrame();
+    present({});
+
+    EXPECT_TRUE(mountingManager_->takeShownOverlays().empty());
 }
 
 } // namespace

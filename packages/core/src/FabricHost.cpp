@@ -517,6 +517,15 @@ SceneFrame FabricHost::takeFrame() {
     return mountingManager_->takeFrame();
 }
 
+void FabricHost::emitShownOverlays() {
+    react_native_assert(std::this_thread::get_id() == owningThread_);
+
+    for (const std::shared_ptr<const facebook::react::ModalHostViewEventEmitter>& overlay :
+         mountingManager_->takeShownOverlays()) {
+        overlay->onShow({});
+    }
+}
+
 SceneSnapshot FabricHost::snapshotScene() const {
     react_native_assert(std::this_thread::get_id() == owningThread_);
 

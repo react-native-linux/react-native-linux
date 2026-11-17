@@ -183,7 +183,13 @@ void WindowSession::tickAnimations(std::chrono::steady_clock::time_point now) {
     }
 }
 
-void WindowSession::recordDrawOutcome(bool presented) noexcept { frameClock_.recordDrawOutcome(presented); }
+void WindowSession::recordDrawOutcome(bool presented) {
+    frameClock_.recordDrawOutcome(presented);
+
+    if (presented) {
+        fabricHost_->emitShownOverlays();
+    }
+}
 
 FrameClock::Tick WindowSession::recordFrameTick(FrameClock::Source source, std::chrono::steady_clock::time_point now) {
     const bool hasPending = hasPendingWork();

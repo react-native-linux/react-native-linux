@@ -596,8 +596,10 @@ void PointerRouter::cancelPressForScroll(const InputEvent& event) {
         return;
     }
 
-    pressedTag_ = kNoPressTarget;
+    cancelPress();
 }
+
+void PointerRouter::cancelPress() noexcept { pressedTag_ = kNoPressTarget; }
 
 std::vector<PointerDispatch> PointerRouter::route(const InputEvent& event, facebook::react::Tag targetTag,
                                                   facebook::react::Point targetOffset) {

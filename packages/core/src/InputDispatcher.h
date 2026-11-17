@@ -187,6 +187,12 @@ private:
      */
     std::shared_ptr<const facebook::react::ModalHostViewShadowNode> overlayNode_;
     facebook::react::Tag syncedOverlayTag_{0};
+
+    /**
+     * The scene presents an overlay whose dismissal the committed tree already holds and the mount has not applied.
+     * Until it has, the focus state is the last settled one, and Escape closes nothing and goes nowhere.
+     */
+    bool isOverlaySettling_{false};
     TextInputController textInputController_;
     std::function<void()> onHardwareBackPress_;
 

@@ -573,7 +573,13 @@ void InputDispatcher::dispatchKeyEvent(const InputEvent& event) {
         return;
     }
 
-    if (overlayNode_ != nullptr && isBareEscapePress(event)) {
+    // While a dismissal is committed but not yet mounted, the Escape is no one's: the modal is already closing, and
+    // going back as well would act on the screen beneath it.
+    if (isBareEscapePress(event) && isOverlaySettling_) {
+        return;
+    }
+
+    if (isBareEscapePress(event) && overlayNode_ != nullptr) {
         overlayNode_->getConcreteEventEmitter().onRequestClose({});
 
         return;
@@ -696,25 +702,40 @@ void InputDispatcher::emitFocusEvent(const facebook::react::ShadowNode& shadowNo
 }
 
 void InputDispatcher::syncFocusables() {
-    const std::shared_ptr<const facebook::react::ShadowNode> root = rootShadowNode();
+    // The scene's tag before the committed root: a mount follows its commit, so a tag this root does not hold is a
+    // dismissal still to be mounted, never a present the root has not seen.
     const facebook::react::Tag overlayTag = mountingManager_->topmostOverlayTag(surfaceId_);
+    const std::shared_ptr<const facebook::react::ShadowNode> root = rootShadowNode();
 
     if (root == syncedRoot_ && overlayTag == syncedOverlayTag_) {
         return;
     }
 
-    // A press in progress beneath a `<Modal>` that is presenting ends as a cancel: its release can no longer reach
-    // the node it started on.
-    if (overlayTag != kNoTag && overlayTag != syncedOverlayTag_) {
+    const std::shared_ptr<const facebook::react::ModalHostViewShadowNode> overlay =
+        root == nullptr || overlayTag == kNoTag
+            ? nullptr
+            : std::dynamic_pointer_cast<const facebook::react::ModalHostViewShadowNode>(
+                  shadowNodeWithTag(root, overlayTag));
+
+    // The scene still presents an overlay the committed tree no longer holds: its dismissal is committed and not yet
+    // mounted. Nothing is re-read until the mount settles it, so a nested dismissal restores one level, not all.
+    isOverlaySettling_ = overlayTag != kNoTag && overlay == nullptr;
+
+    if (isOverlaySettling_) {
+        return;
+    }
+
+    // A press in progress beneath a `<Modal>` that is presenting ends: its touch as a cancel, and its click never,
+    // even if the modal is dismissed before the button is released over the node it started on. An overlay
+    // uncovered by a dismissal above it is not presenting.
+    if (overlay != nullptr && !focusModel_.isPresented(overlayTag)) {
         cancelTouch(InputEvent{.kind = InputEventKind::PointerLeave, .surfacePoint = touchOrigin_});
+        router_.cancelPress();
     }
 
     syncedRoot_ = root;
     syncedOverlayTag_ = overlayTag;
-    overlayNode_ = root == nullptr || overlayTag == kNoTag
-                       ? nullptr
-                       : std::dynamic_pointer_cast<const facebook::react::ModalHostViewShadowNode>(
-                             shadowNodeWithTag(root, overlayTag));
+    overlayNode_ = overlay;
     focusableNodes_.clear();
     textInputNodes_.clear();
 
@@ -734,8 +755,7 @@ void InputDispatcher::syncFocusables() {
         focusableTags.push_back(focusable->getTag());
     }
 
-    const FocusTransition transition =
-        focusModel_.setFocusableTags(std::move(focusableTags), overlayNode_ == nullptr ? kNoTag : overlayTag);
+    const FocusTransition transition = focusModel_.setFocusableTags(std::move(focusableTags), overlayTag);
 
     if (transition.hasChanged) {
         applyFocusTransition(transition);

@@ -611,15 +611,22 @@ ScrollController::scrollViewWithTag(facebook::react::Tag tag) const {
 
 std::shared_ptr<const facebook::react::ScrollViewShadowNode>
 ScrollController::scrollViewUnderPointer(facebook::react::Point surfacePoint) const {
+    // The scene's tag before the committed root, as `InputDispatcher::syncFocusables` reads them.
+    const facebook::react::Tag overlayTag = mountingManager_->topmostOverlayTag(surfaceId_);
     const std::shared_ptr<const facebook::react::ShadowNode> surfaceRoot = rootShadowNode();
 
     if (surfaceRoot == nullptr) {
         return nullptr;
     }
 
-    const facebook::react::Tag overlayTag = mountingManager_->topmostOverlayTag(surfaceId_);
     const std::shared_ptr<const facebook::react::ShadowNode> overlay =
         overlayTag == 0 ? nullptr : findNodeWithTag(surfaceRoot, overlayTag);
+
+    // A dismissal committed and not yet mounted: the scene still covers the page, so the wheel reaches nothing.
+    if (overlayTag != 0 && overlay == nullptr) {
+        return nullptr;
+    }
+
     const std::shared_ptr<const facebook::react::ShadowNode> rootNode = overlay == nullptr ? surfaceRoot : overlay;
 
     // The overlay lays out at its parent's origin but is painted at the surface's, so the point moves by that origin

@@ -262,6 +262,22 @@ TEST(FocusModelTest, NestedOverlaysRestoreOneAtATimeOrAllAtOnceToTheFirstInvoker
     expectTransition(model.setFocusableTags({kAlpha, kBeta}), kInsideNestedOverlay, kAlpha);
 }
 
+TEST(FocusModelTest, AnOverlayIsPresentedFromItsPresentUntilItsDismissal) {
+    FocusModel model = modelWithThreeFocusables();
+
+    EXPECT_FALSE(model.isPresented(kOverlay));
+
+    model.setFocusableTags({kInsideOverlay}, kOverlay);
+    model.setFocusableTags({kInsideNestedOverlay}, kNestedOverlay);
+
+    EXPECT_TRUE(model.isPresented(kOverlay));
+    EXPECT_TRUE(model.isPresented(kNestedOverlay));
+
+    model.setFocusableTags({kInsideOverlay}, kOverlay);
+
+    EXPECT_FALSE(model.isPresented(kNestedOverlay));
+}
+
 TEST(FocusModelTest, AnInvokerUnmountedWhileTheOverlayWasOpenIsNotRestored) {
     FocusModel model = modelWithThreeFocusables();
 

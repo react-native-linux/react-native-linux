@@ -26,11 +26,9 @@ FocusTransition FocusModel::setFocusableTags(std::vector<facebook::react::Tag> f
                                              facebook::react::Tag overlayTag) {
     focusableTags_ = std::move(focusableTags);
 
-    const auto presented =
-        std::find_if(presentedOverlays_.begin(), presentedOverlays_.end(),
-                     [overlayTag](const PresentedOverlay& overlay) { return overlay.overlayTag == overlayTag; });
+    const auto presented = findPresented(overlayTag);
 
-    if (overlayTag != kNoTag && presented == presentedOverlays_.end()) {
+    if (overlayTag != kNoTag && presented == presentedOverlays_.cend()) {
         presentedOverlays_.push_back(
             PresentedOverlay{.overlayTag = overlayTag, .invokerTag = focusedTag_, .wasFocusVisible = isFocusVisible_});
 
@@ -38,9 +36,9 @@ FocusTransition FocusModel::setFocusableTags(std::vector<facebook::react::Tag> f
                                       : transitionTo(focusableTags_.front(), isFocusVisible_);
     }
 
-    const auto firstDismissed = presented == presentedOverlays_.end() ? presentedOverlays_.begin() : presented + 1;
+    const auto firstDismissed = presented == presentedOverlays_.cend() ? presentedOverlays_.cbegin() : presented + 1;
 
-    if (firstDismissed != presentedOverlays_.end()) {
+    if (firstDismissed != presentedOverlays_.cend()) {
         const PresentedOverlay dismissed = *firstDismissed;
 
         presentedOverlays_.erase(firstDismissed, presentedOverlays_.end());
@@ -86,6 +84,16 @@ FocusTransition FocusModel::focusTagWithVisibility(facebook::react::Tag tag, boo
     }
 
     return transitionTo(tag, isFocusVisible);
+}
+
+bool FocusModel::isPresented(facebook::react::Tag overlayTag) const {
+    return findPresented(overlayTag) != presentedOverlays_.end();
+}
+
+std::vector<FocusModel::PresentedOverlay>::const_iterator
+FocusModel::findPresented(facebook::react::Tag overlayTag) const {
+    return std::find_if(presentedOverlays_.begin(), presentedOverlays_.end(),
+                        [overlayTag](const PresentedOverlay& overlay) { return overlay.overlayTag == overlayTag; });
 }
 
 facebook::react::Tag FocusModel::focusedTag() const noexcept { return focusedTag_; }
