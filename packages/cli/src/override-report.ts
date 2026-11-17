@@ -16,7 +16,7 @@ interface OverrideReportRow extends OverrideEntry {
 }
 
 /** ADR-0001's override budget. Raising it is a reviewed edit to this number, with the reason in the pull request. */
-const OVERRIDE_BUDGET = 14;
+const OVERRIDE_BUDGET = 19;
 const MINOR_INDEX = 1;
 const HUNK_NOT_FOUND = -1;
 

@@ -1,0 +1,30 @@
+{
+  "name": "alert-destructive-enter",
+  "bundle": "alert.tsx",
+  "ready": "alert: committed",
+  "frames": 900,
+  "steps": [
+    "sleep 800",
+    "key Escape press",
+    "key Escape release",
+    "await alert: press early ok",
+    "sleep 300",
+    "click 120 40",
+    "sleep 600",
+    "key Return press",
+    "key Return release",
+    "sleep 300",
+    "key space press",
+    "key space release",
+    "sleep 300",
+    "key Escape press",
+    "key Escape release",
+    "sleep 300"
+  ],
+  "expect": ["alert: press early ok", "alert: launch destructive"],
+  "reject": ["alert: press erase", "alert: launch two", "alert: launch prompt", "alert: launch three"],
+  "screenshot": {
+    "golden": "alert-destructive.png",
+    "maxDifferentPixels": 1
+  }
+}

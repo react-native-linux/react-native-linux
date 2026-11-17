@@ -76,6 +76,37 @@
       "issue": 577
     },
     {
+      "type": "derived",
+      "file": "src-linux/Libraries/Alert/Alert.linux.ts",
+      "baseFile": "packages/react-native/Libraries/Alert/Alert.js",
+      "baseHash": "73f3f9cf2f520ededeb47f19d64546535a494ca3",
+      "issue": 262
+    },
+    {
+      "type": "platform",
+      "file": "src-linux/Libraries/Alert/AlertModal.tsx",
+      "issue": 262
+    },
+    {
+      "type": "platform",
+      "file": "src-linux/Libraries/Alert/alertRequests.ts",
+      "issue": 262
+    },
+    {
+      "type": "derived",
+      "file": "src-linux/Libraries/Alert/RCTAlertManager.linux.ts",
+      "baseFile": "packages/react-native/React/CoreModules/RCTAlertManager.mm",
+      "baseHash": "953a4c198651eed907e22a9e73fb911e60e8426d",
+      "issue": 262
+    },
+    {
+      "type": "derived",
+      "file": "src-linux/Libraries/ReactNative/AppContainer.linux.tsx",
+      "baseFile": "packages/react-native/Libraries/ReactNative/AppContainer.js",
+      "baseHash": "e7f0078d71c71cca0fca1416c45510b44112e4e9",
+      "issue": 262
+    },
+    {
       "type": "platform",
       "file": "src-linux/expo-modules-core/polyfill/index.linux.ts",
       "issue": 662

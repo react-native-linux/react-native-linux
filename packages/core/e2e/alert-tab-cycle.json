@@ -1,0 +1,45 @@
+{
+  "name": "alert-tab-cycle",
+  "bundle": "alert.tsx",
+  "ready": "alert: committed",
+  "frames": 900,
+  "steps": [
+    "sleep 800",
+    "key Escape press",
+    "key Escape release",
+    "await alert: press early ok",
+    "sleep 300",
+    "click 120 140",
+    "sleep 600",
+    "key Tab press",
+    "key Tab release",
+    "sleep 150",
+    "key Tab press",
+    "key Tab release",
+    "sleep 150",
+    "key Tab press",
+    "key Tab release",
+    "sleep 150",
+    "key Tab press",
+    "key Tab release",
+    "sleep 150",
+    "key Return press",
+    "key Return release",
+    "await alert: press cancel",
+    "sleep 300",
+    "click 120 140",
+    "sleep 800"
+  ],
+  "expect": ["alert: press early ok", "alert: launch three", "alert: press cancel", "alert: launch three"],
+  "reject": [
+    "alert: press save",
+    "alert: press dont-save",
+    "alert: focus launcher two",
+    "alert: focus launcher destructive",
+    "alert: focus launcher prompt"
+  ],
+  "screenshot": {
+    "golden": "alert-three-buttons.png",
+    "maxDifferentPixels": 1
+  }
+}

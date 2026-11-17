@@ -14,6 +14,9 @@ export default defineConfig({
         // Renders React Native components, which Vitest can neither load (react-native is Flow) nor render (#639).
         // Its logic is in lex.ts and styles.ts, and the streaming-markdown golden draws each element it renders.
         "packages/enriched-markdown/src/index.tsx",
+        // The same for ADR-0005's alert views: their rules are in alertRequests.ts, and the alert e2e scenarios draw and drive them.
+        "packages/core/src-linux/Libraries/Alert/AlertModal.tsx",
+        "packages/core/src-linux/Libraries/ReactNative/AppContainer.linux.tsx",
         "scripts/codegen-core/**/*.spec.ts",
         "scripts/create-package/**/*.spec.ts",
         "scripts/doctor/**/*.spec.ts",
@@ -40,6 +43,7 @@ export default defineConfig({
         "packages/test-harness/test-bundles/t3code-desktop-profile/expo-updates.ts",
         "packages/core/goldens/*.ts",
         "packages/core/src-linux/**/*.ts",
+        "packages/core/src-linux/**/*.tsx",
         "scripts/codegen-core/**/*.ts",
         "scripts/create-package/**/*.ts",
         "scripts/doctor/**/*.ts",

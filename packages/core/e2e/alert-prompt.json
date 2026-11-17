@@ -1,0 +1,23 @@
+{
+  "name": "alert-prompt",
+  "bundle": "alert.tsx",
+  "ready": "alert: committed",
+  "frames": 900,
+  "steps": [
+    "sleep 800",
+    "key Escape press",
+    "key Escape release",
+    "await alert: press early ok",
+    "sleep 300",
+    "click 120 90",
+    "sleep 600",
+    "type Inbox",
+    "sleep 300",
+    "key Return press",
+    "key Return release",
+    "await alert: press rename Inbox",
+    "sleep 300"
+  ],
+  "expect": ["alert: press early ok", "alert: launch prompt", "alert: press rename Inbox"],
+  "reject": ["alert: press prompt cancel"]
+}
