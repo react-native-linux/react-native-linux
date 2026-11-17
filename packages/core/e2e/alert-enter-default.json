@@ -1,0 +1,27 @@
+{
+  "name": "alert-enter-default",
+  "bundle": "alert.tsx",
+  "ready": "alert: committed",
+  "frames": 900,
+  "steps": [
+    "sleep 800",
+    "key Escape press",
+    "key Escape release",
+    "await alert: press early ok",
+    "sleep 300",
+    "click 120 240",
+    "sleep 600",
+    "key Return press",
+    "key Return release",
+    "await alert: press archive",
+    "sleep 300",
+    "click 120 240",
+    "sleep 800"
+  ],
+  "expect": ["alert: press early ok", "alert: launch dark", "alert: press archive", "alert: launch dark"],
+  "reject": ["alert: press dark cancel"],
+  "screenshot": {
+    "golden": "alert-dark.png",
+    "maxDifferentPixels": 1
+  }
+}

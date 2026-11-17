@@ -25,7 +25,15 @@ const linuxOnlyOverlayIndex: Readonly<Record<string, string>> = {
 
 const linuxOverlayIndex: Readonly<Record<string, string>> = {
   ...linuxOnlyOverlayIndex,
+  "Libraries/Alert/Alert": path.join(coreLinuxUtilitiesDirectory, "..", "Alert", "Alert.linux.ts"),
+  "Libraries/Alert/RCTAlertManager": path.join(coreLinuxUtilitiesDirectory, "..", "Alert", "RCTAlertManager.linux.ts"),
   "Libraries/NativeComponent/BaseViewConfig": path.join(coreLinuxNativeComponentDirectory, "BaseViewConfig.linux.ts"),
+  "Libraries/ReactNative/AppContainer": path.join(
+    coreLinuxUtilitiesDirectory,
+    "..",
+    "ReactNative",
+    "AppContainer.linux.tsx",
+  ),
   "Libraries/StyleSheet/PlatformColorValueTypes": path.join(
     coreLinuxUtilitiesDirectory,
     "..",
@@ -76,8 +84,6 @@ const resolveLinuxModuleName = (
  * bundle takes the upstream variant named here.
  */
 const linuxUpstreamVariantIndex: Readonly<Record<string, "android" | "ios">> = {
-  // NativeAlertManager's alert, the desktop dialog shape; Android's is DialogManagerAndroid.
-  "Libraries/Alert/RCTAlertManager": "ios",
   // The Accessibility manager's focus call; Android's goes through UIManager commands this platform does not serve.
   "Libraries/Components/AccessibilityInfo/legacySendAccessibilityEvent": "ios",
   // A stub that warns; Android's needs the Android drawer view.

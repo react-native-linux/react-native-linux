@@ -123,6 +123,9 @@ importers:
       '@react-native/normalize-colors':
         specifier: 0.88.1
         version: 0.88.1
+      react:
+        specifier: '*'
+        version: 19.3.1
       react-native:
         specifier: 0.88.1
         version: 0.88.1(patch_hash=6b3a0befcda7e6ee7b87ffc28e229730a284e887a53328eab553497985347a41)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1)
@@ -142,6 +145,9 @@ importers:
       '@types/pngjs':
         specifier: 'catalog:'
         version: 6.0.5
+      '@types/react':
+        specifier: ^19.1.1
+        version: 19.3.0
       expo-modules-core:
         specifier: 58.0.30
         version: 58.0.30(react-native-worklets@0.13.1(patch_hash=53a18eb9b655c7f4e00f254167a7fef02a4519ffee0b7635afdbead7c6c67a36)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(react-native@0.88.1(patch_hash=6b3a0befcda7e6ee7b87ffc28e229730a284e887a53328eab553497985347a41)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1)(supports-color@8.1.1))(react-native@0.88.1(patch_hash=6b3a0befcda7e6ee7b87ffc28e229730a284e887a53328eab553497985347a41)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1)

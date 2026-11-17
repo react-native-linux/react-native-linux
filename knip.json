@@ -15,8 +15,8 @@
       "ignoreBinaries": ["desktop-file-validate"]
     },
     "packages/core": {
-      "entry": ["goldens/*.spec.ts", "scripts/*.ts", "src-linux/**/*.linux.ts"],
-      "project": ["goldens/**/*.ts", "scripts/**/*.ts", "src-linux/**/*.ts"],
+      "entry": ["goldens/*.spec.ts", "scripts/*.ts", "src-linux/**/*.linux.{ts,tsx}"],
+      "project": ["goldens/**/*.ts", "scripts/**/*.ts", "src-linux/**/*.{ts,tsx}"],
       "ignoreBinaries": ["cmake"],
       "ignoreDependencies": [
         "@formatjs/intl-displaynames",

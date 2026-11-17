@@ -5,6 +5,7 @@ import {
   resolveLinuxOverlayForResolvedFile,
 } from "./metro-config.ts";
 import { describe, expect, it } from "vitest";
+import { existsSync } from "node:fs";
 import { linuxPackageOverlayIndex } from "./package-overlays.ts";
 import path from "node:path";
 
@@ -44,6 +45,17 @@ describe("resolveLinuxOverlayForResolvedFile", () => {
   });
 
   it.each([
+    ["Alert/Alert.js", /src-linux[/\\]Libraries[/\\]Alert[/\\]Alert\.linux\.ts$/u],
+    ["Alert/RCTAlertManager.js", /src-linux[/\\]Libraries[/\\]Alert[/\\]RCTAlertManager\.linux\.ts$/u],
+    ["ReactNative/AppContainer.js", /src-linux[/\\]Libraries[/\\]ReactNative[/\\]AppContainer\.linux\.tsx$/u],
+  ])("replaces %s with ADR-0005's Alert overlay", (resolved, overlay) => {
+    const overlayPath = resolveLinuxOverlayForResolvedFile(upstreamFile(resolved), "linux") ?? "";
+
+    expect(overlayPath).toMatch(overlay);
+    expect(existsSync(overlayPath)).toBe(true);
+  });
+
+  it.each([
     ["Network/RCTNetworking.js", "Network/RCTNetworking.android.js"],
     ["Utilities/BackHandler.js", "Utilities/BackHandler.android.js"],
   ])("takes the named upstream variant of %s", (resolved, variant) => {
@@ -62,7 +74,6 @@ describe("resolveLinuxOverlayForResolvedFile", () => {
 describe("linuxUpstreamVariantIndex", () => {
   it("covers every self-re-exporting upstream file that has no overlay", () => {
     expect(Object.keys(linuxUpstreamVariantIndex)).toStrictEqual([
-      "Libraries/Alert/RCTAlertManager",
       "Libraries/Components/AccessibilityInfo/legacySendAccessibilityEvent",
       "Libraries/Components/DrawerAndroid/DrawerLayoutAndroid",
       "Libraries/Components/ProgressBarAndroid/ProgressBarAndroid",

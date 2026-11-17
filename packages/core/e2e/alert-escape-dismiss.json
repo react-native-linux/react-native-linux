@@ -1,0 +1,21 @@
+{
+  "name": "alert-escape-dismiss",
+  "bundle": "alert.tsx",
+  "ready": "alert: committed",
+  "frames": 900,
+  "steps": [
+    "sleep 800",
+    "key Escape press",
+    "key Escape release",
+    "await alert: press early ok",
+    "sleep 300",
+    "click 120 290",
+    "sleep 600",
+    "key Escape press",
+    "key Escape release",
+    "await alert: dismiss",
+    "sleep 300"
+  ],
+  "expect": ["alert: press early ok", "alert: launch dismiss", "alert: dismiss"],
+  "reject": ["alert: press leave", "alert: press stay"]
+}

@@ -49,6 +49,7 @@
     "@formatjs/intl-locale": "4.2.13",
     "@types/node": "catalog:",
     "@types/pngjs": "catalog:",
+    "@types/react": "^19.1.1",
     "expo-modules-core": "58.0.30",
     "pngjs": "catalog:",
     "react-native-keyboard-controller": "1.23.0",
@@ -56,6 +57,7 @@
   },
   "peerDependencies": {
     "expo-modules-core": "*",
+    "react": "*",
     "react-native": "0.88.1"
   },
   "peerDependenciesMeta": {

@@ -35,6 +35,7 @@
     "packages/core/goldens/*.ts",
     "packages/core/scripts/**/*.ts",
     "packages/core/src-linux/**/*.ts",
+    "packages/core/src-linux/**/*.tsx",
     "packages/core/index.ts",
     "scripts/autolink.ts",
     "scripts/codegen-spec.ts",

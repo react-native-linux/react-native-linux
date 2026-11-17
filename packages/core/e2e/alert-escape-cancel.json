@@ -1,0 +1,27 @@
+{
+  "name": "alert-escape-cancel",
+  "bundle": "alert.tsx",
+  "ready": "alert: committed",
+  "frames": 900,
+  "steps": [
+    "sleep 800",
+    "key Escape press",
+    "key Escape release",
+    "await alert: press early ok",
+    "sleep 300",
+    "click 120 190",
+    "sleep 600",
+    "key Escape press",
+    "key Escape release",
+    "await alert: press cancel",
+    "sleep 300",
+    "click 120 190",
+    "sleep 800"
+  ],
+  "expect": ["alert: press early ok", "alert: launch two", "alert: press cancel", "alert: launch two"],
+  "reject": ["alert: press discard"],
+  "screenshot": {
+    "golden": "alert-two-buttons.png",
+    "maxDifferentPixels": 1
+  }
+}
