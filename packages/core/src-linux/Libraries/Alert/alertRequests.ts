@@ -131,9 +131,12 @@ const initialFocus = (type: AlertType, defaultKey: string | null, cancelKey: str
   return key === null ? { kind: "card" } : { key, kind: "button" };
 };
 
-const escapeAction = ({ buttons, cancelable }: KeyboardInput, cancelKey: string | null): AlertEscape => {
+/** Rule 1 is an acknowledgement's only: Escape never commits a prompt's text. */
+const escapeAction = ({ buttons, cancelable, type }: KeyboardInput, cancelKey: string | null): AlertEscape => {
   const acknowledgement =
-    buttons.length === loneButtonCount ? (buttons.find((button) => button.style !== "destructive") ?? null) : null;
+    type === "default" && buttons.length === loneButtonCount
+      ? (buttons.find((button) => button.style !== "destructive") ?? null)
+      : null;
 
   if (acknowledgement !== null) {
     return { key: acknowledgement.key, kind: "press" };
@@ -158,19 +161,29 @@ const alertKeyboard = (input: KeyboardInput): AlertKeyboard => {
   };
 };
 
+/** RCTAlertManager.mm's callback value: none for an alert, the text for a prompt, the credentials for login-password. */
+const responseValue = (type: AlertType, login: string, password: string): [] | [AlertValue] => {
+  if (type === "default") {
+    return [];
+  }
+
+  return [type === "login-password" ? { login, password } : login];
+};
+
 /** The row's order: the cancel button first, as UIAlertController and the GNOME HIG place it. Keys never change. */
 const visualButtonOrder = (buttons: readonly AlertRequestButton[]): readonly AlertRequestButton[] => [
   ...buttons.filter((button) => button.style === "cancel"),
   ...buttons.filter((button) => button.style !== "cancel"),
 ];
 
-export type { AlertButtonStyle, AlertContent, AlertKeyboard, AlertRequest, AlertRequestButton, AlertType, AlertValue };
+export type { AlertButtonStyle, AlertContent, AlertKeyboard, AlertRequest, AlertRequestButton, AlertType };
 export {
   addAlertRequest,
   alertKeyboard,
   mountAlertRoot,
   readAlertRequests,
   removeAlertRequest,
+  responseValue,
   subscribeAlertRequests,
   visualButtonOrder,
 };

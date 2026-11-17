@@ -1,20 +1,7 @@
-import type { AlertButtonStyle, AlertType, AlertValue } from "./alertRequests.ts";
+import type { AlertButton, AlertOptions, AlertType } from "react-native";
 import { alertWithArgs } from "./RCTAlertManager.linux.ts";
 
-type Callback = ((value?: AlertValue) => unknown) | null | undefined;
-
-interface AlertButton {
-  readonly text?: string | undefined;
-  readonly onPress?: Callback;
-  readonly isPreferred?: boolean | undefined;
-  readonly style?: AlertButtonStyle | undefined;
-}
-
-interface AlertOptions {
-  readonly cancelable?: boolean | null | undefined;
-  readonly userInterfaceStyle?: "unspecified" | "light" | "dark" | undefined;
-  readonly onDismiss?: (() => void) | null | undefined;
-}
+type Callback = ((text: string) => void) | AlertButton["onPress"];
 
 const NOT_FOUND = -1;
 const lastIndexOffset = 1;
@@ -37,9 +24,9 @@ const buttonDefinitions = (buttons: readonly AlertButton[]): Record<string, stri
  */
 // oxlint-disable-next-line eslint/max-params -- Upstream's public signature.
 const prompt = (
-  title?: string | null,
+  title: string | null | undefined,
   message?: string | null,
-  callbackOrButtons?: Callback | readonly AlertButton[],
+  callbackOrButtons?: ((text: string) => void) | readonly AlertButton[] | null,
   type: AlertType | null = "plain-text",
   defaultValue?: string,
   keyboardType?: string,
@@ -65,14 +52,19 @@ const prompt = (
       userInterfaceStyle: options?.userInterfaceStyle ?? null,
     },
     (key, ...value) => {
-      callbacks[Number(key)]?.(...value);
+      const callback = callbacks[Number(key)];
+
+      // Upstream hands login-password's credentials to a callback typed for text, and `Function` takes any arguments.
+      if (typeof callback === "function") {
+        Reflect.apply(callback, null, value);
+      }
     },
   );
 };
 
 // oxlint-disable-next-line eslint/max-params -- Upstream's public signature.
 const alert = (
-  title?: string | null,
+  title: string | null | undefined,
   message?: string | null,
   buttons?: readonly AlertButton[],
   options?: AlertOptions,

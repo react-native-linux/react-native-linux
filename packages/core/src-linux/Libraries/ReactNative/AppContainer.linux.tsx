@@ -4,6 +4,8 @@ import { mountAlertRoot, readAlertRequests, subscribeAlertRequests } from "../Al
 // oxlint-disable-next-line import/no-relative-parent-imports -- src-linux mirrors upstream's Libraries tree, which imports across it.
 import AlertModal from "../Alert/AlertModal.tsx";
 import type { ComponentType } from "react";
+import type { RootTag } from "react-native";
+import { RootTagContext } from "react-native";
 
 interface AppContainerProps {
   readonly rootTag: number;
@@ -18,6 +20,9 @@ const UpstreamAppContainer: ComponentType<AppContainerProps> = __DEV__
   ? require("react-native/Libraries/ReactNative/AppContainer-dev").default
   : require("react-native/Libraries/ReactNative/AppContainer-prod").default;
 /* oxlint-enable typescript/no-require-imports, typescript/no-var-requires, unicorn/prefer-module */
+
+// oxlint-disable-next-line import/no-commonjs, typescript/no-require-imports, typescript/no-var-requires, unicorn/prefer-module -- The one way to make a RootTag, which react-native's types do not declare.
+const createRootTag: (rootTag: number) => RootTag = require("react-native/Libraries/ReactNative/RootTag").createRootTag;
 
 const HostedContext = createContext(false);
 
@@ -40,11 +45,13 @@ const AppContainer = (props: AppContainerProps): React.JSX.Element => {
   ) : (
     <HostedContext.Provider value>
       {createElement(UpstreamAppContainer, props)}
-      {requests
-        .filter((request) => request.rootTag === rootTag)
-        .map((request) => (
-          <AlertModal key={request.id} request={request} />
-        ))}
+      <RootTagContext.Provider value={createRootTag(rootTag)}>
+        {requests
+          .filter((request) => request.rootTag === rootTag)
+          .map((request) => (
+            <AlertModal key={request.id} request={request} />
+          ))}
+      </RootTagContext.Provider>
     </HostedContext.Provider>
   );
 };

@@ -7,7 +7,10 @@
 //   two          Cancel and a destructive Discard: Escape presses Cancel, the alert-two-buttons golden
 //   three        Don't Save, Cancel and a preferred Save: Tab cycles inside it, the alert-three-buttons golden
 //   destructive  one destructive Erase, not cancelable: Enter and Escape do nothing
-//   prompt       a plain-text prompt: typing reaches its field without a click, and Enter presses Rename
+//   prompt       a plain-text prompt: typing reaches its field without a click, and Enter presses Rename; the
+//                alert-prompt golden
+//   dark         userInterfaceStyle "dark": Enter presses the focused default, Archive; the alert-dark golden
+//   dismiss      cancelable, with no cancel button: Escape calls onDismiss and no button
 import { Alert, AppRegistry, Pressable, Text, View } from "react-native";
 import { useEffect } from "react";
 
@@ -36,6 +39,26 @@ const launchers: Readonly<Record<string, () => void>> = {
       { onPress: () => log("press cancel"), style: "cancel", text: "Cancel" },
       { onPress: () => log("press discard"), style: "destructive", text: "Discard" },
     ]),
+  dark: () =>
+    Alert.alert(
+      "Archive thread?",
+      "You can find it later in Archived.",
+      [
+        { onPress: () => log("press dark cancel"), style: "cancel", text: "Cancel" },
+        { onPress: () => log("press archive"), text: "Archive" },
+      ],
+      { userInterfaceStyle: "dark" },
+    ),
+  dismiss: () =>
+    Alert.alert(
+      "Leave this page?",
+      "Your draft stays in the thread.",
+      [
+        { onPress: () => log("press leave"), style: "destructive", text: "Leave" },
+        { onPress: () => log("press stay"), text: "Stay" },
+      ],
+      { cancelable: true, onDismiss: () => log("dismiss") },
+    ),
 };
 
 Alert.alert("Raised before mount", "This alert was raised before the root mounted.", [

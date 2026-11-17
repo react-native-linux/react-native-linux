@@ -26,7 +26,7 @@ describe("Alert.alert on Linux, upstream's iOS branch", () => {
     const buttons = [
       { style: "cancel", text: "Keep" },
       { isPreferred: true, onPress: remove, style: "destructive", text: "Delete" },
-      { onPress: null },
+      {},
     ] as const;
 
     Alert.alert("Delete?", "", buttons, { cancelable: true, onDismiss, userInterfaceStyle: "dark" });
@@ -50,7 +50,7 @@ describe("Alert.alert on Linux, upstream's iOS branch", () => {
   it("calls the pressed button's callback, with nothing for a default alert", () => {
     const remove = vi.fn<() => void>();
 
-    Alert.alert("Delete?", "Gone for good", [{ text: "Keep" }, { onPress: remove, text: "Delete" }, { onPress: null }]);
+    Alert.alert("Delete?", "Gone for good", [{ text: "Keep" }, { onPress: remove, text: "Delete" }, {}]);
     lastCall().respond("1");
     lastCall().respond("2");
 
@@ -98,5 +98,23 @@ describe("Alert.prompt on Linux, upstream's iOS branch", () => {
     Alert.prompt("Sign in", null, null, null);
 
     expect(lastCall().args).toMatchObject({ buttons: [], keyboardType: null, message: null, type: null });
+  });
+});
+
+describe("Alert.prompt's types, upstream's", () => {
+  it("accepts the text-only callback upstream types, under strict TypeScript", () => {
+    // oxlint-disable-next-line eslint/no-undefined -- The exact call CodeRabbit's review names.
+    Alert.prompt("Rename", undefined, (text: string) => text.trim());
+
+    expect(lastCall().args).toMatchObject({ message: null, type: "plain-text" });
+  });
+
+  it("hands login-password's credentials to that callback, as upstream does", () => {
+    const onCredentials = vi.fn<(text: string) => void>();
+
+    Alert.prompt("Sign in", null, onCredentials, "login-password");
+    lastCall().respond("0", { login: "ada", password: "secret" });
+
+    expect(onCredentials).toHaveBeenCalledWith({ login: "ada", password: "secret" });
   });
 });

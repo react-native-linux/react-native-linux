@@ -5,6 +5,7 @@ import {
   mountAlertRoot,
   readAlertRequests,
   removeAlertRequest,
+  responseValue,
   subscribeAlertRequests,
   visualButtonOrder,
 } from "./alertRequests.ts";
@@ -121,6 +122,26 @@ describe("alertKeyboard with one button or no safe one", () => {
       escape: { kind: "none" },
       initialFocus: { kind: "card" },
     });
+  });
+});
+
+describe("alertKeyboard for a prompt", () => {
+  it("never commits a prompt on Escape, even with one acknowledgement", () => {
+    expect(keyboardOf([button("0")], "plain-text")).toStrictEqual({
+      defaultKey: "0",
+      escape: { kind: "none" },
+      initialFocus: { kind: "field" },
+    });
+    expect(keyboardOf([button("0")], "secure-text", true).escape).toStrictEqual({ kind: "dismiss" });
+  });
+});
+
+describe("responseValue", () => {
+  it("calls back with nothing for an alert, the text for a prompt, and the credentials for login-password", () => {
+    expect(responseValue("default", "ada", "secret")).toStrictEqual([]);
+    expect(responseValue("plain-text", "ada", "secret")).toStrictEqual(["ada"]);
+    expect(responseValue("secure-text", "hunter2", "")).toStrictEqual(["hunter2"]);
+    expect(responseValue("login-password", "ada", "secret")).toStrictEqual([{ login: "ada", password: "secret" }]);
   });
 });
 

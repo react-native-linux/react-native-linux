@@ -1,7 +1,7 @@
-import type { AlertKeyboard, AlertRequest, AlertRequestButton, AlertValue } from "./alertRequests.ts";
+import type { AlertKeyboard, AlertRequest, AlertRequestButton } from "./alertRequests.ts";
 import type { ComponentRef, RefObject } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useColorScheme } from "react-native";
-import { alertKeyboard, removeAlertRequest, visualButtonOrder } from "./alertRequests.ts";
+import { alertKeyboard, removeAlertRequest, responseValue, visualButtonOrder } from "./alertRequests.ts";
 import { useRef, useState } from "react";
 
 const palettes = {
@@ -33,7 +33,7 @@ const styles = StyleSheet.create({
   button: { borderRadius: 6, minWidth: 80, paddingHorizontal: 16, paddingVertical: 8 },
   buttonText: { fontSize: 14, fontWeight: "600", textAlign: "center" },
   card: { borderRadius: 12, gap: 12, maxHeight: "100%", maxWidth: 400, padding: 20, width: "100%" },
-  field: { borderRadius: 6, borderWidth: 1, fontSize: 14, height: 36, paddingHorizontal: 8 },
+  field: { borderRadius: 6, borderWidth: 1, fontSize: 14, paddingHorizontal: 8, paddingVertical: 8 },
   message: { fontSize: 14, lineHeight: 20 },
   messageScroll: { flexGrow: 0, flexShrink: 1 },
   row: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" },
@@ -60,14 +60,6 @@ interface Card {
   readonly press: (key: string) => void;
 }
 
-const fieldValue = (request: AlertRequest, login: string, password: string): [] | [AlertValue] => {
-  if (request.type === "default") {
-    return [];
-  }
-
-  return [request.type === "login-password" ? { login, password } : login];
-};
-
 const useCard = (request: AlertRequest): Card => {
   const colorScheme = useColorScheme();
   const [login, setLogin] = useState(request.defaultValue);
@@ -84,7 +76,7 @@ const useCard = (request: AlertRequest): Card => {
     password,
     press: (key) => {
       removeAlertRequest(request.id);
-      request.respond(key, ...fieldValue(request, login, password));
+      request.respond(key, ...responseValue(request.type, login, password));
     },
     request,
     setLogin,
