@@ -27,8 +27,12 @@ constexpr std::string_view kSafeAreaProviderComponentName = "RNCSafeAreaProvider
  * first one arrives. An `Insert` is the first layout; an `Update` whose frame differs is a later one, a resize too.
  *
  * The insets are always zero: a desktop window has no notch, and the surface React lays out already excludes the
- * title bar this platform draws client-side (`contentExtentOf`). The frame is the provider's layout frame, which for
- * a provider at the root of the surface, where apps mount it, is the window's.
+ * title bar this platform draws client-side (`contentExtentOf`).
+ *
+ * The frame is the provider's layout frame, relative to its parent. iOS and Android report it in root coordinates,
+ * and the two agree only for a provider at the root of the surface, which is where apps mount it. A nested provider
+ * under an offset reports that offset wrongly, and an ancestor that moves sends nothing. #161 owns both: the scene
+ * has no absolute-origin query to answer them with yet.
  */
 void reportSafeAreaInsetsIfProvider(const facebook::react::ShadowView* previous,
                                     const facebook::react::ShadowView& next) {
