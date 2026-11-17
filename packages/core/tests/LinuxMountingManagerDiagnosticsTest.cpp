@@ -212,6 +212,22 @@ TEST(LinuxMountingManagerDiagnosticsTest, AComponentWhosePropsAreNotViewPropsIsC
     EXPECT_NE(mountingManager.dumpScene().find("SecondPlainPropsView"), std::string::npos);
 }
 
+TEST(LinuxMountingManagerDiagnosticsTest, AnUnnamedComponentWhosePropsAreNotViewPropsIsCountedWithAnEmptyName) {
+    LinuxMountingManager mountingManager;
+    ShadowView unnamed = makeView(kMountedTag, makeRect(0, 0, 10, 10));
+    ShadowViewMutationList mutations;
+
+    unnamed.componentName = nullptr;
+    unnamed.props = std::make_shared<const facebook::react::Props>();
+    mountingManager.startSurface(kSurfaceTag, Size{.width = 800, .height = 600});
+    mutations.push_back(ShadowViewMutation::CreateMutation(unnamed));
+    mutations.push_back(ShadowViewMutation::InsertMutation(kSurfaceTag, unnamed, 0));
+    mountingManager.executeMount(kSurfaceTag, numberedTransactionOf(kLaterTransaction, std::move(mutations)));
+
+    EXPECT_EQ(mountingManager.mountDiagnostics().componentsWithoutViewProps, 1U);
+    EXPECT_EQ(mountingManager.mountDiagnostics().firstComponentWithoutViewProps, "");
+}
+
 TEST(LinuxMountingManagerCommandTest, ACommandForAKnownTagIsQueuedWithItsArgumentsAndReportsNothing) {
     LinuxMountingManager mountingManager;
 

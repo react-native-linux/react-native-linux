@@ -55,15 +55,16 @@ folly::dynamic renderAttributedString(facebook::react::Tag selfTag,
 
 folly::dynamic renderView(const facebook::react::StubView& view, bool includeLayoutMetrics) {
     folly::dynamic element = folly::dynamic::object;
+    const std::string_view componentName = view.componentName != nullptr ? view.componentName : "";
 
-    element["type"] = view.componentName;
+    element["type"] = componentName;
 #if RN_DEBUG_STRING_CONVERTIBLE
     folly::dynamic props = renderProps(view.props->getDebugProps());
 #else
     folly::dynamic props = folly::dynamic::object;
 #endif
 
-    if (std::string_view(view.componentName) == "Paragraph") {
+    if (componentName == "Paragraph") {
         const auto& state =
             static_cast<const facebook::react::ConcreteState<facebook::react::ParagraphState>&>(*view.state);
 
