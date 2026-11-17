@@ -42,13 +42,28 @@ const awaitTrace = async (trace: TraceWatch, awaitStep: string, stretchStart: nu
 
 const isHeldStep = (step: string): boolean => step.startsWith(AWAIT_STEP_PREFIX) || isClipboardStep(step);
 
+/** Where the stretch after `heldStep` counts its awaits from, when that is not where the trace ends as it begins. */
+const carriedStretchStart = (
+  heldStep: string,
+  hasSentInput: boolean,
+  { heldStart, stretchStart }: { readonly heldStart: number; readonly stretchStart: number },
+): { readonly stretchStart?: number } => {
+  if (isClipboardStep(heldStep)) {
+    return { stretchStart: heldStart };
+  }
+
+  return hasSentInput ? {} : { stretchStart };
+};
+
 /**
  * Sends `steps` to one running `rnl_inject` a stretch at a time, holding back what follows each `await <text>`
  * step (#719) until the trace shows `<text>` after the point where it ended when the stretch before began. The
  * wait is bounded and ends early when the window closes its trace, and the step itself never reaches the injector.
  * A clipboard step (#60) is held the same way and run through `runCommand` instead of awaited; an `await` after
  * it counts from where the trace ended when the step began, because what the window traces in answer, such as
- * receiving the selection the step set, can arrive before the step returns.
+ * receiving the selection the step set, can arrive before the step returns. An `await` that follows one with no
+ * input between them counts from where the first one did: the app traces on its own clock, so a line it prints
+ * before a gate such as drive.ts's pointer bind resolves still answers the scenario's first `await` (#814).
  * Input that depends on the app's state, such as a click on a control that has to finish moving first, goes out
  * once the app reports that state rather than after a sleep that guesses how long it takes under load. One
  * injector for the whole script matters: a new one is a new virtual pointer the window has to bind before its
@@ -85,7 +100,7 @@ const sendAwaitingTrace = async ({
       runCommand,
       send,
       steps: remainingSteps,
-      ...(isClipboardStep(heldStep) ? { stretchStart: heldStart } : {}),
+      ...carriedStretchStart(heldStep, heldIndex > SCRIPT_START_INDEX, { heldStart, stretchStart }),
       trace,
     })
   );

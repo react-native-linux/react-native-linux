@@ -9,9 +9,10 @@ const EMPTY_LENGTH = 0;
 const MILLISECONDS_PER_SECOND = 1000;
 const SECONDS_FRACTION_DIGITS = 1;
 /**
- * The fixture's window runs the `dev` preset, whose Debug Hermes evaluates T3 Code's development bundle in about 100 s
- * on an idle machine before `"main"` runs; six times that leaves room for a loaded runner. The first commit can be a
- * spinner or a Suspense fallback, so the window stays open `settleMs` past it for what renders next to report.
+ * The fixture's window runs the `dev` preset, which evaluates T3 Code's development bundle in about 3 s on an idle
+ * machine before `"main"` runs, and took 100 s before its Hermes was built optimised (#814); the timeout leaves room for
+ * a loaded runner. The first commit can be a spinner or a Suspense fallback, so the window stays open `settleMs` past
+ * it for what renders next to report.
  */
 const STARTUP_TIMING: StartupTiming = { pollIntervalMs: 1000, settleMs: 5000, timeoutMs: 600_000 };
 

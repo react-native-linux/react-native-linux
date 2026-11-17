@@ -9567,6 +9567,15 @@ shares the container-matrix decision with #349 and #356's e2e.
    carrying a patch for each distribution compiler that introduces a new warning.
 6. **CMake 4 and old `cmake_minimum_required`.** Hermes' vendored Boost.Context declares `VERSION 3.5...3.16`.
    If a future CMake refuses it, configure with `-DCMAKE_POLICY_VERSION_MINIMUM=3.5`.
+7. **A Debug configure builds a slow-debug VM.** Hermes compiles at the configure's build type, and in Debug it also
+   defines `HERMES_SLOW_DEBUG`, which verifies the heap on every collection. Together they ran T3 Code's development
+   bundle about 30 times slower: `"main"` at 90–120 s instead of 3.1 s, and the commit that holds its first screen
+   took over 20 s of one JavaScript task, so the screen mounted a minute after the first commit and `e2e:t3code`
+   screenshotted an empty provider (#814). The Hermes branch sets `HERMES_SLOW_DEBUG=OFF` and appends `-O2` to
+   `CMAKE_C_FLAGS` and `CMAKE_CXX_FLAGS` for Hermes' `add_subdirectory` only, as Hermes' own CI configures it, saving
+   and restoring both as hazard 2 does; a Release configure's `-O3` still follows it. Hermes' `assert`s stay on in
+   Debug, because they follow `NDEBUG`. `HermesBuildTest` fails while `HermesInternal.getRuntimeProperties().Build`
+   answers `SlowDebug`. Without the slow-debug checks but at `-O0`, `"main"` took 22.3 s.
 
 ## First-build fix ledger (2026-09-01, clang 22, Arch)
 
