@@ -14,7 +14,9 @@
 #include <utility>
 #include <vector>
 
+#include <react/renderer/components/text/ParagraphComponentDescriptor.h>
 #include <react/renderer/components/text/RawTextComponentDescriptor.h>
+#include <react/renderer/components/text/TextComponentDescriptor.h>
 #include <react/renderer/uimanager/LayoutEventEmitter.h>
 
 // When a resize is allowed to wake JavaScript up, and at which output scale two frames count as the same one
@@ -60,6 +62,9 @@ constexpr Tag kNewSurfaceTag = 21;
 constexpr Tag kCommittedParentTag = 22;
 constexpr Tag kCommittedChildTag = 23;
 constexpr Tag kRawTextTag = 24;
+constexpr Tag kParagraphTag = 25;
+constexpr Tag kTextTag = 26;
+constexpr Tag kInlineViewTag = 27;
 constexpr float kSurfaceHeight = 600.0F;
 constexpr float kInitialWidth = 400.0F;
 constexpr float kResizedWidth = 800.0F;
@@ -225,33 +230,58 @@ protected:
         return committedChild;
     }
 
-    /**
-     * One commit that appends a new subtree (a flexible surface over a row holding the reporting leaf `kAddedTag`
-     * and a raw text node Yoga does not lay out) to `siblingsOf` its base root, with a resize committed from another
-     * thread inside the first attempt, so the commit is retried. Answers the number of attempts.
-     */
-    int commitRetriedOverAResize(const std::function<ChildList(const RootShadowNode&)>& siblingsOf) {
-        const std::shared_ptr<const ShadowNode> row = react_native_linux::makeConfiguredShadowNode(
+    /** A flexible surface over a fixed row holding the reporting leaf `kAddedTag`. */
+    std::shared_ptr<const ShadowNode> rowSubtree() {
+        return flexibleSurfaceOver(react_native_linux::makeConfiguredShadowNode(
             viewDescriptor_, kRowTag, kSurfaceId, contextContainer_,
             folly::dynamic::object("flexDirection", "row")("width", kInitialWidth)("height", kFixedHeight),
-            std::make_shared<const ChildList>(ChildList{
-                makeReportingView(kAddedTag, fixedSize()),
-                react_native_linux::makeConfiguredShadowNode(rawTextDescriptor_, kRawTextTag, kSurfaceId,
-                                                             contextContainer_, folly::dynamic::object("text", "x"),
-                                                             std::make_shared<const ChildList>())}));
-        const std::shared_ptr<const ShadowNode> surface = react_native_linux::makeConfiguredShadowNode(
+            std::make_shared<const ChildList>(ChildList{makeReportingView(kAddedTag, fixedSize())})));
+    }
+
+    /**
+     * A flexible surface over a paragraph whose `<Text>` holds a raw text and an inline view, which the paragraph
+     * lays out as an attachment, over the reporting leaf `kAddedTag`.
+     */
+    std::shared_ptr<const ShadowNode> textAttachmentSubtree() {
+        const auto noChildren = std::make_shared<const ChildList>();
+        const std::shared_ptr<const ShadowNode> inlineView = react_native_linux::makeConfiguredShadowNode(
+            viewDescriptor_, kInlineViewTag, kSurfaceId, contextContainer_, fixedSize(),
+            std::make_shared<const ChildList>(ChildList{makeReportingView(kAddedTag, fixedSize())}));
+        const std::shared_ptr<const ShadowNode> text = react_native_linux::makeConfiguredShadowNode(
+            textDescriptor_, kTextTag, kSurfaceId, contextContainer_, folly::dynamic::object(),
+            std::make_shared<const ChildList>(
+                ChildList{react_native_linux::makeConfiguredShadowNode(rawTextDescriptor_, kRawTextTag, kSurfaceId,
+                                                                       contextContainer_,
+                                                                       folly::dynamic::object("text", "x"), noChildren),
+                          inlineView}));
+
+        return flexibleSurfaceOver(react_native_linux::makeConfiguredShadowNode(
+            paragraphDescriptor_, kParagraphTag, kSurfaceId, contextContainer_, fixedSize(),
+            std::make_shared<const ChildList>(ChildList{text})));
+    }
+
+    std::shared_ptr<const ShadowNode> flexibleSurfaceOver(std::shared_ptr<const ShadowNode> child) {
+        return react_native_linux::makeConfiguredShadowNode(
             viewDescriptor_, kNewSurfaceTag, kSurfaceId, contextContainer_, folly::dynamic::object("flex", 1),
-            std::make_shared<const ChildList>(ChildList{row}));
+            std::make_shared<const ChildList>(ChildList{std::move(child)}));
+    }
+
+    /**
+     * One commit that appends `newSubtree` to `siblingsOf` its base root, with a resize committed from another thread
+     * inside the first attempt, so the commit is retried. Answers the number of attempts.
+     */
+    int commitRetriedOverAResize(const std::function<ChildList(const RootShadowNode&)>& siblingsOf,
+                                 const std::shared_ptr<const ShadowNode>& newSubtree) {
         int attempts = 0;
 
         shadowTree_->commit(
-            [this, &attempts, &siblingsOf, &surface](const RootShadowNode& oldRootShadowNode) {
+            [this, &attempts, &siblingsOf, &newSubtree](const RootShadowNode& oldRootShadowNode) {
                 if (attempts++ == 0) {
                     std::thread([this] { configure(kResizedWidth, 1.0F); }).join();
                 }
 
                 ChildList children = siblingsOf(oldRootShadowNode);
-                children.push_back(surface);
+                children.push_back(newSubtree);
 
                 return react_native_linux::cloneRootWithChildren(
                     oldRootShadowNode, std::make_shared<const ChildList>(std::move(children)));
@@ -269,6 +299,10 @@ protected:
         react_native_linux::makeRecordingEventDispatcher(recordedEventTypes_)};
     std::shared_ptr<facebook::react::UIManager> uiManager_;
     facebook::react::RawTextComponentDescriptor rawTextDescriptor_{ComponentDescriptorParameters{
+        .eventDispatcher = eventDispatcher_, .contextContainer = contextContainer_, .flavor = nullptr}};
+    facebook::react::TextComponentDescriptor textDescriptor_{ComponentDescriptorParameters{
+        .eventDispatcher = eventDispatcher_, .contextContainer = contextContainer_, .flavor = nullptr}};
+    facebook::react::ParagraphComponentDescriptor paragraphDescriptor_{ComponentDescriptorParameters{
         .eventDispatcher = eventDispatcher_, .contextContainer = contextContainer_, .flavor = nullptr}};
     ViewComponentDescriptor viewDescriptor_{ComponentDescriptorParameters{
         .eventDispatcher = eventDispatcher_, .contextContainer = contextContainer_, .flavor = nullptr}};
@@ -390,9 +424,10 @@ TEST_F(OnLayoutEmissionTest, ACommitRetriedAfterAConcurrentResizeStillReportsIts
     commitNestedSibling();
     const size_t eventsBefore = layoutEventCount();
 
-    EXPECT_EQ(commitRetriedOverAResize(
-                  [](const RootShadowNode& oldRootShadowNode) { return oldRootShadowNode.getChildren(); }),
-              2);
+    EXPECT_EQ(
+        commitRetriedOverAResize(
+            [](const RootShadowNode& oldRootShadowNode) { return oldRootShadowNode.getChildren(); }, rowSubtree()),
+        2);
     EXPECT_EQ(layoutEventCount(), eventsBefore + 1);
     EXPECT_EQ(frames().at(kAddedTag), (Rect{.origin = {.x = 0, .y = 3 * kFixedHeight},
                                             .size = {.width = kFixedWidth, .height = kFixedHeight}}));
@@ -422,13 +457,30 @@ TEST_F(OnLayoutEmissionTest, ARetryOnlyReadsTheNodesAnOlderRevisionStillHolds) {
 
     isReading.wait();
     const int attempts = commitRetriedOverAResize(
-        [&olderRevisionChildren](const RootShadowNode& /*oldRootShadowNode*/) { return olderRevisionChildren; });
+        [&olderRevisionChildren](const RootShadowNode& /*oldRootShadowNode*/) { return olderRevisionChildren; },
+        rowSubtree());
     isCommitted.store(true);
     reader.join();
 
     EXPECT_EQ(attempts, 2);
     EXPECT_EQ(layoutEventCount(), eventsBefore + 1);
     EXPECT_TRUE(dynamic_cast<const LayoutableShadowNode&>(*olderRevisionNode).getIsLayoutClean());
+}
+
+/**
+ * A retried commit whose new view sits inside text: the paragraph lays its inline view out as an attachment, by
+ * cloning it and laying the clone's subtree out from there, so a clone that still carries the failed attempt's spent
+ * layout comes out of that pass unchanged. The `<Text>` between them is not layoutable, and the relayout has to go
+ * through it to reach the inline view and the leaf under it.
+ */
+TEST_F(OnLayoutEmissionTest, ACommitRetriedAfterAConcurrentResizeStillReportsALeafInsideText) {
+    const size_t eventsBefore = layoutEventCount();
+
+    EXPECT_EQ(commitRetriedOverAResize(
+                  [](const RootShadowNode& oldRootShadowNode) { return oldRootShadowNode.getChildren(); },
+                  textAttachmentSubtree()),
+              2);
+    EXPECT_EQ(layoutEventCount(), eventsBefore + 1);
 }
 
 } // namespace

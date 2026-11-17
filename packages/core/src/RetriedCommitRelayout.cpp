@@ -34,8 +34,7 @@ std::shared_ptr<facebook::react::ShadowNode> dirtyCopy(const facebook::react::Sh
     for (std::shared_ptr<const facebook::react::ShadowNode>& child : children) {
         const facebook::react::ShadowNode* committedChild = committedCounterpart(*child, committed);
 
-        if (child.get() != committedChild &&
-            dynamic_cast<const facebook::react::LayoutableShadowNode*>(child.get()) != nullptr) {
+        if (child.get() != committedChild) {
             child = dirtyCopy(*child, committedChild);
         }
     }
@@ -44,7 +43,9 @@ std::shared_ptr<facebook::react::ShadowNode> dirtyCopy(const facebook::react::Sh
         {.children = std::make_shared<const std::vector<std::shared_ptr<const facebook::react::ShadowNode>>>(
              std::move(children))});
 
-    static_cast<facebook::react::LayoutableShadowNode&>(*copy).dirtyLayout();
+    if (auto* layoutable = dynamic_cast<facebook::react::LayoutableShadowNode*>(copy.get())) {
+        layoutable->dirtyLayout();
+    }
 
     return copy;
 }

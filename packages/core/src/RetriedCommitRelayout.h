@@ -14,11 +14,13 @@ namespace react_native_linux {
  * out, skips them, and `LayoutEventEmitter` never hears of them, so their `onLayout` is lost for good.
  *
  * A retry is a second `shadowTreeWillCommit` for one tree on one thread with no `shadowTreeDidCommit` between them.
- * On a retry this returns a new root in which every layoutable node that is not pointer-identical to the committed
- * node of its family at the same place, the root included, is replaced by a fresh `ShadowNode::clone` marked dirty.
- * Those are the nodes the failed attempt may have laid out; they can also be nodes of an older revision that other
- * threads still read. Nodes the committed tree shares are kept as they are, and so are nodes Yoga does not lay out.
- * The only nodes this writes are the clones it creates; every other node is only read, by `clone`, as Yoga's own
+ * On a retry this returns a new root in which every node that is not pointer-identical to the committed node of its
+ * family at the same place, the root included, is replaced by a fresh `ShadowNode::clone` over its replaced
+ * children, and every such clone that is layoutable is marked dirty. Nodes Yoga does not lay out are copied too
+ * rather than kept, because a `<Text>` holds inline views that its `<Paragraph>` lays out as attachments, and those
+ * have to come out dirty as well. The replaced nodes are the ones the failed attempt may have laid out; they can also
+ * be nodes of an older revision that other threads still read. Nodes the committed tree shares are kept as they
+ * are. The only nodes this writes are the clones it creates; every other node is only read, by `clone`, as Yoga's own
  * `adoptYogaChild` reads it. A commit that a later hook cancels looks like a retry to the next commit on that thread,
  * which then only relays what that commit changed.
  *
