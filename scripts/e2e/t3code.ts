@@ -1,6 +1,6 @@
 import { FIRST_PRESENTED_FRAME_TRACE_LINE, hasPresentedFirstFrame } from "./window-readiness.ts";
+import { MAIN_SCREEN_BUTTON_NAME, findStartupErrors } from "./t3code-startup.ts";
 import { cpSync, readdirSync, realpathSync } from "node:fs";
-import { findStartupErrors } from "./t3code-startup.ts";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -13,11 +13,15 @@ const PAIRING_URL_PATTERN = /^Pairing URL: (?<pairingUrl>\S+)$/mu;
 const SUCCESSFUL_EXIT_STATUS = 0;
 const TAIL_LINE_COUNT = 40;
 
-/** What the fixture saw of one window run: the wayland socket, the trace, and how the compositor ended. */
+/**
+ * What the fixture saw of one window run: the wayland socket, whether T3 Code's main screen showed and what the last
+ * accessibility tree named, the trace, and how the compositor ended.
+ */
 interface WindowRun {
   readonly exitCode: number | null;
-  readonly firstCommitMs: number | null;
   readonly hasSocket: boolean;
+  readonly lastNames: readonly string[];
+  readonly mainScreenMs: number | null;
   readonly isTraceClosed: boolean;
   readonly signal: string | null;
   readonly trace: string;
@@ -63,9 +67,12 @@ const installVariants = (variantsDirectory: string, mobileRoot: string): string 
   return null;
 };
 
+const describeLastNames = (names: readonly string[]): string =>
+  names.length === EMPTY_LENGTH ? "nothing" : names.map((name) => JSON.stringify(name)).join(", ");
+
 /**
  * Why a run is not a pass, the errors startup reported leading as where it stopped; empty only when the socket came
- * up, the window presented its first frame, T3 Code committed a view, and the compositor exited successfully.
+ * up, the window presented its first frame, T3 Code showed its main screen, and the compositor exited successfully.
  */
 const gradeWindowRun = (run: WindowRun): readonly string[] => {
   const startupErrors = findStartupErrors(run.trace);
@@ -74,7 +81,11 @@ const gradeWindowRun = (run: WindowRun): readonly string[] => {
     ...(startupErrors.length === EMPTY_LENGTH ? [] : [`startup reported\n${startupErrors.join("\n")}`]),
     ...(run.hasSocket ? [] : ["the compositor never created a wayland socket"]),
     ...(hasPresentedFirstFrame(run.trace) ? [] : [`the window never printed "${FIRST_PRESENTED_FRAME_TRACE_LINE}"`]),
-    ...(run.firstCommitMs === null ? ["T3 Code never committed a view under the surface root"] : []),
+    ...(run.mainScreenMs === null
+      ? [
+          `T3 Code's main screen never showed its "${MAIN_SCREEN_BUTTON_NAME}" button; the last accessibility tree named ${describeLastNames(run.lastNames)}`,
+        ]
+      : []),
     ...(run.isTraceClosed ? [] : ["the window did not exit within the run timeout"]),
     ...(run.exitCode === SUCCESSFUL_EXIT_STATUS
       ? []

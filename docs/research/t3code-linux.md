@@ -169,10 +169,13 @@ The order epic #634 follows. Each step needs the ones before it.
    <checkout>` builds T3 Code's own development bundle for `linux` (it pairs from a link only under `__DEV__`) with its
    own Metro config under this platform's resolver (`packages/test-harness/scripts/t3code-metro-config.ts`), starts the
    checkout's T3 server on loopback, and runs the bundle in the headless rig with the link that pairs it. It passes only
-   when the window presents a frame and exits cleanly with no fatal JavaScript error, and otherwise names the first such
-   error; #641 keeps the ordered list of what stands between that error and the main screen. With `rnl_window`
-   autolinking safe-area-context, svg and screens as CI's fabric job does, and its Hermes built optimised (#814),
-   `"main"` runs 3.1 s after launch and the main screen, paired with the server, is drawn within the five-second settle.
+   when the accessibility tree shows the main screen's "New thread" button within 60 s, startup reports no fatal error or
+   `console.error`, the window exits cleanly, and the screenshot above LogBox's toast matches
+   `packages/test-harness/e2e/goldens/t3code-main-screen.png` (#807); otherwise it names the first error and what the
+   last accessibility tree held. #641 keeps the ordered list of what stands between that and the main screen. With
+   `rnl_window` autolinking safe-area-context, svg and screens as CI's fabric job does, and its Hermes built optimised
+   (#814), `"main"` runs 3.1 s after launch and the main screen, paired with the server, shows 0–2 s later; a Hermes with
+   slow-debug checks reaches `"main"` only after 90 s, and the fixture fails.
 8. **The measurement**: against the Electron build (#642), with frame pacing (#20) and the trace surface (#90).
 
 Secondary screens come after the fixture: attachments (#650), webviews (#272), notifications (#274), the image

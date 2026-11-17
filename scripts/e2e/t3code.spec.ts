@@ -55,9 +55,10 @@ describe("buildPairingLink", () => {
 const presented = "[rnl-present] first frame presented\n";
 const cleanRun = {
   exitCode: 0,
-  firstCommitMs: 97_000,
   hasSocket: true,
   isTraceClosed: true,
+  lastNames: ["Select a thread", "New thread"],
+  mainScreenMs: 3100,
   signal: null,
   trace: presented,
 };
@@ -66,22 +67,24 @@ const statusBarError =
 const componentError = "[console.error] TypeError: Cannot read property 'default' of undefined";
 
 describe("gradeWindowRun", () => {
-  it("passes a run whose window presented, committed a view and exited cleanly with no startup error", () => {
+  it("passes a run whose window presented, showed the main screen and exited cleanly with no startup error", () => {
     expect(gradeWindowRun(cleanRun)).toStrictEqual([]);
   });
 
-  it("fails an empty window: a run that presented and exited cleanly but never committed a view", () => {
-    expect(gradeWindowRun({ ...cleanRun, firstCommitMs: null })).toStrictEqual([
-      "T3 Code never committed a view under the surface root",
+  it("fails a run that showed LogBox's toast alone, and names what the last accessibility tree held", () => {
+    expect(
+      gradeWindowRun({ ...cleanRun, lastNames: ["8", "Failed to initialize devtools client"], mainScreenMs: null }),
+    ).toStrictEqual([
+      'T3 Code\'s main screen never showed its "New thread" button; the last accessibility tree named "8", "Failed to initialize devtools client"',
     ]);
   });
 
   it("fails a root render error React reported only through console.error, and leads with it", () => {
     const trace = `${presented}Running "main"\n${statusBarError}\n${componentError}\n  isComponentError: true }\n`;
 
-    expect(gradeWindowRun({ ...cleanRun, firstCommitMs: null, trace })).toStrictEqual([
+    expect(gradeWindowRun({ ...cleanRun, lastNames: [], mainScreenMs: null, trace })).toStrictEqual([
       `startup reported\n${statusBarError}\n${componentError}`,
-      "T3 Code never committed a view under the surface root",
+      'T3 Code\'s main screen never showed its "New thread" button; the last accessibility tree named nothing',
     ]);
   });
 
@@ -89,16 +92,17 @@ describe("gradeWindowRun", () => {
     expect(
       gradeWindowRun({
         exitCode: null,
-        firstCommitMs: null,
         hasSocket: false,
         isTraceClosed: false,
+        lastNames: [],
+        mainScreenMs: null,
         signal: "SIGKILL",
         trace: "",
       }),
     ).toStrictEqual([
       "the compositor never created a wayland socket",
       'the window never printed "[rnl-present] first frame presented"',
-      "T3 Code never committed a view under the surface root",
+      'T3 Code\'s main screen never showed its "New thread" button; the last accessibility tree named nothing',
       "the window did not exit within the run timeout",
       "the compositor ended with exit code null, signal SIGKILL",
     ]);

@@ -1,6 +1,6 @@
-import type { StartupTiming, StartupWatch } from "./t3code-startup.ts";
+import type { StartupOutcome, StartupTiming, StartupWatch } from "./t3code-startup.ts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { describeStartupTimings, findStartupErrors, waitForFirstCommit } from "./t3code-startup.ts";
+import { describeStartupTimings, findStartupErrors, waitForMainScreen } from "./t3code-startup.ts";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { once } from "node:events";
@@ -16,11 +16,12 @@ const runningMain = 'Running "main" with {"rootTag":1}';
 const SETTLE_MS = 50;
 const timing = { pollIntervalMs: 1, settleMs: SETTLE_MS, timeoutMs: 5000 };
 const shortTiming = { pollIntervalMs: 1, settleMs: SETTLE_MS, timeoutMs: 20 };
+const virtualTiming = { pollIntervalMs: 1, settleMs: SETTLE_MS, timeoutMs: 5 };
 const VIRTUAL_LAUNCH_MS = 1_000_000;
 const NO_ELAPSED_MS = 0;
-const POLLS_BEFORE_COMMIT = 2;
-/** The two polls answered with a refusal and an empty root, each followed by one poll interval. */
-const COMMIT_AFTER_MS = POLLS_BEFORE_COMMIT * timing.pollIntervalMs;
+const POLLS_BEFORE_MAIN_SCREEN = 2;
+/** The two polls answered with a refusal and LogBox's toast alone, each followed by one poll interval. */
+const MAIN_SCREEN_AFTER_MS = POLLS_BEFORE_MAIN_SCREEN * timing.pollIntervalMs;
 
 /** A promise and the call that resolves it. */
 interface Latch {
@@ -83,8 +84,18 @@ describe("findStartupErrors", () => {
   });
 });
 
-const treeLine = (children: readonly unknown[]): string =>
-  `${JSON.stringify({ ok: true, result: { roots: [{ children, tag: 1 }] } })}\n`;
+const treeLine = (nodes: readonly unknown[]): string => `${JSON.stringify({ ok: true, result: { nodes } })}\n`;
+const logBoxToast = {
+  children: [
+    { name: "8", role: "text", tag: 14 },
+    { name: "Failed to initialize devtools client", role: "text", tag: 24 },
+  ],
+  role: "none",
+  tag: 36,
+};
+const newThreadButton = { children: [{ name: "New thread", role: "text", tag: 126 }], role: "button", tag: 128 };
+const mainScreen = treeLine([{ name: "Select a thread", role: "text", tag: 118 }, newThreadButton, logBoxToast]);
+const toastNames = ["8", "Failed to initialize devtools client"];
 const refusal = `${JSON.stringify({ error: "busy", ok: false })}\n`;
 const FIRST_ANSWER = 0;
 const NEXT_ANSWER = 1;
@@ -128,26 +139,26 @@ const serveAnswers = async (
   return server;
 };
 
-/** A wait in progress against a window that commits on its third poll, and whether the wait has returned. */
+/** A wait in progress against a window that shows its main screen on its third poll, and whether it has returned. */
 interface SettlingWait {
   readonly clock: VirtualClock;
-  readonly pending: Promise<Awaited<ReturnType<typeof waitForFirstCommit>>>;
+  readonly pending: Promise<StartupOutcome>;
   readonly progress: { hasReturned: boolean };
   readonly server: ReturnType<typeof createServer>;
 }
 
 const startSettlingWait = async (socketPath: string): Promise<SettlingWait> => {
-  const server = await serveAnswers(socketPath, [refusal, treeLine([]), treeLine([{ tag: 2 }])]);
+  const server = await serveAnswers(socketPath, [refusal, treeLine([logBoxToast]), mainScreen]);
   const lines = [`[rnl-automation] listening on ${socketPath}`, runningMain];
   const clock = createVirtualClock(SETTLE_MS);
   const progress = { hasReturned: false };
   const watch = { isClosed: (): boolean => false, read: (): string => lines.join("\n") };
-  const pending = (async (): Promise<Awaited<ReturnType<typeof waitForFirstCommit>>> => {
-    const timings = await waitForFirstCommit(watch, VIRTUAL_LAUNCH_MS, { ...timing, ...clock });
+  const pending = (async (): Promise<StartupOutcome> => {
+    const outcome = await waitForMainScreen(watch, VIRTUAL_LAUNCH_MS, { ...timing, ...clock });
 
     progress.hasReturned = true;
 
-    return timings;
+    return outcome;
   })();
 
   return { clock, pending, progress, server };
@@ -168,10 +179,10 @@ const useSocketPath = (): (() => string) => {
   return () => path.join(directory, "automation.sock");
 };
 
-describe("waitForFirstCommit", () => {
+describe("waitForMainScreen", () => {
   const socketPathOf = useSocketPath();
 
-  it("polls through a refusal and an empty root until a view commits, times main, and settles past the commit", async () => {
+  it("polls through a refusal and LogBox's toast alone until the New thread button shows, and settles past it", async () => {
     const { clock, pending, progress, server } = await startSettlingWait(socketPathOf());
 
     await clock.requested;
@@ -179,70 +190,95 @@ describe("waitForFirstCommit", () => {
     const hasReturnedWhileSettling = progress.hasReturned;
 
     clock.release();
-    const timings = await pending;
+    const outcome = await pending;
 
     server.close();
-    expect([hasReturnedWhileSettling, timings, clock.sleeps, clock.now() - VIRTUAL_LAUNCH_MS]).toStrictEqual([
+    expect([hasReturnedWhileSettling, outcome, clock.sleeps, clock.now() - VIRTUAL_LAUNCH_MS]).toStrictEqual([
       false,
-      { firstCommitMs: COMMIT_AFTER_MS, runningMainMs: NO_ELAPSED_MS },
+      {
+        lastNames: ["Select a thread", "New thread", ...toastNames],
+        mainScreenMs: MAIN_SCREEN_AFTER_MS,
+        runningMainMs: NO_ELAPSED_MS,
+      },
       [timing.pollIntervalMs, timing.pollIntervalMs, SETTLE_MS],
-      COMMIT_AFTER_MS + SETTLE_MS,
+      MAIN_SCREEN_AFTER_MS + SETTLE_MS,
     ]);
   });
 
+  it("times out on a window that shows LogBox's toast alone, and names what that toast held", async () => {
+    const socketPath = socketPathOf();
+    const server = await serveAnswers(socketPath, [treeLine([logBoxToast])]);
+    const clock = createVirtualClock();
+    const watch = watchTrace(`[rnl-automation] listening on ${socketPath}\n${runningMain}`);
+    const outcome = await waitForMainScreen(watch, VIRTUAL_LAUNCH_MS, { ...virtualTiming, ...clock });
+
+    server.close();
+    expect([outcome, clock.now() - VIRTUAL_LAUNCH_MS]).toStrictEqual([
+      { lastNames: toastNames, mainScreenMs: null, runningMainMs: NO_ELAPSED_MS },
+      virtualTiming.timeoutMs,
+    ]);
+  });
+});
+
+describe("waitForMainScreen without a main screen to wait for", () => {
   it("stops at once when startup reports an error or the window closes, still timing a main run seen in that poll", async () => {
     expect([
-      await waitForFirstCommit(watchTrace(`${runningMain}\n${statusBarError}`), Date.now()),
-      await waitForFirstCommit(watchTrace(runningMain, true), Date.now()),
+      await waitForMainScreen(watchTrace(`${runningMain}\n${statusBarError}`), Date.now()),
+      await waitForMainScreen(watchTrace(runningMain, true), Date.now()),
     ]).toStrictEqual([
-      { firstCommitMs: null, runningMainMs: expect.any(Number) },
-      { firstCommitMs: null, runningMainMs: expect.any(Number) },
+      { lastNames: [], mainScreenMs: null, runningMainMs: expect.any(Number) },
+      { lastNames: [], mainScreenMs: null, runningMainMs: expect.any(Number) },
     ]);
   });
 
   it("gives up after its timeout while the window has opened no automation channel", async () => {
-    expect(await waitForFirstCommit(watchTrace(NO_TRACE), Date.now(), shortTiming)).toStrictEqual({
-      firstCommitMs: null,
-      runningMainMs: null,
-    });
+    const clock = createVirtualClock();
+
+    expect(
+      await waitForMainScreen(watchTrace(NO_TRACE), VIRTUAL_LAUNCH_MS, { ...virtualTiming, ...clock }),
+    ).toStrictEqual({ lastNames: [], mainScreenMs: null, runningMainMs: null });
   });
 });
 
-describe("waitForFirstCommit around one poll", () => {
+describe("waitForMainScreen around one poll", () => {
   const socketPathOf = useSocketPath();
 
-  it("counts a commit whose answer arrives after the deadline as a timeout", async () => {
+  it("counts a main screen whose answer arrives after the deadline as a timeout", async () => {
     const socketPath = socketPathOf();
-    const server = await serveAnswers(socketPath, [treeLine([{ tag: 2 }])], {
+    const server = await serveAnswers(socketPath, [mainScreen], {
       delayMs: LATE_ANSWER_MS,
       onRequest: null,
     });
     const trace = `[rnl-automation] listening on ${socketPath}`;
-    const result = await waitForFirstCommit(watchTrace(trace), Date.now(), shortTiming);
+    const result = await waitForMainScreen(watchTrace(trace), Date.now(), shortTiming);
 
     server.close();
-    expect(result).toStrictEqual({ firstCommitMs: null, runningMainMs: null });
+    expect(result).toStrictEqual({
+      lastNames: ["Select a thread", "New thread", ...toastNames],
+      mainScreenMs: null,
+      runningMainMs: null,
+    });
   });
 
-  it("times a main run printed during the poll that commits before settling past it", async () => {
+  it("times a main run printed during the poll that shows the main screen before settling past it", async () => {
     const socketPath = socketPathOf();
     const lines = [`[rnl-automation] listening on ${socketPath}`];
-    const server = await serveAnswers(socketPath, [treeLine([{ tag: 2 }])], {
+    const server = await serveAnswers(socketPath, [mainScreen], {
       delayMs: NO_DELAY_MS,
       onRequest: () => lines.push(runningMain),
     });
     const watch = { isClosed: (): boolean => false, read: (): string => lines.join("\n") };
-    const timings = await waitForFirstCommit(watch, VIRTUAL_LAUNCH_MS, { ...timing, ...createVirtualClock() });
+    const outcome = await waitForMainScreen(watch, VIRTUAL_LAUNCH_MS, { ...timing, ...createVirtualClock() });
 
     server.close();
-    expect(timings).toStrictEqual({ firstCommitMs: NO_ELAPSED_MS, runningMainMs: NO_ELAPSED_MS });
+    expect([outcome.mainScreenMs, outcome.runningMainMs]).toStrictEqual([NO_ELAPSED_MS, NO_ELAPSED_MS]);
   });
 });
 
 describe("describeStartupTimings", () => {
-  it("states how long main and the first commit took, or that one was not seen", () => {
-    expect(describeStartupTimings({ firstCommitMs: null, runningMainMs: 96_400 })).toBe(
-      'time to "main": 96.4 s, time to the first commit: not seen',
+  it("states how long main and the main screen took, or that one was not seen", () => {
+    expect(describeStartupTimings({ lastNames: [], mainScreenMs: null, runningMainMs: 96_400 })).toBe(
+      'time to "main": 96.4 s, time to the main screen: not seen',
     );
   });
 });
