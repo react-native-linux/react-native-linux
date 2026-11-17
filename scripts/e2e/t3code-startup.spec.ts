@@ -1,7 +1,7 @@
+import type { StartupTiming, StartupWatch } from "./t3code-startup.ts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { describeStartupTimings, findStartupErrors, waitForFirstCommit } from "./t3code-startup.ts";
 import { mkdtempSync, rmSync } from "node:fs";
-import type { StartupWatch } from "./t3code-startup.ts";
 import { createServer } from "node:net";
 import { once } from "node:events";
 import path from "node:path";
@@ -15,6 +15,27 @@ const runningMain = 'Running "main" with {"rootTag":1}';
 const SETTLE_MS = 50;
 const timing = { pollIntervalMs: 1, settleMs: SETTLE_MS, timeoutMs: 5000 };
 const shortTiming = { pollIntervalMs: 1, settleMs: SETTLE_MS, timeoutMs: 20 };
+const VIRTUAL_LAUNCH_MS = 1_000_000;
+const NO_ELAPSED_MS = 0;
+const POLLS_BEFORE_COMMIT = 2;
+/** The two polls answered with a refusal and an empty root, each followed by one poll interval. */
+const COMMIT_AFTER_MS = POLLS_BEFORE_COMMIT * timing.pollIntervalMs;
+
+/** A clock that stands still between sleeps and records each one, so time moves only when the wait sleeps. */
+const createVirtualClock = (): Required<Pick<StartupTiming, "now" | "sleep">> & { readonly sleeps: number[] } => {
+  let time = VIRTUAL_LAUNCH_MS;
+  const sleeps: number[] = [];
+
+  return {
+    now: (): number => time,
+    sleep: async (milliseconds: number): Promise<void> => {
+      sleeps.push(milliseconds);
+      time += milliseconds;
+      await Promise.resolve();
+    },
+    sleeps,
+  };
+};
 
 describe("findStartupErrors", () => {
   it("answers each fatal error and console.error once, in trace order, and ignores logs and warnings", () => {
@@ -98,18 +119,17 @@ describe("waitForFirstCommit", () => {
   it("polls through a refusal and an empty root until a view commits, times main, and settles past the commit", async () => {
     const socketPath = socketPathOf();
     const server = await serveAnswers(socketPath, [refusal, treeLine([]), treeLine([{ tag: 2 }])]);
-    const lines = [`[rnl-automation] listening on ${socketPath}`];
-    const launchedAt = Date.now();
-    const pending = waitForFirstCommit({ isClosed: () => false, read: () => lines.join("\n") }, launchedAt, timing);
-
-    lines.push(runningMain);
-    const { firstCommitMs, runningMainMs } = await pending;
+    const lines = [`[rnl-automation] listening on ${socketPath}`, runningMain];
+    const clock = createVirtualClock();
+    const watch = { isClosed: (): boolean => false, read: (): string => lines.join("\n") };
+    const timings = await waitForFirstCommit(watch, VIRTUAL_LAUNCH_MS, { ...timing, ...clock });
 
     server.close();
-    expect([
-      runningMainMs === null,
-      firstCommitMs !== null && Date.now() - launchedAt >= firstCommitMs + SETTLE_MS,
-    ]).toStrictEqual([false, true]);
+    expect([timings, clock.sleeps, clock.now() - VIRTUAL_LAUNCH_MS]).toStrictEqual([
+      { firstCommitMs: COMMIT_AFTER_MS, runningMainMs: NO_ELAPSED_MS },
+      [timing.pollIntervalMs, timing.pollIntervalMs, SETTLE_MS],
+      COMMIT_AFTER_MS + SETTLE_MS,
+    ]);
   });
 
   it("stops at once when startup reports an error or the window closes, still timing a main run seen in that poll", async () => {
@@ -154,10 +174,10 @@ describe("waitForFirstCommit around one poll", () => {
       onRequest: () => lines.push(runningMain),
     });
     const watch = { isClosed: (): boolean => false, read: (): string => lines.join("\n") };
-    const { firstCommitMs, runningMainMs } = await waitForFirstCommit(watch, Date.now(), timing);
+    const timings = await waitForFirstCommit(watch, VIRTUAL_LAUNCH_MS, { ...timing, ...createVirtualClock() });
 
     server.close();
-    expect(runningMainMs !== null && firstCommitMs !== null && runningMainMs <= firstCommitMs).toBe(true);
+    expect(timings).toStrictEqual({ firstCommitMs: NO_ELAPSED_MS, runningMainMs: NO_ELAPSED_MS });
   });
 });
 
