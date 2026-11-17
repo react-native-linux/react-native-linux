@@ -18,10 +18,10 @@
     "sleep 500"
   ],
   "expect": [
+    "keyboard-controller: state height=0 visible=false isVisible()=false",
     "keyboard-controller: avoiding 0,60 1280x600",
     "keyboard-controller: avoiding input 0,540 400x60",
     "keyboard-controller: sticky 0,660 1280x60",
-    "keyboard-controller: state height=0 visible=false isVisible()=false",
     "keyboard-controller: reanimated height=0",
     "keyboard-controller: avoiding focus",
     "keyboard-controller: focused input update resolved",

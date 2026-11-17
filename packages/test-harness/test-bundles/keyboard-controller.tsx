@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import { AppRegistry, StyleSheet, TextInput, View } from "react-native";
 import type { LayoutChangeEvent } from "react-native";
 import {
@@ -26,6 +25,7 @@ const report = (message: string): void => {
 };
 
 const firstFrames = new Map<string, string>();
+let reportedState = "";
 
 const reportFrame =
   (name: string) =>
@@ -71,9 +71,12 @@ const KeyboardStatus = (): null => {
       scheduleOnRN(report, `reanimated height=${value}`);
     },
   );
-  useEffect(() => {
-    report(`state height=${height} visible=${isVisible} isVisible()=${KeyboardController.isVisible()}`);
-  }, [height, isVisible]);
+  const state = `state height=${height} visible=${isVisible} isVisible()=${KeyboardController.isVisible()}`;
+
+  if (state !== reportedState) {
+    reportedState = state;
+    report(state);
+  }
 
   return null;
 };

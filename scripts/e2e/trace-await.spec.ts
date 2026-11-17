@@ -76,6 +76,13 @@ describe("sendAwaitingTrace", () => {
     expect(rig.waitOutcomes).toEqual([false]);
   });
 
+  it("counts text the app traced before an await with no input before it toward the await that follows", async () => {
+    const rig = createRig(["app ready\npointer bound\n"]);
+
+    expect(await sendThrough(rig, ["await pointer bound", "await app ready", "click 1 2"])).toBeNull();
+    expect(rig.sent).toEqual([[], [], ["click 1 2"]]);
+  });
+
   it("ends the wait as soon as the window closes its trace, and says the window closed", async () => {
     const rig = createRig([], "", true);
 
