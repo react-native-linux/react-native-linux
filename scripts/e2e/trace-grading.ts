@@ -9,8 +9,9 @@ const NEXT_LINE = 1;
 /**
  * The narrow slice of "error" the trace can prove today, per #233: an uncaught JS error's own report from
  * `JsErrorReporter`, and the bracketed component tags `rnl_window`'s C++ diagnostics use when they hit a fault.
- * A raw `console.error`/`console.warn` call is deliberately not in this list — `ConsoleBinding` prints it with no
- * prefix, indistinguishable from `console.log`, until #214's `ListErrors` channel replaces this mechanism.
+ * A raw `console.warn` is indistinguishable from `console.log` here. `console.error` carries `[console.error]` (#798),
+ * which only the T3 Code fixture grades so far; #803 grades it in every scenario. See *The error gate (#233)* in
+ * docs/cpp-toolchain.md.
  */
 const ERROR_TRACE_PATTERNS: readonly string[] = ["[js-error]", "[bundle-runner]", "[image]", "[text]", "[rnl-window]"];
 

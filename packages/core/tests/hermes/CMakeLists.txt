@@ -101,6 +101,7 @@ endif()
 add_executable(rnl_core_hermes_tests
     AdditionalSurfaceTest.cpp
     ClipboardModuleTest.cpp
+    ConsoleBindingTest.cpp
     CrossThreadPromiseStressTest.cpp
     FantomTesterTest.cpp
     HotModuleReplacementSetupTest.cpp

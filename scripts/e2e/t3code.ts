@@ -1,12 +1,13 @@
 import { FIRST_PRESENTED_FRAME_TRACE_LINE, hasPresentedFirstFrame } from "./window-readiness.ts";
 import { cpSync, readdirSync, realpathSync } from "node:fs";
+import { findStartupErrors } from "./t3code-startup.ts";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
 /** The T3 Code revision docs/research/t3code-linux.md surveyed, and the one the fixture runs. */
 const T3CODE_REVISION = "238678951ac4945969b8203ae2996b5891b6ffce";
 
-const FATAL_ERROR_PREFIX = "[js-error] fatal";
+const EMPTY_LENGTH = 0;
 const MOBILE_PACKAGE_NAME = "@t3tools/mobile";
 const PAIRING_URL_PATTERN = /^Pairing URL: (?<pairingUrl>\S+)$/mu;
 const SUCCESSFUL_EXIT_STATUS = 0;
@@ -15,6 +16,7 @@ const TAIL_LINE_COUNT = 40;
 /** What the fixture saw of one window run: the wayland socket, the trace, and how the compositor ended. */
 interface WindowRun {
   readonly exitCode: number | null;
+  readonly firstCommitMs: number | null;
   readonly hasSocket: boolean;
   readonly isTraceClosed: boolean;
   readonly signal: string | null;
@@ -62,16 +64,17 @@ const installVariants = (variantsDirectory: string, mobileRoot: string): string 
 };
 
 /**
- * Why a run is not a pass, the first fatal JavaScript error leading as where startup stopped; empty only when the
- * socket came up, the window presented its first frame, and the compositor exited successfully within the run.
+ * Why a run is not a pass, the errors startup reported leading as where it stopped; empty only when the socket came
+ * up, the window presented its first frame, T3 Code committed a view, and the compositor exited successfully.
  */
 const gradeWindowRun = (run: WindowRun): readonly string[] => {
-  const [firstFatalError = null] = run.trace.split("\n").filter((line) => line.startsWith(FATAL_ERROR_PREFIX));
+  const startupErrors = findStartupErrors(run.trace);
 
   return [
-    ...(firstFatalError === null ? [] : [`startup stopped at\n${firstFatalError}`]),
+    ...(startupErrors.length === EMPTY_LENGTH ? [] : [`startup reported\n${startupErrors.join("\n")}`]),
     ...(run.hasSocket ? [] : ["the compositor never created a wayland socket"]),
     ...(hasPresentedFirstFrame(run.trace) ? [] : [`the window never printed "${FIRST_PRESENTED_FRAME_TRACE_LINE}"`]),
+    ...(run.firstCommitMs === null ? ["T3 Code never committed a view under the surface root"] : []),
     ...(run.isTraceClosed ? [] : ["the window did not exit within the run timeout"]),
     ...(run.exitCode === SUCCESSFUL_EXIT_STATUS
       ? []
